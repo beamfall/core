@@ -2703,3 +2703,46 @@ func TestPendingStartIsNotPreempted(t *testing.T) {
 		t.Fatalf("foreground session B after A's replacement: %v", err)
 	}
 }
+
+// TestSegmentNamesPastFiveDigitsAreServable keeps a source long enough for six
+// digit segment numbers playable (CORE-1737): FFmpeg and the playlists write
+// seg100000.m4s, so serving must accept it, and only the canonical spelling.
+func TestSegmentNamesPastFiveDigitsAreServable(t *testing.T) {
+	t.Parallel()
+	// One encoder start lays seg99999 through seg100001.
+	sessions := NewSessions(&fakeTranscoder{segmentsToLay: 3}, t.TempDir(), nil)
+	defer sessions.Close()
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+	duration := (100000 + 2) * segmentSeconds
+	filePath := func(name string) (string, error) {
+		return sessions.FilePath(context.Background(), key, "/src/long.mkv", duration, 1280, 720, false, name)
+	}
+
+	index, err := filePath("720p/index.m3u8")
+	if err != nil {
+		t.Fatalf("index.m3u8: %v", err)
+	}
+	playlist, err := os.ReadFile(index) // #nosec G304 -- index is beneath a test-owned temporary directory.
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, listed := range []string{"\nseg99999.m4s\n", "\nseg100000.m4s\n", "\nseg100001.m4s\n"} {
+		if !strings.Contains(string(playlist), listed) {
+			t.Fatalf("playlist does not list %q", strings.TrimSpace(listed))
+		}
+	}
+	for _, name := range []string{"720p/seg99999.m4s", "720p/seg100000.m4s", "720p/seg100001.m4s"} {
+		path, err := filePath(name)
+		if err != nil {
+			t.Fatalf("FilePath(%q): %v", name, err)
+		}
+		if filepath.Base(path) != filepath.Base(name) {
+			t.Fatalf("FilePath(%q) = %q", name, path)
+		}
+	}
+	for _, name := range []string{"720p/seg000001.m4s", "720p/seg0099999.m4s", "720p/seg100002.m4s", "720p/seg1000000000.m4s"} {
+		if _, err := filePath(name); err == nil {
+			t.Fatalf("FilePath accepted %q", name)
+		}
+	}
+}

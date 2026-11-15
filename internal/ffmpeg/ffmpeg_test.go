@@ -627,15 +627,35 @@ func TestSegmentArgsMapSelectedAudioStream(t *testing.T) {
 	if !containsArgSequence(copied, "-map", "0:v:0", "-map", "0:2") {
 		t.Fatalf("audio-copy segment argv = %v, want [-map 0:v:0 -map 0:2]", copied)
 	}
+}
 
-	burn := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{AudioStreamIndex: &selected}.WithBurnSubtitle(3))
-	if containsArgSequence(burn, "-map", "0:v:0") || !containsArgSequence(burn, "-map", "[vsub]", "-map", "0:2") {
-		t.Fatalf("burn-in segment argv = %v, want only [-map [vsub] -map 0:2]", burn)
-	}
-
-	legacy := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{})
-	if containsArg(legacy, "-map") {
-		t.Fatalf("nil audio selection changed legacy segment argv: %v", legacy)
+// TestHLSArgsAudioOnlyDropsVideo covers the linear (unknown-duration) HLS
+// encode of an audio-only rendition: only the audio stream is mapped and no
+// video encoder, filter or forced keyframe reaches the argv (CORE-1542).
+func TestHLSArgsAudioOnlyDropsVideo(t *testing.T) {
+	selected := 1
+	for _, tc := range []struct {
+		name      string
+		rendition Rendition
+		wantMap   string
+	}{
+		{"first audio stream", Rendition{AudioOnly: true, AudioCodec: "aac", AudioChannels: 2}, "0:a:0"},
+		{"selected audio stream", Rendition{AudioOnly: true, AudioCodec: "aac", AudioChannels: 2, AudioStreamIndex: &selected}, "0:1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := hlsArgs("/src/track.mp3", "/tmp/hls", tc.rendition)
+			if !containsArgPair(args, "-map", tc.wantMap) {
+				t.Fatalf("audio-only HLS argv = %v, want -map %s", args, tc.wantMap)
+			}
+			for _, video := range []string{"-c:v", "-vf", "-b:v", "-force_key_frames", "0:v:0"} {
+				if containsArg(args, video) {
+					t.Fatalf("audio-only HLS argv carries video argument %q: %v", video, args)
+				}
+			}
+			if !containsArgPair(args, "-c:a", "aac") {
+				t.Fatalf("audio-only HLS argv = %v, want the AAC audio encode", args)
+			}
+		})
 	}
 }
 

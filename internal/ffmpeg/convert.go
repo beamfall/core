@@ -2,9 +2,11 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 )
 
 // ConvertProfile is a named, server-side conversion preset (apple ADR-0003 §1):
@@ -43,7 +45,42 @@ type ConvertProfile struct {
 	// FastStart moves the MP4 index to the front so playback can start before
 	// the whole file is read.
 	FastStart bool
+	// sourceTransfer and sourceDoViProfile describe the source's video signal
+	// (see WithSourceVideo). The zero values mean an SDR source.
+	sourceTransfer    string
+	sourceDoViProfile int
 }
+
+// WithSourceVideo returns a copy of the profile that knows the source's video
+// signal: its ffprobe color_transfer and Dolby Vision profile (0 for none). A
+// video re-encode of an HDR source then leads its filter graph with the live
+// transcode's HDR-to-SDR tone-map chain (Rendition.toneMapChain), so the H.264
+// output is SDR BT.709 rather than washed-out HDR, and Convert refuses an HDR
+// source that chain cannot handle.
+func (p ConvertProfile) WithSourceVideo(colorTransfer string, doViProfile int) ConvertProfile {
+	p.sourceTransfer = colorTransfer
+	p.sourceDoViProfile = doViProfile
+	return p
+}
+
+// sourceRendition is the source signal as the live transcode's Rendition, so
+// a conversion consults the same tone-map decision and chain as HLS.
+func (p ConvertProfile) sourceRendition() Rendition {
+	return Rendition{ColorTransfer: p.sourceTransfer, DoViProfile: p.sourceDoViProfile}
+}
+
+// toneMapRefusal names why this profile's video re-encode of its source must
+// not run, or "" when it may (see Rendition.ToneMapRefusal).
+func (p ConvertProfile) toneMapRefusal() string {
+	if p.AudioOnly || p.VideoCodec == "" || p.VideoCodec == "copy" {
+		return ""
+	}
+	return p.sourceRendition().ToneMapRefusal()
+}
+
+// ErrToneMapRefused is returned by Convert for an HDR source the tone-map
+// chain cannot convert to SDR on this build.
+var ErrToneMapRefused = errors.New("ffmpeg convert: HDR source cannot be tone-mapped to SDR")
 
 // convertProfiles is the fixed catalog of conversion presets. A conversion
 // names a preset; an unknown name is rejected before any FFmpeg run. Three
@@ -130,13 +167,19 @@ func (p ConvertProfile) encodeArgs() []string {
 	return args
 }
 
-// boundArgs caps a re-encode's height and bitrate. The height is held even,
-// as yuv420p requires, and never exceeds the source's.
+// boundArgs tone-maps an HDR source and caps a re-encode's height and
+// bitrate. The tone-map chain leads the filter graph, as in the live
+// transcode. The height is held even, as yuv420p requires, and never exceeds
+// the source's.
 func (p ConvertProfile) boundArgs() []string {
 	var args []string
+	filters := p.sourceRendition().toneMapFilters()
 	if p.MaxHeight > 0 {
 		height := strconv.Itoa(p.MaxHeight)
-		args = append(args, "-vf", "scale=-2:trunc(min(ih\\,"+height+")/2)*2")
+		filters = append(filters, "scale=-2:trunc(min(ih\\,"+height+")/2)*2")
+	}
+	if len(filters) > 0 {
+		args = append(args, "-vf", strings.Join(filters, ","))
 	}
 	if p.MaxVideoKbps > 0 {
 		args = append(args, "-maxrate", strconv.Itoa(p.MaxVideoKbps)+"k",
@@ -167,6 +210,9 @@ func (r *Runner) Convert(ctx context.Context, src, dst string, profile ConvertPr
 	}
 	if err := checkPath(dst); err != nil {
 		return err
+	}
+	if reason := profile.toneMapRefusal(); reason != "" {
+		return fmt.Errorf("%w: %s", ErrToneMapRefused, reason)
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {

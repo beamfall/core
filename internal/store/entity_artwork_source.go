@@ -91,7 +91,8 @@ func (s *Store) EntityMemberMediaIDs(ctx context.Context, id EntityID, relation 
 // EntitiesRelatingTo returns one page of the Entities of one kind that point
 // at an Entity through a relation, by title then id, skipping trashed Entities
 // and Entities in any other Library, for the same reason as
-// EntityMemberMediaIDs.
+// EntityMemberMediaIDs. The read runs on the Entity's catalog plane, so an
+// unsealed encrypted Library's relations come from its own database.
 func (s *Store) EntitiesRelatingTo(ctx context.Context, id EntityID, fromKind, relation string, offset, limit int) ([]EntityID, error) {
 	if id == "" || fromKind == "" || relation == "" {
 		return nil, errors.New("entity ID, source kind and relation name are required")
@@ -104,7 +105,17 @@ func (s *Store) EntitiesRelatingTo(ctx context.Context, id EntityID, fromKind, r
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `
+	// Relations live beside the Entity: the catalog, or an unsealed
+	// encrypted Library's own database. A sealed Library's Entity is not
+	// found, so it relates to nothing.
+	plane, err := s.catalogPlaneForEntityLocked(ctx, id)
+	if errors.Is(err, errVisibleEntityNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT e.id FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
 		JOIN entity target ON target.id = r.to_entity_id AND target.library_id = e.library_id

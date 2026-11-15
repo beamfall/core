@@ -1,0 +1,148 @@
+/* Container entity page (CORE-1786). The header reuses the media detail stage
+ * (media-detail.css) without a poster column; the children are one ordered
+ * list of links, a grid of tiles on wide screens and list rows on a phone.
+ * Spacing 8/12/16/24 and --radius-card only; motion is the token hover and
+ * focus states, removed under reduce-motion. */
+
+[data-register="viewer"] .bf-entity-lockup {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+[data-register="viewer"] .bf-entity-next {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+[data-register="viewer"] .bf-children-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+[data-register="viewer"] .bf-children {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-child-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 8px;
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-child-link:hover {
+  background: var(--control-bg-hover);
+}
+
+[data-register="viewer"] .bf-child-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-child-thumb {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+}
+
+[data-register="viewer"] .bf-child-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+[data-register="viewer"] .bf-child-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-child-title {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+[data-register="viewer"] .bf-child-number {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"] .bf-child-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"] .bf-child-watched {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-register="viewer"] .bf-child-watched svg {
+  width: 12px;
+  height: 12px;
+}
+
+[data-register="viewer"] .bf-child-progress {
+  display: block;
+  height: 4px;
+  border-radius: var(--radius-control);
+  background: var(--line);
+  overflow: hidden;
+}
+
+[data-register="viewer"] .bf-child-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--beam-500);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-register="viewer"] .bf-child-link {
+    transition: none;
+  }
+}
+
+/* Phone: list rows, thumbnail at the start, text beside it, in DOM order. */
+@media (max-width: 640px) {
+  [data-register="viewer"] .bf-children {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  [data-register="viewer"] .bf-child-link {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+  [data-register="viewer"] .bf-child-thumb {
+    flex: 0 0 120px;
+  }
+  [data-register="viewer"] .bf-child-text {
+    flex: 1 1 auto;
+  }
+}

@@ -216,6 +216,8 @@ export interface EntityFieldInfo {
 export interface EntityInfo {
   id: string;
   kind: string;
+  /** The plugin's display name for `kind`; absent when it declares none. */
+  kindDisplayName?: DisplayString;
   title: string;
   fields: EntityFieldInfo[];
   /** The kind's fixed archetype ("container", "person", …); drives generic page layout. */

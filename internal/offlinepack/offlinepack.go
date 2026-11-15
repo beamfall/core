@@ -63,6 +63,12 @@ const (
 	QualityLow      = "low"
 )
 
+// ErrOriginalItemTooLarge refuses an Original-quality build of a video item
+// larger than the BFOP per-item bound: Original seals the source's own bytes,
+// and BFOP cannot carry an item over 4 GiB. A transcoded quality is bounded by
+// its output instead, so it is the way to pack such an item.
+var ErrOriginalItemTooLarge = errors.New("offline pack: a video item is larger than the 4 GiB limit for original quality; choose high, medium or low quality")
+
 // ErrUnknownQuality is returned for a quality outside the four named values.
 var ErrUnknownQuality = errors.New("offline pack: unknown download quality")
 
@@ -79,9 +85,11 @@ func NormalizeQuality(quality string) (string, error) {
 }
 
 // Transcoder writes a transcoded copy of the plaintext source file src to dst
-// at quality (one of high, medium or low). The composition root wires it to
+// at quality (one of high, medium or low). streams is the source file's
+// persisted per-stream inventory (empty when the scan recorded none), so the
+// transcoder can tell an HDR source from SDR. The composition root wires it to
 // FFmpeg; nil (the default) refuses every non-original video build.
-type Transcoder func(ctx context.Context, src, dst, quality string) error
+type Transcoder func(ctx context.Context, src, dst, quality string, streams []store.MediaFileStream) error
 
 // ExpireJobKind runs the server-side Offline Pack eviction/expiry sweep.
 const ExpireJobKind store.JobKind = "offline-pack-expire"
@@ -125,6 +133,7 @@ type Store interface {
 	VisibleMediaBatch(ctx context.Context, ids []store.MediaID, filter store.LibraryFilter) (map[store.MediaID]store.Media, error)
 	PrimaryMediaFile(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.MediaFile, error)
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
+	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
 }
 
@@ -289,6 +298,68 @@ func (s *Service) HandleBuildJob(ctx context.Context, payload []byte) (store.Off
 	})
 }
 
+// AdmitBuild runs the bound checks a build request can pass or fail before any
+// job is queued or any byte is read. It refuses an Original-quality request
+// with ErrOriginalItemTooLarge when a video item exceeds the BFOP per-item
+// bound. Transcoded qualities return nil without resolving the target: their
+// items are bounded after the transcode. Any other error is the same failure
+// BuildPack would report for the request.
+func (s *Service) AdmitBuild(ctx context.Context, scope auth.Scope, req BuildPackRequest) error {
+	quality, err := NormalizeQuality(req.Quality)
+	if err != nil {
+		return err
+	}
+	if quality != QualityOriginal {
+		return nil
+	}
+	_, err = s.resolveBuildSources(ctx, scope, req, quality)
+	return err
+}
+
+// resolveBuildSources resolves the request's target to the visible Media to
+// pack and preflights each item's source file and bounds.
+func (s *Service) resolveBuildSources(ctx context.Context, scope auth.Scope, req BuildPackRequest, quality string) ([]packBuildSource, error) {
+	resolver, ok := s.resolvers[req.TargetKind]
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrUnknownTargetKind, req.TargetKind)
+	}
+	filter, err := s.filter(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	var resolved ResolvedTarget
+	if profileResolver, ok := resolver.(ProfileTargetResolver); ok {
+		resolved, err = profileResolver.ResolveForProfile(ctx, req.TargetRef, scope.ProfileID, filter)
+	} else {
+		resolved, err = resolver.Resolve(ctx, req.TargetRef, filter)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(resolved.MediaIDs) == 0 {
+		return nil, ErrEmptyTarget
+	}
+	if len(resolved.MediaIDs) > MaxManifestItems {
+		return nil, errors.New("offline pack exceeds item bound")
+	}
+	// Defense in depth: re-confirm every resolved id is visible Media before it
+	// is frozen, and build the manifest from those rows so titles are the
+	// catalog's (never resolver-supplied free text). A resolver that returned a
+	// hidden id (a bug) is dropped here, not written into the pack.
+	visible, err := s.store.VisibleMediaBatch(ctx, resolved.MediaIDs, filter)
+	if err != nil {
+		return nil, err
+	}
+	sources, err := s.preflightBuildSources(ctx, resolved.MediaIDs, visible, filter, req.SelectedVersions, quality)
+	if err != nil {
+		return nil, err
+	}
+	if len(sources) == 0 {
+		return nil, ErrEmptyTarget
+	}
+	return sources, nil
+}
+
 // BuildPack is the server-only ADR-0157/0208 producer. It resolves an audio or
 // video target, transcodes video items when a non-original quality is asked, verifies the enrolled device key attestation, selects one immutable
 // Version per Media, seals BFOP bytes, wraps the per-revision CEK, signs the
@@ -338,43 +409,9 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 	if err != nil {
 		return store.OfflinePack{}, err
 	}
-	resolver, ok := s.resolvers[req.TargetKind]
-	if !ok {
-		return store.OfflinePack{}, fmt.Errorf("%w: %q", ErrUnknownTargetKind, req.TargetKind)
-	}
-	filter, err := s.filter(ctx, scope)
+	sources, err := s.resolveBuildSources(ctx, scope, req, quality)
 	if err != nil {
 		return store.OfflinePack{}, err
-	}
-	var resolved ResolvedTarget
-	if profileResolver, ok := resolver.(ProfileTargetResolver); ok {
-		resolved, err = profileResolver.ResolveForProfile(ctx, req.TargetRef, scope.ProfileID, filter)
-	} else {
-		resolved, err = resolver.Resolve(ctx, req.TargetRef, filter)
-	}
-	if err != nil {
-		return store.OfflinePack{}, err
-	}
-	if len(resolved.MediaIDs) == 0 {
-		return store.OfflinePack{}, ErrEmptyTarget
-	}
-	if len(resolved.MediaIDs) > MaxManifestItems {
-		return store.OfflinePack{}, errors.New("offline pack exceeds item bound")
-	}
-	// Defense in depth: re-confirm every resolved id is visible Media before it
-	// is frozen, and build the manifest from those rows so titles are the
-	// catalog's (never resolver-supplied free text). A resolver that returned a
-	// hidden id (a bug) is dropped here, not written into the pack.
-	visible, err := s.store.VisibleMediaBatch(ctx, resolved.MediaIDs, filter)
-	if err != nil {
-		return store.OfflinePack{}, err
-	}
-	sources, err := s.preflightBuildSources(ctx, resolved.MediaIDs, visible, filter, req.SelectedVersions, quality)
-	if err != nil {
-		return store.OfflinePack{}, err
-	}
-	if len(sources) == 0 {
-		return store.OfflinePack{}, ErrEmptyTarget
 	}
 	packID := req.PackID
 	if packID == "" {

@@ -13,6 +13,8 @@ import { useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
+import { CollectionListPage } from "./pages/CollectionListPage";
+import { CollectionPage } from "./pages/CollectionPage";
 import { EntityPage } from "./pages/EntityPage";
 import { FavoritesPage } from "./pages/FavoritesPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -155,6 +157,8 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/entity/:entityId" element={<EntityPage />} />
         <Route path="/media/:mediaId" element={<MediaDetailPage />} />
         <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+        <Route path="/collections" element={<CollectionListPage />} />
+        <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/mydata" element={<MyDataPage />} />
         <Route path="/favorites" element={<FavoritesPage />} />

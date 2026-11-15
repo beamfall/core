@@ -633,7 +633,13 @@ func (s *Store) MediaForEntity(ctx context.Context, entityID EntityID, filter Li
 // entity hidden behind the Reveal contract errors the same way a missing one
 // does.
 func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
-	if _, err := s.visibleEntitySQL(ctx, entityID, filter); err != nil {
+	// Relations and Media live beside the Entity: the catalog, or an
+	// encrypted Library's own database (a sealed one errors here).
+	plane, err := s.catalogPlaneForEntityLocked(ctx, entityID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.visibleEntitySQLFrom(ctx, plane.reader, entityID, filter); err != nil {
 		return nil, err
 	}
 	libraries, err := loadLibraries(ctx, s.catalogR)
@@ -661,9 +667,21 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		args = append(args, id)
 	}
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	if library, encrypted, err := s.encryptedLibraryForReaderLocked(ctx, plane.reader); err != nil {
+		return nil, err
+	} else if encrypted {
+		// The encrypted plane has no library table; scope by the catalog
+		// Library row's plugin instead.
+		pluginID := ""
+		if library.PluginID != nil {
+			pluginID = *library.PluginID
+		}
+		certClause, certArgs = planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	}
 	args = append(args, certArgs...)
 	args = append(args, limit, offset)
-	rows, err := s.catalogR.QueryContext(ctx, `
+	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed certification SQL.
+	rows, err := plane.reader.QueryContext(ctx, `
 		SELECT m.id, m.title, m.duration_seconds, m.library_id
 		FROM entity_relation r
 		JOIN media m ON m.id = r.to_media_id

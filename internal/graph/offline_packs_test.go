@@ -306,3 +306,72 @@ func TestCreateOfflinePackRejectsUnknownQuality(t *testing.T) {
 		t.Fatalf("jobs = %+v, want none queued", jobs)
 	}
 }
+
+// makeOfflinePackFixtureLargeVideo turns the fixture into a video whose file
+// reports one byte over the 4 GiB per-item bound. The file is extended
+// sparsely, so no 4 GiB of data is written.
+func makeOfflinePackFixtureLargeVideo(t *testing.T, st *store.Store) {
+	t.Helper()
+	filter := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	visible, err := st.VisibleMediaBatch(t.Context(), []store.MediaID{"media-alpha"}, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.MediaFilesForMedia(t.Context(), "media-alpha", filter)
+	if err != nil || len(files) == 0 {
+		t.Fatalf("MediaFilesForMedia: %v", err)
+	}
+	if _, _, err := st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+		LibraryID: visible["media-alpha"].LibraryID, Path: files[0].Path, Title: visible["media-alpha"].Title,
+		Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo,
+		ContentFingerprint: files[0].ContentFingerprint,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(files[0].Path, int64(offlinepack.MaxItemSize)+1); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCreateOfflinePackRefusesOriginalOverTheItemBound covers CORE-1745: an
+// Original-quality request for a video item over 4 GiB is refused with an
+// INVALID error naming the limit, before any job is queued.
+func TestCreateOfflinePackRefusesOriginalOverTheItemBound(t *testing.T) {
+	for _, variables := range []string{
+		`{"targetKind":"media","targetRef":"media-alpha","quality":"original"}`,
+		`{"targetKind":"media","targetRef":"media-alpha"}`,
+	} {
+		handler, st := newOfflinePackHandler(t)
+		makeOfflinePackFixtureLargeVideo(t, st)
+		body := `{"query":"mutation { createOfflinePack { id } }","variables":` + variables + `}`
+		_, errs := post(t, handler, body, authorizeViewer)
+		if len(errs) != 1 || errs[0].Message != "original quality is limited to 4 GiB per item; choose high, medium or low quality" || errs[0].Extensions.Code != ErrorCodeInvalid {
+			t.Fatalf("variables %s: errors = %#v, want the INVALID 4 GiB original limit", variables, errs)
+		}
+		queued, err := st.ListJobs(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(queued) != 0 {
+			t.Fatalf("variables %s: jobs = %+v, want none queued", variables, queued)
+		}
+	}
+}
+
+// TestCreateOfflinePackQueuesTranscodedQualityOverTheItemBound: the limit is
+// on sealed bytes only, so a transcoded quality is still queued.
+func TestCreateOfflinePackQueuesTranscodedQualityOverTheItemBound(t *testing.T) {
+	handler, st := newOfflinePackHandler(t)
+	makeOfflinePackFixtureLargeVideo(t, st)
+	body := `{"query":"mutation { createOfflinePack { id state } }","variables":{"targetKind":"media","targetRef":"media-alpha","quality":"medium"}}`
+	if _, errs := post(t, handler, body, authorizeViewer); len(errs) != 0 {
+		t.Fatalf("createOfflinePack errors = %#v", errs)
+	}
+	queued, err := st.ListJobs(t.Context(), store.JobStatusQueued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 1 {
+		t.Fatalf("queued jobs = %d, want 1", len(queued))
+	}
+}

@@ -175,6 +175,63 @@ func TestLiveComposedPictureNeedsCapableFFmpeg(t *testing.T) {
 	}
 }
 
+// The precomputed composed rendition is admitted and advertised at its whole
+// peak, the 1500k video maxrate plus the ladder's 256 kbps audio and mux
+// allowance, exactly like the live 720p composed rung (CORE-1804). A budget
+// one bit under that total no longer admits it; the live 480p shape serves.
+func TestPrecomputedComposedRenditionHonoursBitrateBudget(t *testing.T) {
+	cases := []struct {
+		name            string
+		profile         CapabilityProfile
+		storedBandwidth int
+		wantPrecomputed bool
+	}{
+		{"no limit serves it", videoClientWithH264(0, 0), composedBandwidth, true},
+		{"budget exactly the precomputed total", videoClientWithH264(0, 1_756_000), composedBandwidth, true},
+		{"budget just under the precomputed total", videoClientWithH264(0, 1_755_999), composedBandwidth, false},
+		{"budget just above the bare video maxrate", videoClientWithH264(0, 1_500_001), composedBandwidth, false},
+		{"client streaming ceiling exactly the total", func() CapabilityProfile {
+			p := videoClient
+			p.MaxStreamingBitrate = 1_756_000
+			return p
+		}(), composedBandwidth, true},
+		// A row an earlier build stored at the bare 1.5 Mbps video maxrate holds
+		// the same bytes, so it is held to the same total.
+		{"row stored at the video maxrate, no limit", videoClientWithH264(0, 0), 1_500_000, true},
+		{"row stored at the video maxrate, budget under the total", videoClientWithH264(0, 1_600_000), 1_500_000, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service, st, scope := liveComposedService(t)
+			media := importAudioMedia(t, st, filepath.Join(t.TempDir(), "song.mp3"), "fp-precomputed-budget")
+			picture := ComposedPicture{TimedText: composedTestText}
+			insertComposedRenditionAt(t, st, media, "fp-precomputed-budget", picture, tc.storedBandwidth)
+			service.SetPictureComposer(staticComposer(picture, true, nil))
+			resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(media.ID), CapabilityProfile: tc.profile})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(resp.Streams) != 1 || len(resp.Streams[0].Renditions) != 1 {
+				t.Fatalf("decision = %q streams = %#v, want one composed stream", resp.Decision, resp.Streams)
+			}
+			rendition := resp.Streams[0].Renditions[0]
+			if !tc.wantPrecomputed {
+				if resp.Decision != "transcode" || rendition.Height != 480 {
+					t.Fatalf("decision = %q rendition = %+v, want the live 480p composed shape", resp.Decision, rendition)
+				}
+				return
+			}
+			if resp.Decision != "precomputed-rendition" || rendition.ID != ComposedRungID {
+				t.Fatalf("decision = %q rendition = %+v, want the precomputed composed rendition", resp.Decision, rendition)
+			}
+			live, _ := composedLiveRungWithin(0, 0)
+			if rendition.Bandwidth != 1_756_000 || rendition.Bandwidth != live.Bandwidth {
+				t.Fatalf("advertised bandwidth = %d, want 1756000, the live 720p composed rung's %d", rendition.Bandwidth, live.Bandwidth)
+			}
+		})
+	}
+}
+
 // A Ready rendition was encoded earlier, so a build that cannot compose live
 // still serves it.
 func TestReadyComposedRenditionNeedsNoCapableFFmpeg(t *testing.T) {

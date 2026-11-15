@@ -5,6 +5,7 @@ import {
   History,
   LayoutDashboard,
   ListOrdered,
+  ListVideo,
   Settings,
   Users,
   Wrench,
@@ -96,6 +97,14 @@ export function AccountMenu() {
             <Link to="/mydata" className="bf-account-item" aria-current={current("/mydata")}>
               <Database aria-hidden />
               {t("myData")}
+            </Link>
+            <Link
+              to="/collections"
+              className="bf-account-item"
+              aria-current={current("/collections")}
+            >
+              <ListVideo aria-hidden />
+              {t("viewerCollectionsTitle")}
             </Link>
             <Link to="/favorites" className="bf-account-item" aria-current={current("/favorites")}>
               <Heart aria-hidden />

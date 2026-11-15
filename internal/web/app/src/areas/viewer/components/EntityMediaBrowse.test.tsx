@@ -125,7 +125,10 @@ function renderBrowse(entity: EntityInfo, items: SourceItem[]) {
     <I18nProvider initialLocale="en">
       <MemoryRouter initialEntries={["/entity"]}>
         <Routes>
-          <Route path="/entity" element={<EntityMediaBrowse entity={entity} items={items} />} />
+          <Route
+            path="/entity"
+            element={<EntityMediaBrowse entity={entity} items={items} label="Children" />}
+          />
           <Route path="/watch/:id" element={<WatchProbe />} />
         </Routes>
       </MemoryRouter>
@@ -167,19 +170,19 @@ describe("EntityMediaBrowse", () => {
     expect(screen.queryByRole("button", { name: /^Test Album/ })).not.toBeInTheDocument();
   });
 
-  it("keeps the poster grid when the listed Media is not audio", async () => {
+  it("lists child rows when the listed Media is not audio", async () => {
     vi.mocked(fetchMediaRows).mockResolvedValue({
       ...rows,
       t2: { ...rows.t2, mediaClass: "video" } as GenericMediaInfo,
     });
     const { container } = renderBrowse(album, tracks);
-    await vi.waitFor(() => expect(container.querySelector(".bf-grid")).not.toBeNull());
+    await vi.waitFor(() => expect(container.querySelector(".bf-children")).not.toBeNull());
     expect(screen.queryByRole("list", { name: "Tracks" })).not.toBeInTheDocument();
   });
 
   it("reads no rows for archetypes without a listening layout", () => {
     const { container } = renderBrowse({ ...album, archetype: undefined } as EntityInfo, tracks);
     expect(fetchMediaRows).not.toHaveBeenCalled();
-    expect(container.querySelector(".bf-grid")).not.toBeNull();
+    expect(container.querySelector(".bf-children")).not.toBeNull();
   });
 });

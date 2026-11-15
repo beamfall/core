@@ -1524,7 +1524,7 @@ func (s *Service) hlsChoice(ctx context.Context, grant streamtoken.Grant, suffix
 	if err != nil {
 		return StreamChoice{}, err
 	}
-	rungs := rungsForLadder(media.VideoWidth, media.VideoHeight, caps)
+	rungs := advertisedRungs(media, caps)
 	renditions := make([]RenditionInfo, 0, len(rungs))
 	for _, rung := range rungs {
 		renditions = append(renditions, RenditionInfo{ID: rung.ID, Height: advertisedRungHeight(media, rung), Bandwidth: rung.Bandwidth})
@@ -1682,6 +1682,19 @@ func (s *Service) ladderCaps(profile CapabilityProfile, ov quirkOverlay) ladderC
 // the field simply disappears — the honest "unknown" the dimensionless source
 // rung already conveys. The rung keeps its ceiling for the encoder, which
 // reconstructs the same rung list from LadderCapsFromGrant.
+// advertisedRungs is the rung inventory a transcode of media offers. An
+// audio-class Media offers the single audio-only rung (ADR-0010 §8, honest
+// ladder): a picture stream it carries is embedded art, not video, so its
+// dimensions must not seed a resolution ladder and the master must not
+// advertise a video rate. The byte layer reaches the same rung through
+// StreamShape.AudioOnly.
+func advertisedRungs(media store.Media, caps ladderCaps) []Rung {
+	if media.Class == store.MediaClassAudio {
+		return []Rung{audioOnlyRung()}
+	}
+	return rungsForLadder(media.VideoWidth, media.VideoHeight, caps)
+}
+
 func advertisedRungHeight(media store.Media, rung Rung) int {
 	if media.VideoHeight <= 0 {
 		return 0
@@ -1733,7 +1746,7 @@ func (s *Service) degradedHLSChoice(ctx context.Context, grant streamtoken.Grant
 	if err != nil {
 		return StreamChoice{}, err
 	}
-	rung := lowestRung(rungsForLadder(media.VideoWidth, media.VideoHeight, caps))
+	rung := lowestRung(advertisedRungs(media, caps))
 	return StreamChoice{
 		ID:         "hls-" + suffix,
 		Kind:       "hls",
@@ -2303,7 +2316,14 @@ func audioOnlyCodecDeclared(media store.Media, streams []store.MediaFileStream, 
 // container is not, so the video is copied into the HLS container instead of re-encoded. The
 // HDR-preservation rule applies to that swap, so a source without a recorded video stream, or
 // with HDR10+/Dolby Vision metadata, still falls through to the full transcode.
+//
+// An audio-class item never takes this rung: its only picture stream is
+// embedded art, which is not video to copy through. Its transcode is the
+// audio-only rendition (advertisedRungs).
 func audioCopyEligible(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
+	if media.Class == store.MediaClassAudio {
+		return false
+	}
 	containerDeclared := slices.Contains(profile.Containers, media.Container)
 	return videoCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) &&
 		(!containerDeclared || audioNeedsRework(streams, profile, ov))

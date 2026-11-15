@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { calibrateWatchPartyClock, fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
 import type { GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
@@ -13,6 +14,7 @@ import {
   mediaDetailCacheKey,
   mediaLinkState,
 } from "../lib/mediaDetail";
+import { resetHomeNetworkProbeForTest } from "../lib/watchTogether";
 import { MediaDetailPage } from "./MediaDetailPage";
 
 const mocks = vi.hoisted(() => ({ identity: null as string | null }));
@@ -21,6 +23,12 @@ vi.mock("../lib/mediaDetail", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/mediaDetail")>()),
   fetchMedia: vi.fn(),
   fetchMediaDetailFields: vi.fn(),
+}));
+vi.mock("@/lib/graphql", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  fetchEntity: vi.fn(),
+  fetchMediaForEntity: vi.fn(),
+  calibrateWatchPartyClock: vi.fn(),
 }));
 vi.mock("@/lib/session", () => ({ useViewerIdentity: () => mocks.identity }));
 vi.mock("@/components/chrome/AppShell", () => ({
@@ -56,6 +64,7 @@ function Probe() {
   return (
     <>
       <p data-testid="path">{location.pathname}</p>
+      <p data-testid="search">{location.search}</p>
       <p data-testid="state">{JSON.stringify(location.state)}</p>
     </>
   );
@@ -69,6 +78,7 @@ function renderAt(entries: Array<string | { pathname: string; state?: unknown }>
           <Route path="/" element={<Probe />} />
           <Route path="/n/:id" element={<Probe />} />
           <Route path="/watch/:mediaId" element={<Probe />} />
+          <Route path="/entity/:id" element={<Probe />} />
           <Route path="/media/:mediaId" element={<MediaDetailPage />} />
         </Routes>
       </MemoryRouter>
@@ -90,6 +100,11 @@ beforeEach(() => {
   mocks.identity = identity;
   vi.mocked(fetchMedia).mockReset();
   vi.mocked(fetchMediaDetailFields).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
+  // Off the home network by default: Watch together is not offered (CORE-1764).
+  resetHomeNetworkProbeForTest();
+  vi.mocked(calibrateWatchPartyClock).mockReset().mockRejectedValue(new Error("home network only"));
 });
 
 afterEach(() => {
@@ -118,7 +133,9 @@ describe("MediaDetailPage", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Details" })).toBeInTheDocument();
     expect(screen.getByText("Studio")).toBeInTheDocument();
     expect(screen.getByText("North")).toBeInTheDocument();
-    expect(screen.getByText("rating")).toBeInTheDocument();
+    // An undeclared field (no plugin label) is bookkeeping: Manage shows it, the Viewer does not.
+    expect(screen.queryByText("rating")).toBeNull();
+    expect(screen.queryByText("PG")).toBeNull();
     // A deep link knows no resume point: plain Play, no progress bar.
     expect(screen.getByRole("button", { name: "Play Server title" })).toHaveTextContent("Play");
     expect(screen.queryByRole("progressbar")).toBeNull();
@@ -277,5 +294,212 @@ describe("MediaDetailPage", () => {
     // The previous item's server detail never paints under the new id.
     expect(screen.getByRole("heading", { level: 1, name: "Second" })).toBeInTheDocument();
     expect(screen.queryByText("Server summary")).toBeNull();
+  });
+  it("shows only viewer-facing fields and puts the rating in the facts row (CORE-1785)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        { entityID: "g1", title: "Drama", kind: "genre", archetype: "category", relation: "in" },
+        { entityID: "p1", title: "A Person", kind: "person", archetype: "person", relation: "by" },
+      ],
+    });
+    vi.mocked(fetchMediaDetailFields).mockResolvedValue([
+      { name: "class", type: "text", value: "feature", label: { en: "Class" } },
+      { name: "hydrated", type: "flag", value: "true", label: { en: "Grouped Locally" } },
+      { name: "index", type: "number", value: "3" },
+      { name: "sequence", type: "number", value: "7" },
+      { name: "certification", type: "text", value: "PG-13", label: { en: "Certification" } },
+      { name: "tagline", type: "text", value: "A line", label: { en: "Tagline" } },
+    ]);
+    const timed = { ...card, engagement: { durationSeconds: 5400 } } as SourceItem;
+    renderAt([{ pathname: "/media/m1", state: mediaLinkState(timed, identity) }]);
+    await act(async () => {});
+
+    const facts = screen.getByRole("list", { name: "About this item" });
+    expect(Array.from(facts.querySelectorAll("li"), (li) => li.textContent)).toEqual([
+      "2001",
+      "1 h 30 min",
+      "PG-13",
+      "Drama",
+    ]);
+    const details = screen.getByRole("heading", { level: 2, name: "Details" }).closest("section");
+    expect(details).toHaveTextContent("Tagline");
+    expect(details).toHaveTextContent("A line");
+    for (const hidden of ["Class", "Grouped Locally", "index", "sequence", "Certification"]) {
+      expect(details).not.toHaveTextContent(hidden);
+    }
+  });
+
+  it("leaves the Details section out when no field is viewer-facing", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    vi.mocked(fetchMediaDetailFields).mockResolvedValue([
+      { name: "index", type: "number", value: "3" },
+      { name: "class", type: "text", value: "feature", label: { en: "Class" } },
+    ]);
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { level: 1, name: "Server title" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: "Details" })).toBeNull();
+  });
+
+  it("fills only Play with the accent, at the 44px size", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    const started = { ...card, engagement: { positionSeconds: 60, durationSeconds: 600 } };
+    const { container } = renderAt([
+      { pathname: "/media/m1", state: mediaLinkState(started as SourceItem, identity) },
+    ]);
+    await act(async () => {});
+
+    const filled = container.querySelectorAll(".bg-primary");
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toBe(screen.getByRole("button", { name: "Resume Server title" }));
+    expect(filled[0]).toHaveClass("h-11");
+    expect(
+      screen.getByRole("button", { name: "Start Server title from the beginning" }),
+    ).toHaveClass("h-11");
+  });
+
+  it("offers Watch together as a ghost secondary on the home network only", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: "Watch Server title together" })).toBeNull();
+    cleanup();
+
+    resetHomeNetworkProbeForTest();
+    vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 0, roundTripMS: 2 });
+    const { container } = renderAt(["/media/m1"]);
+    await act(async () => {});
+    const together = screen.getByRole("button", { name: "Watch Server title together" });
+    expect(together).toHaveClass("h-11");
+    expect(container.querySelectorAll(".bg-primary")).toHaveLength(1);
+  });
+
+  it("starts over from the beginning with ?t=0 only when a position is known", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /from the beginning/ })).toBeNull();
+
+    cleanup();
+    const started = { ...card, engagement: { positionSeconds: 60, durationSeconds: 600 } };
+    renderAt([{ pathname: "/media/m1", state: mediaLinkState(started as SourceItem, identity) }]);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Start Server title from the beginning" }));
+    expect(screen.getByTestId("path")).toHaveTextContent("/watch/m1");
+    expect(screen.getByTestId("search")).toHaveTextContent("?t=0");
+    expect(JSON.parse(screen.getByTestId("state").textContent || "null")).toEqual({
+      title: "Server title",
+    });
+  });
+
+  it("links the container credit and the grouping above it, and offers Next", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        {
+          entityID: "c-inner",
+          title: "Part Two",
+          kind: "inner",
+          kindDisplayName: { en: "Part" },
+          archetype: "container",
+          relation: "in",
+        },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { id: "m0", kind: "media", title: "Before" },
+      { id: "m1", kind: "media", title: "Server title" },
+      { id: "m2", kind: "media", title: "After" },
+    ]);
+    vi.mocked(fetchEntity).mockResolvedValue({
+      id: "c-inner",
+      kind: "inner",
+      title: "Part Two",
+      fields: [],
+      relatedEntities: [
+        {
+          kind: "outer",
+          items: [
+            { id: "c-outer", kind: "outer", title: "The Whole", engagement: { totalCount: 9 } },
+          ],
+        },
+        {
+          kind: "tag",
+          items: [{ id: "t1", kind: "tag", title: "Small", engagement: { totalCount: 2 } }],
+        },
+      ],
+    });
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+
+    const nav = screen.getByRole("navigation", { name: "Part of" });
+    expect(Array.from(nav.querySelectorAll("a"), (a) => a.getAttribute("href"))).toEqual([
+      "/entity/c-outer",
+      "/entity/c-inner",
+    ]);
+    expect(fetchMediaForEntity).toHaveBeenCalledWith("c-inner", expect.anything());
+
+    const next = screen.getByRole("link", { name: "Next: After" });
+    expect(next).toHaveAttribute("href", "/media/m2");
+    fireEvent.click(screen.getByRole("link", { name: "Part Two" }));
+    expect(screen.getByTestId("path")).toHaveTextContent("/entity/c-inner");
+  });
+
+  it("offers no Next on the last item and keeps the credit link when the list fails", async () => {
+    const withCredit = {
+      ...media,
+      credits: [
+        { entityID: "c1", title: "Group", kind: "inner", archetype: "container", relation: "in" },
+      ],
+    };
+    vi.mocked(fetchMedia).mockResolvedValue(withCredit);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { id: "m0", kind: "media", title: "Before" },
+      { id: "m1", kind: "media", title: "Server title" },
+    ]);
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+    expect(screen.queryByRole("link", { name: /^Next/ })).toBeNull();
+    expect(screen.getByRole("link", { name: "Group" })).toHaveAttribute("href", "/entity/c1");
+
+    cleanup();
+    vi.mocked(fetchMediaForEntity).mockRejectedValue(new TypeError("Failed to fetch"));
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+    expect(screen.getByRole("link", { name: "Group" })).toHaveAttribute("href", "/entity/c1");
+    expect(screen.queryByRole("link", { name: /^Next/ })).toBeNull();
+  });
+
+  it("clamps a long overview behind a More toggle", async () => {
+    const long = "A sentence about the item. ".repeat(20).trim();
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, summary: long });
+    const { container } = renderAt(["/media/m1"]);
+    await act(async () => {});
+
+    const text = container.querySelector(".bf-detail-summary");
+    expect(text).toHaveAttribute("data-clamped");
+    const toggle = screen.getByRole("button", { name: "More" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(text).not.toHaveAttribute("data-clamped");
+    expect(screen.getByRole("button", { name: "Less" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("lays the backdrop behind the stage and fades it in only once loaded", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      artworkSlots: { backdrop: "/api/media/artwork/m1/backdrop?v=1" },
+    });
+    const { container } = renderAt(["/media/m1"]);
+    await act(async () => {});
+
+    const img = container.querySelector(".bf-detail-backdrop img");
+    expect(img?.getAttribute("src")).toContain("backdrop?v=1&bucket=w1280");
+    expect(img).not.toHaveAttribute("data-loaded");
+    fireEvent.load(img as Element);
+    expect(img).toHaveAttribute("data-loaded");
+    expect(container.querySelector(".bf-detail-stage")).toHaveAttribute("data-backdrop");
   });
 });

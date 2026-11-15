@@ -150,7 +150,7 @@ func TestLiveComposedPlayRaisesQueuedSweepRender(t *testing.T) {
 	media := importAudioMedia(t, st, filepath.Join(t.TempDir(), "song.mp3"), "fp-raise")
 	composer := staticComposer(ComposedPicture{TimedText: composedTestText}, true, nil)
 	service.SetPictureComposer(composer)
-	if queued, err := EnsureComposedRendition(ctx, st, media.ID, composer, service.composedCache, time.Unix(90, 0)); err != nil || !queued {
+	if queued, err := EnsureComposedRendition(ctx, st, media.ID, composer, nil, service.composedCache, time.Unix(90, 0)); err != nil || !queued {
 		t.Fatalf("sweep enqueue = %v err %v", queued, err)
 	}
 	if _, err := service.Info(ctx, scope, InfoRequest{MediaID: string(media.ID), CapabilityProfile: videoClient}); err != nil {

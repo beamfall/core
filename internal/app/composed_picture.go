@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -25,6 +26,9 @@ type pictureComposerHook interface {
 type pictureComposers struct {
 	store   *store.Store
 	parsers map[string]scanpkg.FilenameParser
+	// recipeSupported is the FFmpeg capability check the sweep consults
+	// before queueing a render (nil: the cached check of the resolved build).
+	recipeSupported playback.ComposedRecipeCheck
 }
 
 // newPictureComposers returns nil when no activated parser can compose, so
@@ -89,6 +93,9 @@ const composedSweepLimit = 200
 // whose plugin composes pictures (ADR-0057 §2: the seeded Schedule is the
 // explicit trigger). One Media's failure is logged and skipped so it cannot
 // stall the rest; disk use stays governed by the precompute admission budget.
+// A picture the FFmpeg build cannot compose (timed text without libass) is
+// not queued, so it is counted as unsupported rather than failing a render on
+// every run; a rendition already stored for it is still served.
 // It walks every Media of those Libraries each run (resolving the picture to
 // detect edited sidecars), which is cheap at songbook sizes.
 func (c *pictureComposers) sweep(ctx context.Context, cacheRoot string, now time.Time, logger *slog.Logger) (int, error) {
@@ -104,10 +111,10 @@ func (c *pictureComposers) sweep(ctx context.Context, cacheRoot string, now time
 	if err != nil {
 		return 0, err
 	}
-	enqueued, skipped := 0, 0
+	enqueued, skipped, unsupported := 0, 0, 0
 	defer func() {
-		if logger != nil && (enqueued > 0 || skipped > 0) {
-			logger.Info("composed rendition sweep", "enqueued", enqueued, "skipped", skipped, "pending", pending)
+		if logger != nil && (enqueued > 0 || skipped > 0 || unsupported > 0) {
+			logger.Info("composed rendition sweep", "enqueued", enqueued, "skipped", skipped, "unsupported", unsupported, "pending", pending)
 		}
 	}()
 	for _, library := range libraries {
@@ -128,7 +135,11 @@ func (c *pictureComposers) sweep(ctx context.Context, cacheRoot string, now time
 			if enqueued >= headroom {
 				return enqueued, nil
 			}
-			added, err := playback.EnsureComposedRendition(ctx, c.store, mediaID, c.forMedia, cacheRoot, now)
+			added, err := playback.EnsureComposedRendition(ctx, c.store, mediaID, c.forMedia, c.recipeSupported, cacheRoot, now)
+			if errors.Is(err, playback.ErrComposedRecipeUnsupported) {
+				unsupported++
+				continue
+			}
 			if err != nil {
 				skipped++
 				if logger != nil {

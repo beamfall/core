@@ -546,6 +546,7 @@ type Handler struct {
 // music kind, keeping the wire surface domain-agnostic.
 type OfflinePackService interface {
 	BuildPack(ctx context.Context, scope auth.Scope, req offlinepack.BuildPackRequest) (store.OfflinePack, error)
+	AdmitBuild(ctx context.Context, scope auth.Scope, req offlinepack.BuildPackRequest) error
 	Revoke(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) (store.OfflinePack, error)
 	Pack(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) (store.OfflinePack, error)
 	Packs(ctx context.Context, profileID store.ProfileID) ([]store.OfflinePack, error)

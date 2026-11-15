@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSourceItems } from "@/lib/graphql";
 import { fetchMediaRows } from "@/lib/graphql/browse";
@@ -14,21 +14,26 @@ import {
   trackRows,
 } from "../lib/trackList";
 import { playQueueOf } from "../lib/watchQueue";
+import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
 import { TrackList } from "./TrackList";
 
 // The Media an Entity page lists when its Kind has no detail Layout. The
 // layout follows the generic rules in lib/trackList (CORE-1635): an audio
 // "container" lists numbered tracks, an audio "person" lists top tracks and
-// the containers it appears on; anything else keeps the poster grid. Only
-// those two archetypes read per-Media rows, and only when no listed item is
-// already known to be something other than audio.
+// the containers it appears on; anything else lists its children grouped by
+// kind (ContainerChildren, CORE-1786). Only those two archetypes read
+// per-Media rows, and only when no listed item is already known to be
+// something other than audio.
 export function EntityMediaBrowse({
   entity,
   items,
+  label,
 }: {
   entity: EntityInfo | null;
   items: SourceItem[];
+  /** Accessible name of the child list the non-audio layout renders. */
+  label: string;
 }) {
   const archetype = entity?.archetype;
   const wantsRows =
@@ -53,8 +58,6 @@ export function EntityMediaBrowse({
     return () => controller.abort();
   }, [wantsRows, ids]);
 
-  const queue = useMemo(() => playQueueOf(items), [items]);
-
   if (wantsRows && rows === null) {
     return (
       <div aria-hidden className="flex flex-col gap-2">
@@ -70,20 +73,7 @@ export function EntityMediaBrowse({
     if (archetype === "person")
       return <PersonListening entity={entity} items={items} rows={rows} />;
   }
-  if (items.length === 0) return null;
-  return (
-    <ul className="bf-grid">
-      {items.map((item, index) => (
-        <MediaItemCard
-          key={`${item.id}-${index}`}
-          item={item}
-          posInSet={index + 1}
-          setSize={items.length}
-          queue={queue}
-        />
-      ))}
-    </ul>
-  );
+  return <ContainerChildren items={items} label={label} />;
 }
 
 /** Marks rows the page verified as audio, so the player's queue knows their class. */
