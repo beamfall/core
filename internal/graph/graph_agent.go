@@ -9,11 +9,13 @@ package graph
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +32,7 @@ const agentCatalogGuide = `Beamfall GraphQL for agents.
 POST /api/graphql with {"query": "...", "variables": {...}} and "Authorization: Bearer <token>".
 Mint a token offline with the server stopped: beamfall token create --name <n> --access cli|diagnostics|agent.
 Tiers: cli runs the operator CLI fields; diagnostics also runs every admin read plus jobCancel and jobRetry; agent also runs admin mutations except minting credentials and transferring ownership.
-Each field below lists its kind, whether it needs an Admin Session, the token tiers that may run it, its arguments and its top-level result fields. Select result fields in braces, for example: query { jobs { id status } }.
+Each field below lists its kind, whether it needs an Admin Session, the token tiers that may run it, its arguments and its top-level result fields. When argumentsKnown is false the field's arguments are not catalogued (an empty list does not mean it takes none); see docs/api. Select result fields in braces, for example: query { jobs { id status } }.
 A refused field answers "admin session required". Every response carries an X-Beamfall-Request-Id header; pass it to serverLogs(requestId: ...) or diagnosticsBundle to find the matching log lines.
 Debug: serverLogs(limit, contains, level, requestId) and diagnosticsBundle(profiles: ["goroutine","heap","allocs","block","mutex","threadcreate"]).`
 
@@ -47,8 +49,12 @@ type AgentCatalogField struct {
 	AdminSession bool     `json:"adminSession"`
 	ManagerRole  bool     `json:"managerRole"`
 	TokenTiers   []string `json:"tokenTiers"`
-	Arguments    []string `json:"arguments"`
-	ResultFields []string `json:"resultFields"`
+	// ArgumentsKnown is false when the server has no argument metadata for the
+	// field: Arguments is then empty because it is unknown, not because the
+	// field takes none.
+	ArgumentsKnown bool     `json:"argumentsKnown"`
+	Arguments      []string `json:"arguments"`
+	ResultFields   []string `json:"resultFields"`
 }
 
 var tokenTiers = []store.APITokenAccess{store.APITokenAccessCLI, store.APITokenAccessDiagnostics, store.APITokenAccessAgent}
@@ -57,13 +63,14 @@ func agentCatalog() AgentCatalogInfo {
 	fields := make([]AgentCatalogField, 0, len(fieldHandlerRegistry))
 	for name, handler := range fieldHandlerRegistry {
 		entry := AgentCatalogField{
-			Name:         handler.wireName,
-			Kind:         "query",
-			AdminSession: handler.roleGate&roleAdmin != 0,
-			ManagerRole:  handler.roleGate&roleManager != 0,
-			TokenTiers:   []string{},
-			Arguments:    catalogArguments(name),
-			ResultFields: catalogResultFields(name),
+			Name:           handler.wireName,
+			Kind:           "query",
+			AdminSession:   handler.roleGate&roleAdmin != 0,
+			ManagerRole:    handler.roleGate&roleManager != 0,
+			TokenTiers:     []string{},
+			Arguments:      catalogArguments(name),
+			ArgumentsKnown: catalogArgumentsKnown(name),
+			ResultFields:   catalogResultFields(name),
 		}
 		if handler.kind == fieldMutation {
 			entry.Kind = "mutation"
@@ -79,8 +86,32 @@ func agentCatalog() AgentCatalogInfo {
 	return AgentCatalogInfo{Guide: agentCatalogGuide, Fields: fields}
 }
 
+// agentArgumentHints declares arguments for fields the nested wire schema does
+// not describe (fieldArguments), starting with the job fields an operator's
+// agent uses to inspect and recover work. A field in neither map reports
+// argumentsKnown false.
+var agentArgumentHints = map[string][]NestedArgument{
+	"job":       {{Name: "id", Kind: "string"}},
+	"jobcancel": {{Name: "id", Kind: "string"}},
+	"jobevents": {{Name: "id", Kind: "string"}},
+	"jobretry":  {{Name: "id", Kind: "string"}},
+}
+
+func catalogArgumentSource(field string) ([]NestedArgument, bool) {
+	if args, ok := fieldArguments[field]; ok {
+		return args, true
+	}
+	args, ok := agentArgumentHints[field]
+	return args, ok
+}
+
+func catalogArgumentsKnown(field string) bool {
+	_, ok := catalogArgumentSource(field)
+	return ok
+}
+
 func catalogArguments(field string) []string {
-	args := fieldArguments[field]
+	args, _ := catalogArgumentSource(field)
 	out := make([]string, 0, len(args))
 	for _, arg := range args {
 		text := arg.Name + ": " + arg.Kind
@@ -142,25 +173,60 @@ func (f serverLogFilter) match(line string) bool {
 	return true
 }
 
-// logLineHasAttr reports whether a slog text line carries key=value as a whole
-// attribute (bounded by a space or the line ends, optionally quoted).
+// logLineHasAttr reports whether a slog text line carries key=value as one of
+// its attributes. Quoted values are unquoted, and text inside a quoted value
+// never counts as an attribute.
 func logLineHasAttr(line, key, value string) bool {
-	for _, candidate := range []string{key + "=" + value, key + `="` + value + `"`} {
-		for rest := line; ; {
-			index := strings.Index(rest, candidate)
-			if index < 0 {
-				break
+	for rest := line; rest != ""; {
+		rest = strings.TrimLeft(rest, " ")
+		eq := strings.IndexAny(rest, "= ")
+		if eq < 0 || rest[eq] == ' ' {
+			// a bare word with no '=': skip it
+			if eq < 0 {
+				return false
 			}
-			startOK := index == 0 || rest[index-1] == ' '
-			end := index + len(candidate)
-			endOK := end == len(rest) || rest[end] == ' '
-			if startOK && endOK {
-				return true
+			rest = rest[eq:]
+			continue
+		}
+		name := rest[:eq]
+		rest = rest[eq+1:]
+		var got string
+		if strings.HasPrefix(rest, `"`) {
+			end := quotedValueEnd(rest)
+			raw := rest[:end]
+			rest = rest[end:]
+			unquoted, err := strconv.Unquote(raw)
+			if err != nil {
+				unquoted = strings.Trim(raw, `"`)
 			}
-			rest = rest[index+1:]
+			got = unquoted
+		} else {
+			end := strings.IndexByte(rest, ' ')
+			if end < 0 {
+				end = len(rest)
+			}
+			got = rest[:end]
+			rest = rest[end:]
+		}
+		if name == key && got == value {
+			return true
 		}
 	}
 	return false
+}
+
+// quotedValueEnd returns the index just past the closing quote of the Go
+// quoted string that opens s, or len(s) when it is unterminated.
+func quotedValueEnd(s string) int {
+	for i := 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '"':
+			return i + 1
+		}
+	}
+	return len(s)
 }
 
 // filteredServerLogs returns up to limit of the most recent kept lines that
@@ -295,16 +361,33 @@ func profileText(name string) DiagnosticsProfile {
 	if name == "goroutine" {
 		debugLevel = 2 // full stacks, the form an agent reads
 	}
-	var buf bytes.Buffer
+	w := &cappedWriter{limit: diagnosticsProfileMaxBytes}
 	if profile := pprof.Lookup(name); profile != nil {
-		_ = profile.WriteTo(&buf, debugLevel)
+		_ = profile.WriteTo(w, debugLevel)
 	}
-	out := DiagnosticsProfile{Name: name, Text: buf.String()}
-	if len(out.Text) > diagnosticsProfileMaxBytes {
-		out.Text = strings.ToValidUTF8(out.Text[:diagnosticsProfileMaxBytes], "")
-		out.Truncated = true
+	return DiagnosticsProfile{Name: name, Text: strings.ToValidUTF8(w.buf.String(), ""), Truncated: w.truncated}
+}
+
+// errProfileCapReached stops a profile write once cappedWriter is full, so the
+// rest of the profile is never formatted or buffered.
+var errProfileCapReached = errors.New("profile size cap reached")
+
+// cappedWriter keeps at most limit bytes and fails the write that would exceed
+// it, bounding the memory a profile read can hold.
+type cappedWriter struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	room := w.limit - w.buf.Len()
+	if len(p) <= room {
+		return w.buf.Write(p)
 	}
-	return out
+	w.buf.Write(p[:max(room, 0)])
+	w.truncated = true
+	return max(room, 0), errProfileCapReached
 }
 
 func buildRevision() string {

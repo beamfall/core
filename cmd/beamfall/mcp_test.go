@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestServeMCP (CORE-2098): the stdio server answers initialize, lists its
@@ -133,5 +135,24 @@ func TestServeMCP(t *testing.T) {
 	}
 	if len(gotQueries) != 3 {
 		t.Fatalf("graphql calls = %d, want 3", len(gotQueries))
+	}
+}
+
+// TestServeMCPReturnsOnCancelWhileIdle: a client that holds stdin open must not
+// keep the server running after its context is cancelled.
+func TestServeMCPReturnsOnCancelWhileIdle(t *testing.T) {
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- serveMCP(ctx, cliHTTPOptions{server: "http://127.0.0.1:1"}, reader, io.Discard) }()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serveMCP after cancel = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveMCP did not return after its context was cancelled")
 	}
 }

@@ -96,7 +96,7 @@ var mcpTools = func() []mcpTool {
 }()
 
 const (
-	mcpCatalogQuery = `query { agentCatalog { guide fields { name kind adminSession managerRole tokenTiers arguments resultFields } } }`
+	mcpCatalogQuery = `query { agentCatalog { guide fields { name kind adminSession managerRole tokenTiers argumentsKnown arguments resultFields } } }`
 	mcpLogsQuery    = `query L($limit: Int, $contains: String, $level: String, $requestId: String) { serverLogs(limit: $limit, contains: $contains, level: $level, requestId: $requestId) { available capacity lines } }`
 	mcpBundleQuery  = `query B($profiles: [String!], $limit: Int, $contains: String, $level: String, $requestId: String) { diagnosticsBundle(profiles: $profiles, limit: $limit, contains: $contains, level: $level, requestId: $requestId) { version revision goVersion os arch startedAt uptimeSeconds goroutines cpus memory { heapAlloc heapInuse heapObjects stackInuse sys totalAlloc numGC pauseTotalNs } logs { available capacity lines } profiles { name text truncated } } }`
 )
@@ -127,13 +127,38 @@ func mcpCommand(ctx context.Context, args []string, stdout io.Writer) error {
 	return serveMCP(ctx, resolved, os.Stdin, stdout)
 }
 
-// serveMCP answers newline-delimited JSON-RPC requests from in until EOF.
+// serveMCP answers newline-delimited JSON-RPC requests from in until EOF or
+// until ctx is cancelled. Lines are read on their own goroutine so a client
+// that holds stdin open cannot keep the server alive past shutdown.
 func serveMCP(ctx context.Context, opts cliHTTPOptions, in io.Reader, out io.Writer) error {
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 64<<10), mcpMaxMessageBytes)
+	lines := make(chan string)
+	readErr := make(chan error, 1)
+	go func() {
+		scanner := bufio.NewScanner(in)
+		scanner.Buffer(make([]byte, 64<<10), mcpMaxMessageBytes)
+		for scanner.Scan() {
+			select {
+			case lines <- scanner.Text():
+			case <-ctx.Done():
+				return
+			}
+		}
+		readErr <- scanner.Err()
+	}()
 	encoder := json.NewEncoder(out)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for {
+		var line string
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-readErr:
+			if err != nil {
+				return fmt.Errorf("mcp: read stdin: %w", err)
+			}
+			return nil
+		case line = <-lines:
+		}
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -153,10 +178,6 @@ func serveMCP(ctx context.Context, opts cliHTTPOptions, in io.Reader, out io.Wri
 			return err
 		}
 	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("mcp: read stdin: %w", err)
-	}
-	return nil
 }
 
 func handleMCP(ctx context.Context, opts cliHTTPOptions, req mcpRequest) (any, *mcpError) {

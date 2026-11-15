@@ -22,7 +22,7 @@ class APIDocsTest(unittest.TestCase):
         (root / "docs/api").mkdir(parents=True)
         for source in ("gen-api-docs.sh", "openapi_to_md.py"):
             shutil.copy2(ROOT / "script" / source, root / "script" / source)
-        for source in ("openapi.json", "home-automation.md", "request-tools.md", *CHECK.OUTPUTS):
+        for source in ("openapi.json", "home-automation.md", "request-tools.md", "agents.md", *CHECK.OUTPUTS):
             shutil.copy2(ROOT / "docs/api" / source, root / "docs/api" / source)
         return root
 

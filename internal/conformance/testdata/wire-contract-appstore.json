@@ -2210,6 +2210,10 @@
                 }
               },
               {
+                "name": "argumentsKnown",
+                "kind": "scalar"
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -2251,6 +2255,10 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "argumentsKnown",
+              "kind": "scalar"
             },
             {
               "name": "kind",

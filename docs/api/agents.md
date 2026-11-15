@@ -25,12 +25,14 @@ token's tier; `beamfall token revoke` withdraws one.
 ## Discover
 
 ```graphql
-query { agentCatalog { guide fields { name kind adminSession tokenTiers arguments resultFields } } }
+query { agentCatalog { guide fields { name kind adminSession tokenTiers argumentsKnown arguments resultFields } } }
 ```
 
 The catalog lists every top-level field, whether it needs an Admin Session, the token tiers that may
 run it, its arguments and its top-level result fields. It comes from the dispatcher registries, so it
-matches what the server enforces. A refused field answers `admin session required`.
+matches what the server enforces. A refused field answers `admin session required`. Argument
+metadata is not yet complete: when `argumentsKnown` is `false`, the empty `arguments` list means the
+arguments are not catalogued, not that the field takes none.
 
 ## Debug
 
