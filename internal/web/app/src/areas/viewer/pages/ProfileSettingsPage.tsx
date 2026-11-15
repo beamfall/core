@@ -73,6 +73,13 @@ export function ProfileSettingsPage() {
   const [avatarError, setAvatarError] = useState(false);
   const [credits, setCredits] = useState<MetadataAttribution[]>([]);
   const loadToken = useRef(0);
+  // Theme saves can overlap (pick Moss, then Tide before Moss resolves). Only the newest pick may
+  // roll back, and it rolls back to the newest pick the server confirmed, never over a later success.
+  const themeSave = useRef({ latest: 0, confirmed: 0, pending: 0, confirmedPreset: preset });
+  useEffect(() => {
+    // With no save in flight the shown preset is the settled one (it may arrive from the server).
+    if (themeSave.current.pending === 0) themeSave.current.confirmedPreset = preset;
+  }, [preset]);
 
   const load = useCallback(async () => {
     const token = ++loadToken.current;
@@ -214,10 +221,18 @@ export function ProfileSettingsPage() {
               <Select
                 value={preset}
                 onValueChange={(v) => {
-                  const previous = preset;
+                  const save = themeSave.current;
+                  const seq = ++save.latest;
+                  save.pending += 1;
                   setPreset(v as string);
                   void persist(PREF_KEYS.themePreset, v as string, {}).then((saved) => {
-                    if (!saved) setPreset(previous);
+                    save.pending -= 1;
+                    if (saved && seq > save.confirmed) {
+                      save.confirmed = seq;
+                      save.confirmedPreset = v as string;
+                    } else if (!saved && seq === save.latest) {
+                      setPreset(save.confirmedPreset);
+                    }
                   });
                 }}
               >
