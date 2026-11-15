@@ -428,7 +428,7 @@ for outer in (
         raise SystemExit(f"canonical check remains outside the coordinator: {outer}")
 
 ordered = [
-    'run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke',
+    'run_macos_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke',
     'run_step "release workflow pins check" make release-workflow-pins-check',
     'full_gate_only_step "vulnerability check" make vuln-check',
     'run_step "contract registry check" python3 script/check-contract-registry.py',
@@ -525,7 +525,7 @@ gate = Path(sys.argv[1]).read_text()
 
 def mandatory_steps(text):
     steps = re.findall(
-        r'^\s*run_scoped_step "([^"]+)" (script|web|webe2e|image)\b',
+        r'^\s*run_(?:scoped|macos)_step "([^"]+)" (script|web|webe2e|image)\b',
         text,
         re.MULTILINE,
     )

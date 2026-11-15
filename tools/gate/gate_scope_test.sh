@@ -22,10 +22,13 @@ awk '/^scope_matches\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^run_scoped_step\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^docker_daemon_available\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^run_docker_step\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
+awk '/^macos_host\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
+awk '/^run_macos_step\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 awk '/^tonemap_docker_precondition\(\)/,/^\}/' "$ROOT/tools/gate/gate.sh" >> "$FUNCS"
 grep -q 'gate_release_mode()' "$FUNCS" && grep -q 'changed_paths()' "$FUNCS" \
   && grep -q 'configure_race_short_scope()' "$FUNCS" && grep -q 'scope_matches()' "$FUNCS" \
   && grep -q 'run_scoped_step()' "$FUNCS" && grep -q 'run_docker_step()' "$FUNCS" \
+  && grep -q 'macos_host()' "$FUNCS" && grep -q 'run_macos_step()' "$FUNCS" \
   && grep -q 'docker_daemon_available()' "$FUNCS" && grep -q 'tonemap_docker_precondition()' "$FUNCS" \
   || { echo "gate_scope_test: could not extract functions from gate.sh" >&2; exit 1; }
 grep -Fq 'run_scoped_step "support script tests" script ' "$ROOT/tools/gate/gate.sh" \
@@ -33,8 +36,8 @@ grep -Fq 'run_scoped_step "support script tests" script ' "$ROOT/tools/gate/gate
   || { echo "gate_scope_test: required checker missing from script suite" >&2; exit 1; }
 grep -Fq 'run_scoped_step "ADR-0122 cross-repo wire conformance" contract make crossrepo-conformance' "$ROOT/tools/gate/gate.sh" \
   || { echo "gate_scope_test: cross-repo contract lane missing from required gate" >&2; exit 1; }
-grep -Fq 'run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke' "$ROOT/tools/gate/gate.sh" \
-  || { echo "gate_scope_test: the web UI E2E smoke step must use webe2e scope" >&2; exit 1; }
+grep -Fq 'run_macos_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke' "$ROOT/tools/gate/gate.sh" \
+  || { echo "gate_scope_test: the web UI E2E smoke step must use webe2e scope and the CORE-1039 macOS skip contract" >&2; exit 1; }
 grep -Fq 'run_docker_step "pinned FFmpeg tone-map conformance" tonemap make ffmpeg-tonemap-conforming' "$ROOT/tools/gate/gate.sh" \
   || { echo "gate_scope_test: the FFmpeg tone-map step must use the CORE-0947 Docker skip contract" >&2; exit 1; }
 # CORE-0977: the browser smoke rebuilds its own web/server inputs, so a second
@@ -104,6 +107,7 @@ patterns = (
     re.compile(r'^run_step "([^"$]+)" (.+)$'),
     re.compile(r'^run_scoped_step "([^"$]+)" \S+ (.+)$'),
     re.compile(r'^run_docker_step "([^"$]+)" \S+ (.+)$'),
+    re.compile(r'^run_macos_step "([^"$]+)" \S+ (.+)$'),
     re.compile(r'^start_parallel_step \S+ "([^"$]+)" (.+)$'),
 )
 inventory = []
@@ -833,6 +837,38 @@ for candidate in "" docs/note.md internal/store/embeddings.go internal/playback/
 done
 [ "$(tonemap_dispatch no "" release)" = $'RUN\t'"$tonemap_step" ] \
   || fail "release mode must run the tone-map step even without Docker"
+# CORE-1039: the web UI E2E smoke can only pass on macOS (CORE-1112 goldens).
+# On macOS it follows its webe2e scope; elsewhere it SKIPs with that reason as a
+# scope skip, except in release mode, where it runs and fails closed.
+smoke_dispatch() {  # smoke_dispatch <macos:yes|no> <changed path|""> [GATE_MODE]
+  local macos="$1" candidate="$2" mode="${3:-normal}"
+  (
+    cd "$REPO"
+    . "$FUNCS"
+    export GATE_MODE="$mode"
+    changed_paths() { [ -z "$candidate" ] || printf '%s\n' "$candidate"; }
+    macos_host() { [ "$macos" = yes ]; }
+    run_step() { printf 'RUN\t%s\n' "$1"; }
+    gate_metric() { printf 'METRIC\t%s\t%s\t%s\n' "$1" "$2" "$5"; }
+    run_macos_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke
+  )
+}
+smoke_step="web UI E2E smoke (pre-gate)"
+[ "$(smoke_dispatch yes internal/web/app/src/main.tsx)" = $'RUN\t'"$smoke_step" ] \
+  || fail "web smoke must run on macOS for a web change"
+grep -Fqx $'METRIC\t'"$smoke_step"$'\tskip\tscope:webe2e' <<<"$(smoke_dispatch yes docs/note.md)" \
+  || fail "web smoke on macOS must keep its webe2e scope skip for an unrelated change"
+for candidate in "" docs/note.md internal/web/app/src/main.tsx Makefile; do
+  output="$(smoke_dispatch no "$candidate")"
+  grep -Fqx $'METRIC\t'"$smoke_step"$'\tskip\tscope:webe2e:not-macos' <<<"$output" \
+    || fail "web smoke off macOS did not record scope SKIP evidence: ${candidate:-<no diff>}"
+  grep -q "^SKIP $smoke_step elapsed_s=0 (needs a macOS host: .*CORE-1112" <<<"$output" \
+    || fail "web smoke off macOS did not state why it skipped: ${candidate:-<no diff>}"
+  if grep -q '^RUN' <<<"$output"; then fail "web smoke ran off macOS: ${candidate:-<no diff>}"; fi
+done
+[ "$(smoke_dispatch no "" release)" = $'RUN\t'"$smoke_step" ] \
+  || fail "release mode must run the web smoke off macOS"
+
 # The early precondition fails only when the tail step would run without Docker.
 tonemap_precondition() {  # tonemap_precondition <docker:yes|no> <changed path|""> [GATE_MODE]
   local docker="$1" candidate="$2" mode="${3:-normal}"

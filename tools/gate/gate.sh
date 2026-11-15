@@ -1494,6 +1494,26 @@ run_docker_step() {
   fi
 }
 
+# CORE-1039: skip contract for steps that can only pass on macOS. The web UI E2E
+# smoke requires every visual-parity state to pass, and its goldens are
+# macOS-rendered (CORE-1112), so on any other host it fails by construction.
+# There it SKIPs with that reason, recorded as a scope skip; release mode runs
+# it anyway and fails closed. The binding gate runs on macOS.
+macos_host() {
+  [ "$(uname -s 2>/dev/null)" = Darwin ]
+}
+
+run_macos_step() {
+  local name="$1" scope="$2"
+  shift 2
+  if macos_host || gate_release_mode; then
+    run_scoped_step "$name" "$scope" "$@"
+  else
+    gate_metric "$name" skip 0 0 "scope:$scope:not-macos"
+    echo "SKIP $name elapsed_s=0 (needs a macOS host: its visual-parity goldens are macOS-rendered, CORE-1112; the binding gate runs it on macOS)"
+  fi
+}
+
 run_web_app() {
   local script="$1"
   if ! command -v npm >/dev/null 2>&1; then
@@ -1610,7 +1630,7 @@ run_outer_checks() {
   # bundle and server binary from source, so no later gate step can change what
   # it tests; the late "second pass" (re-added by GATE-OUTER-COORDINATION-1 after
   # GATE-WEB-E2E-DEDUP-1 removed it) repeated identical inputs and is gone.
-  run_scoped_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke
+  run_macos_step "web UI E2E smoke (pre-gate)" webe2e make web-ui-e2e-smoke
   run_step "release workflow pins check" make release-workflow-pins-check
   full_gate_only_step "vulnerability check" make vuln-check
   run_step "contract registry check" python3 script/check-contract-registry.py
