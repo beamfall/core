@@ -735,6 +735,7 @@ describe("PlayerPage karaoke key and tempo controls", () => {
       hlsRef: { current: null },
       state: current,
       retry: vi.fn(),
+      restart: vi.fn(),
       switchToHls: vi.fn(() => false as const),
       adjustment: DEFAULT_ADJUSTMENT,
       adjust: vi.fn(),
