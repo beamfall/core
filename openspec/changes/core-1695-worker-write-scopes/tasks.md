@@ -16,7 +16,7 @@
 - [x] 2.7 Bindings outlive a restamped row's fresh root; store-invalid metadata refused before
       audit; seam failure releases the rows (Codex review)
 - [x] 2.3 `openspec validate --all --strict` passes
-- [ ] 2.4 wsl preflight passes on the head
+- [x] 2.4 wsl preflight passes on the head
 
 ## 3. Close
 
