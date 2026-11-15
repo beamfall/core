@@ -9,7 +9,6 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"strings"
 	"sync"
 
 	"github.com/beamfall/core/internal/redact"
@@ -96,7 +95,7 @@ func (r *Ring) store(line string) {
 // A quoted value the limit leaves open is dropped with its key, because
 // whitespace inside quotes is not a token boundary.
 func truncateAtToken(cut string) string {
-	quoteStart, inQuote, escaped := -1, false, false
+	boundary, inQuote, escaped := -1, false, false
 	for i := 0; i < len(cut); i++ {
 		switch c := cut[i]; {
 		case escaped:
@@ -105,18 +104,14 @@ func truncateAtToken(cut string) string {
 			escaped = true
 		case c == '"':
 			inQuote = !inQuote
-			if inQuote {
-				quoteStart = i
-			}
+		case !inQuote && (c == ' ' || c == '\t'):
+			boundary = i
 		}
 	}
-	if inQuote {
-		cut = cut[:quoteStart]
+	if boundary < 0 {
+		return ""
 	}
-	if i := strings.LastIndexAny(cut, " \t"); i >= 0 {
-		return cut[:i]
-	}
-	return ""
+	return cut[:boundary]
 }
 
 // Lines returns up to limit of the most recent lines, oldest first. A limit

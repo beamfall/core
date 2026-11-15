@@ -45,6 +45,8 @@ func TestRingDropsTheTokenTheLimitSplitsBeforeRedacting(t *testing.T) {
 		"bare":   "level=INFO token=sk-" + strings.Repeat("x", MaxLineBytes),
 		"quoted": `level=INFO password="alpha beta ` + strings.Repeat("x", MaxLineBytes) + `"`,
 		"escape": `level=INFO msg="a \" b" password="alpha beta ` + strings.Repeat("x", MaxLineBytes) + `"`,
+		"closes at the limit": `level=INFO password="alpha beta ` +
+			strings.Repeat("x", MaxLineBytes-len(`level=INFO password="alpha beta `)-1) + `" tail=` + strings.Repeat("z", 64),
 	} {
 		r := NewRing(1)
 		_, _ = r.Write([]byte(line + "\n"))
