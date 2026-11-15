@@ -17,7 +17,7 @@
 ## 3. Follow-ups (not in this change)
 
 - [ ] 3.1 Viewer media detail More/Manage link to `/manage/items/:mediaID`
-- [ ] 3.2 Publish wire contract 2.8.0 (batch landing)
+- [x] 3.2 Publish the wire contract at batch landing (2.9.0; batch 4 holds 2.8.0)
 - [ ] 3.3 Genres stored as related entities
 
 ## 4. Gate and archive
