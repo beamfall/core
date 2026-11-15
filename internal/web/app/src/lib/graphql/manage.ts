@@ -9,6 +9,7 @@
 import { type GraphQLOptions, graphql } from "@/lib/api";
 import type {
   ArtworkCandidate,
+  BackupContentsInfo,
   BackupHistoryEntry,
   BackupInfo,
   BatchResultInfo,
@@ -60,6 +61,7 @@ import type {
   SetupState,
   SkipDetectionInfo,
   SmartCollectionInfo,
+  StagedRestoreInfo,
   SubscriptionInfo,
   SubscriptionRetentionResult,
   TagAssignmentInfo,
@@ -494,6 +496,65 @@ export async function verifyBackup(manifest: string): Promise<VerifyBackupInfo> 
     manifest,
   });
   return data.verifyBackup;
+}
+
+// --- Staged restore (CORE-1720) ---------------------------------------------
+// The backup key is a mutation argument only, so it never lands in a query
+// string, a cache key or a response.
+
+const BACKUP_CONTENTS_FIELDS =
+  "createdAt createdBy reason restoreInstructionsVersion supportedRestoreInstructionsVersion databases { name database schemaVersion supportedSchemaVersion sizeBytes } operationalFiles libraryRootCount compatible refusal";
+
+const STAGED_RESTORE_FIELDS = `staged stagedAt envelope replaceIdentity contents { ${BACKUP_CONTENTS_FIELDS} } lastResult { appliedAt ok error rollbackCopy backupCreatedAt }`;
+
+const STAGED_RESTORE_QUERY = `query StagedRestore { stagedRestore { ${STAGED_RESTORE_FIELDS} } }`;
+
+/** StagedRestore — the restore staged for the next start, and the last one applied. */
+export async function fetchStagedRestore(signal?: AbortSignal): Promise<StagedRestoreInfo> {
+  const data = await graphql<{ stagedRestore: StagedRestoreInfo }>(
+    STAGED_RESTORE_QUERY,
+    {},
+    signal,
+  );
+  return data.stagedRestore;
+}
+
+const INSPECT_BACKUP_MUTATION = `mutation InspectBackup($envelope: String!, $backupKey: String!) { inspectBackup(envelope: $envelope, backupKey: $backupKey) { ${BACKUP_CONTENTS_FIELDS} } }`;
+
+/** InspectBackup — open an encrypted Backup Set with its key and report what it holds. */
+export async function inspectBackup(
+  envelope: string,
+  backupKey: string,
+): Promise<BackupContentsInfo> {
+  const data = await graphql<{ inspectBackup: BackupContentsInfo }>(INSPECT_BACKUP_MUTATION, {
+    envelope,
+    backupKey,
+  });
+  return data.inspectBackup;
+}
+
+const STAGE_RESTORE_MUTATION = `mutation StageRestore($envelope: String!, $backupKey: String!, $replaceIdentity: Boolean) { stageRestore(envelope: $envelope, backupKey: $backupKey, replaceIdentity: $replaceIdentity) { ${STAGED_RESTORE_FIELDS} } }`;
+
+/** StageRestore — stage a Backup Set to be restored on the next server start. */
+export async function stageRestore(
+  envelope: string,
+  backupKey: string,
+  replaceIdentity: boolean,
+): Promise<StagedRestoreInfo> {
+  const data = await graphql<{ stageRestore: StagedRestoreInfo }>(STAGE_RESTORE_MUTATION, {
+    envelope,
+    backupKey,
+    replaceIdentity,
+  });
+  return data.stageRestore;
+}
+
+const CANCEL_STAGED_RESTORE_MUTATION = "mutation CancelStagedRestore { cancelStagedRestore }";
+
+/** CancelStagedRestore — drop the staged restore; true when one was staged. */
+export async function cancelStagedRestore(): Promise<boolean> {
+  const data = await graphql<{ cancelStagedRestore: boolean }>(CANCEL_STAGED_RESTORE_MUTATION, {});
+  return data.cancelStagedRestore;
 }
 
 const METADATA_EXPORT_QUERY =

@@ -4,6 +4,7 @@ import {
   addCollectionMedia,
   assignTag,
   bulkAssignTags,
+  cancelStagedRestore,
   createCollection,
   createMarker,
   createSmartCollection,
@@ -15,9 +16,11 @@ import {
   dismissUnmatched,
   fetchBackupHistory,
   fetchMetadataExport,
+  fetchStagedRestore,
   fetchTrashedLibraries,
   fixMatch,
   identifySearch,
+  inspectBackup,
   linkMediaRelation,
   purgeLibrary,
   purgeTrash,
@@ -30,6 +33,7 @@ import {
   restoreTag,
   runBackup,
   setLibraryIcon,
+  stageRestore,
   unassignTag,
   updateCollection,
   updateMarker,
@@ -52,6 +56,7 @@ const recordedSignals: (AbortSignal | null | undefined)[] = [];
 const MANAGE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchBackupHistory", (s) => fetchBackupHistory("/backups", s)],
   ["fetchMetadataExport", (s) => fetchMetadataExport(s)],
+  ["fetchStagedRestore", (s) => fetchStagedRestore(s)],
 ];
 
 beforeEach(() => {
@@ -614,5 +619,31 @@ describe("manage mutation request recording", () => {
       scraperID: "tmdb",
       candidateID: "candidate-1",
     });
+  });
+
+  it("staged restore requests carry the backup key only as a mutation variable (CORE-1720)", async () => {
+    await fetchStagedRestore();
+    await inspectBackup("/backups/a/set.bbk", "key-words");
+    await stageRestore("/backups/a/set.bbk", "key-words", true);
+    await cancelStagedRestore();
+    expect(recorded[0].query).toContain("query StagedRestore { stagedRestore { staged stagedAt");
+    expect(recorded[0].variables).toEqual({});
+    expect(recorded[1].query).toContain(
+      "inspectBackup(envelope: $envelope, backupKey: $backupKey) { createdAt",
+    );
+    expect(recorded[1].query).not.toContain("key-words");
+    expect(recorded[1].variables).toEqual({
+      envelope: "/backups/a/set.bbk",
+      backupKey: "key-words",
+    });
+    expect(recorded[2].query).toContain(
+      "stageRestore(envelope: $envelope, backupKey: $backupKey, replaceIdentity: $replaceIdentity)",
+    );
+    expect(recorded[2].variables).toEqual({
+      envelope: "/backups/a/set.bbk",
+      backupKey: "key-words",
+      replaceIdentity: true,
+    });
+    expect(recorded[3].query).toBe("mutation CancelStagedRestore { cancelStagedRestore }");
   });
 });

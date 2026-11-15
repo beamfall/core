@@ -180,6 +180,11 @@
     "tier": "admin"
   },
   {
+    "field": "cancelstagedrestore",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "capabilitystates",
     "effect": "read",
     "tier": "admin"
@@ -482,6 +487,11 @@
   {
     "field": "importstatus",
     "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "inspectbackup",
+    "effect": "write",
     "tier": "admin"
   },
   {
@@ -1120,6 +1130,11 @@
     "tier": "public"
   },
   {
+    "field": "serverlogs",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
     "field": "setaccessschedule",
     "effect": "write",
     "tier": "admin"
@@ -1313,6 +1328,16 @@
     "field": "sourceitems",
     "effect": "read",
     "tier": "session"
+  },
+  {
+    "field": "stagedrestore",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "stagerestore",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "stationdelete",

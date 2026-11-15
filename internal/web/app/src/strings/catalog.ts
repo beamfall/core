@@ -25,11 +25,14 @@ import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
 import { profileDeviceStrings } from "./profiles-devices";
+import { providerKeyStrings } from "./provider-keys";
 import { remoteAccessStrings } from "./remote-access";
 import { remoteControlStrings } from "./remote-control";
+import { serverLogStrings } from "./server-logs";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
+import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { viewerAccountStrings } from "./viewer-account";
 import { viewerCollectionStrings } from "./viewer-collections";
@@ -76,6 +79,9 @@ export const en = {
   ...viewerCollectionStrings.en,
   ...castStrings.en,
   ...itemMetadataStrings.en,
+  ...providerKeyStrings.en,
+  ...serverLogStrings.en,
+  ...stagedRestoreStrings.en,
 } as const;
 
 export const fr = {
@@ -117,6 +123,9 @@ export const fr = {
   ...viewerCollectionStrings.fr,
   ...castStrings.fr,
   ...itemMetadataStrings.fr,
+  ...providerKeyStrings.fr,
+  ...serverLogStrings.fr,
+  ...stagedRestoreStrings.fr,
 } as const;
 
 export const de = {
@@ -158,6 +167,9 @@ export const de = {
   ...viewerCollectionStrings.de,
   ...castStrings.de,
   ...itemMetadataStrings.de,
+  ...providerKeyStrings.de,
+  ...serverLogStrings.de,
+  ...stagedRestoreStrings.de,
 } as const;
 
 export const es = {
@@ -199,6 +211,9 @@ export const es = {
   ...viewerCollectionStrings.es,
   ...castStrings.es,
   ...itemMetadataStrings.es,
+  ...providerKeyStrings.es,
+  ...serverLogStrings.es,
+  ...stagedRestoreStrings.es,
 } as const;
 
 export const pt = {
@@ -240,4 +255,7 @@ export const pt = {
   ...viewerCollectionStrings.pt,
   ...castStrings.pt,
   ...itemMetadataStrings.pt,
+  ...providerKeyStrings.pt,
+  ...serverLogStrings.pt,
+  ...stagedRestoreStrings.pt,
 } as const;

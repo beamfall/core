@@ -343,6 +343,8 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	148: dispatchFieldBlock148,
 	149: dispatchFieldBlock149,
 	150: dispatchFieldBlock150,
+	151: dispatchFieldBlock151,
+	152: dispatchFieldBlock152,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -656,6 +658,11 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"deletewebhook":                      newFieldHandler("deleteWebhook", "deleteWebhook", fieldMutation, roleSession|roleAdmin, 150),
 	"testwebhook":                        newFieldHandler("testWebhook", "testWebhook", fieldMutation, roleSession|roleAdmin, 150),
 	"setwebhooksettings":                 newFieldHandler("setWebhookSettings", "setWebhookSettings", fieldMutation, roleSession|roleAdmin, 150),
+	"serverlogs":                         newFieldHandler("serverLogs", "serverLogs", fieldRead, roleSession|roleAdmin, 151),
+	"stagedrestore":                      newFieldHandler("stagedRestore", "stagedRestore", fieldRead, roleSession|roleAdmin, 152),
+	"inspectbackup":                      newFieldHandler("inspectBackup", "inspectBackup", fieldMutation, roleSession|roleAdmin, 152),
+	"stagerestore":                       newFieldHandler("stageRestore", "stageRestore", fieldMutation, roleSession|roleAdmin, 152),
+	"cancelstagedrestore":                newFieldHandler("cancelStagedRestore", "cancelStagedRestore", fieldMutation, roleSession|roleAdmin, 152),
 }
 
 func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
@@ -4113,6 +4120,51 @@ func dispatchFieldBlock150(dispatch *fieldDispatchContext) response {
 	if fields["setwebhooksettings"] {
 		settings, err := h.setWebhookSettings(ctx, scope, req)
 		if resp := resolveField(dispatch, "setwebhooksettings", settings, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock151(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["serverlogs"] {
+		if resp := resolveField(dispatch, "serverlogs", h.serverLogs(req), nil); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock152(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["stagedrestore"] {
+		status, err := h.stagedRestore()
+		if resp := resolveField(dispatch, "stagedrestore", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["inspectbackup"] {
+		contents, err := h.inspectBackup(ctx, req)
+		if resp := resolveField(dispatch, "inspectbackup", contents, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["stagerestore"] {
+		status, err := h.stageRestore(ctx, scope, req)
+		if resp := resolveField(dispatch, "stagerestore", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["cancelstagedrestore"] {
+		removed, err := h.cancelStagedRestore(ctx, scope)
+		if resp := resolveField(dispatch, "cancelstagedrestore", removed, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

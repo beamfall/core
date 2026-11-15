@@ -421,6 +421,11 @@
       ]
     },
     {
+      "field": "cancelstagedrestore",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "capabilitystates",
       "effect": "read",
       "tier": "admin",
@@ -1195,6 +1200,23 @@
         "status",
         "unmatchedRecords",
         "updatedAt"
+      ]
+    },
+    {
+      "field": "inspectbackup",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "compatible",
+        "createdAt",
+        "createdBy",
+        "databases",
+        "libraryRootCount",
+        "operationalFiles",
+        "reason",
+        "refusal",
+        "restoreInstructionsVersion",
+        "supportedRestoreInstructionsVersion"
       ]
     },
     {
@@ -2835,6 +2857,16 @@
       ]
     },
     {
+      "field": "serverlogs",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "available",
+        "capacity",
+        "lines"
+      ]
+    },
+    {
       "field": "setaccessschedule",
       "effect": "write",
       "tier": "admin",
@@ -3333,6 +3365,32 @@
         "restricted",
         "summary",
         "title"
+      ]
+    },
+    {
+      "field": "stagedrestore",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "contents",
+        "envelope",
+        "lastResult",
+        "replaceIdentity",
+        "staged",
+        "stagedAt"
+      ]
+    },
+    {
+      "field": "stagerestore",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "contents",
+        "envelope",
+        "lastResult",
+        "replaceIdentity",
+        "staged",
+        "stagedAt"
       ]
     },
     {

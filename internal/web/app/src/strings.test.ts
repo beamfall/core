@@ -42,7 +42,10 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 // merged with the CORE-1786 container entity copy;
 // merged with the CORE-1684 viewer Collections copy;
 // merged with the CORE-1679 Cast sender copy;
-// merged with the CORE-1715 item metadata editor copy.
+// merged with the CORE-1715 item metadata editor copy;
+// merged with the CORE-1534 Libraries provider-key copy;
+// merged with the CORE-1716 console server-log copy;
+// merged with the CORE-1720 console staged restore copy and the reworded backup restore safety line.
 const BASE_SERIALIZED_LENGTH = 550_827;
 const BASE_REGISTRY_SHA256 = "995840a9581ff3648bce0218037d6697cdb520e054dff02b5bbaa645c63f68d1";
 const BASE_KEY_ORDER_SHA256 = "35a112a75e631bbc175a479496703caeaa8ab7d36e7082db9498270e671d897d";
