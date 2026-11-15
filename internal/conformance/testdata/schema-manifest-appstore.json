@@ -370,6 +370,11 @@
     "tier": "session"
   },
   {
+    "field": "editmediametadata",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "encryptedlibrarystatus",
     "effect": "read",
     "tier": "admin"
@@ -605,6 +610,11 @@
     "tier": "session"
   },
   {
+    "field": "mediametadata",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "mediarelations",
     "effect": "read",
     "tier": "session"
@@ -811,6 +821,11 @@
   },
   {
     "field": "recordengagement",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
+    "field": "refreshmediametadata",
     "effect": "write",
     "tier": "session"
   },

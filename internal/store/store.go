@@ -529,6 +529,9 @@ type MediaMetadata struct {
 	Title   *string
 	Summary *string
 	Year    *int
+	// SortTitle is the admin-set browse sort key; "" clears it so the item
+	// sorts by its title again.
+	SortTitle *string
 	// Source records who is making this write for provenance tracking. If
 	// zero-value the store falls back to MutationSourceOperator (all
 	// explicit identification writes are operator-initiated today).
@@ -3014,7 +3017,7 @@ func (s *Store) UpdateMediaMetadata(ctx context.Context, id MediaID, metadata Me
 	if id == "" {
 		return errors.New("media ID is required")
 	}
-	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil {
+	if metadata.Title == nil && metadata.Summary == nil && metadata.Year == nil && metadata.SortTitle == nil {
 		return errors.New("no metadata fields to update")
 	}
 	if metadata.Title != nil && strings.TrimSpace(*metadata.Title) == "" {

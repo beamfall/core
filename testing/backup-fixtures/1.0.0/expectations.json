@@ -1,5 +1,5 @@
 {
-  "schemaFingerprint": "cef708ab78ec96f84d7acd2863e511738fd672c589f8e598cc452a36056fa258",
+  "schemaFingerprint": "14b92cf1662f4c6582783312f4a92d58b5c70189235b0494e7e64dccdb766c2d",
   "tables": {
     "catalog.access_grant": {
       "rows": 1,
@@ -219,11 +219,15 @@
     },
     "catalog.media_metadata_provenance": {
       "rows": 1,
-      "checksum": "7e8ee1b88c24fa05e81e3a90dba16df12368311ab57d438be9b1784b4d934b31"
+      "checksum": "38e77ebbefdaf5ab1d65e06f4bfe70caf4870adb20d36e607f6487e5fe7c1b6b"
     },
     "catalog.media_relation": {
       "rows": 1,
       "checksum": "2f1e169ea7048249e812af972476d535608c30e07f660b98475b3d7959ca141f"
+    },
+    "catalog.media_sort_title": {
+      "rows": 1,
+      "checksum": "75f372bcc36c0510befff16795df933937cb1bcd2c10dbcd74e8dade56d95f95"
     },
     "catalog.media_tag": {
       "rows": 1,
@@ -330,8 +334,8 @@
       "checksum": "78db107c4d13509a4581394e44b0bacc109b78bcfb28331592e09f2030821dbd"
     },
     "catalog.schema_migrations": {
-      "rows": 110,
-      "checksum": "d974f287c791f2621957e4f966f2b4c20753c69d1a60a2cf8ae75b2dfd26f78b"
+      "rows": 111,
+      "checksum": "525316f8b9e8119db9e9c170a3e22bb734c53dbf0d5107a15b9a025808eb3856"
     },
     "catalog.scoped_api_key": {
       "rows": 1,
@@ -351,7 +355,7 @@
     },
     "catalog.server_config": {
       "rows": 1,
-      "checksum": "d76fe3731975dfe0a19f9121ef7ac46666843baf3678b9191bf7ced62c3a7dbb"
+      "checksum": "dce5daf519c1aff404b59520a94c406932726dc12c2159e8bc7209959e0b022c"
     },
     "catalog.smart_collection": {
       "rows": 1,
@@ -447,7 +451,7 @@
     },
     "encrypted:library-acc-archive.media_file": {
       "rows": 1,
-      "checksum": "79a2ffe65cdc8ae99529c22b46a3fd7176ff15349876b8300261e323c655c5f5"
+      "checksum": "881fcf396f95b28483ff304bc61256bf1381ccfa329618e9acc4b096ec610e85"
     },
     "encrypted:library-acc-archive.media_file_font_attachment": {
       "rows": 1,
@@ -467,7 +471,7 @@
     },
     "encrypted:library-acc-archive.schema_migrations": {
       "rows": 5,
-      "checksum": "b55f312781230694ea665a6ab13031a8e22d996bd3f256c30204e438945ae064"
+      "checksum": "f9879f652e3f310d7fc32d01bdcaffef3d31fe43268556382c5ae874e83bc967"
     },
     "events.activity_entry": {
       "rows": 1,
@@ -483,7 +487,7 @@
     },
     "events.engagement_event": {
       "rows": 3,
-      "checksum": "dbfd16ff379125e469e335fbf5d61889bdb4f8d4a0b1053c5eb27940fb4d4e82"
+      "checksum": "b91cc474173039d6dfcceac2eb6d31e3d78e3f9f1010f38ca32215655a14cee4"
     },
     "events.event_outbox": {
       "rows": 1,
@@ -539,7 +543,7 @@
     },
     "events.schema_migrations": {
       "rows": 22,
-      "checksum": "cfe15b6ef8f8741c7f899f775c42d450bae2b2be0a8f40346d663c937fb0d4ff"
+      "checksum": "ed79514a2bd3d7b0dd7718922738801bb58f6894cfc9721b12e63c02dfbe405d"
     },
     "events.stream_token_ledger": {
       "rows": 1,
@@ -551,7 +555,7 @@
     }
   },
   "schemaVersions": {
-    "catalog": 110,
+    "catalog": 111,
     "encrypted:library-acc-archive": 5,
     "events": 22
   },

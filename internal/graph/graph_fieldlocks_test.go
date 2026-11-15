@@ -61,9 +61,12 @@ func TestMediaFieldLocksReadAndSetManagerGated(t *testing.T) {
 		t.Fatalf("viewer mediaFieldLocks = %s", rec.Body.String())
 	}
 
-	// Initial read: the three lockable fields, all unlocked.
+	// Initial read: the fixed lockable fields, all unlocked.
 	locks := decodeFieldLocks(t, post(readBody, authorizeManager), "mediaFieldLocks")
-	wantFields := map[string]bool{"title": false, "summary": false, "year": false}
+	wantFields := map[string]bool{
+		"title": false, "sortTitle": false, "summary": false, "year": false,
+		"artworkPoster": false, "artworkBackdrop": false, "artworkThumb": false,
+	}
 	if len(locks) != len(wantFields) {
 		t.Fatalf("locks = %#v, want %d fields", locks, len(wantFields))
 	}

@@ -7,6 +7,7 @@ import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
+import { itemMetadataStrings } from "./item-metadata";
 import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
@@ -74,6 +75,7 @@ export const en = {
   ...webhookStrings.en,
   ...viewerCollectionStrings.en,
   ...castStrings.en,
+  ...itemMetadataStrings.en,
 } as const;
 
 export const fr = {
@@ -114,6 +116,7 @@ export const fr = {
   ...webhookStrings.fr,
   ...viewerCollectionStrings.fr,
   ...castStrings.fr,
+  ...itemMetadataStrings.fr,
 } as const;
 
 export const de = {
@@ -154,6 +157,7 @@ export const de = {
   ...webhookStrings.de,
   ...viewerCollectionStrings.de,
   ...castStrings.de,
+  ...itemMetadataStrings.de,
 } as const;
 
 export const es = {
@@ -194,6 +198,7 @@ export const es = {
   ...webhookStrings.es,
   ...viewerCollectionStrings.es,
   ...castStrings.es,
+  ...itemMetadataStrings.es,
 } as const;
 
 export const pt = {
@@ -234,4 +239,5 @@ export const pt = {
   ...webhookStrings.pt,
   ...viewerCollectionStrings.pt,
   ...castStrings.pt,
+  ...itemMetadataStrings.pt,
 } as const;

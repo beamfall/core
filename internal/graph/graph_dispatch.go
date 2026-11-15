@@ -467,6 +467,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"marknotificationread":               newFieldHandler("markNotificationRead", "markNotificationRead", fieldMutation, roleSession, 89),
 	"media":                              newFieldHandler("media", "media", fieldRead, roleSession, 24),
 	"mediafieldlocks":                    newFieldHandler("mediaFieldLocks", "mediaFieldLocks", fieldRead, roleSession|roleManager, 108),
+	"mediametadata":                      newFieldHandler("mediaMetadata", "mediaMetadata", fieldRead, roleSession|roleManager, 108),
 	"mediafields":                        newFieldHandler("mediaFields", "mediaFields", fieldRead, roleSession, 15),
 	"mediafiles":                         newFieldHandler("mediaFiles", "mediaFiles", fieldRead, roleSession, 9),
 	"mediaforentity":                     newFieldHandler("mediaForEntity", "mediaForEntity", fieldRead, roleSession, 8),
@@ -578,6 +579,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setlibraryrestricted":               newFieldHandler("setLibraryRestricted", "setLibraryRestricted", fieldMutation, roleSession|roleAdmin, 49),
 	"setlibraryroots":                    newFieldHandler("setLibraryRoots", "setLibraryRoots", fieldMutation, roleSession|roleAdmin, 46),
 	"setmediafieldlock":                  newFieldHandler("setMediaFieldLock", "setMediaFieldLock", fieldMutation, roleSession|roleManager, 108),
+	"editmediametadata":                  newFieldHandler("editMediaMetadata", "editMediaMetadata", fieldMutation, roleSession|roleManager, 108),
+	"refreshmediametadata":               newFieldHandler("refreshMediaMetadata", "refreshMediaMetadata", fieldMutation, roleSession|roleManager, 108),
 	"setmute":                            newFieldHandler("setMute", "setMute", fieldMutation, roleSession, 123),
 	"setnavoverride":                     newFieldHandler("setNavOverride", "setNavOverride", fieldMutation, roleSession|roleManager, 62),
 	"setpluginactive":                    newFieldHandler("setPluginActive", "setPluginActive", fieldMutation, roleSession|roleAdmin, 66),
@@ -3148,6 +3151,25 @@ func dispatchFieldBlock108(dispatch *fieldDispatchContext) response {
 			if resp := resolveField(dispatch, "setmediafieldlock", locks, err); len(resp.Errors) > 0 {
 				return resp
 			}
+		}
+	}
+	// Per-item metadata editor (CORE-1715, resolvers in graph_itemmetadata.go).
+	if fields["mediametadata"] {
+		info, err := h.mediaMetadata(ctx, scope, req)
+		if resp := resolveField(dispatch, "mediametadata", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["editmediametadata"] {
+		info, err := h.editMediaMetadata(ctx, scope, req)
+		if resp := resolveField(dispatch, "editmediametadata", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["refreshmediametadata"] {
+		info, err := h.refreshMediaMetadata(ctx, scope, req)
+		if resp := resolveField(dispatch, "refreshmediametadata", info, err); len(resp.Errors) > 0 {
+			return resp
 		}
 	}
 	return response{}

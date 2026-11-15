@@ -168,7 +168,8 @@ var originalScopedFields = []string{
 	"media",
 	"mediafieldlocks",
 	"mediafields",
-	"mediafiles", // WEB-5B: Versions/Parts file-plane read
+	"mediametadata", // CORE-1715: per-item metadata editor read
+	"mediafiles",    // WEB-5B: Versions/Parts file-plane read
 	"mediaforentity",
 	"mediarelations", // WEB-5B: generic Media relation read
 	"mergeentities",
@@ -288,6 +289,8 @@ var originalScopedFields = []string{
 	"setlibraryrestricted",
 	"setlibraryroots",
 	"setmediafieldlock",
+	"editmediametadata",    // CORE-1715: per-item manual metadata edit (locks edited fields)
+	"refreshmediametadata", // CORE-1715: per-item provider refresh honouring locks
 	"setpluginactive",
 	"setprofilelibraries",
 	"uninstallplugindata",
