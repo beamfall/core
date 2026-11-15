@@ -1,0 +1,4 @@
+- [x] Identification writes a provider `sortTitle` at identification rank and retracts its own on a result without one
+- [x] Store: a non-manual empty sort title retracts only a same-tier value, never an admin's
+- [x] Tests: provider sort title and retraction, admin value kept, browse order and letters by sort title with fallback
+- [ ] Plugin SDK: admit `sortTitle` as a built-in FieldMap key, release, repin core (outside this repo)

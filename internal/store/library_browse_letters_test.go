@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"slices"
 	"testing"
 )
@@ -88,5 +89,59 @@ func TestLibraryBrowseLettersMatchTheTitleOrder(t *testing.T) {
 
 	if year := mustLibraryBrowse(t, st, LibraryBrowseQuery{Sort: LibraryBrowseSortYear}); year.Letters == nil || len(year.Letters) != 0 {
 		t.Fatalf("year sort letters = %#v, want an empty list", year.Letters)
+	}
+}
+
+// CORE-1768: a title sort and its letters both key on the sort title when an
+// item has one and fall back to the title otherwise, so a rail jump lands on
+// the order the grid shows.
+func TestLibraryBrowseSortsAndLettersBySortTitle(t *testing.T) {
+	st := openDemo(t)
+	before := mustLibraryBrowse(t, st, LibraryBrowseQuery{Limit: 200})
+	if len(before.Items) < 3 || len(before.Items) != before.Total {
+		t.Fatalf("need the whole demo library, got %d of %d", len(before.Items), before.Total)
+	}
+	moved := before.Items[0]
+	if libraryBrowseInitial(moved.Title) == "Z" {
+		t.Fatalf("first title %q already buckets under Z", moved.Title)
+	}
+	if err := st.UpdateMediaMetadata(context.Background(), moved.ID, MediaMetadata{
+		SortTitle: strPtr("Zzzz sort key"), Source: MutationSourceManual,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after := mustLibraryBrowse(t, st, LibraryBrowseQuery{Limit: 200})
+
+	// The item with a sort title moves to its sort-title place; every other
+	// item keeps its title order.
+	var wantOrder []MediaID
+	for _, item := range before.Items[1:] {
+		wantOrder = append(wantOrder, item.ID)
+	}
+	wantOrder = append(wantOrder, moved.ID)
+	var gotOrder []MediaID
+	for _, item := range after.Items {
+		gotOrder = append(gotOrder, item.ID)
+	}
+	if !slices.Equal(gotOrder, wantOrder) {
+		t.Fatalf("order = %v, want %v", gotOrder, wantOrder)
+	}
+
+	// The letters bucket it under its sort title's initial, at its offset.
+	last := after.Letters[len(after.Letters)-1]
+	if last.Letter != "Z" || last.Offset+last.Count != after.Total {
+		t.Fatalf("last letter = %+v, want Z ending at %d", last, after.Total)
+	}
+	counts := map[string]int{}
+	for _, letter := range after.Letters {
+		counts[letter.Letter] = letter.Count
+	}
+	beforeCounts := map[string]int{}
+	for _, letter := range before.Letters {
+		beforeCounts[letter.Letter] = letter.Count
+	}
+	oldInitial := libraryBrowseInitial(moved.Title)
+	if counts["Z"] != beforeCounts["Z"]+1 || counts[oldInitial] != beforeCounts[oldInitial]-1 {
+		t.Fatalf("letter counts %v, before %v: the item must move from %s to Z", counts, beforeCounts, oldInitial)
 	}
 }

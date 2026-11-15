@@ -71,6 +71,72 @@ func TestManualEditLocksFieldsAgainstIdentification(t *testing.T) {
 	}
 }
 
+// CORE-1768: a provider-supplied sort title lands at identification rank. A
+// later identification without one retracts it, but never an admin's value,
+// locked or unlocked.
+func TestProviderSortTitleFollowsIdentificationAndSparesAdminValue(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	filter := store.LibraryFilter{Revealed: true, AllLibraries: true}
+	sortTitle := func() string {
+		t.Helper()
+		got, err := st.MediaSortTitle(ctx, "media-alpha", filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	identifyWith := func(value string) {
+		t.Helper()
+		if err := st.UpdateMediaMetadata(ctx, "media-alpha", store.MediaMetadata{SortTitle: ptr(value), Source: store.MutationSourceOperator}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No sort title yet: a retraction is a no-op and records nothing.
+	identifyWith("")
+	if got := sortTitle(); got != "" {
+		t.Fatalf("sort title after empty identification = %q", got)
+	}
+	if source, err := st.MediaFieldProvenance(ctx, "media-alpha", "sortTitle"); err != nil || source != "" {
+		t.Fatalf("provenance after empty identification = %q, %v; want none", source, err)
+	}
+
+	identifyWith("Provider Key")
+	if got := sortTitle(); got != "Provider Key" {
+		t.Fatalf("provider sort title = %q", got)
+	}
+	if locks := lockMap(t, st, ctx, filter); locks["sortTitle"] {
+		t.Fatal("a provider sort title must not lock the field")
+	}
+	identifyWith("")
+	if got := sortTitle(); got != "" {
+		t.Fatalf("sort title after a candidate without one = %q, want it retracted", got)
+	}
+
+	// An admin value survives a provider retraction while locked and after
+	// the lock is cleared; an unlocked one still yields to a provider value.
+	if err := st.UpdateMediaMetadata(ctx, "media-alpha", store.MediaMetadata{SortTitle: ptr("Admin Key"), Source: store.MutationSourceManual}); err != nil {
+		t.Fatal(err)
+	}
+	identifyWith("")
+	identifyWith("Provider Key")
+	if got := sortTitle(); got != "Admin Key" {
+		t.Fatalf("locked sort title = %q, want the admin value", got)
+	}
+	if _, err := st.SetMediaFieldLock(ctx, "media-alpha", "sortTitle", false, filter); err != nil {
+		t.Fatal(err)
+	}
+	identifyWith("")
+	if got := sortTitle(); got != "Admin Key" {
+		t.Fatalf("unlocked admin sort title after retraction = %q, want it kept", got)
+	}
+	identifyWith("Provider Key")
+	if got := sortTitle(); got != "Provider Key" {
+		t.Fatalf("unlocked sort title after provider value = %q", got)
+	}
+}
+
 func TestSortTitleRoundTripAndClear(t *testing.T) {
 	st := storetest.Open(t)
 	ctx := context.Background()

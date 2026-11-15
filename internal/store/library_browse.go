@@ -99,12 +99,12 @@ type libraryBrowseCandidate struct {
 	inProgress  bool
 	lastWatched int64
 	rating      int
-	// sortTitle is the admin-set sort title, "" when none is set.
+	// sortTitle is the admin- or provider-set sort title, "" when none is set.
 	sortTitle string
 }
 
 // titleKey is the title a candidate sorts and letter-indexes by: its sort
-// title when an admin set one, else its title.
+// title when it has one, else its title (COALESCE(sort title, title)).
 func (c libraryBrowseCandidate) titleKey() string {
 	if c.sortTitle != "" {
 		return c.sortTitle
