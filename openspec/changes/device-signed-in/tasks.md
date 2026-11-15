@@ -1,0 +1,4 @@
+- [x] `Store.SignedInDeviceIDs` with a store test (signed-out device absent, expired row present)
+- [x] `DeviceInfo.signedIn` on `devices` and `setDeviceRole`, with a graph test
+- [x] Console device list "Signed out" chip, with a vitest case
+- [x] Wire contract baselines regenerated; 2.10.0 published in the lockstep

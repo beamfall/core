@@ -28,12 +28,19 @@ type DeviceInfo struct {
 	// Current is true for the device making this request — the Console must never
 	// offer to revoke the operator's own browser (that would lock them out).
 	Current bool `json:"current"`
+	// SignedIn is false once the device has no session left, e.g. a browser
+	// that signed out: it is not revoked but must enroll again (CORE-1607).
+	SignedIn bool `json:"signedIn"`
 }
 
 // devices lists every enrolled device for the Console administration list. The
 // secret hash is dropped at the boundary; `current` marks the requesting device.
 func (h *Handler) devices(ctx context.Context, scope auth.Scope) ([]DeviceInfo, error) {
 	list, err := h.store.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	signedIn, err := h.store.SignedInDeviceIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -45,6 +52,7 @@ func (h *Handler) devices(ctx context.Context, scope auth.Scope) ([]DeviceInfo, 
 			Role:     string(d.Role),
 			Revoked:  d.Revoked,
 			Current:  d.ID == scope.DeviceID,
+			SignedIn: signedIn[d.ID],
 		})
 	}
 	return out, nil
@@ -66,12 +74,17 @@ func (h *Handler) setDeviceRole(ctx context.Context, scope auth.Scope, req reque
 	if err := h.logActivity(ctx, scope, store.ActivityDeviceRole, "device", string(deviceID), ""); err != nil {
 		return DeviceInfo{}, err
 	}
+	signedIn, err := h.store.SignedInDeviceIDs(ctx)
+	if err != nil {
+		return DeviceInfo{}, err
+	}
 	return DeviceInfo{
 		DeviceID: string(device.ID),
 		Name:     device.Name,
 		Role:     string(device.Role),
 		Revoked:  device.Revoked,
 		Current:  false,
+		SignedIn: signedIn[device.ID],
 	}, nil
 }
 

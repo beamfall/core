@@ -270,6 +270,8 @@ export function Devices() {
                 <TableCell>
                   {d.revoked ? (
                     <StatusChip tone="red">{t("deviceRevoked")}</StatusChip>
+                  ) : d.signedIn === false ? (
+                    <StatusChip>{t("deviceSignedOut")}</StatusChip>
                   ) : (
                     <StatusChip tone="green">{t("deviceActive")}</StatusChip>
                   )}

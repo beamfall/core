@@ -925,7 +925,8 @@
         "deviceID",
         "name",
         "revoked",
-        "role"
+        "role",
+        "signedIn"
       ]
     },
     {
@@ -2992,7 +2993,8 @@
         "deviceID",
         "name",
         "revoked",
-        "role"
+        "role",
+        "signedIn"
       ]
     },
     {
