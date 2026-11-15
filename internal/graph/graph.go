@@ -1854,7 +1854,10 @@ func libraryIDs(ids []store.LibraryID) []string {
 // just enough to choose — policy detail stays on the manager shapes. The
 // per-plugin certification ceilings ride along so the Console's Enforced
 // Filters picker can render and edit them without a second round trip
-// (ADR-0028 §5; matches setCertificationCeiling's return shape). Avatar is the
+// (ADR-0028 §5; matches setCertificationCeiling's return shape). The remote
+// bitrate cap rides along for the same reason, so the Console's Profile policy
+// control can show the stored cap it edits (CORE-1717, CORE-1853); bits per
+// second, 0 meaning unlimited. Avatar is the
 // Profile's chosen avatar token, empty when it has none; it is opaque to core
 // and clients fall back to a generated avatar (CORE-1196).
 type ProfileSummary struct {
@@ -1863,6 +1866,7 @@ type ProfileSummary struct {
 	Kind                  string                     `json:"kind"`
 	Avatar                string                     `json:"avatar"`
 	CertificationCeilings []CertificationCeilingInfo `json:"certificationCeilings"`
+	RemoteMaxBitrate      int                        `json:"remoteMaxBitrate"`
 }
 
 // profiles lists the Profiles a picker may offer to any session: Profiles
@@ -1896,6 +1900,7 @@ func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
 			Kind:                  string(profile.Kind),
 			Avatar:                avatars[profile.ID],
 			CertificationCeilings: ceilings,
+			RemoteMaxBitrate:      profile.RemoteMaxBitrate,
 		})
 	}
 	return summaries, nil

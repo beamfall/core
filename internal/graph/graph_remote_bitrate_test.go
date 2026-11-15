@@ -54,6 +54,26 @@ func TestRemoteMaxBitrateAdminWrites(t *testing.T) {
 		t.Fatalf("store RemoteMaxBitrate = %d, want 3000000", stored.RemoteMaxBitrate)
 	}
 
+	// The Console reads the stored cap back from the profiles query (CORE-1853).
+	resp = postGraphJSON(t, handler, authorizeManager, `query { profiles { id remoteMaxBitrate } }`, nil)
+	if len(resp.Errors) != 0 {
+		t.Fatalf("profiles errors = %#v", resp.Errors)
+	}
+	var summaries []ProfileSummary
+	mustUnmarshal(t, resp.Data["profiles"], &summaries)
+	found := false
+	for _, summary := range summaries {
+		if summary.ID == "profile-default" {
+			found = true
+			if summary.RemoteMaxBitrate != 3_000_000 {
+				t.Fatalf("profiles remoteMaxBitrate = %d, want 3000000", summary.RemoteMaxBitrate)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("profiles = %#v, want profile-default", summaries)
+	}
+
 	for _, bad := range []any{-1, store.MaxRemoteBitrate + 1, 1.5} {
 		if resp := postGraphJSON(t, handler, authorizeManager, setRemoteCapMutation, map[string]any{"remoteMaxBitrate": bad}); len(resp.Errors) == 0 {
 			t.Fatalf("setConsoleConfig(%v) accepted an out-of-range cap", bad)

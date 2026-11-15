@@ -2018,7 +2018,8 @@
         "certificationCeilings",
         "id",
         "kind",
-        "name"
+        "name",
+        "remoteMaxBitrate"
       ]
     },
     {

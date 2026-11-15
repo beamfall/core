@@ -51,6 +51,7 @@ beforeEach(() => {
         name: "Owner",
         kind: "adult",
         libraryIDs: ["library-local"],
+        remoteMaxBitrate: 12_500_000,
         certificationCeilings: [],
       },
       {
@@ -190,6 +191,66 @@ describe("ProfilesAccess managed-Profile policy", () => {
     expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p2", 8_000_000);
     expect(await formOf(capInput).findByText("Applied.")).toBeInTheDocument();
     expect(setProfileStreamCap).not.toHaveBeenCalled();
+  });
+
+  it("shows the Profile's stored remote bitrate cap in Mbit/s (CORE-1853)", async () => {
+    await pickProfile("Owner");
+    expect(await screen.findByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(12.5);
+  });
+
+  it("leaves the remote cap input empty when the Profile has no cap", async () => {
+    await pickProfile("Kid");
+    expect(await screen.findByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(null);
+  });
+
+  it("shows the saved remote cap after Apply and rereads the profiles (CORE-1853)", async () => {
+    vi.mocked(setProfileRemoteBitrateCap).mockResolvedValue({
+      id: "p1",
+      remoteMaxBitrate: 4_000_000,
+    });
+    const user = await pickProfile("Owner");
+    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
+    await user.clear(capInput);
+    await user.type(capInput, "4");
+    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
+    expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p1", 4_000_000);
+    expect(await formOf(capInput).findByText("Applied.")).toBeInTheDocument();
+    expect(capInput).toHaveValue(4);
+    await waitFor(() => expect(fetchEnforcedFilters).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the reread remote cap when the profile is reselected mid-Apply (CORE-1853)", async () => {
+    let finishSave: (value: { id: string; remoteMaxBitrate: number }) => void = () => {};
+    vi.mocked(setProfileRemoteBitrateCap).mockReturnValue(
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+    );
+    const user = await pickProfile("Owner");
+    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
+    await user.clear(capInput);
+    await user.type(capInput, "4");
+    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
+    // The input is locked while the save is in flight, so no edit is lost.
+    expect(capInput).toBeDisabled();
+    // Switch away and back before the save returns: the control remounts with
+    // the pre-save profiles payload.
+    for (const name of ["Kid", "Owner"]) {
+      await user.click(screen.getAllByRole("combobox")[0]);
+      await user.click(await screen.findByRole("option", { name }));
+    }
+    expect(await screen.findByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(12.5);
+    const before = await fetchEnforcedFilters();
+    vi.mocked(fetchEnforcedFilters).mockResolvedValue({
+      ...before,
+      profiles: before.profiles.map((p) =>
+        p.id === "p1" ? { ...p, remoteMaxBitrate: 4_000_000 } : p,
+      ),
+    });
+    finishSave({ id: "p1", remoteMaxBitrate: 4_000_000 });
+    await waitFor(() =>
+      expect(screen.getByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(4),
+    );
   });
 
   it("clears the remote bitrate cap by sending 0 when the input is empty", async () => {

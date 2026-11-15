@@ -55,6 +55,8 @@ export function InfoOverlay({
       engineNativeHls: t("engineNativeHls"),
       engineHlsJs: t("engineHlsJs"),
       reasonRequiresTranscode: t("reasonRequiresTranscode"),
+      reasonBitrateCeiling: t("reasonBitrateCeiling"),
+      reasonPolicyBitrateCeiling: t("reasonPolicyBitrateCeiling"),
     },
   });
 
