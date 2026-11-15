@@ -32,10 +32,11 @@ import (
 // HTTP over TCP, nothing else (no file, no https, no crypto, no concat).
 const pipeProtocolAllowlist = "http,tcp"
 
-// pipeFormatAllowlist pins the input demuxer to single-resource containers.
+// pipeFormatAllowlist pins the input demuxer to single-resource containers,
+// video and the common music formats (MP3, FLAC, WAV, AIFF, raw AAC) alike.
 // Playlist and manifest demuxers (hls, dash, concat, image sequences) are left
 // out because they open further URLs a crafted source could choose.
-const pipeFormatAllowlist = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mpegts,mpeg,avi,flv,asf,ogg"
+const pipeFormatAllowlist = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mpegts,mpeg,avi,flv,asf,ogg,mp3,flac,wav,w64,aiff,aac"
 
 // pipeMovflags fragments the output at every keyframe with an empty moov up
 // front, so the MP4 can be written to a pipe without seeking back. faststart
@@ -116,12 +117,52 @@ func (r *Runner) ProbePipeDuration(ctx context.Context, in PipeInput) (time.Dura
 	return parsePipeDuration(stdout.bytes())
 }
 
+// ExtractSubtitleToPipe extracts the text subtitle stream at the absolute
+// ffprobe stream index from the loopback HTTP source in and converts it to
+// WebVTT, under the same confinement and input options as TranscodeToPipe: the
+// track never reaches a file. FFmpeg's output is held in a buffer of at most
+// limit bytes, and a track that runs past it kills FFmpeg and fails with
+// ErrOutputOverflow; only a complete, successful extraction is written to
+// stdout, in one piece.
+//
+// Like ExtractSubtitleToWebVTT, decode errors are not made fatal, since one bad
+// cue should not cost the track; the caller's endpoint is what proves the
+// whole source was served.
+func (r *Runner) ExtractSubtitleToPipe(ctx context.Context, in PipeInput, streamIndex, limit int, stdout io.Writer) error {
+	port, err := loopbackPort(in.URL)
+	if err != nil {
+		return err
+	}
+	switch {
+	case stdout == nil:
+		return errors.New("ffmpeg pipe subtitle extract: no output writer")
+	case streamIndex < 0:
+		return fmt.Errorf("ffmpeg pipe subtitle extract: stream index must be >= 0, got %d", streamIndex)
+	case limit <= 0:
+		return errors.New("ffmpeg pipe subtitle extract: output limit must be positive")
+	}
+	out := &boundedBuffer{limit: limit}
+	args := pipeSubtitleArgs(in.URL, pipeReadTimeout(in), streamIndex)
+	if err := r.runPipeTool(ctx, port, in, "ffmpeg", "ffmpeg pipe subtitle extract", args, out); err != nil {
+		return err
+	}
+	_, err = stdout.Write(out.bytes())
+	return err
+}
+
 // runPipeTool runs the FFmpeg tool named by tool against a loopback input
 // under the pipe confinement, streaming its stdout to stdout. what names the
 // run in its errors, and a failure's diagnostic is redacted of in's URL and
 // secret. A bounded stdout that overflows kills the tool, so an overproducing
 // child cannot hold the worker until another limit fires.
 func (r *Runner) runPipeTool(ctx context.Context, port int, in PipeInput, tool, what string, args []string, stdout io.Writer) error {
+	return r.runPipeToolWith(ctx, port, in, tool, what, args, stdout, nil)
+}
+
+// runPipeToolWith is runPipeTool with a caller-sized stderr capture, for an
+// analysis whose result FFmpeg prints on stderr. A nil stderr gets the default
+// diagnostic bound. An overflow of either buffer kills the tool.
+func (r *Runner) runPipeToolWith(ctx context.Context, port int, in PipeInput, tool, what string, args []string, stdout io.Writer, stderr *boundedBuffer) error {
 	toolPath, err := exec.LookPath(tool)
 	if err != nil {
 		return fmt.Errorf("%s is not available: %w", tool, err)
@@ -131,15 +172,22 @@ func (r *Runner) runPipeTool(ctx context.Context, port int, in PipeInput, tool, 
 		return err
 	}
 	cmd.Env = pipeEnv(os.Environ())
-	return r.runPipeCmd(ctx, cmd, in, what, stdout)
+	return r.runPipeCmdWith(ctx, cmd, in, what, stdout, stderr)
 }
 
 // runPipeCmd supervises a confined pipe command built by runPipeTool. A
 // bounded stdout that overflows kills the command, as stderr does.
 func (r *Runner) runPipeCmd(ctx context.Context, cmd *exec.Cmd, in PipeInput, what string, stdout io.Writer) error {
+	return r.runPipeCmdWith(ctx, cmd, in, what, stdout, nil)
+}
+
+func (r *Runner) runPipeCmdWith(ctx context.Context, cmd *exec.Cmd, in PipeInput, what string, stdout io.Writer, stderr *boundedBuffer) error {
 	var killOnce sync.Once
 	kill := func() { killOnce.Do(func() { killProcessGroup(cmd) }) }
-	stderr := &boundedBuffer{limit: pipeStderrLimit, onOverflow: kill}
+	if stderr == nil {
+		stderr = &boundedBuffer{limit: pipeStderrLimit}
+	}
+	stderr.onOverflow = kill
 	boundedOut, _ := stdout.(*boundedBuffer)
 	if boundedOut != nil && boundedOut.onOverflow == nil {
 		boundedOut.onOverflow = kill
@@ -154,7 +202,11 @@ func (r *Runner) runPipeCmd(ctx context.Context, cmd *exec.Cmd, in PipeInput, wh
 	if runErr == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %s", what, redactPipeDetail(captureDetail(nil, stderr.bytes(), runErr), in))
+	detail := stderr.bytes()
+	if len(detail) > pipeStderrLimit {
+		detail = detail[len(detail)-pipeStderrLimit:]
+	}
+	return fmt.Errorf("%s: %s", what, redactPipeDetail(captureDetail(nil, detail, runErr), in))
 }
 
 func pipeReadTimeout(in PipeInput) time.Duration {
@@ -184,6 +236,18 @@ func pipeArgs(inputURL string, timeout time.Duration, profile ConvertProfile) []
 	args = append(args, "-i", inputURL)
 	args = append(args, profile.encodeArgs()...)
 	return append(args, "-movflags", pipeMovflags, "-f", "mp4", "pipe:1")
+}
+
+// pipeSubtitleArgs builds the FFmpeg argv that converts one subtitle stream of
+// the loopback source to WebVTT on pipe:1, under the same input options as
+// pipeArgs.
+func pipeSubtitleArgs(inputURL string, timeout time.Duration, streamIndex int) []string {
+	args := append([]string{"-v", "error", "-nostdin"}, pipeInputOptions(timeout)...)
+	return append(args,
+		"-i", inputURL,
+		"-map", "0:"+strconv.Itoa(streamIndex),
+		"-c:s", "webvtt",
+		"-f", "webvtt", "pipe:1")
 }
 
 // pipeProbeArgs builds the ffprobe argv that prints the loopback source's

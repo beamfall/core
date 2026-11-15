@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 
 	"github.com/beamfall/core/internal/store"
@@ -76,12 +75,13 @@ func (s *Service) LoudnessAsset(fingerprint string) (string, bool) {
 // a fingerprint, returning ok=false when none exists or it cannot be read/parsed.
 // This is the content seam (not just existence) playback reads to populate the
 // rung-specific loudness/normalization state — playback never touches the on-disk
-// path, only this parsed result.
-func (s *Service) LoudnessForFingerprint(fingerprint string) (LoudnessAnalysis, bool) {
+// path, only this parsed result. An Encrypted Library's measurement is decrypted
+// in memory under libraryID, so a Sealed Library reports ok=false.
+func (s *Service) LoudnessForFingerprint(libraryID store.LibraryID, fingerprint string) (LoudnessAnalysis, bool) {
 	if fingerprint == "" {
 		return LoudnessAnalysis{}, false
 	}
-	data, err := os.ReadFile(s.LoudnessPath(fingerprint))
+	data, err := s.readAsset(libraryID, fingerprint, LoudnessName)
 	if err != nil {
 		return LoudnessAnalysis{}, false
 	}
@@ -104,7 +104,7 @@ func (s *Service) GenerateLoudness(ctx context.Context, id store.MediaID) error 
 	if s.gen == nil {
 		return errors.New("no generator configured")
 	}
-	_, file, ok, err := s.audioSource(ctx, id)
+	media, file, ok, err := s.audioSource(ctx, id)
 	if err != nil || !ok {
 		return err
 	}
@@ -112,7 +112,14 @@ func (s *Service) GenerateLoudness(ctx context.Context, id store.MediaID) error 
 	if regularFileExists(dst) {
 		return nil
 	}
-	integratedLUFS, rangeLU, truePeakDBTP, fromTags, err := s.gen.LoudnessMeasure(ctx, file.Path)
+	src, target, encrypted := s.encryptedPlane(media, file)
+	var integratedLUFS, rangeLU, truePeakDBTP float64
+	var fromTags bool
+	if encrypted {
+		integratedLUFS, rangeLU, truePeakDBTP, err = s.encGen.LoudnessMeasure(ctx, src)
+	} else {
+		integratedLUFS, rangeLU, truePeakDBTP, fromTags, err = s.gen.LoudnessMeasure(ctx, file.Path)
+	}
 	if err != nil {
 		return err
 	}
@@ -133,7 +140,7 @@ func (s *Service) GenerateLoudness(ctx context.Context, id store.MediaID) error 
 	if err != nil {
 		return err
 	}
-	if err := s.publishBytes(string(id), file.ContentFingerprint, "loudness:v1", LoudnessName, data); err != nil {
+	if err := s.publishData(target, string(id), file.ContentFingerprint, "loudness:v1", LoudnessName, data); err != nil {
 		return fmt.Errorf("publishing loudness for %s: %w", id, err)
 	}
 	return nil

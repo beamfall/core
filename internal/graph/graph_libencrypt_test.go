@@ -447,6 +447,11 @@ func TestRewrapEncryptedLibraryRotatesFilesAndRecoveryKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	purger := &recordingDerivativePurger{before: func() bool {
+		now, err := os.ReadFile(originalCipher) // #nosec G304 -- test temp-dir path.
+		return err == nil && bytes.Equal(now, originalBefore)
+	}}
+	handler.encryptedDerivativePurgers = []EncryptedDerivativePurger{purger}
 
 	rewrap := `mutation R($libraryID: ID!) { rewrapEncryptedLibrary(libraryID: $libraryID) { recoveryKey acknowledgementRequired residualRiskNotice backupRotationArtifacts { kind path manifest action } status { sealed } } }`
 	if rec := postGraphQL(t, handler, authorizeViewer, rewrap, map[string]any{"libraryID": libID}); !bytes.Contains(rec.Body.Bytes(), []byte("admin session required")) {
@@ -499,6 +504,12 @@ func TestRewrapEncryptedLibraryRotatesFilesAndRecoveryKey(t *testing.T) {
 	if bytes.Equal(assetBefore, assetAfter) {
 		t.Fatal("generated-asset ciphertext did not change")
 	}
+	if len(purger.calls) != 1 || purger.calls[0] != store.LibraryID(libID) {
+		t.Fatalf("regenerable derivative purges = %v, want one for %s", purger.calls, libID)
+	}
+	if !purger.ranFirst {
+		t.Fatal("regenerable derivatives were purged after the media ciphertext was rewritten")
+	}
 
 	unseal := `mutation U($libraryID: ID!, $recoveryKey: String) { unsealEncryptedLibrary(libraryID: $libraryID, recoveryKey: $recoveryKey) { sealed } }`
 	oldRec := postGraphQL(t, handler, authorizeManager, unseal, map[string]any{"libraryID": libID, "recoveryKey": oldRK})
@@ -531,6 +542,20 @@ func TestRewrapEncryptedLibraryRotatesFilesAndRecoveryKey(t *testing.T) {
 	if string(gotAsset) != `{"version":1}` {
 		t.Fatalf("asset plaintext = %q", gotAsset)
 	}
+}
+
+// recordingDerivativePurger records the rewrap's purges of regenerable
+// derivative caches and whether before held when each ran.
+type recordingDerivativePurger struct {
+	calls    []store.LibraryID
+	ranFirst bool
+	before   func() bool
+}
+
+func (p *recordingDerivativePurger) PurgeEncryptedDerivatives(_ context.Context, libraryID store.LibraryID) error {
+	p.calls = append(p.calls, libraryID)
+	p.ranFirst = p.before()
+	return nil
 }
 
 // TestProvisionRejectsNonEncryptedLibrary confirms a Library not flagged

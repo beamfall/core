@@ -592,6 +592,44 @@ func TestRunRefusesAnExistingStagingFile(t *testing.T) {
 	}
 }
 
+func TestRunChecksCoverageAgainstTheExpectedDuration(t *testing.T) {
+	t.Run("part of the source", func(t *testing.T) {
+		_, job := newJobFixture(t)
+		job.ProbeDuration = probeReturning(3*testSourceDuration, nil)
+		job.ExpectedDuration = func(source time.Duration) time.Duration { return source / 3 }
+		result, err := Run(context.Background(), job)
+		if err != nil {
+			t.Fatalf("Run with a partial expected duration: %v", err)
+		}
+		_ = result.Close()
+	})
+	t.Run("output short of the expected part", func(t *testing.T) {
+		fx, job := newJobFixture(t)
+		job.ProbeDuration = probeReturning(3*testSourceDuration, nil)
+		job.ExpectedDuration = func(source time.Duration) time.Duration { return source / 2 }
+		if _, err := Run(context.Background(), job); !errors.Is(err, ErrInvalidOutput) {
+			t.Fatalf("err = %v, want ErrInvalidOutput", err)
+		}
+		assertNoFiles(t, fx.stageDir)
+	})
+	for name, expected := range map[string]func(time.Duration) time.Duration{
+		"zero":            func(time.Duration) time.Duration { return 0 },
+		"past the source": func(source time.Duration) time.Duration { return source + time.Second },
+	} {
+		t.Run(name, func(t *testing.T) {
+			fx, job := newJobFixture(t)
+			job.ExpectedDuration = expected
+			job.Transcode = func(context.Context, Input, io.Writer) error {
+				panic("transcoder started without a usable expected duration")
+			}
+			if _, err := Run(context.Background(), job); !errors.Is(err, ErrSourceDuration) {
+				t.Fatalf("err = %v, want ErrSourceDuration", err)
+			}
+			assertNoFiles(t, fx.stageDir)
+		})
+	}
+}
+
 func TestRunValidatesJob(t *testing.T) {
 	for name, edit := range map[string]func(*Job){
 		"no source":           func(j *Job) { j.Open = nil },

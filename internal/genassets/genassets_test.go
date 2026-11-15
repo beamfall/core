@@ -1017,9 +1017,10 @@ func TestGenerateWaveformSkipsSealedLibrary(t *testing.T) {
 }
 
 func TestGenerateWaveformSkipsEncryptedUnsealedLibrary(t *testing.T) {
-	// ENCPRIV-10b: a Generated Asset is a plaintext derivative. An Encrypted
-	// Library that is currently Unsealed (sealed predicate false) must still be
-	// skipped — no waveform, no existence marker.
+	// ENCPRIV-10b: without the encrypted plane (SetEncryptedPlane) an asset
+	// could only be written as plaintext, so an Encrypted Library that is
+	// currently Unsealed must still be skipped — no waveform, no existence
+	// marker. encrypted_test.go covers generation with the plane wired.
 	gen := &fakeGen{waveformSamples: []float64{0.2, 0.4, 0.6}}
 	svc, st, _ := newTestService(t, gen)
 	svc.SetSealed(func(store.LibraryID) bool { return false })

@@ -41,6 +41,12 @@ type PrecomputeRequest struct {
 	SourcePath         string
 	Path               string
 	Priority           int
+	// LibraryID and Encrypted mark a request for an Unsealed Encrypted
+	// Library (CORE-1963). Its job payload carries neither ContentFingerprint
+	// nor SourcePath: the claimed handler reads both from the Library's own DB,
+	// so the Media-to-content join never reaches the shared job table.
+	LibraryID store.LibraryID
+	Encrypted bool
 }
 
 type PrecomputeSourceRule struct {
@@ -58,6 +64,8 @@ type PrecomputePayload struct {
 	Bandwidth          int                       `json:"bandwidth"`
 	SourcePath         string                    `json:"sourcePath"`
 	Path               string                    `json:"path"`
+	LibraryID          store.LibraryID           `json:"libraryID,omitempty"`
+	Encrypted          bool                      `json:"encrypted,omitempty"`
 }
 
 type PrecomputeEvictPayload struct {
@@ -87,6 +95,12 @@ type PrecomputeJobHandler struct {
 	Generator PrecomputeGenerator
 	Admission *PrecomputeResourceGovernor
 	Now       func() time.Time
+	// Encrypted generates and reads renditions for Unsealed Encrypted
+	// Libraries through the shared encrypted-derivative helper (ADR-0235).
+	// Sealed reports whether a Library is Sealed. With either nil, every
+	// encrypted job is refused.
+	Encrypted EncryptedPrecomputeGenerator
+	Sealed    func(store.LibraryID) bool
 }
 
 // PrecomputeResourceGovernor reserves estimated output bytes before a
@@ -198,6 +212,19 @@ func RequestPrecomputeRendition(ctx context.Context, st *store.Store, req Precom
 // handler installs Generating only after admission, so a deduped re-trigger can
 // never invalidate the generation already doing the work.
 func PrecomputeMediaRenditions(ctx context.Context, st *store.Store, mediaID store.MediaID, renditionTarget, cacheRoot string, now time.Time) ([]store.Job, error) {
+	return precomputeMediaRenditions(ctx, st, mediaID, renditionTarget, cacheRoot, now, nil)
+}
+
+// PrecomputeMediaRenditionsAllowingEncrypted is PrecomputeMediaRenditions for
+// a server that can generate renditions for Unsealed Encrypted Libraries
+// through the shared encrypted-derivative helper (CORE-1963). sealed reports
+// whether a Library is Sealed; a Sealed Library, or a nil predicate, enqueues
+// nothing.
+func PrecomputeMediaRenditionsAllowingEncrypted(ctx context.Context, st *store.Store, mediaID store.MediaID, renditionTarget, cacheRoot string, now time.Time, sealed func(store.LibraryID) bool) ([]store.Job, error) {
+	return precomputeMediaRenditions(ctx, st, mediaID, renditionTarget, cacheRoot, now, sealed)
+}
+
+func precomputeMediaRenditions(ctx context.Context, st *store.Store, mediaID store.MediaID, renditionTarget, cacheRoot string, now time.Time, sealed func(store.LibraryID) bool) ([]store.Job, error) {
 	if st == nil {
 		return nil, errors.New("store is required")
 	}
@@ -217,15 +244,14 @@ func PrecomputeMediaRenditions(ctx context.Context, st *store.Store, mediaID sto
 	if media.Class == store.MediaClassImage {
 		return nil, errors.New("image media cannot be precomputed")
 	}
-	// Encrypted Libraries fail closed: a precomputed HLS rendition
-	// is a plaintext derivative written to the shared cache root, and no encrypted
-	// -plane write path exists yet, so refuse to enqueue rather than
-	// leak plaintext segments — whether the Library is Sealed or Unsealed.
+	// Encrypted Libraries fail closed unless the caller can generate on the
+	// encrypted plane (sealed != nil) and the Library is Unsealed: a public
+	// precomputed HLS rendition is a plaintext derivative in the shared cache.
 	encrypted, err := st.LibraryEncrypted(ctx, media.LibraryID)
 	if err != nil {
 		return nil, err
 	}
-	if encrypted {
+	if encrypted && (sealed == nil || sealed(media.LibraryID)) {
 		return nil, nil
 	}
 	files, err := st.MediaFilesForMedia(ctx, mediaID, store.LibraryFilter{AllLibraries: true, Revealed: true})
@@ -259,6 +285,9 @@ func PrecomputeMediaRenditions(ctx context.Context, st *store.Store, mediaID sto
 			Bandwidth:          rung.Bandwidth,
 			SourcePath:         source.Path,
 			Path:               filepath.Join(cacheRoot, string(renditionID)),
+		}
+		if encrypted {
+			req = encryptedPrecomputeRequest(req, media.LibraryID, cacheRoot)
 		}
 		// A height-unknown source yields the single "source" rung with Height 0;
 		// the precompute request requires a positive height, so stamp the source
@@ -493,6 +522,45 @@ func (h PrecomputeJobHandler) Handle(ctx context.Context, job store.Job) error {
 	if err != nil {
 		return err
 	}
+	encrypted, err := h.Store.LibraryEncrypted(ctx, media.LibraryID)
+	if err != nil {
+		return err
+	}
+	if encrypted || req.Encrypted {
+		run, hydrated, err := h.encryptedRun(ctx, req, media, encrypted)
+		if err != nil {
+			return err
+		}
+		return h.generate(ctx, job, hydrated, media, run)
+	}
+	return h.generate(ctx, job, req, media, precomputeRun{
+		paths: precomputeGenerationPaths,
+		generate: func(ctx context.Context, spec PrecomputeSpec, _ int64) error {
+			return h.Generator.PrecomputeHLS(ctx, spec)
+		},
+		verify: verifyPrecomputeArtifact,
+	})
+}
+
+// precomputeRun is what differs between a public and an encrypted precompute:
+// where the generation stages and publishes, how it is generated and verified,
+// and (encrypted only) the revocation check that stops it once the Library is
+// Sealed or the job is cancelled.
+type precomputeRun struct {
+	paths    func(req PrecomputeRequest, job store.Job, generation int64) (staging, published string)
+	generate func(ctx context.Context, spec PrecomputeSpec, estimateBytes int64) error
+	verify   func(root, rungID string) error
+	revoked  func(ctx context.Context) error
+}
+
+func (r precomputeRun) check(ctx context.Context) error {
+	if r.revoked == nil {
+		return nil
+	}
+	return r.revoked(ctx)
+}
+
+func (h PrecomputeJobHandler) generate(ctx context.Context, job store.Job, req PrecomputeRequest, media store.Media, run precomputeRun) error {
 	estimateBytes, err := precomputeEstimateBytes(media.DurationSeconds, req.Bandwidth)
 	if err != nil {
 		return err
@@ -531,7 +599,7 @@ func (h PrecomputeJobHandler) Handle(ctx context.Context, job store.Job) error {
 		failGeneration()
 		return err
 	}
-	stagingPath, publishedPath := precomputeGenerationPaths(req, job, generation)
+	stagingPath, publishedPath := run.paths(req, job, generation)
 	published := false
 	defer func() {
 		_ = os.RemoveAll(stagingPath)
@@ -547,11 +615,15 @@ func (h PrecomputeJobHandler) Handle(ctx context.Context, job store.Job) error {
 	spec := req.spec()
 	spec.OutputDir = stagingPath
 	spec.SourceVideo = sourceVideo
-	if err := h.Generator.PrecomputeHLS(ctx, spec); err != nil {
+	if err := run.generate(ctx, spec, estimateBytes); err != nil {
 		failGeneration()
 		return err
 	}
-	if err := verifyPrecomputeArtifact(stagingPath, req.RungID); err != nil {
+	if err := run.check(ctx); err != nil {
+		failGeneration()
+		return err
+	}
+	if err := run.verify(stagingPath, req.RungID); err != nil {
 		failGeneration()
 		return err
 	}
@@ -569,6 +641,10 @@ func (h PrecomputeJobHandler) Handle(ctx context.Context, job store.Job) error {
 		return fmt.Errorf("precompute artifact exceeds reserved bytes: %d > %d", sizeBytes, estimateBytes)
 	}
 	if err := os.MkdirAll(filepath.Dir(publishedPath), 0o700); err != nil {
+		failGeneration()
+		return err
+	}
+	if err := run.check(ctx); err != nil {
 		failGeneration()
 		return err
 	}
@@ -651,12 +727,21 @@ func precomputeGenerationPaths(req PrecomputeRequest, job store.Job, generation 
 }
 
 func verifyPrecomputeArtifact(root, rungID string) error {
+	return verifyPrecomputeArtifactWith(root, rungID, func(artifactRoot *os.Root, name string) ([]byte, error) {
+		return artifactRoot.ReadFile(name)
+	}, nil)
+}
+
+// verifyPrecomputeArtifactWith verifies a staged generation. read returns a
+// playlist's text (an encrypted generation decrypts it in memory); member,
+// when set, additionally checks every file of the generation.
+func verifyPrecomputeArtifactWith(root, rungID string, read func(artifactRoot *os.Root, name string) ([]byte, error), member func(artifactRoot *os.Root, name string) error) error {
 	artifactRoot, err := os.OpenRoot(root)
 	if err != nil {
 		return fmt.Errorf("%w: artifact root: %v", ErrPrecomputeIncomplete, err)
 	}
 	defer artifactRoot.Close()
-	master, err := artifactRoot.ReadFile("master.m3u8")
+	master, err := read(artifactRoot, masterPlaylistName)
 	if err != nil {
 		return fmt.Errorf("%w: master playlist: %v", ErrPrecomputeIncomplete, err)
 	}
@@ -664,7 +749,7 @@ func verifyPrecomputeArtifact(root, rungID string) error {
 	if !strings.HasPrefix(masterText, "#EXTM3U\n") || !strings.Contains(masterText, rungID+"/index.m3u8") {
 		return fmt.Errorf("%w: invalid master playlist", ErrPrecomputeIncomplete)
 	}
-	media, err := artifactRoot.ReadFile(filepath.Join(rungID, "index.m3u8"))
+	media, err := read(artifactRoot, filepath.Join(rungID, "index.m3u8"))
 	if err != nil {
 		return fmt.Errorf("%w: media playlist: %v", ErrPrecomputeIncomplete, err)
 	}
@@ -692,6 +777,15 @@ func verifyPrecomputeArtifact(root, rungID string) error {
 		}
 		if !info.Mode().IsRegular() || info.Size() == 0 {
 			return fmt.Errorf("%w: invalid member %s", ErrPrecomputeIncomplete, path)
+		}
+		if member != nil {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			if err := member(artifactRoot, rel); err != nil {
+				return err
+			}
 		}
 		if strings.HasSuffix(entry.Name(), ".m4s") || strings.HasSuffix(entry.Name(), ".ts") {
 			segments++
@@ -870,16 +964,7 @@ func (g FFmpegPrecomputeGenerator) PrecomputeHLS(ctx context.Context, spec Preco
 	if err := os.MkdirAll(rungDir, 0o700); err != nil {
 		return err
 	}
-	proc, err := runner.StartBackgroundHLS(ctx, spec.SourcePath, rungDir, ffmpeg.Rendition{
-		Height:         spec.Height,
-		VideoKbps:      precomputeVideoKbps(spec.Bandwidth),
-		AudioCodec:     "aac",
-		AudioChannels:  2,
-		ColorTransfer:  spec.SourceVideo.ColorTransfer,
-		ColorPrimaries: spec.SourceVideo.ColorPrimaries,
-		DoViProfile:    spec.SourceVideo.DoViProfile,
-		DoViBLCompatID: spec.SourceVideo.DoViBLCompatID,
-	})
+	proc, err := runner.StartBackgroundHLS(ctx, spec.SourcePath, rungDir, spec.Rendition())
 	if err != nil {
 		return err
 	}
@@ -907,7 +992,7 @@ func precomputeSourceVideo(ctx context.Context, st *store.Store, fingerprint str
 }
 
 func hydratePrecomputeRequest(ctx context.Context, st *store.Store, req PrecomputeRequest) (PrecomputeRequest, error) {
-	if req.MediaID == "" {
+	if req.MediaID == "" || req.Encrypted {
 		return req, nil
 	}
 	if req.ContentFingerprint != "" && req.SourcePath != "" {
@@ -933,7 +1018,11 @@ func validatePrecomputeRequest(req PrecomputeRequest) error {
 	if req.MediaID == "" {
 		return errors.New("media ID is required")
 	}
-	if req.ContentFingerprint == "" {
+	if req.Encrypted {
+		if err := validateEncryptedPrecomputeRequest(req); err != nil {
+			return err
+		}
+	} else if req.ContentFingerprint == "" {
 		return errors.New("content fingerprint is required")
 	}
 	if req.RenditionID == "" {
@@ -954,7 +1043,7 @@ func validatePrecomputeRequest(req PrecomputeRequest) error {
 	if precomputeVideoKbps(req.Bandwidth) <= 0 {
 		return errors.New("playback bandwidth must exceed the audio and mux reserve")
 	}
-	if req.SourcePath == "" {
+	if req.SourcePath == "" && !req.Encrypted {
 		return errors.New("source path is required")
 	}
 	if req.Path == "" {
@@ -997,6 +1086,8 @@ func (req PrecomputeRequest) payload() PrecomputePayload {
 		Bandwidth:          req.Bandwidth,
 		SourcePath:         req.SourcePath,
 		Path:               req.Path,
+		LibraryID:          req.LibraryID,
+		Encrypted:          req.Encrypted,
 	}
 }
 
@@ -1011,6 +1102,8 @@ func (p PrecomputePayload) request() PrecomputeRequest {
 		Bandwidth:          p.Bandwidth,
 		SourcePath:         p.SourcePath,
 		Path:               p.Path,
+		LibraryID:          p.LibraryID,
+		Encrypted:          p.Encrypted,
 	}
 }
 
@@ -1079,10 +1172,5 @@ func dirSize(root string) (int64, error) {
 }
 
 func writePrecomputeMasterPlaylist(path string, spec PrecomputeSpec) error {
-	var b strings.Builder
-	b.WriteString("#EXTM3U\n")
-	b.WriteString("#EXT-X-VERSION:7\n")
-	fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,CODECS=\"avc1.64001f,mp4a.40.2\"\n", spec.Bandwidth)
-	fmt.Fprintf(&b, "%s/index.m3u8\n", spec.RungID)
-	return os.WriteFile(path, []byte(b.String()), 0o600)
+	return os.WriteFile(path, PrecomputeMasterPlaylist(spec), 0o600)
 }

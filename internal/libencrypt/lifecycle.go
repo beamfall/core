@@ -9,9 +9,25 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 )
 
-type libraryLease struct{ mu sync.RWMutex }
+// libraryLease is a library's ownership lease. sealPending counts the Seal and
+// Erase calls waiting for, or holding, its exclusive side; SealedEncrypted reads
+// it without touching mu.
+type libraryLease struct {
+	mu          sync.RWMutex
+	sealPending atomic.Int32
+}
+
+// announceSeal marks a seal of libraryID as pending until the returned func
+// runs. It is called before the exclusive lease is requested, so any reader
+// that finds the lease's writer side queued by this seal already sees the mark.
+func (m *Manager) announceSeal(libraryID string) func() {
+	lease := m.lease(libraryID)
+	lease.sealPending.Add(1)
+	return func() { lease.sealPending.Add(-1) }
+}
 
 func (m *Manager) lease(libraryID string) *libraryLease {
 	m.leasing.Lock()
@@ -213,6 +229,7 @@ func (m *Manager) BootUnsealPrepared(libraryIDs []string, prepare func(string, O
 }
 
 func (m *Manager) Seal(libraryID string) {
+	defer m.announceSeal(libraryID)()
 	release := m.acquireLibrary(libraryID)
 	defer release()
 	m.sealLocked(libraryID)
@@ -226,6 +243,7 @@ func (m *Manager) Seal(libraryID string) {
 // alone: their sanitized names can collide across library ids, and boot migration
 // has already moved a live library's legacy refs to its owner-bound ones.
 func (m *Manager) Erase(libraryID string) error {
+	defer m.announceSeal(libraryID)()
 	release := m.acquireLibrary(libraryID)
 	defer release()
 	m.sealLocked(libraryID)
@@ -242,6 +260,28 @@ func (m *Manager) Sealed(libraryID string) bool {
 	release := m.acquireLibraryShared(libraryID)
 	defer release()
 	return m.sealedLocked(libraryID)
+}
+
+// SealedEncrypted reports whether libraryID is an Encrypted Library that is
+// Sealed, counting a Seal or Erase that is already waiting on the ownership
+// lease as Sealed. Revocation polls for open decrypt streams depend on that:
+// RWMutex makes a queued writer block later readers, so a poll that took the
+// shared lease would queue behind the waiting Seal, which in turn waits for the
+// very stream the poll exists to stop. Any other exclusive operation (rewrap,
+// unseal, provision) is still waited for, as Sealed does.
+func (m *Manager) SealedEncrypted(libraryID string) bool {
+	lease := m.lease(libraryID)
+	if lease.sealPending.Load() > 0 {
+		return true
+	}
+	if !lease.mu.TryRLock() {
+		if lease.sealPending.Load() > 0 {
+			return true
+		}
+		lease.mu.RLock()
+	}
+	defer lease.mu.RUnlock()
+	return m.provisionedLocked(libraryID) && m.sealedLocked(libraryID)
 }
 
 func (m *Manager) DEK(libraryID string) ([]byte, error) {

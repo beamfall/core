@@ -68,7 +68,7 @@ func (s *Service) GenerateSilenceMap(ctx context.Context, id store.MediaID) erro
 	if s.gen == nil {
 		return errors.New("no generator configured")
 	}
-	_, file, ok, err := s.audioSource(ctx, id)
+	media, file, ok, err := s.audioSource(ctx, id)
 	if err != nil || !ok {
 		return err
 	}
@@ -76,7 +76,13 @@ func (s *Service) GenerateSilenceMap(ctx context.Context, id store.MediaID) erro
 	if regularFileExists(dst) {
 		return nil
 	}
-	detected, err := s.gen.SilenceSpans(ctx, file.Path)
+	src, target, encrypted := s.encryptedPlane(media, file)
+	var detected [][2]float64
+	if encrypted {
+		detected, err = s.encGen.SilenceSpans(ctx, src)
+	} else {
+		detected, err = s.gen.SilenceSpans(ctx, file.Path)
+	}
 	if err != nil {
 		return err
 	}
@@ -88,7 +94,7 @@ func (s *Service) GenerateSilenceMap(ctx context.Context, id store.MediaID) erro
 	if err != nil {
 		return err
 	}
-	if err := s.publishBytes(string(id), file.ContentFingerprint, "silence-map:v1", SilenceMapName, data); err != nil {
+	if err := s.publishData(target, string(id), file.ContentFingerprint, "silence-map:v1", SilenceMapName, data); err != nil {
 		return fmt.Errorf("publishing silence map for %s: %w", id, err)
 	}
 	return nil

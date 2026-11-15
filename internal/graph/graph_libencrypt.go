@@ -55,6 +55,16 @@ type EncryptedGeneratedAssetRewrapper interface {
 	RewrapEncryptedLibraryAssets(ctx context.Context, files []store.MediaFile, rewrap func(path, contentFingerprint, assetName string) error) error
 }
 
+// EncryptedDerivativePurger removes an Encrypted Library's regenerable
+// ciphertext derivatives (caches rebuilt on demand, such as extracted
+// subtitles) during a DEK rewrap instead of rewrapping them. It runs inside the
+// rewrap's exclusive key lease before any other class is rewritten, so no
+// object written under the retiring key outlives it and none can be written
+// under that key afterwards.
+type EncryptedDerivativePurger interface {
+	PurgeEncryptedDerivatives(ctx context.Context, libraryID store.LibraryID) error
+}
+
 type preparedLibEncryptManager interface {
 	ProvisionPrepared(string, libencrypt.UnsealMode, string, libencrypt.ProvisionHooks) (libencrypt.RecoveryKey, error)
 	RewrapPrepared(string, libencrypt.UnsealMode, string, func(libencrypt.OperationCipher) error, func(libencrypt.OperationCipher) error, func(libencrypt.RewrapCipher) error, func() error, bool) (libencrypt.RecoveryKey, error)
@@ -428,6 +438,12 @@ func (h *Handler) rewrapEncryptedLibrary(ctx context.Context, scope auth.Scope, 
 		//: the DB is the per-library singleton, media
 		// bytes bind to their persisted content fingerprint, and generated
 		// assets bind to fingerprint + asset name — never to file paths.
+		// Regenerable derivative caches are purged first, not rewrapped.
+		for _, purger := range h.encryptedDerivativePurgers {
+			if err := purger.PurgeEncryptedDerivatives(ctx, store.LibraryID(libraryID)); err != nil {
+				return err
+			}
+		}
 		if h.encryptedLibraryDBLifecycle != nil {
 			dbObj := libencrypt.LibraryDBObjectContext(libraryID)
 			if err := h.encryptedLibraryDBLifecycle.RewrapEncryptedLibraryDB(ctx, store.LibraryID(libraryID), func(path string) error {

@@ -926,9 +926,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// reports "DEK not in memory", which is true for every ordinary unprovisioned
 	// Library too — so gate on Provisioned first or every plain Library would read
 	// as sealed and lose all bytes.
+	// SealedEncrypted also counts a Seal already queued on the Library's lease,
+	// so a derivative job's revocation poll stops its open decrypt stream
+	// instead of waiting behind that Seal for the stream to finish.
 	sealedPredicate := func(libraryID store.LibraryID) bool {
-		id := string(libraryID)
-		return libEncryptManager.Provisioned(id) && libEncryptManager.Sealed(id)
+		return libEncryptManager.SealedEncrypted(string(libraryID))
 	}
 	// Encrypted (provisioned) predicate — Sealed OR Unsealed. The
 	// plaintext-derivative generators fail closed for every Encrypted Library, not
@@ -941,8 +943,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	playbackInfo.SetSealed(sealedPredicate)
 	mediaHTTP.SetSealed(sealedPredicate)
 	mediaHTTP.SetEncryptedBytes(appLibEncryptDBCipher{manager: libEncryptManager})
+	mediaHTTP.SetEncryptedSubtitles(encryptedSubtitleExtractor{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}, appLibEncryptDBCipher{manager: libEncryptManager})
 	assetService.SetSealed(sealedPredicate)
 	assetService.SetEncrypted(encryptedPredicate)
+	assetService.SetEncryptedPlane(encryptedAssetGenerator{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}, appLibEncryptDBCipher{manager: libEncryptManager})
+	// Precomputed renditions of an Unsealed Encrypted Library go through the
+	// same helper (CORE-1963). Set before any job worker runs; the precompute
+	// job closure reads the handler at call time.
+	precomputeHandler.Encrypted = encryptedPrecomputeGenerator{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}
+	precomputeHandler.Sealed = sealedPredicate
 	artworkService.SetSealed(sealedPredicate)
 	artworkService.SetEncrypted(encryptedPredicate)
 	// Encrypted-Library crash-recovery derivative reconcile (ADR-0045 §reconcile,
@@ -1036,6 +1045,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 			now:       time.Now,
 			wake:      jobWake,
 			composer:  composers.playbackComposer(),
+			sealed:    sealedPredicate,
 		}
 	}
 	// Device-key revocation aborts the revoked device's in-flight transcodes
@@ -1170,6 +1180,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		LibEncrypt:                   libEncryptManager,
 		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
 		EncryptedGeneratedAssets:     assetService,
+		EncryptedDerivativePurgers:   []graph.EncryptedDerivativePurger{mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot}},
 		ExtensionPusher:              extensionPusher,
 		AccessRequestPusher:          accessRequestPusher,
 	}
@@ -3147,12 +3158,15 @@ type playbackCacheController struct {
 	// resolved build). An unsupported picture is refused, not sent to the
 	// ladder.
 	recipeSupported playback.ComposedRecipeCheck
+	// sealed lets an Unsealed Encrypted Library precompute on the encrypted
+	// plane; nil refuses every Encrypted Library.
+	sealed func(store.LibraryID) bool
 }
 
 func (c playbackCacheController) PrecomputeMedia(ctx context.Context, mediaID store.MediaID) (int, error) {
 	jobs, err := playback.PrecomputeComposedRendition(ctx, c.store, mediaID, c.composer, c.recipeSupported, c.cacheRoot, c.clock())
 	if err == nil && len(jobs) == 0 {
-		jobs, err = playback.PrecomputeMediaRenditions(ctx, c.store, mediaID, "h264", c.cacheRoot, c.clock())
+		jobs, err = playback.PrecomputeMediaRenditionsAllowingEncrypted(ctx, c.store, mediaID, "h264", c.cacheRoot, c.clock(), c.sealed)
 	}
 	if err == nil && len(jobs) > 0 {
 		c.wake.notify()
@@ -3213,8 +3227,8 @@ func (l playbackAssetsLocator) LoudnessAsset(fingerprint string) (string, bool) 
 	return l.service.LoudnessAsset(fingerprint)
 }
 
-func (l playbackAssetsLocator) LoudnessForFingerprint(fingerprint string) (playback.LoudnessData, bool) {
-	analysis, ok := l.service.LoudnessForFingerprint(fingerprint)
+func (l playbackAssetsLocator) LoudnessForFingerprint(libraryID store.LibraryID, fingerprint string) (playback.LoudnessData, bool) {
+	analysis, ok := l.service.LoudnessForFingerprint(libraryID, fingerprint)
 	if !ok {
 		return playback.LoudnessData{}, false
 	}
@@ -3850,6 +3864,7 @@ func (e libraryKeyEraser) EraseLibraryKeys(libraryID store.LibraryID) error {
 type appLibEncryptDBCipher struct {
 	manager interface {
 		EncryptFile(libraryID, plaintextPath, ciphertextPath string, obj libencrypt.ObjectContext) error
+		EncryptObjectFrom(libraryID string, src io.Reader, ciphertextPath string, obj libencrypt.ObjectContext) error
 		OpenDecryptReader(libraryID, ciphertextPath string, obj libencrypt.ObjectContext) (io.ReadSeekCloser, error)
 		UnsealDBFile(libraryID, ciphertextPath, workingPath string, obj libencrypt.ObjectContext) error
 		SealDBFile(libraryID, workingPath, ciphertextPath string, obj libencrypt.ObjectContext) error
@@ -3865,6 +3880,7 @@ type appLibEncryptDBCipher struct {
 var (
 	_ mediahttp.EncryptedByteDecryptor  = appLibEncryptDBCipher{}
 	_ mediahttp.EncryptedByteReadSeeker = appLibEncryptDBCipher{}
+	_ mediahttp.EncryptedObjectWriter   = appLibEncryptDBCipher{}
 )
 
 type appOperationDBCipher struct{ cipher libencrypt.OperationCipher }
@@ -3902,6 +3918,17 @@ func (c appLibEncryptDBCipher) DecryptBytes(libraryID store.LibraryID, ciphertex
 	}
 	defer reader.Close()
 	return io.ReadAll(reader)
+}
+
+// EncryptObject encrypts a server-generated derivative held in memory (an
+// extracted subtitle) straight from src, so its plaintext never reaches disk.
+// The class and identity fail closed inside libencrypt's context validation.
+func (c appLibEncryptDBCipher) EncryptObject(libraryID store.LibraryID, src io.Reader, ciphertextPath, objectClass, immutableObjectID string) error {
+	return c.manager.EncryptObjectFrom(string(libraryID), src, ciphertextPath, libencrypt.ObjectContext{
+		LibraryID:         string(libraryID),
+		ObjectClass:       libencrypt.ObjectClass(objectClass),
+		ImmutableObjectID: immutableObjectID,
+	})
 }
 
 // EncryptFile is the legacy context-free BackupIngestEncryptor method. Every
