@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { PlaybackNext } from "../lib/playback";
+import { resetStillWatching } from "../lib/stillWatching";
 import { markViewerIntent } from "./viewerIntent";
 
 // Browser Media Session API integration (ADR-0084 §43). The Media Session is a
@@ -96,30 +97,37 @@ export function useMediaSession({
     };
 
     // Each transport intent is marked as the viewer's own, so a Watch Party
-    // sends it on like an in-page control.
+    // sends it on like an in-page control. An OS transport control is viewer
+    // input, so it also ends the autoplay run (CORE-1689); next and previous
+    // start another item, which ends it anyway.
     safeSet("play", () => {
       markViewerIntent();
+      resetStillWatching();
       void video.play().catch(() => {});
     });
     safeSet("pause", () => {
       markViewerIntent();
+      resetStillWatching();
       video.pause();
     });
     // OS offsets and seek times are song seconds; the <video> plays stream seconds.
     const scale = songScale > 0 && Number.isFinite(songScale) ? songScale : 1;
     safeSet("seekbackward", (details) => {
       markViewerIntent();
+      resetStillWatching();
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
       video.currentTime = Math.max(0, video.currentTime - step / scale);
     });
     safeSet("seekforward", (details) => {
       markViewerIntent();
+      resetStillWatching();
       const step = details?.seekOffset ?? SEEK_STEP_SECONDS;
       const end = Number.isFinite(video.duration) ? video.duration : Infinity;
       video.currentTime = Math.min(end, video.currentTime + step / scale);
     });
     safeSet("seekto", (details) => {
       markViewerIntent();
+      resetStillWatching();
       if (details?.seekTime != null) video.currentTime = details.seekTime / scale;
     });
     // nexttrack only when the server pre-minted a next item; the advance is

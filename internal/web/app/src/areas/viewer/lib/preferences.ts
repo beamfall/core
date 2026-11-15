@@ -44,6 +44,7 @@ export const PREF_KEYS = {
   subtitleOpacity: "subtitle.opacity",
   subtitleEdge: "subtitle.edge",
   subtitlePosition: "subtitle.position",
+  stillWatchingAfter: "stillwatching.after",
 } as const;
 
 export type PrefKey = (typeof PREF_KEYS)[keyof typeof PREF_KEYS];
@@ -62,6 +63,16 @@ export const DOWNSTREAM_AUDIO_MODES = ["stereo", "surround"] as const;
 export type DownstreamAudioMode = (typeof DOWNSTREAM_AUDIO_MODES)[number];
 export const DOWNSTREAM_AUDIO_DEFAULT: DownstreamAudioMode = "stereo";
 
+// "Are you still watching?" (CORE-1689, docs/still-watching/README.md): ask
+// after this many items in a row started by the Up Next countdown. The stored
+// value is "1".."10" or "off"; absent or malformed means the default. Every
+// client parses the same key the same way.
+export const STILL_WATCHING_OFF = "off";
+export const STILL_WATCHING_DEFAULT = 3;
+export const STILL_WATCHING_MAX = 10;
+/** The choices the settings page offers; any stored 1..10 is still honoured. */
+export const STILL_WATCHING_OPTIONS = ["off", "1", "2", "3", "4", "5"] as const;
+
 /** The resolved, typed self-service preference set for one Profile. */
 export interface ViewerPreferences {
   autoSkipIntro: boolean;
@@ -74,6 +85,8 @@ export interface ViewerPreferences {
   trimSilence: boolean;
   skipInterval: SkipInterval;
   downstreamAudio: DownstreamAudioMode;
+  /** Autoplayed items in a row before the prompt; 0 means never ask. */
+  stillWatchingAfter: number;
 }
 
 function bool(map: Map<string, string>, key: string): boolean {
@@ -85,6 +98,14 @@ function downstreamAudio(map: Map<string, string>): DownstreamAudioMode {
   return (DOWNSTREAM_AUDIO_MODES as readonly string[]).includes(raw ?? "")
     ? (raw as DownstreamAudioMode)
     : DOWNSTREAM_AUDIO_DEFAULT;
+}
+
+/** Parse the stillwatching.after value: 0 for "off", 1..10, else the default. */
+export function parseStillWatchingAfter(raw: string | undefined): number {
+  if (raw === STILL_WATCHING_OFF) return 0;
+  // Exactly "1".."10": no whitespace, sign or leading zero, as every client parses it.
+  if (raw === undefined || !/^(10|[1-9])$/.test(raw)) return STILL_WATCHING_DEFAULT;
+  return Number(raw);
 }
 
 function speed(map: Map<string, string>): PlaybackSpeed {
@@ -136,6 +157,7 @@ export function resolvePreferences(prefs: ClientPref[], showID = ""): ViewerPref
       ? interval(map, skipIntervalOverrideKey(showID), globalSkipInterval)
       : globalSkipInterval,
     downstreamAudio: downstreamAudio(map),
+    stillWatchingAfter: parseStillWatchingAfter(map.get(PREF_KEYS.stillWatchingAfter)),
   };
 }
 

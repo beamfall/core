@@ -4,8 +4,10 @@ import {
   encodeBool,
   PLAYBACK_SPEED_DEFAULT,
   PREF_KEYS,
+  parseStillWatchingAfter,
   resolvePreferences,
   SKIP_INTERVAL_DEFAULT,
+  STILL_WATCHING_DEFAULT,
   skipIntervalOverrideKey,
 } from "./preferences";
 
@@ -22,6 +24,7 @@ describe("resolvePreferences", () => {
       trimSilence: false,
       skipInterval: SKIP_INTERVAL_DEFAULT,
       downstreamAudio: DOWNSTREAM_AUDIO_DEFAULT,
+      stillWatchingAfter: STILL_WATCHING_DEFAULT,
     });
   });
 
@@ -99,6 +102,39 @@ describe("resolvePreferences", () => {
     expect(resolvePreferences([{ key: PREF_KEYS.skipInterval, value: "99" }]).skipInterval).toBe(
       SKIP_INTERVAL_DEFAULT,
     );
+  });
+});
+
+describe("parseStillWatchingAfter", () => {
+  it("reads 1..10, 'off' as never, and defaults anything else to 3", () => {
+    expect(STILL_WATCHING_DEFAULT).toBe(3);
+    expect(parseStillWatchingAfter("1")).toBe(1);
+    expect(parseStillWatchingAfter("10")).toBe(10);
+    expect(parseStillWatchingAfter("off")).toBe(0);
+    for (const raw of [
+      undefined,
+      "",
+      "0",
+      "11",
+      "-1",
+      "2.5",
+      "on",
+      "03x",
+      "01",
+      " 2",
+      "+3",
+      " off ",
+      "OFF",
+    ]) {
+      expect(parseStillWatchingAfter(raw)).toBe(STILL_WATCHING_DEFAULT);
+    }
+  });
+
+  it("resolves the stillwatching.after key", () => {
+    expect(
+      resolvePreferences([{ key: PREF_KEYS.stillWatchingAfter, value: "off" }]).stillWatchingAfter,
+    ).toBe(0);
+    expect(PREF_KEYS.stillWatchingAfter).toBe("stillwatching.after");
   });
 });
 
