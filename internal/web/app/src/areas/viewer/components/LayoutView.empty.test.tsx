@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -62,6 +62,32 @@ describe("LayoutView empty-as-activation", () => {
     expect(screen.getByText(/nothing to show in this library yet/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /start first scan/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /migrate/i })).toBeNull();
+  });
+
+  it("renders nothing for an empty detail Layout inside an Entity", async () => {
+    vi.mocked(fetchSectionItems).mockResolvedValue([]);
+    mockSession.mockReturnValue({ manifest: null, isManager: true });
+    const info: Section = {
+      id: "info",
+      kind: "info",
+      title: { en: "About" },
+      artworkSlot: "poster",
+      source: { kind: "entity-media" } as Section["source"],
+    };
+    for (const sections of [[], [info]]) {
+      const { container, unmount } = render(
+        <I18nProvider>
+          <MemoryRouter>
+            <LayoutView layout={{ id: "detail", sections }} libraryID="" entityID="e1" />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+      await act(async () => {});
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.queryByRole("button", { name: /start first scan/i })).toBeNull();
+      expect(container.textContent).toBe("");
+      unmount();
+    }
   });
 
   it("never offers the owner first-scan CTA when every Section failed to load", async () => {
