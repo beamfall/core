@@ -50,6 +50,10 @@ type scanWalkState struct {
 	containerArt        map[store.EntityID]*containerArtChoice
 	localReleases       map[localArtSlot]bool
 	localMatched        map[localArtSlot]bool
+	// walkMediaFiles counts the media-file candidates this run's walk saw,
+	// including ones a resumed checkpoint skips as already done. Zero means
+	// the root walked empty, so the post-walk missing pass must not run.
+	walkMediaFiles int
 	// startedAt is the wall-clock time this walk began, compared with lock
 	// marker file times, so it uses the real clock rather than now.
 	startedAt time.Time
@@ -114,17 +118,19 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 		return nil, nil
 	}
 	path = filepath.Clean(path)
-	if s.checkpoint.LastPath != "" && path <= s.checkpoint.LastPath {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
+	if !entry.Type().IsRegular() || titleFromPath(path) == "" || !mediaExtensions[ext] {
+		return nil, nil
+	}
+	s.walkMediaFiles++
+	if s.checkpoint.LastPath != "" && compareWalkOrder(s.req.Root, path, s.checkpoint.LastPath) <= 0 {
 		return nil, nil
 	}
 	info, err := entry.Info()
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || titleFromPath(path) == "" {
-		return nil, nil
-	}
-	if ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), "."); !mediaExtensions[ext] {
+	if !info.Mode().IsRegular() {
 		return nil, nil
 	}
 	if now().Sub(info.ModTime()) < stabilityWindow {
@@ -158,4 +164,26 @@ func (s *scanWalkState) skipOrPropagate(path string, err error) error {
 	}
 	slog.Warn("scan: skipping unreadable or invalid file", "path", path, "error", err.Error())
 	return nil
+}
+
+// compareWalkOrder orders two paths under root the way filepath.WalkDir visits
+// them: component by component relative to root, each directory's entries in
+// lexical order and a directory before everything inside it. A plain byte
+// compare of full paths disagrees whenever a sibling name sorts below the
+// separator: "a-c/x" < "a/b/y" bytewise ('-' < '/'), yet WalkDir finishes a/
+// before it reaches a-c/. Paths outside root fall back to the byte compare.
+func compareWalkOrder(root, a, b string) int {
+	relA, errA := filepath.Rel(root, a)
+	relB, errB := filepath.Rel(root, b)
+	if errA != nil || errB != nil || !filepath.IsLocal(relA) || !filepath.IsLocal(relB) {
+		return strings.Compare(a, b)
+	}
+	partsA := strings.Split(relA, string(filepath.Separator))
+	partsB := strings.Split(relB, string(filepath.Separator))
+	for i := 0; i < len(partsA) && i < len(partsB); i++ {
+		if c := strings.Compare(partsA[i], partsB[i]); c != 0 {
+			return c
+		}
+	}
+	return len(partsA) - len(partsB)
 }

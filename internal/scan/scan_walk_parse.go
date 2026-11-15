@@ -132,7 +132,7 @@ func (s *scanWalkState) flushPendingParts() error {
 			MediaID:            media.ID,
 			ContentFingerprint: file.ContentFingerprint,
 		})
-		if file.Path > s.result.LastPath {
+		if s.result.LastPath == "" || compareWalkOrder(s.req.Root, file.Path, s.result.LastPath) > 0 {
 			s.result.LastPath = file.Path
 		}
 		if !s.result.seenMedia[media.ID] {
