@@ -1436,6 +1436,49 @@ func (r Rendition) lowPowerArgs() []string {
 	return slices.Clone(lowPowerArgs)
 }
 
+// rateControlArgs returns the bitrate and encoder-tuning arguments for a
+// re-encoded video stream (CORE-2089). libx264 is CRF-driven and VideoKbps only
+// caps it. A hardware encoder has no CRF; given only -maxrate, FFmpeg's
+// defaults leave h264/hevc_vaapi in CQP (the cap is ignored), NVENC at its
+// built-in 2 Mb/s VBR target whatever the rung, and QSV runtime-dependent. So
+// every hardware path gets an explicit target equal to the rung, a VBR mode
+// capped by -maxrate, and a realtime-friendly preset where the encoder has one.
+// Segment keyframes come from -force_key_frames on every path; NVENC needs
+// -forced-idr so those frames are IDRs that start an HLS segment cleanly.
+func (r Rendition) rateControlArgs() []string {
+	var out []string
+	hw := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec) != ""
+	if hw {
+		switch r.hwAccel {
+		case HWAccelNVENC:
+			out = append(out, "-preset", "p4", "-forced-idr", "1")
+		case HWAccelQSV:
+			out = append(out, "-preset", "veryfast")
+		}
+	}
+	if r.VideoKbps <= 0 {
+		return out
+	}
+	maxrate := r.VideoKbps
+	if hw {
+		switch r.hwAccel {
+		case HWAccelNVENC:
+			out = append(out, "-rc", "vbr")
+		case HWAccelVAAPI:
+			out = append(out, "-rc_mode", "VBR")
+		case HWAccelQSV:
+			// h264/hevc_qsv pick CBR when -maxrate equals -b:v; one kb/s of
+			// headroom keeps them in capped VBR instead of padding to the rung.
+			maxrate++
+		}
+		out = append(out, "-b:v", fmt.Sprintf("%dk", r.VideoKbps))
+	}
+	return append(out,
+		"-maxrate", fmt.Sprintf("%dk", maxrate),
+		"-bufsize", fmt.Sprintf("%dk", 2*r.VideoKbps),
+	)
+}
+
 // ToneMapUnavailable reports source HDR shapes this FFmpeg recipe refuses
 // rather than producing a known-wrong SDR encode. It is a source-shape
 // predicate only; for the full spawn-time decision use ToneMapRefusal.
@@ -1489,13 +1532,7 @@ func (r Rendition) args() []string {
 	if filters := r.videoFilters(); len(filters) > 0 {
 		out = append(out, "-vf", strings.Join(filters, ","))
 	}
-	if r.VideoKbps > 0 {
-		out = append(out,
-			"-maxrate", fmt.Sprintf("%dk", r.VideoKbps),
-			"-bufsize", fmt.Sprintf("%dk", 2*r.VideoKbps),
-		)
-	}
-	return out
+	return append(out, r.rateControlArgs()...)
 }
 
 func (r Rendition) audioArgs() []string {
@@ -1932,13 +1969,7 @@ func (r Rendition) burnInArgs(burnIndex int) []string {
 	if len(graphParts) > 1 {
 		out[1] = strings.Join(graphParts, ";")
 	}
-	if r.VideoKbps > 0 {
-		out = append(out,
-			"-maxrate", fmt.Sprintf("%dk", r.VideoKbps),
-			"-bufsize", fmt.Sprintf("%dk", 2*r.VideoKbps),
-		)
-	}
-	return out
+	return append(out, r.rateControlArgs()...)
 }
 
 // hlsStderrTailBytes bounds the stderr an HLS process keeps for its exit

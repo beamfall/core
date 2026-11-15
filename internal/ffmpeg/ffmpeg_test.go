@@ -699,9 +699,42 @@ func TestRenditionHEVCHardwareVideoArgs(t *testing.T) {
 	}
 }
 
+// TestRenditionRateControlArgsPerEncoder pins the exact rate-control argv each
+// encoder path gets for a 1080p rung (CORE-2089): libx264 stays CRF with a cap,
+// and every hardware encoder gets an explicit target, capped VBR and its preset.
+func TestRenditionRateControlArgsPerEncoder(t *testing.T) {
+	tests := []struct {
+		name  string
+		accel HWAccel
+		codec string
+		want  []string
+	}{
+		{"software", "", "h264", []string{"-maxrate", "6000k", "-bufsize", "12000k"}},
+		{"nvenc", HWAccelNVENC, "h264", []string{"-preset", "p4", "-forced-idr", "1", "-rc", "vbr", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
+		{"nvenc hevc", HWAccelNVENC, "hevc", []string{"-preset", "p4", "-forced-idr", "1", "-rc", "vbr", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
+		{"vaapi", HWAccelVAAPI, "h264", []string{"-rc_mode", "VBR", "-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
+		{"qsv", HWAccelQSV, "h264", []string{"-preset", "veryfast", "-b:v", "6000k", "-maxrate", "6001k", "-bufsize", "12000k"}},
+		{"videotoolbox", HWAccelVideoToolbox, "h264", []string{"-b:v", "6000k", "-maxrate", "6000k", "-bufsize", "12000k"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := Rendition{VideoCodec: tc.codec, VideoKbps: 6000, hwAccel: tc.accel}
+			if got := r.rateControlArgs(); !equalArgs(got, tc.want) {
+				t.Fatalf("rateControlArgs = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	if got := (Rendition{hwAccel: HWAccelVAAPI}).rateControlArgs(); len(got) != 0 {
+		t.Fatalf("uncapped VAAPI rateControlArgs = %v, want none", got)
+	}
+	if got, want := (Rendition{hwAccel: HWAccelNVENC}).rateControlArgs(), []string{"-preset", "p4", "-forced-idr", "1"}; !equalArgs(got, want) {
+		t.Fatalf("uncapped NVENC rateControlArgs = %v, want %v", got, want)
+	}
+}
+
 func TestRenditionHardwareUploadFilters(t *testing.T) {
 	qsv := Rendition{Height: 720, hwAccel: HWAccelQSV}.args()
-	if want := []string{"-vf", "scale=-2:min(ih\\,720),format=nv12"}; !equalArgs(qsv, want) {
+	if want := []string{"-vf", "scale=-2:min(ih\\,720),format=nv12", "-preset", "veryfast"}; !equalArgs(qsv, want) {
 		t.Fatalf("QSV args = %v, want %v", qsv, want)
 	}
 	vaapi := Rendition{Height: 720, hwAccel: HWAccelVAAPI}
