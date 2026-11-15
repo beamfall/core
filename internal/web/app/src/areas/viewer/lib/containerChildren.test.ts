@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
-import { childThumbURL, groupChildrenByKind, nextUpChild } from "./containerChildren";
+import {
+  childThumbURL,
+  groupChildrenByKind,
+  nextUpChild,
+  nextUpChildContainer,
+} from "./containerChildren";
 
 const item = (id: string, extra: Partial<SourceItem> = {}): SourceItem => ({
   id,
@@ -54,5 +59,38 @@ describe("childThumbURL", () => {
     expect(childThumbURL(item("a", { artworkSlots: { backdrop: "/b" } }))).toBe("/b");
     expect(childThumbURL(item("a", { artwork: { poster: "/p" } }))).toBe("/p");
     expect(childThumbURL(item("a"))).toBe("");
+  });
+});
+
+describe("nextUpChildContainer", () => {
+  const box = (id: string, remainingCount?: number, extra: Partial<SourceItem> = {}) =>
+    item(id, {
+      kind: "entity",
+      engagement: remainingCount === undefined ? undefined : { remainingCount },
+      ...extra,
+    });
+
+  it("picks the first container with children left, skipping other archetypes", () => {
+    const next = nextUpChildContainer([
+      { archetype: "person", items: [box("p")] },
+      { archetype: "container", items: [box("s1", 0), box("s2", 3), box("s3", 5)] },
+    ]);
+    expect(next?.id).toBe("s2");
+  });
+
+  it("falls back to the first when every child container is finished", () => {
+    expect(
+      nextUpChildContainer([{ archetype: "container", items: [box("s1", 0), box("s2", 0)] }])?.id,
+    ).toBe("s1");
+  });
+
+  it("skips locked children and returns null without a container group", () => {
+    expect(
+      nextUpChildContainer([
+        { archetype: "container", items: [box("s1", 2, { locked: true }), box("s2", 2)] },
+      ])?.id,
+    ).toBe("s2");
+    expect(nextUpChildContainer([{ archetype: "person", items: [box("p")] }])).toBeNull();
+    expect(nextUpChildContainer(undefined)).toBeNull();
   });
 });

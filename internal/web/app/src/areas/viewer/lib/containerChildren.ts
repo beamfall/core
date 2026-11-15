@@ -50,3 +50,19 @@ export function childThumbURL(item: SourceItem): string {
     artworkSlotURL(item, "poster")
   );
 }
+
+/**
+ * The child container a container with no Media of its own plays next: the
+ * first related group whose archetype is a container, then its first item with
+ * children left to finish, else (all finished) its first. Null when there is
+ * no such group. Only read when the Entity has no direct Media, so a parent
+ * container among the related groups never stands in for a child.
+ */
+export function nextUpChildContainer(
+  groups: readonly { archetype?: string; items: readonly SourceItem[] }[] | undefined,
+): SourceItem | null {
+  const group = groups?.find((g) => g.archetype === "container" && g.items.length > 0);
+  if (!group) return null;
+  const items = group.items.filter((item) => !item.locked);
+  return items.find((item) => (item.engagement?.remainingCount ?? 1) > 0) ?? items[0] ?? null;
+}
