@@ -133,12 +133,13 @@ var clientErrorCodes = map[string]ErrorCode{
 	"only an adult profile can resolve an access request":              ErrorCodeForbidden,
 	"only an adult profile can respond to an extension request":        ErrorCodeForbidden,
 	"only an adult profile can revoke an access grant":                 ErrorCodeForbidden,
-	"profile PIN required":                              ErrorCodeForbidden,
-	"profile has no reveal path":                        ErrorCodeForbidden,
-	"profile is disabled":                               ErrorCodeForbidden,
-	"reveal PIN mismatch":                               ErrorCodeForbidden,
-	"reveal PIN must be set before exporting your data": ErrorCodeForbidden,
-	"session not controllable":                          ErrorCodeForbidden,
+	"profile PIN required":                                           ErrorCodeForbidden,
+	"profile has no reveal path":                                     ErrorCodeForbidden,
+	"profile is disabled":                                            ErrorCodeForbidden,
+	"reveal PIN mismatch":                                            ErrorCodeForbidden,
+	"reveal PIN must be set before exporting your data":              ErrorCodeForbidden,
+	"session not controllable":                                       ErrorCodeForbidden,
+	"retry the offline pack build from the device that requested it": ErrorCodeForbidden,
 
 	"device revoked": ErrorCodeUnauthenticated,
 
@@ -151,6 +152,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"library is not provisioned":                         ErrorCodeConflict,
 	"library must be unsealed before rewrap":             ErrorCodeConflict,
 	"no runnable job":                                    ErrorCodeConflict,
+	"offline pack is still building":                     ErrorCodeConflict,
 	"queue has items; pass confirmReplace to replace it": ErrorCodeConflict,
 	"session has no active playback":                     ErrorCodeConflict,
 

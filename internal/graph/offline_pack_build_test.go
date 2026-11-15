@@ -143,6 +143,61 @@ func TestOfflinePackFailedBuildRetriesIdempotently(t *testing.T) {
 	}
 }
 
+// TestOfflinePackRetryJoinsOperatorJobRetry pins that a pack retry and an
+// operator jobRetry of the same failed build share one active job, in either
+// order, so two builders never run under one pack ID.
+func TestOfflinePackRetryJoinsOperatorJobRetry(t *testing.T) {
+	for _, operatorFirst := range []bool{true, false} {
+		handler, st := newOfflinePackHandler(t)
+		file, err := st.PrimaryMediaFile(t.Context(), "media-alpha", store.LibraryFilter{AllLibraries: true, Revealed: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		original, err := os.ReadFile(file.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		created := queueOfflinePackBuildForTest(t, handler)
+		if err := os.Remove(file.Path); err != nil {
+			t.Fatal(err)
+		}
+		runOfflinePackBuildJob(t, handler)
+		failed, err := st.ListJobs(t.Context(), store.JobStatusFailed)
+		if err != nil || len(failed) != 1 {
+			t.Fatalf("failed jobs = %d / %v, want 1", len(failed), err)
+		}
+		if err := os.WriteFile(file.Path, original, 0o600); err != nil { // #nosec G703 -- test fixture path from the seeded catalog under t.TempDir()
+			t.Fatal(err)
+		}
+		operatorRetry := func() {
+			if _, err := st.RetryJob(t.Context(), failed[0].ID, time.Now().UTC()); err != nil {
+				t.Fatalf("RetryJob: %v", err)
+			}
+		}
+		if operatorFirst {
+			operatorRetry()
+		}
+		if _, errs := retryOfflinePackForTest(t, handler, created.ID); len(errs) != 0 {
+			t.Fatalf("operatorFirst=%v: retryOfflinePack errors = %#v", operatorFirst, errs)
+		}
+		if !operatorFirst {
+			operatorRetry()
+		}
+		queued, err := st.ListJobs(t.Context(), store.JobStatusQueued)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(queued) != 1 {
+			t.Fatalf("operatorFirst=%v: queued jobs = %d, want 1", operatorFirst, len(queued))
+		}
+		runOfflinePackBuildJob(t, handler)
+		packs := listOfflinePackBuilds(t, handler)
+		if len(packs) != 1 || packs[0].ID != created.ID || packs[0].State != "ready" {
+			t.Fatalf("operatorFirst=%v: offlinePacks = %+v, want %q ready", operatorFirst, packs, created.ID)
+		}
+	}
+}
+
 // TestOfflinePackRetryAndRevokeOfUnknownOrBuildingIDs pins the edges: an ID
 // with no build is not found, a building build cannot be revoked, and revoking
 // a failed build dismisses it from the list.

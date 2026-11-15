@@ -229,11 +229,9 @@ func (h *Handler) queueOfflinePackBuild(ctx context.Context, scope auth.Scope, b
 		return OfflinePackInfo{}, err
 	}
 	job, err := h.store.EnqueueJob(ctx, store.Job{
-		Kind:  offlinepack.BuildJobKind,
-		Class: store.JobClassBackground,
-		// The device is part of the key: a pack is sealed to one device key, so
-		// another device of the same Profile must not reuse this build.
-		DedupeKey: offlinePackBuildDedupeKey(scope.ProfileID, build.TargetKind, build.TargetRef) + "\x1f" + string(scope.DeviceID) + "\x1f" + build.Quality + "\x1f" + selectedVersionsKey(build.SelectedVersions),
+		Kind:      offlinepack.BuildJobKind,
+		Class:     store.JobClassBackground,
+		DedupeKey: offlinePackQueueDedupeKey(scope, build.TargetKind, build.TargetRef, build.Quality, build.SelectedVersions),
 		Payload:   payload,
 		CreatedAt: time.Now().UTC(),
 	})
@@ -295,10 +293,17 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 		return OfflinePackInfo{}, err
 	}
 	if payload != nil {
+		var job offlinepack.BuildJobPayload
+		if err := json.Unmarshal(payload, &job); err != nil {
+			return OfflinePackInfo{}, err
+		}
 		if _, err := h.store.EnqueueJob(ctx, store.Job{
-			Kind:      offlinepack.BuildJobKind,
-			Class:     store.JobClassBackground,
-			DedupeKey: "offline-pack-retry\x1f" + string(id),
+			Kind:  offlinepack.BuildJobKind,
+			Class: store.JobClassBackground,
+			// The original build's key: an operator jobRetry keeps that key, so
+			// a retry from either side joins the other's active job instead of
+			// running a second builder for the same pack ID.
+			DedupeKey: offlinePackQueueDedupeKey(scope, job.TargetKind, job.TargetRef, job.Quality, job.SelectedVersions),
 			Payload:   payload,
 			CreatedAt: time.Now().UTC(),
 		}); err != nil {
@@ -348,6 +353,13 @@ func selectedVersionsKey(selected map[store.MediaID]string) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ",")
+}
+
+// offlinePackQueueDedupeKey keys a background build. The device is part of
+// the key: a pack is sealed to one device key, so another device of the same
+// Profile must not reuse this build.
+func offlinePackQueueDedupeKey(scope auth.Scope, kind, ref, quality string, selected map[store.MediaID]string) string {
+	return offlinePackBuildDedupeKey(scope.ProfileID, kind, ref) + "\x1f" + string(scope.DeviceID) + "\x1f" + quality + "\x1f" + selectedVersionsKey(selected)
 }
 
 func offlinePackBuildDedupeKey(profileID store.ProfileID, kind, ref string) string {
