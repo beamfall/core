@@ -35,7 +35,7 @@
     {
       "id": "apple-core-goldens",
       "consumerProbe": "Tests/BeamfallKitTests/CoreGoldenDriftTests.swift",
-      "artifact": "Tests/BeamfallKitTests/Fixtures/core-goldens.sha256 (+ the three vendored goldens)",
+      "artifact": "Tests/BeamfallKitTests/Fixtures/core-goldens.sha256 (+ the four vendored goldens)",
       "assertedBy": "CoreGoldenDriftTests.testCoreGoldensMatchRecordedHashes",
       "refresh": "in the consumer repo: `BEAMFALL_SERVER_REPO=<core> script/sync_core_goldens.sh` (verify with `--check`)",
       "byteCopies": [
@@ -50,6 +50,10 @@
         {
           "producer": "internal/conformance/testdata/playback-info.golden.json",
           "consumer": "Tests/BeamfallKitTests/Fixtures/playback-info.golden.json"
+        },
+        {
+          "producer": "internal/conformance/testdata/token-scope.golden.json",
+          "consumer": "Tests/BeamfallKitTests/Fixtures/token-scope.golden.json"
         }
       ],
       "digestManifest": {
@@ -59,7 +63,8 @@
         "keys": [
           "graph-response.golden.json",
           "manifest.golden.json",
-          "playback-info.golden.json"
+          "playback-info.golden.json",
+          "token-scope.golden.json"
         ]
       }
     },
