@@ -7,7 +7,7 @@ import type { TrackMenuOption } from "../lib/transport";
 // A settings-sheet row that opens a Base UI listbox (audio / subtitle / quality).
 // The row shows the current choice; the listbox portals into a layer inside the
 // stage so it stays visible in stage fullscreen.
-// An empty track set renders one disabled "Unavailable on this route" row.
+// An empty track set renders one disabled "Not available for this title" row.
 export interface MenuRow<Id extends string = string> extends TrackMenuOption {
   id: Id;
 }

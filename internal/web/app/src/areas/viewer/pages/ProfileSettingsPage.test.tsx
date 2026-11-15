@@ -137,7 +137,7 @@ describe("ProfileSettingsPage", () => {
 
     await user.click(await screen.findByRole("switch", { name: "Remove long pauses" }));
 
-    expect(screen.getByText(/Smart speed is planned separately/i)).toBeInTheDocument();
+    expect(screen.getByText(/Skips long silent gaps/i)).toBeInTheDocument();
     expect(setClientPref).toHaveBeenCalledWith("playback.trim-silence", "on");
   });
 
@@ -187,7 +187,7 @@ describe("ProfileSettingsPage", () => {
 
     await screen.findByRole("switch", { name: "Skip intros" });
     expect(screen.queryByRole("switch", { name: "Personalized recommendations" })).toBeNull();
-    expect(screen.getByText(/managed by your operator/i)).toBeInTheDocument();
+    expect(screen.getByText(/set by the person who runs the server/i)).toBeInTheDocument();
   });
 
   it("surfaces a save error and reloads when a write fails", async () => {

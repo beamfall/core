@@ -1609,14 +1609,6 @@
   padding: 0 round(clamp(16px, 3vw, 40px), 1px) round(clamp(10px, 2vw, 22px), 1px);
 }
 
-.bf-route-summary {
-  min-height: 16px;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-  color: oklch(86% 0.02 250 / 86%);
-}
-
 .bf-player-meta {
   display: grid;
   gap: 2px;
@@ -1635,14 +1627,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: oklch(99% 0.003 250);
-}
-
-.bf-route-summary.is-direct {
-  color: var(--green-500);
-}
-
-.bf-route-summary.is-remote {
-  color: var(--cyan-500);
 }
 
 /* Slim scrubber: a 3px hairline that thickens on hover and keyboard focus. */

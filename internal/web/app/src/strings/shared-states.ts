@@ -28,15 +28,16 @@ export const sharedStateStrings = {
     managed: "Managed",
     tooManyAttempts: "Too many attempts. Try again in a few minutes.",
     pinIncorrect: "That PIN is not right.",
-    playbackUnavailable: "Playback is unavailable right now.",
+    playbackUnavailable: "This can't play right now. Try again in a moment.",
     playbackMediaFileMissing:
-      "The file for this item is missing on the server. It may have been moved, or its drive may be offline.",
-    playbackMediaNotAvailable: "This item is no longer available to this profile.",
-    playerTerminalUnavailable: "Playback is no longer available for this session.",
+      "The file for this item is missing on the server. It may have been moved, or its drive may be offline. Ask the person who runs the server to check it.",
+    playbackMediaNotAvailable:
+      "This item is no longer available to this profile. Go back to Browse to pick something else.",
+    playerTerminalUnavailable: "This can no longer play here. Go back to Browse.",
     transcodedPlaybackUnsupported:
-      "Transcoded playback is not supported in this browser (it has neither native HLS nor Media Source support).",
+      "This browser can't play this video. Try another browser or device.",
     playbackUnsupportedCodec:
-      "This browser can’t decode this media’s format. Try a different browser, or enable server transcoding for this Profile.",
+      "This browser can't play this file's format. Try another browser, or ask the person who runs the server to turn on converting for this profile.",
     playbackFailed: "Playback failed. Please try again.",
     couldNotSwitchProfile: "Could not switch the profile.",
     couldNotCreateLibrary: "Could not create the library.",
@@ -84,15 +85,16 @@ export const sharedStateStrings = {
     managed: "Géré",
     tooManyAttempts: "Trop de tentatives. Réessayez dans quelques minutes.",
     pinIncorrect: "Ce PIN n’est pas correct.",
-    playbackUnavailable: "La lecture est indisponible pour le moment.",
+    playbackUnavailable: "Impossible de lire ceci pour le moment. Réessayez dans un instant.",
     playbackMediaFileMissing:
-      "Le fichier de cet élément est introuvable sur le serveur. Il a peut-être été déplacé, ou son disque est hors ligne.",
-    playbackMediaNotAvailable: "Cet élément n’est plus disponible pour ce profil.",
-    playerTerminalUnavailable: "La lecture n’est plus disponible pour cette session.",
+      "Le fichier de cet élément est introuvable sur le serveur. Il a peut-être été déplacé, ou son disque est hors ligne. Demandez à la personne qui gère le serveur de vérifier.",
+    playbackMediaNotAvailable:
+      "Cet élément n’est plus disponible pour ce profil. Revenez en arrière pour choisir autre chose.",
+    playerTerminalUnavailable: "Ceci ne peut plus être lu ici. Revenez en arrière.",
     transcodedPlaybackUnsupported:
-      "La lecture transcodée n’est pas prise en charge dans ce navigateur (il ne prend en charge ni HLS natif ni Media Source).",
+      "Ce navigateur ne peut pas lire cette vidéo. Essayez un autre navigateur ou appareil.",
     playbackUnsupportedCodec:
-      "Ce navigateur ne peut pas décoder le format de ce média. Essayez un autre navigateur ou activez le transcodage serveur pour ce profil.",
+      "Ce navigateur ne peut pas lire le format de ce fichier. Essayez un autre navigateur, ou demandez à la personne qui gère le serveur d’activer la conversion pour ce profil.",
     playbackFailed: "La lecture a échoué. Veuillez réessayer.",
     couldNotSwitchProfile: "Impossible de changer de profil.",
     couldNotCreateLibrary: "Impossible de créer la bibliothèque.",
@@ -135,15 +137,18 @@ export const sharedStateStrings = {
     managed: "Verwaltet",
     tooManyAttempts: "Zu viele Versuche. Versuche es in einigen Minuten erneut.",
     pinIncorrect: "Diese PIN ist nicht richtig.",
-    playbackUnavailable: "Wiedergabe ist derzeit nicht verfügbar.",
+    playbackUnavailable:
+      "Das kann gerade nicht abgespielt werden. Versuchen Sie es gleich noch einmal.",
     playbackMediaFileMissing:
-      "Die Datei für dieses Element fehlt auf dem Server. Sie wurde vielleicht verschoben, oder ihr Laufwerk ist offline.",
-    playbackMediaNotAvailable: "Dieses Element ist für dieses Profil nicht mehr verfügbar.",
-    playerTerminalUnavailable: "Die Wiedergabe ist für diese Sitzung nicht mehr verfügbar.",
+      "Die Datei für dieses Element fehlt auf dem Server. Sie wurde vielleicht verschoben, oder ihr Laufwerk ist offline. Bitten Sie die Person, die den Server betreibt, das zu prüfen.",
+    playbackMediaNotAvailable:
+      "Dieses Element ist für dieses Profil nicht mehr verfügbar. Gehen Sie zurück zu Durchsuchen und wählen Sie etwas anderes.",
+    playerTerminalUnavailable:
+      "Das kann hier nicht mehr abgespielt werden. Gehen Sie zurück zu Durchsuchen.",
     transcodedPlaybackUnsupported:
-      "Transcodierte Wiedergabe wird in diesem Browser nicht unterstützt (er unterstützt weder natives HLS noch Media Source).",
+      "Dieser Browser kann dieses Video nicht abspielen. Versuchen Sie einen anderen Browser oder ein anderes Gerät.",
     playbackUnsupportedCodec:
-      "Dieser Browser kann das Format dieses Mediums nicht dekodieren. Versuchen Sie einen anderen Browser oder aktivieren Sie das Server-Transcoding für dieses Profil.",
+      "Dieser Browser kann das Format dieser Datei nicht abspielen. Versuchen Sie einen anderen Browser, oder bitten Sie die Person, die den Server betreibt, die Konvertierung für dieses Profil einzuschalten.",
     playbackFailed: "Wiedergabe fehlgeschlagen. Bitte erneut versuchen.",
     couldNotSwitchProfile: "Das Profil konnte nicht gewechselt werden.",
     couldNotCreateLibrary: "Die Bibliothek konnte nicht erstellt werden.",
@@ -185,15 +190,16 @@ export const sharedStateStrings = {
     managed: "Gestionado",
     tooManyAttempts: "Demasiados intentos. Inténtalo de nuevo en unos minutos.",
     pinIncorrect: "Ese PIN no es correcto.",
-    playbackUnavailable: "La reproducción no está disponible en este momento.",
+    playbackUnavailable: "No se puede reproducir ahora mismo. Inténtalo de nuevo en un momento.",
     playbackMediaFileMissing:
-      "Falta el archivo de este elemento en el servidor. Puede que se haya movido o que su disco esté desconectado.",
-    playbackMediaNotAvailable: "Este elemento ya no está disponible para este perfil.",
-    playerTerminalUnavailable: "La reproducción ya no está disponible para esta sesión.",
+      "Falta el archivo de este elemento en el servidor. Puede que se haya movido o que su disco esté desconectado. Pide a la persona que administra el servidor que lo revise.",
+    playbackMediaNotAvailable:
+      "Este elemento ya no está disponible para este perfil. Vuelve a Explorar para elegir otra cosa.",
+    playerTerminalUnavailable: "Esto ya no se puede reproducir aquí. Vuelve a Explorar.",
     transcodedPlaybackUnsupported:
-      "La reproducción transcodificada no es compatible con este navegador (no tiene HLS nativo ni compatibilidad con Media Source).",
+      "Este navegador no puede reproducir este video. Prueba con otro navegador o dispositivo.",
     playbackUnsupportedCodec:
-      "Este navegador no puede decodificar el formato de este medio. Prueba con otro navegador o habilita el transcodificado en el servidor para este perfil.",
+      "Este navegador no puede reproducir el formato de este archivo. Prueba con otro navegador, o pide a la persona que administra el servidor que active la conversión para este perfil.",
     playbackFailed: "Error de reproducción. Inténtalo de nuevo.",
     couldNotSwitchProfile: "No se pudo cambiar el perfil.",
     couldNotCreateLibrary: "No se pudo crear la biblioteca.",
@@ -236,15 +242,16 @@ export const sharedStateStrings = {
     managed: "Gerenciado",
     tooManyAttempts: "Muitas tentativas. Tente novamente em alguns minutos.",
     pinIncorrect: "Esse PIN não está correto.",
-    playbackUnavailable: "A reprodução não está disponível no momento.",
+    playbackUnavailable: "Não é possível reproduzir agora. Tente novamente em instantes.",
     playbackMediaFileMissing:
-      "O arquivo deste item não está no servidor. Ele pode ter sido movido, ou o disco pode estar offline.",
-    playbackMediaNotAvailable: "Este item não está mais disponível para este perfil.",
-    playerTerminalUnavailable: "A reprodução não está mais disponível para esta sessão.",
+      "O arquivo deste item não está no servidor. Ele pode ter sido movido, ou o disco pode estar offline. Peça à pessoa que administra o servidor para verificar.",
+    playbackMediaNotAvailable:
+      "Este item não está mais disponível para este perfil. Volte para Navegar e escolha outra coisa.",
+    playerTerminalUnavailable: "Isto não pode mais ser reproduzido aqui. Volte para Navegar.",
     transcodedPlaybackUnsupported:
-      "A reprodução transcodificada não é compatível com este navegador (ele não tem HLS nativo nem suporte a Media Source).",
+      "Este navegador não consegue reproduzir este vídeo. Tente outro navegador ou dispositivo.",
     playbackUnsupportedCodec:
-      "Este navegador não consegue decodificar o formato desta mídia. Tente outro navegador ou ative o transcodificação no servidor para este perfil.",
+      "Este navegador não consegue reproduzir o formato deste arquivo. Tente outro navegador, ou peça à pessoa que administra o servidor para ativar a conversão para este perfil.",
     playbackFailed: "Falha na reprodução. Tente novamente.",
     couldNotSwitchProfile: "Não foi possível trocar o perfil.",
     couldNotCreateLibrary: "Não foi possível criar a biblioteca.",

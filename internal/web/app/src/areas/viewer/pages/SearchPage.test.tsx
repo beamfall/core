@@ -66,7 +66,7 @@ describe("SearchPage mode exposure", () => {
   it("hides the mode toggle when only keyword is available", async () => {
     renderPage();
     await waitFor(() => expect(fetchSemanticCapability).toHaveBeenCalled());
-    expect(screen.queryByLabelText("Search mode")).toBeNull();
+    expect(screen.queryByLabelText("Search by")).toBeNull();
   });
 
   it("shows the semantic option when the plugin is active", async () => {
@@ -74,7 +74,7 @@ describe("SearchPage mode exposure", () => {
       { libraryID: "l1", pluginActive: true, state: "ready" },
     ]);
     renderPage();
-    expect(await screen.findByLabelText("Search mode")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Search by")).toBeInTheDocument();
   });
 
   it("searches as the user types and renders results with a count", async () => {
@@ -126,12 +126,12 @@ describe("SearchPage mode exposure", () => {
     });
     const user = userEvent.setup();
     renderPage();
-    await screen.findByLabelText("Search mode");
+    await screen.findByLabelText("Search by");
     // Select semantic, then search.
-    await user.click(screen.getByLabelText("Search mode"));
-    await user.click(await screen.findByRole("option", { name: "Semantic" }));
+    await user.click(screen.getByLabelText("Search by"));
+    await user.click(await screen.findByRole("option", { name: "Similar meaning" }));
     await user.type(screen.getByLabelText("Search"), "x");
-    expect(await screen.findByText(/showing keyword results/i)).toBeInTheDocument();
+    expect(await screen.findByText(/these results match your words/i)).toBeInTheDocument();
     expect(searchResult).toHaveBeenLastCalledWith("x", "semantic", expect.any(AbortSignal));
   });
 
@@ -154,16 +154,16 @@ describe("SearchPage mode exposure", () => {
     });
     const user = userEvent.setup();
     renderPage();
-    await screen.findByLabelText("Search mode");
+    await screen.findByLabelText("Search by");
     await user.type(screen.getByLabelText("Search"), "x");
     expect(await screen.findByText("Hit")).toBeInTheDocument();
 
-    await user.click(screen.getByLabelText("Search mode"));
-    await user.click(await screen.findByRole("option", { name: "Semantic" }));
+    await user.click(screen.getByLabelText("Search by"));
+    await user.click(await screen.findByRole("option", { name: "Similar meaning" }));
     await waitFor(() =>
       expect(searchResult).toHaveBeenLastCalledWith("x", "semantic", expect.any(AbortSignal)),
     );
-    expect(screen.queryByText(/showing keyword results/i)).toBeNull();
+    expect(screen.queryByText(/these results match your words/i)).toBeNull();
 
     answerSemantic({
       mode: "semantic",
@@ -171,7 +171,7 @@ describe("SearchPage mode exposure", () => {
       restrictedResultsPresent: false,
     });
     expect(await screen.findByText("Near")).toBeInTheDocument();
-    expect(screen.queryByText(/showing keyword results/i)).toBeNull();
+    expect(screen.queryByText(/these results match your words/i)).toBeNull();
   });
 
   it("cancels a slower previous search and ignores its results", async () => {

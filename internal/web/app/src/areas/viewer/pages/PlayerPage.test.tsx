@@ -191,7 +191,7 @@ describe("PlayerPage failure and recovery states", () => {
     expect(retry).not.toHaveBeenCalled();
   });
 
-  it("shows the server's reason under the message (CORE-1146)", () => {
+  it("keeps the server's reason behind a Details disclosure (CORE-1146, CORE-2011)", () => {
     renderPlayer(
       playerState({
         phase: "message",
@@ -199,7 +199,9 @@ describe("PlayerPage failure and recovery states", () => {
         detail: "playback info unavailable",
       }),
     );
-    expect(screen.getByText("Server said: playback info unavailable")).toBeInTheDocument();
+    const reason = screen.getByText("Message from the server: playback info unavailable");
+    expect(reason.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("Details").tagName).toBe("SUMMARY");
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
