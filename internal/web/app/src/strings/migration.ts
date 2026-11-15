@@ -108,7 +108,7 @@ export const migrationStrings = {
     migrationWizardLead:
       "Aus einem anderen System über einen installierten Importer importieren. Importe sind additiv und wiederholbar.",
     migrationWizardEmpty:
-      "Keine Importer verfügbar. Installieren Sie ein importfähiges Plugin zum Migrieren.",
+      "Keine Importer verfügbar. Installiere ein importfähiges Plugin, um zu migrieren.",
     migrationWizardRun: "Import starten",
     migrationWizardConflict: "Konflikt",
     migrationWizardInput: "Eingabe",
@@ -122,7 +122,7 @@ export const migrationStrings = {
     migrationWizardSourcePathPlaceholder: "/pfad/zu/export.xml",
     migrationWizardCategories: "Datenkategorien",
     migrationWizardCategoryDesc:
-      "Wählen Sie aus, welche Daten importiert werden sollen. Standardmäßig werden alle Kategorien importiert.",
+      "Wähle aus, welche Daten importiert werden sollen. Standardmäßig werden alle Kategorien importiert.",
     migrationWizardRunning: "Import läuft…",
     migrationWizardProgress: "Fortschritt",
     migrationWizardComplete: "Import abgeschlossen",

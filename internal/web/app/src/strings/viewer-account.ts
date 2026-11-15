@@ -97,7 +97,7 @@ export const viewerAccountStrings = {
   de: {
     searchClear: "Suche löschen",
     searchNoResultsFor: "Keine Ergebnisse für „{query}“",
-    searchNoResultsLead: "Prüfen Sie die Schreibweise oder verwenden Sie weniger Wörter.",
+    searchNoResultsLead: "Prüfe die Schreibweise oder verwende weniger Wörter.",
     searchResultCount:
       "{count, plural, one {# Ergebnis für „{query}“} other {# Ergebnisse für „{query}“}}",
     searchOpenFull: "Vollständige Suche öffnen",
@@ -109,19 +109,19 @@ export const viewerAccountStrings = {
     searchTypeImage: "Bilder",
     searchTypeOther: "Sonstiges",
     search: "Suchen",
-    searchPlaceholder: "Ihre Bibliotheken durchsuchen",
+    searchPlaceholder: "Deine Bibliotheken durchsuchen",
     searchResults: "Suchergebnisse",
     searchEmpty: "Keine Treffer.",
     searchUnavailable: "Die Suche ist derzeit nicht verfügbar.",
-    searchPrompt: "Durchsuchen Sie Ihre Bibliotheken",
+    searchPrompt: "Durchsuche deine Bibliotheken",
     searchPromptLead:
-      "Geben Sie einen Titel oder ein Stichwort ein, um alles zu durchsuchen, was für dieses Profil sichtbar ist.",
-    searchEmptyLead: "Versuchen Sie einen anderen Titel oder ein anderes Stichwort.",
+      "Gib einen Titel oder ein Stichwort ein, um alles zu durchsuchen, was für dieses Profil sichtbar ist.",
+    searchEmptyLead: "Versuch es mit einem anderen Titel oder Stichwort.",
     clear: "Löschen",
     notifications: "Benachrichtigungen",
     notificationsTitle: "Benachrichtigungen",
     notificationsLead:
-      "Nachrichten für dieses Profil. Neue erscheinen, wenn Sie zu diesem Tab zurückkehren.",
+      "Nachrichten für dieses Profil. Neue erscheinen, wenn du zu diesem Tab zurückkehrst.",
     notificationsInboxHeading: "Posteingang",
     notificationsUnreadCount: "{count} ungelesen",
     notificationsUnreadAria: "Benachrichtigungen, {count} ungelesen",
@@ -136,10 +136,10 @@ export const viewerAccountStrings = {
     myData: "Meine Daten",
     myDataTitle: "Meine Daten & Privatsphäre",
     myDataLead:
-      "Alles hier sind Ihre eigenen Daten, beschränkt auf dieses Profil. Nichts wird geteilt und nichts wird irgendwohin gesendet.",
+      "Alles hier sind deine eigenen Daten, beschränkt auf dieses Profil. Nichts wird geteilt und nichts wird irgendwohin gesendet.",
     myDataExportHeading: "Meine Aktivität exportieren",
     myDataExportLead:
-      "Laden Sie eine Kopie Ihres Wiedergabefortschritts, Ihrer Favoriten und Ihrer Warteschlange als JSON-Datei herunter.",
+      "Lade eine Kopie deines Wiedergabefortschritts, deiner Favoriten und deiner Warteschlange als JSON-Datei herunter.",
     myDataExport: "Meine Daten herunterladen",
   },
   es: {

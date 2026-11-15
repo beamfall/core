@@ -56,14 +56,15 @@ export const activityPluginStrings = {
     activityEventPluginCatalogRead: "{target} hat den Katalog gelesen",
     activityEventPluginIngestRequest: "{target} hat angefragt, Dateien hinzuzufügen",
     activityEventPluginFileMutationRequest: "{target} hat angefragt, Dateien zu ändern",
-    activityEventPluginProfileLink: "{target} hat ein Konto für {actor} verknüpft",
+    activityEventPluginProfileLink: "{target} hat ein Konto verknüpft (Auftraggeber: {actor})",
     activityEventPluginOutboundRequest: "{target} hat einen externen Dienst kontaktiert",
     activityEventPluginMetadataWrite: "{target} hat Metadaten bearbeitet",
     activityEventPluginCollectionWrite: "{target} hat eine Sammlung geändert",
     activityEventPluginArtworkWrite: "{target} hat Artwork festgelegt",
-    activityEventPluginWatchStateWrite: "{target} hat den Wiedergabestatus für {actor} geändert",
+    activityEventPluginWatchStateWrite:
+      "{target} hat den Wiedergabestatus geändert (Auftraggeber: {actor})",
     activityEventPluginPlaybackStateRead:
-      "{target} hat den Wiedergabefortschritt für {actor} gelesen",
+      "{target} hat den Wiedergabefortschritt gelesen (Auftraggeber: {actor})",
     activityEventPluginDeadLetterRetry:
       "{actor} hat eine fehlgeschlagene Zustellung für {target} erneut versucht",
     activityEventCapabilityToggle: "{actor} hat {target} ein- oder ausgeschaltet",
