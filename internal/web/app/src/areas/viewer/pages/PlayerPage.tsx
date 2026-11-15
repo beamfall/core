@@ -653,7 +653,10 @@ function FeaturePlayer({
 
   // A remote stop ends playback on a known page. Going back could land on an
   // earlier watch route (a remote play-media pushes one) and start that player.
+  // The host would dock a closing audio route and keep it playing, so the stop
+  // ends host playback first (CORE-1875).
   function stopRemotely() {
+    onStop?.();
     navigate(mediaId ? `/media/${encodeURIComponent(mediaId)}` : "/", { replace: true });
   }
 
