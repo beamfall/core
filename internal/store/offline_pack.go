@@ -166,6 +166,11 @@ func (s *Store) CreateOfflinePack(ctx context.Context, pack OfflinePack, items [
 		nonzeroGeneration(pack.RevBackup), nonnilBytes(pack.WrappedCEK)); err != nil {
 		return OfflinePack{}, err
 	}
+	// The sealed pack replaces its pending build row (CORE-1743) in the same
+	// transaction, so a list never shows both or neither.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM offline_pack_build WHERE pack_id = ?`, pack.ID); err != nil {
+		return OfflinePack{}, err
+	}
 	for i, item := range items {
 		order := item.SortOrder
 		if order == 0 {

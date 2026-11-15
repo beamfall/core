@@ -548,6 +548,12 @@ type OfflinePackService interface {
 	Packs(ctx context.Context, profileID store.ProfileID) ([]store.OfflinePack, error)
 	SyncProgress(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID, bytesReady, bytesTotal int64) (store.OfflinePack, error)
 	IssuePackGrant(ctx context.Context, scope auth.Scope, id store.OfflinePackID) (string, error)
+	// Background builds that have not sealed yet (CORE-1743).
+	TrackBuild(ctx context.Context, payload []byte) (store.OfflinePackBuild, error)
+	Builds(ctx context.Context, profileID store.ProfileID) ([]store.OfflinePackBuild, error)
+	RetryBuild(ctx context.Context, scope auth.Scope, id store.OfflinePackID) (store.OfflinePackBuild, []byte, error)
+	FailBuild(ctx context.Context, id store.OfflinePackID, reason string) error
+	DismissBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
 }
 
 // SetOfflinePacks wires the Offline Pack substrate (ADR-0098 area 6).
@@ -5222,6 +5228,7 @@ var mutationFields = map[string]bool{
 	"reordercollectionmedia": true,
 	"createofflinepack":      true, // MUSIC-6 (ADR-0098 area 6): build an Offline Pack from an opaque (kind, ref) target
 	"revokeofflinepack":      true, // MUSIC-6 (ADR-0098 area 6): revoke an owned Offline Pack (serving layer then denies bytes)
+	"retryofflinepack":       true, // CORE-1743: retry an owned failed background pack build by its pack ID
 	"deletemypacktokens":     true, // MUSIC-6 (ADR-0036 + ADR-0098 area 6): clear own outstanding pack-token ledger rows
 	"createsmartcollection":  true,
 	"updatesmartcollection":  true,

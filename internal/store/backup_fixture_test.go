@@ -657,6 +657,7 @@ func syntheticFixtureValue(table, column, typ string) any {
 		"segment_detection.end_seconds":   float64(1),
 		"segment_detection.confidence":    float64(0.5),
 		"subscription.retention_kind":     "keep-all",
+		"offline_pack_build.state":        "building",
 	}[table+"."+column]; ok {
 		return value
 	}

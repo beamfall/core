@@ -208,10 +208,10 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 				if media.Class == store.MediaClassVideo {
 					return nil, ErrOriginalItemTooLarge
 				}
-				return nil, errors.New("offline pack item exceeds size bound")
+				return nil, ErrItemTooLarge
 			}
 			if size > s.buildByteBudget-total {
-				return nil, errors.New("offline pack exceeds cumulative byte budget")
+				return nil, ErrBuildBudget
 			}
 			total += size
 			source.size = size
@@ -223,13 +223,13 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 
 // transcodeSources replaces each marked source with its transcode in packDir
 // and records the transcoded size.
-func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSource, packDir, quality string) error {
+func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSource, packDir, quality string, step func()) error {
 	for i := range sources {
 		if !sources[i].transcode {
 			continue
 		}
 		if s.transcode == nil {
-			return errors.New("offline pack transcoder is not configured")
+			return fmt.Errorf("%w: transcoder is not configured", ErrTranscode)
 		}
 		dst := filepath.Join(packDir, fmt.Sprintf("%04d.src.mp4", i))
 		if err := s.transcode(ctx, sources[i].path, dst, quality, sources[i].streams); err != nil {
@@ -240,7 +240,7 @@ func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSourc
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return fmt.Errorf("offline pack transcode interrupted: %w", ctxErr)
 			}
-			return fmt.Errorf("offline pack transcode: %w", err)
+			return fmt.Errorf("%w: %w", ErrTranscode, err)
 		}
 		sources[i].path = dst
 		sources[i].transcoded = true
@@ -250,9 +250,10 @@ func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSourc
 		}
 		size := info.Size()
 		if size <= 0 {
-			return errors.New("offline pack transcode produced no bytes")
+			return fmt.Errorf("%w produced no bytes", ErrTranscode)
 		}
 		sources[i].size = uint64(size)
+		step()
 	}
 	return nil
 }
@@ -264,10 +265,10 @@ func (s *Service) checkBuildBytes(sources []packBuildSource) (uint64, error) {
 	for i := range sources {
 		size := sources[i].size
 		if size > MaxItemSize {
-			return 0, errors.New("offline pack item exceeds size bound")
+			return 0, ErrItemTooLarge
 		}
 		if size > s.buildByteBudget-total {
-			return 0, errors.New("offline pack exceeds cumulative byte budget")
+			return 0, ErrBuildBudget
 		}
 		storageSize, err := uint64ToInt64(size)
 		if err != nil {

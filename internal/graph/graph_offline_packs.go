@@ -38,6 +38,15 @@ type OfflinePackInfo struct {
 	// pack returns empty token fields (the byte routes would deny them anyway).
 	ManifestToken string `json:"manifestToken,omitempty"`
 	KeyToken      string `json:"keyToken,omitempty"`
+	// Progress is the server-side build progress from 0 to 1 (CORE-1743). A
+	// background build reports it while building and keeps it when it fails;
+	// a sealed pack reports 1.
+	Progress float64 `json:"progress"`
+	// FailureReason is a closed code naming why a background build failed
+	// (state "failed"): empty_target, unknown_target_kind, unknown_quality,
+	// device_attestation_failed, source_unavailable, transcode_failed,
+	// byte_bound_exceeded or build_failed. Empty in every other state.
+	FailureReason string `json:"failureReason,omitempty"`
 }
 
 func offlinePackInfo(pack store.OfflinePack) OfflinePackInfo {
@@ -51,9 +60,29 @@ func offlinePackInfo(pack store.OfflinePack) OfflinePackInfo {
 		BytesReady: pack.BytesReady,
 		CreatedAt:  formatOptionalTime(pack.CreatedAt),
 		UpdatedAt:  formatOptionalTime(pack.UpdatedAt),
+		Progress:   1,
 	}
 	if pack.ExpiresAt != nil {
 		info.ExpiresAt = formatOptionalTime(*pack.ExpiresAt)
+	}
+	return info
+}
+
+// offlinePackBuildInfo is the wire view of a background build that has not
+// sealed yet: state building or failed, its progress and, when failed, its
+// reason code. Item and byte counts stay zero until the pack seals.
+func offlinePackBuildInfo(build store.OfflinePackBuild) OfflinePackInfo {
+	info := OfflinePackInfo{
+		ID:         string(build.PackID),
+		TargetKind: build.TargetKind,
+		TargetRef:  build.TargetRef,
+		State:      string(build.State),
+		CreatedAt:  formatOptionalTime(build.CreatedAt),
+		UpdatedAt:  formatOptionalTime(build.UpdatedAt),
+		Progress:   build.Progress,
+	}
+	if build.State == store.OfflinePackBuildFailed {
+		info.FailureReason = build.FailureReason
 	}
 	return info
 }
@@ -73,16 +102,32 @@ func (h *Handler) withPackTokens(ctx context.Context, scope auth.Scope, pack sto
 	return info
 }
 
-// offlinePacks lists the caller's Offline Packs.
+// offlinePacks lists the caller's Offline Packs: background builds that have
+// not sealed yet (building or failed) first, then sealed packs. Builds are
+// read before packs, so a build that seals between the two reads is listed
+// once, as its pack.
 func (h *Handler) offlinePacks_(ctx context.Context, scope auth.Scope) ([]OfflinePackInfo, error) {
 	if h.offlinePacks == nil {
 		return nil, clientError("offline packs unavailable")
+	}
+	builds, err := h.offlinePacks.Builds(ctx, scope.ProfileID)
+	if err != nil {
+		return nil, err
 	}
 	packs, err := h.offlinePacks.Packs(ctx, scope.ProfileID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]OfflinePackInfo, 0, len(packs))
+	sealed := make(map[store.OfflinePackID]bool, len(packs))
+	for _, p := range packs {
+		sealed[p.ID] = true
+	}
+	out := make([]OfflinePackInfo, 0, len(builds)+len(packs))
+	for _, b := range builds {
+		if !sealed[b.PackID] {
+			out = append(out, offlinePackBuildInfo(b))
+		}
+	}
 	for _, p := range packs {
 		out = append(out, h.withPackTokens(ctx, scope, p, offlinePackInfo(p)))
 	}
@@ -205,9 +250,69 @@ func (h *Handler) queueOfflinePackBuild(ctx context.Context, scope auth.Scope, b
 	if err := json.Unmarshal(job.Payload, &queued); err != nil || !offlinepack.ValidPackID(queued.PackID) {
 		return OfflinePackInfo{}, errors.New("offline pack build job carries no pack ID")
 	}
+	// Record the pending row now, so offlinePacks lists the build before its
+	// job starts (CORE-1743).
+	tracked, err := h.offlinePacks.TrackBuild(ctx, job.Payload)
+	if err != nil {
+		return OfflinePackInfo{}, err
+	}
+	if tracked.PackID != "" {
+		return offlinePackBuildInfo(tracked), nil
+	}
+	// The matched build sealed while its job was still finishing.
+	if pack, err := h.offlinePacks.Pack(ctx, queued.PackID, scope.ProfileID); err == nil {
+		return h.withPackTokens(ctx, scope, pack, offlinePackInfo(pack)), nil
+	}
 	return OfflinePackInfo{
 		ID: string(queued.PackID), TargetKind: build.TargetKind, TargetRef: build.TargetRef, State: offlinePackBuilding,
 	}, nil
+}
+
+// retryOfflinePack restarts the caller's failed background build under the
+// same pack ID (CORE-1743). It is idempotent by pack ID: a build that is
+// already building is returned as-is without queueing a second job, and a
+// pack that has since sealed is returned as the pack.
+func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req request) (OfflinePackInfo, error) {
+	if h.offlinePacks == nil {
+		return OfflinePackInfo{}, clientError("offline packs unavailable")
+	}
+	if h.store == nil {
+		return OfflinePackInfo{}, clientError("offline pack job runner unavailable")
+	}
+	id := store.OfflinePackID(trimmedVariable(req, "id"))
+	if id == "" {
+		return OfflinePackInfo{}, clientError("id is required")
+	}
+	build, payload, err := h.offlinePacks.RetryBuild(ctx, scope, id)
+	switch {
+	case errors.Is(err, offlinepack.ErrBuildSealed):
+		pack, err := h.offlinePacks.Pack(ctx, id, scope.ProfileID)
+		if err != nil {
+			return OfflinePackInfo{}, err
+		}
+		return h.withPackTokens(ctx, scope, pack, offlinePackInfo(pack)), nil
+	case errors.Is(err, store.ErrOfflinePackBuildNotFound):
+		return OfflinePackInfo{}, clientError("offline pack build not found")
+	case errors.Is(err, offlinepack.ErrBuildDevice):
+		return OfflinePackInfo{}, clientError("retry the offline pack build from the device that requested it")
+	case err != nil:
+		return OfflinePackInfo{}, err
+	}
+	if payload != nil {
+		if _, err := h.store.EnqueueJob(ctx, store.Job{
+			Kind:      offlinepack.BuildJobKind,
+			Class:     store.JobClassBackground,
+			DedupeKey: "offline-pack-retry\x1f" + string(id),
+			Payload:   payload,
+			CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			if failErr := h.offlinePacks.FailBuild(context.WithoutCancel(ctx), id, offlinepack.FailureBuild); failErr != nil {
+				return OfflinePackInfo{}, errors.Join(err, failErr)
+			}
+			return OfflinePackInfo{}, err
+		}
+	}
+	return offlinePackBuildInfo(build), nil
 }
 
 func decodeOfflinePackBytes(req request, name string) ([]byte, error) {
@@ -277,10 +382,39 @@ func (h *Handler) revokeOfflinePack(ctx context.Context, scope auth.Scope, req r
 		return OfflinePackInfo{}, clientError("id is required")
 	}
 	pack, err := h.offlinePacks.Revoke(ctx, id, scope.ProfileID)
+	if errors.Is(err, store.ErrOfflinePackNotFound) {
+		return h.dismissOfflinePackBuild(ctx, scope, id, err)
+	}
 	if err != nil {
 		return OfflinePackInfo{}, err
 	}
 	return offlinePackInfo(pack), nil
+}
+
+// dismissOfflinePackBuild revokes a pack that never sealed: a failed build is
+// removed from the list and reported revoked; a building one is refused. Any
+// other ID keeps the pack lookup's not-found error.
+func (h *Handler) dismissOfflinePackBuild(ctx context.Context, scope auth.Scope, id store.OfflinePackID, notFound error) (OfflinePackInfo, error) {
+	builds, err := h.offlinePacks.Builds(ctx, scope.ProfileID)
+	if err != nil {
+		return OfflinePackInfo{}, err
+	}
+	for _, build := range builds {
+		if build.PackID != id {
+			continue
+		}
+		if build.State != store.OfflinePackBuildFailed {
+			return OfflinePackInfo{}, clientError("offline pack is still building")
+		}
+		if err := h.offlinePacks.DismissBuild(ctx, id, scope.ProfileID); err != nil {
+			return OfflinePackInfo{}, err
+		}
+		info := offlinePackBuildInfo(build)
+		info.State = string(store.OfflinePackRevoked)
+		info.FailureReason = ""
+		return info, nil
+	}
+	return OfflinePackInfo{}, notFound
 }
 
 // syncOfflinePackProgress records client-side reconnect progress for one
