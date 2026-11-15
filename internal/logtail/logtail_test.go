@@ -40,6 +40,26 @@ func TestRingBoundsLongLines(t *testing.T) {
 	}
 }
 
+func TestRingDropsTheTokenTheLimitSplitsBeforeRedacting(t *testing.T) {
+	for name, line := range map[string]string{
+		"bare":   "level=INFO token=sk-" + strings.Repeat("x", MaxLineBytes),
+		"quoted": `level=INFO password="alpha beta ` + strings.Repeat("x", MaxLineBytes) + `"`,
+		"escape": `level=INFO msg="a \" b" password="alpha beta ` + strings.Repeat("x", MaxLineBytes) + `"`,
+	} {
+		r := NewRing(1)
+		_, _ = r.Write([]byte(line + "\n"))
+		got := r.Lines(0)[0]
+		if got != "level=INFO"+truncatedSuffix && !strings.HasPrefix(got, `level=INFO msg="a \" b"`) {
+			t.Errorf("%s: kept %q", name, got)
+		}
+		for _, leak := range []string{"alpha", "beta", "sk-", "xxx"} {
+			if strings.Contains(got, leak) {
+				t.Errorf("%s: truncated line leaks %q: %q", name, leak, got)
+			}
+		}
+	}
+}
+
 func TestHandlerTeesRedactedRecordsIntoRing(t *testing.T) {
 	var out bytes.Buffer
 	ring := NewRing(10)

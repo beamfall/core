@@ -79,15 +79,7 @@ func appendBounded(dst, src []byte) []byte {
 
 func (r *Ring) store(line string) {
 	if len(line) > MaxLineBytes {
-		// Drop the token the limit splits before redacting: a cut secret,
-		// address or path may no longer match its redaction pattern.
-		cut := line[:MaxLineBytes]
-		if i := strings.LastIndexAny(cut, " \t"); i >= 0 {
-			cut = cut[:i]
-		} else {
-			cut = ""
-		}
-		line = redact.LogLine(cut) + truncatedSuffix
+		line = redact.LogLine(truncateAtToken(line[:MaxLineBytes])) + truncatedSuffix
 	} else {
 		line = redact.LogLine(line)
 	}
@@ -97,6 +89,34 @@ func (r *Ring) store(line string) {
 		r.next = 0
 		r.full = true
 	}
+}
+
+// truncateAtToken drops the token a line limit splits, so redaction sees only
+// whole tokens: a cut secret, address or path may no longer match its pattern.
+// A quoted value the limit leaves open is dropped with its key, because
+// whitespace inside quotes is not a token boundary.
+func truncateAtToken(cut string) string {
+	quoteStart, inQuote, escaped := -1, false, false
+	for i := 0; i < len(cut); i++ {
+		switch c := cut[i]; {
+		case escaped:
+			escaped = false
+		case inQuote && c == '\\':
+			escaped = true
+		case c == '"':
+			inQuote = !inQuote
+			if inQuote {
+				quoteStart = i
+			}
+		}
+	}
+	if inQuote {
+		cut = cut[:quoteStart]
+	}
+	if i := strings.LastIndexAny(cut, " \t"); i >= 0 {
+		return cut[:i]
+	}
+	return ""
 }
 
 // Lines returns up to limit of the most recent lines, oldest first. A limit
