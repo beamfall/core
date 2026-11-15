@@ -94,7 +94,13 @@ describe("caption <track> elements", () => {
       "sidecar-main-0",
       "sidecar-main-1",
     ]);
-    expect(elements[2].getAttribute("src")).toBe("/c/0.vtt");
+    // No track loads until it is shown: each first request converts on the server.
+    expect(elements.map((element) => element.getAttribute("src"))).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
     expect(elements[2].srclang).toBe("de");
     // jsdom has no TextTrack on <track>: stub the mode each element carries.
     for (const element of elements) {
@@ -103,6 +109,12 @@ describe("caption <track> elements", () => {
     expect(shownCaptionElement(video)).toBeNull();
     showCaptionElement(video, "sidecar-main-0");
     expect(shownCaptionElement(video)).toBe("sidecar-main-0");
+    expect(elements.map((element) => element.getAttribute("src"))).toEqual([
+      null,
+      null,
+      "/c/0.vtt",
+      null,
+    ]);
     showCaptionElement(video, null);
     expect(shownCaptionElement(video)).toBeNull();
     removeCaptionElements(video);
