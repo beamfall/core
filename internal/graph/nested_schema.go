@@ -110,6 +110,7 @@ var resultTypes = map[string]any{
 	"webhookdeliveries":      WebhookDeliveryInfo{},
 	"webhooksettings":        WebhookSettingsInfo{},
 	"serverlogs":             ServerLogsInfo{},
+	"stagedrestore":          StagedRestoreInfo{},
 	"libraryhealthitems":     HealthItemInfo{},
 	"libraryduplicategroups": DuplicateGroupInfo{},
 	"metadataexport":         MetadataExportInfo{},
@@ -270,6 +271,9 @@ var resultTypes = map[string]any{
 	"purgelibrary":                       LibraryPurgeResult{},
 	"savewebhook":                        WebhookEndpointInfo{},
 	"deletewebhook":                      deleteWebhookResult{},
+	"inspectbackup":                      BackupContentsInfo{},
+	"stagerestore":                       StagedRestoreInfo{},
+	"cancelstagedrestore":                cancelStagedRestoreResult{},
 	"testwebhook":                        WebhookTestResultInfo{},
 	"setwebhooksettings":                 WebhookSettingsInfo{},
 	"scanlibrary":                        JobInfo{},
@@ -487,6 +491,10 @@ type restoreLibraryResult struct{}
 
 // deleteWebhookResult models the boolean-leaf webhook removal (CORE-1697).
 type deleteWebhookResult struct{}
+
+// cancelStagedRestoreResult models the boolean-leaf staged-restore removal
+// (CORE-1720).
+type cancelStagedRestoreResult struct{}
 
 // registerImportSourceResult models the scalar-result import-token mutation
 // (apple ADR-0003 §3, POWERTOOLS-6B): execute() assigns data["registerImportSource"]

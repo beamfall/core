@@ -175,6 +175,11 @@
     "tier": "admin"
   },
   {
+    "field": "cancelstagedrestore",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "channels",
     "effect": "read",
     "tier": "session"
@@ -467,6 +472,11 @@
   {
     "field": "importstatus",
     "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "inspectbackup",
+    "effect": "write",
     "tier": "admin"
   },
   {
@@ -1263,6 +1273,16 @@
     "field": "sourceitems",
     "effect": "read",
     "tier": "session"
+  },
+  {
+    "field": "stagedrestore",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "stagerestore",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "stationdelete",

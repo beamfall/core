@@ -728,6 +728,55 @@ export interface VerifyBackupInfo {
   error?: string;
 }
 
+/** One database snapshot in a Backup Set (graph.BackupContentsDatabaseInfo, CORE-1720). */
+export interface BackupContentsDatabaseInfo {
+  name: string;
+  database: string;
+  schemaVersion: number;
+  supportedSchemaVersion: number;
+  sizeBytes: number;
+}
+
+/**
+ * What an encrypted Backup Set holds and whether this server can restore it
+ * (graph.BackupContentsInfo, CORE-1720). refusal says why when compatible is
+ * false.
+ */
+export interface BackupContentsInfo {
+  createdAt: string;
+  createdBy: string;
+  reason: string;
+  restoreInstructionsVersion: number;
+  supportedRestoreInstructionsVersion: number;
+  databases: BackupContentsDatabaseInfo[];
+  operationalFiles: string[];
+  libraryRootCount: number;
+  compatible: boolean;
+  refusal: string;
+}
+
+/** The outcome of the last staged restore a start ran (graph.RestoreResultInfo). */
+export interface RestoreResultInfo {
+  appliedAt: string;
+  ok: boolean;
+  error: string;
+  rollbackCopy: string;
+  backupCreatedAt: string;
+}
+
+/**
+ * The staged restore, if any, and the last applied one (graph.StagedRestoreInfo,
+ * CORE-1720). The backup key is never part of it.
+ */
+export interface StagedRestoreInfo {
+  staged: boolean;
+  stagedAt: string;
+  envelope: string;
+  replaceIdentity: boolean;
+  contents: BackupContentsInfo | null;
+  lastResult: RestoreResultInfo | null;
+}
+
 /**
  * The full metadata export (graph.MetadataExportInfo, ADR-0005 §5). The lists
  * are left untyped here because the UI only summarizes counts and downloads the

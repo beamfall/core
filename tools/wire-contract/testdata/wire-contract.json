@@ -183,6 +183,11 @@
       "tier": "admin"
     },
     {
+      "field": "cancelstagedrestore",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "capabilitystates",
       "effect": "read",
       "tier": "admin"
@@ -480,6 +485,11 @@
     {
       "field": "importstatus",
       "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "inspectbackup",
+      "effect": "write",
       "tier": "admin"
     },
     {
@@ -1306,6 +1316,16 @@
       "field": "sourceitems",
       "effect": "read",
       "tier": "session"
+    },
+    {
+      "field": "stagedrestore",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "stagerestore",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "stationdelete",
@@ -3083,6 +3103,10 @@
           "kind": "scalar"
         }
       ]
+    },
+    {
+      "field": "cancelstagedrestore",
+      "kind": "object"
     },
     {
       "field": "capabilitystates",
@@ -8349,6 +8373,104 @@
           "name": "updatedAt",
           "kind": "scalar",
           "optional": true
+        }
+      ]
+    },
+    {
+      "field": "inspectbackup",
+      "kind": "object",
+      "children": [
+        {
+          "name": "compatible",
+          "kind": "scalar"
+        },
+        {
+          "name": "createdAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "createdBy",
+          "kind": "scalar"
+        },
+        {
+          "name": "databases",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "database",
+                "kind": "scalar"
+              },
+              {
+                "name": "name",
+                "kind": "scalar"
+              },
+              {
+                "name": "schemaVersion",
+                "kind": "scalar"
+              },
+              {
+                "name": "sizeBytes",
+                "kind": "scalar"
+              },
+              {
+                "name": "supportedSchemaVersion",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "database",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            },
+            {
+              "name": "schemaVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "sizeBytes",
+              "kind": "scalar"
+            },
+            {
+              "name": "supportedSchemaVersion",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "libraryRootCount",
+          "kind": "scalar"
+        },
+        {
+          "name": "operationalFiles",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "reason",
+          "kind": "scalar"
+        },
+        {
+          "name": "refusal",
+          "kind": "scalar"
+        },
+        {
+          "name": "restoreInstructionsVersion",
+          "kind": "scalar"
+        },
+        {
+          "name": "supportedRestoreInstructionsVersion",
+          "kind": "scalar"
         }
       ]
     },
@@ -25217,6 +25339,302 @@
       ]
     },
     {
+      "field": "stagedrestore",
+      "kind": "object",
+      "children": [
+        {
+          "name": "contents",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "compatible",
+              "kind": "scalar"
+            },
+            {
+              "name": "createdAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "createdBy",
+              "kind": "scalar"
+            },
+            {
+              "name": "databases",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "database",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "name",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "schemaVersion",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "sizeBytes",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "supportedSchemaVersion",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "database",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "name",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "schemaVersion",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "sizeBytes",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "supportedSchemaVersion",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "libraryRootCount",
+              "kind": "scalar"
+            },
+            {
+              "name": "operationalFiles",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "refusal",
+              "kind": "scalar"
+            },
+            {
+              "name": "restoreInstructionsVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "supportedRestoreInstructionsVersion",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "envelope",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastResult",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "appliedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "backupCreatedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "error",
+              "kind": "scalar"
+            },
+            {
+              "name": "ok",
+              "kind": "scalar"
+            },
+            {
+              "name": "rollbackCopy",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "replaceIdentity",
+          "kind": "scalar"
+        },
+        {
+          "name": "staged",
+          "kind": "scalar"
+        },
+        {
+          "name": "stagedAt",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "stagerestore",
+      "kind": "object",
+      "children": [
+        {
+          "name": "contents",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "compatible",
+              "kind": "scalar"
+            },
+            {
+              "name": "createdAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "createdBy",
+              "kind": "scalar"
+            },
+            {
+              "name": "databases",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "database",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "name",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "schemaVersion",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "sizeBytes",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "supportedSchemaVersion",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "database",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "name",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "schemaVersion",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "sizeBytes",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "supportedSchemaVersion",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "libraryRootCount",
+              "kind": "scalar"
+            },
+            {
+              "name": "operationalFiles",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "reason",
+              "kind": "scalar"
+            },
+            {
+              "name": "refusal",
+              "kind": "scalar"
+            },
+            {
+              "name": "restoreInstructionsVersion",
+              "kind": "scalar"
+            },
+            {
+              "name": "supportedRestoreInstructionsVersion",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "envelope",
+          "kind": "scalar"
+        },
+        {
+          "name": "lastResult",
+          "kind": "object",
+          "nullable": true,
+          "children": [
+            {
+              "name": "appliedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "backupCreatedAt",
+              "kind": "scalar"
+            },
+            {
+              "name": "error",
+              "kind": "scalar"
+            },
+            {
+              "name": "ok",
+              "kind": "scalar"
+            },
+            {
+              "name": "rollbackCopy",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "replaceIdentity",
+          "kind": "scalar"
+        },
+        {
+          "name": "staged",
+          "kind": "scalar"
+        },
+        {
+          "name": "stagedAt",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "stationdelete",
       "kind": "object",
       "children": [
@@ -30074,6 +30492,10 @@
         "effect": "write"
       },
       {
+        "field": "cancelstagedrestore",
+        "effect": "write"
+      },
+      {
         "field": "capabilitystates",
         "effect": "read"
       },
@@ -30144,6 +30566,10 @@
       {
         "field": "importstatus",
         "effect": "read"
+      },
+      {
+        "field": "inspectbackup",
+        "effect": "write"
       },
       {
         "field": "job",
@@ -30432,6 +30858,14 @@
       {
         "field": "skipdetectionenabled",
         "effect": "read"
+      },
+      {
+        "field": "stagedrestore",
+        "effect": "read"
+      },
+      {
+        "field": "stagerestore",
+        "effect": "write"
       },
       {
         "field": "terminatesession",

@@ -30,6 +30,7 @@ import { serverLogStrings } from "./server-logs";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
+import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { viewerAccountStrings } from "./viewer-account";
 import { watchPartyStrings } from "./watch-party";
@@ -74,6 +75,7 @@ export const en = {
   ...webhookStrings.en,
   ...providerKeyStrings.en,
   ...serverLogStrings.en,
+  ...stagedRestoreStrings.en,
 } as const;
 
 export const fr = {
@@ -114,6 +116,7 @@ export const fr = {
   ...webhookStrings.fr,
   ...providerKeyStrings.fr,
   ...serverLogStrings.fr,
+  ...stagedRestoreStrings.fr,
 } as const;
 
 export const de = {
@@ -154,6 +157,7 @@ export const de = {
   ...webhookStrings.de,
   ...providerKeyStrings.de,
   ...serverLogStrings.de,
+  ...stagedRestoreStrings.de,
 } as const;
 
 export const es = {
@@ -194,6 +198,7 @@ export const es = {
   ...webhookStrings.es,
   ...providerKeyStrings.es,
   ...serverLogStrings.es,
+  ...stagedRestoreStrings.es,
 } as const;
 
 export const pt = {
@@ -234,4 +239,5 @@ export const pt = {
   ...webhookStrings.pt,
   ...providerKeyStrings.pt,
   ...serverLogStrings.pt,
+  ...stagedRestoreStrings.pt,
 } as const;

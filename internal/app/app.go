@@ -58,6 +58,7 @@ import (
 	"github.com/beamfall/core/internal/push"
 	"github.com/beamfall/core/internal/qbittorrent"
 	"github.com/beamfall/core/internal/remoteaccess"
+	"github.com/beamfall/core/internal/restorestage"
 	"github.com/beamfall/core/internal/reveal"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	schedulepkg "github.com/beamfall/core/internal/schedule"
@@ -1301,6 +1302,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if ring := logtail.RingOf(logger); ring != nil {
 		graphHandler.SetServerLogs(ring)
 	}
+	// Console staged restore (CORE-1720): the next start applies it before
+	// the store opens (cmd/beamfall applyStagedRestore).
+	graphHandler.SetRestoreStager(restorestage.New(cfg.DataDir, st))
 	// Scrobble Integration Plugin: an opt-in consumer of the
 	// unwatched→watched transition (the graph playback path, NOT a new SSE event
 	// kind). Dormant unless the operator has activated an adapter in

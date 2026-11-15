@@ -78,6 +78,10 @@
       "effect": "write"
     },
     {
+      "field": "cancelstagedrestore",
+      "effect": "write"
+    },
+    {
       "field": "capabilitystates",
       "effect": "read"
     },
@@ -148,6 +152,10 @@
     {
       "field": "importstatus",
       "effect": "read"
+    },
+    {
+      "field": "inspectbackup",
+      "effect": "write"
     },
     {
       "field": "job",
@@ -436,6 +444,14 @@
     {
       "field": "skipdetectionenabled",
       "effect": "read"
+    },
+    {
+      "field": "stagedrestore",
+      "effect": "read"
+    },
+    {
+      "field": "stagerestore",
+      "effect": "write"
     },
     {
       "field": "terminatesession",
