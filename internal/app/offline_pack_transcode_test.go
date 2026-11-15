@@ -236,8 +236,8 @@ func TestOfflinePackPipeTranscoderUsesTheEndpointAndThePresets(t *testing.T) {
 	if len(runner.inputs) != 1 || runner.inputs[0] != (ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}) {
 		t.Fatalf("inputs = %+v, want the endpoint URL and token", runner.inputs)
 	}
-	if runner.profiles[0] != preset.WithSourceVideo("smpte2084", 0) {
-		t.Fatalf("profile = %+v, want pack-480p with the HDR source signal", runner.profiles[0])
+	if runner.profiles[0] != preset.WithSourceVideo("smpte2084", 0).WithSourceVideoStream(0) {
+		t.Fatalf("profile = %+v, want pack-480p with the HDR source signal on the mapped stream", runner.profiles[0])
 	}
 	for _, quality := range []string{offlinepack.QualityOriginal, "", "ultra"} {
 		if err := transcode(t.Context(), in, io.Discard, quality, nil); err == nil {
