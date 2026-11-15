@@ -1,5 +1,5 @@
 import { AlertCircle, LoaderCircle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
@@ -51,6 +51,8 @@ import {
 } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { KaraokeControls } from "../player/KaraokeControls";
+import { MiniPlayer } from "../player/MiniPlayer";
+import { type HostedPlayerProps, usePlayerHost, type WatchEntry } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { PrePlayStage } from "../player/PrePlayStage";
 import { SkippedOverlay } from "../player/SkippedOverlay";
@@ -81,10 +83,16 @@ import { WatchPartyPanel, WatchPartySyncIndicator } from "../player/WatchPartyPa
 // Before the title starts, the page asks the server for its pre-play queue
 // (CORE-1701) and plays those items first. A timestamped link (?t=) and an
 // advance from the queue or Up Next go straight to the title.
+//
+// Under the viewer's player host (CORE-1633) the route hands the title to the
+// host, which keeps the engine above the routes so an audio Media plays on in
+// the docked mini player once the listener leaves; without a host (a bare
+// route) the page mounts the player itself.
 export function PlayerPage() {
   const t = useT();
   const location = useLocation();
   const { mediaId } = useParams();
+  const host = usePlayerHost();
   const skip = new URLSearchParams(location.search).has("t");
   const carried =
     !!location.state && (location.state as { skipPrePlay?: unknown }).skipPrePlay === true;
@@ -108,7 +116,16 @@ export function PlayerPage() {
   }, [mediaId]);
 
   const current = decided && decided.mediaId === mediaId ? decided : null;
-  if (bypass || (current && current.items.length === 0)) return <FeaturePlayer />;
+  const feature = bypass || (current && current.items.length === 0);
+  // A pre-play queue (or the wait for one) ends whatever the host plays: the
+  // route is about to start another title.
+  useLayoutEffect(() => {
+    if (host && !feature) host.stop();
+  }, [host, feature]);
+  if (feature) {
+    const entry = { mediaId: mediaId || "", state: location.state, search: location.search };
+    return host ? <AttachToHost host={host} entry={entry} /> : <FeaturePlayer entry={entry} />;
+  }
   if (current) {
     return (
       <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
@@ -127,12 +144,40 @@ export function PlayerPage() {
   );
 }
 
-function FeaturePlayer() {
+// The watch route's side of the host: it shows this entry in the full player
+// while the route is open and lets the host decide what carries on after.
+function AttachToHost({
+  host,
+  entry,
+}: {
+  host: NonNullable<ReturnType<typeof usePlayerHost>>;
+  entry: WatchEntry;
+}) {
+  const { mediaId, state, search } = entry;
+  useLayoutEffect(() => {
+    host.attach({ mediaId, state, search });
+  }, [host, mediaId, state, search]);
+  useLayoutEffect(() => () => host.detach(), [host]);
+  return null;
+}
+
+/** The player the host mounts above the routes (CORE-1633). */
+export function HostedPlayer(props: HostedPlayerProps) {
+  return <FeaturePlayer {...props} />;
+}
+
+function FeaturePlayer({
+  entry,
+  docked = false,
+  onAudioChange,
+  onAdvanceDocked,
+  onStop,
+}: Partial<Omit<HostedPlayerProps, "entry">> & { entry: WatchEntry }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
   const location = useLocation();
-  const { mediaId } = useParams();
+  const mediaId = entry.mediaId;
   const { revealed, session } = useSession();
   const profileID = session?.profileID;
   const identity = useViewerIdentity();
@@ -145,10 +190,10 @@ function FeaturePlayer() {
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
-  const navState = readPlayerNavState(location.state, identity);
+  const navState = readPlayerNavState(entry.state, identity);
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
-  const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
+  const startAtSeconds = parseTimestampParam(new URLSearchParams(entry.search).get("t"));
   // Media classes playback-info has reported (this item's and its declared
   // next item's), by Media id (CORE-1490).
   const [learnedClasses, setLearnedClasses] = useState<Record<string, string>>({});
@@ -319,15 +364,18 @@ function FeaturePlayer() {
   // Advance to another Media's watch route, carrying its title and the queue
   // forward. A fresh route remounts the engine cleanly (resume, markers,
   // trickplay, progress beacon); `replace` keeps Back returning to the catalog
-  // rather than stepping through every track played.
+  // rather than stepping through every track played. Docked in the mini
+  // player, the advance stays on the page the listener is browsing.
   const playItem = useCallback(
     (id: string, title: string) => {
-      navigate(`/watch/${encodeURIComponent(id)}`, {
-        replace: true,
-        state: { title, skipPrePlay: true, ...(queue ? { queue, queueIdentity } : {}) },
-      });
+      const state = { title, skipPrePlay: true, ...(queue ? { queue, queueIdentity } : {}) };
+      if (docked && onAdvanceDocked) {
+        onAdvanceDocked({ mediaId: id, state, search: "" });
+        return;
+      }
+      navigate(`/watch/${encodeURIComponent(id)}`, { replace: true, state });
     },
-    [navigate, queue, queueIdentity],
+    [navigate, queue, queueIdentity, docked, onAdvanceDocked],
   );
 
   // Watch Party (CORE-1677): the party moves every member's player to the
@@ -452,6 +500,41 @@ function FeaturePlayer() {
       videoRef.current.pause();
     }
   }, [revealed, videoRef]);
+  // Docked, there is no block to show: a relock (revealed turning false)
+  // closes the mini player. Only the transition counts; ordinary browsing is
+  // unrevealed, and docking must not pause it.
+  const wasRevealed = useRef(revealed);
+  useEffect(() => {
+    if (wasRevealed.current && !revealed && docked) onStop?.();
+    wasRevealed.current = revealed;
+  }, [revealed, docked, onStop]);
+
+  // The host keeps an audio Media playing once the watch route closes
+  // (CORE-1633); anything else stops with the route. Docked, a terminal block,
+  // a failure the mini player cannot offer a way out of, or an advance into a
+  // Media that is not audio ends playback instead.
+  const audioMedia = state.info ? isAudio : entryClass === "audio";
+  useEffect(() => {
+    onAudioChange?.(audioMedia);
+  }, [audioMedia, onAudioChange]);
+  const infoIsCurrent = !!state.info && state.mediaID === mediaId;
+  const dockedEnds =
+    docked &&
+    (state.phase === "terminal" ||
+      state.phase === "message" ||
+      (infoIsCurrent && state.info?.mediaClass !== "audio"));
+  useEffect(() => {
+    if (dockedEnds) onStop?.();
+  }, [dockedEnds, onStop]);
+
+  // Back to the full player from the mini player: the watch route for the
+  // same entry, which re-attaches to the playing engine.
+  const openFullPlayer = useCallback(() => {
+    const carried = entry.state && typeof entry.state === "object" ? entry.state : {};
+    navigate(`/watch/${encodeURIComponent(mediaId)}${entry.search}`, {
+      state: { ...carried, skipPrePlay: true },
+    });
+  }, [navigate, mediaId, entry.state, entry.search]);
 
   // The media(id) read: title for a deep link, artwork and credits for the
   // audio surface, and the container Entity for the skip-interval row.
@@ -565,155 +648,177 @@ function FeaturePlayer() {
     navigate(mediaId ? `/media/${encodeURIComponent(mediaId)}` : "/", { replace: true });
   }
 
+  // Docked, the full player stays mounted but hidden, so its media element
+  // (and with it playback) outlives the watch route; only the mini player
+  // shows. The fragment keeps the element in the same place in both modes.
   return (
-    <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
-      <h1 className="sr-only">{navTitle || t("brand")}</h1>
-      <div className="bf-player-bar">
-        <Button variant="outline" size="sm" onClick={back}>
-          {t("back")}
-        </Button>
-        {showKaraokeControls && adjustmentRanges ? (
-          <KaraokeControls
-            ranges={adjustmentRanges}
-            adjustment={adjustment}
-            applied={karaokeApplied}
-            onChange={adjust}
-          />
-        ) : null}
-        {mediaId && (
-          <WatchPartyPanel
-            party={watchParty.party}
-            open={partyOpen}
-            onOpenChange={setPartyOpen}
-            onStart={watchParty.start}
-            onLeave={watchParty.leave}
-          />
-        )}
-      </div>
-
-      {state.phase === "message" || state.phase === "terminal" ? (
-        <div className="flex flex-1 items-center justify-center p-6">
-          <div className="flex max-w-md flex-col items-center gap-3 text-center">
-            <AlertCircle aria-hidden className="size-7 text-[var(--state-danger)]" />
-            {navTitle ? <h2 className="m-0 text-xl font-semibold text-white">{navTitle}</h2> : null}
-            <p className="m-0 text-[15px] leading-relaxed text-white/75" role="alert">
-              {state.message}
-            </p>
-            {state.detail ? (
-              <p className="m-0 text-sm text-white/55">
-                {t("playbackServerReason", { reason: state.detail })}
-              </p>
-            ) : null}
-            <div className="mt-3">
-              {state.terminal || state.action === "back" ? (
-                <Button onClick={back}>{t("backToBrowse")}</Button>
-              ) : (
-                <Button onClick={retry}>{t("tryAgain")}</Button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div
-          ref={stageRef}
-          className={"bf-player-stage" + (playing && chromeHidden ? " is-chrome-hidden" : "")}
-        >
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
-          {showAudioStage && (
-            <AudioStage
-              title={navTitle}
-              artworkURL={artworkURL}
-              credits={credits}
-              queuePosition={queuePosition}
+    <>
+      <main hidden={docked} className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+        <h1 className="sr-only">{navTitle || t("brand")}</h1>
+        <div className="bf-player-bar">
+          <Button variant="outline" size="sm" onClick={back}>
+            {t("back")}
+          </Button>
+          {showKaraokeControls && adjustmentRanges ? (
+            <KaraokeControls
+              ranges={adjustmentRanges}
+              adjustment={adjustment}
+              applied={karaokeApplied}
+              onChange={adjust}
+            />
+          ) : null}
+          {mediaId && (
+            <WatchPartyPanel
+              party={watchParty.party}
+              open={partyOpen}
+              onOpenChange={setPartyOpen}
+              onStart={watchParty.start}
+              onLeave={watchParty.leave}
             />
           )}
-          {showSpinner && (
-            <div
-              className="pointer-events-none absolute inset-0 flex items-center justify-center"
-              role="status"
-            >
-              <LoaderCircle aria-hidden className="size-10 animate-spin text-white/80" />
-              <span className="sr-only">{t("playerLoading")}</span>
+        </div>
+
+        {state.phase === "message" || state.phase === "terminal" ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="flex max-w-md flex-col items-center gap-3 text-center">
+              <AlertCircle aria-hidden className="size-7 text-[var(--state-danger)]" />
+              {navTitle ? (
+                <h2 className="m-0 text-xl font-semibold text-white">{navTitle}</h2>
+              ) : null}
+              <p className="m-0 text-[15px] leading-relaxed text-white/75" role="alert">
+                {state.message}
+              </p>
+              {state.detail ? (
+                <p className="m-0 text-sm text-white/55">
+                  {t("playbackServerReason", { reason: state.detail })}
+                </p>
+              ) : null}
+              <div className="mt-3">
+                {state.terminal || state.action === "back" ? (
+                  <Button onClick={back}>{t("backToBrowse")}</Button>
+                ) : (
+                  <Button onClick={retry}>{t("tryAgain")}</Button>
+                )}
+              </div>
             </div>
-          )}
-          {state.waitingForNetwork ? (
-            <p
-              className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
-              role="status"
-            >
-              {t("playerWaitingForNetwork")}
-            </p>
-          ) : (
-            state.recovering && (
+          </div>
+        ) : (
+          <div
+            ref={stageRef}
+            className={"bf-player-stage" + (playing && chromeHidden ? " is-chrome-hidden" : "")}
+          >
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
+            {showAudioStage && (
+              <AudioStage
+                title={navTitle}
+                artworkURL={artworkURL}
+                credits={credits}
+                queuePosition={queuePosition}
+              />
+            )}
+            {showSpinner && (
+              <div
+                className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                role="status"
+              >
+                <LoaderCircle aria-hidden className="size-10 animate-spin text-white/80" />
+                <span className="sr-only">{t("playerLoading")}</span>
+              </div>
+            )}
+            {state.waitingForNetwork ? (
               <p
                 className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
                 role="status"
               >
-                {t("reconnecting")}
+                {t("playerWaitingForNetwork")}
               </p>
-            )
-          )}
-          <WatchPartySyncIndicator
-            playback={watchParty.playback}
-            driftMS={watchParty.driftMS}
-            needsTap={watchParty.needsTap}
-            onResume={watchParty.resume}
-          />
-          {playing && (
-            <PlayerTransport
-              videoRef={videoRef}
-              hlsRef={hlsRef}
-              state={state}
-              mediaTitle={navTitle}
-              mediaID={mediaId || ""}
-              profileID={session?.profileID ?? ""}
-              metadataAttribution={media?.metadataAttribution}
-              stageRef={stageRef}
-              skipInterval={Number(resolvedPrefs.skipInterval)}
-              showSkipInterval={showSkipInterval}
-              showSkipIntervalLabel={showSkipIntervalLabel}
-              showSkipIntervalCollection={collectionTitle}
-              onShowSkipIntervalChange={setShowSkipInterval}
-              subtitleAppearance={subtitleAppearance}
-              onSubtitleAppearanceChange={setSubtitleAppearance}
-              onSubtitleAppearanceReset={resetSubtitleAppearance}
-              onShare={shareAt}
-              onPreviousInQueue={playPrevious}
-              onNextInQueue={playNext}
-              onStop={back}
-              onRemoteStop={stopRemotely}
-              onRemoteRestart={restart}
-              switchToHls={switchToHls}
-              onSelectVersion={selectVersion}
-              onMenuOpenChange={setMenuOpen}
+            ) : (
+              state.recovering && (
+                <p
+                  className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
+                  role="status"
+                >
+                  {t("reconnecting")}
+                </p>
+              )
+            )}
+            <WatchPartySyncIndicator
+              playback={watchParty.playback}
+              driftMS={watchParty.driftMS}
+              needsTap={watchParty.needsTap}
+              onResume={watchParty.resume}
             />
-          )}
-          {playing && upNext.visible && (
-            <UpNextCard
-              title={upNext.title}
-              countdown={upNext.countdown}
-              onPlay={upNext.advance}
-              onDismiss={upNext.dismiss}
-            />
-          )}
-          {playing && stillWatching.prompting && (
-            <StillWatchingPrompt
-              title={stillWatching.title}
-              onContinue={stillWatching.continueWatching}
-              onStop={stillWatching.stop}
-            />
-          )}
-          {playing && autoSkip.skipped && (
-            <SkippedOverlay
-              segment={autoSkip.skipped}
-              onUndo={autoSkip.undo}
-              onDismiss={autoSkip.dismiss}
-            />
-          )}
-        </div>
+            {playing && !docked && (
+              <PlayerTransport
+                videoRef={videoRef}
+                hlsRef={hlsRef}
+                state={state}
+                mediaTitle={navTitle}
+                mediaID={mediaId || ""}
+                profileID={session?.profileID ?? ""}
+                metadataAttribution={media?.metadataAttribution}
+                stageRef={stageRef}
+                skipInterval={Number(resolvedPrefs.skipInterval)}
+                showSkipInterval={showSkipInterval}
+                showSkipIntervalLabel={showSkipIntervalLabel}
+                showSkipIntervalCollection={collectionTitle}
+                onShowSkipIntervalChange={setShowSkipInterval}
+                subtitleAppearance={subtitleAppearance}
+                onSubtitleAppearanceChange={setSubtitleAppearance}
+                onSubtitleAppearanceReset={resetSubtitleAppearance}
+                onShare={shareAt}
+                onPreviousInQueue={playPrevious}
+                onNextInQueue={playNext}
+                onStop={back}
+                onRemoteStop={stopRemotely}
+                onRemoteRestart={restart}
+                switchToHls={switchToHls}
+                onSelectVersion={selectVersion}
+                onMenuOpenChange={setMenuOpen}
+              />
+            )}
+            {playing && upNext.visible && (
+              <UpNextCard
+                title={upNext.title}
+                countdown={upNext.countdown}
+                onPlay={upNext.advance}
+                onDismiss={upNext.dismiss}
+              />
+            )}
+            {playing && stillWatching.prompting && (
+              <StillWatchingPrompt
+                title={stillWatching.title}
+                onContinue={stillWatching.continueWatching}
+                onStop={stillWatching.stop}
+              />
+            )}
+            {playing && autoSkip.skipped && (
+              <SkippedOverlay
+                segment={autoSkip.skipped}
+                onUndo={autoSkip.undo}
+                onDismiss={autoSkip.dismiss}
+              />
+            )}
+          </div>
+        )}
+      </main>
+      {docked && (
+        <MiniPlayer
+          videoRef={videoRef}
+          title={navTitle}
+          artist={people}
+          artworkURL={artworkURL}
+          mediaID={mediaId}
+          songScale={songScale}
+          onNext={playNext}
+          onPrevious={playPrevious}
+          onOpen={openFullPlayer}
+          onStop={() => onStop?.()}
+          onRestart={restart}
+        />
       )}
-    </main>
+    </>
   );
 }
 

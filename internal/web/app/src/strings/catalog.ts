@@ -14,6 +14,7 @@ import { managedFileStrings } from "./managed-files";
 import { mediaDetailStrings } from "./media-detail";
 import { metadataManagementStrings } from "./metadata-management";
 import { migrationStrings } from "./migration";
+import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
@@ -70,6 +71,7 @@ export const en = {
   ...karaokeStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
+  ...miniPlayerStrings.en,
 } as const;
 
 export const fr = {
@@ -108,6 +110,7 @@ export const fr = {
   ...karaokeStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
+  ...miniPlayerStrings.fr,
 } as const;
 
 export const de = {
@@ -146,6 +149,7 @@ export const de = {
   ...karaokeStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
+  ...miniPlayerStrings.de,
 } as const;
 
 export const es = {
@@ -184,6 +188,7 @@ export const es = {
   ...karaokeStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
+  ...miniPlayerStrings.es,
 } as const;
 
 export const pt = {
@@ -222,4 +227,5 @@ export const pt = {
   ...karaokeStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
+  ...miniPlayerStrings.pt,
 } as const;
