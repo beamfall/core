@@ -135,6 +135,13 @@ type Store interface {
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
 	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
+	TrackOfflinePackBuild(ctx context.Context, build store.OfflinePackBuild, now time.Time) (store.OfflinePackBuild, error)
+	SetOfflinePackBuildProgress(ctx context.Context, id store.OfflinePackID, progress float64, now time.Time) error
+	FailOfflinePackBuild(ctx context.Context, id store.OfflinePackID, reason string, now time.Time) error
+	RestartOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID, payload []byte, now time.Time) (bool, error)
+	DeleteFailedOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error
+	OfflinePackBuildByID(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) (store.OfflinePackBuild, error)
+	OfflinePackBuildsForProfile(ctx context.Context, profileID store.ProfileID) ([]store.OfflinePackBuild, error)
 }
 
 type DeviceKeyAttestationVerifier interface {
@@ -270,13 +277,19 @@ func BuildJobPayloadFor(scope auth.Scope, req BuildPackRequest) ([]byte, error) 
 	})
 }
 
-// HandleBuildJob executes one ADR-0013 Offline Pack packaging job.
+// HandleBuildJob executes one ADR-0013 Offline Pack packaging job. A job
+// under a pre-assigned pack ID keeps its pending build row current: building
+// with progress while it runs, and failed with a reason code when it ends
+// without sealing (CORE-1743).
 func (s *Service) HandleBuildJob(ctx context.Context, payload []byte) (store.OfflinePack, error) {
 	var job BuildJobPayload
 	if err := json.Unmarshal(payload, &job); err != nil {
 		return store.OfflinePack{}, err
 	}
-	return s.BuildPack(ctx, auth.Scope{
+	if _, err := s.TrackBuild(ctx, payload); err != nil {
+		return store.OfflinePack{}, err
+	}
+	pack, err := s.BuildPack(ctx, auth.Scope{
 		SessionID:     job.SessionID,
 		DeviceID:      job.DeviceID,
 		DeviceRole:    job.DeviceRole,
@@ -296,6 +309,12 @@ func (s *Service) HandleBuildJob(ctx context.Context, payload []byte) (store.Off
 		Quality:           job.Quality,
 		PackID:            job.PackID,
 	})
+	if err != nil {
+		if failErr := s.recordBuildFailure(ctx, job.PackID, err); failErr != nil {
+			return store.OfflinePack{}, errors.Join(err, failErr)
+		}
+	}
+	return pack, err
 }
 
 // AdmitBuild runs the bound checks a build request can pass or fail before any
@@ -383,10 +402,10 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 		return store.OfflinePack{}, err
 	}
 	if len(req.DeviceAttestation) == 0 {
-		return store.OfflinePack{}, errors.New("offline pack device-key attestation is required")
+		return store.OfflinePack{}, fmt.Errorf("%w is required", ErrDeviceAttestation)
 	}
 	if err := s.attester.VerifyDeviceKey(ctx, string(scope.DeviceID), req.DevicePublicKey, req.DeviceAttestation); err != nil {
-		return store.OfflinePack{}, fmt.Errorf("offline pack device-key attestation: %w", err)
+		return store.OfflinePack{}, fmt.Errorf("%w: %w", ErrDeviceAttestation, err)
 	}
 	quality, err := NormalizeQuality(req.Quality)
 	if err != nil {
@@ -438,7 +457,8 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 			_ = os.RemoveAll(packDir)
 		}
 	}()
-	if err := s.transcodeSources(ctx, sources, packDir, quality); err != nil {
+	progress := s.newBuildProgress(ctx, req.PackID, sources)
+	if err := s.transcodeSources(ctx, sources, packDir, quality, progress.step); err != nil {
 		return store.OfflinePack{}, err
 	}
 	defer removeTranscodes(sources)
@@ -459,6 +479,7 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 		if err != nil {
 			return store.OfflinePack{}, err
 		}
+		progress.step()
 		digest := base64.RawURLEncoding.EncodeToString(sum[:])
 		sortOrder := len(items) + 1
 		items = append(items, store.OfflinePackItem{
@@ -539,6 +560,7 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 			return store.OfflinePack{}, closeReaderErr
 		}
 		items[i].CiphertextPath = path
+		progress.step()
 	}
 	scopeTemplate := GrantClaims{
 		V: 1, Iss: s.authority.Issuer(), Aud: OfflinePackAudience,

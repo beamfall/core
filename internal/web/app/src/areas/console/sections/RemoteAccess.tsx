@@ -1,5 +1,5 @@
 import { ChevronLeft, ExternalLink, RefreshCw, Wifi } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   DataTable,
@@ -32,6 +32,7 @@ import type {
   RemoteEndpointInfo,
 } from "@/lib/graphql";
 import {
+  fetchConsoleConfig,
   fetchImporters,
   fetchImportStatus,
   fetchLibraries,
@@ -39,6 +40,7 @@ import {
   fetchQBittorrentIngest,
   fetchRemoteAccess,
   runImport,
+  setConsoleConfig,
   setScraperCredential,
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -357,9 +359,80 @@ export function RemoteAccessStatus() {
             <Wifi className="console-nav-icon" aria-hidden />
             {t("remoteAccessLanDirectDetail")}
           </p>
+          <RemoteBitrateLimit />
         </div>
       )}
     </Section>
+  );
+}
+
+// RemoteBitrateLimit edits the server-wide remote streaming cap (CORE-1717).
+// The admin enters Mbit/s; the server stores bits per second, 0 = unlimited.
+// LAN playback never sees it, and a Profile's own cap applies when lower.
+export function RemoteBitrateLimit() {
+  const t = useT();
+  const { data, failed, setData } = useAsync(fetchConsoleConfig);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [applied, setApplied] = useState(false);
+
+  if (failed) {
+    return <p className="text-xs text-muted-foreground">{t("remoteBitrateLimitUnavailable")}</p>;
+  }
+  if (!data) return null;
+  const stored = data.remoteMaxBitrate ?? 0;
+  const value = draft ?? (stored > 0 ? String(stored / 1_000_000) : "");
+
+  async function apply(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setApplied(false);
+    try {
+      const mbps = Number(value) || 0;
+      const next = await setConsoleConfig({
+        remoteMaxBitrate: mbps > 0 ? Math.round(mbps * 1_000_000) : 0,
+      });
+      setData(next);
+      setDraft(null);
+      setApplied(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={apply}
+      className="flex flex-wrap items-end gap-2 border-t border-[var(--border-subtle)] pt-4"
+    >
+      <div className="space-y-1">
+        <Label htmlFor="remote-bitrate-limit" className="text-xs">
+          {t("remoteBitrateLimitLabel")}
+        </Label>
+        <Input
+          id="remote-bitrate-limit"
+          type="number"
+          min={0}
+          step="any"
+          className="w-24"
+          value={value}
+          placeholder="0"
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setApplied(false);
+          }}
+        />
+      </div>
+      <Button type="submit" size="sm" disabled={busy}>
+        {t("remoteBitrateLimitApply")}
+      </Button>
+      {applied && (
+        <span className="text-xs text-[var(--text-secondary)]" role="status">
+          {t("remoteBitrateLimitApplied")}
+        </span>
+      )}
+      <p className="w-full text-xs text-muted-foreground">{t("remoteBitrateLimitHint")}</p>
+    </form>
   );
 }
 

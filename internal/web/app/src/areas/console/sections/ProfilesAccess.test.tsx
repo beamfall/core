@@ -13,6 +13,7 @@ import {
   setCertificationCeiling,
   setExtensionPreauthorization,
   setProfileLibraries,
+  setProfileRemoteBitrateCap,
   setProfileStreamCap,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
@@ -28,6 +29,7 @@ vi.mock("@/lib/graphql", () => ({
   setAccessSchedule: vi.fn(),
   setCertificationCeiling: vi.fn(),
   setProfileStreamCap: vi.fn(),
+  setProfileRemoteBitrateCap: vi.fn(),
   setExtensionPreauthorization: vi.fn(),
   setProfileLibraries: vi.fn(),
 }));
@@ -92,6 +94,10 @@ beforeEach(() => {
     id: "p2",
     maxConcurrentStreams: 2,
   });
+  vi.mocked(setProfileRemoteBitrateCap).mockResolvedValue({
+    id: "p2",
+    remoteMaxBitrate: 8_000_000,
+  });
   vi.mocked(setExtensionPreauthorization).mockResolvedValue({
     profileID: "p2",
     enabled: true,
@@ -153,20 +159,44 @@ describe("ProfilesAccess managed-Profile policy", () => {
     expect(setCertificationCeiling).toHaveBeenCalledWith("p2", "filmtv", "PG");
   });
 
+  // Both caps carry an "Apply" button, so each test scopes to its own form.
+  function formOf(input: HTMLElement) {
+    const form = input.closest("form");
+    if (!form) throw new Error("input is not inside a form");
+    return within(form);
+  }
+
   it("applies a stream cap through setProfileStreamCap", async () => {
     const user = await pickProfile("Kid");
     const capInput = await screen.findByLabelText("Concurrent streams");
     await user.type(capInput, "2");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
     expect(setProfileStreamCap).toHaveBeenCalledWith("p2", 2);
-    expect(await screen.findByText("Applied.")).toBeInTheDocument();
+    expect(await formOf(capInput).findByText("Applied.")).toBeInTheDocument();
   });
 
   it("clears the cap by sending 0 when the input is empty", async () => {
     const user = await pickProfile("Kid");
-    await screen.findByLabelText("Concurrent streams");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    const capInput = await screen.findByLabelText("Concurrent streams");
+    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
     expect(setProfileStreamCap).toHaveBeenCalledWith("p2", 0);
+  });
+
+  it("applies a remote bitrate cap in Mbit/s as bits per second (CORE-1717)", async () => {
+    const user = await pickProfile("Kid");
+    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
+    await user.type(capInput, "8");
+    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
+    expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p2", 8_000_000);
+    expect(await formOf(capInput).findByText("Applied.")).toBeInTheDocument();
+    expect(setProfileStreamCap).not.toHaveBeenCalled();
+  });
+
+  it("clears the remote bitrate cap by sending 0 when the input is empty", async () => {
+    const user = await pickProfile("Kid");
+    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
+    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
+    expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p2", 0);
   });
 
   it("shows the extension pre-auth toggle for a managed Profile and wires it", async () => {

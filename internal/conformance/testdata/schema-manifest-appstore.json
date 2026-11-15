@@ -950,6 +950,11 @@
     "tier": "admin"
   },
   {
+    "field": "retryofflinepack",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "reveal",
     "effect": "write",
     "tier": "session"
