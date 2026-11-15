@@ -1959,7 +1959,7 @@ func (h *Handler) switchProfile(ctx context.Context, scope auth.Scope, req reque
 		return SessionInfo{}, err
 	}
 	adult := profile.Kind == store.ProfileAdult
-	attemptKey := profileID + ":" + string(scope.DeviceID) + ":" + string(scope.SessionID)
+	attemptKey := pinAttemptKey(targetID, scope.DeviceID)
 	now := time.Now().UTC()
 	if adult {
 		until, err := h.store.AuthBackoffUntil(ctx, profileEntryAttemptAction, attemptKey, now, profileEntryBackoff)
@@ -3063,6 +3063,15 @@ const (
 	profileEntryAttemptAction = "profile-entry"
 )
 
+// pinAttemptKey is the throttle lane for PIN guesses against one Profile from
+// one Device. It must not include the session: a Device can renew into a new
+// session with only its device secret, which would hand it a fresh lane
+// (CORE-2108). Keeping the Device in the key stops one Device from locking a
+// Profile's PIN for the rest of the household.
+func pinAttemptKey(profile store.ProfileID, device store.DeviceID) string {
+	return string(profile) + ":" + string(device)
+}
+
 // revealBackoff is the Reveal-PIN lane's exponential-backoff curve (ADR-0012
 // §3): the lockout grows with consecutive failed reveal attempts and resets on
 // a correct PIN. Reveal is the family-safety boundary — a flat counter falls to
@@ -3427,7 +3436,7 @@ func (h *Handler) logActivity(ctx context.Context, scope auth.Scope, action, tar
 }
 
 // revealOps executes the Reveal-contract session mutations:
-// reveal(pin) is PIN-gated and throttled per session, relock always works,
+// reveal(pin) is PIN-gated and throttled per Profile and Device, relock always works,
 // setRevealPin is manager-only. Managed profiles have no reveal path.
 func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
 	data := map[string]any{}
@@ -3443,7 +3452,8 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 	}
 	if fields["reveal"] {
 		now := time.Now().UTC()
-		until, err := h.store.AuthBackoffUntil(ctx, revealAttemptAction, string(scope.SessionID), now, revealBackoff)
+		attemptKey := pinAttemptKey(scope.ProfileID, scope.DeviceID)
+		until, err := h.store.AuthBackoffUntil(ctx, revealAttemptAction, attemptKey, now, revealBackoff)
 		if err != nil {
 			return nil, err
 		}
@@ -3455,7 +3465,7 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 		if recordErr := h.store.RecordAuthAttempt(ctx, store.AuthAttempt{
 			OccurredAt: now,
 			Action:     revealAttemptAction,
-			Key:        string(scope.SessionID),
+			Key:        attemptKey,
 			Success:    verifyErr == nil,
 		}); recordErr != nil {
 			return nil, recordErr
