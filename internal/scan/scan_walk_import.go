@@ -18,6 +18,8 @@ func (s *scanWalkState) consumeTask(task *workerTask) error {
 		return err
 	} else if decision != nil && decision.refused {
 		return s.queueContextRefusal(path, decision.refusal)
+	} else if decision.skipsStillImage(path) {
+		return s.ctx.Err()
 	}
 	if task.fastPath {
 		return s.consumeFastTask(task)

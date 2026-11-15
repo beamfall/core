@@ -19,6 +19,10 @@ type contextualDirectoryPreflight struct {
 	accepted map[string]bool
 	refused  bool
 	refusal  ParsedMedia
+	// audioParts reports that the plugin accepted an audio-only sibling as a
+	// numbered part, so the folder is a parts folder and a still image in it
+	// is never an item (CORE-1833).
+	audioParts bool
 }
 
 func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPreflight, error) {
@@ -68,6 +72,9 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 		legacy, legacyOK := s.parser.Parse(candidate, parseProbe)
 		parsed, accepted := contextual.ParseWithContext(candidate, parseProbe, s.directoryContext(candidate))
 		decision.parsed[candidate], decision.accepted[candidate] = parsed, accepted
+		if !isImage && s.isParsedPart(parsed, accepted) && parseProbe.HasAudio && !parseProbe.HasVideo {
+			decision.audioParts = true
+		}
 		switch {
 		case accepted && !isImage:
 			otherAccepted = true
@@ -91,6 +98,14 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 	}
 	s.directoryPreflights[dir] = decision
 	return decision, nil
+}
+
+// skipsStillImage reports whether path is a still image the plugin did not
+// accept, inside a folder of audio parts. Whatever its name, such an image is
+// a scan, a booklet page or other artwork beside the parts, never a playable
+// item, so the walk does not catalogue it (CORE-1833).
+func (d *contextualDirectoryPreflight) skipsStillImage(path string) bool {
+	return d != nil && d.audioParts && imageClassForPath(path) && !d.accepted[path]
 }
 
 func (s *scanWalkState) parseFilename(path string, probe ParseProbe) (ParsedMedia, bool, bool) {

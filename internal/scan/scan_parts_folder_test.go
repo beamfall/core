@@ -73,9 +73,10 @@ func partsLibrary(t *testing.T, st *store.Store) store.LibraryID {
 	return library.ID
 }
 
-// TestScanCataloguesTaggedPartsFolderBesideImages (CORE-1710): three tagged
-// audio parts beside cover.jpg and a stray image are one item whose files play
-// in part order. Neither image may refuse the folder.
+// TestScanCataloguesTaggedPartsFolderBesideImages (CORE-1710, CORE-1833):
+// three tagged audio parts beside cover.jpg and an out-of-vocabulary image are
+// one item whose files play in part order. Neither image may refuse the folder,
+// and neither is catalogued, on the first scan or a rescan.
 func TestScanCataloguesTaggedPartsFolderBesideImages(t *testing.T) {
 	// feature:scan-pipeline
 	for _, workers := range []int{1, 4} {
@@ -91,8 +92,10 @@ func TestScanCataloguesTaggedPartsFolderBesideImages(t *testing.T) {
 		filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{libraryID}}
 		parsers := map[string]FilenameParser{"parts": taggedPartsParser{}}
 
-		if _, err := ScanWithWorkerGovernor(context.Background(), st, prober, nil, parsers, nil, nil, nil, nil, fixedGovernor(workers), Request{LibraryID: libraryID, Root: root}); err != nil {
-			t.Fatalf("workers=%d scan: %v", workers, err)
+		for pass := 1; pass <= 2; pass++ {
+			if _, err := ScanWithWorkerGovernor(context.Background(), st, prober, nil, parsers, nil, nil, nil, nil, fixedGovernor(workers), Request{LibraryID: libraryID, Root: root}); err != nil {
+				t.Fatalf("workers=%d pass=%d scan: %v", workers, pass, err)
+			}
 		}
 		records, err := st.UnmatchedRecords(context.Background(), store.LibraryFilter{AllowedIDs: filter.AllowedIDs, Revealed: true})
 		if err != nil || len(records) != 0 {
@@ -125,12 +128,12 @@ func TestScanCataloguesTaggedPartsFolderBesideImages(t *testing.T) {
 			}
 		}
 		for _, file := range files {
-			if file.Path == stray && file.MediaID == mediaID {
-				t.Fatalf("workers=%d stray image joined the parts item", workers)
+			if file.Path == stray || filepath.Base(file.Path) == "cover.jpg" {
+				t.Fatalf("workers=%d image catalogued: %#v", workers, file)
 			}
-			if filepath.Base(file.Path) == "cover.jpg" {
-				t.Fatalf("workers=%d cover.jpg catalogued: %#v", workers, file)
-			}
+		}
+		if len(files) != len(parts) {
+			t.Fatalf("workers=%d files = %#v; want only the %d parts", workers, files, len(parts))
 		}
 	}
 }
