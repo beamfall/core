@@ -11,10 +11,26 @@ import {
   TableSkeletonRows,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchBackupHistory, fetchMetadataExport, runBackup, verifyBackup } from "@/lib/graphql";
-import type { BackupHistoryEntry, MetadataExportInfo } from "@/lib/graphql/types";
+import { ApiError } from "@/lib/api";
+import {
+  cancelStagedRestore,
+  fetchBackupHistory,
+  fetchMetadataExport,
+  fetchStagedRestore,
+  inspectBackup,
+  runBackup,
+  stageRestore,
+  verifyBackup,
+} from "@/lib/graphql";
+import type {
+  BackupContentsInfo,
+  BackupHistoryEntry,
+  MetadataExportInfo,
+  StagedRestoreInfo,
+} from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "../lib/schedule";
 
@@ -27,10 +43,11 @@ import { formatDateTime } from "../lib/schedule";
 //      a per-row Verify re-runs verifyBackup and shows a pass/fail result.
 //   3. Manifest detail: the selected set's manifest path and the binding
 //      "Recovery Keys are NOT in this backup" exclusion callout.
-//   4. Restore assistant: the destructive whole-DB restore is OPERATOR-RUN
-//      OFFLINE (server stopped) — the assistant guides toward the offline
-//      restore CLI with the schema-version guard, never a live-DB overwrite from
-//      the Console.
+//   4. Restore: the admin opens the selected encrypted set with its backup key,
+//      sees what it holds and its versions, and stages it (CORE-1720). The next
+//      server start applies it before the store opens and keeps the previous
+//      data as a rollback copy, so the Console never overwrites a live database.
+//      The offline restore CLI stays documented below it.
 //   5. Metadata export: the reveal-filtered portability export, downloaded JSON.
 // The backend backupHistory/verifyBackup return only a sanitized pass/fail and a
 // reason — never a checksum of an arbitrary server file — so this page derives
@@ -38,6 +55,8 @@ import { formatDateTime } from "../lib/schedule";
 
 // The manifest file name inside a published set (store.backupManifestBasename).
 const MANIFEST_BASENAME = "manifest.json";
+// The encrypted envelope inside a published set (store.backupEnvelopeBasename).
+const ENVELOPE_BASENAME = "set.bbk";
 
 // The event-handler reads on this page (backupHistory, metadataExport) compose
 // the same two boundaries the common Console fetch path composes in
@@ -102,7 +121,7 @@ export function BackupExportPage() {
         setSelected={setSelected}
       />
       <ManifestSection selected={selected} />
-      <RestoreSection />
+      <RestoreSection selected={selected} />
       <ExportSection />
     </div>
   );
@@ -396,41 +415,294 @@ function ManifestSection({ selected }: { selected: BackupHistoryEntry | null }) 
   );
 }
 
-// RestoreSection: the restore assistant. Per the approved MIGREV-3 mockup and
-// ADR-0077, the destructive whole-DB restore is OPERATOR-RUN OFFLINE — the
-// server refuses a live-DB overwrite, so the Console guides the operator through
-// the offline restore CLI (schema-version guard included) rather than restoring
-// over a live database.
-function RestoreSection() {
+// RestoreSection: stage a console restore of the selected set (CORE-1720), with
+// the offline restore CLI kept below as the alternative. Neither path writes
+// over a live database: a staged restore applies on the next start, before the
+// store opens.
+function RestoreSection({ selected }: { selected: BackupHistoryEntry | null }) {
   const t = useT();
 
   return (
     <ManageSection title={t("backupRestoreHeading")} lead={t("backupRestoreLead")}>
-      <div id="restore" className="space-y-3" tabIndex={-1}>
-        <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
-          <li>{t("backupRestoreStepStop")}</li>
-          <li>{t("backupRestoreStepChoose")}</li>
-          <li>{t("backupRestoreStepRun")}</li>
-          <li>{t("backupRestoreStepStart")}</li>
-        </ol>
-        <p className="manage-cell-num break-all rounded-md border bg-muted/40 px-3 py-2 text-sm">
-          beamfall restore --manifest /path/to/backup/manifest.json --data-dir /var/lib/beamfall
-        </p>
-        <p className="text-sm text-muted-foreground">{t("backupRestoreSafety")}</p>
-        <p className="text-sm text-muted-foreground">
-          {t("backupRestoreNote")}
-          <a
-            href={t("backupRestoreNoteDocHref")}
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            {t("backupRestoreNoteDocLabel")}
-          </a>
-          {t("backupRestoreNoteAfterDoc")}
-        </p>
+      <div id="restore" className="space-y-4" tabIndex={-1}>
+        <StagedRestorePanel selected={selected} />
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold">{t("stagedRestoreOfflineHeading")}</h3>
+          <ol className="list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
+            <li>{t("backupRestoreStepStop")}</li>
+            <li>{t("backupRestoreStepChoose")}</li>
+            <li>{t("backupRestoreStepRun")}</li>
+            <li>{t("backupRestoreStepStart")}</li>
+          </ol>
+          <p className="manage-cell-num break-all rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            beamfall restore --manifest /path/to/backup/manifest.json --data-dir /var/lib/beamfall
+          </p>
+          <p className="text-sm text-muted-foreground">{t("backupRestoreSafety")}</p>
+          <p className="text-sm text-muted-foreground">
+            {t("backupRestoreNote")}
+            <a
+              href={t("backupRestoreNoteDocHref")}
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              {t("backupRestoreNoteDocLabel")}
+            </a>
+            {t("backupRestoreNoteAfterDoc")}
+          </p>
+        </div>
       </div>
     </ManageSection>
+  );
+}
+
+// A refusal from the server (wrong key, newer schema, identity conflict) is
+// admin-safe text; anything else falls back to the page's own copy.
+function refusalMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiError && err.message ? err.message : fallback;
+}
+
+// StagedRestorePanel: inspect the selected set with its backup key, stage it
+// for the next start, or cancel the staged one. The key lives only in this
+// input and the two mutation calls; it is cleared once a restore is staged.
+function StagedRestorePanel({ selected }: { selected: BackupHistoryEntry | null }) {
+  const t = useT();
+  const [status, setStatus] = useState<StagedRestoreInfo | null>(null);
+  const [backupKey, setBackupKey] = useState("");
+  const [contents, setContents] = useState<BackupContentsInfo | null>(null);
+  const [inspectedFor, setInspectedFor] = useState("");
+  const [replaceIdentity, setReplaceIdentity] = useState(false);
+  const [busy, setBusy] = useState<"" | "inspect" | "stage" | "cancel">("");
+  const [error, setError] = useState("");
+  const beginRequest = useEpochRequest();
+
+  const envelope = selected ? `${selected.directory}/${ENVELOPE_BASENAME}` : "";
+
+  useEffect(() => {
+    const { current, signal } = beginRequest();
+    fetchStagedRestore(signal)
+      .then((next) => {
+        if (current()) setStatus(next);
+      })
+      .catch(() => {
+        if (current()) setError(t("stagedRestoreUnavailable"));
+      });
+  }, [beginRequest, t]);
+
+  const onInspect = async () => {
+    setError("");
+    setContents(null);
+    setBusy("inspect");
+    try {
+      const next = await inspectBackup(envelope, backupKey);
+      setContents(next);
+      setInspectedFor(envelope);
+    } catch (err) {
+      setError(refusalMessage(err, t("stagedRestoreFailed")));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const onStage = async () => {
+    setError("");
+    setBusy("stage");
+    try {
+      const next = await stageRestore(envelope, backupKey, replaceIdentity);
+      setStatus(next);
+      setBackupKey("");
+      setContents(null);
+    } catch (err) {
+      setError(refusalMessage(err, t("stagedRestoreFailed")));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const onCancel = async () => {
+    setError("");
+    setBusy("cancel");
+    try {
+      await cancelStagedRestore();
+      setStatus(status ? { ...status, staged: false, contents: null } : status);
+    } catch (err) {
+      setError(refusalMessage(err, t("stagedRestoreFailed")));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const shown = contents && inspectedFor === envelope ? contents : null;
+  const last = status?.lastResult;
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold">{t("stagedRestoreHeading")}</h3>
+        <p className="text-sm text-muted-foreground">{t("stagedRestoreLead")}</p>
+      </div>
+
+      {last && (
+        <div
+          role="status"
+          className={
+            last.ok
+              ? "rounded-md border border-[var(--state-success,var(--state-direct))]/40 bg-[var(--state-success,var(--state-direct))]/5 px-3 py-2 text-sm"
+              : "rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm"
+          }
+        >
+          {last.ok
+            ? t("stagedRestoreLastOK", {
+                time: formatDateTime(last.backupCreatedAt),
+                path: last.rollbackCopy,
+              })
+            : t("stagedRestoreLastFailed", { error: last.error })}
+        </div>
+      )}
+
+      {status?.staged ? (
+        <div className="space-y-2 rounded-md border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/5 px-3 py-3">
+          <p className="text-sm font-semibold">{t("stagedRestoreStagedTitle")}</p>
+          <p className="break-all text-sm text-muted-foreground">
+            {t("stagedRestoreStagedBody", {
+              set: setLabel(status.envelope.replace(`/${ENVELOPE_BASENAME}`, "")),
+              time: formatDateTime(status.stagedAt),
+            })}
+          </p>
+          {status.replaceIdentity && (
+            <p className="text-sm text-muted-foreground">{t("stagedRestoreStagedReplaces")}</p>
+          )}
+          {status.contents && <BackupContents contents={status.contents} />}
+          <Button type="button" variant="outline" onClick={onCancel} disabled={busy !== ""}>
+            {busy === "cancel" ? t("stagedRestoreCanceling") : t("stagedRestoreCancel")}
+          </Button>
+        </div>
+      ) : !selected ? (
+        <EmptyLine message={t("stagedRestorePickSet")} />
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm">
+            <span className="text-muted-foreground">{t("stagedRestoreSetLabel")}: </span>
+            <span className="manage-cell-num">{setLabel(selected.directory)}</span>
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="grow space-y-1">
+              <Label htmlFor="staged-restore-key">{t("stagedRestoreKeyLabel")}</Label>
+              <Input
+                id="staged-restore-key"
+                type="password"
+                value={backupKey}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setBackupKey(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{t("stagedRestoreKeyHint")}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onInspect}
+              disabled={busy !== "" || !backupKey.trim()}
+            >
+              {busy === "inspect" ? t("stagedRestoreInspecting") : t("stagedRestoreInspect")}
+            </Button>
+          </div>
+          {shown && (
+            <>
+              <BackupContents contents={shown} />
+              {shown.compatible && (
+                <div className="space-y-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={replaceIdentity}
+                      onChange={(e) => setReplaceIdentity(e.target.checked)}
+                    />
+                    {t("stagedRestoreReplaceIdentity")}
+                  </label>
+                  <Button
+                    type="button"
+                    onClick={onStage}
+                    disabled={busy !== "" || !backupKey.trim()}
+                  >
+                    {busy === "stage" ? t("stagedRestoreStaging") : t("stagedRestoreStage")}
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      <ErrorLine message={error} />
+    </div>
+  );
+}
+
+// BackupContents: what a set holds, its versions against what this server
+// supports, and whether it can be restored here.
+function BackupContents({ contents }: { contents: BackupContentsInfo }) {
+  const t = useT();
+  return (
+    <div className="space-y-2">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm">
+        <dt className="text-muted-foreground">{t("stagedRestoreCreatedLabel")}</dt>
+        <dd className="manage-cell-num">{formatDateTime(contents.createdAt)}</dd>
+        {contents.reason && (
+          <>
+            <dt className="text-muted-foreground">{t("stagedRestoreReasonLabel")}</dt>
+            <dd>{contents.reason}</dd>
+          </>
+        )}
+        <dt className="text-muted-foreground">{t("stagedRestoreFormatLabel")}</dt>
+        <dd className="manage-cell-num">
+          {t("stagedRestoreFormatValue", {
+            version: contents.restoreInstructionsVersion,
+            supported: contents.supportedRestoreInstructionsVersion,
+          })}
+        </dd>
+        <dt className="text-muted-foreground">{t("stagedRestoreLibraryRootsLabel")}</dt>
+        <dd className="manage-cell-num">{contents.libraryRootCount}</dd>
+        <dt className="text-muted-foreground">{t("stagedRestoreFilesLabel")}</dt>
+        <dd className="break-all">
+          {contents.operationalFiles.length > 0
+            ? contents.operationalFiles.join(", ")
+            : t("stagedRestoreFilesNone")}
+        </dd>
+      </dl>
+      <ManageTable>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("stagedRestoreColDatabase")}</TableHead>
+            <TableHead className="text-right">{t("stagedRestoreColSchema")}</TableHead>
+            <TableHead className="text-right">{t("stagedRestoreColSupported")}</TableHead>
+            <TableHead className="text-right">{t("stagedRestoreColSize")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {contents.databases.map((db) => (
+            <TableRow key={db.name}>
+              <TableCell className="manage-cell-num">{db.name}</TableCell>
+              <TableCell className="manage-cell-num text-right">{db.schemaVersion}</TableCell>
+              <TableCell className="manage-cell-num text-right">
+                {db.supportedSchemaVersion}
+              </TableCell>
+              <TableCell className="manage-cell-num text-right">
+                {formatBytes(db.sizeBytes)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </ManageTable>
+      {contents.compatible ? (
+        <StatusChip tone="green">{t("stagedRestoreCompatible")}</StatusChip>
+      ) : (
+        <div className="space-y-1">
+          <StatusChip tone="red">{t("stagedRestoreIncompatible")}</StatusChip>
+          <p className="break-all text-sm text-muted-foreground">{contents.refusal}</p>
+        </div>
+      )}
+    </div>
   );
 }
 

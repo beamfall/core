@@ -10,6 +10,7 @@ import {
   graphql,
   isAuthRejection,
   postJSON,
+  postKeepalive,
   setIdentityEpochSignal,
 } from "./api";
 
@@ -281,5 +282,30 @@ describe("setup probe", () => {
       vi.fn().mockResolvedValue(new Response(JSON.stringify({ required: false }))),
     );
     await expect(fetchSetupStatus()).resolves.toMatchObject({ securityMode: "home" });
+  });
+});
+
+describe("keepalive POST", () => {
+  it("sends a same-origin CSRF-marked request that outlives the page", () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response("{}")));
+    vi.stubGlobal("fetch", fetchMock);
+    postKeepalive("/api/graphql", { query: "q", variables: { partyID: "p1" } });
+    expect(fetchMock).toHaveBeenCalledWith("/api/graphql", {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      headers: { "Content-Type": "application/json", "X-Beamfall-Csrf": "1" },
+      body: JSON.stringify({ query: "q", variables: { partyID: "p1" } }),
+    });
+  });
+
+  it("never throws, even when fetch rejects or is missing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new Error("offline"))),
+    );
+    expect(() => postKeepalive("/api/graphql", {})).not.toThrow();
+    vi.stubGlobal("fetch", undefined);
+    expect(() => postKeepalive("/api/graphql", {})).not.toThrow();
   });
 });

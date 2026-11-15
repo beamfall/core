@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d39938af0f67ff2fed90c069627f07f3 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -15,12 +15,12 @@ Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:
 <!-- flowdocs:paragraph:1c602f5e393c63153aeaf1332605625c -->
 Declared member: source declares BrowserMessage; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:580; symbol: BrowserMessage; span SHA256: 565a53e0e7456e363d84abc4a68e7b2d435fafca173a70f6698306ae42c6d4a5.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:587; symbol: BrowserMessage; span SHA256: 565a53e0e7456e363d84abc4a68e7b2d435fafca173a70f6698306ae42c6d4a5.
 
 <!-- flowdocs:paragraph:96cbc4b2a273baee17d420a2e15cb6e4 -->
 Declared member: source declares BrowserSkeleton; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:570; symbol: BrowserSkeleton; span SHA256: d79864ab3fd8cfd723623b6df38cec9b54887e57f733b810ce2c06843820a16f.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:577; symbol: BrowserSkeleton; span SHA256: d79864ab3fd8cfd723623b6df38cec9b54887e57f733b810ce2c06843820a16f.
 
 <!-- flowdocs:paragraph:5cd866cdca8e78b6baea3276e443ec34 -->
 Declared member: source declares Crumb; membership is caller\-declared, not runtime evidence\.
@@ -165,40 +165,40 @@ Source: internal/web/app/src/components/beamfall/workbench/index\.tsx:108; symbo
 <!-- flowdocs:paragraph:e03d1e1676080ab8574914c617239bf3 -->
 Declared member: source declares ADD\_PATH\_PICKER\_ROOT\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1042; symbol: ADD\_PATH\_PICKER\_ROOT\_MUTATION; span SHA256: 9468a9ba9a12ce9e6ec960a47fa3bd65a899cffc4ff7aabeeeab58ee4f2c21a8.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1174; symbol: ADD\_PATH\_PICKER\_ROOT\_MUTATION; span SHA256: 9468a9ba9a12ce9e6ec960a47fa3bd65a899cffc4ff7aabeeeab58ee4f2c21a8.
 
 <!-- flowdocs:paragraph:fe35bd46dbb9492a875701c4842e8d50 -->
 Declared member: source declares PATH\_PICKER\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1022; symbol: PATH\_PICKER\_QUERY; span SHA256: 941e743f9a238da8ed74388bb7e9ba6ae64e7009b5f64104db5be9b610e45698.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1154; symbol: PATH\_PICKER\_QUERY; span SHA256: 941e743f9a238da8ed74388bb7e9ba6ae64e7009b5f64104db5be9b610e45698.
 
 <!-- flowdocs:paragraph:f68cd08477d8c3c4d06483b01e322a48 -->
 Declared member: source declares addPathPickerRoot; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1045; symbol: addPathPickerRoot; span SHA256: a3c6924decf1c2e3fc93d0f5b2fdb0b865340d9c9b8105dc43f04679cb2e856c.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1177; symbol: addPathPickerRoot; span SHA256: a3c6924decf1c2e3fc93d0f5b2fdb0b865340d9c9b8105dc43f04679cb2e856c.
 
 <!-- flowdocs:paragraph:aae5a6bae2cbc30ac9d4aa55ffdceb22 -->
 Declared member: source declares fetchPathPicker; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/manage\.ts:1025; symbol: fetchPathPicker; span SHA256: 62f1c716abeb77aa6181a6dce239297424d3189c569e0e30ba4189be9bcb6303.
+Source: internal/web/app/src/lib/graphql/manage\.ts:1157; symbol: fetchPathPicker; span SHA256: 62f1c716abeb77aa6181a6dce239297424d3189c569e0e30ba4189be9bcb6303.
 
 <!-- flowdocs:paragraph:26c6fea5fdecd250e1edbf48e1e877f5 -->
 Declared member: source declares allowBrowsing; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:237; symbol: allowBrowsing; span SHA256: c11ab14b4fa546794534ff28cac84b8e2ffda72a56615555fbfe345b65f7121a.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:242; symbol: allowBrowsing; span SHA256: c11ab14b4fa546794534ff28cac84b8e2ffda72a56615555fbfe345b65f7121a.
 
 <!-- flowdocs:paragraph:a3030d5b0c33b949a291065941ec4fe5 -->
 Declared member: source declares close; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:230; symbol: close; span SHA256: c3ea5c92300603cac183f6f2ec73bb6a999d3d1f611f9f16e1e71ebb1e904a6d.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:235; symbol: close; span SHA256: c3ea5c92300603cac183f6f2ec73bb6a999d3d1f611f9f16e1e71ebb1e904a6d.
 
 <!-- flowdocs:paragraph:09c1755e1b0d24d8ec1fc3b0e0b2c1d5 -->
 Declared member: source declares commit; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:255; symbol: commit; span SHA256: 59ff3589b375e5b4f3d822491381c3b7ea5177f918b84bffd067f26ed73e2ba7.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:260; symbol: commit; span SHA256: 59ff3589b375e5b4f3d822491381c3b7ea5177f918b84bffd067f26ed73e2ba7.
 
 <!-- flowdocs:paragraph:d299a3b03c755b539107775509b46082 -->
 Declared member: source declares load; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:200; symbol: load; span SHA256: 751f64bf60952237a6789d744048f18db298a6a0753636c0c9815e8535790c43.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:205; symbol: load; span SHA256: 751f64bf60952237a6789d744048f18db298a6a0753636c0c9815e8535790c43.
 

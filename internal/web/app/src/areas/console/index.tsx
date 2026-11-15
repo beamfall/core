@@ -15,6 +15,7 @@ import {
   Network,
   Plug,
   Rocket,
+  ScrollText,
   ServerCog,
   ShieldCheck,
   Stethoscope,
@@ -57,6 +58,7 @@ import { PlayHistory } from "./sections/PlayHistory";
 import { Plugins } from "./sections/Plugins";
 import { MigrationWizard, RemoteAccess } from "./sections/RemoteAccess";
 import { Retention } from "./sections/Retention";
+import { ServerLogs } from "./sections/ServerLogs";
 import {
   fetchHasBrowsableContent,
   firstValueOpen,
@@ -263,6 +265,13 @@ const GROUPS: NavGroup[] = [
         label: "activityLogHeading",
         icon: Activity,
         element: <ActivityLog />,
+        placement: "Monitor/Activity & Logs",
+      },
+      {
+        path: "logs",
+        label: "serverLogsHeading",
+        icon: ScrollText,
+        element: <ServerLogs />,
         placement: "Monitor/Activity & Logs",
       },
     ],

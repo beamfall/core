@@ -7,6 +7,7 @@ import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
+import { itemMetadataStrings } from "./item-metadata";
 import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
@@ -26,11 +27,14 @@ import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
 import { profileDeviceStrings } from "./profiles-devices";
+import { providerKeyStrings } from "./provider-keys";
 import { remoteAccessStrings } from "./remote-access";
 import { remoteControlStrings } from "./remote-control";
+import { serverLogStrings } from "./server-logs";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
+import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { trackMenuStrings } from "./track-menu";
 import { viewerAccountStrings } from "./viewer-account";
@@ -79,6 +83,10 @@ export const en = {
   ...webhookStrings.en,
   ...viewerCollectionStrings.en,
   ...castStrings.en,
+  ...itemMetadataStrings.en,
+  ...providerKeyStrings.en,
+  ...serverLogStrings.en,
+  ...stagedRestoreStrings.en,
   ...miniPlayerStrings.en,
 } as const;
 
@@ -122,6 +130,10 @@ export const fr = {
   ...webhookStrings.fr,
   ...viewerCollectionStrings.fr,
   ...castStrings.fr,
+  ...itemMetadataStrings.fr,
+  ...providerKeyStrings.fr,
+  ...serverLogStrings.fr,
+  ...stagedRestoreStrings.fr,
   ...miniPlayerStrings.fr,
 } as const;
 
@@ -165,6 +177,10 @@ export const de = {
   ...webhookStrings.de,
   ...viewerCollectionStrings.de,
   ...castStrings.de,
+  ...itemMetadataStrings.de,
+  ...providerKeyStrings.de,
+  ...serverLogStrings.de,
+  ...stagedRestoreStrings.de,
   ...miniPlayerStrings.de,
 } as const;
 
@@ -208,6 +224,10 @@ export const es = {
   ...webhookStrings.es,
   ...viewerCollectionStrings.es,
   ...castStrings.es,
+  ...itemMetadataStrings.es,
+  ...providerKeyStrings.es,
+  ...serverLogStrings.es,
+  ...stagedRestoreStrings.es,
   ...miniPlayerStrings.es,
 } as const;
 
@@ -251,5 +271,9 @@ export const pt = {
   ...webhookStrings.pt,
   ...viewerCollectionStrings.pt,
   ...castStrings.pt,
+  ...itemMetadataStrings.pt,
+  ...providerKeyStrings.pt,
+  ...serverLogStrings.pt,
+  ...stagedRestoreStrings.pt,
   ...miniPlayerStrings.pt,
 } as const;

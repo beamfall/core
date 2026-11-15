@@ -1,6 +1,6 @@
 # Viewer My Data / privacy: summary, event log, sessions, stream tokens, export — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0ffb157aeb8349dd2f5109af03300ef7 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -70,52 +70,52 @@ Source: internal/web/app/src/areas/viewer/pages/MyDataPage\.tsx:596; symbol: for
 <!-- flowdocs:paragraph:53f107c1bebe6a73b78cc063224b2153 -->
 Declared member: source declares DELETE\_MY\_ENGAGEMENT\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:361; symbol: DELETE\_MY\_ENGAGEMENT\_MUTATION; span SHA256: a2bca1e38316e7b7182f0eef84112704610841916beaaeaff19548aece5d6ffd.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:423; symbol: DELETE\_MY\_ENGAGEMENT\_MUTATION; span SHA256: a2bca1e38316e7b7182f0eef84112704610841916beaaeaff19548aece5d6ffd.
 
 <!-- flowdocs:paragraph:7a28ea03a19725758ffe18188a05067f -->
 Declared member: source declares MY\_DATA\_SUMMARY\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:338; symbol: MY\_DATA\_SUMMARY\_QUERY; span SHA256: 5ec3ec0cf28287c08e063c067444b56a6b961ecd974a8d9ba552c7afe7900be8.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:400; symbol: MY\_DATA\_SUMMARY\_QUERY; span SHA256: 5ec3ec0cf28287c08e063c067444b56a6b961ecd974a8d9ba552c7afe7900be8.
 
 <!-- flowdocs:paragraph:aef0501086e64e3e61a0b40a747876d3 -->
 Declared member: source declares MY\_ENGAGEMENT\_LOG\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:347; symbol: MY\_ENGAGEMENT\_LOG\_QUERY; span SHA256: 318fb5e84685d0de629ab5a5abe7c0c4f6923af85cb0ec04d9622cdf7baba06b.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:409; symbol: MY\_ENGAGEMENT\_LOG\_QUERY; span SHA256: 318fb5e84685d0de629ab5a5abe7c0c4f6923af85cb0ec04d9622cdf7baba06b.
 
 <!-- flowdocs:paragraph:3a09a6cfc697885299ed84a70c69670e -->
 Declared member: source declares MY\_ENGAGEMENT\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:329; symbol: MY\_ENGAGEMENT\_QUERY; span SHA256: 5f162ffa36703a549f2bb5c3ab3ad85dec06db12195e50188ba1fbdf95863fad.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:391; symbol: MY\_ENGAGEMENT\_QUERY; span SHA256: 5f162ffa36703a549f2bb5c3ab3ad85dec06db12195e50188ba1fbdf95863fad.
 
 <!-- flowdocs:paragraph:623e11ba76d17927987dbde7c959c8d5 -->
 Declared member: source declares MY\_SESSIONS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:295; symbol: MY\_SESSIONS\_QUERY; span SHA256: f80a007c13834f5879a67b5d5e087aee3544ed0743f26adbe988fc7fad8446c7.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:332; symbol: MY\_SESSIONS\_QUERY; span SHA256: f80a007c13834f5879a67b5d5e087aee3544ed0743f26adbe988fc7fad8446c7.
 
 <!-- flowdocs:paragraph:74384390ef1c8a3573fbd322c2216cb1 -->
 Declared member: source declares deleteMyEngagement; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:365; symbol: deleteMyEngagement; span SHA256: d65a456766e1afa622cbac40da799c9fbab5e59c0c85f5f48ff96a998908fccb.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:427; symbol: deleteMyEngagement; span SHA256: d65a456766e1afa622cbac40da799c9fbab5e59c0c85f5f48ff96a998908fccb.
 
 <!-- flowdocs:paragraph:08b86f7551cc214aa7451325fb220b93 -->
 Declared member: source declares fetchMyDataSummary; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:342; symbol: fetchMyDataSummary; span SHA256: 1e3b4715a69f60f3a1b4fb7762fa536445ded66330296b1bb12b532fbffea0db.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:404; symbol: fetchMyDataSummary; span SHA256: 1e3b4715a69f60f3a1b4fb7762fa536445ded66330296b1bb12b532fbffea0db.
 
 <!-- flowdocs:paragraph:1a04c7b6e84f7fb5415983d323ec167c -->
 Declared member: source declares fetchMyEngagement; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:333; symbol: fetchMyEngagement; span SHA256: 1cf13eaa333533e9e6e5270a5813d1fd6d8e6b2a0edb2eaee3a241f65177c52b.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:395; symbol: fetchMyEngagement; span SHA256: 1cf13eaa333533e9e6e5270a5813d1fd6d8e6b2a0edb2eaee3a241f65177c52b.
 
 <!-- flowdocs:paragraph:e3a1d015083e49e5e37decbbb7d01771 -->
 Declared member: source declares fetchMyEngagementLog; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:351; symbol: fetchMyEngagementLog; span SHA256: 12f92551e00e909cd02301fd2963c970c521263a99e8fa2d341a4184ecc9f94d.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:413; symbol: fetchMyEngagementLog; span SHA256: 12f92551e00e909cd02301fd2963c970c521263a99e8fa2d341a4184ecc9f94d.
 
 <!-- flowdocs:paragraph:88dc6b85702bf46e84e38024a8e2b0a4 -->
 Declared member: source declares fetchMySessions; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:299; symbol: fetchMySessions; span SHA256: b8d8e0e1b923dd64f6033c30b55ffb97f992677d7f6dd5c785d39bb36d2e25fc.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:336; symbol: fetchMySessions; span SHA256: b8d8e0e1b923dd64f6033c30b55ffb97f992677d7f6dd5c785d39bb36d2e25fc.
 
 <!-- flowdocs:paragraph:ac72c8e2a90e7c45c030712eabc0354e -->
 Declared member: source declares onApplyFilters; membership is caller\-declared, not runtime evidence\.

@@ -1,10 +1,24 @@
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdminEpochSignal } from "@/areas/console/adminEpoch";
-import { fetchBackupHistory, fetchMetadataExport, verifyBackup } from "@/lib/graphql";
-import type { BackupHistoryEntry, MetadataExportInfo } from "@/lib/graphql/types";
+import { ApiError } from "@/lib/api";
+import {
+  cancelStagedRestore,
+  fetchBackupHistory,
+  fetchMetadataExport,
+  fetchStagedRestore,
+  inspectBackup,
+  stageRestore,
+  verifyBackup,
+} from "@/lib/graphql";
+import type {
+  BackupContentsInfo,
+  BackupHistoryEntry,
+  MetadataExportInfo,
+  StagedRestoreInfo,
+} from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { BackupExportPage } from "./BackupExportPage";
 
@@ -34,6 +48,10 @@ vi.mock("@/lib/graphql", () => ({
   fetchBackupHistory: vi.fn(),
   verifyBackup: vi.fn(),
   fetchMetadataExport: vi.fn(),
+  fetchStagedRestore: vi.fn(),
+  inspectBackup: vi.fn(),
+  stageRestore: vi.fn(),
+  cancelStagedRestore: vi.fn(),
   // PathPickerField (used by the destination field) pulls these from the module.
   fetchPathPicker: vi.fn(),
   addPathPickerRoot: vi.fn(),
@@ -42,6 +60,23 @@ vi.mock("@/lib/graphql", () => ({
 const mockHistory = vi.mocked(fetchBackupHistory);
 const mockVerify = vi.mocked(verifyBackup);
 const mockExport = vi.mocked(fetchMetadataExport);
+const mockStaged = vi.mocked(fetchStagedRestore);
+const mockInspect = vi.mocked(inspectBackup);
+const mockStage = vi.mocked(stageRestore);
+const mockCancel = vi.mocked(cancelStagedRestore);
+
+const NOTHING_STAGED: StagedRestoreInfo = {
+  staged: false,
+  stagedAt: "",
+  envelope: "",
+  replaceIdentity: false,
+  contents: null,
+  lastResult: null,
+};
+
+beforeEach(() => {
+  mockStaged.mockResolvedValue(NOTHING_STAGED);
+});
 
 afterEach(() => {
   setAdminEpochSignal();
@@ -96,7 +131,7 @@ describe("BackupExportPage", () => {
     expect(screen.getByText("Guided restore")).toBeVisible();
     expect(screen.getByText(/beamfall restore --manifest/)).toBeVisible();
     expect(screen.getByText(/refuses a live server lock/)).toBeVisible();
-    expect(screen.getByText(/only guides restore\. It never overwrites/)).toBeVisible();
+    expect(screen.getByText(/never overwrites a live database: a staged restore/)).toBeVisible();
   });
 
   it("loads history for a destination and renders per-set verify state", async () => {
@@ -270,5 +305,168 @@ describe("BackupExportPage", () => {
       resolveExport(EXPORT_PAYLOAD);
     });
     expect(setterLog.writes - writesBeforeSettle).toBe(0);
+  });
+
+  describe("console staged restore (CORE-1720)", () => {
+    const CONTENTS: BackupContentsInfo = {
+      createdAt: "2026-07-03T02:00:00Z",
+      createdBy: "admin",
+      reason: "nightly",
+      restoreInstructionsVersion: 2,
+      supportedRestoreInstructionsVersion: 2,
+      databases: [
+        {
+          name: "catalog",
+          database: "catalog",
+          schemaVersion: 110,
+          supportedSchemaVersion: 110,
+          sizeBytes: 4096,
+        },
+      ],
+      operationalFiles: ["config", "secrets"],
+      libraryRootCount: 3,
+      compatible: true,
+      refusal: "",
+    };
+
+    async function selectSet(user: ReturnType<typeof userEvent.setup>) {
+      mockHistory.mockResolvedValue([HISTORY_ROW]);
+      renderPage();
+      await user.type(screen.getByLabelText("Destination"), "/backups");
+      await user.click(screen.getByRole("button", { name: "Load history" }));
+      await user.click(await screen.findByText("beamfall-1f9a"));
+    }
+
+    it("asks for a set before offering a restore", async () => {
+      renderPage();
+      expect(
+        await screen.findByText("Select a backup set in the history above to restore it."),
+      ).toBeVisible();
+      expect(mockStaged).toHaveBeenCalledWith(expect.any(AbortSignal));
+    });
+
+    it("inspects the selected set with its key, shows its versions and stages it", async () => {
+      const user = userEvent.setup();
+      mockInspect.mockResolvedValue(CONTENTS);
+      mockStage.mockResolvedValue({
+        staged: true,
+        stagedAt: "2026-07-04T10:00:00Z",
+        envelope: "/backups/beamfall-1f9a/set.bbk",
+        replaceIdentity: true,
+        contents: CONTENTS,
+        lastResult: null,
+      });
+      await selectSet(user);
+
+      const key = screen.getByLabelText("Backup key");
+      expect(key).toHaveAttribute("type", "password");
+      await user.type(key, "secret-words");
+      await user.click(screen.getByRole("button", { name: "Show contents" }));
+
+      expect(mockInspect).toHaveBeenCalledWith("/backups/beamfall-1f9a/set.bbk", "secret-words");
+      expect(await screen.findByText("This server can restore this backup.")).toBeVisible();
+      expect(screen.getByText("Version 2, this server reads up to 2")).toBeVisible();
+      expect(screen.getByText("config, secrets")).toBeVisible();
+      expect(screen.getAllByText("110")).toHaveLength(2);
+
+      await user.click(screen.getByLabelText(/Replace this server's secrets/));
+      await user.click(screen.getByRole("button", { name: "Stage restore for next start" }));
+
+      expect(mockStage).toHaveBeenCalledWith(
+        "/backups/beamfall-1f9a/set.bbk",
+        "secret-words",
+        true,
+      );
+      expect(await screen.findByText("A restore is staged")).toBeVisible();
+      expect(screen.getByText(/beamfall-1f9a, staged .*Restart the server/)).toBeVisible();
+      expect(screen.getByText(/also replaces this server's secrets/)).toBeVisible();
+      // The key is gone once the restore is staged.
+      expect(screen.queryByLabelText("Backup key")).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain("secret-words");
+    });
+
+    it("shows an incompatible set's refusal and offers no stage", async () => {
+      const user = userEvent.setup();
+      mockInspect.mockResolvedValue({
+        ...CONTENTS,
+        compatible: false,
+        refusal: "catalog schema version 999 is newer than this binary supports (110)",
+      });
+      await selectSet(user);
+      await user.type(screen.getByLabelText("Backup key"), "secret-words");
+      await user.click(screen.getByRole("button", { name: "Show contents" }));
+
+      expect(await screen.findByText("This server cannot restore this backup.")).toBeVisible();
+      expect(screen.getByText(/newer than this binary supports/)).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Stage restore for next start" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows a server refusal such as a wrong key", async () => {
+      const user = userEvent.setup();
+      mockInspect.mockRejectedValue(
+        new ApiError("the backup could not be opened with this key", 200),
+      );
+      await selectSet(user);
+      await user.type(screen.getByLabelText("Backup key"), "wrong-words");
+      await user.click(screen.getByRole("button", { name: "Show contents" }));
+
+      expect(await screen.findByText("the backup could not be opened with this key")).toBeVisible();
+    });
+
+    it("cancels a staged restore and reports the last applied one with its rollback copy", async () => {
+      const user = userEvent.setup();
+      mockStaged.mockResolvedValue({
+        staged: true,
+        stagedAt: "2026-07-04T10:00:00Z",
+        envelope: "/backups/beamfall-1f9a/set.bbk",
+        replaceIdentity: false,
+        contents: CONTENTS,
+        lastResult: {
+          appliedAt: "2026-07-02T09:00:00Z",
+          ok: true,
+          error: "",
+          rollbackCopy: "/var/lib/beamfall.pre-restore-20260702T090000Z",
+          backupCreatedAt: "2026-07-01T02:00:00Z",
+        },
+      });
+      mockCancel.mockResolvedValue(true);
+      renderPage();
+
+      expect(await screen.findByText("A restore is staged")).toBeVisible();
+      expect(
+        screen.getByText(/previous data is kept at \/var\/lib\/beamfall\.pre-restore-/),
+      ).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Cancel staged restore" }));
+
+      expect(mockCancel).toHaveBeenCalledTimes(1);
+      await waitFor(() =>
+        expect(screen.queryByText("A restore is staged")).not.toBeInTheDocument(),
+      );
+      expect(
+        screen.getByText("Select a backup set in the history above to restore it."),
+      ).toBeVisible();
+    });
+
+    it("reports a failed staged restore that kept the original data", async () => {
+      mockStaged.mockResolvedValue({
+        ...NOTHING_STAGED,
+        lastResult: {
+          appliedAt: "2026-07-02T09:00:00Z",
+          ok: false,
+          error: "restore copy failed",
+          rollbackCopy: "",
+          backupCreatedAt: "2026-07-01T02:00:00Z",
+        },
+      });
+      renderPage();
+
+      expect(
+        await screen.findByText(
+          /could not restore the staged backup and kept the original data: restore copy failed/,
+        ),
+      ).toBeVisible();
+    });
   });
 });

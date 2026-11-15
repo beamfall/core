@@ -4,19 +4,30 @@ import {
   acceptWatchParty,
   calibrateWatchPartyClock,
   createWatchParty,
+  decideWatchPartyRequest,
+  fetchMySessions,
   inviteToWatchParty,
   leaveWatchParty,
+  leaveWatchPartyKeepalive,
+  reportWatchPartyDrift,
   requestWatchPartyTransport,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
+  DRIFT_REPORT_INTERVAL_MS,
+  decidePartyRequest,
+  endParty,
   getWatchParty,
   inviteToParty,
   joinWatchParty,
   leaveParty,
+  leavePartyOnPageHide,
+  MAX_PARTY_REQUESTS,
+  reportPartyDrift,
   resetWatchPartyForTest,
   sendPartyTransport,
   startWatchParty,
+  watchPartyDefersUpNext,
 } from "./watchPartyStore";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -28,8 +39,12 @@ vi.mock("@/lib/graphql", () => ({
   acceptWatchParty: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   createWatchParty: vi.fn(),
+  decideWatchPartyRequest: vi.fn(),
+  fetchMySessions: vi.fn(),
   inviteToWatchParty: vi.fn(),
   leaveWatchParty: vi.fn(),
+  leaveWatchPartyKeepalive: vi.fn(),
+  reportWatchPartyDrift: vi.fn(),
   requestWatchPartyTransport: vi.fn(),
   watchPartyTransport: vi.fn(),
 }));
@@ -47,6 +62,7 @@ beforeEach(() => {
   vi.mocked(subscribeEvents).mockReturnValue(unsubscribe);
   vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 25, roundTripMS: 4 });
   vi.mocked(leaveWatchParty).mockResolvedValue();
+  vi.mocked(reportWatchPartyDrift).mockResolvedValue({ groupID: "", action: "none", rate: 0 });
 });
 
 afterEach(() => {
@@ -391,5 +407,278 @@ describe("races", () => {
     });
     await sendPartyTransport("m1", 5000, false);
     expect(getWatchParty().timeline).toMatchObject({ presentAtMS: 10_100, paused: true });
+  });
+});
+
+describe("host leave, end and page exit (CORE-1763)", () => {
+  async function member(partyID = "p3") {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({ groupID: partyID, signal: "roster", paused: true, members: ["Guest", "Host"] });
+      return { partyID, item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    await joinWatchParty(partyID);
+  }
+
+  function mySession(id: string) {
+    vi.mocked(fetchMySessions).mockResolvedValue({
+      sessions: [
+        {
+          id: "other",
+          deviceID: "d0",
+          deviceName: "",
+          deviceRole: "",
+          current: false,
+          expiresAt: "",
+        },
+        { id, deviceID: "d1", deviceName: "", deviceRole: "", current: true, expiresAt: "" },
+      ],
+      streamTokens: [],
+    } as never);
+  }
+
+  it("tells a member who the host handed the party to, without making it host", async () => {
+    await member();
+    deliver({
+      groupID: "p3",
+      signal: "roster",
+      paused: true,
+      members: ["Guest"],
+      handoff: true,
+      hostName: "Guest2",
+    });
+    expect(getWatchParty()).toMatchObject({
+      status: "active",
+      isHost: false,
+      notice: "handoff",
+      noticeName: "Guest2",
+      members: ["Guest"],
+    });
+    expect(fetchMySessions).not.toHaveBeenCalled();
+  });
+
+  it("makes this viewer host when the hand-off names its own session", async () => {
+    mySession("session-guest");
+    await member();
+    deliver({
+      groupID: "p3",
+      signal: "roster",
+      paused: true,
+      members: ["Guest"],
+      handoff: true,
+      hostName: "Guest",
+      host: "session-guest",
+    });
+    await vi.waitFor(() => expect(getWatchParty().isHost).toBe(true));
+    expect(getWatchParty().notice).toBe("handoff");
+  });
+
+  it("stays a member when the hand-off names another session of the same Profile", async () => {
+    mySession("session-guest");
+    await member();
+    deliver({
+      groupID: "p3",
+      signal: "roster",
+      paused: true,
+      handoff: true,
+      hostName: "Guest",
+      host: "session-tv",
+    });
+    await vi.waitFor(() => expect(fetchMySessions).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(getWatchParty().isHost).toBe(false);
+  });
+
+  it("drops the party with a notice when the host ends it", async () => {
+    await member();
+    deliver({ groupID: "p3", signal: "ended", hostName: "Host" });
+    expect(getWatchParty()).toMatchObject({
+      status: "idle",
+      partyID: "",
+      notice: "ended",
+      noticeName: "Host",
+    });
+    expect(unsubscribe).toHaveBeenCalled();
+    expect(leaveWatchParty).not.toHaveBeenCalled();
+  });
+
+  it("ends the party for everyone only as host", async () => {
+    await member();
+    await endParty();
+    expect(leaveWatchParty).not.toHaveBeenCalled();
+    resetWatchPartyForTest();
+
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [{ displayName: "Host", present: true }],
+    });
+    await startWatchParty("m1");
+    await endParty();
+    expect(getWatchParty().status).toBe("idle");
+    expect(leaveWatchParty).toHaveBeenCalledWith("p1", true);
+  });
+
+  it("leaves with a keepalive request when the page goes away", async () => {
+    await member();
+    leavePartyOnPageHide();
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledWith("p3");
+    expect(getWatchParty().status).toBe("idle");
+    leavePartyOnPageHide();
+    expect(leaveWatchPartyKeepalive).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("host-only requests (CORE-1765)", () => {
+  async function strictHost() {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p5",
+      content: "m1",
+      relaxed: false,
+      members: [{ displayName: "Host", present: true }],
+    });
+    await startWatchParty("m1", 0, false);
+  }
+
+  function request(id: string, extra: Record<string, unknown> = {}) {
+    deliver({
+      groupID: "p5",
+      signal: "request",
+      request: id,
+      from: "Guest",
+      item: "m1",
+      positionMS: 42000,
+      paused: true,
+      ...extra,
+    });
+  }
+
+  it("starts host-only when asked", async () => {
+    await strictHost();
+    expect(createWatchParty).toHaveBeenCalledWith(expect.objectContaining({ relaxed: false }));
+  });
+
+  it("lists a request on the host without moving the timeline", async () => {
+    await strictHost();
+    const before = getWatchParty().timeline;
+    request("r1");
+    expect(getWatchParty().requests).toEqual([
+      { id: "r1", from: "Guest", item: "m1", positionMS: 42000, paused: true },
+    ]);
+    expect(getWatchParty().timeline).toBe(before);
+  });
+
+  it("replaces a repeated request id and keeps only the newest few", async () => {
+    await strictHost();
+    request("r1");
+    request("r1", { positionMS: 1000 });
+    expect(getWatchParty().requests).toHaveLength(1);
+    expect(getWatchParty().requests[0].positionMS).toBe(1000);
+    for (let i = 0; i < MAX_PARTY_REQUESTS + 3; i++) request(`n${i}`);
+    const ids = getWatchParty().requests.map((r) => r.id);
+    expect(ids).toHaveLength(MAX_PARTY_REQUESTS);
+    expect(ids.at(-1)).toBe(`n${MAX_PARTY_REQUESTS + 2}`);
+  });
+
+  it("ignores requests on a member's player", async () => {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({ groupID: "p5", signal: "roster", paused: true, members: ["Guest", "Host"] });
+      return { partyID: "p5", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    await joinWatchParty("p5");
+    request("r1");
+    expect(getWatchParty().requests).toEqual([]);
+  });
+
+  it("approves or declines through the server and drops the request", async () => {
+    await strictHost();
+    vi.mocked(decideWatchPartyRequest).mockResolvedValue({
+      item: "m1",
+      positionMS: 42000,
+      presentAtMS: 0,
+    });
+    request("r1");
+    request("r2");
+    expect(await decidePartyRequest("r1", true)).toBe(true);
+    expect(decideWatchPartyRequest).toHaveBeenCalledWith("p5", "r1", true);
+    expect(await decidePartyRequest("r2", false)).toBe(true);
+    expect(decideWatchPartyRequest).toHaveBeenCalledWith("p5", "r2", false);
+    expect(getWatchParty().requests).toEqual([]);
+  });
+
+  it("reports a refused decision", async () => {
+    await strictHost();
+    vi.mocked(decideWatchPartyRequest).mockRejectedValue(new Error("unknown request"));
+    request("r1");
+    expect(await decidePartyRequest("r1", true)).toBe(false);
+    expect(getWatchParty()).toMatchObject({ error: "failed", errorDetail: "unknown request" });
+  });
+
+  it("drops pending requests when the host role moves", async () => {
+    await strictHost();
+    request("r1");
+    deliver({
+      groupID: "p5",
+      signal: "roster",
+      paused: true,
+      members: ["Guest"],
+      handoff: true,
+      hostName: "Guest",
+    });
+    expect(getWatchParty()).toMatchObject({ isHost: false, requests: [] });
+    expect(await decidePartyRequest("r1", true)).toBe(false);
+  });
+});
+
+describe("drift reporting and Up Next deferral (CORE-1766)", () => {
+  async function member(partyID = "p6") {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({ groupID: partyID, signal: "roster", paused: true, members: ["Guest", "Host"] });
+      return { partyID, item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    await joinWatchParty(partyID);
+  }
+
+  it("reports at most once per interval, whatever the sync rate", async () => {
+    await member();
+    const start = 1_000_000;
+    // The player measures every 250 ms; only the first of each interval is sent.
+    let sent = 0;
+    for (let t = 0; t < 3 * DRIFT_REPORT_INTERVAL_MS; t += 250) {
+      if (reportPartyDrift(40 + t / 1000, start + t)) sent++;
+    }
+    expect(sent).toBe(3);
+    expect(reportWatchPartyDrift).toHaveBeenCalledTimes(3);
+    expect(reportWatchPartyDrift).toHaveBeenNthCalledWith(1, "p6", 40);
+    expect(reportPartyDrift(12, start + 3 * DRIFT_REPORT_INTERVAL_MS)).toBe(true);
+  });
+
+  it("never reports outside a party, and a failed report is not an error", async () => {
+    expect(reportPartyDrift(80, 0)).toBe(false);
+    expect(reportWatchPartyDrift).not.toHaveBeenCalled();
+
+    await member();
+    vi.mocked(reportWatchPartyDrift).mockRejectedValueOnce(new Error("offline"));
+    expect(reportPartyDrift(80, 0)).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getWatchParty().error).toBe("");
+    expect(reportPartyDrift(Number.NaN, DRIFT_REPORT_INTERVAL_MS)).toBe(false);
+  });
+
+  it("starts a new interval after leaving and rejoining", async () => {
+    await member();
+    expect(reportPartyDrift(30, 0)).toBe(true);
+    await leaveParty();
+    await member("p7");
+    expect(reportPartyDrift(30, 1)).toBe(true);
+    expect(reportWatchPartyDrift).toHaveBeenLastCalledWith("p7", 30);
+  });
+
+  it("defers Up Next on a member's player only", async () => {
+    expect(watchPartyDefersUpNext(getWatchParty())).toBe(false);
+    await member();
+    expect(watchPartyDefersUpNext(getWatchParty())).toBe(true);
+    expect(watchPartyDefersUpNext({ ...getWatchParty(), isHost: true })).toBe(false);
   });
 });

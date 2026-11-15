@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — readme
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e49c5863b9f98fc8eb9070186ea8823d -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -30,6 +30,10 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.playback\-engine: 130 resolved, 1 unresolved members.
+Declared inventory flow player\.playback\-engine: 128 resolved, 3 unresolved members.
+
+- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts TrackPreferences: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+
+- Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts bumpTracks: symbol declaration is ambiguous in this path at this revision.
 
 - Unresolved member internal/web/app/src/areas/viewer/player/usePlayer\.ts onTimeUpdate: symbol declaration is ambiguous in this path at this revision.

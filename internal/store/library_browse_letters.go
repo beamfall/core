@@ -39,7 +39,7 @@ func libraryBrowseLetters(candidates []libraryBrowseCandidate) []LibraryBrowseLe
 	letters := []LibraryBrowseLetter{}
 	at := map[string]int{}
 	for offset, c := range candidates {
-		initial := libraryBrowseInitial(c.item.Title)
+		initial := libraryBrowseInitial(c.titleKey())
 		if i, ok := at[initial]; ok {
 			letters[i].Count++
 			continue

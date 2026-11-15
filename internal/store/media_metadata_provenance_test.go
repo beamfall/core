@@ -13,18 +13,18 @@ func TestMediaMetadataProvenanceUpsertAndCascade(t *testing.T) {
 	if _, ok, err := st.MediaMetadataProvenance(ctx, "media-alpha"); err != nil || ok {
 		t.Fatalf("provenance before identify = ok %v, err %v; want none", ok, err)
 	}
-	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "demo", "lookup"); err != nil {
+	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "demo", "lookup", "cand-1"); err != nil {
 		t.Fatal(err)
 	}
 	got, ok, err := st.MediaMetadataProvenance(ctx, "media-alpha")
 	if err != nil || !ok {
 		t.Fatalf("provenance = ok %v, err %v", ok, err)
 	}
-	if got.PluginID != "demo" || got.ScraperID != "lookup" {
+	if got.PluginID != "demo" || got.ScraperID != "lookup" || got.CandidateID != "cand-1" {
 		t.Fatalf("provenance = %#v, want demo/lookup", got)
 	}
 
-	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "other", "second"); err != nil {
+	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "other", "second", "cand-1"); err != nil {
 		t.Fatal(err)
 	}
 	got, _, err = st.MediaMetadataProvenance(ctx, "media-alpha")
@@ -35,17 +35,17 @@ func TestMediaMetadataProvenanceUpsertAndCascade(t *testing.T) {
 		t.Fatalf("provenance after re-identify = %#v, want other/second", got)
 	}
 
-	if err := st.SetMediaMetadataProvenance(ctx, "media-missing", "demo", "lookup"); !errors.As(err, new(ValidationError)) {
+	if err := st.SetMediaMetadataProvenance(ctx, "media-missing", "demo", "lookup", "cand-1"); !errors.As(err, new(ValidationError)) {
 		t.Fatalf("missing media err = %v, want validation error", err)
 	}
-	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", " ", "lookup"); !errors.As(err, new(ValidationError)) {
+	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", " ", "lookup", "cand-1"); !errors.As(err, new(ValidationError)) {
 		t.Fatalf("blank plugin err = %v, want validation error", err)
 	}
 
 	if _, err := st.catalogW.ExecContext(ctx, `DELETE FROM media_metadata_provenance WHERE media_id = 'media-alpha'`); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "demo", "lookup"); err != nil {
+	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "demo", "lookup", "cand-1"); err != nil {
 		t.Fatal(err)
 	}
 	var onDelete string

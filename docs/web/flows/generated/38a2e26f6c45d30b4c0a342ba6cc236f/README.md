@@ -1,11 +1,11 @@
 # Home\-mode admin password sign\-in on the enroll page — readme
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:94b205cbae771aeda354151cf428de42 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:182; symbol: AdminSignInForm; span SHA256: 40ab7553bfdf2f87650f6fa92685559c630579854d7486f125171c6e0991e9bf.
+Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:206; symbol: AdminSignInForm; span SHA256: 40ab7553bfdf2f87650f6fa92685559c630579854d7486f125171c6e0991e9bf.
 
 
 Security summaries: not collected; absence is not a clean security finding.

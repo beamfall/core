@@ -1,6 +1,6 @@
 # Viewer header live search with keyboard shortcut — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b411703a15d94e63b2a9ad3db1610117 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -70,12 +70,12 @@ Source: internal/web/app/src/areas/viewer/lib/useLiveSearch\.ts:106; symbol: use
 <!-- flowdocs:paragraph:0bd02c0f7477431762dd77dc529acbb4 -->
 Declared member: source declares SEARCH\_RESULT\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:224; symbol: SEARCH\_RESULT\_QUERY; span SHA256: 2657b15ca18988a1185cca1d4da0e668c8866740d471da29d015c8ca97c46d7d.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:229; symbol: SEARCH\_RESULT\_QUERY; span SHA256: 2657b15ca18988a1185cca1d4da0e668c8866740d471da29d015c8ca97c46d7d.
 
 <!-- flowdocs:paragraph:2256c393d13d5bf45d0a33296c482c00 -->
 Declared member: source declares searchResult; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:234; symbol: searchResult; span SHA256: 3daf7e2d1a254bb5d63b4722f09694733f36e6db7b47bedc57df2f4b2031438b.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:239; symbol: searchResult; span SHA256: 3daf7e2d1a254bb5d63b4722f09694733f36e6db7b47bedc57df2f4b2031438b.
 
 <!-- flowdocs:paragraph:461e4766cbebdc345050868c94744567 -->
 Declared member: source declares activate; membership is caller\-declared, not runtime evidence\.

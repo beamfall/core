@@ -12,7 +12,8 @@
 # generated/generation.json and the pages beside it (exit 1 = drift, 2 = invalid
 # input), then the application map
 # is rebuilt at HEAD and compared with map.json ignoring only its revision and
-# digest. Neither mode is wired into `make gate`.
+# digest. Neither mode is wired into `make gate`, by decision (CORE-1762): see
+# docs/web/flows/README.md, "Regenerate and check".
 #
 # Needs a Corvint build whose flow generator is version 6 or later (V1-5524).
 # CORVINT_DOCS and CORVINT override the corvint-docs and corvint executables.

@@ -306,6 +306,25 @@ export async function postJSON<T = unknown>(
   );
 }
 
+/**
+ * POST JSON with keepalive, so the request outlives the page that sent it: a
+ * pagehide handler uses it to tell the server the viewer left. Fire and
+ * forget; the response is never read.
+ */
+export function postKeepalive(path: string, body: unknown): void {
+  try {
+    void fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      headers: { "Content-Type": "application/json", [CSRF_HEADER]: "1" },
+      body: JSON.stringify(body),
+    }).catch(() => {});
+  } catch {
+    // A page being torn down may refuse new requests; the server's expiry covers it.
+  }
+}
+
 /** GET JSON with same-origin credentials. Honors an optional AbortSignal. */
 export async function getJSON<T = unknown>(
   path: string,

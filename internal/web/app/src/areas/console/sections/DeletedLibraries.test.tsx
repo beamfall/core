@@ -28,6 +28,8 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 vi.mock("@/lib/graphql", () => ({
   createLibrary: vi.fn(),
   deleteLibrary: vi.fn(),
+  disableScraperCredential: vi.fn(),
+  fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),
   fetchFolderTree: vi.fn(),
   fetchJobs: vi.fn(),
   fetchLibraries: vi.fn(),
@@ -40,7 +42,9 @@ vi.mock("@/lib/graphql", () => ({
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
   setLibraryRoots: vi.fn(),
+  setScraperCredential: vi.fn(),
   setSkipDetectionEnabled: vi.fn(),
+  validateScraperCredential: vi.fn(),
 }));
 
 // CORE-1201, openspec/changes/archive/2026-11-14-library-trash-restore.

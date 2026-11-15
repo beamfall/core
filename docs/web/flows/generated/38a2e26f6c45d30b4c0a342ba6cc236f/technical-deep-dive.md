@@ -1,16 +1,16 @@
 # Home\-mode admin password sign\-in on the enroll page — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e3078687ba2ddb8ce2a995bc72c24a56 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:182; symbol: AdminSignInForm; span SHA256: 40ab7553bfdf2f87650f6fa92685559c630579854d7486f125171c6e0991e9bf.
+Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:206; symbol: AdminSignInForm; span SHA256: 40ab7553bfdf2f87650f6fa92685559c630579854d7486f125171c6e0991e9bf.
 
 <!-- flowdocs:paragraph:3e8637587af897e5b62f6907b72571a9 -->
 Declared member: source declares adminSignInErrorMessage; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:266; symbol: adminSignInErrorMessage; span SHA256: 0bbae5c215e0d5bb8e514dc21d32103909cf7e82b970e19c5f7039517837903d.
+Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:352; symbol: adminSignInErrorMessage; span SHA256: 0bbae5c215e0d5bb8e514dc21d32103909cf7e82b970e19c5f7039517837903d.
 
 <!-- flowdocs:paragraph:a22c661c5ba2939356a7b5690ea37183 -->
 Declared member: source declares RebindOutcome; membership is caller\-declared, not runtime evidence\.

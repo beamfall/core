@@ -25,6 +25,10 @@ type Registry struct {
 	groups   map[string]*Group
 	formedAt map[string]time.Time
 
+	// presence tracks open event streams per session for Watch Party expiry
+	// (CORE-1763). It has its own lock and nests under neither lock above.
+	presence presence
+
 	// Test-only synchronization hooks keep the lock-order regression deterministic.
 	acceptMapLocked          func()
 	reapMapLockAttempting    func()

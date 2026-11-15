@@ -1,6 +1,6 @@
 # Manage restrictions — technical-deep-dive
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1374bf7293150d7098eba5e61bccbb2b -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -10,22 +10,22 @@ Source: internal/web/app/src/areas/manage/pages/RestrictionsPage\.tsx:15; symbol
 <!-- flowdocs:paragraph:eff049742cada47318b29001a100f420 -->
 Declared member: source declares RELOCK\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:112; symbol: RELOCK\_MUTATION; span SHA256: 193527dc7c12c281cf75b85b259283560b510e894456b498ccb689d201d40645.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:117; symbol: RELOCK\_MUTATION; span SHA256: 193527dc7c12c281cf75b85b259283560b510e894456b498ccb689d201d40645.
 
 <!-- flowdocs:paragraph:55fb869d00155267e4cbeea3645d1010 -->
 Declared member: source declares REVEAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:103; symbol: REVEAL\_MUTATION; span SHA256: 2222933595504a0715f5d94732652dc0cc461519bee2cace01a6470529d89c70.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:108; symbol: REVEAL\_MUTATION; span SHA256: 2222933595504a0715f5d94732652dc0cc461519bee2cace01a6470529d89c70.
 
 <!-- flowdocs:paragraph:8a20a6865d00800679a46394703e4e97 -->
 Declared member: source declares relock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:115; symbol: relock; span SHA256: dd81aadb3d4b78c941f70c445bed3b22c92ec5bc74d54430b1e343dc1d586e0a.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:120; symbol: relock; span SHA256: dd81aadb3d4b78c941f70c445bed3b22c92ec5bc74d54430b1e343dc1d586e0a.
 
 <!-- flowdocs:paragraph:8d93c8c210d18454519c79ed9db90bda -->
 Declared member: source declares reveal; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/viewer\.ts:106; symbol: reveal; span SHA256: 62950c908e55a3083fecf1f4eca9c0d94134d0568abd9a135bab7d0a06c3a60b.
+Source: internal/web/app/src/lib/graphql/viewer\.ts:111; symbol: reveal; span SHA256: 62950c908e55a3083fecf1f4eca9c0d94134d0568abd9a135bab7d0a06c3a60b.
 
 <!-- flowdocs:paragraph:c6cb3fcafa91b6c9cac77c476679c833 -->
 Declared member: source declares onRelock; membership is caller\-declared, not runtime evidence\.

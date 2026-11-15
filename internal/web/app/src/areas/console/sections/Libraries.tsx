@@ -69,6 +69,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { requestManifestRefresh } from "@/lib/manifestRefresh";
 import { cn } from "@/lib/utils";
 import { ConfirmButton } from "../ConfirmButton";
+import { MissingProviderKeys } from "../ProviderKeys";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 import { AddLibrary } from "./AddLibrary";
@@ -575,6 +576,8 @@ export function Libraries() {
         </>
       }
     >
+      <MissingProviderKeys />
+
       {(adding || empty) && (
         <AddLibrary
           plugins={pluginList}

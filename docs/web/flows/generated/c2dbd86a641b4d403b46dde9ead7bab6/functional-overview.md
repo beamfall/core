@@ -1,6 +1,6 @@
 # Shared workbench widgets: status chips, tables, forms, server path picker — functional-overview
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0e6d2d485148eff0eb23fc814445bb80 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -10,7 +10,7 @@ Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:
 <!-- flowdocs:paragraph:00fda471d39c8b4a4ef960913621c888 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:594; symbol: ; span SHA256: 722042ae5ab26e15b80cf7982763d8d81c6680a29d0ee98be1fd69c4697a04a3.
+Source: internal/web/app/src/components/beamfall/workbench/PathPickerField\.tsx:601; symbol: ; span SHA256: 722042ae5ab26e15b80cf7982763d8d81c6680a29d0ee98be1fd69c4697a04a3.
 
 <!-- flowdocs:paragraph:db94cd0708c2bee72ce0d648fbd7dc06 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

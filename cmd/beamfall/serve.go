@@ -12,6 +12,7 @@ import (
 	"github.com/beamfall/core/internal/config"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/integrationhost"
+	"github.com/beamfall/core/internal/logtail"
 )
 
 func serve(ctx context.Context, args []string) error {
@@ -39,10 +40,14 @@ func serve(ctx context.Context, args []string) error {
 }
 
 // startServer takes the data directory's server lock, which offline commands
-// probe before writing, and builds the server. The caller runs the server and
-// then calls release.
+// probe before writing, applies a staged restore under it, and builds the
+// server. The caller runs the server and then calls release.
 func startServer(ctx context.Context, cfg config.Config) (*app.App, func(), error) {
 	release, err := lockServeDataDir(cfg.DataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	release, err = applyStagedRestore(ctx, cfg.DataDir, slog.Default(), release)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -55,5 +60,7 @@ func startServer(ctx context.Context, cfg config.Config) (*app.App, func(), erro
 }
 
 func newOperatorLogger(w io.Writer, level slog.Level) *slog.Logger {
-	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+	// The handler also keeps the most recent lines, redacted, for the console
+	// server-log read (CORE-1716); stderr output is unchanged.
+	return slog.New(logtail.NewTextHandler(w, logtail.NewRing(logtail.DefaultCapacity), &slog.HandlerOptions{Level: level}))
 }

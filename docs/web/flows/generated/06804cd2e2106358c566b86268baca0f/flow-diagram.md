@@ -1,6 +1,6 @@
 # Manage restrictions — flow-diagram
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:81591007b037041f06a2388546b4035c -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -18,9 +18,9 @@ sequenceDiagram
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx at line 18 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx at line 19 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx at line 20 - order unresolved
-    Note over S,U: Source contains call signalOrCommitted in internal/web/app/src/lib/graphql/viewer.ts at line 118 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 119 - order unresolved
-    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 108 - order unresolved
+    Note over S,U: Source contains call signalOrCommitted in internal/web/app/src/lib/graphql/viewer.ts at line 123 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 124 - order unresolved
+    Note over S,U: Source contains call rebindCompatibility in internal/web/app/src/lib/graphql/viewer.ts at line 113 - order unresolved
     Note over S,U: Source contains call async in internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx at line 43 - order unresolved
     Note over S,U: Source contains call setBusy in internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx at line 44 - order unresolved
     Note over S,U: Source contains call setError in internal/web/app/src/areas/manage/pages/RestrictionsPage.tsx at line 45 - order unresolved

@@ -1,6 +1,6 @@
 # Manage trash: restore, purge and reversible activity — functional-overview
 
-Source revision: 6742c2361d684c662e9ccb84d344a2200c377582. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: a75e0f8437987a575a00a20b8d515be33b584f10. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d49fc270c052396a0dd8cd0797b18131 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -10,7 +10,7 @@ Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:259; symbol: Acti
 <!-- flowdocs:paragraph:054e1556034d96f5f2ab7c1f73ece6c7 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:723; symbol: ; span SHA256: 7a0b83fc8d4571e2c2cfba58455501c76ba2feb04967c6ec685995d9e196e31e.
+Source: internal/web/app/src/lib/graphql/console\.ts:759; symbol: ; span SHA256: 7a0b83fc8d4571e2c2cfba58455501c76ba2feb04967c6ec685995d9e196e31e.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

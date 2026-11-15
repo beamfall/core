@@ -27,6 +27,7 @@ package conductor
 
 import (
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/beamfall/core/internal/store"
@@ -43,6 +44,9 @@ var (
 	// in the party. Collapsed at the surface into "unknown invite" so the party
 	// is never a cross-Profile existence oracle.
 	ErrNoInvite = errors.New("conductor: no pending invite for this profile")
+	// ErrNoRequest reports that the party has no pending transport request with
+	// the given id: it was decided already, replaced, or dropped on hand-off.
+	ErrNoRequest = errors.New("conductor: no pending transport request")
 )
 
 // Posture distinguishes an Ambient Group (auto-advancing, muted-video + audio)
@@ -143,9 +147,10 @@ func (r *Registry) FormParty(host store.ProfileID, hostSession store.SessionID, 
 		invites:   map[store.ProfileID]Invite{},
 		// A party forms paused at the start of its content, so a member who
 		// joins before the host presses play lands on position zero.
-		item:   content,
-		anchor: now,
-		paused: true,
+		item:        content,
+		anchor:      now,
+		paused:      true,
+		hostProfile: host,
 	}
 	r.mu.Lock()
 	r.groups[g.ID] = g
@@ -232,6 +237,9 @@ func (r *Registry) Accept(id string, profile store.ProfileID, m Member) error {
 	delete(g.invites, profile)
 	member := m
 	member.ProfileID = profile // ADR-0111: record profile so graph can surface display name
+	if _, rejoin := g.members[m.SessionID]; !rejoin {
+		g.order = append(g.order, m.SessionID)
+	}
 	g.members[m.SessionID] = &member
 	delete(r.formedAt, id)
 	g.mu.Unlock()
@@ -317,32 +325,97 @@ func (r *Registry) RequestTransport(id string, session store.SessionID) (Transpo
 	return TransportRequest{Authoritative: g.relaxed, Host: g.host}, nil
 }
 
+// HostProfile returns the Profile of the party's current host session. It
+// follows the host role on hand-off, unlike ProfileID, which stays the Profile
+// that formed the party.
+func (g *Group) HostProfile() store.ProfileID {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.hostProfile
+}
+
+// PartyLeave reports what a member's departure did to the party (CORE-1763).
+type PartyLeave struct {
+	// Dissolved is true when the last member left and the party is gone.
+	Dissolved bool
+	// NewHost is the session the host role passed to when the host left while
+	// other members remained; empty when the host role did not move.
+	NewHost store.SessionID
+}
+
 // LeaveParty removes session from the Watch Party identified by id (ADR-0111
 // revocation propagation). Unlike Leave, this does NOT assert same-Profile
 // ownership — a Watch Party is cross-Profile by design, so any member can leave
 // regardless of which Profile owns the party. The party dissolves when the last
-// member leaves, exactly as Leave does for Ambient Groups. ErrNoGroup and
-// ErrNotParty are reported as-is so the surface can route them to partyClientError.
-func (r *Registry) LeaveParty(id string, session store.SessionID) error {
+// member leaves, exactly as Leave does for Ambient Groups. When the host leaves
+// and members remain, the host role passes to the member who joined earliest
+// (CORE-1763): the party never runs on without a host. The hand-off stays
+// inside the party's existing, accepted membership, so it widens nothing
+// CORE-0531 limits. ErrNoGroup and ErrNotParty are reported as-is so the
+// surface can route them to partyClientError.
+func (r *Registry) LeaveParty(id string, session store.SessionID) (PartyLeave, error) {
 	g, err := r.partyLookup(id)
 	if err != nil {
-		return err
+		return PartyLeave{}, err
 	}
 	g.mu.Lock()
 	if _, ok := g.members[session]; !ok {
 		g.mu.Unlock()
-		return ErrNotMember
+		return PartyLeave{}, ErrNotMember
 	}
 	delete(g.members, session)
-	empty := len(g.members) == 0
+	g.order = slices.DeleteFunc(g.order, func(s store.SessionID) bool { return s == session })
+	g.dropRequestFrom(session)
+	var leave PartyLeave
+	if len(g.members) == 0 {
+		leave.Dissolved = true
+	} else if session == g.host {
+		for _, next := range g.order {
+			if m, ok := g.members[next]; ok {
+				g.host = next
+				g.hostProfile = m.ProfileID
+				// Requests were addressed to the old host; the new one did not see them.
+				g.requests = nil
+				leave.NewHost = next
+				break
+			}
+		}
+	}
 	g.mu.Unlock()
-	if empty {
+	if leave.Dissolved {
 		r.mu.Lock()
 		delete(r.groups, id)
 		delete(r.formedAt, id)
 		r.mu.Unlock()
 	}
-	return nil
+	return leave, nil
+}
+
+// EndParty ends the Watch Party for everyone (CORE-1763). Only the host may end
+// it. It returns the members the party had, so the surface can tell each of
+// them the party ended.
+func (r *Registry) EndParty(id string, host store.SessionID) ([]Member, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return nil, err
+	}
+	g.mu.Lock()
+	if g.host != host {
+		g.mu.Unlock()
+		return nil, ErrNotHost
+	}
+	members := make([]Member, 0, len(g.members))
+	for _, m := range g.members {
+		members = append(members, *m)
+	}
+	g.members = map[store.SessionID]*Member{}
+	g.order = nil
+	g.mu.Unlock()
+	r.mu.Lock()
+	delete(r.groups, id)
+	delete(r.formedAt, id)
+	r.mu.Unlock()
+	return members, nil
 }
 
 // PartyAnchor is the current {item, position, present_at} a late joiner syncs to
@@ -367,4 +440,88 @@ func (r *Registry) PartyAnchor(id string) (Transition, error) {
 		PresentAt: now.Add(PreBufferWindow),
 		Paused:    g.paused,
 	}, nil
+}
+
+// PartyRequest is a member's play, pause or seek in a host-only party, held
+// until the host approves or declines it (CORE-1765).
+type PartyRequest struct {
+	// ID is the opaque id the host round-trips to decide the request.
+	ID string
+	// From is the requesting member's session.
+	From     store.SessionID
+	Item     store.MediaID
+	Position time.Duration
+	Paused   bool
+}
+
+// AddRequest records req as pending with the party's host and returns the
+// host's Profile, which the request notification is addressed to. The caller
+// must be a member and not the host. A member has at most one pending request:
+// a newer one replaces it.
+func (r *Registry) AddRequest(id string, req PartyRequest) (store.ProfileID, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return "", err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.members[req.From]; !ok {
+		return "", ErrNotMember
+	}
+	if req.From == g.host {
+		return "", ErrNotHost
+	}
+	g.dropRequestFrom(req.From)
+	if g.requests == nil {
+		g.requests = map[string]PartyRequest{}
+	}
+	g.requests[req.ID] = req
+	return g.hostProfile, nil
+}
+
+// TakeRequest removes and returns the pending request requestID so the host can
+// approve or decline it. Only the host may take one; ErrNoRequest reports a
+// request that is unknown or already decided.
+func (r *Registry) TakeRequest(id string, host store.SessionID, requestID string) (PartyRequest, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return PartyRequest{}, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.host != host {
+		return PartyRequest{}, ErrNotHost
+	}
+	req, ok := g.requests[requestID]
+	if !ok {
+		return PartyRequest{}, ErrNoRequest
+	}
+	delete(g.requests, requestID)
+	return req, nil
+}
+
+// dropRequestFrom removes session's pending request, if any. Callers hold g.mu.
+func (g *Group) dropRequestFrom(session store.SessionID) {
+	for id, req := range g.requests {
+		if req.From == session {
+			delete(g.requests, id)
+		}
+	}
+}
+
+// PartyReportDrift classifies a Watch Party member's measured drift
+// (CORE-1766). Unlike ReportDrift it never re-anchors: the party timeline is
+// the host's, so a member that drifted past the resync threshold seeks itself
+// back onto it, and the others are not moved. The caller must be a member.
+func (r *Registry) PartyReportDrift(id string, session store.SessionID, drift time.Duration) (DriftDecision, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return DriftDecision{}, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.members[session]; !ok {
+		return DriftDecision{}, ErrNotMember
+	}
+	return ClassifyDrift(drift), nil
 }

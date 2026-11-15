@@ -102,17 +102,22 @@ var originalScopedFields = []string{
 	"createprofile",
 	"currentsession",
 	"deletelibrary",
-	"trashedlibraries",   // CORE-1201: deleted Libraries that can still be restored
-	"restorelibrary",     // CORE-1201: bring a deleted Library back
-	"purgelibrary",       // CORE-1201: permanently remove a deleted Library
-	"webhooks",           // CORE-1697: console-managed webhook endpoints
-	"webhookdeliveries",  // CORE-1697: webhook delivery log
-	"webhooksettings",    // CORE-1697: shared webhook options
-	"savewebhook",        // CORE-1697: add or edit a webhook endpoint
-	"deletewebhook",      // CORE-1697: remove a webhook endpoint
-	"testwebhook",        // CORE-1697: send one test notification
-	"setwebhooksettings", // CORE-1697: save shared webhook options
-	"deletemanagedpath",  // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
+	"trashedlibraries",    // CORE-1201: deleted Libraries that can still be restored
+	"restorelibrary",      // CORE-1201: bring a deleted Library back
+	"purgelibrary",        // CORE-1201: permanently remove a deleted Library
+	"webhooks",            // CORE-1697: console-managed webhook endpoints
+	"webhookdeliveries",   // CORE-1697: webhook delivery log
+	"webhooksettings",     // CORE-1697: shared webhook options
+	"savewebhook",         // CORE-1697: add or edit a webhook endpoint
+	"deletewebhook",       // CORE-1697: remove a webhook endpoint
+	"testwebhook",         // CORE-1697: send one test notification
+	"setwebhooksettings",  // CORE-1697: save shared webhook options
+	"serverlogs",          // CORE-1716: recent redacted server log lines
+	"stagedrestore",       // CORE-1720: the restore staged for the next start
+	"inspectbackup",       // CORE-1720: decrypt a backup set and report its contents
+	"stagerestore",        // CORE-1720: stage a restore for the next start
+	"cancelstagedrestore", // CORE-1720: drop a staged restore
+	"deletemanagedpath",   // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
 	"deletemarker",
 	"deletetag",
 	"deletemyengagement",
@@ -168,7 +173,8 @@ var originalScopedFields = []string{
 	"media",
 	"mediafieldlocks",
 	"mediafields",
-	"mediafiles", // WEB-5B: Versions/Parts file-plane read
+	"mediametadata", // CORE-1715: per-item metadata editor read
+	"mediafiles",    // WEB-5B: Versions/Parts file-plane read
 	"mediaforentity",
 	"mediarelations", // WEB-5B: generic Media relation read
 	"mergeentities",
@@ -289,6 +295,8 @@ var originalScopedFields = []string{
 	"setlibraryrestricted",
 	"setlibraryroots",
 	"setmediafieldlock",
+	"editmediametadata",    // CORE-1715: per-item manual metadata edit (locks edited fields)
+	"refreshmediametadata", // CORE-1715: per-item provider refresh honouring locks
 	"setpluginactive",
 	"setprofilelibraries",
 	"uninstallplugindata",

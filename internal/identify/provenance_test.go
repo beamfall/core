@@ -14,7 +14,7 @@ import (
 )
 
 type provenanceRecord struct {
-	pluginID, scraperID string
+	pluginID, scraperID, candidateID string
 }
 
 type fakeProvenanceStore struct {
@@ -23,14 +23,14 @@ type fakeProvenanceStore struct {
 	err     error
 }
 
-func (f *fakeProvenanceStore) SetMediaMetadataProvenance(_ context.Context, mediaID store.MediaID, pluginID, scraperID string) error {
+func (f *fakeProvenanceStore) SetMediaMetadataProvenance(_ context.Context, mediaID store.MediaID, pluginID, scraperID, candidateID string) error {
 	if f.err != nil {
 		return f.err
 	}
 	if f.byMedia == nil {
 		f.byMedia = map[store.MediaID]provenanceRecord{}
 	}
-	f.byMedia[mediaID] = provenanceRecord{pluginID: pluginID, scraperID: scraperID}
+	f.byMedia[mediaID] = provenanceRecord{pluginID: pluginID, scraperID: scraperID, candidateID: candidateID}
 	f.writes++
 	return nil
 }
@@ -52,7 +52,7 @@ func TestApplyRecordsMetadataProvenance(t *testing.T) {
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := provenance.byMedia["media-alpha"], (provenanceRecord{"demo", "lookup"}); got != want {
+	if got, want := provenance.byMedia["media-alpha"], (provenanceRecord{"demo", "lookup", "42"}); got != want {
 		t.Fatalf("provenance = %#v, want %#v", got, want)
 	}
 }
@@ -70,7 +70,7 @@ func TestApplyOverwritesMetadataProvenanceOnReidentify(t *testing.T) {
 	if err := service.Apply(ctx, "media-alpha", "demo", "second", "43"); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := provenance.byMedia["media-alpha"], (provenanceRecord{"demo", "second"}); got != want {
+	if got, want := provenance.byMedia["media-alpha"], (provenanceRecord{"demo", "second", "43"}); got != want {
 		t.Fatalf("provenance after re-identify = %#v, want %#v", got, want)
 	}
 	if provenance.writes != 2 {
@@ -148,7 +148,7 @@ type lockedProvenanceStore struct {
 	scraper string
 }
 
-func (s *lockedProvenanceStore) SetMediaMetadataProvenance(_ context.Context, _ store.MediaID, _, scraperID string) error {
+func (s *lockedProvenanceStore) SetMediaMetadataProvenance(_ context.Context, _ store.MediaID, _, scraperID, _ string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.scraper = scraperID

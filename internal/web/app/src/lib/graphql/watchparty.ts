@@ -3,7 +3,7 @@
 // shared timeline, and leave. Forming and joining are home-network only
 // (CORE-0531); the server refuses them from anywhere else.
 
-import { graphql, postJSON } from "@/lib/api";
+import { graphql, postJSON, postKeepalive } from "@/lib/api";
 
 export interface WatchPartyParticipant {
   displayName: string;
@@ -56,8 +56,14 @@ const WATCH_PARTY_TRANSPORT_MUTATION =
 const REQUEST_WATCH_PARTY_TRANSPORT_MUTATION =
   "mutation RequestWatchPartyTransport($partyID: String!, $item: String!, $positionMS: Int!, $paused: Boolean) { requestWatchPartyTransport(partyID: $partyID, item: $item, positionMS: $positionMS, paused: $paused) { partyID approved } }";
 
+const DECIDE_WATCH_PARTY_REQUEST_MUTATION =
+  "mutation DecideWatchPartyRequest($partyID: String!, $request: String, $decline: Boolean) { watchPartyTransport(partyID: $partyID, request: $request, decline: $decline) { item positionMS presentAtMS } }";
+
+const REPORT_DRIFT_MUTATION =
+  "mutation ReportDrift($groupID: String!, $driftMS: Int!) { reportDrift(groupID: $groupID, driftMS: $driftMS) { groupID action rate } }";
+
 const LEAVE_WATCH_PARTY_MUTATION =
-  "mutation LeaveWatchParty($partyID: String!) { leaveWatchParty(partyID: $partyID) { partyID } }";
+  "mutation LeaveWatchParty($partyID: String!, $end: Boolean) { leaveWatchParty(partyID: $partyID, end: $end) { partyID } }";
 
 /** CreateWatchParty — the caller's session hosts a party around `content`. */
 export async function createWatchParty(vars: {
@@ -126,11 +132,58 @@ export async function requestWatchPartyTransport(vars: {
   return data.requestWatchPartyTransport;
 }
 
-/** LeaveWatchParty — the caller's session leaves the party. */
-export async function leaveWatchParty(partyID: string): Promise<void> {
+/**
+ * DecideWatchPartyRequest — the host approves a member's pending request, which
+ * moves every member, or declines it, which leaves the timeline as it is.
+ */
+export async function decideWatchPartyRequest(
+  partyID: string,
+  request: string,
+  approve: boolean,
+): Promise<WatchPartyAnchor> {
+  const data = await graphql<{ watchPartyTransport: WatchPartyAnchor }>(
+    DECIDE_WATCH_PARTY_REQUEST_MUTATION,
+    { partyID, request, decline: !approve },
+  );
+  return data.watchPartyTransport;
+}
+
+/** The server's read of a reported drift: in sync, a rate nudge, or a re-seek. */
+export interface DriftReport {
+  groupID: string;
+  action: "none" | "nudge" | "resync";
+  rate: number;
+}
+
+/**
+ * ReportDrift — tell the server how far this member's player is from the
+ * party timeline, in ms (positive is ahead), so it can nudge it (CORE-1766).
+ */
+export async function reportWatchPartyDrift(
+  partyID: string,
+  driftMS: number,
+): Promise<DriftReport> {
+  const data = await graphql<{ reportDrift: DriftReport }>(REPORT_DRIFT_MUTATION, {
+    groupID: partyID,
+    driftMS: Math.round(driftMS),
+  });
+  return data.reportDrift;
+}
+
+/**
+ * LeaveWatchParty — the caller's session leaves the party. A host's leave
+ * hands the party to the member who joined first; `end` ends it for everyone.
+ */
+export async function leaveWatchParty(partyID: string, end = false): Promise<void> {
   await graphql<{ leaveWatchParty: { partyID: string } }>(LEAVE_WATCH_PARTY_MUTATION, {
     partyID,
+    ...(end ? { end: true } : {}),
   });
+}
+
+/** LeaveWatchParty sent with keepalive from pagehide, so a closing tab still leaves. */
+export function leaveWatchPartyKeepalive(partyID: string): void {
+  postKeepalive("/api/graphql", { query: LEAVE_WATCH_PARTY_MUTATION, variables: { partyID } });
 }
 
 /**
