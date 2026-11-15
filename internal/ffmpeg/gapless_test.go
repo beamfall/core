@@ -296,6 +296,10 @@ func TestProbeGaplessRealEncodes(t *testing.T) {
 			if audio == nil {
 				t.Fatalf("no audio stream in %+v", probe.Streams)
 			}
+			// Logged so a run against another FFmpeg build (the pinned container's,
+			// CORE-1888) records the facts it measured, not only pass or fail.
+			t.Logf("%s on %s: rate=%d delay=%d padding=%d decoded=%d", tc.name, ffmpegVersionLine(t),
+				audio.SampleRate, audio.EncoderDelaySamples, audio.EncoderPaddingSamples, audio.DecodedSamples)
 			if audio.SampleRate != tc.rate || audio.EncoderDelaySamples <= 0 || audio.EncoderPaddingSamples <= 0 {
 				t.Fatalf("gapless facts = %+v", audio)
 			}
@@ -304,4 +308,15 @@ func TestProbeGaplessRealEncodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ffmpegVersionLine is the first line of `ffmpeg -version`, or "unknown ffmpeg".
+func ffmpegVersionLine(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("ffmpeg", "-version").Output()
+	if err != nil {
+		return "unknown ffmpeg"
+	}
+	line, _, _ := strings.Cut(string(out), "\n")
+	return strings.TrimSpace(line)
 }
