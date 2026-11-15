@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/streamtoken"
 )
 
@@ -28,11 +29,20 @@ type StreamShape struct {
 	// non-zero adjustment without a composed picture replaces the ladder with
 	// one audio-only rung, and stretches the session's timeline by the tempo.
 	Adjust ffmpeg.AudioAdjust
+	// AudioOnly replaces the session's ladder with one audio-only rung: the
+	// Media is audio-class, so any picture stream it carries is embedded art,
+	// not video to re-encode. A composed picture still takes precedence.
+	AudioOnly bool
 }
 
-// StreamShapeFromGrant reads the StreamShape a stream grant carries.
-func StreamShapeFromGrant(grant streamtoken.Grant) StreamShape {
-	return StreamShape{ComposedPicture: grant.ComposedPicture, Adjust: grantAudioAdjust(grant)}
+// StreamShapeFromGrant reads the StreamShape a stream grant carries for
+// media, the Media the grant names.
+func StreamShapeFromGrant(grant streamtoken.Grant, media store.Media) StreamShape {
+	return StreamShape{
+		ComposedPicture: grant.ComposedPicture,
+		Adjust:          grantAudioAdjust(grant),
+		AudioOnly:       media.Class == store.MediaClassAudio,
+	}
 }
 
 // SetPictureComposer wires the resolver composed-picture sessions draw their

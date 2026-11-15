@@ -2089,8 +2089,10 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	if reason := rendition.ToneMapRefusal(); reason != "" {
 		return nil, errors.New("ffmpeg: " + reason)
 	}
-	rendition = rendition.withHWAccel(r.hwAccel)
-	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+	if !rendition.AudioOnly {
+		rendition = rendition.withHWAccel(r.hwAccel)
+		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
@@ -2129,6 +2131,11 @@ func hlsArgs(src, dir string, rendition Rendition) []string {
 	args = append(args,
 		"-i", src,
 	)
+	if rendition.AudioOnly {
+		args = append(args, "-map", audioOnlyMap(rendition))
+		args = append(args, rendition.audioArgs()...)
+		return append(args, hlsMuxArgs(dir)...)
+	}
 	args = append(args, rendition.videoArgs()...)
 	args = append(args, rendition.selectedStreamMapArgs()...)
 	if !rendition.CopyVideo {
@@ -2148,6 +2155,15 @@ func (r Rendition) selectedStreamMapArgs() []string {
 		return nil
 	}
 	return []string{"-map", "0:v:0", "-map", fmt.Sprintf("0:%d", *r.AudioStreamIndex)}
+}
+
+// audioOnlyMap is the single -map an audio-only rendition encodes: the
+// selected audio stream, or the first audio stream when none is selected.
+func audioOnlyMap(rendition Rendition) string {
+	if rendition.AudioStreamIndex != nil {
+		return fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
+	}
+	return "0:a:0"
 }
 
 // hlsMuxArgs is the CMAF fMP4 HLS muxer tail every file-to-HLS encode shares:
@@ -2311,11 +2327,7 @@ func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime 
 		"-i", src,
 	)
 	if rendition.AudioOnly {
-		audioMap := "0:a:0"
-		if rendition.AudioStreamIndex != nil {
-			audioMap = fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
-		}
-		args = append(args, "-map", audioMap)
+		args = append(args, "-map", audioOnlyMap(rendition))
 	} else {
 		args = append(args, rendition.videoArgs()...)
 		args = append(args, streamMaps...)

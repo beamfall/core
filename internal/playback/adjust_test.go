@@ -60,7 +60,7 @@ func TestInfoAdjustedAudioIsAnAudioOnlyTranscode(t *testing.T) {
 		t.Fatalf("decision = %q reason = %q streams = %#v, want one adjusted transcode", resp.Decision, resp.Reason, resp.Streams)
 	}
 	stream := resp.Streams[0]
-	if stream.Kind != "hls" || stream.ID != "adjusted-main" || len(stream.Renditions) != 1 || stream.Renditions[0].ID != adjustedAudioRungID || stream.Renditions[0].Height != 0 {
+	if stream.Kind != "hls" || stream.ID != "adjusted-main" || len(stream.Renditions) != 1 || stream.Renditions[0].ID != audioOnlyRungID || stream.Renditions[0].Height != 0 {
 		t.Fatalf("stream = %#v, want one audio-only HLS rung", stream)
 	}
 	if grant := hlsGrant(t, stream.Token); grant.PitchShiftSemitones != -2 || grant.Tempo != 0.9 || grant.ComposedPicture || grant.AudioCopy {
@@ -175,18 +175,18 @@ func TestAdjustedSessionEncodesOneAudioOnlyRungOnTheOutputTimeline(t *testing.T)
 		t.Fatal(err)
 	}
 	master, err := os.ReadFile(filepath.Clean(masterPath))
-	if err != nil || strings.Count(string(master), "#EXT-X-STREAM-INF") != 1 || !strings.Contains(string(master), adjustedAudioRungID+"/index.m3u8") || strings.Contains(string(master), "RESOLUTION") {
+	if err != nil || strings.Count(string(master), "#EXT-X-STREAM-INF") != 1 || !strings.Contains(string(master), audioOnlyRungID+"/index.m3u8") || strings.Contains(string(master), "RESOLUTION") {
 		t.Fatalf("master = %q err %v, want only the audio rung", master, err)
 	}
 	// 120s of song at tempo 0.8 lasts 150s: 38 segments of 4s.
-	index, err := os.ReadFile(filepath.Join(filepath.Dir(masterPath), adjustedAudioRungID, "index.m3u8"))
+	index, err := os.ReadFile(filepath.Join(filepath.Dir(masterPath), audioOnlyRungID, "index.m3u8"))
 	if err != nil || strings.Count(string(index), "#EXTINF") != 38 {
 		t.Fatalf("index = %q err %v, want 38 segments", index, err)
 	}
-	if _, err := adjustedFilePath(sessions, key, adjust, adjustedAudioRungID+"/seg00037.m4s"); err != nil {
+	if _, err := adjustedFilePath(sessions, key, adjust, audioOnlyRungID+"/seg00037.m4s"); err != nil {
 		t.Fatalf("last output segment: %v", err)
 	}
-	if _, err := adjustedFilePath(sessions, key, adjust, adjustedAudioRungID+"/seg00038.m4s"); err == nil {
+	if _, err := adjustedFilePath(sessions, key, adjust, audioOnlyRungID+"/seg00038.m4s"); err == nil {
 		t.Fatal("a segment past the adjusted end must be refused")
 	}
 	if len(transcoder.renditions) != 1 {
@@ -206,17 +206,17 @@ func TestAdjustmentChangeRestartsAtTheSameSongPosition(t *testing.T) {
 	sessions := NewSessions(transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-retempo", MediaID: "media-song"}
-	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 0.8}, adjustedAudioRungID+"/init.mp4"); err != nil {
+	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 0.8}, audioOnlyRungID+"/init.mp4"); err != nil {
 		t.Fatal(err)
 	}
 	// The viewer is 40s into the song when the tempo changes to 1.25: output
 	// 32s, segment 8. Then back to 0.8: output 50s, segment 12.
 	sessions.NoteResumePosition(key, 40)
-	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 1.25}, adjustedAudioRungID+"/init.mp4"); err != nil {
+	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 1.25}, audioOnlyRungID+"/init.mp4"); err != nil {
 		t.Fatal(err)
 	}
 	sessions.NoteResumePosition(key, 40)
-	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 0.8}, adjustedAudioRungID+"/init.mp4"); err != nil {
+	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 0.8}, audioOnlyRungID+"/init.mp4"); err != nil {
 		t.Fatal(err)
 	}
 	transcoder.mu.Lock()
@@ -228,7 +228,7 @@ func TestAdjustmentChangeRestartsAtTheSameSongPosition(t *testing.T) {
 	// A position noted while an unchanged session runs is dropped by its next
 	// request rather than carried to a later session.
 	sessions.NoteResumePosition(key, 40)
-	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 0.8}, adjustedAudioRungID+"/init.mp4"); err != nil {
+	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 0.8}, audioOnlyRungID+"/init.mp4"); err != nil {
 		t.Fatal(err)
 	}
 	sessions.mu.Lock()

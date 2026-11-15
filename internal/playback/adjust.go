@@ -79,16 +79,6 @@ func grantAudioAdjust(grant streamtoken.Grant) ffmpeg.AudioAdjust {
 	return ffmpeg.AudioAdjust{PitchSemitones: grant.PitchShiftSemitones, Tempo: grant.Tempo}
 }
 
-// adjustedAudioRungID names the single rung of an adjusted audio stream.
-const adjustedAudioRungID = "audio"
-
-// adjustedAudioRung is the single audio-only rung an adjusted audio stream
-// offers: no video is encoded, so there is no resolution ladder. Bandwidth is
-// the stereo-AAC-and-mux allowance.
-func adjustedAudioRung() Rung {
-	return Rung{ID: adjustedAudioRungID, AudioOnly: true, Bandwidth: bandwidthFor(0)}
-}
-
 // adjustedAudioChoice mints the HLS stream for an adjusted audio Media
 // without a composed picture: an audio-only encode carrying the grant's
 // adjustment.
@@ -99,7 +89,7 @@ func (s *Service) adjustedAudioChoice(ctx context.Context, grant streamtoken.Gra
 	if err != nil {
 		return StreamChoice{}, err
 	}
-	rung := adjustedAudioRung()
+	rung := audioOnlyRung()
 	return StreamChoice{
 		ID:         "adjusted-" + suffix,
 		Kind:       "hls",

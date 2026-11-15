@@ -898,13 +898,18 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	}
 	// The keyframe timeline lays out the copied-video rung, which a composed
 	// picture or an audio adjustment replaces with a single encoded rung.
+	// An audio-only shape never copies a picture stream through: the audio
+	// class's embedded art is not video.
+	if shape.AudioOnly {
+		audioCopy = false
+	}
 	var timeline *keyframeTimeline
 	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() {
 		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
 			return "", err
 		}
 	}
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, priority)
+	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1144,8 +1149,8 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // served rendition copy the source video and transcode only the audio. A
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
-// audio-only rung.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, priority Priority) (*hlsSession, error) {
+// audio-only rung. audioOnly (an audio-class Media) offers that rung too.
+func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1162,8 +1167,8 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			return nil, err
 		}
 		requestedRungs = []Rung{rung}
-	} else if !adjust.IsZero() {
-		requestedRungs = []Rung{adjustedAudioRung()}
+	} else if audioOnly || !adjust.IsZero() {
+		requestedRungs = []Rung{audioOnlyRung()}
 	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	if existing, ok := s.sessions[key]; ok {
