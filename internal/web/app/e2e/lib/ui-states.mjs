@@ -233,6 +233,7 @@ export const IN_PAGE_STATES = Object.freeze({
     { kind: "error", name: "err-playback-variants" },
     { kind: "error", name: "err-offline" },
     { kind: "loading", name: "recovering" },
+    { kind: "menu", name: "chapters" },
     {
       kind: "select",
       name: "skip-interval",
@@ -760,6 +761,7 @@ export const UI_STATE_GAPS = Object.freeze({
   "/watch/:mediaId#error:err-playback-variants": NO_ERROR_FIXTURE,
   "/watch/:mediaId#error:err-offline": NO_ERROR_FIXTURE,
   "/watch/:mediaId#loading:recovering": NO_LOADING_FIXTURE,
+  "/watch/:mediaId#menu:chapters": NO_CONTROL_DRIVEN,
   "/manage/libraries#loading:page": NO_LOADING_FIXTURE,
   "/manage/libraries#empty:page": NO_EMPTY_FIXTURE,
   "/manage/libraries#error:page": NO_ERROR_FIXTURE,

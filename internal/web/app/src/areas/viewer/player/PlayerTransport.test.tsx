@@ -7,6 +7,7 @@ import { I18nProvider } from "@/lib/i18n";
 import type { Locale } from "@/strings";
 import { PlayerTransport } from "./PlayerTransport";
 import type { PlayerState } from "./usePlayer";
+import { lastViewerIntent } from "./viewerIntent";
 
 const state: PlayerState = {
   phase: "playing",
@@ -182,6 +183,22 @@ describe("PlayerTransport", () => {
     fireTouch(stage, "pointerdown", { pointerId: 1, clientX: 75, clientY: 50 });
     fireTouch(stage, "pointerup", { pointerId: 1, clientX: 75, clientY: 50 });
     expect(video.currentTime).toBe(50);
+  });
+
+  it("opens the keyboard shortcut sheet on ? and closes it on Escape (CORE-1682)", async () => {
+    const onMenuOpenChange = vi.fn();
+    render(<Harness onMenuOpenChange={onMenuOpenChange} skipInterval={30} />);
+
+    expect(dispatchKey("?", { shiftKey: true }).defaultPrevented).toBe(true);
+    const sheet = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(sheet).toHaveTextContent("Back or forward 10 seconds");
+    expect(sheet).toHaveTextContent("Back or forward 30 seconds");
+    expect(screen.getByTestId("stage")).toContainElement(sheet);
+    await waitFor(() => expect(onMenuOpenChange).toHaveBeenLastCalledWith(true));
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(onMenuOpenChange).toHaveBeenLastCalledWith(false);
   });
 
   it("mirrors live volume and speed, exposes their values, and restores muted volume", async () => {
@@ -453,8 +470,11 @@ describe("PlayerTransport", () => {
     fireEvent.timeUpdate(video);
     expect(scrubber).toHaveAttribute("aria-valuetext", expect.stringContaining("1 minute"));
 
+    const beforeRelease = performance.now();
     fireMouse(document, "pointerup", 60);
     expect(seeks).toEqual([60]);
+    // The seek marks the viewer's intent, so a Watch Party sends it however long the drag took.
+    expect(lastViewerIntent()).toBeGreaterThanOrEqual(beforeRelease);
   });
 
   it("seeks on a touch tap of the scrubber (CORE-1360)", () => {

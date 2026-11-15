@@ -271,7 +271,7 @@ function streamOfKind(info: PlaybackInfo, kind: string | undefined): PlaybackStr
 type Engine = "hlsjs" | "native" | "unsupported";
 
 /** The engine that plays `stream` in this browser. */
-function engineFor(video: HTMLVideoElement, stream: PlaybackStream): Engine {
+export function engineFor(video: HTMLVideoElement, stream: PlaybackStream): Engine {
   if (stream.kind !== "hls") return "native";
   const nativeHLS = video.canPlayType("application/vnd.apple.mpegurl");
   const hlsJsOK = Hls.isSupported();

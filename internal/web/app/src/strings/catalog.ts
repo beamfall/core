@@ -18,6 +18,7 @@ import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
 import { playerRecoveryStrings } from "./player-recovery";
+import { playerShortcutStrings } from "./player-shortcuts";
 import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
@@ -28,6 +29,7 @@ import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { viewerAccountStrings } from "./viewer-account";
+import { watchPartyStrings } from "./watch-party";
 import { whosWatchingStrings } from "./whos-watching";
 
 export const en = {
@@ -38,6 +40,7 @@ export const en = {
   ...libraryHealthStrings.en,
   ...consoleOperationsStrings.en,
   ...playbackStrings.en,
+  ...playerShortcutStrings.en,
   ...subtitleAppearanceStrings.en,
   ...managedFileStrings.en,
   ...backupRetentionStrings.en,
@@ -59,6 +62,7 @@ export const en = {
   ...powerToolStrings.en,
   ...itemActionStrings.en,
   ...playerRecoveryStrings.en,
+  ...watchPartyStrings.en,
   ...libraryTrashStrings.en,
   ...mediaDetailStrings.en,
   ...karaokeStrings.en,
@@ -72,6 +76,7 @@ export const fr = {
   ...libraryHealthStrings.fr,
   ...consoleOperationsStrings.fr,
   ...playbackStrings.fr,
+  ...playerShortcutStrings.fr,
   ...subtitleAppearanceStrings.fr,
   ...managedFileStrings.fr,
   ...backupRetentionStrings.fr,
@@ -93,6 +98,7 @@ export const fr = {
   ...powerToolStrings.fr,
   ...itemActionStrings.fr,
   ...playerRecoveryStrings.fr,
+  ...watchPartyStrings.fr,
   ...libraryTrashStrings.fr,
   ...mediaDetailStrings.fr,
   ...karaokeStrings.fr,
@@ -106,6 +112,7 @@ export const de = {
   ...libraryHealthStrings.de,
   ...consoleOperationsStrings.de,
   ...playbackStrings.de,
+  ...playerShortcutStrings.de,
   ...subtitleAppearanceStrings.de,
   ...managedFileStrings.de,
   ...backupRetentionStrings.de,
@@ -127,6 +134,7 @@ export const de = {
   ...powerToolStrings.de,
   ...itemActionStrings.de,
   ...playerRecoveryStrings.de,
+  ...watchPartyStrings.de,
   ...libraryTrashStrings.de,
   ...mediaDetailStrings.de,
   ...karaokeStrings.de,
@@ -140,6 +148,7 @@ export const es = {
   ...libraryHealthStrings.es,
   ...consoleOperationsStrings.es,
   ...playbackStrings.es,
+  ...playerShortcutStrings.es,
   ...subtitleAppearanceStrings.es,
   ...managedFileStrings.es,
   ...backupRetentionStrings.es,
@@ -161,6 +170,7 @@ export const es = {
   ...powerToolStrings.es,
   ...itemActionStrings.es,
   ...playerRecoveryStrings.es,
+  ...watchPartyStrings.es,
   ...libraryTrashStrings.es,
   ...mediaDetailStrings.es,
   ...karaokeStrings.es,
@@ -174,6 +184,7 @@ export const pt = {
   ...libraryHealthStrings.pt,
   ...consoleOperationsStrings.pt,
   ...playbackStrings.pt,
+  ...playerShortcutStrings.pt,
   ...subtitleAppearanceStrings.pt,
   ...managedFileStrings.pt,
   ...backupRetentionStrings.pt,
@@ -195,6 +206,7 @@ export const pt = {
   ...powerToolStrings.pt,
   ...itemActionStrings.pt,
   ...playerRecoveryStrings.pt,
+  ...watchPartyStrings.pt,
   ...libraryTrashStrings.pt,
   ...mediaDetailStrings.pt,
   ...karaokeStrings.pt,

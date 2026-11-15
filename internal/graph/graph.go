@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -352,6 +353,10 @@ type Options struct {
 
 // Handler serves the GraphQL HTTP endpoint.
 type Handler struct {
+	// partyMu serializes Watch Party timeline moves with their fan-out
+	// (graph_watchparty.go partyTransition).
+	partyMu sync.Mutex
+
 	manifest        *manifest.Service
 	auth            *auth.Service
 	store           *store.Store

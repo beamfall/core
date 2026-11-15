@@ -509,11 +509,18 @@ const (
 	// correction"). It targets one member session (Session in the payload) so the
 	// member ignores a nudge addressed to a peer.
 	GroupSignalNudge = "nudge"
+	// GroupSignalRoster is a Watch Party membership snapshot: the members'
+	// display names plus the current anchor (item, position, present_at,
+	// paused), sent when a party forms and whenever a member joins or leaves,
+	// so a member who joined from an invite can see who is watching and land
+	// on the live timeline (CORE-1677).
+	GroupSignalRoster = "roster"
 )
 
 var groupSyncSignals = map[string]bool{
 	GroupSignalTransition: true,
 	GroupSignalNudge:      true,
+	GroupSignalRoster:     true,
 }
 
 // GroupSyncPayload is the JSON body of a group.sync outbox event.
@@ -527,6 +534,14 @@ var groupSyncSignals = map[string]bool{
 //     PresentAt − own_render_latency.
 //   - nudge: Session (the one member it targets) + Rate (the signed ±0.1 %
 //     playback-rate delta); a member ignores a nudge whose Session is not its own.
+//   - roster: Members (display names) plus the transition fields for the
+//     current anchor.
+//
+// Paused accompanies a Watch Party transition or roster whose timeline holds at
+// Position. A Watch Party is cross-Profile, so the surface writes one row per
+// member Profile (each row's ProfileID is that member's). The SSE stream keeps
+// its Profile gate and also reveal-filters a signal whose Item names Media, so
+// an unrevealed member session never learns a restricted item's identity.
 //
 // Time fields are server-clock Unix milliseconds — the wire-stable encoding the
 // member pairs with its calibrated clock offset; the conductor package works in
@@ -540,6 +555,8 @@ type GroupSyncPayload struct {
 	PresentAtMS int64     `json:"presentAtMS,omitempty"`
 	Session     SessionID `json:"session,omitempty"`
 	Rate        float64   `json:"rate,omitempty"`
+	Paused      bool      `json:"paused,omitempty"`
+	Members     []string  `json:"members,omitempty"`
 }
 
 // GroupSyncSignalValid reports whether signal is a member of the closed
