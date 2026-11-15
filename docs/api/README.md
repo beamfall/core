@@ -1,7 +1,7 @@
 ---
 name: developer-api-documentation
 description: Human and AI entry points for Beamfall Core's versioned developer API.
-updated: 2026-07-12
+updated: 2026-11-14
 ---
 
 # Developer API documentation
@@ -16,6 +16,10 @@ updated: 2026-07-12
 `openapi.json` is the `/v1` contract source. After changing it, run `script/gen-api-docs.sh` from
 the repository root and commit the regenerated reference and LLM files. Do not hand-edit generated
 outputs.
+
+A running server serves the same `openapi.json` at `GET /api/docs/openapi.json` and a browsable
+reference rendered from it at `GET /api/docs`, with no credential. The served bytes are this file,
+embedded at build time (`openapi.go`), so the live document is the one the contract checks validate.
 
 `/api/graphql` is a private, server-authoritative client surface, not a stable third-party
 integration contract. It may change without the `/v1` compatibility window. Third-party tools must
