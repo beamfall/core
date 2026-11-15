@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1",
+  "sourceLocale": "en",
+  "locales": [
+    {"tag": "en", "englishName": "English",    "nativeName": "English",   "direction": "ltr", "status": "shipped"},
+    {"tag": "fr", "englishName": "French",     "nativeName": "Français",  "direction": "ltr", "status": "shipped"},
+    {"tag": "de", "englishName": "German",     "nativeName": "Deutsch",   "direction": "ltr", "status": "shipped"},
+    {"tag": "es", "englishName": "Spanish",    "nativeName": "Español",   "direction": "ltr", "status": "shipped"},
+    {"tag": "pt", "englishName": "Portuguese", "nativeName": "Português", "direction": "ltr", "status": "shipped"}
+  ]
+}
