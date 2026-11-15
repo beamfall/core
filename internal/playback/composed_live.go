@@ -94,7 +94,7 @@ func writeLivePicture(rungDir string, picture ComposedPicture) (*ffmpeg.Composed
 // quirk height or bitrate limit with the same picture scaled down
 // (ffmpeg.ComposedCanvas).
 var composedLiveRungs = []Rung{
-	composedRung(composedHeight, composedBandwidth/1000),
+	composedRung(composedHeight, composedVideoKbps),
 	composedRung(480, 1000),
 	composedRung(360, 600),
 }

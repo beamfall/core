@@ -74,10 +74,14 @@ func audioCopyRung() Rung {
 	}
 }
 
+// audioMuxReserve is the stereo-AAC-and-mux allowance, in bits/s, every
+// advertised video rung reserves on top of its video maxrate.
+const audioMuxReserve = 256_000
+
 // bandwidthFor converts a video maxrate ceiling into the peak stream rate
 // advertised to clients: video plus a stereo-AAC-and-mux allowance.
 func bandwidthFor(videoKbps int) int {
-	return videoKbps*1000 + 256_000
+	return videoKbps*1000 + audioMuxReserve
 }
 
 // rungsFor returns the rungs the source can honestly back, best first, with no

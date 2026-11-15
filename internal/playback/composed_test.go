@@ -54,6 +54,13 @@ func staticComposer(picture ComposedPicture, ok bool, err error) PictureComposer
 // insertComposedRendition stores a Ready composed rendition keyed on picture.
 func insertComposedRendition(t *testing.T, st *store.Store, media store.Media, fingerprint string, picture ComposedPicture) store.PlaybackRenditionID {
 	t.Helper()
+	return insertComposedRenditionAt(t, st, media, fingerprint, picture, composedBandwidth)
+}
+
+// insertComposedRenditionAt is insertComposedRendition with the bandwidth the
+// row records, for a row stored by an earlier build.
+func insertComposedRenditionAt(t *testing.T, st *store.Store, media store.Media, fingerprint string, picture ComposedPicture, bandwidth int) store.PlaybackRenditionID {
+	t.Helper()
 	digest, err := picture.digest()
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +69,7 @@ func insertComposedRendition(t *testing.T, st *store.Store, media store.Media, f
 	if err := st.UpsertPlaybackRendition(context.Background(), store.PlaybackRendition{
 		ID: id, MediaID: media.ID, ContentFingerprint: fingerprint,
 		Kind: store.PlaybackRenditionKindHLS, Status: store.PlaybackRenditionReady,
-		RungID: ComposedRungID, Codec: composedCodec, Height: composedHeight, Bandwidth: composedBandwidth,
+		RungID: ComposedRungID, Codec: composedCodec, Height: composedHeight, Bandwidth: bandwidth,
 		Path: t.TempDir(), SizeBytes: 4096, CreatedAt: time.Unix(50, 0).UTC(), LastUsedAt: time.Unix(50, 0).UTC(),
 	}); err != nil {
 		t.Fatalf("UpsertPlaybackRendition: %v", err)
@@ -197,6 +204,12 @@ func TestPrecomputeComposedRenditionEnqueue(t *testing.T) {
 	if !strings.Contains(string(jobsOut[0].Payload), `"rungID":"composed"`) ||
 		!strings.Contains(string(jobsOut[0].Payload), string(composedRenditionID(audio.ID, "fp-enqueue", digest))) {
 		t.Fatalf("payload = %s", jobsOut[0].Payload)
+	}
+	// The rendition is advertised and admitted at its whole peak: the 1500k
+	// video maxrate plus the ladder's 256 kbps audio and mux allowance, the
+	// same total as the live 720p composed rung (CORE-1804).
+	if !strings.Contains(string(jobsOut[0].Payload), `"bandwidth":1756000`) {
+		t.Fatalf("payload = %s, want bandwidth 1756000", jobsOut[0].Payload)
 	}
 	for name, run := range map[string]func() ([]store.Job, error){
 		"declined": func() ([]store.Job, error) {

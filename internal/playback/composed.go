@@ -28,9 +28,14 @@ const (
 	// ComposedRungID is the rung every composed rendition is stored under.
 	ComposedRungID = "composed"
 
-	composedCodec     = "h264"
-	composedHeight    = 720
-	composedBandwidth = 1_500_000
+	composedCodec  = "h264"
+	composedHeight = 720
+	// composedVideoKbps is the 720p composed encode's video maxrate, and
+	// composedBandwidth the whole peak the rendition is advertised and
+	// admitted at: that maxrate plus the ladder's audio and mux allowance
+	// (bandwidthFor), the same total as the live 720p composed rung.
+	composedVideoKbps = 1500
+	composedBandwidth = composedVideoKbps*1000 + audioMuxReserve
 	// composedTimedTextFile is written into the rung directory for the encode
 	// and removed afterwards; the HLS serving path never serves it either way.
 	composedTimedTextFile = "picture.ass"
@@ -245,7 +250,7 @@ func (g FFmpegPrecomputeGenerator) precomputeComposedHLS(ctx context.Context, ru
 	}
 	proc, err := runner.StartBackgroundComposedHLS(ctx, spec.SourcePath, rungDir, input, ffmpeg.Rendition{
 		Height:        spec.Height,
-		VideoKbps:     spec.Bandwidth / 1000,
+		VideoKbps:     composedVideoKbps,
 		AudioCodec:    "aac",
 		AudioChannels: 2,
 	})
@@ -298,6 +303,7 @@ func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant st
 	// is always composed live.
 	adjusted := !grantAudioAdjust(grant).IsZero()
 	for _, rendition := range renditions {
+		rendition = withComposedPeak(rendition)
 		if adjusted || rendition.ID != want || !composedRenditionCompatible(rendition, profile, wantedAudio, ov) {
 			continue
 		}
@@ -453,9 +459,23 @@ func composedRenditionCompatible(r store.PlaybackRendition, profile CapabilityPr
 		return false
 	}
 	if len(profile.VideoCodecs) > 0 {
+		// The same envelope the live composed shapes are chosen within
+		// (liveComposedRung): height and the whole peak bandwidth.
 		cap, ok := videoCodecCap(profile.VideoCodecs, r.Codec)
-		return ok && (cap.MaxHeight <= 0 || r.Height <= cap.MaxHeight)
+		return ok && (cap.MaxHeight <= 0 || r.Height <= cap.MaxHeight) &&
+			(cap.MaxBitrate <= 0 || r.Bandwidth <= cap.MaxBitrate)
 	}
 	ceiling := clientLadderCeiling(profile)
 	return ceiling <= 0 || r.Height <= ceiling
+}
+
+// withComposedPeak holds a Ready composed rendition to its whole peak. A row
+// stored before CORE-1804 recorded the bare video maxrate as its bandwidth;
+// the encode was the same, so it is admitted and advertised at the same total
+// as one stored now.
+func withComposedPeak(r store.PlaybackRendition) store.PlaybackRendition {
+	if r.RungID == ComposedRungID && r.Bandwidth < composedBandwidth {
+		r.Bandwidth = composedBandwidth
+	}
+	return r
 }
