@@ -23,6 +23,7 @@ import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
 import { profileDeviceStrings } from "./profiles-devices";
+import { providerKeyStrings } from "./provider-keys";
 import { remoteAccessStrings } from "./remote-access";
 import { remoteControlStrings } from "./remote-control";
 import { sessionUpdateStrings } from "./sessions-updates";
@@ -70,6 +71,7 @@ export const en = {
   ...karaokeStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
+  ...providerKeyStrings.en,
 } as const;
 
 export const fr = {
@@ -108,6 +110,7 @@ export const fr = {
   ...karaokeStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
+  ...providerKeyStrings.fr,
 } as const;
 
 export const de = {
@@ -146,6 +149,7 @@ export const de = {
   ...karaokeStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
+  ...providerKeyStrings.de,
 } as const;
 
 export const es = {
@@ -184,6 +188,7 @@ export const es = {
   ...karaokeStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
+  ...providerKeyStrings.es,
 } as const;
 
 export const pt = {
@@ -222,4 +227,5 @@ export const pt = {
   ...karaokeStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
+  ...providerKeyStrings.pt,
 } as const;
