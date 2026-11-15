@@ -99,6 +99,9 @@ type Scope struct {
 	// is then empty. Token scopes are ops-class: manager role,
 	// hidden-world visibility, no Profile.
 	APITokenID string
+	// APITokenAccess is the admin API token's tier (CORE-2095); empty unless
+	// APITokenID is set. The GraphQL dispatcher bounds admin fields by it.
+	APITokenAccess store.APITokenAccess
 	// APIKeyID is set when the request authenticated with a scoped developer
 	// API key (ADR-0040 §2.2, Bearer bfk_…) instead of a session or admin
 	// token. APIScopes then carries the key's closed-vocabulary scope set;
@@ -295,9 +298,10 @@ func (s *Service) ScopeFromAPIToken(ctx context.Context, token string) (Scope, e
 		return Scope{}, err
 	}
 	return Scope{
-		APITokenID:   verified.ID,
-		DeviceRole:   store.DeviceRoleManager,
-		AllLibraries: true, // ops-class token: hidden-world, every Library
+		APITokenID:     verified.ID,
+		APITokenAccess: verified.Access,
+		DeviceRole:     store.DeviceRoleManager,
+		AllLibraries:   true, // ops-class token: hidden-world, every Library
 	}, nil
 }
 

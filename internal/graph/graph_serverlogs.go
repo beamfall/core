@@ -36,9 +36,6 @@ func (h *Handler) serverLogs(req request) ServerLogsInfo {
 		return ServerLogsInfo{Lines: []string{}}
 	}
 	limit := boundedIntVar(req, "limit", serverLogsMaxLimit, serverLogsMaxLimit)
-	lines := h.serverLogSource.Lines(limit)
-	if lines == nil {
-		lines = []string{}
-	}
+	lines := h.filteredServerLogs(limit, serverLogFilterFrom(req))
 	return ServerLogsInfo{Available: true, Capacity: h.serverLogSource.Capacity(), Lines: lines}
 }

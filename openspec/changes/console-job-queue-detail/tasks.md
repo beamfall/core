@@ -1,8 +1,8 @@
 - [x] Graph: `JobInfo.target` from the job payload, gated by `jobNeedsRedaction` and Library visibility
 - [x] Graph tests: visible target, payload-less job, restricted unrevealed and revealed
-- [x] Regenerate wire goldens (default and App Store) and publish `wire-contract-v2.12.0.json`
+- [x] Regenerate wire goldens (default and App Store) and publish `wire-contract-v2.13.0.json`
 - [x] Web: job kind labels and descriptions for every server kind, target line, backfill tag
 - [x] Web: Scan now control in the Job queue
 - [x] Web tests: job display helpers and Job queue rows and Scan now; string baselines
 - [x] Verify in the browser
-- [x] Pin client-core-wire 2.12.0 in the registry (additive optional field; consumers re-vendor at their pace)
+- [x] Pin client-core-wire 2.13.0 in the registry (additive optional field; consumers re-vendor at their pace)

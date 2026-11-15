@@ -113,6 +113,8 @@ var originalScopedFields = []string{
 	"testwebhook",         // CORE-1697: send one test notification
 	"setwebhooksettings",  // CORE-1697: save shared webhook options
 	"serverlogs",          // CORE-1716: recent redacted server log lines
+	"agentcatalog",        // CORE-2096: self-describing field catalog for agents
+	"diagnosticsbundle",   // CORE-2097: runtime diagnostics and text profiles
 	"stagedrestore",       // CORE-1720: the restore staged for the next start
 	"inspectbackup",       // CORE-1720: decrypt a backup set and report its contents
 	"stagerestore",        // CORE-1720: stage a restore for the next start
@@ -879,6 +881,51 @@ func TestAdminAPITokenCLIOpsEndToEnd(t *testing.T) {
 		`{"query":"mutation R($id:String!){ revokeApiToken(id:$id){ id revoked } }","variables":{"id":"`+info.ID+`"}}`, authorize)
 	if len(errs) != 0 || !strings.Contains(string(data["revokeApiToken"]), `"revoked":true`) {
 		t.Fatalf("token revoke via token: data=%s errs=%#v", data["revokeApiToken"], errs)
+	}
+}
+
+// TestAPITokenTiersBoundConsoleFields (CORE-2095): a diagnostics token runs
+// every Console read plus job cancel and retry and nothing else that writes; an
+// agent token runs every Console field except the credential-minting and
+// ownership-transfer ones; neither tier can widen itself through GraphQL.
+func TestAPITokenTiersBoundConsoleFields(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	for _, access := range []store.APITokenAccess{store.APITokenAccessDiagnostics, store.APITokenAccessAgent} {
+		_, token, err := st.CreateAPITokenWithAccess(t.Context(), string(access), access, time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		authorize := func(req *http.Request) { req.Header.Set("Authorization", "Bearer "+token) }
+		for field := range adminFields {
+			kind := "query"
+			if mutationFields[field] {
+				kind = "mutation"
+			}
+			var want bool
+			switch access {
+			case store.APITokenAccessDiagnostics:
+				want = adminTokenOps[field] || !mutationFields[field] || diagnosticsTokenMutations[field]
+			case store.APITokenAccessAgent:
+				want = !agentTokenDenied[field]
+			}
+			body := `{"query":"` + kind + ` { ` + fieldHandlerRegistry[field].wireName + ` }"}`
+			_, errs := post(t, handler, body, authorize)
+			refused := len(errs) > 0 && errs[0].Message == "admin session required"
+			if want == refused {
+				t.Errorf("%s token on %q: refused=%v errs=%#v, want allowed=%v", access, field, refused, errs, want)
+			}
+		}
+	}
+	for field := range agentTokenDenied {
+		if !adminFields[field] {
+			t.Errorf("agentTokenDenied %q is not a Console field", field)
+		}
+	}
+	for field := range diagnosticsTokenMutations {
+		if !adminFields[field] || !mutationFields[field] {
+			t.Errorf("diagnosticsTokenMutations %q is not a Console mutation", field)
+		}
 	}
 }
 

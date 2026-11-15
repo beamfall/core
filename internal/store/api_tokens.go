@@ -21,6 +21,35 @@ type APIToken struct {
 	CreatedAt  time.Time
 	LastUsedAt time.Time
 	Revoked    bool
+	// Access is the token's tier (CORE-2095); it bounds which admin GraphQL
+	// fields the token may run without an Admin Session.
+	Access APITokenAccess
+}
+
+// APITokenAccess is the closed set of admin API token tiers.
+type APITokenAccess string
+
+const (
+	// APITokenAccessCLI runs only the operator CLI allowlist. It is the
+	// default, and every token minted before tiers existed has it.
+	APITokenAccessCLI APITokenAccess = "cli"
+	// APITokenAccessDiagnostics adds every admin read.
+	APITokenAccessDiagnostics APITokenAccess = "diagnostics"
+	// APITokenAccessAgent adds admin mutations except credential minting and
+	// owner transfer.
+	APITokenAccessAgent APITokenAccess = "agent"
+)
+
+// ParseAPITokenAccess validates a tier name; empty means cli.
+func ParseAPITokenAccess(value string) (APITokenAccess, error) {
+	switch access := APITokenAccess(strings.TrimSpace(value)); access {
+	case "":
+		return APITokenAccessCLI, nil
+	case APITokenAccessCLI, APITokenAccessDiagnostics, APITokenAccessAgent:
+		return access, nil
+	default:
+		return "", ValidationError("token access must be cli, diagnostics or agent")
+	}
 }
 
 // apiTokenPrefix makes a leaked token greppable by secret scanners. Format:
@@ -29,10 +58,20 @@ const apiTokenPrefix = "bft_"
 
 var errInvalidAPIToken = errors.New("invalid API token")
 
-// CreateAPIToken mints a token: 8 random bytes of identifier, 32 random
-// bytes of secret. The returned string is the only time the secret leaves
-// the store; callers must never log it.
+// CreateAPIToken mints a cli-tier token: 8 random bytes of identifier, 32
+// random bytes of secret. The returned string is the only time the secret
+// leaves the store; callers must never log it.
 func (s *Store) CreateAPIToken(ctx context.Context, name string, now time.Time) (APIToken, string, error) {
+	return s.CreateAPITokenWithAccess(ctx, name, APITokenAccessCLI, now)
+}
+
+// CreateAPITokenWithAccess mints a token of the given tier. Only the offline
+// `beamfall token create` path passes an elevated tier.
+func (s *Store) CreateAPITokenWithAccess(ctx context.Context, name string, access APITokenAccess, now time.Time) (APIToken, string, error) {
+	access, err := ParseAPITokenAccess(string(access))
+	if err != nil {
+		return APIToken{}, "", err
+	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return APIToken{}, "", ValidationError("token name is required")
@@ -53,12 +92,12 @@ func (s *Store) CreateAPIToken(ctx context.Context, name string, now time.Time) 
 		return APIToken{}, "", err
 	}
 	if _, err := s.catalogW.ExecContext(ctx, `
-		INSERT INTO api_token(id, name, secret_hash, created_at_ms)
-		VALUES (?, ?, ?, ?)`,
-		id, name, hashAPITokenSecret(secret), timeToMillis(now)); err != nil {
+		INSERT INTO api_token(id, name, secret_hash, created_at_ms, access)
+		VALUES (?, ?, ?, ?, ?)`,
+		id, name, hashAPITokenSecret(secret), timeToMillis(now), string(access)); err != nil {
 		return APIToken{}, "", err
 	}
-	return APIToken{ID: id, Name: name, CreatedAt: now}, apiTokenPrefix + id + "_" + secret, nil
+	return APIToken{ID: id, Name: name, CreatedAt: now, Access: access}, apiTokenPrefix + id + "_" + secret, nil
 }
 
 // APITokens lists every token row, newest first — list metadata only, no
@@ -70,7 +109,7 @@ func (s *Store) APITokens(ctx context.Context) ([]APIToken, error) {
 		return nil, err
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, name, created_at_ms, last_used_at_ms, revoked
+		SELECT id, name, created_at_ms, last_used_at_ms, revoked, access
 		FROM api_token ORDER BY created_at_ms DESC, id`)
 	if err != nil {
 		return nil, err
@@ -138,7 +177,7 @@ func (s *Store) VerifyAPIToken(ctx context.Context, token string, now time.Time)
 		return APIToken{}, err
 	}
 	token2, err := scanAPIToken(s.catalogR.QueryRowContext(ctx, `
-		SELECT id, name, created_at_ms, last_used_at_ms, revoked FROM api_token WHERE id = ?`, id))
+		SELECT id, name, created_at_ms, last_used_at_ms, revoked, access FROM api_token WHERE id = ?`, id))
 	if err != nil {
 		return APIToken{}, err
 	}
@@ -180,7 +219,8 @@ func scanAPIToken(scanner interface{ Scan(dest ...any) error }) (APIToken, error
 	var token APIToken
 	var createdAt, lastUsedAt int64
 	var revoked int
-	if err := scanner.Scan(&token.ID, &token.Name, &createdAt, &lastUsedAt, &revoked); err != nil {
+	var access string
+	if err := scanner.Scan(&token.ID, &token.Name, &createdAt, &lastUsedAt, &revoked, &access); err != nil {
 		return APIToken{}, err
 	}
 	token.CreatedAt = millisToTime(createdAt)
@@ -188,5 +228,6 @@ func scanAPIToken(scanner interface{ Scan(dest ...any) error }) (APIToken, error
 		token.LastUsedAt = millisToTime(lastUsedAt)
 	}
 	token.Revoked = revoked != 0
+	token.Access = APITokenAccess(access)
 	return token, nil
 }

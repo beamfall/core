@@ -255,9 +255,23 @@ func hardwareAccelReport(result ffmpeg.HWAccelResult) config.HardwareAccelReport
 		report.Results[i] = config.HardwareAccelProbe{
 			Accelerator: string(probe.Accelerator),
 			Status:      string(probe.Status),
+			HEVC:        probe.HEVC,
+			AV1:         probe.AV1,
+			LowPower:    probe.LowPower,
 		}
 	}
 	return report
+}
+
+func renderNodeReports(nodes []ffmpeg.RenderNode) []config.RenderNodeReport {
+	if len(nodes) == 0 {
+		return nil
+	}
+	out := make([]config.RenderNodeReport, len(nodes))
+	for i, node := range nodes {
+		out[i] = config.RenderNodeReport{Path: node.Path, Vendor: node.Vendor, VendorID: node.VendorID, DeviceID: node.DeviceID}
+	}
+	return out
 }
 
 // New wires the server capabilities. A nil logger defaults to slog.Default();
@@ -457,14 +471,34 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		if accel, ok := ffmpeg.HWAccelFromString(transcodePolicy.Device); ok {
 			configured = accel
 		}
+		// Pick the render node before probing so the QSV/VA-API probe,
+		// tone-map and encode all run on the same GPU (CORE-2092).
+		renderNodes := ffmpeg.EnumerateRenderNodes(ffmpeg.DefaultDRIDir, ffmpeg.DefaultDRMDir)
+		renderNode, hintMatched, haveNode := ffmpeg.SelectRenderNode(renderNodes, transcodePolicy.Device)
+		if haveNode {
+			ffmpeg.SetRenderNode(renderNode.Path)
+			if !hintMatched && ffmpeg.RenderNodeHint(transcodePolicy.Device) {
+				logger.Warn("stored transcode device matches no render node; using the default", "device", transcodePolicy.Device, "renderNode", renderNode.Path)
+			}
+		}
 		probe := ffmpeg.ProbeHardwareAccel(ctx, ffmpeg.HWAccelOptions{ConfiguredPreference: configured})
-		ffmpegRunner.SetHardwareAccel(ffmpeg.SelectHWAccel(probe, configured))
+		selected := ffmpeg.SelectHWAccel(probe, configured)
+		ffmpegRunner.SetHardwareEncode(probe.HardwareEncode(selected))
 		cfg.HardwareAcceleration = hardwareAccelReport(probe)
-		cfg.TranscodeCap = ffmpeg.TranscodeCapForHWAccel(probe)
+		cfg.HardwareAcceleration.RenderNodes = renderNodeReports(renderNodes)
+		cfg.HardwareAcceleration.RenderNode = renderNode.Path
+		if len(renderNodes) > 0 {
+			logger.Info("hardware acceleration: render nodes", "nodes", cfg.HardwareAcceleration.RenderNodes, "selected", renderNode.Path)
+		}
+		// The automatic cap fits the host: usable cores for software, the
+		// selected backend's limit for hardware (CORE-2093). An env/flag or
+		// stored cap still wins below.
+		cfg.TranscodeCap = ffmpeg.DefaultTranscodeCap(selected)
+		logger.Info("transcode cap: automatic default derived", "cap", cfg.TranscodeCap, "accelerator", string(selected))
 		if cfg.HardwareAcceleration.SoftwareOnly() {
 			logger.Info("hardware acceleration probe: none verified, using software transcode")
 		} else {
-			logger.Info("hardware acceleration probe: verified working", "accelerators", cfg.HardwareAcceleration.Working)
+			logger.Info("hardware acceleration probe: verified working", "accelerators", cfg.HardwareAcceleration.Working, "hevc", cfg.HardwareAcceleration.HEVC(), "av1", cfg.HardwareAcceleration.AV1(), "lowPower", cfg.HardwareAcceleration.LowPower())
 		}
 	}
 	autoTranscodeCap := cfg.TranscodeCap

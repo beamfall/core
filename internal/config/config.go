@@ -177,13 +177,29 @@ type JellyfinCompatConfig struct {
 
 // HardwareAccelReport is the verified-working hardware-acceleration result the
 // startup probe records. The accelerator names mirror the closed
-// vocabulary the ffmpeg probe emits ("qsv", "vaapi", "nvenc", "videotoolbox");
+// vocabulary the ffmpeg probe emits ("qsv", "vaapi", "nvenc", "videotoolbox", and
+// "amf" on Windows);
 // config holds them as plain strings so this bootstrap package stays decoupled
 // from internal/ffmpeg. Working lists them in the order they were probed;
 // empty means software-only.
 type HardwareAccelReport struct {
 	Working []string
 	Results []HardwareAccelProbe
+	// RenderNodes are the DRM render nodes found at startup and RenderNode is
+	// the one QSV/VA-API probe, tone-map and encode use (CORE-2092). They are
+	// for the startup log and internal diagnostics only and are never copied
+	// onto the API.
+	RenderNodes []RenderNodeReport
+	RenderNode  string
+}
+
+// RenderNodeReport is one DRM render node and the PCI identity behind it.
+// Vendor is "intel", "amd", "nvidia" or "" for another vendor.
+type RenderNodeReport struct {
+	Path     string `json:"path"`
+	Vendor   string `json:"vendor"`
+	VendorID string `json:"vendorId"`
+	DeviceID string `json:"deviceId"`
 }
 
 // HardwareAccelProbe is one sanitized accelerator probe status. Status is one
@@ -191,6 +207,49 @@ type HardwareAccelReport struct {
 type HardwareAccelProbe struct {
 	Accelerator string `json:"accelerator"`
 	Status      string `json:"status"`
+	// HEVC reports that the accelerator's HEVC encoder passed its own probe
+	// encode, separately from the H.264 verdict in Status.
+	HEVC bool `json:"hevc"`
+	// AV1 reports that the accelerator's AV1 encoder passed its own probe
+	// encode, and LowPower that the accelerator encodes only in low-power
+	// mode (CORE-2094). Internal report only, never copied onto the API.
+	AV1      bool `json:"av1"`
+	LowPower bool `json:"lowPower"`
+}
+
+// HEVC lists the working accelerators whose HEVC encoder was also verified, in
+// probe order.
+func (r HardwareAccelReport) HEVC() []string {
+	var out []string
+	for _, probe := range r.Results {
+		if probe.Status == "working" && probe.HEVC {
+			out = append(out, probe.Accelerator)
+		}
+	}
+	return out
+}
+
+// AV1 lists the working accelerators whose AV1 encoder was also verified, in
+// probe order.
+func (r HardwareAccelReport) AV1() []string {
+	var out []string
+	for _, probe := range r.Results {
+		if probe.Status == "working" && probe.AV1 {
+			out = append(out, probe.Accelerator)
+		}
+	}
+	return out
+}
+
+// LowPower lists the working accelerators that encode only in low-power mode.
+func (r HardwareAccelReport) LowPower() []string {
+	var out []string
+	for _, probe := range r.Results {
+		if probe.Status == "working" && probe.LowPower {
+			out = append(out, probe.Accelerator)
+		}
+	}
+	return out
 }
 
 // ReviewDemoEnrollmentConfig enables the App Review demo enrollment grant.

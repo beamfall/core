@@ -110,6 +110,8 @@ var resultTypes = map[string]any{
 	"webhookdeliveries":      WebhookDeliveryInfo{},
 	"webhooksettings":        WebhookSettingsInfo{},
 	"serverlogs":             ServerLogsInfo{},
+	"agentcatalog":           AgentCatalogInfo{},
+	"diagnosticsbundle":      DiagnosticsBundleInfo{},
 	"stagedrestore":          StagedRestoreInfo{},
 	"libraryhealthitems":     HealthItemInfo{},
 	"libraryduplicategroups": DuplicateGroupInfo{},
@@ -380,20 +382,37 @@ var fieldArguments = map[string][]NestedArgument{
 		{Name: "recordID", Kind: "string", Optional: true},
 		{Name: "scraperID", Kind: "string", Optional: true},
 	},
-	"importstatus":   {{Name: "jobID", Kind: "string"}},
-	"itemstate":      {{Name: "entityID", Kind: "string", Optional: true}, {Name: "mediaID", Kind: "string", Optional: true}},
-	"libraryitems":   libraryItemsArguments(),
-	"media":          {{Name: "id", Kind: "string"}},
-	"mediafields":    {{Name: "mediaID", Kind: "string"}},
-	"mediafiles":     {{Name: "mediaID", Kind: "string"}},
-	"mediaforentity": {{Name: "entityID", Kind: "string"}},
-	"mediarelations": {{Name: "mediaID", Kind: "string"}, {Name: "relation", Kind: "string"}},
-	"search":         {{Name: "query", Kind: "string", Optional: true}},
-	"searchentities": {{Name: "query", Kind: "string", Optional: true}},
-	"searchfeeds":    {{Name: "query", Kind: "string"}},
-	"preplayqueue":   {{Name: "mediaID", Kind: "string"}},
-	"searchresult":   {searchModeArgument(), {Name: "query", Kind: "string", Optional: true}},
-	"sourceitems":    sourceArguments(),
+	"diagnosticsbundle": diagnosticsBundleArguments(),
+	"importstatus":      {{Name: "jobID", Kind: "string"}},
+	"itemstate":         {{Name: "entityID", Kind: "string", Optional: true}, {Name: "mediaID", Kind: "string", Optional: true}},
+	"libraryitems":      libraryItemsArguments(),
+	"media":             {{Name: "id", Kind: "string"}},
+	"mediafields":       {{Name: "mediaID", Kind: "string"}},
+	"mediafiles":        {{Name: "mediaID", Kind: "string"}},
+	"mediaforentity":    {{Name: "entityID", Kind: "string"}},
+	"mediarelations":    {{Name: "mediaID", Kind: "string"}, {Name: "relation", Kind: "string"}},
+	"search":            {{Name: "query", Kind: "string", Optional: true}},
+	"serverlogs":        serverLogsArguments(),
+	"searchentities":    {{Name: "query", Kind: "string", Optional: true}},
+	"searchfeeds":       {{Name: "query", Kind: "string"}},
+	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
+	"searchresult":      {searchModeArgument(), {Name: "query", Kind: "string", Optional: true}},
+	"sourceitems":       sourceArguments(),
+}
+
+func serverLogsArguments() []NestedArgument {
+	return []NestedArgument{
+		{Name: "contains", Kind: "string", Optional: true},
+		{Name: "level", Kind: "string", Optional: true, Enum: []string{"DEBUG", "ERROR", "INFO", "WARN"}},
+		{Name: "limit", Kind: "number", Optional: true},
+		{Name: "requestId", Kind: "string", Optional: true},
+	}
+}
+
+func diagnosticsBundleArguments() []NestedArgument {
+	args := serverLogsArguments()
+	profiles := NestedArgument{Name: "profiles", Kind: "list", Optional: true, Elem: &NestedArgument{Kind: "string", Enum: diagnosticsProfiles}}
+	return slices.Insert(args, len(args)-1, profiles) // keep names sorted: profiles sorts before requestId
 }
 
 func searchModeArgument() NestedArgument {

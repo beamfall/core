@@ -60,6 +60,11 @@
     "tier": "session"
   },
   {
+    "field": "agentcatalog",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "ambientqueue",
     "effect": "read",
     "tier": "session"
@@ -371,6 +376,11 @@
   },
   {
     "field": "devices",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "diagnosticsbundle",
     "effect": "read",
     "tier": "admin"
   },
