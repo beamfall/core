@@ -48,6 +48,8 @@ type hostRequest struct {
 	FileMut   FileMutationRequest `json:"fileMutation,omitempty"`
 	Outbound  OutboundRequest     `json:"outbound,omitempty"`
 	Causation causation.Token     `json:"causationToken,omitempty"`
+	// Write carries the arguments of the scoped write and playback-read methods.
+	Write *WriteRequest `json:"write,omitempty"`
 }
 
 // hostResponse is the supervisor's reply. Err is the permission-denied (or other)
@@ -72,6 +74,12 @@ const (
 	methodRequestOutbound     = "request-outbound"
 	methodWriteStatus         = "write-status"
 	methodLinkProfile         = "link-profile"
+	methodWriteMetadata       = "write-metadata"
+	methodCreateCollection    = "create-collection"
+	methodAddCollectionMedia  = "add-collection-media"
+	methodSetArtwork          = "set-artwork"
+	methodSetWatched          = "set-watched"
+	methodReadPlaybackState   = "read-playback-state"
 )
 
 // handleConn runs the per-connection protocol: handshake then request loop. A
@@ -267,6 +275,9 @@ func (s *Supervisor) dispatchOwned(ctx context.Context, req hostRequest) hostRes
 	case methodLinkProfile:
 		err := s.host.LinkProfile(ctx, store.ProfileID(req.Ref), req.Value)
 		return jsonResp(struct{}{}, err)
+	case methodWriteMetadata, methodCreateCollection, methodAddCollectionMedia,
+		methodSetArtwork, methodSetWatched, methodReadPlaybackState:
+		return s.dispatchWrite(causation.WithToken(ctx, req.Causation), req.Method, req.Write)
 	default:
 		return hostResponse{Err: "unknown method"}
 	}

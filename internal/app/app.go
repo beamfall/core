@@ -1304,6 +1304,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return nil, err
 	}
 	if integrationMgr != nil {
+		integrationMgr.setArtworkWriter(artworkService)
 		graphHandler.SetIntegrationActionRunner(integrationMgr)
 	}
 	if scrobbleDispatcher != nil {

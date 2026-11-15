@@ -243,6 +243,21 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
     "a plugin",
     "plugin",
   ),
+  "plugin.metadata_write": label("plugins", "{target} edited metadata", "a plugin", "plugin"),
+  "plugin.collection_write": label("plugins", "{target} changed a collection", "a plugin", "plugin"),
+  "plugin.artwork_write": label("plugins", "{target} set artwork", "a plugin", "plugin"),
+  "plugin.watch_state_write": label(
+    "plugins",
+    "{target} changed watch state for {actor}",
+    "a plugin",
+    "plugin",
+  ),
+  "plugin.playback_state_read": label(
+    "plugins",
+    "{target} read playback progress for {actor}",
+    "a plugin",
+    "plugin",
+  ),
   "plugin.dead_letter_retry": label(
     "plugins",
     "{actor} retried a failed delivery for {target}",

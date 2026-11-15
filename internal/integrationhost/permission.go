@@ -24,6 +24,11 @@ const (
 	PermProfileLink         = "profile-link"
 	PermRequestIngest       = "request-ingest"
 	PermRequestFileMutation = "request-file-mutation"
+	PermWriteMetadata       = "write-metadata"
+	PermWriteCollections    = "write-collections"
+	PermWriteArtwork        = "write-artwork"
+	PermWriteWatchState     = "write-watch-state"
+	PermReadPlaybackState   = "read-playback-state"
 )
 
 // highRiskPermissions are the grants that require explicit Console/Manager
@@ -35,7 +40,23 @@ var highRiskPermissions = map[string]bool{
 	PermProfileLink:         true,
 	PermRequestIngest:       true,
 	PermRequestFileMutation: true,
+	PermWriteMetadata:       true,
+	PermWriteCollections:    true,
+	PermWriteArtwork:        true,
+	PermWriteWatchState:     true,
+	PermReadPlaybackState:   true,
 }
+
+// profileBoundPermissions act on one Profile's own state (watch marks and
+// playback progress), so their grant must bind exactly one Profile. An
+// all-Libraries grant, or a grant with no binding, is refused for them.
+var profileBoundPermissions = map[string]bool{
+	PermWriteWatchState:   true,
+	PermReadPlaybackState: true,
+}
+
+// RequiresBoundProfile reports whether a grant of kind must bind one Profile.
+func RequiresBoundProfile(kind string) bool { return profileBoundPermissions[kind] }
 
 // IsHighRisk reports whether a permission kind requires explicit approval and
 // per-call audit.
@@ -54,6 +75,11 @@ var knownPermissions = map[string]bool{
 	PermProfileLink:         true,
 	PermRequestIngest:       true,
 	PermRequestFileMutation: true,
+	PermWriteMetadata:       true,
+	PermWriteCollections:    true,
+	PermWriteArtwork:        true,
+	PermWriteWatchState:     true,
+	PermReadPlaybackState:   true,
 }
 
 // IsKnownPermission reports whether kind is in the closed Core vocabulary. A
@@ -80,6 +106,11 @@ var permissionDispatch = map[string]string{
 	PermProfileLink:         methodLinkProfile,
 	PermRequestIngest:       methodRequestIngest,
 	PermRequestFileMutation: methodRequestFileMutation,
+	PermWriteMetadata:       methodWriteMetadata,
+	PermWriteCollections:    methodCreateCollection, // also methodAddCollectionMedia
+	PermWriteArtwork:        methodSetArtwork,
+	PermWriteWatchState:     methodSetWatched,
+	PermReadPlaybackState:   methodReadPlaybackState,
 }
 
 // DispatchMethodFor returns the Host API wire method that gates on kind, and

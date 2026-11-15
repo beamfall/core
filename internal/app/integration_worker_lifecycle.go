@@ -103,7 +103,10 @@ func (m *integrationManager) workerRunnable(ctx context.Context) (bool, error) {
 func (m *integrationManager) runGeneration(ctx context.Context) (result error) {
 	lease := m.fence.Acquire()
 	runCtx, cancel := context.WithCancelCause(ctx)
-	host := integrationhost.NewHost(m.pluginID, m.deps, integrationGrantStore{
+	m.mu.Lock()
+	deps := m.deps // setArtworkWriter writes it under mu
+	m.mu.Unlock()
+	host := integrationhost.NewHost(m.pluginID, deps, integrationGrantStore{
 		st: m.st, declaredPermissions: m.permissions, manifestBinding: m.manifestBinding,
 	}, time.Now)
 	sup := integrationhost.NewSupervisor(m.pluginID, m.artifact, host, m.logger, time.Now)

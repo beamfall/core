@@ -874,3 +874,36 @@ func TestIntegrationEventReaderWired(t *testing.T) {
 	}
 	_ = events // an empty store yields no events; the seam is exercised
 }
+
+// TestIntegrationHostDepsScopedWriteSeamsShipWithContainment pins the CORE-1695
+// promotion: the scoped-write seams are wired only together with the Library
+// scope, the audit ledger and the shared causation cap, and write-artwork stays
+// dormant until the composition root attaches the artwork service.
+func TestIntegrationHostDepsScopedWriteSeamsShipWithContainment(t *testing.T) {
+	st := storetest.Open(t)
+	deps := IntegrationHostDeps(st, secretFiles{dir: t.TempDir()}, integrationLifecycle(st))
+	if deps.Metadata == nil || deps.Collections == nil || deps.WatchState == nil || deps.Playback == nil {
+		t.Fatalf("scoped write seams not wired: metadata=%v collections=%v watch=%v playback=%v",
+			deps.Metadata != nil, deps.Collections != nil, deps.WatchState != nil, deps.Playback != nil)
+	}
+	if deps.Scope == nil || deps.Audit == nil || deps.Causation == nil {
+		t.Fatal("scoped write seams require the Library scope, the audit ledger and the causation cap")
+	}
+	if deps.Artwork != nil {
+		t.Fatal("write-artwork must stay dormant until setArtworkWriter attaches the artwork service")
+	}
+
+	child := &integrationManager{deps: deps}
+	parent := &integrationManager{workers: map[string]*integrationManager{"p": child}}
+	writer := fakeArtworkWriter{}
+	parent.setArtworkWriter(writer)
+	if child.deps.Artwork == nil {
+		t.Fatal("setArtworkWriter did not reach the supervised worker's Host deps")
+	}
+	parent.setArtworkWriter(nil) // a nil writer must not clear a wired one
+	if child.deps.Artwork == nil {
+		t.Fatal("setArtworkWriter(nil) cleared the artwork seam")
+	}
+}
+
+type fakeArtworkWriter struct{ integrationhost.ArtworkWriter }

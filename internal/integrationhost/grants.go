@@ -46,6 +46,9 @@ func validateGrant(g Grant) error {
 	if g.Kind != "" && !IsKnownPermission(g.Kind) {
 		return fmt.Errorf("integrationhost: unknown permission %q", g.Kind)
 	}
+	if RequiresBoundProfile(g.Kind) && g.AllLibraries {
+		return fmt.Errorf("%w: %s must bind one Profile (plugin %s)", ErrGrantScopeConflict, g.Kind, g.PluginID)
+	}
 	return nil
 }
 
