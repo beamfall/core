@@ -463,12 +463,22 @@
         ]
       },
       {
+        "name": "durationSeconds",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "favorited",
         "kind": "scalar"
       },
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "metadataAttribution",
@@ -799,6 +809,11 @@
       },
       {
         "name": "locked",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "mediaClass",
         "kind": "scalar",
         "optional": true
       },
@@ -3831,12 +3846,22 @@
         ]
       },
       {
+        "name": "durationSeconds",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "favorited",
         "kind": "scalar"
       },
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "metadataAttribution",
@@ -4897,6 +4922,11 @@
     ],
     "children": [
       {
+        "name": "archetype",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "attributes",
         "kind": "map",
         "nullable": true,
@@ -4992,6 +5022,11 @@
     ],
     "children": [
       {
+        "name": "archetype",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "fields",
         "kind": "list",
         "nullable": true,
@@ -5071,6 +5106,11 @@
           "kind": "object",
           "children": [
             {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "items",
               "kind": "list",
               "nullable": true,
@@ -5141,6 +5181,11 @@
                   },
                   {
                     "name": "locked",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "mediaClass",
                     "kind": "scalar",
                     "optional": true
                   },
@@ -5234,6 +5279,11 @@
                   "optional": true
                 },
                 {
+                  "name": "mediaClass",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "muted",
                   "kind": "scalar",
                   "optional": true
@@ -5270,6 +5320,11 @@
           ]
         },
         "children": [
+          {
+            "name": "archetype",
+            "kind": "scalar",
+            "optional": true
+          },
           {
             "name": "items",
             "kind": "list",
@@ -5341,6 +5396,11 @@
                 },
                 {
                   "name": "locked",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "mediaClass",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -5434,6 +5494,11 @@
                 "optional": true
               },
               {
+                "name": "mediaClass",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "muted",
                 "kind": "scalar",
                 "optional": true
@@ -5504,6 +5569,11 @@
         "optional": true,
         "nullable": true,
         "children": [
+          {
+            "name": "archetype",
+            "kind": "scalar",
+            "optional": true
+          },
           {
             "name": "fields",
             "kind": "list",
@@ -5670,12 +5740,22 @@
             ]
           },
           {
+            "name": "durationSeconds",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
             "name": "favorited",
             "kind": "scalar"
           },
           {
             "name": "id",
             "kind": "scalar"
+          },
+          {
+            "name": "mediaClass",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "metadataAttribution",
@@ -5904,12 +5984,22 @@
         ]
       },
       {
+        "name": "durationSeconds",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "favorited",
         "kind": "scalar"
       },
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "metadataAttribution",
@@ -6291,12 +6381,22 @@
         ]
       },
       {
+        "name": "durationSeconds",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "favorited",
         "kind": "scalar"
       },
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "metadataAttribution",
@@ -7551,6 +7651,11 @@
               "optional": true
             },
             {
+              "name": "mediaClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "muted",
               "kind": "scalar",
               "optional": true
@@ -7636,6 +7741,11 @@
           },
           {
             "name": "locked",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "mediaClass",
             "kind": "scalar",
             "optional": true
           },
@@ -8708,12 +8818,22 @@
         ]
       },
       {
+        "name": "durationSeconds",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "favorited",
         "kind": "scalar"
       },
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "metadataAttribution",
@@ -8927,6 +9047,11 @@
         "optional": true
       },
       {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "muted",
         "kind": "scalar",
         "optional": true
@@ -9048,12 +9173,22 @@
             ]
           },
           {
+            "name": "durationSeconds",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
             "name": "favorited",
             "kind": "scalar"
           },
           {
             "name": "id",
             "kind": "scalar"
+          },
+          {
+            "name": "mediaClass",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "metadataAttribution",
@@ -13022,6 +13157,11 @@
         "optional": true
       },
       {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "muted",
         "kind": "scalar",
         "optional": true
@@ -13110,6 +13250,11 @@
       },
       {
         "name": "locked",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "mediaClass",
         "kind": "scalar",
         "optional": true
       },
@@ -13206,6 +13351,11 @@
         "optional": true
       },
       {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "muted",
         "kind": "scalar",
         "optional": true
@@ -13294,6 +13444,11 @@
       },
       {
         "name": "locked",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "mediaClass",
         "kind": "scalar",
         "optional": true
       },
@@ -15522,6 +15677,11 @@
         "optional": true
       },
       {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "muted",
         "kind": "scalar",
         "optional": true
@@ -15617,6 +15777,11 @@
       },
       {
         "name": "locked",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "mediaClass",
         "kind": "scalar",
         "optional": true
       },
@@ -15795,6 +15960,11 @@
               "optional": true
             },
             {
+              "name": "mediaClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "mode",
               "kind": "scalar"
             },
@@ -15917,6 +16087,11 @@
           },
           {
             "name": "locked",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "mediaClass",
             "kind": "scalar",
             "optional": true
           },
@@ -18089,12 +18264,22 @@
         ]
       },
       {
+        "name": "durationSeconds",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "favorited",
         "kind": "scalar"
       },
       {
         "name": "id",
         "kind": "scalar"
+      },
+      {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
       },
       {
         "name": "metadataAttribution",
@@ -22827,6 +23012,11 @@
         "optional": true
       },
       {
+        "name": "mediaClass",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "muted",
         "kind": "scalar",
         "optional": true
@@ -23081,6 +23271,11 @@
       },
       {
         "name": "locked",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "mediaClass",
         "kind": "scalar",
         "optional": true
       },

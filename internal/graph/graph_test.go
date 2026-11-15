@@ -5532,12 +5532,14 @@ func TestMediaReadCarriesCredits(t *testing.T) {
 		t.Fatal(err)
 	}
 	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID:          library.ID,
-		Path:               "/srv/tunes/one.mp3",
-		Title:              "Cut One",
-		Container:          "mp3",
-		Codec:              "mp3",
-		ContentFingerprint: "fp-cut-one",
+		LibraryID:           library.ID,
+		Path:                "/srv/tunes/one.mp3",
+		Title:               "Cut One",
+		Container:           "mp3",
+		Codec:               "mp3",
+		ContentFingerprint:  "fp-cut-one",
+		Class:               store.MediaClassAudio,
+		DurationSecondsHint: 201,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -5561,7 +5563,7 @@ func TestMediaReadCarriesCredits(t *testing.T) {
 
 	read := func(id string) MediaInfo {
 		t.Helper()
-		body := []byte(`{"query":"query($id:String!) { media(id: $id) { id title credits } }","variables":{"id":"` + id + `"}}`)
+		body := []byte(`{"query":"query($id:String!) { media(id: $id) { id title durationSeconds mediaClass credits } }","variables":{"id":"` + id + `"}}`)
 		req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
 		authorizeViewer(req)
 		rec := httptest.NewRecorder()
@@ -5578,7 +5580,12 @@ func TestMediaReadCarriesCredits(t *testing.T) {
 		return resp.Data["media"]
 	}
 
-	got := read(string(media.ID)).Credits
+	full := read(string(media.ID))
+	// The track-list row reads runtime and class from the same read (CORE-1635).
+	if full.MediaClass != "audio" || full.DurationSeconds <= 0 {
+		t.Fatalf("media class/duration = %q/%d, want audio with a runtime", full.MediaClass, full.DurationSeconds)
+	}
+	got := full.Credits
 	want := []MediaCreditInfo{
 		{EntityID: "entity-record", Title: "The Record", Kind: "record", KindDisplayName: plugin.L("Record"), Archetype: "container", Relation: "record-cut"},
 		{EntityID: "entity-performer", Title: "The Performer", Kind: "performer", KindDisplayName: plugin.L("Performer"), Archetype: "person", Relation: "plays-on"},

@@ -205,7 +205,7 @@ func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 // attributes — not a nested "entityInfo" object.
 func TestNestedSchemaFlattensEmbedded(t *testing.T) {
 	e := topLevel(t, "entitiesformedia")
-	want := []string{"attributes", "fields", "id", "kind", "kindDisplayName", "title"}
+	want := []string{"archetype", "attributes", "fields", "id", "kind", "kindDisplayName", "title"}
 	if got := childNames(e.Children); !slices.Equal(got, want) {
 		t.Fatalf("entitiesForMedia fields = %v, want %v (embedded EntityInfo flattened)", got, want)
 	}

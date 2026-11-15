@@ -1,0 +1,171 @@
+import type { GenericMediaInfo, RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
+import { type PlayerNavState, type PlayQueueItem, queueWindow } from "./watchQueue";
+
+// Listening layout rules (CORE-1635). Core stays domain-agnostic: the layout is
+// chosen from the Entity's archetype, the Media class the server reports and
+// the server's own ordering — never from a plugin's kind names or field names.
+//
+// - A "container" Entity whose member Media are all class "audio" renders as a
+//   numbered track list in server order (mediaForEntity order). A row names the
+//   track's "person" credits only when they differ from the container's own
+//   people: its related "person" Entities, or, when it declares none, the people
+//   credited on every track.
+// - A "person" Entity lists its related "container" Entities as usual, then
+//   "Appears on": containers credited on the person's own Media that are not
+//   among its related containers (a compilation credits another album person).
+// - Top tracks: the profile's top-tracks feed narrowed to the person's Media,
+//   filled up from server order.
+
+export const AUDIO_CLASS = "audio";
+export const TOP_TRACKS_LIMIT = 10;
+
+type ClassedItem = SourceItem & { mediaClass?: string };
+
+/** One row of a track list. */
+export interface TrackRow {
+  item: SourceItem;
+  /** 1-based position in server order. */
+  number: number;
+  /** Credited people, shown only when they differ from the container's own. */
+  artist?: string;
+  durationSeconds?: number;
+}
+
+/** The class of a listed Media item: the row's own report, else its media(id) read. */
+export function mediaClassOf(
+  item: ClassedItem,
+  rows: Readonly<Record<string, GenericMediaInfo>>,
+): string | undefined {
+  return item.mediaClass || rows[item.id]?.mediaClass;
+}
+
+/** True when there is at least one Media item and every one is audio. */
+export function isAudioListing(
+  items: readonly ClassedItem[],
+  rows: Readonly<Record<string, GenericMediaInfo>>,
+): boolean {
+  const media = items.filter((item) => item.kind === "media");
+  return media.length > 0 && media.every((item) => mediaClassOf(item, rows) === AUDIO_CLASS);
+}
+
+/** True when some listed Media item is known not to be audio (so no row read is needed). */
+export function hasKnownNonAudio(items: readonly ClassedItem[]): boolean {
+  return items.some(
+    (item) => item.kind === "media" && !!item.mediaClass && item.mediaClass !== AUDIO_CLASS,
+  );
+}
+
+function personCredits(row: GenericMediaInfo | undefined) {
+  return (row?.credits ?? []).filter((credit) => credit.archetype === "person");
+}
+
+/** The container's own people: related "person" Entities, else those credited on every track. */
+export function ownerPeople(
+  groups: readonly RelatedEntityGroup[] | undefined,
+  items: readonly SourceItem[],
+  rows: Readonly<Record<string, GenericMediaInfo>>,
+): Set<string> {
+  const related = new Set<string>();
+  for (const group of groups ?? []) {
+    if (group.archetype !== "person") continue;
+    for (const item of group.items) related.add(item.id);
+  }
+  if (related.size > 0) return related;
+  const media = items.filter((item) => item.kind === "media");
+  const credited = media.map(
+    (item) => new Set(personCredits(rows[item.id]).map((credit) => credit.entityID)),
+  );
+  if (credited.length === 0) return related;
+  return new Set([...credited[0]].filter((id) => credited.every((ids) => ids.has(id))));
+}
+
+/** The track rows of an audio container, numbered in server order. */
+export function trackRows(
+  items: readonly SourceItem[],
+  rows: Readonly<Record<string, GenericMediaInfo>>,
+  owners: ReadonlySet<string>,
+): TrackRow[] {
+  return items
+    .filter((item) => item.kind === "media")
+    .map((item, index) => {
+      const row = rows[item.id];
+      const people = personCredits(row);
+      const differs = people.some((credit) => !owners.has(credit.entityID));
+      const track: TrackRow = { item, number: index + 1 };
+      if (differs) track.artist = people.map((credit) => credit.title).join(", ");
+      if (row?.durationSeconds) track.durationSeconds = row.durationSeconds;
+      return track;
+    });
+}
+
+/** m:ss, or h:mm:ss from an hour up; empty when unknown. */
+export function formatDuration(seconds: number | undefined): string {
+  if (!seconds || seconds < 0) return "";
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+/**
+ * Containers credited on a person's Media that are not among its related
+ * containers, in first-credit order, as entity items a card can open.
+ */
+export function appearsOn(
+  groups: readonly RelatedEntityGroup[] | undefined,
+  items: readonly SourceItem[],
+  rows: Readonly<Record<string, GenericMediaInfo>>,
+): SourceItem[] {
+  const own = new Set<string>();
+  for (const group of groups ?? []) {
+    if (group.archetype !== "container") continue;
+    for (const item of group.items) own.add(item.id);
+  }
+  const seen = new Set<string>();
+  const out: SourceItem[] = [];
+  for (const item of items) {
+    for (const credit of rows[item.id]?.credits ?? []) {
+      if (credit.archetype !== "container" || own.has(credit.entityID)) continue;
+      if (seen.has(credit.entityID)) continue;
+      seen.add(credit.entityID);
+      out.push({ id: credit.entityID, kind: "entity", title: credit.title });
+    }
+  }
+  return out;
+}
+
+/**
+ * The person's top tracks: their Media in the profile's top-tracks order, then
+ * the rest in server order, capped at `limit`.
+ */
+export function topTracks(
+  items: readonly SourceItem[],
+  profileTop: readonly SourceItem[],
+  limit = TOP_TRACKS_LIMIT,
+): SourceItem[] {
+  const media = items.filter((item) => item.kind === "media");
+  const byID = new Map(media.map((item) => [item.id, item]));
+  const out: SourceItem[] = [];
+  const taken = new Set<string>();
+  for (const ranked of profileTop) {
+    const item = byID.get(ranked.id);
+    if (!item || taken.has(item.id)) continue;
+    taken.add(item.id);
+    out.push(item);
+  }
+  for (const item of media) {
+    if (!taken.has(item.id)) out.push(item);
+  }
+  return out.slice(0, limit);
+}
+
+/** The watch-route state that starts `item` with `queue` as the player's queue. */
+export function playState(
+  identity: string | null | undefined,
+  queue: readonly PlayQueueItem[],
+  item: { id: string; title: string },
+): PlayerNavState {
+  if (!identity || queue.length === 0) return { title: item.title };
+  return { title: item.title, queue: queueWindow(queue, item.id), queueIdentity: identity };
+}

@@ -10,6 +10,7 @@ import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
 import { libraryTrashStrings } from "./library-trash";
+import { listeningStrings } from "./listening";
 import { managedFileStrings } from "./managed-files";
 import { mediaDetailStrings } from "./media-detail";
 import { metadataManagementStrings } from "./metadata-management";
@@ -45,6 +46,7 @@ export const en = {
   ...playbackStrings.en,
   ...playerShortcutStrings.en,
   ...subtitleAppearanceStrings.en,
+  ...listeningStrings.en,
   ...managedFileStrings.en,
   ...backupRetentionStrings.en,
   ...sharedStateStrings.en,
@@ -84,6 +86,7 @@ export const fr = {
   ...playbackStrings.fr,
   ...playerShortcutStrings.fr,
   ...subtitleAppearanceStrings.fr,
+  ...listeningStrings.fr,
   ...managedFileStrings.fr,
   ...backupRetentionStrings.fr,
   ...sharedStateStrings.fr,
@@ -123,6 +126,7 @@ export const de = {
   ...playbackStrings.de,
   ...playerShortcutStrings.de,
   ...subtitleAppearanceStrings.de,
+  ...listeningStrings.de,
   ...managedFileStrings.de,
   ...backupRetentionStrings.de,
   ...sharedStateStrings.de,
@@ -162,6 +166,7 @@ export const es = {
   ...playbackStrings.es,
   ...playerShortcutStrings.es,
   ...subtitleAppearanceStrings.es,
+  ...listeningStrings.es,
   ...managedFileStrings.es,
   ...backupRetentionStrings.es,
   ...sharedStateStrings.es,
@@ -201,6 +206,7 @@ export const pt = {
   ...playbackStrings.pt,
   ...playerShortcutStrings.pt,
   ...subtitleAppearanceStrings.pt,
+  ...listeningStrings.pt,
   ...managedFileStrings.pt,
   ...backupRetentionStrings.pt,
   ...sharedStateStrings.pt,

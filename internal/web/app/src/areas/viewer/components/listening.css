@@ -1,0 +1,82 @@
+/* Listening browse (CORE-1635): track lists and playlist rows. Tokens only. */
+
+[data-register="viewer"] .bf-track-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+[data-register="viewer"] .bf-track-row {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 48px 6px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+[data-register="viewer"] .bf-track-row:hover,
+[data-register="viewer"] .bf-track-row:focus-visible {
+  background: color-mix(in oklab, var(--text-primary) 6%, transparent);
+}
+
+[data-register="viewer"] .bf-track-number,
+[data-register="viewer"] .bf-track-duration {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+[data-register="viewer"] .bf-track-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-track-title,
+[data-register="viewer"] .bf-track-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-register="viewer"] .bf-track-artist {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+[data-register="viewer"] .bf-track .bf-card-more {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+[data-register="viewer"] .bf-track-tools {
+  display: inline-flex;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+[data-register="viewer"] .bf-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

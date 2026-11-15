@@ -118,6 +118,7 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 	want := []RelatedEntityGroupInfo{{
 		Kind:            "record",
 		KindDisplayName: plugin.L("Record"),
+		Archetype:       "container",
 		Items: []SourceItem{
 			{ID: "entity-record-a", Kind: "entity", Title: "First Record"},
 			{ID: "entity-record-b", Kind: "entity", Title: "Second Record"},
@@ -131,12 +132,16 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 	want = []RelatedEntityGroupInfo{{
 		Kind:            "performer",
 		KindDisplayName: plugin.L("Performer"),
+		Archetype:       "person",
 		Items:           []SourceItem{{ID: "entity-performer", Kind: "entity", Title: "The Performer"}},
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("record relatedEntities = %#v, want %#v", got, want)
 	}
 
+	if record := read("entity-record-a"); record.Archetype != "container" {
+		t.Fatalf("record archetype = %q, want container", record.Archetype)
+	}
 	if solo := read("entity-solo"); solo.ID != "entity-solo" || solo.RelatedEntities != nil {
 		t.Fatalf("media-only entity = %#v, want no related groups", solo)
 	}
