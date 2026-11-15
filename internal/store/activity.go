@@ -54,9 +54,15 @@ const (
 	// pending-tag id; the promoted value is read back from the Media, not
 	// memorialized here. Reject is a discard and is not audited (it changes no
 	// canonical state).
-	ActivityAITagAccept         = "media.ai_tag_accept"
-	ActivityArtworkPin          = "artwork.pin"
-	ActivityLibraryRoots        = "library.roots"
+	ActivityAITagAccept  = "media.ai_tag_accept"
+	ActivityArtworkPin   = "artwork.pin"
+	ActivityLibraryRoots = "library.roots"
+	// ActivityScanPreview audits a rescan preview (CORE-1054); its OperationID
+	// is the preview's audit id. ActivityScanPreviewCommit audits the commit
+	// that spent the preview's token, under the OperationID "<audit id>.commit".
+	// Both carry the Library id in TargetID.
+	ActivityScanPreview         = "scan.preview"
+	ActivityScanPreviewCommit   = "scan.preview_commit"
 	ActivityPathPickerRootAdded = "path_picker.root_added"
 	ActivityLibraryPreviewClips = "library.preview_clips"
 	ActivityLibraryRestriction  = "library.restriction"

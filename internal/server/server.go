@@ -1045,6 +1045,12 @@ func (s *Server) SetObservability(observability ObservabilityController) {
 	s.observability = observability
 }
 
+// serverFeatures names optional server endpoints a client may probe for
+// before enabling a control. They are protocol features, not power-tool
+// capabilities, so they stay out of the capability registry and compat policy.
+// "scan-preview" is the Graph scanPreview/commitScanPreview pair (CORE-1054).
+var serverFeatures = []string{"scan-preview"}
+
 // health answers liveness and readiness in one document. Liveness
 // is implicit: the handler responding at all proves the process is up, so live
 // is always true. Readiness reflects store/DB reachability plus migrations
@@ -1055,6 +1061,7 @@ func (s *Server) SetObservability(observability ObservabilityController) {
 // status follows ready ("ok" or "not_ready"). ffmpeg and ffprobe report whether
 // each binary resolves on PATH; they are informational and never gate
 // readiness, because a server without FFmpeg still serves direct play.
+// features lists the optional endpoints this server offers (serverFeatures).
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	ready := false
 	if s.readiness != nil {
@@ -1084,6 +1091,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"seedProfile":  s.seedProfile,
 		"seedVersion":  s.seedVersion,
 		"capabilities": s.capabilities,
+		"features":     serverFeatures,
 	})
 }
 

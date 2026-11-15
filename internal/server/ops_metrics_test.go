@@ -335,3 +335,22 @@ func TestHealthReportsFFmpegPresenceWithoutGatingReadiness(t *testing.T) {
 		t.Fatalf("health exposes a binary path: %s", rec.Body.String())
 	}
 }
+
+// TestHealthAdvertisesScanPreview asserts /health lists the scan-preview
+// feature clients probe before enabling a previewed rescan (CORE-1054).
+func TestHealthAdvertisesScanPreview(t *testing.T) {
+	srv, _, _ := newTestServerWithMetrics(t)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	body := decodeHealth(t, rec.Body.String())
+	features, ok := body["features"].([]any)
+	if !ok {
+		t.Fatalf("health features = %#v, want a list: %v", body["features"], body)
+	}
+	for _, feature := range features {
+		if feature == "scan-preview" {
+			return
+		}
+	}
+	t.Fatalf("health features = %v, want scan-preview", features)
+}

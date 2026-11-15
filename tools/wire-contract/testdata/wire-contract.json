@@ -223,6 +223,11 @@
       "tier": "session"
     },
     {
+      "field": "commitscanpreview",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "connectionendpoints",
       "effect": "read",
       "tier": "session"
@@ -1084,6 +1089,11 @@
     },
     {
       "field": "scanlibrary",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "scanpreview",
       "effect": "write",
       "tier": "admin"
     },
@@ -3572,6 +3582,80 @@
           "name": "trashedAt",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "updatedAt",
+          "kind": "scalar",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "field": "commitscanpreview",
+      "kind": "object",
+      "children": [
+        {
+          "name": "attempts",
+          "kind": "scalar"
+        },
+        {
+          "name": "class",
+          "kind": "scalar"
+        },
+        {
+          "name": "createdAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "error",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "finishedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "progress",
+          "kind": "object",
+          "children": [
+            {
+              "name": "current",
+              "kind": "scalar"
+            },
+            {
+              "name": "message",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "total",
+              "kind": "scalar"
+            },
+            {
+              "name": "unit",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "startedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "status",
+          "kind": "scalar"
         },
         {
           "name": "updatedAt",
@@ -18247,6 +18331,92 @@
       ]
     },
     {
+      "field": "scanpreview",
+      "kind": "object",
+      "children": [
+        {
+          "name": "adds",
+          "kind": "scalar"
+        },
+        {
+          "name": "auditEventID",
+          "kind": "scalar"
+        },
+        {
+          "name": "changes",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "path",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "path",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "expiresAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "libraryID",
+          "kind": "scalar"
+        },
+        {
+          "name": "missing",
+          "kind": "scalar"
+        },
+        {
+          "name": "missingSkipped",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "previewToken",
+          "kind": "scalar"
+        },
+        {
+          "name": "roots",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "truncated",
+          "kind": "scalar"
+        },
+        {
+          "name": "unchanged",
+          "kind": "scalar"
+        },
+        {
+          "name": "updates",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "schedules",
       "kind": "object",
       "children": [
@@ -32249,6 +32419,10 @@
         "effect": "write"
       },
       {
+        "field": "commitscanpreview",
+        "effect": "write"
+      },
+      {
         "field": "consoleconfig",
         "effect": "read"
       },
@@ -32494,6 +32668,10 @@
       },
       {
         "field": "scanlibrary",
+        "effect": "write"
+      },
+      {
+        "field": "scanpreview",
         "effect": "write"
       },
       {

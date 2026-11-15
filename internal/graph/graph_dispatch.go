@@ -558,6 +558,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"savedfilters":                       newFieldHandler("savedFilters", "savedFilters", fieldRead, roleSession, 55),
 	"scanestimate":                       newFieldHandler("scanEstimate", "scanEstimate", fieldRead, roleSession|roleAdmin, 82),
 	"scanlibrary":                        newFieldHandler("scanLibrary", "scanLibrary", fieldMutation, roleSession|roleAdmin, 52),
+	"scanpreview":                        newFieldHandler("scanPreview", "scanPreview", fieldMutation, roleSession|roleAdmin, 52),
+	"commitscanpreview":                  newFieldHandler("commitScanPreview", "commitScanPreview", fieldMutation, roleSession|roleAdmin, 52),
 	"schedules":                          newFieldHandler("schedules", "schedules", fieldRead, roleSession|roleAdmin, 64),
 	"scrobbleeligibility":                newFieldHandler("scrobbleEligibility", "scrobbleEligibility", fieldRead, roleSession, 86),
 	"scrobblelinks":                      newFieldHandler("scrobbleLinks", "scrobbleLinks", fieldRead, roleSession, 85),
@@ -1605,6 +1607,18 @@ func dispatchFieldBlock052(dispatch *fieldDispatchContext) response {
 	if fields["scanlibrary"] {
 		job, err := h.scanLibrary(ctx, scope, req)
 		if resp := resolveField(dispatch, "scanlibrary", job, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["scanpreview"] {
+		preview, err := h.scanPreview(ctx, scope, req)
+		if resp := resolveField(dispatch, "scanpreview", preview, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["commitscanpreview"] {
+		job, err := h.commitScanPreview(ctx, scope, req)
+		if resp := resolveField(dispatch, "commitscanpreview", job, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

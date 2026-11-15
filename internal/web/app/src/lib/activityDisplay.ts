@@ -162,6 +162,13 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
     "a library",
     "library",
   ),
+  "scan.preview": label("library", "{actor} previewed a rescan of {target}", "a library", "library"),
+  "scan.preview_commit": label(
+    "library",
+    "{actor} started a previewed rescan of {target}",
+    "a library",
+    "library",
+  ),
   "library.icon": label("library", "{actor} changed the icon of {target}", "a library", "library"),
   "library.preview_clips": label(
     "library",

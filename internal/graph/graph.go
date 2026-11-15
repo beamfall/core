@@ -385,6 +385,8 @@ type Handler struct {
 	// apply, so an older save can never overwrite a newer one in the running
 	// transcoder (CORE-1970).
 	transcodeConfigMu sync.Mutex
+	// scanPreviews holds the single-use rescan preview tokens (CORE-1054).
+	scanPreviews scanPreviewTokens
 	// mutationAuditAppend is a test seam for the request-level audit lifecycle.
 	// Nil uses store.AppendActivity in production.
 	mutationAuditAppend func(context.Context, store.ActivityEntry) error
@@ -2584,51 +2586,59 @@ func (h *Handler) emitLibraryRestrictionInvalidation(ctx context.Context, librar
 // The job dedupes by (library, root) while one is already queued; the existing
 // jobs query is the progress surface.
 func (h *Handler) scanLibrary(ctx context.Context, scope auth.Scope, req request) (JobInfo, error) {
-	libraryID := trimmedVariable(req, "libraryID")
+	libraryID := store.LibraryID(trimmedVariable(req, "libraryID"))
 	root := trimmedVariable(req, "root")
 	// Optional backfill flag: re-runs music hydration for audio that
 	// lacks the marker. Absent defaults to false — a normal scan, unchanged.
 	backfill, _ := newVars(req).Bool("backfill")
-	if libraryID == "" {
-		return JobInfo{}, clientError("libraryID is required")
-	}
-	libraries, err := h.store.Libraries(ctx, scope.LibraryFilter())
+	roots, err := h.resolveScanRoots(ctx, scope, libraryID, root)
 	if err != nil {
 		return JobInfo{}, err
 	}
-	known := false
-	for _, library := range libraries {
-		if library.ID == store.LibraryID(libraryID) {
-			known = true
-			break
-		}
+	return h.enqueueScanRoots(ctx, scope, libraryID, roots, backfill)
+}
+
+// resolveScanRoots checks the Library is visible and returns the roots a scan
+// of it walks: the given root when it is one of the Library's folders, or
+// every persisted root when root is empty.
+func (h *Handler) resolveScanRoots(ctx context.Context, scope auth.Scope, libraryID store.LibraryID, root string) ([]string, error) {
+	if libraryID == "" {
+		return nil, clientError("libraryID is required")
+	}
+	known, err := h.visibleLibrary(ctx, scope, libraryID)
+	if err != nil {
+		return nil, err
 	}
 	if !known {
-		return JobInfo{}, clientError("unknown library")
+		return nil, clientError("unknown library")
 	}
-	roots := []string{root}
 	if root == "" {
-		persisted, err := h.store.LibraryRoots(ctx, store.LibraryID(libraryID))
+		persisted, err := h.store.LibraryRoots(ctx, libraryID)
 		if err != nil {
-			return JobInfo{}, err
+			return nil, err
 		}
 		if len(persisted) == 0 {
-			return JobInfo{}, clientError("library has no roots")
+			return nil, clientError("library has no roots")
 		}
-		roots = persisted
-	} else {
-		entry, err := h.store.FolderTree(ctx, store.LibraryID(libraryID), root, 0, scope.LibraryFilter())
-		if err != nil {
-			return JobInfo{}, err
-		}
-		if entry.Kind != "folder" {
-			return JobInfo{}, clientError("scan root is not a folder")
-		}
+		return persisted, nil
 	}
+	entry, err := h.store.FolderTree(ctx, libraryID, root, 0, scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	if entry.Kind != "folder" {
+		return nil, clientError("scan root is not a folder")
+	}
+	return []string{root}, nil
+}
+
+// enqueueScanRoots enqueues one durable scan job per root and returns the
+// first job.
+func (h *Handler) enqueueScanRoots(ctx context.Context, scope auth.Scope, libraryID store.LibraryID, roots []string, backfill bool) (JobInfo, error) {
 	var first store.Job
 	for _, scanRoot := range roots {
 		job, err := scan.NewJob(scan.JobRequest{
-			LibraryID: store.LibraryID(libraryID),
+			LibraryID: libraryID,
 			Root:      scanRoot,
 			CreatedAt: time.Now().UTC(),
 			Backfill:  backfill,
@@ -2644,7 +2654,7 @@ func (h *Handler) scanLibrary(ctx context.Context, scope auth.Scope, req request
 			first = created
 		}
 		if h.scanObserver != nil {
-			h.scanObserver.Observe(store.LibraryID(libraryID), scanRoot)
+			h.scanObserver.Observe(libraryID, scanRoot)
 		}
 	}
 	return h.jobInfo(ctx, scope, first), nil
@@ -5270,6 +5280,8 @@ var mutationFields = map[string]bool{
 	"stagerestore":                       true, // CORE-1720: stage a restore for the next start
 	"cancelstagedrestore":                true, // CORE-1720: drop a staged restore
 	"scanlibrary":                        true,
+	"scanpreview":                        true, // CORE-1054: plan a rescan and mint a single-use token
+	"commitscanpreview":                  true, // CORE-1054: spend the token and enqueue the rescan
 	"addsubscription":                    true,
 	"removesubscription":                 true,
 	"setsubscriptionretention":           true,
@@ -5424,6 +5436,8 @@ var adminFields = map[string]bool{
 	"restorelibrary":         true,
 	"purgelibrary":           true,
 	"scanlibrary":            true,
+	"scanpreview":            true, // CORE-1054: rescan preview and its token-gated commit
+	"commitscanpreview":      true,
 	// Webhooks (CORE-1697): endpoint URLs and secrets are owner configuration.
 	"webhooks":           true,
 	"webhookdeliveries":  true,

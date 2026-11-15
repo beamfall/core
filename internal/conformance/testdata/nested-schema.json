@@ -1986,6 +1986,80 @@
     ]
   },
   {
+    "field": "commitscanpreview",
+    "kind": "object",
+    "children": [
+      {
+        "name": "attempts",
+        "kind": "scalar"
+      },
+      {
+        "name": "class",
+        "kind": "scalar"
+      },
+      {
+        "name": "createdAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "error",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "finishedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "progress",
+        "kind": "object",
+        "children": [
+          {
+            "name": "current",
+            "kind": "scalar"
+          },
+          {
+            "name": "message",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "total",
+            "kind": "scalar"
+          },
+          {
+            "name": "unit",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "startedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "status",
+        "kind": "scalar"
+      },
+      {
+        "name": "updatedAt",
+        "kind": "scalar",
+        "optional": true
+      }
+    ]
+  },
+  {
     "field": "connectionendpoints",
     "kind": "object",
     "children": [
@@ -16648,6 +16722,92 @@
         "name": "updatedAt",
         "kind": "scalar",
         "optional": true
+      }
+    ]
+  },
+  {
+    "field": "scanpreview",
+    "kind": "object",
+    "children": [
+      {
+        "name": "adds",
+        "kind": "scalar"
+      },
+      {
+        "name": "auditEventID",
+        "kind": "scalar"
+      },
+      {
+        "name": "changes",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "path",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "path",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "expiresAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "libraryID",
+        "kind": "scalar"
+      },
+      {
+        "name": "missing",
+        "kind": "scalar"
+      },
+      {
+        "name": "missingSkipped",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "previewToken",
+        "kind": "scalar"
+      },
+      {
+        "name": "roots",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "truncated",
+        "kind": "scalar"
+      },
+      {
+        "name": "unchanged",
+        "kind": "scalar"
+      },
+      {
+        "name": "updates",
+        "kind": "scalar"
       }
     ]
   },

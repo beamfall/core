@@ -1946,7 +1946,7 @@ func (s *Store) mediaFilesForLibrarySQL(ctx context.Context, db *sql.DB, library
 
 func (s *Store) forEachMediaFileForLibrarySQL(ctx context.Context, db *sql.DB, libraryID LibraryID, yield func(MediaFile) error) error {
 	rows, err := db.QueryContext(ctx, `
-		SELECT f.media_id, f.path, f.content_fingerprint, f.version_label, f.part_ordinal, f.oshash, f.phash, f.last_seen_at_ms
+		SELECT f.media_id, f.path, f.content_fingerprint, f.version_label, f.part_ordinal, f.oshash, f.phash, f.last_seen_at_ms, f.size_bytes, f.mtime_ms
 		FROM media_file f
 		JOIN media m ON m.id = f.media_id
 		WHERE m.library_id = ? AND m.trashed_at_ms IS NULL AND f.missing_at_ms IS NULL
@@ -1958,11 +1958,12 @@ func (s *Store) forEachMediaFileForLibrarySQL(ctx context.Context, db *sql.DB, l
 	defer rows.Close()
 	for rows.Next() {
 		var file MediaFile
-		var lastSeen int64
-		if err := rows.Scan(&file.MediaID, &file.Path, &file.ContentFingerprint, &file.VersionLabel, &file.PartOrdinal, &file.OSHash, &file.PHash, &lastSeen); err != nil {
+		var lastSeen, mtimeMS int64
+		if err := rows.Scan(&file.MediaID, &file.Path, &file.ContentFingerprint, &file.VersionLabel, &file.PartOrdinal, &file.OSHash, &file.PHash, &lastSeen, &file.SizeBytes, &mtimeMS); err != nil {
 			return err
 		}
 		file.LastSeenAt = millisToTime(lastSeen)
+		file.ModTime = millisToTime(mtimeMS)
 		if err := yield(file); err != nil {
 			return err
 		}

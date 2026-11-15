@@ -280,6 +280,8 @@ var resultTypes = map[string]any{
 	"testwebhook":                        WebhookTestResultInfo{},
 	"setwebhooksettings":                 WebhookSettingsInfo{},
 	"scanlibrary":                        JobInfo{},
+	"scanpreview":                        ScanPreviewInfo{},
+	"commitscanpreview":                  JobInfo{},
 	"addsubscription":                    SubscriptionInfo{},
 	"removesubscription":                 SubscriptionInfo{},
 	"setsubscriptionretention":           SubscriptionInfo{},

@@ -220,6 +220,11 @@
     "tier": "session"
   },
   {
+    "field": "commitscanpreview",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "connectionendpoints",
     "effect": "read",
     "tier": "session"
@@ -1081,6 +1086,11 @@
   },
   {
     "field": "scanlibrary",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "scanpreview",
     "effect": "write",
     "tier": "admin"
   },
