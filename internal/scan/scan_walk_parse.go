@@ -109,7 +109,9 @@ func (s *scanWalkState) flushPendingParts() error {
 	}
 	media, files, err := s.st.ImportMediaFileParts(s.ctx, imports)
 	if err != nil {
-		return err
+		// A member a managed import is still admitting skips the whole group
+		// this pass; the next scan groups it with the cataloged file.
+		return skipManagedAdmissionInFlight(err, parts[0].imported.Path)
 	}
 	first := parts[0]
 	fields := append([]store.MediaField(nil), first.fields...)

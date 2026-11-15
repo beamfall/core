@@ -405,14 +405,29 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 	if err != nil {
 		return ManagedPath{}, err
 	}
+	// Reserve the target BEFORE it appears on disk and hold it until the
+	// managed catalog admission settles: a scan that finds the file in between
+	// is refused (ErrManagedAdmissionInFlight) instead of cataloging it through
+	// the ordinary path, which would skip the duplicate refusal below and
+	// repoint an existing row (CORE-1089).
+	release, err := s.reserveManagedAdmission(target)
+	if err != nil {
+		return ManagedPath{}, err
+	}
+	defer release()
 	if err := admitStagedFileNoReplace(stagingPath, target); err != nil {
 		return ManagedPath{}, err
+	}
+
+	if s.managedImportStepHook != nil {
+		s.managedImportStepHook("catalog")
 	}
 
 	// Catalog the now-on-disk file as managed Media via the existing audited
 	// admission — the SAME admission the convert path uses — so
 	// ResolveManagedMediaFile/ConvertManagedFile accept it. On failure, undo the
-	// on-disk write so no un-cataloged orphan is left.
+	// on-disk write so no un-cataloged orphan is left — unless another
+	// admission has cataloged the file, which the undo must never delete.
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 	_, _, err = s.ImportMediaFile(ctx, ImportMediaFile{
 		LibraryID:          libraryID,
@@ -425,10 +440,78 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 		managedAdmission:   true,
 	})
 	if err != nil {
-		_ = os.Remove(target)
+		s.removeUncatalogedManagedTargetLocked(ctx, libraryID, target)
 		return ManagedPath{}, fmt.Errorf("admit imported file: %w", err)
 	}
 	return ManagedPath{Path: target, Kind: "file"}, nil
+}
+
+// ErrManagedAdmissionInFlight refuses an ordinary (scan) import of a path that
+// an ImportManagedFile has put on disk but not yet cataloged. The managed
+// admission catalogs the file itself, so the scan skips the path and loses
+// nothing; a later scan sees it as an ordinary cataloged file.
+var ErrManagedAdmissionInFlight = errors.New("managed import of this path is in flight")
+
+// reserveManagedAdmission marks target as an in-flight managed admission until
+// the returned release runs. A second reservation of the same path is refused
+// like any other existing target.
+func (s *Store) reserveManagedAdmission(target string) (func(), error) {
+	s.managedInflightMu.Lock()
+	defer s.managedInflightMu.Unlock()
+	if s.managedInflight == nil {
+		s.managedInflight = map[string]struct{}{}
+	}
+	if _, busy := s.managedInflight[target]; busy {
+		return nil, ValidationError("import target already exists")
+	}
+	s.managedInflight[target] = struct{}{}
+	return func() {
+		s.managedInflightMu.Lock()
+		defer s.managedInflightMu.Unlock()
+		delete(s.managedInflight, target)
+	}, nil
+}
+
+// refuseManagedAdmissionInFlight returns ErrManagedAdmissionInFlight when path
+// is reserved by an in-flight managed admission. A scan can only have read the
+// file after its on-disk admission, which the reservation precedes, so a check
+// that finds no reservation means the managed catalog write has already
+// committed (or the file was never a managed import).
+func (s *Store) refuseManagedAdmissionInFlight(path string) error {
+	s.managedInflightMu.Lock()
+	defer s.managedInflightMu.Unlock()
+	if _, busy := s.managedInflight[path]; busy {
+		return fmt.Errorf("%w: %s", ErrManagedAdmissionInFlight, path)
+	}
+	return nil
+}
+
+// removeUncatalogedManagedTargetLocked undoes a managed import's on-disk
+// admission after its catalog admission failed. The file is removed only when
+// no live catalog row names the path: a file another admission cataloged is
+// never deleted, and when that cannot be proved (the lookup itself fails) the
+// file is kept, since an orphan is picked up by the next scan while a deleted
+// cataloged file is lost. The lookup ignores cancellation of ctx, which may be
+// the very reason the admission failed. Caller holds s.mu (read).
+func (s *Store) removeUncatalogedManagedTargetLocked(ctx context.Context, libraryID LibraryID, target string) {
+	ctx = context.WithoutCancel(ctx)
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		slog.Warn("managed import cleanup kept the admitted file", "path", target, "error", err)
+		return
+	}
+	var cataloged int
+	err = plane.reader.QueryRowContext(ctx,
+		"SELECT 1 FROM media_file WHERE path = ? AND missing_at_ms IS NULL LIMIT 1", target,
+	).Scan(&cataloged)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		_ = os.Remove(target)
+	case err != nil:
+		slog.Warn("managed import cleanup kept the admitted file", "path", target, "error", err)
+	default:
+		slog.Warn("managed import cleanup kept a file another admission cataloged", "path", target)
+	}
 }
 
 // verifySourceEntryIdentity proves that name, resolved through a descriptor on

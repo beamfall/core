@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"errors"
 	"log/slog"
 	"path/filepath"
 
@@ -83,7 +84,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	}
 	media, _, err := s.st.ImportMediaFile(s.ctx, imported)
 	if err != nil {
-		return err
+		return skipManagedAdmissionInFlight(err, path)
 	}
 	s.rememberVersionAnchor(versionKey, media.ID, stored.ContentFingerprint, parsed)
 	fields := append([]store.MediaField(nil), parsedFields...)
@@ -235,7 +236,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	media, _, err := s.st.ImportMediaFile(s.ctx, imported)
 	if err != nil {
-		return err
+		return skipManagedAdmissionInFlight(err, path)
 	}
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
 	if isImage {
@@ -291,4 +292,15 @@ func mediaClassFromProbe(probe ffmpeg.Probe) store.MediaClass {
 		return store.MediaClassAudio
 	}
 	return store.MediaClassVideo
+}
+
+// skipManagedAdmissionInFlight turns the store's refusal of a path that a
+// managed import is still admitting into a skip: that admission catalogs the
+// file itself (CORE-1089). Any other error is returned unchanged.
+func skipManagedAdmissionInFlight(err error, path string) error {
+	if errors.Is(err, store.ErrManagedAdmissionInFlight) {
+		slog.Info("scan: skipping a file a managed import is admitting", "path", path)
+		return nil
+	}
+	return err
 }
