@@ -120,7 +120,7 @@ func composesPicture(media store.Media) bool {
 // error, when the Media is not a candidate or the composer declines; the
 // caller then falls back to the ordinary ladder.
 func PrecomputeComposedRendition(ctx context.Context, st *store.Store, mediaID store.MediaID, composer PictureComposer, cacheRoot string, now time.Time) ([]store.Job, error) {
-	req, ok, err := composedRequest(ctx, st, mediaID, composer, cacheRoot)
+	req, _, ok, err := composedRequest(ctx, st, mediaID, composer, cacheRoot)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -141,8 +141,16 @@ func PrecomputeComposedRendition(ctx context.Context, st *store.Store, mediaID s
 // any of them. An edited sidecar changes the digest and so the rendition ID,
 // which the next sweep picks up; the superseded rendition ages out through
 // the budget's LRU eviction.
-func EnsureComposedRendition(ctx context.Context, st *store.Store, mediaID store.MediaID, composer PictureComposer, cacheRoot string, now time.Time) (bool, error) {
-	req, ok, err := composedRequest(ctx, st, mediaID, composer, cacheRoot)
+//
+// supported is the FFmpeg capability check the live composed path uses (nil:
+// the cached check of the resolved build). A picture whose recipe the build
+// cannot run (a timed-text picture without libass's `ass` filter, say) is not
+// queued: EnsureComposedRendition returns ErrComposedRecipeUnsupported and
+// records nothing, so no render fails on every sweep, and a later build that
+// can run it picks the picture up. A rendition already stored for the picture
+// is still left alone, so a Ready one keeps being served.
+func EnsureComposedRendition(ctx context.Context, st *store.Store, mediaID store.MediaID, composer PictureComposer, supported ComposedRecipeCheck, cacheRoot string, now time.Time) (bool, error) {
+	req, picture, ok, err := composedRequest(ctx, st, mediaID, composer, cacheRoot)
 	if err != nil || !ok {
 		return false, err
 	}
@@ -153,6 +161,12 @@ func EnsureComposedRendition(ctx context.Context, st *store.Store, mediaID store
 	if !errors.Is(err, store.ErrPlaybackRenditionNotFound) {
 		return false, err
 	}
+	if supported == nil {
+		supported = composedRecipeSupported
+	}
+	if !supported(picture.TimedText != "", composedPrecomputeRendition(req.Height)) {
+		return false, ErrComposedRecipeUnsupported
+	}
 	if _, err := RequestPrecomputeRendition(ctx, st, req, normalizePrecomputeTime(now)); err != nil {
 		return false, err
 	}
@@ -160,42 +174,42 @@ func EnsureComposedRendition(ctx context.Context, st *store.Store, mediaID store
 }
 
 // composedRequest resolves the precompute request for one Media's composed
-// picture. ok is false when the Media is not a candidate, its Library is
-// encrypted, or the composer declines.
-func composedRequest(ctx context.Context, st *store.Store, mediaID store.MediaID, composer PictureComposer, cacheRoot string) (PrecomputeRequest, bool, error) {
+// picture, and the picture. ok is false when the Media is not a candidate,
+// its Library is encrypted, or the composer declines.
+func composedRequest(ctx context.Context, st *store.Store, mediaID store.MediaID, composer PictureComposer, cacheRoot string) (PrecomputeRequest, ComposedPicture, bool, error) {
 	if st == nil {
-		return PrecomputeRequest{}, false, errors.New("store is required")
+		return PrecomputeRequest{}, ComposedPicture{}, false, errors.New("store is required")
 	}
 	if composer == nil || mediaID == "" || strings.TrimSpace(cacheRoot) == "" {
-		return PrecomputeRequest{}, false, nil
+		return PrecomputeRequest{}, ComposedPicture{}, false, nil
 	}
 	media, err := st.Media(ctx, mediaID, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
-		return PrecomputeRequest{}, false, err
+		return PrecomputeRequest{}, ComposedPicture{}, false, err
 	}
 	if !composesPicture(media) {
-		return PrecomputeRequest{}, false, nil
+		return PrecomputeRequest{}, ComposedPicture{}, false, nil
 	}
 	// Same fail-closed rule as every precomputed rendition.
 	encrypted, err := st.LibraryEncrypted(ctx, media.LibraryID)
 	if err != nil || encrypted {
-		return PrecomputeRequest{}, false, err
+		return PrecomputeRequest{}, ComposedPicture{}, false, err
 	}
 	files, err := st.MediaFilesForMedia(ctx, mediaID, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
-		return PrecomputeRequest{}, false, err
+		return PrecomputeRequest{}, ComposedPicture{}, false, err
 	}
 	if len(files) == 0 {
-		return PrecomputeRequest{}, false, errors.New("media has no source files")
+		return PrecomputeRequest{}, ComposedPicture{}, false, errors.New("media has no source files")
 	}
 	source := files[0]
 	picture, ok, err := composer(ctx, media, source.Path)
 	if err != nil || !ok {
-		return PrecomputeRequest{}, false, err
+		return PrecomputeRequest{}, ComposedPicture{}, false, err
 	}
 	digest, err := picture.digest()
 	if err != nil {
-		return PrecomputeRequest{}, false, err
+		return PrecomputeRequest{}, ComposedPicture{}, false, err
 	}
 	renditionID := composedRenditionID(mediaID, source.ContentFingerprint, digest)
 	return PrecomputeRequest{
@@ -208,7 +222,18 @@ func composedRequest(ctx context.Context, st *store.Store, mediaID store.MediaID
 		Bandwidth:          composedBandwidth,
 		SourcePath:         source.Path,
 		Path:               filepath.Join(cacheRoot, string(renditionID)),
-	}, true, nil
+	}, picture, true, nil
+}
+
+// composedPrecomputeRendition is the shape the precomputed composed encode
+// runs at, and so the shape its capability is checked against.
+func composedPrecomputeRendition(height int) ffmpeg.Rendition {
+	return ffmpeg.Rendition{
+		Height:        height,
+		VideoKbps:     composedVideoKbps,
+		AudioCodec:    "aac",
+		AudioChannels: 2,
+	}
 }
 
 // precomputeComposedHLS is the generator's composed branch. It re-resolves the
@@ -248,12 +273,7 @@ func (g FFmpegPrecomputeGenerator) precomputeComposedHLS(ctx context.Context, ru
 			return err
 		}
 	}
-	proc, err := runner.StartBackgroundComposedHLS(ctx, spec.SourcePath, rungDir, input, ffmpeg.Rendition{
-		Height:        spec.Height,
-		VideoKbps:     composedVideoKbps,
-		AudioCodec:    "aac",
-		AudioChannels: 2,
-	})
+	proc, err := runner.StartBackgroundComposedHLS(ctx, spec.SourcePath, rungDir, input, composedPrecomputeRendition(spec.Height))
 	if err != nil {
 		return err
 	}
@@ -349,11 +369,19 @@ func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Gran
 	}, nil
 }
 
-// composedRecipeSupported reports whether the resolved FFmpeg build can run the
-// live composed encode of a timed-text (true) or graphics (false) picture with
-// a rendition. It is a variable so a test can state the build it means instead
-// of inheriting the FFmpeg on the developer's PATH, like toneMapSupported.
-var composedRecipeSupported = ffmpeg.ComposedRecipeSupported
+// ComposedRecipeCheck reports whether the resolved FFmpeg build can run the
+// composed encode of a timed-text (true) or graphics (false) picture with a
+// rendition.
+type ComposedRecipeCheck func(timedText bool, rendition ffmpeg.Rendition) bool
+
+// ErrComposedRecipeUnsupported is EnsureComposedRendition declining a picture
+// the FFmpeg build cannot compose.
+var ErrComposedRecipeUnsupported = errors.New("ffmpeg build cannot run the composed picture recipe")
+
+// composedRecipeSupported is the cached ComposedRecipeCheck of the resolved
+// build. It is a variable so a test can state the build it means instead of
+// inheriting the FFmpeg on the developer's PATH, like toneMapSupported.
+var composedRecipeSupported ComposedRecipeCheck = ffmpeg.ComposedRecipeSupported
 
 // composedLiveRendition is the rendition a live composed session encodes for
 // rung, audio and adjust: the fields hlsSession.rendition fills that decide
@@ -409,7 +437,7 @@ func (s *Service) SetComposedCacheRoot(root string) {
 // picture already exists. A render the sweep
 // already queued is raised to demand priority instead of duplicated.
 func (s *Service) queueComposedRendition(ctx context.Context, mediaID store.MediaID) error {
-	req, ok, err := composedRequest(ctx, s.store, mediaID, s.composer, s.composedCache)
+	req, _, ok, err := composedRequest(ctx, s.store, mediaID, s.composer, s.composedCache)
 	if err != nil || !ok {
 		return err
 	}

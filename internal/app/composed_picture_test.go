@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/playback"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	schedulepkg "github.com/beamfall/core/internal/schedule"
@@ -97,6 +98,7 @@ func TestPictureComposersSweepEnqueuesMissingRenditions(t *testing.T) {
 		"composing": composingParser{text: "[Script Info]", ok: true, gotPath: &gotPath},
 		"plain":     plainParser{},
 	})
+	composers.recipeSupported = func(bool, ffmpeg.Rendition) bool { return true }
 	scope, err := auth.NewService(st).Scope(ctx, "session-default")
 	if err != nil {
 		t.Fatal(err)
@@ -163,6 +165,84 @@ func TestPictureComposersSweepEnqueuesMissingRenditions(t *testing.T) {
 	var nilSet *pictureComposers
 	if n, err := nilSet.sweep(ctx, t.TempDir(), now, nil); n != 0 || err != nil {
 		t.Fatalf("nil set sweep = %d err %v", n, err)
+	}
+}
+
+// TestPictureComposersSweepSkipsUnsupportedRecipe covers CORE-1790: on an
+// FFmpeg build without libass (`ass` filter), the sweep queues no timed-text
+// render, so none fails and is retried on every run, while graphics pictures
+// it can compose still queue.
+func TestPictureComposersSweepSkipsUnsupportedRecipe(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	dir := t.TempDir()
+	graphics := filepath.Join(dir, "picture.cdg")
+	if err := os.WriteFile(graphics, []byte("graphics"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var textPath, graphicsPath string
+	composers := newPictureComposers(st, map[string]scanpkg.FilenameParser{
+		"text":     composingParser{text: "[Script Info]", ok: true, gotPath: &textPath},
+		"graphics": composingParser{graphics: graphics, ok: true, gotPath: &graphicsPath},
+	})
+	var checkedText []bool
+	composers.recipeSupported = func(timedText bool, rendition ffmpeg.Rendition) bool {
+		checkedText = append(checkedText, timedText)
+		if rendition.Height <= 0 || rendition.VideoKbps <= 0 {
+			t.Errorf("capability checked against rendition %+v, want the encode's shape", rendition)
+		}
+		return !timedText // no libass: graphics only
+	}
+	scope, err := auth.NewService(st).Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, plugin := range []string{"text", "graphics"} {
+		library, err := st.CreateLibrary(ctx, plugin, false, plugin, scope.ProfileID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, plugin+".mp3")
+		if err := os.WriteFile(path, []byte("audio"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: path, Title: plugin, Container: "mp3", Codec: "mp3",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + plugin, DurationSecondsHint: 3,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now := time.Unix(700, 0).UTC()
+	cache := t.TempDir()
+	for run := 1; run <= 2; run++ {
+		// Only the graphics picture queues (its unclaimed job dedupes).
+		if enqueued, err := composers.sweep(ctx, cache, now, nil); err != nil || enqueued != 1 {
+			t.Fatalf("sweep %d = %d err %v, want 1", run, enqueued, err)
+		}
+	}
+	jobs, err := st.ListJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	precompute := 0
+	for _, job := range jobs {
+		if job.Kind == playback.PrecomputeJobKind {
+			precompute++
+		}
+	}
+	if precompute != 1 {
+		t.Fatalf("precompute jobs = %d, want 1 (the timed-text picture never queues)", precompute)
+	}
+	unsupportedChecks := 0
+	for _, timedText := range checkedText {
+		if timedText {
+			unsupportedChecks++
+		}
+	}
+	if unsupportedChecks != 2 {
+		t.Fatalf("timed-text capability checks = %d, want one per sweep", unsupportedChecks)
 	}
 }
 
