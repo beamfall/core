@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   EmptyState,
   ErrorState,
@@ -274,6 +274,7 @@ const KEY_STATUS: Record<string, { label: StringKey; tone: StatusTone }> = {
   invalid: { label: "consoleScraperInvalid", tone: "red" },
   unreadable: { label: "consoleScraperUnreadable", tone: "red" },
   "not-required": { label: "consoleScraperNotRequired", tone: "neutral" },
+  disabled: { label: "consoleScraperDisabled", tone: "neutral" },
 };
 
 function keyStatusChip(status: string, t: ReturnType<typeof useT>) {
@@ -428,6 +429,10 @@ function ProviderKeyRow({
   const [pending, setPending] = useState(false);
   const { authRef, label, hosts, status } = providerKey;
   const configured = status === "configured";
+  const disabled = status === "disabled";
+  // Disable stops the provider outright: the server never falls back to a key
+  // built into the server (CORE-1540), and the copy says so.
+  const hintID = useId();
 
   async function run(action: () => Promise<unknown>, clear: boolean) {
     setPending(true);
@@ -466,7 +471,7 @@ function ProviderKeyRow({
         <Button type="submit" size="sm" className="px-4" disabled={pending || !secret.trim()}>
           {t("consoleScraperSave")}
         </Button>
-        {status !== "missing" && (
+        {status !== "missing" && !disabled && (
           <>
             <Button
               type="button"
@@ -482,6 +487,7 @@ function ProviderKeyRow({
               size="sm"
               variant="ghost"
               disabled={pending}
+              aria-describedby={hintID}
               onClick={() => void run(() => disableScraperCredential(authRef), true)}
             >
               {t("consoleScraperDisable")}
@@ -489,6 +495,11 @@ function ProviderKeyRow({
           </>
         )}
       </form>
+      {status !== "missing" && (
+        <p id={hintID} className="mt-1.5 text-xs text-muted-foreground">
+          {t(disabled ? "pluginKeyDisabledHint" : "pluginKeyDisableHint")}
+        </p>
+      )}
     </div>
   );
 }
