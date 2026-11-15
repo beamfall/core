@@ -119,10 +119,19 @@ func composesPicture(media store.Media) bool {
 // job as every precomputed rendition. It returns no jobs, and no
 // error, when the Media is not a candidate or the composer declines; the
 // caller then falls back to the ordinary ladder.
-func PrecomputeComposedRendition(ctx context.Context, st *store.Store, mediaID store.MediaID, composer PictureComposer, cacheRoot string, now time.Time) ([]store.Job, error) {
-	req, _, ok, err := composedRequest(ctx, st, mediaID, composer, cacheRoot)
+//
+// supported is the same FFmpeg capability check EnsureComposedRendition and
+// the live composed path consult (nil: the cached check of the resolved
+// build). A picture whose recipe the build cannot run is refused with
+// ErrComposedRecipeUnsupported and nothing is queued, so the operator's
+// explicit precompute never queues a render that can only fail.
+func PrecomputeComposedRendition(ctx context.Context, st *store.Store, mediaID store.MediaID, composer PictureComposer, supported ComposedRecipeCheck, cacheRoot string, now time.Time) ([]store.Job, error) {
+	req, picture, ok, err := composedRequest(ctx, st, mediaID, composer, cacheRoot)
 	if err != nil || !ok {
 		return nil, err
+	}
+	if !composedRecipeRunnable(supported, picture, req) {
+		return nil, ErrComposedRecipeUnsupported
 	}
 	job, err := RequestPrecomputeRendition(ctx, st, req, normalizePrecomputeTime(now))
 	if err != nil {
@@ -161,10 +170,7 @@ func EnsureComposedRendition(ctx context.Context, st *store.Store, mediaID store
 	if !errors.Is(err, store.ErrPlaybackRenditionNotFound) {
 		return false, err
 	}
-	if supported == nil {
-		supported = composedRecipeSupported
-	}
-	if !supported(picture.TimedText != "", composedPrecomputeRendition(req.Height)) {
+	if !composedRecipeRunnable(supported, picture, req) {
 		return false, ErrComposedRecipeUnsupported
 	}
 	if _, err := RequestPrecomputeRendition(ctx, st, req, normalizePrecomputeTime(now)); err != nil {
@@ -223,6 +229,16 @@ func composedRequest(ctx context.Context, st *store.Store, mediaID store.MediaID
 		SourcePath:         source.Path,
 		Path:               filepath.Join(cacheRoot, string(renditionID)),
 	}, picture, true, nil
+}
+
+// composedRecipeRunnable consults the capability check (nil: the cached check
+// of the resolved build) against the exact rendition the precomputed encode
+// runs at, for both the explicit precompute and the Schedule sweep.
+func composedRecipeRunnable(supported ComposedRecipeCheck, picture ComposedPicture, req PrecomputeRequest) bool {
+	if supported == nil {
+		supported = composedRecipeSupported
+	}
+	return supported(picture.TimedText != "", composedPrecomputeRendition(req.Height))
 }
 
 // composedPrecomputeRendition is the shape the precomputed composed encode
@@ -375,7 +391,8 @@ func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Gran
 // rendition.
 type ComposedRecipeCheck func(timedText bool, rendition ffmpeg.Rendition) bool
 
-// ErrComposedRecipeUnsupported is EnsureComposedRendition declining a picture
+// ErrComposedRecipeUnsupported is PrecomputeComposedRendition or
+// EnsureComposedRendition declining a picture
 // the FFmpeg build cannot compose.
 var ErrComposedRecipeUnsupported = errors.New("ffmpeg build cannot run the composed picture recipe")
 

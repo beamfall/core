@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -270,5 +271,67 @@ func TestComposedSweepScheduleSeededOnlyWithBudgetAndComposer(t *testing.T) {
 				t.Fatalf("composed sweep schedule seeded = %v (err %v), want %v", got, err, tc.want)
 			}
 		})
+	}
+}
+
+// TestPlaybackCacheControllerRefusesUnsupportedComposedRecipe covers
+// CORE-1847: the Console precompute applies the sweep's FFmpeg capability
+// check, so on a build without libass a timed-text picture is refused and
+// queues nothing, rather than queueing a render that can only fail or falling
+// back to the ladder.
+func TestPlaybackCacheControllerRefusesUnsupportedComposedRecipe(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	dir := t.TempDir()
+	var gotPath string
+	composers := newPictureComposers(st, map[string]scanpkg.FilenameParser{
+		"text": composingParser{text: "[Script Info]", ok: true, gotPath: &gotPath},
+	})
+	scope, err := auth.NewService(st).Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	library, err := st.CreateLibrary(ctx, "text", false, "text", scope.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "text.mp3")
+	if err := os.WriteFile(path, []byte("audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: path, Title: "text", Container: "mp3", Codec: "mp3",
+		Class: store.MediaClassAudio, ContentFingerprint: "fp-console", DurationSecondsHint: 3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checked int
+	controller := playbackCacheController{
+		store:     st,
+		cacheRoot: t.TempDir(),
+		budget:    1 << 30,
+		now:       func() time.Time { return time.Unix(800, 0) },
+		composer:  composers.playbackComposer(),
+		recipeSupported: func(timedText bool, _ ffmpeg.Rendition) bool {
+			checked++
+			return !timedText // no libass
+		},
+	}
+	enqueued, err := controller.PrecomputeMedia(ctx, media.ID)
+	if !errors.Is(err, playback.ErrComposedRecipeUnsupported) || enqueued != 0 {
+		t.Fatalf("PrecomputeMedia = %d err %v, want ErrComposedRecipeUnsupported", enqueued, err)
+	}
+	if checked != 1 {
+		t.Fatalf("capability checks = %d, want 1", checked)
+	}
+	jobs, err := st.ListJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range jobs {
+		if job.Kind == playback.PrecomputeJobKind {
+			t.Fatalf("precompute job %+v queued, want none", job)
+		}
 	}
 }
