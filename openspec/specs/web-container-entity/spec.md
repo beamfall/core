@@ -7,7 +7,7 @@ Defines the web Viewer page for a container Entity: what it leads with, how it l
 
 ### Requirement: Container Entity page leads with the next-up child
 
-The web Entity page SHALL show a lockup of the title, a chip with the plugin's display name for the Entity's kind, and only viewer-facing fields under their declared labels. The page SHALL read the Entity's ordered Media for its primary action whether or not a detail Layout renders them. When the Entity has a playable child, it SHALL offer one accent-filled action that plays the first child in progress, else the first unfinished child, else the first child. Locked children are skipped. The player SHALL receive the container's order as its queue. When the Entity has no playable Media of its own, the action SHALL play the next-up child of its next-up child container: the first related group whose archetype is a container, then the first unlocked item in it with children left to finish, else its first unlocked item, with that child container's order as the queue. The page SHALL NOT name any plugin kind to decide this.
+The web Entity page SHALL show a lockup of the title, a chip with the plugin's display name for the Entity's kind, and only viewer-facing fields under their declared labels. The page SHALL read the Entity's ordered Media for its primary action whether or not a detail Layout renders them. When the Entity has a playable child, it SHALL offer one accent-filled action that plays the first child in progress, else the first unfinished child, else the first child. Locked children are skipped. The player SHALL receive the container's order as its queue. The page SHALL NOT name any plugin kind to decide this.
 
 #### Scenario: A child is in progress
 - **GIVEN** a container whose second child has a saved position
@@ -18,6 +18,10 @@ The web Entity page SHALL show a lockup of the title, a chip with the plugin's d
 #### Scenario: Nothing is in progress
 - **GIVEN** a container whose first child is finished and second is not started
 - **THEN** the action is Play for the second child
+
+### Requirement: A container of containers plays through its next-up child container
+
+When the Entity has no playable Media of its own, its primary action SHALL play the next-up child of its next-up child container: the first related group whose archetype is a container, then the first unlocked item in it with children left to finish, else its first unlocked item. The player SHALL receive that child container's order as its queue. The page SHALL NOT name any plugin kind to decide this.
 
 #### Scenario: A container of containers
 - **GIVEN** a container with a detail Layout, no Media of its own, and two related child containers, the first finished and the second with children left
