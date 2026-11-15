@@ -218,6 +218,26 @@ func (m *Manager) Seal(libraryID string) {
 	m.sealLocked(libraryID)
 }
 
+// Erase destroys a purged library's key material: it drops the in-memory DEK and
+// clears every owner-bound secret (key bundle, recovery journals, KEK), so no
+// ciphertext the library left behind can ever be decrypted again. The wrapped
+// bundle goes first because it alone holds the DEK. Clearing an absent secret is
+// success, so a partial Erase is finished by repeating it. Legacy refs are left
+// alone: their sanitized names can collide across library ids, and boot migration
+// has already moved a live library's legacy refs to its owner-bound ones.
+func (m *Manager) Erase(libraryID string) error {
+	release := m.acquireLibrary(libraryID)
+	defer release()
+	m.sealLocked(libraryID)
+	var joined error
+	for _, kind := range []secretKind{secretKindBundle, secretKindRewrapJournal, secretKindProvisionJournal, secretKindKEK} {
+		if err := m.writeOwnerSecret(libraryID, kind, ""); err != nil {
+			joined = errors.Join(joined, fmt.Errorf("libencrypt: erase %s: %w", kind, err))
+		}
+	}
+	return joined
+}
+
 func (m *Manager) Sealed(libraryID string) bool {
 	release := m.acquireLibraryShared(libraryID)
 	defer release()

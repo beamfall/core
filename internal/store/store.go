@@ -936,6 +936,12 @@ type Store struct {
 	// exact fence, which wall-clock scheduling cannot express. Never set in
 	// production wiring.
 	convertStepHook func(step string)
+	// managedImportStepHook, when non-nil, fires inside ImportManagedFile
+	// between the on-disk admission and the managed catalog admission (step
+	// "catalog"). Test-only, like convertStepHook: it lets a deterministic
+	// test land a scan import in that exact window. Never set in production
+	// wiring.
+	managedImportStepHook func(step string)
 	// entityIndexes holds the registered plugin-declared field index
 	// postures: kind → field → spec (RegisterEntityFieldIndexes). Guarded by
 	// mu like every other member.
@@ -967,6 +973,10 @@ type Store struct {
 	// (ADR-0045 §reconcile). The store stays a storage leaf: it owns the
 	// lifecycle timing, not the derivative filesystem layout. Guarded by mu.
 	encDerivativeReconciler EncryptedDerivativeReconciler
+	// encKeyEraser is the app-injected seam (nil by default) that destroys a
+	// purged encrypted Library's key material. Without it an encrypted Library
+	// cannot be purged. Guarded by mu; called only with mu released.
+	encKeyEraser EncryptedLibraryKeyEraser
 	// snapshotSealer is the app-injected Backup Set encryption/verification
 	// seam. The store owns snapshot consistency and publication, while the
 	// backup package owns envelope cryptography. Set once at composition.
@@ -986,6 +996,13 @@ type Store struct {
 	// registration never contends on s.mu). Lazily allocated.
 	importTokens  map[string]managedImportToken
 	importTokenMu sync.Mutex
+	// managedInflight holds the Library paths an ImportManagedFile has put on
+	// disk but not yet cataloged. The ordinary scan imports refuse such a path
+	// with ErrManagedAdmissionInFlight, so a scan cannot catalog a managed
+	// import ahead of its own admission. Guarded by managedInflightMu (never
+	// s.mu); lazily allocated.
+	managedInflight   map[string]struct{}
+	managedInflightMu sync.Mutex
 }
 
 // managedImportToken is the stable-reference record a server-minted import
@@ -2841,6 +2858,11 @@ func (s *Store) ImportMediaFile(ctx context.Context, imported ImportMediaFile) (
 	if err := validateImportMediaFile(imported); err != nil {
 		return Media{}, MediaFile{}, err
 	}
+	if !imported.managedAdmission {
+		if err := s.refuseManagedAdmissionInFlight(imported.Path); err != nil {
+			return Media{}, MediaFile{}, err
+		}
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -2893,6 +2915,9 @@ func (s *Store) ImportMediaFileParts(ctx context.Context, parts []ImportMediaFil
 		}
 		ordinals[part.SourceOrdinal] = true
 		if err := validateImportMediaFile(part.File); err != nil {
+			return Media{}, nil, err
+		}
+		if err := s.refuseManagedAdmissionInFlight(part.File.Path); err != nil {
 			return Media{}, nil, err
 		}
 		if part.File.LibraryID != parts[0].File.LibraryID {

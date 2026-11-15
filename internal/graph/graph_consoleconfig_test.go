@@ -408,6 +408,137 @@ func TestScraperCredentialsAreAuthRefScoped(t *testing.T) {
 	}
 }
 
+// bundledMemoryCredentials mimics an official build's credential source: the
+// owner's secret first, then a built-in default unless the owner disabled it.
+type bundledMemoryCredentials struct {
+	memoryScraperCredentials
+	bundled  map[string]string
+	disabled map[string]bool
+}
+
+func (b *bundledMemoryCredentials) Secret(ref string) (string, error) {
+	if secret, err := b.memoryScraperCredentials.Secret(ref); err == nil {
+		return secret, nil
+	}
+	if value, ok := b.bundled[ref]; ok && !b.disabled[ref] {
+		return value, nil
+	}
+	return "", fmt.Errorf("credential %q unavailable", ref)
+}
+
+func (b *bundledMemoryCredentials) SetSecret(ref, value string) error {
+	if strings.TrimSpace(value) != "" {
+		delete(b.disabled, ref)
+	}
+	return b.memoryScraperCredentials.SetSecret(ref, value)
+}
+
+func (b *bundledMemoryCredentials) DisableSecret(ref string) error {
+	if _, ok := b.bundled[ref]; ok {
+		b.disabled[ref] = true
+	}
+	return b.memoryScraperCredentials.SetSecret(ref, "")
+}
+
+func (b *bundledMemoryCredentials) SecretDisabled(ref string) bool {
+	_, err := b.memoryScraperCredentials.Secret(ref)
+	return err != nil && b.disabled[ref]
+}
+
+// TestDisablingBundledScraperCredentialStops (CORE-1540): on a build that
+// bundles a default for an AuthRef, the audited disableScraperCredential
+// mutation stops the scraper instead of reverting to the built-in key, the
+// Console reports the AuthRef as disabled, and saving an owner key re-enables
+// it.
+func TestDisablingBundledScraperCredentialStops(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newConsoleHandler(t, st)
+	authRef := plugin.ScopedCredentialRef("demo", "shared-api-key")
+	secrets := &bundledMemoryCredentials{bundled: map[string]string{authRef: "built-in"}, disabled: map[string]bool{}}
+	invalidator := &recordingCredentialInvalidator{}
+	handler.SetScraperCredentialStore(secrets)
+	handler.SetScraperCredentialInvalidator(invalidator)
+	openManagerAdminSession(t, st)
+
+	// mutate runs one credential mutation; a non-empty secret adds the
+	// setScraperCredential argument.
+	mutate := func(name, secret string) ScraperCredentialInfo {
+		t.Helper()
+		params, args, vars := "", "", ""
+		if secret != "" {
+			params, args, vars = ",$secret:String!", ", secret:$secret", fmt.Sprintf(`,"secret":%q`, secret)
+		}
+		data, errs := post(t, handler,
+			fmt.Sprintf(`{"query":"mutation($authRef:String!%s){ %s(authRef:$authRef%s) { authRef credentialConfigured credentialStatus credentialError } }","variables":{"authRef":%q%s}}`, params, name, args, authRef, vars),
+			authorizeManager)
+		if len(errs) != 0 {
+			t.Fatalf("%s errors = %#v", name, errs)
+		}
+		var info ScraperCredentialInfo
+		mustUnmarshal(t, data[name], &info)
+		return info
+	}
+
+	if got := mutate("validateScraperCredential", ""); !got.CredentialConfigured || got.CredentialStatus != "configured" {
+		t.Fatalf("bundled credential status = %#v, want configured", got)
+	}
+	disabled := mutate("disableScraperCredential", "")
+	if disabled.CredentialConfigured || disabled.CredentialStatus != "disabled" || disabled.CredentialError != "disabled" {
+		t.Fatalf("disabled bundled credential status = %#v, want disabled", disabled)
+	}
+	if _, err := secrets.Secret(authRef); err == nil {
+		t.Fatal("disabled AuthRef still resolves to the bundled credential")
+	}
+	if got := strings.Join(invalidator.refs, ","); got != authRef {
+		t.Fatalf("invalidated refs after disable = %q", got)
+	}
+
+	data, errs := post(t, handler,
+		`{"query":"query { consoleConfig { plugins { scrapers { scraperID authRef credentialConfigured credentialStatus } } } }"}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("consoleConfig errors = %#v", errs)
+	}
+	var cfg ConsoleConfigInfo
+	mustUnmarshal(t, data["consoleConfig"], &cfg)
+	var rows int
+	for _, p := range cfg.Plugins {
+		for _, scraper := range p.Scrapers {
+			if scraper.AuthRef != authRef {
+				continue
+			}
+			rows++
+			if scraper.CredentialConfigured || scraper.CredentialStatus != "disabled" {
+				t.Fatalf("consoleConfig scraper after disable = %#v", scraper)
+			}
+		}
+	}
+	if rows == 0 {
+		t.Fatal("consoleConfig listed no scraper for the disabled AuthRef")
+	}
+
+	saved := mutate("setScraperCredential", "owner-key")
+	if !saved.CredentialConfigured || saved.CredentialStatus != "configured" || secrets.disabled[authRef] {
+		t.Fatalf("saving an owner key after disable = %#v (disabled=%v)", saved, secrets.disabled[authRef])
+	}
+
+	logData, logErrs := post(t, handler, `{"query":"query { activityLog { action targetType targetID } }"}`, authorizeManager)
+	if len(logErrs) != 0 {
+		t.Fatalf("activityLog errors = %#v", logErrs)
+	}
+	var entries []ActivityEntryInfo
+	mustUnmarshal(t, logData["activityLog"], &entries)
+	var audits int
+	for _, entry := range entries {
+		if entry.Action == store.ActivityConfigUpdate && entry.TargetType == "scraper-credential" && entry.TargetID == authRef {
+			audits++
+		}
+	}
+	if audits != 2 {
+		t.Fatalf("scraper credential audit rows = %d, want 2 (disable, save)", audits)
+	}
+}
+
 type credentialGrantSource map[string][]integrationhost.Grant
 
 func (g credentialGrantSource) Grants(_ context.Context, pluginID string) ([]integrationhost.Grant, error) {

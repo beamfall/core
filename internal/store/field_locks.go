@@ -57,26 +57,20 @@ func (s *Store) MediaFieldLocks(ctx context.Context, id MediaID, filter LibraryF
 	}
 	// Visibility first: reuse the reveal/Library-filtered read so a restricted
 	// Media never reveals its lock state to an unrevealed caller.
-	if _, err := s.visibleMediaSQL(ctx, id, filter); err != nil {
-		return nil, err
-	}
-	var title, summary, year int
-	err := s.catalogR.QueryRowContext(ctx,
-		"SELECT title_identified, summary_identified, year_identified FROM media WHERE id = ?",
-		id,
-	).Scan(&title, &summary, &year)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ValidationError("media not found")
-	}
+	// The lock columns live on the catalog plane that owns the Media's
+	// Library — an encrypted Library's Media are not in the default plane.
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	values := map[string]int{"title": title, "summary": summary, "year": year}
-	locks := make([]MediaFieldLock, 0, len(lockableFields))
-	for _, f := range lockableFields {
-		locks = append(locks, MediaFieldLock{Field: f.Field, Locked: values[f.Field] != 0})
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, filter); err != nil {
+		return nil, err
 	}
-	return locks, nil
+	locks, err := mediaFieldLocksFrom(ctx, plane.reader, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ValidationError("media not found")
+	}
+	return locks, err
 }
 
 // SetMediaFieldLock sets or clears one field's source-precedence lock on a
@@ -97,22 +91,26 @@ func (s *Store) SetMediaFieldLock(ctx context.Context, id MediaID, field string,
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	if _, err := s.visibleMediaSQL(ctx, id, filter); err != nil {
+	plane, err := s.catalogPlaneForMediaLocked(ctx, id)
+	if err != nil {
 		return nil, err
 	}
-	if _, err := s.catalogW.ExecContext(ctx,
+	if _, err := s.visibleMediaSQLFrom(ctx, plane.reader, id, filter); err != nil {
+		return nil, err
+	}
+	if _, err := plane.writer.ExecContext(ctx,
 		"UPDATE media SET "+column+" = ? WHERE id = ?", boolInt(locked), id,
 	); err != nil {
 		return nil, err
 	}
-	return s.mediaFieldLocksLocked(ctx, id)
+	return mediaFieldLocksFrom(ctx, plane.reader, id)
 }
 
-// mediaFieldLocksLocked reads the lock set without re-checking visibility — the
-// caller (SetMediaFieldLock) already gated. Held under s.mu.RLock.
-func (s *Store) mediaFieldLocksLocked(ctx context.Context, id MediaID) ([]MediaFieldLock, error) {
+// mediaFieldLocksFrom reads the lock set from one catalog plane without
+// re-checking visibility — the caller already gated. Held under s.mu.RLock.
+func mediaFieldLocksFrom(ctx context.Context, db *sql.DB, id MediaID) ([]MediaFieldLock, error) {
 	var title, summary, year int
-	if err := s.catalogR.QueryRowContext(ctx,
+	if err := db.QueryRowContext(ctx,
 		"SELECT title_identified, summary_identified, year_identified FROM media WHERE id = ?",
 		id,
 	).Scan(&title, &summary, &year); err != nil {

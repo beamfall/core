@@ -2,7 +2,10 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -138,7 +141,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		}
 	}
 	state.applyDeferredArtwork()
-	if err := st.MarkMissingMediaFilesNotSeenSince(ctx, req.LibraryID, req.Root, scanStarted); err != nil {
+	if err := state.markMissingIfPlausible(scanStarted); err != nil {
 		return Result{}, err
 	}
 	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID); err != nil {
@@ -164,4 +167,89 @@ func metadataBackfillStale(ctx context.Context, st *store.Store, libraryID store
 		}
 	}
 	return stale, nil
+}
+
+// The missing-ratio guard: a completed scan that would flip more than
+// missingRatioGuardThreshold of a root's present files to missing at once
+// skips the missing pass instead. Losing most of a library in one scan is far
+// likelier a partly mounted or unreadable share than a real mass deletion.
+// It only applies from missingRatioGuardMinPresent present files, so deleting
+// most of a small library still marks those files missing.
+const (
+	missingRatioGuardThreshold  = 0.5
+	missingRatioGuardMinPresent = 20
+)
+
+// markMissingIfPlausible runs the post-walk missing pass only when the walk
+// result is believable. An absent, non-directory or unreadable root fails the
+// scan; a root that walked no media files while it still has present rows, or
+// a pass tripping the missing-ratio guard, skips marking with a warning.
+func (s *scanWalkState) markMissingIfPlausible(scanStarted time.Time) error {
+	if err := checkScanRootReadable(s.req.Root); err != nil {
+		return err
+	}
+	present, stale, err := s.presentFilesUnderRoot(scanStarted)
+	if err != nil {
+		return err
+	}
+	if reason := missingPassSkipReason(present, stale, s.walkMediaFiles); reason != "" {
+		slog.Warn("scan: not marking files missing", "library", string(s.req.LibraryID), "root", s.req.Root, "reason", reason, "present", present, "unseen", stale)
+		return nil
+	}
+	return s.st.MarkMissingMediaFilesNotSeenSince(s.ctx, s.req.LibraryID, s.req.Root, scanStarted)
+}
+
+func checkScanRootReadable(root string) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		return fmt.Errorf("scan root %q is unavailable: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("scan root %q is not a directory", root)
+	}
+	if _, err := os.ReadDir(root); err != nil {
+		return fmt.Errorf("scan root %q cannot be read: %w", root, err)
+	}
+	return nil
+}
+
+// presentFilesUnderRoot counts the library's present files under the scan
+// root and how many of them this scan has not refreshed (the rows the missing
+// pass would flip), using the same millisecond cut as the store. Unrefreshed
+// rows that are local artwork sidecars, catalogued before CORE-1708, are left
+// out of both counts: the walk skips them on purpose, so they say nothing about
+// the root's health, and counting them would let a library with more artwork
+// than media trip the guard on every rescan and never drop them.
+func (s *scanWalkState) presentFilesUnderRoot(scanStarted time.Time) (present, stale int, err error) {
+	root := filepath.Clean(s.req.Root)
+	prefix := root + string(filepath.Separator)
+	cutoff := scanStarted.UnixMilli()
+	err = s.st.ForEachMediaFileForLibrary(s.ctx, s.req.LibraryID, func(file store.MediaFile) error {
+		if file.Path != root && !strings.HasPrefix(file.Path, prefix) {
+			return nil
+		}
+		unseen := file.LastSeenAt.IsZero() || file.LastSeenAt.UnixMilli() < cutoff
+		if unseen && isLocalArtworkSidecar(file.Path) {
+			return nil
+		}
+		present++
+		if unseen {
+			stale++
+		}
+		return nil
+	})
+	return present, stale, err
+}
+
+func missingPassSkipReason(present, stale, walkedMediaFiles int) string {
+	if present == 0 || stale == 0 {
+		return ""
+	}
+	if walkedMediaFiles == 0 {
+		return "scan root walked no media files while the library still has present files"
+	}
+	if present >= missingRatioGuardMinPresent && float64(stale) > missingRatioGuardThreshold*float64(present) {
+		return fmt.Sprintf("missing-ratio guard: %d of %d present files would be marked missing (threshold %.0f%%)", stale, present, missingRatioGuardThreshold*100)
+	}
+	return ""
 }
