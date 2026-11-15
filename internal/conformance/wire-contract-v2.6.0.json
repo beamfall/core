@@ -363,6 +363,11 @@
       "tier": "session"
     },
     {
+      "field": "deletewebhook",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "devices",
       "effect": "read",
       "tier": "admin"
@@ -763,6 +768,16 @@
       "tier": "admin"
     },
     {
+      "field": "preplayclips",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "preplayqueue",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "profiles",
       "effect": "read",
       "tier": "session"
@@ -1023,6 +1038,11 @@
       "tier": "session"
     },
     {
+      "field": "savewebhook",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "scanestimate",
       "effect": "read",
       "tier": "admin"
@@ -1188,6 +1208,11 @@
       "tier": "admin"
     },
     {
+      "field": "setpreplayclips",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "setprofilelibraries",
       "effect": "write",
       "tier": "admin"
@@ -1256,6 +1281,11 @@
       "field": "setwatchlisted",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "setwebhooksettings",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "skipdetectionenabled",
@@ -1329,6 +1359,11 @@
     },
     {
       "field": "terminatesession",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "testwebhook",
       "effect": "write",
       "tier": "admin"
     },
@@ -1486,6 +1521,21 @@
       "field": "watchpartytransport",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "webhookdeliveries",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "webhooks",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "webhooksettings",
+      "effect": "read",
+      "tier": "admin"
     }
   ],
   "nested": [
@@ -6365,6 +6415,10 @@
       ]
     },
     {
+      "field": "deletewebhook",
+      "kind": "object"
+    },
+    {
       "field": "devices",
       "kind": "object",
       "children": [
@@ -9314,6 +9368,42 @@
             },
             {
               "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "letters",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "count",
+                "kind": "scalar"
+              },
+              {
+                "name": "letter",
+                "kind": "scalar"
+              },
+              {
+                "name": "offset",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "count",
+              "kind": "scalar"
+            },
+            {
+              "name": "letter",
+              "kind": "scalar"
+            },
+            {
+              "name": "offset",
               "kind": "scalar"
             }
           ]
@@ -14313,6 +14403,121 @@
       ]
     },
     {
+      "field": "preplayclips",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "role",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "field": "preplayqueue",
+      "kind": "list",
+      "arguments": [
+        {
+          "name": "mediaID",
+          "kind": "string"
+        }
+      ],
+      "elem": {
+        "kind": "object",
+        "children": [
+          {
+            "name": "durationSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "label",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "role",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "durationSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "label",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "role",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "profiles",
       "kind": "object",
       "children": [
@@ -16801,6 +17006,68 @@
         },
         {
           "name": "profileID",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "savewebhook",
+      "kind": "object",
+      "children": [
+        {
+          "name": "allowPrivateNetwork",
+          "kind": "scalar"
+        },
+        {
+          "name": "disabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "format",
+          "kind": "scalar"
+        },
+        {
+          "name": "from",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "problem",
+          "kind": "scalar"
+        },
+        {
+          "name": "secretSet",
+          "kind": "scalar"
+        },
+        {
+          "name": "to",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "url",
+          "kind": "scalar"
+        },
+        {
+          "name": "username",
           "kind": "scalar"
         }
       ]
@@ -24042,6 +24309,64 @@
       ]
     },
     {
+      "field": "setpreplayclips",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "role",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "setprofilelibraries",
       "kind": "object",
       "children": [
@@ -24567,6 +24892,32 @@
         },
         {
           "name": "watchlisted",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "setwebhooksettings",
+      "kind": "object",
+      "children": [
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "formats",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "publicBaseURL",
           "kind": "scalar"
         }
       ]
@@ -25400,6 +25751,28 @@
       "children": [
         {
           "name": "sessionID",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "testwebhook",
+      "kind": "object",
+      "children": [
+        {
+          "name": "diagnostic",
+          "kind": "scalar"
+        },
+        {
+          "name": "durationMs",
+          "kind": "scalar"
+        },
+        {
+          "name": "ok",
+          "kind": "scalar"
+        },
+        {
+          "name": "statusClass",
           "kind": "scalar"
         }
       ]
@@ -28320,6 +28693,132 @@
           "kind": "scalar"
         }
       ]
+    },
+    {
+      "field": "webhookdeliveries",
+      "kind": "object",
+      "children": [
+        {
+          "name": "at",
+          "kind": "scalar"
+        },
+        {
+          "name": "attempts",
+          "kind": "scalar"
+        },
+        {
+          "name": "durationMs",
+          "kind": "scalar"
+        },
+        {
+          "name": "endpointID",
+          "kind": "scalar"
+        },
+        {
+          "name": "eventKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "outcome",
+          "kind": "scalar"
+        },
+        {
+          "name": "statusClass",
+          "kind": "scalar"
+        },
+        {
+          "name": "test",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "webhooks",
+      "kind": "object",
+      "children": [
+        {
+          "name": "allowPrivateNetwork",
+          "kind": "scalar"
+        },
+        {
+          "name": "disabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "format",
+          "kind": "scalar"
+        },
+        {
+          "name": "from",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "problem",
+          "kind": "scalar"
+        },
+        {
+          "name": "secretSet",
+          "kind": "scalar"
+        },
+        {
+          "name": "to",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "url",
+          "kind": "scalar"
+        },
+        {
+          "name": "username",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "webhooksettings",
+      "kind": "object",
+      "children": [
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "formats",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "publicBaseURL",
+          "kind": "scalar"
+        }
+      ]
     }
   ],
   "v1": {
@@ -29451,6 +29950,10 @@
         "effect": "write"
       },
       {
+        "field": "deletewebhook",
+        "effect": "write"
+      },
+      {
         "field": "devices",
         "effect": "read"
       },
@@ -29567,6 +30070,10 @@
         "effect": "write"
       },
       {
+        "field": "preplayclips",
+        "effect": "read"
+      },
+      {
         "field": "provisionencryptedlibrary",
         "effect": "write"
       },
@@ -29640,6 +30147,10 @@
       },
       {
         "field": "runpluginlifecycleaction",
+        "effect": "write"
+      },
+      {
+        "field": "savewebhook",
         "effect": "write"
       },
       {
@@ -29719,6 +30230,10 @@
         "effect": "write"
       },
       {
+        "field": "setpreplayclips",
+        "effect": "write"
+      },
+      {
         "field": "setprofilelibraries",
         "effect": "write"
       },
@@ -29747,11 +30262,19 @@
         "effect": "write"
       },
       {
+        "field": "setwebhooksettings",
+        "effect": "write"
+      },
+      {
         "field": "skipdetectionenabled",
         "effect": "read"
       },
       {
         "field": "terminatesession",
+        "effect": "write"
+      },
+      {
+        "field": "testwebhook",
         "effect": "write"
       },
       {
@@ -29800,6 +30323,18 @@
       },
       {
         "field": "watcherstatus",
+        "effect": "read"
+      },
+      {
+        "field": "webhookdeliveries",
+        "effect": "read"
+      },
+      {
+        "field": "webhooks",
+        "effect": "read"
+      },
+      {
+        "field": "webhooksettings",
         "effect": "read"
       }
     ],
@@ -30532,6 +31067,13 @@
             ],
             "optional": true
           }
+        },
+        {
+          "name": "selectedVersion",
+          "shape": {
+            "type": "string",
+            "optional": true
+          }
         }
       ]
     },
@@ -30690,6 +31232,50 @@
                   "name": "selector",
                   "shape": {
                     "type": "string"
+                  }
+                }
+              ]
+            },
+            "optional": true
+          }
+        },
+        {
+          "name": "versions",
+          "shape": {
+            "type": "array",
+            "element": {
+              "type": "object",
+              "fields": [
+                {
+                  "name": "id",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "label",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "videoCodec",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "hdr",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "selected",
+                  "shape": {
+                    "type": "boolean"
                   }
                 }
               ]
@@ -31533,6 +32119,13 @@
         },
         {
           "name": "subtitleFileFingerprint",
+          "shape": {
+            "type": "string",
+            "optional": true
+          }
+        },
+        {
+          "name": "fileFingerprint",
           "shape": {
             "type": "string",
             "optional": true
