@@ -251,7 +251,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `scrape` | plugin |
 | `identify` | store, artwork, scrape, plugin |
 | `ingest` | store, jobs, scan, scrape |
-| `playback` | store, auth, ffmpeg, governor, streamtoken |
+| `playback` | store, auth, ffmpeg, governor, streamtoken, encderiv — CORE-1968: live HLS for an Encrypted Library starts its transcode through the encderiv loopback source, so plaintext never leaves the protected plane |
 | `mediahttp` | store, artwork, genassets, playback, streamtoken, auth |
 | `proxytee` | store, auth, scrape, streamtoken (ADR-0052 §2.1: Stream-Token'd proxy-tee stream + provisional→archived promotion; origin fetch through `scrape`'s SSRF gate) |
 | `offlinepack` | store, auth, streamtoken, encderiv — ADR-0098 area 6: the **generic, domain-agnostic** Offline Pack substrate. Owns pack rows/items, Pack-subject Stream Token grants (a `Grant.PackID`, not a fake Media subject), per-target validation through a `TargetResolver` plugin registry, manifest building (visible-only), and the `http.HandlerFunc` manifest/key serving with the dual revoke/relock/seal byte-denial check. Carries **no** music vocabulary — the Music target resolvers live in the Music plugin, registered via a core adapter. Mounted into `server` via the `SetProxyTee`-style `http.HandlerFunc` seam, so no `server → offlinepack` edge. |

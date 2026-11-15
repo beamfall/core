@@ -681,7 +681,7 @@ func TestLiveRunKeepsNoPlaintextWithRealFFmpeg(t *testing.T) {
 	defer cancel()
 	rendition := ffmpeg.Rendition{Height: 120, VideoCodec: "h264", VideoKbps: 300, AudioCodec: "aac", AudioChannels: 2}
 	ep := ffmpeg.EncryptedLiveEndpoint{Source: run.SourceURL(), Output: run.OutputURL(), Secret: run.Secret()}
-	// io:ffmpeg-encrypted-live-hls
+	// io:ffmpeg-start-encrypted-hls-segments
 	proc, err := ffmpeg.New().StartEncryptedHLSSegments(ctx, ep, 0, 4, rendition)
 	if errors.Is(err, ffmpeg.ErrPipeConfinementUnavailable) {
 		t.Skip(err)
