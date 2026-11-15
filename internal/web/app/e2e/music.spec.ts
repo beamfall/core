@@ -106,11 +106,13 @@ test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ 
   const titles = library.tracks.map((track) => track.title);
   const trackCard = new RegExp(titles.join("|"));
   await page.goto("/web/");
+  // Recently Added by name: earlier specs also fill "Your Most-Played" with the
+  // video and a track, and that shelf queues a single audio item.
   const shelf = page
     .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Recently Added" }) })
     .filter({ has: page.getByRole("button", { name: /Sample Media/ }) })
-    .filter({ has: page.getByRole("button", { name: trackCard }) })
-    .last();
+    .filter({ has: page.getByRole("button", { name: trackCard }) });
   const card = shelf.getByRole("button", { name: trackCard }).first();
   const label = (await card.getAttribute("aria-label")) ?? (await card.innerText());
   const title = titles.find((candidate) => label.includes(candidate));
