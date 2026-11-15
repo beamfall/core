@@ -94,10 +94,43 @@ through the relay's public host, so the relay forwards the probe byte-blind.
 - **WHEN** a listener that is not this server completes or rejects the handshake
 - **THEN** the verdict is unreachable with reason `wrong_responder`
 
+### Requirement: Loopback-limited direct verdict
+
+The direct probe runs from inside the network through the gateway's loopback (NAT hairpin). Each
+verdict whose probe ran SHALL name its method, `gateway_loopback` or `relay`, and the Console SHALL
+say a direct pass was checked through the router's loopback, not from outside.
+
+#### Scenario: Direct pass is labelled
+
+- **WHEN** the direct probe reaches the server's listener
+- **THEN** the verdict has method `gateway_loopback`
+- **AND** the Console says it was checked from inside the network through the router's loopback
+
+### Requirement: Unverified direct verdict without hairpin
+
+When a mapping is active and the direct probe is refused or times out, the direct verdict SHALL
+carry reason `hairpin_unverified`, not `connection_refused` or `timeout`: a gateway without hairpin
+fails the same way while outside clients can connect. The Console SHALL show it as not verified and
+say how to confirm reachability.
+
+#### Scenario: Router without NAT hairpin
+
+- **WHEN** a mapping is active and the direct probe is refused or times out
+- **THEN** the direct verdict is unreachable with reason `hairpin_unverified` and method
+  `gateway_loopback`
+- **AND** the Console shows it as not verified, says the check runs from inside the network and the
+  router may not loop connections back, and tells the owner to check from a device outside the
+  network or rely on the relay result
+
+#### Scenario: Relay path failure
+
+- **WHEN** the relay probe is refused or times out
+- **THEN** the relay verdict keeps reason `connection_refused` or `timeout` with method `relay`
+
 ### Requirement: Reachability reason codes
 
 Each unreachable path SHALL carry one reason code: `not_mapped`, `double_nat`,
-`connection_refused`, `timeout`, `wrong_responder`, `relay_not_configured`, `relay_disconnected`
+`hairpin_unverified`, `connection_refused`, `timeout`, `wrong_responder`, `relay_not_configured`, `relay_disconnected`
 or `probe_error`.
 
 #### Scenario: No mapping yet

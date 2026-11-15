@@ -223,8 +223,8 @@ describe("PortMapping (CORE-1969)", () => {
     reachability: {
       checkedAt: "2030-01-02T01:04:05Z",
       verdicts: [
-        { path: "direct", reachable: true },
-        { path: "relay", reachable: false, reason: "relay_not_configured" },
+        { path: "direct", reachable: true, method: "gateway_loopback" },
+        { path: "relay", reachable: false, method: "relay", reason: "relay_not_configured" },
       ],
     },
   };
@@ -250,10 +250,44 @@ describe("PortMapping (CORE-1969)", () => {
     const direct = screen.getByTestId("reach-direct");
     expect(direct).toHaveTextContent("Direct (mapped port)");
     expect(direct).toHaveTextContent("Reachable");
+    expect(direct).toHaveTextContent(
+      "Checked from inside your network through the router’s loopback, not from outside it.",
+    );
     const relay = screen.getByTestId("reach-relay");
     expect(relay).toHaveTextContent("Unreachable");
     expect(relay).toHaveTextContent("No relay is configured.");
     expect(relay).toHaveTextContent("relay_not_configured");
+  });
+
+  it("calls a failed loopback check unverified, not unreachable", async () => {
+    setRemoteAccess({
+      ...mapped,
+      reachability: {
+        checkedAt: "2030-01-02T01:04:05Z",
+        verdicts: [
+          {
+            path: "direct",
+            reachable: false,
+            method: "gateway_loopback",
+            reason: "hairpin_unverified",
+          },
+          { path: "relay", reachable: false, method: "relay", reason: "timeout" },
+        ],
+      },
+    });
+    renderStatus();
+
+    const direct = await screen.findByTestId("reach-direct");
+    expect(direct).toHaveTextContent("Not verified");
+    expect(direct).not.toHaveTextContent("Unreachable");
+    expect(direct).not.toHaveTextContent("The probe timed out.");
+    expect(direct).toHaveTextContent("this check runs from inside your network");
+    expect(direct).toHaveTextContent("Check from a device outside your network");
+    expect(direct).toHaveTextContent("hairpin_unverified");
+    const relay = screen.getByTestId("reach-relay");
+    expect(relay).toHaveTextContent("Unreachable");
+    expect(relay).toHaveTextContent("The probe timed out.");
+    expect(relay).not.toHaveTextContent("router’s loopback");
   });
 
   it("explains a refused mapping with the reason and router code", async () => {

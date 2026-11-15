@@ -58,13 +58,13 @@ func TestGraphPortMappingStatus(t *testing.T) {
 func TestGraphReachabilityReport(t *testing.T) {
 	got := graphReachabilityReport(remoteaccess.ReachReport{
 		CheckedAt: time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC),
-		Direct:    remoteaccess.ReachVerdict{Path: remoteaccess.ReachPathDirect, Reason: remoteaccess.ReachReasonDoubleNAT},
-		Relay:     remoteaccess.ReachVerdict{Path: remoteaccess.ReachPathRelay, Reachable: true},
+		Direct:    remoteaccess.ReachVerdict{Path: remoteaccess.ReachPathDirect, Method: remoteaccess.ReachMethodGatewayLoopback, Reason: remoteaccess.ReachReasonHairpinUnverified},
+		Relay:     remoteaccess.ReachVerdict{Path: remoteaccess.ReachPathRelay, Method: remoteaccess.ReachMethodRelay, Reachable: true},
 	})
 	if got.CheckedAt != "2026-11-15T10:00:00Z" || len(got.Verdicts) != 2 {
 		t.Fatalf("report = %+v", got)
 	}
-	if got.Verdicts[0].Path != "direct" || got.Verdicts[0].Reason != "double_nat" || !got.Verdicts[1].Reachable {
+	if got.Verdicts[0].Path != "direct" || got.Verdicts[0].Reason != "hairpin_unverified" || got.Verdicts[0].Method != "gateway_loopback" || !got.Verdicts[1].Reachable || got.Verdicts[1].Method != "relay" {
 		t.Fatalf("verdicts = %+v", got.Verdicts)
 	}
 }

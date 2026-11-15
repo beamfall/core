@@ -8,4 +8,6 @@
 - [x] 6. App wiring: boot, TLS listener wrap, bounded removal on shutdown
 - [x] 7. Console Remote access card, strings, tests
 - [x] 8. Fake-gateway unit tests for map, renew, expiry and refusal
-- [ ] 9. Publish the wire contract with the next batch; archive this change after landing
+- [x] 9. Direct verdict names its `gateway_loopback` method, and a failed loopback probe with an
+  active mapping reports `hairpin_unverified` (Go, graph, Console, tests)
+- [ ] 10. Publish the wire contract with the next batch; archive this change after landing

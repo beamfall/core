@@ -112,6 +112,9 @@ func TestReachDirectReachableSendsOnlyAClientHello(t *testing.T) {
 	if !report.Direct.Reachable || report.Direct.Reason != "" || report.Direct.Path != ReachPathDirect {
 		t.Fatalf("direct = %+v, want reachable", report.Direct)
 	}
+	if report.Direct.Method != ReachMethodGatewayLoopback {
+		t.Fatalf("direct method = %q, want gateway_loopback: a pass is not an outside test", report.Direct.Method)
+	}
 	if got := (*addrs)[0]; got != "203.0.113.7:18443" {
 		t.Fatalf("dialed %q", got)
 	}
@@ -134,8 +137,8 @@ func TestReachRelayGoesThroughPublicHost(t *testing.T) {
 		RelayConnected:  true,
 		RelayPublicHost: "media.example.test",
 	})
-	if !report.Relay.Reachable {
-		t.Fatalf("relay = %+v, want reachable", report.Relay)
+	if !report.Relay.Reachable || report.Relay.Method != ReachMethodRelay {
+		t.Fatalf("relay = %+v, want reachable via relay", report.Relay)
 	}
 	if got := (*addrs)[0]; got != "media.example.test:443" {
 		t.Fatalf("dialed %q, want the relay public host on 443", got)
@@ -194,6 +197,31 @@ func TestReachDialFailures(t *testing.T) {
 	}
 }
 
+// A gateway without NAT hairpin refuses or drops the inside-out probe even
+// when the mapping works from outside, so the direct path must not report
+// those as a closed port. The relay path keeps the plain codes.
+func TestReachDirectFailureIsHairpinUnverified(t *testing.T) {
+	cases := map[string]error{
+		"refused": &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)},
+		"timeout": context.DeadlineExceeded,
+	}
+	relay := ReachInputs{RelayConfigured: true, RelayConnected: true, RelayPublicHost: "media.example.test"}
+	for name, err := range cases {
+		p := NewReachProber(NewProbeResponder())
+		p.dial = func(context.Context, string) (net.Conn, error) { return nil, err }
+		in := relay
+		in.Mapping = mappedStatus
+		report := p.Check(context.Background(), in)
+		if d := report.Direct; d.Reachable || d.Reason != ReachReasonHairpinUnverified || d.Method != ReachMethodGatewayLoopback {
+			t.Fatalf("%s: direct = %+v, want hairpin_unverified via gateway_loopback", name, d)
+		}
+		want := map[string]string{"refused": ReachReasonConnectionRefused, "timeout": ReachReasonTimeout}[name]
+		if r := report.Relay; r.Reachable || r.Reason != want || r.Method != ReachMethodRelay {
+			t.Fatalf("%s: relay = %+v, want %q via relay", name, r, want)
+		}
+	}
+}
+
 func TestReachDirectPreconditions(t *testing.T) {
 	p := NewReachProber(NewProbeResponder())
 	p.dial = func(context.Context, string) (net.Conn, error) {
@@ -213,8 +241,8 @@ func TestReachDirectPreconditions(t *testing.T) {
 	}
 	for _, tc := range cases {
 		v := p.checkDirect(context.Background(), tc.status)
-		if v.Reachable || v.Reason != tc.want {
-			t.Fatalf("%s: verdict = %+v, want %q", tc.name, v, tc.want)
+		if v.Reachable || v.Reason != tc.want || v.Method != "" {
+			t.Fatalf("%s: verdict = %+v, want %q with no probe method", tc.name, v, tc.want)
 		}
 	}
 }

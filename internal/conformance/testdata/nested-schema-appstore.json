@@ -1606,6 +1606,11 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "method",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "path",
                   "kind": "scalar"
                 },
@@ -1621,6 +1626,11 @@
               ]
             },
             "children": [
+              {
+                "name": "method",
+                "kind": "scalar",
+                "optional": true
+              },
               {
                 "name": "path",
                 "kind": "scalar"
@@ -14198,6 +14208,11 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "method",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "path",
                   "kind": "scalar"
                 },
@@ -14213,6 +14228,11 @@
               ]
             },
             "children": [
+              {
+                "name": "method",
+                "kind": "scalar",
+                "optional": true
+              },
               {
                 "name": "path",
                 "kind": "scalar"
@@ -23316,6 +23336,11 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "method",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "path",
                   "kind": "scalar"
                 },
@@ -23331,6 +23356,11 @@
               ]
             },
             "children": [
+              {
+                "name": "method",
+                "kind": "scalar",
+                "optional": true
+              },
               {
                 "name": "path",
                 "kind": "scalar"

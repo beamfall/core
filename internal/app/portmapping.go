@@ -116,7 +116,7 @@ func graphPortMappingStatus(s remoteaccess.PortMapStatus) graph.PortMappingStatu
 
 func graphReachabilityReport(r remoteaccess.ReachReport) graph.ReachabilityReport {
 	verdict := func(v remoteaccess.ReachVerdict) graph.ReachabilityVerdict {
-		return graph.ReachabilityVerdict{Path: v.Path, Reachable: v.Reachable, Reason: v.Reason}
+		return graph.ReachabilityVerdict{Path: v.Path, Reachable: v.Reachable, Method: v.Method, Reason: v.Reason}
 	}
 	return graph.ReachabilityReport{
 		CheckedAt: r.CheckedAt.UTC().Format(time.RFC3339),

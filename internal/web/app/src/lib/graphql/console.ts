@@ -53,7 +53,7 @@ import type {
 // --- Remote access (ADR-0012/0018/0025) -----------------------------------
 
 const REMOTE_ACCESS_FIELDS =
-  "directHTTPS { enabled domain certState } relay { enabled endpoint publicHost connectionState lastError } plainHTTPPublicWarning endpoints { kind url } portMapping { enabled state protocol internalPort externalPort externalAddress leaseSeconds expiresAt reason gatewayCode } reachability { checkedAt verdicts { path reachable reason } }";
+  "directHTTPS { enabled domain certState } relay { enabled endpoint publicHost connectionState lastError } plainHTTPPublicWarning endpoints { kind url } portMapping { enabled state protocol internalPort externalPort externalAddress leaseSeconds expiresAt reason gatewayCode } reachability { checkedAt verdicts { path reachable method reason } }";
 
 const REMOTE_ACCESS_QUERY = `query RemoteAccess { remoteAccess { ${REMOTE_ACCESS_FIELDS} } }`;
 

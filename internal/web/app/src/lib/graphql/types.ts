@@ -1187,7 +1187,13 @@ export interface ReachabilityVerdict {
   /** direct | relay */
   path: string;
   reachable: boolean;
-  /** Reason code when unreachable. */
+  /**
+   * How the probe was sent, when one ran: gateway_loopback (direct path, from
+   * inside the network through the router's NAT hairpin, so a pass is not an
+   * outside test) or relay.
+   */
+  method?: string;
+  /** Reason code when unreachable; hairpin_unverified means unknown, not closed. */
   reason?: string;
 }
 

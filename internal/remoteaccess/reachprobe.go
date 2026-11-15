@@ -23,15 +23,25 @@ import (
 // relay routes by SNI and forwards the ClientHello byte-blind like any other
 // public connection (ADR-0018), so no relay-side probe protocol is needed.
 //
-// The direct check depends on the gateway looping a connection to its own
-// public address back to the LAN (NAT hairpin). A gateway without hairpin
-// reports timeout or connection_refused even when outside clients could
-// connect.
+// The direct check runs from inside the network: it depends on the gateway
+// looping a connection to its own public address back to the LAN (NAT
+// hairpin), so its Method is gateway_loopback and a pass is not an outside
+// test. A gateway without hairpin refuses or drops that connection even when
+// outside clients could connect, so with an active mapping a refused or
+// timed-out direct probe reports hairpin_unverified rather than claiming the
+// port is closed.
 
 // Reachability paths.
 const (
 	ReachPathDirect = "direct"
 	ReachPathRelay  = "relay"
+)
+
+// How a path was checked: the direct path through the gateway loopback from
+// inside the network, the relay path through the relay's public host.
+const (
+	ReachMethodGatewayLoopback = "gateway_loopback"
+	ReachMethodRelay           = "relay"
 )
 
 // Reachability reason codes, a closed vocabulary the Console localizes.
@@ -44,6 +54,10 @@ const (
 	ReachReasonRelayNotConfigured = "relay_not_configured"
 	ReachReasonRelayDisconnected  = "relay_disconnected"
 	ReachReasonProbeError         = "probe_error"
+	// ReachReasonHairpinUnverified: the mapping is active but the inside-out
+	// loopback probe was refused or timed out, which a gateway without NAT
+	// hairpin also causes. Reachability from outside is unknown.
+	ReachReasonHairpinUnverified = "hairpin_unverified"
 )
 
 const (
@@ -59,6 +73,9 @@ var errReachProbeSeen = errors.New("remoteaccess: reachability probe received")
 type ReachVerdict struct {
 	Path      string
 	Reachable bool
+	// Method is a ReachMethod* code naming how the probe was sent, set
+	// whenever a probe ran. Empty when the verdict needed no probe.
+	Method string
 	// Reason is a ReachReason* code when Reachable is false.
 	Reason string
 }
@@ -196,7 +213,11 @@ func (p *ReachProber) checkDirect(ctx context.Context, m PortMapStatus) ReachVer
 		v.Reason = ReachReasonDoubleNAT
 		return v
 	}
+	v.Method = ReachMethodGatewayLoopback
 	v.Reachable, v.Reason = p.Probe(ctx, netip.AddrPortFrom(addr, m.ExternalPort).String(), addr.String())
+	if v.Reason == ReachReasonTimeout || v.Reason == ReachReasonConnectionRefused {
+		v.Reason = ReachReasonHairpinUnverified
+	}
 	return v
 }
 
@@ -215,6 +236,7 @@ func (p *ReachProber) checkRelay(ctx context.Context, in ReachInputs) ReachVerdi
 	if err != nil {
 		name, port = host, relayDefaultPort
 	}
+	v.Method = ReachMethodRelay
 	v.Reachable, v.Reason = p.Probe(ctx, net.JoinHostPort(name, port), name)
 	return v
 }

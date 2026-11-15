@@ -57,7 +57,7 @@ func (s *stubPortMapping) LastReachability() (ReachabilityReport, bool) {
 	return *s.report, true
 }
 
-const setPortMappingMutation = `{"query":"mutation($enabled: Boolean!){ setRemoteAccessPortMapping(enabled:$enabled){ portMapping { enabled state protocol internalPort externalPort externalAddress leaseSeconds reason } reachability { checkedAt verdicts { path reachable reason } } } }","variables":{"enabled":%s}}`
+const setPortMappingMutation = `{"query":"mutation($enabled: Boolean!){ setRemoteAccessPortMapping(enabled:$enabled){ portMapping { enabled state protocol internalPort externalPort externalAddress leaseSeconds reason } reachability { checkedAt verdicts { path reachable method reason } } } }","variables":{"enabled":%s}}`
 
 func portMappingRequest(enabled string) string {
 	return strings.Replace(setPortMappingMutation, "%s", enabled, 1)
@@ -113,7 +113,7 @@ func TestSetRemoteAccessPortMappingPersistsAppliesAndAudits(t *testing.T) {
 	ctrl := &stubPortMapping{verdict: ReachabilityReport{
 		CheckedAt: "2026-11-15T10:00:00Z",
 		Verdicts: []ReachabilityVerdict{
-			{Path: "direct", Reachable: false, Reason: "timeout"},
+			{Path: "direct", Reachable: false, Method: "gateway_loopback", Reason: "hairpin_unverified"},
 			{Path: "relay", Reachable: false, Reason: "relay_not_configured"},
 		},
 	}}
@@ -128,7 +128,7 @@ func TestSetRemoteAccessPortMappingPersistsAppliesAndAudits(t *testing.T) {
 	if info.PortMapping == nil || info.PortMapping.State != "mapped" || info.PortMapping.ExternalPort != 18443 || info.PortMapping.ExternalAddress != "203.0.113.7" {
 		t.Fatalf("portMapping = %#v", info.PortMapping)
 	}
-	if info.Reachability == nil || len(info.Reachability.Verdicts) != 2 || info.Reachability.Verdicts[0].Reason != "timeout" {
+	if info.Reachability == nil || len(info.Reachability.Verdicts) != 2 || info.Reachability.Verdicts[0].Reason != "hairpin_unverified" || info.Reachability.Verdicts[0].Method != "gateway_loopback" {
 		t.Fatalf("reachability = %#v", info.Reachability)
 	}
 	if len(ctrl.sets) != 1 || !ctrl.sets[0] || ctrl.checks != 1 {
@@ -186,7 +186,7 @@ func TestCheckRemoteAccessReachability(t *testing.T) {
 		status: PortMappingStatus{State: "disabled", InternalPort: 8443},
 		verdict: ReachabilityReport{CheckedAt: "2026-11-15T10:00:00Z", Verdicts: []ReachabilityVerdict{
 			{Path: "direct", Reason: "not_mapped"},
-			{Path: "relay", Reachable: true},
+			{Path: "relay", Reachable: true, Method: "relay"},
 		}},
 	}
 	handler.SetPortMapping(ctrl)
@@ -201,13 +201,13 @@ func TestCheckRemoteAccessReachability(t *testing.T) {
 		t.Fatalf("before = %#v", before)
 	}
 
-	data, errs = post(t, handler, `{"query":"mutation { checkRemoteAccessReachability { reachability { checkedAt verdicts { path reachable reason } } } }"}`, authorizeManager)
+	data, errs = post(t, handler, `{"query":"mutation { checkRemoteAccessReachability { reachability { checkedAt verdicts { path reachable method reason } } } }"}`, authorizeManager)
 	if len(errs) != 0 {
 		t.Fatalf("checkRemoteAccessReachability errors = %#v", errs)
 	}
 	var after RemoteAccessInfo
 	mustUnmarshal(t, data["checkRemoteAccessReachability"], &after)
-	if ctrl.checks != 1 || after.Reachability == nil || !after.Reachability.Verdicts[1].Reachable || after.Reachability.Verdicts[0].Reason != "not_mapped" {
+	if ctrl.checks != 1 || after.Reachability == nil || !after.Reachability.Verdicts[1].Reachable || after.Reachability.Verdicts[1].Method != "relay" || after.Reachability.Verdicts[0].Reason != "not_mapped" || after.Reachability.Verdicts[0].Method != "" {
 		t.Fatalf("after = %#v checks=%d", after.Reachability, ctrl.checks)
 	}
 }

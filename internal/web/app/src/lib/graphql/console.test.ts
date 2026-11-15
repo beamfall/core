@@ -402,7 +402,7 @@ describe("console GraphQL requests", () => {
 
     await checkRemoteAccessReachability();
     expect(recorded[1].query).toContain("mutation CheckRemoteAccessReachability");
-    expect(recorded[1].query).toContain("verdicts { path reachable reason }");
+    expect(recorded[1].query).toContain("verdicts { path reachable method reason }");
     expect(recorded[1].variables).toEqual({});
   });
 

@@ -35,8 +35,9 @@ whether a direct path works at all. Other media servers ask the router for the f
 ## Non-goals
 
 - A dial-back from an outside vantage point. The direct check relies on the router looping the
-  connection back (NAT hairpin); without hairpin the verdict says `timeout` or `connection_refused`
-  even when outside clients could connect.
+  connection back (NAT hairpin), so a pass is labelled `gateway_loopback` and a refused or
+  timed-out probe with an active mapping says `hairpin_unverified` rather than claiming the port is
+  closed.
 - UDP mappings, IPv6 pinholes (PCP) and choosing the external port by hand.
 - Any third-party reachability service.
 

@@ -119,6 +119,7 @@ const REACHABILITY_PATH: Record<string, StringKey> = {
 const REACHABILITY_REASON: Record<string, StringKey> = {
   not_mapped: "reachabilityReasonNotMapped",
   double_nat: "reachabilityReasonDoubleNAT",
+  hairpin_unverified: "reachabilityReasonHairpinUnverified",
   connection_refused: "reachabilityReasonConnectionRefused",
   timeout: "reachabilityReasonTimeout",
   wrong_responder: "reachabilityReasonWrongResponder",
@@ -530,16 +531,29 @@ export function PortMapping({
             <ul className="space-y-1">
               {reachability.verdicts.map((verdict) => {
                 const why = verdict.reason ? REACHABILITY_REASON[verdict.reason] : undefined;
+                // A failed inside-out loopback check is unknown, not closed.
+                const unverified = verdict.reason === "hairpin_unverified";
                 return (
                   <li key={verdict.path} className="text-sm" data-testid={`reach-${verdict.path}`}>
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-muted-foreground">
                         {t(REACHABILITY_PATH[verdict.path] ?? "reachabilityPathDirect")}
                       </span>
-                      <StatusChip tone={verdict.reachable ? "cyan" : "red"}>
-                        {t(verdict.reachable ? "reachabilityReachable" : "reachabilityUnreachable")}
+                      <StatusChip tone={verdict.reachable ? "cyan" : unverified ? "amber" : "red"}>
+                        {t(
+                          verdict.reachable
+                            ? "reachabilityReachable"
+                            : unverified
+                              ? "reachabilityUnverified"
+                              : "reachabilityUnreachable",
+                        )}
                       </StatusChip>
                     </div>
+                    {verdict.reachable && verdict.method === "gateway_loopback" && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("reachabilityMethodGatewayLoopback")}
+                      </p>
+                    )}
                     {!verdict.reachable && verdict.reason && (
                       <p className="text-xs text-muted-foreground">
                         {why ? t(why) : ""} <span className="console-mono">{verdict.reason}</span>

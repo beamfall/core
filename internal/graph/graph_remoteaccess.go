@@ -213,8 +213,14 @@ type ReachabilityVerdict struct {
 	// Path is "direct" or "relay".
 	Path      string `json:"path"`
 	Reachable bool   `json:"reachable"`
+	// Method is how the probe was sent, when one ran: "gateway_loopback"
+	// (direct path, from inside the network through the gateway's NAT
+	// hairpin, so a pass is not an outside test) or "relay".
+	Method string `json:"method,omitempty"`
 	// Reason is a closed code when Reachable is false: "not_mapped",
-	// "double_nat", "connection_refused", "timeout", "wrong_responder",
+	// "double_nat", "hairpin_unverified" (the mapping is active but the
+	// inside-out loopback probe failed, which a gateway without hairpin also
+	// causes), "connection_refused", "timeout", "wrong_responder",
 	// "relay_not_configured", "relay_disconnected" or "probe_error".
 	Reason string `json:"reason,omitempty"`
 }

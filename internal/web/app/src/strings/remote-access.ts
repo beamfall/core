@@ -70,6 +70,11 @@ export const remoteAccessStrings = {
     reachabilityPathRelay: "Relay",
     reachabilityReachable: "Reachable",
     reachabilityUnreachable: "Unreachable",
+    reachabilityUnverified: "Not verified",
+    reachabilityMethodGatewayLoopback:
+      "Checked from inside your network through the router’s loopback, not from outside it.",
+    reachabilityReasonHairpinUnverified:
+      "The port is mapped, but this check runs from inside your network and your router may not loop connections back to its own public address. Check from a device outside your network, or rely on the relay result.",
     reachabilityReasonNotMapped: "No port is mapped.",
     reachabilityReasonDoubleNAT:
       "The router reports a private or carrier-grade NAT address, so another NAT sits in front of it.",
@@ -149,6 +154,11 @@ export const remoteAccessStrings = {
     reachabilityPathRelay: "Relais",
     reachabilityReachable: "Joignable",
     reachabilityUnreachable: "Injoignable",
+    reachabilityUnverified: "Non vérifié",
+    reachabilityMethodGatewayLoopback:
+      "Vérifié depuis votre réseau via le bouclage du routeur, et non depuis l’extérieur.",
+    reachabilityReasonHairpinUnverified:
+      "Le port est redirigé, mais cette vérification s’exécute depuis votre réseau et votre routeur ne renvoie peut-être pas les connexions vers sa propre adresse publique. Vérifiez depuis un appareil hors de votre réseau, ou fiez-vous au résultat du relais.",
     reachabilityReasonNotMapped: "Aucun port n’est redirigé.",
     reachabilityReasonDoubleNAT:
       "Le routeur indique une adresse privée ou de NAT opérateur : un autre NAT se trouve devant lui.",
