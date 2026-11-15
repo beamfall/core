@@ -293,7 +293,7 @@ func (s *Service) catalogPlaintextSize(libraryID store.LibraryID, file store.Med
 		return uint64(file.SizeBytes), nil
 	}
 	if s.encrypted != nil && s.encrypted(libraryID) {
-		return 0, errors.New("offline pack encrypted item is missing catalog size")
+		return s.encryptedPlaintextSize(libraryID, file.Path)
 	}
 	info, err := os.Stat(file.Path)
 	if err != nil {
@@ -302,6 +302,30 @@ func (s *Service) catalogPlaintextSize(libraryID store.LibraryID, file store.Med
 	size := info.Size()
 	if size < 0 {
 		return 0, errors.New("offline pack item has invalid catalog size")
+	}
+	return uint64(size), nil
+}
+
+// encryptedPlaintextSize reads an encrypted item's plaintext length from its
+// decrypt reader when the catalog carries no size. The store's Media file
+// reads do not return size_bytes, and stat would report the ciphertext
+// length. hashPackSource then decrypts the whole stream, authenticating every
+// chunk, and refuses a stream that does not end at this length.
+func (s *Service) encryptedPlaintextSize(libraryID store.LibraryID, path string) (uint64, error) {
+	reader, err := s.openContent(libraryID, path)
+	if err != nil {
+		return 0, err
+	}
+	size, seekErr := reader.Seek(0, io.SeekEnd)
+	closeErr := reader.Close()
+	if seekErr != nil {
+		return 0, seekErr
+	}
+	if closeErr != nil {
+		return 0, closeErr
+	}
+	if size < 0 {
+		return 0, errors.New("offline pack item has invalid plaintext size")
 	}
 	return uint64(size), nil
 }

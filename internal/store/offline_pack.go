@@ -128,6 +128,15 @@ func (s *Store) CreateOfflinePack(ctx context.Context, pack OfflinePack, items [
 	if err := s.guardLocked(); err != nil {
 		return OfflinePack{}, err
 	}
+	// Pack items may name catalog Media or Media in an unsealed Encrypted
+	// Library's own database (CORE-1742), so no catalog foreign key can
+	// check them; each must exist on a readable plane. Media of a sealed
+	// Library is not found.
+	for _, item := range items {
+		if _, err := s.catalogPlaneForMediaLocked(ctx, item.MediaID); err != nil {
+			return OfflinePack{}, err
+		}
+	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return OfflinePack{}, err

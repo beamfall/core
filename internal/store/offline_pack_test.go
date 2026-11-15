@@ -88,9 +88,9 @@ func TestOfflinePackCreateRollsBackWhenItemInsertFails(t *testing.T) {
 	_, err := st.CreateOfflinePack(ctx, OfflinePack{
 		ProfileID:  "profile-default",
 		TargetKind: "media",
-	}, []OfflinePackItem{{MediaID: "media-missing"}}, time.Now().UTC())
+	}, []OfflinePackItem{{MediaID: "media-alpha"}, {MediaID: "media-alpha"}}, time.Now().UTC())
 	if err == nil {
-		t.Fatal("CreateOfflinePack with missing item media must error")
+		t.Fatal("CreateOfflinePack with a duplicate item must error")
 	}
 	if got := countCatalogRows(t, st, `SELECT COUNT(*) FROM offline_pack`); got != 0 {
 		t.Fatalf("packs after failed item insert = %d, want 0", got)
