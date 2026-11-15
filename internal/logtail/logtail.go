@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/beamfall/core/internal/redact"
@@ -78,9 +79,19 @@ func appendBounded(dst, src []byte) []byte {
 
 func (r *Ring) store(line string) {
 	if len(line) > MaxLineBytes {
-		line = line[:MaxLineBytes] + truncatedSuffix
+		// Drop the token the limit splits before redacting: a cut secret,
+		// address or path may no longer match its redaction pattern.
+		cut := line[:MaxLineBytes]
+		if i := strings.LastIndexAny(cut, " \t"); i >= 0 {
+			cut = cut[:i]
+		} else {
+			cut = ""
+		}
+		line = redact.LogLine(cut) + truncatedSuffix
+	} else {
+		line = redact.LogLine(line)
 	}
-	r.lines[r.next] = redact.LogLine(line)
+	r.lines[r.next] = line
 	r.next++
 	if r.next == len(r.lines) {
 		r.next = 0
