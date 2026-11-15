@@ -86,5 +86,6 @@ describe("fieldDisplayValue", () => {
     );
     expect(fieldDisplayValue({ type: "date", value: "Spring 2025" }, "en-US")).toBe("Spring 2025");
     expect(fieldDisplayValue({ type: "date", value: "2025-02-31" }, "en-US")).toBe("2025-02-31");
+    expect(fieldDisplayValue({ type: "date", value: "0001-05-09" }, "en-US")).toBe("0001-05-09");
   });
 });
