@@ -19,6 +19,9 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
+# internal/server imports the docs/api Go package, which embeds the OpenAPI
+# document (CORE-1714); the rest of docs stays out of the context (CORE-2076).
+COPY docs/api ./docs/api
 # Source identity for an unstamped build (CORE-1096): a digest of the Go
 # sources, taken before the web bundle is copied in, so two unstamped images
 # built from different trees report different versions.
@@ -42,13 +45,23 @@ ARG BEAMFALL_FIRST_PARTY_BUILDS=""
 # build is never mistaken for a release.
 ARG BEAMFALL_VERSION=""
 ARG BEAMFALL_COMMIT=""
-RUN set -eu; \
+# Bundled metadata keys (internal/app.BundledCredentials, ref=value,...) come
+# from an optional BuildKit secret, never a build arg, so they stay out of the
+# image history: `docker build --secret id=beamfall_bundled_credentials,src=FILE`.
+# Without the secret the image bundles none, as a source build does. The secret
+# is not part of the layer cache key, so changing it needs a source change or
+# --no-cache to take effect.
+RUN --mount=type=secret,id=beamfall_bundled_credentials,required=false set -eu; \
+	bundled=""; \
+	if [ -s /run/secrets/beamfall_bundled_credentials ]; then \
+		bundled="$(tr -d ' \t\r\n' </run/secrets/beamfall_bundled_credentials)"; \
+	fi; \
 	if [ -n "${BEAMFALL_FIRST_PARTY_BUILDS}" ]; then \
 		CGO_ENABLED=0 go run ./cmd/beamfall release build-catalog --catalog "${BEAMFALL_FIRST_PARTY_BUILDS}" >/dev/null; \
 	fi; \
 	version="${BEAMFALL_VERSION:-development+src.$(cat /out/source-id)}"; \
 	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${version} -X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS}" -o /out/beamfall ./cmd/beamfall
+	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${version} -X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS} -X github.com/beamfall/core/internal/app.BundledCredentials=${bundled}" -o /out/beamfall ./cmd/beamfall
 
 FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS runtime
 

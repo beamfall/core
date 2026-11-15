@@ -2,7 +2,8 @@
 .cache
 .beamfall
 .DS_Store
-docs
+docs/*
+!docs/api
 packaging
 script/dist
 tmp
