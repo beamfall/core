@@ -39,6 +39,8 @@ type Handler struct {
 	subtitles             SubtitleConverter
 	subtitleDir           string
 	subtitleMu            sync.Mutex
+	encryptedSubtitles    EncryptedSubtitleExtractor
+	encryptedObjects      EncryptedObjectWriter
 	hotSegments           *hotSegmentCache
 	sealed                SealedPredicate
 	encryptedBytes        EncryptedByteDecryptor
@@ -428,17 +430,27 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown subtitle", http.StatusNotFound)
 		return
 	}
-	// Encrypted Libraries fail closed: extracting a muxed subtitle
-	// caches a plaintext WebVTT sidecar under subtitleDir — a plaintext derivative
-	// of the encrypted Media. No encrypted-plane cache exists yet, so
-	// refuse rather than write it, whether the Library is Sealed or Unsealed.
+	// An Encrypted Library never takes the plaintext sidecar path below: its
+	// subtitle is extracted in memory through the shared encrypted-derivative
+	// helper and cached as a ciphertext object (ADR-0235). A Sealed Library was
+	// refused above.
 	library, err := h.mediaLibrary(r.Context(), media.LibraryID, scope.PlaybackFilter())
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
 	}
 	if library.Encrypted {
-		http.Error(w, "subtitle unavailable", http.StatusNotFound)
+		mediaID, fingerprint := grant.MediaID, file.ContentFingerprint
+		h.serveEncryptedSubtitle(w, r, library.ID, file, streamIndex, name, func(ctx context.Context) error {
+			if h.sealed != nil && h.sealed(library.ID) {
+				return errors.New("library is sealed")
+			}
+			_, current, err := h.verifyMediaGrant(ctx, token, streamtoken.TargetMediaSubtitle)
+			if err != nil {
+				return errors.New("subtitle grant no longer verifies")
+			}
+			return h.subtitleSourceStillVisible(ctx, current, mediaID, library.ID, fingerprint)
+		})
 		return
 	}
 	cached, err := h.subtitleSidecarPath(r.Context(), file.ContentFingerprint, file.Path, streamIndex)
@@ -456,6 +468,28 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown subtitle", rootScopeStatus(err))
 		return
 	}
+}
+
+// subtitleSourceStillVisible re-resolves an encrypted subtitle's Media and
+// source file under the session's current scope. The grant verifying is not
+// enough: it checks identity and Reveal, while a removed Library grant or a
+// tightened certification ceiling only shows in the refreshed playback filter.
+func (h *Handler) subtitleSourceStillVisible(ctx context.Context, scope auth.Scope, mediaID store.MediaID, libraryID store.LibraryID, fingerprint string) error {
+	filter := scope.PlaybackFilter()
+	media, err := h.mediaResolver(ctx, mediaID, filter)
+	if err != nil || media.LibraryID != libraryID {
+		return errors.New("media is no longer visible")
+	}
+	files, err := h.store.MediaFilesForMedia(ctx, mediaID, filter)
+	if err != nil {
+		return errors.New("media files are unavailable")
+	}
+	for _, candidate := range files {
+		if candidate.ContentFingerprint == fingerprint {
+			return nil
+		}
+	}
+	return errors.New("subtitle source is no longer visible")
 }
 
 // subtitleSidecarPath returns the cached WebVTT member for a (fingerprint,

@@ -941,6 +941,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	playbackInfo.SetSealed(sealedPredicate)
 	mediaHTTP.SetSealed(sealedPredicate)
 	mediaHTTP.SetEncryptedBytes(appLibEncryptDBCipher{manager: libEncryptManager})
+	mediaHTTP.SetEncryptedSubtitles(encryptedSubtitleExtractor{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}, appLibEncryptDBCipher{manager: libEncryptManager})
 	assetService.SetSealed(sealedPredicate)
 	assetService.SetEncrypted(encryptedPredicate)
 	artworkService.SetSealed(sealedPredicate)
@@ -3851,6 +3852,7 @@ func (e libraryKeyEraser) EraseLibraryKeys(libraryID store.LibraryID) error {
 type appLibEncryptDBCipher struct {
 	manager interface {
 		EncryptFile(libraryID, plaintextPath, ciphertextPath string, obj libencrypt.ObjectContext) error
+		EncryptObjectFrom(libraryID string, src io.Reader, ciphertextPath string, obj libencrypt.ObjectContext) error
 		OpenDecryptReader(libraryID, ciphertextPath string, obj libencrypt.ObjectContext) (io.ReadSeekCloser, error)
 		UnsealDBFile(libraryID, ciphertextPath, workingPath string, obj libencrypt.ObjectContext) error
 		SealDBFile(libraryID, workingPath, ciphertextPath string, obj libencrypt.ObjectContext) error
@@ -3866,6 +3868,7 @@ type appLibEncryptDBCipher struct {
 var (
 	_ mediahttp.EncryptedByteDecryptor  = appLibEncryptDBCipher{}
 	_ mediahttp.EncryptedByteReadSeeker = appLibEncryptDBCipher{}
+	_ mediahttp.EncryptedObjectWriter   = appLibEncryptDBCipher{}
 )
 
 type appOperationDBCipher struct{ cipher libencrypt.OperationCipher }
@@ -3903,6 +3906,17 @@ func (c appLibEncryptDBCipher) DecryptBytes(libraryID store.LibraryID, ciphertex
 	}
 	defer reader.Close()
 	return io.ReadAll(reader)
+}
+
+// EncryptObject encrypts a server-generated derivative held in memory (an
+// extracted subtitle) straight from src, so its plaintext never reaches disk.
+// The class and identity fail closed inside libencrypt's context validation.
+func (c appLibEncryptDBCipher) EncryptObject(libraryID store.LibraryID, src io.Reader, ciphertextPath, objectClass, immutableObjectID string) error {
+	return c.manager.EncryptObjectFrom(string(libraryID), src, ciphertextPath, libencrypt.ObjectContext{
+		LibraryID:         string(libraryID),
+		ObjectClass:       libencrypt.ObjectClass(objectClass),
+		ImmutableObjectID: immutableObjectID,
+	})
 }
 
 // EncryptFile is the legacy context-free BackupIngestEncryptor method. Every
