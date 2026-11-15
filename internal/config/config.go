@@ -177,7 +177,8 @@ type JellyfinCompatConfig struct {
 
 // HardwareAccelReport is the verified-working hardware-acceleration result the
 // startup probe records. The accelerator names mirror the closed
-// vocabulary the ffmpeg probe emits ("qsv", "vaapi", "nvenc", "videotoolbox");
+// vocabulary the ffmpeg probe emits ("qsv", "vaapi", "nvenc", "videotoolbox", and
+// "amf" on Windows);
 // config holds them as plain strings so this bootstrap package stays decoupled
 // from internal/ffmpeg. Working lists them in the order they were probed;
 // empty means software-only.

@@ -41,13 +41,36 @@ const (
 	HWAccelNVENC HWAccel = "nvenc"
 	// HWAccelVideoToolbox is Apple's VideoToolbox encoder (macOS hosts).
 	HWAccelVideoToolbox HWAccel = "videotoolbox"
+	// HWAccelAMF is AMD's Advanced Media Framework encoder (Windows hosts;
+	// AMD GPUs on Linux encode through VA-API) (CORE-2091).
+	HWAccelAMF HWAccel = "amf"
 )
 
 var allHWAccels = []HWAccel{HWAccelQSV, HWAccelVAAPI, HWAccelNVENC, HWAccelVideoToolbox}
 
+// windowsHWAccels are the accelerators that exist only on Windows hosts. They
+// are probed, and listed in the report, only there, so the Linux and macOS
+// reports keep their rows (CORE-2091).
+var windowsHWAccels = []HWAccel{HWAccelAMF}
+
+// vocabularyHWAccels is the whole closed accelerator vocabulary.
+var vocabularyHWAccels = slices.Concat(allHWAccels, windowsHWAccels)
+
+// reportedHWAccels lists the accelerators a probe on goos reports, in order.
+func reportedHWAccels(goos string) []HWAccel {
+	if goos == "windows" {
+		return vocabularyHWAccels
+	}
+	return allHWAccels
+}
+
+// hostOS is the platform encode argv is built for. Tests override it to build
+// Windows argv on any host.
+var hostOS = runtime.GOOS
+
 // HWAccelFromString resolves s against the closed accelerator vocabulary.
 func HWAccelFromString(s string) (HWAccel, bool) {
-	for _, a := range allHWAccels {
+	for _, a := range vocabularyHWAccels {
 		if string(a) == s {
 			return a, true
 		}
@@ -96,6 +119,7 @@ var hwAccelEncoder = map[HWAccel]string{
 	HWAccelVAAPI:        "h264_vaapi",
 	HWAccelNVENC:        "h264_nvenc",
 	HWAccelVideoToolbox: "h264_videotoolbox",
+	HWAccelAMF:          "h264_amf",
 }
 
 var hwAccelHEVCEncoder = map[HWAccel]string{
@@ -103,6 +127,7 @@ var hwAccelHEVCEncoder = map[HWAccel]string{
 	HWAccelVAAPI:        "hevc_vaapi",
 	HWAccelNVENC:        "hevc_nvenc",
 	HWAccelVideoToolbox: "hevc_videotoolbox",
+	HWAccelAMF:          "hevc_amf",
 }
 
 // hwAccelAV1Encoder lists the hardware AV1 encoders. FFmpeg has no
@@ -111,6 +136,7 @@ var hwAccelAV1Encoder = map[HWAccel]string{
 	HWAccelQSV:   "av1_qsv",
 	HWAccelVAAPI: "av1_vaapi",
 	HWAccelNVENC: "av1_nvenc",
+	HWAccelAMF:   "av1_amf",
 }
 
 func hwAccelVideoEncoder(accel HWAccel, codec string) string {
@@ -349,9 +375,13 @@ func hwAccelCandidates(goos string, driPresent bool) []HWAccel {
 		// is actually present.
 		c = append(c, HWAccelNVENC)
 		return c
+	case "windows":
+		// NVENC, Intel QSV on D3D11, and AMD AMF (CORE-2091). There is no
+		// /dev/dri gate: each probe encode tells us whether its GPU is present.
+		return []HWAccel{HWAccelNVENC, HWAccelQSV, HWAccelAMF}
 	default:
-		// Other platforms (e.g. Windows) advertise no first-class accelerator
-		// in v1: probe nothing, fall back to software.
+		// Other platforms advertise no accelerator: probe nothing, fall back
+		// to software.
 		return nil
 	}
 }
@@ -397,9 +427,10 @@ func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult 
 	}
 
 	candidates := hwAccelCandidates(goos, driPresent())
-	probes := make([]HWAccelProbe, len(allHWAccels))
+	reported := reportedHWAccels(goos)
+	probes := make([]HWAccelProbe, len(reported))
 	var wg sync.WaitGroup
-	for i, candidate := range allHWAccels {
+	for i, candidate := range reported {
 		probes[i] = HWAccelProbe{Accelerator: candidate, Status: HWAccelUnavailable}
 		if !slices.Contains(candidates, candidate) || ctx.Err() != nil {
 			continue
@@ -469,7 +500,7 @@ func probeOneHWAccel(ctx context.Context, runner HWAccelRunner, encode HWAccelEn
 func init() {
 	for _, encoders := range []map[HWAccel]string{hwAccelEncoder, hwAccelHEVCEncoder, hwAccelAV1Encoder} {
 		for accel, encoder := range encoders {
-			if !slices.Contains(allHWAccels, accel) {
+			if !slices.Contains(vocabularyHWAccels, accel) {
 				panic("ffmpeg: hwAccelEncoder contains accelerator outside closed vocabulary")
 			}
 			if encoder == "" {
@@ -536,7 +567,22 @@ func hwAccelProbeArgs(encode HWAccelEncode) []string {
 	if encode.LowPower && hwAccelLowPowerCapable(accel) {
 		args = append(args, lowPowerArgs...)
 	}
+	// The probe encodes with the rate control real encodes use (CORE-2089):
+	// Intel's low-power path needs HuC firmware for VBR but not for CQP, so a
+	// probe without a bitrate could pass where every real encode fails.
+	probe := Rendition{hwAccel: accel, VideoCodec: encoderCodec(encoder), VideoKbps: probeVideoKbps}
+	args = append(args, probe.rateControlArgs()...)
 	return append(args, "-f", "null", "-")
+}
+
+// probeVideoKbps is the bitrate target of the probe encode.
+const probeVideoKbps = 1000
+
+// encoderCodec is the codec an FFmpeg encoder name encodes ("hevc_qsv" →
+// "hevc").
+func encoderCodec(encoder string) string {
+	codec, _, _ := strings.Cut(encoder, "_")
+	return codec
 }
 
 // lowPowerArgs selects the low-power (VDENC) encode on QSV and VA-API.

@@ -1454,6 +1454,8 @@ func (r Rendition) rateControlArgs() []string {
 			out = append(out, "-preset", "p4", "-forced-idr", "1")
 		case HWAccelQSV:
 			out = append(out, "-preset", "veryfast")
+		case HWAccelAMF:
+			out = append(out, "-quality", "speed")
 		}
 	}
 	if r.VideoKbps <= 0 {
@@ -1466,6 +1468,9 @@ func (r Rendition) rateControlArgs() []string {
 			out = append(out, "-rc", "vbr")
 		case HWAccelVAAPI:
 			out = append(out, "-rc_mode", "VBR")
+		case HWAccelAMF:
+			// Peak-constrained VBR: -b:v is the target, -maxrate the cap.
+			out = append(out, "-rc", "vbr_peak")
 		case HWAccelQSV:
 			// h264/hevc_qsv pick CBR when -maxrate equals -b:v; one kb/s of
 			// headroom keeps them in capped VBR instead of padding to the rung.
@@ -1609,6 +1614,9 @@ func (r Rendition) hwUploadFilters() []string {
 		return []string{"format=nv12"}
 	case HWAccelVAAPI:
 		return []string{"format=nv12", "hwupload"}
+	case HWAccelAMF:
+		// AMF uploads system-memory NV12 frames itself (CORE-2091).
+		return []string{"format=nv12"}
 	default:
 		return nil
 	}

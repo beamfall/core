@@ -153,6 +153,10 @@ func qsvInitArgs() []string {
 // the device string selects the MFX implementation, not a node ("hw" is the
 // hardware implementation); the node goes in child_device, which FFmpeg opens
 // as the child VA-API device the QSV session runs on.
+// On Windows QSV runs on a D3D11 child device and no node applies (CORE-2091).
 func qsvDeviceSpec(name, node string) string {
+	if hostOS == "windows" {
+		return "qsv=" + name + ":hw_any,child_device_type=d3d11va"
+	}
 	return "qsv=" + name + ":hw,child_device=" + node
 }
