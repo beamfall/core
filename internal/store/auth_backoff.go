@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"math"
 	"time"
 )
 
@@ -168,20 +167,20 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 	// in different runs, whatever came before the older one.
 	breakGap := policy.MaxDelay + policy.Window
 	// Read back from now in doubling spans until the start of the current run
-	// is inside the span, so an ordinary check never walks the lane's history.
+	// is inside the span, so an ordinary check reads only recent attempts.
 	var failures []time.Time
-	for span := breakGap; ; span *= 2 {
-		sinceMs := int64(math.MinInt64)
-		if span > 0 && span < authAttemptScanCeiling {
-			sinceMs = timeToMillis(now) - span.Milliseconds()
+	complete := false
+	for span := breakGap; !complete; span *= 2 {
+		last := span <= 0 || span >= authRunHorizon
+		if last {
+			span = authRunHorizon
 		}
-		var complete bool
 		var err error
-		failures, complete, err = authFailureRun(ctx, q, action, key, sinceMs, breakGap)
+		failures, complete, err = authFailureRun(ctx, q, action, key, timeToMillis(now)-span.Milliseconds(), breakGap)
 		if err != nil {
 			return 0, time.Time{}, err
 		}
-		if complete || sinceMs == math.MinInt64 {
+		if last {
 			break
 		}
 	}
@@ -189,11 +188,15 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 		return 0, time.Time{}, nil
 	}
 	// Replay oldest to newest: the idle gap that ends a run depends on the
-	// lockout the run had armed by then.
+	// lockout the run had armed by then. A run that reaches back past the
+	// horizon is carried in at the cap.
 	count := 0
+	if !complete {
+		count = failuresToCap(policy) - 1
+	}
 	var last time.Time
 	for i := len(failures) - 1; i >= 0; i-- {
-		if count > 0 && laneForgotten(count, last, failures[i], policy) {
+		if i < len(failures)-1 && laneForgotten(count, last, failures[i], policy) {
 			count = 0
 		}
 		count++
@@ -205,9 +208,21 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 	return count, last, nil
 }
 
-// authAttemptScanCeiling is the span past which a lane read stops doubling and
-// reads the lane's whole retained history instead.
-const authAttemptScanCeiling = 2 * 365 * 24 * time.Hour
+// authRunHorizon is how far back a lane read looks for the start of the
+// current run. A run with no success and no gap of MaxDelay plus Window in
+// that time is treated as already at MaxDelay: an unseen start can keep a
+// lane locked, never reopen it. It is no longer than the shortest events
+// retention, so compaction never cuts a run inside it.
+const authRunHorizon = 24 * time.Hour
+
+// failuresToCap is the fewest consecutive failures that arm MaxDelay.
+func failuresToCap(policy AuthBackoff) int {
+	n := max(policy.FreeAttempts, 1)
+	// The delay doubles per failure, so it reaches any cap within 63 steps.
+	for limit := n + 63; n < limit && lockoutAfter(n, policy) < policy.MaxDelay; n++ {
+	}
+	return n
+}
 
 // authFailureRun returns the lane's failures at or after sinceMs, newest
 // first, back to the latest success or to a gap of breakGap between two

@@ -268,8 +268,7 @@ func TestAuthBackoffIdleLaneResets(t *testing.T) {
 }
 
 // TestAuthBackoffSlowFailuresStayFreshRuns: failures that each arrive after the
-// lane has been idle for Window never add up, however many of them there are
-// and however far back they go.
+// lane has been idle for Window never add up.
 func TestAuthBackoffSlowFailuresStayFreshRuns(t *testing.T) {
 	st := openBackoffStore(t)
 	ctx := context.Background()
@@ -277,7 +276,7 @@ func TestAuthBackoffSlowFailuresStayFreshRuns(t *testing.T) {
 	base := time.Unix(7_000_000, 0).UTC()
 
 	const action, key = "test.lane", "subject-H"
-	const failures = 600
+	const failures = 100
 	step := policy.Window + time.Second
 	for i := 0; i < failures; i++ {
 		recordFailure(t, st, action, key, base.Add(time.Duration(i)*step))
