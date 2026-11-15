@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -50,8 +53,10 @@ const (
 // HydrationRehydrator is the optional HydrationMapper extension that keys
 // hydration on the file's content fingerprint, so a re-tagged file is
 // re-hydrated and an unchanged one is not. FingerprintField names a declared
-// text Media field holding the fingerprint the last hydration read; a mapper
-// without it keeps the absent-only write.
+// text Media field holding the hydration key the last hydration recorded (the
+// content fingerprint plus a digest of the mapped plan, see hydrationKey); a
+// mapper without it keeps the absent-only write. DecideHydrationWrite
+// compares the recorded and the current key.
 type HydrationRehydrator interface {
 	FingerprintField() string
 	DecideHydrationWrite(recordedFingerprint, currentFingerprint string) HydrationWrite
@@ -180,7 +185,12 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if !a.capability.Supports(input.Class) {
 		return nil
 	}
-	write, err := a.decideWrite(ctx, input)
+	plan := a.mapper.MapHydration(input.Metadata, input.Path)
+	key, err := hydrationKey(input.ContentFingerprint, plan)
+	if err != nil {
+		return err
+	}
+	write, err := a.decideWrite(ctx, input.MediaID, key)
 	if err != nil {
 		return err
 	}
@@ -197,7 +207,6 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 			write = HydrationWriteFresh
 		}
 	}
-	plan := a.mapper.MapHydration(input.Metadata, input.Path)
 	if plan.Empty() {
 		return nil
 	}
@@ -220,7 +229,26 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 			return err
 		}
 	}
-	return a.recordFingerprint(ctx, input.MediaID, write, input.ContentFingerprint)
+	return a.recordFingerprint(ctx, input.MediaID, write, key)
+}
+
+// hydrationKey is the value the skip decision compares and the fingerprint
+// field records: the content fingerprint plus a digest of the mapped plan. The
+// plan carries what the mapper derived from the file's path (a disc folder,
+// say), so a file moved with the same bytes is re-hydrated when the move
+// changes a derived fact, and skipped when neither bytes nor derived facts
+// changed. An empty fingerprint stays empty so the mapper's no-fingerprint
+// rule still applies.
+func hydrationKey(fingerprint string, plan HydrationPlan) (string, error) {
+	if fingerprint == "" {
+		return "", nil
+	}
+	encoded, err := json.Marshal(plan)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(encoded)
+	return fingerprint + ";plan=" + hex.EncodeToString(sum[:8]), nil
 }
 
 // recordFingerprint records the hydrated content fingerprint after every other
@@ -238,16 +266,16 @@ func (a *hydrationAdapter) recordFingerprint(ctx context.Context, mediaID store.
 }
 
 // decideWrite asks an opted-in mapper how to land this hydration, from the
-// fingerprint recorded at the last hydration and the one the scan computed.
+// hydration key recorded at the last hydration and the current one.
 // A mapper without a fingerprint field always gets the absent-only write.
-func (a *hydrationAdapter) decideWrite(ctx context.Context, input scanpkg.MetadataHydrationInput) (HydrationWrite, error) {
+func (a *hydrationAdapter) decideWrite(ctx context.Context, mediaID store.MediaID, key string) (HydrationWrite, error) {
 	if a.rehydrator == nil {
 		return HydrationWriteFresh, nil
 	}
 	if declaredType, ok := a.declaredMediaFields[a.fingerprintField]; a.fingerprintField == "" || !ok || declaredType != string(store.EntityFieldText) {
 		return HydrationWriteFresh, fmt.Errorf("hydration fingerprint field %q is not a declared text field", a.fingerprintField)
 	}
-	fields, err := a.store.MediaFields(ctx, input.MediaID, metadataLibraryFilter)
+	fields, err := a.store.MediaFields(ctx, mediaID, metadataLibraryFilter)
 	if err != nil {
 		return HydrationWriteFresh, err
 	}
@@ -258,7 +286,7 @@ func (a *hydrationAdapter) decideWrite(ctx context.Context, input scanpkg.Metada
 			break
 		}
 	}
-	return a.rehydrator.DecideHydrationWrite(recorded, input.ContentFingerprint), nil
+	return a.rehydrator.DecideHydrationWrite(recorded, key), nil
 }
 
 func (a *hydrationAdapter) validatePlan(plan HydrationPlan, marker string) (HydrationPlan, error) {

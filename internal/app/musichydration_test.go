@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1176,6 +1177,13 @@ func hydrateWithFingerprint(t *testing.T, adapter *hydrationAdapter, fingerprint
 	}
 }
 
+// recordedFingerprint strips the plan digest hydrationKey appends, leaving
+// the content fingerprint the recorded key was built from.
+func recordedFingerprint(key string) string {
+	fingerprint, _, _ := strings.Cut(key, ";plan=")
+	return fingerprint
+}
+
 func TestHydrateMetadataKeyedOnContentFingerprint(t *testing.T) {
 	st := newFakeHydrationStore()
 	adapter := newRehydrationAdapter(t, st)
@@ -1185,18 +1193,18 @@ func TestHydrateMetadataKeyedOnContentFingerprint(t *testing.T) {
 	}
 
 	hydrateWithFingerprint(t, adapter, "fp-1", map[string]string{"title": "One", "album": "First"})
-	if text("title") != "One" || text("album") != "First" || text(testHydrationFingerprintField) != "fp-1" {
+	if text("title") != "One" || text("album") != "First" || recordedFingerprint(text(testHydrationFingerprintField)) != "fp-1" {
 		t.Fatalf("fresh hydration fields = %+v", st.fields[testMedia])
 	}
 
 	writes := st.writes
-	hydrateWithFingerprint(t, adapter, "fp-1", map[string]string{"title": "Ignored", "album": "Ignored"})
+	hydrateWithFingerprint(t, adapter, "fp-1", map[string]string{"title": "One", "album": "First"})
 	if st.writes != writes || text("title") != "One" {
-		t.Fatalf("same fingerprint wrote %d times, title %q; want no write", st.writes-writes, text("title"))
+		t.Fatalf("same fingerprint and plan wrote %d times, title %q; want no write", st.writes-writes, text("title"))
 	}
 
 	hydrateWithFingerprint(t, adapter, "fp-2", map[string]string{"title": "Two", "album": "Second"})
-	if text("title") != "Two" || text("album") != "Second" || text(testHydrationFingerprintField) != "fp-2" {
+	if text("title") != "Two" || text("album") != "Second" || recordedFingerprint(text(testHydrationFingerprintField)) != "fp-2" {
 		t.Fatalf("replace hydration fields = %+v", st.fields[testMedia])
 	}
 
@@ -1210,7 +1218,7 @@ func TestHydrateMetadataKeyedOnContentFingerprint(t *testing.T) {
 	// fingerprint stays, so a later scan retries the replace.
 	st.locked, st.lockErr = nil, errors.New("locks unreadable")
 	hydrateWithFingerprint(t, adapter, "fp-4", map[string]string{"title": "Four", "album": "Fourth"})
-	if text("title") != "Two" || text("album") != "Third" || text(testHydrationFingerprintField) != "fp-3" {
+	if text("title") != "Two" || text("album") != "Third" || recordedFingerprint(text(testHydrationFingerprintField)) != "fp-3" {
 		t.Fatalf("lock-read failure: title %q album %q fingerprint %q, want nothing replaced", text("title"), text("album"), text(testHydrationFingerprintField))
 	}
 }
@@ -1375,7 +1383,7 @@ func TestRehydrationReplacesScanTierFields(t *testing.T) {
 	r.write("original audio bytes padding padding", 2*time.Hour, map[string]string{"title": "One", "album": "First"})
 	r.scan()
 	r.rehydrate("sha256:retagged", map[string]string{"title": "Two", "album": "Second"})
-	if r.field("title") != "Two" || r.field("album") != "Second" || r.field(testHydrationFingerprintField) != "sha256:retagged" {
+	if r.field("title") != "Two" || r.field("album") != "Second" || recordedFingerprint(r.field(testHydrationFingerprintField)) != "sha256:retagged" {
 		t.Fatalf("title %q album %q fingerprint %q, want the re-tagged values", r.field("title"), r.field("album"), r.field(testHydrationFingerprintField))
 	}
 }
@@ -1449,5 +1457,100 @@ func TestRehydrationKeepsManualTitle(t *testing.T) {
 	r.rehydrate("sha256:retagged", map[string]string{"title": "Two", "album": "Second"})
 	if r.field("title") != "One" || r.field("album") != "Second" {
 		t.Fatalf("title %q album %q, want the manually owned title kept and the album re-hydrated", r.field("title"), r.field("album"))
+	}
+}
+
+// discFolderTestMapper is rehydratingTestMapper plus a disc number derived
+// from a "CDn" parent folder, the path-derived fact CORE-1733 is about.
+type discFolderTestMapper struct{ rehydratingTestMapper }
+
+func (discFolderTestMapper) MapHydration(tags map[string]string, path string) HydrationPlan {
+	plan := rehydratingTestMapper{}.MapHydration(tags, path)
+	if disc, ok := strings.CutPrefix(filepath.Base(filepath.Dir(path)), "CD"); ok {
+		if n, err := strconv.Atoi(disc); err == nil && n > 0 {
+			plan.MarkComplete = true
+			plan.MediaFields = append(plan.MediaFields, store.MediaField{Name: "disc-number", Type: store.EntityFieldNumber, Number: float64(n)})
+		}
+	}
+	return plan
+}
+
+func (r *rehydrationScan) number(name string) float64 {
+	r.t.Helper()
+	fields, err := r.st.MediaFields(context.Background(), r.mediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	for _, field := range fields {
+		if field.Name == name {
+			return field.Number
+		}
+	}
+	return 0
+}
+
+// move relocates the scanned file under root, keeping its bytes and mtime.
+func (r *rehydrationScan) move(rel string) {
+	r.t.Helper()
+	next := filepath.Join(r.root, rel)
+	if err := os.MkdirAll(filepath.Dir(next), 0o750); err != nil {
+		r.t.Fatal(err)
+	}
+	if err := os.Rename(r.path, next); err != nil {
+		r.t.Fatal(err)
+	}
+	r.path = next
+}
+
+// CORE-1733: moving an untagged item into a CDn folder keeps its bytes, so
+// the content fingerprint alone would skip it; the path-derived disc number
+// must still be re-derived, while an unmoved, unchanged file is not reworked.
+func TestScanRehydratesMovedFileIntoDiscFolder(t *testing.T) {
+	r := newRehydrationScan(t)
+	registry, err := plugin.NewRegistry([]plugin.Bundle{rehydrationBundle()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.adapter = newHydrationAdapters(registry, r.counted, map[string]HydrationMapper{testHydrationPluginID: discFolderTestMapper{}})[testHydrationPluginID].(*hydrationAdapter)
+	r.path = filepath.Join(r.root, "Album", "CD1", "01 track.flac")
+	if err := os.MkdirAll(filepath.Dir(r.path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	r.write("untagged audio bytes padding padding", 3*time.Hour, map[string]string{"title": "One"})
+	r.scan()
+	if got := r.number("disc-number"); got != 1 {
+		t.Fatalf("first scan disc-number = %v, want 1", got)
+	}
+	first := r.mediaID
+
+	writes := r.counted.writes
+	r.touch(2 * time.Hour)
+	r.scan()
+	if r.counted.writes != writes {
+		t.Fatalf("unchanged, unmoved file re-hydrated: %d writes, want 0", r.counted.writes-writes)
+	}
+
+	r.move(filepath.Join("Album", "CD2", "01 track.flac"))
+	r.scan()
+	if r.mediaID != first {
+		t.Fatalf("moved file Media = %q, want the same Media %q", r.mediaID, first)
+	}
+	if got := r.number("disc-number"); got != 2 {
+		t.Fatalf("moved file disc-number = %v, want 2 from the CD2 folder", got)
+	}
+
+	writes = r.counted.writes
+	r.touch(time.Hour)
+	r.scan()
+	if r.counted.writes != writes {
+		t.Fatalf("moved file re-hydrated again with nothing changed: %d writes, want 0", r.counted.writes-writes)
+	}
+
+	// A move that changes no derived fact is not reworked either.
+	r.move(filepath.Join("Renamed", "CD2", "01 track.flac"))
+	writes = r.counted.writes
+	r.scan()
+	if r.counted.writes != writes || r.number("disc-number") != 2 {
+		t.Fatalf("fact-preserving move: %d writes, disc-number %v; want no write and disc 2", r.counted.writes-writes, r.number("disc-number"))
 	}
 }
