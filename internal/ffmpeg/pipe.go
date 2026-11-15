@@ -113,16 +113,14 @@ func (r *Runner) ProbePipeDuration(ctx context.Context, in PipeInput) (time.Dura
 	if err := r.runPipeTool(ctx, port, in, "ffprobe", "ffprobe pipe probe", pipeProbeArgs(in.URL, pipeReadTimeout(in)), stdout); err != nil {
 		return 0, err
 	}
-	if stdout.overflowed() {
-		return 0, ErrOutputOverflow
-	}
 	return parsePipeDuration(stdout.bytes())
 }
 
 // runPipeTool runs the FFmpeg tool named by tool against a loopback input
 // under the pipe confinement, streaming its stdout to stdout. what names the
 // run in its errors, and a failure's diagnostic is redacted of in's URL and
-// secret.
+// secret. A bounded stdout that overflows kills the tool, so an overproducing
+// child cannot hold the worker until another limit fires.
 func (r *Runner) runPipeTool(ctx context.Context, port int, in PipeInput, tool, what string, args []string, stdout io.Writer) error {
 	toolPath, err := exec.LookPath(tool)
 	if err != nil {
@@ -133,14 +131,24 @@ func (r *Runner) runPipeTool(ctx context.Context, port int, in PipeInput, tool, 
 		return err
 	}
 	cmd.Env = pipeEnv(os.Environ())
+	return r.runPipeCmd(ctx, cmd, in, what, stdout)
+}
+
+// runPipeCmd supervises a confined pipe command built by runPipeTool. A
+// bounded stdout that overflows kills the command, as stderr does.
+func (r *Runner) runPipeCmd(ctx context.Context, cmd *exec.Cmd, in PipeInput, what string, stdout io.Writer) error {
 	var killOnce sync.Once
 	kill := func() { killOnce.Do(func() { killProcessGroup(cmd) }) }
 	stderr := &boundedBuffer{limit: pipeStderrLimit, onOverflow: kill}
+	boundedOut, _ := stdout.(*boundedBuffer)
+	if boundedOut != nil && boundedOut.onOverflow == nil {
+		boundedOut.onOverflow = kill
+	}
 	runErr := r.runWith(ctx, cmd, stdout, stderr)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("%s interrupted: %w", what, ctxErr)
 	}
-	if stderr.overflowed() {
+	if stderr.overflowed() || (boundedOut != nil && boundedOut.overflowed()) {
 		return ErrOutputOverflow
 	}
 	if runErr == nil {
