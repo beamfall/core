@@ -36,9 +36,12 @@ import {
   attachCaptionElements,
   captionLocale,
   isBurnInCaption,
+  matchSelectedCaption,
+  preferredLanguageIndex,
   removeCaptionElements,
   showCaptionElement,
   shownCaptionElement,
+  trackPreferencePolicy,
 } from "./streamTracks";
 
 // The player engine, ported from the vanilla play() / startPreparedPlayback /
@@ -116,6 +119,26 @@ interface TrackChoice {
   burnIndex?: number;
   /** The caption picked: an id, null for off, undefined for no pick yet. */
   captionID?: string | null;
+  /** The server's start-of-playback subtitle pick has been taken up (CORE-1680). */
+  startCaptionAdopted?: boolean;
+}
+
+/**
+ * Takes up the server's start-of-playback subtitle pick, once per Media and
+ * only before the viewer picks: a text track is shown when the stream
+ * attaches, and a picture-based one needs the stream asked for again with it
+ * burned in, which the return value reports.
+ */
+function adoptStartCaption(choice: TrackChoice, info: PlaybackInfo): boolean {
+  if (choice.startCaptionAdopted) return false;
+  choice.startCaptionAdopted = true;
+  if (choice.captionID !== undefined || choice.burnIndex !== undefined) return false;
+  const track = matchSelectedCaption(info.captionTracks, info.selectedSubtitleTrack);
+  if (!track) return false;
+  choice.captionID = track.id;
+  if (!isBurnInCaption(track)) return false;
+  choice.burnIndex = track.streamIndex;
+  return true;
 }
 
 const REPORT_INTERVAL_MS = 15000;
@@ -672,25 +695,34 @@ export function usePlayer(
       // parallel with it; neither markers nor trickplay ever gate attaching
       // the stream (best-effort, applied when they arrive).
       const markersRequest = fetchPlaybackMarkers(mediaID).catch((): PlaybackMarker[] => []);
-      let info: PlaybackInfo;
-      try {
-        info = await fetchPlaybackInfo(
-          mediaID,
-          nextMediaIDRef.current,
-          requestedAdjustment,
-          selectedVersionRef.current,
-          trackRequest(),
-        );
-      } catch (err) {
-        if (!alive) return;
-        if (!(err instanceof ApiError) && offline) {
-          waitForNetwork(() => void start());
-          return;
+      const loadInfo = async (): Promise<PlaybackInfo | null> => {
+        try {
+          return await fetchPlaybackInfo(
+            mediaID,
+            nextMediaIDRef.current,
+            requestedAdjustment,
+            selectedVersionRef.current,
+            trackRequest(),
+          );
+        } catch (err) {
+          if (!alive) return null;
+          if (!(err instanceof ApiError) && offline) {
+            waitForNetwork(() => void start());
+            return null;
+          }
+          showPlaybackInfoError(err);
+          return null;
         }
-        showPlaybackInfoError(err);
-        return;
+      };
+      let loaded = await loadInfo();
+      if (!loaded || !alive) return;
+      // The server burns a picture-based subtitle in only when asked by
+      // stream index, so its start pick of one is asked for once more.
+      if (adoptStartCaption(trackChoiceRef.current, loaded)) {
+        loaded = await loadInfo();
+        if (!loaded || !alive) return;
       }
-      if (!alive) return;
+      let info: PlaybackInfo = loaded;
 
       const stream = choosePlaybackStream(info);
       const decision = playbackDecision(info, stream);
@@ -897,7 +929,7 @@ export function usePlayer(
           );
         };
         const applyPreferencesThenBump = () => {
-          applyTrackPreferences(video, hlsRef.current, info.trackPreferences);
+          applyTrackPreferences(video, hlsRef.current, info);
           bumpTracks();
         };
 
@@ -1356,48 +1388,50 @@ export function usePlayer(
   };
 }
 
-interface TrackPreferences {
-  audioLanguage?: string;
-  preferredAudioLanguage?: string;
-  subtitleLanguage?: string;
-  preferredSubtitleLanguage?: string;
-  subtitleMode?: string;
-}
-
-// applyTrackPreferences selects the server-preferred audio/subtitle tracks once
-// the live track set is known, ported from applyTrackPreferences (app.js). It
-// runs on every track-update so a preference applies whichever event surfaces
-// the matching track. Unknown/absent preferences are a no-op.
-function applyTrackPreferences(video: HTMLVideoElement, hls: Hls | null, raw: unknown): void {
-  const preferences = raw as TrackPreferences | null;
+// applyTrackPreferences applies the Profile's track policy to the live track
+// set once per load, for streams whose tracks the server does not list: an
+// hls.js audio rendition in the most preferred language, and, with subtitles
+// always on, a live text track in the most preferred subtitle language. When
+// playbackInfo lists the file's tracks the server has already delivered the
+// preferred audio stream and named the starting subtitle (adoptStartCaption),
+// so only the hls.js audio choice can still apply.
+function applyTrackPreferences(video: HTMLVideoElement, hls: Hls | null, info: PlaybackInfo): void {
+  const preferences = trackPreferencePolicy(info.trackPreferences);
   if (!preferences) {
     return;
   }
-  const audioLanguage = preferences.audioLanguage || preferences.preferredAudioLanguage;
-  const subtitleLanguage = preferences.subtitleLanguage || preferences.preferredSubtitleLanguage;
-  if (audioLanguage && hls && Array.isArray(hls.audioTracks)) {
-    const index = hls.audioTracks.findIndex(
-      (track) => track.lang === audioLanguage || track.name === audioLanguage,
+  if (!info.audioTracks?.length && hls && Array.isArray(hls.audioTracks)) {
+    const index = preferredLanguageIndex(
+      hls.audioTracks.map((track) => track.lang),
+      preferences.audioLanguages,
     );
-    if (index >= 0) {
+    if (index >= 0 && hls.audioTrack !== index) {
       hls.audioTrack = index;
     }
   }
-  if (subtitleLanguage && hls && Array.isArray(hls.subtitleTracks)) {
-    const index = hls.subtitleTracks.findIndex(
-      (track) => track.lang === subtitleLanguage || track.name === subtitleLanguage,
+  if (info.captionTracks?.length || preferences.subtitleMode !== "always") {
+    return;
+  }
+  if (hls && Array.isArray(hls.subtitleTracks)) {
+    const index = preferredLanguageIndex(
+      hls.subtitleTracks.map((track) => track.lang),
+      preferences.subtitleLanguages,
     );
     if (index >= 0) {
-      hls.subtitleDisplay = preferences.subtitleMode !== "off";
+      hls.subtitleDisplay = true;
       hls.subtitleTrack = index;
     }
   }
-  if (video.textTracks && subtitleLanguage) {
-    for (const track of Array.from(video.textTracks)) {
-      track.mode =
-        track.language === subtitleLanguage || track.label === subtitleLanguage
-          ? "showing"
-          : "disabled";
+  if (video.textTracks) {
+    const tracks = Array.from(video.textTracks);
+    const index = preferredLanguageIndex(
+      tracks.map((track) => track.language),
+      preferences.subtitleLanguages,
+    );
+    if (index >= 0) {
+      tracks.forEach((track, i) => {
+        track.mode = i === index ? "showing" : "disabled";
+      });
     }
   }
 }

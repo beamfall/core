@@ -450,10 +450,9 @@ type PreviewInfoResponse struct {
 }
 
 // TrackPreferences carries the Profile's audio/subtitle pre-selection policy.
-// The probe pipeline records container/codec only — no per-track language
-// data exists server-side — so playbackInfo forwards the policy verbatim and
-// the player resolves it against the real track list; the server never
-// invents track indexes the probe cannot support.
+// The server applies it at negotiation (the audio stream it delivers and the
+// SelectedSubtitleTrack it stamps) and forwards it verbatim so the player can
+// resolve it against tracks only the client sees.
 type TrackPreferences struct {
 	AudioLanguages    []string `json:"audioLanguages"`
 	SubtitleLanguages []string `json:"subtitleLanguages"`
@@ -1040,12 +1039,13 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if burnSubtitleIndex := selectedBurnSubtitleIndex(streams, profile, selectedSubtitleIndex, ov); burnSubtitleIndex >= 0 {
 		grant.BurnSubtitleIndex = burnSubtitleIndex + 1
 	}
-	// The audio track: the viewer's pick, else the file's default. A file with several audio streams
+	// The audio track: the viewer's pick, else the Profile's preferred
+	// language, else the file's default. A file with several audio streams
 	// names it in the grant so a server stream maps exactly that track instead
 	// of FFmpeg's own choice; one that is not the default rules out direct
 	// play and the untouched precomputed rendition below, which carry the
 	// default track only.
-	audio := resolveAudioTrack(streams, selectedAudioIndex)
+	audio := resolveAudioTrack(streams, selectedAudioIndex, policy.AudioLanguages)
 	if len(audio.tracks) > 1 {
 		grant.AudioStreamIndex = audio.chosen + 1
 	}

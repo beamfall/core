@@ -13,10 +13,11 @@ type audioSelection struct {
 }
 
 // resolveAudioTrack chooses the audio track the delivered streams play: a
-// selected index that names one of the file's audio streams, else the file's
-// default stream: the first with the default disposition, or the first audio
-// stream when none has it.
-func resolveAudioTrack(streams []store.MediaFileStream, selected *int) audioSelection {
+// selected index that names one of the file's audio streams, else the stream
+// the Profile's audio language preferences pick (see preferredAudioStream),
+// else the file's default stream: the first with the default disposition, or
+// the first audio stream when none has it.
+func resolveAudioTrack(streams []store.MediaFileStream, selected *int, languages []string) audioSelection {
 	sel := audioSelection{fileDefault: -1, chosen: -1}
 	var audio []store.MediaFileStream
 	for _, stream := range streams {
@@ -37,6 +38,8 @@ func resolveAudioTrack(streams []store.MediaFileStream, selected *int) audioSele
 	sel.chosen = sel.fileDefault
 	if selected != nil && hasAudioIndex(audio, *selected) {
 		sel.chosen = *selected
+	} else if preferred := preferredAudioStream(audio, sel.fileDefault, languages); preferred >= 0 {
+		sel.chosen = preferred
 	}
 	sel.tracks = make([]AudioTrack, 0, len(audio))
 	for _, stream := range audio {
@@ -70,6 +73,35 @@ func (sel audioSelection) language() string {
 		}
 	}
 	return ""
+}
+
+// preferredAudioStream returns the stream index of the audio stream in the
+// most preferred language that has one, or -1 when no stream matches any
+// preferred language. Within a language a main track beats commentary and
+// audio-description tracks, and the file default beats the other main tracks.
+func preferredAudioStream(audio []store.MediaFileStream, fileDefault int, languages []string) int {
+	for _, preferred := range languages {
+		best, bestRank := -1, 3
+		for _, stream := range audio {
+			if !langEq(stream.Language, preferred) {
+				continue
+			}
+			rank := 1
+			switch {
+			case stream.Commentary || stream.VisualImpaired:
+				rank = 2
+			case stream.Index == fileDefault:
+				rank = 0
+			}
+			if rank < bestRank {
+				best, bestRank = stream.Index, rank
+			}
+		}
+		if best >= 0 {
+			return best
+		}
+	}
+	return -1
 }
 
 func hasAudioIndex(audio []store.MediaFileStream, index int) bool {

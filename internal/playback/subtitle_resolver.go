@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"golang.org/x/text/language"
+
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 )
@@ -257,13 +259,30 @@ func languagePreferred(lang string, prefs []string) bool {
 }
 
 // langEq compares two language tags case-insensitively and prefix-tolerantly, so
-// "en" matches "en", "EN", and "en-US" (and vice versa).
+// "en" matches "en", "EN", and "en-US" (and vice versa). Both sides are first
+// canonicalized, so the ISO 639-2 codes a probe records ("eng", "fre", "ger")
+// match the BCP 47 tags a Profile stores ("en", "fr", "de").
 func langEq(a, b string) bool {
-	a, b = strings.ToLower(strings.TrimSpace(a)), strings.ToLower(strings.TrimSpace(b))
+	a, b = canonicalLanguage(a), canonicalLanguage(b)
 	if a == "" || b == "" {
 		return a == b
 	}
 	return a == b || strings.HasPrefix(a, b+"-") || strings.HasPrefix(b, a+"-")
+}
+
+// canonicalLanguage lowercases a language tag and maps it to its canonical
+// BCP 47 form. A tag the parser does not know, or one it reduces to "und",
+// is kept as written so it still matches itself.
+func canonicalLanguage(tag string) string {
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	if tag == "" {
+		return ""
+	}
+	parsed, err := language.Parse(tag)
+	if err != nil || parsed == language.Und {
+		return tag
+	}
+	return strings.ToLower(parsed.String())
 }
 
 // resolveSubtitles loads the decision's pinned series choice (when the item has

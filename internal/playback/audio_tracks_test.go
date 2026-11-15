@@ -20,7 +20,7 @@ func multiAudioStreams() []store.MediaFileStream {
 
 func TestResolveAudioTrack(t *testing.T) {
 	streams := multiAudioStreams()
-	sel := resolveAudioTrack(streams, nil)
+	sel := resolveAudioTrack(streams, nil, nil)
 	if sel.fileDefault != 1 || sel.chosen != 1 || sel.overridesDefault() || sel.language() != "eng" {
 		t.Fatalf("no selection = %+v, want default stream 1 chosen", sel)
 	}
@@ -29,27 +29,27 @@ func TestResolveAudioTrack(t *testing.T) {
 	}
 
 	picked := 2
-	sel = resolveAudioTrack(streams, &picked)
+	sel = resolveAudioTrack(streams, &picked, nil)
 	if sel.chosen != 2 || !sel.overridesDefault() || sel.language() != "fra" || !sel.tracks[1].Selected || sel.tracks[0].Selected {
 		t.Fatalf("selection 2 = %+v, want stream 2 chosen over the default", sel)
 	}
 
 	notAudio := 4
-	if sel = resolveAudioTrack(streams, &notAudio); sel.chosen != 1 {
+	if sel = resolveAudioTrack(streams, &notAudio, nil); sel.chosen != 1 {
 		t.Fatalf("subtitle index selection chose %d, want the default 1", sel.chosen)
 	}
 
 	// No default disposition: the first audio stream is the default.
 	streams[1].Default = false
-	if sel = resolveAudioTrack(streams, nil); sel.fileDefault != 1 || sel.chosen != 1 {
+	if sel = resolveAudioTrack(streams, nil, nil); sel.fileDefault != 1 || sel.chosen != 1 {
 		t.Fatalf("no default disposition = %+v, want stream 1", sel)
 	}
 	streams[2].Default = true
-	if sel = resolveAudioTrack(streams, nil); sel.fileDefault != 2 || sel.chosen != 2 || !sel.tracks[1].Default {
+	if sel = resolveAudioTrack(streams, nil, nil); sel.fileDefault != 2 || sel.chosen != 2 || !sel.tracks[1].Default {
 		t.Fatalf("default disposition on stream 2 = %+v, want stream 2", sel)
 	}
 
-	if sel = resolveAudioTrack([]store.MediaFileStream{videoStream("h264", "High", 0, "")}, nil); sel.tracks != nil || sel.chosen != -1 || sel.overridesDefault() {
+	if sel = resolveAudioTrack([]store.MediaFileStream{videoStream("h264", "High", 0, "")}, nil, nil); sel.tracks != nil || sel.chosen != -1 || sel.overridesDefault() {
 		t.Fatalf("silent file = %+v, want no tracks", sel)
 	}
 }
@@ -140,5 +140,81 @@ func TestInfoSingleAudioTrackLeavesGrantUnbound(t *testing.T) {
 	}
 	if grant.AudioStreamIndex != 0 {
 		t.Fatalf("AudioStreamIndex = %d, want 0 for a single-track file", grant.AudioStreamIndex)
+	}
+}
+
+// CORE-1680: with no explicit pick, the Profile's audio languages choose the
+// stream, in preference order; a main track beats commentary in the same
+// language, and probed ISO 639-2 codes match BCP 47 preferences.
+func TestResolveAudioTrackHonoursLanguagePreferences(t *testing.T) {
+	streams := multiAudioStreams()
+	for _, tc := range []struct {
+		name      string
+		languages []string
+		want      int
+	}{
+		{"no preference keeps the default", nil, 1},
+		{"preferred language", []string{"fr"}, 2},
+		{"first available preference wins", []string{"de", "fr-CA", "en"}, 2},
+		{"default wins within a language", []string{"en"}, 1},
+		{"unmatched preference keeps the default", []string{"ja"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sel := resolveAudioTrack(streams, nil, tc.languages)
+			if sel.chosen != tc.want {
+				t.Fatalf("chosen = %d, want %d", sel.chosen, tc.want)
+			}
+		})
+	}
+	// Commentary only wins when it is the only track in the language.
+	commentaryFirst := []store.MediaFileStream{
+		{Index: 1, Type: "audio", Codec: "aac", Language: "fra", Default: true},
+		{Index: 2, Type: "audio", Codec: "aac", Language: "eng", Commentary: true},
+		{Index: 3, Type: "audio", Codec: "aac", Language: "eng"},
+	}
+	if sel := resolveAudioTrack(commentaryFirst, nil, []string{"en"}); sel.chosen != 3 {
+		t.Fatalf("chosen = %d, want the main English track 3", sel.chosen)
+	}
+	// An explicit pick beats the preference.
+	picked := 3
+	if sel := resolveAudioTrack(streams, &picked, []string{"fr"}); sel.chosen != 3 {
+		t.Fatalf("chosen = %d, want the explicit pick 3", sel.chosen)
+	}
+}
+
+// CORE-1680: a two-language MP4 the browser could direct-play still plays the
+// Profile's preferred language: the decision moves to the audio-copy rung
+// with that stream mapped, and the response marks it selected.
+func TestInfoAppliesAudioLanguagePreferenceOnDirectPlayFile(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	mediaID := importProbedMedia(t, st, "fp-two-language", "mp4", "h264", 1920, 1080, multiAudioStreams())
+	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{AudioLanguages: &[]string{"fr"}})
+
+	resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: main10_1080p})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "direct-stream" {
+		t.Fatalf("Decision = %q (%q), want direct-stream for the preferred non-default track", resp.Decision, resp.Reason)
+	}
+	grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, streamtoken.TargetMediaHLS)
+	if err != nil {
+		t.Fatalf("HLS token: %v", err)
+	}
+	if grant.AudioStreamIndex != 3 {
+		t.Fatalf("AudioStreamIndex = %d, want 3 (French stream 2 + 1)", grant.AudioStreamIndex)
+	}
+	if !resp.AudioTracks[1].Selected || resp.AudioTracks[0].Selected {
+		t.Fatalf("AudioTracks = %+v, want the French stream selected", resp.AudioTracks)
+	}
+
+	// A preference the default already satisfies keeps direct play.
+	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{AudioLanguages: &[]string{"en"}})
+	resp, err = service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: main10_1080p})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if resp.Decision != "direct-play" {
+		t.Fatalf("Decision = %q, want direct-play when the default track is preferred", resp.Decision)
 	}
 }

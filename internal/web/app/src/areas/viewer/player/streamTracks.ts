@@ -1,4 +1,8 @@
-import type { PlaybackAudioTrack, PlaybackCaptionTrack } from "../lib/playback";
+import type {
+  PlaybackAudioTrack,
+  PlaybackCaptionTrack,
+  PlaybackSelectedSubtitle,
+} from "../lib/playback";
 
 // The audio and caption tracks playbackInfo lists for the negotiated file
 // (CORE-1709). The player builds its menus from these rather than from the
@@ -38,6 +42,70 @@ export function sameLanguage(a: string | undefined, b: string | undefined): bool
   const right = canonicalLanguage(b);
   if (!left || !right) return left === right;
   return left === right || left.startsWith(`${right}-`) || right.startsWith(`${left}-`);
+}
+
+/** The Profile's track policy as playbackInfo forwards it (CORE-1680). */
+export interface TrackPreferencePolicy {
+  audioLanguages: string[];
+  subtitleLanguages: string[];
+  /** "off" | "smart" | "forced-only" | "always"; "" when unstated. */
+  subtitleMode: string;
+  preferSDH: boolean;
+}
+
+/** Reads playbackInfo.trackPreferences; null when it is absent or not an object. */
+export function trackPreferencePolicy(raw: unknown): TrackPreferencePolicy | null {
+  if (!raw || typeof raw !== "object") return null;
+  const fields = raw as Record<string, unknown>;
+  const languages = (value: unknown) =>
+    Array.isArray(value)
+      ? value.filter((tag): tag is string => typeof tag === "string" && tag.trim() !== "")
+      : [];
+  return {
+    audioLanguages: languages(fields.audioLanguages),
+    subtitleLanguages: languages(fields.subtitleLanguages),
+    subtitleMode: typeof fields.subtitleMode === "string" ? fields.subtitleMode : "",
+    preferSDH: fields.preferSDH === true,
+  };
+}
+
+/** The index of the first track in the most preferred language, or -1 when none matches. */
+export function preferredLanguageIndex(
+  languages: ReadonlyArray<string | undefined>,
+  preferred: readonly string[],
+): number {
+  for (const want of preferred) {
+    const index = languages.findIndex((language) => sameLanguage(language, want));
+    if (index >= 0) return index;
+  }
+  return -1;
+}
+
+/**
+ * The caption track the server's start-of-playback pick names: same kind,
+ * language and forced flag; among those the one whose other roles match, and
+ * a text track before a burn-in one.
+ */
+export function matchSelectedCaption(
+  tracks: readonly PlaybackCaptionTrack[] | undefined,
+  selected: PlaybackSelectedSubtitle | undefined,
+): PlaybackCaptionTrack | undefined {
+  if (!tracks?.length || !selected?.track) return undefined;
+  const { kind, language } = selected.track;
+  const roles = selected.track.roles ?? {};
+  const score = (track: PlaybackCaptionTrack) =>
+    (!!track.sdh === !!roles.sdh ? 4 : 0) +
+    (!!track.commentary === !!roles.commentary && !!track.visualImpaired === !!roles.visualImpaired
+      ? 2
+      : 0) +
+    (isBurnInCaption(track) ? 0 : 1);
+  let best: PlaybackCaptionTrack | undefined;
+  for (const track of tracks) {
+    if (captionKind(track) !== kind || !sameLanguage(track.language, language)) continue;
+    if (!!track.forced !== !!roles.forced) continue;
+    if (!best || score(track) > score(best)) best = track;
+  }
+  return best;
 }
 
 /** The display name of a language tag, or "" when it has none. */

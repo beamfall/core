@@ -7,11 +7,14 @@ import {
   captionTrackLabel,
   isBurnInCaption,
   languageName,
+  matchSelectedCaption,
+  preferredLanguageIndex,
   removeCaptionElements,
   sameLanguage,
   showCaptionElement,
   shownCaptionElement,
   type TrackLabelText,
+  trackPreferencePolicy,
 } from "./streamTracks";
 
 const text: TrackLabelText = {
@@ -104,5 +107,62 @@ describe("caption <track> elements", () => {
     expect(shownCaptionElement(video)).toBeNull();
     removeCaptionElements(video);
     expect(video.querySelectorAll("track")).toHaveLength(0);
+  });
+});
+
+describe("track preferences (CORE-1680)", () => {
+  it("reads the wire policy and ignores what is not a language list", () => {
+    expect(
+      trackPreferencePolicy({
+        audioLanguages: ["fr", 3, ""],
+        subtitleLanguages: ["en"],
+        subtitleMode: "forced-only",
+        preferSDH: true,
+      }),
+    ).toEqual({
+      audioLanguages: ["fr"],
+      subtitleLanguages: ["en"],
+      subtitleMode: "forced-only",
+      preferSDH: true,
+    });
+    expect(trackPreferencePolicy(undefined)).toBeNull();
+    expect(trackPreferencePolicy({})?.audioLanguages).toEqual([]);
+  });
+
+  it("picks the track in the most preferred language that is present", () => {
+    expect(preferredLanguageIndex(["eng", "fra"], ["de", "fr-CA", "en"])).toBe(1);
+    expect(preferredLanguageIndex(["eng", "fra"], ["ja"])).toBe(-1);
+    expect(preferredLanguageIndex(["eng", "fra"], [])).toBe(-1);
+  });
+
+  it("matches the server's subtitle pick by kind, language and forced flag", () => {
+    const forced = matchSelectedCaption(captions, {
+      track: { kind: "sidecar", language: "deu", roles: { forced: true } },
+    });
+    expect(forced?.id).toBe("sidecar-main-0");
+    const muxed = matchSelectedCaption(captions, { track: { kind: "muxed", language: "en" } });
+    expect(muxed?.id).toBe("muxed-main-4");
+    const picture = matchSelectedCaption(captions, { track: { kind: "muxed", language: "es" } });
+    expect(picture?.id).toBe("muxed-main-6");
+    // A forced pick never lands on a full track, nor a sidecar pick on a muxed one.
+    expect(
+      matchSelectedCaption(captions, {
+        track: { kind: "muxed", language: "en", roles: { forced: true } },
+      }),
+    ).toBeUndefined();
+    expect(
+      matchSelectedCaption(captions, { track: { kind: "sidecar", language: "fr" } }),
+    ).toBeUndefined();
+    expect(matchSelectedCaption(captions, undefined)).toBeUndefined();
+  });
+
+  it("prefers a text rendition over a burn-in one for the same pick", () => {
+    const both: PlaybackCaptionTrack[] = [
+      { id: "muxed-main-7", format: "hdmv_pgs_subtitle", streamIndex: 7, language: "eng" },
+      { id: "muxed-main-8", format: "subrip", streamIndex: 8, language: "eng", url: "/s/8.vtt" },
+    ];
+    expect(matchSelectedCaption(both, { track: { kind: "muxed", language: "en" } })?.id).toBe(
+      "muxed-main-8",
+    );
   });
 });
