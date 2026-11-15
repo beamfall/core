@@ -100,6 +100,9 @@ def render_operation(spec, path, method, operation, out):
     out.append(f"### {method.upper()} `{path}`\n")
     if operation.get("summary"):
         out.append(operation["summary"] + "\n")
+    credentials = operation.get("x-credentials")
+    if credentials:
+        out.append("Accepted credentials: " + ", ".join(f"`{c}`" for c in credentials) + "\n")
     scope = operation.get("x-required-scope")
     if scope:
         out.append(f"Required scope: `{scope}`\n")
@@ -123,9 +126,12 @@ def render(spec):
     out.append("")
     out.append("## Authentication\n")
     for name, scheme in spec.get("components", {}).get("securitySchemes", {}).items():
-        out.append(f"**{name}** ({scheme.get('type')}, {scheme.get('scheme')}"
-                   f"{', format `' + scheme['bearerFormat'] + '`' if scheme.get('bearerFormat') else ''}): "
-                   f"{scheme.get('description', '')}\n")
+        if scheme.get("type") == "apiKey":
+            detail = f"{scheme.get('in')} `{scheme.get('name')}`"
+        else:
+            detail = (f"{scheme.get('scheme')}"
+                      f"{', format `' + scheme['bearerFormat'] + '`' if scheme.get('bearerFormat') else ''}")
+        out.append(f"**{name}** ({scheme.get('type')}, {detail}): {scheme.get('description', '')}\n")
     out.append("## Endpoints\n")
     for path, methods in spec["paths"].items():
         for method, operation in methods.items():

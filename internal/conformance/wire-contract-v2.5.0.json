@@ -17801,28 +17801,6 @@
           "kind": "scalar"
         },
         {
-          "name": "playbackAdjustments",
-          "kind": "object",
-          "children": [
-            {
-              "name": "pitchShiftSemitonesMax",
-              "kind": "scalar"
-            },
-            {
-              "name": "pitchShiftSemitonesMin",
-              "kind": "scalar"
-            },
-            {
-              "name": "tempoMax",
-              "kind": "scalar"
-            },
-            {
-              "name": "tempoMin",
-              "kind": "scalar"
-            }
-          ]
-        },
-        {
           "name": "version",
           "kind": "scalar"
         }
@@ -28329,6 +28307,10 @@
         "method": "GET",
         "pattern": "/v1/libraries",
         "scope": "read-catalog",
+        "credentials": [
+          "scopedKey",
+          "deviceSession"
+        ],
         "revealClass": "content-json",
         "response": {
           "contentType": "application/json",
@@ -28389,6 +28371,10 @@
         "method": "GET",
         "pattern": "/v1/libraries/{libraryID}/media",
         "scope": "read-catalog",
+        "credentials": [
+          "scopedKey",
+          "deviceSession"
+        ],
         "revealClass": "content-json",
         "response": {
           "contentType": "application/json",
@@ -28470,6 +28456,10 @@
         "method": "GET",
         "pattern": "/v1/media/{mediaID}",
         "scope": "read-catalog",
+        "credentials": [
+          "scopedKey",
+          "deviceSession"
+        ],
         "revealClass": "content-json",
         "response": {
           "contentType": "application/json",
@@ -28520,10 +28510,420 @@
         }
       },
       {
+        "operationID": "getPlaybackInfo",
+        "method": "POST",
+        "pattern": "/v1/media/{mediaID}/playback-info",
+        "credentials": [
+          "deviceSession"
+        ],
+        "revealClass": "content-json",
+        "request": {
+          "contentType": "application/json",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "capabilityProfile",
+                "shape": {
+                  "type": "object",
+                  "fields": [
+                    {
+                      "name": "client",
+                      "shape": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "name": "containers",
+                      "shape": {
+                        "type": "array",
+                        "element": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "name": "directCodecs",
+                      "shape": {
+                        "type": "array",
+                        "element": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "name": "videoCodecs",
+                      "shape": {
+                        "type": "array",
+                        "element": {
+                          "type": "object",
+                          "fields": [
+                            {
+                              "name": "codec",
+                              "shape": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "name": "profiles",
+                              "shape": {
+                                "type": "array",
+                                "element": {
+                                  "type": "string"
+                                }
+                              },
+                              "omitempty": true
+                            },
+                            {
+                              "name": "maxHeight",
+                              "shape": {
+                                "type": "integer"
+                              },
+                              "omitempty": true
+                            },
+                            {
+                              "name": "maxBitrate",
+                              "shape": {
+                                "type": "integer"
+                              },
+                              "omitempty": true
+                            },
+                            {
+                              "name": "maxLevel",
+                              "shape": {
+                                "type": "integer"
+                              },
+                              "omitempty": true
+                            }
+                          ]
+                        }
+                      },
+                      "omitempty": true
+                    },
+                    {
+                      "name": "audioCodecs",
+                      "shape": {
+                        "type": "array",
+                        "element": {
+                          "type": "object",
+                          "fields": [
+                            {
+                              "name": "codec",
+                              "shape": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "name": "maxChannels",
+                              "shape": {
+                                "type": "integer"
+                              },
+                              "omitempty": true
+                            }
+                          ]
+                        }
+                      },
+                      "omitempty": true
+                    },
+                    {
+                      "name": "hdrFormats",
+                      "shape": {
+                        "type": "array",
+                        "element": {
+                          "type": "string"
+                        }
+                      },
+                      "omitempty": true
+                    },
+                    {
+                      "name": "subtitleFormats",
+                      "shape": {
+                        "type": "array",
+                        "element": {
+                          "type": "string"
+                        }
+                      },
+                      "omitempty": true
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "response": {
+          "contentType": "application/json",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "mediaID",
+                "shape": {
+                  "type": "string"
+                }
+              },
+              {
+                "name": "decision",
+                "shape": {
+                  "type": "string"
+                }
+              },
+              {
+                "name": "reason",
+                "shape": {
+                  "type": "string"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "streamTokenRequired",
+                "shape": {
+                  "type": "boolean"
+                }
+              },
+              {
+                "name": "streams",
+                "shape": {
+                  "type": "array",
+                  "element": {
+                    "type": "object",
+                    "fields": [
+                      {
+                        "name": "id",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "kind",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "url",
+                        "shape": {
+                          "type": "string"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "token",
+                        "shape": {
+                          "type": "string"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "expiresAt",
+                        "shape": {
+                          "type": "string"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "renditions",
+                        "shape": {
+                          "type": "array",
+                          "element": {
+                            "type": "object",
+                            "fields": [
+                              {
+                                "name": "id",
+                                "shape": {
+                                  "type": "string"
+                                }
+                              },
+                              {
+                                "name": "height",
+                                "shape": {
+                                  "type": "integer"
+                                },
+                                "omitempty": true
+                              },
+                              {
+                                "name": "bandwidth",
+                                "shape": {
+                                  "type": "integer"
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "omitempty": true
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "durationSeconds",
+                "shape": {
+                  "type": "integer"
+                }
+              },
+              {
+                "name": "positionSeconds",
+                "shape": {
+                  "type": "integer"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "captionTracks",
+                "shape": {
+                  "type": "array",
+                  "element": {
+                    "type": "object",
+                    "fields": [
+                      {
+                        "name": "id",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "url",
+                        "shape": {
+                          "type": "string"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "format",
+                        "shape": {
+                          "type": "string"
+                        }
+                      },
+                      {
+                        "name": "streamIndex",
+                        "shape": {
+                          "type": "integer"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "language",
+                        "shape": {
+                          "type": "string"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "forced",
+                        "shape": {
+                          "type": "boolean"
+                        },
+                        "omitempty": true
+                      },
+                      {
+                        "name": "sdh",
+                        "shape": {
+                          "type": "boolean"
+                        },
+                        "omitempty": true
+                      }
+                    ]
+                  }
+                },
+                "omitempty": true
+              }
+            ]
+          }
+        },
+        "listBounds": [
+          {
+            "field": "streams",
+            "maxItems": 16
+          },
+          {
+            "field": "streams.renditions",
+            "maxItems": 16
+          },
+          {
+            "field": "captionTracks",
+            "maxItems": 64
+          }
+        ]
+      },
+      {
+        "operationID": "reportProgress",
+        "method": "PUT",
+        "pattern": "/v1/media/{mediaID}/progress",
+        "credentials": [
+          "deviceSession"
+        ],
+        "revealClass": "content-json",
+        "request": {
+          "contentType": "application/json",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "positionSeconds",
+                "shape": {
+                  "type": "integer"
+                }
+              },
+              {
+                "name": "durationSeconds",
+                "shape": {
+                  "type": "integer"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "finished",
+                "shape": {
+                  "type": "boolean"
+                },
+                "omitempty": true
+              },
+              {
+                "name": "eventTimeMS",
+                "shape": {
+                  "type": "integer"
+                },
+                "omitempty": true
+              }
+            ]
+          }
+        },
+        "response": {
+          "contentType": "application/json",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "mediaID",
+                "shape": {
+                  "type": "string"
+                }
+              },
+              {
+                "name": "positionSeconds",
+                "shape": {
+                  "type": "integer"
+                }
+              },
+              {
+                "name": "watched",
+                "shape": {
+                  "type": "boolean"
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
         "operationID": "listSessions",
         "method": "GET",
         "pattern": "/v1/sessions",
         "scope": "read-sessions",
+        "credentials": [
+          "scopedKey"
+        ],
         "revealClass": "content-json",
         "response": {
           "contentType": "application/json",
@@ -28626,6 +29026,9 @@
         "method": "POST",
         "pattern": "/v1/playback-control",
         "scope": "playback-control",
+        "credentials": [
+          "scopedKey"
+        ],
         "revealClass": "content-json",
         "request": {
           "contentType": "application/json",
@@ -28673,6 +29076,9 @@
         "method": "POST",
         "pattern": "/v1/scans",
         "scope": "ingest",
+        "credentials": [
+          "scopedKey"
+        ],
         "revealClass": "content-json",
         "request": {
           "contentType": "application/json",
@@ -28723,6 +29129,9 @@
         "method": "GET",
         "pattern": "/v1/backups/{libraryID}/status",
         "scope": "backup",
+        "credentials": [
+          "scopedKey"
+        ],
         "revealClass": "content-json",
         "response": {
           "contentType": "application/json",
@@ -28756,6 +29165,9 @@
         "method": "POST",
         "pattern": "/v1/backups/media",
         "scope": "backup",
+        "credentials": [
+          "scopedKey"
+        ],
         "revealClass": "content-json",
         "request": {
           "contentType": "multipart/form-data",
@@ -28833,6 +29245,9 @@
         "method": "GET",
         "pattern": "/v1/events",
         "scope": "events-subscribe",
+        "credentials": [
+          "scopedKey"
+        ],
         "revealClass": "event-fanout"
       }
     ],
@@ -30072,29 +30487,6 @@
             "type": "integer",
             "optional": true
           }
-        },
-        {
-          "name": "adjustment",
-          "shape": {
-            "type": "object",
-            "fields": [
-              {
-                "name": "pitchShiftSemitones",
-                "shape": {
-                  "type": "integer",
-                  "optional": true
-                }
-              },
-              {
-                "name": "tempo",
-                "shape": {
-                  "type": "number",
-                  "optional": true
-                }
-              }
-            ],
-            "optional": true
-          }
         }
       ]
     },
@@ -30946,29 +31338,6 @@
           }
         },
         {
-          "name": "adjustment",
-          "shape": {
-            "type": "object",
-            "fields": [
-              {
-                "name": "pitchShiftSemitones",
-                "shape": {
-                  "type": "integer",
-                  "optional": true
-                }
-              },
-              {
-                "name": "tempo",
-                "shape": {
-                  "type": "number",
-                  "optional": true
-                }
-              }
-            ],
-            "optional": true
-          }
-        },
-        {
           "name": "systemSurfaceDisclosure",
           "shape": {
             "type": "object",
@@ -30995,8 +31364,7 @@
       "selectedSubtitleTrack.track is the format-independent language+kind+role identity. It is NOT the request-side selectedSubtitleIndex ffprobe stream index, which is unstable across renditions. roles is a SET — forced/sdh/visualImpaired/commentary co-occur and have no precedence order.",
       "selectedSubtitleTrack.track.kind is the closed vocabulary muxed|sidecar. Reflection publishes it as a generic string, so the vocabulary is enumerated here; growing it is a deliberate wire-contract change.",
       "subtitlesUnavailableReason is free text and is INDEPENDENT of decision. Subtitles being unavailable never degrades the whole-media decision verdict (direct-play|direct-stream|precomputed-rendition|transcode|unavailable). Absent/empty means subtitles are not known to be unavailable.",
-      "systemSurfaceDisclosure.metadataAllowed is server-authoritative for the response Media. It is true only when the Media metadata is visible to every Profile with Reveal off. Missing fields, unknown snapshot versions, and false mean clients must use generic system-surface metadata.",
-      "adjustment requests a pitch shift (pitchShiftSemitones, whole semitones) and a tempo factor (tempo; 0 or omitted is 1) inside the ranges serverInfo.playbackAdjustments advertises; out-of-range values are rejected. It applies only to the main item of an audio Media when a transcode is admitted: the response echoes adjustment only when applied, and an absent response adjustment means the stream plays unadjusted. An adjusted stream runs on its own clock (stream seconds = song seconds / tempo) while timeline and reported progress stay in song seconds. Changing the adjustment mid-play is a new playback info call: report progress first, and the new stream starts at the segment holding timeline.positionSeconds."
+      "systemSurfaceDisclosure.metadataAllowed is server-authoritative for the response Media. It is true only when the Media metadata is visible to every Profile with Reveal off. Missing fields, unknown snapshot versions, and false mean clients must use generic system-surface metadata."
     ],
     "streamToken": {
       "type": "object",
@@ -31175,27 +31543,6 @@
           "name": "playbackRenditionID",
           "shape": {
             "type": "string",
-            "optional": true
-          }
-        },
-        {
-          "name": "composedPicture",
-          "shape": {
-            "type": "boolean",
-            "optional": true
-          }
-        },
-        {
-          "name": "pitchShiftSemitones",
-          "shape": {
-            "type": "integer",
-            "optional": true
-          }
-        },
-        {
-          "name": "tempo",
-          "shape": {
-            "type": "number",
             "optional": true
           }
         },

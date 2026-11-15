@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Beamfall Developer API",
-    "version": "1.1.0",
-    "description": "The Beamfall `/v1/` stable developer contract (ADR-0040). Every endpoint under `/v1/` is part of the stability promise: no breaking changes within this major version; a breaking change requires a new prefix (`/v2/`) with a minimum two-release deprecation window. Endpoints are authenticated with a scoped developer API key (`Authorization: Bearer bfk_...`) carrying a subset of the closed API-scope vocabulary; each operation declares the single scope it requires. All catalog and session reads are Reveal-filtered and Profile-bound to the key's binding (ADR-0004): a Profile-bound key never sees content or sessions outside its Profile, and restricted content it cannot Reveal never appears. The wire entity is `Media`; this surface is domain-agnostic (no plugin/domain vocabulary)."
+    "version": "1.2.0",
+    "description": "The Beamfall `/v1/` stable developer contract (ADR-0040). Every endpoint under `/v1/` is part of the stability promise: no breaking changes within this major version; a breaking change requires a new prefix (`/v2/`) with a minimum two-release deprecation window. Each operation lists the credentials it accepts in `x-credentials`. Automation operations accept a scoped developer API key (`Authorization: Bearer bfk_...`) carrying the single scope the operation declares in `x-required-scope`. Client operations accept an enrolled device Session (the `X-Beamfall-Session`, `X-Beamfall-Device` and `X-Beamfall-Device-Secret` headers together), which acts as that Session's Profile with its reveal state. The catalog reads accept either. Adding an operation, a response field or an optional request field is a minor version change, and clients must ignore response fields they do not know. All catalog and session reads are Reveal-filtered and Profile-bound to the key's binding (ADR-0004): a Profile-bound key never sees content or sessions outside its Profile, and restricted content it cannot Reveal never appears. The wire entity is `Media`; this surface is domain-agnostic (no plugin/domain vocabulary)."
   },
   "servers": [
     { "url": "/", "description": "The Beamfall home server origin." }
@@ -14,7 +14,25 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "bfk_<id>_<secret>",
-        "description": "A scoped developer API key (ADR-0040 §2.2), minted by a server operator from the Console with a chosen scope subset and an optional Profile binding. Presented as `Authorization: Bearer bfk_...`. A session credential or an admin API token carries no API scopes and is rejected by every `/v1/` endpoint."
+        "description": "A scoped developer API key (ADR-0040 §2.2), minted by a server operator from the Console with a chosen scope subset and an optional Profile binding. Presented as `Authorization: Bearer bfk_...`. An admin API token carries no API scopes and is rejected by every `/v1/` endpoint."
+      },
+      "deviceSession": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Beamfall-Session",
+        "description": "The enrolled device Session ID, obtained by pairing the device. All three device headers are required together; an integration Session or an admin API token is not a device Session."
+      },
+      "deviceID": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Beamfall-Device",
+        "description": "The paired device ID. All three device headers are required together; an integration Session or an admin API token is not a device Session."
+      },
+      "deviceSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Beamfall-Device-Secret",
+        "description": "The paired device secret. All three device headers are required together; an integration Session or an admin API token is not a device Session."
       }
     },
     "schemas": {
@@ -119,6 +137,107 @@
         },
         "required": ["libraryID"]
       },
+      "CapabilityProfile": {
+        "type": "object",
+        "description": "What the client can play. The server picks direct play or transcode from it.",
+        "properties": {
+          "client": { "type": "string", "description": "A short client identifier, used for logging and device quirks." },
+          "containers": { "type": "array", "items": { "type": "string" } },
+          "directCodecs": { "type": "array", "items": { "type": "string" } },
+          "videoCodecs": { "type": "array", "items": { "$ref": "#/components/schemas/VideoCodecCapability" } },
+          "audioCodecs": { "type": "array", "items": { "$ref": "#/components/schemas/AudioCodecCapability" } },
+          "hdrFormats": { "type": "array", "items": { "type": "string" } },
+          "subtitleFormats": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["client", "containers", "directCodecs"]
+      },
+      "VideoCodecCapability": {
+        "type": "object",
+        "properties": {
+          "codec": { "type": "string" },
+          "profiles": { "type": "array", "items": { "type": "string" } },
+          "maxHeight": { "type": "integer" },
+          "maxBitrate": { "type": "integer" },
+          "maxLevel": { "type": "integer" }
+        },
+        "required": ["codec"]
+      },
+      "AudioCodecCapability": {
+        "type": "object",
+        "properties": { "codec": { "type": "string" }, "maxChannels": { "type": "integer" } },
+        "required": ["codec"]
+      },
+      "PlaybackInfoRequest": {
+        "type": "object",
+        "properties": { "capabilityProfile": { "$ref": "#/components/schemas/CapabilityProfile" } },
+        "required": ["capabilityProfile"]
+      },
+      "PlaybackInfo": {
+        "type": "object",
+        "description": "The playback decision for one Media and capability profile.",
+        "properties": {
+          "mediaID": { "type": "string" },
+          "decision": { "type": "string", "description": "How the server will deliver the Media, for example direct play or transcode." },
+          "reason": { "type": "string" },
+          "streamTokenRequired": { "type": "boolean" },
+          "streams": { "type": "array", "items": { "$ref": "#/components/schemas/PlaybackStream" }, "maxItems": 16 },
+          "durationSeconds": { "type": "integer" },
+          "positionSeconds": { "type": "integer", "description": "The resume position for the device Session's Profile." },
+          "captionTracks": { "type": "array", "items": { "$ref": "#/components/schemas/CaptionTrack" }, "maxItems": 64 }
+        },
+        "required": ["mediaID", "decision", "streamTokenRequired", "streams", "durationSeconds"]
+      },
+      "PlaybackStream": {
+        "type": "object",
+        "description": "One playable stream. The `url` carries its own stream token, so the client fetches it without other credentials until `expiresAt` (RFC 3339). `token` is that token on its own.",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "url": { "type": "string" },
+          "token": { "type": "string" },
+          "expiresAt": { "type": "string" },
+          "renditions": { "type": "array", "items": { "$ref": "#/components/schemas/Rendition" }, "maxItems": 16 }
+        },
+        "required": ["id", "kind"]
+      },
+      "Rendition": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "height": { "type": "integer" }, "bandwidth": { "type": "integer" } },
+        "required": ["id", "bandwidth"]
+      },
+      "CaptionTrack": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "format": { "type": "string" },
+          "streamIndex": { "type": "integer", "description": "Index of the subtitle stream muxed in the media. Absent for sidecar files. A muxed text stream can also have a url to fetch it converted." },
+          "language": { "type": "string" },
+          "forced": { "type": "boolean" },
+          "sdh": { "type": "boolean" }
+        },
+        "required": ["id", "format"]
+      },
+      "ProgressRequest": {
+        "type": "object",
+        "properties": {
+          "positionSeconds": { "type": "integer", "minimum": 0 },
+          "durationSeconds": { "type": "integer", "minimum": 0, "description": "Omit or send 0 to use the Media's duration." },
+          "finished": { "type": "boolean", "description": "True when playback reached the end." },
+          "eventTimeMS": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "The client clock, in Unix milliseconds, when it observed the position. The server keeps the latest report by this time."
+          }
+        },
+        "required": ["positionSeconds"]
+      },
+      "Progress": {
+        "type": "object",
+        "properties": { "mediaID": { "type": "string" }, "positionSeconds": { "type": "integer" }, "watched": { "type": "boolean" } },
+        "required": ["mediaID", "positionSeconds", "watched"]
+      },
       "Error": {
         "type": "object",
         "properties": { "error": { "type": "string" } },
@@ -131,7 +250,19 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "Forbidden": {
-        "description": "The scoped key does not carry the scope this operation requires.",
+        "description": "The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "BadRequest": {
+        "description": "Invalid JSON or an invalid field value.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "NotFound": {
+        "description": "Media not found or not visible.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unavailable": {
+        "description": "The operation is not available on this server.",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       }
     }
@@ -142,9 +273,10 @@
       "get": {
         "operationId": "listLibraries",
         "summary": "List the Libraries visible to the key.",
-        "description": "Requires the `read-catalog` scope. Reveal-filtered and Profile-bound: a Profile-bound key sees only its Profile's granted Libraries, and a restricted Library it has not Revealed never appears.",
+        "description": "Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Reveal-filtered and Profile-bound: a Profile-bound key sees only its Profile's granted Libraries, and a restricted Library it has not Revealed never appears.",
         "x-required-scope": "read-catalog",
-        "security": [{ "scopedKey": ["read-catalog"] }],
+        "x-credentials": ["scopedKey", "deviceSession"],
+        "security": [{ "scopedKey": ["read-catalog"] }, { "deviceSession": [], "deviceID": [], "deviceSecret": [] }],
         "parameters": [
           { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Opaque cursor returned as nextCursor by the previous page." },
           { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }, "description": "Maximum number of Libraries to return." }
@@ -174,9 +306,10 @@
       "get": {
         "operationId": "listLibraryMedia",
         "summary": "List the Media in one Library.",
-        "description": "Requires the `read-catalog` scope. Reveal-filtered: a Library outside the key's grants (or restricted and unrevealed) yields an empty list, never an error.",
+        "description": "Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Reveal-filtered: a Library outside the key's grants (or restricted and unrevealed) yields an empty list, never an error.",
         "x-required-scope": "read-catalog",
-        "security": [{ "scopedKey": ["read-catalog"] }],
+        "x-credentials": ["scopedKey", "deviceSession"],
+        "security": [{ "scopedKey": ["read-catalog"] }, { "deviceSession": [], "deviceID": [], "deviceSecret": [] }],
         "parameters": [
           { "name": "libraryID", "in": "path", "required": true, "schema": { "type": "string" } },
           { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Opaque cursor returned as nextCursor by the previous page." },
@@ -208,9 +341,10 @@
       "get": {
         "operationId": "getMedia",
         "summary": "Read one Media's detail.",
-        "description": "Requires the `read-catalog` scope. Reveal-filtered: a hidden or unknown id both resolve to 404, so the read is never an existence oracle for Media the key cannot see.",
+        "description": "Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Reveal-filtered: a hidden or unknown id both resolve to 404, so the read is never an existence oracle for Media the key cannot see.",
         "x-required-scope": "read-catalog",
-        "security": [{ "scopedKey": ["read-catalog"] }],
+        "x-credentials": ["scopedKey", "deviceSession"],
+        "security": [{ "scopedKey": ["read-catalog"] }, { "deviceSession": [], "deviceID": [], "deviceSecret": [] }],
         "parameters": [
           { "name": "mediaID", "in": "path", "required": true, "schema": { "type": "string" } }
         ],
@@ -225,12 +359,60 @@
         }
       }
     },
+    "/v1/media/{mediaID}/playback-info": {
+      "post": {
+        "operationId": "getPlaybackInfo",
+        "summary": "Start playback: get streams for a capability profile.",
+        "description": "Accepts an enrolled device Session only. Runs the playback decision for the declared capability profile as the Session's Profile and returns stream URLs, stream tokens and their expiries, renditions, caption tracks and the resume position. Hidden and unknown Media both answer 404.",
+        "x-credentials": ["deviceSession"],
+        "security": [{ "deviceSession": [], "deviceID": [], "deviceSecret": [] }],
+        "parameters": [{ "name": "mediaID", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlaybackInfoRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "The playback decision.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PlaybackInfo" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/v1/media/{mediaID}/progress": {
+      "put": {
+        "operationId": "reportProgress",
+        "summary": "Report the playback position.",
+        "description": "Accepts an enrolled device Session only. Records the position for the Session's Profile with the server's resume policy for the Media, and marks the Media watched when playback finishes or passes the watched threshold. Hidden and unknown Media both answer 404 and nothing is written.",
+        "x-credentials": ["deviceSession"],
+        "security": [{ "deviceSession": [], "deviceID": [], "deviceSecret": [] }],
+        "parameters": [{ "name": "mediaID", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProgressRequest" } } } },
+        "responses": {
+          "200": {
+            "description": "The stored position and watched state.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Progress" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
     "/v1/sessions": {
       "get": {
         "operationId": "listSessions",
         "summary": "List active playback sessions.",
         "description": "Requires the `read-sessions` scope. A Profile-bound key sees only its own Profile's sessions; an admin-scoped key (no Profile binding) sees all. Media-identifying fields are omitted for sessions playing Media the key cannot currently Reveal.",
         "x-required-scope": "read-sessions",
+        "x-credentials": ["scopedKey"],
         "security": [{ "scopedKey": ["read-sessions"] }],
         "parameters": [
           { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" }, "description": "Opaque cursor returned as nextCursor by the previous page." },
@@ -263,6 +445,7 @@
         "summary": "Issue a transport command to an active playback session.",
         "description": "Requires the `playback-control` scope. Publishes one closed-vocabulary transport command (`pause`, `resume`, `skip-media`, `skip-track`) to the target session's event channel; success means the command was authorized and published, not that the target device has applied it. A Profile-bound key can control only its own Profile's reveal-visible active sessions. An admin-scoped key (no Profile binding) can control reveal-visible active sessions across Profiles, matching ADR-0040's operator-created all-session automation key model. Missing, cross-Profile, inactive, and reveal-hidden targets all resolve to 404.",
         "x-required-scope": "playback-control",
+        "x-credentials": ["scopedKey"],
         "security": [{ "scopedKey": ["playback-control"] }],
         "requestBody": {
           "required": true,
@@ -286,6 +469,7 @@
         "summary": "Trigger a library scan/import.",
         "description": "Requires the `ingest` scope. Enqueues a durable scan job for a Library the key can see; an empty root scans the Library's persisted roots. A Library outside the key's grants is reported as 404 (never an existence oracle).",
         "x-required-scope": "ingest",
+        "x-credentials": ["scopedKey"],
         "security": [{ "scopedKey": ["ingest"] }],
         "requestBody": {
           "required": true,
@@ -332,6 +516,7 @@
         "summary": "Read backup ingest status for one Library.",
         "description": "Requires the `backup` scope and a Profile-bound key. Returns the caller Profile's pause/quota state for the target Library; paused state is explicit so a client can surface that backup is stopped instead of silently dropping uploads.",
         "x-required-scope": "backup",
+        "x-credentials": ["scopedKey"],
         "security": [{ "scopedKey": ["backup"] }],
         "parameters": [
           { "name": "libraryID", "in": "path", "required": true, "schema": { "type": "string" } }
@@ -354,6 +539,7 @@
         "summary": "Upload one profile-owned backup Media blob.",
         "description": "Requires the `backup` scope and a Profile-bound key. The request is multipart/form-data with `libraryID`, optional `title`, `class`, `container`, `codec`, and a `file` part. The server applies quota and disk-headroom checks, rejects hostile image headers for image uploads, encrypts the uploaded bytes before durable storage, and registers Media through the target Library catalog plane.",
         "x-required-scope": "backup",
+        "x-credentials": ["scopedKey"],
         "security": [{ "scopedKey": ["backup"] }],
         "requestBody": {
           "required": true,
@@ -397,6 +583,7 @@
         "summary": "Subscribe to the server-sent event stream.",
         "description": "Requires the `events-subscribe` scope. A long-lived `text/event-stream` of Reveal-filtered server events (playback, library, and — for admin-scoped keys — Profile lifecycle). Event payloads carry only identifiers and state; a restricted-Media event never reaches a key that cannot Reveal it. This is an alias of the pre-existing `/api/events` route on the stable prefix; both resolve through the same `events-subscribe` gate. Reconnect with the standard `Last-Event-ID` header or the `?after=` query cursor.",
         "x-required-scope": "events-subscribe",
+        "x-credentials": ["scopedKey"],
         "security": [{ "scopedKey": ["events-subscribe"] }],
         "parameters": [
           { "name": "after", "in": "query", "required": false, "schema": { "type": "integer" }, "description": "Resume cursor: deliver only events after this sequence number." }

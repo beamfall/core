@@ -264,6 +264,8 @@ var v1PublicLine = []string{
 	"GET /v1/libraries",
 	"GET /v1/libraries/{libraryID}/media",
 	"GET /v1/media/{mediaID}",
+	"POST /v1/media/{mediaID}/playback-info",
+	"PUT /v1/media/{mediaID}/progress",
 	"GET /v1/sessions",
 	"POST /v1/playback-control",
 	"POST /v1/scans",

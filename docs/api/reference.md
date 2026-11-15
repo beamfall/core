@@ -1,14 +1,20 @@
 # Beamfall Developer API — reference
 
-Version 1.1.0 · OpenAPI 3.1.0 · generated from `docs/api/openapi.json` by `script/gen-api-docs.sh` — do not edit by hand.
+Version 1.2.0 · OpenAPI 3.1.0 · generated from `docs/api/openapi.json` by `script/gen-api-docs.sh` — do not edit by hand.
 
-The Beamfall `/v1/` stable developer contract (ADR-0040). Every endpoint under `/v1/` is part of the stability promise: no breaking changes within this major version; a breaking change requires a new prefix (`/v2/`) with a minimum two-release deprecation window. Endpoints are authenticated with a scoped developer API key (`Authorization: Bearer bfk_...`) carrying a subset of the closed API-scope vocabulary; each operation declares the single scope it requires. All catalog and session reads are Reveal-filtered and Profile-bound to the key's binding (ADR-0004): a Profile-bound key never sees content or sessions outside its Profile, and restricted content it cannot Reveal never appears. The wire entity is `Media`; this surface is domain-agnostic (no plugin/domain vocabulary).
+The Beamfall `/v1/` stable developer contract (ADR-0040). Every endpoint under `/v1/` is part of the stability promise: no breaking changes within this major version; a breaking change requires a new prefix (`/v2/`) with a minimum two-release deprecation window. Each operation lists the credentials it accepts in `x-credentials`. Automation operations accept a scoped developer API key (`Authorization: Bearer bfk_...`) carrying the single scope the operation declares in `x-required-scope`. Client operations accept an enrolled device Session (the `X-Beamfall-Session`, `X-Beamfall-Device` and `X-Beamfall-Device-Secret` headers together), which acts as that Session's Profile with its reveal state. The catalog reads accept either. Adding an operation, a response field or an optional request field is a minor version change, and clients must ignore response fields they do not know. All catalog and session reads are Reveal-filtered and Profile-bound to the key's binding (ADR-0004): a Profile-bound key never sees content or sessions outside its Profile, and restricted content it cannot Reveal never appears. The wire entity is `Media`; this surface is domain-agnostic (no plugin/domain vocabulary).
 
 Server: `/` — The Beamfall home server origin.
 
 ## Authentication
 
-**scopedKey** (http, bearer, format `bfk_<id>_<secret>`): A scoped developer API key (ADR-0040 §2.2), minted by a server operator from the Console with a chosen scope subset and an optional Profile binding. Presented as `Authorization: Bearer bfk_...`. A session credential or an admin API token carries no API scopes and is rejected by every `/v1/` endpoint.
+**scopedKey** (http, bearer, format `bfk_<id>_<secret>`): A scoped developer API key (ADR-0040 §2.2), minted by a server operator from the Console with a chosen scope subset and an optional Profile binding. Presented as `Authorization: Bearer bfk_...`. An admin API token carries no API scopes and is rejected by every `/v1/` endpoint.
+
+**deviceSession** (apiKey, header `X-Beamfall-Session`): The enrolled device Session ID, obtained by pairing the device. All three device headers are required together; an integration Session or an admin API token is not a device Session.
+
+**deviceID** (apiKey, header `X-Beamfall-Device`): The paired device ID. All three device headers are required together; an integration Session or an admin API token is not a device Session.
+
+**deviceSecret** (apiKey, header `X-Beamfall-Device-Secret`): The paired device secret. All three device headers are required together; an integration Session or an admin API token is not a device Session.
 
 ## Endpoints
 
@@ -16,9 +22,11 @@ Server: `/` — The Beamfall home server origin.
 
 List the Libraries visible to the key.
 
+Accepted credentials: `scopedKey`, `deviceSession`
+
 Required scope: `read-catalog`
 
-Requires the `read-catalog` scope. Reveal-filtered and Profile-bound: a Profile-bound key sees only its Profile's granted Libraries, and a restricted Library it has not Revealed never appears.
+Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Reveal-filtered and Profile-bound: a Profile-bound key sees only its Profile's granted Libraries, and a restricted Library it has not Revealed never appears.
 
 **Parameters**
 
@@ -33,15 +41,17 @@ Requires the `read-catalog` scope. Reveal-filtered and Profile-bound: a Profile-
 | --- | --- | --- |
 | 200 | The visible Libraries. | object {`libraries`: array of [Library](#library), `nextCursor`: string} |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 
 ### GET `/v1/libraries/{libraryID}/media`
 
 List the Media in one Library.
 
+Accepted credentials: `scopedKey`, `deviceSession`
+
 Required scope: `read-catalog`
 
-Requires the `read-catalog` scope. Reveal-filtered: a Library outside the key's grants (or restricted and unrevealed) yields an empty list, never an error.
+Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Reveal-filtered: a Library outside the key's grants (or restricted and unrevealed) yields an empty list, never an error.
 
 **Parameters**
 
@@ -58,15 +68,17 @@ Requires the `read-catalog` scope. Reveal-filtered: a Library outside the key's 
 | 200 | The Media in the Library, Reveal-filtered. | object {`media`: array of [MediaSummary](#mediasummary), `nextCursor`: string} |
 | 400 | libraryID missing. | [Error](#error) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 
 ### GET `/v1/media/{mediaID}`
 
 Read one Media's detail.
 
+Accepted credentials: `scopedKey`, `deviceSession`
+
 Required scope: `read-catalog`
 
-Requires the `read-catalog` scope. Reveal-filtered: a hidden or unknown id both resolve to 404, so the read is never an existence oracle for Media the key cannot see.
+Accepts a scoped key with the `read-catalog` scope or an enrolled device Session. Reveal-filtered: a hidden or unknown id both resolve to 404, so the read is never an existence oracle for Media the key cannot see.
 
 **Parameters**
 
@@ -80,12 +92,79 @@ Requires the `read-catalog` scope. Reveal-filtered: a hidden or unknown id both 
 | --- | --- | --- |
 | 200 | The Media detail. | [MediaDetail](#mediadetail) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 | 404 | Media not found or not visible. | [Error](#error) |
+
+### POST `/v1/media/{mediaID}/playback-info`
+
+Start playback: get streams for a capability profile.
+
+Accepted credentials: `deviceSession`
+
+Accepts an enrolled device Session only. Runs the playback decision for the declared capability profile as the Session's Profile and returns stream URLs, stream tokens and their expiries, renditions, caption tracks and the resume position. Hidden and unknown Media both answer 404.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `mediaID` | path | string | yes |  |
+
+**Request body** (`application/json`)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `capabilityProfile` | [CapabilityProfile](#capabilityprofile) | yes |  |
+
+**Responses**
+
+| Status | Description | Body |
+| --- | --- | --- |
+| 200 | The playback decision. | [PlaybackInfo](#playbackinfo) |
+| 400 | Invalid JSON or an invalid field value. | [Error](#error) |
+| 401 | No valid credential was presented. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
+| 404 | Media not found or not visible. | [Error](#error) |
+| 503 | The operation is not available on this server. | [Error](#error) |
+
+### PUT `/v1/media/{mediaID}/progress`
+
+Report the playback position.
+
+Accepted credentials: `deviceSession`
+
+Accepts an enrolled device Session only. Records the position for the Session's Profile with the server's resume policy for the Media, and marks the Media watched when playback finishes or passes the watched threshold. Hidden and unknown Media both answer 404 and nothing is written.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `mediaID` | path | string | yes |  |
+
+**Request body** (`application/json`)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `positionSeconds` | integer | yes |  |
+| `durationSeconds` | integer | no | Omit or send 0 to use the Media's duration. |
+| `finished` | boolean | no | True when playback reached the end. |
+| `eventTimeMS` | integer | no | The client clock, in Unix milliseconds, when it observed the position. The server keeps the latest report by this time. |
+
+**Responses**
+
+| Status | Description | Body |
+| --- | --- | --- |
+| 200 | The stored position and watched state. | [Progress](#progress) |
+| 400 | Invalid JSON or an invalid field value. | [Error](#error) |
+| 401 | No valid credential was presented. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
+| 404 | Media not found or not visible. | [Error](#error) |
+| 503 | The operation is not available on this server. | [Error](#error) |
 
 ### GET `/v1/sessions`
 
 List active playback sessions.
+
+Accepted credentials: `scopedKey`
 
 Required scope: `read-sessions`
 
@@ -104,11 +183,13 @@ Requires the `read-sessions` scope. A Profile-bound key sees only its own Profil
 | --- | --- | --- |
 | 200 | The active sessions. | object {`sessions`: array of [Session](#session), `nextCursor`: string} |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 
 ### POST `/v1/playback-control`
 
 Issue a transport command to an active playback session.
+
+Accepted credentials: `scopedKey`
 
 Required scope: `playback-control`
 
@@ -128,12 +209,14 @@ Requires the `playback-control` scope. Publishes one closed-vocabulary transport
 | 202 | The transport command was accepted for delivery. | [PlaybackControlResponse](#playbackcontrolresponse) |
 | 400 | sessionID missing, command missing or outside the closed transport vocabulary, or invalid JSON. | [Error](#error) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 | 404 | Session not found, not active, outside the key's Profile binding, or not reveal-visible. | [Error](#error) |
 
 ### POST `/v1/scans`
 
 Trigger a library scan/import.
+
+Accepted credentials: `scopedKey`
 
 Required scope: `ingest`
 
@@ -153,13 +236,15 @@ Requires the `ingest` scope. Enqueues a durable scan job for a Library the key c
 | 202 | The scan job(s) were enqueued. | object {`jobIDs`: array of string} |
 | 400 | libraryID missing, the Library has no roots, or more than 200 roots require selecting one root. | [Error](#error) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 | 404 | Unknown or invisible Library. | [Error](#error) |
 | 500 | A scan job could not be enqueued. Jobs queued for earlier roots before the failure stay queued and are listed in `jobIDs` (possibly empty). | object {`error`: string, `jobIDs`: array of string} |
 
 ### GET `/v1/backups/{libraryID}/status`
 
 Read backup ingest status for one Library.
+
+Accepted credentials: `scopedKey`
 
 Required scope: `backup`
 
@@ -178,12 +263,14 @@ Requires the `backup` scope and a Profile-bound key. Returns the caller Profile'
 | 200 | Backup ingest status. | [BackupStatus](#backupstatus) |
 | 400 | libraryID missing. | [Error](#error) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 | 500 | Backup status could not be read due to an internal failure. | [Error](#error) |
 
 ### POST `/v1/backups/media`
 
 Upload one profile-owned backup Media blob.
+
+Accepted credentials: `scopedKey`
 
 Required scope: `backup`
 
@@ -196,7 +283,7 @@ Requires the `backup` scope and a Profile-bound key. The request is multipart/fo
 | 201 | The upload was encrypted, deduplicated by content fingerprint, and registered as Media. | [BackupMediaResponse](#backupmediaresponse) |
 | 400 | Invalid multipart request, missing fields, hostile image bytes, or rejected backup policy. | [Error](#error) |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 | 423 | Backup ingest is paused and must be surfaced to the user. | [BackupMediaResponse](#backupmediaresponse) |
 | 500 | Backup ingest failed due to an internal storage failure. | [Error](#error) |
 | 507 | Quota or disk-headroom guard refused the upload. | [Error](#error) |
@@ -204,6 +291,8 @@ Requires the `backup` scope and a Profile-bound key. The request is multipart/fo
 ### GET `/v1/events`
 
 Subscribe to the server-sent event stream.
+
+Accepted credentials: `scopedKey`
 
 Required scope: `events-subscribe`
 
@@ -221,7 +310,7 @@ Requires the `events-subscribe` scope. A long-lived `text/event-stream` of Revea
 | --- | --- | --- |
 | 200 | The SSE stream. | — |
 | 401 | No valid credential was presented. | [Error](#error) |
-| 403 | The scoped key does not carry the scope this operation requires. | [Error](#error) |
+| 403 | The credential is not accepted: a scoped key without the required scope, or a credential kind the operation does not list in `x-credentials`. | [Error](#error) |
 
 ## Schemas
 
@@ -317,6 +406,108 @@ Result of a profile-owned backup upload registered as Media.
 | `libraryID` | string | yes |  |
 | `fingerprint` | string | no |  |
 | `paused` | boolean | no |  |
+
+### CapabilityProfile
+
+What the client can play. The server picks direct play or transcode from it.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `client` | string | yes | A short client identifier, used for logging and device quirks. |
+| `containers` | array of string | yes |  |
+| `directCodecs` | array of string | yes |  |
+| `videoCodecs` | array of [VideoCodecCapability](#videocodeccapability) | no |  |
+| `audioCodecs` | array of [AudioCodecCapability](#audiocodeccapability) | no |  |
+| `hdrFormats` | array of string | no |  |
+| `subtitleFormats` | array of string | no |  |
+
+### VideoCodecCapability
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `codec` | string | yes |  |
+| `profiles` | array of string | no |  |
+| `maxHeight` | integer | no |  |
+| `maxBitrate` | integer | no |  |
+| `maxLevel` | integer | no |  |
+
+### AudioCodecCapability
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `codec` | string | yes |  |
+| `maxChannels` | integer | no |  |
+
+### PlaybackInfoRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `capabilityProfile` | [CapabilityProfile](#capabilityprofile) | yes |  |
+
+### PlaybackInfo
+
+The playback decision for one Media and capability profile.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `mediaID` | string | yes |  |
+| `decision` | string | yes | How the server will deliver the Media, for example direct play or transcode. |
+| `reason` | string | no |  |
+| `streamTokenRequired` | boolean | yes |  |
+| `streams` | array of [PlaybackStream](#playbackstream) | yes |  |
+| `durationSeconds` | integer | yes |  |
+| `positionSeconds` | integer | no | The resume position for the device Session's Profile. |
+| `captionTracks` | array of [CaptionTrack](#captiontrack) | no |  |
+
+### PlaybackStream
+
+One playable stream. The `url` carries its own stream token, so the client fetches it without other credentials until `expiresAt` (RFC 3339). `token` is that token on its own.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes |  |
+| `kind` | string | yes |  |
+| `url` | string | no |  |
+| `token` | string | no |  |
+| `expiresAt` | string | no |  |
+| `renditions` | array of [Rendition](#rendition) | no |  |
+
+### Rendition
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes |  |
+| `height` | integer | no |  |
+| `bandwidth` | integer | yes |  |
+
+### CaptionTrack
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes |  |
+| `url` | string | no |  |
+| `format` | string | yes |  |
+| `streamIndex` | integer | no | Index of the subtitle stream muxed in the media. Absent for sidecar files. A muxed text stream can also have a url to fetch it converted. |
+| `language` | string | no |  |
+| `forced` | boolean | no |  |
+| `sdh` | boolean | no |  |
+
+### ProgressRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `positionSeconds` | integer | yes |  |
+| `durationSeconds` | integer | no | Omit or send 0 to use the Media's duration. |
+| `finished` | boolean | no | True when playback reached the end. |
+| `eventTimeMS` | integer | no | The client clock, in Unix milliseconds, when it observed the position. The server keeps the latest report by this time. |
+
+### Progress
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `mediaID` | string | yes |  |
+| `positionSeconds` | integer | yes |  |
+| `watched` | boolean | yes |  |
 
 ### Error
 

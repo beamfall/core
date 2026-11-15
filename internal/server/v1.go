@@ -66,6 +66,10 @@ func (s *Server) v1Handler(operationID string) http.HandlerFunc {
 		return s.v1LibraryMedia
 	case "getMedia":
 		return s.v1Media
+	case "getPlaybackInfo":
+		return s.v1PlaybackInfo
+	case "reportProgress":
+		return s.v1ReportProgress
 	case "listSessions":
 		return s.v1Sessions
 	case "playbackControl":
@@ -108,8 +112,8 @@ func (s *Server) SetV1ScanEnqueuer(enqueue V1ScanEnqueuer) {
 // written the response (401 for an unresolved credential, 403 for a scoped key
 // missing the required scope) and returns false. A non-scoped-key credential —
 // a session or admin token — never carries an API scope, so HasAPIScope is
-// false and the request is rejected: the /v1/ surface is reachable only by a
-// scoped developer key carrying the named scope.
+// false and the request is rejected. Routes that also accept an enrolled
+// device Session use v1Caller instead (ADR-0234 D1).
 func (s *Server) v1Scope(w http.ResponseWriter, r *http.Request, required store.APIScope) (auth.Scope, bool) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
@@ -140,7 +144,7 @@ type v1LibrariesResponse struct {
 }
 
 func (s *Server) v1Libraries(w http.ResponseWriter, r *http.Request) {
-	scope, ok := s.v1Scope(w, r, store.ScopeReadCatalog)
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
 	if !ok {
 		return
 	}
@@ -188,7 +192,7 @@ type v1LibraryMediaResponse struct {
 }
 
 func (s *Server) v1LibraryMedia(w http.ResponseWriter, r *http.Request) {
-	scope, ok := s.v1Scope(w, r, store.ScopeReadCatalog)
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
 	if !ok {
 		return
 	}
@@ -256,7 +260,7 @@ const (
 )
 
 func (s *Server) v1Media(w http.ResponseWriter, r *http.Request) {
-	scope, ok := s.v1Scope(w, r, store.ScopeReadCatalog)
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
 	if !ok {
 		return
 	}

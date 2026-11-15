@@ -26,6 +26,12 @@ const (
 	DeviceCookie       = "beamfall_device"
 	DeviceSecretCookie = "beamfall_device_secret"
 	CSRFHeader         = "X-Beamfall-Csrf"
+
+	// The header form of the device Session credential, for clients that
+	// cannot hold cookies.
+	SessionHeader      = "X-Beamfall-Session"
+	DeviceHeader       = "X-Beamfall-Device"
+	DeviceSecretHeader = "X-Beamfall-Device-Secret" // #nosec G101 -- a header name, not a credential.
 )
 
 // Admin Session policy (ADR-0007 §4 — "short-lived re-auth"; ADR-0012 §3 —
@@ -239,12 +245,12 @@ func (s *Service) ScopeFromRequest(ctx context.Context, r *http.Request) (Scope,
 		}
 		return s.ScopeFromAPIToken(ctx, token)
 	}
-	sessionID := store.SessionID(r.Header.Get("X-Beamfall-Session"))
+	sessionID := store.SessionID(r.Header.Get(SessionHeader))
 	if sessionID == "" {
 		return s.scopeFromCookies(ctx, r)
 	}
-	deviceID := store.DeviceID(r.Header.Get("X-Beamfall-Device"))
-	deviceSecret := r.Header.Get("X-Beamfall-Device-Secret")
+	deviceID := store.DeviceID(r.Header.Get(DeviceHeader))
+	deviceSecret := r.Header.Get(DeviceSecretHeader)
 	return s.ScopeWithDeviceCredential(ctx, sessionID, deviceID, deviceSecret)
 }
 
@@ -369,6 +375,15 @@ func (s Scope) HasAPIScope(scope store.APIScope) bool {
 // authorization path untouched.
 func (s Scope) IsScopedKey() bool {
 	return s.APIKeyID != ""
+}
+
+// IsEnrolledDeviceSession reports whether the Scope was authenticated by an
+// enrolled device Session: the credential a client app holds after pairing.
+// Scoped developer keys, admin API tokens and integration Sessions are not
+// enrolled device Sessions.
+func (s Scope) IsEnrolledDeviceSession() bool {
+	return s.SessionID != "" && s.SessionKind == store.SessionKindEnrolled &&
+		s.APIKeyID == "" && s.APITokenID == ""
 }
 
 // Scope resolves a session identifier into a Scope.

@@ -3617,26 +3617,61 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 			Watched:         progress.Watched,
 		}, nil
 	}
+	progress, err := h.recordPlaybackProgress(ctx, scope, media, store.PlaybackProgress{
+		PositionSeconds: positionSeconds,
+		DurationSeconds: durationSeconds,
+		EventTimeMS:     eventTimeMS,
+	}, finished)
+	if err != nil {
+		return PlaybackReport{}, err
+	}
+	return PlaybackReport{
+		MediaID:         string(media.ID),
+		PositionSeconds: progress.PositionSeconds,
+		Watched:         progress.Watched,
+	}, nil
+}
+
+// RecordPlaybackProgress records a playback position reported through the
+// public /v1 client API for the Scope's Profile. It resolves the Media with the
+// same reveal filter as reportPlayback (an error means unknown or hidden), and
+// then applies the same resume policy and scrobble transition. The report's
+// ProfileID and MediaID come from the Scope and the resolved Media; a zero
+// DurationSeconds falls back to the Media's duration.
+func (h *Handler) RecordPlaybackProgress(ctx context.Context, scope auth.Scope, report store.PlaybackProgress, finished bool) (store.PlaybackProgress, error) {
+	media, err := h.store.Media(ctx, report.MediaID, scope.PlaybackFilter())
+	if err != nil {
+		return store.PlaybackProgress{}, err
+	}
+	if report.DurationSeconds <= 0 {
+		report.DurationSeconds = media.DurationSeconds
+	}
+	return h.recordPlaybackProgress(ctx, scope, media, report, finished)
+}
+
+// recordPlaybackProgress writes one non-ambient position report for an already
+// reveal-resolved Media and returns the stored state.
+func (h *Handler) recordPlaybackProgress(ctx context.Context, scope auth.Scope, media store.Media, report store.PlaybackProgress, finished bool) (store.PlaybackProgress, error) {
 	// Capture the prior watched state so we can detect the unwatched→watched
 	// TRANSITION below: the scrobble observer must fire exactly
 	// once per item, not on every position report past the threshold. A missing
 	// prior row reads as unwatched (the zero value), which is correct.
 	priorProgress, _, err := h.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID)
 	if err != nil {
-		return PlaybackReport{}, err
+		return store.PlaybackProgress{}, err
 	}
 	if err := h.store.UpsertPlaybackProgress(ctx, store.PlaybackProgress{
 		ProfileID:       scope.ProfileID,
 		MediaID:         media.ID,
-		PositionSeconds: positionSeconds,
-		DurationSeconds: durationSeconds,
-		EventTimeMS:     eventTimeMS,
+		PositionSeconds: report.PositionSeconds,
+		DurationSeconds: report.DurationSeconds,
+		EventTimeMS:     report.EventTimeMS,
 	}, finished, h.resumePolicy(ctx, media)); err != nil {
-		return PlaybackReport{}, err
+		return store.PlaybackProgress{}, err
 	}
 	progress, _, err := h.store.PlaybackProgressFor(ctx, scope.ProfileID, media.ID)
 	if err != nil {
-		return PlaybackReport{}, err
+		return store.PlaybackProgress{}, err
 	}
 	// Scrobble: on the unwatched→watched transition, notify the
 	// observer (the Scrobble Integration Plugin). It is best-effort and
@@ -3646,11 +3681,7 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	if h.watchedObserver != nil && progress.Watched && !priorProgress.Watched {
 		h.notifyWatched(ctx, scope.ProfileID, media)
 	}
-	return PlaybackReport{
-		MediaID:         string(media.ID),
-		PositionSeconds: progress.PositionSeconds,
-		Watched:         progress.Watched,
-	}, nil
+	return progress, nil
 }
 
 // notifyWatched resolves the watched Media's External IDs and hands the
