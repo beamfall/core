@@ -348,6 +348,7 @@ type Options struct {
 	IntegrationLifecycle         IntegrationLifecycle
 	IntegrationActionRunner      integrationhost.ActionRunner
 	RemoteAccess                 RemoteAccessProvider
+	PortMapping                  PortMappingController
 	LibEncrypt                   LibEncryptManager
 	EncryptedLibraryDBLifecycle  EncryptedLibraryDBLifecycle
 	EncryptedGeneratedAssets     EncryptedGeneratedAssetRewrapper
@@ -410,6 +411,9 @@ type Handler struct {
 	// manager Console (ADR-0012/0018/0025). Nil (the default) reports both
 	// paths disabled — honest for a LAN-only server.
 	remoteAccess RemoteAccessProvider
+	// portMapping owns automatic router port mapping and the reachability
+	// self-test (CORE-1969). Nil (the default) leaves both unavailable.
+	portMapping PortMappingController
 	// watcherProvider reports the fsnotify per-Library Watcher state to the
 	// manager Console. Nil (the default) reports every Library as
 	// unavailable — honest for a build with no Watcher running.
@@ -719,6 +723,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.integrationLifecycle = o.IntegrationLifecycle
 	h.integrationActionRunner = o.IntegrationActionRunner
 	h.remoteAccess = o.RemoteAccess
+	h.portMapping = o.PortMapping
 	h.libEncrypt = o.LibEncrypt
 	h.encryptedLibraryDBLifecycle = o.EncryptedLibraryDBLifecycle
 	h.encryptedGeneratedAssets = o.EncryptedGeneratedAssets
@@ -5262,6 +5267,8 @@ var mutationFields = map[string]bool{
 	"validatescrapercredential":          true,
 	"disablescrapercredential":           true,
 	"settranscodeconfig":                 true,
+	"setremoteaccessportmapping":         true,
+	"checkremoteaccessreachability":      true,
 	"bulkrescanunmatched":                true,
 	"bulktrashbroken":                    true,
 	"bulkmergeduplicates":                true,
@@ -5493,8 +5500,10 @@ var adminFields = map[string]bool{
 	"setdevicerole":    true,
 	// Operations — remote access / watcher / ingest status (§4 server settings
 	// + §5 real-time monitoring)
-	"remoteaccess":  true,
-	"watcherstatus": true,
+	"remoteaccess":                  true,
+	"setremoteaccessportmapping":    true,
+	"checkremoteaccessreachability": true,
+	"watcherstatus":                 true,
 	// Scrobble eligibility: per-Library opt-in is an
 	// operator decision, gated like the other Library/Console mutations.
 	"setscrobbleeligibility": true,

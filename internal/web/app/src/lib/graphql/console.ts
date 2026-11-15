@@ -52,13 +52,51 @@ import type {
 
 // --- Remote access (ADR-0012/0018/0025) -----------------------------------
 
-const REMOTE_ACCESS_QUERY =
-  "query RemoteAccess { remoteAccess { directHTTPS { enabled domain certState } relay { enabled endpoint publicHost connectionState lastError } plainHTTPPublicWarning endpoints { kind url } } }";
+const REMOTE_ACCESS_FIELDS =
+  "directHTTPS { enabled domain certState } relay { enabled endpoint publicHost connectionState lastError } plainHTTPPublicWarning endpoints { kind url } portMapping { enabled state protocol internalPort externalPort externalAddress leaseSeconds expiresAt reason gatewayCode } reachability { checkedAt verdicts { path reachable reason } }";
+
+const REMOTE_ACCESS_QUERY = `query RemoteAccess { remoteAccess { ${REMOTE_ACCESS_FIELDS} } }`;
 
 /** RemoteAccess — the direct-HTTPS/ACME + relay carrier status. */
 export async function fetchRemoteAccess(signal?: AbortSignal): Promise<RemoteAccessInfo> {
   const data = await graphql<{ remoteAccess: RemoteAccessInfo }>(REMOTE_ACCESS_QUERY, {}, signal);
   return data.remoteAccess;
+}
+
+const SET_REMOTE_ACCESS_PORT_MAPPING_MUTATION = `mutation SetRemoteAccessPortMapping($enabled: Boolean!) { setRemoteAccessPortMapping(enabled: $enabled) { ${REMOTE_ACCESS_FIELDS} } }`;
+
+/**
+ * SetRemoteAccessPortMapping — opt in to (or out of) automatic router port
+ * mapping over UPnP IGD or NAT-PMP (CORE-1969). The server persists the
+ * choice, maps or unmaps, and reruns the reachability self-test. Admin-gated.
+ */
+export async function setRemoteAccessPortMapping(
+  enabled: boolean,
+  signal?: AbortSignal,
+): Promise<RemoteAccessInfo> {
+  const data = await graphql<{ setRemoteAccessPortMapping: RemoteAccessInfo }>(
+    SET_REMOTE_ACCESS_PORT_MAPPING_MUTATION,
+    { enabled },
+    signal,
+  );
+  return data.setRemoteAccessPortMapping;
+}
+
+const CHECK_REMOTE_ACCESS_REACHABILITY_MUTATION = `mutation CheckRemoteAccessReachability { checkRemoteAccessReachability { ${REMOTE_ACCESS_FIELDS} } }`;
+
+/**
+ * CheckRemoteAccessReachability — rerun the external reachability self-test
+ * (CORE-1969). The probe is a bare TLS ClientHello; no library data travels.
+ */
+export async function checkRemoteAccessReachability(
+  signal?: AbortSignal,
+): Promise<RemoteAccessInfo> {
+  const data = await graphql<{ checkRemoteAccessReachability: RemoteAccessInfo }>(
+    CHECK_REMOTE_ACCESS_REACHABILITY_MUTATION,
+    {},
+    signal,
+  );
+  return data.checkRemoteAccessReachability;
 }
 
 // --- Console config: workers + plugin activation (ADR-0013) ---------------

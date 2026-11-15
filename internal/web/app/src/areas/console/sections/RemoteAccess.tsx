@@ -27,11 +27,14 @@ import type {
   ImporterInfo,
   JobInfo,
   LibraryInfo,
+  PortMappingStatus,
   ProfileSummary,
+  ReachabilityReport,
   RemoteAccessInfo,
   RemoteEndpointInfo,
 } from "@/lib/graphql";
 import {
+  checkRemoteAccessReachability,
   fetchConsoleConfig,
   fetchImporters,
   fetchImportStatus,
@@ -41,6 +44,7 @@ import {
   fetchRemoteAccess,
   runImport,
   setConsoleConfig,
+  setRemoteAccessPortMapping,
   setScraperCredential,
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -83,6 +87,43 @@ const RELAY_TONE: Record<string, StatusTone> = {
   connecting: "amber",
   connected: "cyan",
   error: "red",
+};
+
+const PORT_MAPPING_STATE: Record<string, StringKey> = {
+  disabled: "portMappingStateDisabled",
+  mapping: "portMappingStateMapping",
+  mapped: "portMappingStateMapped",
+  failed: "portMappingStateFailed",
+};
+
+const PORT_MAPPING_TONE: Record<string, StatusTone> = {
+  disabled: "neutral",
+  mapping: "amber",
+  mapped: "cyan",
+  failed: "red",
+};
+
+const PORT_MAPPING_REASON: Record<string, StringKey> = {
+  no_gateway: "portMappingReasonNoGateway",
+  gateway_refused: "portMappingReasonGatewayRefused",
+  gateway_error: "portMappingReasonGatewayError",
+  lease_expired: "portMappingReasonLeaseExpired",
+};
+
+const REACHABILITY_PATH: Record<string, StringKey> = {
+  direct: "reachabilityPathDirect",
+  relay: "reachabilityPathRelay",
+};
+
+const REACHABILITY_REASON: Record<string, StringKey> = {
+  not_mapped: "reachabilityReasonNotMapped",
+  double_nat: "reachabilityReasonDoubleNAT",
+  connection_refused: "reachabilityReasonConnectionRefused",
+  timeout: "reachabilityReasonTimeout",
+  wrong_responder: "reachabilityReasonWrongResponder",
+  relay_not_configured: "reachabilityReasonRelayNotConfigured",
+  relay_disconnected: "reachabilityReasonRelayDisconnected",
+  probe_error: "reachabilityReasonProbeError",
 };
 
 export function isPublicCleartextConsoleLocation(
@@ -320,7 +361,7 @@ function WatchAwayFlow({
 // Status only — no secret or token is ever shown (the query selects none).
 export function RemoteAccessStatus() {
   const t = useT();
-  const { data, failed, refresh } = useAsync(fetchRemoteAccess);
+  const { data, failed, refresh, setData } = useAsync(fetchRemoteAccess);
   const displayLocale = useDisplayLocale();
   const connectionClasses = connectionClassLabels(data?.endpoints);
 
@@ -359,10 +400,168 @@ export function RemoteAccessStatus() {
             <Wifi className="console-nav-icon" aria-hidden />
             {t("remoteAccessLanDirectDetail")}
           </p>
+          {data?.portMapping && (
+            <PortMapping
+              mapping={data.portMapping}
+              reachability={data.reachability ?? undefined}
+              onChange={setData}
+            />
+          )}
           <RemoteBitrateLimit />
         </div>
       )}
     </Section>
+  );
+}
+
+function formatTimestamp(value: string | undefined, locale: string) {
+  if (!value) return "";
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return value;
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(at);
+}
+
+// PortMapping is the opt-in UPnP / NAT-PMP router mapping and the external
+// reachability self-test (CORE-1969). Every reason the server reports is a
+// closed code shown with its localized text, the raw code kept beside it.
+export function PortMapping({
+  mapping,
+  reachability,
+  onChange,
+}: {
+  mapping: PortMappingStatus;
+  reachability?: ReachabilityReport;
+  onChange: (next: RemoteAccessInfo) => void;
+}) {
+  const t = useT();
+  const displayLocale = useDisplayLocale();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function run(action: () => Promise<RemoteAccessInfo>) {
+    setBusy(true);
+    setFailed(false);
+    try {
+      onChange(await action());
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const reasonKey = mapping.reason ? PORT_MAPPING_REASON[mapping.reason] : undefined;
+  const mapped = mapping.state === "mapped";
+
+  return (
+    <div
+      className="space-y-3 border-t border-[var(--border-subtle)] pt-4"
+      data-testid="port-mapping"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-medium">{t("portMappingHeading")}</h3>
+        <StatusChip tone={PORT_MAPPING_TONE[mapping.state] ?? "neutral"}>
+          {t(PORT_MAPPING_STATE[mapping.state] ?? "portMappingStateDisabled")}
+        </StatusChip>
+      </div>
+      <p className="text-xs text-muted-foreground">{t("portMappingLead")}</p>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="port-mapping-enabled"
+          checked={mapping.enabled}
+          disabled={busy}
+          onCheckedChange={(checked) =>
+            void run(() => setRemoteAccessPortMapping(checked === true))
+          }
+        />
+        <Label htmlFor="port-mapping-enabled" className="text-sm">
+          {t("portMappingToggle")}
+        </Label>
+      </div>
+      {mapping.enabled && (
+        <div className="space-y-1">
+          <Field label="portMappingProtocol" value={mapping.protocol?.toUpperCase() ?? ""} />
+          <Field label="portMappingInternalPort" value={String(mapping.internalPort || "")} />
+          {mapped && (
+            <>
+              <Field label="portMappingExternalPort" value={String(mapping.externalPort || "")} />
+              <Field label="portMappingExternalAddress" value={mapping.externalAddress ?? ""} />
+              {mapping.leaseSeconds ? (
+                <Field
+                  label="portMappingExpiresAt"
+                  value={formatTimestamp(mapping.expiresAt, displayLocale)}
+                />
+              ) : (
+                <Field label="portMappingLease" value={t("portMappingLeasePermanent")} />
+              )}
+            </>
+          )}
+          {mapping.state === "failed" && mapping.reason && (
+            <p className="text-sm" role="status">
+              <span className="text-muted-foreground">{t("portMappingReason")}: </span>
+              {reasonKey ? t(reasonKey) : ""}{" "}
+              <span className="console-mono text-xs text-muted-foreground">
+                {mapping.reason}
+                {mapping.gatewayCode
+                  ? ` · ${t("portMappingGatewayCode")} ${mapping.gatewayCode}`
+                  : ""}
+              </span>
+            </p>
+          )}
+        </div>
+      )}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-medium">{t("reachabilityHeading")}</h4>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => void run(() => checkRemoteAccessReachability())}
+          >
+            {t("reachabilityCheck")}
+          </Button>
+        </div>
+        {reachability ? (
+          <>
+            <Field
+              label="reachabilityCheckedAt"
+              value={formatTimestamp(reachability.checkedAt, displayLocale)}
+            />
+            <ul className="space-y-1">
+              {reachability.verdicts.map((verdict) => {
+                const why = verdict.reason ? REACHABILITY_REASON[verdict.reason] : undefined;
+                return (
+                  <li key={verdict.path} className="text-sm" data-testid={`reach-${verdict.path}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">
+                        {t(REACHABILITY_PATH[verdict.path] ?? "reachabilityPathDirect")}
+                      </span>
+                      <StatusChip tone={verdict.reachable ? "cyan" : "red"}>
+                        {t(verdict.reachable ? "reachabilityReachable" : "reachabilityUnreachable")}
+                      </StatusChip>
+                    </div>
+                    {!verdict.reachable && verdict.reason && (
+                      <p className="text-xs text-muted-foreground">
+                        {why ? t(why) : ""} <span className="console-mono">{verdict.reason}</span>
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        ) : (
+          <p className="text-xs text-muted-foreground">{t("reachabilityNotChecked")}</p>
+        )}
+        <p className="text-xs text-muted-foreground">{t("reachabilityHint")}</p>
+      </div>
+      {failed && (
+        <p className="text-sm text-[var(--state-danger)]" role="alert">
+          {t("portMappingActionFailed")}
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -469,3 +469,27 @@ func TestConsoleConfigViewerPairingCodesDefaultAndRoundTrip(t *testing.T) {
 		t.Fatal("unrelated patch cleared ViewerPairingCodesDisabled")
 	}
 }
+
+// TestPortMappingEnabledRoundTrip proves the automatic port-mapping opt-in
+// defaults off and persists both ways (CORE-1969).
+func TestPortMappingEnabledRoundTrip(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	now := time.Unix(1700, 0).UTC()
+
+	if on, err := st.PortMappingEnabled(ctx); err != nil || on {
+		t.Fatalf("default PortMappingEnabled = %v, %v; want false", on, err)
+	}
+	if err := st.SetPortMappingEnabled(ctx, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if on, err := st.PortMappingEnabled(ctx); err != nil || !on {
+		t.Fatalf("after enable PortMappingEnabled = %v, %v; want true", on, err)
+	}
+	if err := st.SetPortMappingEnabled(ctx, false, now); err != nil {
+		t.Fatal(err)
+	}
+	if on, err := st.PortMappingEnabled(ctx); err != nil || on {
+		t.Fatalf("after disable PortMappingEnabled = %v, %v; want false", on, err)
+	}
+}

@@ -2,7 +2,13 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchConsoleConfig, fetchRemoteAccess, setConsoleConfig } from "@/lib/graphql";
+import {
+  checkRemoteAccessReachability,
+  fetchConsoleConfig,
+  fetchRemoteAccess,
+  setConsoleConfig,
+  setRemoteAccessPortMapping,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import {
   currentEndpointKind,
@@ -12,9 +18,11 @@ import {
 } from "./RemoteAccess";
 
 vi.mock("@/lib/graphql", () => ({
+  checkRemoteAccessReachability: vi.fn(),
   fetchConsoleConfig: vi.fn(),
   fetchRemoteAccess: vi.fn(),
   setConsoleConfig: vi.fn(),
+  setRemoteAccessPortMapping: vi.fn(),
 }));
 
 const baseConfig = {
@@ -190,5 +198,125 @@ describe("RemoteBitrateLimit", () => {
     await user.clear(input);
     await user.click(screen.getByRole("button", { name: "Apply" }));
     expect(setConsoleConfig).toHaveBeenLastCalledWith({ remoteMaxBitrate: 0 });
+  });
+});
+
+describe("PortMapping (CORE-1969)", () => {
+  const lanOnly = {
+    directHTTPS: null,
+    relay: null,
+    plainHTTPPublicWarning: false,
+    endpoints: [{ kind: "lan", url: "http://beamfall.local" }],
+  };
+  const mapped = {
+    ...lanOnly,
+    portMapping: {
+      enabled: true,
+      state: "mapped",
+      protocol: "natpmp",
+      internalPort: 8443,
+      externalPort: 18443,
+      externalAddress: "203.0.113.7",
+      leaseSeconds: 7200,
+      expiresAt: "2030-01-02T03:04:05Z",
+    },
+    reachability: {
+      checkedAt: "2030-01-02T01:04:05Z",
+      verdicts: [
+        { path: "direct", reachable: true },
+        { path: "relay", reachable: false, reason: "relay_not_configured" },
+      ],
+    },
+  };
+
+  it("stays hidden when the server has no port-mapping controller", async () => {
+    setRemoteAccess(lanOnly);
+    renderStatus();
+    await screen.findByText(/^Reachable through/);
+    expect(screen.queryByTestId("port-mapping")).not.toBeInTheDocument();
+  });
+
+  it("shows the mapped port, external address and per-path verdicts with reason codes", async () => {
+    setRemoteAccess(mapped);
+    renderStatus();
+
+    expect(await screen.findByText("Automatic port mapping")).toBeInTheDocument();
+    expect(screen.getByText("Mapped")).toBeInTheDocument();
+    expect(screen.getByText("NATPMP")).toBeInTheDocument();
+    expect(screen.getByText("18443")).toBeInTheDocument();
+    expect(screen.getByText("203.0.113.7")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Map a router port automatically" })).toBeChecked();
+
+    const direct = screen.getByTestId("reach-direct");
+    expect(direct).toHaveTextContent("Direct (mapped port)");
+    expect(direct).toHaveTextContent("Reachable");
+    const relay = screen.getByTestId("reach-relay");
+    expect(relay).toHaveTextContent("Unreachable");
+    expect(relay).toHaveTextContent("No relay is configured.");
+    expect(relay).toHaveTextContent("relay_not_configured");
+  });
+
+  it("explains a refused mapping with the reason and router code", async () => {
+    setRemoteAccess({
+      ...lanOnly,
+      portMapping: {
+        enabled: true,
+        state: "failed",
+        protocol: "upnp",
+        internalPort: 8443,
+        leaseSeconds: 0,
+        reason: "gateway_refused",
+        gatewayCode: 718,
+      },
+    });
+    renderStatus();
+
+    expect(await screen.findByText("Not mapped")).toBeInTheDocument();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("The router refused the mapping.");
+    expect(status).toHaveTextContent("gateway_refused");
+    expect(status).toHaveTextContent("Router code 718");
+    expect(screen.getByText("Not checked yet.")).toBeInTheDocument();
+  });
+
+  it("toggles the opt-in and reruns the self-test on demand", async () => {
+    setRemoteAccess({
+      ...lanOnly,
+      portMapping: { enabled: false, state: "disabled", internalPort: 8443, leaseSeconds: 0 },
+    });
+    vi.mocked(setRemoteAccessPortMapping).mockResolvedValue(mapped);
+    vi.mocked(checkRemoteAccessReachability).mockResolvedValue({
+      ...mapped,
+      reachability: {
+        checkedAt: "2030-01-02T02:04:05Z",
+        verdicts: [{ path: "direct", reachable: false, reason: "double_nat" }],
+      },
+    });
+    const user = userEvent.setup();
+    renderStatus();
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "Map a router port automatically" }),
+    );
+    expect(setRemoteAccessPortMapping).toHaveBeenCalledWith(true);
+    expect(await screen.findByText("203.0.113.7")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Check reachability" }));
+    expect(checkRemoteAccessReachability).toHaveBeenCalledTimes(1);
+    expect(await screen.findByTestId("reach-direct")).toHaveTextContent("double_nat");
+    expect(screen.queryByTestId("reach-relay")).not.toBeInTheDocument();
+  });
+
+  it("reports a failed request without dropping the last status", async () => {
+    setRemoteAccess(mapped);
+    vi.mocked(checkRemoteAccessReachability).mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    renderStatus();
+
+    await user.click(await screen.findByRole("button", { name: "Check reachability" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The request did not complete. Try again.",
+    );
+    expect(screen.getByText("203.0.113.7")).toBeInTheDocument();
   });
 });

@@ -129,6 +129,9 @@ type App struct {
 	// relay is the self-hosted relay carrier client (ADR-0018/0025), nil when
 	// no relay endpoint is configured.
 	relay *remoteaccess.RelayClient
+	// portMapping is the opt-in UPnP/NAT-PMP mapper and reachability
+	// self-test (CORE-1969), nil when the listen port is ephemeral.
+	portMapping *portMapping
 
 	// addr holds the live listener address once Run binds it, so a caller that
 	// started the server on an ephemeral port (":0") can discover the chosen
@@ -1079,6 +1082,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	directTLSActive := &atomic.Bool{}
 	graphRemoteAccess := remoteAccessProvider{direct: directHTTPS, directTLSActive: directTLSActive, relay: relayClient, lanPort: lanPort, overlayTLSActive: true}
+	portMap := newPortMapping(lanPort, relayClient, logger)
+	var graphPortMapping graph.PortMappingController
+	if portMap != nil {
+		graphPortMapping = portMap
+	}
 	// Client certificate pinning: hand the pairing service
 	// the SPKI of the SELF-SIGNED identity — always, regardless of whether direct
 	// HTTPS/ACME is configured. This is the identity that actually backs every
@@ -1126,6 +1134,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		WatcherStatus:                watcherStatusAdapter{service: watcherService},
 		IntegrationLifecycle:         integrationController,
 		RemoteAccess:                 graphRemoteAccess,
+		PortMapping:                  graphPortMapping,
 		LibEncrypt:                   libEncryptManager,
 		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
 		EncryptedGeneratedAssets:     assetService,
@@ -1384,6 +1393,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		directHTTPS:            directHTTPS,
 		selfSigned:             selfSigned,
 		relay:                  relayClient,
+		portMapping:            portMap,
 		addrReady:              make(chan struct{}),
 		directTLSActive:        directTLSActive,
 		drainGrace:             defaultJobDrainGracePeriod,
@@ -1863,6 +1873,13 @@ func (a *App) Run(ctx context.Context) error {
 		directTLSActive = true
 		a.logger.Info("direct HTTPS enabled", "domain", a.directHTTPS.Domain())
 	}
+	// Reachability self-test (CORE-1969): both the bound port and the relay
+	// backend recognise this server's own probe ClientHello and abort it
+	// before any certificate or request is exchanged; every other handshake
+	// is delegated unchanged.
+	if a.portMapping != nil {
+		carrierTLS = a.portMapping.responder.WrapTLSConfig(carrierTLS)
+	}
 
 	httpServer := &http.Server{
 		Handler:           handler,
@@ -2037,6 +2054,16 @@ func (a *App) Run(ctx context.Context) error {
 		defer jobsDone.Done()
 		observePersistedRoots(jobsCtx, a.store, a.watcher, a.logger)
 	}()
+	// Automatic router port mapping (CORE-1969): idle until the operator
+	// opts in; the persisted opt-in is restored once Serve owns the port, and
+	// the mapping is removed within portMapCloseBound at shutdown.
+	if a.portMapping != nil {
+		jobsDone.Add(1)
+		go func() {
+			defer jobsDone.Done()
+			a.portMapping.run(jobsCtx, a.store, a.logger)
+		}()
+	}
 	if a.setupToken != "" {
 		// Printed last, once the server is serving, so the one line a new
 		// owner needs is not buried in startup output (CORE-1603). First-run

@@ -185,6 +185,11 @@
     "tier": "session"
   },
   {
+    "field": "checkremoteaccessreachability",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "clearallmutes",
     "effect": "write",
     "tier": "session"
@@ -1223,6 +1228,11 @@
     "field": "setrating",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "setremoteaccessportmapping",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "setretentioncandidatehold",

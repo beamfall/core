@@ -519,6 +519,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"rejectpendingaitag":                 newFieldHandler("rejectPendingAITag", "rejectPendingAITag", fieldMutation, roleSession|roleAdmin, 77),
 	"relock":                             newFieldHandler("relock", "reveal", fieldMutation, roleSession, 25),
 	"remoteaccess":                       newFieldHandler("remoteAccess", "remoteAccess", fieldRead, roleSession|roleAdmin, 103),
+	"setremoteaccessportmapping":         newFieldHandler("setRemoteAccessPortMapping", "setRemoteAccessPortMapping", fieldMutation, roleSession|roleAdmin, 103),
+	"checkremoteaccessreachability":      newFieldHandler("checkRemoteAccessReachability", "checkRemoteAccessReachability", fieldMutation, roleSession|roleAdmin, 103),
 	"removecollectionmedia":              newFieldHandler("removeCollectionMedia", "removeCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"removelastengagement":               newFieldHandler("removeLastEngagement", "removeLastEngagement", fieldMutation, roleSession, 128),
 	"removesubscription":                 newFieldHandler("removeSubscription", "removeSubscription", fieldMutation, roleSession|roleManager, 54),
@@ -3018,6 +3020,20 @@ func dispatchFieldBlock103(dispatch *fieldDispatchContext) response {
 	if fields["remoteaccess"] {
 		info, err := h.resolveRemoteAccess(ctx, scope)
 		if resp := resolveField(dispatch, "remoteaccess", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	// Automatic port mapping and the reachability self-test (CORE-1969):
+	// Admin-Session mutations returning the same Console view.
+	if fields["setremoteaccessportmapping"] {
+		info, err := h.setRemoteAccessPortMapping(ctx, scope, dispatch.req)
+		if resp := resolveField(dispatch, "setremoteaccessportmapping", info, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["checkremoteaccessreachability"] {
+		info, err := h.checkRemoteAccessReachability(ctx, scope)
+		if resp := resolveField(dispatch, "checkremoteaccessreachability", info, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

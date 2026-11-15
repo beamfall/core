@@ -312,6 +312,8 @@ var originalScopedFields = []string{
 	"setrevealpin",
 	"setsubscriptionretention",
 	"settranscodeconfig",
+	"setremoteaccessportmapping",
+	"checkremoteaccessreachability",
 	"setupstate",
 	"sourceitems",
 	"stationdelete",   // MUSIC-5 (ADR-0098 area 5)

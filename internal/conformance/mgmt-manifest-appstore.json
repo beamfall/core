@@ -78,6 +78,10 @@
       "effect": "write"
     },
     {
+      "field": "checkremoteaccessreachability",
+      "effect": "write"
+    },
+    {
       "field": "consoleconfig",
       "effect": "read"
     },
@@ -387,6 +391,10 @@
     },
     {
       "field": "setqualitypolicy",
+      "effect": "write"
+    },
+    {
+      "field": "setremoteaccessportmapping",
       "effect": "write"
     },
     {
