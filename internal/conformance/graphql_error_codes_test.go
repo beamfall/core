@@ -262,16 +262,6 @@ func reasonVocabularyFailures(t *testing.T, dir string, published map[string]boo
 		pos := fset.Position(node.Pos())
 		failures = append(failures, fmt.Sprintf("%s:%d: %s", vocabRelPath(t, pos.Filename), pos.Line, fmt.Sprintf(format, args...)))
 	}
-	for _, file := range files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "ErrorReason" {
-					fail(call, "converts a value into an ErrorReason; use a published constant")
-				}
-			}
-			return true
-		})
-	}
 	// Imports are stubbed, so the checker reports errors for every use of
 	// another package; those are expected and ignored. ErrorReason and the
 	// types that carry it are local, so their constants still type-check.
@@ -281,6 +271,28 @@ func reasonVocabularyFailures(t *testing.T, dir string, published map[string]boo
 	reasonType := pkg.Scope().Lookup("ErrorReason")
 	if reasonType == nil {
 		t.Fatal("internal/graph declares no ErrorReason type")
+	}
+	isReason := func(expr ast.Expr) bool {
+		tv, ok := info.Types[expr]
+		return ok && tv.IsType() && types.Identical(tv.Type, reasonType.Type())
+	}
+	// A conversion or type assertion yields a runtime ErrorReason the constant
+	// scan below cannot see. Resolving the target by type identity catches
+	// parenthesised and aliased spellings too.
+	for _, file := range files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				if isReason(n.Fun) {
+					fail(n, "converts a value into an ErrorReason; use a published constant")
+				}
+			case *ast.TypeAssertExpr:
+				if n.Type != nil && isReason(n.Type) {
+					fail(n, "asserts a value into an ErrorReason; use a published constant")
+				}
+			}
+			return true
+		})
 	}
 	for expr, tv := range info.Types {
 		if tv.Value == nil || !types.Identical(tv.Type, reasonType.Type()) {
@@ -297,6 +309,60 @@ func reasonVocabularyFailures(t *testing.T, dir string, published map[string]boo
 	}
 	sort.Strings(failures)
 	return failures
+}
+
+// TestGraphQLErrorReasonGuardCatchesEveryMintingForm plants each way of minting
+// an unpublished ErrorReason in a scratch package and requires the guard to
+// report exactly the lines marked "// want", and nothing else.
+func TestGraphQLErrorReasonGuardCatchesEveryMintingForm(t *testing.T) {
+	const plant = `package graph
+
+import "fmt"
+
+type ErrorReason string
+
+type reasonAlias = ErrorReason
+
+const ErrorReasonRevealPINRequired ErrorReason = "REVEAL_PIN_REQUIRED"
+
+const unpublished ErrorReason = "UNPUBLISHED_CONST" // want ErrorReason "UNPUBLISHED_CONST" is missing from ErrorReasons
+
+type gqlError struct{ Reason ErrorReason }
+
+func plants(s string, v any) {
+	_ = ErrorReason(s)   // want converts a value into an ErrorReason; use a published constant
+	_ = (ErrorReason)(s) // want converts a value into an ErrorReason; use a published constant
+	_ = reasonAlias(s)   // want converts a value into an ErrorReason; use a published constant
+	_ = v.(ErrorReason)  // want asserts a value into an ErrorReason; use a published constant
+	_ = gqlError{Reason: "UNPUBLISHED_LITERAL"} // want ErrorReason "UNPUBLISHED_LITERAL" is missing from ErrorReasons
+	var r ErrorReason
+	r = "UNPUBLISHED_ASSIGN" // want ErrorReason "UNPUBLISHED_ASSIGN" is missing from ErrorReasons
+	_ = r
+	_ = gqlError{Reason: ErrorReasonRevealPINRequired}
+	_ = gqlError{Reason: ""}
+	_ = fmt.Sprint(s)
+}
+
+func unpublishedReturn() ErrorReason {
+	return "UNPUBLISHED_RETURN" // want ErrorReason "UNPUBLISHED_RETURN" is missing from ErrorReasons
+}
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plant.go")
+	if err := os.WriteFile(path, []byte(plant), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var want []string
+	for i, line := range strings.Split(plant, "\n") {
+		if _, msg, ok := strings.Cut(line, "// want "); ok {
+			want = append(want, fmt.Sprintf("%s:%d: %s", vocabRelPath(t, path), i+1, msg))
+		}
+	}
+	sort.Strings(want)
+	got := reasonVocabularyFailures(t, dir, map[string]bool{"REVEAL_PIN_REQUIRED": true})
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("guard failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
 }
 
 // unresolvedImporter resolves no import, so a package type-checks on its own.
