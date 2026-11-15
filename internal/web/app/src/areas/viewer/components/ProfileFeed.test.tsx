@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchSourceItems } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
@@ -41,7 +41,8 @@ describe("ProfileFeed paging (CORE-1878)", () => {
   it("loads the next page of a feed longer than one page", async () => {
     vi.mocked(fetchSourceItems)
       .mockResolvedValueOnce(page(0, PROFILE_FEED_LIMIT))
-      .mockResolvedValueOnce(page(PROFILE_FEED_LIMIT, 3));
+      .mockResolvedValueOnce(page(PROFILE_FEED_LIMIT, 3))
+      .mockResolvedValueOnce([]);
     renderFeed();
 
     expect(await screen.findByText(`Item ${PROFILE_FEED_LIMIT - 1}`)).toBeInTheDocument();
@@ -57,12 +58,31 @@ describe("ProfileFeed paging (CORE-1878)", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
-  it("offers no more when the first page is short", async () => {
-    vi.mocked(fetchSourceItems).mockResolvedValueOnce(page(0, 4));
+  it("offers no more once a short page is followed by an empty one", async () => {
+    vi.mocked(fetchSourceItems).mockResolvedValueOnce(page(0, 4)).mockResolvedValueOnce([]);
     renderFeed();
 
     expect(await screen.findByText("Item 3")).toBeInTheDocument();
+    await waitFor(() => expect(fetchSourceItems).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
-    expect(fetchSourceItems).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads past a page that muting shortened", async () => {
+    // The server pages first and drops muted rows after, so a page of 99 can
+    // still have a row after it.
+    vi.mocked(fetchSourceItems)
+      .mockResolvedValueOnce(page(0, PROFILE_FEED_LIMIT - 1))
+      .mockResolvedValueOnce(page(PROFILE_FEED_LIMIT, 1))
+      .mockResolvedValueOnce([]);
+    renderFeed();
+
+    expect(await screen.findByText(`Item ${PROFILE_FEED_LIMIT}`)).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(PROFILE_FEED_LIMIT);
+    expect(vi.mocked(fetchSourceItems).mock.calls.map(([query]) => query.offset)).toEqual([
+      0,
+      PROFILE_FEED_LIMIT,
+      2 * PROFILE_FEED_LIMIT,
+    ]);
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 });

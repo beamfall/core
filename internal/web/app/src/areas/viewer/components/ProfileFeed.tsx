@@ -27,10 +27,34 @@ function feedPage(kind: string, offset: number, signal: AbortSignal): Promise<So
   );
 }
 
+/** A bound on the server pages one read walks past pages shortened by muting. */
+const MAX_FEED_READS = 10;
+
+// One read of a feed from `offset`. The server drops muted rows from a page
+// after paging, so a short page is not the end: the read steps on by the
+// requested size until a page comes back full (more may follow) or empty (the
+// end). It returns the rows and the offset of the next page, or null at the end.
+async function readFeed(
+  kind: string,
+  offset: number,
+  signal: AbortSignal,
+): Promise<{ items: SourceItem[]; next: number | null }> {
+  const items: SourceItem[] = [];
+  let at = offset;
+  for (let reads = 0; reads < MAX_FEED_READS; reads++) {
+    const page = await feedPage(kind, at, signal);
+    items.push(...page);
+    at += PROFILE_FEED_LIMIT;
+    if (page.length === PROFILE_FEED_LIMIT) return { items, next: at };
+    if (page.length === 0) return { items, next: null };
+  }
+  return { items, next: at };
+}
+
 // One of the acting Profile's own feeds (favorites, recently played, most
 // played; CORE-1635) as a poster grid in server order. It reloads when the
 // identity or the Profile's engagement changes. The feed reads one page at a
-// time, and a full page offers Load more for the next one (CORE-1878).
+// time, and Load more reads the next one until the feed ends (CORE-1878).
 export function ProfileFeed({
   kind,
   heading,
@@ -46,7 +70,7 @@ export function ProfileFeed({
   const identity = useViewerIdentity();
   const epoch = useEngagementEpoch();
   const [items, setItems] = useState<SourceItem[] | null>(null);
-  // The offset of the next page, or null when the last page read was short.
+  // The offset of the next page, or null when the feed has ended.
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
@@ -58,10 +82,10 @@ export function ProfileFeed({
     setItems(null);
     setNextOffset(null);
     setLoadingMore(false);
-    feedPage(kind, 0, controller.signal)
-      .then((page) => {
-        setItems(page);
-        setNextOffset(page.length === PROFILE_FEED_LIMIT ? PROFILE_FEED_LIMIT : null);
+    readFeed(kind, 0, controller.signal)
+      .then(({ items: first, next }) => {
+        setItems(first);
+        setNextOffset(next);
       })
       .catch(() => {
         if (!controller.signal.aborted) setItems([]);
@@ -73,13 +97,11 @@ export function ProfileFeed({
     const controller = controllerRef.current;
     if (!controller || nextOffset === null) return;
     setLoadingMore(true);
-    // Paging steps by the requested size, not the rows returned: the server can
-    // drop muted rows from a page after paging.
-    feedPage(kind, nextOffset, controller.signal)
-      .then((page) => {
+    readFeed(kind, nextOffset, controller.signal)
+      .then(({ items: more, next }) => {
         if (controller.signal.aborted) return;
-        setItems((prev) => [...(prev ?? []), ...page]);
-        setNextOffset(page.length === PROFILE_FEED_LIMIT ? nextOffset + PROFILE_FEED_LIMIT : null);
+        setItems((prev) => [...(prev ?? []), ...more]);
+        setNextOffset(next);
       })
       .catch(() => {})
       .finally(() => {
