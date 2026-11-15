@@ -100,6 +100,9 @@ func TestLogLineHasAttrIgnoresQuotedText(t *testing.T) {
 		{`level=ERROR requestID=abcd`, "requestID", "abc", false},
 		{`time=x bare level=DEBUG`, "level", "DEBUG", true},
 		{`msg="unterminated level=ERROR`, "level", "ERROR", false},
+		{`level=INFO msg="real" "x=foo"="remote level=ERROR happened"`, "level", "ERROR", false},
+		{`level=INFO msg="real" "x=foo"="remote level=ERROR happened"`, "x=foo", "remote level=ERROR happened", true},
+		{`=stray level=WARN`, "level", "WARN", true},
 	}
 	for _, tc := range cases {
 		if got := logLineHasAttr(tc.line, tc.key, tc.value); got != tc.want {
@@ -120,6 +123,20 @@ func TestCappedWriterBoundsProfileMemory(t *testing.T) {
 	}
 	if w.buf.String() != "1234567890" || !w.truncated || w.buf.Cap() > 64 {
 		t.Fatalf("buffer = %q (cap %d) truncated=%v", w.buf.String(), w.buf.Cap(), w.truncated)
+	}
+}
+
+// TestGoroutineProfileStaysWithinCap: a goroutine dump larger than the cap is
+// truncated to it and flagged.
+func TestGoroutineProfileStaysWithinCap(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	for range 3000 {
+		go func() { <-release }()
+	}
+	profile := profileText("goroutine")
+	if len(profile.Text) > diagnosticsProfileMaxBytes || !profile.Truncated || !strings.HasPrefix(profile.Text, "goroutine ") {
+		t.Fatalf("goroutine profile = %d bytes truncated=%v prefix %.40q", len(profile.Text), profile.Truncated, profile.Text)
 	}
 }
 

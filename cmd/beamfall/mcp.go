@@ -129,8 +129,15 @@ func mcpCommand(ctx context.Context, args []string, stdout io.Writer) error {
 
 // serveMCP answers newline-delimited JSON-RPC requests from in until EOF or
 // until ctx is cancelled. Lines are read on their own goroutine so a client
-// that holds stdin open cannot keep the server alive past shutdown.
+// that holds stdin open cannot keep the server alive past shutdown. On return
+// the reader is released: in is closed when it is an io.Closer, which unblocks
+// a pending read.
 func serveMCP(ctx context.Context, opts cliHTTPOptions, in io.Reader, out io.Writer) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if closer, ok := in.(io.Closer); ok {
+		defer func() { _ = closer.Close() }()
+	}
 	lines := make(chan string)
 	readErr := make(chan error, 1)
 	go func() {
@@ -150,7 +157,7 @@ func serveMCP(ctx context.Context, opts cliHTTPOptions, in io.Reader, out io.Wri
 		var line string
 		select {
 		case <-ctx.Done():
-			return nil
+			return nil // the deferred cancel and Close release the reader
 		case err := <-readErr:
 			if err != nil {
 				return fmt.Errorf("mcp: read stdin: %w", err)

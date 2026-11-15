@@ -174,59 +174,57 @@ func (f serverLogFilter) match(line string) bool {
 }
 
 // logLineHasAttr reports whether a slog text line carries key=value as one of
-// its attributes. Quoted values are unquoted, and text inside a quoted value
-// never counts as an attribute.
+// its attributes. Keys and values may be Go-quoted; text inside a quoted key
+// or value never counts as an attribute.
 func logLineHasAttr(line, key, value string) bool {
-	for rest := line; rest != ""; {
-		rest = strings.TrimLeft(rest, " ")
-		eq := strings.IndexAny(rest, "= ")
-		if eq < 0 || rest[eq] == ' ' {
-			// a bare word with no '=': skip it
-			if eq < 0 {
-				return false
-			}
-			rest = rest[eq:]
+	for rest := strings.TrimLeft(line, " "); rest != ""; rest = strings.TrimLeft(rest, " ") {
+		name, after := slogToken(rest, true)
+		if !strings.HasPrefix(after, "=") {
+			rest = after // a bare word with no value
 			continue
 		}
-		name := rest[:eq]
-		rest = rest[eq+1:]
-		var got string
-		if strings.HasPrefix(rest, `"`) {
-			end := quotedValueEnd(rest)
-			raw := rest[:end]
-			rest = rest[end:]
-			unquoted, err := strconv.Unquote(raw)
-			if err != nil {
-				unquoted = strings.Trim(raw, `"`)
-			}
-			got = unquoted
-		} else {
-			end := strings.IndexByte(rest, ' ')
-			if end < 0 {
-				end = len(rest)
-			}
-			got = rest[:end]
-			rest = rest[end:]
-		}
+		got, next := slogToken(after[1:], false)
 		if name == key && got == value {
 			return true
 		}
+		rest = next
 	}
 	return false
 }
 
-// quotedValueEnd returns the index just past the closing quote of the Go
-// quoted string that opens s, or len(s) when it is unterminated.
-func quotedValueEnd(s string) int {
-	for i := 1; i < len(s); i++ {
-		switch s[i] {
-		case '\\':
-			i++
-		case '"':
-			return i + 1
+// slogToken reads one key or value from the start of s and returns it
+// unquoted with the remaining text. A bare key stops at '=' or a space; a bare
+// value stops at a space.
+func slogToken(s string, isKey bool) (string, string) {
+	if strings.HasPrefix(s, `"`) {
+		end := len(s)
+		for i := 1; i < len(s); i++ {
+			if s[i] == '\\' {
+				i++
+			} else if s[i] == '"' {
+				end = i + 1
+				break
+			}
 		}
+		raw := s[:end]
+		if unquoted, err := strconv.Unquote(raw); err == nil {
+			return unquoted, s[end:]
+		}
+		return strings.Trim(raw, `"`), s[end:]
 	}
-	return len(s)
+	stop := " "
+	if isKey {
+		stop = "= "
+	}
+	end := strings.IndexAny(s, stop)
+	if end < 0 {
+		end = len(s)
+	}
+	if end == 0 {
+		// a stray '=' with no key: consume it so the scan advances
+		return "", s[1:]
+	}
+	return s[:end], s[end:]
 }
 
 // filteredServerLogs returns up to limit of the most recent kept lines that
@@ -357,13 +355,17 @@ func diagnosticsProfileNames(req request) ([]string, error) {
 }
 
 func profileText(name string) DiagnosticsProfile {
-	debugLevel := 1
 	if name == "goroutine" {
-		debugLevel = 2 // full stacks, the form an agent reads
+		// Full stacks, the form an agent reads. runtime.Stack fills a fixed
+		// buffer, so a large goroutine count never grows memory past the cap
+		// (pprof's debug=2 path buffers the whole dump first).
+		buf := make([]byte, diagnosticsProfileMaxBytes)
+		n := runtime.Stack(buf, true)
+		return DiagnosticsProfile{Name: name, Text: strings.ToValidUTF8(string(buf[:n]), ""), Truncated: n == len(buf)}
 	}
 	w := &cappedWriter{limit: diagnosticsProfileMaxBytes}
 	if profile := pprof.Lookup(name); profile != nil {
-		_ = profile.WriteTo(w, debugLevel)
+		_ = profile.WriteTo(w, 1)
 	}
 	return DiagnosticsProfile{Name: name, Text: strings.ToValidUTF8(w.buf.String(), ""), Truncated: w.truncated}
 }

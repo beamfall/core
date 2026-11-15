@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -154,5 +155,9 @@ func TestServeMCPReturnsOnCancelWhileIdle(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("serveMCP did not return after its context was cancelled")
+	}
+	// The reader was released: its pipe end is closed, not left blocked.
+	if _, err := writer.Write([]byte("{}\n")); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("write after serveMCP returned = %v, want io.ErrClosedPipe", err)
 	}
 }
