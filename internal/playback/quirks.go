@@ -537,6 +537,10 @@ type quirkOverlay struct {
 	// sets matched or overrideIDs, so attribution never names an entry for it,
 	// and it does not gate audio-only items, which have no picture to scale.
 	clientMaxBitrate int
+	// policyCeiling reports that clientMaxBitrate came from the admin's
+	// remote bitrate cap (CORE-1717) rather than the viewer's own ceiling. It
+	// changes only the decision reason a ceiling-forced verdict names.
+	policyCeiling bool
 }
 
 // withClientCeiling folds the viewer's streaming ceiling into the overlay. A
@@ -550,6 +554,15 @@ func (ov quirkOverlay) withClientCeiling(ceiling int) quirkOverlay {
 	}
 	ov.clientMaxBitrate = max(ceiling, ladderFloorBandwidth())
 	return ov
+}
+
+// ceilingReason is the decision reason for a verdict the streaming ceiling
+// alone forced: the admin's remote cap names itself apart from the viewer's.
+func (ov quirkOverlay) ceilingReason() string {
+	if ov.policyCeiling {
+		return policyBitrateCeilingReason
+	}
+	return bitrateCeilingReason
 }
 
 // withoutClientCeiling is the overlay the quirks alone produce, the

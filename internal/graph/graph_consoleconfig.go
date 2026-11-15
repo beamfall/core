@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,10 @@ type ConsoleConfigInfo struct {
 	EventsRetentionDays int `json:"eventsRetentionDays"`
 	// ObservabilityEnabled is ADR-0146's default-off OTel metrics toggle.
 	ObservabilityEnabled bool `json:"observabilityEnabled"`
+	// RemoteMaxBitrate is the server-wide playback bitrate cap, in bits per
+	// second, for requests that do not come from the LAN (CORE-1717). 0
+	// means no server-wide remote cap.
+	RemoteMaxBitrate int `json:"remoteMaxBitrate"`
 	// Plugins lists every available plugin (loaded at boot) with its current
 	// Console activation state.
 	Plugins []PluginActivationInfo `json:"plugins"`
@@ -174,6 +179,7 @@ func (h *Handler) consoleConfig(ctx context.Context, _ auth.Scope, _ request) (C
 		ViewerPairingCodesDisabled: cfg.ViewerPairingCodesDisabled,
 		EventsRetentionDays:        cfg.EventsRetentionDays,
 		ObservabilityEnabled:       cfg.ObservabilityEnabled,
+		RemoteMaxBitrate:           cfg.RemoteMaxBitrate,
 		Plugins:                    []PluginActivationInfo{},
 	}
 	overrides, err := h.store.PluginActivations(ctx)
@@ -264,6 +270,11 @@ func (h *Handler) setConsoleConfig(ctx context.Context, scope auth.Scope, req re
 	}
 	if enabled, ok := v.Bool("observabilityEnabled"); ok {
 		patch.ObservabilityEnabled = &enabled
+		has = true
+	}
+	if number, ok := v.Number("remoteMaxBitrate"); ok {
+		limit := remoteMaxBitrateVariable(number)
+		patch.RemoteMaxBitrate = &limit
 		has = true
 	}
 	libraryIcon, setLibraryIcon := v.String("libraryIcon")
@@ -755,4 +766,14 @@ func encodePluginConfigValue(spec plugin.ConfigFieldSpec, raw any) (string, erro
 		}
 	}
 	return value, nil
+}
+
+// remoteMaxBitrateVariable converts a remoteMaxBitrate JSON number to bits per
+// second. A fractional or out-of-range number maps to -1 so the store's
+// range validation refuses it instead of the float conversion wrapping.
+func remoteMaxBitrateVariable(number float64) int {
+	if number < 0 || number > store.MaxRemoteBitrate || number != math.Trunc(number) {
+		return -1
+	}
+	return int(number)
 }

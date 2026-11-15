@@ -24,6 +24,9 @@ export const accessBulkStrings = {
     streamCapApply: "Apply",
     streamCapApplied: "Applied.",
     streamCapHint: "Maximum simultaneous streams for this profile. 0 removes the cap.",
+    remoteBitrateCapLabel: "Remote bitrate cap (Mbit/s)",
+    remoteBitrateCapHint:
+      "Highest bitrate for this profile away from the local network. 0 removes the cap; the lower of this and the server-wide cap applies.",
     extensionPreauthLabel: "Pre-authorize extension requests",
     extensionPreauthHint:
       "Automatically grant this managed profile’s more-time requests without an adult tap.",
@@ -89,6 +92,9 @@ export const accessBulkStrings = {
     streamCapApply: "Appliquer",
     streamCapApplied: "Appliqué.",
     streamCapHint: "Nombre maximal de flux simultanés pour ce profil. 0 supprime la limite.",
+    remoteBitrateCapLabel: "Débit distant maximal (Mbit/s)",
+    remoteBitrateCapHint:
+      "Débit maximal pour ce profil hors du réseau local. 0 supprime la limite ; la plus basse de cette limite et de la limite du serveur s’applique.",
     extensionPreauthLabel: "Pré-autoriser les demandes de prolongation",
     extensionPreauthHint:
       "Accorder automatiquement les demandes de temps supplémentaire de ce profil géré sans intervention d’un adulte.",
@@ -152,6 +158,9 @@ export const accessBulkStrings = {
     streamCapApply: "Anwenden",
     streamCapApplied: "Angewendet.",
     streamCapHint: "Maximale gleichzeitige Streams für dieses Profil. 0 entfernt die Begrenzung.",
+    remoteBitrateCapLabel: "Maximale Remote-Bitrate (Mbit/s)",
+    remoteBitrateCapHint:
+      "Höchste Bitrate für dieses Profil außerhalb des lokalen Netzwerks. 0 entfernt die Begrenzung; es gilt der niedrigere Wert aus dieser und der serverweiten Begrenzung.",
     extensionPreauthLabel: "Verlängerungsanfragen vorab genehmigen",
     extensionPreauthHint:
       "Mehr-Zeit-Anfragen dieses verwalteten Profils automatisch ohne Erwachsenentipp genehmigen.",
@@ -214,6 +223,9 @@ export const accessBulkStrings = {
     streamCapApply: "Aplicar",
     streamCapApplied: "Aplicado.",
     streamCapHint: "Máximo de streams simultáneos para este perfil. 0 elimina el límite.",
+    remoteBitrateCapLabel: "Tasa de bits remota máxima (Mbit/s)",
+    remoteBitrateCapHint:
+      "Tasa de bits máxima para este perfil fuera de la red local. 0 elimina el límite; se aplica el menor entre este y el límite del servidor.",
     extensionPreauthLabel: "Preautorizar solicitudes de extensión",
     extensionPreauthHint:
       "Concede automáticamente las solicitudes de más tiempo de este perfil gestionado sin toque de un adulto.",
@@ -276,6 +288,9 @@ export const accessBulkStrings = {
     streamCapApply: "Aplicar",
     streamCapApplied: "Aplicado.",
     streamCapHint: "Máximo de streams simultâneos para este perfil. 0 remove o limite.",
+    remoteBitrateCapLabel: "Taxa de bits remota máxima (Mbit/s)",
+    remoteBitrateCapHint:
+      "Taxa de bits máxima para este perfil fora da rede local. 0 remove o limite; aplica-se o menor entre este e o limite do servidor.",
     extensionPreauthLabel: "Pré-autorizar solicitações de extensão",
     extensionPreauthHint:
       "Concede automaticamente pedidos de mais tempo deste perfil gerenciado sem toque de um adulto.",

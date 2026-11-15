@@ -203,6 +203,10 @@ type hlsSession struct {
 	audioStreamIndex  *int
 	sourceVideo       VideoSignal
 	burnSubtitleIndex int
+	// audioSource marks a source without a picture (no frame size): an encode
+	// from its start keeps the source's priming (ffmpeg.Rendition.KeepPriming),
+	// so the output carries exactly the encoder delay playbackInfo reports.
+	audioSource bool
 	// composed, when set, is the composed picture the session's single rung
 	// draws over the source's audio (see StreamShape.ComposedPicture), and
 	// picture is its encoder input as laid out in the session directory.
@@ -377,6 +381,7 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 		AudioGainDB:      h.audioProfile.GainDB,
 		AudioStreamIndex: h.audioStreamIndex,
 		AudioOnly:        rung.AudioOnly,
+		KeepPriming:      h.audioSource,
 		ColorTransfer:    h.sourceVideo.ColorTransfer,
 		ColorPrimaries:   h.sourceVideo.ColorPrimaries,
 		DoViProfile:      h.sourceVideo.DoViProfile,
@@ -1197,6 +1202,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		audioStreamIndex:  audioStreamIndex,
 		sourceVideo:       sourceVideo,
 		burnSubtitleIndex: burnSubtitleIndex,
+		audioSource:       videoWidth <= 0 && videoHeight <= 0 && picture == nil,
 		lastAccess:        s.now(),
 		priority:          priority,
 		degraded:          degraded,

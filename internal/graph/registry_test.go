@@ -183,6 +183,7 @@ var originalScopedFields = []string{
 	"offlinepacks",            // MUSIC-6 (ADR-0098 area 6): own Offline Packs + fetch tokens
 	"createofflinepack",       // MUSIC-6 (ADR-0098 area 6): build a pack from an opaque target
 	"revokeofflinepack",       // MUSIC-6 (ADR-0098 area 6): revoke an owned pack
+	"retryofflinepack",        // CORE-1743: retry an owned failed background pack build
 	"syncofflinepackprogress", // APPLE-6 (ADR-0098 area 6): sync own Offline Pack byte progress
 	"deletemypacktokens",      // MUSIC-6 (ADR-0036): clear own pack-token ledger rows
 	"mutes",                   // ENR-4 (ADR-0054 §2.8): own self-authored mute list read

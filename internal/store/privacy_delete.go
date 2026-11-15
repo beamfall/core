@@ -327,7 +327,7 @@ func (s *Store) deleteProfileCatalogAndSaveStateLocked(ctx context.Context, stat
 }
 
 func deleteMyCatalogFootprintTx(ctx context.Context, tx *sql.Tx, profileID ProfileID) error {
-	for _, table := range []string{"saved_filter", "saved_station", "offline_pack", "access_request", "access_grant"} {
+	for _, table := range []string{"saved_filter", "saved_station", "offline_pack", "offline_pack_build", "access_request", "access_grant"} {
 		// #nosec G202 -- table is drawn from the closed literal list above.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE profile_id = ?`, profileID); err != nil {
 			return err

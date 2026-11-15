@@ -53,6 +53,8 @@ package store
 //   - encrypted-library 0001-0005 (ENC-1/ENC-4/ENC-ENTITY-RELATION-UPSERT-1,
 //     ADR-0045) mirror the typed Media-field, provenance, and entity-relation
 //     upsert surface into the encrypted library.
+//   - encrypted-library 0006 (CORE-1626) mirrors catalog 0115's gapless
+//     media_file_stream columns into the encrypted library.
 //
 // Every entry above rode the `make bench` gate at the migration that introduced
 // it, and each sits off the entity-query hot path.
@@ -62,5 +64,5 @@ package store
 //   - mute/retention/podcast predicates
 const (
 	schemaFreezeEventsMigrations           = 22
-	schemaFreezeEncryptedLibraryMigrations = 5
+	schemaFreezeEncryptedLibraryMigrations = 6
 )

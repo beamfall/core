@@ -3554,6 +3554,10 @@
         "kind": "scalar"
       },
       {
+        "name": "remoteMaxBitrate",
+        "kind": "scalar"
+      },
+      {
         "name": "updateCheckChannel",
         "kind": "scalar"
       },
@@ -4076,6 +4080,11 @@
         "kind": "scalar"
       },
       {
+        "name": "failureReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "id",
         "kind": "scalar"
       },
@@ -4092,6 +4101,10 @@
         "name": "manifestToken",
         "kind": "scalar",
         "optional": true
+      },
+      {
+        "name": "progress",
+        "kind": "scalar"
       },
       {
         "name": "state",
@@ -4190,6 +4203,10 @@
       },
       {
         "name": "preferSDH",
+        "kind": "scalar"
+      },
+      {
+        "name": "remoteMaxBitrate",
         "kind": "scalar"
       },
       {
@@ -12010,6 +12027,11 @@
           "kind": "scalar"
         },
         {
+          "name": "failureReason",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -12026,6 +12048,10 @@
           "name": "manifestToken",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "progress",
+          "kind": "scalar"
         },
         {
           "name": "state",
@@ -12063,6 +12089,11 @@
         "kind": "scalar"
       },
       {
+        "name": "failureReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "id",
         "kind": "scalar"
       },
@@ -12079,6 +12110,10 @@
         "name": "manifestToken",
         "kind": "scalar",
         "optional": true
+      },
+      {
+        "name": "progress",
+        "kind": "scalar"
       },
       {
         "name": "state",
@@ -14805,6 +14840,71 @@
     ]
   },
   {
+    "field": "retryofflinepack",
+    "kind": "object",
+    "children": [
+      {
+        "name": "bytesReady",
+        "kind": "scalar"
+      },
+      {
+        "name": "bytesTotal",
+        "kind": "scalar"
+      },
+      {
+        "name": "createdAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "expiresAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "failureReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "itemCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "keyToken",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "manifestToken",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "progress",
+        "kind": "scalar"
+      },
+      {
+        "name": "state",
+        "kind": "scalar"
+      },
+      {
+        "name": "targetKind",
+        "kind": "scalar"
+      },
+      {
+        "name": "targetRef",
+        "kind": "scalar"
+      },
+      {
+        "name": "updatedAt",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "reveal",
     "kind": "object",
     "children": [
@@ -14960,6 +15060,11 @@
         "kind": "scalar"
       },
       {
+        "name": "failureReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "id",
         "kind": "scalar"
       },
@@ -14976,6 +15081,10 @@
         "name": "manifestToken",
         "kind": "scalar",
         "optional": true
+      },
+      {
+        "name": "progress",
+        "kind": "scalar"
       },
       {
         "name": "state",
@@ -16733,6 +16842,10 @@
       },
       {
         "name": "preferSDH",
+        "kind": "scalar"
+      },
+      {
+        "name": "remoteMaxBitrate",
         "kind": "scalar"
       },
       {
@@ -18519,6 +18632,10 @@
       },
       {
         "name": "remoteEnrollmentEnabled",
+        "kind": "scalar"
+      },
+      {
+        "name": "remoteMaxBitrate",
         "kind": "scalar"
       },
       {
@@ -20872,6 +20989,10 @@
         "kind": "scalar"
       },
       {
+        "name": "remoteMaxBitrate",
+        "kind": "scalar"
+      },
+      {
         "name": "updateCheckChannel",
         "kind": "scalar"
       },
@@ -22636,6 +22757,10 @@
         "kind": "scalar"
       },
       {
+        "name": "remoteMaxBitrate",
+        "kind": "scalar"
+      },
+      {
         "name": "updateCheckChannel",
         "kind": "scalar"
       },
@@ -22905,6 +23030,10 @@
       },
       {
         "name": "preferSDH",
+        "kind": "scalar"
+      },
+      {
+        "name": "remoteMaxBitrate",
         "kind": "scalar"
       },
       {
@@ -24044,6 +24173,11 @@
         "kind": "scalar"
       },
       {
+        "name": "failureReason",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
         "name": "id",
         "kind": "scalar"
       },
@@ -24060,6 +24194,10 @@
         "name": "manifestToken",
         "kind": "scalar",
         "optional": true
+      },
+      {
+        "name": "progress",
+        "kind": "scalar"
       },
       {
         "name": "state",
@@ -26308,6 +26446,10 @@
         "kind": "scalar"
       },
       {
+        "name": "remoteMaxBitrate",
+        "kind": "scalar"
+      },
+      {
         "name": "updateCheckChannel",
         "kind": "scalar"
       },
@@ -26779,6 +26921,10 @@
       },
       {
         "name": "preferSDH",
+        "kind": "scalar"
+      },
+      {
+        "name": "remoteMaxBitrate",
         "kind": "scalar"
       },
       {

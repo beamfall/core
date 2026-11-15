@@ -56,6 +56,11 @@ func streamsFromProbe(streams []ffmpeg.ProbeStream) []store.MediaFileStream {
 			HDR10Plus:       s.HDR10Plus,
 			DoViProfile:     s.DoViProfile,
 			DoViBLCompatID:  s.DoViBLCompatID,
+
+			SampleRate:            s.SampleRate,
+			EncoderDelaySamples:   s.EncoderDelaySamples,
+			EncoderPaddingSamples: s.EncoderPaddingSamples,
+			DecodedSamples:        s.DecodedSamples,
 		})
 	}
 	return out
