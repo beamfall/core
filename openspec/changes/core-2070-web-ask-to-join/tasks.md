@@ -1,0 +1,9 @@
+- [ ] `internal/server`: browser poll (CSRF header) applies the web transport rule, sets the credential cookies on approval and blanks the body credential
+- [ ] `internal/server` tests for the browser poll, the plain-HTTP refusal and the unchanged native poll
+- [ ] `docs/api/lan-pairing.md` documents the browser poll
+- [ ] Web: request, poll and regenerate helpers; Ask to join on the enroll page with New code and Cancel
+- [ ] Web: distinct denied, expired, throttled and refused messages; 404 hides the button
+- [ ] Web: strings in en, fr, de, es and pt
+- [ ] Vitest: approve, deny, expiry, regenerate, 404 fallback, unmount, typed submit cancels the ask
+- [ ] `make gate`
+- [ ] `openspec archive core-2070-web-ask-to-join` after landing
