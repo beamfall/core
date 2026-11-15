@@ -51,7 +51,12 @@ Two separate faults cause the transcode:
 - **Visualizer**: the acceptance criterion is a visualizer from the pinned Oscillux release. No
   Oscillux release is pinned yet (OSC-0020 is owner-gated), and its web package carries DSP only, no
   renderer or shader bundle. Per ADR-0228 no effect code is written in the client; the visualizer
-  lands when Oscillux publishes a pinned web renderer, and CORE-1143 stays open until then.
+  lands when Oscillux publishes a pinned web renderer. That work is CORE-1309; CORE-1143 closed
+  without it.
+- **How core consumes Oscillux** is decided (CORE-1511, ADR-0233 D7, owner decision 2026-11-15):
+  the Web Viewer ships a checksum-pinned release cut from Oscillux's `AGPL-3.0-only` tree. Core's
+  licence notice gets no additional permission, no Oscillux source is copied into core, and the
+  PolyForm-labelled v0.1.0 and v0.1.1 assets are never used. No such release exists yet.
 
 ## Impact
 
