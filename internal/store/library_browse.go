@@ -84,6 +84,9 @@ type LibraryBrowseResult struct {
 	Total  int
 	Items  []SourceItem
 	Facets LibraryBrowseFacets
+	// Letters is where each title initial starts in the filtered set, for a
+	// title sort only; any other order leaves it empty.
+	Letters []LibraryBrowseLetter
 }
 
 type libraryBrowseCandidate struct {
@@ -130,7 +133,7 @@ func ValidLibraryBrowseQuality(quality string) bool {
 // database from the catalog, so the candidate set is merged, filtered and
 // sorted here rather than in one SQL statement.
 func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query LibraryBrowseQuery) (LibraryBrowseResult, error) {
-	empty := LibraryBrowseResult{Items: []SourceItem{}}
+	empty := LibraryBrowseResult{Items: []SourceItem{}, Letters: []LibraryBrowseLetter{}}
 	if query.LibraryID == "" {
 		return empty, nil
 	}
@@ -204,7 +207,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 			return empty, err
 		}
 	}
-	result := LibraryBrowseResult{Items: []SourceItem{}}
+	result := LibraryBrowseResult{Items: []SourceItem{}, Letters: []LibraryBrowseLetter{}}
 	result.Facets = libraryBrowseFacets(candidates)
 	for _, kind := range query.FacetEntityKinds {
 		titles, err := libraryBrowseEntityTitles(ctx, reader, kind, visible, candidates)
@@ -239,6 +242,9 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		return !libraryBrowseMatches(c, query)
 	})
 	sortLibraryBrowse(candidates, query)
+	if query.Sort == "" || query.Sort == LibraryBrowseSortTitle {
+		result.Letters = libraryBrowseLetters(candidates)
+	}
 
 	result.Total = len(candidates)
 	if offset < len(candidates) {

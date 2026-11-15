@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -224,5 +225,46 @@ func TestLibraryItemsCarryTheProfilesPlaybackState(t *testing.T) {
 	done := states["media-demo-bunny"]
 	if done == nil || !done.Completed {
 		t.Fatalf("finished grid item engagement = %+v, want completed", done)
+	}
+}
+
+// A title sort reports where each title initial starts across the whole
+// filtered set, so a client can jump to a letter without loading every item.
+func TestLibraryItemsReportWhereEachTitleInitialStarts(t *testing.T) {
+	handler := newDemoLibraryHandler(t)
+	const query = `query($libraryID: String!, $sort: String, $limit: Int, $offset: Int) {
+		libraryItems(libraryID: $libraryID, sort: $sort, limit: $limit, offset: $offset) {
+			total items { id title } letters { letter offset count }
+		}
+	}`
+	var first LibraryItemsResponse
+	execGraph(t, handler, authorizeDemoViewer, query,
+		map[string]any{"libraryID": "library-demo-open", "sort": "title", "limit": 1}, "libraryItems", &first)
+	if len(first.Letters) < 2 {
+		t.Fatalf("letters = %+v, want the initials of the whole set on a one-item page", first.Letters)
+	}
+	counted := 0
+	for _, letter := range first.Letters {
+		counted += letter.Count
+	}
+	if counted != first.Total {
+		t.Fatalf("letter counts sum to %d, want the %d items", counted, first.Total)
+	}
+	last := first.Letters[len(first.Letters)-1]
+	if last.Offset <= 0 || last.Offset >= first.Total {
+		t.Fatalf("last letter %+v lies outside the %d items", last, first.Total)
+	}
+	var jumped LibraryItemsResponse
+	execGraph(t, handler, authorizeDemoViewer, query,
+		map[string]any{"libraryID": "library-demo-open", "sort": "title", "limit": 1, "offset": last.Offset}, "libraryItems", &jumped)
+	if len(jumped.Items) != 1 || !strings.EqualFold(jumped.Items[0].Title[:len(last.Letter)], last.Letter) {
+		t.Fatalf("offset %d opened on %+v, want a title starting with %q", last.Offset, jumped.Items, last.Letter)
+	}
+
+	var byYear LibraryItemsResponse
+	execGraph(t, handler, authorizeDemoViewer, query,
+		map[string]any{"libraryID": "library-demo-open", "sort": "year"}, "libraryItems", &byYear)
+	if byYear.Letters == nil || len(byYear.Letters) != 0 {
+		t.Fatalf("year sort letters = %+v, want an empty list", byYear.Letters)
 	}
 }
