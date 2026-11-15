@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -124,10 +125,11 @@ func TestCreateCodeAndEnrollDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCode returned error: %v", err)
 	}
-	if code.Code != "PAIR1234" {
-		t.Fatalf("Code = %q, want PAIR1234", code.Code)
+	if code.Code != "PA1R1234" {
+		t.Fatalf("Code = %q, want PA1R1234", code.Code)
 	}
 
+	// Typed with the look-alike I for 1, lower case and a hyphen: still redeems.
 	enrolled, err := service.Enroll(context.Background(), EnrollRequest{
 		Code:       "pair-1234",
 		DeviceName: "Living Room",
@@ -1084,7 +1086,7 @@ func TestBootstrapEmptyAdminPasswordLeavesFlowUnchanged(t *testing.T) {
 
 func deterministicService(st *store.Store, now time.Time) *Service {
 	service := NewService(st, func() time.Time { return now })
-	service.generateCode = func() (string, error) { return "PAIR1234", nil }
+	service.generateCode = func() (string, error) { return "PA1R1234", nil }
 	service.generateSecret = func() (string, error) { return "device-secret-new", nil }
 	ids := []string{"device-new", "session-new"}
 	service.generateID = func(_ string) (string, error) {
@@ -1240,5 +1242,30 @@ func TestViewerPairingCodesDisabledKeepsDemoEnrollment(t *testing.T) {
 	}
 	if enrolled.DeviceRole != string(store.DeviceRoleViewer) || enrolled.ProfileID != "profile-managed" {
 		t.Fatalf("enrolled = %+v, want viewer on profile-managed", enrolled)
+	}
+}
+
+func TestRandomCodeAvoidsLookAlikeCharacters(t *testing.T) {
+	// feature:pairing-enroll
+	for range 200 {
+		code, err := randomCode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(code) != 8 || strings.ContainsAny(code, "ILOU") || normalizeCode(code) != code {
+			t.Fatalf("randomCode() = %q; want 8 Crockford base32 characters with no I, L, O or U", code)
+		}
+	}
+}
+
+func TestNormalizeCodeFoldsLookAlikes(t *testing.T) {
+	for typed, want := range map[string]string{
+		"0O1IL-x":    "00111X",
+		" ab o-l i ": "AB011",
+		"PA1R1234":   "PA1R1234",
+	} {
+		if got := normalizeCode(typed); got != want {
+			t.Errorf("normalizeCode(%q) = %q, want %q", typed, got, want)
+		}
 	}
 }

@@ -357,7 +357,7 @@ func TestCreateOwnerCodeMintsManagerCodeForOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateOwnerCode: %v", err)
 	}
-	if code.Code != "PAIR1234" || code.DeviceRole != "manager" || code.ProfileID != "profile-default" ||
+	if code.Code != "PA1R1234" || code.DeviceRole != "manager" || code.ProfileID != "profile-default" ||
 		code.ExpiresAt != now.Add(10*time.Minute).Format(time.RFC3339) {
 		t.Fatalf("code = %+v", code)
 	}
