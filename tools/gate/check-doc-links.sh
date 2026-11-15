@@ -94,6 +94,7 @@ KNOWN_GAPS = {
     "internal/util": "package-map row: intentionally absent",
     "internal/model": "package-map row: intentionally absent",
     "internal/serving": "package-map row: intentionally absent (superseded by internal/reveal)",
+    "internal/web/app-dist/production": "gitignored Web UI production bundle, built by make web-build; absent from a fresh clone (CORE-1712)",
 }
 
 LINK_RE = re.compile(r'\]\(([^)]+)\)')
