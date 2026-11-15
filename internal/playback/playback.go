@@ -1996,7 +1996,7 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 // ladder rung, whose 256 kbit/s audio reserve holds only stereo AAC.
 // Audio-only items keep their audio: the ceiling never applies to them.
 func (ov quirkOverlay) ceilingBindsAudio(media store.Media, file store.MediaFile, streams []store.MediaFileStream) bool {
-	return ov.clientMaxBitrate > 0 && !audioOnlyMedia(media, streams) && ov.vetoesVideoPassthrough(media, file, streams)
+	return ov.clientMaxBitrate > 0 && !audioOnlyMedia(media) && ov.vetoesVideoPassthrough(media, file, streams)
 }
 
 // ceilingBoundAudio holds a re-encoded stream's audio to stereo AAC under the
@@ -2333,7 +2333,7 @@ func canDirectPlay(media store.Media, file store.MediaFile, streams []store.Medi
 		return false
 	}
 	videoOK := false
-	if audioOnlyMedia(media, streams) {
+	if audioOnlyMedia(media) {
 		videoOK = audioOnlyCodecDeclared(media, streams, profile)
 	} else {
 		videoOK = videoDirectPlayable(media, file, streams, profile)
@@ -2412,16 +2412,14 @@ func firstAudioStream(streams []store.MediaFileStream) (store.MediaFileStream, b
 	return store.MediaFileStream{}, false
 }
 
-// audioOnlyMedia reports an audio-class item with no video stream. Its
-// Media.Codec is the audio codec (scan sets it from the probe), so the video
-// envelope has nothing to judge: without this exemption a client declaring
-// videoCodecs could never direct-play a track (CORE-1143).
-func audioOnlyMedia(media store.Media, streams []store.MediaFileStream) bool {
-	if media.Class != store.MediaClassAudio {
-		return false
-	}
-	_, hasVideo := primaryVideoStream(streams)
-	return !hasVideo
+// audioOnlyMedia reports an audio-class item. Its Media.Codec is the audio
+// codec (scan sets it from the probe), so the video envelope has nothing to
+// judge: without this exemption a client declaring videoCodecs could never
+// direct-play a track (CORE-1143). A picture stream an audio item carries is
+// embedded cover art, not video (CORE-1542, CORE-1848), so it changes nothing
+// here, as advertisedRungs and StreamShape.AudioOnly already treat it.
+func audioOnlyMedia(media store.Media) bool {
+	return media.Class == store.MediaClassAudio
 }
 
 // audioOnlyCodecDeclared stands in for the video gate on audio-only items.

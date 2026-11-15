@@ -673,19 +673,23 @@ func (ov quirkOverlay) vetoesVideoPassthrough(media store.Media, file store.Medi
 	if ov.ForceTranscode {
 		return true
 	}
-	if len(ov.DenyVideoCodecs) > 0 {
+	// An audio item has no video to veto: its Media.Codec is the audio codec,
+	// and a picture stream it carries is embedded cover art (CORE-1848). Only
+	// the bitrate cap below applies to it.
+	audioOnly := audioOnlyMedia(media)
+	if len(ov.DenyVideoCodecs) > 0 && !audioOnly {
 		codec, ok := normalizeVideoCodec(media.Codec)
 		if !ok || slices.Contains(ov.DenyVideoCodecs, codec) {
 			return true
 		}
 	}
-	if ov.MaxHeight > 0 && (media.VideoHeight <= 0 || media.VideoHeight > ov.MaxHeight) {
+	if ov.MaxHeight > 0 && !audioOnly && (media.VideoHeight <= 0 || media.VideoHeight > ov.MaxHeight) {
 		return true
 	}
 	// The viewer's ceiling follows the same evidence rule: a source whose
 	// bitrate cannot be estimated is not handed over on a capped network.
 	bitrateCap := ov.MaxBitrate
-	if !audioOnlyMedia(media, streams) {
+	if !audioOnly {
 		bitrateCap = ov.maxBitrate()
 	}
 	if bitrateCap > 0 {
@@ -694,7 +698,7 @@ func (ov quirkOverlay) vetoesVideoPassthrough(media store.Media, file store.Medi
 			return true
 		}
 	}
-	return ov.vetoesHDR(streams)
+	return !audioOnly && ov.vetoesHDR(streams)
 }
 
 // vetoesHDR fails closed only when the video stream ROW is absent. An empty
