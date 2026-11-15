@@ -56,6 +56,9 @@ const WATCH_PARTY_TRANSPORT_MUTATION =
 const REQUEST_WATCH_PARTY_TRANSPORT_MUTATION =
   "mutation RequestWatchPartyTransport($partyID: String!, $item: String!, $positionMS: Int!, $paused: Boolean) { requestWatchPartyTransport(partyID: $partyID, item: $item, positionMS: $positionMS, paused: $paused) { partyID approved } }";
 
+const DECIDE_WATCH_PARTY_REQUEST_MUTATION =
+  "mutation DecideWatchPartyRequest($partyID: String!, $request: String, $decline: Boolean) { watchPartyTransport(partyID: $partyID, request: $request, decline: $decline) { item positionMS presentAtMS } }";
+
 const LEAVE_WATCH_PARTY_MUTATION =
   "mutation LeaveWatchParty($partyID: String!, $end: Boolean) { leaveWatchParty(partyID: $partyID, end: $end) { partyID } }";
 
@@ -124,6 +127,22 @@ export async function requestWatchPartyTransport(vars: {
     vars,
   );
   return data.requestWatchPartyTransport;
+}
+
+/**
+ * DecideWatchPartyRequest — the host approves a member's pending request, which
+ * moves every member, or declines it, which leaves the timeline as it is.
+ */
+export async function decideWatchPartyRequest(
+  partyID: string,
+  request: string,
+  approve: boolean,
+): Promise<WatchPartyAnchor> {
+  const data = await graphql<{ watchPartyTransport: WatchPartyAnchor }>(
+    DECIDE_WATCH_PARTY_REQUEST_MUTATION,
+    { partyID, request, decline: !approve },
+  );
+  return data.watchPartyTransport;
 }
 
 /**

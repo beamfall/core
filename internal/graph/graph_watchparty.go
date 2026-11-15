@@ -348,6 +348,11 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 // (ErrNotHost → "not the party host"); non-hosts use requestWatchPartyTransport
 // instead. item/position are what the host's client declares (queue composition
 // stays plugin-owned), so pause/resume/seek/skip all funnel through here.
+//
+// With `request` the host decides a member's pending request instead of
+// declaring its own move (CORE-1765): approve applies the requested item,
+// position and pause state to every member; `decline: true` drops the request
+// and returns the unchanged anchor without a transition.
 func (h *Handler) watchPartyTransport(ctx context.Context, scope auth.Scope, req request) (GroupTransitionResult, error) {
 	if h.conductor == nil {
 		return GroupTransitionResult{}, clientError("group conductor unavailable")
@@ -358,6 +363,9 @@ func (h *Handler) watchPartyTransport(ctx context.Context, scope auth.Scope, req
 	partyID := trimmedVariable(req, "partyID")
 	if partyID == "" {
 		return GroupTransitionResult{}, clientError("partyID is required")
+	}
+	if requestID := trimmedVariable(req, "request"); requestID != "" {
+		return h.decidePartyRequest(ctx, scope, partyID, requestID, boolVar(req, "decline"))
 	}
 	item := store.MediaID(trimmedVariable(req, "item"))
 	if item == "" {
@@ -379,12 +387,42 @@ func (h *Handler) watchPartyTransport(ctx context.Context, scope auth.Scope, req
 	}, nil
 }
 
+// decidePartyRequest approves or declines the host's pending request requestID.
+// Taking the request is host-only, so a member cannot decide its own request.
+// A decline returns the live anchor; an approval moves every member through
+// partyTransition, which re-checks that every member can see the item.
+func (h *Handler) decidePartyRequest(ctx context.Context, scope auth.Scope, partyID, requestID string, decline bool) (GroupTransitionResult, error) {
+	pending, err := h.conductor.TakeRequest(partyID, scope.SessionID, requestID)
+	if err != nil {
+		return GroupTransitionResult{}, partyClientError(err)
+	}
+	transition, err := h.conductor.PartyAnchor(partyID)
+	if err != nil {
+		return GroupTransitionResult{}, partyClientError(err)
+	}
+	if !decline {
+		transition, err = h.partyTransition(ctx, partyID, scope.SessionID, scope.ProfileID, pending.Item, pending.Position, pending.Paused)
+		if err != nil {
+			return GroupTransitionResult{}, err
+		}
+		if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
+			return GroupTransitionResult{}, err
+		}
+	}
+	return GroupTransitionResult{
+		GroupID:     partyID,
+		Item:        string(transition.Item),
+		PositionMS:  transition.Position.Milliseconds(),
+		PresentAtMS: transition.PresentAt.UnixMilli(),
+	}, nil
+}
+
 // RequestTransportResult tells a non-host participant what happened to its
 // seek/skip request. Approved is true in a relaxed party — the
 // request was auto-approved and applied authoritatively (the transition was
 // broadcast). In a non-relaxed party Approved is false: the request was surfaced
-// to the host (a host notification) for approval, and the timeline was NOT
-// mutated.
+// to the host (a host notification and a player request row) for approval, and
+// the timeline was NOT mutated.
 type RequestTransportResult struct {
 	PartyID  string `json:"partyID"`
 	Approved bool   `json:"approved"`
@@ -394,8 +432,9 @@ type RequestTransportResult struct {
 // It never mutates the timeline directly. In a relaxed party
 // (household auto-approve) the request is applied on the host's behalf — the
 // resulting transition is broadcast authoritatively, Approved=true. Otherwise it
-// is surfaced to the host for approval via an in-app notification, Approved=false
-// and nothing is mutated. The caller must be a party member and must not be the
+// is held for the host's decision (CORE-1765): a watch-party-request notification
+// to the host's Profile and a `request` sync row to the host's player,
+// Approved=false and nothing is mutated. The caller must be a party member and must not be the
 // host (the host uses watchPartyTransport).
 func (h *Handler) requestWatchPartyTransport(ctx context.Context, scope auth.Scope, req request) (RequestTransportResult, error) {
 	if h.conductor == nil {
@@ -418,23 +457,8 @@ func (h *Handler) requestWatchPartyTransport(ctx context.Context, scope auth.Sco
 		return RequestTransportResult{}, partyClientError(err)
 	}
 	if !decision.Authoritative {
-		// Surface the request to the host: an in-app notification
-		// to the host's Profile, addressed by the party id. The timeline is NOT
-		// mutated — the host approves or ignores.
-		if h.store != nil {
-			host, _ := h.partyHostProfile(partyID)
-			if host != "" {
-				if err := h.store.CreateNotification(ctx, store.Notification{
-					ID:                 newPartyNotificationID(),
-					RecipientProfileID: host,
-					Kind:               store.NotificationWatchPartyInvite,
-					Title:              "Watch Party seek request",
-					Ref:                partyID,
-					CreatedAt:          time.Now().UTC(),
-				}); err != nil {
-					return RequestTransportResult{}, err
-				}
-			}
+		if err := h.holdPartyRequest(ctx, partyID, scope.SessionID, item, position, boolVar(req, "paused")); err != nil {
+			return RequestTransportResult{}, err
 		}
 		return RequestTransportResult{PartyID: partyID, Approved: false}, nil
 	}
@@ -447,6 +471,59 @@ func (h *Handler) requestWatchPartyTransport(ctx context.Context, scope auth.Sco
 		return RequestTransportResult{}, err
 	}
 	return RequestTransportResult{PartyID: partyID, Approved: true}, nil
+}
+
+// holdPartyRequest records a member's request in a host-only party and tells the
+// host: a watch-party-request notification (its own kind, not an invite) and a
+// `request` row on the host's Profile so the player can offer Approve and
+// Decline. The timeline is not mutated.
+func (h *Handler) holdPartyRequest(ctx context.Context, partyID string, from store.SessionID, item store.MediaID, position time.Duration, paused bool) error {
+	requestID := newPartyNotificationID()
+	host, err := h.conductor.AddRequest(partyID, conductor.PartyRequest{
+		ID: requestID, From: from, Item: item, Position: position, Paused: paused,
+	})
+	if err != nil {
+		return partyClientError(err)
+	}
+	if h.store == nil || host == "" {
+		return nil
+	}
+	g, err := h.conductor.Party(partyID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	name := "Participant"
+	for _, m := range g.Members() {
+		if m.SessionID == from {
+			name = partyMemberDisplayName(ctx, h.store, m)
+		}
+	}
+	now := time.Now().UTC()
+	if err := h.store.CreateNotification(ctx, store.Notification{
+		ID:                 newPartyNotificationID(),
+		RecipientProfileID: host,
+		Kind:               store.NotificationWatchPartyRequest,
+		Title:              "Watch Party seek request",
+		Body:               name,
+		Ref:                partyID + ":" + requestID,
+		CreatedAt:          now,
+	}); err != nil {
+		return err
+	}
+	hostSession, _ := g.Host()
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	return h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+		GroupID:    partyID,
+		ProfileID:  host,
+		Signal:     store.GroupSignalRequest,
+		Session:    hostSession,
+		Request:    requestID,
+		From:       name,
+		Item:       item,
+		PositionMS: position.Milliseconds(),
+		Paused:     paused,
+	}, now)
 }
 
 // WatchPartyAutoSkipResult tells a party member what happened to its client-side
@@ -924,6 +1001,8 @@ func partyClientError(err error) error {
 		return clientError("unknown party")
 	case errors.Is(err, conductor.ErrNoInvite):
 		return clientError("unknown invite")
+	case errors.Is(err, conductor.ErrNoRequest):
+		return clientError("unknown request")
 	case errors.Is(err, conductor.ErrNotHost):
 		return clientError("not the party host")
 	case errors.Is(err, conductor.ErrNotMember):

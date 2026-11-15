@@ -4,6 +4,7 @@ import {
   acceptWatchParty,
   calibrateWatchPartyClock,
   createWatchParty,
+  decideWatchPartyRequest,
   fetchMySessions,
   inviteToWatchParty,
   leaveWatchParty,
@@ -34,6 +35,19 @@ export type WatchPartyErrorKind = "" | "home-network" | "failed";
 /** What last happened to the party's host (CORE-1763); the UI turns it into words. */
 export type WatchPartyNotice = "" | "handoff" | "ended";
 
+/** A member's play, pause or seek waiting for the host's decision (CORE-1765). */
+export interface WatchPartyRequest {
+  id: string;
+  /** The requesting member's display name. */
+  from: string;
+  item: string;
+  positionMS: number;
+  paused: boolean;
+}
+
+/** How many pending requests the host's player keeps; older ones fall off. */
+export const MAX_PARTY_REQUESTS = 10;
+
 export interface WatchPartyState {
   status: WatchPartyStatus;
   partyID: string;
@@ -53,6 +67,8 @@ export interface WatchPartyState {
   notice: WatchPartyNotice;
   /** The display name the notice is about: the new host, or the host who ended it. */
   noticeName: string;
+  /** Members' requests waiting for this host's decision, oldest first. */
+  requests: WatchPartyRequest[];
 }
 
 const IDLE: WatchPartyState = {
@@ -67,6 +83,7 @@ const IDLE: WatchPartyState = {
   errorDetail: "",
   notice: "",
   noticeName: "",
+  requests: [],
 };
 
 /** How long a join waits for the roster that tells it whether the party is paused. */
@@ -127,6 +144,10 @@ function applyFrame(frame: GroupSyncFrame): void {
   // corrects its own drift. Transitions and rosters both carry the live anchor,
   // in stream order, so each one is the timeline.
   if (frame.signal === "nudge") return;
+  if (frame.signal === "request") {
+    addRequest(frame);
+    return;
+  }
   if (frame.signal === "ended") {
     // The host ended the party for everyone; the local player keeps playing on its own.
     reset({ notice: "ended", noticeName: frame.hostName ?? "" });
@@ -145,6 +166,8 @@ function applyFrame(frame: GroupSyncFrame): void {
       patch.notice = "handoff";
       patch.noticeName = frame.hostName ?? "";
       patch.isHost = false;
+      // Requests were addressed to the old host; the server dropped them.
+      patch.requests = [];
       // Only the new host's own Profile row names its session.
       if (frame.host) void adoptHost(frame.host, generation);
     }
@@ -155,6 +178,20 @@ function applyFrame(frame: GroupSyncFrame): void {
     rosterWaiters = [];
     for (const wake of waiters) wake();
   }
+}
+
+// A request frame reaches every session of the host's Profile; only the host acts on it.
+function addRequest(frame: GroupSyncFrame): void {
+  if (!state.isHost || !frame.request) return;
+  const request: WatchPartyRequest = {
+    id: frame.request,
+    from: frame.from ?? "",
+    item: frame.item,
+    positionMS: frame.positionMS,
+    paused: frame.paused,
+  };
+  const rest = state.requests.filter((r) => r.id !== request.id);
+  set({ requests: [...rest, request].slice(-MAX_PARTY_REQUESTS) });
 }
 
 // This viewer's own session id, fetched once: a hand-off names the new host by session.
@@ -216,16 +253,21 @@ function invitedOf(info: WatchPartyInfo): string[] {
  * Start a party around `content`, hosted by this session. The timeline holds
  * at `positionMS` until the host's first transport puts it in motion.
  */
-export async function startWatchParty(content: string, positionMS = 0): Promise<boolean> {
+export async function startWatchParty(
+  content: string,
+  positionMS = 0,
+  relaxed = true,
+): Promise<boolean> {
   if (state.status !== "idle") return false;
   set({ status: "starting", error: "", errorDetail: "", notice: "", noticeName: "" });
   const gen = generation;
   try {
     const clock = await calibrateWatchPartyClock();
-    // Relaxed: anyone in the household party may play, pause or seek.
+    // Relaxed: anyone in the household party may play, pause or seek. Host-only:
+    // a member's play, pause or seek waits for the host's approval (CORE-1765).
     const info = await createWatchParty({
       content,
-      relaxed: true,
+      relaxed,
       clockOffsetMS: clock.offsetMS,
       renderLatencyMS: 0,
     });
@@ -369,6 +411,25 @@ export async function sendPartyTransport(
     }
   } catch (err) {
     if (gen === generation) set(failure(err));
+  }
+}
+
+/**
+ * As host, approve a member's pending request, which moves every member, or
+ * decline it. Resolves to false when this viewer is not the host or the
+ * server refused (the error is in the state).
+ */
+export async function decidePartyRequest(requestID: string, approve: boolean): Promise<boolean> {
+  if (state.status !== "active" || !state.isHost || !requestID) return false;
+  const partyID = state.partyID;
+  const gen = generation;
+  set({ requests: state.requests.filter((r) => r.id !== requestID) });
+  try {
+    await decideWatchPartyRequest(partyID, requestID, approve);
+    return true;
+  } catch (err) {
+    if (gen === generation) set(failure(err));
+    return false;
   }
 }
 

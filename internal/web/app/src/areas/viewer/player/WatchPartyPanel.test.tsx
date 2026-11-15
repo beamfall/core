@@ -4,7 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { formatDrift, WatchPartyPanel, WatchPartySyncIndicator } from "./WatchPartyPanel";
-import { endParty, inviteToParty, type WatchPartyState } from "./watchPartyStore";
+import {
+  decidePartyRequest,
+  endParty,
+  inviteToParty,
+  type WatchPartyState,
+} from "./watchPartyStore";
 
 // The party the indicator reads from the store (the panel takes it as a prop).
 let storeParty: WatchPartyState;
@@ -12,6 +17,7 @@ let storeParty: WatchPartyState;
 vi.mock("./watchPartyStore", () => ({
   inviteToParty: vi.fn(async () => true),
   endParty: vi.fn(async () => {}),
+  decidePartyRequest: vi.fn(async () => true),
   clearWatchPartyNotice: vi.fn(),
   useWatchPartyState: () => storeParty,
 }));
@@ -28,11 +34,13 @@ const idle: WatchPartyState = {
   errorDetail: "",
   notice: "",
   noticeName: "",
+  requests: [],
 };
 
 beforeEach(() => {
   storeParty = idle;
   vi.mocked(endParty).mockClear();
+  vi.mocked(decidePartyRequest).mockClear();
 });
 
 function renderPanel(party: WatchPartyState, onStart = vi.fn(async () => true)) {
@@ -56,7 +64,46 @@ describe("WatchPartyPanel", () => {
   it("starts a party from the title playing", async () => {
     const { onStart } = renderPanel(idle);
     await userEvent.click(screen.getByRole("button", { name: "Start a Watch Party" }));
-    expect(onStart).toHaveBeenCalled();
+    expect(onStart).toHaveBeenCalledWith(true);
+  });
+
+  it("offers host-only control at start (CORE-1765)", async () => {
+    const { onStart } = renderPanel(idle);
+    expect(screen.getByRole("radio", { name: "Everyone" })).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: "Only me" }));
+    await userEvent.click(screen.getByRole("button", { name: "Start a Watch Party" }));
+    expect(onStart).toHaveBeenCalledWith(false);
+  });
+
+  it("lets the host approve or decline a member's request (CORE-1765)", async () => {
+    renderPanel({
+      ...idle,
+      status: "active",
+      partyID: "p1",
+      isHost: true,
+      members: ["Host", "Guest"],
+      requests: [
+        { id: "r1", from: "Guest", item: "m1", positionMS: 83000, paused: false },
+        { id: "r2", from: "Guest", item: "m1", positionMS: 5000, paused: true },
+      ],
+    });
+    expect(screen.getByText("Guest asks to play from 1:23")).toBeVisible();
+    expect(screen.getByText("Guest asks to pause at 0:05")).toBeVisible();
+    await userEvent.click(screen.getAllByRole("button", { name: "Approve" })[0]);
+    expect(decidePartyRequest).toHaveBeenCalledWith("r1", true);
+    await userEvent.click(screen.getAllByRole("button", { name: "Decline" })[1]);
+    expect(decidePartyRequest).toHaveBeenCalledWith("r2", false);
+  });
+
+  it("shows no requests to a member", () => {
+    renderPanel({
+      ...idle,
+      status: "active",
+      partyID: "p1",
+      members: ["Host", "Guest"],
+      requests: [{ id: "r1", from: "Guest", item: "m1", positionMS: 0, paused: false }],
+    });
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
   });
 
   it("shows members, invites a profile by name and leaves", async () => {

@@ -44,6 +44,9 @@ var (
 	// in the party. Collapsed at the surface into "unknown invite" so the party
 	// is never a cross-Profile existence oracle.
 	ErrNoInvite = errors.New("conductor: no pending invite for this profile")
+	// ErrNoRequest reports that the party has no pending transport request with
+	// the given id: it was decided already, replaced, or dropped on hand-off.
+	ErrNoRequest = errors.New("conductor: no pending transport request")
 )
 
 // Posture distinguishes an Ambient Group (auto-advancing, muted-video + audio)
@@ -362,6 +365,7 @@ func (r *Registry) LeaveParty(id string, session store.SessionID) (PartyLeave, e
 	}
 	delete(g.members, session)
 	g.order = slices.DeleteFunc(g.order, func(s store.SessionID) bool { return s == session })
+	g.dropRequestFrom(session)
 	var leave PartyLeave
 	if len(g.members) == 0 {
 		leave.Dissolved = true
@@ -370,6 +374,8 @@ func (r *Registry) LeaveParty(id string, session store.SessionID) (PartyLeave, e
 			if m, ok := g.members[next]; ok {
 				g.host = next
 				g.hostProfile = m.ProfileID
+				// Requests were addressed to the old host; the new one did not see them.
+				g.requests = nil
 				leave.NewHost = next
 				break
 			}
@@ -434,4 +440,71 @@ func (r *Registry) PartyAnchor(id string) (Transition, error) {
 		PresentAt: now.Add(PreBufferWindow),
 		Paused:    g.paused,
 	}, nil
+}
+
+// PartyRequest is a member's play, pause or seek in a host-only party, held
+// until the host approves or declines it (CORE-1765).
+type PartyRequest struct {
+	// ID is the opaque id the host round-trips to decide the request.
+	ID string
+	// From is the requesting member's session.
+	From     store.SessionID
+	Item     store.MediaID
+	Position time.Duration
+	Paused   bool
+}
+
+// AddRequest records req as pending with the party's host and returns the
+// host's Profile, which the request notification is addressed to. The caller
+// must be a member and not the host. A member has at most one pending request:
+// a newer one replaces it.
+func (r *Registry) AddRequest(id string, req PartyRequest) (store.ProfileID, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return "", err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.members[req.From]; !ok {
+		return "", ErrNotMember
+	}
+	if req.From == g.host {
+		return "", ErrNotHost
+	}
+	g.dropRequestFrom(req.From)
+	if g.requests == nil {
+		g.requests = map[string]PartyRequest{}
+	}
+	g.requests[req.ID] = req
+	return g.hostProfile, nil
+}
+
+// TakeRequest removes and returns the pending request requestID so the host can
+// approve or decline it. Only the host may take one; ErrNoRequest reports a
+// request that is unknown or already decided.
+func (r *Registry) TakeRequest(id string, host store.SessionID, requestID string) (PartyRequest, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return PartyRequest{}, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.host != host {
+		return PartyRequest{}, ErrNotHost
+	}
+	req, ok := g.requests[requestID]
+	if !ok {
+		return PartyRequest{}, ErrNoRequest
+	}
+	delete(g.requests, requestID)
+	return req, nil
+}
+
+// dropRequestFrom removes session's pending request, if any. Callers hold g.mu.
+func (g *Group) dropRequestFrom(session store.SessionID) {
+	for id, req := range g.requests {
+		if req.From == session {
+			delete(g.requests, id)
+		}
+	}
 }

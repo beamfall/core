@@ -41,7 +41,8 @@ export interface WatchPartyView {
   needsTap: boolean;
   resume: () => void;
   /** Start a party around this title, carrying the current position and pause state. */
-  start: () => Promise<boolean>;
+  /** Start a party; `relaxed` lets every member control playback (CORE-1765). */
+  start: (relaxed?: boolean) => Promise<boolean>;
   leave: () => Promise<void>;
 }
 
@@ -232,13 +233,16 @@ export function useWatchParty({
     });
   }, [videoRef, correct]);
 
-  const start = useCallback(async () => {
-    const video = videoRef.current;
-    if (!mediaId) return false;
-    const ok = await startWatchParty(mediaId, video ? video.currentTime * 1000 : 0);
-    if (ok && video) await sendPartyTransport(mediaId, video.currentTime * 1000, video.paused);
-    return ok;
-  }, [mediaId, videoRef]);
+  const start = useCallback(
+    async (relaxed = true) => {
+      const video = videoRef.current;
+      if (!mediaId) return false;
+      const ok = await startWatchParty(mediaId, video ? video.currentTime * 1000 : 0, relaxed);
+      if (ok && video) await sendPartyTransport(mediaId, video.currentTime * 1000, video.paused);
+      return ok;
+    },
+    [mediaId, videoRef],
+  );
 
   return { party, driftMS, playback, needsTap, resume, start, leave: leaveParty };
 }

@@ -739,6 +739,10 @@ const (
 	// GroupSignalEnded tells every Watch Party member that the host ended the
 	// party for everyone (CORE-1763). HostName names who ended it.
 	GroupSignalEnded = "ended"
+	// GroupSignalRequest tells the host of a host-only Watch Party that a member
+	// asked to play, pause or seek, so the host can approve or decline it from
+	// the player (CORE-1765). It is written only to the host's Profile.
+	GroupSignalRequest = "request"
 )
 
 var groupSyncSignals = map[string]bool{
@@ -746,6 +750,7 @@ var groupSyncSignals = map[string]bool{
 	GroupSignalNudge:      true,
 	GroupSignalRoster:     true,
 	GroupSignalEnded:      true,
+	GroupSignalRequest:    true,
 }
 
 // GroupSyncPayload is the JSON body of a group.sync outbox event.
@@ -765,6 +770,9 @@ var groupSyncSignals = map[string]bool{
 //     host's session) only on the row for the new host's Profile, so that
 //     session learns it now drives the party (CORE-1763).
 //   - ended: HostName, the display name of the host who ended the party.
+//   - request: Request (the id the host round-trips to decide it), From (the
+//     requesting member's display name), Session (the host session it is for)
+//     and the requested Item, Position(ms) and Paused (CORE-1765).
 //
 // Paused accompanies a Watch Party transition or roster whose timeline holds at
 // Position. A Watch Party is cross-Profile, so the surface writes one row per
@@ -789,6 +797,8 @@ type GroupSyncPayload struct {
 	Host        SessionID `json:"host,omitempty"`
 	HostName    string    `json:"hostName,omitempty"`
 	Handoff     bool      `json:"handoff,omitempty"`
+	Request     string    `json:"request,omitempty"`
+	From        string    `json:"from,omitempty"`
 }
 
 // GroupSyncSignalValid reports whether signal is a member of the closed

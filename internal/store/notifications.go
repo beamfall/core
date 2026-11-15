@@ -49,6 +49,13 @@ const (
 	// (§2.3) is enforced on ACCEPT against the accepting session's own filter, not
 	// by hiding the invite.
 	NotificationWatchPartyInvite NotificationKind = "watch-party-invite"
+	// NotificationWatchPartyRequest is a member's play, pause or seek request in
+	// a host-only Watch Party, addressed to the host's Profile (CORE-1765). Ref is
+	// "<party id>:<request id>", which the host round-trips to approve or
+	// decline; Body is the requesting member's display name. Like the invite, it
+	// carries no LibraryID: the item is checked against every member when the
+	// host approves.
+	NotificationWatchPartyRequest NotificationKind = "watch-party-request"
 )
 
 // Notification is one inbox row addressed to a single recipient Profile.

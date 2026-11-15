@@ -264,6 +264,10 @@ type Group struct {
 	// ProfileID and follows the host role on hand-off; ProfileID itself never
 	// changes, because lookup reads it without the group lock.
 	hostProfile store.ProfileID
+	// requests holds members' transport requests waiting for the host's decision
+	// in a host-only party, keyed by request id, at most one per member session
+	// (CORE-1765). Dropped when the host role moves. Nil until the first request.
+	requests map[string]PartyRequest
 }
 
 // Members returns a snapshot copy of the group's members (ADR-0035 §8: the

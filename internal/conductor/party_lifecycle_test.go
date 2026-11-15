@@ -1,6 +1,7 @@
 package conductor
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -62,7 +63,7 @@ func TestLeavePartyHandsOffToEarliestMember(t *testing.T) {
 	if _, _, err := r.HostTransition(g.ID, "first", "media-alpha", time.Second, false); err != nil {
 		t.Fatalf("new host transition: %v", err)
 	}
-	if _, _, err := r.HostTransition(g.ID, "host-session", "media-alpha", 0, false); err != ErrNotHost {
+	if _, _, err := r.HostTransition(g.ID, "host-session", "media-alpha", 0, false); !errors.Is(err, ErrNotHost) {
 		t.Fatalf("old host transition err = %v, want ErrNotHost", err)
 	}
 
@@ -83,7 +84,7 @@ func TestEndParty(t *testing.T) {
 	r := NewRegistry()
 	g := lifecycleParty(t, r, "guest")
 
-	if _, err := r.EndParty(g.ID, "guest"); err != ErrNotHost {
+	if _, err := r.EndParty(g.ID, "guest"); !errors.Is(err, ErrNotHost) {
 		t.Fatalf("member EndParty err = %v, want ErrNotHost", err)
 	}
 	members, err := r.EndParty(g.ID, "host-session")
@@ -93,14 +94,14 @@ func TestEndParty(t *testing.T) {
 	if len(members) != 2 {
 		t.Fatalf("EndParty members = %d, want 2", len(members))
 	}
-	if _, err := r.Party(g.ID); err != ErrNoGroup {
+	if _, err := r.Party(g.ID); !errors.Is(err, ErrNoGroup) {
 		t.Fatalf("ended party err = %v, want ErrNoGroup", err)
 	}
-	if _, err := r.EndParty(g.ID, "host-session"); err != ErrNoGroup {
+	if _, err := r.EndParty(g.ID, "host-session"); !errors.Is(err, ErrNoGroup) {
 		t.Fatalf("EndParty twice err = %v, want ErrNoGroup", err)
 	}
 	ag := r.Form("profile-amb")
-	if _, err := r.EndParty(ag.ID, "s1"); err != ErrNotParty {
+	if _, err := r.EndParty(ag.ID, "s1"); !errors.Is(err, ErrNotParty) {
 		t.Fatalf("ambient EndParty err = %v, want ErrNotParty", err)
 	}
 }
@@ -158,5 +159,51 @@ func TestExpireDisconnected(t *testing.T) {
 	got = r.ExpireDisconnected(grace)
 	if len(got) != 1 || got[0].Session != "host-session" || got[0].Leave.NewHost != "reconnects" {
 		t.Fatalf("host expiry = %+v, want hand-off to reconnects", got)
+	}
+}
+
+// TestPartyRequests covers CORE-1765: a member holds at most one pending
+// request, only the host takes one, and a hand-off drops them.
+func TestPartyRequests(t *testing.T) {
+	r := NewRegistry()
+	g := lifecycleParty(t, r, "guest-a", "guest-b")
+
+	if _, err := r.AddRequest(g.ID, PartyRequest{ID: "r0", From: "host-session"}); !errors.Is(err, ErrNotHost) {
+		t.Fatalf("host AddRequest err = %v, want ErrNotHost", err)
+	}
+	if _, err := r.AddRequest(g.ID, PartyRequest{ID: "r0", From: "stranger"}); !errors.Is(err, ErrNotMember) {
+		t.Fatalf("non-member AddRequest err = %v, want ErrNotMember", err)
+	}
+	host, err := r.AddRequest(g.ID, PartyRequest{ID: "r1", From: "guest-a", Position: time.Second})
+	if err != nil || host != "profile-host" {
+		t.Fatalf("AddRequest = %q, %v, want profile-host", host, err)
+	}
+	// A newer request from the same member replaces the older one.
+	if _, err := r.AddRequest(g.ID, PartyRequest{ID: "r2", From: "guest-a", Position: 2 * time.Second}); err != nil {
+		t.Fatalf("AddRequest r2: %v", err)
+	}
+	if _, err := r.TakeRequest(g.ID, "host-session", "r1"); !errors.Is(err, ErrNoRequest) {
+		t.Fatalf("TakeRequest(replaced) err = %v, want ErrNoRequest", err)
+	}
+	if _, err := r.TakeRequest(g.ID, "guest-a", "r2"); !errors.Is(err, ErrNotHost) {
+		t.Fatalf("member TakeRequest err = %v, want ErrNotHost", err)
+	}
+	req, err := r.TakeRequest(g.ID, "host-session", "r2")
+	if err != nil || req.From != "guest-a" || req.Position != 2*time.Second {
+		t.Fatalf("TakeRequest = %#v, %v", req, err)
+	}
+	if _, err := r.TakeRequest(g.ID, "host-session", "r2"); !errors.Is(err, ErrNoRequest) {
+		t.Fatalf("TakeRequest twice err = %v, want ErrNoRequest", err)
+	}
+
+	// A leaver's request goes with it, and a hand-off clears the rest.
+	if _, err := r.AddRequest(g.ID, PartyRequest{ID: "r3", From: "guest-b"}); err != nil {
+		t.Fatalf("AddRequest r3: %v", err)
+	}
+	if _, err := r.LeaveParty(g.ID, "host-session"); err != nil {
+		t.Fatalf("LeaveParty: %v", err)
+	}
+	if _, err := r.TakeRequest(g.ID, "guest-a", "r3"); !errors.Is(err, ErrNoRequest) {
+		t.Fatalf("TakeRequest after hand-off err = %v, want ErrNoRequest", err)
 	}
 }

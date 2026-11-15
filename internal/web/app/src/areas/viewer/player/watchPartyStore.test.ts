@@ -4,6 +4,7 @@ import {
   acceptWatchParty,
   calibrateWatchPartyClock,
   createWatchParty,
+  decideWatchPartyRequest,
   fetchMySessions,
   inviteToWatchParty,
   leaveWatchParty,
@@ -12,12 +13,14 @@ import {
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
+  decidePartyRequest,
   endParty,
   getWatchParty,
   inviteToParty,
   joinWatchParty,
   leaveParty,
   leavePartyOnPageHide,
+  MAX_PARTY_REQUESTS,
   resetWatchPartyForTest,
   sendPartyTransport,
   startWatchParty,
@@ -32,6 +35,7 @@ vi.mock("@/lib/graphql", () => ({
   acceptWatchParty: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   createWatchParty: vi.fn(),
+  decideWatchPartyRequest: vi.fn(),
   fetchMySessions: vi.fn(),
   inviteToWatchParty: vi.fn(),
   leaveWatchParty: vi.fn(),
@@ -516,5 +520,106 @@ describe("host leave, end and page exit (CORE-1763)", () => {
     expect(getWatchParty().status).toBe("idle");
     leavePartyOnPageHide();
     expect(leaveWatchPartyKeepalive).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("host-only requests (CORE-1765)", () => {
+  async function strictHost() {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p5",
+      content: "m1",
+      relaxed: false,
+      members: [{ displayName: "Host", present: true }],
+    });
+    await startWatchParty("m1", 0, false);
+  }
+
+  function request(id: string, extra: Record<string, unknown> = {}) {
+    deliver({
+      groupID: "p5",
+      signal: "request",
+      request: id,
+      from: "Guest",
+      item: "m1",
+      positionMS: 42000,
+      paused: true,
+      ...extra,
+    });
+  }
+
+  it("starts host-only when asked", async () => {
+    await strictHost();
+    expect(createWatchParty).toHaveBeenCalledWith(expect.objectContaining({ relaxed: false }));
+  });
+
+  it("lists a request on the host without moving the timeline", async () => {
+    await strictHost();
+    const before = getWatchParty().timeline;
+    request("r1");
+    expect(getWatchParty().requests).toEqual([
+      { id: "r1", from: "Guest", item: "m1", positionMS: 42000, paused: true },
+    ]);
+    expect(getWatchParty().timeline).toBe(before);
+  });
+
+  it("replaces a repeated request id and keeps only the newest few", async () => {
+    await strictHost();
+    request("r1");
+    request("r1", { positionMS: 1000 });
+    expect(getWatchParty().requests).toHaveLength(1);
+    expect(getWatchParty().requests[0].positionMS).toBe(1000);
+    for (let i = 0; i < MAX_PARTY_REQUESTS + 3; i++) request(`n${i}`);
+    const ids = getWatchParty().requests.map((r) => r.id);
+    expect(ids).toHaveLength(MAX_PARTY_REQUESTS);
+    expect(ids.at(-1)).toBe(`n${MAX_PARTY_REQUESTS + 2}`);
+  });
+
+  it("ignores requests on a member's player", async () => {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({ groupID: "p5", signal: "roster", paused: true, members: ["Guest", "Host"] });
+      return { partyID: "p5", item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    await joinWatchParty("p5");
+    request("r1");
+    expect(getWatchParty().requests).toEqual([]);
+  });
+
+  it("approves or declines through the server and drops the request", async () => {
+    await strictHost();
+    vi.mocked(decideWatchPartyRequest).mockResolvedValue({
+      item: "m1",
+      positionMS: 42000,
+      presentAtMS: 0,
+    });
+    request("r1");
+    request("r2");
+    expect(await decidePartyRequest("r1", true)).toBe(true);
+    expect(decideWatchPartyRequest).toHaveBeenCalledWith("p5", "r1", true);
+    expect(await decidePartyRequest("r2", false)).toBe(true);
+    expect(decideWatchPartyRequest).toHaveBeenCalledWith("p5", "r2", false);
+    expect(getWatchParty().requests).toEqual([]);
+  });
+
+  it("reports a refused decision", async () => {
+    await strictHost();
+    vi.mocked(decideWatchPartyRequest).mockRejectedValue(new Error("unknown request"));
+    request("r1");
+    expect(await decidePartyRequest("r1", true)).toBe(false);
+    expect(getWatchParty()).toMatchObject({ error: "failed", errorDetail: "unknown request" });
+  });
+
+  it("drops pending requests when the host role moves", async () => {
+    await strictHost();
+    request("r1");
+    deliver({
+      groupID: "p5",
+      signal: "roster",
+      paused: true,
+      members: ["Guest"],
+      handoff: true,
+      hostName: "Guest",
+    });
+    expect(getWatchParty()).toMatchObject({ isHost: false, requests: [] });
+    expect(await decidePartyRequest("r1", true)).toBe(false);
   });
 });

@@ -21,13 +21,14 @@ export interface PartyTimeline {
   paused: boolean;
 }
 
-export type GroupSyncSignal = "transition" | "nudge" | "roster" | "ended";
+export type GroupSyncSignal = "transition" | "nudge" | "roster" | "ended" | "request";
 
 const SIGNALS: ReadonlySet<string> = new Set<GroupSyncSignal>([
   "transition",
   "nudge",
   "roster",
   "ended",
+  "request",
 ]);
 
 export interface GroupSyncFrame extends PartyTimeline {
@@ -41,6 +42,10 @@ export interface GroupSyncFrame extends PartyTimeline {
   hostName?: string;
   /** The new host's session, only on the row for the new host's own Profile. */
   host?: string;
+  /** On a `request` frame (CORE-1765): the id the host decides it by. */
+  request?: string;
+  /** On a `request` frame: the requesting member's display name. */
+  from?: string;
 }
 
 interface GroupSyncPayload {
@@ -54,6 +59,8 @@ interface GroupSyncPayload {
   handoff?: boolean;
   hostName?: string;
   host?: string;
+  request?: string;
+  from?: string;
 }
 
 /** Reads a group.sync SSE frame; anything else, or a malformed one, is null. */
@@ -83,6 +90,8 @@ export function parseGroupSync(event: { type: string; data: unknown }): GroupSyn
       ? { hostName: payload.hostName }
       : {}),
     ...(typeof payload.host === "string" && payload.host ? { host: payload.host } : {}),
+    ...(typeof payload.request === "string" && payload.request ? { request: payload.request } : {}),
+    ...(typeof payload.from === "string" && payload.from ? { from: payload.from } : {}),
   };
 }
 

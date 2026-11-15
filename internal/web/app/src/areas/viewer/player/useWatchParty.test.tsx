@@ -46,6 +46,7 @@ function activeParty(timeline: WatchPartyState["timeline"]): WatchPartyState {
     errorDetail: "",
     notice: "",
     noticeName: "",
+    requests: [],
   };
 }
 

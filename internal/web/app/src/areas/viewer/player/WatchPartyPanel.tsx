@@ -3,19 +3,24 @@ import { type FormEvent, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/lib/i18n";
+import { formatClockTime } from "../lib/transport";
 import type { WatchPartyPlayback } from "./useWatchParty";
 import {
   clearWatchPartyNotice,
+  decidePartyRequest,
   endParty,
   inviteToParty,
   useWatchPartyState,
+  type WatchPartyRequest,
   type WatchPartyState,
 } from "./watchPartyStore";
 import { driftLevel } from "./watchPartySync";
 
 // The player bar's Watch Party control (CORE-1677): start a party from the
 // title playing, invite a household Profile by name, see who is in it, leave.
-// A host can also end it for everyone (CORE-1763).
+// A host can also end it for everyone (CORE-1763), chooses at start whether
+// everyone or only the host controls playback, and decides members' requests
+// in a host-only party (CORE-1765).
 
 /** How long a hand-off or end notice stays on the stage. */
 const NOTICE_MS = 6000;
@@ -30,7 +35,7 @@ export function WatchPartyPanel({
   party: WatchPartyState;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onStart: () => Promise<boolean>;
+  onStart: (relaxed: boolean) => Promise<boolean>;
   onLeave: () => Promise<void>;
 }) {
   const t = useT();
@@ -38,6 +43,7 @@ export function WatchPartyPanel({
   const inputID = useId();
   const [name, setName] = useState("");
   const [inviting, setInviting] = useState(false);
+  const [relaxed, setRelaxed] = useState(true);
   const active = party.status === "active";
   const busy = party.status === "starting" || party.status === "joining";
 
@@ -78,7 +84,25 @@ export function WatchPartyPanel({
           {!active ? (
             <>
               <p className="m-0 text-white/75">{t("watchPartyIntro")}</p>
-              <Button size="sm" disabled={busy} onClick={() => void onStart()}>
+              <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+                <legend className="mb-1 p-0 text-white/75">{t("watchPartyControl")}</legend>
+                {[
+                  { value: true, label: t("watchPartyRelaxed") },
+                  { value: false, label: t("watchPartyHostOnly") },
+                ].map((option) => (
+                  <label key={String(option.value)} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name={`${panelID}-control`}
+                      checked={relaxed === option.value}
+                      disabled={busy}
+                      onChange={() => setRelaxed(option.value)}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </fieldset>
+              <Button size="sm" disabled={busy} onClick={() => void onStart(relaxed)}>
                 {busy ? t("watchPartyStarting") : t("watchPartyStart")}
               </Button>
             </>
@@ -99,6 +123,9 @@ export function WatchPartyPanel({
                   ))}
                 </ul>
               </div>
+              {party.isHost && party.requests.length > 0 && (
+                <PartyRequests requests={party.requests} />
+              )}
               <form className="flex flex-col gap-1" onSubmit={(event) => void invite(event)}>
                 <label htmlFor={inputID} className="text-white/75">
                   {t("watchPartyInviteLabel")}
@@ -135,6 +162,44 @@ export function WatchPartyPanel({
           )}
         </section>
       )}
+    </div>
+  );
+}
+
+/** The host's pending member requests, each with Approve and Decline. */
+function PartyRequests({ requests }: { requests: WatchPartyRequest[] }) {
+  const t = useT();
+  return (
+    <div>
+      <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-white/60">
+        {t("watchPartyRequests")}
+      </h2>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {requests.map((request) => {
+          const vars = { name: request.from, position: formatClockTime(request.positionMS / 1000) };
+          return (
+            <li key={request.id} className="flex flex-col gap-1" data-party-request={request.id}>
+              <span>
+                {request.paused
+                  ? t("watchPartyRequestPause", vars)
+                  : t("watchPartyRequestPlay", vars)}
+              </span>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => void decidePartyRequest(request.id, true)}>
+                  {t("watchPartyApprove")}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void decidePartyRequest(request.id, false)}
+                >
+                  {t("watchPartyDecline")}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
