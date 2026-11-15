@@ -1011,14 +1011,19 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		h.servePrecomputedHLS(w, r, grant, scope, library, name)
 		return
 	}
-	if library.Encrypted {
-		http.Error(w, "stream unavailable", http.StatusNotFound)
-		return
-	}
 	file, err := h.grantFile(r.Context(), grant.MediaID, grant.FileFingerprint, scope.PlaybackFilter())
 	if err != nil {
 		http.Error(w, "media unavailable", http.StatusNotFound)
 		return
+	}
+	// An Encrypted Library's live session reads the source decrypted through
+	// a loopback endpoint and keeps only encrypted files (ADR-0236).
+	var secure *playback.EncryptedSource
+	if library.Encrypted {
+		if secure, ok = h.encryptedLiveSource(library, file); !ok {
+			http.Error(w, "stream unavailable", http.StatusNotFound)
+			return
+		}
 	}
 	streams, err := h.store.MediaFileStreams(r.Context(), file.ContentFingerprint)
 	if err != nil {
@@ -1060,6 +1065,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// Ready at mint) is likewise decided at mint and carried by the grant.
 	shape := playback.StreamShapeFromGrant(grant, media)
 	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
+	shape.Encrypted = secure
 	path, err := h.hls.FilePathShaped(r.Context(), key, file.Path, media.DurationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
 	if err != nil {
 		// An evicted session is an expected teardown (ADR-0012 §7 revocation,
@@ -1077,6 +1083,11 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "segment does not exist", http.StatusNotFound)
 			return
 		}
+		// A shape the encrypted plane does not carry will not appear on retry.
+		if errors.Is(err, playback.ErrEncryptedLiveUnavailable) {
+			http.Error(w, "stream unavailable", http.StatusNotFound)
+			return
+		}
 		logHLSServeFailure(r.Context(), err)
 		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
 		return
@@ -1086,6 +1097,10 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// init.mp4 and the fMP4 .m4s media segments are both MP4 bytes.
 		w.Header().Set("Content-Type", "video/mp4")
+	}
+	if secure != nil {
+		h.serveLiveArtifact(w, r, key, path)
+		return
 	}
 	// The session engine hands back a member of its own work directory. Serving it
 	// through the root-scoped opener binds the bytes to that directory entry, so a
@@ -1598,6 +1613,51 @@ func (h *Handler) Direct(w http.ResponseWriter, r *http.Request) {
 		body = requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f}
 	}
 	http.ServeContent(w, r, info.Name(), info.ModTime(), body)
+}
+
+// encryptedLiveSource is the plaintext source of a live session on an
+// Encrypted Library: a decrypting reader opened afresh for each encoder run,
+// the plaintext size, and the Sealed predicate that ends the session. It
+// reports false when the file cannot be streamed decrypted.
+func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFile) (*playback.EncryptedSource, bool) {
+	streaming, ok := h.encryptedBytes.(EncryptedByteReadSeeker)
+	// The object identity is the content fingerprint, never the path.
+	if !ok || file.ContentFingerprint == "" {
+		return nil, false
+	}
+	libraryID, path, fingerprint := library.ID, file.Path, file.ContentFingerprint
+	open := func() (io.ReadSeekCloser, error) {
+		return streaming.OpenDecryptReader(libraryID, path, encryptedClassMediaBytes, fingerprint)
+	}
+	plain, err := open()
+	if err != nil {
+		return nil, false
+	}
+	size, err := plain.Seek(0, io.SeekEnd)
+	_ = plain.Close()
+	if err != nil {
+		return nil, false
+	}
+	var revoked func() bool
+	if sealed := h.sealed; sealed != nil {
+		revoked = func() bool { return sealed(libraryID) }
+	}
+	return &playback.EncryptedSource{LibraryID: string(libraryID), Open: open, Size: size, Revoked: revoked}, true
+}
+
+// serveLiveArtifact serves one file of an encrypted live session decrypted.
+func (h *Handler) serveLiveArtifact(w http.ResponseWriter, r *http.Request, key playback.SessionKey, path string) {
+	f, err := h.hls.OpenLiveArtifact(key, path)
+	if err != nil {
+		if errors.Is(err, playback.ErrSessionEvicted) {
+			http.Error(w, "stream ended", http.StatusGone)
+			return
+		}
+		http.Error(w, "stream unavailable", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	http.ServeContent(w, r, filepath.Base(path), f.ModTime(), requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f})
 }
 
 type requestContextReadSeeker struct {
