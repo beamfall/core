@@ -3,7 +3,7 @@ export const backupRetentionStrings = {
     // WEB-5L — Backup / metadata export / Trash policy / Activity undo.
     backupHeading: "Backups",
     backupLead:
-      "Run a database backup to a server-side destination. The mutation returns the written manifest path, shown below as the run record.",
+      "Back up the database to a folder on the server. When the backup finishes, its location appears below.",
     backupDestLabel: "Destination",
     backupDestPlaceholder: "/var/lib/beamfall/backups/2026-06-20",
     backupRun: "Run backup",
@@ -14,16 +14,17 @@ export const backupRetentionStrings = {
     backupNeedDest: "Enter a destination path.",
     backupRestoreNote: "For every step in detail, read the ",
     backupRestoreNoteDocLabel: "restore guide",
-    backupRestoreNoteDocHref: "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
+    backupRestoreNoteDocHref:
+      "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
     backupRestoreNoteAfterDoc: ".",
     backupRestoreHeading: "Guided restore",
     backupRestoreLead:
       "Use this when startup refuses a corrupt database or you need to roll back to a known-good backup.",
     backupRestoreStepStop: "Stop Beamfall and leave the corrupt data directory in place.",
     backupRestoreStepChoose:
-      "Choose the newest trusted manifest, usually under <data-dir>/backups/pre-migration or the backup destination shown above.",
+      "Choose the newest backup you trust, usually under <data-dir>/backups/pre-migration or the destination shown above.",
     backupRestoreStepRun:
-      "Run the offline restore command on the server host; it refuses a live server lock and verifies manifest hashes before touching the data directory.",
+      "Run the offline restore command on the server. It won't run while Beamfall is running, and it checks the backup before it touches the data folder.",
     backupRestoreStepStart:
       "Start Beamfall again and keep the pre-restore snapshot until the restored server is verified.",
     backupRestoreSafety:
@@ -31,7 +32,7 @@ export const backupRetentionStrings = {
     // MIGREV-3 — Backup panel: history + verify + manifest + restore assistant.
     backupHistoryHeading: "Backup history",
     backupHistoryLead:
-      "The run record of the backup sets written to this destination: when each ran, its size, and its last integrity verify status. Enter a destination and load its history, or run a backup to publish a new set.",
+      "Backups saved in this destination, with when each ran, its size, and whether it passed its last check. Enter a destination and load its history, or run a backup to add one.",
     backupHistoryLoad: "Load history",
     backupHistoryLoading: "Loading…",
     backupHistoryEmpty: "No backup sets under this destination yet.",
@@ -53,7 +54,7 @@ export const backupRetentionStrings = {
       "Integrity check failed. This set is incomplete or was modified after capture and cannot be trusted for restore.",
     backupManifestHeading: "Manifest detail",
     backupManifestLead:
-      "The contents of the selected set: its published manifest path and the recovery-key exclusion that restore depends on. Select a set from the history above.",
+      "What the selected backup holds and where its file list is saved. Recovery Keys are always left out, so keep them somewhere safe. Select a backup from the history above.",
     backupManifestNone: "Select a backup set to see its manifest detail.",
     backupManifestPathLabel: "Manifest path",
     backupKeysCalloutTitle: "Recovery Keys are NOT in this backup",

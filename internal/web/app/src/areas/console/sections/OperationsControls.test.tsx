@@ -120,7 +120,7 @@ describe("OperationsControls", () => {
     renderPanel();
 
     expect(await screen.findByText("Generation allowed")).toBeVisible();
-    expect(screen.getByText("Transcode preempting background")).toBeVisible();
+    expect(screen.getByText("Background work paused for playback")).toBeVisible();
     expect(screen.getByText("Generation workers")).toBeVisible();
     expect(fetchOperationsGovernor).toHaveBeenCalled();
   });

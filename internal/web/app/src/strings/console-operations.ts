@@ -1,8 +1,7 @@
 const updateSafetyStrings = {
   updateMigrationCautionLabel: "Migration caution",
   updateMigrationCautionAria: "Migration caution for available Core update",
-  updateMigrationImpactUnknown:
-    "Migration impact is unknown. The signed release manifest does not represent migrations.",
+  updateMigrationImpactUnknown: "Beamfall can't tell whether this release changes the database.",
   updateMigrationPossible:
     "This release may contain forward-only migrations. Backup freshness is unknown.",
   updateBackupRequired: "Take and verify a backup before installing.",
@@ -30,14 +29,15 @@ const updateSafetyStrings = {
   updateExportMetadata: "Export metadata",
   updateOfflineRestoreGuidance: "Offline restore guidance",
   updateRollbackSelectVersion:
-    "Select the prior Beamfall version you intend to run. Confirm the trusted pre-migration manifest's fromVersions/toVersions tuple belongs to that exact upgrade session; do not guess from its filename.",
-  updateRollbackStop: "Stop Beamfall before restore. The command refuses a live server lock.",
+    "Select the earlier Beamfall version you want to run. Check that the versions listed inside the pre-migration manifest match that exact upgrade. Don't go by the file name.",
+  updateRollbackStop:
+    "Stop Beamfall before restore. The command won't run while Beamfall is running.",
   updateRollbackRun:
-    "Run the guarded rollback command. It verifies the pre-migration manifest before replacing the database tree:",
+    "Run the rollback command. It checks the pre-migration manifest before it replaces the database folder:",
   updateRollbackCommand:
     "beamfall restore --rollback-manifest /path/to/pre-migration/manifest.json --data-dir /var/lib/beamfall",
   updateRollbackRestart:
-    "Restart Beamfall and verify health and an authenticated read before removing the retained pre-rollback database tree.",
+    "Restart Beamfall, check that it is healthy and that you can sign in, then remove the old database folder it kept.",
   updateCanonicalRestoreProcedure: "Canonical restore procedure",
   updateCanonicalRestoreHref:
     "https://github.com/beamfall/core/blob/main/docs/operations/restore.md",
@@ -48,12 +48,12 @@ export const consoleOperationsStrings = {
     ...updateSafetyStrings,
     playbackCacheHeading: "Playback rendition cache",
     playbackCacheLead:
-      "Precomputed playback renditions: the cache-health snapshot, explicit generation, and budget eviction.",
+      "Copies of your videos prepared ahead of time so they start faster. Check how much space they use, prepare one title now, or free up space.",
     playbackCacheRefresh: "Refresh",
     playbackCacheUnavailable: "The playback rendition cache is unavailable right now.",
     playbackCacheUnconfigured: "The playback rendition cache is not configured.",
     playbackCacheUnconfiguredHelp:
-      "Set a cache root and disk budget on the server to precompute and govern playback renditions.",
+      "Set a cache folder and a disk budget on the server to prepare playback copies ahead of time.",
     playbackCacheConfigured: "Configured",
     playbackCacheOverBudget: "Over budget",
     playbackCacheStatusReady: "Ready",
@@ -63,16 +63,17 @@ export const consoleOperationsStrings = {
     playbackCacheDiskUsed: "Disk used / budget",
     playbackCachePrecompute: "Precompute renditions",
     playbackCachePrecomputeHelp:
-      "Explicit operator generation for one Media's honest ladder. Never automatic.",
+      "Prepares every playback quality for one title now. Beamfall never does this on its own.",
     playbackCacheMediaPlaceholder: "Media ID",
     playbackCachePrecomputeAction: "Precompute",
     playbackCacheEvict: "Evict over budget",
-    playbackCacheEvictHelp: "Immediate disk-budget eviction pass. Cache objects are rebuildable.",
+    playbackCacheEvictHelp:
+      "Removes prepared copies until the cache fits its disk budget. Beamfall can prepare them again later.",
     playbackCacheEvictAction: "Evict over budget",
     playbackCacheEvictConfirm: "Evict cache objects over the disk budget?",
     capabilitiesHeading: "Capabilities",
     capabilitiesLead:
-      "Workflow capabilities are enabled by config and flippable here; probe-detected capabilities are auto-detected and shown read-only.",
+      "Turn workflow features on or off here. Detected features depend on this computer, so they can only be viewed.",
     capabilitiesRefresh: "Refresh",
     capabilitiesUnavailable: "Capabilities are unavailable right now.",
     capabilitiesEmpty: "No capabilities are compiled into this server.",
@@ -84,7 +85,7 @@ export const consoleOperationsStrings = {
     capabilitiesDisableAction: "Disable",
     operationsControlsHeading: "Operations controls",
     operationsControlsLead:
-      "The resource governor and the job queue: live posture, background-worker settings, low-power mode, and per-job cancel, retry, and logs.",
+      "How much background work the server does, low-power mode, and the job list. Cancel, retry, or read the log for any job.",
     governorHeading: "Resource governor",
     governorRefresh: "Refresh",
     governorUnavailable: "The resource governor is unavailable right now.",
@@ -92,7 +93,7 @@ export const consoleOperationsStrings = {
     governorInactive: "Unavailable",
     governorUnwiredLine: "The resource governor is not active on this server.",
     governorUnwiredHelp:
-      "The configured background worker count is shown. Governor preemption metrics appear once the governor is wired.",
+      "This shows the background worker count from the server settings. Live load figures appear once the resource governor is running.",
     governorWorkers: "Generation workers",
     governorCPUBudget: "CPU budget",
     governorActiveTranscodes: "Active transcodes",
@@ -100,17 +101,17 @@ export const consoleOperationsStrings = {
     governorCPUBudgetUnit: "cores",
     governorGenerationAllowed: "Generation allowed",
     governorGenerationPaused: "Generation paused",
-    governorPreempting: "Transcode preempting background",
+    governorPreempting: "Background work paused for playback",
     governorLowPower: "Low-power mode",
     governorSettingsHeading: "Background work",
     governorBackgroundWorkers: "Background workers",
     governorBackgroundWorkersSave: "Save background workers",
     governorBackgroundWorkersHelp:
-      "Concurrent generation slots against the CPU budget. Realtime playback always preempts.",
+      "How many background jobs can run at once within the CPU budget. Playback always comes first.",
     eventsRetentionDays: "Events retention days",
     eventsRetentionDaysSave: "Save events retention days",
     eventsRetentionDaysHelp:
-      "Age cutoff for disposable events.db rows. Activity and engagement history are never pruned here.",
+      "How many days to keep routine server events. Watch history and activity are never deleted here.",
     eventsCompactionRun: "Compact events now",
     eventsCompactionQueued: "Queued",
     eventsCompactionFailed: "Could not queue events compaction.",

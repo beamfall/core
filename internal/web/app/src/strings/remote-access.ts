@@ -2,36 +2,36 @@ export const remoteAccessStrings = {
   en: {
     remoteAccessHeading: "Remote access",
     remoteAccessLead:
-      "How this server is reachable from outside the LAN. Status only: no secret or token is ever shown here.",
+      "How this server can be reached from outside your home network. This page only shows status. It never shows passwords or keys.",
     watchAwayHeading: "Watch away from home",
     watchAwayLead:
-      "Start with Tailscale or WireGuard. Use Direct HTTPS only when DNS and router forwarding are under your control; relay stays advanced.",
+      "Start with Tailscale or WireGuard. Use Direct HTTPS only if you can change your domain settings and your router. The relay is for advanced setups.",
     watchAwayOverlayTitle: "Tailscale or WireGuard",
     watchAwayVerified: "Verified",
     watchAwayDetected: "Detected",
     watchAwayNotDetected: "Not detected",
     watchAwayOverlayVerifiedDetail:
-      "This browser is already reaching Beamfall through an overlay address. Use the same mesh on your phone before switching to cellular.",
+      "This browser already reaches Beamfall through Tailscale or WireGuard. Set up the same network on your phone before you switch it to cellular.",
     watchAwayOverlayDetectedDetail:
-      "An overlay address is available. Open it on your phone after the phone joins the same mesh, then switch the phone to cellular to confirm playback.",
+      "Tailscale or WireGuard is running on this server. Join your phone to the same network, open the address below on it, then switch the phone to cellular to check playback.",
     watchAwayOverlayMissingDetail:
-      "Install Tailscale or WireGuard on this server and your phone, join both to the same mesh, then refresh until Beamfall sees the overlay address.",
+      "Install Tailscale or WireGuard on this server and on your phone, sign both in to the same network, then check again until Beamfall finds it.",
     watchAwayInstallTailscale: "Install Tailscale",
-    watchAwayPollOverlay: "Poll for overlay",
+    watchAwayPollOverlay: "Check again",
     watchAwayPhoneTest: "Phone test URL",
     watchAwayDirectTitle: "Direct HTTPS",
     watchAwayReady: "Ready",
     watchAwayNotConfigured: "Not configured",
-    watchAwayPreflightPending: "Preflight pending",
+    watchAwayPreflightPending: "Checking setup",
     watchAwayDirectDetail:
-      "Second choice: point DNS at home, forward TCP 443 to this server, then wait for the certificate state to become issued.",
+      "Second choice: point your domain at your home address, forward port 443 on your router to this server, then wait until the certificate shows as issued.",
     watchAwayAdvancedRelay: "Self-hosted relay",
     remoteAccessReachableVia: "Reachable through",
     watchAwayRelayDetail:
-      "Use this only when overlay and Direct HTTPS are not workable. The relay forwards encrypted bytes; it does not terminate media TLS.",
+      "Use this only when Tailscale, WireGuard and Direct HTTPS won't work. The relay passes your traffic along without being able to read it.",
     remoteAccessRefresh: "Refresh",
-    remoteAccessLanDirect: "LAN (direct)",
-    remoteAccessLanDirectDetail: "Always reachable on the local network over HTTP.",
+    remoteAccessLanDirect: "Home network",
+    remoteAccessLanDirectDetail: "Always reachable on your home network.",
     remoteBitrateLimitLabel: "Remote bitrate cap (Mbit/s)",
     remoteBitrateLimitHint:
       "Highest bitrate for streams away from the local network, for every profile. 0 removes the cap. A profile’s own cap applies when it is lower.",
@@ -86,12 +86,12 @@ export const remoteAccessStrings = {
     reachabilityReasonProbeError: "The probe could not run.",
     reachabilityHint:
       "The probe sends only a TLS greeting, never library data. The direct check needs a router that loops connections to its own public address back to the LAN; without that it can report unreachable even when outside clients can connect.",
-    remoteAccessDirectHTTPS: "Direct HTTPS (ACME)",
+    remoteAccessDirectHTTPS: "Direct HTTPS",
     remoteAccessRelay: "Self-hosted relay",
     remoteAccessHostedRelay: "Hosted relay",
-    remoteAccessOverlay: "Overlay network",
+    remoteAccessOverlay: "Private network",
     remoteAccessOverlayDetail:
-      "Reachable through a blessed overlay network (Tailscale/WireGuard) where the device joins the same mesh.",
+      "Reachable through Tailscale or WireGuard from any device signed in to the same private network.",
     remoteAccessDomain: "Domain",
     remoteAccessEndpoint: "Relay endpoint",
     remoteAccessPublicHost: "Public host",
@@ -99,7 +99,7 @@ export const remoteAccessStrings = {
     remoteAccessLastError: "Last error",
     remoteAccessOff: "Not configured",
     remoteAccessPlainHTTPPublicWarning:
-      "This Console is being reached over plain HTTP from a public address. Use Direct HTTPS, relay, or a private LAN/overlay path before entering credentials.",
+      "This Console is open over an unencrypted connection from the internet. Before you sign in, connect through Direct HTTPS, the relay, Tailscale or WireGuard, or your home network.",
     remoteAccessUnavailable: "Could not load remote-access status.",
     certPending: "Pending (issued on first connection)",
     certIssued: "Issued",
@@ -114,7 +114,7 @@ export const remoteAccessStrings = {
     remoteAccessLead:
       "Comment ce serveur est joignable depuis l'extérieur du réseau local. État seulement : aucun secret ni jeton n'est jamais affiché ici.",
     remoteAccessRefresh: "Actualiser",
-    remoteAccessLanDirect: "Réseau local (direct)",
+    remoteAccessLanDirect: "Réseau domestique",
     remoteAccessLanDirectDetail: "Toujours joignable sur le réseau local en HTTP.",
     remoteBitrateLimitLabel: "Débit distant maximal (Mbit/s)",
     remoteBitrateLimitHint:
@@ -170,11 +170,11 @@ export const remoteAccessStrings = {
     reachabilityReasonProbeError: "La sonde n’a pas pu s’exécuter.",
     reachabilityHint:
       "La sonde n’envoie qu’une salutation TLS, jamais de données de bibliothèque. La vérification directe exige un routeur qui renvoie vers le réseau local les connexions à sa propre adresse publique ; sans cela, elle peut indiquer injoignable alors que des clients extérieurs peuvent se connecter.",
-    remoteAccessDirectHTTPS: "HTTPS direct (ACME)",
+    remoteAccessDirectHTTPS: "HTTPS direct",
     remoteAccessRelay: "Relais auto-hébergé",
-    remoteAccessOverlay: "Réseau overlay",
+    remoteAccessOverlay: "Réseau privé",
     remoteAccessOverlayDetail:
-      "Joignable via un réseau overlay approuvé (Tailscale/WireGuard) où l'appareil rejoint le même maillage.",
+      "Joignable via Tailscale ou WireGuard depuis tout appareil connecté au même réseau privé.",
     remoteAccessDomain: "Domaine",
     remoteAccessEndpoint: "Point d'accès du relais",
     remoteAccessPublicHost: "Hôte public",
@@ -182,7 +182,7 @@ export const remoteAccessStrings = {
     remoteAccessLastError: "Dernière erreur",
     remoteAccessOff: "Non configuré",
     remoteAccessPlainHTTPPublicWarning:
-      "Cette console est atteinte en HTTP non chiffré depuis une adresse publique. Utilisez HTTPS direct, un relais ou un chemin privé LAN/overlay avant de saisir des identifiants.",
+      "Cette console est ouverte sur une connexion non chiffrée depuis Internet. Avant de vous connecter, passez par HTTPS direct, le relais, Tailscale ou WireGuard, ou votre réseau domestique.",
     remoteAccessUnavailable: "Impossible de charger l'état de l'accès à distance.",
     certPending: "En attente (émis à la première connexion)",
     certIssued: "Émis",
@@ -197,7 +197,7 @@ export const remoteAccessStrings = {
     remoteAccessLead:
       "Wie dieser Server von außerhalb des LANs erreichbar ist. Nur Status: hier werden niemals Geheimnisse oder Token angezeigt.",
     remoteAccessRefresh: "Aktualisieren",
-    remoteAccessLanDirect: "LAN (direkt)",
+    remoteAccessLanDirect: "Heimnetz",
     remoteAccessLanDirectDetail: "Im lokalen Netzwerk immer über HTTP erreichbar.",
     remoteBitrateLimitLabel: "Maximale Remote-Bitrate (Mbit/s)",
     remoteBitrateLimitHint:
@@ -205,11 +205,11 @@ export const remoteAccessStrings = {
     remoteBitrateLimitApply: "Anwenden",
     remoteBitrateLimitApplied: "Angewendet.",
     remoteBitrateLimitUnavailable: "Die maximale Remote-Bitrate konnte nicht geladen werden.",
-    remoteAccessDirectHTTPS: "Direktes HTTPS (ACME)",
+    remoteAccessDirectHTTPS: "Direktes HTTPS",
     remoteAccessRelay: "Selbstgehostetes Relais",
-    remoteAccessOverlay: "Overlay-Netzwerk",
+    remoteAccessOverlay: "Privates Netzwerk",
     remoteAccessOverlayDetail:
-      "Erreichbar über ein freigegebenes Overlay-Netzwerk (Tailscale/WireGuard), in dem das Gerät demselben Mesh beitritt.",
+      "Über Tailscale oder WireGuard von jedem Gerät erreichbar, das im selben privaten Netzwerk angemeldet ist.",
     remoteAccessDomain: "Domäne",
     remoteAccessEndpoint: "Relais-Endpunkt",
     remoteAccessPublicHost: "Öffentlicher Host",
@@ -217,7 +217,7 @@ export const remoteAccessStrings = {
     remoteAccessLastError: "Letzter Fehler",
     remoteAccessOff: "Nicht konfiguriert",
     remoteAccessPlainHTTPPublicWarning:
-      "Diese Konsole wird über unverschlüsseltes HTTP von einer öffentlichen Adresse erreicht. Verwenden Sie direktes HTTPS, ein Relais oder einen privaten LAN-/Overlay-Pfad, bevor Sie Zugangsdaten eingeben.",
+      "Diese Konsole ist über eine unverschlüsselte Verbindung aus dem Internet geöffnet. Verbinden Sie sich vor der Anmeldung über direktes HTTPS, das Relais, Tailscale oder WireGuard oder Ihr Heimnetz.",
     remoteAccessUnavailable: "Status des Fernzugriffs konnte nicht geladen werden.",
     certPending: "Ausstehend (bei erster Verbindung ausgestellt)",
     certIssued: "Ausgestellt",
@@ -232,7 +232,7 @@ export const remoteAccessStrings = {
     remoteAccessLead:
       "Cómo es accesible este servidor desde fuera de la red local. Solo estado: aquí nunca se muestra ningún secreto ni token.",
     remoteAccessRefresh: "Actualizar",
-    remoteAccessLanDirect: "Red local (directo)",
+    remoteAccessLanDirect: "Red doméstica",
     remoteAccessLanDirectDetail: "Siempre accesible en la red local mediante HTTP.",
     remoteBitrateLimitLabel: "Tasa de bits remota máxima (Mbit/s)",
     remoteBitrateLimitHint:
@@ -240,11 +240,11 @@ export const remoteAccessStrings = {
     remoteBitrateLimitApply: "Aplicar",
     remoteBitrateLimitApplied: "Aplicado.",
     remoteBitrateLimitUnavailable: "No se pudo cargar la tasa de bits remota máxima.",
-    remoteAccessDirectHTTPS: "HTTPS directo (ACME)",
+    remoteAccessDirectHTTPS: "HTTPS directo",
     remoteAccessRelay: "Relé autoalojado",
-    remoteAccessOverlay: "Red superpuesta",
+    remoteAccessOverlay: "Red privada",
     remoteAccessOverlayDetail:
-      "Accesible a través de una red superpuesta autorizada (Tailscale/WireGuard) donde el dispositivo se une a la misma malla.",
+      "Accesible mediante Tailscale o WireGuard desde cualquier dispositivo conectado a la misma red privada.",
     remoteAccessDomain: "Dominio",
     remoteAccessEndpoint: "Punto de acceso del relé",
     remoteAccessPublicHost: "Host público",
@@ -252,7 +252,7 @@ export const remoteAccessStrings = {
     remoteAccessLastError: "Último error",
     remoteAccessOff: "Sin configurar",
     remoteAccessPlainHTTPPublicWarning:
-      "Esta consola se está alcanzando por HTTP sin cifrar desde una dirección pública. Usa HTTPS directo, relé o una ruta privada LAN/superpuesta antes de introducir credenciales.",
+      "Esta consola está abierta con una conexión sin cifrar desde internet. Antes de iniciar sesión, conéctate mediante HTTPS directo, el relé, Tailscale o WireGuard, o tu red doméstica.",
     remoteAccessUnavailable: "No se pudo cargar el estado del acceso remoto.",
     certPending: "Pendiente (emitido en la primera conexión)",
     certIssued: "Emitido",
@@ -267,7 +267,7 @@ export const remoteAccessStrings = {
     remoteAccessLead:
       "Como este servidor é acessível de fora da rede local. Apenas status: nenhum segredo ou token é exibido aqui.",
     remoteAccessRefresh: "Atualizar",
-    remoteAccessLanDirect: "Rede local (direto)",
+    remoteAccessLanDirect: "Rede doméstica",
     remoteAccessLanDirectDetail: "Sempre acessível na rede local via HTTP.",
     remoteBitrateLimitLabel: "Taxa de bits remota máxima (Mbit/s)",
     remoteBitrateLimitHint:
@@ -275,11 +275,11 @@ export const remoteAccessStrings = {
     remoteBitrateLimitApply: "Aplicar",
     remoteBitrateLimitApplied: "Aplicado.",
     remoteBitrateLimitUnavailable: "Não foi possível carregar a taxa de bits remota máxima.",
-    remoteAccessDirectHTTPS: "HTTPS direto (ACME)",
+    remoteAccessDirectHTTPS: "HTTPS direto",
     remoteAccessRelay: "Relay auto-hospedado",
-    remoteAccessOverlay: "Rede de sobreposição",
+    remoteAccessOverlay: "Rede privada",
     remoteAccessOverlayDetail:
-      "Acessível por uma rede de sobreposição aprovada (Tailscale/WireGuard) em que o dispositivo entra na mesma malha.",
+      "Acessível pelo Tailscale ou WireGuard a partir de qualquer dispositivo conectado à mesma rede privada.",
     remoteAccessDomain: "Domínio",
     remoteAccessEndpoint: "Endpoint do relay",
     remoteAccessPublicHost: "Host público",
@@ -287,7 +287,7 @@ export const remoteAccessStrings = {
     remoteAccessLastError: "Último erro",
     remoteAccessOff: "Não configurado",
     remoteAccessPlainHTTPPublicWarning:
-      "Este Console está sendo acessado por HTTP sem criptografia a partir de um endereço público. Use HTTPS direto, relay ou um caminho privado LAN/sobreposição antes de inserir credenciais.",
+      "Este Console está aberto por uma conexão sem criptografia vinda da internet. Antes de entrar, conecte-se por HTTPS direto, pelo relay, pelo Tailscale ou WireGuard, ou pela sua rede doméstica.",
     remoteAccessUnavailable: "Não foi possível carregar o status do acesso remoto.",
     certPending: "Pendente (emitido na primeira conexão)",
     certIssued: "Emitido",

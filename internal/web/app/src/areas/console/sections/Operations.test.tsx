@@ -156,7 +156,7 @@ describe("UpdateAwareness update-check state", () => {
         name: "Migration caution for available Core update",
       });
       expect(warning).toHaveTextContent(
-        "Migration impact is unknown. The signed release manifest does not represent migrations.",
+        "Beamfall can't tell whether this release changes the database.",
       );
       expect(warning).toHaveTextContent(
         "This release may contain forward-only migrations. Backup freshness is unknown.",
@@ -223,12 +223,12 @@ describe("UpdateAwareness update-check state", () => {
     const offline = within(warning).getByRole("region", { name: "Offline restore guidance" });
     expect(offline).toHaveAttribute("tabindex", "-1");
     expect(offline).toHaveTextContent("Stop Beamfall before restore.");
-    expect(offline).toHaveTextContent("trusted pre-migration manifest");
+    expect(offline).toHaveTextContent("inside the pre-migration manifest");
     expect(offline).toHaveTextContent(
       "beamfall restore --rollback-manifest /path/to/pre-migration/manifest.json --data-dir /var/lib/beamfall",
     );
     expect(offline).toHaveTextContent(
-      "Restart Beamfall and verify health and an authenticated read",
+      "Restart Beamfall, check that it is healthy and that you can sign in",
     );
 
     const canonical = within(offline).getByRole("link", { name: "Canonical restore procedure" });

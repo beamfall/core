@@ -130,7 +130,7 @@ describe("BackupExportPage", () => {
     expect(container.querySelector("#restore")).toBeInTheDocument();
     expect(screen.getByText("Guided restore")).toBeVisible();
     expect(screen.getByText(/beamfall restore --manifest/)).toBeVisible();
-    expect(screen.getByText(/refuses a live server lock/)).toBeVisible();
+    expect(screen.getByText(/won't run while Beamfall is running/)).toBeVisible();
     expect(screen.getByText(/never overwrites a live database: a staged restore/)).toBeVisible();
   });
 
