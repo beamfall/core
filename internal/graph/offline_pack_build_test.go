@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -463,6 +464,55 @@ func TestOfflinePackOperatorCancelFailsTheBuild(t *testing.T) {
 	}
 	if packs := listOfflinePackBuilds(t, handler); len(packs) != 0 {
 		t.Fatalf("offlinePacks after dismissing = %+v, want none", packs)
+	}
+}
+
+// TestOfflinePackOperatorCancelOfRunningBuildWaitsForTheWorker covers
+// CORE-1866 for a job a worker holds: the build stays building, so a retry
+// cannot start a second job on the same pack folder, until that worker stops.
+// Only then is the build failed, and a retry queues a job that seals it.
+func TestOfflinePackOperatorCancelOfRunningBuildWaitsForTheWorker(t *testing.T) {
+	handler, st, registry, svc := newOfflinePackHandlerWith(t, nil)
+	openManagerAdminSession(t, st)
+	created := queueOfflinePackBuildForTest(t, handler)
+	cancelledWhileRunning := false
+	registry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
+		if cancelledWhileRunning {
+			return jobs.Result{}, svc.RunBuildJob(ctx, st, job)
+		}
+		cancelledWhileRunning = true
+		cancelJobAsOperator(t, handler, job.ID)
+		if state := offlinePackBuildState(t, handler, created.ID); state != "building" {
+			t.Errorf("build %q while its cancelled worker runs = %q, want building", created.ID, state)
+		}
+		if retried, errs := retryOfflinePackForTest(t, handler, created.ID); len(errs) != 0 || retried.State != "building" {
+			t.Errorf("retry while the cancelled worker runs = %+v / %#v, want building", retried, errs)
+		}
+		if active := activeOfflinePackBuildJobs(t, st, created.ID); len(active) != 0 {
+			t.Errorf("active jobs while the cancelled worker runs = %+v, want none", active)
+		}
+		// The runner cancels the handler once it loses the job's lease.
+		lost, stop := context.WithCancel(ctx)
+		stop()
+		return jobs.Result{}, svc.RunBuildJob(lost, st, job)
+	})
+	if _, err := handler.jobRunner.RunOne(t.Context(), []store.JobClass{store.JobClassBackground}, time.Now().UTC()); !errors.Is(err, jobs.ErrLeaseLost) {
+		t.Fatalf("RunOne for the cancelled job = %v, want ErrLeaseLost", err)
+	}
+	if !cancelledWhileRunning {
+		t.Fatal("the build job never ran")
+	}
+	if state := offlinePackBuildState(t, handler, created.ID); state != "failed" {
+		t.Fatalf("build %q after its cancelled worker stopped = %q, want failed", created.ID, state)
+	}
+	retried, errs := retryOfflinePackForTest(t, handler, created.ID)
+	if len(errs) != 0 || retried.State != "building" {
+		t.Fatalf("retry after the worker stopped = %+v / %#v, want building", retried, errs)
+	}
+	requireBuildHasWorker(t, handler, st, created.ID)
+	runOfflinePackBuildJob(t, handler)
+	if state := offlinePackBuildState(t, handler, created.ID); state != "ready" {
+		t.Fatalf("build %q after the retried job = %q, want ready", created.ID, state)
 	}
 }
 

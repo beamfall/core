@@ -163,9 +163,11 @@ func (s *Service) FailBuild(ctx context.Context, id store.OfflinePackID, reason 
 	return s.store.FailOfflinePackBuild(ctx, id, reason, s.now())
 }
 
-// BuildJobCanceled moves the build a cancelled job was running back to
-// failed. An operator cancel makes the job terminal, so no worker will ever
-// finish that build; failed keeps it retryable and dismissable. A payload
+// BuildJobCanceled moves the build of a cancelled job back to failed. An
+// operator cancel makes the job terminal, so no worker will ever finish that
+// build; failed keeps it retryable and dismissable. Call it only once no
+// worker holds the job: jobCancel does for a job no worker had claimed, and
+// RunBuildJob does after a cancelled running job's worker returns. A payload
 // without a pack ID (an untracked build) needs nothing.
 func (s *Service) BuildJobCanceled(ctx context.Context, payload []byte) error {
 	var job BuildJobPayload
@@ -176,6 +178,31 @@ func (s *Service) BuildJobCanceled(ctx context.Context, payload []byte) error {
 		return nil
 	}
 	return s.store.FailOfflinePackBuild(context.WithoutCancel(ctx), job.PackID, FailureBuild, s.now())
+}
+
+// JobReader reads a job's current row (satisfied by *store.Store).
+type JobReader interface {
+	Job(ctx context.Context, id store.JobID) (store.Job, error)
+}
+
+// RunBuildJob is the job runner handler for BuildJobKind. It runs the build
+// and, when the run stopped because an operator cancelled its job while it was
+// running, moves the build to failed (CORE-1866). That waits until this worker
+// has returned, so a retry under the same pack ID never overlaps a worker
+// still writing the pack folder.
+func (s *Service) RunBuildJob(ctx context.Context, jobs JobReader, job store.Job) error {
+	_, err := s.HandleBuildJob(ctx, job.Payload)
+	if err == nil || ctx.Err() == nil {
+		return err
+	}
+	current, readErr := jobs.Job(context.WithoutCancel(ctx), job.ID)
+	if readErr != nil {
+		return errors.Join(err, readErr)
+	}
+	if current.Status != store.JobStatusCanceled {
+		return err
+	}
+	return errors.Join(err, s.BuildJobCanceled(ctx, job.Payload))
 }
 
 // DismissBuild removes the caller's failed build from the list.

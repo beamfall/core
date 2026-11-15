@@ -387,14 +387,22 @@ func (s *Store) FailJob(ctx context.Context, id JobID, leaseOwner string, messag
 }
 
 func (s *Store) CancelJob(ctx context.Context, id JobID, now time.Time) error {
+	_, err := s.CancelJobWithPrior(ctx, id, now)
+	return err
+}
+
+// CancelJobWithPrior cancels a job and reports the status it had just before,
+// read in the same transaction. Running means a worker still held the job when
+// it was cancelled and may still be working; queued or yielded means none did.
+func (s *Store) CancelJobWithPrior(ctx context.Context, id JobID, now time.Time) (JobStatus, error) {
 	if id == "" {
-		return errors.New("job ID is required")
+		return "", errors.New("job ID is required")
 	}
 	now = normalizeTime(now)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return err
+		return "", err
 	}
 	return s.cancelJobSQL(ctx, id, now)
 }
@@ -966,24 +974,35 @@ func (s *Store) finishJobSQL(ctx context.Context, id JobID, leaseOwner string, s
 	return s.commitOutboxTx(tx)
 }
 
-func (s *Store) cancelJobSQL(ctx context.Context, id JobID, now time.Time) error {
+func (s *Store) cancelJobSQL(ctx context.Context, id JobID, now time.Time) (JobStatus, error) {
 	tx, err := s.eventsW.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer tx.Rollback()
+	var prior JobStatus
+	err = tx.QueryRowContext(ctx, `SELECT status FROM job WHERE id = ?`, id).Scan(&prior)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrJobTerminal
+	}
+	if err != nil {
+		return "", err
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE job
 		SET status = ?, lease_owner = NULL, lease_expires_at_ms = NULL, updated_at_ms = ?, cancel_requested_at_ms = ?, finished_at_ms = ?
 		WHERE id = ? AND status IN ('queued', 'running', 'yielded')
 	`, JobStatusCanceled, timeToMillis(now), timeToMillis(now), timeToMillis(now), id)
 	if err := jobMutationResult(result, err, ErrJobTerminal); err != nil {
-		return err
+		return "", err
 	}
 	if err := appendJobEventSQL(ctx, tx, id, now, "canceled", `{"status":"canceled"}`); err != nil {
-		return err
+		return "", err
 	}
-	return s.commitOutboxTx(tx)
+	if err := s.commitOutboxTx(tx); err != nil {
+		return "", err
+	}
+	return prior, nil
 }
 
 func (s *Store) resumeInterruptedJobsSQL(ctx context.Context, now time.Time) (int, error) {

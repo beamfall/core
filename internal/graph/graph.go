@@ -1678,7 +1678,8 @@ func (h *Handler) jobCancel(ctx context.Context, scope auth.Scope, req request) 
 		}
 		return JobInfo{}, err
 	}
-	if err := h.store.CancelJob(ctx, store.JobID(id), time.Now().UTC()); err != nil {
+	prior, err := h.store.CancelJobWithPrior(ctx, store.JobID(id), time.Now().UTC())
+	if err != nil {
 		if errors.Is(err, store.ErrJobTerminal) || errors.Is(err, store.ErrJobNotFound) {
 			return JobInfo{}, clientError(err.Error())
 		}
@@ -1686,8 +1687,10 @@ func (h *Handler) jobCancel(ctx context.Context, scope auth.Scope, req request) 
 	}
 	// A cancelled offline pack build job never finishes its build, so put
 	// the build row back to failed (retryable, dismissable) instead of
-	// leaving it building with no worker (CORE-1866).
-	if cancelled.Kind == offlinepack.BuildJobKind && h.offlinePacks != nil {
+	// leaving it building with no worker (CORE-1866). A job a worker was
+	// running is left to that worker: it fails the build once it has stopped
+	// writing the pack folder, so a retry cannot overlap it.
+	if cancelled.Kind == offlinepack.BuildJobKind && prior != store.JobStatusRunning && h.offlinePacks != nil {
 		if err := h.offlinePacks.BuildJobCanceled(context.WithoutCancel(ctx), cancelled.Payload); err != nil {
 			return JobInfo{}, err
 		}

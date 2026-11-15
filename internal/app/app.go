@@ -1262,8 +1262,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	offlinePacks.SetTranscoder(offlinePackTranscoder(ffmpegRunner))
 	registerOfflinePackResolvers(offlinePacks, st, executablePlugins, hooks.OfflinePackResolvers)
 	jobRegistry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
-		_, err := offlinePacks.HandleBuildJob(ctx, job.Payload)
-		return jobs.Result{}, err
+		return jobs.Result{}, offlinePacks.RunBuildJob(ctx, st, job)
 	})
 	jobRegistry.Register(offlinepack.ExpireJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		_, err := offlinePacks.HandleExpireJob(ctx)

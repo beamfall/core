@@ -84,8 +84,7 @@ func newOfflinePackHandlerWith(t *testing.T, wrap func(*store.Store) offlinepack
 	handler.SetOfflinePacks(svc)
 	registry := jobs.NewRegistry(st, "offline-pack-graph-test")
 	registry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
-		_, err := svc.HandleBuildJob(ctx, job.Payload)
-		return jobs.Result{}, err
+		return jobs.Result{}, svc.RunBuildJob(ctx, st, job)
 	})
 	handler.SetJobRunner(registry)
 	return handler, st, registry, svc
