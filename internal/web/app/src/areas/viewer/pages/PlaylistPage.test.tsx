@@ -5,10 +5,10 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchCollections } from "@/lib/graphql";
 import { fetchMediaRows } from "@/lib/graphql/browse";
-import type { CollectionInfo, GenericMediaInfo, LibrarySummary } from "@/lib/graphql/types";
+import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { fetchEntryLocks } from "../lib/collections";
-import type { PlayerNavState } from "../lib/trackList";
+import type { PlayerNavState } from "../lib/watchQueue";
 import { PlaylistPage } from "./PlaylistPage";
 
 vi.mock("@/lib/session", () => ({
