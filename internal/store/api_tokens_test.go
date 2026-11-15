@@ -117,3 +117,42 @@ func TestAPITokenActivityAttribution(t *testing.T) {
 		t.Fatalf("entries = %+v, want token attribution preserved", entries)
 	}
 }
+
+// TestAPITokenAccessRoundTrip (CORE-2095): a token keeps the tier it was
+// minted with, a plain CreateAPIToken mints a cli token, and an unknown tier is
+// refused before anything is written.
+func TestAPITokenAccessRoundTrip(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+
+	plain, _, err := st.CreateAPIToken(ctx, "plain", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Access != store.APITokenAccessCLI {
+		t.Fatalf("CreateAPIToken access = %q, want cli", plain.Access)
+	}
+	for _, access := range []store.APITokenAccess{store.APITokenAccessDiagnostics, store.APITokenAccessAgent} {
+		created, secret, err := st.CreateAPITokenWithAccess(ctx, string(access), access, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		verified, err := st.VerifyAPIToken(ctx, secret, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if created.Access != access || verified.Access != access {
+			t.Fatalf("access created=%q verified=%q, want %q", created.Access, verified.Access, access)
+		}
+	}
+	if got, err := store.ParseAPITokenAccess(""); err != nil || got != store.APITokenAccessCLI {
+		t.Fatalf(`ParseAPITokenAccess("") = %q, %v; want cli`, got, err)
+	}
+	if _, err := store.ParseAPITokenAccess("root"); err == nil {
+		t.Fatal(`ParseAPITokenAccess("root") succeeded, want a validation error`)
+	}
+	if _, _, err := st.CreateAPITokenWithAccess(ctx, "bad", "root", now); err == nil {
+		t.Fatal("CreateAPITokenWithAccess accepted tier root")
+	}
+}

@@ -66,6 +66,8 @@ func runWithOutput(ctx context.Context, args []string, stdout io.Writer) error {
 		return localInferenceShim(ctx, args[1:])
 	case "library":
 		return libraryCommand(ctx, args[1:], stdout)
+	case "mcp":
+		return mcpCommand(ctx, args[1:], stdout)
 	case "pairing-code":
 		return pairingCodeCommand(ctx, args[1:], stdout)
 	case "release":
@@ -95,6 +97,7 @@ Commands:
   export-config          export a console config document
   library list           list library ids and names through the running server
   backup                 request a server-side backup
+  mcp                    run a Model Context Protocol stdio server for AI agents
   pairing-code           mint a one-time owner pairing code to sign in a browser
   release                release helper commands
   reset-admin-password   set the local admin password while the server is stopped

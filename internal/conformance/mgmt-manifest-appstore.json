@@ -126,6 +126,10 @@
       "effect": "read"
     },
     {
+      "field": "diagnosticsbundle",
+      "effect": "read"
+    },
+    {
       "field": "disablescrapercredential",
       "effect": "write"
     },

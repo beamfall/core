@@ -63,6 +63,11 @@
       "tier": "session"
     },
     {
+      "field": "agentcatalog",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "ambientqueue",
       "effect": "read",
       "tier": "session"
@@ -374,6 +379,11 @@
     },
     {
       "field": "devices",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "diagnosticsbundle",
       "effect": "read",
       "tier": "admin"
     },
@@ -2177,6 +2187,116 @@
       ]
     },
     {
+      "field": "agentcatalog",
+      "kind": "object",
+      "children": [
+        {
+          "name": "fields",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "adminSession",
+                "kind": "scalar"
+              },
+              {
+                "name": "arguments",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "argumentsKnown",
+                "kind": "scalar"
+              },
+              {
+                "name": "kind",
+                "kind": "scalar"
+              },
+              {
+                "name": "managerRole",
+                "kind": "scalar"
+              },
+              {
+                "name": "name",
+                "kind": "scalar"
+              },
+              {
+                "name": "resultFields",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "tokenTiers",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "adminSession",
+              "kind": "scalar"
+            },
+            {
+              "name": "arguments",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "argumentsKnown",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "managerRole",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            },
+            {
+              "name": "resultFields",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "tokenTiers",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        {
+          "name": "guide",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "ambientqueue",
       "kind": "object",
       "arguments": [
@@ -2447,6 +2567,10 @@
       "field": "apitokens",
       "kind": "object",
       "children": [
+        {
+          "name": "access",
+          "kind": "scalar"
+        },
         {
           "name": "createdAt",
           "kind": "scalar"
@@ -5451,6 +5575,10 @@
           "kind": "object",
           "children": [
             {
+              "name": "access",
+              "kind": "scalar"
+            },
+            {
               "name": "createdAt",
               "kind": "scalar"
             },
@@ -6738,6 +6866,188 @@
         },
         {
           "name": "signedIn",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "diagnosticsbundle",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "contains",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "level",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "DEBUG",
+            "ERROR",
+            "INFO",
+            "WARN"
+          ]
+        },
+        {
+          "name": "limit",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "profiles",
+          "kind": "list",
+          "optional": true,
+          "elem": {
+            "kind": "string",
+            "enum": [
+              "allocs",
+              "block",
+              "goroutine",
+              "heap",
+              "mutex",
+              "threadcreate"
+            ]
+          }
+        },
+        {
+          "name": "requestId",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "children": [
+        {
+          "name": "arch",
+          "kind": "scalar"
+        },
+        {
+          "name": "cpus",
+          "kind": "scalar"
+        },
+        {
+          "name": "goVersion",
+          "kind": "scalar"
+        },
+        {
+          "name": "goroutines",
+          "kind": "scalar"
+        },
+        {
+          "name": "logs",
+          "kind": "object",
+          "children": [
+            {
+              "name": "available",
+              "kind": "scalar"
+            },
+            {
+              "name": "capacity",
+              "kind": "scalar"
+            },
+            {
+              "name": "lines",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            }
+          ]
+        },
+        {
+          "name": "memory",
+          "kind": "object",
+          "children": [
+            {
+              "name": "heapAlloc",
+              "kind": "scalar"
+            },
+            {
+              "name": "heapInuse",
+              "kind": "scalar"
+            },
+            {
+              "name": "heapObjects",
+              "kind": "scalar"
+            },
+            {
+              "name": "numGC",
+              "kind": "scalar"
+            },
+            {
+              "name": "pauseTotalNs",
+              "kind": "scalar"
+            },
+            {
+              "name": "stackInuse",
+              "kind": "scalar"
+            },
+            {
+              "name": "sys",
+              "kind": "scalar"
+            },
+            {
+              "name": "totalAlloc",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "os",
+          "kind": "scalar"
+        },
+        {
+          "name": "profiles",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "name",
+                "kind": "scalar"
+              },
+              {
+                "name": "text",
+                "kind": "scalar"
+              },
+              {
+                "name": "truncated",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "name",
+              "kind": "scalar"
+            },
+            {
+              "name": "text",
+              "kind": "scalar"
+            },
+            {
+              "name": "truncated",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "revision",
+          "kind": "scalar"
+        },
+        {
+          "name": "startedAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "uptimeSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "version",
           "kind": "scalar"
         }
       ]
@@ -17115,6 +17425,10 @@
       "kind": "object",
       "children": [
         {
+          "name": "access",
+          "kind": "scalar"
+        },
+        {
           "name": "createdAt",
           "kind": "scalar"
         },
@@ -18766,6 +19080,34 @@
     {
       "field": "serverlogs",
       "kind": "object",
+      "arguments": [
+        {
+          "name": "contains",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "level",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "DEBUG",
+            "ERROR",
+            "INFO",
+            "WARN"
+          ]
+        },
+        {
+          "name": "limit",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "requestId",
+          "kind": "string",
+          "optional": true
+        }
+      ],
       "children": [
         {
           "name": "available",
@@ -31610,6 +31952,10 @@
       },
       {
         "field": "devices",
+        "effect": "read"
+      },
+      {
+        "field": "diagnosticsbundle",
         "effect": "read"
       },
       {
