@@ -1,7 +1,11 @@
 package graph
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -278,5 +282,125 @@ func TestOfflinePackRetryAndRevokeOfUnknownOrBuildingIDs(t *testing.T) {
 	}
 	if packs := listOfflinePackBuilds(t, handler); len(packs) != 0 {
 		t.Fatalf("offlinePacks after dismissing the failed build = %+v, want none", packs)
+	}
+}
+
+// failedOfflinePackBuildForTest queues a build, fails it by removing its
+// source file, then restores the file so a retry can succeed.
+func failedOfflinePackBuildForTest(t *testing.T, handler *Handler, st *store.Store) offlinePackBuildView {
+	t.Helper()
+	file, err := st.PrimaryMediaFile(t.Context(), "media-alpha", store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(file.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := queueOfflinePackBuildForTest(t, handler)
+	if err := os.Remove(file.Path); err != nil {
+		t.Fatal(err)
+	}
+	runOfflinePackBuildJob(t, handler)
+	if err := os.WriteFile(file.Path, original, 0o600); err != nil { // #nosec G703 -- test fixture path from the seeded catalog under t.TempDir()
+		t.Fatal(err)
+	}
+	if state := offlinePackBuildState(t, handler, created.ID); state != "failed" {
+		t.Fatalf("build %q = %q after its source vanished, want failed", created.ID, state)
+	}
+	return created
+}
+
+func offlinePackBuildState(t *testing.T, handler *Handler, id string) string {
+	t.Helper()
+	for _, pack := range listOfflinePackBuilds(t, handler) {
+		if pack.ID == id {
+			return pack.State
+		}
+	}
+	return ""
+}
+
+// activeOfflinePackBuildJobs returns the queued, running or yielded build
+// jobs whose payload names the pack ID.
+func activeOfflinePackBuildJobs(t *testing.T, st *store.Store, id string) []store.Job {
+	t.Helper()
+	var active []store.Job
+	for _, status := range []store.JobStatus{store.JobStatusQueued, store.JobStatusRunning, store.JobStatusYielded} {
+		jobs, err := st.ListJobs(t.Context(), status)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, job := range jobs {
+			var payload offlinepack.BuildJobPayload
+			if job.Kind == offlinepack.BuildJobKind && json.Unmarshal(job.Payload, &payload) == nil && string(payload.PackID) == id {
+				active = append(active, job)
+			}
+		}
+	}
+	return active
+}
+
+// requireBuildHasWorker fails unless the pack's build row is failed (and so
+// retryable) or is building with an active job for its pack ID.
+func requireBuildHasWorker(t *testing.T, handler *Handler, st *store.Store, id string) {
+	t.Helper()
+	switch state := offlinePackBuildState(t, handler, id); state {
+	case "failed":
+	case "building":
+		if jobs := activeOfflinePackBuildJobs(t, st, id); len(jobs) == 0 {
+			t.Fatalf("build %q is building with no queued or running job", id)
+		}
+	default:
+		t.Fatalf("build %q = %q, want failed, or building with a job", id, state)
+	}
+}
+
+// cancelAfterRestartStore cancels the request after RestartOfflinePackBuild
+// commits, the window CORE-1867 found stranding a building row.
+type cancelAfterRestartStore struct {
+	*store.Store
+	cancel    context.CancelFunc
+	restarted bool
+}
+
+func (s *cancelAfterRestartStore) RestartOfflinePackBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID, payload []byte, now time.Time) (bool, error) {
+	restarted, err := s.Store.RestartOfflinePackBuild(ctx, id, profileID, payload, now)
+	s.restarted = s.restarted || restarted
+	if s.cancel != nil {
+		s.cancel()
+	}
+	return restarted, err
+}
+
+// TestOfflinePackRetryCancelledAfterRestartKeepsAJob covers CORE-1867: a
+// retry request cancelled after its restart commits still ends with a queued
+// job for the pack, never a building row with no job.
+func TestOfflinePackRetryCancelledAfterRestartKeepsAJob(t *testing.T) {
+	var wrapped *cancelAfterRestartStore
+	handler, st, _, _ := newOfflinePackHandlerWith(t, func(st *store.Store) offlinepack.Store {
+		wrapped = &cancelAfterRestartStore{Store: st}
+		return wrapped
+	})
+	created := failedOfflinePackBuildForTest(t, handler, st)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	wrapped.cancel = cancel
+	body := `{"query":"mutation R($id:String!){ retryOfflinePack(id:$id){ id state } }","variables":{"id":"` + created.ID + `"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader([]byte(body))).WithContext(ctx)
+	authorizeViewer(req)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	wrapped.cancel = nil
+	if !wrapped.restarted {
+		t.Fatal("the retry never restarted the failed build")
+	}
+	requireBuildHasWorker(t, handler, st, created.ID)
+	if jobs := activeOfflinePackBuildJobs(t, st, created.ID); len(jobs) != 1 {
+		t.Fatalf("active jobs for %q after the cancelled retry = %d, want 1", created.ID, len(jobs))
+	}
+	runOfflinePackBuildJob(t, handler)
+	if state := offlinePackBuildState(t, handler, created.ID); state != "ready" {
+		t.Fatalf("build %q after its job = %q, want ready", created.ID, state)
 	}
 }

@@ -135,12 +135,24 @@ func (s *Service) RetryBuild(ctx context.Context, scope auth.Scope, id store.Off
 	if err != nil {
 		return store.OfflinePackBuild{}, nil, err
 	}
-	build, err = s.store.OfflinePackBuildByID(ctx, id, scope.ProfileID)
-	if err != nil {
-		return store.OfflinePackBuild{}, nil, err
-	}
 	if !restarted {
+		build, err = s.store.OfflinePackBuildByID(ctx, id, scope.ProfileID)
+		if err != nil {
+			return store.OfflinePackBuild{}, nil, err
+		}
 		return build, nil, nil
+	}
+	// The row is building now and only the caller's enqueue gives it a job,
+	// so a request cancelled from here on must not abandon it: reread
+	// without the request's cancellation, and put the row back to failed
+	// (retryable) if the reread still fails.
+	detached := context.WithoutCancel(ctx)
+	build, err = s.store.OfflinePackBuildByID(detached, id, scope.ProfileID)
+	if err != nil {
+		if failErr := s.store.FailOfflinePackBuild(detached, id, FailureBuild, s.now()); failErr != nil {
+			return store.OfflinePackBuild{}, nil, errors.Join(err, failErr)
+		}
+		return store.OfflinePackBuild{}, nil, err
 	}
 	return build, payload, nil
 }

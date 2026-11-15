@@ -26,6 +26,15 @@ func (offlinePackTestAttester) VerifyDeviceKey(context.Context, string, []byte, 
 
 func newOfflinePackHandler(t *testing.T) (*Handler, *store.Store) {
 	t.Helper()
+	handler, st, _, _ := newOfflinePackHandlerWith(t, nil)
+	return handler, st
+}
+
+// newOfflinePackHandlerWith is newOfflinePackHandler with the offline pack
+// service's store optionally wrapped (wrap may be nil), returning the job
+// registry and service too so a test can replace the build job handler.
+func newOfflinePackHandlerWith(t *testing.T, wrap func(*store.Store) offlinepack.Store) (*Handler, *store.Store, *jobs.Registry, *offlinepack.Service) {
+	t.Helper()
 	st := storetest.Open(t)
 	path := filepath.Join(t.TempDir(), "media-alpha.bin")
 	if err := os.WriteFile(path, []byte("bytes-media-alpha"), 0o600); err != nil {
@@ -58,7 +67,11 @@ func newOfflinePackHandler(t *testing.T) (*Handler, *store.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := offlinepack.NewService(st, authority, time.Now)
+	var svcStore offlinepack.Store = st
+	if wrap != nil {
+		svcStore = wrap(st)
+	}
+	svc := offlinepack.NewService(svcStore, authority, time.Now)
 	svc.SetPackRoot(t.TempDir())
 	svc.SetDeviceKeyAttestationVerifier(offlinePackTestAttester{})
 	deviceKey, err := ecdh.P256().GenerateKey(rand.Reader)
@@ -75,7 +88,7 @@ func newOfflinePackHandler(t *testing.T) (*Handler, *store.Store) {
 		return jobs.Result{}, err
 	})
 	handler.SetJobRunner(registry)
-	return handler, st
+	return handler, st, registry, svc
 }
 
 // TestCreateAndRevokeOfflinePackMutation exercises the createOfflinePack and

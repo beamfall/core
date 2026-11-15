@@ -293,11 +293,19 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 		return OfflinePackInfo{}, err
 	}
 	if payload != nil {
+		// RetryBuild committed the row to building: from here every path
+		// either queues its job or puts the row back to failed, and none of
+		// it honours the request's cancellation, which would strand the row
+		// building with no job.
+		detached := context.WithoutCancel(ctx)
 		var job offlinepack.BuildJobPayload
 		if err := json.Unmarshal(payload, &job); err != nil {
+			if failErr := h.offlinePacks.FailBuild(detached, id, offlinepack.FailureBuild); failErr != nil {
+				return OfflinePackInfo{}, errors.Join(err, failErr)
+			}
 			return OfflinePackInfo{}, err
 		}
-		queued, err := h.store.EnqueueJob(ctx, store.Job{
+		queued, err := h.store.EnqueueJob(detached, store.Job{
 			Kind:  offlinepack.BuildJobKind,
 			Class: store.JobClassBackground,
 			// The original build's key: an operator jobRetry keeps that key, so
@@ -308,7 +316,7 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 			CreatedAt: time.Now().UTC(),
 		})
 		if err != nil {
-			if failErr := h.offlinePacks.FailBuild(context.WithoutCancel(ctx), id, offlinepack.FailureBuild); failErr != nil {
+			if failErr := h.offlinePacks.FailBuild(detached, id, offlinepack.FailureBuild); failErr != nil {
 				return OfflinePackInfo{}, errors.Join(err, failErr)
 			}
 			return OfflinePackInfo{}, err
@@ -318,7 +326,7 @@ func (h *Handler) retryOfflinePack(ctx context.Context, scope auth.Scope, req re
 		// put it back to failed, where it stays retryable.
 		var matched offlinepack.BuildJobPayload
 		if err := json.Unmarshal(queued.Payload, &matched); err != nil || matched.PackID != id {
-			if failErr := h.offlinePacks.FailBuild(context.WithoutCancel(ctx), id, offlinepack.FailureBuild); failErr != nil {
+			if failErr := h.offlinePacks.FailBuild(detached, id, offlinepack.FailureBuild); failErr != nil {
 				return OfflinePackInfo{}, failErr
 			}
 			return OfflinePackInfo{}, clientError("another offline pack build for the same selection is running; retry when it finishes")
