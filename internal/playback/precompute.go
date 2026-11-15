@@ -872,7 +872,7 @@ func (g FFmpegPrecomputeGenerator) PrecomputeHLS(ctx context.Context, spec Preco
 	}
 	proc, err := runner.StartBackgroundHLS(ctx, spec.SourcePath, rungDir, ffmpeg.Rendition{
 		Height:         spec.Height,
-		VideoKbps:      spec.Bandwidth / 1000,
+		VideoKbps:      precomputeVideoKbps(spec.Bandwidth),
 		AudioCodec:     "aac",
 		AudioChannels:  2,
 		ColorTransfer:  spec.SourceVideo.ColorTransfer,
@@ -951,6 +951,9 @@ func validatePrecomputeRequest(req PrecomputeRequest) error {
 	if req.Height <= 0 || req.Bandwidth <= 0 {
 		return errors.New("playback height and bandwidth must be positive")
 	}
+	if precomputeVideoKbps(req.Bandwidth) <= 0 {
+		return errors.New("playback bandwidth must exceed the audio and mux reserve")
+	}
 	if req.SourcePath == "" {
 		return errors.New("source path is required")
 	}
@@ -958,6 +961,15 @@ func validatePrecomputeRequest(req PrecomputeRequest) error {
 		return errors.New("precomputed output path is required")
 	}
 	return nil
+}
+
+// precomputeVideoKbps is the video maxrate for a precomputed ladder rung. The
+// rung's Bandwidth is the whole advertised peak, bandwidthFor(videoKbps), so the
+// audio and mux reserve comes off before it caps the video; otherwise the
+// encode's real peak would exceed the BANDWIDTH its master playlist declares
+// (CORE-1846, ADR-0010 section 8).
+func precomputeVideoKbps(bandwidth int) int {
+	return (bandwidth - audioMuxReserve) / 1000
 }
 
 func validatePrecomputeSpec(spec PrecomputeSpec) error {
