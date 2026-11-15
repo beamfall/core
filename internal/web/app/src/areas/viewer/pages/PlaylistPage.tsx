@@ -9,6 +9,7 @@ import type { CollectionInfo, GenericMediaInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { ViewerActions } from "../components/ViewerActions";
+import { fetchLockedEntries } from "../lib/collections";
 import {
   loadPlaylists,
   memberOrder,
@@ -22,7 +23,9 @@ import "../components/listening.css";
 // One playlist (CORE-1635): its members in stored order, Play all, and on a
 // manager device move up/down and remove. Rows play with the playlist as the
 // player's queue. Member titles come from each Media's own read, so a member
-// the acting Profile cannot see is simply not listed.
+// the acting Profile cannot see is simply not listed. A member locked by the
+// Profile's certification ceiling is listed but cannot play, and Play all
+// leaves it out of the queue (CORE-1876).
 export function PlaylistPage() {
   const t = useT();
   const navigate = useNavigate();
@@ -32,6 +35,7 @@ export function PlaylistPage() {
   const libraryKey = (manifest?.libraries ?? []).map((library) => library.id).join("\n");
   const [playlist, setPlaylist] = useState<CollectionInfo | null | undefined>(undefined);
   const [rows, setRows] = useState<Record<string, GenericMediaInfo>>({});
+  const [locked, setLocked] = useState<Set<string> | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -61,13 +65,30 @@ export function PlaylistPage() {
     return () => controller.abort();
   }, [orderKey]);
 
-  const visible = order.filter((id) => rows[id]);
-  const queue: PlayQueueItem[] = visible.map((id) => {
-    const row = rows[id];
-    return row.mediaClass
-      ? { id, title: row.title, mediaClass: row.mediaClass }
-      : { id, title: row.title };
-  });
+  // Lock state is per Profile, so it reloads when the playlist or its members
+  // change. Nothing plays until it is known; if the read fails, playback still
+  // meets the server's own ceiling check.
+  useEffect(() => {
+    setLocked(null);
+    if (!orderKey) return;
+    const controller = new AbortController();
+    fetchLockedEntries(playlistId, orderKey.split("\n").length, controller.signal)
+      .then(setLocked)
+      .catch(() => {
+        if (!controller.signal.aborted) setLocked(new Set());
+      });
+    return () => controller.abort();
+  }, [playlistId, orderKey]);
+
+  const listed: PlayQueueItem[] = order
+    .filter((id) => rows[id])
+    .map((id) => {
+      const row = rows[id];
+      return row.mediaClass
+        ? { id, title: row.title, mediaClass: row.mediaClass }
+        : { id, title: row.title };
+    });
+  const queue = locked ? listed.filter((entry) => !locked.has(entry.id)) : [];
 
   function play(entry: PlayQueueItem) {
     navigate(`/watch/${encodeURIComponent(entry.id)}`, {
@@ -113,9 +134,9 @@ export function PlaylistPage() {
           {order.length === 0 && (
             <p className="text-sm text-muted-foreground">{t("playlistEmpty")}</p>
           )}
-          {queue.length > 0 && (
+          {listed.length > 0 && (
             <ol className="bf-track-list" aria-label={playlist.name}>
-              {queue.map((entry, index) => {
+              {listed.map((entry, index) => {
                 const position = order.indexOf(entry.id);
                 return (
                   <li key={entry.id} className="bf-track">
@@ -123,6 +144,7 @@ export function PlaylistPage() {
                       type="button"
                       className="bf-track-row"
                       aria-label={t("trackPlay", { title: entry.title })}
+                      disabled={!queue.some((item) => item.id === entry.id)}
                       onClick={() => play(entry)}
                     >
                       <span className="bf-track-number">{index + 1}</span>
