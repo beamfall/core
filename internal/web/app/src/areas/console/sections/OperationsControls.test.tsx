@@ -8,9 +8,11 @@ import {
   fetchConsoleConfig,
   fetchJobEvents,
   fetchJobs,
+  fetchLibraries,
   fetchOperationsGovernor,
   retryJob,
   runEventsCompaction,
+  scanLibrary,
   setConsoleConfig,
 } from "@/lib/graphql";
 import type { JobEventInfo } from "@/lib/graphql/types";
@@ -34,6 +36,8 @@ vi.mock("@/lib/graphql", () => ({
   cancelJob: vi.fn(),
   retryJob: vi.fn(),
   runEventsCompaction: vi.fn(),
+  fetchLibraries: vi.fn(),
+  scanLibrary: vi.fn(),
 }));
 
 let eventObservers: ((event: MessageEvent) => void)[] = [];
@@ -86,6 +90,15 @@ beforeEach(() => {
   vi.mocked(setConsoleConfig).mockReset().mockResolvedValue(config);
   vi.mocked(fetchJobs).mockReset().mockResolvedValue([job()]);
   vi.mocked(fetchJobEvents).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchLibraries)
+    .mockReset()
+    .mockResolvedValue([
+      { id: "lib-1", title: "Films", roots: ["/media/films", "/media/more"] },
+      { id: "lib-2", title: "Empty", roots: [] },
+    ] as never);
+  vi.mocked(scanLibrary)
+    .mockReset()
+    .mockResolvedValue(job({ id: "job-scan", status: "queued" }) as never);
   vi.mocked(cancelJob)
     .mockReset()
     .mockResolvedValue(job({ status: "canceled" }));
@@ -200,6 +213,54 @@ describe("OperationsControls", () => {
     expect(container.querySelector(".console-table")).toBeNull();
     expect(container.querySelector(".console-job-row .console-jbar")).not.toBeNull();
     expect(container.querySelector(".console-job-actions")).not.toBeNull();
+  });
+
+  it("says what each job does and which library folder it works on", async () => {
+    vi.mocked(fetchJobs).mockResolvedValue([
+      job({ target: { libraryID: "lib-1", libraryTitle: "Films", root: "/media/films" } }),
+      job({
+        id: "job-2",
+        status: "queued",
+        target: { libraryID: "lib-1", libraryTitle: "Films", root: "/media/films", backfill: true },
+      }),
+      job({
+        id: "job-3",
+        kind: "artwork-sweep",
+        status: "queued",
+        progress: { current: 0, total: 0, unit: "" },
+      }),
+      job({
+        id: "job-4",
+        kind: "playback.precompute",
+        status: "queued",
+        progress: { current: 0, total: 0, unit: "" },
+      }),
+    ]);
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(4));
+    const rows = Array.from(container.querySelectorAll(".console-job-row"));
+
+    expect(rows[0]).toHaveTextContent(
+      "Walks a library folder and imports new or changed media files.",
+    );
+    expect(rows[0]).toHaveTextContent("Films · /media/films");
+    expect(rows[1]).toHaveTextContent("refreshes metadata");
+    expect(rows[1]).toHaveTextContent("Metadata refresh");
+    expect(rows[2]).toHaveTextContent("Fills in missing posters");
+    expect(rows[2].querySelector(".console-job-target")).toBeNull();
+    expect(rows[3]).toHaveTextContent("Playback precompute");
+    expect(rows[3]).toHaveTextContent("Prepares playback renditions");
+  });
+
+  it("force-queues a scan of every library folder from the job queue", async () => {
+    renderPanel();
+    const scanNow = await screen.findByRole("button", { name: "Rescan all libraries" });
+    await waitFor(() => expect(scanNow).toBeEnabled());
+    await userEvent.click(scanNow);
+
+    await waitFor(() => expect(scanLibrary).toHaveBeenCalledTimes(2));
+    expect(scanLibrary).toHaveBeenCalledWith("lib-1", "/media/films");
+    expect(scanLibrary).toHaveBeenCalledWith("lib-1", "/media/more");
   });
 
   it("cancels a live job through the confirm dialog", async () => {

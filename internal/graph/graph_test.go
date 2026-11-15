@@ -440,7 +440,7 @@ func TestJobsQueryReturnsManagerVisibleProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := []byte(`{"query":"query { jobs { id kind class status progress { current total unit message } } }"}`)
+	body := []byte(`{"query":"query { jobs { id kind class status progress { current total unit message } target { libraryID libraryTitle root backfill } } }"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
 	authorizeManager(req)
 	rec := httptest.NewRecorder()
@@ -466,6 +466,13 @@ func TestJobsQueryReturnsManagerVisibleProgress(t *testing.T) {
 	}
 	if got.Progress.Current != 7 || got.Progress.Total != 10 || got.Progress.Unit != "files" || got.Progress.Message != "Scanning" {
 		t.Fatalf("progress = %#v", got.Progress)
+	}
+	wantTarget := JobTargetInfo{LibraryID: "library-local", LibraryTitle: "Local Library", Root: "/media/local"}
+	if got.Target == nil || *got.Target != wantTarget {
+		t.Fatalf("target = %#v, want %#v", got.Target, wantTarget)
+	}
+	if jobs[1].Target != nil {
+		t.Fatalf("payload-less job target = %#v, want nil", jobs[1].Target)
 	}
 }
 
@@ -796,9 +803,9 @@ func TestJobsQueryRedactsRestrictedLibraryErrorsUntilRevealed(t *testing.T) {
 	}
 	openAdminSession(t, st, "session-mgr-revealed")
 
-	body := []byte(`{"query":"query { jobs { id status error } }"}`)
+	body := []byte(`{"query":"query { jobs { id status error target { libraryID libraryTitle root } } }"}`)
 
-	// Unrevealed manager: the path-bearing error is withheld.
+	// Unrevealed manager: the path-bearing error and the target are withheld.
 	req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
 	authorizeManager(req)
 	rec := httptest.NewRecorder()
@@ -819,8 +826,11 @@ func TestJobsQueryRedactsRestrictedLibraryErrorsUntilRevealed(t *testing.T) {
 	if got.Error != "error withheld — reveal required" {
 		t.Fatalf("unrevealed error = %q, want redacted placeholder", got.Error)
 	}
-	if strings.Contains(rec.Body.String(), "secret-title") {
+	if strings.Contains(rec.Body.String(), "secret-title") || strings.Contains(rec.Body.String(), "/media/archive") {
 		t.Fatalf("unrevealed response leaks restricted path: %s", rec.Body.String())
+	}
+	if got.Target != nil {
+		t.Fatalf("unrevealed target = %#v, want nil", got.Target)
 	}
 
 	// Revealed manager: full error text.
@@ -839,6 +849,9 @@ func TestJobsQueryRedactsRestrictedLibraryErrorsUntilRevealed(t *testing.T) {
 	}
 	if got := resp.Data["jobs"][0].Error; got != pathBearingError {
 		t.Fatalf("revealed error = %q, want full error text", got)
+	}
+	if got := resp.Data["jobs"][0].Target; got == nil || got.LibraryTitle != "Archive" || got.Root != "/media/archive" {
+		t.Fatalf("revealed target = %#v, want Archive at /media/archive", got)
 	}
 }
 

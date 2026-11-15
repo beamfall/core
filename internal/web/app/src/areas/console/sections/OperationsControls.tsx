@@ -1,5 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import { RescanAllButton } from "@/components/beamfall/LibraryRescan";
 import {
   ControlRow,
   EmptyState,
@@ -19,6 +20,7 @@ import {
   fetchConsoleConfig,
   fetchJobEvents,
   fetchJobs,
+  fetchLibraries,
   fetchOperationsGovernor,
   retryJob,
   runEventsCompaction,
@@ -26,7 +28,14 @@ import {
 } from "@/lib/graphql";
 import type { JobEventInfo, JobInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
-import { jobKindLabel, jobProgressDetail, jobStatusLabel, jobStatusState } from "@/lib/jobDisplay";
+import {
+  jobKindDescription,
+  jobKindLabel,
+  jobProgressDetail,
+  jobStatusLabel,
+  jobStatusState,
+  jobTargetDetail,
+} from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
@@ -321,10 +330,13 @@ function JobLog({ jobID }: { jobID: string }) {
 // Job queue with per-job operations (ADR-0013 §4): the live job substrate plus
 // Cancel (queued/running/yielded → jobCancel) and Retry (terminal → jobRetry),
 // and an inline logs view (jobEvents). Live via the SSE event stream (ADR-0040):
-// any server-side job event triggers a refresh.
+// any server-side job event triggers a refresh. Each row says what the job does
+// and, when the session may see it, which Library folder it works on; Scan now
+// force-queues a scan of every library folder.
 function JobQueue() {
   const t = useT();
   const { data, loading, failed, refresh } = useAsync(fetchJobs);
+  const libraries = useAsync(fetchLibraries);
   const jobs: JobInfo[] = data ?? [];
   const [openLog, setOpenLog] = useState<string | null>(null);
   const [logRefresh, setLogRefresh] = useState(0);
@@ -352,12 +364,16 @@ function JobQueue() {
     <Section
       heading="jobQueueHeading"
       actions={
-        <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw className="console-nav-icon" aria-hidden />
-          {t("jobQueueRefresh")}
-        </Button>
+        <>
+          <RescanAllButton libraries={libraries.data ?? []} variant="outline" />
+          <Button variant="outline" size="sm" onClick={() => void refresh()}>
+            <RefreshCw className="console-nav-icon" aria-hidden />
+            {t("jobQueueRefresh")}
+          </Button>
+        </>
       }
     >
+      <p className="console-job-help">{t("jobQueueScanHelp")}</p>
       {loading ? (
         <Skeleton className="h-32 w-full" />
       ) : failed ? (
@@ -372,6 +388,8 @@ function JobQueue() {
             const tone = statusTone(job.status);
             const live = isLive(job.status);
             const logOpen = openLog === job.id;
+            const description = jobKindDescription(job, t);
+            const target = jobTargetDetail(job);
             return (
               <div key={job.id} className="console-job-row console-job-row-ops">
                 <span className="console-job-name">{jobKindLabel(job.kind, t)}</span>
@@ -411,6 +429,19 @@ function JobQueue() {
                     </Button>
                   )}
                 </span>
+                {(description || target) && (
+                  <div className="console-job-about">
+                    {description && <span>{description}</span>}
+                    {target && (
+                      <span className="console-job-target">
+                        <span className="console-mono">{target}</span>
+                        {job.target?.backfill && (
+                          <StatusChip tone="neutral">{t("jobTargetBackfill")}</StatusChip>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                )}
                 {logOpen && (
                   <div className="console-job-log">
                     <JobLog key={`${job.id}:${logRefresh}`} jobID={job.id} />

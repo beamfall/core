@@ -129,6 +129,49 @@ export const consoleOperationsStrings = {
     jobLogsUnavailable: "Could not load this job's history.",
     jobLogPayloadRedacted: "(redacted)",
     jobKindEventsCompaction: "Events compaction",
+    jobKindPlaybackPrecompute: "Playback precompute",
+    jobKindPlaybackPrecomputeEvict: "Playback cache eviction",
+    jobKindPlaybackComposedSweep: "Composed rendition sweep",
+    jobKindOfflinePackBuild: "Offline Pack build",
+    jobKindOfflinePackExpire: "Offline Pack expiry",
+    jobKindPhotoExport: "Photo export",
+    jobKindConvertManagedFile: "Managed file conversion",
+    jobKindSubtitleOffsetPrune: "Subtitle offset cleanup",
+    jobKindDescScan: "Walks a library folder and imports new or changed media files.",
+    jobKindDescScanBackfill:
+      "Walks a library folder and refreshes metadata for media already imported.",
+    jobKindDescSubscriptionPoll: "Checks every Subscription for new items to fetch.",
+    jobKindDescQBittorrentIngestPoll: "Checks qBittorrent for finished downloads and imports them.",
+    jobKindDescMigration: "Imports data from another media server through the Migration Wizard.",
+    jobKindDescRetentionSweep:
+      "Permanently removes trash past its retention window and the records and artwork orphaned by it.",
+    jobKindDescEventsCompaction:
+      "Prunes disposable events.db rows older than the retention cutoff.",
+    jobKindDescDatabaseBackup: "Writes a backup of the server databases.",
+    jobKindDescArtworkSweep: "Fills in missing posters and artwork across your libraries.",
+    jobKindDescAssetSweep:
+      "Generates missing Generated Assets such as thumbnails and previews, when the governor allows.",
+    jobKindDescDecodeVerify: "Samples media files and checks that they still decode cleanly.",
+    jobKindDescSkipDetectSweep:
+      "Finds skippable segments such as intros and credits in newly scanned media.",
+    jobKindDescPlaybackPrecompute:
+      "Prepares playback renditions ahead of time so playback starts without transcoding.",
+    jobKindDescPlaybackPrecomputeEvict:
+      "Evicts precomputed playback renditions to keep the cache within its disk budget.",
+    jobKindDescPlaybackComposedSweep:
+      "Queues missing composed renditions for libraries whose plugin composes pictures.",
+    jobKindDescOfflinePackBuild: "Packages media into an Offline Pack for download.",
+    jobKindDescOfflinePackExpire: "Removes expired Offline Packs.",
+    jobKindDescPhotoExport: "Exports photos in bulk.",
+    jobKindDescConvertManagedFile: "Converts a media file into a managed file.",
+    jobKindDescSubtitleOffsetPrune:
+      "Removes stored subtitle timing corrections for subtitle tracks that no longer exist.",
+    jobTargetLibrary: "Library",
+    jobTargetFolder: "Folder",
+    jobTargetBackfill: "Metadata refresh",
+    jobTargetAllLibraries: "All libraries",
+    jobQueueScanHelp:
+      "Scan now queues a scan of every library folder. A folder that already has a scan waiting is not queued twice.",
     created: "Created",
     lastUsed: "Last used",
     never: "Never",
