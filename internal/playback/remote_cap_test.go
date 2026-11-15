@@ -9,13 +9,18 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
+// remoteCapSourceBytes sizes the remote-cap source at 15 Mbit/s over the
+// fixture's 120 s, above every cap and client ceiling these cases set, so
+// each limit binds on the source's real size_bytes (CORE-1844).
+const remoteCapSourceBytes = 225_000_000
+
 // remoteCapInfo runs one playbackInfo for a probed 1080p HEVC source after
 // applying the admin's remote caps (server-wide and per Profile, 0 = none).
 func remoteCapInfo(t *testing.T, serverCap, profileCap int, profile CapabilityProfile, remote bool) InfoResponse {
 	t.Helper()
 	service, st, scope := capabilityTestService(t)
 	setRemoteCaps(t, st, scope, serverCap, profileCap)
-	mediaID := importProbedMediaSized(t, st, "fp-remote-cap", "mkv", "hevc", 1920, 1080, ceilingSourceBytes, []store.MediaFileStream{
+	mediaID := importProbedMediaSized(t, st, "fp-remote-cap", "mkv", "hevc", 1920, 1080, remoteCapSourceBytes, []store.MediaFileStream{
 		videoStream("hevc", "Main 10", 0, ""),
 		audioStream(1, "eac3", 6),
 	})
