@@ -197,7 +197,7 @@ func TestPrecomputeComposedRenditionEnqueue(t *testing.T) {
 	videoID := importProbedMedia(t, st, "fp-enqueue-video", "mp4", "h264", 1280, 720, []store.MediaFileStream{videoStream("h264", "High", 0, "")})
 	picture := ComposedPicture{TimedText: composedTestText}
 
-	jobsOut, err := PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), cache, now)
+	jobsOut, err := PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), nil, cache, now)
 	if err != nil || len(jobsOut) != 1 {
 		t.Fatalf("jobs = %v err %v, want one composed job", jobsOut, err)
 	}
@@ -214,11 +214,13 @@ func TestPrecomputeComposedRenditionEnqueue(t *testing.T) {
 	}
 	for name, run := range map[string]func() ([]store.Job, error){
 		"declined": func() ([]store.Job, error) {
-			return PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(picture, false, nil), cache, now)
+			return PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(picture, false, nil), nil, cache, now)
 		},
-		"no composer": func() ([]store.Job, error) { return PrecomputeComposedRendition(ctx, st, audio.ID, nil, cache, now) },
+		"no composer": func() ([]store.Job, error) {
+			return PrecomputeComposedRendition(ctx, st, audio.ID, nil, nil, cache, now)
+		},
 		"video media": func() ([]store.Job, error) {
-			return PrecomputeComposedRendition(ctx, st, videoID, staticComposer(picture, true, nil), cache, now)
+			return PrecomputeComposedRendition(ctx, st, videoID, staticComposer(picture, true, nil), nil, cache, now)
 		},
 	} {
 		if got, err := run(); err != nil || len(got) != 0 {
@@ -277,7 +279,7 @@ func TestComposedRenditionEndToEnd(t *testing.T) {
 	now := time.Unix(100, 0).UTC()
 	cache := t.TempDir()
 
-	queued, err := PrecomputeComposedRendition(ctx, st, media.ID, composer, cache, now)
+	queued, err := PrecomputeComposedRendition(ctx, st, media.ID, composer, nil, cache, now)
 	if err != nil || len(queued) != 1 {
 		t.Fatalf("enqueue: %v %v", queued, err)
 	}
@@ -430,4 +432,48 @@ func countJobs(t *testing.T, st *store.Store, kind store.JobKind) int {
 		}
 	}
 	return n
+}
+
+// TestPrecomputeComposedRenditionRefusesUnsupportedRecipe covers CORE-1847:
+// the explicit Console precompute consults the same FFmpeg capability check
+// as the sweep (CORE-1790), so on a build without libass a timed-text picture
+// is refused and queues nothing, while a graphics picture still queues.
+func TestPrecomputeComposedRenditionRefusesUnsupportedRecipe(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(650, 0).UTC()
+	cache := t.TempDir()
+	audio := importAudioMedia(t, st, filepath.Join(t.TempDir(), "song.mp3"), "fp-console-unsupported")
+	picture := ComposedPicture{TimedText: composedTestText}
+	var checked []ffmpeg.Rendition
+	noLibass := func(timedText bool, rendition ffmpeg.Rendition) bool {
+		checked = append(checked, rendition)
+		return !timedText
+	}
+
+	jobsOut, err := PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), noLibass, cache, now)
+	if !errors.Is(err, ErrComposedRecipeUnsupported) || len(jobsOut) != 0 {
+		t.Fatalf("no libass: jobs %v err %v, want ErrComposedRecipeUnsupported and none", jobsOut, err)
+	}
+	if got := countJobs(t, st, PrecomputeJobKind); got != 0 {
+		t.Fatalf("precompute jobs = %d, want 0", got)
+	}
+	if want := composedPrecomputeRendition(composedHeight); len(checked) != 1 || checked[0] != want {
+		t.Fatalf("checked renditions %+v, want the precomputed encode %+v", checked, want)
+	}
+
+	// The package default is the cached check (pinned by TestMain here).
+	withComposedRecipeSupport(t, true, false)
+	if _, err := PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), nil, cache, now); !errors.Is(err, ErrComposedRecipeUnsupported) {
+		t.Fatalf("default check without libass: err %v, want ErrComposedRecipeUnsupported", err)
+	}
+
+	graphicsPath := filepath.Join(t.TempDir(), "picture.cdg")
+	if err := os.WriteFile(graphicsPath, []byte("graphics"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	graphics := ComposedPicture{GraphicsPath: graphicsPath}
+	if jobsOut, err := PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(graphics, true, nil), noLibass, cache, now); err != nil || len(jobsOut) != 1 {
+		t.Fatalf("graphics without libass: jobs %v err %v, want one", jobsOut, err)
+	}
 }

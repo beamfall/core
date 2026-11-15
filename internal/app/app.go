@@ -3047,10 +3047,15 @@ type playbackCacheController struct {
 	// composer, when set, lets a picture-less Media precompute as its
 	// composed-picture rendition instead of the ladder.
 	composer playback.PictureComposer
+	// recipeSupported is the FFmpeg capability check the composed precompute
+	// consults, the same one the sweep uses (nil: the cached check of the
+	// resolved build). An unsupported picture is refused, not sent to the
+	// ladder.
+	recipeSupported playback.ComposedRecipeCheck
 }
 
 func (c playbackCacheController) PrecomputeMedia(ctx context.Context, mediaID store.MediaID) (int, error) {
-	jobs, err := playback.PrecomputeComposedRendition(ctx, c.store, mediaID, c.composer, c.cacheRoot, c.clock())
+	jobs, err := playback.PrecomputeComposedRendition(ctx, c.store, mediaID, c.composer, c.recipeSupported, c.cacheRoot, c.clock())
 	if err == nil && len(jobs) == 0 {
 		jobs, err = playback.PrecomputeMediaRenditions(ctx, c.store, mediaID, "h264", c.cacheRoot, c.clock())
 	}
