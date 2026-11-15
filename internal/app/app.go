@@ -851,6 +851,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// argon2id params for the passphrase-unseal path. Auto-unseal at boot happens
 	// below, once the Library list is readable.
 	libEncryptManager := libencrypt.NewManager(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets"), dataDir: cfg.DataDir})
+	// A purged encrypted Library's private database and keys are destroyed
+	// through this seam. A purge that committed before a crash or a failed
+	// teardown is finished now, before its keys are reported as orphans.
+	st.SetEncryptedLibraryKeyEraser(libraryKeyEraser{manager: libEncryptManager})
+	if err := st.CompletePendingLibraryPurges(ctx); err != nil {
+		logger.Warn("encrypted-library purge teardown incomplete; the retention sweep retries it", "error", err)
+	}
 	cryptoOwners, err := st.LibraryEncryptionOwners(ctx)
 	if err != nil {
 		_ = st.Close()
@@ -3708,6 +3715,14 @@ func (s appEncryptedContentSource) OpenDecryptReader(libraryID, ciphertextPath, 
 		ObjectClass:       libencrypt.ObjectClass(objectClass),
 		ImmutableObjectID: immutableObjectID,
 	})
+}
+
+// libraryKeyEraser destroys a purged encrypted Library's key material for the
+// store, which does not import libencrypt.
+type libraryKeyEraser struct{ manager *libencrypt.Manager }
+
+func (e libraryKeyEraser) EraseLibraryKeys(libraryID store.LibraryID) error {
+	return e.manager.Erase(string(libraryID))
 }
 
 type appLibEncryptDBCipher struct {

@@ -413,29 +413,6 @@ func TestSweepPurgeTrashedLibrariesYieldsWhileTrashDisabled(t *testing.T) {
 	}
 }
 
-func TestPurgeLibraryRefusesEncryptedLibraryAndSweepSkipsIt(t *testing.T) {
-	st := openSeeded(t)
-	ctx := context.Background()
-	library, _, _ := trashFixtureLibrary(t, st, "Vault")
-	if err := st.SetLibraryBacking(ctx, library.ID, false, true); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.DeleteLibrary(ctx, library.ID); err != nil {
-		t.Fatal(err)
-	}
-	var validation ValidationError
-	if _, err := st.PurgeLibrary(ctx, library.ID); !errors.As(err, &validation) {
-		t.Fatalf("PurgeLibrary(encrypted) = %v, want a validation error", err)
-	}
-	purged, skipped, err := st.SweepPurgeTrashedLibrariesBefore(ctx, time.Now().UTC().Add(time.Hour))
-	if err != nil || skipped || len(purged) != 0 {
-		t.Fatalf("sweep = %v, skipped %v, err %v; want the encrypted library left alone", purged, skipped, err)
-	}
-	if got := trashedLibraryIDs(t, st, revealedAll); !slices.Equal(got, []LibraryID{library.ID}) {
-		t.Fatalf("trashed after sweep = %v, want the encrypted library", got)
-	}
-}
-
 func TestPurgeLibraryLockedHonoursTrashedBeforeBound(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
@@ -447,7 +424,7 @@ func TestPurgeLibraryLockedHonoursTrashedBeforeBound(t *testing.T) {
 	// again after the sweep chose its candidates: the purge transaction itself
 	// must refuse, not just the candidate query.
 	st.mu.RLock()
-	_, err := st.purgeLibraryLocked(ctx, library.ID, 1)
+	_, _, err := st.purgeLibraryLocked(ctx, library.ID, 1, false)
 	st.mu.RUnlock()
 	var validation ValidationError
 	if !errors.As(err, &validation) {

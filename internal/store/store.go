@@ -973,6 +973,10 @@ type Store struct {
 	// (ADR-0045 §reconcile). The store stays a storage leaf: it owns the
 	// lifecycle timing, not the derivative filesystem layout. Guarded by mu.
 	encDerivativeReconciler EncryptedDerivativeReconciler
+	// encKeyEraser is the app-injected seam (nil by default) that destroys a
+	// purged encrypted Library's key material. Without it an encrypted Library
+	// cannot be purged. Guarded by mu; called only with mu released.
+	encKeyEraser EncryptedLibraryKeyEraser
 	// snapshotSealer is the app-injected Backup Set encryption/verification
 	// seam. The store owns snapshot consistency and publication, while the
 	// backup package owns envelope cryptography. Set once at composition.
