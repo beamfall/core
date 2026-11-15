@@ -56,6 +56,10 @@ type Job struct {
 	StageName string
 	// MaxBytes bounds the derivative's final length. Zero means unbounded.
 	MaxBytes int64
+	// SourceDuration is the source's playback length. The derivative's
+	// reference track must run within durationTolerance of it: a transcoder
+	// that stops early on a decoder error it does not report still exits 0.
+	SourceDuration time.Duration
 	// TTL, IdleTimeout and PollInterval default to the package defaults.
 	TTL          time.Duration
 	IdleTimeout  time.Duration
@@ -84,6 +88,8 @@ func (j *Job) normalize() error {
 		return errors.New("encderiv: staging name must be a single path component")
 	case j.MaxBytes < 0:
 		return errors.New("encderiv: negative size limit")
+	case j.SourceDuration <= 0:
+		return errors.New("encderiv: job is missing the source duration")
 	}
 	if j.TTL <= 0 {
 		j.TTL = DefaultTTL
@@ -218,6 +224,9 @@ func run(parent context.Context, job *Job, file *os.File, path string, key []byt
 	if err != nil {
 		return nil, secret, err
 	}
+	if err := coversSource(scan.duration(), job.SourceDuration); err != nil {
+		return nil, secret, err
+	}
 	finalLen := scan.n + int64(len(index))
 	if job.MaxBytes > 0 && finalLen > job.MaxBytes {
 		return nil, secret, ErrTooLarge
@@ -232,6 +241,16 @@ func run(parent context.Context, job *Job, file *os.File, path string, key []byt
 		return nil, secret, ErrRevoked
 	}
 	return &Result{path: path, key: key, insertAt: scan.insertAt, index: index, size: finalLen, sha: sum}, secret, nil
+}
+
+// coversSource refuses a derivative that runs shorter than its source by more
+// than one second or 1%, whichever is larger: room for encoders rounding the
+// last frame, not for a transcode that stopped early.
+func coversSource(output, source time.Duration) error {
+	if output < source-max(time.Second, source/100) {
+		return invalid("output runs %v of the source's %v", output.Round(time.Millisecond), source)
+	}
+	return nil
 }
 
 // transcodeToStage runs the transcoder and encrypts its output into the

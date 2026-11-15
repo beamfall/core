@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -87,8 +88,10 @@ func newJobFixture(t *testing.T) (*jobFixture, Job) {
 		StageDir:     fx.stageDir,
 		StageName:    "0001",
 		PollInterval: time.Millisecond,
-		Revoked:      func(context.Context) error { return nil },
-		Transcode:    synthTranscoder(false, nil),
+		// synthFrags' 60 frames.
+		SourceDuration: 60 * testFrameDuration * time.Second / testVideoTimescale,
+		Revoked:        func(context.Context) error { return nil },
+		Transcode:      synthTranscoder(false, nil),
 	}
 	return fx, job
 }
@@ -325,6 +328,15 @@ func TestRunLeavesNoStagingOnFailure(t *testing.T) {
 				return err
 			}
 		}, ErrInvalidOutput},
+		"output short of the source, clean exit": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
+			job.SourceDuration += 1500 * time.Millisecond
+		}, ErrInvalidOutput},
+		"no source duration": {func(_ *jobFixture, job *Job, _ context.CancelFunc) {
+			job.SourceDuration = 0
+			job.Transcode = func(context.Context, Input, io.Writer) error {
+				panic("transcoder started without a source duration")
+			}
+		}, nil},
 		"cancelled": {func(fx *jobFixture, job *Job, cancel context.CancelFunc) {
 			job.Transcode = func(ctx context.Context, _ Input, w io.Writer) error {
 				_, _ = w.Write(fx.stream.raw[:len(fx.stream.raw)/2])
@@ -390,11 +402,45 @@ func TestRunLeavesNoStagingOnFailure(t *testing.T) {
 				_ = result.Close()
 				t.Fatal("Run succeeded")
 			}
-			if !errors.Is(err, tc.want) {
+			if tc.want != nil && !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
 			assertNoFiles(t, fx.stageDir, fx.tmpDir)
 		})
+	}
+}
+
+func TestCoversSourceAllowsOnlyEncoderRounding(t *testing.T) {
+	for _, tc := range []struct {
+		output, source time.Duration
+		ok             bool
+	}{
+		{12 * time.Second, 12 * time.Second, true},
+		{13 * time.Second, 12 * time.Second, true},
+		{11 * time.Second, 12 * time.Second, true}, // one second under a short source
+		{11*time.Second - time.Millisecond, 12 * time.Second, false},
+		{594 * time.Second, 600 * time.Second, true}, // 1% under a long one
+		{594*time.Second - time.Millisecond, 600 * time.Second, false},
+		{0, 12 * time.Second, false},
+	} {
+		err := coversSource(tc.output, tc.source)
+		if tc.ok != (err == nil) || (err != nil && !errors.Is(err, ErrInvalidOutput)) {
+			t.Errorf("coversSource(%v, %v) = %v, want ok %v", tc.output, tc.source, err, tc.ok)
+		}
+	}
+}
+
+func TestFragmentReaderSumsReferenceDuration(t *testing.T) {
+	f, _, err := scanAll(buildSynth(synthFrags(testPayload(30_000)), false).raw, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := f.duration(), 2500*time.Millisecond; got != want {
+		t.Fatalf("duration = %v, want %v", got, want)
+	}
+	f.fragments = append(f.fragments, fragment{duration: math.MaxUint64})
+	if got := f.duration(); got != math.MaxInt64 {
+		t.Fatalf("overflowing duration = %v, want saturation", got)
 	}
 }
 

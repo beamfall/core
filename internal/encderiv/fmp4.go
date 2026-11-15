@@ -9,6 +9,7 @@ import (
 	"hash"
 	"io"
 	"math"
+	"time"
 )
 
 const (
@@ -586,6 +587,28 @@ func parseTrun(body []byte, defaults trunDefaults) (trunSummary, error) {
 		}
 	}
 	return out, nil
+}
+
+// duration is the reference track's total fragment duration, saturating rather
+// than overflowing.
+func (f *fragmentReader) duration() time.Duration {
+	if f.ref == nil || f.ref.timescale == 0 {
+		return 0
+	}
+	var total uint64
+	for _, frag := range f.fragments {
+		if frag.duration > math.MaxUint64-total {
+			return math.MaxInt64
+		}
+		total += frag.duration
+	}
+	timescale := uint64(f.ref.timescale)
+	secs, rem := total/timescale, total%timescale
+	if secs >= math.MaxInt64/uint64(time.Second) {
+		return math.MaxInt64
+	}
+	// Both terms are bounded: secs by the check above, rem*1e9 by rem < 2^32.
+	return time.Duration(secs)*time.Second + time.Duration(rem*uint64(time.Second)/timescale) //nolint:gosec // bounded above
 }
 
 // sidx builds the version-1 segment index for the body: one reference per
