@@ -6,6 +6,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Gauge,
+  Layers,
   Maximize,
   Minimize,
   MonitorPlay,
@@ -35,6 +36,7 @@ import { Slider } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
 import type { MetadataAttribution } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { songSecondsPerStreamSecond } from "../lib/playback";
 import { SKIP_INTERVALS, type SkipInterval } from "../lib/preferences";
 import {
   SUBTITLE_APPEARANCE_DEFAULTS,
@@ -42,21 +44,31 @@ import {
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
 import {
+  buildChapterList,
   buildMarkerStripModel,
   buildRenditionMenuModel,
   chapterSeekTarget,
   formatAriaTime,
   formatClockTime,
   formatRemainingTime,
+  resolveTrickplaySheetURL,
   resolveTrickplayTile,
 } from "../lib/transport";
+import { versionLabel } from "../lib/versionChoice";
+import { useRemotePlayerTarget } from "../remote/remoteControl";
+import { AudioSyncPanel } from "./AudioSyncPanel";
+import { ChapterList } from "./ChapterList";
 import { InfoOverlay } from "./InfoOverlay";
+import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
-import { TransportMenu } from "./TransportMenu";
+import { type MenuRow, TransportMenu } from "./TransportMenu";
+import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
+import { usePlayerShortcuts } from "./usePlayerShortcuts";
 import { useSubtitleAppearance } from "./useSubtitleAppearance";
 import { useSubtitleStyling } from "./useSubtitleStyling";
+import { markViewerIntent } from "./viewerIntent";
 
 // The player's control overlay (CORE-1141): a gradient scrim with the title,
 // route summary, slim scrubber (buffered range, marker strip, hover tooltip or
@@ -67,7 +79,16 @@ import { useSubtitleStyling } from "./useSubtitleStyling";
 // (openKey), and the open state is reported up so the player stage can
 // suppress idle auto-hide while settings or a menu is up. Every control is
 // keyboard-operable and labelled (the a11y gate).
-type OpenKey = "audio" | "subtitle" | "quality" | "info" | "subtitleStyle" | null;
+type OpenKey =
+  | "audio"
+  | "subtitle"
+  | "quality"
+  | "version"
+  | "info"
+  | "subtitleStyle"
+  | "audioSync"
+  | "shortcuts"
+  | null;
 type GestureFeedback =
   | { kind: "seek"; side: "left" | "right"; amount: number }
   | { kind: "volume"; value: number };
@@ -81,6 +102,7 @@ export function PlayerTransport({
   state,
   mediaTitle = "",
   mediaID = "",
+  profileID = "",
   metadataAttribution,
   stageRef,
   skipInterval = 10,
@@ -94,7 +116,11 @@ export function PlayerTransport({
   onShare,
   onPreviousInQueue,
   onNextInQueue,
+  onStop,
+  onRemoteStop,
+  onRemoteRestart,
   switchToHls,
+  onSelectVersion,
   onMenuOpenChange,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -104,6 +130,8 @@ export function PlayerTransport({
   mediaTitle?: string;
   /** The current Media's id, for the info overlay's item actions. */
   mediaID?: string;
+  /** The active Profile; subtitle offset and audio delay persist per Profile and Media. */
+  profileID?: string;
   /** The current Media's plugin-declared metadata credit, for the info overlay. */
   metadataAttribution?: MetadataAttribution;
   /** The player stage element — subtitle styling rides a CSS var/class on it. */
@@ -128,12 +156,23 @@ export function PlayerTransport({
   onPreviousInQueue?: () => void;
   /** Play the queue's next item; the control is hidden when absent. */
   onNextInQueue?: () => void;
+  /** Leaves the player when another device sends stop; without it stop only pauses. */
+  onStop?: () => void;
+  /** Stop requested by another device; falls back to onStop. */
+  onRemoteStop?: () => void;
+  /** Another device's play-media for this Media: set up afresh at that position. */
+  onRemoteRestart?: (atSeconds?: number) => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
+  /** Plays another Version of the Media; the Version row is hidden when absent. */
+  onSelectVersion?: (versionID: string) => void;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
   onMenuOpenChange?: (open: boolean) => void;
 }) {
   const t = useT();
+  // The transport's times are song seconds; an adjusted stream runs at song
+  // time divided by the applied tempo (CORE-1659).
+  const songScale = songSecondsPerStreamSecond(state.info);
   const [current, setCurrent] = useState(0);
   // The position a pointer drag on the scrubber previews; null when not dragging.
   const [scrubValue, setScrubValue] = useState<number | null>(null);
@@ -168,6 +207,7 @@ export function PlayerTransport({
   const [gestureFeedback, setGestureFeedback] = useState<GestureFeedback | null>(null);
   const [openKey, setOpenKey] = useState<OpenKey>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chaptersOpen, setChaptersOpen] = useState(false);
   const [buffered, setBuffered] = useState(0);
   const [hover, setHover] = useState<{ left: number; time: number } | null>(null);
   const narrow = useNarrowViewport();
@@ -191,8 +231,8 @@ export function PlayerTransport({
 
   // Report open/closed up so the stage can keep chrome visible while a menu is up.
   useEffect(() => {
-    onMenuOpenChange?.(settingsOpen || openKey !== null);
-  }, [openKey, settingsOpen, onMenuOpenChange]);
+    onMenuOpenChange?.(settingsOpen || chaptersOpen || openKey !== null);
+  }, [openKey, settingsOpen, chaptersOpen, onMenuOpenChange]);
 
   const closeSettings = useCallback((restoreFocus: boolean) => {
     setSettingsOpen(false);
@@ -229,6 +269,8 @@ export function PlayerTransport({
     videoRef,
     hlsRef,
     tracksVersion: state.tracksVersion,
+    profileID,
+    mediaID,
   });
   useSubtitleAppearance({
     stageRef,
@@ -241,6 +283,15 @@ export function PlayerTransport({
     subtitle.reset();
   }, [onSubtitleAppearanceReset, subtitle.reset]);
 
+  const audioSync = useAudioDelay({
+    videoRef,
+    profileID,
+    mediaID,
+    stream: state.stream,
+  });
+  // Audio-only items have nothing to line the sound up with.
+  const audioSyncAvailable = state.info?.mediaClass !== "audio";
+
   const tracks = useLiveTracks({
     videoRef,
     hlsRef,
@@ -252,18 +303,39 @@ export function PlayerTransport({
     onSubtitleChanged: subtitle.applySync,
   });
 
+  // Commands from the Profile's other devices drive this player (CORE-1678).
+  useRemotePlayerTarget({
+    video: () => videoRef.current,
+    mediaID,
+    selectAudio: tracks.selectAudio,
+    selectSubtitle: tracks.selectSubtitle,
+    next: onNextInQueue,
+    previous: onPreviousInQueue,
+    stop: onRemoteStop ?? onStop,
+    restart: onRemoteRestart,
+  });
+  // The Media's Versions (CORE-1676), listed by playbackInfo only when there
+  // are two or more; the default Version takes the client's own name.
+  const versionOptions: MenuRow[] = (state.info?.versions ?? []).map((version) => ({
+    id: version.id,
+    label: versionLabel(version, t("versionDefault")),
+    selected: version.selected,
+    disabled: false,
+    reason: "",
+  }));
+
   // Mirror the live <video> time into React state so the chrome re-renders.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const sync = () => {
-      setCurrent(Number.isFinite(video.currentTime) ? video.currentTime : 0);
-      setDuration(Number.isFinite(video.duration) ? video.duration : 0);
+      setCurrent(Number.isFinite(video.currentTime) ? video.currentTime * songScale : 0);
+      setDuration(Number.isFinite(video.duration) ? video.duration * songScale : 0);
       setPaused(video.paused);
       setVolumeState(video.volume);
       setMuted(video.muted);
       setPlaybackRate(video.playbackRate);
-      setBuffered(bufferedEnd(video));
+      setBuffered(bufferedEnd(video) * songScale);
     };
     sync();
     video.addEventListener("timeupdate", sync);
@@ -284,7 +356,7 @@ export function PlayerTransport({
       video.removeEventListener("ratechange", sync);
       video.removeEventListener("progress", sync);
     };
-  }, [videoRef]);
+  }, [videoRef, songScale]);
 
   useEffect(() => {
     const sync = () => {
@@ -322,9 +394,9 @@ export function PlayerTransport({
       const video = videoRef.current;
       if (!video) return;
       const dur = Number.isFinite(video.duration) ? video.duration : Infinity;
-      video.currentTime = Math.max(0, Math.min(dur, video.currentTime + seconds));
+      video.currentTime = Math.max(0, Math.min(dur, video.currentTime + seconds / songScale));
     },
-    [videoRef],
+    [videoRef, songScale],
   );
 
   const setVolume = useCallback(
@@ -459,46 +531,27 @@ export function PlayerTransport({
     setMuted(video.muted);
   }, [videoRef]);
 
-  useEffect(() => {
-    const interactive = (target: EventTarget | null) => {
-      const element = target instanceof Element ? target : document.activeElement;
-      if (!(element instanceof HTMLElement)) return false;
-      if (element.isContentEditable) return true;
-      return Boolean(
-        element.closest(
-          'button, a, input, select, textarea, menu, dialog, [role="menu"], [role="dialog"], [contenteditable]:not([contenteditable="false"])',
-        ),
-      );
-    };
-    const keydown = (event: KeyboardEvent) => {
-      if (
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        interactive(event.target)
-      ) {
-        return;
-      }
-      const key = event.key.toLowerCase();
-      const actions: Record<string, () => void> = {
-        " ": togglePlay,
-        k: togglePlay,
-        f: toggleFullscreen,
-        m: toggleMute,
-        arrowleft: () => seekBy(-skipInterval),
-        arrowright: () => seekBy(skipInterval),
-        arrowup: () => setVolume((videoRef.current?.volume ?? 0) + 0.05),
-        arrowdown: () => setVolume((videoRef.current?.volume ?? 0) - 0.05),
-      };
-      const action = actions[key];
-      if (!action) return;
-      event.preventDefault();
-      action();
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [seekBy, setVolume, skipInterval, toggleFullscreen, toggleMute, togglePlay, videoRef]);
+  usePlayerShortcuts({
+    videoRef,
+    skipInterval,
+    speeds: SPEEDS,
+    markers: state.markers,
+    togglePlay,
+    toggleFullscreen,
+    toggleMute,
+    seekBy,
+    setVolume,
+    subtitleOptions: tracks.subtitleOptions,
+    audioOptions: tracks.audioOptions,
+    selectSubtitle: tracks.selectSubtitle,
+    selectAudio: tracks.selectAudio,
+    onPreviousInQueue,
+    onNextInQueue,
+    onHelp: () => {
+      setSettingsOpen(false);
+      setOpenKey("shortcuts");
+    },
+  });
 
   async function togglePictureInPicture() {
     const video = videoRef.current;
@@ -522,7 +575,10 @@ export function PlayerTransport({
   function setPlaybackPosition(value: number) {
     const video = videoRef.current;
     if (video && Number.isFinite(value)) {
-      video.currentTime = value;
+      // A scrub can commit long after the press that began it, so the seek
+      // itself marks the viewer's intent for a Watch Party.
+      markViewerIntent();
+      video.currentTime = value / songScale;
       setCurrent(value);
     }
   }
@@ -576,12 +632,7 @@ export function PlayerTransport({
       setTrickplay(null);
       return;
     }
-    let sheetURL = tile.sheet;
-    try {
-      sheetURL = new URL(tile.sheet, state.trickplayBaseURL).href;
-    } catch {
-      // leave the server-provided URL as-is
-    }
+    const sheetURL = resolveTrickplaySheetURL(tile.sheet, state.trickplayBaseURL);
     setTrickplay({
       left: ratio * 100,
       time,
@@ -600,13 +651,17 @@ export function PlayerTransport({
   });
   const previousChapter = chapterSeekTarget(state.markers, current, -1);
   const nextChapter = chapterSeekTarget(state.markers, current, 1);
+  const chapters = buildChapterList(state.markers, {
+    thumbnailBase: state.info?.assets?.markerThumbnailBase,
+    currentTimeSeconds: current,
+  });
   const skipBackLabel = t("seekBackSeconds", { seconds: skipInterval });
   const skipForwardLabel = t("seekForwardSeconds", { seconds: skipInterval });
 
   function seekTo(seconds: number | null) {
     const video = videoRef.current;
     if (!video || seconds === null) return;
-    video.currentTime = Math.max(0, Math.min(duration || Infinity, seconds));
+    video.currentTime = Math.max(0, Math.min(duration || Infinity, seconds)) / songScale;
   }
 
   const volumeLevel = muted ? 0 : volume;
@@ -640,7 +695,7 @@ export function PlayerTransport({
           onClick={() => {
             const video = videoRef.current;
             if (video && markerModel.skip) {
-              video.currentTime = markerModel.skip.endSeconds;
+              video.currentTime = markerModel.skip.endSeconds / songScale;
             }
           }}
           className="bf-control is-skip-segment"
@@ -845,6 +900,14 @@ export function PlayerTransport({
             <ChevronsRight aria-hidden="true" />
             <span className="sr-only">{t("nextChapter")}</span>
           </button>
+          <ChapterList
+            chapters={chapters}
+            trickplay={state.trickplay}
+            trickplayBaseURL={state.trickplayBaseURL}
+            container={layerRef}
+            onSeek={seekTo}
+            onOpenChange={setChaptersOpen}
+          />
 
           <div className="bf-volume">
             <button
@@ -992,8 +1055,35 @@ export function PlayerTransport({
                     onAppearanceChange={onSubtitleAppearanceChange}
                     syncOffset={subtitle.syncOffset}
                     nudgeSync={subtitle.nudgeSync}
+                    resetSync={subtitle.resetSync}
                     reset={resetSubtitles}
                     syncSupported={subtitle.syncSupported}
+                  />
+                )}
+                {audioSyncAvailable && (
+                  <AudioSyncPanel
+                    open={openKey === "audioSync"}
+                    onOpenChange={(open) => setOpen("audioSync", open)}
+                    audioDelay={audioSync.audioDelay}
+                    nudgeAudioDelay={audioSync.nudgeAudioDelay}
+                    resetAudioDelay={audioSync.resetAudioDelay}
+                    supported={audioSync.audioDelaySupported}
+                  />
+                )}
+                {onSelectVersion && versionOptions.length > 1 && (
+                  <TransportMenu
+                    label={t("version")}
+                    ariaLabel={t("version")}
+                    icon={<Layers />}
+                    container={layerRef}
+                    side={menuSide}
+                    options={versionOptions}
+                    open={openKey === "version"}
+                    onOpenChange={(open) => setOpen("version", open)}
+                    onSelect={(id) => {
+                      closeSettings(true);
+                      onSelectVersion(id);
+                    }}
                   />
                 )}
                 <TransportMenu
@@ -1094,6 +1184,12 @@ export function PlayerTransport({
           them) but outside the glass sheet (a backdrop-filter ancestor would
           break their fixed positioning). */}
       <div ref={layerRef} className="bf-transport-layer" />
+      <ShortcutHelpOverlay
+        open={openKey === "shortcuts"}
+        onOpenChange={(open) => setOpen("shortcuts", open)}
+        container={layerRef}
+        skipInterval={skipInterval}
+      />
     </div>
   );
 }

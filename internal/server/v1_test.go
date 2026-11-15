@@ -462,7 +462,7 @@ func TestV1PlaybackControlRequiresScopeAndCredential(t *testing.T) {
 }
 
 func TestV1PlaybackControlPublishesTransportCommand(t *testing.T) {
-	for _, command := range []string{"pause", "resume", "skip-media", "skip-track"} {
+	for _, command := range []string{"pause", "resume", "stop", "skip-media", "skip-track", "mute", "unmute"} {
 		t.Run(command, func(t *testing.T) {
 			srv, st := newTestServerWithStore(t)
 			ctx := context.Background()
@@ -499,6 +499,9 @@ func TestV1PlaybackControlPublishesTransportCommand(t *testing.T) {
 			}
 			if payload.Command != command || payload.ProfileID != "profile-default" || payload.MediaID != "media-alpha" {
 				t.Fatalf("payload = %#v, want command/profile-default/media-alpha", payload)
+			}
+			if len(payload.PlayingMediaIDs) != 1 || payload.PlayingMediaIDs[0] != "media-alpha" {
+				t.Fatalf("payload playingMediaIDs = %v, want [media-alpha]", payload.PlayingMediaIDs)
 			}
 			entries := sessionControlActivity(t, st)
 			if len(entries) != 1 {
@@ -558,7 +561,19 @@ func TestV1PlaybackControlRejectsInvalidOrUnavailableTargets(t *testing.T) {
 		},
 		{
 			name: "unknown command",
+			body: `{"sessionID":"session-default","command":"teleport"}`,
+			want: http.StatusBadRequest,
+		},
+		{
+			// The /v1 body carries no arguments, so argument-bearing verbs
+			// (CORE-1678) are a 400 naming the missing argument.
+			name: "seek without position",
 			body: `{"sessionID":"session-default","command":"seek"}`,
+			want: http.StatusBadRequest,
+		},
+		{
+			name: "play-media without media",
+			body: `{"sessionID":"session-default","command":"play-media"}`,
 			want: http.StatusBadRequest,
 		},
 		{
@@ -1189,5 +1204,40 @@ func TestV1LibraryMediaCarriesYearAndDuration(t *testing.T) {
 				t.Fatalf("%s %s: list = %v, detail = %v", id, field, item[field], want[field])
 			}
 		}
+	}
+}
+
+// TestV1PlaybackControlAnchorSetListsOnlyVisibleMedia: a session holding tokens
+// for an open and a restricted Media publishes only the one the unrevealed key
+// can see as the receiver's anchor set, so a receiver playing the hidden one
+// refuses the command and its id never travels.
+func TestV1PlaybackControlAnchorSetListsOnlyVisibleMedia(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	future := time.Now().UTC().Add(time.Hour)
+	for _, token := range []struct {
+		media      store.MediaID
+		restricted bool
+	}{{"media-alpha", false}, {"media-archive", true}} {
+		if err := st.RecordStreamToken(ctx, "session-default", "profile-default", "device-tv", "media-direct", token.media, token.restricted, future); err != nil {
+			t.Fatalf("RecordStreamToken(%s): %v", token.media, err)
+		}
+	}
+	key := mintKey(t, st, "control", "profile-default", store.ScopePlaybackControl)
+
+	rec := v1Post(t, srv, "/v1/playback-control", key, `{"sessionID":"session-default","command":"pause"}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("POST /v1/playback-control = %d, want 202: %s", rec.Code, rec.Body.String())
+	}
+	events := sessionControlEvents(t, st)
+	if len(events) != 1 {
+		t.Fatalf("session-control events = %d, want 1", len(events))
+	}
+	var payload store.SessionControlPayload
+	if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
+		t.Fatalf("decode event payload: %v", err)
+	}
+	if payload.MediaID != "media-alpha" || len(payload.PlayingMediaIDs) != 1 || payload.PlayingMediaIDs[0] != "media-alpha" {
+		t.Fatalf("payload media/playing = %q/%v, want media-alpha/[media-alpha]", payload.MediaID, payload.PlayingMediaIDs)
 	}
 }

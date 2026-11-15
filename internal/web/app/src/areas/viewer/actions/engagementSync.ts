@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { subscribeEvents } from "@/lib/api";
 
 // One counter that moves whenever the bound Profile's watched, watchlist or
@@ -47,8 +47,14 @@ export function isEngagementInvalidation(data: unknown): boolean {
   }
 }
 
-/** Mount once per viewer session: turns the server's invalidation events into epoch changes. */
-export function useEngagementEvents(): void {
+/**
+ * Mount once per viewer session: turns the server's invalidation events into epoch changes.
+ * `onEvent` sees every frame of the same stream, so other viewer features (the cross-device
+ * remote) share this one subscription instead of opening their own.
+ */
+export function useEngagementEvents(onEvent?: (event: MessageEvent) => void): void {
+  const handler = useRef(onEvent);
+  handler.current = onEvent;
   useEffect(
     () =>
       subscribeEvents((event) => {
@@ -57,6 +63,7 @@ export function useEngagementEvents(): void {
           (event.type === INVALIDATE_KIND && isEngagementInvalidation(event.data))
         )
           notifyEngagementChanged();
+        handler.current?.(event);
       }),
     [],
   );

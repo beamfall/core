@@ -10,6 +10,8 @@ import { getManifest, graphql } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
 import type {
   ClientPref,
+  ControlSessionResult,
+  ControlSessionVars,
   EntityFilter,
   EntityInfo,
   FieldFilters,
@@ -26,7 +28,10 @@ import type {
   NavigationManifest,
   NotificationInfo,
   NotificationReadResult,
+  PlaybackAdjustmentRanges,
   PlaybackMarker,
+  PrePlayItem,
+  ProfileSessionInfo,
   ProfileSummary,
   ReportPlaybackResult,
   ReportPlaybackVars,
@@ -290,6 +295,38 @@ export async function fetchPlaybackMarkers(mediaID: string): Promise<PlaybackMar
   return data.markers ?? [];
 }
 
+const PLAYBACK_ADJUSTMENTS_QUERY =
+  "query PlaybackAdjustments { serverInfo { playbackAdjustments { pitchShiftSemitonesMin pitchShiftSemitonesMax tempoMin tempoMax } } }";
+
+/**
+ * PlaybackAdjustments — the pitch shift and tempo ranges the server accepts
+ * (CORE-1658), or null when it advertises none: the field is absent, the read
+ * fails (a server that predates it), or the ranges are not usable.
+ */
+export async function fetchPlaybackAdjustmentRanges(
+  signal?: AbortSignal,
+): Promise<PlaybackAdjustmentRanges | null> {
+  try {
+    const data = await graphql<{
+      serverInfo: { playbackAdjustments?: PlaybackAdjustmentRanges | null } | null;
+    }>(PLAYBACK_ADJUSTMENTS_QUERY, {}, signal);
+    const ranges = data.serverInfo?.playbackAdjustments;
+    if (!ranges) return null;
+    const { pitchShiftSemitonesMin, pitchShiftSemitonesMax, tempoMin, tempoMax } = ranges;
+    const usable =
+      [pitchShiftSemitonesMin, pitchShiftSemitonesMax, tempoMin, tempoMax].every(Number.isFinite) &&
+      pitchShiftSemitonesMin <= 0 &&
+      pitchShiftSemitonesMax >= 0 &&
+      tempoMin > 0 &&
+      tempoMin <= 1 &&
+      tempoMax >= 1 &&
+      (pitchShiftSemitonesMin < pitchShiftSemitonesMax || tempoMin < tempoMax);
+    return usable ? ranges : null;
+  } catch {
+    return null;
+  }
+}
+
 // --- My Data / Privacy panel (ADR-0036) -----------------------------------
 
 const MY_SESSIONS_QUERY =
@@ -299,6 +336,31 @@ const MY_SESSIONS_QUERY =
 export async function fetchMySessions(): Promise<MySessionsInfo> {
   const data = await graphql<{ mySessions: MySessionsInfo }>(MY_SESSIONS_QUERY, {});
   return data.mySessions;
+}
+
+// --- Remote control (CORE-1678) -------------------------------------------
+
+const PROFILE_SESSIONS_QUERY =
+  "query ProfileSessions { profileSessions { sessionID deviceID deviceName deviceRole current mediaID title positionSeconds durationSeconds } }";
+
+/** ProfileSessions — the active playbacks in the bound Profile, for the remote. */
+export async function fetchProfileSessions(): Promise<ProfileSessionInfo[]> {
+  const data = await graphql<{ profileSessions: ProfileSessionInfo[] | null }>(
+    PROFILE_SESSIONS_QUERY,
+    {},
+  );
+  return data.profileSessions ?? [];
+}
+
+const CONTROL_SESSION_MUTATION =
+  "mutation ControlSession($sessionID: String!, $command: String!, $direction: String, $positionMs: Float, $volume: Int, $trackID: String, $mediaID: String, $text: String) { controlSession(sessionID: $sessionID, command: $command, direction: $direction, positionMs: $positionMs, volume: $volume, trackID: $trackID, mediaID: $mediaID, text: $text) { sessionID command } }";
+
+/** ControlSession — send one transport command to another session in the Profile. */
+export async function controlSession(vars: ControlSessionVars): Promise<ControlSessionResult> {
+  const data = await graphql<{ controlSession: ControlSessionResult }>(CONTROL_SESSION_MUTATION, {
+    ...vars,
+  });
+  return data.controlSession;
 }
 
 const NOTIFICATIONS_QUERY =
@@ -378,6 +440,26 @@ const CLIENT_PREFS_QUERY = "query ClientPrefs { clientPrefs { key value } }";
 export async function fetchClientPrefs(): Promise<ClientPref[]> {
   const data = await graphql<{ clientPrefs: ClientPref[] | null }>(CLIENT_PREFS_QUERY, {});
   return data.clientPrefs ?? [];
+}
+
+const PRE_PLAY_QUEUE_QUERY =
+  "query PrePlayQueue($mediaID: String!) { prePlayQueue(mediaID: $mediaID) { mediaID title durationSeconds role label } }";
+
+/**
+ * PrePlayQueue — the items to play before `mediaID` (CORE-1701): the Owner's
+ * clips, then any items the active plugin suggests. Empty unless the Profile
+ * opted in and the feature is eligible.
+ */
+export async function fetchPrePlayQueue(
+  mediaID: string,
+  signal?: AbortSignal,
+): Promise<PrePlayItem[]> {
+  const data = await graphql<{ prePlayQueue: PrePlayItem[] | null }>(
+    PRE_PLAY_QUEUE_QUERY,
+    { mediaID },
+    signal,
+  );
+  return data.prePlayQueue ?? [];
 }
 
 const SET_CLIENT_PREF_MUTATION =

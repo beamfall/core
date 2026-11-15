@@ -6,6 +6,7 @@ import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
+import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryOperationsStrings } from "./library-operations";
 import { libraryTrashStrings } from "./library-trash";
@@ -17,16 +18,20 @@ import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
 import { playerRecoveryStrings } from "./player-recovery";
+import { playerShortcutStrings } from "./player-shortcuts";
 import { pluginStrings } from "./plugins";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
 import { profileDeviceStrings } from "./profiles-devices";
 import { remoteAccessStrings } from "./remote-access";
+import { remoteControlStrings } from "./remote-control";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { viewerAccountStrings } from "./viewer-account";
+import { watchPartyStrings } from "./watch-party";
+import { webhookStrings } from "./webhooks";
 import { whosWatchingStrings } from "./whos-watching";
 
 export const en = {
@@ -37,6 +42,7 @@ export const en = {
   ...libraryHealthStrings.en,
   ...consoleOperationsStrings.en,
   ...playbackStrings.en,
+  ...playerShortcutStrings.en,
   ...subtitleAppearanceStrings.en,
   ...managedFileStrings.en,
   ...backupRetentionStrings.en,
@@ -58,8 +64,12 @@ export const en = {
   ...powerToolStrings.en,
   ...itemActionStrings.en,
   ...playerRecoveryStrings.en,
+  ...watchPartyStrings.en,
   ...libraryTrashStrings.en,
   ...mediaDetailStrings.en,
+  ...karaokeStrings.en,
+  ...remoteControlStrings.en,
+  ...webhookStrings.en,
 } as const;
 
 export const fr = {
@@ -70,6 +80,7 @@ export const fr = {
   ...libraryHealthStrings.fr,
   ...consoleOperationsStrings.fr,
   ...playbackStrings.fr,
+  ...playerShortcutStrings.fr,
   ...subtitleAppearanceStrings.fr,
   ...managedFileStrings.fr,
   ...backupRetentionStrings.fr,
@@ -91,8 +102,12 @@ export const fr = {
   ...powerToolStrings.fr,
   ...itemActionStrings.fr,
   ...playerRecoveryStrings.fr,
+  ...watchPartyStrings.fr,
   ...libraryTrashStrings.fr,
   ...mediaDetailStrings.fr,
+  ...karaokeStrings.fr,
+  ...remoteControlStrings.fr,
+  ...webhookStrings.fr,
 } as const;
 
 export const de = {
@@ -103,6 +118,7 @@ export const de = {
   ...libraryHealthStrings.de,
   ...consoleOperationsStrings.de,
   ...playbackStrings.de,
+  ...playerShortcutStrings.de,
   ...subtitleAppearanceStrings.de,
   ...managedFileStrings.de,
   ...backupRetentionStrings.de,
@@ -124,8 +140,12 @@ export const de = {
   ...powerToolStrings.de,
   ...itemActionStrings.de,
   ...playerRecoveryStrings.de,
+  ...watchPartyStrings.de,
   ...libraryTrashStrings.de,
   ...mediaDetailStrings.de,
+  ...karaokeStrings.de,
+  ...remoteControlStrings.de,
+  ...webhookStrings.de,
 } as const;
 
 export const es = {
@@ -136,6 +156,7 @@ export const es = {
   ...libraryHealthStrings.es,
   ...consoleOperationsStrings.es,
   ...playbackStrings.es,
+  ...playerShortcutStrings.es,
   ...subtitleAppearanceStrings.es,
   ...managedFileStrings.es,
   ...backupRetentionStrings.es,
@@ -157,8 +178,12 @@ export const es = {
   ...powerToolStrings.es,
   ...itemActionStrings.es,
   ...playerRecoveryStrings.es,
+  ...watchPartyStrings.es,
   ...libraryTrashStrings.es,
   ...mediaDetailStrings.es,
+  ...karaokeStrings.es,
+  ...remoteControlStrings.es,
+  ...webhookStrings.es,
 } as const;
 
 export const pt = {
@@ -169,6 +194,7 @@ export const pt = {
   ...libraryHealthStrings.pt,
   ...consoleOperationsStrings.pt,
   ...playbackStrings.pt,
+  ...playerShortcutStrings.pt,
   ...subtitleAppearanceStrings.pt,
   ...managedFileStrings.pt,
   ...backupRetentionStrings.pt,
@@ -190,6 +216,10 @@ export const pt = {
   ...powerToolStrings.pt,
   ...itemActionStrings.pt,
   ...playerRecoveryStrings.pt,
+  ...watchPartyStrings.pt,
   ...libraryTrashStrings.pt,
   ...mediaDetailStrings.pt,
+  ...karaokeStrings.pt,
+  ...remoteControlStrings.pt,
+  ...webhookStrings.pt,
 } as const;

@@ -1,25 +1,48 @@
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, type NavigateFunction, Route, Routes, useNavigate } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setIdentityEpochSignal } from "@/lib/api";
-import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
+import {
+  fetchClientPrefs,
+  fetchMedia,
+  fetchPlaybackAdjustmentRanges,
+  fetchPrePlayQueue,
+  setClientPref,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import type { PlaybackAdjustment, PlaybackInfo } from "../lib/playback";
+import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
-import { usePlayer } from "../player/usePlayer";
+import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ revealed: true }),
+  useSession: () => ({ revealed: true, session: { profileID: "profile-a" } }),
   useViewerIdentity: () => "viewer-1",
 }));
 vi.mock("@/lib/graphql", () => ({
   fetchClientPrefs: vi.fn().mockResolvedValue([]),
   setClientPref: vi.fn().mockResolvedValue(undefined),
   fetchMedia: vi.fn().mockResolvedValue(null),
+  fetchPlaybackAdjustmentRanges: vi.fn().mockResolvedValue(null),
+  fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
 }));
-vi.mock("../player/usePlayer", () => ({ usePlayer: vi.fn() }));
+vi.mock("../player/PrePlayStage", () => ({
+  PrePlayStage: vi.fn(({ items, onDone }: { items: { title: string }[]; onDone: () => void }) => (
+    <section aria-label="pre-play stage">
+      <span>{items.map((item) => item.title).join(", ")}</span>
+      <button type="button" onClick={onDone}>
+        Skip all
+      </button>
+    </section>
+  )),
+}));
+vi.mock("../player/usePlayer", () => ({
+  usePlayer: vi.fn(),
+  DEFAULT_ADJUSTMENT: { pitchShiftSemitones: 0, tempo: 1 },
+}));
 vi.mock("../player/PlayerTransport", () => ({ PlayerTransport: vi.fn(() => null) }));
 
 function playerState(overrides: Partial<PlayerState>): PlayerState {
@@ -36,29 +59,48 @@ function playerState(overrides: Partial<PlayerState>): PlayerState {
     hlsActive: false,
     recovering: false,
     tracksVersion: 0,
+    mediaID: "media-alpha",
     ...overrides,
   };
 }
 
-function renderPlayer(state: PlayerState, navState?: unknown) {
+function renderPlayer(
+  state: PlayerState,
+  navState?: unknown,
+  adjustment: PlaybackAdjustment = DEFAULT_ADJUSTMENT,
+) {
   const retry = vi.fn();
+  const adjust = vi.fn();
   vi.mocked(usePlayer).mockReturnValue({
     videoRef: { current: null },
     hlsRef: { current: null },
     state,
     retry,
+    restart: vi.fn(),
     switchToHls: vi.fn(() => false as const),
+    adjustment,
+    adjust,
   });
-  render(
+  const tree = () => (
     <I18nProvider>
-      <MemoryRouter initialEntries={[{ pathname: "/watch/media-alpha", state: navState }]}>
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: "/watch/media-alpha",
+            // These cases test the title's player, so they arrive as an
+            // advance does: past any pre-play queue (CORE-1701).
+            state: { skipPrePlay: true, ...((navState as object | undefined) ?? {}) },
+          },
+        ]}
+      >
         <Routes>
           <Route path="/watch/:mediaId" element={<PlayerPage />} />
         </Routes>
       </MemoryRouter>
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { retry };
+  const view = render(tree());
+  return { retry, adjust, rerender: () => view.rerender(tree()) };
 }
 
 function stageVideo(): HTMLVideoElement {
@@ -267,6 +309,18 @@ describe("PlayerPage audio items (CORE-1143)", () => {
     { id: "media-next", title: "After" },
   ];
 
+  it("shows the video surface, not the artwork stage, for a composed-picture audio item (CORE-1656)", () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: { mediaClass: "audio", reason: "composed-picture" } as PlayerState["info"],
+      }),
+      { title: "Alpha" },
+    );
+    expect(document.querySelector(".bf-audio-stage")).toBeNull();
+    expect(document.querySelector("video")).not.toBeNull();
+  });
+
   it("shows artwork, title and credits for an audio item, and declares the queue's next item", async () => {
     vi.mocked(fetchMedia).mockResolvedValueOnce({
       id: "media-alpha",
@@ -425,11 +479,17 @@ describe("PlayerPage Back", () => {
       hlsRef: { current: null },
       state: playerState({ phase: "playing" }),
       retry: vi.fn(),
+      restart: vi.fn(),
       switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
     });
     render(
       <I18nProvider>
-        <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
+        <MemoryRouter
+          initialEntries={entries.map((pathname) => ({ pathname, state: { skipPrePlay: true } }))}
+          initialIndex={entries.length - 1}
+        >
           <Routes>
             <Route path="/" element={<p>home route</p>} />
             <Route path="/entity/:entityId" element={<p>entity route</p>} />
@@ -450,6 +510,98 @@ describe("PlayerPage Back", () => {
     renderAt(["/watch/media-alpha"]);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByText("home route")).toBeInTheDocument();
+  });
+});
+
+describe("PlayerPage Version choice (CORE-1676)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+    window.localStorage.clear();
+  });
+
+  it("asks for the profile's remembered Version, and a new pick is remembered and reloads", async () => {
+    writeVersionChoice("profile-a", "media-alpha", "v-remembered");
+    const { retry } = renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "video" } as PlayerState["info"] }),
+    );
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[4]).toBe("v-remembered");
+
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    act(() => props?.onSelectVersion?.("v-uhd"));
+
+    expect(readVersionChoice("profile-a", "media-alpha")).toBe("v-uhd");
+    expect(retry).toHaveBeenCalledOnce();
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[4]).toBe("v-uhd"));
+
+    // Choosing the Version already playing does nothing.
+    act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onSelectVersion?.("v-uhd"));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+});
+
+// CORE-1701: the pre-play queue plays before the title unless the viewer
+// arrived by a timestamped link or an advance.
+describe("PlayerPage pre-play", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(usePlayer).mockReturnValue({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: playerState({ phase: "playing" }),
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    });
+    vi.mocked(fetchPrePlayQueue).mockReset();
+  });
+
+  function renderEntry(entry: { pathname: string; search?: string; state?: unknown }) {
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  it("plays the pre-play queue first, then the title on Skip all", async () => {
+    vi.mocked(fetchPrePlayQueue).mockResolvedValue([
+      { mediaID: "clip-1", title: "Intro clip", durationSeconds: 10, role: "clip", label: "" },
+      {
+        mediaID: "s-1",
+        title: "Suggested one",
+        durationSeconds: 90,
+        role: "suggested",
+        label: "Preview",
+      },
+    ]);
+    renderEntry({ pathname: "/watch/media-alpha" });
+    const stage = await screen.findByRole("region", { name: "pre-play stage" });
+    expect(stage).toHaveTextContent("Intro clip, Suggested one");
+    expect(vi.mocked(fetchPrePlayQueue).mock.calls[0]?.[0]).toBe("media-alpha");
+    expect(usePlayer).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Skip all" }));
+    expect(screen.queryByRole("region", { name: "pre-play stage" })).not.toBeInTheDocument();
+    expect(usePlayer).toHaveBeenCalled();
+  });
+
+  it("starts the title when the queue is empty or cannot load", async () => {
+    vi.mocked(fetchPrePlayQueue).mockRejectedValue(new Error("offline"));
+    renderEntry({ pathname: "/watch/media-alpha" });
+    await waitFor(() => expect(usePlayer).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "pre-play stage" })).not.toBeInTheDocument();
+  });
+
+  it("skips pre-play for a timestamped link and for an advance", () => {
+    renderEntry({ pathname: "/watch/media-alpha", search: "?t=42" });
+    expect(fetchPrePlayQueue).not.toHaveBeenCalled();
+    expect(usePlayer).toHaveBeenCalled();
   });
 });
 
@@ -519,5 +671,220 @@ describe("PlayerPage subtitle appearance prefs (CORE-1681)", () => {
     } finally {
       setIdentityEpochSignal();
     }
+  });
+});
+
+// CORE-1659: key and tempo controls for a karaoke song.
+describe("PlayerPage karaoke key and tempo controls", () => {
+  const ranges = {
+    pitchShiftSemitonesMin: -6,
+    pitchShiftSemitonesMax: 6,
+    tempoMin: 0.75,
+    tempoMax: 1.25,
+  };
+  // A synthetic karaoke song: an audio item the server composes a picture for.
+  const karaokeInfo = {
+    mediaClass: "audio",
+    reason: "composed-picture",
+    streams: [],
+  } as unknown as PlaybackInfo;
+
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue(ranges);
+  });
+  afterEach(() => vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue(null));
+
+  it("shows key and tempo controls for a karaoke song when the server advertises them", async () => {
+    renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    const group = await screen.findByRole("group", { name: "Key and tempo" });
+    expect(group).toHaveTextContent("Key 0");
+    expect(group).toHaveTextContent("Tempo 100%");
+    for (const name of [
+      "Lower the key by a semitone",
+      "Raise the key by a semitone",
+      "Reset the key",
+      "Slow down by 5%",
+      "Speed up by 5%",
+      "Reset the tempo",
+    ]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    }
+    expect(within(group).getByRole("status")).toHaveTextContent("Key 0, Tempo 100%");
+  });
+
+  it("hides the controls when the server does not advertise the capability", async () => {
+    vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue(null);
+    renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    await waitFor(() => expect(fetchPlaybackAdjustmentRanges).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
+  });
+
+  it("hides the controls for a Media that is not a karaoke song", async () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "video",
+          reason: "direct-play",
+          streams: [],
+        } as unknown as PlaybackInfo,
+      }),
+    );
+    await waitFor(() => expect(fetchPlaybackAdjustmentRanges).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
+  });
+
+  it("applies a key and a tempo step through the player", async () => {
+    const { adjust } = renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    fireEvent.click(await screen.findByRole("button", { name: "Raise the key by a semitone" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 1, tempo: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Slow down by 5%" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 0, tempo: 0.95 });
+  });
+
+  it("shows the applied key and tempo the server echoed", async () => {
+    const adjustment = { pitchShiftSemitones: 2, tempo: 0.95 };
+    renderPlayer(
+      playerState({ phase: "playing", info: { ...karaokeInfo, adjustment }, adjustment }),
+      undefined,
+      adjustment,
+    );
+    const group = await screen.findByRole("group", { name: "Key and tempo" });
+    expect(group).toHaveTextContent("Key +2");
+    expect(group).toHaveTextContent("Tempo 95%");
+    expect(group).not.toHaveTextContent("Not applied");
+    expect(within(group).getByRole("status")).toHaveTextContent("Key +2, Tempo 95%");
+  });
+
+  it("says Not applied when the server did not echo the adjustment", async () => {
+    const adjustment = { pitchShiftSemitones: 1, tempo: 1 };
+    renderPlayer(
+      playerState({ phase: "playing", info: karaokeInfo, adjustment }),
+      undefined,
+      adjustment,
+    );
+    const group = await screen.findByRole("group", { name: "Key and tempo" });
+    expect(group).toHaveTextContent("Key +1");
+    expect(group).toHaveTextContent("Not applied");
+    expect(within(group).getByRole("status")).toHaveTextContent("Key +1, Tempo 100%: not applied");
+  });
+
+  it("keeps the controls mounted while a change restarts the stream", async () => {
+    const adjustment = { pitchShiftSemitones: 1, tempo: 1 };
+    const { adjust, rerender } = renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    const up = await screen.findByRole("button", { name: "Raise the key by a semitone" });
+    up.focus();
+    fireEvent.click(up);
+    expect(adjust).toHaveBeenCalledTimes(1);
+    // The restart clears state.info; the song verdict stays for this Media.
+    vi.mocked(usePlayer).mockReturnValue({
+      ...vi.mocked(usePlayer).mock.results.at(-1)?.value,
+      state: playerState({ phase: "loading" }),
+      adjustment,
+    });
+    rerender();
+    expect(up).toHaveFocus();
+    expect(screen.getByRole("group", { name: "Key and tempo" })).toHaveTextContent("Key +1");
+    expect(screen.getByRole("group", { name: "Key and tempo" })).not.toHaveTextContent(
+      "Not applied",
+    );
+  });
+
+  it("keeps the controls, focus and notice when a change is declined to bare audio", async () => {
+    const adjustment = { pitchShiftSemitones: 1, tempo: 1 };
+    const { adjust, rerender } = renderPlayer(playerState({ phase: "playing", info: karaokeInfo }));
+    const up = await screen.findByRole("button", { name: "Raise the key by a semitone" });
+    up.focus();
+    fireEvent.click(up);
+    expect(adjust).toHaveBeenCalledTimes(1);
+    // The server declined: plain audio, no composed picture, no adjustment echo.
+    vi.mocked(usePlayer).mockReturnValue({
+      ...vi.mocked(usePlayer).mock.results.at(-1)?.value,
+      state: playerState({
+        phase: "playing",
+        info: { mediaClass: "audio", reason: "direct-play", streams: [] },
+        adjustment,
+      }),
+      adjustment,
+    });
+    rerender();
+    const group = screen.getByRole("group", { name: "Key and tempo" });
+    expect(up).toHaveFocus();
+    expect(within(group).getByRole("status")).toHaveTextContent(/not applied/i);
+  });
+
+  it("does not carry a karaoke song's controls to the next Media", async () => {
+    const karaokeState = playerState({ phase: "playing", info: karaokeInfo });
+    let current = karaokeState;
+    vi.mocked(usePlayer).mockImplementation(() => ({
+      videoRef: { current: null },
+      hlsRef: { current: null },
+      state: current,
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    }));
+    let navigate: NavigateFunction | undefined;
+    function Navigator() {
+      navigate = useNavigate();
+      return null;
+    }
+    const tree = () => (
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/watch/media-alpha"]}>
+          <Navigator />
+          <Routes>
+            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    const view = render(tree());
+    await screen.findByRole("group", { name: "Key and tempo" });
+
+    // The new route renders first with the karaoke song's playback state.
+    await act(async () => navigate?.("/watch/media-beta"));
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
+
+    // Then an ordinary track loads for it.
+    current = playerState({
+      phase: "playing",
+      mediaID: "media-beta",
+      info: { mediaClass: "audio", reason: "direct-play", streams: [] } as unknown as PlaybackInfo,
+    });
+    view.rerender(tree());
+    expect(screen.queryByRole("group", { name: "Key and tempo" })).not.toBeInTheDocument();
+  });
+
+  it("clamps to the advertised range and keeps the control at its limit focusable", async () => {
+    vi.mocked(fetchPlaybackAdjustmentRanges).mockResolvedValue({
+      pitchShiftSemitonesMin: -2,
+      pitchShiftSemitonesMax: 2,
+      tempoMin: 0.9,
+      tempoMax: 1.1,
+    });
+    const adjustment = { pitchShiftSemitones: 2, tempo: 0.9 };
+    const { adjust } = renderPlayer(
+      playerState({ phase: "playing", info: { ...karaokeInfo, adjustment }, adjustment }),
+      undefined,
+      adjustment,
+    );
+    const up = await screen.findByRole("button", { name: "Raise the key by a semitone" });
+    const slower = screen.getByRole("button", { name: "Slow down by 5%" });
+    expect(up).toHaveAttribute("aria-disabled", "true");
+    expect(up).not.toBeDisabled();
+    expect(slower).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(up);
+    fireEvent.click(slower);
+    expect(adjust).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Speed up by 5%" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 2, tempo: 0.95 });
+    fireEvent.click(screen.getByRole("button", { name: "Reset the key" }));
+    expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 0, tempo: 0.9 });
   });
 });

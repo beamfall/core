@@ -5,9 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // OutboxEvent is one row of the append-only event outbox (the realtime spine
@@ -353,15 +356,67 @@ func (s *Store) appendMediaEventsLocked(ctx context.Context, kind string, mediaI
 // closed and generic (invariant #1) — no domain or media-kind verbs: a command
 // names a transport axis, not what is playing. Clients ship this vocabulary
 // compiled in and ignore an unknown verb, exactly like the Section/Source
-// vocabularies. "skip-media" advances to the next/previous Media item;
-// "skip-track" advances within the current item's track list (audio session);
-// "pause"/"resume" toggle transport. Direction (prev/next) rides in the
-// command payload, not a separate verb.
+// vocabularies.
+//
+//   - "pause" / "resume" / "stop" toggle or end transport.
+//   - "skip-media" advances to the next/previous Media item; "skip-track"
+//     advances within the current item's track list (audio session). Direction
+//     ("next", the default, or "previous") rides in the payload.
+//   - "seek" moves to an absolute PositionMs.
+//   - "set-volume" sets Volume (0–100); "mute" / "unmute" toggle output.
+//   - "select-audio-track" selects TrackID; "select-subtitle-track" selects
+//     TrackID, or turns subtitles off when TrackID is empty.
+//   - "play-media" starts MediaID on the target, optionally at PositionMs.
+//   - "display-message" shows Text on the target.
+//
+// TrackID is the opaque track id the target already reported on its own
+// playback surface; the server never interprets it.
+const (
+	SessionCommandPause               = "pause"
+	SessionCommandResume              = "resume"
+	SessionCommandStop                = "stop"
+	SessionCommandSkipMedia           = "skip-media"
+	SessionCommandSkipTrack           = "skip-track"
+	SessionCommandSeek                = "seek"
+	SessionCommandSetVolume           = "set-volume"
+	SessionCommandMute                = "mute"
+	SessionCommandUnmute              = "unmute"
+	SessionCommandSelectAudioTrack    = "select-audio-track"
+	SessionCommandSelectSubtitleTrack = "select-subtitle-track"
+	SessionCommandPlayMedia           = "play-media"
+	SessionCommandDisplayMessage      = "display-message"
+)
+
+// Skip directions carried by skip-media and skip-track.
+const (
+	SessionDirectionNext     = "next"
+	SessionDirectionPrevious = "previous"
+)
+
+// Session-control argument bounds.
+const (
+	SessionControlMaxVolume      = 100
+	SessionControlMaxTrackIDLen  = 128
+	SessionControlMaxMessageRune = 256
+	// SessionControlMaxPositionMs bounds seek/play-media positions at 7 days,
+	// far past any real Media and well inside int64 and JSON number precision.
+	SessionControlMaxPositionMs = int64(7 * 24 * time.Hour / time.Millisecond)
+)
+
 var sessionControlCommands = map[string]bool{
-	"skip-media": true,
-	"skip-track": true,
-	"pause":      true,
-	"resume":     true,
+	SessionCommandPause:               true,
+	SessionCommandResume:              true,
+	SessionCommandStop:                true,
+	SessionCommandSkipMedia:           true,
+	SessionCommandSkipTrack:           true,
+	SessionCommandSeek:                true,
+	SessionCommandSetVolume:           true,
+	SessionCommandMute:                true,
+	SessionCommandUnmute:              true,
+	SessionCommandSelectAudioTrack:    true,
+	SessionCommandSelectSubtitleTrack: true,
+	SessionCommandPlayMedia:           true,
+	SessionCommandDisplayMessage:      true,
 }
 
 // SessionControlCommandValid reports whether command is a member of the closed
@@ -369,6 +424,109 @@ var sessionControlCommands = map[string]bool{
 // before authorizing, so an unknown verb is a client error, never an outbox row.
 func SessionControlCommandValid(command string) bool {
 	return sessionControlCommands[command]
+}
+
+// SessionControlCommands returns the closed vocabulary in a stable order, for
+// docs and conformance checks.
+func SessionControlCommands() []string {
+	out := make([]string, 0, len(sessionControlCommands))
+	for command := range sessionControlCommands {
+		out = append(out, command)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SessionControlArgs are the per-command arguments a controller supplies. Only
+// the arguments the command takes may be set; ValidateSessionControlArgs
+// rejects the rest, so the outbox never carries a stray field.
+type SessionControlArgs struct {
+	Direction  string
+	PositionMs *int64
+	Volume     *int
+	TrackID    *string
+	MediaID    MediaID
+	Text       string
+}
+
+// ValidateSessionControlArgs checks a command and its arguments against the
+// closed vocabulary and returns the normalized arguments (skip direction
+// defaulted to "next", subtitle-off TrackID made explicit). Every caller (the
+// GraphQL mutation, the /v1 REST surface and the outbox writer) runs the same
+// check, so the vocabulary has one definition.
+func ValidateSessionControlArgs(command string, args SessionControlArgs) (SessionControlArgs, error) {
+	if !sessionControlCommands[command] {
+		return SessionControlArgs{}, ValidationError("unknown transport command")
+	}
+	var allowed struct{ direction, position, volume, track, media, text bool }
+	switch command {
+	case SessionCommandSkipMedia, SessionCommandSkipTrack:
+		allowed.direction = true
+		switch args.Direction {
+		case "":
+			args.Direction = SessionDirectionNext
+		case SessionDirectionNext, SessionDirectionPrevious:
+		default:
+			return SessionControlArgs{}, ValidationError("direction must be next or previous")
+		}
+	case SessionCommandSeek:
+		allowed.position = true
+		if args.PositionMs == nil {
+			return SessionControlArgs{}, ValidationError("seek requires positionMs")
+		}
+	case SessionCommandSetVolume:
+		allowed.volume = true
+		if args.Volume == nil {
+			return SessionControlArgs{}, ValidationError("set-volume requires volume")
+		}
+		if *args.Volume < 0 || *args.Volume > SessionControlMaxVolume {
+			return SessionControlArgs{}, ValidationError("volume must be between 0 and 100")
+		}
+	case SessionCommandSelectAudioTrack:
+		allowed.track = true
+		if args.TrackID == nil || *args.TrackID == "" {
+			return SessionControlArgs{}, ValidationError("select-audio-track requires trackID")
+		}
+	case SessionCommandSelectSubtitleTrack:
+		allowed.track = true
+		if args.TrackID == nil {
+			off := ""
+			args.TrackID = &off
+		}
+	case SessionCommandPlayMedia:
+		allowed.media, allowed.position = true, true
+		if args.MediaID == "" {
+			return SessionControlArgs{}, ValidationError("play-media requires mediaID")
+		}
+	case SessionCommandDisplayMessage:
+		allowed.text = true
+		if strings.TrimSpace(args.Text) == "" {
+			return SessionControlArgs{}, ValidationError("display-message requires text")
+		}
+		if utf8.RuneCountInString(args.Text) > SessionControlMaxMessageRune || !utf8.ValidString(args.Text) {
+			return SessionControlArgs{}, ValidationError("text must be at most 256 characters")
+		}
+		for _, r := range args.Text {
+			if unicode.IsControl(r) {
+				return SessionControlArgs{}, ValidationError("text must not contain control characters")
+			}
+		}
+	}
+	if args.PositionMs != nil && (*args.PositionMs < 0 || *args.PositionMs > SessionControlMaxPositionMs) {
+		return SessionControlArgs{}, ValidationError("positionMs is out of range")
+	}
+	if args.TrackID != nil && (len(*args.TrackID) > SessionControlMaxTrackIDLen || strings.TrimSpace(*args.TrackID) != *args.TrackID) {
+		return SessionControlArgs{}, ValidationError("trackID is invalid")
+	}
+	if (args.Direction != "" && !allowed.direction) ||
+		(args.PositionMs != nil && !allowed.position) ||
+		(args.Volume != nil && !allowed.volume) ||
+		(args.TrackID != nil && !allowed.track) ||
+		(args.MediaID != "" && !allowed.media) ||
+		(args.Text != "" && !allowed.text) {
+		return SessionControlArgs{}, ValidationError(command + " does not take that argument")
+	}
+	return args, nil
 }
 
 // SessionControlKind is the single outbox Kind for every cross-device transport
@@ -383,11 +541,68 @@ const SessionControlKind = "session.control"
 // and MediaID are store-resolved at issue time from the TARGET session's active
 // playback, never client input, so a controller cannot widen delivery past its
 // own Profile or probe a hidden Media by spoofing the payload.
+//
+// The argument fields are additive within /v1 (ADR-0040): a target that
+// predates a verb ignores it. For play-media, MediaID is the Media to start
+// (authorized as visible to the controller at issue time); for every other
+// verb it is the target's active Media. Either way the SSE surface
+// reveal-filters delivery on it.
+//
+// PlayingMediaIDs, on every verb but play-media, lists each Media the target
+// session held a live Stream Token for at issue time (a prefetched next item
+// as well as the current one), all visible to the controller. It is the
+// receiver's anchor: a transport command applies only while the receiver
+// plays one of them. The SSE surface reveal-filters on every entry too, so the
+// list never names a Media to a subscriber who cannot reveal it.
 type SessionControlPayload struct {
-	Command    string    `json:"command"`
-	FromDevice DeviceID  `json:"fromDevice,omitempty"`
-	ProfileID  ProfileID `json:"profileID"`
-	MediaID    MediaID   `json:"mediaID,omitempty"`
+	Command         string    `json:"command"`
+	FromDevice      DeviceID  `json:"fromDevice,omitempty"`
+	ProfileID       ProfileID `json:"profileID"`
+	MediaID         MediaID   `json:"mediaID,omitempty"`
+	PlayingMediaIDs []MediaID `json:"playingMediaIDs,omitempty"`
+	Direction       string    `json:"direction,omitempty"`
+	PositionMs      *int64    `json:"positionMs,omitempty"`
+	Volume          *int      `json:"volume,omitempty"`
+	TrackID         *string   `json:"trackID,omitempty"`
+	Text            string    `json:"text,omitempty"`
+}
+
+// NewSessionControlPayload validates command and args and builds the outbox
+// payload. mediaID is the reveal anchor: the target's active Media, or for
+// play-media the Media to start (args.MediaID, which must match).
+func NewSessionControlPayload(command string, args SessionControlArgs, from DeviceID, profile ProfileID, mediaID MediaID) (SessionControlPayload, error) {
+	normalized, err := ValidateSessionControlArgs(command, args)
+	if err != nil {
+		return SessionControlPayload{}, err
+	}
+	if command == SessionCommandPlayMedia && mediaID != normalized.MediaID {
+		return SessionControlPayload{}, ValidationError("play-media reveal anchor must be the started Media")
+	}
+	return SessionControlPayload{
+		Command:    command,
+		FromDevice: from,
+		ProfileID:  profile,
+		MediaID:    mediaID,
+		Direction:  normalized.Direction,
+		PositionMs: normalized.PositionMs,
+		Volume:     normalized.Volume,
+		TrackID:    normalized.TrackID,
+		Text:       normalized.Text,
+	}, nil
+}
+
+func (p SessionControlPayload) args() SessionControlArgs {
+	args := SessionControlArgs{
+		Direction:  p.Direction,
+		PositionMs: p.PositionMs,
+		Volume:     p.Volume,
+		TrackID:    p.TrackID,
+		Text:       p.Text,
+	}
+	if p.Command == SessionCommandPlayMedia {
+		args.MediaID = p.MediaID
+	}
+	return args
 }
 
 // AppendSessionControlEvent records a cross-device transport command in the
@@ -454,11 +669,17 @@ func sessionControlPayloadJSON(target SessionID, payload SessionControlPayload) 
 	if target == "" {
 		return nil, ValidationError("target session is required")
 	}
-	if !sessionControlCommands[payload.Command] {
-		return nil, ValidationError("unknown transport command")
+	normalized, err := ValidateSessionControlArgs(payload.Command, payload.args())
+	if err != nil {
+		return nil, err
 	}
+	payload.Direction = normalized.Direction
+	payload.TrackID = normalized.TrackID
 	if payload.ProfileID == "" {
 		return nil, ValidationError("session-control event is missing its Profile")
+	}
+	if payload.Command == SessionCommandPlayMedia && len(payload.PlayingMediaIDs) > 0 {
+		return nil, ValidationError("play-media does not carry playingMediaIDs")
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -509,11 +730,18 @@ const (
 	// correction"). It targets one member session (Session in the payload) so the
 	// member ignores a nudge addressed to a peer.
 	GroupSignalNudge = "nudge"
+	// GroupSignalRoster is a Watch Party membership snapshot: the members'
+	// display names plus the current anchor (item, position, present_at,
+	// paused), sent when a party forms and whenever a member joins or leaves,
+	// so a member who joined from an invite can see who is watching and land
+	// on the live timeline (CORE-1677).
+	GroupSignalRoster = "roster"
 )
 
 var groupSyncSignals = map[string]bool{
 	GroupSignalTransition: true,
 	GroupSignalNudge:      true,
+	GroupSignalRoster:     true,
 }
 
 // GroupSyncPayload is the JSON body of a group.sync outbox event.
@@ -527,6 +755,14 @@ var groupSyncSignals = map[string]bool{
 //     PresentAt − own_render_latency.
 //   - nudge: Session (the one member it targets) + Rate (the signed ±0.1 %
 //     playback-rate delta); a member ignores a nudge whose Session is not its own.
+//   - roster: Members (display names) plus the transition fields for the
+//     current anchor.
+//
+// Paused accompanies a Watch Party transition or roster whose timeline holds at
+// Position. A Watch Party is cross-Profile, so the surface writes one row per
+// member Profile (each row's ProfileID is that member's). The SSE stream keeps
+// its Profile gate and also reveal-filters a signal whose Item names Media, so
+// an unrevealed member session never learns a restricted item's identity.
 //
 // Time fields are server-clock Unix milliseconds — the wire-stable encoding the
 // member pairs with its calibrated clock offset; the conductor package works in
@@ -540,6 +776,8 @@ type GroupSyncPayload struct {
 	PresentAtMS int64     `json:"presentAtMS,omitempty"`
 	Session     SessionID `json:"session,omitempty"`
 	Rate        float64   `json:"rate,omitempty"`
+	Paused      bool      `json:"paused,omitempty"`
+	Members     []string  `json:"members,omitempty"`
 }
 
 // GroupSyncSignalValid reports whether signal is a member of the closed

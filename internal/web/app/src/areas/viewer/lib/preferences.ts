@@ -36,6 +36,9 @@ export const PREF_KEYS = {
   skipInterval: "playback.skip-interval",
   downstreamAudio: "playback.downstream-audio",
   reduceMotion: "a11y.reduce-motion",
+  // Pre-play queue opt-in and suggested-item count (CORE-1701, graph_preplay.go).
+  prePlayEnabled: "preplay.enabled",
+  prePlayExtras: "preplay.extras",
   // Subtitle appearance (CORE-1681); values and defaults live in subtitleAppearance.ts.
   subtitleSize: "subtitle.size",
   subtitleBackground: "subtitle.background",
@@ -44,6 +47,7 @@ export const PREF_KEYS = {
   subtitleOpacity: "subtitle.opacity",
   subtitleEdge: "subtitle.edge",
   subtitlePosition: "subtitle.position",
+  stillWatchingAfter: "stillwatching.after",
 } as const;
 
 export type PrefKey = (typeof PREF_KEYS)[keyof typeof PREF_KEYS];
@@ -61,6 +65,20 @@ export const SKIP_INTERVAL_DEFAULT: SkipInterval = "10";
 export const DOWNSTREAM_AUDIO_MODES = ["stereo", "surround"] as const;
 export type DownstreamAudioMode = (typeof DOWNSTREAM_AUDIO_MODES)[number];
 export const DOWNSTREAM_AUDIO_DEFAULT: DownstreamAudioMode = "stereo";
+/** Suggested pre-play item counts; the server clamps any stored value to 0..10. */
+export const PRE_PLAY_EXTRAS = ["0", "1", "2", "3", "4", "5"] as const;
+export type PrePlayExtras = (typeof PRE_PLAY_EXTRAS)[number];
+export const PRE_PLAY_EXTRAS_DEFAULT: PrePlayExtras = "2";
+
+// "Are you still watching?" (CORE-1689, docs/still-watching/README.md): ask
+// after this many items in a row started by the Up Next countdown. The stored
+// value is "1".."10" or "off"; absent or malformed means the default. Every
+// client parses the same key the same way.
+export const STILL_WATCHING_OFF = "off";
+export const STILL_WATCHING_DEFAULT = 3;
+export const STILL_WATCHING_MAX = 10;
+/** The choices the settings page offers; any stored 1..10 is still honoured. */
+export const STILL_WATCHING_OPTIONS = ["off", "1", "2", "3", "4", "5"] as const;
 
 /** The resolved, typed self-service preference set for one Profile. */
 export interface ViewerPreferences {
@@ -74,6 +92,10 @@ export interface ViewerPreferences {
   trimSilence: boolean;
   skipInterval: SkipInterval;
   downstreamAudio: DownstreamAudioMode;
+  /** Autoplayed items in a row before the prompt; 0 means never ask. */
+  stillWatchingAfter: number;
+  prePlayEnabled: boolean;
+  prePlayExtras: PrePlayExtras;
 }
 
 function bool(map: Map<string, string>, key: string): boolean {
@@ -85,6 +107,21 @@ function downstreamAudio(map: Map<string, string>): DownstreamAudioMode {
   return (DOWNSTREAM_AUDIO_MODES as readonly string[]).includes(raw ?? "")
     ? (raw as DownstreamAudioMode)
     : DOWNSTREAM_AUDIO_DEFAULT;
+}
+
+/** Parse the stillwatching.after value: 0 for "off", 1..10, else the default. */
+export function parseStillWatchingAfter(raw: string | undefined): number {
+  if (raw === STILL_WATCHING_OFF) return 0;
+  // Exactly "1".."10": no whitespace, sign or leading zero, as every client parses it.
+  if (raw === undefined || !/^(10|[1-9])$/.test(raw)) return STILL_WATCHING_DEFAULT;
+  return Number(raw);
+}
+
+function prePlayExtras(map: Map<string, string>): PrePlayExtras {
+  const raw = map.get(PREF_KEYS.prePlayExtras)?.trim();
+  return (PRE_PLAY_EXTRAS as readonly string[]).includes(raw ?? "")
+    ? (raw as PrePlayExtras)
+    : PRE_PLAY_EXTRAS_DEFAULT;
 }
 
 function speed(map: Map<string, string>): PlaybackSpeed {
@@ -136,6 +173,9 @@ export function resolvePreferences(prefs: ClientPref[], showID = ""): ViewerPref
       ? interval(map, skipIntervalOverrideKey(showID), globalSkipInterval)
       : globalSkipInterval,
     downstreamAudio: downstreamAudio(map),
+    stillWatchingAfter: parseStillWatchingAfter(map.get(PREF_KEYS.stillWatchingAfter)),
+    prePlayEnabled: bool(map, PREF_KEYS.prePlayEnabled),
+    prePlayExtras: prePlayExtras(map),
   };
 }
 

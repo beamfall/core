@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import {
+  adjustmentApplied,
   fetchPlaybackInfo,
+  hasPicture,
+  isComposedPictureServed,
   serverErrorReason,
+  songSecondsPerStreamSecond,
   UNAVAILABLE_REASONS,
   type UnavailableReasonMessages,
   unavailableReason,
@@ -91,6 +95,53 @@ describe("fetchPlaybackInfo", () => {
     await fetchPlaybackInfo("media-b");
     expect(postJSON.mock.calls[0][1]).not.toHaveProperty("nextMediaID");
   });
+
+  it("sends a remembered Version only when one is chosen (CORE-1676)", async () => {
+    await fetchPlaybackInfo("media-v", undefined, undefined, "v0123456789abcdef");
+    expect(postJSON).toHaveBeenCalledWith(
+      "/api/playback-info",
+      expect.objectContaining({ mediaID: "media-v", selectedVersion: "v0123456789abcdef" }),
+    );
+
+    postJSON.mockClear();
+    await fetchPlaybackInfo("media-v");
+    expect(postJSON.mock.calls[0][1]).not.toHaveProperty("selectedVersion");
+  });
+
+  it("asks for a key or tempo adjustment and omits the recorded one (CORE-1659)", async () => {
+    await fetchPlaybackInfo("media-song", undefined, { pitchShiftSemitones: -2, tempo: 0.9 });
+    expect(postJSON.mock.calls[0][1]).toMatchObject({
+      adjustment: { pitchShiftSemitones: -2, tempo: 0.9 },
+    });
+    await fetchPlaybackInfo("media-song", undefined, { pitchShiftSemitones: 3 });
+    expect(postJSON.mock.calls[1][1]).toMatchObject({
+      adjustment: { pitchShiftSemitones: 3, tempo: 1 },
+    });
+    await fetchPlaybackInfo("media-song", undefined, { pitchShiftSemitones: 0, tempo: 1 });
+    expect(postJSON.mock.calls[2][1]).not.toHaveProperty("adjustment");
+  });
+});
+
+describe("playback adjustment helpers (CORE-1659)", () => {
+  it("scales stream seconds to song seconds by the applied tempo only", () => {
+    expect(songSecondsPerStreamSecond({ adjustment: { tempo: 0.8 } })).toBe(0.8);
+    expect(songSecondsPerStreamSecond({ adjustment: { pitchShiftSemitones: 2 } })).toBe(1);
+    expect(songSecondsPerStreamSecond({ adjustment: { tempo: 0 } })).toBe(1);
+    expect(songSecondsPerStreamSecond({})).toBe(1);
+    expect(songSecondsPerStreamSecond(null)).toBe(1);
+  });
+
+  it("calls an adjustment applied only when the server echoed it", () => {
+    const asked = { pitchShiftSemitones: 2, tempo: 1.1 };
+    expect(adjustmentApplied({ adjustment: { pitchShiftSemitones: 2, tempo: 1.1 } }, asked)).toBe(
+      true,
+    );
+    expect(adjustmentApplied({}, asked)).toBe(false);
+    expect(adjustmentApplied({ adjustment: { pitchShiftSemitones: 1, tempo: 1.1 } }, asked)).toBe(
+      false,
+    );
+    expect(adjustmentApplied({}, { pitchShiftSemitones: 0, tempo: 1 })).toBe(true);
+  });
 });
 
 describe("unavailableReason (CORE-1146)", () => {
@@ -155,5 +206,26 @@ describe("serverErrorReason", () => {
     ["a non-ApiError", new Error("boom")],
   ])("is empty for %s", (_label, err) => {
     expect(serverErrorReason(err)).toBe("");
+  });
+});
+
+describe("hasPicture (CORE-1656)", () => {
+  it("is true for video and for unknown info", () => {
+    expect(hasPicture({ mediaClass: "video" })).toBe(true);
+    expect(hasPicture(null)).toBe(true);
+  });
+  it("is false for plain audio", () => {
+    expect(hasPicture({ mediaClass: "audio", streams: [{ kind: "direct-play" }] })).toBe(false);
+    expect(hasPicture({ mediaClass: "audio", reason: "requires-transcode" })).toBe(false);
+  });
+  it("is true for audio served as a composed picture", () => {
+    expect(hasPicture({ mediaClass: "audio", reason: " composed-picture " })).toBe(true);
+    expect(
+      hasPicture({
+        mediaClass: "audio",
+        streams: [{ renditions: [{ id: "composed", height: 720 }] }],
+      }),
+    ).toBe(true);
+    expect(isComposedPictureServed({ streams: [{ renditions: [{ height: 0 }] }] })).toBe(false);
   });
 });

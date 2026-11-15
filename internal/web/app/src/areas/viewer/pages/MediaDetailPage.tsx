@@ -30,6 +30,7 @@ import {
 } from "../lib/mediaDetail";
 import { type PlayerNavState, readPlayerNavState } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
+import { PlayOnButton } from "../remote/PlayOnButton";
 import "./media-detail.css";
 
 const POSTER_BUCKETS = ["w320", "w640"] as const;
@@ -235,6 +236,13 @@ export function MediaDetailPage() {
                 <Play aria-hidden />
                 {progress ? t("mediaDetailResume") : t("play")}
               </button>
+              {mediaId && (
+                <PlayOnButton
+                  mediaID={mediaId}
+                  title={title}
+                  positionSeconds={progress?.positionSeconds}
+                />
+              )}
               {summary && <p className="bf-detail-summary">{summary}</p>}
               {!media && status === "loading" && <Skeleton aria-hidden className="h-4 w-40" />}
               {status === "failed" && !media && retry}

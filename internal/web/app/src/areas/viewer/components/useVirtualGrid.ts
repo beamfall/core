@@ -57,6 +57,47 @@ function readCardHeight(grid: HTMLElement): number {
   return tallest;
 }
 
+// The tallest card each windowed grid has measured, which its spacer rows
+// use. The jump helpers read it too, so a jump lands on the row the window
+// will render rather than on one computed from the cards now in view.
+const retainedCardHeight = new WeakMap<HTMLElement, number>();
+
+// The grid's column count, row pitch and page-space top, from the same
+// geometry the window uses. Rows not yet measured use the fallback height.
+function gridGeometry(grid: HTMLElement, fixedColumns?: number) {
+  const gap = readGap(grid);
+  const cardHeight = Math.max(retainedCardHeight.get(grid) ?? 0, readCardHeight(grid));
+  return {
+    columns: fixedColumns ?? readColumns(grid, gap),
+    rowHeight: (cardHeight || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap,
+    top: grid.getBoundingClientRect().top + window.scrollY,
+  };
+}
+
+/**
+ * The page scroll position that puts the row holding `index` at the top of the
+ * viewport. Unmeasured rows use the fallback height, so the caller settles the
+ * final position once the card renders.
+ */
+export function virtualGridScrollTop(
+  grid: HTMLElement,
+  index: number,
+  fixedColumns?: number,
+): number {
+  const { columns, rowHeight, top } = gridGeometry(grid, fixedColumns);
+  return Math.max(0, top + Math.floor(index / columns) * rowHeight);
+}
+
+/** The index of the first item in the row at page offset `pageY`. */
+export function virtualGridIndexAt(
+  grid: HTMLElement,
+  pageY: number,
+  fixedColumns?: number,
+): number {
+  const { columns, rowHeight, top } = gridGeometry(grid, fixedColumns);
+  return Math.max(0, Math.floor((pageY - top) / rowHeight)) * columns;
+}
+
 export function useVirtualGrid({
   gridRef,
   itemCount,
@@ -75,13 +116,22 @@ export function useVirtualGrid({
   // Tallest card seen while windowing. It only grows, so the spacer geometry
   // does not oscillate as rows of different heights scroll in and out.
   const cardHeightRef = useRef(0);
+  // The layout the retained height was measured in: a switch between grid
+  // and list starts the measurement over, or the spacers and jumps would
+  // keep the other layout's row height.
+  const layoutRef = useRef(fixedColumns);
   const compute = useCallback((): VirtualGridWindow | null => {
     const grid = gridRef.current;
     if (!grid || !enabled || itemCount <= 0) return null;
+    if (layoutRef.current !== fixedColumns) {
+      layoutRef.current = fixedColumns;
+      cardHeightRef.current = 0;
+    }
 
     const gap = readGap(grid);
     const columns = fixedColumns ?? readColumns(grid, gap);
     cardHeightRef.current = Math.max(cardHeightRef.current, readCardHeight(grid));
+    retainedCardHeight.set(grid, cardHeightRef.current);
     const rowHeight = (cardHeightRef.current || VIRTUAL_GRID_FALLBACK_ROW_HEIGHT) + gap;
     const totalRows = Math.ceil(itemCount / columns);
 
@@ -116,6 +166,7 @@ export function useVirtualGrid({
   useEffect(() => {
     if (!enabled) {
       cardHeightRef.current = 0;
+      if (gridRef.current) retainedCardHeight.delete(gridRef.current);
       setWindowState(null);
       return;
     }
@@ -135,7 +186,7 @@ export function useVirtualGrid({
       window.removeEventListener("scroll", recompute);
       window.removeEventListener("resize", recompute);
     };
-  }, [enabled, compute]);
+  }, [enabled, compute, gridRef]);
 
   return enabled ? windowState : null;
 }

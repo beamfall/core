@@ -16,11 +16,14 @@ export function useUpNext({
   videoRef,
   next,
   onAdvance,
+  onAutoAdvance,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   next: PlaybackNext | null | undefined;
   /** Advance to the issued next Media (navigation). */
   onAdvance: (next: PlaybackNext) => void;
+  /** Told first when the countdown itself (not Play now) starts the next Media. */
+  onAutoAdvance?: (next: PlaybackNext) => void;
 }): {
   visible: boolean;
   countdown: number;
@@ -37,6 +40,8 @@ export function useUpNext({
   nextRef.current = next;
   const onAdvanceRef = useRef(onAdvance);
   onAdvanceRef.current = onAdvance;
+  const onAutoAdvanceRef = useRef(onAutoAdvance);
+  onAutoAdvanceRef.current = onAutoAdvance;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -115,6 +120,8 @@ export function useUpNext({
         countdownRef.current = value;
         setCountdown(value);
         if (value <= 0) {
+          const issued = nextRef.current;
+          if (issued?.streams) onAutoAdvanceRef.current?.(issued);
           advance();
         }
       }, 1000);

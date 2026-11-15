@@ -28,11 +28,15 @@ import {
   encodeBool,
   PLAYBACK_SPEEDS,
   type PlaybackSpeed,
+  PRE_PLAY_EXTRAS,
   PREF_KEYS,
+  type PrePlayExtras,
   resolvePreferences,
   SKIP_INTERVAL_DEFAULT,
   SKIP_INTERVALS,
   type SkipInterval,
+  STILL_WATCHING_OFF,
+  STILL_WATCHING_OPTIONS,
   type ViewerPreferences,
 } from "../lib/preferences";
 
@@ -43,7 +47,7 @@ import {
 // access, transcode policy) stays Console-owned and never appears here.
 //
 // Managed Profiles see only the harmless subset (ADR-0082 §37): playback
-// auto-skip, default speed, and reduced motion. Recommendations opt-in (which
+// auto-skip, default speed, "still watching", and reduced motion. Recommendations opt-in (which
 // uses the Profile's activity) is adult-only here; My Data deletion, Reveal,
 // and policy are intentionally absent for every Profile on this surface.
 //
@@ -238,6 +242,74 @@ export function ProfileSettingsPage() {
               </Select>
             </div>
 
+            <div className="settings-row flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="settings-still-watching">{t("settingsStillWatchingLabel")}</Label>
+                <span className="text-sm text-[var(--text-muted)]">
+                  {t("settingsStillWatchingLead")}
+                </span>
+              </div>
+              <Select
+                value={stillWatchingValue(prefs.stillWatchingAfter)}
+                onValueChange={(v) =>
+                  persist(PREF_KEYS.stillWatchingAfter, v, {
+                    stillWatchingAfter: v === STILL_WATCHING_OFF ? 0 : Number(v),
+                  })
+                }
+              >
+                <SelectTrigger id="settings-still-watching" className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {stillWatchingOptions(prefs.stillWatchingAfter).map((o) => (
+                    <SelectItem key={o} value={o}>
+                      {o === STILL_WATCHING_OFF
+                        ? t("settingsStillWatchingNever")
+                        : t("settingsStillWatchingAfter", { count: Number(o) })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="settings-row flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <ToggleRow
+                  labelKey="settingsPrePlay"
+                  checked={prefs.prePlayEnabled}
+                  onChange={(on) =>
+                    persist(PREF_KEYS.prePlayEnabled, encodeBool(on), {
+                      prePlayEnabled: on,
+                    })
+                  }
+                />
+                <span className="text-sm text-[var(--text-muted)]">{t("settingsPrePlayLead")}</span>
+              </div>
+              {prefs.prePlayEnabled ? (
+                <div className="flex items-center justify-between gap-4">
+                  <Label htmlFor="settings-preplay-extras">{t("settingsPrePlayExtrasLabel")}</Label>
+                  <Select
+                    value={prefs.prePlayExtras}
+                    onValueChange={(v) =>
+                      persist(PREF_KEYS.prePlayExtras, v, {
+                        prePlayExtras: v as PrePlayExtras,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="settings-preplay-extras" className="w-28">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRE_PLAY_EXTRAS.map((n) => (
+                        <SelectItem key={n} value={n}>
+                          {n}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+            </div>
+
             <Advanced keep={prefs.trimSilence}>
               <div className="settings-row flex flex-col gap-1">
                 <ToggleRow
@@ -413,4 +485,15 @@ function ToggleRow({
       <Switch id={id} checked={checked} onCheckedChange={onChange} />
     </div>
   );
+}
+
+function stillWatchingValue(after: number): string {
+  return after > 0 ? String(after) : STILL_WATCHING_OFF;
+}
+
+// The offered choices, plus a value another client stored outside them (6..10).
+function stillWatchingOptions(after: number): string[] {
+  const options: string[] = [...STILL_WATCHING_OPTIONS];
+  const current = stillWatchingValue(after);
+  return options.includes(current) ? options : [...options, current];
 }

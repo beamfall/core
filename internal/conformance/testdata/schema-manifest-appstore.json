@@ -350,6 +350,11 @@
     "tier": "session"
   },
   {
+    "field": "deletewebhook",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "devices",
     "effect": "read",
     "tier": "admin"
@@ -745,6 +750,16 @@
     "tier": "admin"
   },
   {
+    "field": "preplayclips",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "preplayqueue",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "profiles",
     "effect": "read",
     "tier": "session"
@@ -995,6 +1010,11 @@
     "tier": "session"
   },
   {
+    "field": "savewebhook",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "scanestimate",
     "effect": "read",
     "tier": "admin"
@@ -1150,6 +1170,11 @@
     "tier": "admin"
   },
   {
+    "field": "setpreplayclips",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "setprofilelibraries",
     "effect": "write",
     "tier": "admin"
@@ -1213,6 +1238,11 @@
     "field": "setwatchlisted",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "setwebhooksettings",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "skipdetectionenabled",
@@ -1286,6 +1316,11 @@
   },
   {
     "field": "terminatesession",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "testwebhook",
     "effect": "write",
     "tier": "admin"
   },
@@ -1443,5 +1478,20 @@
     "field": "watchpartytransport",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "webhookdeliveries",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "webhooks",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "webhooksettings",
+    "effect": "read",
+    "tier": "admin"
   }
 ]

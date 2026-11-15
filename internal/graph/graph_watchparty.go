@@ -88,13 +88,7 @@ func watchPartyInfo(ctx context.Context, st *store.Store, g *conductor.Group) Wa
 	members := g.Members()
 	wireMembers := make([]WatchPartyParticipant, len(members))
 	for i, m := range members {
-		displayName := "Participant"
-		if st != nil && m.ProfileID != "" {
-			if p, err := st.Profile(ctx, m.ProfileID); err == nil {
-				displayName = p.Name
-			}
-		}
-		wireMembers[i] = WatchPartyParticipant{DisplayName: displayName, Present: true}
+		wireMembers[i] = WatchPartyParticipant{DisplayName: partyMemberDisplayName(ctx, st, m), Present: true}
 	}
 	return WatchPartyInfo{
 		PartyID:  g.ID,
@@ -106,6 +100,22 @@ func watchPartyInfo(ctx context.Context, st *store.Store, g *conductor.Group) Wa
 	}
 }
 
+// partyMemberDisplayName resolves a member to its Profile's chosen display name,
+// falling back to a non-identifying label (ADR-0111 §1).
+func partyMemberDisplayName(ctx context.Context, st *store.Store, m conductor.Member) string {
+	if st != nil && m.ProfileID != "" {
+		if p, err := st.Profile(ctx, m.ProfileID); err == nil {
+			return p.Name
+		}
+	}
+	return "Participant"
+}
+
+// errPartyHomeNetworkOnly is the CORE-0531 refusal: until a fresh legal review
+// promotes remote Watch Party, forming or joining one is household-only, so a
+// request that did not come from the home network is refused outright.
+var errPartyHomeNetworkOnly = clientError("Watch Party is available on your home network only")
+
 // createWatchParty forms a Watch Party hosted by the caller's session, watching
 // `content` (ADR-0038 §2.5 step 1). The caller's session is the host; its
 // transport becomes authoritative (§2.4). The host can only anchor a party on
@@ -116,6 +126,9 @@ func watchPartyInfo(ctx context.Context, st *store.Store, g *conductor.Group) Wa
 func (h *Handler) createWatchParty(ctx context.Context, scope auth.Scope, req request) (WatchPartyInfo, error) {
 	if h.conductor == nil {
 		return WatchPartyInfo{}, clientError("group conductor unavailable")
+	}
+	if auth.RemoteOrigin(ctx) {
+		return WatchPartyInfo{}, errPartyHomeNetworkOnly
 	}
 	if scope.ProfileID == "" || scope.SessionID == "" {
 		return WatchPartyInfo{}, clientError("a session in a profile is required to host a watch party")
@@ -147,6 +160,9 @@ func (h *Handler) createWatchParty(ctx context.Context, scope auth.Scope, req re
 	}
 	if err := h.conductor.Accept(g.ID, scope.ProfileID, hostMember); err != nil {
 		return WatchPartyInfo{}, partyClientError(err)
+	}
+	if err := h.broadcastPartyRoster(ctx, g.ID); err != nil {
+		return WatchPartyInfo{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", g.ID, ""); err != nil {
 		return WatchPartyInfo{}, err
@@ -272,6 +288,9 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 	if h.conductor == nil {
 		return AcceptWatchPartyResult{}, clientError("group conductor unavailable")
 	}
+	if auth.RemoteOrigin(ctx) {
+		return AcceptWatchPartyResult{}, errPartyHomeNetworkOnly
+	}
 	if scope.ProfileID == "" || scope.SessionID == "" {
 		return AcceptWatchPartyResult{}, clientError("a session in a profile is required to accept a watch party")
 	}
@@ -293,24 +312,15 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 	// to Reveal the party's content with ITS OWN filter. h.store.Media returns
 	// "media not found" when the filter cannot see it, so a managed or unrevealed
 	// session is rejected with an explicit reason — never a silent exclusion.
-	content := g.Content()
-	if _, err := h.store.Media(ctx, content, scope.LibraryFilter()); err != nil {
-		return AcceptWatchPartyResult{}, clientError("cannot join: this party's content is not visible to your profile")
-	}
 	member := conductor.Member{
 		SessionID:     scope.SessionID,
 		DeviceID:      scope.DeviceID,
 		ClockOffset:   time.Duration(int64Var(req, "clockOffsetMS")) * time.Millisecond,
 		RenderLatency: time.Duration(int64Var(req, "renderLatencyMS")) * time.Millisecond,
 	}
-	if err := h.conductor.Accept(partyID, scope.ProfileID, member); err != nil {
-		return AcceptWatchPartyResult{}, partyClientError(err)
-	}
-	// Late-join sync (§2.5 step 5): hand back the live anchor so the joiner lands
-	// on the canonical position.
-	anchor, err := h.conductor.PartyAnchor(partyID)
+	anchor, err := h.acceptPartyMember(ctx, g, scope, member)
 	if err != nil {
-		return AcceptWatchPartyResult{}, partyClientError(err)
+		return AcceptWatchPartyResult{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
 		return AcceptWatchPartyResult{}, err
@@ -321,7 +331,7 @@ func (h *Handler) acceptWatchParty(ctx context.Context, scope auth.Scope, req re
 	// (it still joins — the party stays whole). Advisory; a direct-playing client
 	// is unaffected. The authoritative per-member decision is its own playbackInfo.
 	degraded := h.transcodeAdmission != nil &&
-		!h.transcodeAdmission.CanAdmitSession(scope.SessionID, content)
+		!h.transcodeAdmission.CanAdmitSession(scope.SessionID, g.Content())
 	return AcceptWatchPartyResult{
 		PartyID:     partyID,
 		Item:        string(anchor.Item),
@@ -354,11 +364,8 @@ func (h *Handler) watchPartyTransport(ctx context.Context, scope auth.Scope, req
 		return GroupTransitionResult{}, clientError("item is required")
 	}
 	position := time.Duration(int64Var(req, "positionMS")) * time.Millisecond
-	transition, _, err := h.conductor.HostTransition(partyID, scope.SessionID, item, position)
+	transition, err := h.partyTransition(ctx, partyID, scope.SessionID, scope.ProfileID, item, position, boolVar(req, "paused"))
 	if err != nil {
-		return GroupTransitionResult{}, partyClientError(err)
-	}
-	if err := h.broadcastTransition(ctx, partyID, scope.ProfileID, transition); err != nil {
 		return GroupTransitionResult{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
@@ -433,11 +440,7 @@ func (h *Handler) requestWatchPartyTransport(ctx context.Context, scope auth.Sco
 	}
 	// Relaxed party: auto-approve by applying the seek on the host's behalf and
 	// broadcasting the authoritative transition (ADR-0038 §2.4 household mode).
-	transition, _, err := h.conductor.HostTransition(partyID, decision.Host, item, position)
-	if err != nil {
-		return RequestTransportResult{}, partyClientError(err)
-	}
-	if err := h.broadcastTransition(ctx, partyID, scope.ProfileID, transition); err != nil {
+	if _, err := h.partyTransition(ctx, partyID, decision.Host, scope.ProfileID, item, position, boolVar(req, "paused")); err != nil {
 		return RequestTransportResult{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
@@ -509,11 +512,9 @@ func (h *Handler) watchPartyAutoSkip(ctx context.Context, scope auth.Scope, req 
 	// host's own auto-skip, or a relaxed non-host's applied for the host. Mirrors
 	// watchPartyTransport (broadcast + activity log on the timeline mutation).
 	apply := func(hostSession store.SessionID) (WatchPartyAutoSkipResult, error) {
-		transition, _, err := h.conductor.HostTransition(partyID, hostSession, item, position)
+		// An auto-skip moves the position only; a paused party stays paused.
+		transition, err := h.partyTransition(ctx, partyID, hostSession, scope.ProfileID, item, position, g.Paused())
 		if err != nil {
-			return WatchPartyAutoSkipResult{}, partyClientError(err)
-		}
-		if err := h.broadcastTransition(ctx, partyID, scope.ProfileID, transition); err != nil {
 			return WatchPartyAutoSkipResult{}, err
 		}
 		if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
@@ -558,6 +559,189 @@ func (h *Handler) watchPartyAutoSkip(ctx context.Context, scope auth.Scope, req 
 	}, nil
 }
 
+// partyProfiles is the distinct set of Profiles a party sync event must reach:
+// the host's (the party's owning Profile) plus every member's. A Watch Party
+// is cross-Profile while the event stream delivers a group.sync row only to its
+// own Profile, so the surface writes one row per Profile (CORE-1677).
+func partyProfiles(members []conductor.Member, extra ...store.ProfileID) []store.ProfileID {
+	seen := map[store.ProfileID]bool{}
+	out := []store.ProfileID{}
+	add := func(p store.ProfileID) {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, p := range extra {
+		add(p)
+	}
+	for _, m := range members {
+		add(m.ProfileID)
+	}
+	return out
+}
+
+// partyTransition moves a party's shared timeline on hostSession's behalf and
+// broadcasts the result. Two guards hold here (CORE-1677):
+//
+//   - The Reveal intersection holds for every title, not only the one the party
+//     formed on: a move to another Media is refused unless every member's own
+//     session can see it, so the per-Profile fan-out never hands a Profile a
+//     Media id its filter hides.
+//   - partyMu serializes mutation and fan-out, so every Profile receives a
+//     party's transitions and rosters in the same order.
+func (h *Handler) partyTransition(ctx context.Context, partyID string, hostSession store.SessionID, caller store.ProfileID, item store.MediaID, position time.Duration, paused bool) (conductor.Transition, error) {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	if err := h.partyCanReveal(ctx, partyID, item); err != nil {
+		return conductor.Transition{}, err
+	}
+	transition, members, err := h.conductor.HostTransition(partyID, hostSession, item, position, paused)
+	if err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	if err := h.broadcastPartyTransition(ctx, partyID, caller, members, transition); err != nil {
+		return conductor.Transition{}, err
+	}
+	return transition, nil
+}
+
+// errPartyTitleNotVisible refuses a move to a Media some member cannot see.
+var errPartyTitleNotVisible = clientError("cannot play this in the party: it is not visible to every member")
+
+// partyCanReveal checks that every member session of the party can see item
+// with its own filter. The current title passed this check (or the accept-time
+// one) already, so only a change of title is checked.
+func (h *Handler) partyCanReveal(ctx context.Context, partyID string, item store.MediaID) error {
+	anchor, err := h.conductor.PartyAnchor(partyID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	if anchor.Item == item {
+		return nil
+	}
+	g, err := h.conductor.Party(partyID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	if h.store == nil || h.auth == nil {
+		return errPartyTitleNotVisible
+	}
+	for _, m := range g.Members() {
+		scope, err := h.auth.Scope(ctx, m.SessionID)
+		if err != nil {
+			return errPartyTitleNotVisible
+		}
+		if _, err := h.store.Media(ctx, item, scope.LibraryFilter()); err != nil {
+			return errPartyTitleNotVisible
+		}
+	}
+	return nil
+}
+
+// broadcastPartyTransition writes a party transition to every member Profile.
+// caller is the Profile of the request that moved the timeline; it always
+// receives the row, as the single-Profile broadcastTransition did.
+func (h *Handler) broadcastPartyTransition(ctx context.Context, partyID string, caller store.ProfileID, members []conductor.Member, t conductor.Transition) error {
+	host, _ := h.partyHostProfile(partyID)
+	now := time.Now().UTC()
+	for _, profile := range partyProfiles(members, host, caller) {
+		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+			GroupID:     partyID,
+			ProfileID:   profile,
+			Signal:      store.GroupSignalTransition,
+			Item:        t.Item,
+			PositionMS:  t.Position.Milliseconds(),
+			PresentAtMS: t.PresentAt.UnixMilli(),
+			Paused:      t.Paused,
+		}, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// acceptPartyMember joins member to the party and broadcasts the new roster.
+// It holds partyMu across the Reveal check, the join and the broadcast, so no
+// transition to another title can slip between them (partyTransition checks
+// the members it sees). It returns the live anchor for late-join sync (§2.5
+// step 5).
+func (h *Handler) acceptPartyMember(ctx context.Context, g *conductor.Group, scope auth.Scope, member conductor.Member) (conductor.Transition, error) {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	// The Reveal intersection: the accepting session must be able to Reveal the
+	// party's content, and the title it is on now, with ITS OWN filter.
+	// h.store.Media returns "media not found" when the filter cannot see it, so
+	// a managed or unrevealed session is rejected with an explicit reason —
+	// never a silent exclusion.
+	anchor, err := h.conductor.PartyAnchor(g.ID)
+	if err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	for _, item := range []store.MediaID{g.Content(), anchor.Item} {
+		if _, err := h.store.Media(ctx, item, scope.LibraryFilter()); err != nil {
+			return conductor.Transition{}, clientError("cannot join: this party's content is not visible to your profile")
+		}
+	}
+	if err := h.conductor.Accept(g.ID, scope.ProfileID, member); err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	if anchor, err = h.conductor.PartyAnchor(g.ID); err != nil {
+		return conductor.Transition{}, partyClientError(err)
+	}
+	if err := h.broadcastPartyRosterLocked(ctx, g.ID); err != nil {
+		return conductor.Transition{}, err
+	}
+	return anchor, nil
+}
+
+// broadcastPartyRoster writes the party's membership snapshot and current
+// anchor to every member Profile, so a member who joined from an invite sees
+// who is watching and lands on the live timeline. Display names only (ADR-0111
+// §1), sorted for a stable order.
+func (h *Handler) broadcastPartyRoster(ctx context.Context, partyID string) error {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	return h.broadcastPartyRosterLocked(ctx, partyID)
+}
+
+// broadcastPartyRosterLocked is broadcastPartyRoster for a caller holding partyMu.
+func (h *Handler) broadcastPartyRosterLocked(ctx context.Context, partyID string) error {
+	if h.store == nil {
+		return nil
+	}
+	g, err := h.conductor.Party(partyID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	anchor, err := h.conductor.PartyAnchor(partyID)
+	if err != nil {
+		return partyClientError(err)
+	}
+	members := g.Members()
+	names := make([]string, 0, len(members))
+	for _, m := range members {
+		names = append(names, partyMemberDisplayName(ctx, h.store, m))
+	}
+	slices.Sort(names)
+	now := time.Now().UTC()
+	for _, profile := range partyProfiles(members, g.ProfileID) {
+		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
+			GroupID:     partyID,
+			ProfileID:   profile,
+			Signal:      store.GroupSignalRoster,
+			Item:        anchor.Item,
+			PositionMS:  anchor.Position.Milliseconds(),
+			PresentAtMS: anchor.PresentAt.UnixMilli(),
+			Paused:      anchor.Paused,
+			Members:     names,
+		}, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // partyHostProfile resolves the Profile that owns the party's host session, used
 // to address a host-approval notification. The party's ProfileID is the host's
 // Profile (set at FormParty).
@@ -597,6 +781,12 @@ func (h *Handler) leaveWatchParty(ctx context.Context, scope auth.Scope, req req
 	}
 	if err := h.conductor.LeaveParty(partyID, scope.SessionID); err != nil {
 		return LeaveWatchPartyResult{}, partyClientError(err)
+	}
+	// Tell the remaining members; a party that dissolved has no one to tell.
+	if _, err := h.conductor.Party(partyID); err == nil {
+		if err := h.broadcastPartyRoster(ctx, partyID); err != nil {
+			return LeaveWatchPartyResult{}, err
+		}
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityGroupControl, "watch-party", partyID, ""); err != nil {
 		return LeaveWatchPartyResult{}, err

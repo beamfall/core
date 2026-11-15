@@ -44,8 +44,17 @@ func TestFirstPartyHooksComposeProductionPluginBehavior(t *testing.T) {
 	if hooks.EnrichmentProvider == nil {
 		t.Fatal("enrichment provider factory missing")
 	}
-	if len(hooks.OfflinePackResolvers) != 4 {
-		t.Fatalf("offline pack resolver hooks = %d, want 4", len(hooks.OfflinePackResolvers))
+	filmtvResolvers := 0
+	for _, resolver := range hooks.OfflinePackResolvers {
+		if resolver.PluginID == filmtv.PluginID {
+			filmtvResolvers++
+		}
+	}
+	if want := len(filmtv.PackResolvers()); want == 0 || filmtvResolvers != want {
+		t.Fatalf("Film/TV offline pack resolver hooks = %d, want %d", filmtvResolvers, want)
+	}
+	if others := len(hooks.OfflinePackResolvers) - filmtvResolvers; others != 4 {
+		t.Fatalf("other offline pack resolver hooks = %d, want 4", others)
 	}
 	if len(hooks.ScrobbleAdapters) != 3 {
 		t.Fatalf("scrobble adapter hooks = %d, want 3", len(hooks.ScrobbleAdapters))

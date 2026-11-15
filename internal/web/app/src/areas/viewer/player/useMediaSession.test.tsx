@@ -3,6 +3,7 @@ import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybackNext } from "../lib/playback";
 import { useMediaSession } from "./useMediaSession";
+import { lastViewerIntent } from "./viewerIntent";
 
 // Minimal stubs for the Media Session API surface jsdom lacks.
 type Handler = ((d?: { seekOffset?: number; seekTime?: number }) => void) | null;
@@ -112,6 +113,15 @@ describe("useMediaSession", () => {
     expect(video.pause).toHaveBeenCalled();
   });
 
+  it("marks each transport intent as the viewer's own", () => {
+    setup();
+    for (const action of ["play", "pause", "seekforward", "seekbackward", "seekto"]) {
+      const before = performance.now();
+      handlers.get(action)?.({ seekOffset: 1, seekTime: 1 });
+      expect(lastViewerIntent(), action).toBeGreaterThanOrEqual(before);
+    }
+  });
+
   it("keeps supported handlers when a browser rejects one action", () => {
     fakeSession.setActionHandler = (action: string, handler: Handler) => {
       if (action === "seekto") throw new Error("unsupported");
@@ -149,6 +159,24 @@ describe("useMediaSession", () => {
     expect(fakeSession.setPositionState).toHaveBeenCalledWith(
       expect.objectContaining({ duration: 100, position: 30 }),
     );
+  });
+
+  // CORE-1659: under an applied tempo the OS surface shows song time.
+  it("mirrors song time and maps OS seeks back to stream time under a tempo", () => {
+    const { video } = setup({ songScale: 1.25 });
+    video.currentTime = 40;
+    video.emit("timeupdate");
+    expect(fakeSession.setPositionState).toHaveBeenLastCalledWith({
+      duration: 125,
+      position: 50,
+      playbackRate: 1.25,
+    });
+    handlers.get("seekto")?.({ seekTime: 50 });
+    expect(video.currentTime).toBe(40);
+    handlers.get("seekforward")?.({ seekOffset: 10 });
+    expect(video.currentTime).toBe(48);
+    handlers.get("seekbackward")?.({ seekOffset: 5 });
+    expect(video.currentTime).toBe(44);
   });
 
   it("only wires nexttrack when a next item exists, routing through onNext", () => {

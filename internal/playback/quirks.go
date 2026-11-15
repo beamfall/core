@@ -278,7 +278,7 @@ func validateQuirkOverride(id string, override QuirkOverride) (QuirkOverride, er
 	if err := checkNonNegativeCap(id, "maxAudioChannels", override.MaxAudioChannels); err != nil {
 		return QuirkOverride{}, err
 	}
-	if floor := bandwidthFor(h264LadderRungs[len(h264LadderRungs)-1].VideoKbps); override.MaxBitrate > 0 && override.MaxBitrate < floor {
+	if floor := ladderFloorBandwidth(); override.MaxBitrate > 0 && override.MaxBitrate < floor {
 		return QuirkOverride{}, fmt.Errorf("quirks entry %q maxBitrate %d is below the ladder floor %d — the ladder cannot honour it, so express the device with a deny or forceTranscode plus a maxHeight", id, override.MaxBitrate, floor)
 	}
 	video, err := canonicalDenyList(id, "denyVideoCodecs", override.DenyVideoCodecs, normalizeVideoCodec)
@@ -531,6 +531,43 @@ type quirkOverlay struct {
 	// sorted and deduplicated. A flags-only entry is deliberately absent, so
 	// attribution can never blame it for a verdict it did not change.
 	overrideIDs []string
+	// clientMaxBitrate is the viewer's declared streaming ceiling
+	// (CapabilityProfile.MaxStreamingBitrate, CORE-1674), raised to the ladder
+	// floor. It narrows exactly like MaxBitrate but is not a quirk: it never
+	// sets matched or overrideIDs, so attribution never names an entry for it,
+	// and it does not gate audio-only items, which have no picture to scale.
+	clientMaxBitrate int
+}
+
+// withClientCeiling folds the viewer's streaming ceiling into the overlay. A
+// non-positive ceiling is no ceiling. One below the ladder floor is raised to
+// the floor, so it selects the lowest rung (and a cached lowest-rung
+// rendition) instead of refusing every rung.
+func (ov quirkOverlay) withClientCeiling(ceiling int) quirkOverlay {
+	if ceiling <= 0 {
+		ov.clientMaxBitrate = 0
+		return ov
+	}
+	ov.clientMaxBitrate = max(ceiling, ladderFloorBandwidth())
+	return ov
+}
+
+// withoutClientCeiling is the overlay the quirks alone produce, the
+// counterfactual bitrateCeilingForced and the dashboard cause compare against.
+func (ov quirkOverlay) withoutClientCeiling() quirkOverlay {
+	ov.clientMaxBitrate = 0
+	return ov
+}
+
+// maxBitrate is the effective whole-stream bitrate cap: the tighter of the
+// quirk cap and the viewer's ceiling.
+func (ov quirkOverlay) maxBitrate() int {
+	return minNonZero(ov.MaxBitrate, ov.clientMaxBitrate)
+}
+
+// ladderFloorBandwidth is the advertised bandwidth of the lowest h264 rung.
+func ladderFloorBandwidth() int {
+	return bandwidthFor(h264LadderRungs[len(h264LadderRungs)-1].VideoKbps)
 }
 
 // Resolve returns the composed overlay for one request. Entries are evaluated
@@ -632,9 +669,15 @@ func (ov quirkOverlay) vetoesVideoPassthrough(media store.Media, file store.Medi
 	if ov.MaxHeight > 0 && (media.VideoHeight <= 0 || media.VideoHeight > ov.MaxHeight) {
 		return true
 	}
-	if ov.MaxBitrate > 0 {
+	// The viewer's ceiling follows the same evidence rule: a source whose
+	// bitrate cannot be estimated is not handed over on a capped network.
+	bitrateCap := ov.MaxBitrate
+	if !audioOnlyMedia(media, streams) {
+		bitrateCap = ov.maxBitrate()
+	}
+	if bitrateCap > 0 {
 		bitrate := estimatedSourceBitrate(media, file)
-		if bitrate <= 0 || bitrate > ov.MaxBitrate {
+		if bitrate <= 0 || bitrate > bitrateCap {
 			return true
 		}
 	}
@@ -713,7 +756,8 @@ func (ov quirkOverlay) vetoesRendition(r store.PlaybackRendition) bool {
 	if ov.MaxHeight > 0 && (r.Height <= 0 || r.Height > ov.MaxHeight) {
 		return true
 	}
-	return ov.MaxBitrate > 0 && (r.Bandwidth <= 0 || r.Bandwidth > ov.MaxBitrate)
+	maxBitrate := ov.maxBitrate()
+	return maxBitrate > 0 && (r.Bandwidth <= 0 || r.Bandwidth > maxBitrate)
 }
 
 // subtitleFormats returns the client's declared subtitle formats minus the ones
@@ -740,23 +784,49 @@ func (ov quirkOverlay) subtitleFormats(declared []string) []string {
 // bitrateHeightCeiling expresses a video-maxrate ceiling as a height ceiling.
 // The ladder vocabulary is closed and fixed, so this is exact: it returns the
 // height of the best rung whose advertised bandwidth fits under the cap. The
-// parser rejects a cap below the ladder floor, so a candidate always exists.
+// parser rejects a quirk cap below the ladder floor and withClientCeiling
+// raises the viewer's ceiling to it, so a candidate always exists.
 func (ov quirkOverlay) bitrateHeightCeiling() int {
-	if ov.MaxBitrate <= 0 {
+	maxBitrate := ov.maxBitrate()
+	if maxBitrate <= 0 {
 		return 0
 	}
 	for _, rung := range h264LadderRungs {
-		if bandwidthFor(rung.VideoKbps) <= ov.MaxBitrate {
+		if bandwidthFor(rung.VideoKbps) <= maxBitrate {
 			return rung.Height
 		}
 	}
 	return h264LadderRungs[len(h264LadderRungs)-1].Height
 }
 
-// heightCeiling is the single height bound the overlay imposes on the transcode
-// ladder: the tighter of the explicit cap and the bitrate cap's rung height.
+// hevcBitrateHeightCeiling is bitrateHeightCeiling for the HEVC rungs, which
+// carry more picture per bit: it returns the height of the best HEVC rung
+// whose advertised bandwidth fits under the cap. When no HEVC rung fits it
+// falls back to the H.264 answer, which is below every HEVC rung and so keeps
+// them all off the ladder.
+func (ov quirkOverlay) hevcBitrateHeightCeiling() int {
+	maxBitrate := ov.maxBitrate()
+	if maxBitrate <= 0 {
+		return 0
+	}
+	for _, rung := range hevcLadderRungs {
+		if bandwidthFor(rung.VideoKbps) <= maxBitrate {
+			return rung.Height
+		}
+	}
+	return ov.bitrateHeightCeiling()
+}
+
+// heightCeiling is the height bound the overlay imposes on the H.264 rungs of
+// the transcode ladder: the tighter of the explicit cap and the bitrate cap's
+// rung height.
 func (ov quirkOverlay) heightCeiling() int {
 	return minNonZero(ov.MaxHeight, ov.bitrateHeightCeiling())
+}
+
+// hevcHeightCeiling is heightCeiling for the HEVC rungs.
+func (ov quirkOverlay) hevcHeightCeiling() int {
+	return minNonZero(ov.MaxHeight, ov.hevcBitrateHeightCeiling())
 }
 
 // remuxPreservesHDR reports whether a container swap would carry this source's

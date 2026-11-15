@@ -3,6 +3,11 @@ package graph
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -114,6 +119,13 @@ func (h *Handler) createOfflinePack(ctx context.Context, scope auth.Scope, req r
 	if err != nil {
 		return OfflinePackInfo{}, err
 	}
+	if quality := trimmedVariable(req, "quality"); quality != "" {
+		build.Quality, err = offlinepack.NormalizeQuality(quality)
+		if err != nil {
+			return OfflinePackInfo{}, clientError("quality must be original, high, medium or low")
+		}
+		return h.queueOfflinePackBuild(ctx, scope, build)
+	}
 	payload, err := offlinepack.BuildJobPayloadFor(scope, build)
 	if err != nil {
 		return OfflinePackInfo{}, err
@@ -136,6 +148,46 @@ func (h *Handler) createOfflinePack(ctx context.Context, scope auth.Scope, req r
 		return OfflinePackInfo{}, err
 	}
 	return h.withPackTokens(ctx, scope, pack, offlinePackInfo(pack)), nil
+}
+
+// offlinePackBuilding is the state a background build reports before its
+// pack row exists.
+const offlinePackBuilding = "building"
+
+// queueOfflinePackBuild queues a background build under a pre-assigned pack ID
+// and returns at once. A repeat request while that build is active returns the
+// active job's ID, so clients can poll offlinePacks for it.
+func (h *Handler) queueOfflinePackBuild(ctx context.Context, scope auth.Scope, build offlinepack.BuildPackRequest) (OfflinePackInfo, error) {
+	var err error
+	build.PackID, err = offlinepack.NewPackID()
+	if err != nil {
+		return OfflinePackInfo{}, err
+	}
+	payload, err := offlinepack.BuildJobPayloadFor(scope, build)
+	if err != nil {
+		return OfflinePackInfo{}, err
+	}
+	job, err := h.store.EnqueueJob(ctx, store.Job{
+		Kind:  offlinepack.BuildJobKind,
+		Class: store.JobClassBackground,
+		// The device is part of the key: a pack is sealed to one device key, so
+		// another device of the same Profile must not reuse this build.
+		DedupeKey: offlinePackBuildDedupeKey(scope.ProfileID, build.TargetKind, build.TargetRef) + "\x1f" + string(scope.DeviceID) + "\x1f" + build.Quality + "\x1f" + selectedVersionsKey(build.SelectedVersions),
+		Payload:   payload,
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return OfflinePackInfo{}, err
+	}
+	// The dedupe key may have matched an earlier active build: its payload
+	// holds the ID that build will use.
+	var queued offlinepack.BuildJobPayload
+	if err := json.Unmarshal(job.Payload, &queued); err != nil || !offlinepack.ValidPackID(queued.PackID) {
+		return OfflinePackInfo{}, errors.New("offline pack build job carries no pack ID")
+	}
+	return OfflinePackInfo{
+		ID: string(queued.PackID), TargetKind: build.TargetKind, TargetRef: build.TargetRef, State: offlinePackBuilding,
+	}, nil
 }
 
 func decodeOfflinePackBytes(req request, name string) ([]byte, error) {
@@ -164,6 +216,17 @@ func selectedVersionsFromVariables(req request) map[store.MediaID]string {
 		selected[store.MediaID(id)] = version
 	}
 	return selected
+}
+
+// selectedVersionsKey is a canonical form of a pack's version choices, so
+// builds of different versions of the same target never share a job.
+func selectedVersionsKey(selected map[store.MediaID]string) string {
+	parts := make([]string, 0, len(selected))
+	for id, version := range selected {
+		parts = append(parts, strconv.Quote(string(id))+"="+strconv.Quote(version))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
 }
 
 func offlinePackBuildDedupeKey(profileID store.ProfileID, kind, ref string) string {

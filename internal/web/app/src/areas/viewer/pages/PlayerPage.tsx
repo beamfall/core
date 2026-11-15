@@ -4,11 +4,29 @@ import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
-import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
+import {
+  fetchClientPrefs,
+  fetchMedia,
+  fetchPlaybackAdjustmentRanges,
+  fetchPrePlayQueue,
+  setClientPref,
+} from "@/lib/graphql";
+import type {
+  ClientPref,
+  GenericMediaInfo,
+  PlaybackAdjustmentRanges,
+  PrePlayItem,
+} from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
-import type { PlaybackNext } from "../lib/playback";
+import {
+  adjustmentApplied,
+  hasPicture,
+  isComposedPictureServed,
+  type PlaybackNext,
+  sameAdjustment,
+  songSecondsPerStreamSecond,
+} from "../lib/playback";
 import { previousInPlayQueue } from "../lib/playQueue";
 import {
   resolvePreferences,
@@ -16,12 +34,14 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
+import { noteAutoAdvance } from "../lib/stillWatching";
 import {
   encodeSubtitleAppearance,
   resolveSubtitleAppearance,
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
   queueNeighbours,
@@ -30,15 +50,21 @@ import {
   withQueueClasses,
 } from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
+import { KaraokeControls } from "../player/KaraokeControls";
 import { PlayerTransport } from "../player/PlayerTransport";
+import { PrePlayStage } from "../player/PrePlayStage";
 import { SkippedOverlay } from "../player/SkippedOverlay";
+import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
+import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
+import { useWatchParty } from "../player/useWatchParty";
+import { WatchPartyPanel, WatchPartySyncIndicator } from "../player/WatchPartyPanel";
 
 // The player (/watch/:mediaId), ported from the vanilla play() + player view
 // (app.js / index.html). Negotiates playback-info, routes to direct play or
@@ -51,16 +77,68 @@ import { useUpNext } from "../player/useUpNext";
 // runs, reveals on any pointer/key/focus, never while paused or while a menu is
 // open) and the Up Next countdown card (auto-advance to the server-issued next
 // Media). Both are deferred-pass features layered over the core engine.
+//
+// Before the title starts, the page asks the server for its pre-play queue
+// (CORE-1701) and plays those items first. A timestamped link (?t=) and an
+// advance from the queue or Up Next go straight to the title.
 export function PlayerPage() {
+  const t = useT();
+  const location = useLocation();
+  const { mediaId } = useParams();
+  const skip = new URLSearchParams(location.search).has("t");
+  const carried =
+    !!location.state && (location.state as { skipPrePlay?: unknown }).skipPrePlay === true;
+  const bypass = skip || carried || !mediaId;
+  const [decided, setDecided] = useState<{ mediaId: string; items: PrePlayItem[] } | null>(null);
+
+  useEffect(() => {
+    if (bypass || !mediaId) return;
+    const controller = new AbortController();
+    Promise.resolve()
+      .then(() => fetchPrePlayQueue(mediaId, controller.signal))
+      .catch((): PrePlayItem[] => [])
+      .then((items) => {
+        if (!controller.signal.aborted) setDecided({ mediaId, items: items ?? [] });
+      });
+    return () => controller.abort();
+  }, [bypass, mediaId]);
+
+  const finish = useCallback(() => {
+    if (mediaId) setDecided({ mediaId, items: [] });
+  }, [mediaId]);
+
+  const current = decided && decided.mediaId === mediaId ? decided : null;
+  if (bypass || (current && current.items.length === 0)) return <FeaturePlayer />;
+  if (current) {
+    return (
+      <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+        <h1 className="sr-only">{t("prePlayRegion")}</h1>
+        <PrePlayStage key={current.mediaId} items={current.items} onDone={finish} />
+      </main>
+    );
+  }
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[oklch(8%_0.012_255)]">
+      <div role="status">
+        <LoaderCircle aria-hidden className="size-10 animate-spin text-white/80" />
+        <span className="sr-only">{t("playerLoading")}</span>
+      </div>
+    </main>
+  );
+}
+
+function FeaturePlayer() {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
   const location = useLocation();
   const { mediaId } = useParams();
-  const { revealed } = useSession();
+  const { revealed, session } = useSession();
+  const profileID = session?.profileID;
   const identity = useViewerIdentity();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
   const [clientPrefs, setClientPrefs] = useState<ClientPref[]>([]);
   const [media, setMedia] = useState<GenericMediaInfo | null>(null);
 
@@ -84,8 +162,15 @@ export function PlayerPage() {
     ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
         ?.id ?? "")
     : undefined;
+  // The Version this profile picked for this Media (CORE-1676): a pick made in
+  // this player, else the one remembered from an earlier visit.
+  const [versionPick, setVersionPick] = useState<{ mediaID: string; id: string } | null>(null);
+  const selectedVersion =
+    versionPick && versionPick.mediaID === mediaId
+      ? versionPick.id
+      : readVersionChoice(profileID, mediaId || "");
 
-  const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
+  const { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust } = usePlayer(
     mediaId || "",
     {
       couldNotReachServer: t("couldNotReachServer"),
@@ -107,6 +192,17 @@ export function PlayerPage() {
     // "" when a card queue drives playback but has nothing after this item, so
     // an earlier Play all queue is left rather than resumed.
     declaredNextID,
+    selectedVersion,
+  );
+  // A new Version is another file: remember it, then reload at the playhead.
+  const selectVersion = useCallback(
+    (versionID: string) => {
+      if (!mediaId || versionID === selectedVersion) return;
+      writeVersionChoice(profileID, mediaId, versionID);
+      setVersionPick({ mediaID: mediaId, id: versionID });
+      retry();
+    },
+    [mediaId, profileID, selectedVersion, retry],
   );
 
   // The queue stays within the playing item's class (CORE-1490): a track
@@ -141,12 +237,51 @@ export function PlayerPage() {
   }, [info]);
 
   const playing = state.phase === "playing";
+  // Song seconds per stream second under an applied tempo (CORE-1659).
+  const songScale = songSecondsPerStreamSecond(state.info);
+
+  // Key and tempo controls (CORE-1659): only when the server advertises the
+  // ranges and plays this Media as a karaoke song (an audio item served as a composed
+  // picture). A key
+  // or tempo change restarts the stream, which clears state.info for a moment,
+  // so the song verdict is kept per Media and the controls keep their focus.
+  const [adjustmentRanges, setAdjustmentRanges] = useState<PlaybackAdjustmentRanges | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchPlaybackAdjustmentRanges(controller.signal).then((ranges) => {
+      if (!controller.signal.aborted) setAdjustmentRanges(ranges);
+    });
+    return () => controller.abort();
+  }, []);
+  // Once a Media is established as a karaoke song it stays one until the Media
+  // changes: a declined key or tempo change can come back as bare audio, and
+  // dropping the verdict then would unmount the focused controls and the
+  // "Not applied" notice. Only info loaded for this Media counts: the first
+  // render after a route change still carries the previous Media's info.
+  const karaokeRef = useRef<{ mediaID: string; karaoke: boolean } | null>(null);
+  const established = karaokeRef.current?.mediaID === (mediaId || "") && karaokeRef.current.karaoke;
+  if (state.info && state.mediaID === (mediaId || "") && !established) {
+    karaokeRef.current = {
+      mediaID: mediaId || "",
+      karaoke: state.info.mediaClass === "audio" && isComposedPictureServed(state.info),
+    };
+  }
+  const karaokeSong = karaokeRef.current?.mediaID === (mediaId || "") && karaokeRef.current.karaoke;
+  const showKaraokeControls =
+    adjustmentRanges !== null && karaokeSong && state.phase !== "terminal";
+  // Judged only once the stream that was asked for this adjustment is playing,
+  // so a restart in flight never flashes "Not applied".
+  const karaokeApplied =
+    playing && state.info && sameAdjustment(state.adjustment, adjustment)
+      ? adjustmentApplied(state.info, adjustment)
+      : null;
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
   const isAudio = state.info?.mediaClass === "audio";
   // Before playback-info answers, a queue entry that reports its class already
   // routes a track to the audio stage instead of an empty video frame
-  // (CORE-1309).
-  const showAudioStage = isAudio || (!state.info && entryClass === "audio");
+  // (CORE-1309). A song whose composed picture is served shows the picture
+  // instead (CORE-1656).
+  const showAudioStage = state.info ? isAudio && !hasPicture(state.info) : entryClass === "audio";
   const credits = media?.credits ?? [];
   // The per-collection skip interval belongs to the item's container Entity
   // (the show, the album …), named by its title; an item with none has no row.
@@ -178,7 +313,7 @@ export function PlayerPage() {
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
     videoRef,
-    menuOpen,
+    menuOpen: menuOpen || partyOpen,
   });
 
   // Advance to another Media's watch route, carrying its title and the queue
@@ -189,11 +324,21 @@ export function PlayerPage() {
     (id: string, title: string) => {
       navigate(`/watch/${encodeURIComponent(id)}`, {
         replace: true,
-        state: { title, ...(queue ? { queue, queueIdentity } : {}) },
+        state: { title, skipPrePlay: true, ...(queue ? { queue, queueIdentity } : {}) },
       });
     },
     [navigate, queue, queueIdentity],
   );
+
+  // Watch Party (CORE-1677): the party moves every member's player to the
+  // title it is on and keeps the <video> on its shared timeline.
+  const followParty = useCallback((id: string) => playItem(id, ""), [playItem]);
+  const watchParty = useWatchParty({
+    videoRef,
+    attached: state.phase !== "message" && state.phase !== "terminal",
+    mediaId: mediaId || "",
+    onFollow: followParty,
+  });
 
   // Up Next auto-advance: the server-issued next Media (a queue's next item
   // when one was declared, else the server's own next-item pick).
@@ -231,10 +376,22 @@ export function PlayerPage() {
 
   // Audio moves straight on to the next item when one ends (no countdown card,
   // which suits a film or an episode, not a track).
+  // "Are you still watching?" (CORE-1689): after the Profile's run of
+  // countdown-started items, the prompt takes the place of the next autoplay.
+  // The audio path has no countdown, so it never counts or asks.
+  const stillWatching = useStillWatching({
+    videoRef,
+    mediaID: mediaId || "",
+    after: resolvedPrefs.stillWatchingAfter,
+    next: state.info?.next,
+    enabled: !isAudio,
+    onContinue: advanceToNext,
+  });
   const upNext = useUpNext({
     videoRef,
-    next: isAudio ? null : state.info?.next,
+    next: isAudio || stillWatching.armed || stillWatching.prompting ? null : state.info?.next,
     onAdvance: advanceToNext,
+    onAutoAdvance: (next) => noteAutoAdvance(next.mediaID),
   });
   useEffect(() => {
     const video = videoRef.current;
@@ -245,7 +402,7 @@ export function PlayerPage() {
 
   // The card's appearance reveals chrome once; the card itself stays visible
   // and clickable regardless of auto-hide (player-deferred.css).
-  const upNextVisible = upNext.visible;
+  const upNextVisible = upNext.visible || stillWatching.prompting;
   useEffect(() => {
     if (upNextVisible) reveal();
   }, [upNextVisible, reveal]);
@@ -261,6 +418,7 @@ export function PlayerPage() {
       recap: resolvedPrefs.autoSkipRecap,
       credits: resolvedPrefs.autoSkipCredits,
     },
+    songScale,
   });
 
   // Browser Media Session (ADR-0084 §43): mirror transport state to the OS and
@@ -279,6 +437,7 @@ export function PlayerPage() {
     artworkURL,
     onNextTrack: playNext,
     onPreviousTrack: playPrevious,
+    songScale,
   });
 
   // A relock during playback drops restricted content from every view at once
@@ -396,6 +555,12 @@ export function PlayerPage() {
     else navigate("/", { replace: true });
   }
 
+  // A remote stop ends playback on a known page. Going back could land on an
+  // earlier watch route (a remote play-media pushes one) and start that player.
+  function stopRemotely() {
+    navigate(mediaId ? `/media/${encodeURIComponent(mediaId)}` : "/", { replace: true });
+  }
+
   return (
     <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
       <h1 className="sr-only">{navTitle || t("brand")}</h1>
@@ -403,6 +568,23 @@ export function PlayerPage() {
         <Button variant="outline" size="sm" onClick={back}>
           {t("back")}
         </Button>
+        {showKaraokeControls && adjustmentRanges ? (
+          <KaraokeControls
+            ranges={adjustmentRanges}
+            adjustment={adjustment}
+            applied={karaokeApplied}
+            onChange={adjust}
+          />
+        ) : null}
+        {mediaId && (
+          <WatchPartyPanel
+            party={watchParty.party}
+            open={partyOpen}
+            onOpenChange={setPartyOpen}
+            onStart={watchParty.start}
+            onLeave={watchParty.leave}
+          />
+        )}
       </div>
 
       {state.phase === "message" || state.phase === "terminal" ? (
@@ -468,6 +650,12 @@ export function PlayerPage() {
               </p>
             )
           )}
+          <WatchPartySyncIndicator
+            playback={watchParty.playback}
+            driftMS={watchParty.driftMS}
+            needsTap={watchParty.needsTap}
+            onResume={watchParty.resume}
+          />
           {playing && (
             <PlayerTransport
               videoRef={videoRef}
@@ -475,6 +663,7 @@ export function PlayerPage() {
               state={state}
               mediaTitle={navTitle}
               mediaID={mediaId || ""}
+              profileID={session?.profileID ?? ""}
               metadataAttribution={media?.metadataAttribution}
               stageRef={stageRef}
               skipInterval={Number(resolvedPrefs.skipInterval)}
@@ -488,7 +677,11 @@ export function PlayerPage() {
               onShare={shareAt}
               onPreviousInQueue={playPrevious}
               onNextInQueue={playNext}
+              onStop={back}
+              onRemoteStop={stopRemotely}
+              onRemoteRestart={restart}
               switchToHls={switchToHls}
+              onSelectVersion={selectVersion}
               onMenuOpenChange={setMenuOpen}
             />
           )}
@@ -498,6 +691,13 @@ export function PlayerPage() {
               countdown={upNext.countdown}
               onPlay={upNext.advance}
               onDismiss={upNext.dismiss}
+            />
+          )}
+          {playing && stillWatching.prompting && (
+            <StillWatchingPrompt
+              title={stillWatching.title}
+              onContinue={stillWatching.continueWatching}
+              onStop={stillWatching.stop}
             />
           )}
           {playing && autoSkip.skipped && (
@@ -513,10 +713,12 @@ export function PlayerPage() {
   );
 }
 
-function parseTimestampParam(raw: string | null): number {
-  if (!raw) return 0;
+// undefined when the link names no position, so playback resumes from saved
+// progress; an explicit ?t=0 starts from the beginning.
+function parseTimestampParam(raw: string | null): number | undefined {
+  if (raw === null || raw.trim() === "") return undefined;
   const seconds = Number(raw);
-  return Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : undefined;
 }
 
 export function buildTimestampedLink(mediaId: string, seconds: number): string {

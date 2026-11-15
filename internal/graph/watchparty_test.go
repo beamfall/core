@@ -74,14 +74,40 @@ func autoSkipBody(partyID, item string, positionMS int64) string {
 }
 
 // countTransitionsAt counts authoritative group.sync transitions for partyID at
-// or after cursor whose position matches wantPos (-1 = any position).
+// or after cursor whose position matches wantPos (-1 = any position). A
+// transition is fanned out as one row per member Profile, so the count is the
+// number of transitions any one Profile receives, not the number of rows.
 func countTransitionsAt(t *testing.T, st *store.Store, partyID string, cursor int64, wantPos int64) int {
+	t.Helper()
+	perProfile := map[store.ProfileID]int{}
+	for _, p := range partyTransitionRows(t, st, partyID, cursor) {
+		if wantPos < 0 || p.PositionMS == wantPos {
+			perProfile[p.ProfileID]++
+		}
+	}
+	n := 0
+	for _, c := range perProfile {
+		n = max(n, c)
+	}
+	return n
+}
+
+// partyTransitionRows returns the group.sync transition payloads for partyID
+// written at or after cursor, in outbox order.
+func partyTransitionRows(t *testing.T, st *store.Store, partyID string, cursor int64) []store.GroupSyncPayload {
+	t.Helper()
+	return partySyncRows(t, st, partyID, cursor, store.GroupSignalTransition)
+}
+
+// partySyncRows returns the group.sync payloads with signal for partyID written
+// at or after cursor, in outbox order.
+func partySyncRows(t *testing.T, st *store.Store, partyID string, cursor int64, signal string) []store.GroupSyncPayload {
 	t.Helper()
 	after, err := st.ReadEventOutbox(t.Context(), cursor, 256)
 	if err != nil {
 		t.Fatalf("ReadEventOutbox: %v", err)
 	}
-	n := 0
+	var rows []store.GroupSyncPayload
 	for _, e := range after {
 		if e.AggregateType != store.OutboxAggregateGroup || e.AggregateID != partyID {
 			continue
@@ -90,11 +116,11 @@ func countTransitionsAt(t *testing.T, st *store.Store, partyID string, cursor in
 		if err := json.Unmarshal(e.Payload, &p); err != nil {
 			t.Fatalf("decode payload: %v", err)
 		}
-		if p.Signal == store.GroupSignalTransition && (wantPos < 0 || p.PositionMS == wantPos) {
-			n++
+		if p.Signal == signal {
+			rows = append(rows, p)
 		}
 	}
-	return n
+	return rows
 }
 
 // TestWatchPartyHostTransportIsAuthoritative is acceptance (a): the host's

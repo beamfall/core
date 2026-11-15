@@ -203,6 +203,15 @@ type hlsSession struct {
 	audioStreamIndex  *int
 	sourceVideo       VideoSignal
 	burnSubtitleIndex int
+	// composed, when set, is the composed picture the session's single rung
+	// draws over the source's audio (see StreamShape.ComposedPicture), and
+	// picture is its encoder input as laid out in the session directory.
+	composed *ComposedPicture
+	picture  *ffmpeg.ComposedPicture
+	// adjust is the pitch shift and tempo change every encode applies (see
+	// StreamShape.Adjust). durationSeconds, segments and the source end are
+	// then on the adjusted output timeline.
+	adjust ffmpeg.AudioAdjust
 	// timeline lays out the audio-copy rung's segments at the source's own
 	// keyframes (CORE-0021); nil keeps the uniform grid.
 	timeline *keyframeTimeline
@@ -273,10 +282,11 @@ type hlsSession struct {
 	// ErrSourceEnded instead of being encoded as empty segments.
 	sourceEnd      time.Duration
 	sourceEndKnown bool
-	// resumeSeconds is where playback info resumed the viewer. The session's
-	// first encoder starts at the segment containing it, so a resume spawns
-	// FFmpeg once instead of starting at 0 for init.mp4 and restarting at the
-	// first media request. Cleared once an encoder starts.
+	// resumeSeconds is where playback info resumed the viewer, as a source
+	// position. The session's first encoder starts at the segment containing
+	// it, so a resume spawns FFmpeg once instead of starting at 0 for init.mp4
+	// and restarting at the first media request. Cleared once an encoder
+	// starts.
 	resumeSeconds int
 }
 
@@ -366,6 +376,7 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 		AudioChannels:    h.audioProfile.Channels,
 		AudioGainDB:      h.audioProfile.GainDB,
 		AudioStreamIndex: h.audioStreamIndex,
+		AudioOnly:        rung.AudioOnly,
 		ColorTransfer:    h.sourceVideo.ColorTransfer,
 		ColorPrimaries:   h.sourceVideo.ColorPrimaries,
 		DoViProfile:      h.sourceVideo.DoViProfile,
@@ -374,7 +385,10 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 	if h.burnSubtitleIndex >= 0 {
 		rendition = rendition.WithBurnSubtitle(h.burnSubtitleIndex)
 	}
-	return rendition
+	if h.picture != nil {
+		rendition = rendition.WithComposedPicture(*h.picture)
+	}
+	return rendition.WithAudioAdjust(h.adjust)
 }
 
 // Sessions owns the lifecycle of HLS transcode sessions:
@@ -396,6 +410,9 @@ type Sessions struct {
 	nextID   int
 	cap      int
 	governor *governor.Governor
+	// composer resolves the picture of a composed-picture session (see
+	// SetPictureComposer); nil refuses such sessions.
+	composer GenerationComposer
 	// waitWindow, when positive, replaces the latency budgets as the length of
 	// one artifact wait window. Tests set it so a slow-encoder scenario runs in
 	// milliseconds instead of whole budgets.
@@ -859,18 +876,29 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadder(ctx context.Conte
 }
 
 func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, priority Priority, name string) (string, error) {
+	return s.FilePathShaped(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, StreamShape{}, priority, name)
+}
+
+// FilePathShaped is FilePathPriorityWithBurnSubtitleAudioLadderMap with the
+// grant's StreamShape, which can reshape the session beyond its ladder.
+func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (string, error) {
 	if caps.HEVC && !s.SupportsTranscodeCodec("hevc") {
 		caps.HEVC = false
 		caps.HEVCMaxHeight = 0
 	}
+	picture, err := s.livePicture(ctx, key, src, shape)
+	if err != nil {
+		return "", err
+	}
+	// The keyframe timeline lays out the copied-video rung, which a composed
+	// picture or an audio adjustment replaces with a single encoded rung.
 	var timeline *keyframeTimeline
-	if audioCopy && durationSeconds > 0 {
-		var err error
+	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() {
 		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
 			return "", err
 		}
 	}
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, priority)
+	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1107,8 +1135,11 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // FFmpeg process starts until a rung artifact is requested, so admission
 // control runs at real encode start. audioCopy seeds the single audio-copy
 // rung in place of the resolution ladder, so the master and
-// served rendition copy the source video and transcode only the audio.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, priority Priority) (*hlsSession, error) {
+// served rendition copy the source video and transcode only the audio. A
+// non-zero adjust stretches durationSeconds (a source duration) onto the
+// adjusted output timeline and, without a picture, offers the single
+// audio-only rung.
+func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1116,10 +1147,23 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		s.runTeardowns(teardowns)
 	}()
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
+	if picture != nil {
+		rung, err := composedLiveRung(caps)
+		if err != nil {
+			return nil, err
+		}
+		requestedRungs = []Rung{rung}
+	} else if !adjust.IsZero() {
+		requestedRungs = []Rung{adjustedAudioRung()}
+	}
+	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	if existing, ok := s.sessions[key]; ok {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) {
+		if existing.src != src || existing.durationSeconds != durationSeconds || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
+			// A position noted while this session ran was kept only for a
+			// reshaped replacement; the unchanged session ignores it.
+			delete(s.resumeHints, key)
 			existing.lastAccess = s.now()
 			if priority > existing.priority {
 				existing.priority = priority // raise-only: earned standing is kept
@@ -1142,6 +1186,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		lastAccess:        s.now(),
 		priority:          priority,
 		degraded:          degraded,
+		adjust:            adjust,
 	}
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)
@@ -1149,7 +1194,12 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			session.resumeSeconds = hint.seconds
 		}
 	}
-	if err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline); err != nil {
+	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline)
+	if err == nil && picture != nil {
+		session.composed = picture
+		session.picture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
+	}
+	if err != nil {
 		teardowns = append(teardowns, sessionTeardown{dir: dir})
 		s.detached++
 		return nil, err
@@ -1401,7 +1451,7 @@ func (session *hlsSession) resumeSegmentLocked(rung Rung) int {
 	if session.resumeSeconds <= 0 || session.durationSeconds <= 0 {
 		return 0
 	}
-	segment := session.resumeSeconds / rungSegmentSeconds(rung)
+	segment := session.adjust.OutputPosition(session.resumeSeconds) / rungSegmentSeconds(rung)
 	if t := session.keyframeTimeline(rung); t != nil {
 		segment = t.segmentAt(time.Duration(session.resumeSeconds) * time.Second)
 	}
@@ -1427,6 +1477,14 @@ func (s *Sessions) NoteResumePosition(key SessionKey, seconds int) {
 		delete(s.resumeHints, key)
 		if !session.started {
 			session.resumeSeconds = max(seconds, 0)
+			return
+		}
+		// A running session keeps its encoder, but a request that reshapes
+		// it (a new pitch shift or tempo, say) replaces it: that replacement
+		// starts at this position. The next request that reuses the session
+		// unchanged drops it.
+		if seconds > 0 {
+			s.resumeHints[key] = resumeHint{seconds: seconds, at: now}
 		}
 		return
 	}

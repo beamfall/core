@@ -37,6 +37,16 @@ type LibraryItemsFacets struct {
 	Qualities []string               `json:"qualities"`
 }
 
+// LibraryItemsLetter is where one title initial starts in a title-sorted
+// browse and how many items share it: requesting Offset returns the first item
+// with that initial, so a client can jump to a letter without loading the
+// pages before it.
+type LibraryItemsLetter struct {
+	Letter string `json:"letter"`
+	Offset int    `json:"offset"`
+	Count  int    `json:"count"`
+}
+
 // LibraryItemsResponse is one page of a Library browse. Total counts every
 // item matching the filters (not just this page), so a client can display the
 // count and size a virtualized list before the remaining pages arrive.
@@ -44,12 +54,17 @@ type LibraryItemsResponse struct {
 	Total  int                `json:"total"`
 	Items  []SourceItem       `json:"items"`
 	Facets LibraryItemsFacets `json:"facets"`
+	// Letters lists, for a title sort, the offset where each title initial
+	// starts and its item count ("#" for titles that do not open with a
+	// letter); other sorts answer an empty list.
+	Letters []LibraryItemsLetter `json:"letters"`
 }
 
 func emptyLibraryItems() LibraryItemsResponse {
 	return LibraryItemsResponse{
-		Items:  []SourceItem{},
-		Facets: LibraryItemsFacets{Groupings: []LibraryItemsGrouping{}, Decades: []int{}, Qualities: []string{}},
+		Items:   []SourceItem{},
+		Facets:  LibraryItemsFacets{Groupings: []LibraryItemsGrouping{}, Decades: []int{}, Qualities: []string{}},
+		Letters: []LibraryItemsLetter{},
 	}
 }
 
@@ -98,6 +113,9 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 	}
 	if result.Facets.Qualities != nil {
 		resp.Facets.Qualities = result.Facets.Qualities
+	}
+	for _, letter := range result.Letters {
+		resp.Letters = append(resp.Letters, LibraryItemsLetter{Letter: letter.Letter, Offset: letter.Offset, Count: letter.Count})
 	}
 	return resp, nil
 }

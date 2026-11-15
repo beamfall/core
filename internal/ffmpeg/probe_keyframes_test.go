@@ -107,6 +107,16 @@ func TestStartHLSKeyframeSegmentsRefusesReencode(t *testing.T) {
 	}
 }
 
+// TestStartHLSKeyframeSegmentsRefusesAudioAdjust keeps karaoke key and tempo
+// (CORE-1658) off the keyframe path: a tempo change rescales the timeline the
+// keyframe offsets were probed on.
+func TestStartHLSKeyframeSegmentsRefusesAudioAdjust(t *testing.T) {
+	rendition := Rendition{CopyVideo: true}.WithAudioAdjust(AudioAdjust{Tempo: 0.9})
+	if _, err := New().StartHLSKeyframeSegments(context.Background(), "/media/a.mkv", t.TempDir(), 0, 0, rendition); err == nil {
+		t.Fatal("adjusted rendition accepted for keyframe-aligned segmenting")
+	}
+}
+
 // TestProbeKeyframesReadsRealGOP probes real 7s-GOP files in the two container
 // time bases that matter (MKV 1/1000, MP4 1/12800) and checks every keyframe.
 func TestProbeKeyframesReadsRealGOP(t *testing.T) {

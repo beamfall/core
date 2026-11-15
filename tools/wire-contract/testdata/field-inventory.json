@@ -898,6 +898,11 @@
       ]
     },
     {
+      "field": "deletewebhook",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "devices",
       "effect": "read",
       "tier": "admin",
@@ -1380,6 +1385,7 @@
       "children": [
         "facets",
         "items",
+        "letters",
         "total"
       ]
     },
@@ -1911,6 +1917,26 @@
       "tier": "admin",
       "children": [
         "affected"
+      ]
+    },
+    {
+      "field": "preplayclips",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "items"
+      ]
+    },
+    {
+      "field": "preplayqueue",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "durationSeconds",
+        "label",
+        "mediaID",
+        "role",
+        "title"
       ]
     },
     {
@@ -2582,6 +2608,25 @@
       ]
     },
     {
+      "field": "savewebhook",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "allowPrivateNetwork",
+        "disabled",
+        "eventKinds",
+        "format",
+        "from",
+        "id",
+        "name",
+        "problem",
+        "secretSet",
+        "to",
+        "url",
+        "username"
+      ]
+    },
+    {
       "field": "scanestimate",
       "effect": "read",
       "tier": "admin",
@@ -2743,6 +2788,7 @@
       "tier": "public",
       "children": [
         "name",
+        "playbackAdjustments",
         "version"
       ]
     },
@@ -3026,6 +3072,14 @@
       ]
     },
     {
+      "field": "setpreplayclips",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "items"
+      ]
+    },
+    {
       "field": "setprofilelibraries",
       "effect": "write",
       "tier": "admin",
@@ -3188,6 +3242,16 @@
         "rating",
         "watched",
         "watchlisted"
+      ]
+    },
+    {
+      "field": "setwebhooksettings",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "eventKinds",
+        "formats",
+        "publicBaseURL"
       ]
     },
     {
@@ -3390,6 +3454,17 @@
       "tier": "admin",
       "children": [
         "sessionID"
+      ]
+    },
+    {
+      "field": "testwebhook",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "diagnostic",
+        "durationMs",
+        "ok",
+        "statusClass"
       ]
     },
     {
@@ -3794,6 +3869,50 @@
         "item",
         "positionMS",
         "presentAtMS"
+      ]
+    },
+    {
+      "field": "webhookdeliveries",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "at",
+        "attempts",
+        "durationMs",
+        "endpointID",
+        "eventKind",
+        "outcome",
+        "statusClass",
+        "test"
+      ]
+    },
+    {
+      "field": "webhooks",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "allowPrivateNetwork",
+        "disabled",
+        "eventKinds",
+        "format",
+        "from",
+        "id",
+        "name",
+        "problem",
+        "secretSet",
+        "to",
+        "url",
+        "username"
+      ]
+    },
+    {
+      "field": "webhooksettings",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "eventKinds",
+        "formats",
+        "publicBaseURL"
       ]
     }
   ]

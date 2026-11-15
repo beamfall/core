@@ -92,3 +92,29 @@ func TestEventStreamSessionControlRevealFiltered(t *testing.T) {
 		t.Fatalf("revealed subscriber missing the restricted-media session-control event:\n%s", revealed)
 	}
 }
+
+// TestEventStreamSessionControlFiltersAnchorSet: a command whose own Media is
+// open but whose anchor set names a restricted Media is withheld from an
+// unrevealed subscriber (the set would leak the hidden id) and delivered to a
+// revealed one.
+func TestEventStreamSessionControlFiltersAnchorSet(t *testing.T) {
+	srv, st := newTestServerWithStore(t)
+	now := time.Unix(0, 0).UTC()
+
+	if err := st.AppendSessionControlEvent(t.Context(), "session-default", store.SessionControlPayload{
+		Command:         "pause",
+		ProfileID:       "profile-default",
+		MediaID:         "media-alpha",
+		PlayingMediaIDs: []store.MediaID{"media-alpha", "media-archive"},
+	}, now); err != nil {
+		t.Fatalf("AppendSessionControlEvent: %v", err)
+	}
+
+	if unrevealed := collectSSE(t, srv, authorizeViewer); strings.Contains(unrevealed, store.SessionControlKind) {
+		t.Fatalf("unrevealed subscriber received a command naming restricted Media in its anchor set:\n%s", unrevealed)
+	}
+	revealed := collectSSE(t, srv, authorizeRevealed)
+	if !strings.Contains(revealed, "event: "+store.SessionControlKind) || !strings.Contains(revealed, "playingMediaIDs") {
+		t.Fatalf("revealed subscriber missing the session-control event or its anchor set:\n%s", revealed)
+	}
+}

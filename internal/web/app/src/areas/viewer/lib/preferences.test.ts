@@ -3,9 +3,12 @@ import {
   DOWNSTREAM_AUDIO_DEFAULT,
   encodeBool,
   PLAYBACK_SPEED_DEFAULT,
+  PRE_PLAY_EXTRAS_DEFAULT,
   PREF_KEYS,
+  parseStillWatchingAfter,
   resolvePreferences,
   SKIP_INTERVAL_DEFAULT,
+  STILL_WATCHING_DEFAULT,
   skipIntervalOverrideKey,
 } from "./preferences";
 
@@ -22,7 +25,22 @@ describe("resolvePreferences", () => {
       trimSilence: false,
       skipInterval: SKIP_INTERVAL_DEFAULT,
       downstreamAudio: DOWNSTREAM_AUDIO_DEFAULT,
+      stillWatchingAfter: STILL_WATCHING_DEFAULT,
+      prePlayEnabled: false,
+      prePlayExtras: PRE_PLAY_EXTRAS_DEFAULT,
     });
+  });
+
+  it("reads the pre-play opt-in and falls back on an unknown extras count", () => {
+    const prefs = resolvePreferences([
+      { key: PREF_KEYS.prePlayEnabled, value: "on" },
+      { key: PREF_KEYS.prePlayExtras, value: " 4 " },
+    ]);
+    expect(prefs.prePlayEnabled).toBe(true);
+    expect(prefs.prePlayExtras).toBe("4");
+    expect(resolvePreferences([{ key: PREF_KEYS.prePlayExtras, value: "9" }]).prePlayExtras).toBe(
+      PRE_PLAY_EXTRAS_DEFAULT,
+    );
   });
 
   it("reads the 'on' boolean convention shared with the server", () => {
@@ -99,6 +117,39 @@ describe("resolvePreferences", () => {
     expect(resolvePreferences([{ key: PREF_KEYS.skipInterval, value: "99" }]).skipInterval).toBe(
       SKIP_INTERVAL_DEFAULT,
     );
+  });
+});
+
+describe("parseStillWatchingAfter", () => {
+  it("reads 1..10, 'off' as never, and defaults anything else to 3", () => {
+    expect(STILL_WATCHING_DEFAULT).toBe(3);
+    expect(parseStillWatchingAfter("1")).toBe(1);
+    expect(parseStillWatchingAfter("10")).toBe(10);
+    expect(parseStillWatchingAfter("off")).toBe(0);
+    for (const raw of [
+      undefined,
+      "",
+      "0",
+      "11",
+      "-1",
+      "2.5",
+      "on",
+      "03x",
+      "01",
+      " 2",
+      "+3",
+      " off ",
+      "OFF",
+    ]) {
+      expect(parseStillWatchingAfter(raw)).toBe(STILL_WATCHING_DEFAULT);
+    }
+  });
+
+  it("resolves the stillwatching.after key", () => {
+    expect(
+      resolvePreferences([{ key: PREF_KEYS.stillWatchingAfter, value: "off" }]).stillWatchingAfter,
+    ).toBe(0);
+    expect(PREF_KEYS.stillWatchingAfter).toBe("stillwatching.after");
   });
 });
 

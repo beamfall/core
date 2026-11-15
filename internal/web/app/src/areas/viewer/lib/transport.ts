@@ -53,6 +53,17 @@ export interface TrickplayTile {
 }
 
 /** Resolves the sprite tile for a scrub position; null when out of range. */
+// The trickplay manifest URL is usually root-relative (`/api/media/assets/<token>/trickplay.json`),
+// so resolve it against the page first; sheet names are relative to the manifest.
+export function resolveTrickplaySheetURL(sheet: string, manifestURL: string): string {
+  try {
+    const page = typeof window === "undefined" ? undefined : window.location.href;
+    return new URL(sheet, new URL(manifestURL, page)).href;
+  } catch {
+    return sheet;
+  }
+}
+
 export function resolveTrickplayTile(
   manifest: TrickplayManifest | null,
   timeSeconds: number,
@@ -309,6 +320,50 @@ export function chapterSeekTarget(
     return null;
   }
   return starts.find((seconds) => seconds > current + 1) ?? null;
+}
+
+export interface ChapterEntry {
+  startSeconds: number;
+  /** The Marker title; empty when the chapter has none (the UI numbers it). */
+  title: string;
+  /** The server's chapter thumbnail, or null when there is no thumbnail base. */
+  thumbnailURL: string | null;
+  current: boolean;
+}
+
+/** The server's marker thumbnail file name (internal/genassets MarkerThumbName). */
+export function markerThumbnailName(startSeconds: number): string {
+  return `marker-${Math.round(startSeconds * 1000)}.jpg`;
+}
+
+/** The chapter list: Markers without a segment kind (container chapters are
+ * ranges, hand-added chapters points), sorted and de-duplicated by start. The
+ * current chapter is the last one starting at or before the playhead. */
+export function buildChapterList(
+  markers: PlaybackMarker[],
+  options: { thumbnailBase?: string | null; currentTimeSeconds?: number } = {},
+): ChapterEntry[] {
+  const byStart = new Map<number, string>();
+  for (const marker of markers || []) {
+    if ((marker.segmentKind || "").trim() !== "") continue;
+    const start = finiteNumber(marker.startSeconds, -1);
+    if (start < 0) continue;
+    const title = (marker.title || "").trim();
+    if (!byStart.has(start) || (!byStart.get(start) && title)) byStart.set(start, title);
+  }
+  const base = options.thumbnailBase || "";
+  const current = finiteNumber(options.currentTimeSeconds);
+  const starts = Array.from(byStart.keys()).sort((a, b) => a - b);
+  let currentIndex = -1;
+  starts.forEach((start, index) => {
+    if (start <= current) currentIndex = index;
+  });
+  return starts.map((start, index) => ({
+    startSeconds: start,
+    title: byStart.get(start) || "",
+    thumbnailURL: base ? base + markerThumbnailName(start) : null,
+    current: index === currentIndex,
+  }));
 }
 
 // --- Up Next + resume -----------------------------------------------------

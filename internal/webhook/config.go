@@ -22,9 +22,16 @@ type SecretSource interface {
 // file carries no secret.
 type fileEndpoint struct {
 	ID         string   `json:"id"`
+	Name       string   `json:"name,omitempty"`
+	Format     string   `json:"format,omitempty"`
 	URL        string   `json:"url"`
-	SecretRef  string   `json:"secret_ref"`
+	SecretRef  string   `json:"secret_ref,omitempty"`
 	EventKinds []string `json:"event_kinds,omitempty"`
+	Disabled   bool     `json:"disabled,omitempty"`
+	// From, To and Username are the email envelope and SMTP user name.
+	From     string   `json:"from,omitempty"`
+	To       []string `json:"to,omitempty"`
+	Username string   `json:"username,omitempty"`
 	// AllowPrivateNetwork approves a hostname-named LAN receiver for local
 	// address classes (see Endpoint.AllowPrivateNetwork).
 	AllowPrivateNetwork bool `json:"allow_private_network,omitempty"`
@@ -39,6 +46,9 @@ type fileConfig struct {
 	MaxAttempts        int `json:"max_attempts,omitempty"`
 	BaseBackoffSeconds int `json:"base_backoff_seconds,omitempty"`
 	PollIntervalMS     int `json:"poll_interval_ms,omitempty"`
+	// PublicBaseURL is the owner's public origin, used to build artwork URLs
+	// in derived events. Empty leaves them out.
+	PublicBaseURL string `json:"public_base_url,omitempty"`
 }
 
 // LoadConfig reads the webhook configuration from path and resolves each
@@ -79,13 +89,29 @@ func LoadConfig(path string, secrets SecretSource) (Config, error) {
 		if err != nil {
 			return Config{}, ErrSecretDiagnostic
 		}
-		cfg.Endpoints = append(cfg.Endpoints, Endpoint{
-			ID:                  fe.ID,
-			URL:                 fe.URL,
-			Secret:              []byte(secret),
-			EventKinds:          fe.EventKinds,
-			AllowPrivateNetwork: fe.AllowPrivateNetwork,
-		})
+		cfg.Endpoints = append(cfg.Endpoints, fe.endpoint([]byte(secret)))
 	}
 	return cfg, nil
+}
+
+// endpoint builds the runtime Endpoint from its on-disk form and resolved
+// secret.
+func (fe fileEndpoint) endpoint(secret []byte) Endpoint {
+	format, _ := ParseFormat(fe.Format)
+	if fe.Format != "" && format == "" {
+		format = Format(fe.Format) // invalid: validateEndpoint rejects it
+	}
+	return Endpoint{
+		ID:                  fe.ID,
+		Name:                fe.Name,
+		Format:              format,
+		URL:                 fe.URL,
+		Secret:              secret,
+		EventKinds:          fe.EventKinds,
+		AllowPrivateNetwork: fe.AllowPrivateNetwork,
+		Disabled:            fe.Disabled,
+		From:                fe.From,
+		To:                  fe.To,
+		Username:            fe.Username,
+	}
 }

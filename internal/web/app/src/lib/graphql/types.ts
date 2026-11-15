@@ -302,6 +302,18 @@ export interface PlaybackMarker {
   title: string;
 }
 
+/**
+ * serverInfo.playbackAdjustments (graph.PlaybackAdjustmentRanges, CORE-1658):
+ * the inclusive pitch shift (whole semitones) and tempo ranges playback-info
+ * accepts. Absent on a server without playback adjustment.
+ */
+export interface PlaybackAdjustmentRanges {
+  pitchShiftSemitonesMin: number;
+  pitchShiftSemitonesMax: number;
+  tempoMin: number;
+  tempoMax: number;
+}
+
 /** The reportPlayback mutation result. */
 export interface ReportPlaybackResult {
   mediaID: string;
@@ -368,6 +380,37 @@ export interface MySessionInfo {
   deviceRole: string;
   current: boolean;
   expiresAt?: string;
+}
+
+/** One active playback in the caller's Profile (graph.ProfileSessionInfo). Title and
+ * libraryID are empty when the Media is outside the caller's current visibility. */
+export interface ProfileSessionInfo {
+  sessionID: string;
+  deviceID: string;
+  deviceName: string;
+  deviceRole: string;
+  current: boolean;
+  mediaID?: string;
+  title?: string;
+  positionSeconds: number;
+  durationSeconds: number;
+}
+
+/** controlSession arguments; each verb takes only its own (store.SessionControlArgs). */
+export interface ControlSessionVars {
+  sessionID: string;
+  command: string;
+  direction?: "next" | "previous";
+  positionMs?: number;
+  volume?: number;
+  trackID?: string;
+  mediaID?: string;
+  text?: string;
+}
+
+export interface ControlSessionResult {
+  sessionID: string;
+  command: string;
 }
 
 export interface MyStreamTokenInfo {
@@ -1606,4 +1649,69 @@ export interface RetentionCandidateHoldResult {
   ruleID: string;
   mediaID: string;
   hold: boolean;
+}
+
+/**
+ * One entry of a pre-play queue (graph.PrePlayItem, CORE-1701): an item a
+ * client plays before a feature. `role` is "clip" (one of the Owner's clips)
+ * or "suggested" (a plugin policy's pick, shown with its `label`).
+ */
+export interface PrePlayItem {
+  mediaID: string;
+  title: string;
+  durationSeconds: number;
+  role: string;
+  label: string;
+}
+
+/** The Owner's pre-play clip list (graph.PrePlayClipsInfo). */
+export interface PrePlayClipsInfo {
+  items: PrePlayItem[];
+}
+
+/**
+ * One webhook endpoint (graph.WebhookEndpointInfo). url is redacted to scheme
+ * and host; a stored signing key, token or password shows only as secretSet.
+ * problem is empty for a running endpoint, else why it cannot run.
+ */
+export interface WebhookEndpointInfo {
+  id: string;
+  name: string;
+  format: string;
+  url: string;
+  eventKinds: string[];
+  disabled: boolean;
+  allowPrivateNetwork: boolean;
+  secretSet: boolean;
+  from: string;
+  to: string[];
+  username: string;
+  problem: string;
+}
+
+/** The outcome of one webhook test send (graph.WebhookTestResultInfo). */
+export interface WebhookTestResultInfo {
+  ok: boolean;
+  statusClass: string;
+  diagnostic: string;
+  durationMs: number;
+}
+
+/** One webhook delivery log row (graph.WebhookDeliveryInfo); at is RFC 3339. */
+export interface WebhookDeliveryInfo {
+  endpointID: string;
+  eventKind: string;
+  outcome: string;
+  statusClass: string;
+  attempts: number;
+  durationMs: number;
+  at: string;
+  test: boolean;
+}
+
+/** Shared webhook options and the console's choices (graph.WebhookSettingsInfo). */
+export interface WebhookSettingsInfo {
+  publicBaseURL: string;
+  formats: string[];
+  eventKinds: string[];
 }

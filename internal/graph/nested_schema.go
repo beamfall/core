@@ -66,6 +66,8 @@ var resultTypes = map[string]any{
 	"semanticcapability":     SemanticCapabilityInfo{},
 	"searchentities":         SourceItem{},
 	"searchfeeds":            FeedSearchResult{},
+	"preplayqueue":           []PrePlayItem{},
+	"preplayclips":           PrePlayClipsInfo{},
 	"media":                  MediaInfo{},
 	"trashlist":              TrashEntry{},
 	"tags":                   TagInfo{},
@@ -104,6 +106,9 @@ var resultTypes = map[string]any{
 	"profilesessions":        ProfileSessionInfo{},
 	"libraryhealth":          LibraryHealthInfo{},
 	"trashedlibraries":       TrashedLibraryInfo{},
+	"webhooks":               WebhookEndpointInfo{},
+	"webhookdeliveries":      WebhookDeliveryInfo{},
+	"webhooksettings":        WebhookSettingsInfo{},
 	"libraryhealthitems":     HealthItemInfo{},
 	"libraryduplicategroups": DuplicateGroupInfo{},
 	"metadataexport":         MetadataExportInfo{},
@@ -262,6 +267,10 @@ var resultTypes = map[string]any{
 	"deletelibrary":                      deleteLibraryResult{},
 	"restorelibrary":                     restoreLibraryResult{},
 	"purgelibrary":                       LibraryPurgeResult{},
+	"savewebhook":                        WebhookEndpointInfo{},
+	"deletewebhook":                      deleteWebhookResult{},
+	"testwebhook":                        WebhookTestResultInfo{},
+	"setwebhooksettings":                 WebhookSettingsInfo{},
 	"scanlibrary":                        JobInfo{},
 	"addsubscription":                    SubscriptionInfo{},
 	"removesubscription":                 SubscriptionInfo{},
@@ -337,6 +346,7 @@ var resultTypes = map[string]any{
 	"rejectpendingaitag":        PendingAITagInfo{},
 	"setlibraryaiindexing":      LibraryIndexStatusInfo{},
 	"setskipdetectionenabled":   SkipDetectionInfo{},
+	"setpreplayclips":           PrePlayClipsInfo{},
 	"offlinepacks":              []OfflinePackInfo{},
 	"createofflinepack":         OfflinePackInfo{},
 	"revokeofflinepack":         OfflinePackInfo{},
@@ -368,6 +378,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"search":         {{Name: "query", Kind: "string", Optional: true}},
 	"searchentities": {{Name: "query", Kind: "string", Optional: true}},
 	"searchfeeds":    {{Name: "query", Kind: "string"}},
+	"preplayqueue":   {{Name: "mediaID", Kind: "string"}},
 	"searchresult":   {searchModeArgument(), {Name: "query", Kind: "string", Optional: true}},
 	"sourceitems":    sourceArguments(),
 }
@@ -472,6 +483,9 @@ type deleteLibraryResult struct{}
 // (CORE-1201): execute() assigns data["restoreLibrary"] = true, so like
 // deleteLibraryResult it carries no nested fields.
 type restoreLibraryResult struct{}
+
+// deleteWebhookResult models the boolean-leaf webhook removal (CORE-1697).
+type deleteWebhookResult struct{}
 
 // registerImportSourceResult models the scalar-result import-token mutation
 // (apple ADR-0003 §3, POWERTOOLS-6B): execute() assigns data["registerImportSource"]

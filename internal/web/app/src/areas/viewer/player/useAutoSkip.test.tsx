@@ -56,6 +56,23 @@ describe("useAutoSkip", () => {
     );
   });
 
+  // CORE-1659: markers are song seconds; a stream second covers songScale of them.
+  it("compares song time and seeks in stream time under a tempo", () => {
+    const credits: PlaybackMarker[] = [
+      { title: "Credits", startSeconds: 40, endSeconds: 60, segmentKind: "credits" },
+    ];
+    const { video, view } = setup({ markers: credits, songScale: 1.25 });
+    tick(video, 30); // song 37.5: before the segment
+    expect(video.currentTime).toBe(30);
+    tick(video, 34); // song 42.5: inside it
+    expect(video.currentTime).toBe(48); // song 60
+    expect(view.result.current.skipped).toEqual(
+      expect.objectContaining({ segmentKind: "credits", endSeconds: 60 }),
+    );
+    act(() => view.result.current.undo());
+    expect(video.currentTime).toBe(32); // song 40
+  });
+
   it("does not seek when the matching pref is off", () => {
     const { video, view } = setup({ prefs: { intro: false, recap: true, credits: true } });
     tick(video, 10);

@@ -425,8 +425,9 @@ func (e *eventOutboxReadError) Unwrap() error {
 //     playback), that Media is reveal-filtered through the subscriber's live
 //     filter exactly like a created/updated event — a command for restricted
 //     Media never reaches an unrevealed subscriber, so the transport channel is
-//     not a reveal side-channel. A command with no Media (none resolved at issue
-//     time) skips the Media read and rides only the Profile gate.
+//     not a reveal side-channel. Each entry of playingMediaIDs (the receiver's
+//     anchor set) is filtered the same way. A command with no Media (none
+//     resolved at issue time) skips the Media read and rides only the Profile gate.
 func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, profileID store.ProfileID, filter store.LibraryFilter) bool {
 	if event.AggregateType == store.OutboxAggregateSession {
 		var payload store.SessionControlPayload
@@ -439,27 +440,42 @@ func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, pr
 		if profileID == "" || payload.ProfileID != profileID {
 			return false
 		}
-		if payload.MediaID == "" {
-			return true
+		// Every Media the command names, the receiver's anchor set included,
+		// must be visible to this subscriber: one hidden entry withholds it.
+		named := payload.PlayingMediaIDs
+		if payload.MediaID != "" {
+			named = append([]store.MediaID{payload.MediaID}, named...)
 		}
-		if _, err := s.events.Media(ctx, payload.MediaID, filter); err != nil {
-			return false
+		for _, mediaID := range named {
+			if _, err := s.events.Media(ctx, mediaID, filter); err != nil {
+				return false
+			}
 		}
 		return true
 	}
 	if event.AggregateType == store.OutboxAggregateGroup {
-		// Group Conductor sync signals are Profile-gated only — the
-		// group is same-Profile by construction (formed within one Profile, every
-		// member same-Profile) and the signal carries a queue position/anchor, not
-		// a Media identity to reveal-filter. A different-Profile subscriber — or a
-		// non-Profile context (admin token / unbound scoped key) — never observes
-		// the signal, so multi-room sync can never cross a Profile boundary. This
-		// is the §7 same-Profile gate the §8 channel reuses, fail-closed.
+		// Group Conductor sync signals are Profile-gated: each row names one
+		// Profile (a Watch Party writes one row per member Profile, CORE-1677),
+		// and a different-Profile subscriber — or a non-Profile context (admin
+		// token / unbound scoped key) — never observes it, so multi-room sync can
+		// never cross a Profile boundary. This is the §7 same-Profile gate the §8
+		// channel reuses, fail-closed. A signal whose anchor names a Media item is
+		// also reveal-filtered like a session-control command, so an unrevealed
+		// session on a member Profile never learns a restricted item's identity.
 		var payload store.GroupSyncPayload
 		if err := json.Unmarshal(event.Payload, &payload); err != nil {
 			return false // malformed payload — fail closed, never over-deliver
 		}
-		return profileID != "" && payload.ProfileID == profileID
+		if profileID == "" || payload.ProfileID != profileID {
+			return false
+		}
+		if payload.Item == "" {
+			return true
+		}
+		if _, err := s.events.Media(ctx, payload.Item, filter); err != nil {
+			return false
+		}
+		return true
 	}
 	if event.AggregateType == store.OutboxAggregateExtension {
 		// Parental extension-request outcome (ADR-0039 §2.3 step 6) is Profile-gated

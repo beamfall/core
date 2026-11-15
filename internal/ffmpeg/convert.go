@@ -28,6 +28,21 @@ type ConvertProfile struct {
 	// AudioOnly drops the video stream entirely (-vn), for audio extraction
 	// presets writing to an audio container.
 	AudioOnly bool
+	// MaxHeight caps the output height in lines, never upscaling and keeping
+	// the aspect ratio; 0 keeps the source size.
+	MaxHeight int
+	// MaxVideoKbps caps the video bitrate (-maxrate, with a two-second
+	// buffer); 0 leaves it to the CRF.
+	MaxVideoKbps int
+	// AudioKbps sets the audio bitrate; 0 leaves the encoder default.
+	AudioKbps int
+	// Stereo downmixes audio to two channels.
+	Stereo bool
+	// NoSubtitles drops subtitle streams, which an MP4 cannot always carry.
+	NoSubtitles bool
+	// FastStart moves the MP4 index to the front so playback can start before
+	// the whole file is read.
+	FastStart bool
 }
 
 // convertProfiles is the fixed catalog of conversion presets. A conversion
@@ -38,6 +53,31 @@ var convertProfiles = map[string]ConvertProfile{
 	"h264-mp4": {Name: "h264-mp4", Container: "mp4", VideoCodec: "libx264", AudioCodec: "aac", CRF: 23},
 	"hevc-mp4": {Name: "hevc-mp4", Container: "mp4", VideoCodec: "libx265", AudioCodec: "aac", CRF: 28},
 	"aac-m4a":  {Name: "aac-m4a", Container: "m4a", AudioCodec: "aac", AudioOnly: true},
+}
+
+// packProfiles is the fixed catalog of offline pack download presets: H.264/AAC
+// MP4 bounded in height and bitrate so a download fits a phone. They are kept
+// apart from convertProfiles because a conversion replaces the Library file,
+// while a pack transcode only ever writes a temporary copy.
+var packProfiles = map[string]ConvertProfile{
+	"pack-1080p": packProfile("pack-1080p", 1080, 21, 8000, 192),
+	"pack-720p":  packProfile("pack-720p", 720, 22, 4000, 160),
+	"pack-480p":  packProfile("pack-480p", 480, 23, 1500, 128),
+}
+
+func packProfile(name string, height, crf, videoKbps, audioKbps int) ConvertProfile {
+	return ConvertProfile{
+		Name: name, Container: "mp4", VideoCodec: "libx264", AudioCodec: "aac", CRF: crf,
+		MaxHeight: height, MaxVideoKbps: videoKbps, AudioKbps: audioKbps,
+		Stereo: true, NoSubtitles: true, FastStart: true,
+	}
+}
+
+// PackProfileByName resolves a named offline pack preset, reporting whether it
+// exists.
+func PackProfileByName(name string) (ConvertProfile, bool) {
+	p, ok := packProfiles[name]
+	return p, ok
 }
 
 // ConvertProfileByName resolves a named preset, reporting whether it exists.
@@ -65,6 +105,7 @@ func (p ConvertProfile) encodeArgs() []string {
 		}
 		if codec != "copy" {
 			args = append(args, "-pix_fmt", "yuv420p")
+			args = append(args, p.boundArgs()...)
 		}
 	}
 	audio := p.AudioCodec
@@ -72,6 +113,35 @@ func (p ConvertProfile) encodeArgs() []string {
 		audio = "copy"
 	}
 	args = append(args, "-c:a", audio)
+	if audio != "copy" {
+		if p.AudioKbps > 0 {
+			args = append(args, "-b:a", strconv.Itoa(p.AudioKbps)+"k")
+		}
+		if p.Stereo {
+			args = append(args, "-ac", "2")
+		}
+	}
+	if p.NoSubtitles {
+		args = append(args, "-sn")
+	}
+	if p.FastStart {
+		args = append(args, "-movflags", "+faststart")
+	}
+	return args
+}
+
+// boundArgs caps a re-encode's height and bitrate. The height is held even,
+// as yuv420p requires, and never exceeds the source's.
+func (p ConvertProfile) boundArgs() []string {
+	var args []string
+	if p.MaxHeight > 0 {
+		height := strconv.Itoa(p.MaxHeight)
+		args = append(args, "-vf", "scale=-2:trunc(min(ih\\,"+height+")/2)*2")
+	}
+	if p.MaxVideoKbps > 0 {
+		args = append(args, "-maxrate", strconv.Itoa(p.MaxVideoKbps)+"k",
+			"-bufsize", strconv.Itoa(2*p.MaxVideoKbps)+"k")
+	}
 	return args
 }
 

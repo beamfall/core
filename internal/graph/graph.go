@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -20,6 +21,7 @@ import (
 	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/conductor"
 	"github.com/beamfall/core/internal/config"
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/integrationhost"
 	"github.com/beamfall/core/internal/manifest"
@@ -36,6 +38,28 @@ import (
 type ServerInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	// PlaybackAdjustments advertises the pitch shift and tempo ranges
+	// playback info accepts.
+	PlaybackAdjustments PlaybackAdjustmentRanges `json:"playbackAdjustments"`
+}
+
+// PlaybackAdjustmentRanges is the accepted range of each playback adjustment
+// field: a pitch shift in whole semitones and a tempo factor, both inclusive.
+type PlaybackAdjustmentRanges struct {
+	PitchShiftSemitonesMin int     `json:"pitchShiftSemitonesMin"`
+	PitchShiftSemitonesMax int     `json:"pitchShiftSemitonesMax"`
+	TempoMin               float64 `json:"tempoMin"`
+	TempoMax               float64 `json:"tempoMax"`
+}
+
+// playbackAdjustmentRanges reports the ranges the encoder accepts.
+func playbackAdjustmentRanges() PlaybackAdjustmentRanges {
+	return PlaybackAdjustmentRanges{
+		PitchShiftSemitonesMin: ffmpeg.MinPitchShiftSemitones,
+		PitchShiftSemitonesMax: ffmpeg.MaxPitchShiftSemitones,
+		TempoMin:               ffmpeg.MinTempo,
+		TempoMax:               ffmpeg.MaxTempo,
+	}
 }
 
 // serverVersion is the running server version reported by ServerInfo and used
@@ -300,6 +324,7 @@ type Options struct {
 	PlaybackCache                PlaybackCacheController
 	Governor                     GovernorStatusProvider
 	FeedSearcher                 FeedSearcher
+	PrePlayPolicy                PrePlayPolicy
 	AssetSweep                   func(context.Context)
 	SubscriptionSecrets          SubscriptionSecretStore
 	ScraperCredentialStore       ScraperCredentialStore
@@ -329,6 +354,10 @@ type Options struct {
 
 // Handler serves the GraphQL HTTP endpoint.
 type Handler struct {
+	// partyMu serializes Watch Party timeline moves with their fan-out
+	// (graph_watchparty.go partyTransition).
+	partyMu sync.Mutex
+
 	manifest        *manifest.Service
 	auth            *auth.Service
 	store           *store.Store
@@ -362,6 +391,7 @@ type Handler struct {
 	jobRunner       JobRunner
 	governor        GovernorStatusProvider
 	feedSearcher    FeedSearcher
+	prePlayPolicy   PrePlayPolicy
 	// playbackCache wires the precomputed-playback-rendition cache controls:
 	// explicit operator generation, on-demand eviction, and the
 	// cache-health snapshot the Console surfaces. Nil (the default) reports the
@@ -501,6 +531,9 @@ type Handler struct {
 	// composition time, so graph stays domain-agnostic — it only builds, lists,
 	// revokes, and mints grants for opaque (kind, ref) targets.
 	offlinePacks OfflinePackService
+	// webhooks is the console webhook manager (CORE-1697). Nil means the build
+	// has none, so the webhook fields report it unavailable.
+	webhooks WebhookAdmin
 }
 
 // OfflinePackService is the consumer-side seam for the Offline Pack substrate
@@ -636,6 +669,7 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.playbackCache = o.PlaybackCache
 	h.governor = o.Governor
 	h.feedSearcher = o.FeedSearcher
+	h.prePlayPolicy = o.PrePlayPolicy
 	h.assetSweep = o.AssetSweep
 	h.subscriptionSecrets = o.SubscriptionSecrets
 	h.scraperCredentials = o.ScraperCredentialStore
@@ -4903,6 +4937,8 @@ var queryFields = map[string]bool{
 	"semanticcapability":     true,
 	"searchentities":         true,
 	"searchfeeds":            true,
+	"preplayqueue":           true, // CORE-1701: items to play before a feature
+	"preplayclips":           true, // CORE-1701: the Owner's pre-play clip list
 	"media":                  true,
 	"trashlist":              true,
 	"tags":                   true,
@@ -4946,6 +4982,9 @@ var queryFields = map[string]bool{
 	"profilesessions":        true,
 	"libraryhealth":          true,
 	"trashedlibraries":       true, // CORE-1201: deleted Libraries that can still be restored
+	"webhooks":               true, // CORE-1697: console-managed outbound notification endpoints
+	"webhookdeliveries":      true, // CORE-1697: webhook delivery log
+	"webhooksettings":        true, // CORE-1697: shared webhook options and choices
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -5096,6 +5135,10 @@ var mutationFields = map[string]bool{
 	"deletelibrary":                      true,
 	"restorelibrary":                     true,
 	"purgelibrary":                       true,
+	"savewebhook":                        true, // CORE-1697: add or edit a webhook endpoint
+	"deletewebhook":                      true, // CORE-1697: remove a webhook endpoint
+	"testwebhook":                        true, // CORE-1697: send one test notification
+	"setwebhooksettings":                 true, // CORE-1697: save shared webhook options
 	"scanlibrary":                        true,
 	"addsubscription":                    true,
 	"removesubscription":                 true,
@@ -5196,6 +5239,7 @@ var mutationFields = map[string]bool{
 	// ENR-7 (ADR-0048 Decision 3/6): operator write of the per-Library
 	// skip-detection toggle (resolver in graph_skipdetect.go).
 	"setskipdetectionenabled": true,
+	"setpreplayclips":         true,
 	// Encrypted-Library key model: provision the DEK +
 	// three wraps (Recovery Key once), and the Sealed/Unsealed lifecycle.
 	"provisionencryptedlibrary": true,
@@ -5247,6 +5291,14 @@ var adminFields = map[string]bool{
 	"restorelibrary":         true,
 	"purgelibrary":           true,
 	"scanlibrary":            true,
+	// Webhooks (CORE-1697): endpoint URLs and secrets are owner configuration.
+	"webhooks":           true,
+	"webhookdeliveries":  true,
+	"webhooksettings":    true,
+	"savewebhook":        true,
+	"deletewebhook":      true,
+	"testwebhook":        true,
+	"setwebhooksettings": true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as
 	// — only the native Companion authority can register a source token or import.
@@ -5385,6 +5437,8 @@ var adminFields = map[string]bool{
 	// 3/6 — Admin Session, the same tier as setLibraryAIIndexing).
 	"skipdetectionenabled":    true,
 	"setskipdetectionenabled": true,
+	"preplayclips":            true, // CORE-1701: the Owner's pre-play clip list
+	"setpreplayclips":         true,
 }
 
 // scopedFields are the top-level fields that need an authenticated session

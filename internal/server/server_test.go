@@ -757,7 +757,7 @@ func TestGraphQLRoute(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	var resp struct {
-		Data map[string]map[string]string `json:"data"`
+		Data map[string]map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode GraphQL response: %v", err)

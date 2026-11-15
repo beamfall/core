@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -160,9 +161,13 @@ type packBuildSource struct {
 	selectedVersion string
 	size            uint64
 	storageSize     int64
+	// transcode marks a video item to transcode before hashing; after the
+	// transcode, path names the temporary MP4 in the pack directory.
+	transcode  bool
+	transcoded bool
 }
 
-func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, selectedVersions map[store.MediaID]string) ([]packBuildSource, uint64, error) {
+func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID, visible map[store.MediaID]store.Media, filter store.LibraryFilter, selectedVersions map[store.MediaID]string, quality string) ([]packBuildSource, error) {
 	sources := make([]packBuildSource, 0, len(ids))
 	var total uint64
 	for _, id := range ids {
@@ -170,34 +175,107 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		if !ok {
 			continue
 		}
-		if media.Class != store.MediaClassAudio {
-			return nil, 0, errors.New("offline pack launch scope is audio-only")
+		if media.Class != store.MediaClassAudio && media.Class != store.MediaClassVideo {
+			return nil, errors.New("offline pack supports audio and video Media only")
+		}
+		transcode := media.Class == store.MediaClassVideo && quality != QualityOriginal
+		if transcode && s.encrypted != nil && s.encrypted(media.LibraryID) {
+			return nil, errors.New("offline pack cannot transcode Media in an encrypted Library")
 		}
 		file, err := s.selectedVersionFile(ctx, id, filter, selectedVersions[id])
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
-		size, err := s.catalogPlaintextSize(media.LibraryID, file)
+		source := packBuildSource{
+			mediaID: id, libraryID: media.LibraryID, path: file.Path,
+			selectedVersion: file.VersionLabel, transcode: transcode,
+		}
+		if !transcode {
+			// Fail before any transcode work when original bytes already break
+			// a bound; checkBuildBytes re-checks the final set.
+			size, err := s.catalogPlaintextSize(media.LibraryID, file)
+			if err != nil {
+				return nil, err
+			}
+			if size > MaxItemSize {
+				return nil, errors.New("offline pack item exceeds size bound")
+			}
+			if size > s.buildByteBudget-total {
+				return nil, errors.New("offline pack exceeds cumulative byte budget")
+			}
+			total += size
+			source.size = size
+		}
+		sources = append(sources, source)
+	}
+	return sources, nil
+}
+
+// transcodeSources replaces each marked source with its transcode in packDir
+// and records the transcoded size.
+func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSource, packDir, quality string) error {
+	for i := range sources {
+		if !sources[i].transcode {
+			continue
+		}
+		if s.transcode == nil {
+			return errors.New("offline pack transcoder is not configured")
+		}
+		dst := filepath.Join(packDir, fmt.Sprintf("%04d.src.mp4", i))
+		if err := s.transcode(ctx, sources[i].path, dst, quality); err != nil {
+			_ = os.Remove(dst)
+			// A transcoder may flatten a cancellation into its own error. Keep
+			// shutdown and preemption visible so the job yields and reruns under
+			// the same pack ID instead of failing.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return fmt.Errorf("offline pack transcode interrupted: %w", ctxErr)
+			}
+			return fmt.Errorf("offline pack transcode: %w", err)
+		}
+		sources[i].path = dst
+		sources[i].transcoded = true
+		info, err := os.Stat(dst)
 		if err != nil {
-			return nil, 0, err
+			return err
 		}
+		size := info.Size()
+		if size <= 0 {
+			return errors.New("offline pack transcode produced no bytes")
+		}
+		sources[i].size = uint64(size)
+	}
+	return nil
+}
+
+// checkBuildBytes applies the per-item bound and the build byte budget to the
+// bytes that will be sealed, and fills each source's signed storage size.
+func (s *Service) checkBuildBytes(sources []packBuildSource) (uint64, error) {
+	var total uint64
+	for i := range sources {
+		size := sources[i].size
 		if size > MaxItemSize {
-			return nil, 0, errors.New("offline pack item exceeds size bound")
+			return 0, errors.New("offline pack item exceeds size bound")
+		}
+		if size > s.buildByteBudget-total {
+			return 0, errors.New("offline pack exceeds cumulative byte budget")
 		}
 		storageSize, err := uint64ToInt64(size)
 		if err != nil {
-			return nil, 0, err
+			return 0, err
 		}
-		if size > s.buildByteBudget-total {
-			return nil, 0, errors.New("offline pack exceeds cumulative byte budget")
-		}
+		sources[i].storageSize = storageSize
 		total += size
-		sources = append(sources, packBuildSource{
-			mediaID: id, libraryID: media.LibraryID, path: file.Path,
-			selectedVersion: file.VersionLabel, size: size, storageSize: storageSize,
-		})
 	}
-	return sources, total, nil
+	return total, nil
+}
+
+// removeTranscodes deletes the temporary transcodes once they are sealed.
+func removeTranscodes(sources []packBuildSource) {
+	for _, source := range sources {
+		if source.transcoded {
+			_ = os.Remove(source.path)
+		}
+	}
 }
 
 func (s *Service) catalogPlaintextSize(libraryID store.LibraryID, file store.MediaFile) (uint64, error) {
@@ -258,12 +336,27 @@ func packExpiry(now time.Time, requested *time.Time) (time.Time, error) {
 	return expiry, nil
 }
 
-func newOfflinePackID() (store.OfflinePackID, error) {
+// NewPackID returns a fresh random Offline Pack ID.
+func NewPackID() (store.OfflinePackID, error) {
 	var value [16]byte
 	if _, err := io.ReadFull(rand.Reader, value[:]); err != nil {
 		return "", err
 	}
 	return store.OfflinePackID("offline-pack-" + fmt.Sprintf("%x", value[:])), nil
+}
+
+// ValidPackID reports whether id has the shape NewPackID produces.
+func ValidPackID(id store.OfflinePackID) bool {
+	hex, ok := strings.CutPrefix(string(id), "offline-pack-")
+	if !ok || len(hex) != 32 {
+		return false
+	}
+	for _, c := range hex {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func packRevocations(pack store.OfflinePack) RevocationGenerations {

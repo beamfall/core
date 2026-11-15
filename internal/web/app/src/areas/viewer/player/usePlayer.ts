@@ -7,11 +7,13 @@ import {
   fetchPlaybackInfo,
   hlsStreamOf,
   isRevealTerminalStatus,
+  type PlaybackAdjustment,
   type PlaybackInfo,
   type PlaybackMessageAction,
   type PlaybackRendition,
   type PlaybackStream,
   serverErrorReason,
+  songSecondsPerStreamSecond,
   type UnavailableReasonMessages,
   unavailableReason,
 } from "../lib/playback";
@@ -21,6 +23,7 @@ import {
   resumePositionFromInfo,
   type TrickplayManifest,
 } from "../lib/transport";
+import { remoteHoldsAutoplay, remotePlayStateMark } from "../remote/remoteControl";
 import {
   freshRecoveryBudget,
   HLS_FRAG_LOAD_ERROR,
@@ -44,6 +47,10 @@ export interface PlayerState {
   /** A reveal-terminal block (relocked/hidden/expired) — offers a Back affordance. */
   terminal: boolean;
   info: PlaybackInfo | null;
+  /** The Media that info came from. Right after a route change the page renders
+   *  once with the previous Media's state, so info describes another Media
+   *  whenever this differs from the one asked for. */
+  mediaID?: string;
   /** The stream the engine is playing now. */
   stream: PlaybackStream | null;
   /** The whole stream inventory of the playback info (direct play plus the
@@ -67,12 +74,17 @@ export interface PlayerState {
   action?: PlaybackMessageAction;
   /** The server's own reason for a refused request, shown under the message. */
   detail?: string;
+  /** The key and tempo this load asked playback-info for (CORE-1659); the
+   *  echo in info.adjustment says whether the server applied them. */
+  adjustment?: PlaybackAdjustment;
   /** Monotonic counter bumped when the live hls.js track set changes; lets the
    *  transport re-derive its audio/subtitle menus off the live tracks. */
   tracksVersion: number;
 }
 
 const REPORT_INTERVAL_MS = 15000;
+/** The song as recorded: no pitch shift, the recorded tempo. */
+export const DEFAULT_ADJUSTMENT: PlaybackAdjustment = { pitchShiftSemitones: 0, tempo: 1 };
 const REPORT_PLAYBACK_MUTATION =
   "mutation ReportPlayback($mediaID: ID!, $positionSeconds: Int!, $durationSeconds: Int!, $finished: Boolean!, $eventTimeMS: Int!) { reportPlayback(mediaID: $mediaID, positionSeconds: $positionSeconds, durationSeconds: $durationSeconds, finished: $finished, eventTimeMS: $eventTimeMS) { mediaID } }";
 let lastPlaybackEventTimeMS = 0;
@@ -260,7 +272,7 @@ function streamOfKind(info: PlaybackInfo, kind: string | undefined): PlaybackStr
 type Engine = "hlsjs" | "native" | "unsupported";
 
 /** The engine that plays `stream` in this browser. */
-function engineFor(video: HTMLVideoElement, stream: PlaybackStream): Engine {
+export function engineFor(video: HTMLVideoElement, stream: PlaybackStream): Engine {
   if (stream.kind !== "hls") return "native";
   const nativeHLS = video.canPlayType("application/vnd.apple.mpegurl");
   const hlsJsOK = Hls.isSupported();
@@ -354,9 +366,12 @@ export function usePlayer(
     /** The stream stops before the item's end: the file is truncated or damaged. */
     sourceEndsEarly?: string;
   } & UnavailableReasonMessages,
-  startAtSeconds = 0,
+  /** Where to open, in seconds; undefined resumes from saved progress. */
+  startAtSeconds?: number,
   /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
   nextMediaID?: string,
+  /** The Version id the viewer picked for this Media (CORE-1676); "" lets the server choose. */
+  selectedVersion = "",
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -372,6 +387,10 @@ export function usePlayer(
   // for this mediaID and never restarts playback on its own.
   const nextMediaIDRef = useRef(nextMediaID);
   nextMediaIDRef.current = nextMediaID;
+  // Also a ref: a new pick reloads through retry(), so the reload resumes at
+  // the playhead, and a renewed token keeps the Version that is playing.
+  const selectedVersionRef = useRef(selectedVersion);
+  selectedVersionRef.current = selectedVersion;
   // Bound by the load effect once a stream is attached.
   const switchRef = useRef<((renditionKey?: string) => SwitchResult) | null>(null);
   const switchToHls = useCallback(
@@ -379,14 +398,50 @@ export function usePlayer(
     [],
   );
 
-  // The last presented position, so Try again resumes where the viewer was
-  // rather than at the opening ?t= or server resume point (CORE-1364).
+  // The last presented position in song seconds, so Try again resumes where
+  // the viewer was rather than at the opening ?t= or server resume point
+  // (CORE-1364).
   const lastPositionRef = useRef(0);
   const retryFromRef = useRef<{ mediaID: string; position: number } | null>(null);
   const retry = useCallback(() => {
     retryFromRef.current = { mediaID, position: lastPositionRef.current };
     setRetryKey((key) => key + 1);
   }, [mediaID]);
+  // A restart (another device's play-media for this Media) sets the player up
+  // afresh: a new progress queue and reporting timer, and an opening position
+  // that replaces any resume seek still waiting on metadata. An undefined
+  // position resumes from saved progress, as a fresh open does.
+  const restartRef = useRef<{ mediaID: string; at: number | undefined } | null>(null);
+  const restart = useCallback(
+    (atSeconds?: number) => {
+      retryFromRef.current = null;
+      restartRef.current = { mediaID, at: atSeconds };
+      setRetryKey((key) => key + 1);
+    },
+    [mediaID],
+  );
+
+  // The key and tempo asked for this Media (CORE-1659); another Media starts
+  // as recorded. A ref feeds the load effect, which a change re-runs.
+  const [requested, setRequested] = useState<{
+    mediaID: string;
+    adjustment: PlaybackAdjustment;
+  } | null>(null);
+  const adjustment = requested?.mediaID === mediaID ? requested.adjustment : DEFAULT_ADJUSTMENT;
+  const adjustmentRef = useRef(adjustment);
+  adjustmentRef.current = adjustment;
+  // Song seconds per stream second of the stream playing now: the tempo the
+  // server applied. Progress reports and the resume point stay in song time.
+  const songScaleRef = useRef(1);
+  // Restarts the stream with a new key or tempo at the same song position.
+  const adjust = useCallback(
+    (next: PlaybackAdjustment) => {
+      retryFromRef.current = { mediaID, position: lastPositionRef.current };
+      setRequested({ mediaID, adjustment: next });
+      setRetryKey((key) => key + 1);
+    },
+    [mediaID],
+  );
 
   const destroyHls = useCallback(() => {
     if (hlsRef.current) {
@@ -416,10 +471,11 @@ export function usePlayer(
       const eventTimeMS = nextPlaybackEventTimeMS();
       const queue = progressQueueRef.current;
       if (!queue) return;
+      const songScale = songScaleRef.current;
       enqueueProgress(queue, {
         mediaID,
-        positionSeconds: Math.floor(position),
-        durationSeconds: Math.floor(video.duration),
+        positionSeconds: Math.floor(position * songScale),
+        durationSeconds: Math.floor(video.duration * songScale),
         finished,
         eventTimeMS,
       });
@@ -464,11 +520,20 @@ export function usePlayer(
       identitySignal?.addEventListener("abort", stopForIdentityChange, { once: true });
     }
     const msg = messagesRef.current;
+    // A pause sent from another device after this load began, or after
+    // playback last started (here or remotely), holds this load's own starts,
+    // reloads (recovery, a renewed token) included.
+    let startMark = remotePlayStateMark();
     setState(emptyState());
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
     retryFromRef.current = null;
+    const restartFrom = restartRef.current?.mediaID === mediaID ? restartRef.current : null;
+    restartRef.current = null;
+    const startAt = restartFrom ? restartFrom.at : startAtSeconds;
     lastPositionRef.current = retryFrom;
     presentedPositionRef.current = null;
+    const requestedAdjustment = adjustmentRef.current;
+    songScaleRef.current = 1;
     // Listeners bound to the <video> for the whole load (not one engine).
     const videoListeners: Array<[string, () => void]> = [];
 
@@ -557,7 +622,12 @@ export function usePlayer(
       const markersRequest = fetchPlaybackMarkers(mediaID).catch((): PlaybackMarker[] => []);
       let info: PlaybackInfo;
       try {
-        info = await fetchPlaybackInfo(mediaID, nextMediaIDRef.current);
+        info = await fetchPlaybackInfo(
+          mediaID,
+          nextMediaIDRef.current,
+          requestedAdjustment,
+          selectedVersionRef.current,
+        );
       } catch (err) {
         if (!alive) return;
         if (!(err instanceof ApiError) && offline) {
@@ -583,6 +653,11 @@ export function usePlayer(
       const video = videoRef.current;
       if (!video) return;
       boundVideo = video;
+      // Stream seconds are song seconds divided by the applied tempo (CORE-1658).
+      // A renewal may come back with another tempo (or none), so this changes
+      // with the stream actually playing.
+      let songScale = songSecondsPerStreamSecond(info);
+      songScaleRef.current = songScale;
 
       // The playhead: the native resume point not yet applied, else the
       // element's own position.
@@ -605,10 +680,15 @@ export function usePlayer(
       };
       const onTimeUpdate = () => {
         if (pendingNativeResume === 0 && video.currentTime > 0) {
-          lastPositionRef.current = video.currentTime;
+          lastPositionRef.current = video.currentTime * songScale;
         }
       };
-      videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate]);
+      const onPlay = () => {
+        // The play event is queued: one from before a remote pause fires after
+        // that pause has applied, and a paused element has not started.
+        if (!video.paused) startMark = remotePlayStateMark();
+      };
+      videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate], ["play", onPlay]);
       for (const [type, listener] of videoListeners) video.addEventListener(type, listener);
 
       // HLS streams (server transcode and direct-stream audio-copy) need the
@@ -666,11 +746,17 @@ export function usePlayer(
         renegotiating = true;
         renegotiatedSinceProgress = true;
         const kind = activeStream.kind;
-        const position = playheadPosition();
+        // In song seconds: the renewed stream may apply another tempo, or none.
+        const songPosition = playheadPosition() * songScale;
         setRecovering(true);
         // The refresh replaces info, so it declares the same next item: Up Next
         // and auto-advance survive a renewed token.
-        void fetchPlaybackInfo(mediaID, nextMediaIDRef.current)
+        void fetchPlaybackInfo(
+          mediaID,
+          nextMediaIDRef.current,
+          requestedAdjustment,
+          selectedVersionRef.current,
+        )
           .then((refreshed) => {
             if (!alive) return;
             const fresh = streamOfKind(refreshed, kind);
@@ -682,7 +768,9 @@ export function usePlayer(
             }
             info = refreshed;
             activeStream = fresh;
-            reload(fresh, position);
+            songScale = songSecondsPerStreamSecond(refreshed);
+            songScaleRef.current = songScale;
+            reload(fresh, songPosition / songScale);
             // The refreshed info only renews the token: its decision may still name
             // the direct play this session switched away from, so the details keep
             // the decision of the stream actually playing.
@@ -714,6 +802,7 @@ export function usePlayer(
       ) => {
         const useHlsJs = engine === "hlsjs";
         const streamURL = target.url ?? "";
+        const shouldPlay = () => options.play && !remoteHoldsAutoplay(mediaID, startMark);
         // hls.js takes the resume point as its startPosition and loads (and
         // seeks to) it directly; only the native <video src> route seeks on
         // metadata, so a resumed HLS session never fetches from 0 first.
@@ -903,7 +992,7 @@ export function usePlayer(
           hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, bumpTracks);
           hls.loadSource(streamURL);
           hls.attachMedia(video);
-          if (options.play) void video.play().catch(() => {});
+          if (shouldPlay()) void video.play().catch(() => {});
         } else {
           // Fail-closed unsupported-codec state (ADR-0084 §Amendment A): the
           // native <video src> route (direct-play, direct-stream, native HLS) is
@@ -970,7 +1059,7 @@ export function usePlayer(
           video.addEventListener("error", videoErrorHandler);
           video.src = streamURL;
           videoCanPlayHandler = () => {
-            if (alive && options.play) {
+            if (alive && shouldPlay()) {
               void video.play().catch(() => {});
             }
           };
@@ -1026,19 +1115,17 @@ export function usePlayer(
       };
       switchRef.current = switchToHls;
 
+      // The opening song position, as a stream position.
       const opening =
-        retryFrom > 0
-          ? retryFrom
-          : startAtSeconds > 0
-            ? startAtSeconds
-            : resumePositionFromInfo(info);
-      attachEngine(stream, initialEngine, opening, { play: true });
+        retryFrom > 0 ? retryFrom : startAt !== undefined ? startAt : resumePositionFromInfo(info);
+      attachEngine(stream, initialEngine, opening / songScale, { play: true });
 
       setState({
         phase: "playing",
         message: "",
         terminal: false,
         info,
+        mediaID,
         stream,
         streams: info.streams ?? [],
         decision,
@@ -1049,6 +1136,7 @@ export function usePlayer(
         recovering: false,
         waitingForNetwork: offline,
         tracksVersion: 0,
+        adjustment: requestedAdjustment,
       });
 
       // Applied only while still playing: a terminal or message state must not
@@ -1137,7 +1225,7 @@ export function usePlayer(
     };
   }, [reportProgress, stopProgressReporting]);
 
-  return { videoRef, hlsRef, state, retry, switchToHls };
+  return { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust };
 }
 
 interface TrackPreferences {

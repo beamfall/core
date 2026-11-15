@@ -19,16 +19,23 @@ import {
 // through Undo's seek back into the segment — until the playhead genuinely
 // leaves the segment's range without Undo being pressed again. A `mediaID`
 // change (new Media loaded) always clears the guard.
+//
+// Markers are in song seconds. Under an applied tempo (CORE-1659) a stream
+// second covers `songScale` song seconds, so the playhead is compared in song
+// time and every seek converts back to stream time.
 export function useAutoSkip({
   videoRef,
   markers,
   mediaID,
   prefs,
+  songScale = 1,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   markers: PlaybackMarker[];
   mediaID: string;
   prefs: AutoSkipPrefs;
+  /** Song seconds per stream second: the tempo the server applied; 1 when none. */
+  songScale?: number;
 }): {
   skipped: AutoSkipSegment | null;
   undo: () => void;
@@ -44,6 +51,8 @@ export function useAutoSkip({
   markersRef.current = markers;
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+  const songScaleRef = useRef(1);
+  songScaleRef.current = songScale > 0 && Number.isFinite(songScale) ? songScale : 1;
 
   // A new Media re-arms everything.
   useEffect(() => {
@@ -66,7 +75,7 @@ export function useAutoSkip({
     // immediately re-trigger the auto-skip we're trying to undo.
     suppressedKeyRef.current = autoSkipSegmentKey(segment);
     ignoreNextTickRef.current = true;
-    video.currentTime = segment.startSeconds;
+    video.currentTime = segment.startSeconds / songScaleRef.current;
     setSkipped(null);
   }, [videoRef]);
 
@@ -79,7 +88,12 @@ export function useAutoSkip({
         ignoreNextTickRef.current = false;
         return;
       }
-      const segment = autoSkipSegmentAt(markersRef.current, video.currentTime, prefsRef.current);
+      const scale = songScaleRef.current;
+      const segment = autoSkipSegmentAt(
+        markersRef.current,
+        video.currentTime * scale,
+        prefsRef.current,
+      );
       if (!segment) {
         // A genuine exit-without-undo: the segment is no longer under us and
         // we didn't just seek it ourselves. Clear the guard so a later
@@ -92,7 +106,7 @@ export function useAutoSkip({
       suppressedKeyRef.current = key;
       undoSegmentRef.current = segment;
       ignoreNextTickRef.current = true;
-      video.currentTime = segment.endSeconds;
+      video.currentTime = segment.endSeconds / scale;
       setSkipped(segment);
     };
 

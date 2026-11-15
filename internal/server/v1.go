@@ -538,8 +538,12 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "sessionID is required")
 		return
 	}
-	if !store.SessionControlCommandValid(command) {
-		writeError(w, r, http.StatusBadRequest, "unknown transport command")
+	// The /v1 body carries no per-command arguments, so only the argument-free
+	// verbs (and skip-* with its default "next" direction) pass here; seek,
+	// set-volume, track selection, play-media and display-message answer 400
+	// naming the missing argument and are reached through GraphQL controlSession.
+	if _, err := store.ValidateSessionControlArgs(command, store.SessionControlArgs{}); err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -548,7 +552,11 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 		writeErrorCause(w, r, http.StatusInternalServerError, "sessions read failed", err)
 		return
 	}
+	// Every visible row's Media goes in the receiver's anchor set (a session
+	// holds tokens for a prefetched next item too); a hidden one is left out, so
+	// a receiver playing it refuses the command.
 	var target store.ActiveSession
+	var playing []store.MediaID
 	foundVisible := false
 	for _, activeSession := range active {
 		if activeSession.SessionID != sessionID {
@@ -560,22 +568,25 @@ func (s *Server) v1PlaybackControl(w http.ResponseWriter, r *http.Request) {
 		if activeSession.Title == "" {
 			continue
 		}
-		target = activeSession
-		foundVisible = true
-		break
+		if !foundVisible {
+			target = activeSession
+			foundVisible = true
+		}
+		playing = append(playing, activeSession.MediaID)
 	}
 	if !foundVisible {
 		writeError(w, r, http.StatusNotFound, "session not found")
 		return
 	}
 
+	payload, err := store.NewSessionControlPayload(command, store.SessionControlArgs{}, scope.DeviceID, target.ProfileID, target.MediaID)
+	if err != nil {
+		writeError(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+	payload.PlayingMediaIDs = playing
 	now := time.Now().UTC()
-	if err := s.v1.AppendSessionControlEventWithActivity(r.Context(), sessionID, store.SessionControlPayload{
-		Command:    command,
-		FromDevice: scope.DeviceID,
-		ProfileID:  target.ProfileID,
-		MediaID:    target.MediaID,
-	}, store.ActivityEntry{
+	if err := s.v1.AppendSessionControlEventWithActivity(r.Context(), sessionID, payload, store.ActivityEntry{
 		OccurredAt: now,
 		Action:     store.ActivitySessionControl,
 		// A scoped API key is the actor (APIKeyID). ProfileID anchors the row to

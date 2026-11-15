@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,82 @@ func TestConvertProfileEncodeArgs(t *testing.T) {
 	}
 }
 
+func TestPackProfilesBoundHeightAndBitrate(t *testing.T) {
+	cases := map[string][2]string{
+		"pack-1080p": {"scale=-2:trunc(min(ih\\,1080)/2)*2", "8000k"},
+		"pack-720p":  {"scale=-2:trunc(min(ih\\,720)/2)*2", "4000k"},
+		"pack-480p":  {"scale=-2:trunc(min(ih\\,480)/2)*2", "1500k"},
+	}
+	for name, want := range cases {
+		p, ok := PackProfileByName(name)
+		if !ok {
+			t.Fatalf("%s preset missing", name)
+		}
+		args := p.encodeArgs()
+		for _, pair := range [][2]string{
+			{"-c:v", "libx264"}, {"-vf", want[0]}, {"-maxrate", want[1]}, {"-c:a", "aac"},
+			{"-ac", "2"}, {"-movflags", "+faststart"},
+		} {
+			if !containsArgPair(args, pair[0], pair[1]) {
+				t.Fatalf("%s args = %v, missing %s %s", name, args, pair[0], pair[1])
+			}
+		}
+		if !contains(args, "-sn") {
+			t.Fatalf("%s args = %v, want subtitles dropped", name, args)
+		}
+	}
+	if _, ok := ConvertProfileByName("pack-720p"); ok {
+		t.Fatal("pack preset must not be a Library conversion preset")
+	}
+	if _, ok := PackProfileByName("h264-mp4"); ok {
+		t.Fatal("conversion preset must not be a pack preset")
+	}
+	plain, _ := ConvertProfileByName("h264-mp4")
+	for _, flag := range []string{"-vf", "-maxrate", "-b:a", "-ac", "-sn", "-movflags"} {
+		if contains(plain.encodeArgs(), flag) {
+			t.Fatalf("h264-mp4 args gained %s: %v", flag, plain.encodeArgs())
+		}
+	}
+}
+
+// TestConvertPackProfileRealBinary transcodes a synthesized 720-line clip with
+// the 480p pack preset and checks the output is 480 lines, never upscaled
+// beyond the source. Skipped when ffmpeg is not installed.
+func TestConvertPackProfileRealBinary(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed; skipping real-binary pack convert test")
+	}
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Skip("ffprobe not installed; skipping real-binary pack convert test")
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.mkv")
+	gen := exec.CommandContext(t.Context(), ffmpegPath, "-v", "error", // #nosec G204 -- resolved test binary, fixed args
+		"-f", "lavfi", "-i", "testsrc=size=1280x720:rate=10:duration=1",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+		"-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", "-t", "1", "-y", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Skipf("could not synthesize test clip (ffmpeg build lacks libx264/aac?): %v\n%s", err, out)
+	}
+	for name, wantHeight := range map[string]string{"pack-480p": "480", "pack-1080p": "720"} {
+		dst := filepath.Join(dir, name+".mp4")
+		preset, _ := PackProfileByName(name)
+		if err := New().Convert(context.Background(), src, dst, preset); err != nil {
+			t.Fatalf("Convert %s: %v", name, err)
+		}
+		out, err := exec.CommandContext(t.Context(), ffprobePath, "-v", "error", "-select_streams", "v:0", // #nosec G204 -- resolved test binary, fixed args
+			"-show_entries", "stream=height", "-of", "csv=p=0", dst).Output()
+		if err != nil {
+			t.Fatalf("ffprobe %s: %v", name, err)
+		}
+		if got := strings.TrimSpace(string(out)); got != wantHeight {
+			t.Fatalf("%s height = %q, want %s", name, got, wantHeight)
+		}
+	}
+}
+
 // TestConvertRealBinary is the real-binary acceptance for the convert seam: a
 // synthesized H.264 MKV clip converts to an MP4, the output exists, and the
 // source is left untouched (the store's trash step preserves it later). Skipped
@@ -47,7 +124,7 @@ func TestConvertRealBinary(t *testing.T) {
 	}
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.mkv")
-	gen := exec.Command(ffmpegPath, "-v", "error",
+	gen := exec.CommandContext(t.Context(), ffmpegPath, "-v", "error", // #nosec G204 -- resolved test binary, fixed args
 		"-f", "lavfi", "-i", "testsrc=size=160x120:rate=10:duration=1",
 		"-f", "lavfi", "-i", "sine=frequency=440:duration=1",
 		"-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", "-t", "1", "-y", src)

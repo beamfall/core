@@ -1,11 +1,13 @@
 import { Bell } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { fetchNotifications, markNotificationRead } from "@/lib/graphql";
 import type { NotificationInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { ViewerActions } from "../components/ViewerActions";
+import { getWatchParty, joinWatchParty } from "../player/watchPartyStore";
 
 const NOTIFICATION_INBOX_LIMIT = 100;
 const NOTIFICATIONS_CHANGED_EVENT = "beamfall:notifications-changed";
@@ -16,7 +18,9 @@ type TFunction = ReturnType<typeof useT>;
 // for clients that do not grant push or return to the app later.
 export function NotificationsPage() {
   const t = useT();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<NotificationInfo[]>([]);
+  const [joiningID, setJoiningID] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +73,27 @@ export function NotificationsPage() {
     }
   }
 
+  // Join a Watch Party from its invite (CORE-1677): accept, then open the
+  // player on the title the party is watching.
+  async function onJoinParty(notification: NotificationInfo) {
+    if (joiningID) return;
+    setError(null);
+    setJoiningID(notification.id);
+    const item = await joinWatchParty(notification.ref);
+    setJoiningID("");
+    if (!item) {
+      const party = getWatchParty();
+      setError(
+        party.error === "home-network"
+          ? t("watchPartyHomeNetworkOnly")
+          : t("watchPartyFailed", { reason: party.errorDetail }),
+      );
+      return;
+    }
+    if (!notification.read) void onMarkRead(notification.id);
+    navigate(`/watch/${encodeURIComponent(item)}`);
+  }
+
   const unreadCount = notifications.filter((row) => !row.read).length;
 
   return (
@@ -114,6 +139,8 @@ export function NotificationsPage() {
                   key={notification.id}
                   notification={notification}
                   onMarkRead={onMarkRead}
+                  joining={joiningID === notification.id}
+                  onJoinParty={onJoinParty}
                 />
               ))}
             </ul>
@@ -127,11 +154,20 @@ export function NotificationsPage() {
 function NotificationRow({
   notification,
   onMarkRead,
+  joining,
+  onJoinParty,
 }: {
   notification: NotificationInfo;
   onMarkRead: (id: string) => void;
+  joining: boolean;
+  onJoinParty: (notification: NotificationInfo) => void;
 }) {
   const t = useT();
+  // A host's own party sends it seek requests under the same kind; those are not invites.
+  const joinable =
+    notification.kind === "watch-party-invite" &&
+    notification.ref !== "" &&
+    !(getWatchParty().isHost && getWatchParty().partyID === notification.ref);
   return (
     <li className="settings-row flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 gap-3">
@@ -157,16 +193,18 @@ function NotificationRow({
           )}
         </div>
       </div>
-      {!notification.read && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="self-start sm:self-center"
-          onClick={() => onMarkRead(notification.id)}
-        >
-          {t("notificationsMarkRead")}
-        </Button>
-      )}
+      <div className="flex gap-2 self-start sm:self-center">
+        {joinable && (
+          <Button size="sm" disabled={joining} onClick={() => onJoinParty(notification)}>
+            {joining ? t("watchPartyJoining") : t("watchPartyJoin")}
+          </Button>
+        )}
+        {!notification.read && (
+          <Button variant="outline" size="sm" onClick={() => onMarkRead(notification.id)}>
+            {t("notificationsMarkRead")}
+          </Button>
+        )}
+      </div>
     </li>
   );
 }

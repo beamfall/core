@@ -353,6 +353,11 @@
       "tier": "session"
     },
     {
+      "field": "deletewebhook",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "devices",
       "effect": "read",
       "tier": "admin"
@@ -748,6 +753,16 @@
       "tier": "admin"
     },
     {
+      "field": "preplayclips",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "preplayqueue",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "profiles",
       "effect": "read",
       "tier": "session"
@@ -998,6 +1013,11 @@
       "tier": "session"
     },
     {
+      "field": "savewebhook",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "scanestimate",
       "effect": "read",
       "tier": "admin"
@@ -1153,6 +1173,11 @@
       "tier": "admin"
     },
     {
+      "field": "setpreplayclips",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "setprofilelibraries",
       "effect": "write",
       "tier": "admin"
@@ -1216,6 +1241,11 @@
       "field": "setwatchlisted",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "setwebhooksettings",
+      "effect": "write",
+      "tier": "admin"
     },
     {
       "field": "skipdetectionenabled",
@@ -1289,6 +1319,11 @@
     },
     {
       "field": "terminatesession",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "testwebhook",
       "effect": "write",
       "tier": "admin"
     },
@@ -1446,6 +1481,21 @@
       "field": "watchpartytransport",
       "effect": "write",
       "tier": "session"
+    },
+    {
+      "field": "webhookdeliveries",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "webhooks",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "webhooksettings",
+      "effect": "read",
+      "tier": "admin"
     }
   ],
   "nested": [
@@ -6153,6 +6203,10 @@
       ]
     },
     {
+      "field": "deletewebhook",
+      "kind": "object"
+    },
+    {
       "field": "devices",
       "kind": "object",
       "children": [
@@ -9102,6 +9156,42 @@
             },
             {
               "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "letters",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "count",
+                "kind": "scalar"
+              },
+              {
+                "name": "letter",
+                "kind": "scalar"
+              },
+              {
+                "name": "offset",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "count",
+              "kind": "scalar"
+            },
+            {
+              "name": "letter",
+              "kind": "scalar"
+            },
+            {
+              "name": "offset",
               "kind": "scalar"
             }
           ]
@@ -13982,6 +14072,121 @@
       ]
     },
     {
+      "field": "preplayclips",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "role",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "field": "preplayqueue",
+      "kind": "list",
+      "arguments": [
+        {
+          "name": "mediaID",
+          "kind": "string"
+        }
+      ],
+      "elem": {
+        "kind": "object",
+        "children": [
+          {
+            "name": "durationSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "label",
+            "kind": "scalar"
+          },
+          {
+            "name": "mediaID",
+            "kind": "scalar"
+          },
+          {
+            "name": "role",
+            "kind": "scalar"
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "durationSeconds",
+          "kind": "scalar"
+        },
+        {
+          "name": "label",
+          "kind": "scalar"
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "role",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "profiles",
       "kind": "object",
       "children": [
@@ -16246,6 +16451,68 @@
       ]
     },
     {
+      "field": "savewebhook",
+      "kind": "object",
+      "children": [
+        {
+          "name": "allowPrivateNetwork",
+          "kind": "scalar"
+        },
+        {
+          "name": "disabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "format",
+          "kind": "scalar"
+        },
+        {
+          "name": "from",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "problem",
+          "kind": "scalar"
+        },
+        {
+          "name": "secretSet",
+          "kind": "scalar"
+        },
+        {
+          "name": "to",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "url",
+          "kind": "scalar"
+        },
+        {
+          "name": "username",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "scanestimate",
       "kind": "object",
       "children": [
@@ -17239,6 +17506,28 @@
         {
           "name": "name",
           "kind": "scalar"
+        },
+        {
+          "name": "playbackAdjustments",
+          "kind": "object",
+          "children": [
+            {
+              "name": "pitchShiftSemitonesMax",
+              "kind": "scalar"
+            },
+            {
+              "name": "pitchShiftSemitonesMin",
+              "kind": "scalar"
+            },
+            {
+              "name": "tempoMax",
+              "kind": "scalar"
+            },
+            {
+              "name": "tempoMin",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "version",
@@ -23288,6 +23577,64 @@
       ]
     },
     {
+      "field": "setpreplayclips",
+      "kind": "object",
+      "children": [
+        {
+          "name": "items",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "durationSeconds",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "scalar"
+              },
+              {
+                "name": "mediaID",
+                "kind": "scalar"
+              },
+              {
+                "name": "role",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "durationSeconds",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "mediaID",
+              "kind": "scalar"
+            },
+            {
+              "name": "role",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "field": "setprofilelibraries",
       "kind": "object",
       "children": [
@@ -23703,6 +24050,32 @@
         },
         {
           "name": "watchlisted",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "setwebhooksettings",
+      "kind": "object",
+      "children": [
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "formats",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "publicBaseURL",
           "kind": "scalar"
         }
       ]
@@ -24536,6 +24909,28 @@
       "children": [
         {
           "name": "sessionID",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "testwebhook",
+      "kind": "object",
+      "children": [
+        {
+          "name": "diagnostic",
+          "kind": "scalar"
+        },
+        {
+          "name": "durationMs",
+          "kind": "scalar"
+        },
+        {
+          "name": "ok",
+          "kind": "scalar"
+        },
+        {
+          "name": "statusClass",
           "kind": "scalar"
         }
       ]
@@ -27456,6 +27851,132 @@
           "kind": "scalar"
         }
       ]
+    },
+    {
+      "field": "webhookdeliveries",
+      "kind": "object",
+      "children": [
+        {
+          "name": "at",
+          "kind": "scalar"
+        },
+        {
+          "name": "attempts",
+          "kind": "scalar"
+        },
+        {
+          "name": "durationMs",
+          "kind": "scalar"
+        },
+        {
+          "name": "endpointID",
+          "kind": "scalar"
+        },
+        {
+          "name": "eventKind",
+          "kind": "scalar"
+        },
+        {
+          "name": "outcome",
+          "kind": "scalar"
+        },
+        {
+          "name": "statusClass",
+          "kind": "scalar"
+        },
+        {
+          "name": "test",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "webhooks",
+      "kind": "object",
+      "children": [
+        {
+          "name": "allowPrivateNetwork",
+          "kind": "scalar"
+        },
+        {
+          "name": "disabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "format",
+          "kind": "scalar"
+        },
+        {
+          "name": "from",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "problem",
+          "kind": "scalar"
+        },
+        {
+          "name": "secretSet",
+          "kind": "scalar"
+        },
+        {
+          "name": "to",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "url",
+          "kind": "scalar"
+        },
+        {
+          "name": "username",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "webhooksettings",
+      "kind": "object",
+      "children": [
+        {
+          "name": "eventKinds",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "formats",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "publicBaseURL",
+          "kind": "scalar"
+        }
+      ]
     }
   ],
   "v1": {
@@ -28712,6 +29233,10 @@
         "effect": "write"
       },
       {
+        "field": "deletewebhook",
+        "effect": "write"
+      },
+      {
         "field": "devices",
         "effect": "read"
       },
@@ -28824,6 +29349,10 @@
         "effect": "write"
       },
       {
+        "field": "preplayclips",
+        "effect": "read"
+      },
+      {
         "field": "provisionencryptedlibrary",
         "effect": "write"
       },
@@ -28889,6 +29418,10 @@
       },
       {
         "field": "runjob",
+        "effect": "write"
+      },
+      {
+        "field": "savewebhook",
         "effect": "write"
       },
       {
@@ -28960,6 +29493,10 @@
         "effect": "write"
       },
       {
+        "field": "setpreplayclips",
+        "effect": "write"
+      },
+      {
         "field": "setprofilelibraries",
         "effect": "write"
       },
@@ -28984,11 +29521,19 @@
         "effect": "write"
       },
       {
+        "field": "setwebhooksettings",
+        "effect": "write"
+      },
+      {
         "field": "skipdetectionenabled",
         "effect": "read"
       },
       {
         "field": "terminatesession",
+        "effect": "write"
+      },
+      {
+        "field": "testwebhook",
         "effect": "write"
       },
       {
@@ -29037,6 +29582,18 @@
       },
       {
         "field": "watcherstatus",
+        "effect": "read"
+      },
+      {
+        "field": "webhookdeliveries",
+        "effect": "read"
+      },
+      {
+        "field": "webhooks",
+        "effect": "read"
+      },
+      {
+        "field": "webhooksettings",
         "effect": "read"
       }
     ],
@@ -29722,6 +30279,13 @@
                   "type": "number",
                   "optional": true
                 }
+              },
+              {
+                "name": "maxStreamingBitrate",
+                "shape": {
+                  "type": "integer",
+                  "optional": true
+                }
               }
             ]
           }
@@ -29744,6 +30308,36 @@
           "name": "selectedSubtitleIndex",
           "shape": {
             "type": "integer",
+            "optional": true
+          }
+        },
+        {
+          "name": "adjustment",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "pitchShiftSemitones",
+                "shape": {
+                  "type": "integer",
+                  "optional": true
+                }
+              },
+              {
+                "name": "tempo",
+                "shape": {
+                  "type": "number",
+                  "optional": true
+                }
+              }
+            ],
+            "optional": true
+          }
+        },
+        {
+          "name": "selectedVersion",
+          "shape": {
+            "type": "string",
             "optional": true
           }
         }
@@ -29904,6 +30498,50 @@
                   "name": "selector",
                   "shape": {
                     "type": "string"
+                  }
+                }
+              ]
+            },
+            "optional": true
+          }
+        },
+        {
+          "name": "versions",
+          "shape": {
+            "type": "array",
+            "element": {
+              "type": "object",
+              "fields": [
+                {
+                  "name": "id",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "label",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "videoCodec",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "hdr",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "selected",
+                  "shape": {
+                    "type": "boolean"
                   }
                 }
               ]
@@ -30597,6 +31235,29 @@
           }
         },
         {
+          "name": "adjustment",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "pitchShiftSemitones",
+                "shape": {
+                  "type": "integer",
+                  "optional": true
+                }
+              },
+              {
+                "name": "tempo",
+                "shape": {
+                  "type": "number",
+                  "optional": true
+                }
+              }
+            ],
+            "optional": true
+          }
+        },
+        {
           "name": "systemSurfaceDisclosure",
           "shape": {
             "type": "object",
@@ -30623,7 +31284,8 @@
       "selectedSubtitleTrack.track is the format-independent language+kind+role identity. It is NOT the request-side selectedSubtitleIndex ffprobe stream index, which is unstable across renditions. roles is a SET — forced/sdh/visualImpaired/commentary co-occur and have no precedence order.",
       "selectedSubtitleTrack.track.kind is the closed vocabulary muxed|sidecar. Reflection publishes it as a generic string, so the vocabulary is enumerated here; growing it is a deliberate wire-contract change.",
       "subtitlesUnavailableReason is free text and is INDEPENDENT of decision. Subtitles being unavailable never degrades the whole-media decision verdict (direct-play|direct-stream|precomputed-rendition|transcode|unavailable). Absent/empty means subtitles are not known to be unavailable.",
-      "systemSurfaceDisclosure.metadataAllowed is server-authoritative for the response Media. It is true only when the Media metadata is visible to every Profile with Reveal off. Missing fields, unknown snapshot versions, and false mean clients must use generic system-surface metadata."
+      "systemSurfaceDisclosure.metadataAllowed is server-authoritative for the response Media. It is true only when the Media metadata is visible to every Profile with Reveal off. Missing fields, unknown snapshot versions, and false mean clients must use generic system-surface metadata.",
+      "adjustment requests a pitch shift (pitchShiftSemitones, whole semitones) and a tempo factor (tempo; 0 or omitted is 1) inside the ranges serverInfo.playbackAdjustments advertises; out-of-range values are rejected. It applies only to the main item of an audio Media when a transcode is admitted: the response echoes adjustment only when applied, and an absent response adjustment means the stream plays unadjusted. An adjusted stream runs on its own clock (stream seconds = song seconds / tempo) while timeline and reported progress stay in song seconds. Changing the adjustment mid-play is a new playback info call: report progress first, and the new stream starts at the segment holding timeline.positionSeconds."
     ],
     "streamToken": {
       "type": "object",
@@ -30729,6 +31391,13 @@
           }
         },
         {
+          "name": "fileFingerprint",
+          "shape": {
+            "type": "string",
+            "optional": true
+          }
+        },
+        {
           "name": "sidecarRawASS",
           "shape": {
             "type": "boolean",
@@ -30802,6 +31471,27 @@
           "name": "playbackRenditionID",
           "shape": {
             "type": "string",
+            "optional": true
+          }
+        },
+        {
+          "name": "composedPicture",
+          "shape": {
+            "type": "boolean",
+            "optional": true
+          }
+        },
+        {
+          "name": "pitchShiftSemitones",
+          "shape": {
+            "type": "integer",
+            "optional": true
+          }
+        },
+        {
+          "name": "tempo",
+          "shape": {
+            "type": "number",
             "optional": true
           }
         },

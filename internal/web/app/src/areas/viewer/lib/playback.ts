@@ -38,6 +38,8 @@ export interface PlaybackAssets {
   trickplay?: string;
   /** Silent sampled MP4 preview clip URL for hover/focus preview surfaces. */
   previewClip?: string;
+  /** Marker thumbnail directory URL (ends in `/`); files are `marker-<ms>.jpg`. */
+  markerThumbnailBase?: string;
   /** ISO expiry of the asset Stream Token; an expired token suppresses trickplay. */
   expiresAt?: string;
   /** Optional bar/phrase timing hints composed with beatgrid.json by clients. */
@@ -56,6 +58,29 @@ export interface PlaybackNext {
   next?: PlaybackNext | null;
 }
 
+/**
+ * A pitch shift and tempo change for an audio Media (CORE-1658): whole
+ * semitones, and a speed factor where 1 is as recorded. Sent on the request;
+ * echoed on the response only when the server applied it.
+ */
+export interface PlaybackAdjustment {
+  pitchShiftSemitones?: number;
+  tempo?: number;
+}
+
+/**
+ * One Version of a Media with two or more (ADR-0009, CORE-1676). `id` is
+ * opaque and stable, sent back as `selectedVersion`; `label` "" is the default
+ * Version, which the client names.
+ */
+export interface PlaybackVersion {
+  id: string;
+  label: string;
+  videoCodec?: string;
+  hdr?: string;
+  selected: boolean;
+}
+
 /** The /api/playback-info response (ADR-0010 playbackInfo), narrowed to what the player reads. */
 export interface PlaybackInfo {
   /** "audio" | "video": the item's playback class; absent when unavailable. */
@@ -72,6 +97,10 @@ export interface PlaybackInfo {
   reason?: string;
   next?: PlaybackNext | null;
   trackPreferences?: unknown;
+  /** The adjustment the stream carries; absent when none was applied. */
+  adjustment?: PlaybackAdjustment;
+  /** The Media's Versions, listed only when it has two or more. */
+  versions?: PlaybackVersion[];
 }
 
 /** The /api/preview-info response: Generated Asset URLs only, no playback streams. */
@@ -99,10 +128,15 @@ export function isRevealTerminalStatus(status: number): boolean {
  * pre-mints its stream (info.next); an unservable next item is silently
  * omitted. "" means a card queue drives playback and has no next item;
  * undefined means no card queue, so a Play all queue may name the next item.
+ * `adjustment` asks for a key or tempo change; the default sends none.
+ * `selectedVersion` names the Version the viewer picked; the server ignores
+ * an id it does not know and chooses itself.
  */
 export async function fetchPlaybackInfo(
   mediaID: string,
   nextMediaID?: string,
+  adjustment?: PlaybackAdjustment,
+  selectedVersion?: string,
 ): Promise<PlaybackInfo> {
   // Taken before the probe: a request that resumes after a newer Play all
   // started must not be read as leaving that queue.
@@ -120,6 +154,15 @@ export async function fetchPlaybackInfo(
     mediaID,
     capabilityProfile,
     ...(next ? { nextMediaID: next } : {}),
+    ...(isDefaultAdjustment(adjustment)
+      ? {}
+      : {
+          adjustment: {
+            pitchShiftSemitones: adjustment?.pitchShiftSemitones ?? 0,
+            tempo: adjustment?.tempo ?? 1,
+          },
+        }),
+    ...(selectedVersion ? { selectedVersion } : {}),
   });
   // The server issues a declared next item without a title; the Play all
   // queue kept the one its listing gave, so Up Next and the next heading can
@@ -205,3 +248,68 @@ export async function fetchPreviewInfo(mediaID: string): Promise<PreviewInfo> {
 }
 
 export { ApiError };
+
+/** The playback-info `reason` the server leaves on a composed-picture decision (ADR-0057). */
+export const COMPOSED_PICTURE_REASON = "composed-picture";
+
+/**
+ * Whether an audio item is served as a composed picture (CD+G graphics or lyrics
+ * as H.264 video). Mirrors the Apple and Android kits: the decision reason, or,
+ * where it is absent (the next-item decision), any stream rendition with a
+ * picture height, since a bare audio stream advertises none.
+ */
+export function isComposedPictureServed(
+  info: Pick<PlaybackInfo, "reason" | "streams"> | null | undefined,
+): boolean {
+  if (info?.reason?.trim() === COMPOSED_PICTURE_REASON) return true;
+  return !!info?.streams?.some((s) => s.renditions?.some((r) => (r.height ?? 0) > 0));
+}
+
+/** Whether the player surface has a picture: any non-audio item, or a composed-picture audio one. */
+export function hasPicture(info: PlaybackInfo | null | undefined): boolean {
+  return info?.mediaClass !== "audio" || isComposedPictureServed(info);
+}
+
+/** Whether an adjustment changes nothing: no pitch shift and the recorded tempo. */
+export function isDefaultAdjustment(adjustment: PlaybackAdjustment | null | undefined): boolean {
+  return (adjustment?.pitchShiftSemitones ?? 0) === 0 && appliedTempoOf(adjustment) === 1;
+}
+
+/** The tempo factor of an adjustment: 1 when absent or 0 (the wire default). */
+function appliedTempoOf(adjustment: PlaybackAdjustment | null | undefined): number {
+  const tempo = adjustment?.tempo ?? 0;
+  return Number.isFinite(tempo) && tempo > 0 ? tempo : 1;
+}
+
+/**
+ * Song seconds per stream second: the tempo the server applied (CORE-1658).
+ * An adjusted stream lasts the song duration divided by the tempo, so a
+ * stream position times this is the song position; 1 when nothing was applied.
+ */
+export function songSecondsPerStreamSecond(info: PlaybackInfo | null | undefined): number {
+  return appliedTempoOf(info?.adjustment);
+}
+
+/** Whether two adjustments ask for the same key and tempo. */
+export function sameAdjustment(
+  a: PlaybackAdjustment | null | undefined,
+  b: PlaybackAdjustment | null | undefined,
+): boolean {
+  return (
+    (a?.pitchShiftSemitones ?? 0) === (b?.pitchShiftSemitones ?? 0) &&
+    Math.abs(appliedTempoOf(a) - appliedTempoOf(b)) < 0.001
+  );
+}
+
+/**
+ * Whether the stream plays the requested adjustment: the default needs no
+ * echo; anything else needs the server's `adjustment` echo to match, since
+ * the server omits it whenever it played the item unadjusted.
+ */
+export function adjustmentApplied(
+  info: PlaybackInfo | null | undefined,
+  requested: PlaybackAdjustment,
+): boolean {
+  if (isDefaultAdjustment(requested)) return true;
+  return !!info?.adjustment && sameAdjustment(info.adjustment, requested);
+}

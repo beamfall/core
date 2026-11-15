@@ -1,0 +1,283 @@
+package webhook
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+)
+
+// memSecrets is an in-memory SecretStore.
+type memSecrets struct {
+	mu     sync.Mutex
+	values map[string]string
+	fail   bool
+}
+
+func (m *memSecrets) Secret(ref string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.values[ref]
+	if !ok {
+		return "", errors.New("missing")
+	}
+	return v, nil
+}
+
+func (m *memSecrets) SetSecret(ref, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.fail {
+		return errors.New("write failed")
+	}
+	if value == "" {
+		delete(m.values, ref)
+		return nil
+	}
+	m.values[ref] = value
+	return nil
+}
+
+type managerFixture struct {
+	m       *Manager
+	secrets *memSecrets
+	doer    *recordingDoer
+	config  string
+}
+
+func newManagerFixture(t *testing.T, initial string) *managerFixture {
+	t.Helper()
+	dir := t.TempDir()
+	config := filepath.Join(dir, "webhook-endpoints.json")
+	if initial != "" {
+		if err := os.WriteFile(config, []byte(initial), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := &managerFixture{secrets: &memSecrets{values: map[string]string{}}, doer: &recordingDoer{}, config: config}
+	m, err := OpenManager(ManagerOptions{
+		ConfigPath: config,
+		StatePath:  filepath.Join(dir, "webhook-dead-letter.json"),
+		Secrets:    f.secrets,
+		Events:     &fixedEvents{},
+		Client:     f.doer,
+	})
+	if err != nil {
+		t.Fatalf("OpenManager: %v", err)
+	}
+	f.m = m
+	return f
+}
+
+func strPtr(s string) *string { return &s }
+
+func (f *managerFixture) file(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestManagerAddsDiscordEndpointWithRedactedURL(t *testing.T) {
+	f := newManagerFixture(t, "")
+	view, err := f.m.SaveEndpoint(EndpointInput{
+		Name:       "Family chat",
+		Format:     "discord",
+		URL:        "https://discord.example/api/webhooks/123/tokenvalue",
+		EventKinds: []string{KindMediaAdded},
+	})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if !strings.HasPrefix(view.ID, "wh-") || view.Format != FormatDiscord || view.Problem != "" {
+		t.Fatalf("view = %+v", view)
+	}
+	if view.URL != "https://discord.example/…" {
+		t.Fatalf("URL must be redacted to its origin, got %q", view.URL)
+	}
+	if len(f.m.emitter.endpoints()) != 1 {
+		t.Fatal("a saved endpoint must run without a restart")
+	}
+	if !strings.Contains(f.file(t), "tokenvalue") {
+		t.Fatal("the full URL is kept in the endpoint file")
+	}
+	if list := f.m.Endpoints(); len(list) != 1 || strings.Contains(list[0].URL, "tokenvalue") {
+		t.Fatalf("list = %+v", list)
+	}
+}
+
+func TestManagerStoresSecretOutsideConfig(t *testing.T) {
+	f := newManagerFixture(t, "")
+	view, err := f.m.SaveEndpoint(EndpointInput{Format: "generic", URL: "https://hooks.example/in", Secret: strPtr("signing-key")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !view.SecretSet {
+		t.Fatal("secretSet must report the stored secret")
+	}
+	if strings.Contains(f.file(t), "signing-key") {
+		t.Fatal("the secret must never be written to the endpoint file")
+	}
+	ref := "webhook-" + view.ID
+	if got, _ := f.secrets.Secret(ref); got != "signing-key" {
+		t.Fatalf("secret file %s = %q", ref, got)
+	}
+
+	// An edit with no URL and no secret keeps both.
+	view, err = f.m.SaveEndpoint(EndpointInput{ID: view.ID, Format: "generic", Name: "Renamed"})
+	if err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if view.Name != "Renamed" || !view.SecretSet || view.URL != "https://hooks.example/…" {
+		t.Fatalf("edit view = %+v", view)
+	}
+	running := f.m.emitter.endpoints()
+	if len(running) != 1 || string(running[0].Secret) != "signing-key" {
+		t.Fatal("the running endpoint must keep its secret across an edit")
+	}
+
+	if err := f.m.DeleteEndpoint(view.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.secrets.Secret(ref); err == nil {
+		t.Fatal("delete must remove the secret file")
+	}
+	if len(f.m.emitter.endpoints()) != 0 || len(f.m.Endpoints()) != 0 {
+		t.Fatal("delete must stop and remove the endpoint")
+	}
+	if err := f.m.DeleteEndpoint(view.ID); !errors.Is(err, ErrUnknownEndpoint) {
+		t.Fatalf("second delete: %v", err)
+	}
+}
+
+func TestManagerInvalidSaveChangesNothing(t *testing.T) {
+	f := newManagerFixture(t, "")
+	good, err := f.m.SaveEndpoint(EndpointInput{Format: "ntfy", URL: "https://ntfy.example/topic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := f.file(t)
+	cases := []EndpointInput{
+		{Format: "discord", URL: "https://discord.example/x", EventKinds: []string{"media.created"}},
+		{Format: "generic", URL: "https://hooks.example/in"}, // generic needs a signing secret
+		{Format: "gotify", URL: "https://gotify.example"},    // gotify needs a token
+		{Format: "slack", URL: "http://169.254.169.254/x"},
+		{Format: "email", URL: "smtps://mail.example", From: "a@example.com"}, // no recipients
+		{Format: "carrier-pigeon", URL: "https://x.example"},
+		{Format: "ntfy", URL: "https://user:pw@ntfy.example/t"}, // #nosec G101 -- a refused user-info test input, not a credential.
+		{Format: "ntfy", URL: "https://ntfy.example/t", Name: strings.Repeat("n", maxNameRunes+1)},
+		{ID: good.ID, Format: "slack"}, // a format change needs a URL
+	}
+	for i, in := range cases {
+		if _, err := f.m.SaveEndpoint(in); err == nil {
+			t.Errorf("case %d: invalid input accepted", i)
+		}
+	}
+	if f.file(t) != before {
+		t.Fatal("a rejected save must not change the endpoint file")
+	}
+	if len(f.secrets.values) != 0 {
+		t.Fatal("a rejected save must not write a secret")
+	}
+	if running := f.m.emitter.endpoints(); len(running) != 1 || running[0].ID != good.ID {
+		t.Fatalf("running set changed: %+v", running)
+	}
+}
+
+func TestManagerSecretWriteFailureKeepsConfig(t *testing.T) {
+	f := newManagerFixture(t, "")
+	f.secrets.fail = true
+	if _, err := f.m.SaveEndpoint(EndpointInput{Format: "gotify", URL: "https://gotify.example", Secret: strPtr("tok")}); !errors.Is(err, ErrSecretDiagnostic) {
+		t.Fatalf("want the secret diagnostic, got %v", err)
+	}
+	if _, err := os.Stat(f.config); !os.IsNotExist(err) {
+		t.Fatal("no endpoint file may be written when the secret write fails")
+	}
+}
+
+func TestManagerReportsEndpointsThatCannotRun(t *testing.T) {
+	f := newManagerFixture(t, `{"endpoints":[
+		{"id":"a","url":"https://hooks.example/a","secret_ref":"missing-ref"},
+		{"id":"b","format":"discord","url":"https://discord.example/x","event_kinds":["media.created"]},
+		{"id":"c","format":"ntfy","url":"https://ntfy.example/t"}
+	]}`)
+	views := f.m.Endpoints()
+	if len(views) != 3 {
+		t.Fatalf("every endpoint on disk is listed, got %d", len(views))
+	}
+	if views[0].Problem != ProblemSecretMissing || views[1].Problem != ProblemInvalid || views[2].Problem != "" {
+		t.Fatalf("problems = %q %q %q", views[0].Problem, views[1].Problem, views[2].Problem)
+	}
+	if running := f.m.emitter.endpoints(); len(running) != 1 || running[0].ID != "c" {
+		t.Fatalf("only the valid endpoint runs: %+v", running)
+	}
+	res, err := f.m.TestEndpoint(context.Background(), "a")
+	if err != nil || res.OK || res.Diagnostic != ErrSecretDiagnostic.Error() {
+		t.Fatalf("test of a broken endpoint = %+v, %v", res, err)
+	}
+
+	// Supplying the secret repairs the endpoint without a restart.
+	view, err := f.m.SaveEndpoint(EndpointInput{ID: "a", Format: "generic", Secret: strPtr("key")})
+	if err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if view.Problem != "" || len(f.m.emitter.endpoints()) != 2 {
+		t.Fatalf("repair view = %+v", view)
+	}
+}
+
+func TestManagerTestSendAndDeliveryLog(t *testing.T) {
+	f := newManagerFixture(t, "")
+	view, err := f.m.SaveEndpoint(EndpointInput{Format: "slack", URL: "https://hooks.slack.example/services/x", Disabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := f.m.TestEndpoint(context.Background(), view.ID)
+	if err != nil || !res.OK {
+		t.Fatalf("test = %+v, %v", res, err)
+	}
+	log := f.m.Deliveries()
+	if len(log) != 1 || log[0].EndpointID != view.ID || !log[0].Test {
+		t.Fatalf("delivery log = %+v", log)
+	}
+	if _, err := f.m.TestEndpoint(context.Background(), "wh-none"); !errors.Is(err, ErrUnknownEndpoint) {
+		t.Fatalf("unknown endpoint: %v", err)
+	}
+}
+
+func TestManagerSettingsValidateBaseURL(t *testing.T) {
+	f := newManagerFixture(t, "")
+	for _, bad := range []string{"javascript:alert(1)", "ftp://media.example", "https://u:p@media.example", "media.example", "https://media.example/?q=1"} {
+		if _, err := f.m.SetSettings(Settings{PublicBaseURL: bad}); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	got, err := f.m.SetSettings(Settings{PublicBaseURL: "https://media.example/"})
+	if err != nil || got.PublicBaseURL != "https://media.example" {
+		t.Fatalf("settings = %+v, %v", got, err)
+	}
+	if f.m.publicBaseURL() != "https://media.example" || !strings.Contains(f.file(t), "public_base_url") {
+		t.Fatal("settings must apply and persist")
+	}
+}
+
+func TestRedactURL(t *testing.T) {
+	cases := map[string]string{ // #nosec G101 -- redaction test inputs, not credentials.
+		"https://hooks.example":           "https://hooks.example",
+		"https://hooks.example/":          "https://hooks.example",
+		"https://ntfy.example:8443/topic": "https://ntfy.example:8443/…",
+		"https://hooks.example/?token=x":  "https://hooks.example/…",
+		"smtps://mail.example:465":        "smtps://mail.example:465",
+		"not a url":                       "",
+	}
+	for in, want := range cases {
+		if got := redactURL(in); got != want {
+			t.Errorf("redactURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

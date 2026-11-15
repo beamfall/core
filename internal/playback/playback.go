@@ -40,6 +40,15 @@ type InfoRequest struct {
 	// track the client selected for this playbackInfo request. Omitted means no
 	// concrete subtitle track has been selected server-side.
 	SelectedSubtitleIndex *int `json:"selectedSubtitleIndex,omitempty"`
+	// Adjustment optionally asks for a pitch shift and tempo change on an
+	// audio Media's playback. Omitted, or all defaults, changes nothing. It is
+	// validated (an out-of-range value is an invalid request) and applies to
+	// MediaID only, never to NextMediaID.
+	Adjustment *PlaybackAdjustment `json:"adjustment,omitempty"`
+	// SelectedVersion is the opaque ID of the Version (VersionInfo.ID) the
+	// viewer picked. It applies to MediaID only; an ID that names none of its
+	// Versions is ignored and the server negotiates as if it were absent.
+	SelectedVersion string `json:"selectedVersion,omitempty"`
 }
 
 // PreviewInfoRequest asks for the card-preview Generated Asset only. It is
@@ -116,7 +125,22 @@ type CapabilityProfile struct {
 	// reference, so a client that prefers a different target re-derives its own
 	// offset from the reported IntegratedLUFS.
 	LoudnessReference float64 `json:"loudnessReference,omitempty"`
+	// MaxStreamingBitrate is the viewer's own streaming ceiling in bits per
+	// second for the whole stream (CORE-1674): the quality limit a user picks
+	// for the network they are on, such as a lower one on cellular. 0 (absent)
+	// means no limit. It is a preference, not a device fact, so the server
+	// folds it into the overlay's bitrate cap: a source above it does not
+	// direct play, a cached rendition above it is not served, and the
+	// transcode ladder stops at the best rung under it. A value below the
+	// ladder floor plays the lowest rung. When the ceiling alone moves an item
+	// off direct play, the decision reason is "bitrate-ceiling".
+	MaxStreamingBitrate int `json:"maxStreamingBitrate,omitempty"`
 }
+
+// bitrateCeilingReason is the playbackInfo reason when the viewer's
+// CapabilityProfile.MaxStreamingBitrate, and nothing else, kept an item off
+// direct play or the video-copy rung.
+const bitrateCeilingReason = "bitrate-ceiling"
 
 // Loudness-normalization modes a client may declare in
 // CapabilityProfile.NormalizationModes (closed vocabulary). They name the kind of
@@ -233,6 +257,10 @@ type InfoResponse struct {
 	// that ignore it play the first (primary) Part as today. Omitted when the
 	// item is unavailable.
 	Parts []PartInfo `json:"parts,omitempty"`
+	// Versions lists the Media's Versions when it has two or more, marking the
+	// negotiated one selected, so a client can offer a version picker. Omitted
+	// for a single-Version or unavailable item.
+	Versions []VersionInfo `json:"versions,omitempty"`
 	// Next is the ahead-of-time decision for the declared next queue item.
 	// Omitted whenever the next item cannot be served — an item the scope
 	// cannot see is indistinguishable from an unknown ID (Reveal contract).
@@ -289,6 +317,12 @@ type InfoResponse struct {
 	// only subtitles are unavailable, so subtitle unavailability never degrades
 	// Decision. Empty/absent means subtitles are not known to be unavailable.
 	SubtitlesUnavailableReason string `json:"subtitlesUnavailableReason,omitempty"`
+	// Adjustment echoes the requested pitch shift and tempo change when the
+	// streams apply it: an audio Media served through a transcode that encodes
+	// it. Omitted when no adjustment was requested or it could not be applied
+	// (the streams then play unadjusted). Stream positions are then song
+	// positions divided by the tempo; Timeline stays in song positions.
+	Adjustment *PlaybackAdjustment `json:"adjustment,omitempty"`
 }
 
 // CaptionTrack is one caption track surfaced in playbackInfo. Sidecar tracks use
@@ -464,6 +498,7 @@ type Service struct {
 	sealed          SealedPredicate
 	quirks          QuirkDB
 	composer        PictureComposer
+	composedCache   string
 	observed        observations
 }
 
@@ -605,6 +640,8 @@ type decision struct {
 	// Version yields one Part; multi-Part Versions present back-to-back as one
 	// timeline. Empty for unavailable items.
 	parts []PartInfo
+	// versions is the Version list for a picker; nil for a single Version.
+	versions []VersionInfo
 	// captionTracks is the chosen Version's sidecar caption tracks (FEAT-4 /
 	// ADR-0005 §4), each with a Stream-Token'd WebVTT URL. Empty for unavailable
 	// items or files with no sidecars.
@@ -642,6 +679,9 @@ type decision struct {
 	// capacity refusal, which is the single most valuable thing a playback
 	// report can say.
 	overlayApplied bool
+	// adjustment is the pitch shift and tempo change the streams encode; zero
+	// when none was requested or it does not apply to this decision.
+	adjustment ffmpeg.AudioAdjust
 }
 
 // PartInfo is one ordered Part of the negotiated Version. Parts play
@@ -679,6 +719,13 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	if mediaID == "" {
 		return InfoResponse{}, ErrInvalidRequest
 	}
+	var adjust ffmpeg.AudioAdjust
+	if req.Adjustment != nil {
+		if err := req.Adjustment.validate(); err != nil {
+			return InfoResponse{}, err
+		}
+		adjust = req.Adjustment.audioAdjust()
+	}
 	ctx = s.compatDecisionContext(ctx, scope)
 	// The session Profile's playback policy (transcode gate + stream cap)
 	// applies to every rung decision below.
@@ -699,8 +746,8 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// forbids. The declared CapabilityProfile is passed through unmodified — the
 	// overlay is never written back onto it, which is what makes the
 	// monotone-restrictive rule a property of the code shape.
-	ov := s.quirks.Resolve(req.CapabilityProfile)
-	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, ov)
+	ov := s.quirks.Resolve(req.CapabilityProfile).withClientCeiling(req.CapabilityProfile.MaxStreamingBitrate)
+	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -712,6 +759,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		Streams:             main.streams,
 		Timeline:            main.timeline,
 		Parts:               main.parts,
+		Versions:            main.versions,
 		TrackPreferences:    trackPreferences(policy),
 		Assets:              main.assets,
 		CaptionTracks:       main.captionTracks,
@@ -719,6 +767,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// suppressed: a client applies them to its player regardless of which
 		// item it fetched.
 		BehaviorFlags: ov.flags,
+		Adjustment:    playbackAdjustment(main.adjustment),
 	}
 	if main.overlayApplied {
 		resp.AppliedQuirks = ov.overrideIDs
@@ -746,7 +795,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
-		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, ov)
+		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, "", ov, ffmpeg.AudioAdjust{})
 		if nextErr == nil && next.verdict != "unavailable" {
 			// Attribution tracks what the response actually carries: a next
 			// decision the payload drops would put override IDs on a body whose
@@ -825,7 +874,9 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // admission rank the transcode-refusal check uses: a foreground
 // playhead may be admitted by preempting a normal stream, so the verdict it
 // receives matches what the byte layer would actually start at that rank.
-func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex *int, ov quirkOverlay) (dec decision, err error) {
+// adjust is the requested pitch shift and tempo change; it applies only to an
+// audio Media served through a transcode, which it then forces.
+func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	media, err := s.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
 	if err != nil {
 		var validation store.ValidationError
@@ -862,10 +913,33 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if media.Class == store.MediaClassImage {
 		return s.imageDecision(ctx, scope, media, files, suffix)
 	}
-	file, streams, parts, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, ov)
+	factsFingerprint, versioned, err := s.store.MediaFactsFingerprint(ctx, media.ID)
 	if err != nil {
 		return decision{}, err
 	}
+	file, streams, parts, versions, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, selectedVersion, factsFingerprint, ov)
+	if err != nil {
+		return decision{}, err
+	}
+	// alternate marks a negotiated file other than the one the Media row's
+	// frame size describes (the first Version, which may be missing). Under a
+	// height ceiling, passthrough below is barred for it, or for any Version
+	// of a multi-Version Media (counting missing Versions, so the guard holds
+	// while only one is live), while its frame height is unknown.
+	alternate := file.ContentFingerprint != factsFingerprint
+	if len(versions) > 0 || alternate {
+		// Every rung below judges the negotiated Version by its own file facts.
+		media = versionFacts(media, file, streams, !alternate)
+	}
+	barred := unknownHeightBarred(media, profile, alternate || versioned || len(versions) > 0)
+	// One deferred stamp covers every decision return below, like
+	// audioLanguage: the picker lists the same Versions whatever the verdict,
+	// so a viewer whose pick cannot play can still pick another.
+	defer func() {
+		if err == nil {
+			dec.versions = versions
+		}
+	}()
 	// The operator's live-session dashboard reads the main item's decision.
 	if suffix == "main" {
 		defer func() {
@@ -922,6 +996,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		Foreground:              priority == PriorityForeground,
 		ExpiresAt:               expiresAt,
 	}
+	// A Media with several Versions binds the negotiated file into every token
+	// minted from this grant, the primary's included, so the byte routes serve
+	// exactly the bytes negotiated here. Unbound, a primary-file token would
+	// follow PrimaryMediaFile to another Version once its file went missing.
+	// A single-Version Media leaves it empty and keeps the primary-file path.
+	if len(versions) > 0 {
+		grant.FileFingerprint = file.ContentFingerprint
+	}
 	if burnSubtitleIndex := selectedBurnSubtitleIndex(streams, profile, selectedSubtitleIndex, ov); burnSubtitleIndex >= 0 {
 		grant.BurnSubtitleIndex = burnSubtitleIndex + 1
 	}
@@ -942,6 +1024,9 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}()
 	}
 	hlsAudio := hlsAudioProfile(profile, streams, loudness, loudnessOK, ov)
+	if ov.ceilingBindsAudio(media, file, streams) {
+		hlsAudio = ceilingBoundAudio(hlsAudio)
+	}
 
 	// Generated Asset advertisement: one assets-target token covers
 	// the trickplay manifest + sheets, the preview clip, and Marker
@@ -983,20 +1068,38 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 
 	sourceVideo := VideoSignalFromStreams(streams)
 	sourceHasAudio := hasAudioStream(streams)
+	// A pitch shift or tempo change forces a transcode that encodes it: the
+	// live composed picture when one applies, otherwise an audio-only stream.
+	// It needs an audio Media with audio and a transcode the policy and
+	// capacity admit; otherwise the item plays unadjusted.
+	// A build without the adjustment's filters (or the audio encoder) declines
+	// the adjustment rather than offer a stream that fails to start.
+	if !adjust.IsZero() && media.Class == store.MediaClassAudio && sourceHasAudio && transcodeRefusal == "" && s.sessions != nil &&
+		audioAdjustSupported(adjustedAudioRendition(hlsAudio, adjust)) {
+		grant = withAudioAdjustGrant(grant, adjust)
+	} else {
+		adjust = ffmpeg.AudioAdjust{}
+	}
 	// A Dolby Vision P7 stream never satisfies canDirectPlay (no client advertises
 	// "dolby-vision-p7"), but its HDR10-compatible base layer direct-plays while the
 	// enhancement layer is dropped — the honest base-layer posture of ADR-0017 §4.
 	// The reason makes that explicit in playbackInfo; the stream is a normal
 	// direct-play of the file bytes.
 	// Composed picture: an audio Media whose plugin describes a
-	// picture plays as its precomputed composed video on a video-capable
-	// client — ahead of direct play, which would lose the picture.
-	if composed, ok, err := s.composedChoice(ctx, scope, grant, suffix, media, file, profile, hlsAudio, expiresAt, ov); err != nil {
+	// picture plays as its composed video on a video-capable client — ahead
+	// of direct play, which would lose the picture. A Ready precomputed
+	// rendition is served as is; otherwise the picture is composed live when
+	// the transcode policy and capacity admit it.
+	if composed, live, ok, err := s.composedChoice(ctx, scope, grant, suffix, media, file, profile, hlsAudio, expiresAt, ov, transcodeRefusal); err != nil {
 		return decision{}, err
 	} else if ok {
+		verdict := "precomputed-rendition"
+		if live {
+			verdict = "transcode"
+		}
 		return decision{
 			media:          media,
-			verdict:        "precomputed-rendition",
+			verdict:        verdict,
 			reason:         "composed-picture",
 			streams:        []StreamChoice{composed},
 			timeline:       timeline,
@@ -1004,11 +1107,31 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			assets:         assets,
 			captionTracks:  captionTracks,
 			overlayApplied: true,
+			adjustment:     adjust,
 		}, nil
 	}
-	p7BaseLayer := !canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) &&
+	if !adjust.IsZero() {
+		adjusted, err := s.adjustedAudioChoice(ctx, grant, suffix, hlsAudio, expiresAt)
+		if err != nil {
+			return decision{}, err
+		}
+		return decision{
+			media:          media,
+			verdict:        "transcode",
+			reason:         "playback-adjustment",
+			streams:        []StreamChoice{adjusted},
+			timeline:       timeline,
+			parts:          parts,
+			assets:         assets,
+			captionTracks:  captionTracks,
+			overlayApplied: true,
+			adjustment:     adjust,
+		}, nil
+	}
+	directPlay := !barred && canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov)
+	p7BaseLayer := !barred && !directPlay &&
 		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov)
-	if canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) || p7BaseLayer {
+	if directPlay || p7BaseLayer {
 		grant.Target = streamtoken.TargetMediaDirect
 		token, err := s.tokens.Issue(ctx, grant)
 		if err != nil {
@@ -1054,10 +1177,17 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		if cached, ok, err := s.cachedRenditionChoice(ctx, scope, grant, suffix, media.ID, file.ContentFingerprint, profile, sourceVideo, sourceHasAudio, hlsAudio, expiresAt, ov); err != nil {
 			return decision{}, err
 		} else if ok {
+			reason := "cached-rendition"
+			// The cache is consulted before the video-copy rung, so only a
+			// direct play the ceiling refused would have beaten it.
+			// An unknown-height bar refuses that rung whatever the ceiling.
+			if !barred && bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) {
+				reason = bitrateCeilingReason
+			}
 			return decision{
 				media:          media,
 				verdict:        "precomputed-rendition",
-				reason:         "cached-rendition",
+				reason:         reason,
 				streams:        []StreamChoice{cached},
 				timeline:       timeline,
 				parts:          parts,
@@ -1080,7 +1210,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			s.roster.SessionInWatchPartyForMedia(scope.SessionID, media.ID) {
 			var hls StreamChoice
 			var err error
-			if audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
+			if !barred && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
 				// Video direct-plays; only audio needs transcode — copy the video and
 				// transcode only the audio, lighter than a re-encode.
 				hls, err = s.degradedAudioCopyChoice(ctx, grant, suffix, hlsAudio, expiresAt)
@@ -1114,7 +1244,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// through and transcode only the audio — far cheaper than a full
 	// re-encode. Resolved as an HLS choice carrying the single audio-copy
 	// rendition.
-	if audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
+	if !barred && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
 		hls, err := s.audioCopyChoice(ctx, grant, suffix, hlsAudio, expiresAt)
 		if err != nil {
 			return decision{}, err
@@ -1141,10 +1271,15 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if err != nil {
 		return decision{}, err
 	}
+	reason := "requires-transcode"
+	// Under an unknown-height bar no passthrough rung was open to the ceiling.
+	if !barred && bitrateCeilingForced(media, file, streams, profile, selectedSubtitleIndex, ov) {
+		reason = bitrateCeilingReason
+	}
 	return decision{
 		media:          media,
 		verdict:        "transcode",
-		reason:         "requires-transcode",
+		reason:         reason,
 		streams:        []StreamChoice{hls},
 		timeline:       timeline,
 		parts:          parts,
@@ -1207,54 +1342,78 @@ func (s *Service) imageDecision(ctx context.Context, scope auth.Scope, media sto
 
 // negotiateVersion picks the best Version for the client among a Media's
 // available files, returning the chosen Version's primary file
-// (its first Part), that file's stream inventory, and the Version's ordered
-// Parts. files is ordered by (VersionLabel, PartOrdinal), so consecutive files
-// with the same label are one Version's Parts in timeline order.
+// (its first Part), that file's stream inventory, the Version's ordered
+// Parts, and the Version list for a picker. files is ordered by (VersionLabel,
+// PartOrdinal), so consecutive files with the same label are one Version's
+// Parts in timeline order.
 //
-// Selection: prefer the first Version (in label order) whose primary Part
-// direct-plays for this capability profile — direct-play beats transcode, and
-// negotiating it BEFORE transcode is the whole point (a 1080p SDR Version
-// direct-plays where the 4K HDR sibling would force a tone-map transcode). If
-// no Version direct-plays, fall back to the first Version, which is the default
-// ("" label) when present — identical to the pre-1:N primary-file choice.
+// Selection: a selectedVersion naming one of the Media's Versions wins, even
+// when it needs a transcode: the viewer asked for it. Otherwise prefer the
+// first Version (in label order) whose primary Part direct-plays for this
+// capability profile — direct-play beats transcode, and negotiating it BEFORE
+// transcode is the whole point (a 1080p SDR Version direct-plays where the 4K
+// HDR sibling would force a tone-map transcode). If no Version direct-plays,
+// fall back to the first Version, which is the default ("" label) when
+// present — identical to the pre-1:N primary-file choice. An unknown
+// selectedVersion is ignored.
 //
 // A single-file Media has one Version with one Part, so this returns that file
-// unchanged: existing behaviour is preserved.
-func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, error) {
+// unchanged and no Version list: existing behaviour is preserved.
+func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files []store.MediaFile, profile CapabilityProfile, selectedSubtitleIndex *int, selectedVersion, factsFingerprint string, ov quirkOverlay) (store.MediaFile, []store.MediaFileStream, []PartInfo, []VersionInfo, error) {
 	versions := groupVersions(files)
+	streams := make([][]store.MediaFileStream, len(versions))
+	for i, version := range versions {
+		inventory, err := s.store.MediaFileStreams(ctx, version[0].ContentFingerprint)
+		if err != nil {
+			return store.MediaFile{}, nil, nil, nil, err
+		}
+		streams[i] = inventory
+	}
 	// Default to the first Version (label order: "" sorts first), with its
 	// primary Part's streams — the honest transcode fallback.
-	chosen := versions[0]
-	chosenStreams, err := s.store.MediaFileStreams(ctx, chosen[0].ContentFingerprint)
-	if err != nil {
-		return store.MediaFile{}, nil, nil, err
-	}
-	if !directPlayEligible(media, chosen[0], chosenStreams, profile, selectedSubtitleIndex, ov) {
-		// Look for a Version whose primary Part the client can play as-is (or whose
-		// P7 HDR10 base layer plays), preferring it over a transcoding default.
-		for _, version := range versions {
-			streams, err := s.store.MediaFileStreams(ctx, version[0].ContentFingerprint)
-			if err != nil {
-				return store.MediaFile{}, nil, nil, err
-			}
-			if directPlayEligible(media, version[0], streams, profile, selectedSubtitleIndex, ov) {
-				chosen, chosenStreams = version, streams
+	chosen := 0
+	selected := false
+	if selectedVersion != "" {
+		for i, version := range versions {
+			if versionID(media.ID, version[0].VersionLabel) == selectedVersion {
+				chosen, selected = i, true
 				break
 			}
 		}
 	}
+	eligible := func(i int) bool {
+		trusted := versions[i][0].ContentFingerprint == factsFingerprint
+		if len(versions) < 2 && trusted {
+			return directPlayEligible(media, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
+		}
+		facts := versionFacts(media, versions[i][0], streams[i], trusted)
+		return !unknownHeightBarred(facts, profile, true) &&
+			directPlayEligible(facts, versions[i][0], streams[i], profile, selectedSubtitleIndex, ov)
+	}
+	if !selected && !eligible(0) {
+		// Look for a Version whose primary Part the client can play as-is (or whose
+		// P7 HDR10 base layer plays), preferring it over a transcoding default.
+		for i := range versions {
+			if eligible(i) {
+				chosen = i
+				break
+			}
+		}
+	}
+	infos := versionInfos(media.ID, versions, streams, chosen)
+	version := versions[chosen]
 	// A single-Part Version is the pre-1:N shape (one file): emit no Parts array,
 	// so its playbackInfo stays byte-identical to before — clients ignore the
 	// absent field and play the primary stream as today (no wire-contract churn,
 	// no regression). Only a genuinely multi-Part Version surfaces the timeline.
-	if len(chosen) < 2 {
-		return chosen[0], chosenStreams, nil, nil
+	if len(version) < 2 {
+		return version[0], streams[chosen], nil, infos, nil
 	}
-	parts := make([]PartInfo, len(chosen))
-	for i, part := range chosen {
+	parts := make([]PartInfo, len(version))
+	for i, part := range version {
 		parts[i] = PartInfo{Ordinal: part.PartOrdinal, versionLabel: part.VersionLabel, partOrdinal: part.PartOrdinal}
 	}
-	return chosen[0], chosenStreams, parts, nil
+	return version[0], streams[chosen], parts, infos, nil
 }
 
 // groupVersions splits a (VersionLabel, PartOrdinal)-ordered file list into
@@ -1459,9 +1618,10 @@ func (s *Service) ladderCaps(profile CapabilityProfile, ov quirkOverlay) ladderC
 	// vocabulary is closed and fixed, so no new streamtoken.Grant field is
 	// needed: withHLSLadderGrant/LadderCapsFromGrant already round-trip both
 	// heights and the byte layer reconstructs the identical rung set.
-	ceiling := ov.heightCeiling()
-	caps.ClientMaxHeight = minNonZero(caps.ClientMaxHeight, ceiling)
-	caps.HEVCMaxHeight = minNonZero(caps.HEVCMaxHeight, ceiling)
+	// Each codec takes its own rung heights: an HEVC rung fits more picture
+	// under the same cap than the H.264 rung of that height.
+	caps.ClientMaxHeight = minNonZero(caps.ClientMaxHeight, ov.heightCeiling())
+	caps.HEVCMaxHeight = minNonZero(caps.HEVCMaxHeight, ov.hevcHeightCeiling())
 	return caps
 }
 
@@ -1689,6 +1849,26 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 	if loudnessOK {
 		gain := loudness.GainDB
 		audio.GainDB = &gain
+	}
+	return audio
+}
+
+// ceilingBindsAudio reports whether a video transcode runs on a ceiling-bound
+// ladder rung, whose 256 kbit/s audio reserve holds only stereo AAC.
+// Audio-only items keep their audio: the ceiling never applies to them.
+func (ov quirkOverlay) ceilingBindsAudio(media store.Media, file store.MediaFile, streams []store.MediaFileStream) bool {
+	return ov.clientMaxBitrate > 0 && !audioOnlyMedia(media, streams) && ov.vetoesVideoPassthrough(media, file, streams)
+}
+
+// ceilingBoundAudio holds a re-encoded stream's audio to stereo AAC under the
+// viewer's streaming ceiling. Each ladder rung reserves 256 kbit/s for audio
+// (bandwidthFor); passthrough or 5.1 E-AC-3 can exceed that on its own, which
+// would push the stream past the ceiling the viewer chose. Stereo AAC at the
+// encoder's default rate fits the reserve.
+func ceilingBoundAudio(audio ffmpeg.AudioProfile) ffmpeg.AudioProfile {
+	audio.Codec = "aac"
+	if audio.Channels <= 0 || audio.Channels > 2 {
+		audio.Channels = 2
 	}
 	return audio
 }
@@ -2102,6 +2282,28 @@ func audioNeedsRework(streams []store.MediaFileStream, profile CapabilityProfile
 	return !audioDirectPlayable(streams, profile) ||
 		ov.vetoesAudioPassthrough(streams) ||
 		(ov.ForceRemux && remuxPreservesHDR(streams))
+}
+
+// bitrateCeilingForced reports whether the viewer's streaming ceiling is the
+// one thing that moved this item off a passthrough rung: under the overlay
+// without the ceiling the source would direct play, play its Dolby Vision
+// base layer, or take the video-copy rung. It is only asked once the ceilinged
+// overlay has already refused those rungs.
+func bitrateCeilingForced(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
+	return bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) ||
+		(ov.clientMaxBitrate > 0 && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov.withoutClientCeiling()))
+}
+
+// bitrateCeilingRefusedDirectPlay reports whether, without the viewer's
+// streaming ceiling, the source would direct play or play its Dolby Vision
+// base layer.
+func bitrateCeilingRefusedDirectPlay(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
+	if ov.clientMaxBitrate <= 0 {
+		return false
+	}
+	base := ov.withoutClientCeiling()
+	return canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, base) ||
+		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base)
 }
 
 // audioCopyReason names the audio-copy rung honestly. When the rung was

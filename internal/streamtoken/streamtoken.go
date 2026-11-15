@@ -134,6 +134,14 @@ type Grant struct {
 	// grants retain the primary-file compatibility path.
 	// Meaningful only for TargetMediaSubtitle.
 	SubtitleFileFingerprint string `json:"subtitleFileFingerprint,omitempty"`
+	// FileFingerprint binds a playback grant to the Version file playbackInfo
+	// negotiated when that is not the Media's primary file (ADR-0009). The byte
+	// routes resolve it only among the grant Media's live files and refuse the
+	// request when it names none of them. Omitted means the primary file, which
+	// is also how grants minted before Version selection read.
+	// Meaningful for TargetMediaDirect, TargetMediaHLS, TargetMediaAssets and
+	// TargetMediaSidecar.
+	FileFingerprint string `json:"fileFingerprint,omitempty"`
 	// SidecarRawASS carries the effective, quirk-overlay-filtered ASS-rendering
 	// capability from playbackInfo to the sidecar byte route. Raw ASS is served
 	// only when this signed bit is true; omitted and legacy grants fail closed.
@@ -173,7 +181,19 @@ type Grant struct {
 	// normal HLS Stream Token and reveal scope first; this field only selects
 	// which disposable cache directory to serve after authorization succeeds.
 	PlaybackRenditionID store.PlaybackRenditionID `json:"playbackRenditionID,omitempty"`
-	ExpiresAt           time.Time                 `json:"expiresAt"`
+	// ComposedPicture asks the byte layer for a live composed-picture session:
+	// one rung drawing the Media's composed picture over its audio, decided at
+	// mint because no precomputed composed rendition was Ready. Meaningful only
+	// for TargetMediaHLS. Omitted when false, so tokens without it are
+	// byte-identical to tokens minted before this field existed.
+	ComposedPicture bool `json:"composedPicture,omitempty"`
+	// PitchShiftSemitones and Tempo bind an HLS session to a playback
+	// adjustment: the audio is pitch shifted by whole semitones and played at
+	// Tempo times its recorded speed (0 means 1). Meaningful only for
+	// TargetMediaHLS; omitted when unadjusted, so other tokens are unchanged.
+	PitchShiftSemitones int       `json:"pitchShiftSemitones,omitempty"`
+	Tempo               float64   `json:"tempo,omitempty"`
+	ExpiresAt           time.Time `json:"expiresAt"`
 }
 
 // HasResolvedProfileCapability reports whether the grant carries a capability

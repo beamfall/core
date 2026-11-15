@@ -9,14 +9,18 @@ import {
   type SubtitleAppearance,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { formatSync, SUBTITLE_OFFSET_LIMIT } from "./playbackSync";
+import { SyncNudger } from "./SyncNudger";
 
 // The subtitle styling/sync panel, ported from renderSubtitleStylePanel
 // (app.js): a role="dialog" with one select per appearance field (size,
-// background, font, colour, opacity, edge, position; CORE-1681) plus a sync
-// nudger (−0.5s / +0.5s). The styling button only surfaces when a subtitle track
+// background, font, colour, opacity, edge, position; CORE-1681) plus the
+// subtitle offset nudger (CORE-1671: ±0.1 s and ±0.5 s steps, the value, a
+// reset). The trigger row shows a non-zero offset so it is visible without
+// opening the panel. The styling button only surfaces when a subtitle track
 // exists; the sync controls disable with an honest "unavailable on this route"
-// note when the active route is hls.js. Escape closes and returns focus to the
-// trigger.
+// note when cues are not native TextTracks (an hls.js build rendering its own
+// cue DOM). Escape closes and returns focus to the trigger.
 type StringKey = Parameters<ReturnType<typeof useT>>[0];
 
 const FIELD_LABELS: Record<SubtitleAppearanceField, StringKey> = {
@@ -69,6 +73,7 @@ export function SubtitleStylePanel({
   onAppearanceChange,
   syncOffset,
   nudgeSync,
+  resetSync,
   reset,
   syncSupported,
 }: {
@@ -78,14 +83,13 @@ export function SubtitleStylePanel({
   onAppearanceChange?: (field: SubtitleAppearanceField, value: string) => void;
   syncOffset: number;
   nudgeSync: (delta: number) => void;
+  resetSync: () => void;
   reset: () => void;
   syncSupported: boolean;
 }) {
   const t = useT();
   const percent = new Intl.NumberFormat(useDisplayLocale(), { style: "percent" });
   const anchorRef = useRef<HTMLDivElement | null>(null);
-  const sign = syncOffset > 0 ? "+" : "";
-  const syncDisplay = `${sign}${syncOffset.toFixed(1)}s`;
   const optionLabel = (field: SubtitleAppearanceField, value: string) =>
     field === "opacity" ? percent.format(Number(value)) : t(OPTION_LABELS[`${field}:${value}`]);
 
@@ -97,7 +101,9 @@ export function SubtitleStylePanel({
             <Type />
           </span>
           <span className="bf-settings-label">{t("subtitleStyling")}</span>
-          <span className="bf-settings-value" />
+          <span className="bf-settings-value">
+            {syncOffset !== 0 ? formatSync(syncOffset) : ""}
+          </span>
           <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
         </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
@@ -129,30 +135,15 @@ export function SubtitleStylePanel({
               </div>
             ))}
 
-            <div className="bf-subtitle-row">
-              <span id="bf-subtitle-sync-label">{t("subtitleSync")}</span>
-              <span className="bf-subtitle-sync" aria-labelledby="bf-subtitle-sync-label">
-                <button
-                  type="button"
-                  aria-label={`${t("subtitleSync")} −0.5s`}
-                  disabled={!syncSupported}
-                  onClick={() => nudgeSync(-0.5)}
-                >
-                  −
-                </button>
-                <span className="bf-subtitle-sync-value" aria-live="polite">
-                  {syncDisplay}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`${t("subtitleSync")} +0.5s`}
-                  disabled={!syncSupported}
-                  onClick={() => nudgeSync(0.5)}
-                >
-                  +
-                </button>
-              </span>
-            </div>
+            <SyncNudger
+              label={t("subtitleSync")}
+              value={syncOffset}
+              min={-SUBTITLE_OFFSET_LIMIT}
+              max={SUBTITLE_OFFSET_LIMIT}
+              supported={syncSupported}
+              onNudge={nudgeSync}
+              onReset={resetSync}
+            />
 
             {!syncSupported && (
               <p className="bf-subtitle-unsupported">{t("subtitleSyncUnsupported")}</p>

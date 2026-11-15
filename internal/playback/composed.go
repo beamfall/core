@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -260,39 +261,165 @@ func (g FFmpegPrecomputeGenerator) precomputeComposedHLS(ctx context.Context, ru
 // composedChoice is playbackInfo's composed-picture branch: for an audio Media
 // whose plugin describes a picture, a video-capable client gets the Ready
 // composed rendition matching the current picture instead of the bare audio.
-// It answers ok=false — leaving the ladder untouched — whenever any condition
-// fails, including a composer error: playback never breaks because a picture
-// could not be resolved.
-func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant streamtoken.Grant, suffix string, media store.Media, file store.MediaFile, profile CapabilityProfile, wantedAudio ffmpeg.AudioProfile, expiresAt time.Time, ov quirkOverlay) (StreamChoice, bool, error) {
+// With none Ready, transcodeRefusal empty (policy and capacity admit a live
+// stream), a composed shape within the client and quirk limits, and an FFmpeg
+// build that can run the picture's recipe, it answers a live composed stream
+// instead (live=true) and queues the precomputed rendition for the next play.
+// It answers ok=false —
+// leaving the ladder untouched — whenever any condition fails, including a
+// composer error: playback never breaks because a picture could not be
+// resolved. A grant carrying a pitch shift or tempo change skips the
+// precomputed renditions: only the live stream can encode it.
+func (s *Service) composedChoice(ctx context.Context, scope auth.Scope, grant streamtoken.Grant, suffix string, media store.Media, file store.MediaFile, profile CapabilityProfile, wantedAudio ffmpeg.AudioProfile, expiresAt time.Time, ov quirkOverlay, transcodeRefusal string) (choice StreamChoice, live, ok bool, err error) {
 	if s.composer == nil || !composesPicture(media) || grant.BurnSubtitleIndex != 0 || !profileTakesComposedVideo(profile) {
-		return StreamChoice{}, false, nil
+		return StreamChoice{}, false, false, nil
 	}
 	renditions, err := s.store.ReadyPlaybackRenditions(ctx, media.ID, scope.LibraryFilter())
 	if err != nil {
-		return StreamChoice{}, false, err
+		return StreamChoice{}, false, false, err
 	}
-	// Only resolve the picture (which reads sidecars) when a composed
-	// rendition could possibly match.
-	if !hasComposedRendition(renditions, file.ContentFingerprint) {
-		return StreamChoice{}, false, nil
+	liveRung, shapeFits := liveComposedRung(profile, ov)
+	canLive := transcodeRefusal == "" && s.sessions != nil && shapeFits
+	// Only resolve the picture (which reads sidecars) when it could be used:
+	// a composed rendition might match, or a live stream could be offered.
+	if !hasComposedRendition(renditions, file.ContentFingerprint) && !canLive {
+		return StreamChoice{}, false, false, nil
 	}
-	picture, ok, err := s.composer(ctx, media, file.Path)
-	if err != nil || !ok {
-		return StreamChoice{}, false, nil
+	picture, resolved, err := s.composer(ctx, media, file.Path)
+	if err != nil || !resolved {
+		return StreamChoice{}, false, false, nil
 	}
 	digest, err := picture.digest()
 	if err != nil {
-		return StreamChoice{}, false, nil
+		return StreamChoice{}, false, false, nil
 	}
 	want := composedRenditionID(media.ID, file.ContentFingerprint, digest)
+	// A precomputed rendition is unadjusted, so a pitch shift or tempo change
+	// is always composed live.
+	adjusted := !grantAudioAdjust(grant).IsZero()
 	for _, rendition := range renditions {
-		if rendition.ID != want || !composedRenditionCompatible(rendition, profile, wantedAudio, ov) {
+		if adjusted || rendition.ID != want || !composedRenditionCompatible(rendition, profile, wantedAudio, ov) {
 			continue
 		}
 		choice, err := s.precomputedStreamChoice(ctx, grant, suffix, rendition, expiresAt)
-		return choice, err == nil, err
+		return choice, false, err == nil, err
 	}
-	return StreamChoice{}, false, nil
+	// A build that cannot run the recipe (no libass for timed text, no AAC
+	// encoder) would turn a song that plays as audio into a failing stream, so
+	// it keeps the audio.
+	if !canLive || !composedRecipeSupported(picture.TimedText != "", composedLiveRendition(liveRung, wantedAudio, grantAudioAdjust(grant))) {
+		return StreamChoice{}, false, false, nil
+	}
+	choice, err = s.liveComposedChoice(ctx, grant, suffix, wantedAudio, liveRung, expiresAt)
+	if err != nil {
+		return StreamChoice{}, false, false, err
+	}
+	if err := s.queueComposedRendition(ctx, media.ID); err != nil {
+		slog.WarnContext(ctx, "queueing composed rendition after a live composed play failed", "media", media.ID, "error", err)
+	}
+	return choice, true, true, nil
+}
+
+// liveComposedChoice mints the live composed-picture HLS stream: the grant
+// carries ComposedPicture, and the chosen shape as its client height ceiling,
+// so the byte layer opens a session with that single composed rung under the
+// ordinary transcode session limits.
+func (s *Service) liveComposedChoice(ctx context.Context, grant streamtoken.Grant, suffix string, audio ffmpeg.AudioProfile, rung Rung, expiresAt time.Time) (StreamChoice, error) {
+	grant.Target = streamtoken.TargetMediaHLS
+	grant = withHLSAudioGrant(grant, audio)
+	grant = withHLSLadderGrant(grant, ladderCaps{ClientMaxHeight: rung.Height})
+	grant.ComposedPicture = true
+	token, err := s.tokens.Issue(ctx, grant)
+	if err != nil {
+		return StreamChoice{}, err
+	}
+	return StreamChoice{
+		ID:         "composed-" + suffix,
+		Kind:       "hls",
+		URL:        "/api/media/hls/" + token + "/" + masterPlaylistName,
+		Token:      token,
+		ExpiresAt:  expiresAt.Format(time.RFC3339),
+		Renditions: []RenditionInfo{{ID: rung.ID, Height: rung.Height, Bandwidth: rung.Bandwidth}},
+	}, nil
+}
+
+// composedRecipeSupported reports whether the resolved FFmpeg build can run the
+// live composed encode of a timed-text (true) or graphics (false) picture with
+// a rendition. It is a variable so a test can state the build it means instead
+// of inheriting the FFmpeg on the developer's PATH, like toneMapSupported.
+var composedRecipeSupported = ffmpeg.ComposedRecipeSupported
+
+// composedLiveRendition is the rendition a live composed session encodes for
+// rung, audio and adjust: the fields hlsSession.rendition fills that decide
+// which filters and encoders the command names.
+func composedLiveRendition(rung Rung, audio ffmpeg.AudioProfile, adjust ffmpeg.AudioAdjust) ffmpeg.Rendition {
+	return ffmpeg.Rendition{
+		Height:        rung.Height,
+		VideoKbps:     rung.VideoKbps,
+		AudioCodec:    audio.Codec,
+		AudioChannels: audio.Channels,
+		AudioGainDB:   audio.GainDB,
+	}.WithAudioAdjust(adjust)
+}
+
+// liveComposedRung is the live composed shape a client may be sent: H.264 that
+// no matched quirk denies, under the same limits the cached composed path
+// applies (composedRenditionCompatible) — the client's declared H.264 maximum
+// height and bitrate, and the quirk height and bitrate caps, each bitrate held
+// against the rung's whole stream rate (video plus the audio and mux
+// allowance). ok is false when no composed shape fits.
+func liveComposedRung(profile CapabilityProfile, ov quirkOverlay) (Rung, bool) {
+	if ov.deniesVideoCodec(composedCodec) {
+		return Rung{}, false
+	}
+	maxHeight, maxBitrate := 0, ov.MaxBitrate
+	if len(profile.VideoCodecs) > 0 {
+		cap, ok := videoCodecCap(profile.VideoCodecs, composedCodec)
+		if !ok {
+			return Rung{}, false
+		}
+		maxHeight = cap.MaxHeight
+		maxBitrate = minNonZero(maxBitrate, cap.MaxBitrate)
+	} else {
+		maxHeight = clientLadderCeiling(profile)
+	}
+	return composedLiveRungWithin(minNonZero(maxHeight, ov.MaxHeight), maxBitrate)
+}
+
+// composedDemandPriority is the job priority of a composed render queued by a
+// live play: above the Schedule sweep's default, so the song just played is
+// rendered ahead of the backlog and its next play is precomputed.
+const composedDemandPriority = 10
+
+// SetComposedCacheRoot names the precompute cache directory a live composed
+// play queues its precomputed rendition under. Empty (the default) queues
+// nothing.
+func (s *Service) SetComposedCacheRoot(root string) {
+	s.composedCache = root
+}
+
+// queueComposedRendition queues the Media's composed rendition at demand
+// priority after a live composed play, unless a rendition row for its current
+// picture already exists. A render the sweep
+// already queued is raised to demand priority instead of duplicated.
+func (s *Service) queueComposedRendition(ctx context.Context, mediaID store.MediaID) error {
+	req, ok, err := composedRequest(ctx, s.store, mediaID, s.composer, s.composedCache)
+	if err != nil || !ok {
+		return err
+	}
+	// Same rule as EnsureComposedRendition: any rendition row for the current
+	// picture means generation already ran or is running.
+	if _, err := s.store.PlaybackRendition(ctx, req.RenditionID, store.LibraryFilter{AllLibraries: true, Revealed: true}); err == nil {
+		return nil
+	} else if !errors.Is(err, store.ErrPlaybackRenditionNotFound) {
+		return err
+	}
+	req.Priority = composedDemandPriority
+	job, err := RequestPrecomputeRendition(ctx, s.store, req, s.now())
+	if err != nil {
+		return err
+	}
+	return s.store.RaiseQueuedJobPriority(ctx, job.ID, composedDemandPriority)
 }
 
 func hasComposedRendition(renditions []store.PlaybackRendition, fingerprint string) bool {
