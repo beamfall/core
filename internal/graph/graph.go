@@ -130,6 +130,10 @@ type SourceItem struct {
 	// Engagement is the acting Profile's playback state for the item; absent
 	// means none. See SourceItemEngagement.
 	Engagement *SourceItemEngagement `json:"engagement,omitempty"`
+	// MediaClass is a media-kind item's playback class ("audio", "video"), so
+	// a client can choose a class-appropriate placeholder for an artwork-less
+	// card (CORE-1492). Absent for entities and unknown classes.
+	MediaClass string `json:"mediaClass,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -904,6 +908,16 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // item.Locked is propagated unconditionally: the client needs to know whether
 // to render the lock treatment, and locked items are always visible to the scope
 // that receives them (the byte gate is server-side, not UI-side).
+// annotateCards sets the per-item fields a card renders that the feed query
+// does not carry: each media item's class (for its placeholder) and the acting
+// Profile's engagement.
+func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []store.SourceItem) error {
+	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
+		return err
+	}
+	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+}
+
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
 		ID:         string(item.ID),
@@ -913,6 +927,7 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		Locked:     item.Locked,
 		Muted:      item.Muted,
 		Engagement: sourceItemEngagement(item.Engagement),
+		MediaClass: string(item.MediaClass),
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -1515,7 +1530,7 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -2869,7 +2884,7 @@ func (h *Handler) search(ctx context.Context, scope auth.Scope, req request) ([]
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -2921,7 +2936,7 @@ func (h *Handler) searchEntities(ctx context.Context, scope auth.Scope, req requ
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -3809,7 +3824,7 @@ func (h *Handler) queueItems(ctx context.Context, scope auth.Scope) ([]SourceIte
 	if err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))
@@ -4155,7 +4170,7 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		return EntityDetailInfo{}, err
 	}
 	for _, group := range groups {
-		if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), group.Items); err != nil {
+		if err := h.annotateCards(ctx, scope, group.Items); err != nil {
 			return EntityDetailInfo{}, err
 		}
 		items := make([]SourceItem, len(group.Items))
@@ -4620,7 +4635,7 @@ func (h *Handler) mediaForEntity(ctx context.Context, scope auth.Scope, req requ
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items); err != nil {
+	if err := h.annotateCards(ctx, scope, items); err != nil {
 		return nil, err
 	}
 	resp := make([]SourceItem, len(items))

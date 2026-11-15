@@ -141,6 +141,11 @@ export interface SourceItem {
   locked?: boolean;
   /** The acting Profile's playback state; absent when it has none. */
   engagement?: SourceItemEngagement;
+  /**
+   * A media item's playback class ("audio", "video"), for a class-aware
+   * placeholder when it has no artwork (CORE-1492). Absent for entities.
+   */
+  mediaClass?: string;
 }
 
 /**

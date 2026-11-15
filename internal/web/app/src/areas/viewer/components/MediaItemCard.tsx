@@ -1,4 +1,4 @@
-import { Check, Film, Play } from "lucide-react";
+import { Check, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
@@ -15,6 +15,7 @@ import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus"
 import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
+import { PosterGlyph } from "./PosterGlyph";
 
 export const PREVIEW_DWELL_MS = 400;
 const POINTER_PREVIEW_QUERY = "(hover: hover) and (pointer: fine)";
@@ -234,7 +235,7 @@ export function MediaItemCard({
               onError={() => setImageFailed(true)}
             />
           ) : (
-            <Film aria-hidden strokeWidth={1.5} className="bf-poster-glyph size-[28%]" />
+            <PosterGlyph mediaClass={item.mediaClass} />
           )}
           {previewClip && (
             <video

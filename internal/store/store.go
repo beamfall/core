@@ -808,6 +808,9 @@ type SourceItem struct {
 	Title      string
 	Summary    string
 	Restricted bool
+	// MediaClass is a media-kind item's playback class ("audio", "video"),
+	// set by AnnotateMediaClass; empty for entities and unknown classes.
+	MediaClass MediaClass
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.

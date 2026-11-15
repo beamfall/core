@@ -137,22 +137,23 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // locked certification ceiling), and muted (ADR-0054 §2.7: the per-item
 // Per-Profile Mute badge on deliberately-surfaced / Favorite-overridden items),
 // engagement (CORE-1192: the acting Profile's playback state for the card)
-// and NOTHING else: the android-ui kit's selection
-// of `libraryID` and `mediaClass` under sourceItems are nonexistent nested fields
-// (the contract this schema exists to surface). If a future change adds those
-// fields, this test must be updated deliberately alongside the golden.
+// and NOTHING else: the android-ui kit's selection of `libraryID` under
+// sourceItems is a nonexistent nested field (the contract this schema exists to
+// surface). `mediaClass` was added deliberately by CORE-1492 for class-aware
+// card placeholders. Any further field must be added the same way, alongside
+// the golden.
 func TestNestedSchemaSourceItemShape(t *testing.T) {
 	si := topLevel(t, "sourceitems")
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "engagement", "id", "kind", "locked", "muted", "restricted", "summary", "title"}
+	want := []string{"artwork", "artworkSlots", "engagement", "id", "kind", "locked", "mediaClass", "muted", "restricted", "summary", "title"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}
 	for _, c := range si.Children {
 		switch c.Name {
-		case "libraryID", "mediaClass":
+		case "libraryID":
 			t.Errorf("sourceItems unexpectedly exposes %q — client-drift would be masked", c.Name)
 		case "artwork":
 			if c.Kind != "object" || !slices.Equal(childNames(c.Children), []string{"poster"}) {

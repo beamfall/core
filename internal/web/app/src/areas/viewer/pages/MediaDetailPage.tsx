@@ -1,4 +1,4 @@
-import { ArrowLeft, Film, Play } from "lucide-react";
+import { ArrowLeft, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/viewerCache";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { NotAvailable } from "../components/NotAvailable";
+import { PosterGlyph } from "../components/PosterGlyph";
 import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
@@ -194,7 +195,7 @@ export function MediaDetailPage() {
             </div>
           )}
           <div className="bf-detail-panel">
-            <DetailPoster key={poster} url={poster} />
+            <DetailPoster key={poster} url={poster} mediaClass={card?.mediaClass} />
             <div className="bf-detail-copy">
               <h1 id={TITLE_ID} className="bf-page-title">
                 {title}
@@ -284,7 +285,7 @@ export function MediaDetailPage() {
   );
 }
 
-function DetailPoster({ url }: { url: string }) {
+function DetailPoster({ url, mediaClass }: { url: string; mediaClass?: string }) {
   const [failed, setFailed] = useState(false);
   return (
     <div className="bf-poster bf-detail-poster">
@@ -299,7 +300,7 @@ function DetailPoster({ url }: { url: string }) {
         />
       ) : (
         // The same glyph a card draws when it has no artwork.
-        <Film aria-hidden strokeWidth={1.5} className="bf-poster-glyph size-[28%]" />
+        <PosterGlyph mediaClass={mediaClass} />
       )}
     </div>
   );

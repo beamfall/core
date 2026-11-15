@@ -2343,6 +2343,11 @@
           "optional": true
         },
         {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "muted",
           "kind": "scalar",
           "optional": true
@@ -6857,6 +6862,11 @@
                       "optional": true
                     },
                     {
+                      "name": "mediaClass",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "muted",
                       "kind": "scalar",
                       "optional": true
@@ -6942,6 +6952,11 @@
                   },
                   {
                     "name": "locked",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "mediaClass",
                     "kind": "scalar",
                     "optional": true
                   },
@@ -7057,6 +7072,11 @@
                     "optional": true
                   },
                   {
+                    "name": "mediaClass",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "muted",
                     "kind": "scalar",
                     "optional": true
@@ -7142,6 +7162,11 @@
                 },
                 {
                   "name": "locked",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "mediaClass",
                   "kind": "scalar",
                   "optional": true
                 },
@@ -9263,6 +9288,11 @@
                 "optional": true
               },
               {
+                "name": "mediaClass",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "muted",
                 "kind": "scalar",
                 "optional": true
@@ -9348,6 +9378,11 @@
             },
             {
               "name": "locked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaClass",
               "kind": "scalar",
               "optional": true
             },
@@ -10635,6 +10670,11 @@
         },
         {
           "name": "locked",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaClass",
           "kind": "scalar",
           "optional": true
         },
@@ -14963,6 +15003,11 @@
           "optional": true
         },
         {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "muted",
           "kind": "scalar",
           "optional": true
@@ -15051,6 +15096,11 @@
         },
         {
           "name": "locked",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaClass",
           "kind": "scalar",
           "optional": true
         },
@@ -15147,6 +15197,11 @@
           "optional": true
         },
         {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "muted",
           "kind": "scalar",
           "optional": true
@@ -15235,6 +15290,11 @@
         },
         {
           "name": "locked",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaClass",
           "kind": "scalar",
           "optional": true
         },
@@ -17582,6 +17642,11 @@
           "optional": true
         },
         {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "muted",
           "kind": "scalar",
           "optional": true
@@ -17677,6 +17742,11 @@
         },
         {
           "name": "locked",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaClass",
           "kind": "scalar",
           "optional": true
         },
@@ -17855,6 +17925,11 @@
                 "optional": true
               },
               {
+                "name": "mediaClass",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "mode",
                 "kind": "scalar"
               },
@@ -17977,6 +18052,11 @@
             },
             {
               "name": "locked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaClass",
               "kind": "scalar",
               "optional": true
             },
@@ -25169,6 +25249,11 @@
           "optional": true
         },
         {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "muted",
           "kind": "scalar",
           "optional": true
@@ -25423,6 +25508,11 @@
         },
         {
           "name": "locked",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "mediaClass",
           "kind": "scalar",
           "optional": true
         },
