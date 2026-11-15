@@ -404,3 +404,63 @@ func TestOfflinePackRetryCancelledAfterRestartKeepsAJob(t *testing.T) {
 		t.Fatalf("build %q after its job = %q, want ready", created.ID, state)
 	}
 }
+
+func cancelJobAsOperator(t *testing.T, handler *Handler, id store.JobID) {
+	t.Helper()
+	body := graphPost(t, handler, authorizeManager,
+		`{"query":"mutation($id:String!){ jobCancel(id:$id){ id status } }","variables":{"id":"`+string(id)+`"}}`)
+	var resp struct {
+		Data struct {
+			JobCancel JobInfo `json:"jobCancel"`
+		} `json:"data"`
+		Errors []graphError `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode jobCancel: %v (%s)", err, body)
+	}
+	if len(resp.Errors) != 0 || resp.Data.JobCancel.Status != string(store.JobStatusCanceled) {
+		t.Fatalf("jobCancel = %#v errors=%#v", resp.Data.JobCancel, resp.Errors)
+	}
+}
+
+// TestOfflinePackOperatorCancelFailsTheBuild covers CORE-1866: an operator
+// jobCancel of a queued build job lists the build failed, a retry queues a
+// fresh job for it, and once that job is cancelled too the build can be
+// dismissed by revoking it.
+func TestOfflinePackOperatorCancelFailsTheBuild(t *testing.T) {
+	handler, st := newOfflinePackHandler(t)
+	openManagerAdminSession(t, st)
+	created := queueOfflinePackBuildForTest(t, handler)
+	queued := activeOfflinePackBuildJobs(t, st, created.ID)
+	if len(queued) != 1 {
+		t.Fatalf("active jobs for %q = %d, want 1", created.ID, len(queued))
+	}
+
+	cancelJobAsOperator(t, handler, queued[0].ID)
+	packs := listOfflinePackBuilds(t, handler)
+	if len(packs) != 1 || packs[0].ID != created.ID || packs[0].State != "failed" || packs[0].FailureReason != offlinepack.FailureBuild {
+		t.Fatalf("offlinePacks after jobCancel = %+v, want %q failed with %q", packs, created.ID, offlinepack.FailureBuild)
+	}
+
+	retried, errs := retryOfflinePackForTest(t, handler, created.ID)
+	if len(errs) != 0 || retried.State != "building" {
+		t.Fatalf("retry after jobCancel = %+v / %#v, want building", retried, errs)
+	}
+	requeued := activeOfflinePackBuildJobs(t, st, created.ID)
+	if len(requeued) != 1 || requeued[0].ID == queued[0].ID || requeued[0].Status != store.JobStatusQueued {
+		t.Fatalf("active jobs after the retry = %+v, want one new queued job", requeued)
+	}
+
+	cancelJobAsOperator(t, handler, requeued[0].ID)
+	if state := offlinePackBuildState(t, handler, created.ID); state != "failed" {
+		t.Fatalf("build %q after the second jobCancel = %q, want failed", created.ID, state)
+	}
+	revokeBody := `{"query":"mutation R($id:String!){ revokeOfflinePack(id:$id){ id state } }","variables":{"id":"` + created.ID + `"}}`
+	revoked, errs := offlinePackMutation(t, handler, "revokeOfflinePack", revokeBody)
+	if len(errs) != 0 || revoked.ID != created.ID || revoked.State != "revoked" {
+		t.Fatalf("revoke after jobCancel = %+v / %#v, want it revoked", revoked, errs)
+	}
+	if packs := listOfflinePackBuilds(t, handler); len(packs) != 0 {
+		t.Fatalf("offlinePacks after dismissing = %+v, want none", packs)
+	}
+}

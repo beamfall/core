@@ -163,6 +163,21 @@ func (s *Service) FailBuild(ctx context.Context, id store.OfflinePackID, reason 
 	return s.store.FailOfflinePackBuild(ctx, id, reason, s.now())
 }
 
+// BuildJobCanceled moves the build a cancelled job was running back to
+// failed. An operator cancel makes the job terminal, so no worker will ever
+// finish that build; failed keeps it retryable and dismissable. A payload
+// without a pack ID (an untracked build) needs nothing.
+func (s *Service) BuildJobCanceled(ctx context.Context, payload []byte) error {
+	var job BuildJobPayload
+	if err := json.Unmarshal(payload, &job); err != nil {
+		return err
+	}
+	if job.PackID == "" {
+		return nil
+	}
+	return s.store.FailOfflinePackBuild(context.WithoutCancel(ctx), job.PackID, FailureBuild, s.now())
+}
+
 // DismissBuild removes the caller's failed build from the list.
 func (s *Service) DismissBuild(ctx context.Context, id store.OfflinePackID, profileID store.ProfileID) error {
 	return s.store.DeleteFailedOfflinePackBuild(ctx, id, profileID)
