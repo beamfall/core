@@ -26,6 +26,10 @@ func TestEveryRouteRegistered(t *testing.T) {
 		// Public AGPL §13 corresponding-source offer. It redirects to the
 		// release-injected source archive and exposes no library/Reveal data.
 		"GET /source": false,
+		// Public developer API reference (CORE-1714): the embedded OpenAPI
+		// document and a page rendered from it. Static, no library/Reveal data.
+		"GET /api/docs":              false,
+		"GET /api/docs/openapi.json": false,
 		// Exact-root convenience redirect to the Core Web UI shell.
 		// It serves no Media, Entities, bytes, search results, counts, stats, or
 		// presence, so it is route-tracked but not a Reveal content surface.

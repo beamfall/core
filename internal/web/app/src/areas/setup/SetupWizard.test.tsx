@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   fetchPlugins: vi.fn(),
   loadProviderKeys: vi.fn(),
   loadSavedPluginChoices: vi.fn(),
+  reopenAdminSession: vi.fn(),
   setScraperCredential: vi.fn(),
 }));
 
@@ -55,6 +56,7 @@ vi.mock("./orchestrate", async () => {
     createFirstLibrary: mocks.createFirstLibrary,
     loadProviderKeys: mocks.loadProviderKeys,
     loadSavedPluginChoices: mocks.loadSavedPluginChoices,
+    reopenAdminSession: mocks.reopenAdminSession,
   };
 });
 
@@ -905,6 +907,50 @@ describe("SetupWizard resume (CORE-1604)", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(screen.getByRole("switch", { name: "Music" })).toBeChecked());
     expect(screen.getByRole("switch", { name: "Film & TV" })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(mocks.activatePlugins).toHaveBeenCalledWith(
+        ["music"],
+        ["filmtv", "photos", "karaoke"],
+      ),
+    );
+  });
+
+  it("reopens a lapsed Admin Session with the admin password and continues (CORE-1731)", async () => {
+    const saved = {
+      plugins: FIRST_PARTY_PLUGINS,
+      active: new Set(["music"]),
+      updateCheckEnabled: false,
+      updateCheckChannel: "stable",
+      providerKeys: [],
+    };
+    mocks.loadSavedPluginChoices.mockRejectedValue(new ApiError("admin session required", 403));
+    mocks.reopenAdminSession.mockResolvedValueOnce(false);
+    const user = userEvent.setup();
+    renderSetupWizard();
+
+    expect(
+      await screen.findByText(
+        "The admin window has closed, so the saved plugin choices can't be read. Enter the admin password to reopen it and continue.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+
+    // A rejected password says so, clears the field and leaves the step locked.
+    const password = screen.getByLabelText("Admin password");
+    await user.type(password, "wrong-password{Enter}");
+    expect(await screen.findByText("The admin password was not accepted.")).toBeInTheDocument();
+    expect(mocks.reopenAdminSession).toHaveBeenCalledWith("wrong-password");
+    expect(password).toHaveValue("");
+    expect(mocks.activatePlugins).not.toHaveBeenCalled();
+
+    mocks.reopenAdminSession.mockResolvedValueOnce(true);
+    mocks.loadSavedPluginChoices.mockResolvedValue(saved);
+    await user.type(password, "admin-password");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Music" })).toBeChecked());
+    expect(mocks.reopenAdminSession).toHaveBeenLastCalledWith("admin-password");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() =>
       expect(mocks.activatePlugins).toHaveBeenCalledWith(
