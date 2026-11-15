@@ -25,6 +25,7 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/integrationhost"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/manifest"
 	"github.com/beamfall/core/internal/observability"
 	"github.com/beamfall/core/internal/offlinepack"
@@ -1451,9 +1452,14 @@ func (e clientError) Error() string { return string(e) }
 // abandoned the request (ctx is the request context) logs at debug only.
 func graphFailMessage(ctx context.Context, field string, err error) string {
 	message := field + " unavailable"
+	var le *l10n.Error
 	var ce clientError
 	var ve store.ValidationError
 	switch {
+	case errors.As(err, &le):
+		// Server-localized text (CORE-2102); its code still comes from the
+		// English error it wraps.
+		message = le.Localize(l10n.FromContext(ctx))
 	case errors.As(err, &ce):
 		message = string(ce)
 	case errors.As(err, &ve):
@@ -2320,7 +2326,7 @@ func (h *Handler) createLibrary(ctx context.Context, scope auth.Scope, req reque
 	// Refuse a folder the server cannot use before anything is created, so a
 	// bad path leaves no half-made Library behind (CORE-1598).
 	if err := store.CheckLibraryRoots(roots); err != nil {
-		return LibraryInfo{}, err
+		return LibraryInfo{}, localizeLibraryRootError(err)
 	}
 	library, err := h.store.CreateLibraryWithRoots(ctx, title, restricted, pluginID, scope.ProfileID, roots, familyScope)
 	if err != nil {
@@ -2435,7 +2441,7 @@ func (h *Handler) setLibraryRoots(ctx context.Context, scope auth.Scope, req req
 		return LibraryInfo{}, err
 	}
 	if err := store.CheckAddedLibraryRoots(saved, roots); err != nil {
-		return LibraryInfo{}, err
+		return LibraryInfo{}, localizeLibraryRootError(err)
 	}
 	if err := h.store.SetLibraryRoots(ctx, store.LibraryID(libraryID), roots); err != nil {
 		return LibraryInfo{}, err

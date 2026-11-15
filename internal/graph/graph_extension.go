@@ -353,7 +353,7 @@ func (h *Handler) notifyAdultsOfExtension(ctx context.Context, r store.Extension
 			ID:                 notificationID,
 			RecipientProfileID: p.ID,
 			Kind:               store.NotificationExtensionRequest,
-			Title:              "More time requested",
+			Title:              storedNotificationTitle(store.NotificationExtensionRequest),
 			Ref:                extensionApprovalToken(r),
 		}); err != nil {
 			return err

@@ -10,6 +10,7 @@ import (
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/conductor"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -101,14 +102,31 @@ func watchPartyInfo(ctx context.Context, st *store.Store, g *conductor.Group) Wa
 }
 
 // partyMemberDisplayName resolves a member to its Profile's chosen display name,
-// falling back to a non-identifying label (ADR-0111 §1).
+// falling back to a non-identifying label (ADR-0111 §1) in the request locale.
 func partyMemberDisplayName(ctx context.Context, st *store.Store, m conductor.Member) string {
+	if name := partyMemberName(ctx, st, m); name != "" {
+		return name
+	}
+	return participantFallback(ctx)
+}
+
+// partyMemberBroadcastName is partyMemberDisplayName for an event every member
+// receives: the fallback label is in the source locale, not the actor's.
+func partyMemberBroadcastName(ctx context.Context, st *store.Store, m conductor.Member) string {
+	if name := partyMemberName(ctx, st, m); name != "" {
+		return name
+	}
+	return participantFallback(l10n.WithLocale(ctx, l10n.Source()))
+}
+
+// partyMemberName is the member's Profile display name, or "" when unknown.
+func partyMemberName(ctx context.Context, st *store.Store, m conductor.Member) string {
 	if st != nil && m.ProfileID != "" {
 		if p, err := st.Profile(ctx, m.ProfileID); err == nil {
 			return p.Name
 		}
 	}
-	return "Participant"
+	return ""
 }
 
 // errPartyHomeNetworkOnly is the CORE-0531 refusal: until a fresh legal review
@@ -208,7 +226,7 @@ func (h *Handler) inviteToWatchParty(ctx context.Context, scope auth.Scope, req 
 			ID:                 newPartyNotificationID(),
 			RecipientProfileID: invitee,
 			Kind:               store.NotificationWatchPartyInvite,
-			Title:              "Watch Party invitation",
+			Title:              storedNotificationTitle(store.NotificationWatchPartyInvite),
 			Ref:                partyID,
 			CreatedAt:          time.Now().UTC(),
 		}); err != nil {
@@ -492,10 +510,12 @@ func (h *Handler) holdPartyRequest(ctx context.Context, partyID string, from sto
 	if err != nil {
 		return partyClientError(err)
 	}
-	name := "Participant"
+	// An unknown member leaves the body empty; the inbox renders the fallback
+	// label in the host's locale.
+	name := ""
 	for _, m := range g.Members() {
 		if m.SessionID == from {
-			name = partyMemberDisplayName(ctx, h.store, m)
+			name = partyMemberName(ctx, h.store, m)
 		}
 	}
 	now := time.Now().UTC()
@@ -503,7 +523,7 @@ func (h *Handler) holdPartyRequest(ctx context.Context, partyID string, from sto
 		ID:                 newPartyNotificationID(),
 		RecipientProfileID: host,
 		Kind:               store.NotificationWatchPartyRequest,
-		Title:              "Watch Party seek request",
+		Title:              storedNotificationTitle(store.NotificationWatchPartyRequest),
 		Body:               name,
 		Ref:                partyID + ":" + requestID,
 		CreatedAt:          now,
@@ -808,7 +828,7 @@ func (h *Handler) broadcastPartyRosterHandoffLocked(ctx context.Context, partyID
 	names := make([]string, 0, len(members))
 	hostName := ""
 	for _, m := range members {
-		name := partyMemberDisplayName(ctx, h.store, m)
+		name := partyMemberBroadcastName(ctx, h.store, m)
 		names = append(names, name)
 		if newHost != "" && m.SessionID == newHost {
 			hostName = name
@@ -849,7 +869,7 @@ func (h *Handler) broadcastPartyEndedLocked(ctx context.Context, partyID string,
 	if h.store == nil {
 		return nil
 	}
-	hostName := partyMemberDisplayName(ctx, h.store, host)
+	hostName := partyMemberBroadcastName(ctx, h.store, host)
 	now := time.Now().UTC()
 	for _, profile := range partyProfiles(members, host.ProfileID) {
 		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{

@@ -68,8 +68,8 @@ func (h *Handler) notifications(ctx context.Context, scope auth.Scope, req reque
 		out[i] = NotificationInfo{
 			ID:        n.ID,
 			Kind:      string(n.Kind),
-			Title:     n.Title,
-			Body:      n.Body,
+			Title:     notificationTitle(ctx, n),
+			Body:      notificationBody(ctx, n),
 			Ref:       n.Ref,
 			CreatedAt: n.CreatedAt.Format(time.RFC3339),
 			Read:      !n.ReadAt.IsZero(),
