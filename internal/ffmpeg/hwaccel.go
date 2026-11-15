@@ -158,11 +158,6 @@ type HWAccelResult struct {
 	Working []HWAccel
 }
 
-const (
-	softwareTranscodeCap = 1
-	hardwareTranscodeCap = 4
-)
-
 // Supports reports whether the probe verified the given accelerator works.
 func (r HWAccelResult) Supports(a HWAccel) bool {
 	for _, probe := range r.Results {
@@ -206,14 +201,62 @@ func SelectHWAccel(result HWAccelResult, preferred HWAccel) HWAccel {
 	return ""
 }
 
-// TranscodeCapForHWAccel derives realtime admission capacity from the verified
-// encoder path: software gets one slot; hardware keeps the existing four-slot
-// policy.
-func TranscodeCapForHWAccel(result HWAccelResult) int {
-	if SelectHWAccel(result, "") == "" {
-		return softwareTranscodeCap
+// Automatic concurrent-transcode cap inputs (CORE-2093). The cap is what the
+// server admits when no operator cap is set; an env/flag or Console cap always
+// wins (graph.ResolveTranscodeCap).
+const (
+	// softwareCoresPerTranscode: a libx264 veryfast 1080p encode needs about
+	// four modern cores to stay comfortably ahead of realtime once decode,
+	// audio and the server itself take their share, so a 4-core NAS keeps
+	// the single session it always had.
+	softwareCoresPerTranscode = 4
+	// softwareTranscodeCapMax bounds a large host: beyond eight concurrent
+	// software encodes, memory bandwidth rather than cores is the limit.
+	softwareTranscodeCapMax = 8
+	// hardwareTranscodeCapMin: the hardware pipeline still decodes, scales,
+	// mixes audio and muxes on the CPU (frames are uploaded to the encoder),
+	// so a hardware session costs about one core, but any verified hardware
+	// encoder carries at least two sessions.
+	hardwareTranscodeCapMin = 2
+	// nvencSessionLimit is the NVIDIA consumer driver's concurrent NVENC
+	// session limit on current drivers (raised to 8 in the 550 series; it was
+	// 5, and 3 before that). An encode past it fails to open, so this is a
+	// hard ceiling rather than a throughput guess. An older driver with a
+	// lower limit needs an operator cap.
+	nvencSessionLimit = 8
+	// integratedGPUTranscodeCap covers QSV and VA-API. Intel and AMD
+	// integrated GPUs have no session limit; six realtime 1080p encodes is a
+	// conservative throughput figure for a current Quick Sync or VCN engine,
+	// leaving room for HEVC and 4K sessions, which cost more.
+	integratedGPUTranscodeCap = 6
+	// videoToolboxTranscodeCap assumes the one media engine of a base Apple
+	// silicon chip; Max and Ultra parts have more and can take an operator
+	// cap.
+	videoToolboxTranscodeCap = 4
+)
+
+// hardwareTranscodeCapMax is each backend's ceiling on the automatic cap.
+var hardwareTranscodeCapMax = map[HWAccel]int{
+	HWAccelQSV:          integratedGPUTranscodeCap,
+	HWAccelVAAPI:        integratedGPUTranscodeCap,
+	HWAccelNVENC:        nvencSessionLimit,
+	HWAccelVideoToolbox: videoToolboxTranscodeCap,
+}
+
+// DefaultTranscodeCap derives the automatic realtime admission capacity from
+// the selected encoder path and the host's usable cores. accel is the
+// accelerator the server selected ("" is software). Usable cores are
+// runtime.GOMAXPROCS(0), which honours CPU affinity and cgroup CPU limits.
+func DefaultTranscodeCap(accel HWAccel) int {
+	return transcodeCapFor(accel, runtime.GOMAXPROCS(0))
+}
+
+func transcodeCapFor(accel HWAccel, cpus int) int {
+	limit, hardware := hardwareTranscodeCapMax[accel]
+	if !hardware {
+		return min(max(cpus/softwareCoresPerTranscode, 1), softwareTranscodeCapMax)
 	}
-	return hardwareTranscodeCap
+	return min(max(cpus, hardwareTranscodeCapMin), limit)
 }
 
 // hwAccelCandidates returns the accelerators worth probing on goos, gated by

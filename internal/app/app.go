@@ -462,7 +462,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		selected := ffmpeg.SelectHWAccel(probe, configured)
 		ffmpegRunner.SetHardwareAccel(selected, probe.SupportsHEVC(selected))
 		cfg.HardwareAcceleration = hardwareAccelReport(probe)
-		cfg.TranscodeCap = ffmpeg.TranscodeCapForHWAccel(probe)
+		// The automatic cap fits the host: usable cores for software, the
+		// selected backend's limit for hardware (CORE-2093). An env/flag or
+		// stored cap still wins below.
+		cfg.TranscodeCap = ffmpeg.DefaultTranscodeCap(selected)
+		logger.Info("transcode cap: automatic default derived", "cap", cfg.TranscodeCap, "accelerator", string(selected))
 		if cfg.HardwareAcceleration.SoftwareOnly() {
 			logger.Info("hardware acceleration probe: none verified, using software transcode")
 		} else {

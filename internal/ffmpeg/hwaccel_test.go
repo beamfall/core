@@ -136,16 +136,39 @@ func TestSelectHWAccelFallsBackToFirstVerifiedAccelerator(t *testing.T) {
 	}
 }
 
-func TestTranscodeCapForHWAccelDerivesFromProbeResult(t *testing.T) {
-	if got := TranscodeCapForHWAccel(HWAccelResult{}); got != softwareTranscodeCap {
-		t.Fatalf("software cap = %d, want %d", got, softwareTranscodeCap)
+func TestTranscodeCapForDerivesFromHostAndBackend(t *testing.T) {
+	cases := []struct {
+		accel HWAccel
+		cpus  int
+		want  int
+	}{
+		// Software: one session per four cores, clamped to 1..8.
+		{"", 1, 1},
+		{"", 4, 1},
+		{"", 8, 2},
+		{"", 16, 4},
+		{"", 64, softwareTranscodeCapMax},
+		// Hardware: one per core, at least two, at most the backend limit.
+		{HWAccelQSV, 1, hardwareTranscodeCapMin},
+		{HWAccelQSV, 4, 4},
+		{HWAccelQSV, 32, integratedGPUTranscodeCap},
+		{HWAccelVAAPI, 32, integratedGPUTranscodeCap},
+		{HWAccelNVENC, 6, 6},
+		{HWAccelNVENC, 32, nvencSessionLimit},
+		{HWAccelVideoToolbox, 10, videoToolboxTranscodeCap},
+		// An accelerator outside the vocabulary is software.
+		{HWAccel("bogus"), 16, 4},
 	}
-	result := HWAccelResult{
-		Results: []HWAccelProbe{{Accelerator: HWAccelVideoToolbox, Status: HWAccelWorking}},
-		Working: []HWAccel{HWAccelVideoToolbox},
+	for _, tc := range cases {
+		if got := transcodeCapFor(tc.accel, tc.cpus); got != tc.want {
+			t.Errorf("transcodeCapFor(%q, %d) = %d, want %d", tc.accel, tc.cpus, got, tc.want)
+		}
 	}
-	if got := TranscodeCapForHWAccel(result); got != hardwareTranscodeCap {
-		t.Fatalf("hardware cap = %d, want %d", got, hardwareTranscodeCap)
+	if got := DefaultTranscodeCap(""); got < 1 || got > softwareTranscodeCapMax {
+		t.Fatalf("DefaultTranscodeCap(software) = %d, want within 1..%d", got, softwareTranscodeCapMax)
+	}
+	if nvencSessionLimit != 8 || integratedGPUTranscodeCap != 6 || videoToolboxTranscodeCap != 4 {
+		t.Fatalf("backend limits drifted from the documented spec (openspec hardware-transcode)")
 	}
 }
 
