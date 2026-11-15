@@ -272,23 +272,56 @@ func reasonVocabularyFailures(t *testing.T, dir string, published map[string]boo
 	if reasonType == nil {
 		t.Fatal("internal/graph declares no ErrorReason type")
 	}
-	isReason := func(expr ast.Expr) bool {
-		tv, ok := info.Types[expr]
-		return ok && tv.IsType() && types.Identical(tv.Type, reasonType.Type())
+	// carriesReason reports whether t is ErrorReason or reaches one through a
+	// pointer, slice, array, map or channel, so (*ErrorReason)(&s) counts too.
+	var carriesReason func(t types.Type) bool
+	carriesReason = func(t types.Type) bool {
+		if types.Identical(t, reasonType.Type()) {
+			return true
+		}
+		switch u := t.(type) {
+		case *types.Pointer:
+			return carriesReason(u.Elem())
+		case *types.Slice:
+			return carriesReason(u.Elem())
+		case *types.Array:
+			return carriesReason(u.Elem())
+		case *types.Map:
+			return carriesReason(u.Key()) || carriesReason(u.Elem())
+		case *types.Chan:
+			return carriesReason(u.Elem())
+		}
+		return false
 	}
-	// A conversion or type assertion yields a runtime ErrorReason the constant
-	// scan below cannot see. Resolving the target by type identity catches
-	// parenthesised and aliased spellings too.
+	isReasonType := func(expr ast.Expr) bool {
+		tv, ok := info.Types[expr]
+		return ok && tv.IsType() && carriesReason(tv.Type)
+	}
+	isRuntimeReason := func(expr ast.Expr) bool {
+		tv, ok := info.Types[expr]
+		return ok && tv.Value == nil && types.Identical(tv.Type, reasonType.Type())
+	}
+	// Conversions, type assertions and string arithmetic yield runtime
+	// ErrorReasons the constant scan below cannot see. Resolving targets by
+	// type identity catches parenthesised and aliased spellings too.
 	for _, file := range files {
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.CallExpr:
-				if isReason(n.Fun) {
+				if isReasonType(n.Fun) {
 					fail(n, "converts a value into an ErrorReason; use a published constant")
 				}
 			case *ast.TypeAssertExpr:
-				if n.Type != nil && isReason(n.Type) {
+				if n.Type != nil && isReasonType(n.Type) {
 					fail(n, "asserts a value into an ErrorReason; use a published constant")
+				}
+			case *ast.BinaryExpr:
+				if isRuntimeReason(n) {
+					fail(n, "computes an ErrorReason at runtime; use a published constant")
+				}
+			case *ast.AssignStmt:
+				if n.Tok != token.ASSIGN && n.Tok != token.DEFINE && len(n.Lhs) == 1 && isRuntimeReason(n.Lhs[0]) {
+					fail(n, "computes an ErrorReason at runtime; use a published constant")
 				}
 			}
 			return true
@@ -334,9 +367,14 @@ func plants(s string, v any) {
 	_ = (ErrorReason)(s) // want converts a value into an ErrorReason; use a published constant
 	_ = reasonAlias(s)   // want converts a value into an ErrorReason; use a published constant
 	_ = v.(ErrorReason)  // want asserts a value into an ErrorReason; use a published constant
+	_ = *(*ErrorReason)(&s) // want converts a value into an ErrorReason; use a published constant
+	_ = v.(*ErrorReason) // want asserts a value into an ErrorReason; use a published constant
 	_ = gqlError{Reason: "UNPUBLISHED_LITERAL"} // want ErrorReason "UNPUBLISHED_LITERAL" is missing from ErrorReasons
 	var r ErrorReason
 	r = "UNPUBLISHED_ASSIGN" // want ErrorReason "UNPUBLISHED_ASSIGN" is missing from ErrorReasons
+	r += r                   // want computes an ErrorReason at runtime; use a published constant
+	_ = r + ErrorReasonRevealPINRequired // want computes an ErrorReason at runtime; use a published constant
+	_ = r == ErrorReasonRevealPINRequired
 	_ = r
 	_ = gqlError{Reason: ErrorReasonRevealPINRequired}
 	_ = gqlError{Reason: ""}
