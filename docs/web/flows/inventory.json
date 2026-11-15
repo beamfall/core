@@ -710,7 +710,7 @@
           "symbol": "AppShell"
         },
         {
-          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
+          "path": "internal/web/app/src/components/chrome/unreadNotifications.ts",
           "symbol": "NOTIFICATION_BADGE_LIMIT"
         },
         {
@@ -735,7 +735,7 @@
         },
         {
           "path": "internal/web/app/src/components/chrome/LibrarySidebar.tsx",
-          "symbol": "AggregateIcon"
+          "symbol": "libraryMonograms"
         },
         {
           "path": "internal/web/app/src/components/chrome/LibrarySidebar.tsx",
@@ -766,16 +766,12 @@
           "symbol": "onChange"
         },
         {
-          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
-          "symbol": "onKey"
+          "path": "internal/web/app/src/components/chrome/unreadNotifications.ts",
+          "symbol": "revalidate"
         },
         {
-          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
-          "symbol": "refreshIfForeground"
-        },
-        {
-          "path": "internal/web/app/src/components/chrome/AppShell.tsx",
-          "symbol": "refreshUnreadNotifications"
+          "path": "internal/web/app/src/components/chrome/unreadNotifications.ts",
+          "symbol": "useUnreadNotifications"
         },
         {
           "path": "internal/web/app/src/components/chrome/AppShell.tsx",
@@ -2631,7 +2627,7 @@
         },
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "STEP_KEYS"
+          "symbol": "RAIL_KEYS"
         },
         {
           "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
@@ -2834,8 +2830,8 @@
       "title": "Setup: activate plugins and enter provider keys",
       "members": [
         {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "PLUGIN_ICON"
+          "path": "internal/web/app/src/lib/libraryTypes.ts",
+          "symbol": "pluginIcon"
         },
         {
           "path": "internal/web/app/src/areas/setup/orchestrate.ts",
@@ -2914,12 +2910,12 @@
           "symbol": "breadcrumbs"
         },
         {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "TYPE_ICON"
+          "path": "internal/web/app/src/lib/libraryTypes.ts",
+          "symbol": "libraryTypeOptions"
         },
         {
-          "path": "internal/web/app/src/areas/setup/SetupWizard.tsx",
-          "symbol": "TYPE_LABEL"
+          "path": "internal/web/app/src/lib/libraryTypes.ts",
+          "symbol": "LibraryTypeOption"
         },
         {
           "path": "internal/web/app/src/areas/setup/orchestrate.ts",
@@ -2934,24 +2930,16 @@
           "symbol": "FirstLibraryResult"
         },
         {
-          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
-          "symbol": "LIBRARY_TYPES"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
-          "symbol": "LibraryType"
-        },
-        {
-          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
-          "symbol": "LibraryTypeSpec"
+          "path": "internal/web/app/src/lib/libraryTypes.ts",
+          "symbol": "LibraryTypePlugin"
         },
         {
           "path": "internal/web/app/src/areas/setup/orchestrate.ts",
           "symbol": "createFirstLibrary"
         },
         {
-          "path": "internal/web/app/src/areas/setup/orchestrate.ts",
-          "symbol": "libraryTypeSpec"
+          "path": "internal/web/app/src/lib/libraryTypes.ts",
+          "symbol": "FamilyScopeSummary"
         },
         {
           "path": "internal/web/app/src/lib/graphql/manage.ts",
@@ -4118,11 +4106,11 @@
       "title": "Console libraries: add a library, roots, preview clips, skip detection",
       "members": [
         {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
+          "path": "internal/web/app/src/areas/console/sections/AddLibrary.tsx",
           "symbol": "AddLibrary"
         },
         {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
+          "path": "internal/web/app/src/areas/console/sections/libraryStyles.ts",
           "symbol": "CARD"
         },
         {
@@ -4134,8 +4122,8 @@
           "symbol": "LibraryCard"
         },
         {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
-          "symbol": "NO_PLUGIN"
+          "path": "internal/web/app/src/lib/libraryTypes.ts",
+          "symbol": "libraryTypeOptions"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
@@ -4231,10 +4219,6 @@
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
-          "symbol": "onCreate"
-        },
-        {
-          "path": "internal/web/app/src/areas/console/sections/Libraries.tsx",
           "symbol": "refreshLibraries"
         },
         {
@@ -4274,11 +4258,11 @@
           "symbol": "ConfigField"
         },
         {
-          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "path": "internal/web/app/src/areas/console/ProviderKeys.tsx",
           "symbol": "KEY_INPUT"
         },
         {
-          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "path": "internal/web/app/src/areas/console/ProviderKeys.tsx",
           "symbol": "KEY_STATUS"
         },
         {
@@ -4322,7 +4306,7 @@
           "symbol": "Plugins"
         },
         {
-          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
+          "path": "internal/web/app/src/areas/console/ProviderKeys.tsx",
           "symbol": "ProviderKeyRow"
         },
         {
@@ -4358,8 +4342,8 @@
           "symbol": "fieldValues"
         },
         {
-          "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
-          "symbol": "keyStatusChip"
+          "path": "internal/web/app/src/areas/console/ProviderKeys.tsx",
+          "symbol": "KeyStatusChip"
         },
         {
           "path": "internal/web/app/src/areas/console/sections/Plugins.tsx",
@@ -7975,7 +7959,7 @@
         },
         {
           "path": "internal/web/app/src/areas/viewer/components/useVirtualGrid.ts",
-          "symbol": "readRowHeight"
+          "symbol": "readCardHeight"
         },
         {
           "path": "internal/web/app/src/areas/viewer/components/useVirtualGrid.ts",
@@ -9562,8 +9546,8 @@
           "symbol": "SwitchResult"
         },
         {
-          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
-          "symbol": "TrackPreferences"
+          "path": "internal/web/app/src/areas/viewer/player/streamTracks.ts",
+          "symbol": "TrackPreferencePolicy"
         },
         {
           "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
@@ -9719,10 +9703,6 @@
         },
         {
           "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
-          "symbol": "bumpTracks"
-        },
-        {
-          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
           "symbol": "destroyHls"
         },
         {
@@ -9768,10 +9748,6 @@
         {
           "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
           "symbol": "onSourceEndWaiting"
-        },
-        {
-          "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
-          "symbol": "onTimeUpdate"
         },
         {
           "path": "internal/web/app/src/areas/viewer/player/usePlayer.ts",
@@ -10082,12 +10058,12 @@
           "symbol": "excluded"
         },
         {
-          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
+          "path": "internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts",
           "symbol": "interactive"
         },
         {
-          "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
-          "symbol": "keydown"
+          "path": "internal/web/app/src/areas/viewer/player/usePlayerShortcuts.ts",
+          "symbol": "usePlayerShortcuts"
         },
         {
           "path": "internal/web/app/src/areas/viewer/player/PlayerTransport.tsx",
@@ -10202,12 +10178,12 @@
           "symbol": "pickTrackSource"
         },
         {
-          "path": "internal/web/app/src/areas/viewer/player/SubtitleStylePanel.tsx",
-          "symbol": "BG_OPTIONS"
+          "path": "internal/web/app/src/areas/viewer/lib/subtitleAppearance.ts",
+          "symbol": "SUBTITLE_BACKGROUNDS"
         },
         {
-          "path": "internal/web/app/src/areas/viewer/player/SubtitleStylePanel.tsx",
-          "symbol": "SIZE_OPTIONS"
+          "path": "internal/web/app/src/areas/viewer/lib/subtitleAppearance.ts",
+          "symbol": "SUBTITLE_SIZES"
         },
         {
           "path": "internal/web/app/src/areas/viewer/player/SubtitleStylePanel.tsx",
@@ -10254,8 +10230,8 @@
           "symbol": "CueWithBase"
         },
         {
-          "path": "internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts",
-          "symbol": "SubtitleBackground"
+          "path": "internal/web/app/src/areas/viewer/lib/subtitleAppearance.ts",
+          "symbol": "SubtitleAppearance"
         },
         {
           "path": "internal/web/app/src/areas/viewer/player/useSubtitleStyling.ts",
