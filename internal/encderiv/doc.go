@@ -19,4 +19,10 @@
 // ends early fails the job even when the transcoder itself exits cleanly, as
 // does an output that runs short of the probed length or a source whose length
 // the probe cannot name.
+//
+// RunCapture is the in-memory mode for small derivatives such as an extracted
+// subtitle track. It shares the endpoint, token, expiry and revocation of Run
+// (one session, startSession) but captures the tool's stdout into a bounded
+// buffer, killing the tool when it overflows, and writes nothing to disk; the
+// caller hardens the bytes and stores them in its own at-rest format.
 package encderiv

@@ -1170,6 +1170,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		LibEncrypt:                   libEncryptManager,
 		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
 		EncryptedGeneratedAssets:     assetService,
+		EncryptedDerivativePurgers:   []graph.EncryptedDerivativePurger{mediaHTTP},
 		ExtensionPusher:              extensionPusher,
 		AccessRequestPusher:          accessRequestPusher,
 	}

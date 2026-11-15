@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,4 +189,44 @@ func TestEncryptedDerivativeReconcilerNoOpWhenNothingPresent(t *testing.T) {
 	if err := reconciler.ReconcileEncryptedDerivatives(context.Background(), store.LibraryID("library-enc"), live); err != nil {
 		t.Fatalf("reconcile over empty roots must succeed, got %v", err)
 	}
+}
+
+// TestEncryptedDerivativeReconcilerKeepsCiphertextSubtitles proves the
+// ADR-0235 exception: the unseal reconcile keeps a valid ciphertext object in
+// the Library's encrypted subtitle cache and removes plaintext and temps beside
+// it. The cache directory is computed the way mediahttp lays it out
+// (subtitles/encrypted/<hex of the first 16 bytes of sha256(library ID)>).
+func TestEncryptedDerivativeReconcilerKeepsCiphertextSubtitles(t *testing.T) {
+	dataDir := t.TempDir()
+	artworkSvc := artwork.NewService(nil, nil, dataDir)
+	assetSvc := genassets.NewService(nil, nil, dataDir)
+	subtitleHandler := mediahttp.NewHandler(nil, nil, nil, artworkSvc, nil)
+	subtitleHandler.SetSubtitles(nil, filepath.Join(dataDir, "subtitles"))
+
+	libraryID := store.LibraryID("library-enc")
+	sum := sha256.Sum256([]byte(libraryID))
+	cacheDir := filepath.Join(dataDir, "subtitles", "encrypted", hex.EncodeToString(sum[:16]))
+	ciphertext := filepath.Join(cacheDir, "sha256_fp.0.vtt")
+	plaintext := filepath.Join(cacheDir, "sha256_fp.1.vtt")
+	temp := filepath.Join(cacheDir, ".libenc-1.tmp")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	header := append([]byte("BFE2"), 0x02, 0x00, 0x01, 0x00, 0x00)
+	header = append(header, make([]byte, 64)...)
+	if err := os.WriteFile(ciphertext, header, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, plaintext)
+	writeFile(t, temp)
+
+	reconciler := newEncryptedDerivativeReconciler(artworkSvc, assetSvc, subtitleHandler, nil, filepath.Join(dataDir, "playback-cache"))
+	if err := reconciler.ReconcileEncryptedDerivatives(context.Background(), libraryID, nil); err != nil {
+		t.Fatalf("ReconcileEncryptedDerivatives: %v", err)
+	}
+	if _, err := os.Stat(ciphertext); err != nil {
+		t.Fatalf("ciphertext subtitle object removed: %v", err)
+	}
+	mustBeGone(t, "plaintext in the encrypted subtitle cache", plaintext)
+	mustBeGone(t, "staging temp in the encrypted subtitle cache", temp)
 }

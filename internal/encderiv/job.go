@@ -67,6 +67,10 @@ type Job struct {
 	// still exits 0.
 	// It must stop when ctx ends.
 	ProbeDuration func(ctx context.Context, in Input) (time.Duration, error)
+	// ExpectedDuration names how much of the probed source the derivative must
+	// cover, for a derivative of part of it. Nil means the whole source. A
+	// result that is not positive and no longer than the source fails the job.
+	ExpectedDuration func(source time.Duration) time.Duration
 	// TTL, IdleTimeout and PollInterval default to the package defaults.
 	TTL          time.Duration
 	IdleTimeout  time.Duration
@@ -190,40 +194,33 @@ func Run(ctx context.Context, job Job) (*Result, error) {
 }
 
 func run(parent context.Context, job *Job, file *os.File, path string, key []byte) (*Result, string, error) {
-	ctx, cancelTTL := context.WithTimeoutCause(parent, job.TTL, ErrExpired)
-	defer cancelTTL()
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
-
-	ep, err := startEndpoint(endpointConfig{
-		open:     job.Open,
-		size:     job.Size,
-		deadline: job.now().Add(job.TTL),
-		idle:     job.IdleTimeout,
-		now:      job.now,
-		peer:     job.peer,
+	sess, err := startSession(parent, sessionConfig{
+		open:    job.Open,
+		size:    job.Size,
+		ttl:     job.TTL,
+		idle:    job.IdleTimeout,
+		poll:    job.PollInterval,
+		revoked: job.Revoked,
+		now:     job.now,
+		peer:    job.peer,
 	})
 	if err != nil {
 		return nil, "", err
 	}
-	defer ep.Revoke()
-	secret := ep.token
+	defer sess.close()
+	secret := sess.ep.token
 
-	stopWatch := make(chan struct{})
-	var watchers sync.WaitGroup
-	watchers.Go(func() { watchRevocation(ctx, job, ep, cancel, stopWatch) })
-	defer func() {
-		close(stopWatch)
-		watchers.Wait()
-	}()
-
-	source, err := probeSource(ctx, job, ep)
+	source, err := probeSource(sess, job)
 	if err != nil {
 		return nil, secret, err
 	}
-	scan, transcodeErr, err := transcodeToStage(ctx, cancel, job, ep, file, key)
-	ep.Revoke()
-	if failure := firstFailure(ctx, ep, err, transcodeErr); failure != nil {
+	expected, err := expectedDuration(job, source)
+	if err != nil {
+		return nil, secret, err
+	}
+	scan, transcodeErr, err := transcodeToStage(sess, job, file, key)
+	sess.ep.Revoke()
+	if failure := firstFailure(sess.ctx, sess.ep, err, transcodeErr); failure != nil {
 		return nil, secret, failure
 	}
 	if err := file.Close(); err != nil {
@@ -233,7 +230,7 @@ func run(parent context.Context, job *Job, file *os.File, path string, key []byt
 	if err != nil {
 		return nil, secret, err
 	}
-	if err := coversSource(scan.duration(), source); err != nil {
+	if err := coversSource(scan.duration(), expected); err != nil {
 		return nil, secret, err
 	}
 	finalLen := scan.n + int64(len(index))
@@ -256,9 +253,9 @@ func run(parent context.Context, job *Job, file *os.File, path string, key []byt
 // length the output is checked against is that of the bytes the transcoder
 // reads. A revocation, endpoint failure or cancellation during the probe wins
 // over the probe's own error.
-func probeSource(ctx context.Context, job *Job, ep *endpoint) (time.Duration, error) {
-	source, err := job.ProbeDuration(ctx, Input{URL: ep.URL(), Secret: ep.token, Port: ep.Port()})
-	if failure := firstFailure(ctx, ep, nil, nil); failure != nil {
+func probeSource(sess *session, job *Job) (time.Duration, error) {
+	source, err := job.ProbeDuration(sess.ctx, sess.input())
+	if failure := firstFailure(sess.ctx, sess.ep, nil, nil); failure != nil {
 		return 0, failure
 	}
 	if err != nil {
@@ -268,6 +265,19 @@ func probeSource(ctx context.Context, job *Job, ep *endpoint) (time.Duration, er
 		return 0, ErrSourceDuration
 	}
 	return source, nil
+}
+
+// expectedDuration is the length the derivative must cover: the whole probed
+// source unless the job names a part of it.
+func expectedDuration(job *Job, source time.Duration) (time.Duration, error) {
+	if job.ExpectedDuration == nil {
+		return source, nil
+	}
+	expected := job.ExpectedDuration(source)
+	if expected <= 0 || expected > source {
+		return 0, fmt.Errorf("%w: expected %v of a %v source", ErrSourceDuration, expected, source)
+	}
+	return expected, nil
 }
 
 // coversSource refuses a derivative that runs shorter than its source by more
@@ -282,18 +292,18 @@ func coversSource(output, source time.Duration) error {
 
 // transcodeToStage runs the transcoder and encrypts its output into the
 // staging file as it arrives. It returns once the transcoder has exited.
-func transcodeToStage(ctx context.Context, cancel context.CancelCauseFunc, job *Job, ep *endpoint, file *os.File, key []byte) (*fragmentReader, error, error) {
+func transcodeToStage(sess *session, job *Job, file *os.File, key []byte) (*fragmentReader, error, error) {
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		err := job.Transcode(ctx, Input{URL: ep.URL(), Secret: ep.token, Port: ep.Port()}, pw)
+		err := job.Transcode(sess.ctx, sess.input(), pw)
 		_ = pw.CloseWithError(err)
 		done <- err
 	}()
-	scan := newFragmentReader(ctx, pr, job.MaxBytes)
+	scan := newFragmentReader(sess.ctx, pr, job.MaxBytes)
 	err := libencrypt.EncryptStream(file, scan, key)
 	if err != nil {
-		cancel(err)
+		sess.cancel(err)
 		_ = pr.CloseWithError(err)
 	}
 	transcodeErr := <-done
@@ -323,31 +333,6 @@ func firstFailure(ctx context.Context, ep *endpoint, encryptErr, transcodeErr er
 		return fmt.Errorf("encderiv: transcode: %w", transcodeErr)
 	}
 	return nil
-}
-
-// watchRevocation re-checks authorization until the job ends. On revocation it
-// ends the token first, so no more plaintext is served, then cancels the job,
-// which kills the transcoder.
-func watchRevocation(ctx context.Context, job *Job, ep *endpoint, cancel context.CancelCauseFunc, stop <-chan struct{}) {
-	ticker := time.NewTicker(job.PollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-stop:
-			return
-		case <-ticker.C:
-			if err := job.Revoked(ctx); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
-				ep.Revoke()
-				cancel(ErrRevoked)
-				return
-			}
-		}
-	}
 }
 
 // verifyStage decrypts the staging file once in its final layout, proving it

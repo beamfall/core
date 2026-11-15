@@ -7,6 +7,7 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/genassets"
+	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/store"
@@ -43,6 +44,11 @@ import (
 //     attribution (they are keyed by an in-memory counter), so this class is swept
 //     as a set once per reconcile rather than per-Media — every dir not held by a
 //     live session is an orphan and is purged.
+//
+// Ciphertext derivatives are the exception (ADR-0235): the Library's encrypted
+// subtitle cache {dataDir}/subtitles/encrypted/<library hash>/ keeps every
+// object that carries a libencrypt header, and anything else in it (plaintext,
+// staging temps, stray entries) is removed.
 //
 // FAIL CLOSED: if any purge errors, the whole reconcile returns non-nil and the
 // store call site unwinds the registration, keeping the Library Sealed — the
@@ -87,6 +93,9 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 	// guard makes it safe on the runtime-unseal path too.
 	if r.sessions != nil {
 		joined = errors.Join(joined, r.sessions.PurgeOrphanedTranscodeDirs())
+	}
+	if r.subtitles != nil {
+		joined = errors.Join(joined, r.subtitles.ReconcileEncryptedSubtitles(libraryID, libencrypt.HasObjectHeader))
 	}
 	if joined != nil {
 		return fmt.Errorf("encrypted-library %s derivative reconcile: %w", libraryID, joined)

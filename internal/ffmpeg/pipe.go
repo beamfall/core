@@ -116,6 +116,39 @@ func (r *Runner) ProbePipeDuration(ctx context.Context, in PipeInput) (time.Dura
 	return parsePipeDuration(stdout.bytes())
 }
 
+// ExtractSubtitleToPipe extracts the text subtitle stream at the absolute
+// ffprobe stream index from the loopback HTTP source in and converts it to
+// WebVTT, under the same confinement and input options as TranscodeToPipe: the
+// track never reaches a file. FFmpeg's output is held in a buffer of at most
+// limit bytes, and a track that runs past it kills FFmpeg and fails with
+// ErrOutputOverflow; only a complete, successful extraction is written to
+// stdout, in one piece.
+//
+// Like ExtractSubtitleToWebVTT, decode errors are not made fatal, since one bad
+// cue should not cost the track; the caller's endpoint is what proves the
+// whole source was served.
+func (r *Runner) ExtractSubtitleToPipe(ctx context.Context, in PipeInput, streamIndex, limit int, stdout io.Writer) error {
+	port, err := loopbackPort(in.URL)
+	if err != nil {
+		return err
+	}
+	switch {
+	case stdout == nil:
+		return errors.New("ffmpeg pipe subtitle extract: no output writer")
+	case streamIndex < 0:
+		return fmt.Errorf("ffmpeg pipe subtitle extract: stream index must be >= 0, got %d", streamIndex)
+	case limit <= 0:
+		return errors.New("ffmpeg pipe subtitle extract: output limit must be positive")
+	}
+	out := &boundedBuffer{limit: limit}
+	args := pipeSubtitleArgs(in.URL, pipeReadTimeout(in), streamIndex)
+	if err := r.runPipeTool(ctx, port, in, "ffmpeg", "ffmpeg pipe subtitle extract", args, out); err != nil {
+		return err
+	}
+	_, err = stdout.Write(out.bytes())
+	return err
+}
+
 // runPipeTool runs the FFmpeg tool named by tool against a loopback input
 // under the pipe confinement, streaming its stdout to stdout. what names the
 // run in its errors, and a failure's diagnostic is redacted of in's URL and
@@ -184,6 +217,18 @@ func pipeArgs(inputURL string, timeout time.Duration, profile ConvertProfile) []
 	args = append(args, "-i", inputURL)
 	args = append(args, profile.encodeArgs()...)
 	return append(args, "-movflags", pipeMovflags, "-f", "mp4", "pipe:1")
+}
+
+// pipeSubtitleArgs builds the FFmpeg argv that converts one subtitle stream of
+// the loopback source to WebVTT on pipe:1, under the same input options as
+// pipeArgs.
+func pipeSubtitleArgs(inputURL string, timeout time.Duration, streamIndex int) []string {
+	args := append([]string{"-v", "error", "-nostdin"}, pipeInputOptions(timeout)...)
+	return append(args,
+		"-i", inputURL,
+		"-map", "0:"+strconv.Itoa(streamIndex),
+		"-c:s", "webvtt",
+		"-f", "webvtt", "pipe:1")
 }
 
 // pipeProbeArgs builds the ffprobe argv that prints the loopback source's
