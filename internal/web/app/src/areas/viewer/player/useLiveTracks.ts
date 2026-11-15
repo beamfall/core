@@ -1,7 +1,7 @@
 import type Hls from "hls.js";
 import { useCallback, useState } from "react";
-import { useT } from "@/lib/i18n";
-import { hlsStreamOf, type PlaybackStream } from "../lib/playback";
+import { useDisplayLocale, useT } from "@/lib/i18n";
+import { hlsStreamOf, type PlaybackInfo, type PlaybackStream } from "../lib/playback";
 import {
   buildRenditionMenuModel,
   buildTrackMenuModel,
@@ -10,7 +10,13 @@ import {
   type TrackMenuOption,
 } from "../lib/transport";
 import { audioTrackList, audioTracksArray } from "./media-tracks";
-import { type SwitchResult, selectHlsLevel, selectHlsRendition } from "./usePlayer";
+import { audioTrackLabel, captionTrackLabel, type TrackLabelText } from "./streamTracks";
+import {
+  type StreamTrackControl,
+  type SwitchResult,
+  selectHlsLevel,
+  selectHlsRendition,
+} from "./usePlayer";
 
 // useLiveTracks bridges the live hls.js / native <video> track objects to the
 // pure menu models (transport.ts) and exposes the selection handlers, ported
@@ -23,6 +29,12 @@ import { type SwitchResult, selectHlsLevel, selectHlsRendition } from "./usePlay
 // tracksVersion (bumped by usePlayer on every hls.js track-update) and a local
 // nudge counter drive re-derivation, so a selection re-renders the menu with the
 // new active row.
+//
+// When playbackInfo lists the file's audio and caption tracks (CORE-1709) the
+// Audio and Subtitles menus are built from those instead, on every route: the
+// live lists hold only what one stream carries (a server stream maps a single
+// audio track and no subtitles). Ids stay positional ("off" plus zero-based
+// indices) so remote control and the shortcuts address them the same way.
 
 export interface MenuOption<Id extends string = string> extends TrackMenuOption {
   id: Id;
@@ -55,11 +67,27 @@ function nativeSubtitleTracks(video: HTMLVideoElement) {
     : [];
 }
 
+/** The id of the disabled row that says why some subtitles are missing. */
+export const SUBTITLES_UNAVAILABLE_ID = "unavailable";
+
+function unavailableSubtitleKey(reason: string) {
+  switch (reason) {
+    case "no-forced-subtitle-in-preferred-language":
+      return "subtitlesUnavailableNoForced" as const;
+    case "no-client-renderable-subtitle-track":
+      return "subtitlesUnavailableUnrenderable" as const;
+    default:
+      return "subtitlesUnavailable" as const;
+  }
+}
+
 export function useLiveTracks({
   videoRef,
   hlsRef,
   stream,
   streams,
+  info,
+  trackControl,
   switchToHls,
   manualRenditionID,
   setManualRenditionID,
@@ -68,6 +96,10 @@ export function useLiveTracks({
   videoRef: React.RefObject<HTMLVideoElement | null>;
   hlsRef: React.RefObject<Hls | null>;
   stream: PlaybackStream | null;
+  /** The playback info: its audioTracks and captionTracks feed the menus. */
+  info?: PlaybackInfo | null;
+  /** Applies a pick among info's tracks; without it the live lists drive the menus. */
+  trackControl?: StreamTrackControl;
   /** The whole stream inventory; its HLS sibling feeds the direct-play quality menu. */
   streams?: PlaybackStream[];
   /** Switches direct play to the HLS sibling at the current position. */
@@ -82,6 +114,7 @@ export function useLiveTracks({
   const [, setNudge] = useState(0);
   const nudge = useCallback(() => setNudge((n) => n + 1), []);
   const t = useT();
+  const locale = useDisplayLocale();
 
   const video = videoRef.current;
   const hls = hlsRef.current;
@@ -112,15 +145,72 @@ export function useLiveTracks({
   const audioModel = buildTrackMenuModel("audio", { hlsAudio, nativeAudio }, labels);
   const subtitleModel = buildTrackMenuModel("subtitle", { hlsSubtitle, nativeSubtitle }, labels);
 
-  const audioOptions: MenuOption[] = audioModel.map((option, index) => ({
-    ...option,
-    id: String(index),
-  }));
+  const fileAudio = trackControl ? (info?.audioTracks ?? []) : [];
+  const fileCaptions = trackControl ? (info?.captionTracks ?? []) : [];
+  const unavailableReason = trackControl ? (info?.subtitlesUnavailableReason ?? "") : "";
+  const fileSubtitles = fileCaptions.length > 0 || unavailableReason !== "";
+  const labelText: TrackLabelText = {
+    locale,
+    unknownLanguage: t("trackLanguageUnknown"),
+    mono: t("trackChannelsMono"),
+    stereo: t("trackChannelsStereo"),
+    channels: (count) => t("trackChannelsCount", { count }),
+    commentary: t("trackRoleCommentary"),
+    described: t("trackRoleDescribed"),
+    forced: t("trackRoleForced"),
+    sdh: t("trackRoleSDH"),
+    external: t("trackExternal"),
+    burnedIn: t("trackBurnedIn"),
+  };
+  const option = (id: string, label: string, selected: boolean): MenuOption => ({
+    id,
+    label,
+    selected,
+    disabled: false,
+    reason: "",
+  });
+
+  let audioOptions: MenuOption[];
+  if (fileAudio.length > 0) {
+    const chosen = fileAudio.some((track) => track.selected)
+      ? fileAudio.findIndex((track) => track.selected)
+      : Math.max(
+          0,
+          fileAudio.findIndex((track) => track.default),
+        );
+    audioOptions = fileAudio.map((track, index) =>
+      option(String(index), audioTrackLabel(track, labelText), index === chosen),
+    );
+  } else {
+    audioOptions = audioModel.map((entry, index) => ({ ...entry, id: String(index) }));
+  }
+
   // Subtitle menu: the leading entry is "off", the rest are zero-based indices.
-  const subtitleOptions: MenuOption[] = subtitleModel.map((option, index) => ({
-    ...option,
-    id: index === 0 ? "off" : String(index - 1),
-  }));
+  let subtitleOptions: MenuOption[];
+  if (fileSubtitles && trackControl) {
+    const active = trackControl.activeCaptionID();
+    subtitleOptions = [
+      option("off", labels.subtitlesOff, active === null),
+      ...fileCaptions.map((track, index) =>
+        option(String(index), captionTrackLabel(track, labelText), track.id === active),
+      ),
+    ];
+    if (unavailableReason) {
+      // Never silently absent: say why a subtitle the file has is not offered.
+      subtitleOptions.push({
+        id: SUBTITLES_UNAVAILABLE_ID,
+        label: t(unavailableSubtitleKey(unavailableReason)),
+        selected: false,
+        disabled: true,
+        reason: "",
+      });
+    }
+  } else {
+    subtitleOptions = subtitleModel.map((entry, index) => ({
+      ...entry,
+      id: index === 0 ? "off" : String(index - 1),
+    }));
+  }
 
   const alternate = stream?.kind === "hls" ? null : hlsStreamOf(streams);
   const renditionModel = buildRenditionMenuModel({
@@ -132,10 +222,17 @@ export function useLiveTracks({
 
   const selectAudio = useCallback(
     (id: string) => {
+      const fileTrack = fileAudio[Number(id)];
+      if (trackControl && fileAudio.length > 0) {
+        if (fileTrack) trackControl.selectAudio(fileTrack.streamIndex);
+        nudge();
+        return;
+      }
       const v = videoRef.current;
       const h = hlsRef.current;
       const list = audioTrackList(v);
-      if (h && Array.isArray(h.audioTracks)) {
+      // The menu lists hls.js tracks only when it has some (pickTrackSource).
+      if (h && Array.isArray(h.audioTracks) && h.audioTracks.length > 0) {
         h.audioTrack = Number(id);
       } else if (list && list[Number(id)]) {
         for (let index = 0; index < list.length; index++) {
@@ -145,11 +242,22 @@ export function useLiveTracks({
       }
       nudge();
     },
-    [videoRef, hlsRef, nudge],
+    [videoRef, hlsRef, nudge, trackControl, fileAudio],
   );
 
   const selectSubtitle = useCallback(
     (id: string) => {
+      if (trackControl && fileSubtitles) {
+        if (id === "off") trackControl.selectCaption(null);
+        else {
+          const track = fileCaptions[Number(id)];
+          if (!track) return;
+          trackControl.selectCaption(track.id);
+        }
+        onSubtitleChanged();
+        nudge();
+        return;
+      }
       const v = videoRef.current;
       const h = hlsRef.current;
       if (id === "off") {
@@ -162,7 +270,7 @@ export function useLiveTracks({
             track.mode = "disabled";
           }
         }
-      } else if (h && Array.isArray(h.subtitleTracks)) {
+      } else if (h && Array.isArray(h.subtitleTracks) && h.subtitleTracks.length > 0) {
         h.subtitleDisplay = true;
         h.subtitleTrack = Number(id);
       } else if (v && v.textTracks && v.textTracks[Number(id)]) {
@@ -174,7 +282,7 @@ export function useLiveTracks({
       onSubtitleChanged();
       nudge();
     },
-    [videoRef, hlsRef, onSubtitleChanged, nudge],
+    [videoRef, hlsRef, onSubtitleChanged, nudge, trackControl, fileSubtitles, fileCaptions],
   );
 
   const selectQuality = useCallback(

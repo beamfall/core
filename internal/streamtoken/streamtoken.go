@@ -122,6 +122,13 @@ type Grant struct {
 	// zero means no burn-in, preserving old tokens and still allowing stream 0.
 	// Meaningful only for TargetMediaHLS; ignored for every other Target.
 	BurnSubtitleIndex int `json:"burnSubtitleIndex,omitempty"`
+	// AudioStreamIndex carries the audio track playbackInfo chose for a file
+	// with several audio streams to the byte layer, so the server stream maps
+	// exactly that track. It is encoded as absolute stream index + 1; zero
+	// leaves the choice to FFmpeg, preserving old tokens and still allowing
+	// stream 0. Meaningful only for TargetMediaHLS; ignored for every other
+	// Target.
+	AudioStreamIndex int `json:"audioStreamIndex,omitempty"`
 	// SubtitleStreamIndex binds a muxed-text subtitle grant to one absolute
 	// ffprobe stream index. It is encoded as index + 1 so stream 0 remains
 	// representable while zero keeps legacy grants unbound.

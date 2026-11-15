@@ -614,6 +614,31 @@ func TestHLSArgsMapSelectedAudioStream(t *testing.T) {
 	}
 }
 
+// The segmented session path (every web HLS stream, the audio-copy rung
+// included) maps the picked audio track exactly like the whole-file path.
+func TestSegmentArgsMapSelectedAudioStream(t *testing.T) {
+	selected := 2
+	plain := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{AudioStreamIndex: &selected})
+	if !containsArgSequence(plain, "-map", "0:v:0", "-map", "0:2") {
+		t.Fatalf("segment argv = %v, want [-map 0:v:0 -map 0:2]", plain)
+	}
+
+	copied := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{CopyVideo: true, AudioStreamIndex: &selected})
+	if !containsArgSequence(copied, "-map", "0:v:0", "-map", "0:2") {
+		t.Fatalf("audio-copy segment argv = %v, want [-map 0:v:0 -map 0:2]", copied)
+	}
+
+	burn := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{AudioStreamIndex: &selected}.WithBurnSubtitle(3))
+	if containsArgSequence(burn, "-map", "0:v:0") || !containsArgSequence(burn, "-map", "[vsub]", "-map", "0:2") {
+		t.Fatalf("burn-in segment argv = %v, want only [-map [vsub] -map 0:2]", burn)
+	}
+
+	legacy := keyframeSegmentArgs("/src/movie.mkv", "/tmp/hls", 0, 0, Rendition{})
+	if containsArg(legacy, "-map") {
+		t.Fatalf("nil audio selection changed legacy segment argv: %v", legacy)
+	}
+}
+
 func TestRenditionHardwareVideoArgs(t *testing.T) {
 	tests := []struct {
 		name  string

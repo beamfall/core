@@ -182,7 +182,8 @@ func TestResolveNeverAutoSelectsCommentaryOrVisualImpaired(t *testing.T) {
 	}
 }
 
-// Language matching is prefix-tolerant so "en" prefs match an "en-US" track.
+// Language matching is prefix-tolerant so "en" prefs match an "en-US" track,
+// and canonical so a probed "eng" track matches an "en" preference.
 func TestLangEqPrefixTolerant(t *testing.T) {
 	for _, tc := range []struct {
 		a, b string
@@ -194,6 +195,13 @@ func TestLangEqPrefixTolerant(t *testing.T) {
 		{"en", "en-US", true},
 		{"en", "fr", false},
 		{"", "en", false},
+		{"eng", "en", true},
+		{"en", "eng", true},
+		{"fre", "fr-CA", true},
+		{"ger", "deu", true},
+		{"eng", "fra", false},
+		{"und", "und", true},
+		{"und", "en", false},
 	} {
 		if got := langEq(tc.a, tc.b); got != tc.want {
 			t.Errorf("langEq(%q,%q) = %v, want %v", tc.a, tc.b, got, tc.want)

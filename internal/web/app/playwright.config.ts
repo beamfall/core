@@ -79,7 +79,7 @@ export default defineConfig({
     },
     {
       name: "player-desktop",
-      testMatch: /player\.spec\.ts/,
+      testMatch: /player(-tracks)?\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: join(authDir, "viewer.json"),

@@ -31,6 +31,7 @@ import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
+import { trackMenuStrings } from "./track-menu";
 import { viewerAccountStrings } from "./viewer-account";
 import { watchPartyStrings } from "./watch-party";
 import { webhookStrings } from "./webhooks";
@@ -47,6 +48,7 @@ export const en = {
   ...playerShortcutStrings.en,
   ...subtitleAppearanceStrings.en,
   ...listeningStrings.en,
+  ...trackMenuStrings.en,
   ...managedFileStrings.en,
   ...backupRetentionStrings.en,
   ...sharedStateStrings.en,
@@ -87,6 +89,7 @@ export const fr = {
   ...playerShortcutStrings.fr,
   ...subtitleAppearanceStrings.fr,
   ...listeningStrings.fr,
+  ...trackMenuStrings.fr,
   ...managedFileStrings.fr,
   ...backupRetentionStrings.fr,
   ...sharedStateStrings.fr,
@@ -127,6 +130,7 @@ export const de = {
   ...playerShortcutStrings.de,
   ...subtitleAppearanceStrings.de,
   ...listeningStrings.de,
+  ...trackMenuStrings.de,
   ...managedFileStrings.de,
   ...backupRetentionStrings.de,
   ...sharedStateStrings.de,
@@ -167,6 +171,7 @@ export const es = {
   ...playerShortcutStrings.es,
   ...subtitleAppearanceStrings.es,
   ...listeningStrings.es,
+  ...trackMenuStrings.es,
   ...managedFileStrings.es,
   ...backupRetentionStrings.es,
   ...sharedStateStrings.es,
@@ -207,6 +212,7 @@ export const pt = {
   ...playerShortcutStrings.pt,
   ...subtitleAppearanceStrings.pt,
   ...listeningStrings.pt,
+  ...trackMenuStrings.pt,
   ...managedFileStrings.pt,
   ...backupRetentionStrings.pt,
   ...sharedStateStrings.pt,
