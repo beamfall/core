@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -53,6 +55,123 @@ func (s *Store) checkEncryptedLibraryPurgeableTx(ctx context.Context, tx *sql.Tx
 		}
 	}
 	return nil
+}
+
+// purgeEncryptedLibraryPackItemsTx removes the offline pack items that name a
+// purged encrypted Library's Media (CORE-1852). That Media lives in the
+// Library's private database, so the catalog media delete trigger never sees
+// it. While the Library is unsealed, listed is true and mediaIDs holds every
+// Media id it had, and their items go by id. A sealed Library's ids cannot be
+// listed, so each pack that names the Library drops the items no readable
+// plane holds. A pack that also names another sealed encrypted Library keeps
+// its items: which of them belonged to the purged Library cannot be told.
+func (s *Store) purgeEncryptedLibraryPackItemsTx(ctx context.Context, tx *sql.Tx, id LibraryID, mediaIDs []MediaID, listed bool) error {
+	if listed {
+		for _, mediaID := range mediaIDs {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM offline_pack_item WHERE media_id = ?`, mediaID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	packs, err := s.offlinePacksNamingOnlySealedLibraryTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	for _, pack := range packs {
+		items, err := queryIDs[MediaID](ctx, tx, `SELECT media_id FROM offline_pack_item WHERE pack_id = ?`, pack)
+		if err != nil {
+			return err
+		}
+		for _, mediaID := range items {
+			_, err := s.catalogPlaneForMediaLocked(ctx, mediaID)
+			var missing ValidationError
+			if err != nil && !errors.As(err, &missing) {
+				return err
+			}
+			if err == nil {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM offline_pack_item WHERE pack_id = ? AND media_id = ?`, pack, mediaID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// offlinePacksNamingOnlySealedLibraryTx returns the packs whose Library list
+// names id and no other encrypted Library that is sealed.
+func (s *Store) offlinePacksNamingOnlySealedLibraryTx(ctx context.Context, tx *sql.Tx, id LibraryID) ([]OfflinePackID, error) {
+	quoted, err := json.Marshal(id)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, library_ids_json FROM offline_pack WHERE instr(library_ids_json, ?) > 0`, string(quoted))
+	if err != nil {
+		return nil, err
+	}
+	type candidate struct {
+		id         OfflinePackID
+		libraryIDs []LibraryID
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		var libraryIDsJSON string
+		if err := rows.Scan(&c.id, &libraryIDsJSON); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(libraryIDsJSON), &c.libraryIDs); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var packs []OfflinePackID
+	for _, c := range candidates {
+		if !slices.Contains(c.libraryIDs, id) {
+			continue
+		}
+		shared, err := s.namesOtherSealedEncryptedLibraryTx(ctx, tx, id, c.libraryIDs)
+		if err != nil {
+			return nil, err
+		}
+		if !shared {
+			packs = append(packs, c.id)
+		}
+	}
+	return packs, nil
+}
+
+func (s *Store) namesOtherSealedEncryptedLibraryTx(ctx context.Context, tx *sql.Tx, id LibraryID, libraryIDs []LibraryID) (bool, error) {
+	for _, other := range libraryIDs {
+		if other == id {
+			continue
+		}
+		var encrypted int
+		err := tx.QueryRowContext(ctx, `SELECT encrypted FROM library WHERE id = ?`, other).Scan(&encrypted)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if encrypted == 0 {
+			continue
+		}
+		if db := s.encryptedDBs[other]; db == nil || db.state != "unsealed-registered" || db.reader == nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // completeLibraryPurge tears down a purged encrypted Library and then clears

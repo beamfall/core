@@ -224,6 +224,11 @@ func (s *Store) purgeLibraryLocked(ctx context.Context, id LibraryID, trashedBef
 			return LibraryPurge{}, false, err
 		}
 	}
+	if encrypted {
+		if err := s.purgeEncryptedLibraryPackItemsTx(ctx, tx, id, purge.MediaIDs, catalog != nil); err != nil {
+			return LibraryPurge{}, false, err
+		}
+	}
 	// media and entity reference library without a cascade, so they go first.
 	// Deleting an entity cascades its fields and relations (see PurgePluginData).
 	if _, err := purgeMediaRowsTx(ctx, tx, `SELECT id FROM media WHERE library_id = ?`, id); err != nil {

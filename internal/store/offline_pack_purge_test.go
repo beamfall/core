@@ -77,3 +77,62 @@ func assertNoOfflinePackRows(t *testing.T, st *Store) {
 		t.Fatalf("offline pack items = %d, want 0", got)
 	}
 }
+
+// TestPurgeUnsealedEncryptedLibraryRemovesItsPackItems pins CORE-1852: the
+// catalog media delete trigger never sees an Encrypted Library's Media, so
+// the purge itself removes the pack items naming it, and keeps the items of
+// another Library in the same pack.
+func TestPurgeUnsealedEncryptedLibraryRemovesItsPackItems(t *testing.T) {
+	ctx := context.Background()
+	st, library, media := trashedEncryptedLibrary(t)
+	st.SetEncryptedLibraryKeyEraser(&fakeKeyEraser{})
+	pack := createPackOverEncryptedMedia(t, st, library, media.ID)
+
+	if _, err := st.PurgeLibrary(ctx, library); err != nil {
+		t.Fatalf("PurgeLibrary: %v", err)
+	}
+	assertOnlyArchivePackItem(t, st, pack)
+}
+
+// TestPurgeSealedEncryptedLibraryRemovesItsPackItems pins CORE-1852 for a
+// sealed Library, whose Media ids cannot be listed: the pack items no
+// readable plane holds go, and the other Library's item stays.
+func TestPurgeSealedEncryptedLibraryRemovesItsPackItems(t *testing.T) {
+	ctx := context.Background()
+	st, library, media := trashedEncryptedLibrary(t)
+	st.SetEncryptedLibraryKeyEraser(&fakeKeyEraser{})
+	pack := createPackOverEncryptedMedia(t, st, library, media.ID)
+	if err := st.SealEncryptedLibraryDB(ctx, library, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatalf("SealEncryptedLibraryDB: %v", err)
+	}
+
+	if _, err := st.PurgeLibrary(ctx, library); err != nil {
+		t.Fatalf("PurgeLibrary: %v", err)
+	}
+	assertOnlyArchivePackItem(t, st, pack)
+}
+
+// createPackOverEncryptedMedia seals a pack holding the encrypted Media and
+// the seeded catalog Media of another Library.
+func createPackOverEncryptedMedia(t *testing.T, st *Store, library LibraryID, media MediaID) OfflinePackID {
+	t.Helper()
+	pack, err := st.CreateOfflinePack(t.Context(), OfflinePack{
+		ProfileID: "profile-default", TargetKind: "media", State: OfflinePackReady,
+		LibraryIDs: []LibraryID{library, "library-archive"},
+	}, []OfflinePackItem{{MediaID: media}, {MediaID: "media-archive"}}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("CreateOfflinePack: %v", err)
+	}
+	return pack.ID
+}
+
+func assertOnlyArchivePackItem(t *testing.T, st *Store, pack OfflinePackID) {
+	t.Helper()
+	items, err := st.OfflinePackItems(t.Context(), pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].MediaID != "media-archive" {
+		t.Fatalf("pack items after purge = %+v, want only media-archive", items)
+	}
+}
