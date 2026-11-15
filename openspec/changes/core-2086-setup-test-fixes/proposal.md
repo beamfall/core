@@ -18,8 +18,8 @@ The owner set up a fresh server on 2026-11-15 and hit three things.
 ## What Changes
 
 - The web player gives a caption `<track>` its source only when that track is first shown.
-- The server half (a started conversion finishes and is cached when its request is cancelled) is a
-  separate change, `core-2086-subtitle-conversion`: `internal/mediahttp` is held by another landing.
+- A muxed-subtitle conversion that has started runs to completion (bounded by a timeout) and is
+  cached even when its request is cancelled. A request cancelled while it waited starts none.
 - A job's progress history entry stores the update's counters, unit and message, and the Console
   job log shows it as a progress line.
 - The Console transcoder form has a Browse button that opens the server folder picker, disables
