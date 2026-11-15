@@ -51,6 +51,7 @@ import { profileSearchStrings } from "./profile-search";
 import { profileSearchLibraryStrings } from "./profile-search-library";
 import { profileDeviceStrings } from "./profiles-devices";
 import { profileDevicePairingStrings } from "./profiles-devices-pairing";
+import { profileDeviceRequestStrings } from "./profiles-devices-requests";
 import { providerKeyStrings } from "./provider-keys";
 import { remoteAccessStrings } from "./remote-access";
 import { remoteAccessMappingStrings } from "./remote-access-mapping";
@@ -114,6 +115,7 @@ export const en = {
   ...onboardingStrings.en,
   ...profileDeviceStrings.en,
   ...profileDevicePairingStrings.en,
+  ...profileDeviceRequestStrings.en,
   ...migrationStrings.en,
   ...migrationUnmatchedStrings.en,
   ...migrationFixmatchStrings.en,
@@ -193,6 +195,7 @@ export const fr = {
   ...onboardingStrings.fr,
   ...profileDeviceStrings.fr,
   ...profileDevicePairingStrings.fr,
+  ...profileDeviceRequestStrings.fr,
   ...migrationStrings.fr,
   ...migrationUnmatchedStrings.fr,
   ...migrationFixmatchStrings.fr,
@@ -272,6 +275,7 @@ export const de = {
   ...onboardingStrings.de,
   ...profileDeviceStrings.de,
   ...profileDevicePairingStrings.de,
+  ...profileDeviceRequestStrings.de,
   ...migrationStrings.de,
   ...migrationUnmatchedStrings.de,
   ...migrationFixmatchStrings.de,
@@ -351,6 +355,7 @@ export const es = {
   ...onboardingStrings.es,
   ...profileDeviceStrings.es,
   ...profileDevicePairingStrings.es,
+  ...profileDeviceRequestStrings.es,
   ...migrationStrings.es,
   ...migrationUnmatchedStrings.es,
   ...migrationFixmatchStrings.es,
@@ -430,6 +435,7 @@ export const pt = {
   ...onboardingStrings.pt,
   ...profileDeviceStrings.pt,
   ...profileDevicePairingStrings.pt,
+  ...profileDeviceRequestStrings.pt,
   ...migrationStrings.pt,
   ...migrationUnmatchedStrings.pt,
   ...migrationFixmatchStrings.pt,

@@ -9,7 +9,7 @@
 // which throws ApiError (carrying .status) on a non-2xx response — callers
 // inspect that status the way the vanilla app inspects response.status.
 
-import { graphql, postJSON, type SignInSecurityMode } from "@/lib/api";
+import { getJSON, graphql, postJSON, type SignInSecurityMode } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
 import type { AdminSessionInfo } from "./types";
 
@@ -176,4 +176,41 @@ export interface PairingCode {
  */
 export async function mintPairingCode(deviceRole: string): Promise<PairingCode> {
   return postJSON<PairingCode>("/api/pairing-codes", { deviceRole });
+}
+
+// --- Device-initiated pairing requests (CORE-0317, CORE-2064) ---------------
+
+/** A device that tapped this server and is waiting for an admin to approve it.
+ * `deviceName` and `platform` are chosen by the requesting device: untrusted
+ * text, rendered as text only. */
+export interface PairingRequest {
+  code: string;
+  deviceName: string;
+  platform: string;
+  requestedRole: string;
+  /** True when the request came from the local network. */
+  lan: boolean;
+  requestedAt: string;
+  expiresAt: string;
+}
+
+/** The pending requests (GET /api/pairing-requests, admin session). Rejects
+ * with an ApiError: 401/403 = not an admin session, 404 = a server without
+ * device-initiated pairing. */
+export async function fetchPairingRequests(signal?: AbortSignal): Promise<PairingRequest[]> {
+  const data = await getJSON<{ requests?: PairingRequest[] | null }>("/api/pairing-requests", {
+    signal,
+  });
+  return data.requests ?? [];
+}
+
+/** Approve (POST /api/pairing-requests/approve) or deny (.../deny) one pending
+ * request. With no options the server uses the role the device asked for.
+ * Rejects with an ApiError; 404 = the request is gone or expired. */
+export async function decidePairingRequest(
+  decision: "approve" | "deny",
+  code: string,
+  options: { profileID?: string; deviceRole?: string } = {},
+): Promise<void> {
+  await postJSON(`/api/pairing-requests/${decision}`, { code, ...options });
 }

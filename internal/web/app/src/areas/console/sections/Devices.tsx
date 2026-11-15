@@ -22,6 +22,7 @@ import {
 import type { RemoteEndpointInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { ConfirmButton } from "../ConfirmButton";
+import { usePairingRequests, useRoleLabel } from "../lib/pairingRequests";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 import { enrollQrTarget, isLoopbackHost } from "./enrollQr";
@@ -189,6 +190,86 @@ function PairingCodeBanner({ code }: { code: MintedCode }) {
   );
 }
 
+function ageLabel(t: ReturnType<typeof useT>, requestedAt: string): string {
+  const seconds = Math.max(0, Math.round((Date.now() - Date.parse(requestedAt)) / 1000));
+  if (Number.isNaN(seconds)) return "";
+  return seconds < 60
+    ? t("pairingAgeSeconds", { seconds })
+    : t("pairingAgeMinutes", { minutes: Math.floor(seconds / 60) });
+}
+
+// Devices that asked to join (CORE-0317). The same list feeds the any-screen
+// prompt (CORE-2064). A `code` in the page's query string (the QR a device
+// shows) marks that request and puts it first. Names and platforms come from
+// the devices themselves: text only.
+function PendingRequests() {
+  const t = useT();
+  const roleLabel = useRoleLabel();
+  const { requests, decide } = usePairingRequests();
+  const [failed, setFailed] = useState<string | null>(null);
+  const linked = new URLSearchParams(window.location.search).get("code");
+  const rows = [...requests].sort((a, b) => Number(b.code === linked) - Number(a.code === linked));
+
+  async function onDecide(decision: "approve" | "deny", code: string) {
+    setFailed((await decide(decision, code)) ? null : code);
+  }
+
+  return (
+    <Section heading="pairingPendingHeading" lead="pairingPendingLead">
+      {rows.length === 0 ? (
+        <EmptyState message="pairingPendingEmpty" />
+      ) : (
+        <DataTable
+          columns={[
+            { key: "name", label: t("deviceColName") },
+            { key: "platform", label: t("pairingColPlatform") },
+            { key: "role", label: t("deviceColRole") },
+            { key: "code", label: t("pairingColCode") },
+            { key: "net", label: t("pairingColNetwork") },
+            { key: "age", label: t("pairingColAge") },
+            { key: "action", numeric: true },
+          ]}
+        >
+          {rows.map((r) => (
+            <TableRow key={r.code}>
+              <TableCell className="font-medium">
+                {r.deviceName}
+                {r.code === linked && <StatusChip tone="green">{t("pairingFromLink")}</StatusChip>}
+              </TableCell>
+              <TableCell>{r.platform}</TableCell>
+              <TableCell>{roleLabel(r.requestedRole)}</TableCell>
+              <TableCell>
+                <code>{r.code}</code>
+              </TableCell>
+              <TableCell>{t(r.lan ? "pairingNetworkLan" : "pairingNetworkRemote")}</TableCell>
+              <TableCell>{ageLabel(t, r.requestedAt)}</TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end gap-2">
+                  {failed === r.code && (
+                    <span role="status" className="self-center text-[12px] text-destructive">
+                      {t("pairingFailed")}
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    autoFocus={r.code === linked}
+                    onClick={() => void onDecide("approve", r.code)}
+                  >
+                    {t("pairingApprove")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void onDecide("deny", r.code)}>
+                    {t("pairingDeny")}
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </DataTable>
+      )}
+    </Section>
+  );
+}
+
 export function Devices() {
   const t = useT();
   const devices = useAsync(fetchDevices);
@@ -230,6 +311,7 @@ export function Devices() {
 
   return (
     <div className="space-y-6">
+      <PendingRequests />
       <Section
         heading="devicesHeading"
         lead="devicesLead"
