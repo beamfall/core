@@ -14,9 +14,9 @@ fail() {
 }
 
 repo="$TMP/repo"
-mkdir -p "$repo/script" "$repo/.github/cishards" "$TMP/bin"
+mkdir -p "$repo/script" "$repo/.corvint" "$TMP/bin"
 cp "$ROOT/script/gate-affected.sh" "$repo/script/"
-cp "$ROOT/.github/cishards/test-commands.json" "$repo/.github/cishards/"
+cp "$ROOT/.corvint/test-commands.json" "$repo/.corvint/"
 git -C "$repo" init -q -b main
 git -C "$repo" config user.name "Gate Affected Test"
 git -C "$repo" config user.email "gate-affected@example.invalid"

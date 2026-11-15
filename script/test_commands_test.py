@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # scenario:agent-test-selection
-"""Selftest for .github/cishards/test-commands.json.
+"""Selftest for .corvint/test-commands.json.
 
 `corvint test` maps changed paths to focused verification with the commands this
 file declares. A command that names a missing make target or npm script would
@@ -14,7 +14,7 @@ import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-COMMANDS = ROOT / ".github" / "cishards" / "test-commands.json"
+COMMANDS = ROOT / ".corvint" / "test-commands.json"
 
 
 def make_targets():

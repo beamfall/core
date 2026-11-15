@@ -11,7 +11,7 @@
 #
 # The plan is computed once with --dry-run and the run is bound to it with
 # --manifest, so what ran is what was planned. When that plan already ran
-# `make gate-preflight` (a declared language in .github/cishards/
+# `make gate-preflight` (a declared language in .corvint/
 # test-commands.json maps to it), it is not run a second time.
 set -euo pipefail
 
@@ -73,7 +73,7 @@ if [ "$status" -ne 0 ]; then
   exit "$status"
 fi
 
-preflight_ran="$(python3 - "$work/manifest.json" .github/cishards/test-commands.json <<'PY'
+preflight_ran="$(python3 - "$work/manifest.json" .corvint/test-commands.json <<'PY'
 import json, sys
 manifest = json.load(open(sys.argv[1]))
 languages = json.load(open(sys.argv[2])).get("languages", {})

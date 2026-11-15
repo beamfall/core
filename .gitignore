@@ -63,3 +63,6 @@ kotlinx/
 # Python bytecode cache for script/ helpers
 script/__pycache__/
 .roadmap-db.*.tmp*
+
+# Corvint local observations (per-machine, never tracked)
+/.corvint/self-observations.jsonl
