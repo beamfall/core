@@ -57,7 +57,7 @@ export function FieldLocksPage() {
   };
 
   return (
-    <ManageSection title={t("fieldLocksHeading")} lead={t("fieldLocksLead")}>
+    <ManageSection>
       <div className="flex items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="field-locks-media">{t("fieldLocksMediaLabel")}</Label>

@@ -1,8 +1,7 @@
 export const migrationUnmatchedStrings = {
   en: {
     unmatchedHeading: "Unmatched records",
-    unmatchedLead:
-      "Files and import records that could not be matched to a Library item. Use fix-match or rescan to resolve.",
+    unmatchedLead: "Files Beamfall could not match to a library item. Fix the match or rescan.",
     unmatchedEmpty: "No unmatched records.",
     unmatchedUnavailable: "Could not load unmatched records.",
     unmatchedRescan: "Rescan all unmatched",
@@ -34,7 +33,7 @@ export const migrationUnmatchedStrings = {
   fr: {
     unmatchedHeading: "Enregistrements non appariés",
     unmatchedLead:
-      "Fichiers et enregistrements d'import qui n'ont pas pu être associés à un élément de bibliothèque.",
+      "Fichiers que Beamfall n’a pas pu associer à un élément de bibliothèque. Corrigez l’association ou relancez l’analyse.",
     unmatchedEmpty: "Aucun enregistrement non apparié.",
     unmatchedUnavailable: "Impossible de charger les enregistrements non appariés.",
     unmatchedRescan: "Réanalyser tous les non appariés",
@@ -67,7 +66,7 @@ export const migrationUnmatchedStrings = {
   de: {
     unmatchedHeading: "Nicht zugeordnete Datensätze",
     unmatchedLead:
-      "Dateien und Import-Datensätze, die keinem Bibliothekselement zugeordnet werden konnten.",
+      "Dateien, die Beamfall keinem Bibliothekselement zuordnen konnte. Korrigiere die Zuordnung oder scanne erneut.",
     unmatchedEmpty: "Keine nicht zugeordneten Datensätze.",
     unmatchedUnavailable: "Nicht zugeordnete Datensätze konnten nicht geladen werden.",
     unmatchedRescan: "Alle nicht zugeordneten neu scannen",
@@ -100,7 +99,7 @@ export const migrationUnmatchedStrings = {
   es: {
     unmatchedHeading: "Registros no coincidentes",
     unmatchedLead:
-      "Archivos y registros de importación que no pudieron coincidir con un elemento de la biblioteca.",
+      "Archivos que Beamfall no pudo asociar a un elemento de la biblioteca. Corrige la coincidencia o vuelve a analizar.",
     unmatchedEmpty: "No hay registros no coincidentes.",
     unmatchedUnavailable: "No se pudieron cargar los registros no coincidentes.",
     unmatchedRescan: "Reescanear todos los no coincidentes",
@@ -132,7 +131,7 @@ export const migrationUnmatchedStrings = {
   pt: {
     unmatchedHeading: "Registros não correspondidos",
     unmatchedLead:
-      "Arquivos e registros de importação que não puderam ser correspondidos a um item da biblioteca.",
+      "Arquivos que o Beamfall não conseguiu associar a um item da biblioteca. Corrija a correspondência ou verifique novamente.",
     unmatchedEmpty: "Nenhum registro não correspondido.",
     unmatchedUnavailable: "Não foi possível carregar os registros não correspondidos.",
     unmatchedRescan: "Reanalisar todos os não correspondidos",

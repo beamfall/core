@@ -249,7 +249,6 @@ function ManualCollections({ libraryID }: { libraryID: string }) {
   return (
     <>
       <ManageSection
-        title={t("collections")}
         actions={
           <label className="flex items-center gap-2 text-sm">
             <input

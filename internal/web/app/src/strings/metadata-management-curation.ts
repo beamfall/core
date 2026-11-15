@@ -2,8 +2,7 @@ export const metadataManagementCurationStrings = {
   en: {
     // Manage Curation editor (WEB-5B, ADR-0001/0005/0061).
     curationHeading: "Curation",
-    curationLead:
-      "Open a Media or Entity by ID to review its plugin-declared fields, ordered relations, backing files, and extras.",
+    curationLead: "Open an item by its ID to review its fields, relations, files and extras.",
     curationSubjectType: "Subject type",
     curationSubjectMedia: "Media",
     curationSubjectEntity: "Entity",
@@ -44,7 +43,7 @@ export const metadataManagementCurationStrings = {
   fr: {
     curationHeading: "Curation",
     curationLead:
-      "Ouvrez un média ou une entité par identifiant pour examiner ses champs déclarés par les modules, ses relations ordonnées, ses fichiers sources et ses extras.",
+      "Ouvrez un élément par son identifiant pour examiner ses champs, ses relations, ses fichiers et ses extras.",
     curationSubjectType: "Type de sujet",
     curationSubjectMedia: "Média",
     curationSubjectEntity: "Entité",
@@ -85,7 +84,7 @@ export const metadataManagementCurationStrings = {
   de: {
     curationHeading: "Kuratierung",
     curationLead:
-      "Öffne ein Medium oder eine Entität per ID, um die vom Plugin deklarierten Felder, geordnete Beziehungen, zugehörige Dateien und Extras zu prüfen.",
+      "Öffne ein Element über seine ID, um Felder, Beziehungen, Dateien und Extras zu prüfen.",
     curationSubjectType: "Art des Objekts",
     curationSubjectMedia: "Medium",
     curationSubjectEntity: "Entität",
@@ -126,7 +125,7 @@ export const metadataManagementCurationStrings = {
   es: {
     curationHeading: "Curación",
     curationLead:
-      "Abre un medio o una entidad por ID para revisar sus campos declarados por complementos, relaciones ordenadas, archivos de respaldo y extras.",
+      "Abre un elemento por su ID para revisar sus campos, relaciones, archivos y extras.",
     curationSubjectType: "Tipo de sujeto",
     curationSubjectMedia: "Medio",
     curationSubjectEntity: "Entidad",
@@ -166,8 +165,7 @@ export const metadataManagementCurationStrings = {
   },
   pt: {
     curationHeading: "Curadoria",
-    curationLead:
-      "Abra uma mídia ou entidade pelo ID para revisar os campos declarados pelo plugin, as relações ordenadas, os arquivos de origem e os extras.",
+    curationLead: "Abra um item pelo ID para revisar seus campos, relações, arquivos e extras.",
     curationSubjectType: "Tipo de assunto",
     curationSubjectMedia: "Mídia",
     curationSubjectEntity: "Entidade",

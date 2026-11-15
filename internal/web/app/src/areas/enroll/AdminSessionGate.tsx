@@ -7,11 +7,18 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  FieldInput,
+  FieldLabel,
+  GlassCard,
+  PageShell,
+  PrimaryAction,
+  SurfaceHeading,
+} from "@/components/beamfall/surface";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { endAdminSession, fetchAdminSession, verifyAdminSession } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { FormFeedback } from "./AuthShell";
 
 // Reusable Admin-Session gate (ADR-0007 §4). An Admin Session is the
 // short-lived, owner-adult + admin-password credential that unlocks Console
@@ -137,42 +144,42 @@ export function AdminSessionGate({
     );
   }
 
+  // Locked: the unlock card, embedded in the page that uses the gate.
   return (
-    <form onSubmit={onUnlock} className="max-w-md space-y-4" noValidate>
-      <div className="space-y-1.5">
-        <Label htmlFor={passwordID}>{t("adminPasswordLabel")}</Label>
-        <Input
-          id={passwordID}
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          // The admin password is a credential, but it IS a password: leave
-          // the browser's current-password autofill available, and never
-          // spellcheck/autocapitalize it.
-          autoComplete="current-password"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          autoFocus
-          required
-          aria-invalid={error != null}
-          aria-describedby={error ? errorID : undefined}
+    <PageShell embedded>
+      <GlassCard>
+        <SurfaceHeading
+          level={2}
+          title={t("consoleLockedNoSessionTitle")}
+          lead={t("consoleLockedNoSessionLead")}
         />
-      </div>
-      <Button type="submit" disabled={busy}>
-        {t("adminUnlockSubmit")}
-      </Button>
-      {error && (
-        <p
-          ref={errorRef}
-          id={errorID}
-          role="alert"
-          tabIndex={-1}
-          className="text-sm text-destructive outline-none"
-        >
-          {error}
-        </p>
-      )}
-    </form>
+        <form onSubmit={onUnlock} className="space-y-5" noValidate>
+          <div>
+            <FieldLabel htmlFor={passwordID}>{t("adminPasswordLabel")}</FieldLabel>
+            <FieldInput
+              id={passwordID}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              // The admin password is a credential, but it IS a password: leave
+              // the browser's current-password autofill available, and never
+              // spellcheck/autocapitalize it.
+              autoComplete="current-password"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus
+              required
+              aria-invalid={error != null}
+              aria-describedby={error ? errorID : undefined}
+            />
+          </div>
+          <FormFeedback error={error} errorID={errorID} errorRef={errorRef} />
+          <PrimaryAction type="submit" disabled={busy} className="w-full">
+            {t("adminUnlockSubmit")}
+          </PrimaryAction>
+        </form>
+      </GlassCard>
+    </PageShell>
   );
 }

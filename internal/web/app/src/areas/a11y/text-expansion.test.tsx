@@ -169,7 +169,9 @@ describe("ADR-0034 text-expansion gate — Manage (Trash)", () => {
     const { container } = renderExpanded(<TrashPage />);
     await screen.findByText("Untitled clip 9c08");
     expect(screen.getByRole("button", { name: STRINGS.de.restore })).toBeVisible();
-    expect(container.textContent).toContain(STRINGS.de.trashPolicyHeading);
+    // The page heading lives in the Manage area chrome (CORE-1125); the purge
+    // card heading is the page's own keyed heading.
+    expect(container.textContent).toContain(STRINGS.de.purgeHeading);
   });
 });
 

@@ -10,7 +10,7 @@ export const metadataManagementStrings = {
     watcherStateUnavailable: "Unavailable",
     fieldLocksHeading: "Field locks",
     fieldLocksLead:
-      "Per-field source precedence. A locked field keeps its value through re-scans and scraper passes.",
+      "Choose which source wins for each field. A locked field keeps its value through rescans.",
     fieldLocksMediaLabel: "Media ID",
     fieldLocksLoad: "Load",
     fieldLocksEmpty: "Enter a media ID to view its field locks.",
@@ -53,7 +53,7 @@ export const metadataManagementStrings = {
     watcherStateUnavailable: "Indisponible",
     fieldLocksHeading: "Verrous de champs",
     fieldLocksLead:
-      "Priorité de source par champ. Un champ verrouillé conserve sa valeur lors des réanalyses et des passages de récupération.",
+      "Choisissez la source qui l’emporte pour chaque champ. Un champ verrouillé conserve sa valeur lors des réanalyses.",
     fieldLocksMediaLabel: "Identifiant du média",
     fieldLocksLoad: "Charger",
     fieldLocksEmpty: "Saisissez un identifiant de média pour voir ses verrous de champs.",
@@ -96,7 +96,7 @@ export const metadataManagementStrings = {
     watcherStateUnavailable: "Nicht verfügbar",
     fieldLocksHeading: "Feldsperren",
     fieldLocksLead:
-      "Quellenpriorität pro Feld. Ein gesperrtes Feld behält seinen Wert bei erneuten Scans und Scraper-Durchläufen.",
+      "Lege fest, welche Quelle bei jedem Feld Vorrang hat. Ein gesperrtes Feld behält seinen Wert bei erneuten Scans.",
     fieldLocksMediaLabel: "Medien-ID",
     fieldLocksLoad: "Laden",
     fieldLocksEmpty: "Geben Sie eine Medien-ID ein, um ihre Feldsperren anzuzeigen.",
@@ -139,7 +139,7 @@ export const metadataManagementStrings = {
     watcherStateUnavailable: "No disponible",
     fieldLocksHeading: "Bloqueos de campos",
     fieldLocksLead:
-      "Precedencia de origen por campo. Un campo bloqueado conserva su valor en los reanálisis y las pasadas de extracción.",
+      "Elige qué origen prevalece en cada campo. Un campo bloqueado conserva su valor en los reanálisis.",
     fieldLocksMediaLabel: "ID de medio",
     fieldLocksLoad: "Cargar",
     fieldLocksEmpty: "Introduce un ID de medio para ver sus bloqueos de campos.",
@@ -182,7 +182,7 @@ export const metadataManagementStrings = {
     watcherStateUnavailable: "Indisponível",
     fieldLocksHeading: "Bloqueios de campo",
     fieldLocksLead:
-      "Precedência de origem por campo. Um campo bloqueado mantém seu valor durante novas varreduras e passagens de extração.",
+      "Escolha qual origem prevalece em cada campo. Um campo bloqueado mantém seu valor nas novas verificações.",
     fieldLocksMediaLabel: "ID da mídia",
     fieldLocksLoad: "Carregar",
     fieldLocksEmpty: "Insira um ID de mídia para ver seus bloqueios de campo.",

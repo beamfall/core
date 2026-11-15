@@ -33,6 +33,23 @@ Use:
 - `StatusChip`, `DataTable`, `EmptyState`, `ErrorState`, `Fieldset`, and
   `ControlRow` for Console Workbench sections.
 
+## Surface
+
+Full-page surfaces outside the app chrome (first-run setup, enroll, promote,
+the admin unlock gates) compose:
+
+```ts
+import { GlassCard, PageShell, SurfaceHeading } from "@/components/beamfall/surface";
+```
+
+- `PageShell` for the cinema backdrop, brand bar and the one centred column.
+- `GlassCard` for the column's card (`asChild` makes a `<form>` the card).
+- `SurfaceHeading` for the card title and lead.
+- `FieldLabel`, `FieldLegend`, `FieldInput`, `FieldHint` and `FieldButton` for
+  fields; `PrimaryAction` and `SecondaryAction` for the card's buttons.
+- `HairlineRows`, `HairlineList`, `OptionRow` and `OptionRadio` for choice
+  rows; `SurfaceSection` and `SurfaceInset` for blocks inside the card.
+
 Theming:
 
 - Components use semantic CSS hooks (`manage-*`, `console-*`) and tokens from

@@ -84,7 +84,7 @@ export function PlayerHost({ children }: { children: ReactNode }) {
       {/* Room below the page so the docked player never covers its end. */}
       {docked && <div aria-hidden="true" className="bf-mini-spacer" />}
       {entry && (
-        <Suspense fallback={attached ? <div className="min-h-screen bg-black" /> : null}>
+        <Suspense fallback={attached ? <div className="min-h-screen bg-scrim" /> : null}>
           <LazyHostedPlayer
             entry={entry}
             docked={docked}

@@ -37,7 +37,8 @@ export const appShellStrings = {
     // CORE-1607: default name for a browser enrolled without one.
     deviceNameDefault: "{browser} on {os}",
     promoteTitle: "Promote this browser",
-    promoteLead: "Enter a manager pairing code to promote this browser to a manager device.",
+    promoteLead:
+      "Enter a manager pairing code so this browser can manage the server as well as play.",
     managerPairingCode: "Manager pairing code",
     promote: "Promote",
     cancel: "Cancel",
@@ -105,7 +106,7 @@ export const appShellStrings = {
     deviceNameDefault: "{browser} sur {os}",
     promoteTitle: "Promouvoir ce navigateur",
     promoteLead:
-      "Entrez un code de jumelage gestionnaire pour promouvoir ce navigateur en appareil gestionnaire.",
+      "Entrez un code de jumelage gestionnaire pour que ce navigateur puisse gérer le serveur en plus de lire.",
     managerPairingCode: "Code de jumelage gestionnaire",
     promote: "Promouvoir",
     cancel: "Annuler",
@@ -175,7 +176,7 @@ export const appShellStrings = {
     deviceNameDefault: "{browser} unter {os}",
     promoteTitle: "Diesen Browser hochstufen",
     promoteLead:
-      "Gib einen Manager-Kopplungscode ein, um diesen Browser zu einem Manager-Gerät hochzustufen.",
+      "Gib einen Manager-Kopplungscode ein, damit dieser Browser den Server verwalten und nicht nur wiedergeben kann.",
     managerPairingCode: "Manager-Kopplungscode",
     promote: "Hochstufen",
     cancel: "Abbrechen",
@@ -244,7 +245,7 @@ export const appShellStrings = {
     deviceNameDefault: "{browser} en {os}",
     promoteTitle: "Promover este navegador",
     promoteLead:
-      "Introduce un código de emparejamiento de administrador para promover este navegador a dispositivo administrador.",
+      "Introduce un código de emparejamiento de administrador para que este navegador pueda administrar el servidor además de reproducir.",
     managerPairingCode: "Código de emparejamiento de administrador",
     promote: "Promover",
     cancel: "Cancelar",
@@ -312,7 +313,7 @@ export const appShellStrings = {
     deviceNameDefault: "{browser} no {os}",
     promoteTitle: "Promover este navegador",
     promoteLead:
-      "Insira um código de pareamento de gerente para promover este navegador a dispositivo gerente.",
+      "Insira um código de pareamento de gerente para que este navegador possa gerenciar o servidor além de reproduzir.",
     managerPairingCode: "Código de pareamento de gerente",
     promote: "Promover",
     cancel: "Cancelar",

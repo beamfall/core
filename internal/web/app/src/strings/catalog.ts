@@ -5,6 +5,7 @@ import { activityPageStrings } from "./activity-page";
 import { activityPluginStrings } from "./activity-plugins";
 import { activitySecurityStrings } from "./activity-security";
 import { appShellStrings } from "./app-shell";
+import { appearanceStrings } from "./appearance";
 import { backupRetentionStrings } from "./backup-retention";
 import { backupRetentionExportStrings } from "./backup-retention-export";
 import { backupRetentionHistoryStrings } from "./backup-retention-history";
@@ -71,6 +72,7 @@ import { viewerCollectionStrings } from "./viewer-collections";
 import { watchPartyStrings } from "./watch-party";
 import { webhookStrings } from "./webhooks";
 import { whosWatchingStrings } from "./whos-watching";
+import { workbenchPageStrings } from "./workbench-pages";
 
 export const en = {
   ...appShellStrings.en,
@@ -146,6 +148,8 @@ export const en = {
   ...activityLibraryStrings.en,
   ...activityMediaStrings.en,
   ...activityPluginStrings.en,
+  ...workbenchPageStrings.en,
+  ...appearanceStrings.en,
 } as const;
 
 export const fr = {
@@ -222,6 +226,8 @@ export const fr = {
   ...activityLibraryStrings.fr,
   ...activityMediaStrings.fr,
   ...activityPluginStrings.fr,
+  ...workbenchPageStrings.fr,
+  ...appearanceStrings.fr,
 } as const;
 
 export const de = {
@@ -298,6 +304,8 @@ export const de = {
   ...activityLibraryStrings.de,
   ...activityMediaStrings.de,
   ...activityPluginStrings.de,
+  ...workbenchPageStrings.de,
+  ...appearanceStrings.de,
 } as const;
 
 export const es = {
@@ -374,6 +382,8 @@ export const es = {
   ...activityLibraryStrings.es,
   ...activityMediaStrings.es,
   ...activityPluginStrings.es,
+  ...workbenchPageStrings.es,
+  ...appearanceStrings.es,
 } as const;
 
 export const pt = {
@@ -450,4 +460,6 @@ export const pt = {
   ...activityLibraryStrings.pt,
   ...activityMediaStrings.pt,
   ...activityPluginStrings.pt,
+  ...workbenchPageStrings.pt,
+  ...appearanceStrings.pt,
 } as const;

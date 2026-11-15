@@ -7,7 +7,12 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!src/l10n/locales.json"]
+    "includes": [
+      "**",
+      "!src/l10n/locales.json",
+      "!src/styles/tokens.css",
+      "!src/lib/theme/theme.generated.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

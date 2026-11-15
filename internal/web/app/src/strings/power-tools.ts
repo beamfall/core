@@ -2,7 +2,8 @@ export const powerToolStrings = {
   en: {
     // PowerTools: Conversion page (ADR-0124 §6, POWERTOOLS-8).
     convert: "Convert",
-    convertLead: "Convert a source file or folder into a managed file using a server-side preset.",
+    convertLead:
+      "Turn a source file or folder into a managed copy using one of the server's presets.",
     convertSourceLabel: "Source file or folder",
     convertPresetLabel: "Preset",
     convertQueueTitle: "Conversion queue",
@@ -43,7 +44,7 @@ export const powerToolStrings = {
   fr: {
     convert: "Convertir",
     convertLead:
-      "Convertissez un fichier ou un dossier source en fichier géré à l’aide d’un préréglage côté serveur.",
+      "Transformez un fichier ou un dossier source en copie gérée à l’aide de l’un des préréglages du serveur.",
     convertSourceLabel: "Fichier ou dossier source",
     convertPresetLabel: "Préréglage",
     convertQueueTitle: "File de conversion",
@@ -84,7 +85,7 @@ export const powerToolStrings = {
   de: {
     convert: "Konvertieren",
     convertLead:
-      "Konvertiere eine Quelldatei oder einen Quellordner mit einer serverseitigen Vorgabe in eine verwaltete Datei.",
+      "Wandle eine Quelldatei oder einen Quellordner mit einer der Vorgaben des Servers in eine verwaltete Kopie um.",
     convertSourceLabel: "Quelldatei oder -ordner",
     convertPresetLabel: "Vorgabe",
     convertQueueTitle: "Konvertierungswarteschlange",
@@ -126,7 +127,7 @@ export const powerToolStrings = {
   es: {
     convert: "Convertir",
     convertLead:
-      "Convierte un archivo o carpeta de origen en un archivo administrado con un ajuste preestablecido del servidor.",
+      "Convierte un archivo o carpeta de origen en una copia administrada con uno de los ajustes preestablecidos del servidor.",
     convertSourceLabel: "Archivo o carpeta de origen",
     convertPresetLabel: "Ajuste preestablecido",
     convertQueueTitle: "Cola de conversión",
@@ -167,7 +168,7 @@ export const powerToolStrings = {
   pt: {
     convert: "Converter",
     convertLead:
-      "Converta um arquivo ou pasta de origem em um arquivo gerenciado usando uma predefinição do servidor.",
+      "Transforme um arquivo ou pasta de origem em uma cópia gerenciada usando uma das predefinições do servidor.",
     convertSourceLabel: "Arquivo ou pasta de origem",
     convertPresetLabel: "Predefinição",
     convertQueueTitle: "Fila de conversão",

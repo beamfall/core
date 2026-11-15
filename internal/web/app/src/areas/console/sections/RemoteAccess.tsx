@@ -660,6 +660,7 @@ function QBittorrentIngest() {
     <Section
       heading="qbittorrentHeading"
       lead="qbittorrentLead"
+      collapsible
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />

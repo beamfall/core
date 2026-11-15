@@ -1,5 +1,6 @@
 import { ChevronRight, Folder, X } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
+import { SurfaceInset } from "@/components/beamfall/surface";
 import { Button } from "@/components/ui/button";
 import type { FolderEntryInfo } from "@/lib/graphql/types";
 import { cn } from "@/lib/utils";
@@ -65,8 +66,8 @@ export function FolderPicker({
   }, [node.path, busy]);
 
   return (
-    <div
-      className="mt-2 overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.03]"
+    <SurfaceInset
+      className="mt-2"
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         e.preventDefault();
@@ -75,7 +76,7 @@ export function FolderPicker({
       }}
     >
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1 border-b border-white/10 py-1.5 pl-3 pr-1.5 text-dense text-muted-foreground">
+      <div className="flex items-center gap-1 border-b border-foreground/10 py-1.5 pl-3 pr-1.5 text-dense text-muted-foreground">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
           {crumbs.map((crumb, i) => {
             const isCurrent = i === crumbs.length - 1;
@@ -154,7 +155,7 @@ export function FolderPicker({
       </div>
 
       {/* Footer: current path + commit */}
-      <div className="flex items-center gap-3 border-t border-white/10 py-2 pl-3 pr-2">
+      <div className="flex items-center gap-3 border-t border-foreground/10 py-2 pl-3 pr-2">
         <span
           className="min-w-0 truncate font-mono text-dense text-muted-foreground"
           title={node.path}
@@ -172,6 +173,6 @@ export function FolderPicker({
           {labels.use}
         </Button>
       </div>
-    </div>
+    </SurfaceInset>
   );
 }

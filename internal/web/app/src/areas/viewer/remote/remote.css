@@ -17,7 +17,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-surface);
   background: var(--bg-surface);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  box-shadow: 0 12px 32px color-mix(in oklab, var(--shadow-color) 35%, transparent);
 }
 
 [data-register="viewer"] .bf-remote-message-label {

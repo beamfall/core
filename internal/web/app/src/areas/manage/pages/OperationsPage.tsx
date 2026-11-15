@@ -84,7 +84,6 @@ function JobsSection() {
 
   return (
     <ManageSection
-      title={t("jobs")}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -175,6 +174,7 @@ function SchedulesSection() {
   return (
     <ManageSection
       title={t("schedules")}
+      collapsible
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>
           {t("refresh")}
@@ -373,6 +373,7 @@ function WatcherSection() {
   return (
     <ManageSection
       title={t("watcherStatusHeading")}
+      collapsible
       lead={t("watcherStatusLead")}
       actions={
         <Button type="button" variant="outline" size="sm" onClick={load}>

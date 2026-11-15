@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { ChevronDown, type LucideProps } from "lucide-react";
+import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -236,28 +237,126 @@ export function ControlRow({
   );
 }
 
-export function ManageSection({
+// A page's opening heading (CORE-1125): an icon badge, the page's one h1 and a
+// one-line lead saying what the page is for.
+export function IconHeading({
+  icon: Icon,
+  title,
+  lead,
+}: {
+  icon: ComponentType<LucideProps>;
+  title: string;
+  lead?: string;
+}) {
+  return (
+    <div className="icon-heading">
+      <span className="icon-heading-badge">
+        <Icon className="icon-heading-icon" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <h1 className="icon-heading-title">{title}</h1>
+        {lead && <p className="icon-heading-lead">{lead}</p>}
+      </div>
+    </div>
+  );
+}
+
+// A card whose body folds away behind its heading (CORE-1123): a native
+// <details>, so it opens from the keyboard, and a closed body stays mounted
+// and keeps anything typed into it. The summary holds only the heading and
+// lead; actions sit at the top of the body, never inside the summary. A
+// `flush` card is a fold inside another card: no border or fill of its own.
+// `defaultOpen` turning true later (say, a problem found after load) opens it.
+export function CollapsibleCard({
   title,
   lead,
   actions,
+  level = 2,
+  defaultOpen = false,
+  flush = false,
+  className,
   children,
 }: {
   title: string;
   lead?: string;
   actions?: ReactNode;
+  level?: 2 | 3 | 4;
+  defaultOpen?: boolean;
+  flush?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
+  const Heading = (["h2", "h3", "h4"] as const)[level - 2];
+  return (
+    <details
+      className={cn("collapsible-card", flush && "is-flush", className)}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="collapsible-card-summary">
+        <span className="collapsible-card-text">
+          <Heading className="collapsible-card-title">{title}</Heading>
+          {lead && <span className="collapsible-card-lead">{lead}</span>}
+        </span>
+        <ChevronDown className="collapsible-card-chevron" aria-hidden />
+      </summary>
+      <div className="collapsible-card-body">
+        {actions && <div className="collapsible-card-actions">{actions}</div>}
+        {children}
+      </div>
+    </details>
+  );
+}
+
+export function ManageSection({
+  title,
+  lead,
+  actions,
+  collapsible = false,
+  defaultOpen = false,
+  children,
+}: {
+  /** Left out on a page's first card, whose title and lead are the page heading's. */
+  title?: string;
+  lead?: string;
+  actions?: ReactNode;
+  /** Folds the body behind the title; closed unless defaultOpen. Needs a title. */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  if (collapsible && title) {
+    return (
+      <CollapsibleCard
+        className="manage-section-collapsible"
+        title={title}
+        lead={lead}
+        actions={actions}
+        defaultOpen={defaultOpen}
+      >
+        {children}
+      </CollapsibleCard>
+    );
+  }
   return (
     <Card className="manage-section">
-      <CardHeader className="manage-section-header flex flex-row items-start justify-between gap-2">
-        <div className="min-w-0 space-y-1">
-          <CardTitle role="heading" aria-level={2} className="manage-section-title">
-            {title}
-          </CardTitle>
-          {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
-        </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-      </CardHeader>
+      {(title || lead || actions) && (
+        <CardHeader className="manage-section-header flex flex-row items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            {title && (
+              <CardTitle role="heading" aria-level={2} className="manage-section-title">
+                {title}
+              </CardTitle>
+            )}
+            {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
+          </div>
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        </CardHeader>
+      )}
       {children ? <CardContent className="manage-section-body">{children}</CardContent> : null}
     </Card>
   );

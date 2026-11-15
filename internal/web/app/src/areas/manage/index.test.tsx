@@ -70,7 +70,7 @@ const MANAGE_NAV = [
   ["Bulk edit & file operations", "/manage/bulk"],
   ["Tags", "/manage/tags"],
   ["Curation", "/manage/curation"],
-  ["Manage", "/manage/entities"],
+  ["Entity lookup", "/manage/entities"],
   ["Artwork candidates", "/manage/artwork"],
   ["Markers", "/manage/markers"],
   ["Field locks", "/manage/field-locks"],

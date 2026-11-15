@@ -27,6 +27,7 @@ import {
   type RootProblemReason,
 } from "@/components/beamfall/LibraryRootHealth";
 import {
+  CollapsibleCard,
   EmptyState,
   ErrorLine,
   ErrorState,
@@ -298,147 +299,165 @@ function LibraryCard({
         </div>
       </header>
 
-      <div className="space-y-4 p-4">
+      <div className="px-4 pt-3 empty:hidden">
         <RescanStatus libraryID={library.id} hasRoots={roots.length > 0} />
-        <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <section aria-labelledby={`folders-${library.id}`} className="space-y-2">
-            <h4 id={`folders-${library.id}`} className="m-0 text-sm font-semibold text-foreground">
-              {t("libraryFolders")}
-            </h4>
-            {roots.length > 0 && (
-              <ul className="m-0 flex list-none flex-col p-0">
-                {roots.map((root) => (
-                  <li
-                    key={root}
-                    className="flex min-w-0 items-center gap-3 border-b border-[var(--border-subtle)] py-2 last:border-b-0"
-                  >
-                    <Folder aria-hidden className="size-4 shrink-0 text-primary" />
-                    <span className="min-w-0 flex-1" title={root}>
-                      <span className="block truncate text-sm font-medium">
-                        {lastSegment(root)}
-                      </span>
-                      <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                        {root}
-                      </span>
-                      {rootProblems[root] && (
-                        <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <StatusChip tone="red">
-                            {t(ROOT_PROBLEM_LABEL[rootProblems[root]])}
-                          </StatusChip>
-                          {t("libraryRootFixHint")}
-                        </span>
-                      )}
-                    </span>
-                    <ConfirmButton
-                      variant="ghost"
-                      size="sm"
-                      confirm="confirmRemoveFolder"
-                      actionLabel={t("remove")}
-                      disabled={savingRoots}
-                      onConfirm={async () => {
-                        await saveRoots(roots.filter((item) => item !== root));
-                      }}
-                      label={
-                        <>
-                          <X aria-hidden className="size-4" />
-                          <span className="sr-only">{t("removeFolder", { path: root })}</span>
-                        </>
-                      }
-                    >
-                      <span className="block break-all font-mono text-xs">{root}</span>
-                    </ConfirmButton>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form onSubmit={addRoot}>
-              <PathPickerField
-                id={`roots-${library.id}`}
-                label={<span className="sr-only">{t("addFolderPath")}</span>}
-                role="libraryRoot"
-                value={newRoot}
-                libraryID={library.id}
-                placeholder={t("addFolderPath")}
-                onChange={setNewRoot}
-                inputClassName="min-w-0 flex-1 basis-48"
-                selectLabel={t("pathPickerAddThis")}
-                selectDisabled={savingRoots}
-                onSelect={addRootPath}
-                actions={
-                  <Button
-                    type="submit"
-                    size="sm"
-                    variant="outline"
-                    disabled={savingRoots || !newRoot.trim()}
-                  >
-                    <FolderPlus className="console-nav-icon" aria-hidden />
-                    {t("addFolder")}
-                  </Button>
-                }
-              />
-            </form>
-            <ErrorLine message={rootsError} />
-          </section>
-
-          <section aria-labelledby={`options-${library.id}`} className="space-y-1">
-            <h4 id={`options-${library.id}`} className="m-0 text-sm font-semibold text-foreground">
-              {t("libraryOptions")}
-            </h4>
-            <div className="divide-y divide-[var(--border-subtle)]">
-              <SettingRow
-                label={t("previewClips")}
-                help={t("previewClipsHelp")}
-                checked={library.previewClips}
-                onChange={(c) => void togglePreview(c)}
-              />
-              <SettingRow
-                label={t("skipDetection")}
-                help={t("skipDetectionHelp")}
-                checked={skipDetectionEnabled}
-                onChange={(c) => void toggleSkipDetection(c)}
-              />
-            </div>
-          </section>
-        </div>
-
-        <LibraryIconPicker library={library} onChanged={onChanged} />
-
-        <Advanced>
-          <section aria-labelledby={`scan-heading-${library.id}`} className="space-y-2">
-            <h4
-              id={`scan-heading-${library.id}`}
-              className="m-0 text-sm font-semibold text-foreground"
-            >
-              {t("scanOneFolder")}
-            </h4>
-            <form onSubmit={scan} className="flex items-end gap-2">
-              <div className="flex-1 space-y-1.5">
-                <Label htmlFor={`scan-${library.id}`}>{t("folderToScan")}</Label>
-                <Select value={scanRoot} onValueChange={setScanRoot}>
-                  <SelectTrigger id={`scan-${library.id}`}>
-                    <SelectValue placeholder={t("selectFolderToScan")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {scanFolders.map((folder) => (
-                      <SelectItem key={folder.path} value={folder.path}>
-                        {folder.path}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button type="submit" size="sm" disabled={!scanRoot.trim() || scanBusy}>
-                <ScanLine className="console-nav-icon" aria-hidden />
-                {scanBusy ? t("rescanScanning") : t("scan")}
-              </Button>
-            </form>
-            <ErrorLine message={scanError} />
-          </section>
-        </Advanced>
       </div>
-      <footer className="flex justify-end border-t border-white/[0.07] px-4 py-3">
-        <DeleteLibraryButton library={library} onDeleted={onDeleted} />
-      </footer>
+      {/* A library that already has folders opens folded, so a server with many
+          libraries lists them in a screen or two (CORE-1123); one still being
+          set up, or with a folder the server cannot find, opens on its folders. */}
+      <CollapsibleCard
+        flush
+        level={4}
+        title={t("libraryFoldersAndOptions")}
+        defaultOpen={roots.length === 0 || Object.keys(rootProblems).length > 0}
+      >
+        <div className="space-y-4 px-4 pb-4">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <section aria-labelledby={`folders-${library.id}`} className="space-y-2">
+              <h4
+                id={`folders-${library.id}`}
+                className="m-0 text-sm font-semibold text-foreground"
+              >
+                {t("libraryFolders")}
+              </h4>
+              {roots.length > 0 && (
+                <ul className="m-0 flex list-none flex-col p-0">
+                  {roots.map((root) => (
+                    <li
+                      key={root}
+                      className="flex min-w-0 items-center gap-3 border-b border-[var(--border-subtle)] py-2 last:border-b-0"
+                    >
+                      <Folder aria-hidden className="size-4 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1" title={root}>
+                        <span className="block truncate text-sm font-medium">
+                          {lastSegment(root)}
+                        </span>
+                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                          {root}
+                        </span>
+                        {rootProblems[root] && (
+                          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <StatusChip tone="red">
+                              {t(ROOT_PROBLEM_LABEL[rootProblems[root]])}
+                            </StatusChip>
+                            {t("libraryRootFixHint")}
+                          </span>
+                        )}
+                      </span>
+                      <ConfirmButton
+                        variant="ghost"
+                        size="sm"
+                        confirm="confirmRemoveFolder"
+                        actionLabel={t("remove")}
+                        disabled={savingRoots}
+                        onConfirm={async () => {
+                          await saveRoots(roots.filter((item) => item !== root));
+                        }}
+                        label={
+                          <>
+                            <X aria-hidden className="size-4" />
+                            <span className="sr-only">{t("removeFolder", { path: root })}</span>
+                          </>
+                        }
+                      >
+                        <span className="block break-all font-mono text-xs">{root}</span>
+                      </ConfirmButton>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <form onSubmit={addRoot}>
+                <PathPickerField
+                  id={`roots-${library.id}`}
+                  label={<span className="sr-only">{t("addFolderPath")}</span>}
+                  role="libraryRoot"
+                  value={newRoot}
+                  libraryID={library.id}
+                  placeholder={t("addFolderPath")}
+                  onChange={setNewRoot}
+                  inputClassName="min-w-0 flex-1 basis-48"
+                  selectLabel={t("pathPickerAddThis")}
+                  selectDisabled={savingRoots}
+                  onSelect={addRootPath}
+                  actions={
+                    <Button
+                      type="submit"
+                      size="sm"
+                      variant="outline"
+                      disabled={savingRoots || !newRoot.trim()}
+                    >
+                      <FolderPlus className="console-nav-icon" aria-hidden />
+                      {t("addFolder")}
+                    </Button>
+                  }
+                />
+              </form>
+              <ErrorLine message={rootsError} />
+            </section>
+
+            <section aria-labelledby={`options-${library.id}`} className="space-y-1">
+              <h4
+                id={`options-${library.id}`}
+                className="m-0 text-sm font-semibold text-foreground"
+              >
+                {t("libraryOptions")}
+              </h4>
+              <div className="divide-y divide-[var(--border-subtle)]">
+                <SettingRow
+                  label={t("previewClips")}
+                  help={t("previewClipsHelp")}
+                  checked={library.previewClips}
+                  onChange={(c) => void togglePreview(c)}
+                />
+                <SettingRow
+                  label={t("skipDetection")}
+                  help={t("skipDetectionHelp")}
+                  checked={skipDetectionEnabled}
+                  onChange={(c) => void toggleSkipDetection(c)}
+                />
+              </div>
+            </section>
+          </div>
+
+          <LibraryIconPicker library={library} onChanged={onChanged} />
+
+          <Advanced>
+            <section aria-labelledby={`scan-heading-${library.id}`} className="space-y-2">
+              <h4
+                id={`scan-heading-${library.id}`}
+                className="m-0 text-sm font-semibold text-foreground"
+              >
+                {t("scanOneFolder")}
+              </h4>
+              <form onSubmit={scan} className="flex items-end gap-2">
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor={`scan-${library.id}`}>{t("folderToScan")}</Label>
+                  <Select value={scanRoot} onValueChange={setScanRoot}>
+                    <SelectTrigger id={`scan-${library.id}`}>
+                      <SelectValue placeholder={t("selectFolderToScan")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {scanFolders.map((folder) => (
+                        <SelectItem key={folder.path} value={folder.path}>
+                          {folder.path}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button type="submit" size="sm" disabled={!scanRoot.trim() || scanBusy}>
+                  <ScanLine className="console-nav-icon" aria-hidden />
+                  {scanBusy ? t("rescanScanning") : t("scan")}
+                </Button>
+              </form>
+              <ErrorLine message={scanError} />
+            </section>
+          </Advanced>
+        </div>
+        <footer className="flex justify-end border-t border-foreground/[0.07] px-4 py-3">
+          <DeleteLibraryButton library={library} onDeleted={onDeleted} />
+        </footer>
+      </CollapsibleCard>
     </article>
   );
 }
@@ -598,7 +617,7 @@ export function Libraries() {
       )}
 
       {notice && (
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+        <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <p
               ref={noticeRef}
@@ -607,7 +626,7 @@ export function Libraries() {
               tabIndex={-1}
               className="m-0 flex min-w-0 items-start gap-2.5 rounded-sm text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+              <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--state-direct)]" />
               {noticeText}
             </p>
             {notice.kind === "deleted" && (

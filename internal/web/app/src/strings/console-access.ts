@@ -25,7 +25,7 @@ export const consoleAccessStrings = {
     // gate as the Console, worded for a page rather than the Console.
     manageLockedTitle: "Admin password needed",
     manageLockedLead:
-      "This page changes server settings. Enter the server admin password to continue.",
+      "This page changes settings for everyone on the server, so it asks for the admin password first.",
     manageUnlockSubmit: "Unlock",
     consoleActiveLead: "Console unlocked. The admin session is active.",
     adminLock: "Lock Console",
@@ -58,7 +58,7 @@ export const consoleAccessStrings = {
     adminUnlockSubmit: "Déverrouiller la console",
     manageLockedTitle: "Mot de passe administrateur requis",
     manageLockedLead:
-      "Cette page modifie les réglages du serveur. Saisissez le mot de passe administrateur du serveur pour continuer.",
+      "Cette page modifie les réglages pour tous les utilisateurs du serveur ; elle demande donc d’abord le mot de passe administrateur.",
     manageUnlockSubmit: "Déverrouiller",
     consoleActiveLead: "Console déverrouillée. La session administrateur est active.",
     adminLock: "Verrouiller la console",
@@ -89,7 +89,7 @@ export const consoleAccessStrings = {
     adminUnlockSubmit: "Konsole entsperren",
     manageLockedTitle: "Admin-Passwort erforderlich",
     manageLockedLead:
-      "Diese Seite ändert Servereinstellungen. Gib das Admin-Passwort des Servers ein, um fortzufahren.",
+      "Diese Seite ändert Einstellungen für alle auf dem Server, deshalb fragt sie zuerst nach dem Admin-Passwort.",
     manageUnlockSubmit: "Entsperren",
     consoleActiveLead: "Konsole entsperrt. Die Admin-Sitzung ist aktiv.",
     adminLock: "Konsole sperren",
@@ -122,7 +122,7 @@ export const consoleAccessStrings = {
     adminUnlockSubmit: "Desbloquear la consola",
     manageLockedTitle: "Se necesita la contraseña de administrador",
     manageLockedLead:
-      "Esta página cambia ajustes del servidor. Introduce la contraseña de administrador del servidor para continuar.",
+      "Esta página cambia ajustes para todos en el servidor, así que primero pide la contraseña de administrador.",
     manageUnlockSubmit: "Desbloquear",
     consoleActiveLead: "Consola desbloqueada. La sesión de administrador está activa.",
     adminLock: "Bloquear la consola",
@@ -155,7 +155,7 @@ export const consoleAccessStrings = {
     adminUnlockSubmit: "Desbloquear o console",
     manageLockedTitle: "Senha de administrador necessária",
     manageLockedLead:
-      "Esta página altera configurações do servidor. Digite a senha de administrador do servidor para continuar.",
+      "Esta página altera configurações para todos no servidor, por isso pede primeiro a senha de administrador.",
     manageUnlockSubmit: "Desbloquear",
     consoleActiveLead: "Console desbloqueado. A sessão de administrador está ativa.",
     adminLock: "Bloquear o console",

@@ -3,7 +3,7 @@ export const itemMetadataStrings = {
   en: {
     itemMetadataHeading: "Edit item",
     itemMetadataLead:
-      "Edit an item's details. Saving locks every field you change, so identification, refresh and rescans leave it alone until you unlock it.",
+      "Edit an item's details. Fields you change stay as you set them through rescans until you unlock them.",
     itemMetadataEmpty: "Enter a media ID to edit its details.",
     itemMetadataUnavailable: "Could not load this item.",
     itemMetadataDetailsHeading: "Details",
@@ -45,7 +45,7 @@ export const itemMetadataStrings = {
   fr: {
     itemMetadataHeading: "Modifier l’élément",
     itemMetadataLead:
-      "Modifiez les détails d’un élément. L’enregistrement verrouille chaque champ modifié : l’identification, l’actualisation et les réanalyses n’y touchent plus tant que vous ne le déverrouillez pas.",
+      "Modifiez les détails d’un élément. Les champs que vous modifiez restent tels que vous les avez définis lors des réanalyses, jusqu’à ce que vous les déverrouilliez.",
     itemMetadataEmpty: "Saisissez un identifiant de média pour modifier ses détails.",
     itemMetadataUnavailable: "Impossible de charger cet élément.",
     itemMetadataDetailsHeading: "Détails",
@@ -88,7 +88,7 @@ export const itemMetadataStrings = {
   de: {
     itemMetadataHeading: "Element bearbeiten",
     itemMetadataLead:
-      "Bearbeite die Details eines Elements. Beim Speichern wird jedes geänderte Feld gesperrt, sodass Identifizierung, Aktualisierung und erneute Scans es unangetastet lassen, bis du es entsperrst.",
+      "Bearbeite die Details eines Elements. Felder, die du änderst, bleiben bei erneuten Scans so, wie du sie gesetzt hast, bis du sie entsperrst.",
     itemMetadataEmpty: "Gib eine Medien-ID ein, um die Details zu bearbeiten.",
     itemMetadataUnavailable: "Dieses Element konnte nicht geladen werden.",
     itemMetadataDetailsHeading: "Details",
@@ -132,7 +132,7 @@ export const itemMetadataStrings = {
   es: {
     itemMetadataHeading: "Editar elemento",
     itemMetadataLead:
-      "Edita los detalles de un elemento. Al guardar se bloquea cada campo que cambies, así que la identificación, la actualización y los nuevos análisis no lo tocan hasta que lo desbloquees.",
+      "Edita los detalles de un elemento. Los campos que cambies se mantienen como los dejaste en los nuevos análisis hasta que los desbloquees.",
     itemMetadataEmpty: "Introduce un ID de medio para editar sus detalles.",
     itemMetadataUnavailable: "No se pudo cargar este elemento.",
     itemMetadataDetailsHeading: "Detalles",
@@ -175,7 +175,7 @@ export const itemMetadataStrings = {
   pt: {
     itemMetadataHeading: "Editar item",
     itemMetadataLead:
-      "Edite os detalhes de um item. Ao salvar, cada campo alterado é bloqueado, e a identificação, a atualização e novas verificações não o modificam até você desbloqueá-lo.",
+      "Edite os detalhes de um item. Os campos que você alterar ficam como você definiu nas novas verificações até você desbloqueá-los.",
     itemMetadataEmpty: "Digite um ID de mídia para editar os detalhes.",
     itemMetadataUnavailable: "Não foi possível carregar este item.",
     itemMetadataDetailsHeading: "Detalhes",

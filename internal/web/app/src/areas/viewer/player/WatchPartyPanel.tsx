@@ -79,13 +79,13 @@ export function WatchPartyPanel({
         <section
           id={panelID}
           aria-label={t("watchPartyButton")}
-          className="absolute right-0 top-full mt-2 flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-3 rounded-lg border border-white/15 bg-[oklch(14%_0.012_255)] p-4 text-sm text-white shadow-lg"
+          className="absolute right-0 top-full mt-2 flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-3 rounded-lg border border-on-scrim/15 bg-[color-mix(in_oklab,var(--on-scrim)_6%,var(--scrim))] p-4 text-sm text-on-scrim shadow-lg"
         >
           {!active ? (
             <>
-              <p className="m-0 text-white/75">{t("watchPartyIntro")}</p>
+              <p className="m-0 text-on-scrim/75">{t("watchPartyIntro")}</p>
               <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
-                <legend className="mb-1 p-0 text-white/75">{t("watchPartyControl")}</legend>
+                <legend className="mb-1 p-0 text-on-scrim/75">{t("watchPartyControl")}</legend>
                 {[
                   { value: true, label: t("watchPartyRelaxed") },
                   { value: false, label: t("watchPartyHostOnly") },
@@ -109,7 +109,7 @@ export function WatchPartyPanel({
           ) : (
             <>
               <div>
-                <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-white/60">
+                <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-on-scrim/60">
                   {t("watchPartyMembers")}
                 </h2>
                 <ul className="m-0 flex list-none flex-col gap-1 p-0">
@@ -117,7 +117,7 @@ export function WatchPartyPanel({
                     <li key={member}>{member}</li>
                   ))}
                   {party.invited.map((member) => (
-                    <li key={`invited-${member}`} className="text-white/60">
+                    <li key={`invited-${member}`} className="text-on-scrim/60">
                       {t("watchPartyInvited", { name: member })}
                     </li>
                   ))}
@@ -127,7 +127,7 @@ export function WatchPartyPanel({
                 <PartyRequests requests={party.requests} />
               )}
               <form className="flex flex-col gap-1" onSubmit={(event) => void invite(event)}>
-                <label htmlFor={inputID} className="text-white/75">
+                <label htmlFor={inputID} className="text-on-scrim/75">
                   {t("watchPartyInviteLabel")}
                 </label>
                 <div className="flex gap-2">
@@ -171,7 +171,7 @@ function PartyRequests({ requests }: { requests: WatchPartyRequest[] }) {
   const t = useT();
   return (
     <div>
-      <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-white/60">
+      <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-on-scrim/60">
         {t("watchPartyRequests")}
       </h2>
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -251,7 +251,7 @@ export function WatchPartySyncIndicator({
           : t("watchPartyHandedOff", { name });
     return (
       <p
-        className="pointer-events-none absolute right-4 top-16 z-20 m-0 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
+        className="pointer-events-none absolute right-4 top-16 z-20 m-0 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"
         role="status"
         data-party-notice={party.notice}
       >
@@ -282,7 +282,7 @@ export function WatchPartySyncIndicator({
         : "bg-[var(--state-danger)]";
   return (
     <p
-      className="pointer-events-none absolute right-4 top-16 z-20 m-0 flex items-center gap-2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
+      className="pointer-events-none absolute right-4 top-16 z-20 m-0 flex items-center gap-2 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"
       role="status"
       data-drift-level={level}
     >

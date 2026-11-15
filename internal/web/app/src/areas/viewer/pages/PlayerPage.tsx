@@ -131,16 +131,16 @@ export function PlayerPage() {
   }
   if (current) {
     return (
-      <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+      <main className="flex min-h-screen flex-col bf-media bg-scrim">
         <h1 className="sr-only">{t("prePlayRegion")}</h1>
         <PrePlayStage key={current.mediaId} items={current.items} onDone={finish} />
       </main>
     );
   }
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[oklch(8%_0.012_255)]">
+    <main className="flex min-h-screen items-center justify-center bf-media bg-scrim">
       <div role="status">
-        <LoaderCircle aria-hidden className="size-10 animate-spin text-white/80" />
+        <LoaderCircle aria-hidden className="size-10 animate-spin text-on-scrim/80" />
         <span className="sr-only">{t("playerLoading")}</span>
       </div>
     </main>
@@ -666,7 +666,7 @@ function FeaturePlayer({
   // shows. The fragment keeps the element in the same place in both modes.
   return (
     <>
-      <main hidden={docked} className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
+      <main hidden={docked} className="flex min-h-screen flex-col bf-media bg-scrim">
         <SkipLink />
         <h1 className="sr-only">{navTitle || t("brand")}</h1>
         <div className="bf-player-bar">
@@ -701,13 +701,13 @@ function FeaturePlayer({
             <div className="flex max-w-md flex-col items-center gap-3 text-center">
               <AlertCircle aria-hidden className="size-7 text-[var(--state-danger)]" />
               {navTitle ? (
-                <h2 className="m-0 text-xl font-semibold text-white">{navTitle}</h2>
+                <h2 className="m-0 text-xl font-semibold text-on-scrim">{navTitle}</h2>
               ) : null}
-              <p className="m-0 text-[15px] leading-relaxed text-white/75" role="alert">
+              <p className="m-0 text-[15px] leading-relaxed text-on-scrim/75" role="alert">
                 {state.message}
               </p>
               {state.detail ? (
-                <details className="text-sm text-white/55">
+                <details className="text-sm text-on-scrim/55">
                   <summary className="cursor-pointer">{t("playbackErrorDetails")}</summary>
                   <p className="m-0 mt-1 break-words">
                     {t("playbackServerReason", { reason: state.detail })}
@@ -745,13 +745,13 @@ function FeaturePlayer({
                 className="pointer-events-none absolute inset-0 flex items-center justify-center"
                 role="status"
               >
-                <LoaderCircle aria-hidden className="size-10 animate-spin text-white/80" />
+                <LoaderCircle aria-hidden className="size-10 animate-spin text-on-scrim/80" />
                 <span className="sr-only">{t("playerLoading")}</span>
               </div>
             )}
             {state.waitingForNetwork ? (
               <p
-                className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
+                className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"
                 role="status"
               >
                 {t("playerWaitingForNetwork")}
@@ -759,7 +759,7 @@ function FeaturePlayer({
             ) : (
               state.recovering && (
                 <p
-                  className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-black/70 px-3 py-1 text-sm text-white"
+                  className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-scrim/70 px-3 py-1 text-sm text-on-scrim"
                   role="status"
                 >
                   {t("reconnecting")}

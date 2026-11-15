@@ -1,20 +1,19 @@
 import { type FormEvent, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  FieldHint,
+  FieldInput,
+  FieldLabel,
+  GlassCard,
+  PageShell,
+  PrimaryAction,
+  SecondaryAction,
+  SurfaceHeading,
+} from "@/components/beamfall/surface";
 import { ApiError } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
-import { cn } from "@/lib/utils";
-import {
-  AuthHeading,
-  AuthShell,
-  AUTH_FIELD as FIELD,
-  AUTH_FIELD_LABEL as FIELD_LABEL,
-  FormFeedback,
-  normalizePairingCode,
-} from "./AuthShell";
+import { FormFeedback, normalizePairingCode, PAIRING_CODE_INPUT } from "./AuthShell";
 import { pairingCodeErrorMessage } from "./EnrollPage";
 
 // Browser→MANAGER promotion (ADR-0007 §3): redeem a MANAGER pairing code for
@@ -75,59 +74,49 @@ export function PromotePage() {
   }
 
   return (
-    <AuthShell>
-      <AuthHeading title={t("promoteTitle")} lead={t("promoteLead")} />
-      <form onSubmit={onSubmit} className="space-y-5" noValidate>
-        <div>
-          <Label htmlFor={codeID} className={FIELD_LABEL}>
-            {t("pairingCode")}
-          </Label>
-          <Input
-            id={codeID}
-            ref={codeRef}
-            className={cn(FIELD, "text-center font-mono text-xl tracking-[0.3em]")}
-            value={code}
-            onChange={(e) => {
-              setCode(normalizePairingCode(e.target.value));
-              setError(null);
-            }}
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            autoFocus
-            required
-            aria-invalid={error != null}
-            aria-describedby={error ? `${hintID} ${errorID}` : hintID}
-          />
-          <p id={hintID} className="mb-0 mt-2 text-dense text-muted-foreground">
-            {t("promoteCodeHint", {
-              page: t("consoleAccessGroup"),
-              action: t("deviceAddHeading"),
-              kind: t("deviceMintManager"),
-            })}
-          </p>
-        </div>
-        <FormFeedback error={error} errorID={errorID} errorRef={errorRef} />
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            className="h-11 rounded-[10px] px-5"
-            disabled={busy}
-            onClick={() => navigate("/", { replace: true })}
-          >
-            {t("cancel")}
-          </Button>
-          <Button
-            type="submit"
-            disabled={busy}
-            className="h-11 rounded-[10px] px-6 text-[15px] font-semibold sm:min-w-[140px]"
-          >
-            {t("promote")}
-          </Button>
-        </div>
-      </form>
-    </AuthShell>
+    <PageShell>
+      <GlassCard>
+        <SurfaceHeading title={t("promoteTitle")} lead={t("promoteLead")} />
+        <form onSubmit={onSubmit} className="space-y-5" noValidate>
+          <div>
+            <FieldLabel htmlFor={codeID}>{t("pairingCode")}</FieldLabel>
+            <FieldInput
+              id={codeID}
+              ref={codeRef}
+              className={PAIRING_CODE_INPUT}
+              value={code}
+              onChange={(e) => {
+                setCode(normalizePairingCode(e.target.value));
+                setError(null);
+              }}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus
+              required
+              aria-invalid={error != null}
+              aria-describedby={error ? `${hintID} ${errorID}` : hintID}
+            />
+            <FieldHint id={hintID} className="mt-2">
+              {t("promoteCodeHint", {
+                page: t("consoleAccessGroup"),
+                action: t("deviceAddHeading"),
+                kind: t("deviceMintManager"),
+              })}
+            </FieldHint>
+          </div>
+          <FormFeedback error={error} errorID={errorID} errorRef={errorRef} />
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <SecondaryAction disabled={busy} onClick={() => navigate("/", { replace: true })}>
+              {t("cancel")}
+            </SecondaryAction>
+            <PrimaryAction type="submit" disabled={busy} className="sm:min-w-[140px]">
+              {t("promote")}
+            </PrimaryAction>
+          </div>
+        </form>
+      </GlassCard>
+    </PageShell>
   );
 }

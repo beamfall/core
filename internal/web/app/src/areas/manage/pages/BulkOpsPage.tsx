@@ -80,7 +80,7 @@ export function BulkOpsPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("bulkOpsHeading")} lead={t("bulkOpsLead")}>
+      <ManageSection>
         {batch && (
           <div className="mb-2 flex items-center gap-3">
             <StatusBadge state="green">

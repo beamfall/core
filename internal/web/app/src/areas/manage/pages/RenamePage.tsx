@@ -152,7 +152,7 @@ export function RenamePage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("renameBatchTitle")} lead={t("renameLead")}>
+      <ManageSection title={t("renameBatchTitle")}>
         <div className="manage-fieldrow space-y-3">
           <div className="grid gap-1">
             <Label htmlFor="rename-library">{t("library")}</Label>

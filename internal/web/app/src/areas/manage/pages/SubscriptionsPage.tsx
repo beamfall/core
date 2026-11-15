@@ -158,7 +158,6 @@ export function SubscriptionsPage() {
   return (
     <div className="space-y-4">
       <ManageSection
-        title={t("subscriptions")}
         actions={
           <div className="space-y-1">
             <Label htmlFor="subscription-library" className="sr-only">

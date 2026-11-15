@@ -131,7 +131,7 @@ export function LibrariesPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("libraries")} actions={<RescanAllButton libraries={libraries} />}>
+      <ManageSection actions={<RescanAllButton libraries={libraries} />}>
         {!loading && libraries.length === 0 ? (
           <EmptyLine message={t("libraryEmptyTitle")} />
         ) : (
@@ -598,7 +598,7 @@ function LibraryRow({
           </div>
         </details>
       )}
-      <footer className="mt-4 flex justify-end border-t border-white/[0.07] pt-3">
+      <footer className="mt-4 flex justify-end border-t border-foreground/[0.07] pt-3">
         <DeleteLibraryButton library={library} onDeleted={onDeleted} />
       </footer>
     </article>

@@ -8,10 +8,15 @@ import {
   useState,
 } from "react";
 import { MIN_ADMIN_PASSWORD_LENGTH } from "@/areas/setup/orchestrate";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  FieldHint,
+  FieldInput,
+  FieldLabel,
+  GlassCard,
+  PageShell,
+  PrimaryAction,
+  SurfaceHeading,
+} from "@/components/beamfall/surface";
 import {
   endAdminSession,
   fetchAdminSession,
@@ -22,7 +27,6 @@ import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { setAdminEpochSignal } from "./adminEpoch";
-import "./AdminGate.css";
 import { LOCK_REASON_LEAD, LOCK_REASON_TITLE, type LockReason, lockReason } from "./lib/lockReason";
 
 // The Console is gated by an ADMIN SESSION (ADR-0007 §4 / ADR-0085), never by a
@@ -323,78 +327,75 @@ function LockedCard({
   const canReauth = reason !== "not-adult";
 
   return (
-    <div className="console-gate">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t(titleKey)}</CardTitle>
-          <CardDescription>{t(leadKey)}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {canReauth && (
-            <form onSubmit={onUnlock} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="admin-password">{t("adminPasswordLabel")}</Label>
-                <Input
-                  id="admin-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete={firstPassword ? AUTOFILL_NEW : AUTOFILL_CURRENT}
-                  autoFocus
-                  aria-describedby={firstPassword ? "admin-password-hint" : undefined}
-                  aria-invalid={tooShort || undefined}
-                />
-                {firstPassword && (
-                  <p id="admin-password-hint" className="text-xs text-[var(--text-muted)]">
-                    {t("setupAdminPasswordHint")}
-                  </p>
-                )}
-              </div>
+    <PageShell embedded>
+      <GlassCard>
+        <SurfaceHeading level={2} title={t(titleKey)} lead={t(leadKey)} />
+        {canReauth && (
+          <form onSubmit={onUnlock} className="space-y-5">
+            <div>
+              <FieldLabel htmlFor="admin-password">{t("adminPasswordLabel")}</FieldLabel>
+              <FieldInput
+                id="admin-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={firstPassword ? AUTOFILL_NEW : AUTOFILL_CURRENT}
+                autoFocus
+                aria-describedby={firstPassword ? "admin-password-hint" : undefined}
+                aria-invalid={tooShort || undefined}
+              />
               {firstPassword && (
-                <div className="space-y-2">
-                  <Label htmlFor="admin-password-confirm">{t("setupAdminPasswordConfirm")}</Label>
-                  <Input
-                    id="admin-password-confirm"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    autoComplete="new-password"
-                  />
-                </div>
+                <FieldHint id="admin-password-hint">{t("setupAdminPasswordHint")}</FieldHint>
               )}
-              {tooShort && (
-                <p role="alert" className="text-sm text-[var(--state-danger)]">
-                  {t("setupAdminPasswordTooShort")}
-                </p>
+            </div>
+            {firstPassword && (
+              <div>
+                <FieldLabel htmlFor="admin-password-confirm">
+                  {t("setupAdminPasswordConfirm")}
+                </FieldLabel>
+                <FieldInput
+                  id="admin-password-confirm"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+            )}
+            {tooShort && <LockedAlert>{t("setupAdminPasswordTooShort")}</LockedAlert>}
+            {mismatch && <LockedAlert>{t("consoleFirstPasswordMismatch")}</LockedAlert>}
+            {rejected && (
+              <LockedAlert>
+                {t(firstPassword ? "consoleFirstPasswordRejected" : "adminUnlockRejected")}
+              </LockedAlert>
+            )}
+            <PrimaryAction
+              type="submit"
+              className="w-full"
+              disabled={busy || !password || (firstPassword && !confirmPassword)}
+            >
+              {t(
+                firstPassword
+                  ? "consoleFirstPasswordSubmit"
+                  : (copy?.submit ?? "adminUnlockSubmit"),
               )}
-              {mismatch && (
-                <p role="alert" className="text-sm text-[var(--state-danger)]">
-                  {t("consoleFirstPasswordMismatch")}
-                </p>
-              )}
-              {rejected && (
-                <p role="alert" className="text-sm text-[var(--state-danger)]">
-                  {t(firstPassword ? "consoleFirstPasswordRejected" : "adminUnlockRejected")}
-                </p>
-              )}
-              <Button
-                type="submit"
-                disabled={busy || !password || (firstPassword && !confirmPassword)}
-              >
-                {t(
-                  firstPassword
-                    ? "consoleFirstPasswordSubmit"
-                    : (copy?.submit ?? "adminUnlockSubmit"),
-                )}
-              </Button>
-            </form>
-          )}
-          {/* Admin Session is server-administration authority and is separate
-              from Reveal (ADR-0085 §32) — stated so the two locks aren't
-              conflated. */}
-          <p className="mt-4 text-xs text-[var(--text-muted)]">{t("adminRevealDistinction")}</p>
-        </CardContent>
-      </Card>
-    </div>
+            </PrimaryAction>
+          </form>
+        )}
+        {/* Admin Session is server-administration authority and is separate
+            from Reveal (ADR-0085 §32) — stated so the two locks aren't
+            conflated. */}
+        <FieldHint className={canReauth ? "mt-5" : "mt-0"}>{t("adminRevealDistinction")}</FieldHint>
+      </GlassCard>
+    </PageShell>
+  );
+}
+
+// A refusal under the unlock form: inline danger text on the card.
+function LockedAlert({ children }: { children: ReactNode }) {
+  return (
+    <p role="alert" className="m-0 text-sm leading-snug text-(--state-danger)">
+      {children}
+    </p>
   );
 }

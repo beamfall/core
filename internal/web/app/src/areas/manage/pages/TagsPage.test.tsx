@@ -112,11 +112,8 @@ function renderPage() {
 
 describe("TagsPage", () => {
   // "Favorites"/"Archive" appear in both the tree and the bulk chip row, so
-  // anchor render-readiness on the unique section lead instead.
-  const ready = () =>
-    screen.findByText(
-      "Hierarchical, domain-agnostic Core Tags. Create, rename, reparent, and recover them.",
-    );
+  // anchor render-readiness on the live tag count instead (three live tags).
+  const ready = () => screen.findByText("3 tags");
 
   it("renders the live tag hierarchy from the tags query", async () => {
     renderPage();

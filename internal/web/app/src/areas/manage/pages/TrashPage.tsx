@@ -90,8 +90,6 @@ export function TrashPage() {
   return (
     <div className="space-y-4">
       <ManageSection
-        title={t("trashPolicyHeading")}
-        lead={t("trashPolicyLead")}
         actions={
           <div className="flex items-center gap-2">
             <StatusBadge state="neutral">

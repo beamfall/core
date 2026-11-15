@@ -36,6 +36,7 @@ import type {
   SectionOverrideInfo,
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { THEME_DEFAULT_ACCENT } from "@/lib/theme/theme.generated";
 import { formatDateTime } from "../lib/schedule";
 
 // Navigation/Layout override editor (WEB-5J / ADR-0061 §Layout editor /
@@ -49,9 +50,9 @@ import { formatDateTime } from "../lib/schedule";
 // catalog. Labels are domain-agnostic (HARD invariant #1).
 
 // The accent core serves when no override is set: the design-system brand
-// accent (Cinema --accent = --beam-500 in styles/tokens.css). Mirrors
-// manifest.DefaultAccentColor; a Go conformance test pins all three together.
-const DEFAULT_ACCENT = "#9fd8e5";
+// accent (the default preset's dark accent, generated into theme.generated.ts).
+// Mirrors manifest.DefaultAccentColor; a Go conformance test pins them together.
+const DEFAULT_ACCENT = THEME_DEFAULT_ACCENT;
 const EMPTY_OVERRIDE: NavOverrideInfo = {
   hiddenNodeIDs: [],
   nodeOrder: [],
@@ -180,8 +181,6 @@ export function NavOverridePage() {
   return (
     <div className="space-y-4">
       <ManageSection
-        title={t("navOverrideHeading")}
-        lead={t("navOverrideLead")}
         actions={
           <div className="flex items-center gap-2">
             {isOverridden && <StatusBadge state="amber">{t("navOverrideActive")}</StatusBadge>}

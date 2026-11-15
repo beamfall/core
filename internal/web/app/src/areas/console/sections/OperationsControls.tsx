@@ -100,6 +100,7 @@ function GovernorStatus() {
   return (
     <Section
       heading="governorHeading"
+      collapsible
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />

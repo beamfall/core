@@ -3,11 +3,17 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { type Location, useLocation, useNavigate } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
 import beamfallLogo from "@/assets/beamfall-logo.png";
+import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
 import { markProfilePicked, ProfileAvatar } from "@/components/beamfall/profile";
+import {
+  FieldInput,
+  FieldLabel,
+  GlassCard,
+  PrimaryAction,
+  SecondaryAction,
+  Wordmark,
+} from "@/components/beamfall/surface";
 import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import type { ProfileSummary } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
@@ -103,12 +109,13 @@ export function ProfilePickerPage() {
   const pinProfile = profiles.find((p) => p.id === pinProfileID);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="relative isolate flex min-h-dvh flex-col">
+      <CinemaBackdrop />
       <SkipLink />
       <header className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6">
         <div className="flex items-center gap-2.5">
           <img src={beamfallLogo} alt="" width={28} height={28} className="shrink-0" />
-          <span className="text-base font-semibold tracking-tight">{t("brand")}</span>
+          <Wordmark label={t("brand")} />
         </div>
         <SignOutButton />
       </header>
@@ -221,7 +228,7 @@ function PinPrompt({
   }
 
   return (
-    <div className="mx-auto w-full max-w-sm rounded-xl border bg-card p-6 text-card-foreground shadow-sm sm:p-8">
+    <GlassCard className="mx-auto w-full max-w-sm text-card-foreground">
       <form onSubmit={submit} className="flex flex-col items-center gap-5 text-center" noValidate>
         <ProfileAvatar profile={profile} size="lg" />
         <div className="flex flex-col gap-1.5">
@@ -231,8 +238,8 @@ function PinPrompt({
           <p className="text-sm text-muted-foreground">{t("whosWatchingPinLead")}</p>
         </div>
         <div className="w-full space-y-1.5 text-left">
-          <Label htmlFor={pinID}>{t("pin")}</Label>
-          <Input
+          <FieldLabel htmlFor={pinID}>{t("pin")}</FieldLabel>
+          <FieldInput
             ref={inputRef}
             id={pinID}
             type="password"
@@ -251,14 +258,14 @@ function PinPrompt({
           )}
         </div>
         <div className="flex w-full flex-col gap-2">
-          <Button type="submit" size="lg" disabled={busy || pin === ""}>
+          <PrimaryAction type="submit" disabled={busy || pin === ""}>
             {t("whosWatchingContinue")}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onBack} disabled={busy}>
+          </PrimaryAction>
+          <SecondaryAction onClick={onBack} disabled={busy}>
             {t("whosWatchingBack")}
-          </Button>
+          </SecondaryAction>
         </div>
       </form>
-    </div>
+    </GlassCard>
   );
 }

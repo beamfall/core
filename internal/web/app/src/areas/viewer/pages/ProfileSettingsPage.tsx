@@ -1,6 +1,8 @@
+import { SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MetadataAttributionText } from "@/components/beamfall/MetadataAttributionText";
 import { AvatarChooser, PROFILE_AVATAR_PREF_KEY } from "@/components/beamfall/profile";
+import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,7 +21,10 @@ import {
   setClientPref,
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { SCHEME_PREFERENCES, type SchemePreference } from "@/lib/theme/runtime";
+import { THEME_PRESETS } from "@/lib/theme/theme.generated";
 import type { StringKey } from "@/strings";
 import {
   DOWNSTREAM_AUDIO_DEFAULT,
@@ -60,6 +65,7 @@ export function ProfileSettingsPage() {
   const profileID = session?.profileID || "";
   const profile = profiles.find((p) => p.id === profileID);
   const managed = session?.profile === "managed";
+  const { schemePreference, setSchemePreference, preset, setPreset } = useRegister();
 
   const [prefs, setPrefs] = useState<ViewerPreferences | null>(null);
   const [failed, setFailed] = useState(false);
@@ -67,6 +73,21 @@ export function ProfileSettingsPage() {
   const [avatarError, setAvatarError] = useState(false);
   const [credits, setCredits] = useState<MetadataAttribution[]>([]);
   const loadToken = useRef(0);
+  // Theme saves can overlap (pick Moss, then Tide before Moss resolves). Only the newest pick may
+  // roll back, and it rolls back to the newest pick the server confirmed, never over a later success.
+  // Once the newest pick has failed, a later-arriving success for an older pick is what the server
+  // holds, so it is shown.
+  const themeSave = useRef({
+    latest: 0,
+    confirmed: 0,
+    pending: 0,
+    latestFailed: false,
+    confirmedPreset: preset,
+  });
+  useEffect(() => {
+    // With no save in flight the shown preset is the settled one (it may arrive from the server).
+    if (themeSave.current.pending === 0) themeSave.current.confirmedPreset = preset;
+  }, [preset]);
 
   const load = useCallback(async () => {
     const token = ++loadToken.current;
@@ -96,16 +117,18 @@ export function ProfileSettingsPage() {
 
   // Persist one key, optimistically reflecting it locally. A failed write
   // surfaces an error and reloads the canonical state so the UI never drifts
-  // from the server.
+  // from the server; it resolves false so state held outside prefs can roll back.
   const persist = useCallback(
     async (key: string, value: string, next: Partial<ViewerPreferences>) => {
       setSaveError(false);
       setPrefs((p) => (p ? { ...p, ...next } : p));
       try {
         await setClientPref(key, value);
+        return true;
       } catch {
         setSaveError(true);
         await load();
+        return false;
       }
     },
     [load],
@@ -146,13 +169,14 @@ export function ProfileSettingsPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto flex max-w-2xl flex-col gap-8">
-        <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-          <div className="flex min-w-0 flex-col gap-2">
-            <h1 className="bf-page-title">{t("settingsTitle")}</h1>
-            <p className="bf-lead">{t("settingsLead")}</p>
-          </div>
-          <AdvancedSettingsSwitch className="sm:mt-2" />
+      <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <header className="flex flex-wrap items-start justify-between gap-x-6">
+          <IconHeading
+            icon={SlidersHorizontal}
+            title={t("settingsTitle")}
+            lead={t("settingsLead")}
+          />
+          <AdvancedSettingsSwitch className="mb-5 sm:mt-2" />
         </header>
 
         {saveError && (
@@ -162,27 +186,84 @@ export function ProfileSettingsPage() {
         )}
 
         {profile && (
-          <section className="flex flex-col gap-3" aria-labelledby="settings-avatar">
-            <h2 id="settings-avatar" className="bf-section-title">
-              {t("avatarHeading")}
-            </h2>
-            <div className="settings-group settings-row flex flex-col gap-4">
-              <p className="m-0 text-sm text-[var(--text-muted)]">{t("avatarLead")}</p>
+          <section aria-label={t("avatarHeading")}>
+            <CollapsibleCard title={t("avatarHeading")} lead={t("avatarLead")}>
               {avatarError && (
                 <p className="m-0 text-sm text-[var(--state-danger)]" role="alert">
                   {t("avatarSaveFailed")}
                 </p>
               )}
               <AvatarChooser profile={profile} onSave={saveAvatar} />
-            </div>
+            </CollapsibleCard>
           </section>
         )}
 
-        <section className="flex flex-col gap-3" aria-labelledby="settings-playback">
-          <h2 id="settings-playback" className="bf-section-title">
-            {t("settingsPlaybackHeading")}
-          </h2>
-          <div className="settings-group">
+        {/* Appearance (CORE-1179): the scheme is this device's choice; the theme preset roams
+            with the Profile through theme.preset and re-skins the app as soon as it is picked. */}
+        <section aria-label={t("settingsAppearanceHeading")}>
+          <CollapsibleCard
+            title={t("settingsAppearanceHeading")}
+            lead={t("settingsAppearanceLead")}
+            defaultOpen
+          >
+            <div className="settings-row flex items-center justify-between gap-4">
+              <Label htmlFor="settings-scheme">{t("settingsSchemeLabel")}</Label>
+              <Select
+                value={schemePreference}
+                onValueChange={(v) => setSchemePreference(v as SchemePreference)}
+              >
+                <SelectTrigger id="settings-scheme" className="w-44">
+                  <SelectValue>{(v: SchemePreference) => t(SCHEME_LABELS[v])}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {SCHEME_PREFERENCES.map((scheme) => (
+                    <SelectItem key={scheme} value={scheme}>
+                      {t(SCHEME_LABELS[scheme])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="settings-row flex items-center justify-between gap-4">
+              <Label htmlFor="settings-theme">{t("settingsThemeLabel")}</Label>
+              <Select
+                value={preset}
+                onValueChange={(v) => {
+                  const save = themeSave.current;
+                  const seq = ++save.latest;
+                  save.pending += 1;
+                  save.latestFailed = false;
+                  setPreset(v as string);
+                  void persist(PREF_KEYS.themePreset, v as string, {}).then((saved) => {
+                    save.pending -= 1;
+                    if (saved && seq > save.confirmed) {
+                      save.confirmed = seq;
+                      save.confirmedPreset = v as string;
+                      if (save.latestFailed) setPreset(v as string);
+                    } else if (!saved && seq === save.latest) {
+                      save.latestFailed = true;
+                      setPreset(save.confirmedPreset);
+                    }
+                  });
+                }}
+              >
+                <SelectTrigger id="settings-theme" className="w-44">
+                  <SelectValue>{(v: string) => t(presetLabel(v))}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {THEME_PRESETS.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {t(p.nameKey as StringKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CollapsibleCard>
+        </section>
+
+        <section aria-label={t("settingsPlaybackHeading")}>
+          <CollapsibleCard title={t("settingsPlaybackHeading")} defaultOpen>
             <div className="settings-row flex flex-col gap-3">
               <div className="flex flex-col gap-1">
                 <span className="font-medium">{t("settingsAutoSkipHeading")}</span>
@@ -387,14 +468,11 @@ export function ProfileSettingsPage() {
                 </Select>
               </div>
             </Advanced>
-          </div>
+          </CollapsibleCard>
         </section>
 
-        <section className="flex flex-col gap-3" aria-labelledby="settings-a11y">
-          <h2 id="settings-a11y" className="bf-section-title">
-            {t("settingsAccessibilityHeading")}
-          </h2>
-          <div className="settings-group">
+        <section aria-label={t("settingsAccessibilityHeading")}>
+          <CollapsibleCard title={t("settingsAccessibilityHeading")} defaultOpen>
             <div className="settings-row flex flex-col gap-1">
               <ToggleRow
                 labelKey="settingsReduceMotion"
@@ -409,18 +487,15 @@ export function ProfileSettingsPage() {
                 {t("settingsReduceMotionLead")}
               </span>
             </div>
-          </div>
+          </CollapsibleCard>
         </section>
 
         {/* Recommendations opt-in uses the Profile's activity — adult-only on
             this self-service surface (managed-Profile recommendation policy is
             operator-owned, ADR-0082 §37). */}
         {!managed && (
-          <section className="flex flex-col gap-3" aria-labelledby="settings-recommend">
-            <h2 id="settings-recommend" className="bf-section-title">
-              {t("settingsRecommendHeading")}
-            </h2>
-            <div className="settings-group">
+          <section aria-label={t("settingsRecommendHeading")}>
+            <CollapsibleCard title={t("settingsRecommendHeading")} defaultOpen>
               <div className="settings-row flex flex-col gap-1">
                 <ToggleRow
                   labelKey="settingsRecommendOptIn"
@@ -435,18 +510,14 @@ export function ProfileSettingsPage() {
                   {t("settingsRecommendOptInLead")}
                 </span>
               </div>
-            </div>
+            </CollapsibleCard>
           </section>
         )}
 
         {credits.length > 0 && (
-          <section className="flex flex-col gap-3" aria-labelledby="settings-credits">
-            <h2 id="settings-credits" className="bf-section-title">
-              {t("settingsCreditsHeading")}
-            </h2>
-            <div className="settings-group">
+          <section aria-label={t("settingsCreditsHeading")}>
+            <CollapsibleCard title={t("settingsCreditsHeading")} lead={t("settingsCreditsLead")}>
               <div className="settings-row flex flex-col gap-2">
-                <p className="m-0 text-sm text-[var(--text-muted)]">{t("settingsCreditsLead")}</p>
                 <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
                   {credits.map((credit) => (
                     <li key={`${JSON.stringify(credit.text)}|${credit.url}`}>
@@ -458,7 +529,7 @@ export function ProfileSettingsPage() {
                   ))}
                 </ul>
               </div>
-            </div>
+            </CollapsibleCard>
           </section>
         )}
 
@@ -485,6 +556,16 @@ function ToggleRow({
       <Switch id={id} checked={checked} onCheckedChange={onChange} />
     </div>
   );
+}
+
+const SCHEME_LABELS = {
+  dark: "settingsSchemeDark",
+  light: "settingsSchemeLight",
+  system: "settingsSchemeSystem",
+} as const satisfies Record<SchemePreference, StringKey>;
+
+function presetLabel(id: string): StringKey {
+  return (THEME_PRESETS.find((p) => p.id === id) ?? THEME_PRESETS[0]).nameKey as StringKey;
 }
 
 function stillWatchingValue(after: number): string {

@@ -6,6 +6,8 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import {
   SUBTITLE_APPEARANCE_FIELDS,
   SUBTITLE_APPEARANCE_OPTIONS,
+  SUBTITLE_COLOR_NAMES,
+  SUBTITLE_COLORS,
   type SubtitleAppearance,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
@@ -46,14 +48,9 @@ const OPTION_LABELS: Record<string, StringKey> = {
   "font:serif": "subtitleFontSerif",
   "font:mono": "subtitleFontMono",
   "font:casual": "subtitleFontCasual",
-  "color:#ffffff": "subtitleColorWhite",
-  "color:#ffff00": "subtitleColorYellow",
-  "color:#00ff00": "subtitleColorGreen",
-  "color:#00ffff": "subtitleColorCyan",
-  "color:#0000ff": "subtitleColorBlue",
-  "color:#ff00ff": "subtitleColorMagenta",
-  "color:#ff0000": "subtitleColorRed",
-  "color:#000000": "subtitleColorBlack",
+  ...Object.fromEntries(
+    SUBTITLE_COLORS.map((c) => [`color:${c}`, `subtitleColor${SUBTITLE_COLOR_NAMES[c]}` as const]),
+  ),
   "edge:none": "subtitleEdgeNone",
   "edge:outline": "subtitleEdgeOutline",
   "edge:drop-shadow": "subtitleEdgeDropShadow",

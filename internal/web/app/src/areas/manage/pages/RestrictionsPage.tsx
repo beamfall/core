@@ -52,8 +52,6 @@ export function RestrictionsPage() {
 
   return (
     <ManageSection
-      title={t("restrictionsTitle")}
-      lead={t("restrictionsLead")}
       actions={revealed ? <StatusBadge state="revealed">{t("revealed")}</StatusBadge> : undefined}
     >
       {revealed ? (

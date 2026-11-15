@@ -2,8 +2,7 @@ export const collectionMarkerEditorStrings = {
   en: {
     // Marker editor (WEB-5E / ADR-0033 / ADR-0048 / ADR-0061).
     markersHeading: "Markers",
-    markersLead:
-      "Load one media item's markers and edit timestamps, titles, skip-segment kinds, and tags. Reorder is by start time.",
+    markersLead: "Load one item's markers, then edit their times, titles and kinds.",
     markersMediaID: "Media ID",
     markersLoad: "Load",
     markersNew: "New marker",
@@ -43,7 +42,7 @@ export const collectionMarkerEditorStrings = {
   fr: {
     markersHeading: "Repères",
     markersLead:
-      "Chargez les repères d’un média pour modifier les horodatages, les titres, les types de segments à ignorer et les tags. L’ordre suit l’heure de début.",
+      "Chargez les repères d’un élément, puis modifiez leurs horaires, leurs titres et leurs types.",
     markersMediaID: "ID du média",
     markersLoad: "Charger",
     markersNew: "Nouveau repère",
@@ -83,7 +82,7 @@ export const collectionMarkerEditorStrings = {
   de: {
     markersHeading: "Markierungen",
     markersLead:
-      "Lade die Markierungen eines Mediums, um Zeitstempel, Titel, Überspringen-Arten und Tags zu bearbeiten. Die Reihenfolge richtet sich nach der Startzeit.",
+      "Lade die Markierungen eines Elements und bearbeite dann ihre Zeiten, Titel und Arten.",
     markersMediaID: "Medien-ID",
     markersLoad: "Laden",
     markersNew: "Neue Markierung",
@@ -122,8 +121,7 @@ export const collectionMarkerEditorStrings = {
   },
   es: {
     markersHeading: "Marcadores",
-    markersLead:
-      "Carga los marcadores de un contenido para editar marcas de tiempo, títulos, tipos de segmento omitible y etiquetas. El orden va por la hora de inicio.",
+    markersLead: "Carga los marcadores de un elemento y edita sus tiempos, títulos y tipos.",
     markersMediaID: "ID del contenido",
     markersLoad: "Cargar",
     markersNew: "Nuevo marcador",
@@ -162,8 +160,7 @@ export const collectionMarkerEditorStrings = {
   },
   pt: {
     markersHeading: "Marcadores",
-    markersLead:
-      "Carregue os marcadores de uma mídia para editar carimbos de tempo, títulos, tipos de trecho a pular e tags. A ordem segue o horário de início.",
+    markersLead: "Carregue os marcadores de um item e edite os horários, títulos e tipos.",
     markersMediaID: "ID da mídia",
     markersLoad: "Carregar",
     markersNew: "Novo marcador",

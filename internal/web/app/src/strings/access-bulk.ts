@@ -48,7 +48,7 @@ export const accessBulkStrings = {
     weekdaySaturday: "Saturday",
     bulkOpsHeading: "Bulk edit & file operations",
     bulkOpsLead:
-      "Preview-first edits and organize/merge over many media at once. Every apply is one undoable batch.",
+      "Edit or organize many items at once. Every change is previewed first and can be undone.",
     bulkEditPreviewHeading: "Bulk edit",
     bulkEditMediaIDs: "Media IDs (comma-separated)",
     bulkEditFieldName: "Field name",
@@ -117,7 +117,7 @@ export const accessBulkStrings = {
     weekdaySaturday: "Samedi",
     bulkOpsHeading: "Édition en lot et opérations sur les fichiers",
     bulkOpsLead:
-      "Modifications avec aperçu et organisation/fusion sur plusieurs médias à la fois. Chaque application est un lot annulable.",
+      "Modifiez ou organisez de nombreux éléments à la fois. Chaque modification est d’abord présentée en aperçu et peut être annulée.",
     bulkEditPreviewHeading: "Édition en lot",
     bulkEditMediaIDs: "Identifiants de médias (séparés par des virgules)",
     bulkEditFieldName: "Nom du champ",
@@ -185,7 +185,7 @@ export const accessBulkStrings = {
     weekdaySaturday: "Samstag",
     bulkOpsHeading: "Sammelbearbeitung & Dateioperationen",
     bulkOpsLead:
-      "Bearbeitungen mit Vorschau sowie Organisieren/Zusammenführen über viele Medien gleichzeitig. Jede Anwendung ist ein widerrufbarer Stapel.",
+      "Bearbeite oder organisiere viele Elemente auf einmal. Jede Änderung wird zuerst in der Vorschau gezeigt und kann rückgängig gemacht werden.",
     bulkEditPreviewHeading: "Sammelbearbeitung",
     bulkEditMediaIDs: "Medien-IDs (durch Komma getrennt)",
     bulkEditFieldName: "Feldname",
@@ -253,7 +253,7 @@ export const accessBulkStrings = {
     weekdaySaturday: "Sábado",
     bulkOpsHeading: "Edición masiva y operaciones de archivos",
     bulkOpsLead:
-      "Ediciones con vista previa y organizar/fusionar sobre muchos medios a la vez. Cada aplicación es un lote reversible.",
+      "Edita u organiza muchos elementos a la vez. Cada cambio se previsualiza primero y se puede deshacer.",
     bulkEditPreviewHeading: "Edición masiva",
     bulkEditMediaIDs: "ID de medios (separados por comas)",
     bulkEditFieldName: "Nombre del campo",
@@ -321,7 +321,7 @@ export const accessBulkStrings = {
     weekdaySaturday: "Sábado",
     bulkOpsHeading: "Edição em massa e operações de arquivos",
     bulkOpsLead:
-      "Edições com pré-visualização e organizar/mesclar em vários mídias de uma vez. Cada aplicação é um lote reversível.",
+      "Edite ou organize vários itens de uma vez. Cada alteração é pré-visualizada antes e pode ser desfeita.",
     bulkEditPreviewHeading: "Edição em massa",
     bulkEditMediaIDs: "IDs de mídia (separados por vírgula)",
     bulkEditFieldName: "Nome do campo",

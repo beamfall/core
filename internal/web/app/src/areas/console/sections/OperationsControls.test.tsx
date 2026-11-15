@@ -111,6 +111,11 @@ beforeEach(() => {
     .mockResolvedValue(job({ kind: "events-compaction", status: "queued" }));
 });
 
+// The governor readout sits in a folded card (CORE-1123); open it as a user would.
+async function openGovernor() {
+  await userEvent.setup().click(await screen.findByRole("heading", { name: "Resource governor" }));
+}
+
 function renderPanel() {
   return render(
     <I18nProvider>
@@ -132,6 +137,7 @@ afterEach(() => {
 describe("OperationsControls", () => {
   it("renders the live governor posture from operationsGovernor", async () => {
     renderPanel();
+    await openGovernor();
 
     expect(await screen.findByText("Generation allowed")).toBeVisible();
     expect(screen.getByText("Background work paused for playback")).toBeVisible();
@@ -145,6 +151,7 @@ describe("OperationsControls", () => {
       available: false,
     });
     renderPanel();
+    await openGovernor();
 
     expect(
       await screen.findByText("The resource governor is not active on this server."),
@@ -154,6 +161,7 @@ describe("OperationsControls", () => {
   it("renders the governor-unavailable state when the query fails", async () => {
     vi.mocked(fetchOperationsGovernor).mockRejectedValue(new Error("boom"));
     renderPanel();
+    await openGovernor();
 
     expect(
       await screen.findByText("The resource governor is unavailable right now."),

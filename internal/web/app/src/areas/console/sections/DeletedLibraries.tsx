@@ -193,7 +193,7 @@ function DeletedLibraryRow({
   ].filter(Boolean);
 
   return (
-    <li className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 backdrop-blur-sm">
+    <li className="rounded-xl border border-foreground/10 bg-foreground/[0.03] px-4 py-3 backdrop-blur-sm">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <p className="m-0 truncate text-sm font-medium" title={library.title}>

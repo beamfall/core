@@ -2,8 +2,7 @@ export const customizationStrings = {
   en: {
     // Tag manager (WEB-5D / ADR-0061).
     tagsHeading: "Tags",
-    tagsLead:
-      "Hierarchical, domain-agnostic Core Tags. Create, rename, reparent, and recover them.",
+    tagsLead: "Create tags, nest and rename them, and bring back deleted ones.",
     tagsCount: "{count} tags",
     tagAssignmentCountAria: "{count} assignments",
     tagsUnavailable: "Tags are unavailable right now.",
@@ -45,8 +44,7 @@ export const customizationStrings = {
     tagRestore: "Restore",
     tagNoneDeleted: "No deleted tags.",
     navOverrideHeading: "Navigation",
-    navOverrideLead:
-      "Server-level Navigation Manifest and Layout overrides. Hide, reorder, and relabel nav nodes; override the theme accent; compose Layout sections. Empty = plugin/library defaults.",
+    navOverrideLead: "Hide, reorder and rename what the sidebar shows, and set the accent color.",
     navOverrideUnavailable: "Navigation overrides are unavailable right now.",
     navOverrideActive: "Active override",
     navOverrideNoNodes: "No navigation nodes.",
@@ -86,7 +84,7 @@ export const customizationStrings = {
   fr: {
     tagsHeading: "Étiquettes",
     tagsLead:
-      "Tags Core hiérarchiques et indépendants du domaine. Créez-les, renommez-les, changez leur parent et récupérez-les.",
+      "Créez des tags, imbriquez-les, renommez-les et récupérez ceux qui ont été supprimés.",
     tagsCount: "{count} étiquettes",
     tagAssignmentCountAria: "{count} attributions",
     tagsUnavailable: "Les étiquettes sont indisponibles pour le moment.",
@@ -129,7 +127,7 @@ export const customizationStrings = {
     tagNoneDeleted: "Aucune étiquette supprimée.",
     navOverrideHeading: "Navigation",
     navOverrideLead:
-      "Remplacements du manifeste de navigation et de la mise en page au niveau du serveur. Masquez, réordonnez et renommez les nœuds de navigation, remplacez la couleur d’accent du thème et composez les sections de la mise en page. Vide = valeurs par défaut du module ou de la bibliothèque.",
+      "Masquez, réordonnez et renommez ce qu’affiche la barre latérale, et définissez la couleur d’accent.",
     navOverrideUnavailable: "Les remplacements de navigation sont indisponibles pour le moment.",
     navOverrideActive: "Remplacement actif",
     navOverrideNoNodes: "Aucun nœud de navigation.",
@@ -168,8 +166,7 @@ export const customizationStrings = {
   },
   de: {
     tagsHeading: "Tags",
-    tagsLead:
-      "Hierarchische, domänenunabhängige Core-Tags. Erstelle, benenne um, ändere die Zuordnung und stelle sie wieder her.",
+    tagsLead: "Erstelle Tags, verschachtele und benenne sie um und stelle gelöschte wieder her.",
     tagsCount: "{count} Tags",
     tagAssignmentCountAria: "{count} Zuweisungen",
     tagsUnavailable: "Tags sind derzeit nicht verfügbar.",
@@ -212,7 +209,7 @@ export const customizationStrings = {
     tagNoneDeleted: "Keine gelöschten Tags.",
     navOverrideHeading: "Navigation",
     navOverrideLead:
-      "Überschreibungen des Navigationsmanifests und des Layouts auf Serverebene. Blende Navigationsknoten aus, ordne sie neu an und benenne sie um, überschreibe die Akzentfarbe des Designs und stelle Layout-Bereiche zusammen. Leer = Standardwerte von Plugin bzw. Bibliothek.",
+      "Blende aus, ordne neu an und benenne um, was die Seitenleiste zeigt, und lege die Akzentfarbe fest.",
     navOverrideUnavailable: "Navigationsüberschreibungen sind derzeit nicht verfügbar.",
     navOverrideActive: "Aktive Überschreibung",
     navOverrideNoNodes: "Keine Navigationsknoten.",
@@ -251,8 +248,7 @@ export const customizationStrings = {
   },
   es: {
     tagsHeading: "Etiquetas",
-    tagsLead:
-      "Etiquetas Core jerárquicas e independientes del dominio. Créalas, renómbralas, cambia su elemento superior y recupéralas.",
+    tagsLead: "Crea etiquetas, anídalas, renómbralas y recupera las eliminadas.",
     tagsCount: "{count} etiquetas",
     tagAssignmentCountAria: "{count} asignaciones",
     tagsUnavailable: "Las etiquetas no están disponibles ahora mismo.",
@@ -295,7 +291,7 @@ export const customizationStrings = {
     tagNoneDeleted: "No hay etiquetas eliminadas.",
     navOverrideHeading: "Navegación",
     navOverrideLead:
-      "Reemplazos del manifiesto de navegación y del diseño a nivel de servidor. Oculta, reordena y renombra nodos de navegación, sustituye el color de acento del tema y compón las secciones del diseño. Vacío = valores predeterminados del complemento o de la biblioteca.",
+      "Oculta, reordena y renombra lo que muestra la barra lateral, y define el color de acento.",
     navOverrideUnavailable: "Los reemplazos de navegación no están disponibles ahora mismo.",
     navOverrideActive: "Reemplazo activo",
     navOverrideNoNodes: "No hay nodos de navegación.",
@@ -334,8 +330,7 @@ export const customizationStrings = {
   },
   pt: {
     tagsHeading: "Tags",
-    tagsLead:
-      "Tags Core hierárquicas e independentes de domínio. Crie, renomeie, mude o pai e recupere.",
+    tagsLead: "Crie tags, aninhe e renomeie-as e recupere as excluídas.",
     tagsCount: "{count} tags",
     tagAssignmentCountAria: "{count} atribuições",
     tagsUnavailable: "As tags estão indisponíveis no momento.",
@@ -378,7 +373,7 @@ export const customizationStrings = {
     tagNoneDeleted: "Nenhuma tag excluída.",
     navOverrideHeading: "Navegação",
     navOverrideLead:
-      "Substituições do manifesto de navegação e do layout no nível do servidor. Oculte, reordene e renomeie nós de navegação, substitua a cor de destaque do tema e componha as seções do layout. Vazio = padrões do plugin ou da biblioteca.",
+      "Oculte, reordene e renomeie o que a barra lateral mostra e defina a cor de destaque.",
     navOverrideUnavailable: "As substituições de navegação estão indisponíveis no momento.",
     navOverrideActive: "Substituição ativa",
     navOverrideNoNodes: "Nenhum nó de navegação.",

@@ -267,7 +267,7 @@ export function AddLibrary({
 
       <MutationFailure title={t("couldNotCreateLibrary")} reason={failure} />
 
-      <div className="flex flex-wrap justify-end gap-2 border-t border-white/[0.07] pt-4">
+      <div className="flex flex-wrap justify-end gap-2 border-t border-foreground/[0.07] pt-4">
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
             {t("cancel")}

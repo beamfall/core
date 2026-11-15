@@ -15,15 +15,15 @@ export const consoleAccessLockStrings = {
     consoleLockedNotAdultLead:
       "This profile can’t administer the server. Switch to an adult owner profile to manage the Console.",
     consoleLockedNoSessionTitle: "Console locked",
-    consoleLockedNoSessionLead: "Enter the server admin password to open an admin session.",
+    consoleLockedNoSessionLead: "Enter the server’s admin password to open the Console.",
     consoleLockedExpiredTitle: "Admin session expired",
     consoleLockedExpiredLead:
-      "The admin session timed out. Re-enter the admin password to continue.",
+      "For safety, admin access ends after a while. Enter the admin password again to pick up where you left off.",
     consoleLockedSwitchedTitle: "Profile switched",
     consoleLockedSwitchedLead:
-      "The profile changed since the admin session opened. Re-enter the admin password.",
+      "You switched profiles, so admin access closed. Enter the admin password again to continue.",
     adminRevealDistinction:
-      "The admin session is separate from Reveal: being an admin doesn’t reveal restricted content, and revealing doesn’t grant admin.",
+      "Admin access is separate from Reveal: unlocking here won’t show restricted content, and Reveal never unlocks admin tools.",
     apiKeysHeading: "API keys",
     apiKeysLead: "Create scoped, named keys for third-party tools. Revoke any time.",
     apiKeyNameLabel: "Key name",
@@ -58,15 +58,15 @@ export const consoleAccessLockStrings = {
       "Ce profil ne peut pas administrer le serveur. Passez à un profil propriétaire adulte pour gérer la console.",
     consoleLockedNoSessionTitle: "Console verrouillée",
     consoleLockedNoSessionLead:
-      "Saisissez le mot de passe administrateur du serveur pour ouvrir une session administrateur.",
+      "Saisissez le mot de passe administrateur du serveur pour ouvrir la Console.",
     consoleLockedExpiredTitle: "Session administrateur expirée",
     consoleLockedExpiredLead:
-      "La session administrateur a expiré. Saisissez à nouveau le mot de passe administrateur pour continuer.",
+      "Par sécurité, l’accès administrateur prend fin après un certain temps. Saisissez à nouveau le mot de passe administrateur pour reprendre là où vous en étiez.",
     consoleLockedSwitchedTitle: "Profil changé",
     consoleLockedSwitchedLead:
-      "Le profil a changé depuis l’ouverture de la session administrateur. Saisissez à nouveau le mot de passe administrateur.",
+      "Vous avez changé de profil, l’accès administrateur a donc été fermé. Saisissez à nouveau le mot de passe administrateur pour continuer.",
     adminRevealDistinction:
-      "La session administrateur est distincte de la Révélation : être administrateur ne révèle pas le contenu restreint, et révéler n’accorde pas les droits d’administration.",
+      "L’accès administrateur est distinct de la Révélation : déverrouiller ici n’affiche pas le contenu restreint, et la Révélation ne déverrouille jamais les outils d’administration.",
     apiKeysHeading: "Clés d’API",
     apiKeysLead:
       "Créez des clés nommées et limitées pour des outils tiers. Révocables à tout moment.",
@@ -101,16 +101,15 @@ export const consoleAccessLockStrings = {
     consoleLockedNotAdultLead:
       "Dieses Profil kann den Server nicht verwalten. Wechsle zu einem erwachsenen Eigentümerprofil, um die Console zu verwalten.",
     consoleLockedNoSessionTitle: "Console gesperrt",
-    consoleLockedNoSessionLead:
-      "Gib das Admin-Passwort des Servers ein, um eine Admin-Sitzung zu öffnen.",
+    consoleLockedNoSessionLead: "Gib das Admin-Passwort des Servers ein, um die Konsole zu öffnen.",
     consoleLockedExpiredTitle: "Admin-Sitzung abgelaufen",
     consoleLockedExpiredLead:
-      "Die Admin-Sitzung ist abgelaufen. Gib das Admin-Passwort erneut ein, um fortzufahren.",
+      "Aus Sicherheitsgründen endet der Admin-Zugriff nach einer Weile. Gib das Admin-Passwort erneut ein, um dort weiterzumachen, wo du aufgehört hast.",
     consoleLockedSwitchedTitle: "Profil gewechselt",
     consoleLockedSwitchedLead:
-      "Das Profil hat sich seit dem Öffnen der Admin-Sitzung geändert. Gib das Admin-Passwort erneut ein.",
+      "Du hast das Profil gewechselt, deshalb wurde der Admin-Zugriff geschlossen. Gib das Admin-Passwort erneut ein, um fortzufahren.",
     adminRevealDistinction:
-      "Die Admin-Sitzung ist von „Anzeigen“ getrennt: Als Admin werden eingeschränkte Inhalte nicht angezeigt, und Anzeigen gewährt keine Admin-Rechte.",
+      "Der Admin-Zugriff ist von „Anzeigen“ getrennt: Das Entsperren hier zeigt keine eingeschränkten Inhalte, und „Anzeigen“ entsperrt nie die Admin-Werkzeuge.",
     apiKeysHeading: "API-Schlüssel",
     apiKeysLead:
       "Erstelle benannte, eingeschränkte Schlüssel für Drittanbieter-Tools. Jederzeit widerrufbar.",
@@ -146,15 +145,15 @@ export const consoleAccessLockStrings = {
       "Este perfil no puede administrar el servidor. Cambia a un perfil de propietario adulto para gestionar la Console.",
     consoleLockedNoSessionTitle: "Console bloqueada",
     consoleLockedNoSessionLead:
-      "Introduce la contraseña de administrador del servidor para abrir una sesión de administrador.",
+      "Introduce la contraseña de administrador del servidor para abrir la Consola.",
     consoleLockedExpiredTitle: "Sesión de administrador caducada",
     consoleLockedExpiredLead:
-      "La sesión de administrador ha caducado. Vuelve a introducir la contraseña de administrador para continuar.",
+      "Por seguridad, el acceso de administrador termina al cabo de un tiempo. Vuelve a introducir la contraseña de administrador para continuar donde lo dejaste.",
     consoleLockedSwitchedTitle: "Perfil cambiado",
     consoleLockedSwitchedLead:
-      "El perfil cambió desde que se abrió la sesión de administrador. Vuelve a introducir la contraseña de administrador.",
+      "Cambiaste de perfil, así que el acceso de administrador se cerró. Vuelve a introducir la contraseña de administrador para continuar.",
     adminRevealDistinction:
-      "La sesión de administrador es independiente de Revelar: ser administrador no revela contenido restringido, y revelar no concede permisos de administrador.",
+      "El acceso de administrador es independiente de Revelar: desbloquear aquí no muestra contenido restringido, y Revelar nunca desbloquea las herramientas de administrador.",
     apiKeysHeading: "Claves de API",
     apiKeysLead:
       "Crea claves con nombre y alcance para herramientas de terceros. Revócalas cuando quieras.",
@@ -189,16 +188,15 @@ export const consoleAccessLockStrings = {
     consoleLockedNotAdultLead:
       "Este perfil não pode administrar o servidor. Mude para um perfil de proprietário adulto para gerenciar o Console.",
     consoleLockedNoSessionTitle: "Console bloqueado",
-    consoleLockedNoSessionLead:
-      "Digite a senha de administrador do servidor para abrir uma sessão de administrador.",
+    consoleLockedNoSessionLead: "Digite a senha de administrador do servidor para abrir o Console.",
     consoleLockedExpiredTitle: "Sessão de administrador expirada",
     consoleLockedExpiredLead:
-      "A sessão de administrador expirou. Digite a senha de administrador novamente para continuar.",
+      "Por segurança, o acesso de administrador termina depois de um tempo. Digite a senha de administrador novamente para continuar de onde parou.",
     consoleLockedSwitchedTitle: "Perfil alterado",
     consoleLockedSwitchedLead:
-      "O perfil mudou desde que a sessão de administrador foi aberta. Digite a senha de administrador novamente.",
+      "Você trocou de perfil, então o acesso de administrador foi encerrado. Digite a senha de administrador novamente para continuar.",
     adminRevealDistinction:
-      "A sessão de administrador é separada de Revelar: ser administrador não revela conteúdo restrito, e revelar não concede acesso de administrador.",
+      "O acesso de administrador é separado de Revelar: desbloquear aqui não mostra conteúdo restrito, e Revelar nunca desbloqueia as ferramentas de administrador.",
     apiKeysHeading: "Chaves de API",
     apiKeysLead:
       "Crie chaves nomeadas e com escopo para ferramentas de terceiros. Revogue quando quiser.",
