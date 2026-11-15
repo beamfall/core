@@ -32,10 +32,11 @@ import (
 // HTTP over TCP, nothing else (no file, no https, no crypto, no concat).
 const pipeProtocolAllowlist = "http,tcp"
 
-// pipeFormatAllowlist pins the input demuxer to single-resource containers.
+// pipeFormatAllowlist pins the input demuxer to single-resource containers,
+// video and the common music formats (MP3, FLAC, WAV, AIFF, raw AAC) alike.
 // Playlist and manifest demuxers (hls, dash, concat, image sequences) are left
 // out because they open further URLs a crafted source could choose.
-const pipeFormatAllowlist = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mpegts,mpeg,avi,flv,asf,ogg"
+const pipeFormatAllowlist = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mpegts,mpeg,avi,flv,asf,ogg,mp3,flac,wav,w64,aiff,aac"
 
 // pipeMovflags fragments the output at every keyframe with an empty moov up
 // front, so the MP4 can be written to a pipe without seeking back. faststart

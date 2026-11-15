@@ -46,6 +46,11 @@ func TestPipeArgsScopeInputAndFragmentOutput(t *testing.T) {
 			t.Errorf("format allowlist admits the %s demuxer", demuxer)
 		}
 	}
+	for _, demuxer := range []string{"mp3", "flac", "wav", "aiff", "ogg", "mov"} {
+		if !slices.Contains(strings.Split(pipeFormatAllowlist, ","), demuxer) {
+			t.Errorf("format allowlist refuses the %s demuxer an Encrypted music Library needs", demuxer)
+		}
+	}
 	joined := strings.Join(args, " ")
 	for _, banned := range []string{"faststart", "global_sidx", "file"} {
 		if strings.Contains(joined, banned) {
