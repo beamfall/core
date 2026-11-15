@@ -448,3 +448,28 @@ func TestRequiredFFmpegConfinementRefusesWithoutLandlock(t *testing.T) {
 		t.Fatalf("best-effort applyConfinement without landlock = %v, want nil", err)
 	}
 }
+
+// TestRequiredFFmpegConfinementRefusesLandlockWithoutTruncate proves
+// --require-landlock refuses landlock ABI 1 and 2, whose rulesets cannot handle
+// truncate(2), before building any ruleset, and that the ABI it accepts puts
+// the truncate right in the handled set, where no rule grants it.
+func TestRequiredFFmpegConfinementRefusesLandlockWithoutTruncate(t *testing.T) {
+	original := ffmpegLandlockABI
+	t.Cleanup(func() { ffmpegLandlockABI = original })
+	for _, abi := range []int{1, 2} {
+		ffmpegLandlockABI = func() int { return abi }
+		err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg")
+		if !errors.Is(err, errLandlockRequired) || !strings.Contains(err.Error(), "truncate") {
+			t.Fatalf("applyRequiredConfinement on landlock ABI %d = %v, want an errLandlockRequired naming truncate", abi, err)
+		}
+	}
+	if handledAccess(requiredLandlockMinABI)&unix.LANDLOCK_ACCESS_FS_TRUNCATE == 0 {
+		t.Fatalf("handledAccess(%d) leaves truncate unhandled", requiredLandlockMinABI)
+	}
+	if writeAccessFor(requiredLandlockMinABI)&unix.LANDLOCK_ACCESS_FS_TRUNCATE == 0 {
+		t.Fatalf("writeAccessFor(%d) cannot grant truncate on a read-write path", requiredLandlockMinABI)
+	}
+	if readAccess()&unix.LANDLOCK_ACCESS_FS_TRUNCATE != 0 {
+		t.Fatal("readAccess grants truncate on a read-only path")
+	}
+}

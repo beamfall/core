@@ -35,9 +35,11 @@ func applyConfinement(roPaths, rwPaths []string, binary string) error {
 }
 
 // applyRequiredConfinement is applyConfinement with kernel support made a
-// precondition: a kernel without landlock refuses the launch rather than
-// running the child on rlimits alone. The encrypted-library pipe transcode uses
-// it (--require-landlock), because that child reads decrypted bytes.
+// precondition: a kernel without landlock, or with a landlock ABI below
+// requiredLandlockMinABI that cannot fence truncate(2), refuses the launch
+// rather than running the child on rlimits or a partial ruleset. The
+// encrypted-library pipe transcode uses it (--require-landlock), because that
+// child reads decrypted bytes.
 func applyRequiredConfinement(roPaths, rwPaths []string, binary string) error {
 	return applyFFmpegConfinement(roPaths, rwPaths, binary, true)
 }
@@ -51,10 +53,14 @@ var ffmpegLandlockABI = landlockABI
 
 func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, required bool) error {
 	abi := ffmpegLandlockABI()
-	if abi < 1 {
-		if required {
+	if required && !requiredLandlockEnforceable(abi) {
+		if abi < 1 {
 			return errLandlockRequired
 		}
+		return fmt.Errorf("%w: kernel landlock ABI %d cannot fence truncate(2), need ABI %d or later",
+			errLandlockRequired, abi, requiredLandlockMinABI)
+	}
+	if abi < 1 {
 		// Landlock not supported on this kernel: rlimits carry the weight.
 		return nil
 	}

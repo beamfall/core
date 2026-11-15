@@ -35,8 +35,9 @@ func ffmpegShim(_ context.Context, args []string) error {
 //	[--require-landlock] --ro <dir> ... --rw <dir> ... -- <binary> <args...>
 //
 // --require-landlock turns the best-effort Linux landlock confinement into a
-// precondition: a kernel without landlock refuses the launch instead of running
-// ffmpeg on rlimits alone. The encrypted-library pipe transcode sets it, because
+// precondition: a kernel without landlock, or with a landlock ABI below 3 that
+// cannot fence truncate(2), refuses the launch instead of running ffmpeg on
+// rlimits or a partial ruleset. The encrypted-library pipe transcode sets it, because
 // that child reads decrypted bytes over loopback and must never run unconfined.
 // A bare "--" terminates the flag section; everything after it is the command,
 // taken verbatim (so a media path that looks like a flag is never reinterpreted
