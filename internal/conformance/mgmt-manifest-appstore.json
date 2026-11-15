@@ -318,6 +318,10 @@
       "effect": "write"
     },
     {
+      "field": "serverlogs",
+      "effect": "read"
+    },
+    {
       "field": "setaccessschedule",
       "effect": "write"
     },

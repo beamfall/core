@@ -112,6 +112,7 @@ var originalScopedFields = []string{
 	"deletewebhook",      // CORE-1697: remove a webhook endpoint
 	"testwebhook",        // CORE-1697: send one test notification
 	"setwebhooksettings", // CORE-1697: save shared webhook options
+	"serverlogs",         // CORE-1716: recent redacted server log lines
 	"deletemanagedpath",  // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
 	"deletemarker",
 	"deletetag",

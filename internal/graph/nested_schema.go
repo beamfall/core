@@ -109,6 +109,7 @@ var resultTypes = map[string]any{
 	"webhooks":               WebhookEndpointInfo{},
 	"webhookdeliveries":      WebhookDeliveryInfo{},
 	"webhooksettings":        WebhookSettingsInfo{},
+	"serverlogs":             ServerLogsInfo{},
 	"libraryhealthitems":     HealthItemInfo{},
 	"libraryduplicategroups": DuplicateGroupInfo{},
 	"metadataexport":         MetadataExportInfo{},

@@ -1108,6 +1108,11 @@
       "tier": "public"
     },
     {
+      "field": "serverlogs",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
       "field": "setaccessschedule",
       "effect": "write",
       "tier": "admin"
@@ -18096,6 +18101,28 @@
       ]
     },
     {
+      "field": "serverlogs",
+      "kind": "object",
+      "children": [
+        {
+          "name": "available",
+          "kind": "scalar"
+        },
+        {
+          "name": "capacity",
+          "kind": "scalar"
+        },
+        {
+          "name": "lines",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        }
+      ]
+    },
+    {
       "field": "setaccessschedule",
       "kind": "object",
       "children": [
@@ -30305,6 +30332,10 @@
       {
         "field": "sealencryptedlibrary",
         "effect": "write"
+      },
+      {
+        "field": "serverlogs",
+        "effect": "read"
       },
       {
         "field": "setaccessschedule",

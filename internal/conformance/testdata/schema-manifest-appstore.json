@@ -1080,6 +1080,11 @@
     "tier": "public"
   },
   {
+    "field": "serverlogs",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
     "field": "setaccessschedule",
     "effect": "write",
     "tier": "admin"

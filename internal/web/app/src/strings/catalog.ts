@@ -26,6 +26,7 @@ import { profileDeviceStrings } from "./profiles-devices";
 import { providerKeyStrings } from "./provider-keys";
 import { remoteAccessStrings } from "./remote-access";
 import { remoteControlStrings } from "./remote-control";
+import { serverLogStrings } from "./server-logs";
 import { sessionUpdateStrings } from "./sessions-updates";
 import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
@@ -72,6 +73,7 @@ export const en = {
   ...remoteControlStrings.en,
   ...webhookStrings.en,
   ...providerKeyStrings.en,
+  ...serverLogStrings.en,
 } as const;
 
 export const fr = {
@@ -111,6 +113,7 @@ export const fr = {
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
   ...providerKeyStrings.fr,
+  ...serverLogStrings.fr,
 } as const;
 
 export const de = {
@@ -150,6 +153,7 @@ export const de = {
   ...remoteControlStrings.de,
   ...webhookStrings.de,
   ...providerKeyStrings.de,
+  ...serverLogStrings.de,
 } as const;
 
 export const es = {
@@ -189,6 +193,7 @@ export const es = {
   ...remoteControlStrings.es,
   ...webhookStrings.es,
   ...providerKeyStrings.es,
+  ...serverLogStrings.es,
 } as const;
 
 export const pt = {
@@ -228,4 +233,5 @@ export const pt = {
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
   ...providerKeyStrings.pt,
+  ...serverLogStrings.pt,
 } as const;

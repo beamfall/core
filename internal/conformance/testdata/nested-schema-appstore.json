@@ -16036,6 +16036,28 @@
     ]
   },
   {
+    "field": "serverlogs",
+    "kind": "object",
+    "children": [
+      {
+        "name": "available",
+        "kind": "scalar"
+      },
+      {
+        "name": "capacity",
+        "kind": "scalar"
+      },
+      {
+        "name": "lines",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      }
+    ]
+  },
+  {
     "field": "setaccessschedule",
     "kind": "object",
     "children": [

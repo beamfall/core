@@ -1709,6 +1709,17 @@ export interface WebhookDeliveryInfo {
   test: boolean;
 }
 
+/**
+ * Recent server log lines for the console (graph.ServerLogsInfo, CORE-1716).
+ * Lines are redacted on the server and come oldest first; available is false
+ * when the server keeps no log tail.
+ */
+export interface ServerLogsInfo {
+  available: boolean;
+  capacity: number;
+  lines: string[];
+}
+
 /** Shared webhook options and the console's choices (graph.WebhookSettingsInfo). */
 export interface WebhookSettingsInfo {
   publicBaseURL: string;

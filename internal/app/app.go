@@ -40,6 +40,7 @@ import (
 	"github.com/beamfall/core/internal/integrationhost"
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/libencrypt"
+	"github.com/beamfall/core/internal/logtail"
 	"github.com/beamfall/core/internal/manifest"
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/migrate"
@@ -1295,6 +1296,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return nil, err
 	}
 	graphHandler.SetWebhooks(webhookManager)
+	// Console server-log read (CORE-1716): the operator logger tees redacted
+	// lines into an in-memory tail; embedded or test loggers keep none.
+	if ring := logtail.RingOf(logger); ring != nil {
+		graphHandler.SetServerLogs(ring)
+	}
 	// Scrobble Integration Plugin: an opt-in consumer of the
 	// unwatched→watched transition (the graph playback path, NOT a new SSE event
 	// kind). Dormant unless the operator has activated an adapter in

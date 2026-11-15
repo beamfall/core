@@ -343,6 +343,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	148: dispatchFieldBlock148,
 	149: dispatchFieldBlock149,
 	150: dispatchFieldBlock150,
+	151: dispatchFieldBlock151,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -653,6 +654,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"deletewebhook":                      newFieldHandler("deleteWebhook", "deleteWebhook", fieldMutation, roleSession|roleAdmin, 150),
 	"testwebhook":                        newFieldHandler("testWebhook", "testWebhook", fieldMutation, roleSession|roleAdmin, 150),
 	"setwebhooksettings":                 newFieldHandler("setWebhookSettings", "setWebhookSettings", fieldMutation, roleSession|roleAdmin, 150),
+	"serverlogs":                         newFieldHandler("serverLogs", "serverLogs", fieldRead, roleSession|roleAdmin, 151),
 }
 
 func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
@@ -4091,6 +4093,18 @@ func dispatchFieldBlock150(dispatch *fieldDispatchContext) response {
 	if fields["setwebhooksettings"] {
 		settings, err := h.setWebhookSettings(ctx, scope, req)
 		if resp := resolveField(dispatch, "setwebhooksettings", settings, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock151(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["serverlogs"] {
+		if resp := resolveField(dispatch, "serverlogs", h.serverLogs(req), nil); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

@@ -2793,6 +2793,16 @@
       ]
     },
     {
+      "field": "serverlogs",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "available",
+        "capacity",
+        "lines"
+      ]
+    },
+    {
       "field": "setaccessschedule",
       "effect": "write",
       "tier": "admin",

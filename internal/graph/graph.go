@@ -534,6 +534,9 @@ type Handler struct {
 	// webhooks is the console webhook manager (CORE-1697). Nil means the build
 	// has none, so the webhook fields report it unavailable.
 	webhooks WebhookAdmin
+	// serverLogSource is the redacted in-memory log tail (CORE-1716). Nil means
+	// the server keeps none; the console field then reports it unavailable.
+	serverLogSource ServerLogSource
 }
 
 // OfflinePackService is the consumer-side seam for the Offline Pack substrate
@@ -4985,6 +4988,7 @@ var queryFields = map[string]bool{
 	"webhooks":               true, // CORE-1697: console-managed outbound notification endpoints
 	"webhookdeliveries":      true, // CORE-1697: webhook delivery log
 	"webhooksettings":        true, // CORE-1697: shared webhook options and choices
+	"serverlogs":             true, // CORE-1716: recent redacted server log lines
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -5299,6 +5303,8 @@ var adminFields = map[string]bool{
 	"deletewebhook":      true,
 	"testwebhook":        true,
 	"setwebhooksettings": true,
+	// Server logs (CORE-1716): recent redacted log lines for the console.
+	"serverlogs": true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as
 	// — only the native Companion authority can register a source token or import.
