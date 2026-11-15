@@ -1,7 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addCollectionMedia, fetchCollections, fetchItemState } from "@/lib/graphql";
+import {
+  addCollectionMedia,
+  fetchCollections,
+  fetchItemState,
+  fetchTagAssignments,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
@@ -10,6 +15,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   addCollectionMedia: vi.fn(),
   fetchCollections: vi.fn(),
   fetchItemState: vi.fn(),
+  fetchTagAssignments: vi.fn(),
 }));
 
 vi.mock("@/lib/session", () => ({
@@ -37,6 +43,12 @@ beforeEach(() => {
         members: [],
       },
     ]);
+  vi.mocked(fetchTagAssignments).mockReset().mockResolvedValue({
+    targetType: "media",
+    targetID: "t1",
+    libraryID: "lib-1",
+    tags: [],
+  });
   vi.mocked(addCollectionMedia)
     .mockReset()
     .mockResolvedValue(undefined as never);

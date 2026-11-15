@@ -37,6 +37,36 @@ export async function fetchCollectionItems(
   return items;
 }
 
+// Only the lock state of each entry (CORE-1876). A member read through
+// media() carries no certification-ceiling flag, so the playlist page asks the
+// same Collection feed which entries are locked for the acting Profile.
+const COLLECTION_LOCKS_QUERY =
+  'query CollectionLocks($value: String, $limit: Int, $offset: Int) { sourceItems(kind: "collection", value: $value, limit: $limit, offset: $offset) { id locked } }';
+
+/**
+ * The lock state of a Collection's entries for the acting Profile: true when
+ * the Profile cannot play the entry, false when it can. It reads every page
+ * up to `count` entries, because the server drops muted entries after paging
+ * and a short page does not mean the list has ended. A muted entry is absent
+ * from the map: the feed does not say whether it is locked.
+ */
+export async function fetchEntryLocks(
+  collectionID: string,
+  count: number,
+  signal?: AbortSignal,
+): Promise<Map<string, boolean>> {
+  const locks = new Map<string, boolean>();
+  for (let offset = 0; offset < count; offset += COLLECTION_PAGE) {
+    const data = await graphql<{ sourceItems: Pick<SourceItem, "id" | "locked">[] | null }>(
+      COLLECTION_LOCKS_QUERY,
+      { value: collectionID, limit: COLLECTION_PAGE, offset },
+      signal,
+    );
+    for (const item of data.sourceItems ?? []) locks.set(item.id, item.locked === true);
+  }
+  return locks;
+}
+
 /** One Library's Collections, for the list page. */
 export interface LibraryCollections {
   library: LibrarySummary;

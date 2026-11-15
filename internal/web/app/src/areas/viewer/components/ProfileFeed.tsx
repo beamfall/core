@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSourceItems } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
+import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { playQueueOf } from "../lib/watchQueue";
@@ -9,9 +11,61 @@ import { MediaItemCard } from "./MediaItemCard";
 
 export const PROFILE_FEED_LIMIT = 100;
 
+function feedPage(kind: string, offset: number, signal: AbortSignal): Promise<SourceItem[]> {
+  return fetchSourceItems(
+    {
+      kind,
+      entityKind: "",
+      libraryID: "",
+      entityID: "",
+      fieldFilters: null,
+      entityFilter: null,
+      limit: PROFILE_FEED_LIMIT,
+      offset,
+    },
+    signal,
+  );
+}
+
+/** A bound on the server pages one read walks past pages shortened by muting. */
+const MAX_FEED_READS = 10;
+/**
+ * How many empty pages in a row end a feed. A whole page can be muted, so one
+ * empty page does not prove the end; a run of this many does. A longer run of
+ * muted rows still hides what follows until the server applies Mute before
+ * paging (CORE-1859).
+ */
+const FEED_END_EMPTY_PAGES = 3;
+
+// One read of a feed from `offset`. The server drops muted rows from a page
+// after paging, so a short or even empty page is not the end: the read steps
+// on by the requested size until a page comes back full (more may follow) or
+// FEED_END_EMPTY_PAGES pages in a row come back empty (the end). It returns the
+// rows and the offset of the next page, or null at the end. A read that hits
+// MAX_FEED_READS first leaves Load more to step on.
+async function readFeed(
+  kind: string,
+  offset: number,
+  signal: AbortSignal,
+): Promise<{ items: SourceItem[]; next: number | null }> {
+  const items: SourceItem[] = [];
+  let at = offset;
+  let emptyRun = 0;
+  for (let reads = 0; reads < MAX_FEED_READS; reads++) {
+    const page = await feedPage(kind, at, signal);
+    items.push(...page);
+    at += PROFILE_FEED_LIMIT;
+    if (page.length === PROFILE_FEED_LIMIT) return { items, next: at };
+    emptyRun = page.length === 0 ? emptyRun + 1 : 0;
+    if (emptyRun === FEED_END_EMPTY_PAGES) return { items, next: null };
+  }
+  return { items, next: at };
+}
+
 // One of the acting Profile's own feeds (favorites, recently played, most
 // played; CORE-1635) as a poster grid in server order. It reloads when the
-// identity or the Profile's engagement changes.
+// identity or the Profile's engagement changes. The feed reads one page at a
+// time, and Load more reads the next one until the feed ends (CORE-1878).
 export function ProfileFeed({
   kind,
   heading,
@@ -23,32 +77,48 @@ export function ProfileFeed({
   heading?: string;
   empty: string;
 }) {
+  const t = useT();
   const identity = useViewerIdentity();
   const epoch = useEngagementEpoch();
   const [items, setItems] = useState<SourceItem[] | null>(null);
+  // The offset of the next page, or null when the feed has ended.
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const controllerRef = useRef<AbortController | null>(null);
 
   // The identity and engagement epoch only re-run the read; they are not inputs to it.
   useEffect(() => {
     const controller = new AbortController();
-    fetchSourceItems(
-      {
-        kind,
-        entityKind: "",
-        libraryID: "",
-        entityID: "",
-        fieldFilters: null,
-        entityFilter: null,
-        limit: PROFILE_FEED_LIMIT,
-        offset: 0,
-      },
-      controller.signal,
-    )
-      .then(setItems)
+    controllerRef.current = controller;
+    setItems(null);
+    setNextOffset(null);
+    setLoadingMore(false);
+    readFeed(kind, 0, controller.signal)
+      .then(({ items: first, next }) => {
+        setItems(first);
+        setNextOffset(next);
+      })
       .catch(() => {
         if (!controller.signal.aborted) setItems([]);
       });
     return () => controller.abort();
   }, [kind, identity, epoch]);
+
+  const loadMore = useCallback(() => {
+    const controller = controllerRef.current;
+    if (!controller || nextOffset === null) return;
+    setLoadingMore(true);
+    readFeed(kind, nextOffset, controller.signal)
+      .then(({ items: more, next }) => {
+        if (controller.signal.aborted) return;
+        setItems((prev) => [...(prev ?? []), ...more]);
+        setNextOffset(next);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingMore(false);
+      });
+  }, [kind, nextOffset]);
 
   const queue = useMemo(() => playQueueOf(items ?? []), [items]);
 
@@ -73,6 +143,11 @@ export function ProfileFeed({
             />
           ))}
         </ul>
+      )}
+      {items && nextOffset !== null && (
+        <Button variant="outline" className="self-center" disabled={loadingMore} onClick={loadMore}>
+          {t("loadMore")}
+        </Button>
       )}
     </section>
   );

@@ -1,0 +1,4 @@
+- [x] QR encoder in the web app (`src/lib/qr/encode.ts`), checked against an independent reader, with a golden-matrix test
+- [x] `QrCode` SVG component (dark on light in every theme, labelled, URL shown as text)
+- [x] Enroll target selection: Console address, or the first LAN endpoint on loopback, never localhost
+- [x] Devices panel renders the QR or the "open at the network address" hint; vitest coverage
