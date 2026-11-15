@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // BundledCredentials carries the default scraper credentials an official
@@ -26,13 +27,20 @@ var BundledCredentials string
 // Disabling an AuthRef that has a bundled default also records an opt-out
 // marker, so the scraper stops instead of falling back to the built-in key;
 // saving a new owner secret lifts the opt-out (CORE-1540).
+//
+// Each save or disable touches two files (the owner's secret and the opt-out
+// marker), so mu serializes them: two Console sessions saving and disabling
+// the same key at once must leave the last action's state, never a missing
+// owner file and a missing marker that re-enables the bundled key
+// (CORE-1840). Reads take mu too, so they never see half of an action.
 type bundledSecrets struct {
 	secretFiles
 	bundled map[string]string
+	mu      *sync.Mutex
 }
 
 func withBundledCredentials(files secretFiles, pairs string) bundledSecrets {
-	return bundledSecrets{secretFiles: files, bundled: parseBundledCredentials(pairs)}
+	return bundledSecrets{secretFiles: files, bundled: parseBundledCredentials(pairs), mu: &sync.Mutex{}}
 }
 
 // Secret implements scrape.CredentialSource. Only a missing secret file falls
@@ -42,6 +50,8 @@ func withBundledCredentials(files secretFiles, pairs string) bundledSecrets {
 // (fs.ErrNotExist), so the scrape engine treats it as not configured and
 // sends no request.
 func (b bundledSecrets) Secret(ref string) (string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	secret, err := b.secretFiles.Secret(ref)
 	if err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return secret, err
@@ -64,6 +74,8 @@ func (b bundledSecrets) Secret(ref string) (string, error) {
 // opt-out, so the owner's key is what a later clear falls back from; an empty
 // value only clears the owner's file and leaves an opt-out in place.
 func (b bundledSecrets) SetSecret(ref, value string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if err := b.secretFiles.SetSecret(ref, value); err != nil {
 		return err
 	}
@@ -77,6 +89,8 @@ func (b bundledSecrets) SetSecret(ref, value string) error {
 // owner's secret and, when the build bundles a default for ref, records the
 // opt-out first so no read between the two steps sees the built-in key.
 func (b bundledSecrets) DisableSecret(ref string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if _, ok := b.bundled[ref]; ok {
 		if err := b.writeOptOut(ref); err != nil {
 			return err
@@ -91,6 +105,8 @@ func (b bundledSecrets) SecretDisabled(ref string) bool {
 	if _, ok := b.bundled[ref]; !ok {
 		return false
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if _, err := b.secretFiles.Secret(ref); err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return false
 	}

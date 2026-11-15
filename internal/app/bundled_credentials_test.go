@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -151,6 +152,47 @@ func TestDisablingBundledCredentialStopsTheScraper(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(dir, ".disabled-other-key")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("unbundled ref got an opt-out marker: %v", err)
+	}
+}
+
+// TestConcurrentSaveAndDisableNeverReenableBundledKey (CORE-1840): a save and
+// a disable of the same bundled AuthRef racing from two Console sessions
+// always leave either the owner's key or the opt-out marker, so the scraper
+// never falls back to the built-in key the owner just disabled.
+func TestConcurrentSaveAndDisableNeverReenableBundledKey(t *testing.T) {
+	dir := t.TempDir()
+	creds := withBundledCredentials(secretFiles{dir: dir}, "project-key=bundled-value")
+	for i := 0; i < 200; i++ {
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		errs := make(chan error, 2)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- creds.SetSecret("project-key", "owner-value")
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- creds.DisableSecret("project-key")
+		}()
+		close(start)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, ownerErr := os.Lstat(filepath.Join(dir, "project-key"))
+		_, markerErr := os.Lstat(filepath.Join(dir, ".disabled-project-key"))
+		if errors.Is(ownerErr, fs.ErrNotExist) && errors.Is(markerErr, fs.ErrNotExist) {
+			t.Fatalf("iteration %d: neither owner key nor opt-out marker remains", i)
+		}
+		if got, err := creds.Secret("project-key"); err == nil && got == "bundled-value" {
+			t.Fatalf("iteration %d: Secret = bundled-value after a racing save and disable", i)
+		}
 	}
 }
 
