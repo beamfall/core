@@ -1,6 +1,6 @@
 # Manage operations: jobs, schedules, folder watcher — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7617a8d8f066fdfc462c9c9d9fa5b0a2 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

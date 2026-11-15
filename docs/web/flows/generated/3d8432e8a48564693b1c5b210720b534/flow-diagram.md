@@ -1,6 +1,6 @@
 # Manage curation: fields, relations and files of a Media — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7f169a212dc9701d4b5063f9b7ce8da6 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

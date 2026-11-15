@@ -1,6 +1,6 @@
 # Console access: devices and pairing codes — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b86d0772ed233f57d577991e3f90ad09 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -40,27 +40,27 @@ Source: internal/web/app/src/lib/graphql/console\.ts:172; symbol: ConsoleConfigP
 <!-- flowdocs:paragraph:662ef4b4d6f315f4e66f203e4e8c9f48 -->
 Declared member: source declares DEVICES\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:436; symbol: DEVICES\_QUERY; span SHA256: 2efe78749cb59a6e16b6191959a5275d16d86d9bcdd864daf177341bb9f940e8.
+Source: internal/web/app/src/lib/graphql/console\.ts:438; symbol: DEVICES\_QUERY; span SHA256: 2efe78749cb59a6e16b6191959a5275d16d86d9bcdd864daf177341bb9f940e8.
 
 <!-- flowdocs:paragraph:312ca1370fd569124ad4a2cfcf913e91 -->
 Declared member: source declares REVOKE\_ALL\_DEVICES\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:463; symbol: REVOKE\_ALL\_DEVICES\_MUTATION; span SHA256: 5fa095e2038fb56ad1f2e437cb0addfc02d4ea858f1b028d092a1209a046b8f6.
+Source: internal/web/app/src/lib/graphql/console\.ts:465; symbol: REVOKE\_ALL\_DEVICES\_MUTATION; span SHA256: 5fa095e2038fb56ad1f2e437cb0addfc02d4ea858f1b028d092a1209a046b8f6.
 
 <!-- flowdocs:paragraph:29a38c876ffba4356d96a828ad69de17 -->
 Declared member: source declares REVOKE\_DEVICE\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:444; symbol: REVOKE\_DEVICE\_MUTATION; span SHA256: 59f1db45841632fd08b6a4e2d08abe9bc49825b7cf4eee308d0f389a9337259a.
+Source: internal/web/app/src/lib/graphql/console\.ts:446; symbol: REVOKE\_DEVICE\_MUTATION; span SHA256: 59f1db45841632fd08b6a4e2d08abe9bc49825b7cf4eee308d0f389a9337259a.
 
 <!-- flowdocs:paragraph:961e370f7284c09eed5bc015feb46e33 -->
 Declared member: source declares SET\_CONSOLE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:181; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: f405c71df9a0b139438f527527cf3b861d2570a937d3792e70f1dbb56e699561.
+Source: internal/web/app/src/lib/graphql/console\.ts:183; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: da6d061e04800276be21c679df560caf0300555cca0629e9e480fceea5daf88f.
 
 <!-- flowdocs:paragraph:bfb0a6481e9881d2b1e59265d908ea82 -->
 Declared member: source declares SET\_DEVICE\_ROLE\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:477; symbol: SET\_DEVICE\_ROLE\_MUTATION; span SHA256: 342743982823959afe4b968bb369c85e34c0b05e193c0dd16f161960f5ecf9ff.
+Source: internal/web/app/src/lib/graphql/console\.ts:479; symbol: SET\_DEVICE\_ROLE\_MUTATION; span SHA256: 342743982823959afe4b968bb369c85e34c0b05e193c0dd16f161960f5ecf9ff.
 
 <!-- flowdocs:paragraph:244d8079355d7d4a0a6b388f48646c4f -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
@@ -70,27 +70,27 @@ Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: fetchConsoleCon
 <!-- flowdocs:paragraph:b37d106850b56329aeee04e04b976799 -->
 Declared member: source declares fetchDevices; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:439; symbol: fetchDevices; span SHA256: 2cb96a1f6fdf5156d5272f0e55d47e88874ef6c042a24d3b1ad18553236c3879.
+Source: internal/web/app/src/lib/graphql/console\.ts:441; symbol: fetchDevices; span SHA256: 2cb96a1f6fdf5156d5272f0e55d47e88874ef6c042a24d3b1ad18553236c3879.
 
 <!-- flowdocs:paragraph:d0972acc40d280803c98161707a75ba2 -->
 Declared member: source declares revokeAllDevices; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:467; symbol: revokeAllDevices; span SHA256: 4a001838a63575bc60c42cf5c1fb5b6cbdc5cf7f136a5ac753f10e5b7c2a9d8d.
+Source: internal/web/app/src/lib/graphql/console\.ts:469; symbol: revokeAllDevices; span SHA256: 4a001838a63575bc60c42cf5c1fb5b6cbdc5cf7f136a5ac753f10e5b7c2a9d8d.
 
 <!-- flowdocs:paragraph:5b75cd746dcceddf5042e724579c2d95 -->
 Declared member: source declares revokeDevice; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:449; symbol: revokeDevice; span SHA256: cbe9eefbb3aad859b2bea0a0e169d185407fb4aab1130b76cd28efca2fc4d326.
+Source: internal/web/app/src/lib/graphql/console\.ts:451; symbol: revokeDevice; span SHA256: cbe9eefbb3aad859b2bea0a0e169d185407fb4aab1130b76cd28efca2fc4d326.
 
 <!-- flowdocs:paragraph:6f8e5f8f97014695f6a4e814274f808f -->
 Declared member: source declares setConsoleConfig; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:184; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
+Source: internal/web/app/src/lib/graphql/console\.ts:186; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
 
 <!-- flowdocs:paragraph:be15de1a28e25ee1a0136dfed851ae94 -->
 Declared member: source declares setDeviceRole; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:481; symbol: setDeviceRole; span SHA256: 4c2d988a76b26183ef266a6b30e952c1ede100119e46d4d17305892a94ad8aec.
+Source: internal/web/app/src/lib/graphql/console\.ts:483; symbol: setDeviceRole; span SHA256: 4c2d988a76b26183ef266a6b30e952c1ede100119e46d4d17305892a94ad8aec.
 
 <!-- flowdocs:paragraph:0e49288bf1b86bfecd03dbc996703f3a -->
 Declared member: source declares mint; membership is caller\-declared, not runtime evidence\.

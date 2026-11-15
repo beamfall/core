@@ -1,6 +1,6 @@
 # Manage libraries: library list and folder tree — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3717a85144609c0c3c5ba214027809de -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

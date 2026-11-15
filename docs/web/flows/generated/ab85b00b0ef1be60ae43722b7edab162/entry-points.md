@@ -1,6 +1,6 @@
 # Player OS media\-session integration \(lock\-screen controls\) — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9f9bdd632e0ea6ba1e63d9486058d661 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

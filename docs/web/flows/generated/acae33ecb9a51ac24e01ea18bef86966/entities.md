@@ -1,6 +1,6 @@
 # Console admin gate: locked reasons and unlock — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d3ca80f93e88f54f569445579200f0ae -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

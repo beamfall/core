@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a4008e56175e332ae423ad5a5b1ba962 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

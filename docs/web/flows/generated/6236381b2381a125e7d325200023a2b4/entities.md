@@ -1,6 +1,6 @@
 # Manage area shell: route table, nav groups, admin lock — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c356d30527ce3d6cd5ac02e0378378fe -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

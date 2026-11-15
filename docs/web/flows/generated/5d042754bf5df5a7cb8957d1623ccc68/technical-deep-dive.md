@@ -1,6 +1,6 @@
 # First\-run setup wizard shell: token intake, step navigation — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:98d0e1f102d40ce83c4a6d1ab1865d73 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -65,17 +65,17 @@ Source: internal/web/app/src/components/beamfall/CinemaBackdrop\.tsx:4; symbol: 
 <!-- flowdocs:paragraph:e92de797e53628c6593b394dfa4ab0cc -->
 Declared member: source declares SCRAPER\_CREDENTIAL\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:206; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
+Source: internal/web/app/src/lib/graphql/console\.ts:208; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
 
 <!-- flowdocs:paragraph:667ca4341e12932c987b6671272ae3c8 -->
 Declared member: source declares SET\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:209; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
+Source: internal/web/app/src/lib/graphql/console\.ts:211; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
 
 <!-- flowdocs:paragraph:a59c57b1c664054b34e55afbca0cae93 -->
 Declared member: source declares setScraperCredential; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:212; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
+Source: internal/web/app/src/lib/graphql/console\.ts:214; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
 
 <!-- flowdocs:paragraph:804b7271c7f426db69ef1750a4db7f93 -->
 Declared member: source declares BROWSE\_SERVER\_FOLDERS\_QUERY; membership is caller\-declared, not runtime evidence\.

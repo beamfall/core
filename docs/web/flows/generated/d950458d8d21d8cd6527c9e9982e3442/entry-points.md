@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7b403447d63de1d9e08985e446d69b0a -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

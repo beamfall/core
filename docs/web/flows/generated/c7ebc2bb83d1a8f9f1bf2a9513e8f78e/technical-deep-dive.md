@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6c40ca56526c648a3f4525a94d97a615 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -135,12 +135,12 @@ Source: internal/web/app/src/lib/graphql/console\.ts:69; symbol: CONSOLE\_CONFIG
 <!-- flowdocs:paragraph:22549fe6c7e10a8829b23cfecf954d86 -->
 Declared member: source declares DISABLE\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:240; symbol: DISABLE\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 87f2f5d3c385301eb326da0c88eb72fd131ab32c04f387e8027fa6e608ddc5a1.
+Source: internal/web/app/src/lib/graphql/console\.ts:242; symbol: DISABLE\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 87f2f5d3c385301eb326da0c88eb72fd131ab32c04f387e8027fa6e608ddc5a1.
 
 <!-- flowdocs:paragraph:09bc47da141119e143bd7d8685b7be1e -->
 Declared member: source declares SCRAPER\_CREDENTIAL\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:206; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
+Source: internal/web/app/src/lib/graphql/console\.ts:208; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
 
 <!-- flowdocs:paragraph:cd254a057b0cc71ddbc554b7f9ce7b54 -->
 Declared member: source declares SET\_PLUGIN\_ACTIVE\_MUTATION; membership is caller\-declared, not runtime evidence\.
@@ -155,7 +155,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:150; symbol: SET\_PLUGIN\_C
 <!-- flowdocs:paragraph:968fc66ff5329671c264ed1d7ebb0969 -->
 Declared member: source declares SET\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:209; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
+Source: internal/web/app/src/lib/graphql/console\.ts:211; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
 
 <!-- flowdocs:paragraph:a2d4691854236310f00586439ebe3a97 -->
 Declared member: source declares UNINSTALL\_PLUGIN\_DATA\_MUTATION; membership is caller\-declared, not runtime evidence\.
@@ -165,12 +165,12 @@ Source: internal/web/app/src/lib/graphql/console\.ts:129; symbol: UNINSTALL\_PLU
 <!-- flowdocs:paragraph:cb38d1afc4f0cd0a820637648b85ac30 -->
 Declared member: source declares VALIDATE\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:227; symbol: VALIDATE\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: f97e1477ee94c7032127e537a028fe8238fc1eaba7a769cc9fc9bbc3666ac096.
+Source: internal/web/app/src/lib/graphql/console\.ts:229; symbol: VALIDATE\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: f97e1477ee94c7032127e537a028fe8238fc1eaba7a769cc9fc9bbc3666ac096.
 
 <!-- flowdocs:paragraph:61def85a2eb8046e2457498e668c1161 -->
 Declared member: source declares disableScraperCredential; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:243; symbol: disableScraperCredential; span SHA256: 424a284db59f6dfb73f5f9da210d881e21c9970de6d9ad524db910b17f04e6e3.
+Source: internal/web/app/src/lib/graphql/console\.ts:245; symbol: disableScraperCredential; span SHA256: 424a284db59f6dfb73f5f9da210d881e21c9970de6d9ad524db910b17f04e6e3.
 
 <!-- flowdocs:paragraph:210a3ed2a8afe470d867d175e7c2faf7 -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
@@ -190,7 +190,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:153; symbol: setPluginConfi
 <!-- flowdocs:paragraph:2ca19dfbe1769bc318c9d7b02339fa15 -->
 Declared member: source declares setScraperCredential; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:212; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
+Source: internal/web/app/src/lib/graphql/console\.ts:214; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
 
 <!-- flowdocs:paragraph:b5f1b609df1845eda96bf9d4cde00470 -->
 Declared member: source declares uninstallPluginData; membership is caller\-declared, not runtime evidence\.
@@ -200,7 +200,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:137; symbol: uninstallPlugi
 <!-- flowdocs:paragraph:44d28881c0c0614969e3ee696702f8d3 -->
 Declared member: source declares validateScraperCredential; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:230; symbol: validateScraperCredential; span SHA256: 59b61a307442eb373939cb1ef169202cdf3defc12caa9d1ae684dfdeffe4b6bf.
+Source: internal/web/app/src/lib/graphql/console\.ts:232; symbol: validateScraperCredential; span SHA256: 59b61a307442eb373939cb1ef169202cdf3defc12caa9d1ae684dfdeffe4b6bf.
 
 <!-- flowdocs:paragraph:1ab974ac0dabf64f66666fd603401c5f -->
 Declared member: source declares credentialAction; membership is caller\-declared, not runtime evidence\.

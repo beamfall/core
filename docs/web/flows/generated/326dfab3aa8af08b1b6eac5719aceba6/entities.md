@@ -1,6 +1,6 @@
 # Shell and per\-area error boundaries with reload panel — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:11d0c59448b3463334a19e787b2d30cf -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

@@ -1,6 +1,6 @@
 # Manage rename: pattern preview, batch rename managed paths, undo — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a7ee900810878723a59ba48b854a0455 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

@@ -1,6 +1,6 @@
 # Setup: configure the update\-check channel — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:90dc49e6a5b16314d1d9c6d9da74ea5e -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

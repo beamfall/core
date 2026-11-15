@@ -1,6 +1,6 @@
 # Setup: activate plugins and enter provider keys — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:532ed180a41375cd5c994c07f4bae663 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

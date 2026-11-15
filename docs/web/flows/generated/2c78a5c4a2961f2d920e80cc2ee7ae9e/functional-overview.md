@@ -1,6 +1,6 @@
 # GraphQL client wire types shared by every data call — functional-overview
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6eeea64b9767f36e6eb99d3e50dd5592 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -10,7 +10,7 @@ Source: internal/web/app/src/lib/graphql/types\.ts:963; symbol: APITokenInfo; sp
 <!-- flowdocs:paragraph:7a936bb89b4fe7c8cf5c1252fdda6ab8 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/types\.ts:1504; symbol: ; span SHA256: 87719251ca02fc5b15ab0281e9fdfffa5e6a5363877925eb2fbb89fc609147ba.
+Source: internal/web/app/src/lib/graphql/types\.ts:1509; symbol: ; span SHA256: 87719251ca02fc5b15ab0281e9fdfffa5e6a5363877925eb2fbb89fc609147ba.
 
 <!-- flowdocs:paragraph:9db01855359dcead2a595dcc771e68cf -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

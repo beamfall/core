@@ -1,6 +1,6 @@
 # Setup: choose sign\-in security mode and create the owner Profile — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:578eceea91ad250e00cd8afcc5b59a75 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

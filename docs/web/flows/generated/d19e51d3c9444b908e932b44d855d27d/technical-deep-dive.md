@@ -1,6 +1,6 @@
 # Console libraries: add a library, roots, preview clips, skip detection — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b339e8eea91d08cbbdda27d052e4f8fd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

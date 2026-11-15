@@ -1,6 +1,6 @@
 # App routing: /web basename, area code\-splitting, initial\-route preload — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2896eac14fe9033e31bacbe34ee4f9df -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

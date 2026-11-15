@@ -1,6 +1,6 @@
 # Viewer search page: modes \(text, semantic, recommend\) and grouped results — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:625400382f133a0f0e1b43c4a5f28f2b -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

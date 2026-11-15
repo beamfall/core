@@ -1,6 +1,6 @@
 # Console update awareness: update check, release channel and update\-available guidance — functional-overview
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f5b6734cb6f12f616b93b92bc9cba592 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -15,7 +15,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: ; span SHA256: 
 <!-- flowdocs:paragraph:37ee9a8c336f55f069a145775d82bf83 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:201; symbol: ; span SHA256: 65f9974db65cecec5d4c8fe576646f4dbe94a396397e5024b263dd7593ff7a2f.
+Source: internal/web/app/src/lib/graphql/console\.ts:203; symbol: ; span SHA256: 65f9974db65cecec5d4c8fe576646f4dbe94a396397e5024b263dd7593ff7a2f.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
 # Setup: pick a library type and folder, create the first Library and scan — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:4f86d8ec6fa9ca9b71b7c8160969b16a -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

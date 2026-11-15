@@ -1,6 +1,6 @@
 # Home\-mode admin password sign\-in on the enroll page — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5cc5fc08ebf10cbd51a335173a9679ee -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

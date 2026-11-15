@@ -1,6 +1,6 @@
 # Console operations: resource governor, job queue and job log — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:341e75d03dbf155f5f3ab1d489b68617 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -70,37 +70,37 @@ Source: internal/web/app/src/lib/graphql/console\.ts:172; symbol: ConsoleConfigP
 <!-- flowdocs:paragraph:efcd02c8fdb8807179c236934feca6f5 -->
 Declared member: source declares JOB\_CANCEL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:283; symbol: JOB\_CANCEL\_MUTATION; span SHA256: f812e8bd8b9257ac4b623692872690faf64729bbf33f7edfe0f0776491da779a.
+Source: internal/web/app/src/lib/graphql/console\.ts:285; symbol: JOB\_CANCEL\_MUTATION; span SHA256: f812e8bd8b9257ac4b623692872690faf64729bbf33f7edfe0f0776491da779a.
 
 <!-- flowdocs:paragraph:857799a0b03cfd599e12de9ba759e8e6 -->
 Declared member: source declares JOB\_EVENTS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:270; symbol: JOB\_EVENTS\_QUERY; span SHA256: aa8d53b8e13af30e798cb3eb8a0c0825f8162939af48e31a9fea20e095531ac1.
+Source: internal/web/app/src/lib/graphql/console\.ts:272; symbol: JOB\_EVENTS\_QUERY; span SHA256: aa8d53b8e13af30e798cb3eb8a0c0825f8162939af48e31a9fea20e095531ac1.
 
 <!-- flowdocs:paragraph:8ccc5bebc20010827d54ae900954bf8d -->
 Declared member: source declares JOB\_RETRY\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:292; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
+Source: internal/web/app/src/lib/graphql/console\.ts:294; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
 
 <!-- flowdocs:paragraph:54c4314d59fbf087ef175d2fbcadcfed -->
 Declared member: source declares OPERATIONS\_GOVERNOR\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:255; symbol: OPERATIONS\_GOVERNOR\_QUERY; span SHA256: fbc3abb0686e13ecbc1a6c38e13b94db9d99a1aeec4660be0081b9c29c242f1c.
+Source: internal/web/app/src/lib/graphql/console\.ts:257; symbol: OPERATIONS\_GOVERNOR\_QUERY; span SHA256: fbc3abb0686e13ecbc1a6c38e13b94db9d99a1aeec4660be0081b9c29c242f1c.
 
 <!-- flowdocs:paragraph:37d363640b01add073e667137cccd0de -->
 Declared member: source declares RUN\_EVENTS\_COMPACTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:301; symbol: RUN\_EVENTS\_COMPACTION\_MUTATION; span SHA256: e245dec5e3d58cd0b62f75a7db61ec7f93ae761c6119b28443d02cdb8792e339.
+Source: internal/web/app/src/lib/graphql/console\.ts:303; symbol: RUN\_EVENTS\_COMPACTION\_MUTATION; span SHA256: e245dec5e3d58cd0b62f75a7db61ec7f93ae761c6119b28443d02cdb8792e339.
 
 <!-- flowdocs:paragraph:e689aa03857aa2415eb0293e30393b69 -->
 Declared member: source declares SET\_CONSOLE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:181; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: f405c71df9a0b139438f527527cf3b861d2570a937d3792e70f1dbb56e699561.
+Source: internal/web/app/src/lib/graphql/console\.ts:183; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: da6d061e04800276be21c679df560caf0300555cca0629e9e480fceea5daf88f.
 
 <!-- flowdocs:paragraph:dc0f434c66ea1d01d1dd32aef87e4ab3 -->
 Declared member: source declares cancelJob; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:287; symbol: cancelJob; span SHA256: 6dad4f556b1d71d1865efc973274e5b3d0b736187b0a5738bd5c04d9dfe5f8fa.
+Source: internal/web/app/src/lib/graphql/console\.ts:289; symbol: cancelJob; span SHA256: 6dad4f556b1d71d1865efc973274e5b3d0b736187b0a5738bd5c04d9dfe5f8fa.
 
 <!-- flowdocs:paragraph:3acab659c18aca6516c3c7bbf02f852c -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
@@ -110,27 +110,27 @@ Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: fetchConsoleCon
 <!-- flowdocs:paragraph:d1c3a288b200eb64a9b581a4171e3e0b -->
 Declared member: source declares fetchJobEvents; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:274; symbol: fetchJobEvents; span SHA256: cf2a0bf42a25c33a9e3f9adb68ec353c1876403bbee4d129ee204cc227d16026.
+Source: internal/web/app/src/lib/graphql/console\.ts:276; symbol: fetchJobEvents; span SHA256: cf2a0bf42a25c33a9e3f9adb68ec353c1876403bbee4d129ee204cc227d16026.
 
 <!-- flowdocs:paragraph:4b3c85c4f89421535902227b23804260 -->
 Declared member: source declares fetchOperationsGovernor; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:259; symbol: fetchOperationsGovernor; span SHA256: 5e974a6b1f6ca320aa62410df8ff09220fc51a4dca4042a7af3e5326899f455f.
+Source: internal/web/app/src/lib/graphql/console\.ts:261; symbol: fetchOperationsGovernor; span SHA256: 5e974a6b1f6ca320aa62410df8ff09220fc51a4dca4042a7af3e5326899f455f.
 
 <!-- flowdocs:paragraph:748bf7ad7007a58ef33f2409aa91efea -->
 Declared member: source declares retryJob; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:296; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
+Source: internal/web/app/src/lib/graphql/console\.ts:298; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
 
 <!-- flowdocs:paragraph:33ccbb4f58a21d994020839b2949a6ab -->
 Declared member: source declares runEventsCompaction; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:305; symbol: runEventsCompaction; span SHA256: 12123e2009ab2ad2ba14f60874d0ffe4d2fa70dab2285007103325743e1682c8.
+Source: internal/web/app/src/lib/graphql/console\.ts:307; symbol: runEventsCompaction; span SHA256: 12123e2009ab2ad2ba14f60874d0ffe4d2fa70dab2285007103325743e1682c8.
 
 <!-- flowdocs:paragraph:140f942ac05d352378bc2adc242fbbe1 -->
 Declared member: source declares setConsoleConfig; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:184; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
+Source: internal/web/app/src/lib/graphql/console\.ts:186; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
 
 <!-- flowdocs:paragraph:1022c9c11c7ee4ef8d1a5511e11e9cc3 -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.

@@ -1,6 +1,6 @@
 # Manage operations: jobs, schedules, folder watcher — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:32a97d2cf6162675c626e9cf9dbd73e5 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

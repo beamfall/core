@@ -1,6 +1,6 @@
 # Setup: activate plugins and enter provider keys — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:72b05f691fb77a9b7264510724a52a4f -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

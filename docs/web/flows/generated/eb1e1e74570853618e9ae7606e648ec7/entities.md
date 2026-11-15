@@ -1,6 +1,6 @@
 # Console identification and layout capabilities — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:06579074eaf949756bca7048134f1c5c -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

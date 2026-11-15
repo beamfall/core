@@ -1,6 +1,6 @@
 # Viewer search page: modes \(text, semantic, recommend\) and grouped results — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fb268ba5fc5641d6a895e78705802a11 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

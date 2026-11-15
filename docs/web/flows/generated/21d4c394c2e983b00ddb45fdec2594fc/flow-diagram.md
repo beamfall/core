@@ -1,6 +1,6 @@
 # Rescan a library or all libraries and follow scan state — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b04e658d96258cd9a9a4a89055b5618b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

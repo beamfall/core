@@ -1,6 +1,6 @@
 # Player OS media\-session integration \(lock\-screen controls\) — entities
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:763a8eb83c024487933179cc2f82a091 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

@@ -1,6 +1,6 @@
 # Viewer area: session pending/error states, setup hand\-off, viewer routes — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ee136e1ba4c2e09b1f336b4443b321ad -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

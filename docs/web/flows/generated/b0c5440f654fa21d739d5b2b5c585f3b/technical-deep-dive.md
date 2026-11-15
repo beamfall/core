@@ -1,6 +1,6 @@
 # Manage trash: restore, purge and reversible activity — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:17c9749ef4e9f802099d4b5d6a99c8c1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -30,12 +30,12 @@ Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:46; symbol: REVER
 <!-- flowdocs:paragraph:87337d56f78850332ace5460c3302db2 -->
 Declared member: source declares ACTIVITY\_LOG\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:753; symbol: ACTIVITY\_LOG\_QUERY; span SHA256: 43c011cc1803f3c7444e87a8b0648774414a8641ab8063ce65c1c523cc6a36cb.
+Source: internal/web/app/src/lib/graphql/console\.ts:755; symbol: ACTIVITY\_LOG\_QUERY; span SHA256: 43c011cc1803f3c7444e87a8b0648774414a8641ab8063ce65c1c523cc6a36cb.
 
 <!-- flowdocs:paragraph:e7e72654fea9ac35686a9b0aa4c573b2 -->
 Declared member: source declares fetchActivityLog; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:757; symbol: fetchActivityLog; span SHA256: 7a0b83fc8d4571e2c2cfba58455501c76ba2feb04967c6ec685995d9e196e31e.
+Source: internal/web/app/src/lib/graphql/console\.ts:759; symbol: fetchActivityLog; span SHA256: 7a0b83fc8d4571e2c2cfba58455501c76ba2feb04967c6ec685995d9e196e31e.
 
 <!-- flowdocs:paragraph:e59e6ea8da4e5abc0af293ed87e14e79 -->
 Declared member: source declares PURGE\_TRASH\_MUTATION; membership is caller\-declared, not runtime evidence\.

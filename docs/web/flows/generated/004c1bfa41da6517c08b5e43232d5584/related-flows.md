@@ -1,6 +1,6 @@
 # Server activity indicator \(running jobs and rescans\) in the shell — related-flows
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:aac8a0253d0d0720b1d07512cad2ab36 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

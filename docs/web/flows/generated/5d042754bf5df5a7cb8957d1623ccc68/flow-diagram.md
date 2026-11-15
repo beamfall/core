@@ -1,6 +1,6 @@
 # First\-run setup wizard shell: token intake, step navigation — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bd078539d1bee603a51632232872fc2b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

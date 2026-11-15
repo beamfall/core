@@ -1,6 +1,6 @@
 # Home\-mode admin password sign\-in on the enroll page — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e3078687ba2ddb8ce2a995bc72c24a56 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

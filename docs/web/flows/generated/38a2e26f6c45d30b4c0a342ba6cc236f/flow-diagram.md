@@ -1,6 +1,6 @@
 # Home\-mode admin password sign\-in on the enroll page — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bddfcc93862f2d798645e97dbb57ea4a -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

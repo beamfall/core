@@ -1,6 +1,6 @@
 # Console access: devices and pairing codes — functional-overview
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:31cd0a5846ae0a96ee885b31921487bd -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -15,12 +15,12 @@ Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: ; span SHA256: 
 <!-- flowdocs:paragraph:cbcef617d3ab79d52f97b089daba31f1 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:439; symbol: ; span SHA256: 2cb96a1f6fdf5156d5272f0e55d47e88874ef6c042a24d3b1ad18553236c3879.
+Source: internal/web/app/src/lib/graphql/console\.ts:441; symbol: ; span SHA256: 2cb96a1f6fdf5156d5272f0e55d47e88874ef6c042a24d3b1ad18553236c3879.
 
 <!-- flowdocs:paragraph:3097488a75222fbb5ecfe1f9f0e832d7 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:467; symbol: ; span SHA256: 4a001838a63575bc60c42cf5c1fb5b6cbdc5cf7f136a5ac753f10e5b7c2a9d8d.
+Source: internal/web/app/src/lib/graphql/console\.ts:469; symbol: ; span SHA256: 4a001838a63575bc60c42cf5c1fb5b6cbdc5cf7f136a5ac753f10e5b7c2a9d8d.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

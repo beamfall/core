@@ -1,6 +1,6 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — functional-overview
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:e10cb1ec9f4b1597c14fd5132f70aaf3 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -20,7 +20,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: ; span SHA256: 
 <!-- flowdocs:paragraph:c0291c4607f030e9b06a0113ab3c1980 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:296; symbol: ; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
+Source: internal/web/app/src/lib/graphql/console\.ts:298; symbol: ; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
 
 <!-- flowdocs:paragraph:8991194c78d8a4d3274683fc97e1951a -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

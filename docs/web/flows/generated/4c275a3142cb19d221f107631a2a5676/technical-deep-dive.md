@@ -1,6 +1,6 @@
 # Viewer reveal and relock of restricted content — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3149be121af2b3eda7ef4cf0126109d9 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

@@ -1,6 +1,6 @@
 # Console update awareness: update check, release channel and update\-available guidance — related-flows
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:67f77204c374341b88cb5888d39a37f0 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

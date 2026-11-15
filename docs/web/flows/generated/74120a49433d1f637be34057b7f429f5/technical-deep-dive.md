@@ -1,6 +1,6 @@
 # Backups: history, verify manifest, restore and export — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bd440ef6f398a92b8ae9faff571537bd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

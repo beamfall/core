@@ -1,6 +1,6 @@
 # Console update awareness: update check, release channel and update\-available guidance — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3e4b17029606d72d9213fc1962757f6c -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -40,12 +40,12 @@ Source: internal/web/app/src/lib/graphql/console\.ts:172; symbol: ConsoleConfigP
 <!-- flowdocs:paragraph:523a29205ee84d569ec7b91027f6428f -->
 Declared member: source declares SET\_CONSOLE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:181; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: f405c71df9a0b139438f527527cf3b861d2570a937d3792e70f1dbb56e699561.
+Source: internal/web/app/src/lib/graphql/console\.ts:183; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: da6d061e04800276be21c679df560caf0300555cca0629e9e480fceea5daf88f.
 
 <!-- flowdocs:paragraph:f1f78ba46cd2f1c8b85604a08c370d44 -->
 Declared member: source declares UPDATE\_STATUS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:197; symbol: UPDATE\_STATUS\_QUERY; span SHA256: e8ee5061e0f1fe8bc1d374cf232df323083416ab3782df3de48e5e2a7c2c06c2.
+Source: internal/web/app/src/lib/graphql/console\.ts:199; symbol: UPDATE\_STATUS\_QUERY; span SHA256: e8ee5061e0f1fe8bc1d374cf232df323083416ab3782df3de48e5e2a7c2c06c2.
 
 <!-- flowdocs:paragraph:43c052696531969325b6bb860b3dca77 -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
@@ -55,12 +55,12 @@ Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: fetchConsoleCon
 <!-- flowdocs:paragraph:fe1d181467a245a4ab609227f31e0415 -->
 Declared member: source declares fetchUpdateStatus; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:201; symbol: fetchUpdateStatus; span SHA256: 65f9974db65cecec5d4c8fe576646f4dbe94a396397e5024b263dd7593ff7a2f.
+Source: internal/web/app/src/lib/graphql/console\.ts:203; symbol: fetchUpdateStatus; span SHA256: 65f9974db65cecec5d4c8fe576646f4dbe94a396397e5024b263dd7593ff7a2f.
 
 <!-- flowdocs:paragraph:df094c35ce2388d6211fb50a92c60946 -->
 Declared member: source declares setConsoleConfig; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:184; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
+Source: internal/web/app/src/lib/graphql/console\.ts:186; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
 
 <!-- flowdocs:paragraph:969ab5ccc98d7ac89b2014986735c4c8 -->
 Declared member: source declares onSave; membership is caller\-declared, not runtime evidence\.

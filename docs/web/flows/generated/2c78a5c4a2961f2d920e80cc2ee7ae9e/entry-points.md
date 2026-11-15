@@ -1,6 +1,6 @@
 # GraphQL client wire types shared by every data call — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:52cf3ae7570d2a100a5a12c8d290f29e -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

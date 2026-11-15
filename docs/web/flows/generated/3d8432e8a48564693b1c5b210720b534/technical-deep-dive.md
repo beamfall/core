@@ -1,6 +1,6 @@
 # Manage curation: fields, relations and files of a Media — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c666295d85413adc3ea2d99c7fc348d0 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

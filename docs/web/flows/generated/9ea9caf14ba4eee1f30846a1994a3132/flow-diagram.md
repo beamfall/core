@@ -1,6 +1,6 @@
 # Manage unmatched records: inbox, fix match, suppression — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d3397ef2a6658591a75180b326e3647d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

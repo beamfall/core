@@ -1,6 +1,6 @@
 # Service worker registration and reload\-on\-controller\-change — flow-diagram
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:56d463b3d3c6cd0c370f2cb95e0573dc -->
 Static source inventory only; sequence and runtime ordering are unresolved\.

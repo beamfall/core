@@ -1,6 +1,6 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — technical-deep-dive
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a9d3753c8ca19a779b2faae40dc935c4 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -60,7 +60,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:69; symbol: CONSOLE\_CONFIG
 <!-- flowdocs:paragraph:f18b0d607f20ff986077aa2d2ff6dd4f -->
 Declared member: source declares JOB\_RETRY\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:292; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
+Source: internal/web/app/src/lib/graphql/console\.ts:294; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
 
 <!-- flowdocs:paragraph:5db075adfd93964bbe99cba829d3005a -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
@@ -70,7 +70,7 @@ Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: fetchConsoleCon
 <!-- flowdocs:paragraph:298bc1405b2993608f2c4ef631a146d5 -->
 Declared member: source declares retryJob; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:296; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
+Source: internal/web/app/src/lib/graphql/console\.ts:298; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
 
 <!-- flowdocs:paragraph:48d2a0f20e4ce9d1755cea501deea69c -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.

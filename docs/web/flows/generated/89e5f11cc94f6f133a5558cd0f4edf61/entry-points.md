@@ -1,6 +1,6 @@
 # Viewer full library browse: sort, filters, grouping, virtual grid — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fafe878aebd3e3c2ba4c158fb20534e5 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

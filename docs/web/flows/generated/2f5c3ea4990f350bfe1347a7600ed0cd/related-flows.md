@@ -1,6 +1,6 @@
 # Setup: choose sign\-in security mode and create the owner Profile — related-flows
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9d3b31c0927afb12fa82e64e60c11a06 -->
 Relations are static lexical candidates; computed dispatch remains unresolved\.

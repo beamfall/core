@@ -1,6 +1,6 @@
 # Manage field locks — exceptions
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1f38f2f08f09b7cadef9bad0ce139e65 -->
 Error reachability, rescue behavior and completeness are unresolved\.

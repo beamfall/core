@@ -1,6 +1,6 @@
 # Setup: configure the update\-check channel — entry-points
 
-Source revision: 03e521f81ef085ec14c6d7d5d76533692ecba36c. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 684328a3dab29cbba9cf1058ce382b864f4b6b2d. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d1f12bb75f4daf5d84bd7e2b0376b1ba -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
