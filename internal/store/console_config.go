@@ -67,6 +67,10 @@ const (
 	// second. Absent or 0 means no server-wide cap. It applies only to
 	// playback requests that do not come from the LAN.
 	configRemoteMaxBitrate = "playback.remote_max_bitrate"
+	// Automatic router port mapping (CORE-1969). Default OFF (no override →
+	// no UPnP or NAT-PMP request is ever sent): when ON, the server asks the
+	// LAN gateway to forward its HTTPS port and keeps the lease renewed.
+	configPortMappingEnabled = "remoteaccess.port_mapping_enabled"
 )
 
 // MaxRemoteBitrate is the upper bound accepted for a remote bitrate cap
@@ -454,6 +458,21 @@ func (s *Store) SetQBittorrentConfig(ctx context.Context, patch QBittorrentConfi
 		return QBittorrentConfig{}, err
 	}
 	return s.QBittorrentConfig(ctx)
+}
+
+// PortMappingEnabled reports whether the operator opted in to automatic router
+// port mapping (CORE-1969). Absent means off.
+func (s *Store) PortMappingEnabled(ctx context.Context) (bool, error) {
+	values, err := s.serverConfigValues(ctx)
+	if err != nil {
+		return false, err
+	}
+	return values[configPortMappingEnabled] == "1", nil
+}
+
+// SetPortMappingEnabled persists the automatic port-mapping opt-in.
+func (s *Store) SetPortMappingEnabled(ctx context.Context, enabled bool, now time.Time) error {
+	return s.setServerConfigValues(ctx, map[string]string{configPortMappingEnabled: boolToConfig(enabled)}, now)
 }
 
 func boolToConfig(v bool) string {

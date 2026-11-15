@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdminEpochSignal, withAdminEpoch } from "@/areas/console/adminEpoch";
 import {
   cancelJob,
+  checkRemoteAccessReachability,
   createProfile,
   createRetentionRule,
   deleteRetentionRule,
@@ -43,6 +44,7 @@ import {
   setProfileLibraries,
   setProfileRemoteBitrateCap,
   setProfileStreamCap,
+  setRemoteAccessPortMapping,
   setRetentionCandidateHold,
   setWebhookSettings,
   testWebhook,
@@ -65,6 +67,18 @@ const recordedSignals: (AbortSignal | null | undefined)[] = [];
 const DATA = {
   setConsoleConfig: { backgroundWorkers: 2, viewerPairingCodesDisabled: true, plugins: [] },
   remoteAccess: { directHTTPS: null, relay: null, plainHTTPPublicWarning: false, endpoints: [] },
+  setRemoteAccessPortMapping: {
+    directHTTPS: null,
+    relay: null,
+    plainHTTPPublicWarning: false,
+    endpoints: [],
+  },
+  checkRemoteAccessReachability: {
+    directHTTPS: null,
+    relay: null,
+    plainHTTPPublicWarning: false,
+    endpoints: [],
+  },
   jobCancel: { id: "job-1", status: "cancelling" },
   jobRetry: { id: "job-1", status: "queued" },
   runEventsCompaction: { id: "job-2", kind: "events-compaction", status: "queued" },
@@ -377,6 +391,25 @@ describe("console GraphQL requests", () => {
 
     await setProfileRemoteBitrateCap("p-1", -5);
     expect(recorded[1].variables).toEqual({ profileID: "p-1", remoteMaxBitrate: 0 });
+  });
+
+  it("port-mapping mutations send the opt-in and read back the whole remote-access status", async () => {
+    await setRemoteAccessPortMapping(true);
+    expect(recorded[0].query).toContain("mutation SetRemoteAccessPortMapping($enabled: Boolean!)");
+    expect(recorded[0].query).toContain("setRemoteAccessPortMapping(enabled: $enabled)");
+    expect(recorded[0].query).toContain("externalPort externalAddress");
+    expect(recorded[0].variables).toEqual({ enabled: true });
+
+    await checkRemoteAccessReachability();
+    expect(recorded[1].query).toContain("mutation CheckRemoteAccessReachability");
+    expect(recorded[1].query).toContain("verdicts { path reachable method reason }");
+    expect(recorded[1].variables).toEqual({});
+  });
+
+  it("fetchRemoteAccess reads the port mapping and the last reachability report", async () => {
+    await fetchRemoteAccess();
+    expect(recorded[0].query).toContain("portMapping { enabled state protocol");
+    expect(recorded[0].query).toContain("reachability { checkedAt verdicts");
   });
 
   it("setExtensionPreauthorization sends SetExtensionPreauthorization(profileID, enabled)", async () => {

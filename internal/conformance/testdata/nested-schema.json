@@ -1651,6 +1651,207 @@
     ]
   },
   {
+    "field": "checkremoteaccessreachability",
+    "kind": "object",
+    "children": [
+      {
+        "name": "directHTTPS",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "certState",
+            "kind": "scalar"
+          },
+          {
+            "name": "domain",
+            "kind": "scalar"
+          },
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "endpoints",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "url",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "plainHTTPPublicWarning",
+        "kind": "scalar"
+      },
+      {
+        "name": "portMapping",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          },
+          {
+            "name": "expiresAt",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "externalAddress",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "externalPort",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "gatewayCode",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "internalPort",
+            "kind": "scalar"
+          },
+          {
+            "name": "leaseSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "protocol",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "reason",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "state",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "reachability",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "checkedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "verdicts",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "method",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "path",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "reachable",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "reason",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "method",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "path",
+                "kind": "scalar"
+              },
+              {
+                "name": "reachable",
+                "kind": "scalar"
+              },
+              {
+                "name": "reason",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "relay",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "connectionState",
+            "kind": "scalar"
+          },
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          },
+          {
+            "name": "endpoint",
+            "kind": "scalar"
+          },
+          {
+            "name": "lastError",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "publicHost",
+            "kind": "scalar"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "field": "clearallmutes",
     "kind": "object",
     "children": [
@@ -14345,6 +14546,120 @@
         "kind": "scalar"
       },
       {
+        "name": "portMapping",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          },
+          {
+            "name": "expiresAt",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "externalAddress",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "externalPort",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "gatewayCode",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "internalPort",
+            "kind": "scalar"
+          },
+          {
+            "name": "leaseSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "protocol",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "reason",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "state",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "reachability",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "checkedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "verdicts",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "method",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "path",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "reachable",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "reason",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "method",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "path",
+                "kind": "scalar"
+              },
+              {
+                "name": "reachable",
+                "kind": "scalar"
+              },
+              {
+                "name": "reason",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
+          }
+        ]
+      },
+      {
         "name": "relay",
         "kind": "object",
         "optional": true,
@@ -23704,6 +24019,207 @@
       {
         "name": "watchlisted",
         "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setremoteaccessportmapping",
+    "kind": "object",
+    "children": [
+      {
+        "name": "directHTTPS",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "certState",
+            "kind": "scalar"
+          },
+          {
+            "name": "domain",
+            "kind": "scalar"
+          },
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "endpoints",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "url",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "url",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "plainHTTPPublicWarning",
+        "kind": "scalar"
+      },
+      {
+        "name": "portMapping",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          },
+          {
+            "name": "expiresAt",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "externalAddress",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "externalPort",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "gatewayCode",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "internalPort",
+            "kind": "scalar"
+          },
+          {
+            "name": "leaseSeconds",
+            "kind": "scalar"
+          },
+          {
+            "name": "protocol",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "reason",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "state",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "reachability",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "checkedAt",
+            "kind": "scalar"
+          },
+          {
+            "name": "verdicts",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "method",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "path",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "reachable",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "reason",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "method",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "path",
+                "kind": "scalar"
+              },
+              {
+                "name": "reachable",
+                "kind": "scalar"
+              },
+              {
+                "name": "reason",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "relay",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "connectionState",
+            "kind": "scalar"
+          },
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          },
+          {
+            "name": "endpoint",
+            "kind": "scalar"
+          },
+          {
+            "name": "lastError",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "publicHost",
+            "kind": "scalar"
+          }
+        ]
       }
     ]
   },

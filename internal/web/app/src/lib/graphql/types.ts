@@ -1164,12 +1164,53 @@ export interface RemoteEndpointInfo {
   url: string;
 }
 
+/** Automatic router port mapping, UPnP IGD or NAT-PMP (graph.PortMappingStatus, CORE-1969). */
+export interface PortMappingStatus {
+  enabled: boolean;
+  /** disabled | mapping | mapped | failed */
+  state: string;
+  /** upnp | natpmp, empty before a gateway answers. */
+  protocol?: string;
+  internalPort: number;
+  externalPort?: number;
+  externalAddress?: string;
+  /** 0 = permanent lease. */
+  leaseSeconds?: number;
+  expiresAt?: string;
+  /** Reason code when state is failed. */
+  reason?: string;
+  gatewayCode?: number;
+}
+
+/** One path's reachability outcome (graph.ReachabilityVerdict). */
+export interface ReachabilityVerdict {
+  /** direct | relay */
+  path: string;
+  reachable: boolean;
+  /**
+   * How the probe was sent, when one ran: gateway_loopback (direct path, from
+   * inside the network through the router's NAT hairpin, so a pass is not an
+   * outside test) or relay.
+   */
+  method?: string;
+  /** Reason code when unreachable; hairpin_unverified means unknown, not closed. */
+  reason?: string;
+}
+
+/** The last external reachability self-test (graph.ReachabilityReport). */
+export interface ReachabilityReport {
+  checkedAt: string;
+  verdicts: ReachabilityVerdict[];
+}
+
 /** Remote-access status (graph.RemoteAccessInfo). */
 export interface RemoteAccessInfo {
   directHTTPS?: DirectHTTPSStatus | null;
   relay?: RelayStatus | null;
   plainHTTPPublicWarning: boolean;
   endpoints: RemoteEndpointInfo[];
+  portMapping?: PortMappingStatus | null;
+  reachability?: ReachabilityReport | null;
 }
 
 /** A plugin's Console activation state (graph.PluginActivationInfo). */

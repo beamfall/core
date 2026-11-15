@@ -309,6 +309,8 @@ var resultTypes = map[string]any{
 	"validatescrapercredential":          ScraperCredentialInfo{},
 	"disablescrapercredential":           ScraperCredentialInfo{},
 	"settranscodeconfig":                 TranscodeConfigInfo{},
+	"setremoteaccessportmapping":         RemoteAccessInfo{},
+	"checkremoteaccessreachability":      RemoteAccessInfo{},
 	"provisionencryptedlibrary":          ProvisionEncryptedLibraryInfo{},
 	"unsealencryptedlibrary":             EncryptedLibraryStatusInfo{},
 	"sealencryptedlibrary":               EncryptedLibraryStatusInfo{},

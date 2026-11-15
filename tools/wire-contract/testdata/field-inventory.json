@@ -456,6 +456,19 @@
       ]
     },
     {
+      "field": "checkremoteaccessreachability",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "directHTTPS",
+        "endpoints",
+        "plainHTTPPublicWarning",
+        "portMapping",
+        "reachability",
+        "relay"
+      ]
+    },
+    {
       "field": "clearallmutes",
       "effect": "write",
       "tier": "session",
@@ -2234,6 +2247,8 @@
         "directHTTPS",
         "endpoints",
         "plainHTTPPublicWarning",
+        "portMapping",
+        "reachability",
         "relay"
       ]
     },
@@ -3260,6 +3275,19 @@
         "rating",
         "watched",
         "watchlisted"
+      ]
+    },
+    {
+      "field": "setremoteaccessportmapping",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "directHTTPS",
+        "endpoints",
+        "plainHTTPPublicWarning",
+        "portMapping",
+        "reachability",
+        "relay"
       ]
     },
     {
