@@ -123,13 +123,17 @@ describe("LibrariesPage folder tree", () => {
     const rescan = await screen.findByRole("button", { name: "Rescan library" });
     expect(rescan).toBeDisabled();
     expect(screen.getByRole("button", { name: "Rescan all libraries" })).toBeDisabled();
+    // An empty Library leads with the folder editor, not the file tools.
+    expect(screen.getByText("Library folders")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add folder" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create folder" })).toBeNull();
 
     const input = container.querySelector<HTMLInputElement>("#roots-library-1");
     if (!input) throw new Error("roots input missing");
     fireEvent.change(input, { target: { value: "/fresh" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(setLibraryRoots).toHaveBeenCalledWith("library-1", []));
+    await waitFor(() => expect(setLibraryRoots).toHaveBeenCalledWith("library-1", ["/fresh"]));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Rescan library" })).toBeEnabled(),
     );

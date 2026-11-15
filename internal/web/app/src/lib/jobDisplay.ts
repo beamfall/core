@@ -114,7 +114,7 @@ export function jobStatusState(status: string): JobStatusState {
   }
 }
 
-export function jobProgressDetail(job: JobInfo, labels?: LabelSource): string {
+export function jobProgressDetail(job: Partial<JobInfo>, labels?: LabelSource): string {
   const progress = job.progress ?? { current: 0, total: 0, unit: "" };
   let detail = "";
   if (progress.total > 0) {
@@ -129,4 +129,45 @@ export function jobProgressDetail(job: JobInfo, labels?: LabelSource): string {
       (labels ? jobProgressMessageLabel(progress.message, labels) : progress.message);
   }
   return detail;
+}
+
+/**
+ * What one job history entry says, for the job log. A progress entry reads as
+ * the job's own progress line ("120/340 files - Scanning"); an entry whose
+ * payload only repeats its status says nothing more than its type, so it is
+ * empty. Returns null for a payload this does not recognise: the caller shows
+ * that one as stored.
+ */
+export function jobEventDetail(
+  event: { type: string; payload?: string },
+  labels?: LabelSource,
+): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(event.payload ?? "");
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const payload = parsed as Record<string, unknown>;
+  const keys = Object.keys(payload);
+  if (payload.type === "progress") {
+    const count = (value: unknown) => (typeof value === "number" && value > 0 ? value : 0);
+    const text = (value: unknown) => (typeof value === "string" ? value : "");
+    const progress = {
+      current: count(payload.current),
+      total: count(payload.total),
+      unit: text(payload.unit),
+      message: text(payload.message),
+    };
+    const detail = jobProgressDetail({ progress }, labels);
+    if (progress.total > 0 || progress.current === 0) return detail;
+    const unit = labels ? jobProgressUnitLabel(progress.unit, labels) : progress.unit;
+    const counted = unit ? `${progress.current} ${unit}` : String(progress.current);
+    return detail ? `${counted} - ${detail}` : counted;
+  }
+  if (payload.status === event.type && keys.every((key) => key === "status" || key === "reason")) {
+    return typeof payload.reason === "string" ? payload.reason : "";
+  }
+  return null;
 }

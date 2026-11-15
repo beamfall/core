@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EntityFieldInfo, GenericMediaInfo } from "@/lib/graphql/types";
-import { detailFacts, runtimeParts, viewerFacingFields } from "./viewerFields";
+import { detailFacts, fieldDisplayValue, runtimeParts, viewerFacingFields } from "./viewerFields";
 
 const field = (over: Partial<EntityFieldInfo>): EntityFieldInfo => ({
   name: "f",
@@ -63,5 +63,29 @@ describe("runtimeParts", () => {
   it("rounds to the minute", () => {
     expect(runtimeParts(5400)).toEqual({ hours: 1, minutes: 30 });
     expect(runtimeParts(2690)).toEqual({ hours: 0, minutes: 45 });
+  });
+});
+
+describe("fieldDisplayValue", () => {
+  it("shows a date field as a calendar date in the display locale", () => {
+    expect(fieldDisplayValue({ type: "date", value: "2025-05-09T00:00:00Z" }, "en-US")).toBe(
+      "May 9, 2025",
+    );
+    expect(fieldDisplayValue({ type: "date", value: "2025-05-09" }, "en-GB")).toBe("9 May 2025");
+  });
+
+  it("keeps the stored day whatever the time of day", () => {
+    expect(fieldDisplayValue({ type: "date", value: "2025-05-09T23:30:00-08:00" }, "en-US")).toBe(
+      "May 9, 2025",
+    );
+  });
+
+  it("leaves other types and unparseable dates as stored", () => {
+    expect(fieldDisplayValue({ type: "text", value: "2025-05-09T00:00:00Z" }, "en-US")).toBe(
+      "2025-05-09T00:00:00Z",
+    );
+    expect(fieldDisplayValue({ type: "date", value: "Spring 2025" }, "en-US")).toBe("Spring 2025");
+    expect(fieldDisplayValue({ type: "date", value: "2025-02-31" }, "en-US")).toBe("2025-02-31");
+    expect(fieldDisplayValue({ type: "date", value: "0001-05-09" }, "en-US")).toBe("0001-05-09");
   });
 });

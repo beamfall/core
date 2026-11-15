@@ -34,6 +34,12 @@ ssh root@<unraid-ip> docker build -t "beamfall-core:local-$SHA" \
   "/root/bf-build/$SHA"
 ```
 
+To have a test build carry metadata provider keys (so TMDB works before you enter one), keep them
+on the server in a `0600` file of `ref=value,...` pairs and add
+`--secret id=beamfall_bundled_credentials,src=<file>` to the build. Never commit the file. The
+keys are linked into the server binary, so treat that image as private: keep it on the server
+and do not push it to a registry.
+
 `/root` is RAM on Unraid, so the source tree is gone after a reboot; the image is kept. Then
 install the template as above, but set **Repository** to `beamfall-core:local-<sha>` (no registry).
 Updating means building a new tag and changing **Repository** again; keep the previous tag for

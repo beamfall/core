@@ -11,6 +11,8 @@ import type {
 
 /** The attribute that marks the <track> elements the player adds for caption tracks. */
 export const CAPTION_TRACK_ATTRIBUTE = "data-bf-caption";
+/** Holds a caption <track>'s WebVTT URL until the track is first shown. */
+const CAPTION_SOURCE_ATTRIBUTE = "data-bf-caption-src";
 
 /** A muxed picture-based subtitle stream: shown only by burning it into the video. */
 export function isBurnInCaption(track: PlaybackCaptionTrack): boolean {
@@ -225,6 +227,11 @@ export function removeCaptionElements(video: HTMLVideoElement): void {
  * sidecar alike), all disabled. They play on every route: direct play, the
  * audio-copy direct stream and the HLS transcode, none of which carry the
  * file's text subtitles in the stream itself.
+ *
+ * A track gets its src only when showCaptionElement first shows it. The server
+ * converts a muxed stream on first request, which reads the whole file, so
+ * loading every track up front holds one connection each for that long and can
+ * leave none for the stream itself over HTTP/1.1.
  */
 export function attachCaptionElements(
   video: HTMLVideoElement,
@@ -238,7 +245,7 @@ export function attachCaptionElements(
     element.kind = "subtitles";
     element.label = captionElementLabel(track, locale);
     if (track.language && track.language !== "und") element.srclang = track.language;
-    element.src = track.url;
+    element.setAttribute(CAPTION_SOURCE_ATTRIBUTE, track.url);
     element.setAttribute(CAPTION_TRACK_ATTRIBUTE, track.id);
     video.appendChild(element);
     if (element.track) element.track.mode = "disabled";
@@ -248,9 +255,11 @@ export function attachCaptionElements(
 /** Shows the caption track with this id and hides the rest; null hides them all. */
 export function showCaptionElement(video: HTMLVideoElement, id: string | null): void {
   for (const element of captionElements(video)) {
+    const shown = element.getAttribute(CAPTION_TRACK_ATTRIBUTE) === id;
+    const source = element.getAttribute(CAPTION_SOURCE_ATTRIBUTE);
+    if (shown && source && !element.getAttribute("src")) element.src = source;
     if (!element.track) continue;
-    element.track.mode =
-      element.getAttribute(CAPTION_TRACK_ATTRIBUTE) === id ? "showing" : "disabled";
+    element.track.mode = shown ? "showing" : "disabled";
   }
 }
 

@@ -1,0 +1,5 @@
+- [x] Web player: caption tracks load on first show; test
+- [x] `subtitleSidecarPath`: conversion detached from request cancellation; test
+- [x] Job progress event payload carries counters and message; Console job log renders it; tests
+- [x] Console transcoder form: folder picker and save confirmation; test
+- [ ] Owner retries playback of the reported file on the Unraid test server
