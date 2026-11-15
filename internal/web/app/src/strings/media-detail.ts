@@ -24,6 +24,10 @@ export const mediaDetailStrings = {
     mediaDetailWatchTogetherLabel: "Watch {title} together",
     mediaDetailWatchTogetherHomeOnly: "Watch Party works only on your home network.",
     mediaDetailWatchTogetherFailed: "The Watch Party couldn’t be started. Try again.",
+    // Container entity page (CORE-1786).
+    entityDetailNextUp: "Next up: {title}",
+    entityDetailWatched: "Watched",
+    entityDetailChildrenLabel: "In {title}",
   },
   fr: {
     mediaDetailResume: "Reprendre",
@@ -48,6 +52,9 @@ export const mediaDetailStrings = {
     mediaDetailWatchTogetherLabel: "Regarder {title} ensemble",
     mediaDetailWatchTogetherHomeOnly: "Watch Party ne fonctionne que sur votre réseau domestique.",
     mediaDetailWatchTogetherFailed: "Impossible de lancer la Watch Party. Réessayez.",
+    entityDetailNextUp: "À suivre : {title}",
+    entityDetailWatched: "Vu",
+    entityDetailChildrenLabel: "Dans {title}",
   },
   de: {
     mediaDetailResume: "Fortsetzen",
@@ -73,6 +80,9 @@ export const mediaDetailStrings = {
     mediaDetailWatchTogetherHomeOnly: "Watch Party funktioniert nur in deinem Heimnetzwerk.",
     mediaDetailWatchTogetherFailed:
       "Die Watch Party konnte nicht gestartet werden. Versuche es erneut.",
+    entityDetailNextUp: "Als Nächstes: {title}",
+    entityDetailWatched: "Gesehen",
+    entityDetailChildrenLabel: "In {title}",
   },
   es: {
     mediaDetailResume: "Reanudar",
@@ -97,6 +107,9 @@ export const mediaDetailStrings = {
     mediaDetailWatchTogetherLabel: "Ver {title} juntos",
     mediaDetailWatchTogetherHomeOnly: "Watch Party solo funciona en tu red doméstica.",
     mediaDetailWatchTogetherFailed: "No se pudo iniciar la Watch Party. Inténtalo de nuevo.",
+    entityDetailNextUp: "A continuación: {title}",
+    entityDetailWatched: "Visto",
+    entityDetailChildrenLabel: "En {title}",
   },
   pt: {
     mediaDetailResume: "Retomar",
@@ -121,5 +134,8 @@ export const mediaDetailStrings = {
     mediaDetailWatchTogetherLabel: "Assistir a {title} juntos",
     mediaDetailWatchTogetherHomeOnly: "A Watch Party só funciona na sua rede doméstica.",
     mediaDetailWatchTogetherFailed: "Não foi possível iniciar a Watch Party. Tente novamente.",
+    entityDetailNextUp: "A seguir: {title}",
+    entityDetailWatched: "Assistido",
+    entityDetailChildrenLabel: "Em {title}",
   },
 };
