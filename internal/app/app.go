@@ -2001,7 +2001,18 @@ func (a *App) Run(ctx context.Context) error {
 	close(a.addrReady)
 	if a.cfg.Discovery.Enabled {
 		advertiser := discovery.New()
-		if err := advertiser.Start(a.cfg.ServerName, listenPort(listener.Addr())); err != nil {
+		// scheme follows the same LAN rule as remoteAccessProvider.Endpoints:
+		// the port answers cleartext HTTP to LAN clients unless direct TLS is on.
+		record := discovery.Record{Scheme: "http"}
+		if directTLSActive {
+			record.Scheme = "https"
+		}
+		pin, err := a.selfSigned.ServerSPKIPin(ctx)
+		if err == nil {
+			record.ServerID = discovery.ServerID(pin)
+			err = advertiser.Start(a.cfg.ServerName, listenPort(listener.Addr()), record)
+		}
+		if err != nil {
 			a.logger.Warn("discovery advertise failed", "error", err)
 		} else {
 			defer advertiser.Stop()

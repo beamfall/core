@@ -10,6 +10,7 @@ updated: 2026-11-15
 - Home-automation examples: [`home-automation.md`](home-automation.md)
 - Request-tool integration: [`request-tools.md`](request-tools.md)
 - Operator agents (private `/api/graphql`, token tiers, MCP): [`agents.md`](agents.md)
+- LAN discovery and pairing (private client surface): [`lan-pairing.md`](lan-pairing.md)
 - Compact AI reference: [`llms.txt`](llms.txt)
 - Full AI reference: [`llms-full.txt`](llms-full.txt)
 - Machine contract: [`openapi.json`](openapi.json)

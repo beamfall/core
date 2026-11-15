@@ -1,0 +1,7 @@
+- [x] `discovery.Record` with `scheme` and `id`; `Start` validates both
+- [x] `discovery.ServerID` derives the id from the server key pin (domain-separated SHA-256, 16 bytes hex)
+- [x] App wiring: scheme from the direct-TLS rule, id from the self-signed key pin
+- [x] Tests: pinned TXT entries, no setup entry, invalid scheme and id refused, id stable and not the pin
+- [x] `docs/api/lan-pairing.md` documents the TXT keys
+- [ ] `make gate`
+- [ ] `openspec archive core-2062-discovery-txt` after landing
