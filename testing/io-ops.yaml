@@ -85,6 +85,10 @@ ops:
     desc: PUT, GET, DELETE, and LIST opaque backup ciphertext against an S3-compatible bucket
     pkg: internal/backup
     kind: egress
+  - id: egress-upnp-igd-control
+    desc: GET a LAN gateway's UPnP description and POST SOAP port-mapping actions to its control URL
+    pkg: internal/remoteaccess
+    kind: egress
 
   # ── filesystem ──────────────────────────────────────────────────────────────
   - id: fs-scan-walk

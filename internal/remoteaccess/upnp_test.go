@@ -279,3 +279,65 @@ func TestDiscovererPrefersUPnP(t *testing.T) {
 		t.Fatalf("Discover = %v, %v", gw, err)
 	}
 }
+
+// io:egress-upnp-igd-control
+// TestUPnPProductionClientJourney drives the production IGD client, with its
+// timeout and redirect refusal intact and only its transport swapped for the
+// in-memory gateway, through discovery, a mapping, the WAN address and a
+// delete, then checks that a redirecting description is not followed.
+func TestUPnPProductionClientJourney(t *testing.T) {
+	const location = "http://192.168.1.1:5000/rootDesc.xml"
+	ctx := context.Background()
+	f := &fakeIGD{}
+	d := newUPnPDiscoverer()
+	if d.client.Timeout != upnpRequestBudget || d.client.CheckRedirect == nil {
+		t.Fatalf("production client: timeout %v, redirect policy set %v", d.client.Timeout, d.client.CheckRedirect != nil)
+	}
+	d.client.Transport = roundTripFunc(f.transport)
+	d.search = func(context.Context) ([]string, error) { return []string{location}, nil }
+	d.localIP = func(context.Context, string) (netip.Addr, error) { return netip.MustParseAddr("192.168.1.20"), nil }
+
+	gw, err := d.Discover(ctx)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if ext, lease, err := gw.AddMapping(ctx, 8443, 8443, time.Hour); err != nil || ext != 8443 || lease != time.Hour {
+		t.Fatalf("AddMapping = %d %v %v", ext, lease, err)
+	}
+	if addr, err := gw.ExternalAddress(ctx); err != nil || addr != netip.MustParseAddr("203.0.113.7") {
+		t.Fatalf("ExternalAddress = %v %v", addr, err)
+	}
+	if err := gw.DeleteMapping(ctx, 8443, 8443); err != nil {
+		t.Fatalf("DeleteMapping: %v", err)
+	}
+	var actions []string
+	for _, c := range f.calls {
+		if c.url != "http://192.168.1.1:5000/ctl/IPConn" {
+			t.Fatalf("SOAP call %s went to %s", c.action, c.url)
+		}
+		actions = append(actions, c.action)
+	}
+	if got := strings.Join(actions, ","); got != "AddPortMapping,GetExternalIPAddress,DeletePortMapping" {
+		t.Fatalf("SOAP actions = %s", got)
+	}
+
+	var offLAN int
+	redirecting := newUPnPDiscoverer()
+	redirecting.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Hostname() != "192.168.1.1" {
+			offLAN++
+			return httpReply(http.StatusOK, testIGDDescription), nil
+		}
+		resp := httpReply(http.StatusFound, "")
+		resp.Header.Set("Location", "http://203.0.113.9/rootDesc.xml")
+		return resp, nil
+	})
+	redirecting.search = d.search
+	redirecting.localIP = d.localIP
+	if _, err := redirecting.Discover(ctx); err == nil || !strings.Contains(err.Error(), "HTTP 302") {
+		t.Fatalf("Discover through a redirect = %v, want the 302 refused", err)
+	}
+	if offLAN != 0 {
+		t.Fatalf("the client followed a redirect off the LAN %d time(s)", offLAN)
+	}
+}
