@@ -569,14 +569,14 @@ a.console-task:hover .console-task-icon {
 .console-secret {
   margin: 12px 0;
   padding: 12px 14px;
-  border: 1px solid oklch(82% 0.145 92 / 40%);
+  border: 1px solid color-mix(in oklab, var(--state-warning) 40%, transparent);
   border-radius: var(--radius-card);
-  background: oklch(82% 0.145 92 / 10%);
+  background: color-mix(in oklab, var(--state-warning) 10%, transparent);
 }
 
 [data-theme="light"] .console-secret {
-  border-color: oklch(63% 0.135 92 / 55%);
-  background: oklch(63% 0.135 92 / 12%);
+  border-color: color-mix(in oklab, var(--state-warning) 55%, transparent);
+  background: color-mix(in oklab, var(--state-warning) 12%, transparent);
 }
 
 .console-secret-lead {
@@ -645,7 +645,7 @@ a.console-step {
 }
 
 a.console-step:hover {
-  background: var(--surface-hover, oklch(60% 0 0 / 8%));
+  background: color-mix(in oklab, var(--text) 8%, transparent);
 }
 
 .console-step-index {
@@ -662,7 +662,7 @@ a.console-step:hover {
 }
 
 .console-step.is-done .console-step-index {
-  border-color: oklch(70% 0.14 150 / 60%);
+  border-color: color-mix(in oklab, var(--state-direct) 60%, transparent);
   color: var(--state-success, var(--state-direct));
 }
 

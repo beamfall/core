@@ -303,7 +303,7 @@
 
 /* Workbench Light remaps: the dark fills would swallow ink text on paper. */
 [data-theme="light"] .manage-area .manage-badge {
-  background: var(--paper-200);
+  background: color-mix(in oklab, var(--text) 10%, var(--bg-surface));
 }
 [data-theme="light"] .manage-area .manage-badge[data-state="green"] {
   background: color-mix(in oklab, var(--state-direct) 28%, transparent);

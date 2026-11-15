@@ -172,7 +172,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route
           path="/watch/:mediaId"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-black" />}>
+            <Suspense fallback={<div className="min-h-screen bg-scrim" />}>
               <LazyPlayerPage />
             </Suspense>
           }

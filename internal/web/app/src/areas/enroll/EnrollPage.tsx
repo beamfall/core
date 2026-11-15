@@ -232,7 +232,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
 
   return (
     <div className="mt-5">
-      <p className="m-0 mb-5 flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground before:h-px before:flex-1 before:bg-white/10 after:h-px after:flex-1 after:bg-white/10">
+      <p className="m-0 mb-5 flex items-center gap-3 text-xs uppercase tracking-wide text-muted-foreground before:h-px before:flex-1 before:bg-foreground/10 after:h-px after:flex-1 after:bg-foreground/10">
         {t("adminSignInOr")}
       </p>
       {!open ? (
@@ -289,7 +289,7 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
 }
 
 // The full-width quiet action under the code form (the admin password route).
-const OUTLINE_ACTION = "w-full border-white/15 bg-transparent hover:bg-white/[0.06]";
+const OUTLINE_ACTION = "w-full border-foreground/15 bg-transparent hover:bg-foreground/[0.06]";
 
 // Strict mode has no password fallback (CORE-1110), so a locked-out owner is
 // told the one way back in: mint a code on the server itself (CORE-1608).
@@ -298,7 +298,7 @@ function StrictRecoveryHint() {
   return (
     <p className="m-0 mt-5 text-sm leading-relaxed text-muted-foreground">
       {t("strictRecoveryHint")}{" "}
-      <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-foreground">
+      <code className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[13px] text-foreground">
         beamfall pairing-code
       </code>
     </p>

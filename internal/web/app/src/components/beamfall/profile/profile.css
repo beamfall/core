@@ -3,7 +3,7 @@
  * tone keeps its contrast in both registers. Flat fills, no gloss or glow. */
 
 .bf-avatar {
-  --avatar-tone: var(--mist-500);
+  --avatar-tone: var(--theme-dark-text-muted);
   --avatar-size: 40px;
   display: inline-flex;
   flex-shrink: 0;
@@ -13,11 +13,11 @@
   height: var(--avatar-size);
   border-radius: 28%;
   background: var(--avatar-tone);
-  color: var(--ink-950);
+  color: var(--theme-light-text);
   font-size: calc(var(--avatar-size) * 0.44);
   font-weight: 700;
   line-height: 1;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 14%, transparent);
   user-select: none;
 }
 
@@ -59,7 +59,7 @@
   --avatar-tone: var(--brand-cyan-500);
 }
 .bf-avatar[data-tone="7"] {
-  --avatar-tone: var(--mist-500);
+  --avatar-tone: var(--theme-dark-text-muted);
 }
 
 /* Picker tile: a big avatar with the name under it. */
@@ -127,7 +127,7 @@
 }
 
 .bf-avatar-option:hover {
-  border-color: var(--border-subtle, rgb(255 255 255 / 16%));
+  border-color: var(--border-subtle);
 }
 
 .bf-avatar-option:has(input:checked) {
@@ -142,7 +142,7 @@
 /* Picture options sit on a neutral surface; only the chosen one (and the
  * preview) carries the tone, so the grid never reads as a wall of colour. */
 .bf-avatar-option--picture:not(:has(input:checked)) .bf-avatar {
-  background: var(--bg-raised, rgb(255 255 255 / 6%));
+  background: var(--bg-raised);
   color: var(--text-secondary, currentColor);
 }
 

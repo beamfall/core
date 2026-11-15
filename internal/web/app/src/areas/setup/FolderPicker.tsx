@@ -76,7 +76,7 @@ export function FolderPicker({
       }}
     >
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1 border-b border-white/10 py-1.5 pl-3 pr-1.5 text-dense text-muted-foreground">
+      <div className="flex items-center gap-1 border-b border-foreground/10 py-1.5 pl-3 pr-1.5 text-dense text-muted-foreground">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
           {crumbs.map((crumb, i) => {
             const isCurrent = i === crumbs.length - 1;
@@ -155,7 +155,7 @@ export function FolderPicker({
       </div>
 
       {/* Footer: current path + commit */}
-      <div className="flex items-center gap-3 border-t border-white/10 py-2 pl-3 pr-2">
+      <div className="flex items-center gap-3 border-t border-foreground/10 py-2 pl-3 pr-2">
         <span
           className="min-w-0 truncate font-mono text-dense text-muted-foreground"
           title={node.path}

@@ -19,9 +19,9 @@
   height: var(--bf-mini-height);
   padding: 0 16px;
   padding-bottom: env(safe-area-inset-bottom, 0);
-  background: oklch(14% 0.015 255 / 96%);
-  border-top: 1px solid oklch(100% 0 0 / 10%);
-  color: oklch(97% 0.005 250);
+  background: color-mix(in oklab, var(--scrim) 96%, transparent);
+  border-top: 1px solid color-mix(in oklab, var(--on-scrim) 10%, transparent);
+  color: var(--on-scrim);
   backdrop-filter: blur(12px);
 }
 
@@ -29,12 +29,12 @@
   position: absolute;
   inset: 0 0 auto;
   height: 3px;
-  background: oklch(100% 0 0 / 12%);
+  background: color-mix(in oklab, var(--on-scrim) 12%, transparent);
 }
 
 .bf-mini-progress-fill {
   height: 100%;
-  background: var(--accent, oklch(72% 0.15 250));
+  background: var(--accent);
 }
 
 .bf-mini-artwork {
@@ -43,7 +43,11 @@
   height: 48px;
   overflow: hidden;
   border-radius: 6px;
-  background: linear-gradient(145deg, oklch(26% 0.03 255), oklch(14% 0.02 255));
+  background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--on-scrim) 14%, var(--scrim)),
+    var(--scrim)
+  );
 }
 
 .bf-mini-artwork img {
@@ -76,14 +80,22 @@
 
 .bf-mini-artist {
   font-size: 13px;
-  color: oklch(86% 0.01 250 / 70%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 70%,
+    transparent
+  );
 }
 
 .bf-mini-time {
   flex: none;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: oklch(86% 0.01 250 / 70%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 70%,
+    transparent
+  );
 }
 
 .bf-mini-controls {
@@ -111,11 +123,11 @@
 }
 
 .bf-mini-button:hover:not(:disabled) {
-  background: oklch(100% 0 0 / 10%);
+  background: color-mix(in oklab, var(--on-scrim) 10%, transparent);
 }
 
 .bf-mini-button:focus-visible {
-  outline: 2px solid var(--focus-ring, oklch(80% 0.12 250));
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

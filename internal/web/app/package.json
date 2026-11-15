@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "check": "biome check .",
+    "check": "biome check . && node scripts/check-colour-literals.mjs",
+    "tokens:generate": "node scripts/generate-theme-tokens.mjs",
+    "tokens:check": "node scripts/generate-theme-tokens.mjs --check",
     "format": "biome check --write .",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",

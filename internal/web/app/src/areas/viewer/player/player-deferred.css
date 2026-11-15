@@ -29,16 +29,16 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 8px;
-  border: 1px solid oklch(98% 0.004 250 / 12%);
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 12%, transparent);
   border-radius: 14px;
-  background: oklch(14% 0.014 255 / 76%);
+  background: color-mix(in oklab, var(--scrim) 76%, transparent);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
   backdrop-filter: blur(28px) saturate(150%);
   box-shadow:
-    inset 0 1px 0 oklch(99% 0.003 250 / 12%),
-    0 30px 70px -20px oklch(0% 0 0 / 80%),
-    0 0 0 1px oklch(0% 0 0 / 30%);
-  color: oklch(97% 0.005 250);
+    inset 0 1px 0 color-mix(in oklab, var(--on-scrim) 12%, transparent),
+    0 30px 70px -20px color-mix(in oklab, var(--shadow-color) 80%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--shadow-color) 30%, transparent);
+  color: var(--on-scrim);
   transform-origin: bottom right;
   animation: bf-settings-in 180ms var(--ease-standard);
 }
@@ -54,7 +54,11 @@
   margin: 4px 10px 6px;
   font-size: 12px;
   font-weight: 600;
-  color: oklch(80% 0.02 250 / 80%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 26%, var(--on-scrim-muted)) 80%,
+    transparent
+  );
 }
 
 .bf-settings-row {
@@ -81,7 +85,7 @@
 .bf-settings-row:focus-within,
 .bf-settings-row:focus-visible,
 .bf-settings-row[data-popup-open] {
-  background: oklch(98% 0.004 250 / 8%);
+  background: color-mix(in oklab, var(--on-scrim) 8%, transparent);
 }
 
 .bf-settings-row:focus-visible,
@@ -122,7 +126,7 @@
 }
 
 .bf-settings-sublabel {
-  color: oklch(98% 0.004 250 / 62%);
+  color: color-mix(in oklab, var(--on-scrim) 62%, transparent);
   font-size: 0.8125rem;
   font-weight: 450;
 }
@@ -131,7 +135,11 @@
   overflow: hidden;
   max-width: 140px;
   font-size: 13px;
-  color: oklch(84% 0.015 250 / 78%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 43%, var(--on-scrim-muted)) 78%,
+    transparent
+  );
   white-space: nowrap;
   text-overflow: ellipsis;
   text-align: right;
@@ -140,7 +148,11 @@
 .bf-settings-chevron {
   width: 16px;
   height: 16px;
-  color: oklch(84% 0.015 250 / 60%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 43%, var(--on-scrim-muted)) 60%,
+    transparent
+  );
 }
 
 /* Speed and skip interval are native selects filling the value + chevron
@@ -153,7 +165,11 @@
   padding: 0 22px 0 8px;
   border: 0;
   border-radius: 10px;
-  color: oklch(84% 0.015 250 / 85%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 43%, var(--on-scrim-muted)) 85%,
+    transparent
+  );
   background:
     transparent
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b8bfcc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E")
@@ -173,8 +189,8 @@
 }
 
 .bf-settings-select option {
-  color: oklch(96% 0.006 250);
-  background: oklch(20% 0.014 250);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
+  background: color-mix(in oklab, var(--on-scrim) 7%, var(--scrim));
 }
 
 /* Drill-in dialogs (subtitle styling, playback details) cover the sheet. */
@@ -189,7 +205,7 @@
   overflow-y: auto;
   border: 0;
   border-radius: inherit;
-  background: oklch(14% 0.014 255 / 96%);
+  background: color-mix(in oklab, var(--scrim) 96%, transparent);
   box-shadow: none;
 }
 
@@ -221,7 +237,7 @@
 
 .bf-player-dialog-back:hover,
 .bf-player-dialog-back:focus-visible {
-  background: oklch(98% 0.004 250 / 10%);
+  background: color-mix(in oklab, var(--on-scrim) 10%, transparent);
 }
 
 .bf-player-dialog-back:focus-visible {
@@ -241,7 +257,7 @@
     width: auto;
     max-height: min(72vh, 560px);
     border-radius: 22px;
-    background: oklch(14% 0.014 255 / 94%);
+    background: color-mix(in oklab, var(--scrim) 94%, transparent);
     transform-origin: bottom center;
     animation-name: bf-sheet-in;
   }
@@ -254,7 +270,7 @@
     height: 4px;
     margin: 2px 0 4px;
     border-radius: 999px;
-    background: oklch(98% 0.004 250 / 24%);
+    background: color-mix(in oklab, var(--on-scrim) 24%, transparent);
   }
 
   .bf-settings-value {
@@ -290,15 +306,15 @@
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  border: 1px solid oklch(98% 0.004 250 / 12%);
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 12%, transparent);
   border-radius: 14px;
-  background: oklch(14% 0.014 255 / 82%);
+  background: color-mix(in oklab, var(--scrim) 82%, transparent);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
   backdrop-filter: blur(28px) saturate(150%);
   box-shadow:
-    inset 0 1px 0 oklch(99% 0.003 250 / 12%),
-    0 30px 70px -20px oklch(0% 0 0 / 80%);
-  color: oklch(97% 0.005 250);
+    inset 0 1px 0 color-mix(in oklab, var(--on-scrim) 12%, transparent),
+    0 30px 70px -20px color-mix(in oklab, var(--shadow-color) 80%, transparent);
+  color: var(--on-scrim);
   outline: none;
 }
 
@@ -319,7 +335,7 @@
   position: relative;
   border: 0;
   border-radius: 10px;
-  color: oklch(96% 0.006 250);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
   background: transparent;
   font: inherit;
   font-size: 14px;
@@ -341,14 +357,14 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--beam-500);
-  box-shadow: 0 0 10px var(--beam-500);
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
   transform: translateY(-50%);
 }
 
 .bf-menu-option:hover:not(:disabled),
 .bf-menu-option[data-highlighted] {
-  background: oklch(98% 0.004 250 / 9%);
+  background: color-mix(in oklab, var(--on-scrim) 9%, transparent);
 }
 
 .bf-menu-option:focus-visible,
@@ -366,7 +382,7 @@
 .bf-menu-reason {
   font-size: 11px;
   font-weight: 400;
-  color: oklch(78% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 17%, var(--on-scrim-muted));
 }
 
 /* The chapter list (CORE-1683): a thumbnail, title and start time per row;
@@ -385,14 +401,14 @@
   padding: 6px 12px 6px 30px;
   position: relative;
   border-radius: 10px;
-  color: oklch(96% 0.006 250);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
   font-size: 14px;
   cursor: pointer;
   outline: none;
 }
 
 .bf-chapter-row[data-highlighted] {
-  background: oklch(98% 0.004 250 / 9%);
+  background: color-mix(in oklab, var(--on-scrim) 9%, transparent);
 }
 
 .bf-chapter-row:focus-visible {
@@ -412,8 +428,8 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--beam-500);
-  box-shadow: 0 0 10px var(--beam-500);
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
   transform: translateY(-50%);
 }
 
@@ -422,7 +438,7 @@
   width: 96px;
   aspect-ratio: 16 / 9;
   border-radius: 6px;
-  background-color: oklch(22% 0.012 255);
+  background-color: color-mix(in oklab, var(--on-scrim) 10%, var(--scrim));
   background-repeat: no-repeat;
   object-fit: cover;
 }
@@ -444,7 +460,7 @@
   font-size: 12px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
-  color: oklch(78% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 17%, var(--on-scrim-muted));
 }
 
 /* The info overlay + subtitle-styling panel are role="dialog" surfaces holding
@@ -458,13 +474,13 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  border: 1px solid oklch(98% 0.004 250 / 12%);
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 12%, transparent);
   border-radius: 14px;
-  background: oklch(14% 0.014 255 / 88%);
+  background: color-mix(in oklab, var(--scrim) 88%, transparent);
   -webkit-backdrop-filter: blur(28px);
   backdrop-filter: blur(28px);
-  box-shadow: 0 30px 70px -20px oklch(0% 0 0 / 80%);
-  color: oklch(96% 0.006 250);
+  box-shadow: 0 30px 70px -20px color-mix(in oklab, var(--shadow-color) 80%, transparent);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
 }
 
 /* Solid panels when the viewer asks for reduced transparency. */
@@ -473,7 +489,7 @@
   .bf-menu,
   .bf-player-dialog,
   .bf-transport .bf-control.is-skip-segment::before {
-    background: oklch(14% 0.014 255);
+    background: var(--scrim);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -510,7 +526,7 @@
 }
 
 .bf-info-rows dt {
-  color: oklch(80% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 26%, var(--on-scrim-muted));
 }
 
 .bf-info-rows dd {
@@ -523,7 +539,7 @@
 .bf-info-attribution {
   margin: 12px 0 0;
   font-size: 12px;
-  color: oklch(80% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 26%, var(--on-scrim-muted));
 }
 
 .bf-info-attribution a {
@@ -557,7 +573,7 @@
 
 .bf-shortcut-rows dt {
   white-space: nowrap;
-  color: oklch(80% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 26%, var(--on-scrim-muted));
 }
 
 .bf-shortcut-rows dd {
@@ -568,13 +584,13 @@
   display: inline-block;
   min-width: 1.75em;
   padding: 1px 6px;
-  border: 1px solid oklch(98% 0.004 250 / 18%);
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 18%, transparent);
   border-radius: 6px;
-  background: oklch(98% 0.004 250 / 8%);
+  background: color-mix(in oklab, var(--on-scrim) 8%, transparent);
   font: inherit;
   font-size: 12px;
   text-align: center;
-  color: oklch(96% 0.006 250);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
 }
 
 /* Subtitle styling panel rows. */
@@ -587,16 +603,21 @@
 }
 
 .bf-subtitle-row label {
-  color: oklch(82% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 35%, var(--on-scrim-muted));
 }
 
 .bf-subtitle-row select {
   min-height: 32px;
   padding: 4px 8px;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border: 1px solid
+    color-mix(
+      in oklab,
+      color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 24%,
+      transparent
+    );
   border-radius: 10px;
-  color: oklch(96% 0.006 250);
-  background: oklch(20% 0.014 250);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
+  background: color-mix(in oklab, var(--on-scrim) 7%, var(--scrim));
   font: inherit;
   font-size: 13px;
 }
@@ -613,10 +634,19 @@
   justify-content: center;
   min-width: 40px;
   min-height: 32px;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border: 1px solid
+    color-mix(
+      in oklab,
+      color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 24%,
+      transparent
+    );
   border-radius: 10px;
-  color: oklch(96% 0.006 250);
-  background: oklch(24% 0.014 250 / 82%);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 12%, var(--scrim)) 82%,
+    transparent
+  );
   font: inherit;
   font-size: 14px;
   font-weight: 600;
@@ -646,15 +676,20 @@
 
 .bf-sync-direction {
   font-size: 12px;
-  color: oklch(82% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 35%, var(--on-scrim-muted));
 }
 
 .bf-sync-reset {
   min-height: 32px;
   padding: 4px 10px;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border: 1px solid
+    color-mix(
+      in oklab,
+      color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 24%,
+      transparent
+    );
   border-radius: 10px;
-  color: oklch(96% 0.006 250);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
   background: transparent;
   font: inherit;
   font-size: 12px;
@@ -668,17 +703,26 @@
 
 .bf-subtitle-unsupported {
   font-size: 12px;
-  color: oklch(78% 0.04 78);
+  color: color-mix(in oklab, var(--on-scrim) 17%, var(--on-scrim-muted));
 }
 
 .bf-subtitle-reset {
   align-self: flex-start;
   min-height: 32px;
   padding: 6px 12px;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border: 1px solid
+    color-mix(
+      in oklab,
+      color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 24%,
+      transparent
+    );
   border-radius: 10px;
-  color: oklch(96% 0.006 250);
-  background: oklch(24% 0.014 250 / 82%);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 12%, var(--scrim)) 82%,
+    transparent
+  );
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -695,17 +739,22 @@
   gap: 8px;
   width: min(300px, 70vw);
   padding: 16px;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border: 1px solid
+    color-mix(
+      in oklab,
+      color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 24%,
+      transparent
+    );
   border-radius: var(--radius-card);
-  background: oklch(12% 0.014 250 / 96%);
-  box-shadow: 0 20px 48px oklch(0% 0 0 / 55%);
-  color: oklch(96% 0.006 250);
+  background: color-mix(in oklab, var(--scrim) 96%, transparent);
+  box-shadow: 0 20px 48px color-mix(in oklab, var(--shadow-color) 55%, transparent);
+  color: color-mix(in oklab, var(--on-scrim) 96%, var(--on-scrim-muted));
 }
 
 .bf-up-next-title {
   font-size: 13px;
   font-weight: 600;
-  color: oklch(82% 0.025 250);
+  color: color-mix(in oklab, var(--on-scrim) 35%, var(--on-scrim-muted));
 }
 
 .bf-up-next-media {
@@ -716,7 +765,7 @@
 .bf-up-next-countdown {
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: oklch(86% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted));
 }
 
 .bf-up-next-actions {
@@ -764,7 +813,7 @@
  * below are the defaults before the hook runs. */
 .bf-player-stage {
   --bf-subtitle-size-scale: 1;
-  --bf-subtitle-color: oklch(100% 0 0);
+  --bf-subtitle-color: var(--on-scrim);
   --bf-subtitle-font: system-ui, sans-serif;
   --bf-subtitle-edge: none;
 }
@@ -782,11 +831,11 @@
 }
 
 .bf-player-stage.bf-subtitle-bg-dark video::cue {
-  background: oklch(8% 0 0 / 55%);
+  background: color-mix(in oklab, var(--scrim) 55%, transparent);
 }
 
 .bf-player-stage.bf-subtitle-bg-solid video::cue {
-  background: oklch(8% 0 0 / 92%);
+  background: color-mix(in oklab, var(--scrim) 92%, transparent);
 }
 
 /* --- Audio surface (CORE-1143): artwork, title and credits stand in for the
@@ -838,8 +887,12 @@
   aspect-ratio: 1;
   overflow: hidden;
   border-radius: var(--radius-card);
-  background: linear-gradient(145deg, oklch(26% 0.03 255), oklch(14% 0.02 255));
-  box-shadow: 0 24px 64px oklch(0% 0 0 / 55%);
+  background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--on-scrim) 14%, var(--scrim)),
+    var(--scrim)
+  );
+  box-shadow: 0 24px 64px color-mix(in oklab, var(--shadow-color) 55%, transparent);
 }
 
 .bf-audio-artwork img {
@@ -854,12 +907,16 @@
   min-width: 0;
   flex-direction: column;
   gap: 6px;
-  color: oklch(97% 0.005 250);
+  color: var(--on-scrim);
 }
 
 .bf-audio-position {
   font-size: 13px;
-  color: oklch(86% 0.01 250 / 70%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 70%,
+    transparent
+  );
 }
 
 .bf-audio-title {
@@ -871,13 +928,21 @@
 
 .bf-audio-people {
   font-size: clamp(16px, 1.8vw, 22px);
-  color: oklch(94% 0.01 250 / 90%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 87%, var(--on-scrim-muted)) 90%,
+    transparent
+  );
 }
 
 .bf-audio-collections,
 .bf-audio-others {
   font-size: clamp(14px, 1.4vw, 18px);
-  color: oklch(86% 0.01 250 / 72%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 72%,
+    transparent
+  );
 }
 
 /* Narrow windows stack the artwork above the words. */

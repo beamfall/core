@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { fetchClientPrefs, fetchMetadataCredits, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import { RegisterProvider } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { ProfileSettingsPage } from "./ProfileSettingsPage";
 
@@ -66,7 +67,9 @@ async function showAdvanced(user: ReturnType<typeof userEvent.setup>) {
 function renderPage() {
   return render(
     <I18nProvider>
-      <ProfileSettingsPage />
+      <RegisterProvider>
+        <ProfileSettingsPage />
+      </RegisterProvider>
     </I18nProvider>,
   );
 }
@@ -106,6 +109,27 @@ describe("ProfileSettingsPage", () => {
     await user.click(await screen.findByLabelText("Previews before a title"));
     await user.click(await screen.findByRole("option", { name: "4" }));
     expect(setClientPref).toHaveBeenCalledWith("preplay.extras", "4");
+  });
+
+  it("re-skins with a theme preset, saves it to the Profile and keeps the scheme on the device (CORE-1179)", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByLabelText("Theme"));
+    await user.click(await screen.findByRole("option", { name: "Moss" }));
+    expect(setClientPref).toHaveBeenCalledWith("theme.preset", "moss");
+    expect(document.documentElement.style.getPropertyValue("--theme-dark-accent")).not.toBe("");
+
+    await user.click(screen.getByLabelText("Color scheme"));
+    await user.click(await screen.findByRole("option", { name: "Light" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(setClientPref).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem("beamfall.web.appearance.v1") ?? "{}")).toEqual({
+      scheme: "light",
+      preset: "moss",
+    });
+    localStorage.clear();
+    delete document.documentElement.dataset.theme;
   });
 
   it("persists the downstream audio preference", async () => {
@@ -254,7 +278,9 @@ describe("ProfileSettingsPage", () => {
     setProfileKind("adult", "p2");
     view.rerender(
       <I18nProvider>
-        <ProfileSettingsPage />
+        <RegisterProvider>
+          <ProfileSettingsPage />
+        </RegisterProvider>
       </I18nProvider>,
     );
 

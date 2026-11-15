@@ -813,7 +813,7 @@ export function SetupWizard() {
               key={key}
               aria-current={i === visibleIndex ? "step" : undefined}
               className={cn(
-                "h-1 flex-1 rounded-full bg-white/10 transition-colors duration-200",
+                "h-1 flex-1 rounded-full bg-foreground/10 transition-colors duration-200",
                 i < visibleIndex && "bg-primary/70",
                 i === visibleIndex && "bg-primary",
               )}
@@ -1308,7 +1308,10 @@ export function SetupWizard() {
                 </p>
               )}
               {scanFraction != null && (
-                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10" aria-hidden>
+                <div
+                  className="mt-4 h-1.5 overflow-hidden rounded-full bg-foreground/10"
+                  aria-hidden
+                >
                   <div
                     className="h-full rounded-full bg-primary transition-[width] duration-200"
                     style={{ width: `${Math.round(scanFraction * 100)}%` }}

@@ -79,7 +79,7 @@ export function GlassCard({
     <Comp
       data-slot="glass-card"
       className={cn(
-        "animate-in fade-in motion-reduce:animate-none rounded-[14px] border border-white/10 bg-card p-5 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.7)] duration-200 sm:p-8 [[data-register=manage][data-theme=light]_&]:border-(--line) [[data-register=manage][data-theme=light]_&]:shadow-(--shadow-card)",
+        "animate-in fade-in motion-reduce:animate-none rounded-[14px] border border-foreground/10 bg-card p-5 shadow-[var(--shadow-window)] duration-200 sm:p-8 [[data-register=manage][data-theme=light]_&]:border-(--line) [[data-register=manage][data-theme=light]_&]:shadow-(--shadow-card)",
         className,
       )}
       {...props}
@@ -123,7 +123,7 @@ export function SurfaceHeading({
 const FIELD_LABEL = "mb-2 block text-dense font-medium text-foreground/80";
 // The field look shared by inputs and the buttons that sit beside them.
 const FIELD_LOOK =
-  "h-11 rounded-[10px] border-white/10 bg-white/[0.04] [[data-register=manage][data-theme=light]_&]:border-(--line) [[data-register=manage][data-theme=light]_&]:bg-(--control-bg)";
+  "h-11 rounded-[10px] border-foreground/10 bg-foreground/[0.04] [[data-register=manage][data-theme=light]_&]:border-(--line) [[data-register=manage][data-theme=light]_&]:bg-(--control-bg)";
 
 export function FieldLabel({ className, ...props }: ComponentProps<typeof Label>) {
   return <Label className={cn(FIELD_LABEL, className)} {...props} />;
@@ -193,11 +193,11 @@ export function HairlineList({ className, ...props }: ComponentProps<"ul">) {
 }
 
 const HAIRLINE_ROWS =
-  "divide-y divide-white/10 border-y border-white/10 [[data-register=manage][data-theme=light]_&]:divide-(--line-soft) [[data-register=manage][data-theme=light]_&]:border-(--line-soft)";
+  "divide-y divide-foreground/10 border-y border-foreground/10 [[data-register=manage][data-theme=light]_&]:divide-(--line-soft) [[data-register=manage][data-theme=light]_&]:border-(--line-soft)";
 
 // The hairline above a block inside the card.
 const SECTION_RULE =
-  "border-t border-white/10 [[data-register=manage][data-theme=light]_&]:border-(--line-soft)";
+  "border-t border-foreground/10 [[data-register=manage][data-theme=light]_&]:border-(--line-soft)";
 
 // A titled block below a hairline, inside the card. `asChild` keeps the
 // caller's element (a <section> with its own heading).
@@ -233,7 +233,7 @@ export function SurfaceInset({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-[10px] border border-white/10 bg-white/[0.03] [[data-register=manage][data-theme=light]_&]:border-(--line-soft)",
+        "overflow-hidden rounded-[10px] border border-foreground/10 bg-foreground/[0.03] [[data-register=manage][data-theme=light]_&]:border-(--line-soft)",
         className,
       )}
       {...props}

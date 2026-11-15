@@ -453,7 +453,7 @@ function LibraryCard({
             </section>
           </Advanced>
         </div>
-        <footer className="flex justify-end border-t border-white/[0.07] px-4 py-3">
+        <footer className="flex justify-end border-t border-foreground/[0.07] px-4 py-3">
           <DeleteLibraryButton library={library} onDeleted={onDeleted} />
         </footer>
       </CollapsibleCard>
@@ -616,7 +616,7 @@ export function Libraries() {
       )}
 
       {notice && (
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+        <div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2.5">
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <p
               ref={noticeRef}
@@ -625,7 +625,7 @@ export function Libraries() {
               tabIndex={-1}
               className="m-0 flex min-w-0 items-start gap-2.5 rounded-sm text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+              <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--state-direct)]" />
               {noticeText}
             </p>
             {notice.kind === "deleted" && (

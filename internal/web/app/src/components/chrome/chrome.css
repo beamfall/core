@@ -155,7 +155,7 @@
 
 .bf-side-link:hover {
   color: var(--text-primary);
-  background: var(--night-850);
+  background: color-mix(in oklab, var(--bg-surface) 50%, var(--bg-raised));
 }
 
 .bf-side-link:focus-visible {
@@ -165,7 +165,7 @@
 
 .bf-side-link.is-active {
   color: var(--text-primary);
-  background: color-mix(in oklch, var(--beam-500) 10%, transparent);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
 }
 
 .bf-side-glyph,
@@ -185,14 +185,14 @@
 
 .bf-side-link:hover .bf-side-glyph,
 .bf-side-link.is-active .bf-side-glyph {
-  color: var(--beam-500);
+  color: var(--accent-text);
 }
 
 /* A library monogram: the library's initial in its own accent (or the beam),
  * set like a glyph so the icon rail can still tell libraries apart. */
 .bf-side-tile {
-  --tile: var(--beam-500);
-  color: color-mix(in oklch, var(--tile) 75%, white);
+  --tile: var(--accent);
+  color: color-mix(in oklch, var(--tile) 75%, var(--text));
   font-size: 15px;
   font-weight: 600;
 }
@@ -232,7 +232,7 @@
   position: fixed;
   inset: 0;
   z-index: 44;
-  background: oklch(0% 0 0 / 55%);
+  background: color-mix(in oklab, var(--shadow-color) 55%, transparent);
   transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
@@ -250,7 +250,7 @@
   padding-top: 20px;
   border-right-color: var(--border-strong);
   background: var(--bg-surface);
-  box-shadow: 20px 0 60px -20px oklch(0% 0 0 / 70%);
+  box-shadow: 20px 0 60px -20px color-mix(in oklab, var(--shadow-color) 70%, transparent);
   outline: 2px solid transparent;
   transition: transform var(--duration-normal) var(--ease-standard);
 }
@@ -327,8 +327,8 @@
 /* A revealed session's relock button carries the iris Restrictions tint. */
 .bf-icon-button.bf-reveal-open {
   color: var(--text-primary);
-  background: oklch(67% 0.13 310 / 22%);
-  box-shadow: inset 0 0 0 1px oklch(67% 0.13 310 / 55%);
+  background: color-mix(in oklab, var(--state-restricted) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--state-restricted) 55%, transparent);
 }
 
 /* Labels that collapse to icon-only on narrow screens, keeping the name. */
@@ -345,8 +345,8 @@
   padding: 0 5px;
   border: 2px solid var(--bg-surface);
   border-radius: 999px;
-  background: var(--beam-500);
-  color: var(--night-950);
+  background: var(--accent);
+  color: var(--accent-ink);
   font-size: 10px;
   font-weight: 600;
   line-height: 14px;
@@ -382,7 +382,7 @@
 .bf-avatar-button[aria-expanded="true"] .bf-avatar {
   box-shadow:
     0 0 0 2px var(--bg-surface),
-    0 0 0 4px var(--beam-500);
+    0 0 0 4px var(--accent);
 }
 
 .bf-account-panel {
@@ -398,8 +398,8 @@
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   box-shadow:
-    0 18px 48px oklch(0% 0 0 / 45%),
-    inset 0 1px 0 oklch(100% 0 0 / 6%);
+    0 18px 48px color-mix(in oklab, var(--shadow-color) 45%, transparent),
+    inset 0 1px 0 color-mix(in oklab, var(--text) 6%, transparent);
   animation: bf-menu-in var(--duration-fast, 150ms) var(--ease-standard, ease-out);
 }
 
@@ -463,7 +463,7 @@
 .bf-account-item:hover,
 .bf-account-item:focus-visible {
   color: var(--text-primary);
-  background: var(--night-850);
+  background: color-mix(in oklab, var(--bg-surface) 50%, var(--bg-raised));
 }
 
 /* Focus is shown by the fill, which forced-colors mode drops; the transparent
@@ -475,7 +475,7 @@
 
 .bf-account-item:hover svg,
 .bf-account-item:focus-visible svg {
-  color: var(--beam-500);
+  color: var(--accent-text);
 }
 
 .bf-account-item[aria-current="page"] {
@@ -567,23 +567,23 @@
 }
 
 .bf-chip-revealed {
-  border-color: oklch(67% 0.13 310 / 55%);
-  background: oklch(67% 0.13 310 / 22%);
+  border-color: color-mix(in oklab, var(--state-restricted) 55%, transparent);
+  background: color-mix(in oklab, var(--state-restricted) 22%, transparent);
   color: var(--text-primary);
 }
 
 /* A revealed session is visually explicit: an iris keyline under the header,
  * dropped on relock (design system Restrictions visual treatment). */
 .bf-header.is-revealed {
-  border-bottom-color: oklch(67% 0.13 310 / 55%);
+  border-bottom-color: color-mix(in oklab, var(--state-restricted) 55%, transparent);
 }
 
 /* Page-level enroll banner: persistent state, amber keyline (Banner idiom). */
 .bf-banner {
   margin: 0;
   padding: 10px 20px;
-  background: oklch(78% 0.16 78 / 12%);
-  border-bottom: 1px solid oklch(78% 0.16 78 / 40%);
+  background: color-mix(in oklab, var(--state-warning) 12%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--state-warning) 40%, transparent);
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 18px;
@@ -601,7 +601,7 @@
 [data-register="manage"] .bf-shell {
   min-height: 100vh;
   /* Flat tooling surface: a barely-there cool wash, not a radial glow. */
-  background: linear-gradient(180deg, var(--bg-root), var(--workbench-root-foot));
+  background: linear-gradient(180deg, var(--bg-root), var(--bg-surface));
   background-attachment: fixed;
 }
 
@@ -609,9 +609,9 @@
  * hairline beam top accent is the one sanctioned chrome accent here. */
 [data-register="manage"] .bf-header {
   position: relative;
-  background: var(--workbench-header-bg);
+  background: var(--bg-surface);
   border-bottom-color: var(--border-strong);
-  box-shadow: inset 0 1px 0 var(--workbench-header-accent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--accent) 22%, transparent);
 }
 
 /* Tighter operator content rhythm than the Viewer's airy 24px top pad. */
@@ -1029,7 +1029,7 @@
   border-radius: var(--radius-card);
   background: var(--bg-raised);
   color: var(--text);
-  box-shadow: 0 18px 44px oklch(0% 0 0 / 45%);
+  box-shadow: 0 18px 44px color-mix(in oklab, var(--shadow-color) 45%, transparent);
   /* Transparent rather than none: forced-colors mode shows it in a system color. */
   outline: 2px solid transparent;
 }
@@ -1533,7 +1533,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: oklch(8% 0.012 255);
+  background: var(--scrim);
   touch-action: pan-x;
 }
 
@@ -1546,7 +1546,7 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: oklch(8% 0.012 255);
+  background: var(--scrim);
 }
 
 /* Transport chrome (CORE-1141): the video is the hero. Controls sit on a
@@ -1562,7 +1562,7 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  color: oklch(97% 0.005 250);
+  color: var(--on-scrim);
   pointer-events: none;
 }
 
@@ -1578,9 +1578,9 @@
   height: min(62%, 360px);
   background: linear-gradient(
     to top,
-    oklch(6% 0.012 255 / 92%) 0%,
-    oklch(6% 0.012 255 / 70%) 34%,
-    oklch(6% 0.012 255 / 28%) 70%,
+    color-mix(in oklab, var(--scrim) 92%, transparent) 0%,
+    color-mix(in oklab, var(--scrim) 70%, transparent) 34%,
+    color-mix(in oklab, var(--scrim) 28%, transparent) 70%,
     transparent 100%
   );
   pointer-events: none;
@@ -1597,7 +1597,7 @@
   .bf-transport-scrim {
     height: auto;
     min-height: 168px;
-    background: oklch(8% 0.012 255);
+    background: var(--scrim);
   }
 }
 
@@ -1614,7 +1614,11 @@
   font-size: 12px;
   line-height: 16px;
   font-weight: 600;
-  color: oklch(86% 0.02 250 / 86%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 86%,
+    transparent
+  );
 }
 
 .bf-player-meta {
@@ -1622,7 +1626,7 @@
   gap: 2px;
   min-width: 0;
   padding-bottom: 2px;
-  text-shadow: 0 1px 12px oklch(0% 0 0 / 55%);
+  text-shadow: 0 1px 12px color-mix(in oklab, var(--shadow-color) 55%, transparent);
 }
 
 .bf-player-meta h2 {
@@ -1634,15 +1638,15 @@
   letter-spacing: -0.012em;
   white-space: nowrap;
   text-overflow: ellipsis;
-  color: oklch(99% 0.003 250);
+  color: var(--on-scrim);
 }
 
 .bf-route-summary.is-direct {
-  color: var(--green-500);
+  color: var(--state-direct);
 }
 
 .bf-route-summary.is-remote {
-  color: var(--cyan-500);
+  color: var(--state-remote);
 }
 
 /* Slim scrubber: a 3px hairline that thickens on hover and keyboard focus. */
@@ -1659,7 +1663,11 @@
   line-height: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: oklch(92% 0.012 250 / 90%);
+  color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 78%, var(--on-scrim-muted)) 90%,
+    transparent
+  );
 }
 
 .bf-time.is-start {
@@ -1714,7 +1722,11 @@
   height: 3px;
   overflow: hidden;
   border-radius: 999px;
-  background: oklch(92% 0.01 250 / 22%);
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 78%, var(--on-scrim-muted)) 22%,
+    transparent
+  );
   transition: height 160ms var(--ease-standard);
 }
 
@@ -1733,11 +1745,15 @@
 }
 
 .bf-slider-buffered {
-  background: oklch(92% 0.01 250 / 28%);
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 78%, var(--on-scrim-muted)) 28%,
+    transparent
+  );
 }
 
 .bf-slider-hover {
-  background: oklch(98% 0.004 250 / 22%);
+  background: color-mix(in oklab, var(--on-scrim) 22%, transparent);
 }
 
 .bf-slider-indicator {
@@ -1745,18 +1761,22 @@
   z-index: 1;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--beam-600), var(--beam-500));
-  box-shadow: 0 0 12px color-mix(in oklab, var(--beam-500) 60%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 80%, var(--scrim)),
+    var(--accent)
+  );
+  box-shadow: 0 0 12px color-mix(in oklab, var(--accent) 60%, transparent);
 }
 
 .bf-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--beam-500);
+  background: var(--accent);
   box-shadow:
-    0 0 0 3px oklch(99% 0.003 250 / 92%),
-    0 0 18px color-mix(in oklab, var(--beam-500) 70%, transparent);
+    0 0 0 3px color-mix(in oklab, var(--on-scrim) 92%, transparent),
+    0 0 18px color-mix(in oklab, var(--accent) 70%, transparent);
 }
 
 /* The scrubber thumb keeps its box (so the slider stays visible to
@@ -1771,10 +1791,10 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: var(--beam-500);
+  background: var(--accent);
   box-shadow:
-    0 0 0 3px oklch(99% 0.003 250 / 92%),
-    0 0 18px color-mix(in oklab, var(--beam-500) 70%, transparent);
+    0 0 0 3px color-mix(in oklab, var(--on-scrim) 92%, transparent),
+    0 0 18px color-mix(in oklab, var(--accent) 70%, transparent);
   scale: 0;
   transition: scale 160ms var(--ease-standard);
 }
@@ -1802,14 +1822,14 @@
   top: 0;
   width: 3px;
   height: 100%;
-  background: oklch(8% 0.012 255 / 85%);
+  background: color-mix(in oklab, var(--scrim) 85%, transparent);
 }
 
 .bf-marker-range {
   position: absolute;
   top: 0;
   height: 100%;
-  background: oklch(80% 0.13 60 / 55%);
+  background: color-mix(in oklab, var(--state-warning) 55%, transparent);
 }
 
 .bf-scrub-tooltip,
@@ -1818,11 +1838,11 @@
   bottom: 30px;
   z-index: 4;
   transform: translateX(-50%);
-  border: 1px solid oklch(98% 0.004 250 / 14%);
-  background: oklch(12% 0.014 250 / 82%);
+  border: 1px solid color-mix(in oklab, var(--on-scrim) 14%, transparent);
+  background: color-mix(in oklab, var(--scrim) 82%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   backdrop-filter: blur(16px) saturate(140%);
-  box-shadow: 0 18px 40px -12px oklch(0% 0 0 / 70%);
+  box-shadow: 0 18px 40px -12px color-mix(in oklab, var(--shadow-color) 70%, transparent);
   pointer-events: none;
 }
 
@@ -1846,7 +1866,7 @@
   width: 176px;
   aspect-ratio: 16 / 9;
   border-radius: 8px;
-  background-color: oklch(16% 0.012 250);
+  background-color: var(--scrim);
   background-repeat: no-repeat;
 }
 
@@ -1862,7 +1882,7 @@
 @media (prefers-reduced-transparency: reduce) {
   .bf-scrub-tooltip,
   .bf-trickplay {
-    background: oklch(12% 0.014 250);
+    background: var(--scrim);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -1893,10 +1913,19 @@
   min-width: 44px;
   min-height: 44px;
   padding: 8px 12px;
-  border: 1px solid oklch(86% 0.02 250 / 24%);
+  border: 1px solid
+    color-mix(
+      in oklab,
+      color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted)) 24%,
+      transparent
+    );
   border-radius: var(--radius-control);
-  color: oklch(98% 0.004 250);
-  background: oklch(24% 0.014 250 / 82%);
+  color: var(--on-scrim);
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 12%, var(--scrim)) 82%,
+    transparent
+  );
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -1905,7 +1934,11 @@
 }
 
 .bf-control:hover {
-  background: oklch(32% 0.028 250 / 92%);
+  background: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 22%, var(--scrim)) 92%,
+    transparent
+  );
 }
 
 .bf-control:focus-visible {
@@ -1916,7 +1949,7 @@
 .bf-source-footer {
   padding: 12px 20px 20px;
   text-align: center;
-  color: var(--muted-foreground);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -1970,15 +2003,15 @@
 }
 
 .bf-volume-control .bf-slider-indicator {
-  background: oklch(98% 0.004 250);
+  background: var(--on-scrim);
   box-shadow: none;
 }
 
 .bf-volume-control .bf-slider-thumb {
   width: 12px;
   height: 12px;
-  background: oklch(99% 0.003 250);
-  box-shadow: 0 1px 6px oklch(0% 0 0 / 45%);
+  background: var(--on-scrim);
+  box-shadow: 0 1px 6px color-mix(in oklab, var(--shadow-color) 45%, transparent);
 }
 
 .bf-player-control-status:empty {
@@ -1987,7 +2020,7 @@
 
 .bf-player-control-status {
   font-size: 12px;
-  color: oklch(90% 0.02 250);
+  color: color-mix(in oklab, var(--on-scrim) 70%, var(--on-scrim-muted));
 }
 
 .bf-gesture-feedback {
@@ -1997,8 +2030,8 @@
   min-width: 88px;
   padding: 12px 16px;
   border-radius: 999px;
-  background: oklch(8% 0.012 255 / 82%);
-  color: oklch(98% 0.004 250);
+  background: color-mix(in oklab, var(--scrim) 82%, transparent);
+  color: var(--on-scrim);
   font-weight: 600;
   text-align: center;
   pointer-events: none;
@@ -2044,13 +2077,13 @@
 .bf-control.is-primary {
   min-width: 56px;
   border-color: transparent;
-  background: var(--beam-500);
-  color: var(--night-950);
+  background: var(--accent);
+  color: var(--accent-ink);
   font-weight: 600;
 }
 
 .bf-control.is-primary:hover {
-  background: var(--beam-600);
+  background: color-mix(in oklab, var(--accent) 80%, var(--scrim));
 }
 
 /* Transport buttons (CORE-1141): a 44px touch box with no resting chrome;
@@ -2067,7 +2100,7 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: oklch(97% 0.005 250 / 92%);
+  color: color-mix(in oklab, var(--on-scrim) 92%, transparent);
   font-size: 13px;
   line-height: 16px;
   font-weight: 600;
@@ -2080,8 +2113,8 @@
   inset: 2px;
   z-index: -1;
   border-radius: inherit;
-  background: oklch(98% 0.004 250 / 0%);
-  box-shadow: inset 0 0 0 1px oklch(98% 0.004 250 / 0%);
+  background: color-mix(in oklab, var(--on-scrim) 0%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--on-scrim) 0%, transparent);
   transition:
     background-color 160ms var(--ease-standard),
     box-shadow 160ms var(--ease-standard),
@@ -2093,16 +2126,16 @@
 .bf-transport .bf-control:focus-visible,
 .bf-transport .bf-control.is-open {
   background: transparent;
-  color: oklch(99% 0.003 250);
+  color: var(--on-scrim);
 }
 
 .bf-transport .bf-control:hover:not(:disabled)::before,
 .bf-transport .bf-control:focus-visible::before,
 .bf-transport .bf-control.is-open::before {
-  background: oklch(98% 0.004 250 / 12%);
+  background: color-mix(in oklab, var(--on-scrim) 12%, transparent);
   box-shadow:
-    inset 0 1px 0 oklch(99% 0.003 250 / 18%),
-    inset 0 0 0 1px oklch(98% 0.004 250 / 10%),
+    inset 0 1px 0 color-mix(in oklab, var(--on-scrim) 18%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, var(--on-scrim) 10%, transparent),
     0 0 22px -6px color-mix(in oklab, var(--accent) 70%, transparent);
   scale: 1;
 }
@@ -2171,24 +2204,24 @@
   width: 52px;
   min-width: 52px;
   min-height: 52px;
-  color: var(--night-950);
+  color: var(--accent-ink);
 }
 
 .bf-transport .bf-control.is-primary::before,
 .bf-transport .bf-control.is-primary:hover:not(:disabled)::before,
 .bf-transport .bf-control.is-primary:focus-visible::before {
   inset: 2px;
-  background: var(--beam-500);
+  background: var(--accent);
   box-shadow: none;
   scale: 1;
 }
 
 .bf-transport .bf-control.is-primary:hover:not(:disabled) {
-  color: var(--night-950);
+  color: var(--accent-ink);
 }
 
 .bf-transport .bf-control.is-primary:hover:not(:disabled)::before {
-  background: color-mix(in oklab, var(--beam-500) 88%, white);
+  background: color-mix(in oklab, var(--accent) 88%, var(--on-scrim));
 }
 
 .bf-transport .bf-control.is-primary svg {
@@ -2206,12 +2239,12 @@
 }
 
 .bf-transport .bf-control.is-skip-segment::before {
-  background: oklch(14% 0.014 250 / 72%);
+  background: color-mix(in oklab, var(--scrim) 72%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   backdrop-filter: blur(16px) saturate(140%);
   box-shadow:
-    inset 0 1px 0 oklch(99% 0.003 250 / 16%),
-    inset 0 0 0 1px oklch(98% 0.004 250 / 18%);
+    inset 0 1px 0 color-mix(in oklab, var(--on-scrim) 16%, transparent),
+    inset 0 0 0 1px color-mix(in oklab, var(--on-scrim) 18%, transparent);
   scale: 1;
 }
 
@@ -2238,13 +2271,17 @@
     inset: 0;
     height: auto;
     background:
-      radial-gradient(ellipse 60% 40% at 50% 50%, oklch(6% 0.012 255 / 38%), transparent 70%),
+      radial-gradient(
+        ellipse 60% 40% at 50% 50%,
+        color-mix(in oklab, var(--scrim) 38%, transparent),
+        transparent 70%
+      ),
       linear-gradient(
         to top,
-        oklch(6% 0.012 255 / 90%) 0%,
-        oklch(6% 0.012 255 / 30%) 40%,
-        oklch(6% 0.012 255 / 10%) 70%,
-        oklch(6% 0.012 255 / 40%) 100%
+        color-mix(in oklab, var(--scrim) 90%, transparent) 0%,
+        color-mix(in oklab, var(--scrim) 30%, transparent) 40%,
+        color-mix(in oklab, var(--scrim) 10%, transparent) 70%,
+        color-mix(in oklab, var(--scrim) 40%, transparent) 100%
       );
   }
 
@@ -2290,7 +2327,7 @@
   }
 
   .bf-transport .bf-control.is-seek::before {
-    background: oklch(10% 0.012 255 / 36%);
+    background: color-mix(in oklab, var(--scrim) 36%, transparent);
     scale: 1;
   }
 
@@ -2322,7 +2359,7 @@
     inset: auto 0 0;
     height: auto;
     min-height: 168px;
-    background: oklch(8% 0.012 255);
+    background: var(--scrim);
   }
 }
 
@@ -2332,7 +2369,7 @@
   align-items: center;
   gap: 12px;
   padding: 12px 20px;
-  background: oklch(8% 0.012 255);
+  background: var(--scrim);
 }
 
 /* ============================================================ *
@@ -2616,7 +2653,11 @@ main:has(> .bf-player-stage) > .bf-player-bar {
   inset: 0 0 auto;
   z-index: 10;
   padding-bottom: 32px;
-  background: linear-gradient(to bottom, oklch(8% 0.012 255 / 70%), transparent);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--scrim) 70%, transparent),
+    transparent
+  );
   pointer-events: none;
   transition: opacity 140ms var(--ease-standard);
 }
@@ -2684,7 +2725,7 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
 }
 
 .bf-item-action[aria-pressed="true"] {
-  background: rgb(255 255 255 / 0.08);
+  background: color-mix(in oklab, var(--text) 8%, transparent);
 }
 
 .bf-item-rating {

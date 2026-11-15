@@ -21,7 +21,10 @@ import {
   setClientPref,
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { SCHEME_PREFERENCES, type SchemePreference } from "@/lib/theme/runtime";
+import { THEME_PRESETS } from "@/lib/theme/theme.generated";
 import type { StringKey } from "@/strings";
 import {
   DOWNSTREAM_AUDIO_DEFAULT,
@@ -62,6 +65,7 @@ export function ProfileSettingsPage() {
   const profileID = session?.profileID || "";
   const profile = profiles.find((p) => p.id === profileID);
   const managed = session?.profile === "managed";
+  const { schemePreference, setSchemePreference, preset, setPreset } = useRegister();
 
   const [prefs, setPrefs] = useState<ViewerPreferences | null>(null);
   const [failed, setFailed] = useState(false);
@@ -176,6 +180,56 @@ export function ProfileSettingsPage() {
             </CollapsibleCard>
           </section>
         )}
+
+        {/* Appearance (CORE-1179): the scheme is this device's choice; the theme preset roams
+            with the Profile through theme.preset and re-skins the app as soon as it is picked. */}
+        <section aria-label={t("settingsAppearanceHeading")}>
+          <CollapsibleCard
+            title={t("settingsAppearanceHeading")}
+            lead={t("settingsAppearanceLead")}
+            defaultOpen
+          >
+            <div className="settings-row flex items-center justify-between gap-4">
+              <Label htmlFor="settings-scheme">{t("settingsSchemeLabel")}</Label>
+              <Select
+                value={schemePreference}
+                onValueChange={(v) => setSchemePreference(v as SchemePreference)}
+              >
+                <SelectTrigger id="settings-scheme" className="w-44">
+                  <SelectValue>{(v: SchemePreference) => t(SCHEME_LABELS[v])}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {SCHEME_PREFERENCES.map((scheme) => (
+                    <SelectItem key={scheme} value={scheme}>
+                      {t(SCHEME_LABELS[scheme])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="settings-row flex items-center justify-between gap-4">
+              <Label htmlFor="settings-theme">{t("settingsThemeLabel")}</Label>
+              <Select
+                value={preset}
+                onValueChange={(v) => {
+                  setPreset(v as string);
+                  void persist(PREF_KEYS.themePreset, v as string, {});
+                }}
+              >
+                <SelectTrigger id="settings-theme" className="w-44">
+                  <SelectValue>{(v: string) => t(presetLabel(v))}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {THEME_PRESETS.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {t(p.nameKey as StringKey)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CollapsibleCard>
+        </section>
 
         <section aria-label={t("settingsPlaybackHeading")}>
           <CollapsibleCard title={t("settingsPlaybackHeading")} defaultOpen>
@@ -471,6 +525,16 @@ function ToggleRow({
       <Switch id={id} checked={checked} onCheckedChange={onChange} />
     </div>
   );
+}
+
+const SCHEME_LABELS = {
+  dark: "settingsSchemeDark",
+  light: "settingsSchemeLight",
+  system: "settingsSchemeSystem",
+} as const satisfies Record<SchemePreference, StringKey>;
+
+function presetLabel(id: string): StringKey {
+  return (THEME_PRESETS.find((p) => p.id === id) ?? THEME_PRESETS[0]).nameKey as StringKey;
 }
 
 function stillWatchingValue(after: number): string {
