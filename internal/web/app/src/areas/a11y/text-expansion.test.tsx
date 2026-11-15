@@ -203,7 +203,11 @@ const CLIP_UTILITY =
 // 2026-11-13 (CORE-1201): +1 → 29 for the Console Libraries Recently deleted rows —
 // `truncate` on the library title. CSS ellipsis only; the full title stays in the
 // DOM and a `title`, and the row's Restore and permanent-delete buttons name it.
-const CLIP_BASELINE = 29;
+// 2026-11-14 (CORE-1684): +3 → 32 for the viewer Collections pages — `truncate` on
+// the collection name link in the list and on the member title in the reorder list
+// and the add-members list. CSS ellipsis only; the full text stays in the DOM and a
+// `title`, and each member row's buttons are labelled with the member title.
+const CLIP_BASELINE = 32;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

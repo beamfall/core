@@ -888,3 +888,16 @@ describe("PlayerPage karaoke key and tempo controls", () => {
     expect(adjust).toHaveBeenLastCalledWith({ pitchShiftSemitones: 0, tempo: 0.9 });
   });
 });
+
+// feature:watch-together-entry (CORE-1764)
+describe("PlayerPage Watch together arrival", () => {
+  it("opens the Watch Party panel when the detail page asks for the invite", () => {
+    renderPlayer(playerState({ phase: "playing" }), { watchPartyIntent: "invite" });
+    expect(screen.getByRole("region", { name: "Watch Party" })).toBeInTheDocument();
+  });
+
+  it("keeps the panel closed on an ordinary arrival", () => {
+    renderPlayer(playerState({ phase: "playing" }));
+    expect(screen.queryByRole("region", { name: "Watch Party" })).toBeNull();
+  });
+});
