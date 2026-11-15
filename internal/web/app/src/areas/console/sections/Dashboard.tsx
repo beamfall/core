@@ -19,10 +19,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { subscribeEvents } from "@/lib/api";
+import { isAuthRejection, subscribeEvents } from "@/lib/api";
 import {
   fetchHostMetrics,
   fetchLiveSessions,
+  fetchMySessions,
   type HostMetricSample,
   type LiveSessionInfo,
   terminateSession,
@@ -169,16 +170,39 @@ function SessionProgress({ session }: { session: LiveSessionInfo }) {
 // timer, so position and delivery stay current while the page is open. A
 // restricted session the operator has not revealed shows its load without its
 // media (the server omits the title and the reason) — never hidden.
+//
+// Ending this browser's own session signs it out server-side, so the row is
+// marked, its confirm says so, and afterwards the page reloads to BASE_URL to
+// land on sign-in (web-sign-in-recovery "Terminated session") instead of
+// staying on a Console whose every request now fails.
 export function LiveSessions() {
   const t = useT();
   const { data, loading, failed, refresh } = useAsync(fetchLiveSessions);
   const sessions = data ?? [];
+  // Until this lookup settles no row can be known not to be this browser's, so
+  // End session waits for it; if it fails, every confirm carries the warning.
+  const { data: mine, loading: identifying } = useAsync(fetchMySessions);
+  const currentSessionID = mine?.sessions.find((s) => s.current)?.id;
 
   useEventRefresh(refresh);
   usePolling(refresh, SESSIONS_POLL_MS);
 
   async function terminate(sessionID: string) {
     await terminateSession(sessionID);
+    if (sessionID === currentSessionID) {
+      signedOut();
+      return;
+    }
+    // A probe outside useAsync, so a poll or event refresh cannot abort it and
+    // swallow the 401 that says this browser was signed out after all.
+    try {
+      await fetchLiveSessions();
+    } catch (error) {
+      if (isAuthRejection(error)) {
+        signedOut();
+        return;
+      }
+    }
     await refresh();
   }
 
@@ -224,7 +248,15 @@ export function LiveSessions() {
                     <StatusChip tone="iris">{t("liveSessionRestricted")}</StatusChip>
                   )}
                 </TableCell>
-                <TableCell>{s.deviceName}</TableCell>
+                <TableCell>
+                  {s.deviceName}
+                  {s.sessionID === currentSessionID && (
+                    <>
+                      {" "}
+                      <StatusChip tone="cyan">{t("liveSessionThisBrowser")}</StatusChip>
+                    </>
+                  )}
+                </TableCell>
                 <TableCell>
                   <div className="console-session-method">
                     <StatusChip tone={method.tone}>{t(method.label)}</StatusChip>
@@ -242,8 +274,15 @@ export function LiveSessions() {
                     size="sm"
                     label={t("terminateSession")}
                     confirm="terminateSession"
+                    disabled={identifying && !mine}
                     onConfirm={() => terminate(s.sessionID)}
-                  />
+                  >
+                    {s.sessionID === currentSessionID
+                      ? t("terminateOwnSessionWarning")
+                      : mine
+                        ? undefined
+                        : t("terminateMaybeOwnSessionWarning")}
+                  </ConfirmButton>
                 </TableCell>
               </TableRow>
             );
@@ -252,6 +291,12 @@ export function LiveSessions() {
       )}
     </Section>
   );
+}
+
+// The session cookie is gone server-side; reload so the session spine lands on
+// sign-in, as SignOutButton does.
+function signedOut() {
+  window.location.assign(import.meta.env.BASE_URL);
 }
 
 /** The Overview tile's live figure: how many sessions are playing right now. */
