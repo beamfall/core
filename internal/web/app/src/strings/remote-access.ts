@@ -22,9 +22,9 @@ export const remoteAccessStrings = {
     watchAwayDirectTitle: "Direct HTTPS",
     watchAwayReady: "Ready",
     watchAwayNotConfigured: "Not configured",
-    watchAwayPreflightPending: "Checking setup",
+    watchAwayPreflightPending: "No certificate yet",
     watchAwayDirectDetail:
-      "Second choice: point your domain at your home address, forward port 443 on your router to this server, then wait until the certificate shows as issued.",
+      "Second choice: point your domain at your home address and forward port 443 on your router to this server. Then open your domain with https once, for example from your phone on cellular, so Beamfall requests its certificate.",
     watchAwayAdvancedRelay: "Self-hosted relay",
     remoteAccessReachableVia: "Reachable through",
     watchAwayRelayDetail:
@@ -191,6 +191,9 @@ export const remoteAccessStrings = {
     relayStateConnecting: "Connexion en cours",
     relayStateConnected: "Connecté",
     relayStateError: "Erreur",
+    watchAwayPreflightPending: "Pas encore de certificat",
+    watchAwayDirectDetail:
+      "Deuxième choix : faites pointer votre domaine vers l’adresse de votre domicile et redirigez le port 443 de votre routeur vers ce serveur. Ouvrez ensuite votre domaine en https une fois, par exemple depuis votre téléphone en données mobiles, pour que Beamfall demande son certificat.",
   },
   de: {
     remoteAccessHeading: "Fernzugriff",
@@ -226,6 +229,9 @@ export const remoteAccessStrings = {
     relayStateConnecting: "Verbindung wird hergestellt",
     relayStateConnected: "Verbunden",
     relayStateError: "Fehler",
+    watchAwayPreflightPending: "Noch kein Zertifikat",
+    watchAwayDirectDetail:
+      "Zweite Wahl: Richten Sie Ihre Domain auf Ihre Heimadresse und leiten Sie Port 443 Ihres Routers an diesen Server weiter. Öffnen Sie Ihre Domain dann einmal mit https, zum Beispiel vom Telefon über Mobilfunk, damit Beamfall sein Zertifikat anfordert.",
   },
   es: {
     remoteAccessHeading: "Acceso remoto",
@@ -261,6 +267,9 @@ export const remoteAccessStrings = {
     relayStateConnecting: "Conectando",
     relayStateConnected: "Conectado",
     relayStateError: "Error",
+    watchAwayPreflightPending: "Aún no hay certificado",
+    watchAwayDirectDetail:
+      "Segunda opción: apunta tu dominio a la dirección de tu casa y redirige el puerto 443 de tu router a este servidor. Después abre tu dominio con https una vez, por ejemplo desde el teléfono con datos móviles, para que Beamfall solicite su certificado.",
   },
   pt: {
     remoteAccessHeading: "Acesso remoto",
@@ -296,5 +305,8 @@ export const remoteAccessStrings = {
     relayStateConnecting: "Conectando",
     relayStateConnected: "Conectado",
     relayStateError: "Erro",
+    watchAwayPreflightPending: "Ainda sem certificado",
+    watchAwayDirectDetail:
+      "Segunda opção: aponte seu domínio para o endereço da sua casa e encaminhe a porta 443 do roteador para este servidor. Depois abra seu domínio com https uma vez, por exemplo pelo celular usando dados móveis, para que o Beamfall solicite o certificado.",
   },
 } as const;
