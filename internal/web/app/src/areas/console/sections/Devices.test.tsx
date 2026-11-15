@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchConsoleConfig,
   fetchDevices,
+  fetchRemoteAccess,
   mintPairingCode,
   revokeAllDevices,
   revokeDevice,
@@ -23,6 +24,7 @@ vi.mock("@/lib/graphql", () => ({
   setConsoleConfig: vi.fn(),
   mintPairingCode: vi.fn(),
   setDeviceRole: vi.fn(),
+  fetchRemoteAccess: vi.fn(),
 }));
 
 const config: ConsoleConfigInfo = {
@@ -57,6 +59,7 @@ function renderDevices() {
 beforeEach(() => {
   vi.mocked(fetchDevices).mockResolvedValue(devices);
   vi.mocked(fetchConsoleConfig).mockResolvedValue(config);
+  vi.mocked(fetchRemoteAccess).mockResolvedValue({ plainHTTPPublicWarning: false, endpoints: [] });
   vi.mocked(revokeDevice).mockResolvedValue({ deviceID: "device-tv", transcodesAborted: 0 });
   vi.mocked(revokeAllDevices).mockResolvedValue({ revokedCount: 1, transcodesAborted: 0 });
   vi.mocked(setConsoleConfig).mockResolvedValue({ ...config, remoteEnrollmentEnabled: false });
@@ -182,6 +185,33 @@ describe("Devices (ADR-0081 administration)", () => {
       log.mockRestore();
     },
   );
+
+  it("shows a QR of the LAN enroll URL with the URL as text when the Console is on loopback (CORE-1614)", async () => {
+    vi.mocked(fetchRemoteAccess).mockResolvedValue({
+      plainHTTPPublicWarning: false,
+      endpoints: [{ kind: "lan", url: "http://192.168.1.10:8800" }],
+    });
+    renderDevices();
+    await screen.findByText("My Browser");
+    await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
+
+    const target = "http://192.168.1.10:8800/enroll";
+    const qr = await screen.findByRole("img", { name: `QR code that opens ${target}` });
+    expect(qr).toHaveAttribute("data-qr-value", target);
+    expect(qr.getAttribute("data-qr-value")).not.toContain("PAIR1234");
+    expect(screen.getByText(target)).toBeInTheDocument();
+  });
+
+  it("explains how to get a QR instead of encoding localhost when the server has no LAN endpoint", async () => {
+    renderDevices();
+    await screen.findByText("My Browser");
+    await userEvent.click(screen.getByRole("button", { name: /viewer code/i }));
+
+    expect(
+      await screen.findByText(/open this Console at the server's network address/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /QR code/ })).toBeNull();
+  });
 
   it("says when a minted code has expired instead of showing it", async () => {
     vi.mocked(mintPairingCode).mockResolvedValue({

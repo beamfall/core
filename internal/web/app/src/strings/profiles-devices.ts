@@ -64,6 +64,11 @@ export const profileDeviceStrings = {
     deviceCodeLinkField: "Link with the pairing code",
     deviceCodeLinkCopyHint:
       "This browser can't copy here. The link is selected: press Ctrl+C or ⌘C, or copy it by hand.",
+    // The "Add a device" QR (CORE-1614).
+    deviceQrScan: "Or scan this with the new device's camera:",
+    deviceQrLabel: "QR code that opens {url}",
+    deviceQrNeedsLan:
+      "To show a QR code for a phone, open this Console at the server's network address instead of localhost.",
     remoteEnrollHeading: "Remote enrollment",
     remoteEnrollLead: "Control whether devices can enroll from outside your local network.",
     remoteEnrollToggle: "Allow remote enrollment",
