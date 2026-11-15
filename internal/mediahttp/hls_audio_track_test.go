@@ -96,7 +96,7 @@ printf m4s > "$dir/seg00000.m4s"
 			if rec.Code != http.StatusOK {
 				t.Fatalf("segment status = %d, want 200: %s", rec.Code, rec.Body.String())
 			}
-			raw, err := os.ReadFile(argsPath)
+			raw, err := os.ReadFile(argsPath) // #nosec G304 -- argsPath is under this test's TempDir
 			if err != nil {
 				t.Fatalf("ffmpeg was not started: %v", err)
 			}
