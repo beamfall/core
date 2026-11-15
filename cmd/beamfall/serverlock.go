@@ -28,29 +28,37 @@ var errServerLockHeld = errors.New("server lock held by another process")
 // rename would guard the rollback copy instead. After locking it checks that
 // the path still names the locked file and tries again when it does not.
 func acquireServerLock(dataDir string) (release func(), err error) {
+	release, _, err = takeServerLock(dataDir)
+	return release, err
+}
+
+// takeServerLock is acquireServerLock that also returns current, which
+// reports whether the data directory's lock file is still the one held.
+func takeServerLock(dataDir string) (release func(), current func() bool, err error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil { // #nosec G703 -- operator-chosen data directory (flag or env)
-		return nil, err
+		return nil, nil, err
 	}
 	path := filepath.Join(dataDir, serverLockName)
 	for attempt := 0; attempt < 3; attempt++ {
 		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 G703 -- operator-chosen data directory; fixed file name
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := lockFileExclusive(f); err != nil {
 			_ = f.Close()
-			return nil, err
+			return nil, nil, err
 		}
 		release := func() {
 			_ = unlockFile(f)
 			_ = f.Close()
 		}
-		if lockStillAt(f, path) {
-			return release, nil
+		current := func() bool { return lockStillAt(f, path) }
+		if current() {
+			return release, current, nil
 		}
 		release()
 	}
-	return nil, fmt.Errorf("data directory %s kept moving while its server lock was taken", dataDir)
+	return nil, nil, fmt.Errorf("data directory %s kept moving while its server lock was taken", dataDir)
 }
 
 // lockStillAt reports whether path still names the open file f.
@@ -70,25 +78,35 @@ func lockStillAt(f *os.File, path string) bool {
 // directory after the first check moved its lock with it, so only the journal
 // shows it is running).
 func lockServeDataDir(dataDir string) (release func(), err error) {
-	if err := refuseInterruptedRestore(dataDir); err != nil {
-		return nil, err
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := refuseInterruptedRestore(dataDir); err != nil {
+			return nil, err
+		}
+		release, current, err := takeServerLock(dataDir)
+		if errors.Is(err, errServerLockHeld) {
+			return nil, fmt.Errorf("another Beamfall server is already running against data directory %s", dataDir)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := refuseInterruptedRestore(dataDir); err != nil {
+			release()
+			return nil, err
+		}
+		// A restore journal is written before the data directory is renamed
+		// and cleared only after any rollback, so a lock file that is still
+		// current once the journal is gone cannot be moved by that restore.
+		if !current() {
+			release()
+			continue
+		}
+		// A start that stopped after claiming a staged set but before renaming
+		// the data directory leaves the decrypted set beside it; the data is
+		// intact, so remove the copy.
+		restorestage.RemoveOrphanClaims(dataDir)
+		return release, nil
 	}
-	release, err = acquireServerLock(dataDir)
-	if errors.Is(err, errServerLockHeld) {
-		return nil, fmt.Errorf("another Beamfall server is already running against data directory %s", dataDir)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := refuseInterruptedRestore(dataDir); err != nil {
-		release()
-		return nil, err
-	}
-	// A start that stopped after claiming a staged set but before renaming
-	// the data directory leaves the decrypted set beside it; the data is
-	// intact, so remove the copy.
-	restorestage.RemoveOrphanClaims(dataDir)
-	return release, nil
+	return nil, fmt.Errorf("data directory %s kept moving while its server lock was taken", dataDir)
 }
 
 // refuseServerLock fails when a running server holds the data directory's
