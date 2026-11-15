@@ -235,7 +235,7 @@ export function AskToJoinPanel({
           )}
           <FormFeedback status={status} error={null} errorID={errorID} errorRef={errorRef} />
           {state.phase === "waiting" && (
-            <div className="flex gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <PrimaryAction
                 type="button"
                 variant="outline"
