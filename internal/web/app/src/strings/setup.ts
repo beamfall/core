@@ -41,100 +41,184 @@ export const setupStrings = {
     setupSecurityStrictDetail:
       "Only paired devices can sign in. To recover, run beamfall pairing-code on the server.",
     setupSecurityRecommended: "Recommended",
-    setupLibraryTitle: "Create your first Library",
-    setupLibraryLead:
-      "Pick a folder and say what's in it. Films, TV Shows and Mixed use the Film & TV plugin; Mixed sorts each file.",
-    setupLibraryType: "Library type",
-    setupLibraryName: "Library name",
-    setupLibraryRoot: "Root folder",
-    setupLibraryRootRequired: "Type the folder's path on the server, or choose it with Browse.",
-    setupLibraryCreateFailed: "{reason} Check the path, or choose the folder with Browse.",
-    setupLibraryCreateFailedGeneric:
-      "The server couldn't set up that folder. Check the path, or choose the folder with Browse.",
-    setupLibraryScanFailed:
-      "The Library is created, but its first scan didn't start. Check the folder, then press Continue to try again.",
-    setupLibraryBrowse: "Browse…",
-    setupLibraryPickerUse: "Use this folder",
-    setupLibraryPickerLoading: "Loading folders…",
-    setupLibraryPickerEmpty:
-      "No subfolders here. Use this folder if your media files sit directly inside it.",
-    setupLibraryPickerError:
-      "Couldn't read that folder. The server may not have permission to open it; pick another folder.",
-    setupLibraryPickerSeedError:
-      "Couldn't open {path} on the server, so the picker starts at the top of its filesystem.",
-    setupLibraryPickerClose: "Close folder picker",
-    setupTypeFilms: "Films",
-    setupTypeTVShows: "TV Shows",
-    setupTypeMixed: "Mixed",
-    setupProfileTitle: "Name the owner profile",
-    setupProfileLead: "This is you. Everyone else can get their own Profile later.",
-    setupProfileName: "Owner profile name",
-    setupProfileDefault: "Owner",
-    setupPluginsTitle: "Choose what Beamfall understands",
-    setupPluginsLead:
-      "Each plugin teaches Beamfall a kind of media. Turn on what you have; change it any time.",
-    setupPluginsEmpty: "No plugins are installed.",
-    setupPluginsLoadFailed:
-      "Couldn't load the plugin choices saved on the server, so they can't be changed yet.",
-    setupPluginsRetry: "Try again",
-    setupPluginsLocked:
-      "The admin window has closed, so the saved plugin choices can't be read. Enter the admin password to reopen it and continue.",
-    setupPluginsUnlock: "Unlock",
-    setupKeysTitle: "Metadata provider keys",
-    setupKeysLead:
-      "Titles, details and artwork come from providers that ask for a free API key. Paste one now or add it later in Console › Plugins.",
-    setupKeyOptional: "Optional: paste your API key",
-    setupKeySaveFailed:
-      "The {provider} key couldn't be saved. Check it, or clear the field to add it later in Console › Plugins.",
-    setupUpdateTitle: "Update awareness",
-    setupUpdateLead: "Check the public release manifest for new versions. Off by default.",
-    setupUpdateToggle: "Check for updates",
-    setupUpdateDisclosure:
-      "The check is a plain GET with no library data, account data, cookies, body, query string or server identity.",
-    setupBack: "Back",
-    setupContinue: "Continue",
-    setupFinish: "Finish setup",
-    setupBrowseReady: "Browse what's ready",
-    setupWorking: "Working…",
-    setupFailed:
-      "The server couldn't finish this step. Check the server log for the cause, then try again.",
-    setupOffline:
-      "Can't reach the server. Check that it's running and you're on its network, then try again.",
-    setupScanTitle: "Your library is filling up",
-    setupScanLead:
-      "Beamfall is scanning your first Library. Browse as soon as items appear; the scan keeps going in the background.",
-    setupScanStatus: "Scan status: {status}",
-    setupScanWaiting: "Waiting for progress…",
-    setupScanConnectionLost:
-      "Lost contact with the server. Retrying; the scan keeps running on the server.",
-    setupScanStopped:
-      "The scan stopped before it finished. Browse what's ready, then scan this Library again from Console › Libraries.",
-    // Seam A — inline migration offer, the final setup step (ADR-0080 /
-    // onboarding-funnel §3). Source labels come from the active plugins, never
-    // hardcoded here.
-    setupMigrateTitle: "Bring your library with you",
-    setupMigrateLead:
-      "Switching from another server? Import your watch history, ratings, and collections so you pick up where you left off.",
-    setupMigrateTrustAdditive:
-      "Additive only. It fills gaps and never overwrites or downgrades your Beamfall progress.",
-    setupMigrateTrustScope:
-      "Imports watch state, ratings, and collections only, never files, metadata, or settings.",
-    setupMigrateTrustNoConnection:
-      "No ongoing connection is kept, and your old server is never modified.",
-    setupMigrateTrustRerunnable:
-      "Re-runnable. Keep using the old server and re-import the difference on switch day.",
-    setupMigrateTrustReportFirst:
-      "Report first. You preview exactly what will import before anything is written.",
-    setupMigrateSourcesLabel: "Available sources",
-    setupMigrateSourcesUnavailable:
-      "Could not load the available sources. You can open the importer later from the Console.",
-    setupMigrateNoSources:
-      "No import sources are available from your active plugins yet. You can add them later from the Console.",
-    setupMigrateSkip: "Skip for now",
-    setupMigrateContinue: "Choose a source",
   },
-  fr: {},
-  de: {},
-  es: {},
-  pt: {},
+  fr: {
+    setupBrandSuffix: "Configuration du serveur",
+    setupUnlockedBanner: "Serveur réclamé. Vous en êtes le propriétaire.",
+    setupRailAdminPassword: "Mot de passe admin",
+    setupRailSecurity: "Sécurité de connexion",
+    setupRailLibrary: "Première bibliothèque",
+    setupRailProfile: "Profil propriétaire",
+    setupRailPlugins: "Plugins",
+    setupRailScan: "Premier scan",
+    setupStepCount: "Étape {n} sur {total}",
+    setupTokenTitle: "Déverrouiller avec le jeton de configuration",
+    setupTokenLead:
+      "Collez le code à usage unique affiché au démarrage du serveur (pour les conteneurs, docker logs <container>). Il prouve que vous pouvez joindre le serveur avant que quiconque définisse un mot de passe admin.",
+    setupToken: "Jeton de configuration",
+    setupTokenRequired:
+      "Collez le jeton de configuration affiché au démarrage du serveur pour continuer.",
+    setupTokenInvalid:
+      "Ce jeton de configuration n’a pas fonctionné. Il est peut-être mal saisi ou déjà utilisé ; redémarrer le serveur en affiche un nouveau au démarrage.",
+    setupTokenLanLink: "Sur le même réseau que le serveur ? Ouvrez {url} pour ignorer le jeton.",
+    setupTokenAgain:
+      "Le jeton de configuration est effacé après chaque essai. Collez-le à nouveau pour finir de réclamer le serveur.",
+    setupNeedsSecure:
+      "La configuration exige le HTTPS ou le réseau local de ce serveur. Ouvrez le lien de configuration depuis un appareil du même réseau.",
+    setupAdminPasswordTitle: "Définir le mot de passe admin",
+    setupAdminPasswordLead:
+      "Il déverrouille la Console et les outils réservés au propriétaire. Choisissez-en un robuste et gardez-le dans un gestionnaire de mots de passe.",
+    setupAdminPassword: "Mot de passe admin",
+    setupAdminPasswordConfirm: "Confirmer le mot de passe",
+    setupAdminPasswordMismatch:
+      "Les mots de passe ne correspondent pas. Saisissez le même mot de passe dans les deux champs.",
+    setupAdminPasswordRequired: "Saisissez un mot de passe admin.",
+    setupAdminPasswordHint: "Au moins 8 caractères.",
+    setupAdminPasswordTooShort: "Le mot de passe admin doit comporter au moins 8 caractères.",
+    setupPasswordShow: "Afficher le mot de passe",
+    setupPasswordHide: "Masquer le mot de passe",
+    setupSecurityTitle: "Choisir comment le propriétaire se connecte",
+    setupSecurityLead: "Vous pourrez le modifier plus tard dans la Console.",
+    setupSecurityHome: "Maison",
+    setupSecurityHomeDetail:
+      "Connectez-vous en tant que propriétaire depuis n’importe quel navigateur avec le mot de passe admin.",
+    setupSecurityStrict: "Strict",
+    setupSecurityStrictDetail:
+      "Seuls les appareils jumelés peuvent se connecter. Pour récupérer l’accès, exécutez beamfall pairing-code sur le serveur.",
+    setupSecurityRecommended: "Recommandé",
+  },
+  de: {
+    setupBrandSuffix: "Server-Einrichtung",
+    setupUnlockedBanner: "Server übernommen. Du bist jetzt der Eigentümer.",
+    setupRailAdminPassword: "Admin-Passwort",
+    setupRailSecurity: "Anmeldesicherheit",
+    setupRailLibrary: "Erste Bibliothek",
+    setupRailProfile: "Eigentümerprofil",
+    setupRailPlugins: "Plugins",
+    setupRailScan: "Erster Scan",
+    setupStepCount: "Schritt {n} von {total}",
+    setupTokenTitle: "Mit dem Einrichtungs-Token entsperren",
+    setupTokenLead:
+      "Füge den einmaligen Code aus der Startausgabe des Servers ein (bei Containern docker logs <container>). Er beweist, dass du den Server erreichen kannst, bevor jemand ein Admin-Passwort festlegt.",
+    setupToken: "Einrichtungs-Token",
+    setupTokenRequired:
+      "Füge zum Fortfahren das Einrichtungs-Token aus der Startausgabe des Servers ein.",
+    setupTokenInvalid:
+      "Dieses Einrichtungs-Token hat nicht funktioniert. Vielleicht ist es falsch getippt oder schon benutzt; beim Neustart gibt der Server in seiner Startausgabe ein neues aus.",
+    setupTokenLanLink:
+      "Im selben Netzwerk wie der Server? Öffne {url}, um das Token zu überspringen.",
+    setupTokenAgain:
+      "Das Einrichtungs-Token wird nach jedem Versuch gelöscht. Füge es erneut ein, um die Übernahme des Servers abzuschließen.",
+    setupNeedsSecure:
+      "Die Einrichtung braucht HTTPS oder das lokale Netzwerk dieses Servers. Öffne den Einrichtungslink auf einem Gerät im selben Netzwerk.",
+    setupAdminPasswordTitle: "Admin-Passwort festlegen",
+    setupAdminPasswordLead:
+      "Es entsperrt die Console und Werkzeuge nur für den Eigentümer. Wähle ein starkes Passwort und bewahre es in einem Passwortmanager auf.",
+    setupAdminPassword: "Admin-Passwort",
+    setupAdminPasswordConfirm: "Passwort bestätigen",
+    setupAdminPasswordMismatch:
+      "Die Passwörter stimmen nicht überein. Gib in beiden Feldern dasselbe Passwort ein.",
+    setupAdminPasswordRequired: "Gib ein Admin-Passwort ein.",
+    setupAdminPasswordHint: "Mindestens 8 Zeichen.",
+    setupAdminPasswordTooShort: "Das Admin-Passwort muss mindestens 8 Zeichen lang sein.",
+    setupPasswordShow: "Passwort anzeigen",
+    setupPasswordHide: "Passwort verbergen",
+    setupSecurityTitle: "Wähle, wie sich der Eigentümer anmeldet",
+    setupSecurityLead: "Du kannst das später in der Console ändern.",
+    setupSecurityHome: "Zuhause",
+    setupSecurityHomeDetail:
+      "Melde dich mit dem Admin-Passwort von jedem Browser aus als Eigentümer an.",
+    setupSecurityStrict: "Streng",
+    setupSecurityStrictDetail:
+      "Nur gekoppelte Geräte können sich anmelden. Zur Wiederherstellung führe beamfall pairing-code auf dem Server aus.",
+    setupSecurityRecommended: "Empfohlen",
+  },
+  es: {
+    setupBrandSuffix: "Configuración del servidor",
+    setupUnlockedBanner: "Servidor reclamado. Ahora eres el propietario.",
+    setupRailAdminPassword: "Contraseña de admin",
+    setupRailSecurity: "Seguridad de acceso",
+    setupRailLibrary: "Primera biblioteca",
+    setupRailProfile: "Perfil del propietario",
+    setupRailPlugins: "Plugins",
+    setupRailScan: "Primer análisis",
+    setupStepCount: "Paso {n} de {total}",
+    setupTokenTitle: "Desbloquear con el token de configuración",
+    setupTokenLead:
+      "Pega el código de un solo uso que aparece al arrancar el servidor (en contenedores, docker logs <container>). Demuestra que puedes llegar al servidor antes de que alguien defina una contraseña de admin.",
+    setupToken: "Token de configuración",
+    setupTokenRequired:
+      "Pega el token de configuración que aparece al arrancar el servidor para continuar.",
+    setupTokenInvalid:
+      "Ese token de configuración no funcionó. Puede que esté mal escrito o ya usado; al reiniciar el servidor se muestra uno nuevo al arrancar.",
+    setupTokenLanLink: "¿Estás en la misma red que el servidor? Abre {url} para omitir el token.",
+    setupTokenAgain:
+      "El token de configuración se borra tras cada intento. Pégalo de nuevo para terminar de reclamar el servidor.",
+    setupNeedsSecure:
+      "La configuración necesita HTTPS o la red local de este servidor. Abre el enlace de configuración desde un dispositivo de la misma red.",
+    setupAdminPasswordTitle: "Define la contraseña de admin",
+    setupAdminPasswordLead:
+      "Desbloquea la Console y las herramientas exclusivas del propietario. Usa una contraseña segura y guárdala en un gestor de contraseñas.",
+    setupAdminPassword: "Contraseña de admin",
+    setupAdminPasswordConfirm: "Confirmar contraseña",
+    setupAdminPasswordMismatch:
+      "Las contraseñas no coinciden. Escribe la misma contraseña en ambos campos.",
+    setupAdminPasswordRequired: "Introduce una contraseña de admin.",
+    setupAdminPasswordHint: "Al menos 8 caracteres.",
+    setupAdminPasswordTooShort: "La contraseña de admin debe tener al menos 8 caracteres.",
+    setupPasswordShow: "Mostrar contraseña",
+    setupPasswordHide: "Ocultar contraseña",
+    setupSecurityTitle: "Elige cómo inicia sesión el propietario",
+    setupSecurityLead: "Puedes cambiarlo más tarde en la Console.",
+    setupSecurityHome: "Casa",
+    setupSecurityHomeDetail:
+      "Inicia sesión como propietario desde cualquier navegador con la contraseña de admin.",
+    setupSecurityStrict: "Estricto",
+    setupSecurityStrictDetail:
+      "Solo los dispositivos emparejados pueden iniciar sesión. Para recuperar el acceso, ejecuta beamfall pairing-code en el servidor.",
+    setupSecurityRecommended: "Recomendado",
+  },
+  pt: {
+    setupBrandSuffix: "Configuração do servidor",
+    setupUnlockedBanner: "Servidor reivindicado. Agora você é o proprietário.",
+    setupRailAdminPassword: "Senha de admin",
+    setupRailSecurity: "Segurança de login",
+    setupRailLibrary: "Primeira biblioteca",
+    setupRailProfile: "Perfil do proprietário",
+    setupRailPlugins: "Plugins",
+    setupRailScan: "Primeira verificação",
+    setupStepCount: "Etapa {n} de {total}",
+    setupTokenTitle: "Desbloquear com o token de configuração",
+    setupTokenLead:
+      "Cole o código de uso único exibido na inicialização do servidor (em contêineres, docker logs <container>). Ele prova que você consegue acessar o servidor antes de alguém definir uma senha de admin.",
+    setupToken: "Token de configuração",
+    setupTokenRequired:
+      "Cole o token de configuração exibido na inicialização do servidor para continuar.",
+    setupTokenInvalid:
+      "Esse token de configuração não funcionou. Ele pode estar digitado errado ou já ter sido usado; reiniciar o servidor mostra um novo na inicialização.",
+    setupTokenLanLink: "Está na mesma rede do servidor? Abra {url} para pular o token.",
+    setupTokenAgain:
+      "O token de configuração é apagado a cada tentativa. Cole-o novamente para terminar de reivindicar o servidor.",
+    setupNeedsSecure:
+      "A configuração precisa de HTTPS ou da rede local deste servidor. Abra o link de configuração em um dispositivo da mesma rede.",
+    setupAdminPasswordTitle: "Defina a senha de admin",
+    setupAdminPasswordLead:
+      "Ela desbloqueia o Console e as ferramentas exclusivas do proprietário. Use uma senha forte e guarde-a em um gerenciador de senhas.",
+    setupAdminPassword: "Senha de admin",
+    setupAdminPasswordConfirm: "Confirmar senha",
+    setupAdminPasswordMismatch: "As senhas não coincidem. Digite a mesma senha nos dois campos.",
+    setupAdminPasswordRequired: "Digite uma senha de admin.",
+    setupAdminPasswordHint: "Pelo menos 8 caracteres.",
+    setupAdminPasswordTooShort: "A senha de admin deve ter pelo menos 8 caracteres.",
+    setupPasswordShow: "Mostrar senha",
+    setupPasswordHide: "Ocultar senha",
+    setupSecurityTitle: "Escolha como o proprietário entra",
+    setupSecurityLead: "Você pode mudar isso depois no Console.",
+    setupSecurityHome: "Casa",
+    setupSecurityHomeDetail: "Entre como proprietário de qualquer navegador com a senha de admin.",
+    setupSecurityStrict: "Rígido",
+    setupSecurityStrictDetail:
+      "Somente dispositivos pareados podem entrar. Para recuperar o acesso, execute beamfall pairing-code no servidor.",
+    setupSecurityRecommended: "Recomendado",
+  },
 } as const;

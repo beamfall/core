@@ -32,6 +32,8 @@ export const playerRecoveryStrings = {
       "Cette vidéo Dolby Vision ne peut pas être convertie pour cet appareil.",
     playbackHdrToneMapUnavailable:
       "Ce serveur ne peut pas convertir cette vidéo HDR pour cet appareil.",
+    playbackHdrToneMapDisabled:
+      "La conversion HDR est désactivée sur ce serveur : cette vidéo ne peut donc pas être lue sur cet appareil.",
     playbackSourceEndsEarly:
       "Ce fichier s’arrête avant la fin. Le reste est manquant ou endommagé sur le serveur.",
   },
@@ -49,6 +51,8 @@ export const playerRecoveryStrings = {
       "Dieses Dolby-Vision-Video kann für dieses Gerät nicht konvertiert werden.",
     playbackHdrToneMapUnavailable:
       "Dieser Server kann dieses HDR-Video für dieses Gerät nicht konvertieren.",
+    playbackHdrToneMapDisabled:
+      "Die HDR-Umwandlung ist auf diesem Server ausgeschaltet, daher lässt sich dieses Video auf diesem Gerät nicht abspielen.",
     playbackSourceEndsEarly:
       "Diese Datei endet zu früh. Der Rest fehlt auf dem Server oder ist beschädigt.",
   },
@@ -66,6 +70,8 @@ export const playerRecoveryStrings = {
       "Este video Dolby Vision no se puede convertir para este dispositivo.",
     playbackHdrToneMapUnavailable:
       "Este servidor no puede convertir este video HDR para este dispositivo.",
+    playbackHdrToneMapDisabled:
+      "La conversión HDR está desactivada en este servidor, así que este vídeo no se puede reproducir en este dispositivo.",
     playbackSourceEndsEarly:
       "Este archivo termina antes de tiempo. El resto falta o está dañado en el servidor.",
   },
@@ -83,6 +89,8 @@ export const playerRecoveryStrings = {
       "Este vídeo Dolby Vision não pode ser convertido para este dispositivo.",
     playbackHdrToneMapUnavailable:
       "Este servidor não pode converter este vídeo HDR para este dispositivo.",
+    playbackHdrToneMapDisabled:
+      "A conversão de HDR está desativada neste servidor, então este vídeo não pode ser reproduzido neste dispositivo.",
     playbackSourceEndsEarly:
       "Este arquivo termina antes do fim. O restante está ausente ou danificado no servidor.",
   },

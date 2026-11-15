@@ -102,6 +102,11 @@ export const sharedStateStrings = {
     libraryEmptyTitle: "Rien à afficher dans cette bibliothèque pour le moment.",
     libraryEmptyLead:
       "Cette bibliothèque n’a aucun contenu visible pour le profil et les filtres actuels.",
+    libraryEmptyOwnerTitle: "Votre bibliothèque est prête. Remplissons-la.",
+    libraryEmptyOwnerLead:
+      "Lancez une analyse pour importer vos médias, ou migrez-les depuis un autre serveur.",
+    libraryEmptyStartScan: "Lancer la première analyse",
+    libraryEmptyMigrate: "Migrer une bibliothèque",
     connectionLost:
       "Connexion perdue. Affichage de la dernière vue rendue jusqu’à ce que le serveur réponde.",
   },
@@ -153,6 +158,11 @@ export const sharedStateStrings = {
     libraryEmptyTitle: "In dieser Bibliothek gibt es noch nichts anzuzeigen.",
     libraryEmptyLead:
       "Diese Bibliothek hat für das aktuelle Profil und die aktuellen Filter keine sichtbaren Inhalte.",
+    libraryEmptyOwnerTitle: "Deine Bibliothek ist bereit. Füllen wir sie.",
+    libraryEmptyOwnerLead:
+      "Starte einen Scan, um deine Medien zu importieren, oder migriere sie von einem anderen Server.",
+    libraryEmptyStartScan: "Ersten Scan starten",
+    libraryEmptyMigrate: "Bibliothek migrieren",
     connectionLost:
       "Verbindung verloren. Die zuletzt gerenderte Ansicht wird angezeigt, bis der Server antwortet.",
   },
@@ -203,6 +213,10 @@ export const sharedStateStrings = {
     libraryEmptyTitle: "Aún no hay nada que mostrar en esta biblioteca.",
     libraryEmptyLead:
       "Esta biblioteca no tiene contenido visible para el perfil y los filtros actuales.",
+    libraryEmptyOwnerTitle: "Tu biblioteca está lista. Vamos a llenarla.",
+    libraryEmptyOwnerLead: "Inicia un análisis para traer tus medios, o migra desde otro servidor.",
+    libraryEmptyStartScan: "Iniciar el primer análisis",
+    libraryEmptyMigrate: "Migrar una biblioteca",
     connectionLost:
       "Se perdió la conexión. Se muestra la última vista renderizada hasta que el servidor responda.",
   },
@@ -253,6 +267,11 @@ export const sharedStateStrings = {
     subscriptionsUnavailable: "As assinaturas não estão disponíveis no momento.",
     libraryEmptyTitle: "Ainda não há nada para mostrar nesta biblioteca.",
     libraryEmptyLead: "Esta biblioteca não tem conteúdo visível para o perfil e os filtros atuais.",
+    libraryEmptyOwnerTitle: "Sua biblioteca está pronta. Vamos preenchê-la.",
+    libraryEmptyOwnerLead:
+      "Inicie uma varredura para trazer suas mídias ou migre-as de outro servidor.",
+    libraryEmptyStartScan: "Iniciar a primeira varredura",
+    libraryEmptyMigrate: "Migrar uma biblioteca",
     connectionLost:
       "Conexão perdida. Mostrando a última visualização renderizada até que o servidor responda.",
   },

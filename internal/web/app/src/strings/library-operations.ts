@@ -147,6 +147,7 @@ export const libraryOperationsStrings = {
     libraryFileToolsHint:
       "Créez, renommez, déplacez ou supprimez des dossiers et des fichiers dans les dossiers de cette bibliothèque. Les changements s’appliquent aux fichiers sur le disque.",
     rootsPlaceholder: "Un dossier par ligne",
+    browse: "Parcourir",
     trash: "Corbeille",
     trashIsEmpty: "La corbeille est vide.",
     subscriptions: "Abonnements",
@@ -237,6 +238,7 @@ export const libraryOperationsStrings = {
     libraryFileToolsHint:
       "Ordner und Dateien in den Ordnern dieser Bibliothek erstellen, umbenennen, verschieben oder löschen. Änderungen gelten für die Dateien auf dem Datenträger.",
     rootsPlaceholder: "Ein Ordner pro Zeile",
+    browse: "Durchsuchen",
     trash: "Papierkorb",
     trashIsEmpty: "Der Papierkorb ist leer.",
     subscriptions: "Abonnements",
@@ -327,6 +329,7 @@ export const libraryOperationsStrings = {
     libraryFileToolsHint:
       "Crea, renombra, mueve o elimina carpetas y archivos dentro de las carpetas de esta biblioteca. Los cambios se aplican a los archivos en disco.",
     rootsPlaceholder: "Una carpeta por línea",
+    browse: "Explorar",
     trash: "Papelera",
     trashIsEmpty: "La papelera está vacía.",
     subscriptions: "Suscripciones",
@@ -417,6 +420,7 @@ export const libraryOperationsStrings = {
     libraryFileToolsHint:
       "Crie, renomeie, mova ou exclua pastas e arquivos dentro das pastas desta biblioteca. As alterações se aplicam aos arquivos no disco.",
     rootsPlaceholder: "Uma pasta por linha",
+    browse: "Navegar",
     trash: "Lixeira",
     trashIsEmpty: "A lixeira está vazia.",
     subscriptions: "Assinaturas",

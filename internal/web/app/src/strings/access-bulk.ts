@@ -103,6 +103,9 @@ export const accessBulkStrings = {
       "Titres que ce profil peut visionner au-delà de son plafond de certification.",
     accessGrantsEmpty: "Aucune exception d’accès.",
     accessGrantRevoke: "Révoquer",
+    accessGrantRevokeConfirm: "Révoquer cette exception d’accès ?",
+    accessGrantRevokeEffect:
+      "Ce profil géré perdra immédiatement cette exception propre au titre. Le titre peut disparaître si son plafond de classification ou l’accès à la bibliothèque le bloque.",
     accessGrantRevoking: "Révocation…",
     accessGrantsUnavailable: "Impossible de charger les exceptions d’accès.",
     weekdaySunday: "Dimanche",
@@ -168,6 +171,9 @@ export const accessBulkStrings = {
     accessGrantsHint: "Titel, die dieses Profil über seine Freigabeobergrenze hinaus ansehen darf.",
     accessGrantsEmpty: "Keine Zugriffsausnahmen.",
     accessGrantRevoke: "Widerrufen",
+    accessGrantRevokeConfirm: "Diese Zugriffsausnahme widerrufen?",
+    accessGrantRevokeEffect:
+      "Dieses verwaltete Profil verliert diese titelspezifische Ausnahme sofort. Der Titel kann verschwinden, wenn seine Altersfreigabe-Obergrenze oder der Bibliothekszugriff ihn blockiert.",
     accessGrantRevoking: "Wird widerrufen…",
     accessGrantsUnavailable: "Zugriffsausnahmen konnten nicht geladen werden.",
     weekdaySunday: "Sonntag",
@@ -233,6 +239,9 @@ export const accessBulkStrings = {
     accessGrantsHint: "Títulos que este perfil puede ver más allá de su límite de clasificación.",
     accessGrantsEmpty: "Sin excepciones de acceso.",
     accessGrantRevoke: "Revocar",
+    accessGrantRevokeConfirm: "¿Revocar esta excepción de acceso?",
+    accessGrantRevokeEffect:
+      "Este perfil gestionado perderá de inmediato esta excepción específica del título. El título puede desaparecer si su límite de clasificación o el acceso a la biblioteca lo bloquea.",
     accessGrantRevoking: "Revocando…",
     accessGrantsUnavailable: "No se pudieron cargar las excepciones de acceso.",
     weekdaySunday: "Domingo",
@@ -298,6 +307,9 @@ export const accessBulkStrings = {
     accessGrantsHint: "Títulos que este perfil pode ver além do limite de classificação.",
     accessGrantsEmpty: "Nenhuma exceção de acesso.",
     accessGrantRevoke: "Revogar",
+    accessGrantRevokeConfirm: "Revogar esta exceção de acesso?",
+    accessGrantRevokeEffect:
+      "Este perfil gerenciado perderá imediatamente esta exceção específica do título. O título pode desaparecer se o limite de classificação ou o acesso à biblioteca o bloquear.",
     accessGrantRevoking: "Revogando…",
     accessGrantsUnavailable: "Não foi possível carregar as exceções de acesso.",
     weekdaySunday: "Domingo",
