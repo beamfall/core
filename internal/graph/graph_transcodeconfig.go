@@ -259,15 +259,28 @@ func (h *Handler) setTranscodeConfig(ctx context.Context, scope auth.Scope, req 
 	if !has {
 		return TranscodeConfigInfo{}, clientError("no transcode config to update")
 	}
-	cfg, err := h.store.SetTranscodeConfig(ctx, patch, time.Now().UTC())
+	cfg, err := h.saveAndApplyTranscodeConfig(ctx, patch)
 	if err != nil {
 		return TranscodeConfigInfo{}, err
 	}
-	h.applyTranscodeRuntime(cfg)
 	if err := h.logActivity(ctx, scope, store.ActivityConfigUpdate, "transcode", "", ""); err != nil {
 		return TranscodeConfigInfo{}, err
 	}
 	return h.transcodeConfigInfo(cfg), nil
+}
+
+// saveAndApplyTranscodeConfig stores the patch and applies the result to the
+// running transcoder under one lock, so overlapping saves apply in the order
+// they were stored.
+func (h *Handler) saveAndApplyTranscodeConfig(ctx context.Context, patch store.TranscodeConfigPatch) (store.TranscodeConfig, error) {
+	h.transcodeConfigMu.Lock()
+	defer h.transcodeConfigMu.Unlock()
+	cfg, err := h.store.SetTranscodeConfig(ctx, patch, time.Now().UTC())
+	if err != nil {
+		return store.TranscodeConfig{}, err
+	}
+	h.applyTranscodeRuntime(cfg)
+	return cfg, nil
 }
 
 // applyTranscodeRuntime pushes the live-applicable settings into the running

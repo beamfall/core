@@ -380,6 +380,10 @@ type Handler struct {
 	// resolver reads and applies; liveTranscodeCap is the cap now in force.
 	transcodeRuntime TranscodeRuntime
 	liveTranscodeCap atomic.Int64
+	// transcodeConfigMu serializes a transcode-config write with its live
+	// apply, so an older save can never overwrite a newer one in the running
+	// transcoder (CORE-1970).
+	transcodeConfigMu sync.Mutex
 	// mutationAuditAppend is a test seam for the request-level audit lifecycle.
 	// Nil uses store.AppendActivity in production.
 	mutationAuditAppend func(context.Context, store.ActivityEntry) error

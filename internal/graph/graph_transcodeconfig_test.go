@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -189,5 +190,51 @@ func TestResolveTranscodeCapPrecedence(t *testing.T) {
 	}
 	if got := ResolveTranscodeCap(store.TranscodeConfig{}, 0, 4); got != 4 {
 		t.Fatalf("automatic cap = %d, want 4", got)
+	}
+}
+
+// TestTranscodeConfigOverlappingSavesApplyInStoredOrder proves overlapping
+// saves leave the running transcoder on the stored value: each write and its
+// live apply happen under one lock, so an older save cannot apply last.
+func TestTranscodeConfigOverlappingSavesApplyInStoredOrder(t *testing.T) {
+	st := storetest.Open(t)
+	setter := &recordingCapSetter{}
+	active := t.TempDir()
+	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{
+		CapSetter: setter, StartupCap: 1, AutoCap: 1,
+		ActiveTempDir: active, DefaultTempDir: active,
+	})
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 16)
+	for i := 1; i <= 16; i++ {
+		limit, toneMap := i, i%2 == 0
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := handler.saveAndApplyTranscodeConfig(context.Background(),
+				store.TranscodeConfigPatch{MaxConcurrent: &limit, ToneMapEnabled: &toneMap})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stored, err := st.TranscodeConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(setter.caps) != 16 || setter.caps[len(setter.caps)-1] != stored.MaxConcurrent ||
+		int(handler.liveTranscodeCap.Load()) != stored.MaxConcurrent {
+		t.Fatalf("live caps %v (live %d), stored %d: the last applied cap must be the stored one",
+			setter.caps, handler.liveTranscodeCap.Load(), stored.MaxConcurrent)
+	}
+	if ffmpeg.ToneMapEnabled() != stored.ToneMapEnabled {
+		t.Fatalf("live tone-map %v, stored %v", ffmpeg.ToneMapEnabled(), stored.ToneMapEnabled)
 	}
 }
