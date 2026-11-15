@@ -44,27 +44,27 @@ const COLLECTION_LOCKS_QUERY =
   'query CollectionLocks($value: String, $limit: Int, $offset: Int) { sourceItems(kind: "collection", value: $value, limit: $limit, offset: $offset) { id locked } }';
 
 /**
- * The ids of a Collection's entries that the acting Profile cannot play. It
- * reads every page up to `count` entries: the server drops muted entries after
- * paging, so a short page does not mean the list has ended.
+ * The lock state of a Collection's entries for the acting Profile: true when
+ * the Profile cannot play the entry, false when it can. It reads every page
+ * up to `count` entries, because the server drops muted entries after paging
+ * and a short page does not mean the list has ended. A muted entry is absent
+ * from the map: the feed does not say whether it is locked.
  */
-export async function fetchLockedEntries(
+export async function fetchEntryLocks(
   collectionID: string,
   count: number,
   signal?: AbortSignal,
-): Promise<Set<string>> {
-  const locked = new Set<string>();
-  const end = Math.min(count, MAX_COLLECTION_ENTRIES);
-  for (let offset = 0; offset < end; offset += COLLECTION_PAGE) {
+): Promise<Map<string, boolean>> {
+  const locks = new Map<string, boolean>();
+  for (let offset = 0; offset < count; offset += COLLECTION_PAGE) {
     const data = await graphql<{ sourceItems: Pick<SourceItem, "id" | "locked">[] | null }>(
       COLLECTION_LOCKS_QUERY,
       { value: collectionID, limit: COLLECTION_PAGE, offset },
       signal,
     );
-    const page = data.sourceItems ?? [];
-    for (const item of page) if (item.locked) locked.add(item.id);
+    for (const item of data.sourceItems ?? []) locks.set(item.id, item.locked === true);
   }
-  return locked;
+  return locks;
 }
 
 /** One Library's Collections, for the list page. */

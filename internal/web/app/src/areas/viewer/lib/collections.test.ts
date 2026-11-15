@@ -4,7 +4,8 @@ import type { CollectionInfo } from "@/lib/graphql/types";
 import {
   COLLECTION_PAGE,
   fetchCollectionItems,
-  fetchLockedEntries,
+  fetchEntryLocks,
+  MAX_COLLECTION_ENTRIES,
   memberOrder,
   moveEntry,
   sortCollections,
@@ -88,8 +89,8 @@ describe("fetchCollectionItems", () => {
   });
 });
 
-describe("fetchLockedEntries (CORE-1876)", () => {
-  it("collects locked ids across every page, past a page shortened by muting", async () => {
+describe("fetchEntryLocks (CORE-1876)", () => {
+  it("reads the lock state across every page, past a page shortened by muting", async () => {
     const short = Array.from({ length: COLLECTION_PAGE - 1 }, (_, i) => ({
       id: `m${i}`,
       locked: i === 3,
@@ -98,12 +99,25 @@ describe("fetchLockedEntries (CORE-1876)", () => {
       .mockResolvedValueOnce({ sourceItems: short })
       .mockResolvedValueOnce({ sourceItems: [{ id: "last", locked: true }, { id: "open" }] });
 
-    const locked = await fetchLockedEntries("c1", COLLECTION_PAGE + 2);
+    const locks = await fetchEntryLocks("c1", COLLECTION_PAGE + 2);
 
-    expect([...locked]).toEqual(["m3", "last"]);
+    expect([...locks].filter(([, locked]) => locked).map(([id]) => id)).toEqual(["m3", "last"]);
+    expect(locks.get("open")).toBe(false);
+    expect(locks.has("muted")).toBe(false);
     expect(graphql).toHaveBeenCalledTimes(2);
     const [query, vars] = vi.mocked(graphql).mock.calls[1];
     expect(query).toContain("locked");
     expect(vars).toEqual({ value: "c1", limit: COLLECTION_PAGE, offset: COLLECTION_PAGE });
+  });
+
+  it("reads past the page-view bound when the playlist is longer", async () => {
+    vi.mocked(graphql).mockResolvedValue({ sourceItems: [] });
+
+    await fetchEntryLocks("c1", MAX_COLLECTION_ENTRIES + 1);
+
+    const offsets = vi
+      .mocked(graphql)
+      .mock.calls.map(([, vars]) => (vars as { offset: number }).offset);
+    expect(offsets.at(-1)).toBe(MAX_COLLECTION_ENTRIES);
   });
 });

@@ -7,7 +7,7 @@ import { fetchCollections } from "@/lib/graphql";
 import { fetchMediaRows } from "@/lib/graphql/browse";
 import type { CollectionInfo, GenericMediaInfo, LibrarySummary } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
-import { fetchLockedEntries } from "../lib/collections";
+import { fetchEntryLocks } from "../lib/collections";
 import type { PlayerNavState } from "../lib/trackList";
 import { PlaylistPage } from "./PlaylistPage";
 
@@ -25,7 +25,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => {
   return { ...actual, fetchCollections: vi.fn() };
 });
 vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
-vi.mock("../lib/collections", () => ({ fetchLockedEntries: vi.fn() }));
+vi.mock("../lib/collections", () => ({ fetchEntryLocks: vi.fn() }));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -84,12 +84,18 @@ afterEach(() => {
   cleanup();
   vi.mocked(fetchCollections).mockReset();
   vi.mocked(fetchMediaRows).mockReset();
-  vi.mocked(fetchLockedEntries).mockReset();
+  vi.mocked(fetchEntryLocks).mockReset();
 });
 
 describe("PlaylistPage locked entries (CORE-1876)", () => {
   it("lists a locked entry as unplayable and leaves it out of the Play all queue", async () => {
-    vi.mocked(fetchLockedEntries).mockResolvedValue(new Set(["m-2"]));
+    vi.mocked(fetchEntryLocks).mockResolvedValue(
+      new Map([
+        ["m-1", false],
+        ["m-2", true],
+        ["m-3", false],
+      ]),
+    );
     renderPage();
 
     const locked = await screen.findByRole("button", { name: "Play Second tone" });
@@ -97,14 +103,52 @@ describe("PlaylistPage locked entries (CORE-1876)", () => {
       expect(screen.getByRole("button", { name: "Play First tone" })).toBeEnabled(),
     );
     expect(locked).toBeDisabled();
-    expect(fetchLockedEntries).toHaveBeenCalledWith("pl-1", 3, expect.any(AbortSignal));
+    expect(fetchEntryLocks).toHaveBeenCalledWith("pl-1", 3, expect.any(AbortSignal));
 
     await userEvent.click(screen.getByRole("button", { name: "Play all" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
   });
 
+  it("leaves a muted entry, which has no lock state, out of Play all but plays it alone", async () => {
+    // The lock feed drops muted entries, so m-2 may or may not be locked.
+    vi.mocked(fetchEntryLocks).mockResolvedValue(
+      new Map([
+        ["m-1", false],
+        ["m-3", false],
+      ]),
+    );
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Play Second tone" })).toBeEnabled(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Play all" }));
+    expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-3");
+  });
+
+  it("plays a muted entry on its own, without the playlist queue", async () => {
+    vi.mocked(fetchEntryLocks).mockResolvedValue(new Map([["m-1", false]]));
+    renderPage();
+
+    const muted = await screen.findByRole("button", { name: "Play Third tone" });
+    await waitFor(() => expect(muted).toBeEnabled());
+    await userEvent.click(muted);
+    expect(screen.getByTestId("watch").textContent).toBe("/watch/m-3|");
+  });
+
+  it("plays the whole list when the lock read fails, leaving the server's check", async () => {
+    vi.mocked(fetchEntryLocks).mockRejectedValue(new Error("offline"));
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Play all" })).toBeInTheDocument(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Play all" }));
+    expect(screen.getByTestId("watch")).toHaveTextContent("/watch/m-1|m-1,m-2,m-3");
+  });
+
   it("plays nothing until the lock state is known", async () => {
-    vi.mocked(fetchLockedEntries).mockReturnValue(new Promise(() => {}));
+    vi.mocked(fetchEntryLocks).mockReturnValue(new Promise(() => {}));
     renderPage();
 
     expect(await screen.findByRole("button", { name: "Play First tone" })).toBeDisabled();
