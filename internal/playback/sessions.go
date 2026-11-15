@@ -442,6 +442,8 @@ type Sessions struct {
 	// offLockIdle, when non-nil, is closed when starting, stopping and
 	// detached all drop to zero.
 	offLockIdle chan struct{}
+	// closed is set by Close; once set no session is created.
+	closed bool
 
 	// keyframes holds audio-copy keyframe timelines; it has its own lock.
 	keyframes keyframeCache
@@ -1150,6 +1152,9 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		s.mu.Unlock()
 		s.runTeardowns(teardowns)
 	}()
+	if s.closed {
+		return nil, ErrSessionEvicted
+	}
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
 	if picture != nil {
 		rung, err := composedLiveRung(caps)
@@ -1768,14 +1773,17 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 // Close stops every running transcode and removes its working directory. It
 // also waits for encoder starts and teardowns running with the lock released
 // (a start sees its session gone and stops what it spawned), so no encoder,
-// lease or directory outlives it.
+// lease or directory outlives it. Keyframe probes still running are cancelled
+// and waited for, and no session is created once Close has begun.
 func (s *Sessions) Close() {
 	s.mu.Lock()
+	s.closed = true
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		teardowns = append(teardowns, *s.removeLocked(key))
 	}
 	s.mu.Unlock()
+	s.keyframes.close()
 	s.runTeardowns(teardowns)
 	for {
 		s.mu.Lock()

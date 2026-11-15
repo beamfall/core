@@ -468,3 +468,83 @@ func probeFormatDuration(t *testing.T, src string) float64 {
 	}
 	return duration
 }
+
+// blockingProbeTranscoder holds ProbeKeyframes until its context ends or the
+// test releases it with a usable index.
+type blockingProbeTranscoder struct {
+	fakeTranscoder
+	started   chan struct{}
+	release   chan struct{}
+	cancelled atomic.Bool
+}
+
+func (f *blockingProbeTranscoder) ProbeKeyframes(ctx context.Context, _ string) (ffmpeg.KeyframeIndex, error) {
+	close(f.started)
+	select {
+	case <-ctx.Done():
+		f.cancelled.Store(true)
+		return ffmpeg.KeyframeIndex{}, ctx.Err()
+	case <-f.release:
+		return ffmpeg.KeyframeIndex{Keyframes: []time.Duration{0, 4 * time.Second}, Duration: 8 * time.Second}, nil
+	}
+}
+
+func (f *blockingProbeTranscoder) StartHLSKeyframeSegments(ctx context.Context, src, dir string, startSegment int, _ time.Duration, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	return f.StartHLSSegments(ctx, src, dir, startSegment, 0, rendition)
+}
+
+// TestCloseCancelsAndWaitsForKeyframeProbes keeps Close final (CORE-1736): a
+// first audio-copy play still probing keyframes when Close runs has its probe
+// cancelled and waited for, and neither it nor a later request creates a
+// session or starts an encoder once Close has returned.
+func TestCloseCancelsAndWaitsForKeyframeProbes(t *testing.T) {
+	t.Parallel()
+	src := filepath.Join(t.TempDir(), "film.mkv")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	transcoder := &blockingProbeTranscoder{started: make(chan struct{}), release: make(chan struct{})}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(transcoder.release) }) }
+	t.Cleanup(release)
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
+
+	served := make(chan error, 1)
+	go func() {
+		_, err := sessions.FilePath(context.Background(), key, src, 8, 64, 64, true, audioCopyRungID+"/seg00000.m4s")
+		served <- err
+	}()
+	<-transcoder.started
+
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close did not return while a keyframe probe was in flight")
+	}
+	if !transcoder.cancelled.Load() {
+		t.Error("Close returned before cancelling the in-flight keyframe probe")
+	}
+	release() // without the fix, the probe now completes after Close
+	if err := <-served; err == nil {
+		t.Error("the request whose probe Close cancelled was served")
+	}
+	if _, err := sessions.FilePath(context.Background(), key, src, 120, 1280, 720, false, "720p/index.m3u8"); err == nil {
+		t.Error("a request after Close was served")
+	}
+
+	sessions.mu.Lock()
+	open := len(sessions.sessions)
+	sessions.mu.Unlock()
+	transcoder.mu.Lock()
+	starts := len(transcoder.starts)
+	transcoder.mu.Unlock()
+	if open != 0 || starts != 0 {
+		t.Fatalf("after Close: %d sessions, %d encoder starts; want none", open, starts)
+	}
+}
