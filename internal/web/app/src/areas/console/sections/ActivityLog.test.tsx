@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchDevices, fetchLibraries, fetchProfilesAdmin } from "@/lib/graphql";
@@ -161,6 +161,26 @@ describe("Console Activity log", () => {
     expect(screen.getByText("Showing 4 of 4 loaded events")).toBeInTheDocument();
     // The short page was the last one, so nothing older remains to load.
     expect(screen.queryByRole("button", { name: "Load older events" })).not.toBeInTheDocument();
+  });
+
+  it("keeps paging when a whole page repeats events already shown", async () => {
+    // A full page of new events arrived after the first load, so offset 3 returns
+    // the same three ids again; the next request must still move on to offset 6.
+    const oldest: ActivityRecord[] = [
+      { id: "0", occurredAt: "2026-11-10T09:00:00Z", action: "trash.purge", profileID: "p-alex" },
+    ];
+    vi.mocked(fetchActivityRecords).mockImplementation(async (_signal, offset = 0) =>
+      offset === 6 ? oldest : entries,
+    );
+    const user = userEvent.setup();
+    renderLog();
+
+    await user.click(await screen.findByRole("button", { name: "Load older events" }));
+    await waitFor(() => expect(vi.mocked(fetchActivityRecords).mock.calls.at(-1)?.[1]).toBe(3));
+    await user.click(await screen.findByRole("button", { name: "Load older events" }));
+
+    expect(await screen.findByText("Alex permanently emptied Trash")).toBeInTheDocument();
+    expect(vi.mocked(fetchActivityRecords).mock.calls.at(-1)?.[1]).toBe(6);
   });
 
   it("offers no older events when the first page is the whole log", async () => {

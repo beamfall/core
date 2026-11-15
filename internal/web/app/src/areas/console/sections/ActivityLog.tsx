@@ -41,6 +41,8 @@ interface ActivityPage {
   names: ActivityNames;
   /** False once a page came back short, so no older events remain. */
   more: boolean;
+  /** Rows fetched so far, duplicates included: the offset of the next page. */
+  fetched: number;
 }
 
 // Names are a courtesy: an entry still reads as a sentence without them, so a
@@ -107,13 +109,16 @@ async function fetchActivityPage(signal: AbortSignal): Promise<ActivityPage> {
     entries,
     names: { profiles, devices, libraries, media },
     more: entries.length >= ACTIVITY_PAGE_SIZE,
+    fetched: entries.length,
   };
 }
 
-// The next page continues at the number of events already loaded; an event
-// that arrived since the first page shifts the window, so ids seen are skipped.
+// The next page continues at the number of rows already fetched. Events that
+// arrived since the first page shift the window, so ids already seen are
+// skipped, and the offset still advances by a full page even when every row
+// of a page was a duplicate.
 async function fetchOlderPage(page: ActivityPage, signal: AbortSignal): Promise<ActivityPage> {
-  const older = await fetchActivityRecords(signal, page.entries.length);
+  const older = await fetchActivityRecords(signal, page.fetched);
   const seen = new Set(page.entries.map((e) => e.id));
   const fresh = older.filter((e) => !seen.has(e.id));
   const media = await mediaTitles(fresh, page.names.media, signal);
@@ -121,6 +126,7 @@ async function fetchOlderPage(page: ActivityPage, signal: AbortSignal): Promise<
     entries: [...page.entries, ...fresh],
     names: { ...page.names, media },
     more: older.length >= ACTIVITY_PAGE_SIZE,
+    fetched: page.fetched + older.length,
   };
 }
 
