@@ -3,7 +3,8 @@
 - [x] 1.1 Lazy, gated Cast SDK loader (`cast/castSdk.ts`)
 - [x] 1.2 Default Media Receiver profile, playback-info request and receiver load (`cast/castMedia.ts`)
 - [x] 1.3 Sender state and RemotePlayerController wiring (`cast/useCast.ts`)
-- [x] 1.4 Cast button and cast controls, mounted in `PlayerTransport.tsx`; strings in `strings/cast.ts`
+- [x] 1.4 Cast button and cast controls in `PlayerTransport.tsx`, behind
+  `CAST_RECEIVER_PLAYBACK_READY` (off until 3.1 lands); strings in `strings/cast.ts`
 - [x] 1.5 vitest against a mocked Cast framework
 
 ## 2. Server
@@ -13,7 +14,8 @@
 ## 3. Follow-ups (not in this change)
 
 - [ ] 3.1 Quirks-DB selector for Cast receivers so receiver-bound bytes resolve (ADR-0194 section 6,
-  ADR-0089 receiver-trusted TLS), with a security review
+  ADR-0089 receiver-trusted TLS), with a security review; then turn on
+  `CAST_RECEIVER_PLAYBACK_READY`
 - [ ] 3.2 Test on a physical Cast receiver, including the CSP paths the framework loads
 - [ ] 3.3 Drive the receiver from the main transport and keyboard shortcuts while casting
 - [ ] 3.4 Subtitle and audio switching mid-cast

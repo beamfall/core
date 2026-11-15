@@ -12,6 +12,13 @@ import type { CapabilityProfile } from "../../lib/capabilityProfile";
 import type { PlaybackInfo, PlaybackStream } from "../../lib/playback";
 import type { CastLoadRequestLike, ChromeCastLike } from "./castSdk";
 
+/**
+ * Whether the player offers casting. It stays false until a quirks-DB selector
+ * lets the server resolve Cast receivers (ADR-0194 §6): until then every
+ * receiver-bound media request is refused, so a Cast button could never play.
+ */
+export const CAST_RECEIVER_PLAYBACK_READY = false;
+
 /** The Default Media Receiver: 1080p H.264 up to High 4.1, stereo AAC, WebVTT. */
 export const CAST_RECEIVER_PROFILE: CapabilityProfile = {
   client: "chromecast-default-receiver",

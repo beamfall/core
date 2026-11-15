@@ -4,12 +4,18 @@
 
 The web player SHALL load the Cast Web Sender SDK only in a secure context on a Chromium browser
 that supports Cast, and SHALL make no request for it anywhere else. It SHALL show a Cast button
-for video only after the SDK loaded and reports at least one receiver on the network.
+for video only after the SDK loaded and reports at least one receiver on the network, and only
+once the server can resolve Cast receivers; until then the player SHALL show no Cast button.
 
 #### Scenario: Unsupported browser
 
 - **WHEN** a video plays in a browser without Cast support
 - **THEN** no Cast SDK request is made and no Cast button is shown
+
+#### Scenario: Receivers not yet resolvable
+
+- **WHEN** the server has no quirks-DB selector for Cast receivers
+- **THEN** the player shows no Cast button and makes no Cast SDK request
 
 #### Scenario: Receiver available
 
