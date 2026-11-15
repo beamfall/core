@@ -146,6 +146,9 @@ resolver over `store` typed methods. No `internal/util`, no `internal/model`, no
 | `graphquery` | Pure GraphQL operation selection and top-level field parsing for the hand-written graph dispatcher | 0001, 0011 §8 |
 | `graphshape` | Generic JSON-shape reflection walker used by graph's nested schema artifact | 0011 §8 |
 | `hostmetrics` | In-memory one-hour ring of host CPU, memory and this server's own network traffic for the console graphs; never persisted or sent off the server | — |
+| `redact` | Secret-class and personal-detail redaction for operational log text (API keys, auth headers, URL tokens, content paths, secret-named values, home-directory user names, IP addresses) | — |
+| `logtail` | Bounded in-memory tail of the most recent operator log lines, redacted before they are kept, for the console server-log read (CORE-1716) | — |
+| `restorestage` | Staged restore from the console: decrypts a backup into the data directory and leaves a staged marker; the next start applies it under the server lock, and a restore journal left by an interrupted apply blocks later starts (CORE-1720) | 0115 |
 | `identify` | Identify/apply pipeline, confidence thresholds, Unmatched queue, match pinning, and per-field source precedence | 0003 §4, 0009 §8 |
 | `ingest` | Subscription feed poller and enclosure ingest through the hardened scrape/scan path | 0030 §7, 0020 |
 | `integrationhost` | Third-party integration worker runtime and Host API permission gate | 0058 |
@@ -209,6 +212,9 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `nodehostd` | `nodehost` (node-facing mTLS SESSION transport, ADR-0129 §5: the node dials the main; main-side listener + node-side dialer pin SPKI in both directions. The `app` composition root prepares the cloned self-signed mTLS config + compatibility policy and passes them in, so no `remoteaccess`/`config` edge.) |
 | `capabilities` | — (leaf; compile/runtime capability self-report for clients and CI manifest checks) |
 | `hostmetrics` | — (leaf; host CPU, memory and own-traffic sampler behind the console graphs, CORE-1195; stdlib only, no internal deps) |
+| `redact` | — (leaf; log-text redaction shared by `jobs` and `logtail`; stdlib only, no internal deps) |
+| `logtail` | redact (in-memory tail of redacted operator log lines for the console server-log read, CORE-1716) |
+| `restorestage` | store, backup (staged restore, CORE-1720: `backup` decrypts the set, `store` reads the manifest and checks the restore identity; the apply runs in `cmd/beamfall` under the server lock) |
 | `causation` | — (leaf; ADR-0125 Integration Worker global-chain budget, per-worker action rate, authenticated causation tokens, and bounded/coalesced abort feed; stdlib only) |
 | `apptest` | app, config, plugin, store (in-process E2E test harness, mirrors `store/storetest` but top-level next to `app`: boots the composition root over `httptest` for the I/O E2E track. Test-support only, never imported by production code) |
 | `ioe2e` | — (I/O E2E journey package: `io_e2e`-tagged `*_test.go` journeys only — real ffmpeg ops + harness lifecycle happy-paths — plus an empty untagged `doc.go`. Test imports are arch-walk-invisible; no production imports) |
@@ -231,7 +237,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `streamtoken` | store, auth (auth supplies the verifying `Scope`), serverrole (gates `Issue` on the ADR-0123 §2 / ADR-0129 §1 attached authority face — an attached Origin Node never issues) |
 | `release` | — (leaf; supply-chain integrity core — signed release manifest, ed25519 sign/verify, pinned trust-anchor public key, SBOM/provenance builders; stdlib only, PANEL-11 / ADR-0013 §A) |
 | `updatecheck` | release (opt-in version check, ADR-0013 §7; imports `release` to verify the signed channel manifest before blessing an update — PANEL-11) |
-| `jobs` | store |
+| `jobs` | store, redact (operational job errors are redacted before they are logged) |
 | `auth` | store |
 | `beam` | store, auth |
 | `pairing` | store, auth |
