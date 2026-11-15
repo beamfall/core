@@ -33,6 +33,9 @@ const (
 	configTranscodeCodec           = "transcode.codec"
 	configTranscodeQuality         = "transcode.quality"
 	configTranscodeDevice          = "transcode.device"
+	configTranscodeMaxConcurrent   = "transcode.max_concurrent"
+	configTranscodeTempDir         = "transcode.temp_dir"
+	configTranscodeToneMapEnabled  = "transcode.tone_map_enabled"
 	// opt-in update awareness. Default OFF: the version check is
 	// inert until the operator opts in (in the setup wizard's final step). The
 	// channel selects which release manifest to read.
@@ -177,6 +180,16 @@ type TranscodeConfig struct {
 	// Device is the operator-selected acceleration device hint (e.g. a
 	// /dev/dri render node or an index). Empty means automatic selection.
 	Device string
+	// MaxConcurrent is the operator-set concurrent-transcode cap. Zero means
+	// unset: the server derives the cap from the hardware probe.
+	MaxConcurrent int
+	// TempDir is the operator-set transcode scratch directory. Empty means the
+	// server default (<data-dir>/transcode). The store keeps the path only;
+	// existence and writability are checked by the caller before writing.
+	TempDir string
+	// ToneMapEnabled gates HDR-to-SDR tone-mapped re-encodes. It defaults on;
+	// when off, an HDR source that would need tone-mapping is refused instead.
+	ToneMapEnabled bool
 }
 
 // TranscodeConfigPatch is a partial transcode-config write: a nil field leaves
@@ -186,6 +199,13 @@ type TranscodeConfigPatch struct {
 	Codec           *string
 	Quality         *string
 	Device          *string
+	// MaxConcurrent sets the cap; a value below 1 is a ValidationError.
+	MaxConcurrent *int
+	// ClearMaxConcurrent clears a stored cap back to the probe-derived default.
+	ClearMaxConcurrent bool
+	// TempDir sets the scratch directory; an empty string clears it.
+	TempDir        *string
+	ToneMapEnabled *bool
 }
 
 // transcodeCodecs and transcodeQualities are the closed value vocabularies the
@@ -308,13 +328,22 @@ func (s *Store) TranscodeConfig(ctx context.Context) (TranscodeConfig, error) {
 	if err != nil {
 		return TranscodeConfig{}, err
 	}
-	cfg := TranscodeConfig{}
+	cfg := TranscodeConfig{ToneMapEnabled: true}
 	if raw, ok := values[configTranscodeHardwareEnabled]; ok {
 		cfg.HardwareEnabled = raw == "1"
 	}
 	cfg.Codec = values[configTranscodeCodec]
 	cfg.Quality = values[configTranscodeQuality]
 	cfg.Device = values[configTranscodeDevice]
+	if raw, ok := values[configTranscodeMaxConcurrent]; ok {
+		if n, convErr := strconv.Atoi(raw); convErr == nil && n > 0 {
+			cfg.MaxConcurrent = n
+		}
+	}
+	cfg.TempDir = values[configTranscodeTempDir]
+	if raw, ok := values[configTranscodeToneMapEnabled]; ok {
+		cfg.ToneMapEnabled = raw == "1"
+	}
 	return cfg, nil
 }
 
@@ -352,6 +381,28 @@ func (s *Store) SetTranscodeConfig(ctx context.Context, patch TranscodeConfigPat
 		} else {
 			writes[configTranscodeDevice] = *patch.Device
 		}
+	}
+	if patch.MaxConcurrent != nil && patch.ClearMaxConcurrent {
+		return TranscodeConfig{}, ValidationError("maxConcurrentTranscodes cannot be set and cleared at once")
+	}
+	if patch.MaxConcurrent != nil {
+		if *patch.MaxConcurrent < 1 {
+			return TranscodeConfig{}, ValidationError("maxConcurrentTranscodes must be at least 1")
+		}
+		writes[configTranscodeMaxConcurrent] = strconv.Itoa(*patch.MaxConcurrent)
+	}
+	if patch.ClearMaxConcurrent {
+		clears = append(clears, configTranscodeMaxConcurrent)
+	}
+	if patch.TempDir != nil {
+		if *patch.TempDir == "" {
+			clears = append(clears, configTranscodeTempDir)
+		} else {
+			writes[configTranscodeTempDir] = *patch.TempDir
+		}
+	}
+	if patch.ToneMapEnabled != nil {
+		writes[configTranscodeToneMapEnabled] = boolToConfig(*patch.ToneMapEnabled)
 	}
 	if err := s.setServerConfigValues(ctx, writes, now); err != nil {
 		return TranscodeConfig{}, err

@@ -32,6 +32,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -47,6 +48,9 @@ const (
 	// alternatives are an FFmpeg that dies at filter-graph parse (the shipped
 	// bug) or a washed-out, wrong-rendition encode.
 	ToneMapRefusalUnverified = "hdr-tone-map-unverified"
+	// ToneMapRefusalDisabled is an HDR source while the operator has turned
+	// tone-mapping off in the Console (SetToneMapEnabled(false)).
+	ToneMapRefusalDisabled = "hdr-tone-map-disabled"
 )
 
 // ToneMapStatus is what the probe actually proved about the resolved binary.
@@ -938,6 +942,24 @@ var selectRenditionToneMapBackend = func(r Rendition) HWAccel {
 //io:ignore — in-memory capability check after a one-shot probe, not a server I/O journey.
 func ToneMapSupported() bool {
 	return ToneMapCapability().Status == ToneMapWorking
+}
+
+// toneMapDisabled is the operator's Console tone-map switch, stored inverted so
+// the zero value keeps tone-mapping on. It is process state like the probe
+// verdict: the transcode-config mutation flips it live, and every refusal check
+// reads it at decision time.
+var toneMapDisabled atomic.Bool
+
+// SetToneMapEnabled applies the operator's HDR tone-map switch. Off refuses
+// every re-encode that would need tone-mapping with ToneMapRefusalDisabled; it
+// never emits an untone-mapped encode.
+func SetToneMapEnabled(enabled bool) {
+	toneMapDisabled.Store(!enabled)
+}
+
+// ToneMapEnabled reports the operator's HDR tone-map switch (default on).
+func ToneMapEnabled() bool {
+	return !toneMapDisabled.Load()
 }
 
 // toneMapSupported is the capability gate Rendition.ToneMapRefusal consults. It

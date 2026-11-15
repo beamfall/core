@@ -1383,6 +1383,33 @@ export interface TranscodeConfigInfo {
   device: string;
   configuredPreference?: string;
   hardwareAcceleration: HardwareAccelerationInfo[];
+  /** Stored concurrent-transcode cap; 0 = automatic. */
+  maxConcurrentTranscodes: number;
+  /** The cap the transcoder enforces now. */
+  effectiveMaxConcurrentTranscodes: number;
+  /** BEAMFALL_TRANSCODE_CAP or --transcode-cap overrides the stored cap. */
+  maxConcurrentTranscodesEnvOverride: boolean;
+  maxConcurrentTranscodesRestartRequired: boolean;
+  /** Stored transcode temp directory; "" = server default. */
+  tempDir: string;
+  /** The directory the running transcoder uses. */
+  effectiveTempDir: string;
+  /** BEAMFALL_TRANSCODE_TMP or --transcode-tmp overrides the stored directory. */
+  tempDirEnvOverride: boolean;
+  tempDirRestartRequired: boolean;
+  /** HDR-to-SDR tone-map switch (applies live). */
+  toneMapEnabled: boolean;
+}
+
+/** A transcode-config write: a null cap returns it to automatic. */
+export interface TranscodeConfigUpdate {
+  hardwareEnabled: boolean;
+  codec: string;
+  quality: string;
+  device: string;
+  maxConcurrentTranscodes: number | null;
+  tempDir: string;
+  toneMapEnabled: boolean;
 }
 
 // --- Manage / Console: live sessions, access schedules --------------------

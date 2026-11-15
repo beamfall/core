@@ -236,6 +236,7 @@ function FeaturePlayer({
       transcodeCapacityReached: t("playbackTranscodeCapacityReached"),
       dolbyVisionUnavailable: t("playbackDolbyVisionUnavailable"),
       hdrToneMapUnavailable: t("playbackHdrToneMapUnavailable"),
+      hdrToneMapDisabled: t("playbackHdrToneMapDisabled"),
       sourceEndsEarly: t("playbackSourceEndsEarly"),
     },
     startAtSeconds,

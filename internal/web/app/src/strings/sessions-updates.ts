@@ -10,6 +10,23 @@ export const sessionUpdateStrings = {
     transcodeServerDefault: "Server default",
     transcodeConfigSave: "Save",
     transcodeConfigUnavailable: "Could not load transcoding configuration.",
+    transcodeConfigSaveFailed: "Could not save transcoding settings: {reason}",
+    transcodeConfigSaved: "Transcoding settings saved",
+    transcodeMaxConcurrent: "Maximum simultaneous transcodes",
+    transcodeAutomatic: "Automatic",
+    transcodeMaxConcurrentInvalid:
+      "Enter a whole number of at least 1, or leave it empty for automatic.",
+    transcodeMaxConcurrentEffective: "In effect: {count}",
+    transcodeMaxConcurrentEnvOverride:
+      "BEAMFALL_TRANSCODE_CAP sets the cap in effect. A value saved here applies once that variable is removed.",
+    transcodeTempDir: "Transcoder temp directory",
+    transcodeTempDirEffective: "In use: {dir}",
+    transcodeTempDirEnvOverride:
+      "BEAMFALL_TRANSCODE_TMP sets the directory in use. A value saved here applies once that variable is removed.",
+    transcodeRestartRequired: "Restart the server to apply this change.",
+    transcodeToneMapEnabled: "HDR tone mapping",
+    transcodeToneMapHelp:
+      "Convert HDR video to SDR when transcoding. When off, HDR video that needs converting is not transcoded.",
     prePlayClipsHeading: "Intro clips",
     prePlayClipsLead:
       "Clips that play, in this order, before an eligible title for profiles that turn on intros and previews. Up to {max}.",

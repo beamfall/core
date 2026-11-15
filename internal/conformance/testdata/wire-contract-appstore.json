@@ -25614,6 +25614,14 @@
           "kind": "scalar"
         },
         {
+          "name": "effectiveMaxConcurrentTranscodes",
+          "kind": "scalar"
+        },
+        {
+          "name": "effectiveTempDir",
+          "kind": "scalar"
+        },
+        {
           "name": "hardwareAcceleration",
           "kind": "list",
           "nullable": true,
@@ -25646,7 +25654,35 @@
           "kind": "scalar"
         },
         {
+          "name": "maxConcurrentTranscodes",
+          "kind": "scalar"
+        },
+        {
+          "name": "maxConcurrentTranscodesEnvOverride",
+          "kind": "scalar"
+        },
+        {
+          "name": "maxConcurrentTranscodesRestartRequired",
+          "kind": "scalar"
+        },
+        {
           "name": "quality",
+          "kind": "scalar"
+        },
+        {
+          "name": "tempDir",
+          "kind": "scalar"
+        },
+        {
+          "name": "tempDirEnvOverride",
+          "kind": "scalar"
+        },
+        {
+          "name": "tempDirRestartRequired",
+          "kind": "scalar"
+        },
+        {
+          "name": "toneMapEnabled",
           "kind": "scalar"
         }
       ]
@@ -26943,6 +26979,14 @@
           "kind": "scalar"
         },
         {
+          "name": "effectiveMaxConcurrentTranscodes",
+          "kind": "scalar"
+        },
+        {
+          "name": "effectiveTempDir",
+          "kind": "scalar"
+        },
+        {
           "name": "hardwareAcceleration",
           "kind": "list",
           "nullable": true,
@@ -26975,7 +27019,35 @@
           "kind": "scalar"
         },
         {
+          "name": "maxConcurrentTranscodes",
+          "kind": "scalar"
+        },
+        {
+          "name": "maxConcurrentTranscodesEnvOverride",
+          "kind": "scalar"
+        },
+        {
+          "name": "maxConcurrentTranscodesRestartRequired",
+          "kind": "scalar"
+        },
+        {
           "name": "quality",
+          "kind": "scalar"
+        },
+        {
+          "name": "tempDir",
+          "kind": "scalar"
+        },
+        {
+          "name": "tempDirEnvOverride",
+          "kind": "scalar"
+        },
+        {
+          "name": "tempDirRestartRequired",
+          "kind": "scalar"
+        },
+        {
+          "name": "toneMapEnabled",
           "kind": "scalar"
         }
       ]

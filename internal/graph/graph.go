@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -343,6 +344,7 @@ type Options struct {
 	UpdateChecker                UpdateChecker
 	ServerVersion                string
 	WatcherStatus                WatcherStatusProvider
+	TranscodeRuntime             TranscodeRuntime
 	QBittorrentIngest            QBittorrentIngestProvider
 	QBittorrentIngestConfigurer  QBittorrentIngestConfigurer
 	IntegrationLifecycle         IntegrationLifecycle
@@ -375,6 +377,14 @@ type Handler struct {
 	scanObserver    ScanObserver
 	libraryObserver LibraryMutationObserver
 	hardwareAccel   config.HardwareAccelReport
+	// transcodeRuntime is the live transcoder wiring the transcode-config
+	// resolver reads and applies; liveTranscodeCap is the cap now in force.
+	transcodeRuntime TranscodeRuntime
+	liveTranscodeCap atomic.Int64
+	// transcodeConfigMu serializes a transcode-config write with its live
+	// apply, so an older save can never overwrite a newer one in the running
+	// transcoder (CORE-1970).
+	transcodeConfigMu sync.Mutex
 	// mutationAuditAppend is a test seam for the request-level audit lifecycle.
 	// Nil uses store.AppendActivity in production.
 	mutationAuditAppend func(context.Context, store.ActivityEntry) error
@@ -721,6 +731,8 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 	h.playbackObserver = o.PlaybackObserver
 	h.hostMetrics = o.HostMetrics
 	h.transcodeAdmission = o.TranscodeAdmission
+	h.transcodeRuntime = o.TranscodeRuntime
+	h.liveTranscodeCap.Store(int64(o.TranscodeRuntime.StartupCap))
 	h.updateChecker = o.UpdateChecker
 	h.serverVersion = o.ServerVersion
 	h.watcherProvider = o.WatcherStatus

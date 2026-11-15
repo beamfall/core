@@ -255,6 +255,7 @@ export interface UnavailableReasonMessages {
   transcodeCapacityReached?: string;
   dolbyVisionUnavailable?: string;
   hdrToneMapUnavailable?: string;
+  hdrToneMapDisabled?: string;
 }
 
 // Every reason internal/playback leaves on an `unavailable` decision
@@ -272,6 +273,7 @@ export const UNAVAILABLE_REASONS: Record<
   "transcode-capacity-reached": { message: "transcodeCapacityReached", action: "retry" },
   "dolby-vision-p5-transcode-unavailable": { message: "dolbyVisionUnavailable", action: "back" },
   "hdr-tone-map-unverified": { message: "hdrToneMapUnavailable", action: "back" },
+  "hdr-tone-map-disabled": { message: "hdrToneMapDisabled", action: "back" },
 };
 
 /**

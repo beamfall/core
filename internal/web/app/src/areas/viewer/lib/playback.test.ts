@@ -156,6 +156,7 @@ describe("unavailableReason (CORE-1146)", () => {
     "transcode-capacity-reached": ["transcodeCapacityReached", "retry"],
     "dolby-vision-p5-transcode-unavailable": ["dolbyVisionUnavailable", "back"],
     "hdr-tone-map-unverified": ["hdrToneMapUnavailable", "back"],
+    "hdr-tone-map-disabled": ["hdrToneMapDisabled", "back"],
   } as const;
   const messages: Required<UnavailableReasonMessages> = {
     mediaFileMissing: "file missing",
@@ -165,6 +166,7 @@ describe("unavailableReason (CORE-1146)", () => {
     transcodeCapacityReached: "server busy",
     dolbyVisionUnavailable: "dolby vision",
     hdrToneMapUnavailable: "hdr",
+    hdrToneMapDisabled: "hdr off",
   };
 
   it("maps exactly the server's reasons", () => {

@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
@@ -42,6 +42,15 @@ const savedTranscode = {
   device: "",
   configuredPreference: "",
   hardwareAcceleration: [],
+  maxConcurrentTranscodes: 0,
+  effectiveMaxConcurrentTranscodes: 3,
+  maxConcurrentTranscodesEnvOverride: false,
+  maxConcurrentTranscodesRestartRequired: false,
+  tempDir: "",
+  effectiveTempDir: "/srv/beamfall/transcode",
+  tempDirEnvOverride: false,
+  tempDirRestartRequired: false,
+  toneMapEnabled: true,
 };
 
 const savedConsole: ConsoleConfigInfo = {
@@ -82,7 +91,7 @@ function renderConfig() {
 
 describe("transcoding config", () => {
   it("keeps an edited Advanced field visible in Normal so Save never hides it", async () => {
-    vi.mocked(setTranscodeConfig).mockImplementation(async (next) => next);
+    vi.mocked(setTranscodeConfig).mockResolvedValue(savedTranscode);
     setAdvancedSettings(true);
     const user = userEvent.setup();
     renderConfig();
@@ -92,6 +101,118 @@ describe("transcoding config", () => {
 
     expect(screen.getByRole("textbox", { name: "Codec" })).toHaveValue("hevc");
     expect(screen.queryByRole("textbox", { name: "Quality" })).toBeNull();
+  });
+
+  it("saves the cap and tone-map switch and shows the cap in effect", async () => {
+    vi.mocked(setTranscodeConfig).mockResolvedValue({
+      ...savedTranscode,
+      maxConcurrentTranscodes: 2,
+      effectiveMaxConcurrentTranscodes: 2,
+      toneMapEnabled: false,
+    });
+    const user = userEvent.setup();
+    renderConfig();
+
+    const cap = await screen.findByRole("textbox", { name: "Maximum simultaneous transcodes" });
+    expect(await screen.findByText("In effect: 3")).toBeInTheDocument();
+    await user.type(cap, "2");
+    await user.click(screen.getByRole("switch", { name: "HDR tone mapping" }));
+    const form = cap.closest("form") as HTMLFormElement;
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByText("In effect: 2")).toBeInTheDocument());
+    expect(setTranscodeConfig).toHaveBeenCalledWith({
+      hardwareEnabled: false,
+      codec: "",
+      quality: "",
+      device: "",
+      maxConcurrentTranscodes: 2,
+      tempDir: "",
+      toneMapEnabled: false,
+    });
+  });
+
+  it("sends an empty cap as automatic", async () => {
+    vi.mocked(fetchTranscodeConfig).mockResolvedValue({
+      ...savedTranscode,
+      maxConcurrentTranscodes: 4,
+    });
+    vi.mocked(setTranscodeConfig).mockResolvedValue(savedTranscode);
+    const user = userEvent.setup();
+    renderConfig();
+
+    const cap = await screen.findByRole("textbox", { name: "Maximum simultaneous transcodes" });
+    await waitFor(() => expect(cap).toHaveValue("4"));
+    await user.clear(cap);
+    await user.click(
+      within(cap.closest("form") as HTMLFormElement).getByRole("button", { name: "Save" }),
+    );
+
+    await waitFor(() =>
+      expect(setTranscodeConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ maxConcurrentTranscodes: null }),
+      ),
+    );
+  });
+
+  it("refuses a zero or negative cap before sending it", async () => {
+    const user = userEvent.setup();
+    renderConfig();
+
+    const cap = await screen.findByRole("textbox", { name: "Maximum simultaneous transcodes" });
+    const save = within(cap.closest("form") as HTMLFormElement).getByRole("button", {
+      name: "Save",
+    });
+    for (const bad of ["0", "-2"]) {
+      await user.clear(cap);
+      await user.type(cap, bad);
+      await user.click(save);
+      expect(await screen.findByRole("alert")).toHaveTextContent("at least 1");
+    }
+    expect(setTranscodeConfig).not.toHaveBeenCalled();
+  });
+
+  it("shows the server's rejection of a temp directory", async () => {
+    vi.mocked(setTranscodeConfig).mockRejectedValue(
+      new Error("tempDir must be an existing, writable directory"),
+    );
+    setAdvancedSettings(true);
+    const user = userEvent.setup();
+    renderConfig();
+
+    const dir = await screen.findByRole("textbox", { name: "Transcoder temp directory" });
+    await user.type(dir, "/srv/missing");
+    await user.click(
+      within(dir.closest("form") as HTMLFormElement).getByRole("button", { name: "Save" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "tempDir must be an existing, writable directory",
+    );
+    expect(setTranscodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ tempDir: "/srv/missing" }),
+    );
+  });
+
+  it("says when an environment variable overrides a setting and when a restart is needed", async () => {
+    vi.mocked(fetchTranscodeConfig).mockResolvedValue({
+      ...savedTranscode,
+      maxConcurrentTranscodes: 2,
+      effectiveMaxConcurrentTranscodes: 6,
+      maxConcurrentTranscodesEnvOverride: true,
+      tempDir: "/srv/scratch",
+      effectiveTempDir: "/srv/beamfall/transcode",
+      tempDirRestartRequired: true,
+    });
+    renderConfig();
+
+    expect(await screen.findByText("In effect: 6")).toBeInTheDocument();
+    expect(screen.getByText(/BEAMFALL_TRANSCODE_CAP sets the cap in effect/)).toBeInTheDocument();
+    // The temp dir holds a value, so it stays visible in Normal with its status.
+    const dirStatus = screen.getByTestId("transcode-temp-dir-status");
+    expect(dirStatus).toHaveTextContent("In use: /srv/beamfall/transcode");
+    expect(dirStatus).toHaveTextContent("Restart the server to apply this change.");
+    expect(screen.getByTestId("transcode-cap-status")).not.toHaveTextContent("Restart");
   });
 });
 
