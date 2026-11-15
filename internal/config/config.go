@@ -209,6 +209,11 @@ type HardwareAccelProbe struct {
 	// HEVC reports that the accelerator's HEVC encoder passed its own probe
 	// encode, separately from the H.264 verdict in Status.
 	HEVC bool `json:"hevc"`
+	// AV1 reports that the accelerator's AV1 encoder passed its own probe
+	// encode, and LowPower that the accelerator encodes only in low-power
+	// mode (CORE-2094). Internal report only, never copied onto the API.
+	AV1      bool `json:"av1"`
+	LowPower bool `json:"lowPower"`
 }
 
 // HEVC lists the working accelerators whose HEVC encoder was also verified, in
@@ -217,6 +222,29 @@ func (r HardwareAccelReport) HEVC() []string {
 	var out []string
 	for _, probe := range r.Results {
 		if probe.Status == "working" && probe.HEVC {
+			out = append(out, probe.Accelerator)
+		}
+	}
+	return out
+}
+
+// AV1 lists the working accelerators whose AV1 encoder was also verified, in
+// probe order.
+func (r HardwareAccelReport) AV1() []string {
+	var out []string
+	for _, probe := range r.Results {
+		if probe.Status == "working" && probe.AV1 {
+			out = append(out, probe.Accelerator)
+		}
+	}
+	return out
+}
+
+// LowPower lists the working accelerators that encode only in low-power mode.
+func (r HardwareAccelReport) LowPower() []string {
+	var out []string
+	for _, probe := range r.Results {
+		if probe.Status == "working" && probe.LowPower {
 			out = append(out, probe.Accelerator)
 		}
 	}

@@ -115,14 +115,14 @@ func TestSelectedRenderNodeDrivesProbeToneMapAndEncode(t *testing.T) {
 	wantQSVInit := []string{"-init_hw_device", "qsv=bfqsv:hw,child_device=" + node}
 
 	for _, encoder := range []string{"h264_qsv", "hevc_qsv"} {
-		if got := hwAccelProbeArgs(encoder); !slices.Equal(got[:2], wantQSVInit) {
+		if got := hwAccelProbeArgs(HWAccelEncode{Encoder: encoder}); !slices.Equal(got[:2], wantQSVInit) {
 			t.Fatalf("%s probe argv = %v, want it to lead with %v", encoder, got, wantQSVInit)
 		}
 	}
-	if got := hwAccelProbeArgs("h264_vaapi"); !slices.Contains(got, node) || slices.Contains(got, "qsv=bfqsv:hw,child_device="+node) {
+	if got := hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_vaapi"}); !slices.Contains(got, node) || slices.Contains(got, "qsv=bfqsv:hw,child_device="+node) {
 		t.Fatalf("VAAPI probe argv = %v, want -vaapi_device %s and no QSV init", got, node)
 	}
-	if got := hwAccelProbeArgs("h264_nvenc"); slices.Contains(got, "-init_hw_device") {
+	if got := hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_nvenc"}); slices.Contains(got, "-init_hw_device") {
 		t.Fatalf("NVENC probe argv initialises a DRM device: %v", got)
 	}
 

@@ -77,6 +77,15 @@ type HWAccelProbe struct {
 	// before Skylake, Macs without an HEVC media engine), so HEVC is never
 	// inferred from the H.264 verdict (CORE-2088, ADR-0013 §4).
 	HEVC bool
+	// AV1 reports that the accelerator's AV1 encoder passed its own trivial
+	// encode, probed like HEVC only after H.264 passed (CORE-2094).
+	// VideoToolbox has no AV1 encoder, so it never reports AV1.
+	AV1 bool
+	// LowPower reports that H.264 passed only in low-power mode
+	// (`-low_power 1`, Intel's VDENC path on QSV and VA-API) after the normal
+	// encode failed. The HEVC and AV1 probes and every real encode on this
+	// accelerator then run in low-power mode too (CORE-2094).
+	LowPower bool
 }
 
 // hwAccelEncoder maps an accelerator to the ffmpeg encoder name its trivial
@@ -96,20 +105,59 @@ var hwAccelHEVCEncoder = map[HWAccel]string{
 	HWAccelVideoToolbox: "hevc_videotoolbox",
 }
 
-func hwAccelVideoEncoder(accel HWAccel, codec string) string {
-	if codec == "hevc" {
-		return hwAccelHEVCEncoder[accel]
-	}
-	return hwAccelEncoder[accel]
+// hwAccelAV1Encoder lists the hardware AV1 encoders. FFmpeg has no
+// av1_videotoolbox, so VideoToolbox is absent.
+var hwAccelAV1Encoder = map[HWAccel]string{
+	HWAccelQSV:   "av1_qsv",
+	HWAccelVAAPI: "av1_vaapi",
+	HWAccelNVENC: "av1_nvenc",
 }
 
-// HWAccelRunner runs one trivial probe encode for the named ffmpeg encoder and
-// returns nil only if the encode succeeded. The injected seam: the real
+func hwAccelVideoEncoder(accel HWAccel, codec string) string {
+	switch codec {
+	case "hevc":
+		return hwAccelHEVCEncoder[accel]
+	case "av1":
+		return hwAccelAV1Encoder[accel]
+	default:
+		return hwAccelEncoder[accel]
+	}
+}
+
+// hwAccelLowPowerCapable lists the accelerators whose encoders take
+// `-low_power 1`: Intel's VDENC path, reached through QSV or VA-API. Some Intel
+// parts (Jasper Lake, Alder Lake-N, and Gen12+ with the HuC firmware loaded)
+// encode only in low-power mode, so their normal probe fails.
+func hwAccelLowPowerCapable(accel HWAccel) bool {
+	return accel == HWAccelQSV || accel == HWAccelVAAPI
+}
+
+// hwAccelOfEncoder names the accelerator an encoder belongs to.
+func hwAccelOfEncoder(encoder string) HWAccel {
+	for _, encoders := range []map[HWAccel]string{hwAccelEncoder, hwAccelHEVCEncoder, hwAccelAV1Encoder} {
+		for accel, name := range encoders {
+			if name == encoder {
+				return accel
+			}
+		}
+	}
+	return ""
+}
+
+// HWAccelEncode is one probe encode: the ffmpeg encoder and whether it runs in
+// low-power mode.
+type HWAccelEncode struct {
+	Encoder  string
+	LowPower bool
+}
+
+// HWAccelRunner runs one trivial probe encode and returns nil only if the
+// encode succeeded. The injected seam: the real
 // implementation execs a time-boxed ffmpeg; tests pass a stub that returns
 // canned results and records which encoders were attempted, so the probe is
 // exercised without real hardware. The probe calls it concurrently for
 // different accelerators, so it must be safe for concurrent use.
-type HWAccelRunner func(ctx context.Context, encoder string) error
+type HWAccelRunner func(ctx context.Context, encode HWAccelEncode) error
 
 // HWAccelOptions configures a probe run. The zero value is a valid production
 // probe: a real time-boxed ffmpeg runner, the host's real GOOS, and a real
@@ -177,6 +225,28 @@ func (r HWAccelResult) SupportsHEVC(a HWAccel) bool {
 		}
 	}
 	return false
+}
+
+// HardwareEncode is what the probe verified for accel, ready for
+// Runner.SetHardwareEncode. An accelerator that is not working yields the zero
+// value (software).
+func (r HWAccelResult) HardwareEncode(accel HWAccel) HardwareEncode {
+	for _, probe := range r.Results {
+		if probe.Accelerator == accel && probe.Status == HWAccelWorking {
+			return HardwareEncode{Accel: accel, HEVC: probe.HEVC, AV1: probe.AV1, LowPower: probe.LowPower}
+		}
+	}
+	return HardwareEncode{}
+}
+
+// HardwareEncode is the verified hardware encode path the runner transcodes
+// on: the accelerator, which codecs beyond H.264 its probe verified, and
+// whether its encoders run in low-power mode.
+type HardwareEncode struct {
+	Accel    HWAccel
+	HEVC     bool
+	AV1      bool
+	LowPower bool
 }
 
 // SoftwareOnly reports whether no hardware accelerator was verified working, so
@@ -295,8 +365,9 @@ func hwAccelCandidates(goos string, driPresent bool) []HWAccel {
 // Candidates are probed concurrently, each on its own chain of time-boxed
 // encodes, so one hung accelerator cannot starve the others: a QSV probe that
 // wedges until its PerProbeTimeout leaves VAAPI and NVENC their full budgets
-// (CORE-2090). Within a candidate the encodes stay sequential, because HEVC is
-// only worth probing once H.264 passed (CORE-2088). The context and
+// (CORE-2090). Within a candidate the encodes stay sequential, because HEVC and
+// AV1 are only worth probing once H.264 passed (CORE-2088), in the mode H.264
+// passed in (CORE-2094). The context and
 // TotalTimeout bound the whole run, and the report keeps closed-vocabulary
 // order whatever order the probes finish in.
 func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult {
@@ -349,35 +420,54 @@ func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult 
 }
 
 // hwAccelProbeChainLength is the most encodes one candidate's chain runs in
-// sequence (H.264, then HEVC). Candidates run concurrently, so the default
-// TotalTimeout is one chain's worth of per-probe budgets: enough for the
-// slowest candidate to finish, and still a fixed bound on boot.
-const hwAccelProbeChainLength = 2
+// sequence: H.264, H.264 in low-power mode, HEVC, AV1. Candidates run
+// concurrently, so the default TotalTimeout is one chain's worth of per-probe
+// budgets: enough for the slowest candidate to finish, and still a fixed bound
+// on boot.
+const hwAccelProbeChainLength = 4
 
-// probeHWAccelCandidate runs one accelerator's chain: the H.264 encode decides
-// whether the accelerator works at all, and only then is its HEVC encoder
-// probed.
+// probeHWAccelCandidate runs one accelerator's chain. The H.264 encode decides
+// whether the accelerator works at all; on QSV and VA-API a failed normal
+// encode is retried in low-power mode (CORE-2094). Only then are the HEVC and
+// AV1 encoders probed, in the mode H.264 passed in.
 func probeHWAccelCandidate(ctx context.Context, runner HWAccelRunner, candidate HWAccel, timeout time.Duration, configured bool) HWAccelProbe {
 	probe := HWAccelProbe{Accelerator: candidate, Status: HWAccelUnavailable}
-	if err := probeOneHWAccel(ctx, runner, hwAccelEncoder[candidate], timeout); err != nil {
+	encode := HWAccelEncode{Encoder: hwAccelEncoder[candidate]}
+	err := probeOneHWAccel(ctx, runner, encode, timeout)
+	if err != nil && hwAccelLowPowerCapable(candidate) && ctx.Err() == nil {
+		encode.LowPower = true
+		err = probeOneHWAccel(ctx, runner, encode, timeout)
+	}
+	if err != nil {
 		if configured {
 			probe.Status = HWAccelConfiguredFailed
 		}
 		return probe
 	}
 	probe.Status = HWAccelWorking
-	probe.HEVC = ctx.Err() == nil && probeOneHWAccel(ctx, runner, hwAccelHEVCEncoder[candidate], timeout) == nil
+	probe.LowPower = encode.LowPower
+	probe.HEVC = probeFollowUpEncoder(ctx, runner, hwAccelHEVCEncoder[candidate], encode.LowPower, timeout)
+	probe.AV1 = probeFollowUpEncoder(ctx, runner, hwAccelAV1Encoder[candidate], encode.LowPower, timeout)
 	return probe
 }
 
-func probeOneHWAccel(ctx context.Context, runner HWAccelRunner, encoder string, timeout time.Duration) error {
+// probeFollowUpEncoder probes a codec beyond H.264 on an accelerator whose
+// H.264 encode passed. An accelerator with no such encoder reports false.
+func probeFollowUpEncoder(ctx context.Context, runner HWAccelRunner, encoder string, lowPower bool, timeout time.Duration) bool {
+	if encoder == "" || ctx.Err() != nil {
+		return false
+	}
+	return probeOneHWAccel(ctx, runner, HWAccelEncode{Encoder: encoder, LowPower: lowPower}, timeout) == nil
+}
+
+func probeOneHWAccel(ctx context.Context, runner HWAccelRunner, encode HWAccelEncode, timeout time.Duration) error {
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	return runner(probeCtx, encoder)
+	return runner(probeCtx, encode)
 }
 
 func init() {
-	for _, encoders := range []map[HWAccel]string{hwAccelEncoder, hwAccelHEVCEncoder} {
+	for _, encoders := range []map[HWAccel]string{hwAccelEncoder, hwAccelHEVCEncoder, hwAccelAV1Encoder} {
 		for accel, encoder := range encoders {
 			if !slices.Contains(allHWAccels, accel) {
 				panic("ffmpeg: hwAccelEncoder contains accelerator outside closed vocabulary")
@@ -403,19 +493,21 @@ func devDRIPresent() bool {
 // path works, with no real media file. ctx (already time-boxed by the probe)
 // bounds the run. A missing ffmpeg binary or any non-zero exit reports the
 // accelerator as not working.
-func DefaultHWAccelRunner(ctx context.Context, encoder string) error {
+func DefaultHWAccelRunner(ctx context.Context, encode HWAccelEncode) error {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return err
 	}
-	args := hwAccelProbeArgs(encoder)
+	args := hwAccelProbeArgs(encode)
 	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	// Under the bounded supervisor (tree kill + reap on the probe's time-box)
 	// with output discarded: the probe's verdict is the exit status alone.
 	return supervise(ctx, cmd, io.Discard, io.Discard)
 }
 
-func hwAccelProbeArgs(encoder string) []string {
+func hwAccelProbeArgs(encode HWAccelEncode) []string {
+	encoder := encode.Encoder
+	accel := hwAccelOfEncoder(encoder)
 	// A 1-frame synthetic source encoded to the null muxer: the cheapest way to
 	// force ffmpeg to initialize the hardware encoder. -v error keeps the probe
 	// quiet; a real failure still returns a non-zero exit.
@@ -425,12 +517,12 @@ func hwAccelProbeArgs(encoder string) []string {
 		"-i", "testsrc=duration=0.1:size=128x128:rate=10",
 		"-frames:v", "1",
 	}
-	if encoder == hwAccelEncoder[HWAccelQSV] || encoder == hwAccelHEVCEncoder[HWAccelQSV] {
+	if accel == HWAccelQSV {
 		// The probe initialises QSV on the selected node exactly as the encode
 		// does (CORE-2092), so a pass proves the GPU the encode will use.
 		args = append(qsvInitArgs(), args...)
 	}
-	if encoder == hwAccelEncoder[HWAccelVAAPI] || encoder == hwAccelHEVCEncoder[HWAccelVAAPI] {
+	if accel == HWAccelVAAPI {
 		args = []string{
 			"-v", "error",
 			"-vaapi_device", vaapiDevicePath(),
@@ -440,13 +532,15 @@ func hwAccelProbeArgs(encoder string) []string {
 			"-vf", "format=nv12,hwupload",
 		}
 	}
-	args = append(args,
-		"-c:v", encoder,
-		"-f", "null",
-		"-",
-	)
-	return args
+	args = append(args, "-c:v", encoder)
+	if encode.LowPower && hwAccelLowPowerCapable(accel) {
+		args = append(args, lowPowerArgs...)
+	}
+	return append(args, "-f", "null", "-")
 }
+
+// lowPowerArgs selects the low-power (VDENC) encode on QSV and VA-API.
+var lowPowerArgs = []string{"-low_power", "1"}
 
 // vaapiDevicePath is the render node QSV and VA-API use: the node installed by
 // SetRenderNode (CORE-2092), else the first sorted /dev/dri/renderD*.

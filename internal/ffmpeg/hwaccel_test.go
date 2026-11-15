@@ -12,9 +12,11 @@ import (
 	"time"
 )
 
-// stubHWAccelRunner records every encoder it was asked to probe and returns a
-// canned result per encoder: an encoder explicitly mapped to nil succeeds, and
-// any encoder absent from the map fails — modeling hardware the box lacks. This
+// stubHWAccelRunner records every encode it was asked to probe and returns a
+// canned result per encode: an encode explicitly mapped to nil succeeds, and
+// any encode absent from the map fails — modeling hardware the box lacks. An
+// encode is keyed by its encoder name, with ":low_power" appended for a
+// low-power encode (CORE-2094). This
 // is the injected seam standing in for a real ffmpeg run, so the probe is
 // exercised with no real hardware.
 type stubHWAccelRunner struct {
@@ -25,20 +27,26 @@ type stubHWAccelRunner struct {
 
 // runStrict fails any encoder not explicitly listed, so a test asserts exactly
 // which candidates were declared working.
-func (s *stubHWAccelRunner) runStrict(_ context.Context, encoder string) error {
+func (s *stubHWAccelRunner) runStrict(_ context.Context, encode HWAccelEncode) error {
+	key := encode.Encoder
+	if encode.LowPower {
+		key += lowPowerSuffix
+	}
 	s.mu.Lock()
-	s.attempts = append(s.attempts, encoder)
+	s.attempts = append(s.attempts, key)
 	s.mu.Unlock()
-	if err, ok := s.results[encoder]; ok {
+	if err, ok := s.results[key]; ok {
 		return err
 	}
 	return errors.New("encoder not available")
 }
 
-// assertAttempts checks which encoders were probed. Candidates probe
+const lowPowerSuffix = ":low_power"
+
+// assertAttempts checks which encodes were probed. Candidates probe
 // concurrently, so the comparison is order-free across accelerators; within one
 // accelerator every follow-up encode must come after its H.264 encode
-// (CORE-2088).
+// (CORE-2088), and a low-power H.264 retry after the normal one (CORE-2094).
 func (s *stubHWAccelRunner) assertAttempts(t *testing.T, want ...string) {
 	t.Helper()
 	s.mu.Lock()
@@ -48,13 +56,14 @@ func (s *stubHWAccelRunner) assertAttempts(t *testing.T, want ...string) {
 	if !slices.Equal(sortedGot, sortedWant) {
 		t.Fatalf("attempts = %v, want %v (any order)", got, want)
 	}
-	for i, encoder := range got {
+	for i, attempt := range got {
+		encoder, lowPower := strings.CutSuffix(attempt, lowPowerSuffix)
 		codec, accel, _ := strings.Cut(encoder, "_")
-		if codec == "h264" {
+		if codec == "h264" && !lowPower {
 			continue
 		}
 		if first := slices.Index(got, "h264_"+accel); first < 0 || first > i {
-			t.Fatalf("attempts = %v: %s probed before h264_%s passed", got, encoder, accel)
+			t.Fatalf("attempts = %v: %s probed before h264_%s", got, attempt, accel)
 		}
 	}
 }
@@ -107,7 +116,9 @@ func TestProbeHardwareAccelLinuxReportsOnlyWorking(t *testing.T) {
 	}
 	// VAAPI must have been attempted (DRI present) even though it failed; HEVC
 	// is probed only behind a passing H.264 probe.
-	stub.assertAttempts(t, "h264_qsv", "hevc_qsv", "h264_vaapi", "h264_nvenc", "hevc_nvenc")
+	// A failed VAAPI encode is retried in low-power mode; AV1 follows HEVC.
+	stub.assertAttempts(t, "h264_qsv", "hevc_qsv", "av1_qsv", "h264_vaapi", "h264_vaapi:low_power",
+		"h264_nvenc", "hevc_nvenc", "av1_nvenc")
 }
 
 func TestSelectHWAccelPrefersVerifiedConfiguredAccelerator(t *testing.T) {
@@ -185,7 +196,7 @@ func TestProbeHardwareAccelDegradesWhenDRIAbsent(t *testing.T) {
 	if want := []HWAccel{HWAccelNVENC}; !reflect.DeepEqual(got.Working, want) {
 		t.Fatalf("Working = %v, want %v", got.Working, want)
 	}
-	stub.assertAttempts(t, "h264_nvenc", "hevc_nvenc")
+	stub.assertAttempts(t, "h264_nvenc", "hevc_nvenc", "av1_nvenc")
 	statuses := statusByAccel(got)
 	if statuses[HWAccelQSV] != HWAccelUnavailable || statuses[HWAccelVAAPI] != HWAccelUnavailable {
 		t.Fatalf("DRI-gated statuses = %#v, want QSV/VAAPI unavailable", statuses)
@@ -208,8 +219,9 @@ func TestProbeHardwareAccelConfiguredButFailed(t *testing.T) {
 	if len(got.Working) != 0 {
 		t.Fatalf("Working = %v, want empty", got.Working)
 	}
-	// All three Linux candidates were still test-driven.
-	stub.assertAttempts(t, "h264_qsv", "h264_vaapi", "h264_nvenc")
+	// All three Linux candidates were still test-driven, the Intel ones in
+	// low-power mode too.
+	stub.assertAttempts(t, "h264_qsv", "h264_qsv:low_power", "h264_vaapi", "h264_vaapi:low_power", "h264_nvenc")
 	statuses := statusByAccel(got)
 	if statuses[HWAccelVAAPI] != HWAccelConfiguredFailed {
 		t.Fatalf("configured VAAPI status = %q, want configured-but-failed", statuses[HWAccelVAAPI])
@@ -220,7 +232,7 @@ func TestProbeHardwareAccelConfiguredButFailed(t *testing.T) {
 }
 
 func TestProbeHardwareAccelOutputIsSanitized(t *testing.T) {
-	runner := func(context.Context, string) error {
+	runner := func(context.Context, HWAccelEncode) error {
 		return errors.New("ffmpeg failed on /Users/alice/private/movie.mkv")
 	}
 	got := ProbeHardwareAccel(context.Background(), HWAccelOptions{
@@ -250,6 +262,7 @@ func TestProbeHardwareAccelDarwinProbesVideoToolbox(t *testing.T) {
 	if want := []HWAccel{HWAccelVideoToolbox}; !reflect.DeepEqual(got.Working, want) {
 		t.Fatalf("Working = %v, want %v", got.Working, want)
 	}
+	// VideoToolbox has no AV1 encoder and no low-power retry.
 	stub.assertAttempts(t, "h264_videotoolbox", "hevc_videotoolbox")
 }
 
@@ -293,7 +306,7 @@ func TestProbeHardwareAccelAppliesPerProbeTimeout(t *testing.T) {
 	// The runner sees a deadline within PerProbeTimeout of now — proof each
 	// candidate is time-boxed (ADR-0013 §4 ~5s probe), not run unbounded.
 	var sawDeadline bool
-	runner := func(ctx context.Context, _ string) error {
+	runner := func(ctx context.Context, _ HWAccelEncode) error {
 		if dl, ok := ctx.Deadline(); ok {
 			sawDeadline = true
 			if d := time.Until(dl); d <= 0 || d > 100*time.Millisecond {
@@ -317,7 +330,7 @@ func TestProbeHardwareAccelAppliesPerProbeTimeout(t *testing.T) {
 
 func TestProbeHardwareAccelTotalTimeoutBoundsWholeProbe(t *testing.T) {
 	var attempts atomic.Int32
-	runner := func(ctx context.Context, _ string) error {
+	runner := func(ctx context.Context, _ HWAccelEncode) error {
 		attempts.Add(1)
 		<-ctx.Done()
 		return ctx.Err()
@@ -335,7 +348,8 @@ func TestProbeHardwareAccelTotalTimeoutBoundsWholeProbe(t *testing.T) {
 		t.Fatalf("probe elapsed %v, want bounded by TotalTimeout", elapsed)
 	}
 	// Every Linux candidate starts its H.264 encode at once; the total
-	// timeout ends them all, and no HEVC encode follows a failed H.264 one.
+	// timeout ends them all, and neither a low-power retry nor an HEVC encode
+	// follows once the probe as a whole is out of time.
 	if got := attempts.Load(); got != 3 {
 		t.Fatalf("attempts = %d, want 3 (one H.264 encode per candidate)", got)
 	}
@@ -346,14 +360,14 @@ func TestProbeHardwareAccelTotalTimeoutBoundsWholeProbe(t *testing.T) {
 }
 
 func TestHWAccelProbeArgsUploadsSoftwareFramesForVAAPI(t *testing.T) {
-	vaapiArgs := strings.Join(hwAccelProbeArgs("h264_vaapi"), " ")
+	vaapiArgs := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_vaapi"}), " ")
 	for _, want := range []string{"-vaapi_device", "format=nv12,hwupload", "-c:v h264_vaapi"} {
 		if !strings.Contains(vaapiArgs, want) {
 			t.Fatalf("VAAPI probe args = %q, want %q", vaapiArgs, want)
 		}
 	}
 
-	nvencArgs := strings.Join(hwAccelProbeArgs("h264_nvenc"), " ")
+	nvencArgs := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_nvenc"}), " ")
 	for _, forbidden := range []string{"-vaapi_device", "hwupload"} {
 		if strings.Contains(nvencArgs, forbidden) {
 			t.Fatalf("NVENC probe args = %q, must not contain %q", nvencArgs, forbidden)
@@ -377,7 +391,7 @@ func TestProbeHardwareAccelH264PassHEVCFailIsNotHEVCCapable(t *testing.T) {
 	if got.SupportsHEVC(HWAccelNVENC) {
 		t.Fatalf("SupportsHEVC(NVENC) = true, but the hevc_nvenc probe failed")
 	}
-	stub.assertAttempts(t, "h264_nvenc", "hevc_nvenc")
+	stub.assertAttempts(t, "h264_nvenc", "hevc_nvenc", "av1_nvenc")
 
 	selected := SelectHWAccel(got, "")
 	runner := New()
@@ -425,7 +439,7 @@ func TestRenditionUnverifiedHEVCTakesTheSoftwarePath(t *testing.T) {
 }
 
 func TestHWAccelProbeArgsUploadsSoftwareFramesForHEVCVAAPI(t *testing.T) {
-	args := strings.Join(hwAccelProbeArgs("hevc_vaapi"), " ")
+	args := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "hevc_vaapi"}), " ")
 	for _, want := range []string{"-vaapi_device", "format=nv12,hwupload", "-c:v hevc_vaapi"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("HEVC VAAPI probe args = %q, want %q", args, want)
@@ -438,7 +452,8 @@ func TestProbeHardwareAccelHungCandidateDoesNotStarveOthers(t *testing.T) {
 	// get their full chains, HEVC included, and the report keeps vocabulary
 	// order whichever probe finishes first.
 	working := map[string]bool{"h264_vaapi": true, "hevc_vaapi": true, "h264_nvenc": true, "hevc_nvenc": true}
-	runner := func(ctx context.Context, encoder string) error {
+	runner := func(ctx context.Context, encode HWAccelEncode) error {
+		encoder := encode.Encoder
 		if encoder == "h264_qsv" {
 			<-ctx.Done()
 			return ctx.Err()
@@ -474,5 +489,148 @@ func TestProbeHardwareAccelHungCandidateDoesNotStarveOthers(t *testing.T) {
 	}
 	if !reflect.DeepEqual(order, allHWAccels) {
 		t.Fatalf("report order = %v, want %v", order, allHWAccels)
+	}
+}
+
+func TestProbeHardwareAccelVerifiesAV1BehindH264(t *testing.T) {
+	// CORE-2094 normal pass: QSV's H.264 encode works first time, so no
+	// low-power retry runs and AV1 is verified behind it.
+	stub := &stubHWAccelRunner{results: map[string]error{"h264_qsv": nil, "av1_qsv": nil}}
+	got := ProbeHardwareAccel(context.Background(), HWAccelOptions{
+		Runner:     stub.runStrict,
+		GOOS:       "linux",
+		DRIPresent: func() bool { return true },
+	})
+	want := HardwareEncode{Accel: HWAccelQSV, AV1: true}
+	if encode := got.HardwareEncode(HWAccelQSV); encode != want {
+		t.Fatalf("HardwareEncode(QSV) = %+v, want %+v", encode, want)
+	}
+	if encode := got.HardwareEncode(HWAccelVAAPI); encode != (HardwareEncode{}) {
+		t.Fatalf("HardwareEncode(failed VAAPI) = %+v, want software", encode)
+	}
+	stub.assertAttempts(t, "h264_qsv", "hevc_qsv", "av1_qsv",
+		"h264_vaapi", "h264_vaapi:low_power", "h264_nvenc")
+}
+
+func TestProbeHardwareAccelFallsBackToLowPower(t *testing.T) {
+	// CORE-2094: the normal VAAPI encode fails, the -low_power 1 retry passes.
+	// The accelerator is working in low-power mode and its follow-up codecs
+	// are probed in low-power mode too.
+	stub := &stubHWAccelRunner{results: map[string]error{
+		"h264_vaapi:low_power": nil,
+		"hevc_vaapi:low_power": nil,
+		"av1_vaapi:low_power":  nil,
+	}}
+	got := ProbeHardwareAccel(context.Background(), HWAccelOptions{
+		Runner:     stub.runStrict,
+		GOOS:       "linux",
+		DRIPresent: func() bool { return true },
+	})
+	if want := []HWAccel{HWAccelVAAPI}; !reflect.DeepEqual(got.Working, want) {
+		t.Fatalf("Working = %v, want %v", got.Working, want)
+	}
+	want := HardwareEncode{Accel: HWAccelVAAPI, HEVC: true, AV1: true, LowPower: true}
+	if encode := got.HardwareEncode(HWAccelVAAPI); encode != want {
+		t.Fatalf("HardwareEncode(VAAPI) = %+v, want %+v", encode, want)
+	}
+	stub.assertAttempts(t, "h264_qsv", "h264_qsv:low_power",
+		"h264_vaapi", "h264_vaapi:low_power", "hevc_vaapi:low_power", "av1_vaapi:low_power",
+		"h264_nvenc")
+}
+
+func TestProbeHardwareAccelLowPowerRetryAlsoFails(t *testing.T) {
+	// CORE-2094: both the normal and the low-power encode fail, so the
+	// configured accelerator is configured-but-failed and nothing follows.
+	stub := &stubHWAccelRunner{results: map[string]error{}}
+	got := ProbeHardwareAccel(context.Background(), HWAccelOptions{
+		Runner:               stub.runStrict,
+		GOOS:                 "linux",
+		DRIPresent:           func() bool { return false },
+		ConfiguredPreference: HWAccelNVENC,
+	})
+	if !got.SoftwareOnly() {
+		t.Fatalf("SoftwareOnly() = false, want true: %+v", got)
+	}
+	// NVENC has no low-power mode, so it is not retried.
+	stub.assertAttempts(t, "h264_nvenc")
+
+	stub = &stubHWAccelRunner{results: map[string]error{}}
+	got = ProbeHardwareAccel(context.Background(), HWAccelOptions{
+		Runner:               stub.runStrict,
+		GOOS:                 "linux",
+		DRIPresent:           func() bool { return true },
+		ConfiguredPreference: HWAccelQSV,
+	})
+	if statuses := statusByAccel(got); statuses[HWAccelQSV] != HWAccelConfiguredFailed {
+		t.Fatalf("QSV status = %q, want configured-but-failed", statuses[HWAccelQSV])
+	}
+	for _, probe := range got.Results {
+		if probe.LowPower || probe.HEVC || probe.AV1 {
+			t.Fatalf("failed probe reports capabilities: %+v", probe)
+		}
+	}
+	stub.assertAttempts(t, "h264_qsv", "h264_qsv:low_power", "h264_vaapi", "h264_vaapi:low_power", "h264_nvenc")
+}
+
+func TestHWAccelProbeArgsLowPowerAndAV1(t *testing.T) {
+	low := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_qsv", LowPower: true}), " ")
+	if !strings.Contains(low, "-c:v h264_qsv -low_power 1 -f null -") {
+		t.Fatalf("low-power QSV probe args = %q, want -low_power 1 after the encoder", low)
+	}
+	if normal := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "h264_qsv"}), " "); strings.Contains(normal, "-low_power") {
+		t.Fatalf("normal QSV probe args = %q, must not ask for low power", normal)
+	}
+	av1 := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "av1_vaapi", LowPower: true}), " ")
+	for _, want := range []string{"-vaapi_device", "format=nv12,hwupload", "-c:v av1_vaapi -low_power 1"} {
+		if !strings.Contains(av1, want) {
+			t.Fatalf("AV1 VAAPI probe args = %q, want %q", av1, want)
+		}
+	}
+	// NVENC has no low-power mode; the flag is never passed to it.
+	nvenc := strings.Join(hwAccelProbeArgs(HWAccelEncode{Encoder: "av1_nvenc", LowPower: true}), " ")
+	if strings.Contains(nvenc, "-low_power") || !strings.Contains(nvenc, "-c:v av1_nvenc") {
+		t.Fatalf("AV1 NVENC probe args = %q, want av1_nvenc without -low_power", nvenc)
+	}
+}
+
+func TestRenditionHardwareEncodeLowPowerAndAV1(t *testing.T) {
+	runner := New()
+	runner.SetHardwareEncode(HardwareEncode{Accel: HWAccelQSV, LowPower: true})
+	h264 := runner.hardwareRendition(Rendition{Height: 720})
+	if got, want := h264.videoArgs(), []string{"-c:v", "h264_qsv", "-low_power", "1"}; !slices.Equal(got, want) {
+		t.Fatalf("low-power QSV videoArgs = %v, want %v", got, want)
+	}
+	// AV1 was not verified: the rendition drops the accelerator and its
+	// low-power flag together.
+	av1 := runner.hardwareRendition(Rendition{Height: 720, VideoCodec: "av1"})
+	if av1.hwAccel != "" || av1.hwLowPower {
+		t.Fatalf("unverified AV1 rendition = accel %q lowPower %v, want software", av1.hwAccel, av1.hwLowPower)
+	}
+	if got := av1.videoArgs(); got[1] != "libx264" {
+		t.Fatalf("unverified AV1 videoArgs = %v, want the software fallback", got)
+	}
+	if runner.SupportsTranscodeCodec("av1") {
+		t.Fatalf("SupportsTranscodeCodec(av1) = true, but AV1 was not verified")
+	}
+
+	for accel, encoder := range map[HWAccel]string{HWAccelQSV: "av1_qsv", HWAccelVAAPI: "av1_vaapi", HWAccelNVENC: "av1_nvenc"} {
+		runner.SetHardwareEncode(HardwareEncode{Accel: accel, AV1: true})
+		if !runner.SupportsTranscodeCodec("av1") {
+			t.Fatalf("%s: SupportsTranscodeCodec(av1) = false with a verified AV1 encoder", accel)
+		}
+		got := runner.hardwareRendition(Rendition{Height: 720, VideoCodec: "av1"}).videoArgs()
+		if want := []string{"-c:v", encoder}; !slices.Equal(got, want) {
+			t.Fatalf("%s AV1 videoArgs = %v, want %v", accel, got, want)
+		}
+	}
+	runner.SetHardwareEncode(HardwareEncode{Accel: HWAccelVideoToolbox, AV1: true})
+	if runner.SupportsTranscodeCodec("av1") {
+		t.Fatal("SupportsTranscodeCodec(av1) = true on VideoToolbox, which has no AV1 encoder")
+	}
+
+	// Low-power mode is ignored on an accelerator that has none.
+	runner.SetHardwareEncode(HardwareEncode{Accel: HWAccelNVENC, LowPower: true})
+	if got := runner.hardwareRendition(Rendition{Height: 720}).videoArgs(); slices.Contains(got, "-low_power") {
+		t.Fatalf("NVENC videoArgs = %v, must not carry -low_power", got)
 	}
 }

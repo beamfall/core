@@ -201,6 +201,10 @@ type Runner struct {
 	// hwHEVC reports that the probe verified hwAccel's HEVC encoder. HEVC is
 	// advertised and selected only when it is set (CORE-2088).
 	hwHEVC bool
+	// hwAV1 reports that the probe verified hwAccel's AV1 encoder, and
+	// hwLowPower that hwAccel encodes only in low-power mode (CORE-2094).
+	hwAV1      bool
+	hwLowPower bool
 	// generationNiceness is the Unix niceness applied to background generation
 	// processes (frame grabs, sprite sheets, preview clips, image scales) on
 	// Linux so a realtime transcode — never niced — always wins the CPU.
@@ -250,28 +254,51 @@ func (r *Runner) SetGenerationNiceness(niceness int) {
 // SetHardwareAccel selects the verified hardware encoder used by HLS
 // transcodes. The zero value means software libx264. hevc reports that the
 // probe also verified accel's HEVC encoder; without it the runner neither
-// advertises nor selects HEVC output.
+// advertises nor selects HEVC output. It is SetHardwareEncode without AV1 or
+// low-power mode.
 //
 //io:ignore — config setter, not an I/O operation (cmd/ioe2e ledger).
 func (r *Runner) SetHardwareAccel(accel HWAccel, hevc bool) {
-	if _, ok := hwAccelEncoder[accel]; ok {
-		r.hwAccel = accel
-		r.hwHEVC = hevc
-		return
-	}
-	r.hwAccel = ""
-	r.hwHEVC = false
+	r.SetHardwareEncode(HardwareEncode{Accel: accel, HEVC: hevc})
 }
 
-// renditionHWAccel is the accelerator a rendition encodes on. An HEVC
-// rendition whose HEVC encoder the probe did not verify gets none, so its
-// upload filters, tone-map backend and encoder all take the software path
-// together instead of launching an unverified hevc_* encoder (CORE-2088).
+// SetHardwareEncode selects the verified hardware encode path used by HLS
+// transcodes (see HWAccelResult.HardwareEncode). A codec the probe did not
+// verify is neither advertised nor selected, and low-power mode applies only
+// to the accelerators that have it.
+//
+//io:ignore — config setter, not an I/O operation (cmd/ioe2e ledger).
+func (r *Runner) SetHardwareEncode(encode HardwareEncode) {
+	if _, ok := hwAccelEncoder[encode.Accel]; !ok {
+		encode = HardwareEncode{}
+	}
+	r.hwAccel = encode.Accel
+	r.hwHEVC = encode.HEVC
+	r.hwAV1 = encode.AV1
+	r.hwLowPower = encode.LowPower && hwAccelLowPowerCapable(encode.Accel)
+}
+
+// renditionHWAccel is the accelerator a rendition encodes on. An HEVC or AV1
+// rendition whose encoder the probe did not verify gets none, so its upload
+// filters, tone-map backend and encoder all take the software path together
+// instead of launching an unverified encoder (CORE-2088, CORE-2094).
 func (r *Runner) renditionHWAccel(rendition Rendition) HWAccel {
-	if rendition.VideoCodec == "hevc" && !r.hwHEVC {
+	switch {
+	case rendition.VideoCodec == "hevc" && !r.hwHEVC,
+		rendition.VideoCodec == "av1" && !r.hwAV1:
 		return ""
 	}
 	return r.hwAccel
+}
+
+// hardwareRendition applies the runner's verified hardware encode to a
+// rendition: its accelerator and, when that accelerator encodes only in
+// low-power mode, the low-power flag.
+func (r *Runner) hardwareRendition(rendition Rendition) Rendition {
+	accel := r.renditionHWAccel(rendition)
+	rendition = rendition.withHWAccel(accel)
+	rendition.hwLowPower = accel != "" && r.hwLowPower
+	return rendition
 }
 
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
@@ -281,6 +308,8 @@ func (r *Runner) SupportsTranscodeCodec(codec string) bool {
 		return true
 	case "hevc":
 		return r.hwHEVC && hwAccelVideoEncoder(r.hwAccel, "hevc") != ""
+	case "av1":
+		return r.hwAV1 && hwAccelVideoEncoder(r.hwAccel, "av1") != ""
 	default:
 		return false
 	}
@@ -1273,6 +1302,8 @@ type Rendition struct {
 	// while still allowing stream index 0 to be selected.
 	burnSubtitleIndex int
 	hwAccel           HWAccel
+	// hwLowPower runs hwAccel's encoder in low-power mode (CORE-2094).
+	hwLowPower bool
 	// toneMapAccel is the accelerator the HDR→SDR transform itself runs on.
 	// It is NOT hwAccel: the encoder may be hardware while the tone-map is
 	// software (that is the shipped behaviour), and ADR-0075 Amendment
@@ -1387,7 +1418,7 @@ func (r Rendition) videoArgs() []string {
 		return []string{"-c:v", "copy"}
 	}
 	if encoder := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec); encoder != "" {
-		return []string{"-c:v", encoder}
+		return append([]string{"-c:v", encoder}, r.lowPowerArgs()...)
 	}
 	return []string{
 		"-c:v", "libx264",
@@ -1395,6 +1426,14 @@ func (r Rendition) videoArgs() []string {
 		"-crf", "23",
 		"-pix_fmt", "yuv420p",
 	}
+}
+
+// lowPowerArgs selects the low-power encode on accelerators that have it.
+func (r Rendition) lowPowerArgs() []string {
+	if !r.hwLowPower || !hwAccelLowPowerCapable(r.hwAccel) {
+		return nil
+	}
+	return slices.Clone(lowPowerArgs)
 }
 
 // ToneMapUnavailable reports source HDR shapes this FFmpeg recipe refuses
@@ -2162,7 +2201,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 		return nil, errors.New("ffmpeg: " + reason)
 	}
 	if !rendition.AudioOnly {
-		rendition = rendition.withHWAccel(r.renditionHWAccel(rendition))
+		rendition = r.hardwareRendition(rendition)
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
@@ -2332,7 +2371,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 		return nil, errors.New("ffmpeg: an adjusted encode must be audio-only or a composed picture")
 	}
 	if !rendition.AudioOnly {
-		rendition = rendition.withHWAccel(r.renditionHWAccel(rendition))
+		rendition = r.hardwareRendition(rendition)
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
