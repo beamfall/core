@@ -196,6 +196,9 @@ func logLineHasAttr(line, key, value string) bool {
 // unquoted with the remaining text. A bare key stops at '=' or a space; a bare
 // value stops at a space.
 func slogToken(s string, isKey bool) (string, string) {
+	if s == "" {
+		return "", ""
+	}
 	if strings.HasPrefix(s, `"`) {
 		end := len(s)
 		for i := 1; i < len(s); i++ {

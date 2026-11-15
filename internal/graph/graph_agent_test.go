@@ -103,6 +103,9 @@ func TestLogLineHasAttrIgnoresQuotedText(t *testing.T) {
 		{`level=INFO msg="real" "x=foo"="remote level=ERROR happened"`, "level", "ERROR", false},
 		{`level=INFO msg="real" "x=foo"="remote level=ERROR happened"`, "x=foo", "remote level=ERROR happened", true},
 		{`=stray level=WARN`, "level", "WARN", true},
+		{`level=INFO requestID=`, "requestID", "abc", false},
+		{`level=INFO requestID=`, "requestID", "", true},
+		{`level=`, "level", "INFO", false},
 	}
 	for _, tc := range cases {
 		if got := logLineHasAttr(tc.line, tc.key, tc.value); got != tc.want {
