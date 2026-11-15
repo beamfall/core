@@ -190,6 +190,11 @@ type ObjectContextResolver func(libraryID store.LibraryID, path string) (objectC
 // be opened directly.
 type EncryptedPredicate func(libraryID store.LibraryID) bool
 
+// ScopeReauthorizer rebuilds a build's Profile-bound scope from the Profile's
+// current record, refusing a Profile whose policy no longer authorizes it. The
+// composition root wires auth.Service.ReauthorizeProfileScope.
+type ScopeReauthorizer func(ctx context.Context, scope auth.Scope, profile store.Profile) (auth.Scope, error)
+
 // Service builds and serves Offline Packs.
 type Service struct {
 	store           Store
@@ -198,6 +203,7 @@ type Service struct {
 	resolvers       map[string]TargetResolver
 	sealed          SealedPredicate
 	encrypted       EncryptedPredicate
+	reauthorize     ScopeReauthorizer
 	content         EncryptedContentSource
 	attester        DeviceKeyAttestationVerifier
 	packRoot        string

@@ -192,6 +192,9 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 		if encryptedTranscode && s.pipeTranscode == nil {
 			return nil, fmt.Errorf("%w: encrypted-library transcoder is not configured", ErrTranscode)
 		}
+		if encryptedTranscode && s.reauthorize == nil {
+			return nil, fmt.Errorf("%w: encrypted-library re-authorization is not configured", ErrTranscode)
+		}
 		file, err := s.selectedVersionFile(ctx, id, filter, selectedVersions[id])
 		if err != nil {
 			return nil, err
@@ -358,8 +361,10 @@ func (s *Service) transcodeEncrypted(ctx context.Context, scope auth.Scope, sour
 }
 
 // buildRevoked reports why a build may no longer read an item of an Encrypted
-// Library: the Library is Sealed, the requesting Profile is disabled or gone
-// or has lost its grant to the Library, or the Media has left the scope.
+// Library: the Library is Sealed, or the scope rebuilt from the requesting
+// Profile's current policy refuses it (the Profile is gone, disabled or
+// outside its schedule, has lost its grant to the Library, or a tightened
+// certification ceiling or other change has taken the Media out of scope).
 func (s *Service) buildRevoked(ctx context.Context, scope auth.Scope, mediaID store.MediaID, libraryID store.LibraryID) error {
 	if s.sealed != nil && s.sealed(libraryID) {
 		return errors.New("library is sealed")
@@ -368,13 +373,17 @@ func (s *Service) buildRevoked(ctx context.Context, scope auth.Scope, mediaID st
 	if err != nil {
 		return errors.New("profile is unavailable")
 	}
-	if profile.Disabled {
-		return errors.New("profile is disabled")
+	if s.reauthorize == nil {
+		return errors.New("profile re-authorization is not configured")
 	}
-	if !scope.AllLibraries && !slices.Contains(profile.Library, libraryID) {
+	current, err := s.reauthorize(ctx, scope, profile)
+	if err != nil {
+		return fmt.Errorf("profile authorization is withdrawn: %w", err)
+	}
+	if !current.AllLibraries && !slices.Contains(current.LibraryIDs, libraryID) {
 		return errors.New("profile no longer has the library")
 	}
-	filter, err := s.filter(ctx, scope)
+	filter, err := s.filter(ctx, current)
 	if err != nil {
 		return errors.New("library scope is unavailable")
 	}

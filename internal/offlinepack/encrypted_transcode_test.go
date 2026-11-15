@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -294,6 +295,7 @@ func fetchSource(ctx context.Context, url string) ([]byte, error) {
 type encryptedVideoFixture struct {
 	svc       *Service
 	st        *store.Store
+	auth      *auth.Service
 	scope     auth.Scope
 	profiles  *profileStore
 	source    *lockedDecryptSource
@@ -319,7 +321,7 @@ func newEncryptedVideoFixture(t *testing.T) *encryptedVideoFixture {
 		t.Fatal(err)
 	}
 	fx := &encryptedVideoFixture{
-		svc: svc, st: st, scope: scope, body: body, needles: needles, tmpDir: tmpDir, device: device,
+		svc: svc, st: st, auth: authService, scope: scope, body: body, needles: needles, tmpDir: tmpDir, device: device,
 		source:    &lockedDecryptSource{bodies: map[string][]byte{files[0].Path: body}},
 		fileCalls: &fakeTranscoder{out: map[string][]byte{}},
 	}
@@ -329,6 +331,7 @@ func newEncryptedVideoFixture(t *testing.T) *encryptedVideoFixture {
 		return "media-file", "object-1", nil
 	})
 	svc.SetSealed(func(store.LibraryID) bool { return fx.sealed.Load() })
+	svc.SetScopeReauthorizer(authService.ReauthorizeProfileScope)
 	svc.SetTranscoder(fx.fileCalls.transcode)
 	svc.pipePoll = time.Millisecond
 	return fx
@@ -601,20 +604,31 @@ func (h readHook) Read([]byte) (int, error) {
 }
 
 // TestBuildEncryptedTranscodeRevokedWhileItemsSeal pins that a Seal, a
-// disabled Profile or a withdrawn Library grant landing while the final item
-// is encrypted into the pack, or after it is sealed but before the pack is
-// signed, discards the pack: nothing ready is persisted and nothing is left.
+// disabled Profile, a withdrawn Library grant or a tightened certification
+// ceiling landing while the final item is encrypted into the pack, or after it
+// is sealed but before the pack is signed, discards the pack: nothing ready is
+// persisted and nothing is left.
 func TestBuildEncryptedTranscodeRevokedWhileItemsSeal(t *testing.T) {
 	revocations := []struct {
-		name   string
+		name string
+		// setup, when set, prepares the build's target and returns its ref.
+		setup  func(*testing.T, *encryptedVideoFixture) string
 		revoke func(*encryptedVideoFixture)
 	}{
-		{"library sealed", func(fx *encryptedVideoFixture) { fx.sealed.Store(true) }},
-		{"profile disabled", func(fx *encryptedVideoFixture) {
+		{"library sealed", nil, func(fx *encryptedVideoFixture) { fx.sealed.Store(true) }},
+		{"profile disabled", nil, func(fx *encryptedVideoFixture) {
 			fx.profiles.setEdit(func(p *store.Profile) error { p.Disabled = true; return nil })
 		}},
-		{"library withdrawn", func(fx *encryptedVideoFixture) {
+		{"library withdrawn", nil, func(fx *encryptedVideoFixture) {
 			fx.profiles.setEdit(func(p *store.Profile) error { p.Library = nil; return nil })
+		}},
+		// The build resolves an R-rated film under a ceiling of R, then the
+		// ceiling drops to PG and hides it.
+		{"certification ceiling tightened", certifiedFilmTarget, func(fx *encryptedVideoFixture) {
+			fx.profiles.setEdit(func(p *store.Profile) error {
+				p.CertificationCeilings = []store.ProfileCertificationCeiling{{PluginID: "filmtv", Ceiling: "PG", FilterVisibility: "hide"}}
+				return nil
+			})
 		}},
 	}
 	for _, rv := range revocations {
@@ -627,6 +641,10 @@ func TestBuildEncryptedTranscodeRevokedWhileItemsSeal(t *testing.T) {
 				fx := newEncryptedVideoFixture(t)
 				if fx.scope.AllLibraries {
 					t.Fatal("fixture scope grants every Library; the withdrawn-grant case needs a Profile-scoped session")
+				}
+				target := "media-alpha"
+				if rv.setup != nil {
+					target = rv.setup(t, fx)
 				}
 				fx.svc.SetPipeTranscoder(func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
 					src, err := fetchSource(ctx, in.URL)
@@ -669,6 +687,7 @@ func TestBuildEncryptedTranscodeRevokedWhileItemsSeal(t *testing.T) {
 				}
 				req := fx.request(QualityMedium)
 				req.PackID = packID
+				req.TargetRef = target
 				if _, err := fx.svc.BuildPack(context.Background(), fx.scope, req); !errors.Is(err, encderiv.ErrRevoked) {
 					t.Fatalf("BuildPack err = %v, want ErrRevoked", err)
 				}
@@ -692,6 +711,41 @@ func TestBuildEncryptedTranscodeRevokedWhileItemsSeal(t *testing.T) {
 	}
 }
 
+// certifiedFilmTarget adds an R-rated video film to a Library bound to a
+// "filmtv" certification scale, caps the Profile at R so the build can
+// resolve it, and re-resolves the fixture's scope. It returns the film's ref.
+func certifiedFilmTarget(t *testing.T, fx *encryptedVideoFixture) string {
+	t.Helper()
+	ctx := context.Background()
+	fx.auth.SetCertificationScales(map[string][]string{"filmtv": {"G", "PG", "R"}})
+	library, err := fx.st.CreateLibrary(ctx, "Certified films", false, "filmtv", fx.scope.ProfileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const path = "/films/certified-r.mp4"
+	media, _, err := fx.st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: library.ID, Path: path, Title: "Certified R", Container: "mp4", Codec: "h264",
+		Class: store.MediaClassVideo, ContentFingerprint: store.HashMediaFilePath(path), DurationSecondsHint: 120,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.st.SetMediaFields(ctx, media.ID, []store.MediaField{{Name: "certification", Type: store.EntityFieldText, Text: "R"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.st.SetProfileCertificationCeiling(ctx, fx.scope.ProfileID, store.ProfileCertificationCeiling{PluginID: "filmtv", Ceiling: "R", FilterVisibility: "hide"}); err != nil {
+		t.Fatal(err)
+	}
+	fx.source.mu.Lock()
+	fx.source.bodies[path] = fx.body
+	fx.source.mu.Unlock()
+	fx.scope = scopeFor(t, fx.auth, fx.scope.SessionID)
+	if len(fx.scope.Certification) != 1 || !slices.Contains(fx.scope.Certification[0].Allowed, "R") {
+		t.Fatalf("scope certification = %#v, want a filmtv ceiling that allows R", fx.scope.Certification)
+	}
+	return string(media.ID)
+}
+
 // TestBuildEncryptedTranscodeRefusals pins the refusals that never stage
 // anything: a Sealed Library resolves empty before any transcode, and without
 // the pipe transcoder an Encrypted Library refuses rather than falling back to
@@ -711,6 +765,23 @@ func TestBuildEncryptedTranscodeRefusals(t *testing.T) {
 		}
 		if ran.Load() || fx.source.openCount() != 0 {
 			t.Fatalf("sealed Library reached the transcoder (%v) or decrypted %d times", ran.Load(), fx.source.openCount())
+		}
+		fx.assertNothingLeft(t)
+	})
+	t.Run("no scope reauthorizer", func(t *testing.T) {
+		fx := newEncryptedVideoFixture(t)
+		fx.svc.SetScopeReauthorizer(nil)
+		var ran atomic.Bool
+		fx.svc.SetPipeTranscoder(func(context.Context, encderiv.Input, io.Writer, string, []store.MediaFileStream) error {
+			ran.Store(true)
+			return nil
+		})
+		_, err := fx.build(QualityHigh)
+		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
+			t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
+		}
+		if ran.Load() || fx.source.openCount() != 0 {
+			t.Fatalf("an unrecheckable build reached the transcoder (%v) or decrypted %d times", ran.Load(), fx.source.openCount())
 		}
 		fx.assertNothingLeft(t)
 	})
