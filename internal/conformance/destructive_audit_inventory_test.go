@@ -239,6 +239,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"SetSubscriptionAuthRef":                  {},
 	"SetSubscriptionRetention":                {},
 	"SetTranscodeConfig":                      {},
+	"SignedInDeviceIDs":                       {},
 	"SkipDetectionEnabled":                    {},
 	"SmartCollectionByID":                     {},
 	"SmartCollections":                        {},

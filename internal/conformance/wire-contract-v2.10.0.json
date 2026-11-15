@@ -15009,6 +15009,10 @@
         {
           "name": "name",
           "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
         }
       ]
     },
