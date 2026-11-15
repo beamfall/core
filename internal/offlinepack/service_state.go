@@ -10,10 +10,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -162,9 +164,11 @@ type packBuildSource struct {
 	size            uint64
 	storageSize     int64
 	// transcode marks a video item to transcode before hashing; after the
-	// transcode, path names the temporary MP4 in the pack directory.
+	// transcode, path names the temporary MP4 in the pack directory, or, for
+	// an Encrypted Library, staged holds the encrypted derivative instead.
 	transcode  bool
 	transcoded bool
+	staged     *encderiv.Result
 	// streams is the source file's stream inventory, read for transcodes.
 	streams []store.MediaFileStream
 }
@@ -181,8 +185,8 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 			return nil, errors.New("offline pack supports audio and video Media only")
 		}
 		transcode := media.Class == store.MediaClassVideo && quality != QualityOriginal
-		if transcode && s.encrypted != nil && s.encrypted(media.LibraryID) {
-			return nil, errors.New("offline pack cannot transcode Media in an encrypted Library")
+		if transcode && s.isEncrypted(media.LibraryID) && s.pipeTranscode == nil {
+			return nil, fmt.Errorf("%w: encrypted-library transcoder is not configured", ErrTranscode)
 		}
 		file, err := s.selectedVersionFile(ctx, id, filter, selectedVersions[id])
 		if err != nil {
@@ -222,10 +226,18 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 }
 
 // transcodeSources replaces each marked source with its transcode in packDir
-// and records the transcoded size.
-func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSource, packDir, quality string, step func()) error {
+// and records the transcoded size. An item in an Encrypted Library is staged
+// encrypted instead, under the scope that asked for the pack.
+func (s *Service) transcodeSources(ctx context.Context, scope auth.Scope, sources []packBuildSource, packDir, quality string, step func()) error {
 	for i := range sources {
 		if !sources[i].transcode {
+			continue
+		}
+		if s.isEncrypted(sources[i].libraryID) {
+			if err := s.transcodeEncrypted(ctx, scope, &sources[i], packDir, i, quality); err != nil {
+				return err
+			}
+			step()
 			continue
 		}
 		if s.transcode == nil {
@@ -258,6 +270,122 @@ func (s *Service) transcodeSources(ctx context.Context, sources []packBuildSourc
 	return nil
 }
 
+func (s *Service) isEncrypted(libraryID store.LibraryID) bool {
+	return s.encrypted != nil && s.encrypted(libraryID)
+}
+
+// transcodeEncrypted transcodes one item of an Encrypted Library without
+// plaintext leaving the protected plane (ADR-0235): the transcoder reads the
+// decrypted source from a token-gated loopback endpoint and its output is
+// staged encrypted under a per-item key. The build re-checks the scope's
+// authorization throughout, and a Seal or a lost grant ends the transcode.
+func (s *Service) transcodeEncrypted(ctx context.Context, scope auth.Scope, source *packBuildSource, packDir string, index int, quality string) error {
+	if s.pipeTranscode == nil {
+		return fmt.Errorf("%w: encrypted-library transcoder is not configured", ErrTranscode)
+	}
+	stageDir, err := filepath.Abs(packDir)
+	if err != nil {
+		return err
+	}
+	plaintextSize, err := s.encryptedPlaintextSize(source.libraryID, source.path)
+	if err != nil {
+		return err
+	}
+	size, err := uint64ToInt64(plaintextSize)
+	if err != nil {
+		return err
+	}
+	mediaID, libraryID, path, streams := source.mediaID, source.libraryID, source.path, source.streams
+	result, err := encderiv.Run(ctx, encderiv.Job{
+		Open:         func() (io.ReadSeekCloser, error) { return s.openContent(libraryID, path) },
+		Size:         size,
+		StageDir:     stageDir,
+		StageName:    fmt.Sprintf("%04d", index),
+		MaxBytes:     int64(MaxItemSize),
+		PollInterval: s.pipePoll,
+		Revoked: func(ctx context.Context) error {
+			return s.buildRevoked(ctx, scope, mediaID, libraryID)
+		},
+		Transcode: func(ctx context.Context, in encderiv.Input, stdout io.Writer) error {
+			return s.pipeTranscode(ctx, in, stdout, quality, streams)
+		},
+	})
+	if err != nil {
+		switch {
+		case ctx.Err() != nil:
+			return fmt.Errorf("offline pack transcode interrupted: %w", ctx.Err())
+		case errors.Is(err, encderiv.ErrTooLarge):
+			return ErrItemTooLarge
+		case errors.Is(err, encderiv.ErrRevoked):
+			return fmt.Errorf("offline pack transcode stopped: %w", err)
+		default:
+			return fmt.Errorf("%w: %w", ErrTranscode, err)
+		}
+	}
+	source.staged = result
+	source.transcoded = true
+	source.size = uint64(result.Size()) //nolint:gosec // Result sizes are non-negative
+	return nil
+}
+
+// buildRevoked reports why a build may no longer read an item of an Encrypted
+// Library: the Library is Sealed, the requesting Profile is disabled or gone
+// or has lost its grant to the Library, or the Media has left the scope.
+func (s *Service) buildRevoked(ctx context.Context, scope auth.Scope, mediaID store.MediaID, libraryID store.LibraryID) error {
+	if s.sealed != nil && s.sealed(libraryID) {
+		return errors.New("library is sealed")
+	}
+	profile, err := s.store.Profile(ctx, scope.ProfileID)
+	if err != nil {
+		return errors.New("profile is unavailable")
+	}
+	if profile.Disabled {
+		return errors.New("profile is disabled")
+	}
+	if !scope.AllLibraries && !slices.Contains(profile.Library, libraryID) {
+		return errors.New("profile no longer has the library")
+	}
+	filter, err := s.filter(ctx, scope)
+	if err != nil {
+		return errors.New("library scope is unavailable")
+	}
+	visible, err := s.store.VisibleMediaBatch(ctx, []store.MediaID{mediaID}, filter)
+	if err != nil {
+		return errors.New("media visibility is unavailable")
+	}
+	if _, ok := visible[mediaID]; !ok {
+		return errors.New("media is no longer visible")
+	}
+	return nil
+}
+
+// packSourceDigest is the SHA-256 of the bytes an item seals. A staged
+// derivative's digest was taken over its final layout as it was staged.
+func (s *Service) packSourceDigest(source packBuildSource) ([sha256.Size]byte, error) {
+	var digest [sha256.Size]byte
+	if source.staged == nil {
+		return s.hashPackSource(source.libraryID, source.path, source.storageSize)
+	}
+	if source.staged.Size() != source.storageSize {
+		return digest, errors.New("offline pack staged item size differs from its transcode")
+	}
+	copy(digest[:], source.staged.SHA256())
+	return digest, nil
+}
+
+// openPackSource opens the bytes an item seals. A staged derivative is
+// re-authorized first, so a Seal that lands after its transcode still keeps
+// it out of the pack.
+func (s *Service) openPackSource(ctx context.Context, scope auth.Scope, source packBuildSource) (io.ReadCloser, error) {
+	if source.staged == nil {
+		return s.openContent(source.libraryID, source.path)
+	}
+	if err := s.buildRevoked(ctx, scope, source.mediaID, source.libraryID); err != nil {
+		return nil, fmt.Errorf("offline pack seal stopped: %w: %w", encderiv.ErrRevoked, err)
+	}
+	return source.staged.Open()
+}
+
 // checkBuildBytes applies the per-item bound and the build byte budget to the
 // bytes that will be sealed, and fills each source's signed storage size.
 func (s *Service) checkBuildBytes(sources []packBuildSource) (uint64, error) {
@@ -280,10 +408,15 @@ func (s *Service) checkBuildBytes(sources []packBuildSource) (uint64, error) {
 	return total, nil
 }
 
-// removeTranscodes deletes the temporary transcodes once they are sealed.
+// removeTranscodes deletes the temporary transcodes once they are sealed or
+// the build ends without sealing. A staged derivative's Close deletes its
+// staging file and zeroes its key.
 func removeTranscodes(sources []packBuildSource) {
 	for _, source := range sources {
-		if source.transcoded {
+		switch {
+		case source.staged != nil:
+			_ = source.staged.Close()
+		case source.transcoded:
 			_ = os.Remove(source.path)
 		}
 	}

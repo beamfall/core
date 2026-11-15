@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/offlinepack"
 	"github.com/beamfall/core/internal/store"
@@ -198,5 +200,44 @@ func TestOfflinePackTranscoderMapsTheStreamItReadsTheSignalFrom(t *testing.T) {
 		if len(runner.profiles) != 1 || runner.profiles[0] != tc.want {
 			t.Fatalf("%s: profile = %+v, want %+v", label, runner.profiles, tc.want)
 		}
+	}
+}
+
+type recordingPipe struct {
+	inputs   []ffmpeg.PipeInput
+	profiles []ffmpeg.ConvertProfile
+}
+
+func (r *recordingPipe) TranscodeToPipe(_ context.Context, in ffmpeg.PipeInput, profile ffmpeg.ConvertProfile, _ io.Writer) error {
+	r.inputs = append(r.inputs, in)
+	r.profiles = append(r.profiles, profile)
+	return nil
+}
+
+// TestOfflinePackPipeTranscoderUsesTheEndpointAndThePresets pins CORE-1742:
+// the encrypted-library transcoder hands FFmpeg the loopback endpoint and its
+// token, under the same preset and source signal as a plain Library.
+func TestOfflinePackPipeTranscoderUsesTheEndpointAndThePresets(t *testing.T) {
+	runner := &recordingPipe{}
+	transcode := offlinePackPipeTranscoder(runner)
+	in := encderiv.Input{URL: "http://127.0.0.1:40000/source/abc", Secret: "abc", Port: 40000}
+	streams := []store.MediaFileStream{{Type: "video", ColorTransfer: "smpte2084"}}
+	if err := transcode(t.Context(), in, io.Discard, offlinepack.QualityLow, streams); err != nil {
+		t.Fatal(err)
+	}
+	preset, _ := ffmpeg.PackProfileByName("pack-480p")
+	if len(runner.inputs) != 1 || runner.inputs[0] != (ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}) {
+		t.Fatalf("inputs = %+v, want the endpoint URL and token", runner.inputs)
+	}
+	if runner.profiles[0] != preset.WithSourceVideo("smpte2084", 0) {
+		t.Fatalf("profile = %+v, want pack-480p with the HDR source signal", runner.profiles[0])
+	}
+	for _, quality := range []string{offlinepack.QualityOriginal, "", "ultra"} {
+		if err := transcode(t.Context(), in, io.Discard, quality, nil); err == nil {
+			t.Fatalf("quality %q: want an error", quality)
+		}
+	}
+	if len(runner.inputs) != 1 {
+		t.Fatalf("FFmpeg ran %d times, want only the valid quality", len(runner.inputs))
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -24,6 +25,16 @@ func (s *Service) SetPackRoot(root string) {
 	s.packRoot = root
 }
 
+// SweepStaging deletes the encrypted staging files a crashed build left in the
+// pack directories. Their keys were never written down, so they are already
+// unreadable; the sweep reclaims the space. Call it before any build runs.
+func (s *Service) SweepStaging() error {
+	if s.packRoot == "" {
+		return nil
+	}
+	return encderiv.SweepStaging(s.packRoot)
+}
+
 // SetBuildByteBudget sets the maximum cumulative plaintext bytes in one pack.
 // A zero budget restores the fail-closed default.
 func (s *Service) SetBuildByteBudget(bytes uint64) {
@@ -31,6 +42,12 @@ func (s *Service) SetBuildByteBudget(bytes uint64) {
 		bytes = DefaultBuildByteBudget
 	}
 	s.buildByteBudget = bytes
+}
+
+// SetPipeTranscoder sets the transcoder used for non-original video qualities
+// in an Encrypted Library.
+func (s *Service) SetPipeTranscoder(transcode PipeTranscoder) {
+	s.pipeTranscode = transcode
 }
 
 // SetTranscoder sets the transcoder used for non-original video qualities.

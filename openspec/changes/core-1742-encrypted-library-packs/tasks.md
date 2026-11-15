@@ -14,6 +14,10 @@
 
 - [x] 3.1 Season and series resolvers read an unsealed encrypted Library and refuse once it is sealed
 
-## 4. Remaining
+## 4. Reduced-quality packs in an encrypted Library (ADR-0235)
 
-- [ ] 4.1 High/Medium/Low packs in an encrypted Library without plaintext leaving the protected plane (follow-up)
+- [x] 4.1 High/Medium/Low packs in an encrypted Library without plaintext leaving the protected plane
+- [x] 4.2 `internal/encderiv`: loopback decrypt endpoint (token, range reads, peer checks, revocation), fMP4 scan and sidx, encrypted staging and sweep
+- [x] 4.3 `internal/ffmpeg`: `TranscodeToPipe` reads the endpoint over `http` only and writes fragmented MP4 to stdout, confined with no writable path; Linux requires landlock
+- [x] 4.4 Offline packs stage encrypted transcodes, re-authorize the build throughout, and seal from the staged derivative; the app wires the pipe transcoder and sweeps staging at startup
+- [x] 4.5 Tests: plaintext never on disk, token and peer refusals, real-FFmpeg moov-at-end transcode, staging cleanup on cancel, error and revocation, startup sweep, Seal mid-build

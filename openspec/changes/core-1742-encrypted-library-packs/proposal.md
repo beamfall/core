@@ -28,18 +28,27 @@ stat would report the ciphertext length.
 - A sealed or unauthorized Library still refuses: its Entities and Media are not found, and its
   Media cannot be frozen into a pack.
 
+- Packs at `high`, `medium` or `low` quality in an encrypted Library build without plaintext leaving
+  the protected plane (ADR-0235). A shared `internal/encderiv` helper serves the decrypted source
+  from a loopback-only HTTP endpoint with a single-use 256-bit token, range reads, and revocation at
+  job end, on expiry or idleness, or when the build loses its authorization. FFmpeg reads that
+  endpoint (`http` only, no redirects) and writes fragmented MP4 to stdout. Core builds the `sidx`,
+  stages the output encrypted under a per-item key in a `0600` `.stage` file, and seals the pack item
+  from it. Staging is removed on every exit path, its key is zeroed, and startup sweeps any a crash
+  left behind. A Seal, a disabled Profile or a withdrawn Library grant mid-build stops the transcode.
+
 ## Not in this change
 
-Packs at `high`, `medium` or `low` quality in an encrypted Library are still refused. Building them
-without plaintext leaving the protected plane needs FFmpeg to read the source over a pipe (the
-confined `Convert` is path-only, and the MP4/MOV demuxer needs a seekable input) and needs a
-protected-plane location or at-rest encryption for the transcode output and temp files. Today the
-pack directory is the public `DataDir/offline-packs`, and sealing re-reads sources through the
-decrypt reader. That work stays open as a follow-up.
+Precompute, generated assets, subtitle extraction and live HLS keep their existing FFmpeg paths; the
+`file`-only protocol allowlist stays for every caller but the pipe transcode.
 
 ## Impact
 
 - Store: `internal/store/entity.go`, `entity_artwork_source.go`, `offline_pack.go`, catalog
   migration 0115, schema-freeze marker 111.
-- Offline packs: `internal/offlinepack/service_state.go`.
+- Encrypted derivatives: new `internal/encderiv`.
+- FFmpeg: `internal/ffmpeg` pipe transcode and its confinement; the `cmd/beamfall` FFmpeg shim takes
+  `--require-landlock`.
+- Offline packs: `internal/offlinepack/service_state.go`, `offlinepack.go`, `service_io.go`; app
+  wiring in `internal/app`.
 - No GraphQL or wire contract change.

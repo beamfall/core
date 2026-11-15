@@ -7,8 +7,10 @@ SHALL refuse any other value before queueing a job. At `high`, `medium` and `low
 transcode each video item to an MP4 no taller than 1080, 720 and 480 lines respectively. Audio
 items SHALL keep their original bytes at every quality. In an unsealed encrypted Library the caller
 can see, an `original` pack SHALL resolve and build as it does in a public Library, sizing each item
-from its authenticated plaintext. A sealed Library, or one the caller cannot see, SHALL contribute
-no items.
+from its authenticated plaintext, and a `high`, `medium` or `low` pack SHALL build without the
+plaintext source or transcode reaching disk. A sealed Library, or one the caller cannot see, SHALL
+contribute no items, and a build SHALL stop with no pack and no staged output if the Library is
+sealed or the caller loses access to it before the pack is written.
 
 #### Scenario: Unknown quality
 
@@ -17,8 +19,16 @@ no items.
 
 #### Scenario: Encrypted Library
 
-- **WHEN** a non-original quality is requested for an item in an encrypted Library
-- **THEN** the build fails and no pack is written
+- **WHEN** a `high`, `medium` or `low` pack is requested for a video item in an unsealed encrypted
+  Library the caller can see
+- **THEN** the item is transcoded from the decrypted source without plaintext reaching disk, and the
+  pack is written with the transcode's size and digest
+
+#### Scenario: Sealed during a build
+
+- **WHEN** the encrypted Library is sealed, or the caller's Profile is disabled or loses the Library,
+  while a reduced-quality pack is building
+- **THEN** the transcode stops, the build fails, and no pack or staged output remains
 
 #### Scenario: Original pack in an unsealed encrypted Library
 
