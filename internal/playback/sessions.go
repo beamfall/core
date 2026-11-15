@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/governor"
 	"github.com/beamfall/core/internal/store"
@@ -148,6 +150,9 @@ type encoderRun struct {
 	waiting atomic.Int32
 	// stalled is set by the stall watchdog just before it kills the process.
 	stalled atomic.Bool
+	// live is the run's loopback endpoint on an encrypted session, revoked
+	// when the process exits or is stopped (ADR-0236 D3); nil otherwise.
+	live *encderiv.LiveRun
 }
 
 func (r *encoderRun) exitedChan() <-chan struct{} {
@@ -297,6 +302,12 @@ type hlsSession struct {
 	// and restarting at the first media request. Cleared once an encoder
 	// starts.
 	resumeSeconds int
+	// secure is the source of a session on an Encrypted Library and live its
+	// encrypted file store (ADR-0236); both nil otherwise. revokeDone ends
+	// the session's revocation watcher; removeLocked closes it.
+	secure     *EncryptedSource
+	live       *encderiv.LiveSession
+	revokeDone chan struct{}
 }
 
 // takeRestartLocked spends one crash restart from the session's sliding
@@ -460,6 +471,8 @@ type Sessions struct {
 	// removeDir, when set, replaces os.RemoveAll in runTeardowns. Tests set it
 	// to a slow removal.
 	removeDir func(string) error
+	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
+	revocationPoll time.Duration
 	// stopping counts encoders removed from the map whose teardown has not yet
 	// stopped them (or whose off-lock start has not yet given up). They still
 	// run, so they still count against the cap.
@@ -494,12 +507,19 @@ type sessionTeardown struct {
 	lease *governor.TranscodeLease
 	// counted means removeLocked added this teardown to s.stopping.
 	counted bool
+	// liveRun is revoked before proc stops, and live closed (its key zeroed)
+	// after dir is gone, on an encrypted session (ADR-0236 D2).
+	liveRun *encderiv.LiveRun
+	live    *encderiv.LiveSession
 }
 
 // runTeardowns stops each process, removes each directory, then releases each
 // lease and transcode slot. Call it without s.mu held.
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 	for _, t := range teardowns {
+		if t.liveRun != nil {
+			t.liveRun.Revoke()
+		}
 		s.stop(t.proc)
 		if t.dir != "" {
 			if s.removeDir != nil {
@@ -507,6 +527,9 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 			} else {
 				_ = os.RemoveAll(t.dir)
 			}
+		}
+		if t.live != nil {
+			t.live.Close()
 		}
 		if t.lease != nil {
 			t.lease.Release()
@@ -764,7 +787,14 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	if !ok {
 		return nil
 	}
-	teardown := &sessionTeardown{proc: session.proc, dir: session.dir}
+	teardown := &sessionTeardown{proc: session.proc, dir: session.dir, live: session.live}
+	if session.run != nil {
+		teardown.liveRun = session.run.live
+	}
+	if session.revokeDone != nil {
+		close(session.revokeDone)
+		session.revokeDone = nil
+	}
 	s.detached++
 	switch {
 	case session.proc != nil:
@@ -924,6 +954,9 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 		caps.HEVC = false
 		caps.HEVCMaxHeight = 0
 	}
+	if shape.Encrypted != nil && shape.ComposedPicture {
+		return "", ErrEncryptedLiveUnavailable // ADR-0236 D4
+	}
 	picture, err := s.livePicture(ctx, key, src, shape)
 	if err != nil {
 		return "", err
@@ -936,13 +969,13 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 		audioCopy = false
 	}
 	var timeline *keyframeTimeline
-	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() {
+	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() && shape.Encrypted == nil {
 		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
 			return "", err
 		}
 	}
 	audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, priority)
+	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1047,7 +1080,7 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, waitBudget); err != nil {
 		return "", err
 	}
-	if segmentLacksMedia(path) {
+	if session.segmentLacksMedia(path) {
 		// FFmpeg started past the real end of a truncated source writes a
 		// segment with no media; serving it as playable would stall the player.
 		s.noteSourceEnd(key, session, rung, segment, "")
@@ -1233,7 +1266,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1259,8 +1292,13 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	if audioOnly && audioSource && adjust.IsZero() && durationSeconds > 0 {
 		primed = primedAACGrid(audioSourceStream, audioProfile, segmentSeconds)
 	}
+	if secure != nil {
+		if err := encryptedSessionRefusal(secure, durationSeconds, burnSubtitleIndex, picture); err != nil {
+			return nil, err
+		}
+	}
 	if existing, ok := s.sessions[key]; ok {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust {
+		if existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
@@ -1275,6 +1313,17 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	}
 	s.nextID++
 	dir := filepath.Join(s.dir, fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID))
+	var live *encderiv.LiveSession
+	if secure != nil {
+		abs, err := filepath.Abs(dir)
+		if err == nil {
+			dir = abs
+			live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
 	session := &hlsSession{
 		dir:               dir,
 		src:               src,
@@ -1291,6 +1340,10 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		priority:          priority,
 		degraded:          degraded,
 		adjust:            adjust,
+		live:              live,
+	}
+	if live != nil {
+		session.secure = secure
 	}
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)
@@ -1298,17 +1351,21 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			session.resumeSeconds = hint.seconds
 		}
 	}
-	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed)
+	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
 	if err == nil && picture != nil {
 		session.composed = picture
 		session.picture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
 	}
 	if err != nil {
-		teardowns = append(teardowns, sessionTeardown{dir: dir})
+		teardowns = append(teardowns, sessionTeardown{dir: dir, live: live})
 		s.detached++
 		return nil, err
 	}
 	s.sessions[key] = session
+	if live != nil && secure.Revoked != nil {
+		session.revokeDone = make(chan struct{})
+		go s.watchLiveRevocation(key, session, session.revokeDone, secure.Revoked, s.liveRevocationInterval())
+	}
 	return session, nil
 }
 
@@ -1362,12 +1419,13 @@ func rungsEqual(left, right []Rung) bool {
 // writeSessionPlaylists lays out the session directory: the master playlist,
 // one subdirectory per rung, and (for known durations) the synthesized VOD
 // playlist each variant serves before a single segment exists. The audio-copy
-// rung's playlist follows timeline when there is one.
-func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid) error {
+// rung's playlist follows timeline when there is one. write stores one
+// playlist under its slash-separated name relative to dir.
+func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid, write func(rel string, data []byte) error) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, masterPlaylistName), []byte(masterPlaylist(rungs)), 0o600); err != nil {
+	if err := write(masterPlaylistName, []byte(masterPlaylist(rungs))); err != nil {
 		return err
 	}
 	for _, rung := range rungs {
@@ -1380,7 +1438,7 @@ func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeli
 			if rung.CopyVideo && timeline != nil {
 				playlist = timeline.playlist()
 			}
-			if err := os.WriteFile(filepath.Join(rungDir, "index.m3u8"), []byte(playlist), 0o600); err != nil {
+			if err := write(rung.ID+"/index.m3u8", []byte(playlist)); err != nil {
 				return err
 			}
 		}
@@ -1446,6 +1504,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	}
 	var victim *sessionTeardown
 	var replaced *ffmpeg.HLSProcess
+	var replacedLive *encderiv.LiveRun
 	if session.proc == nil {
 		// The last encoder crashed: this start is a crash restart, bounded by
 		// the session budget so a source that kills FFmpeg fails fast.
@@ -1471,6 +1530,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		// has released — so the lease this branch carries across the swap is always
 		// the live one. The session stays exactly one live transcode unit.
 		replaced = session.proc
+		if session.run != nil {
+			replacedLive = session.run.live
+		}
 		session.proc = nil
 		session.currentRung = ""
 	}
@@ -1485,11 +1547,20 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	if victim != nil {
 		s.runTeardowns([]sessionTeardown{*victim})
 	}
+	if replacedLive != nil {
+		replacedLive.Revoke()
+	}
 	s.stop(replaced)
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
+	var liveRun *encderiv.LiveRun
 	var err error
-	if t := session.keyframeTimeline(rung); t != nil && session.durationSeconds > 0 {
+	if session.secure != nil {
+		// The encrypted encode shares the primed grid; segments the earlier
+		// start rewrites are refused as existing and the first copy stays.
+		segment = session.primed.restartSegment(segment)
+		proc, liveRun, err = s.startEncryptedRung(procCtx, session, rung, segment)
+	} else if t := session.keyframeTimeline(rung); t != nil && session.durationSeconds > 0 {
 		// Copied video restarts at segment's keyframe, stamped with that
 		// keyframe's real time, so the media matches the playlist (CORE-0021).
 		proc, err = s.transcoder.(keyframeTranscoder).StartHLSKeyframeSegments(procCtx, session.src, rungDir, segment, t.segmentStart(segment), session.rendition(rung))
@@ -1509,6 +1580,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		// the lease and the slot.
 		s.mu.Unlock()
 		if err == nil {
+			if liveRun != nil {
+				liveRun.Revoke()
+			}
 			s.stop(proc)
 		}
 		_ = os.RemoveAll(session.dir)
@@ -1529,7 +1603,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		s.releaseTranscodeLease(session)
 		return nil, err
 	}
-	run := &encoderRun{proc: proc}
+	run := &encoderRun{proc: proc, live: liveRun}
 	session.proc = proc
 	session.run = run
 	session.currentRung = rung.ID
@@ -1545,6 +1619,11 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		if proc.ReportsProgress() {
 			go watchForStall(run, s.encoderStallTimeout())
 		}
+		if liveRun != nil {
+			go watchLiveRun(run)
+		}
+	} else if liveRun != nil {
+		liveRun.Revoke() // no process to serve
 	}
 	return run, nil
 }
@@ -1638,6 +1717,11 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 	go func() {
 		defer close(run.exited)
 		waitErr := run.proc.Wait()
+		if run.live != nil {
+			// The token lives exactly as long as the process, plus the time
+			// to store the uploads it sent before exiting.
+			run.live.Finish()
+		}
 		outcome := exitCrashed
 		switch {
 		case run.proc.StopRequested():
@@ -1653,7 +1737,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && session.durationSeconds > 0 {
 			last := frontier
-			for last >= base && segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
+			for last >= base && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
 				last--
 			}
 			if end := last + 1; end < session.segmentCount(rung) {
@@ -2100,16 +2184,24 @@ func segmentLacksMedia(path string) bool {
 	}
 	defer f.Close()
 	info, err := f.Stat()
-	if err != nil || info.Size() == 0 {
+	if err != nil {
 		return false
 	}
-	size := info.Size()
+	return readerLacksMedia(f, info.Size())
+}
+
+// readerLacksMedia is segmentLacksMedia for a segment of size bytes read
+// through r.
+func readerLacksMedia(r io.ReaderAt, size int64) bool {
+	if size == 0 {
+		return false
+	}
 	var header [16]byte
 	for off := int64(0); off < size; {
 		if size-off < 8 {
 			return false // trailing bytes that are not a box
 		}
-		if _, err := f.ReadAt(header[:8], off); err != nil {
+		if _, err := r.ReadAt(header[:8], off); err != nil {
 			return false
 		}
 		boxSize := int64(binary.BigEndian.Uint32(header[:4]))
@@ -2121,7 +2213,7 @@ func segmentLacksMedia(path string) bool {
 			if size-off < 16 {
 				return false
 			}
-			if _, err := f.ReadAt(header[8:16], off+8); err != nil {
+			if _, err := r.ReadAt(header[8:16], off+8); err != nil {
 				return false
 			}
 			large := binary.BigEndian.Uint64(header[8:16])

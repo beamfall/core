@@ -1902,6 +1902,11 @@ type HLSProcess struct {
 	started         time.Time
 	progressedAt    atomic.Int64
 	reportsProgress bool
+	// stderrWithheld marks an encrypted live run, whose stderr is discarded:
+	// FFmpeg there decodes an Encrypted Library's plaintext, and its
+	// diagnostics (or a compromised decoder) could carry that plaintext into
+	// the server's logs.
+	stderrWithheld bool
 }
 
 // hlsProgressLineBytes bounds a partial -progress line kept between writes;
@@ -2094,6 +2099,9 @@ func (p *HLSProcess) StopRequested() bool {
 func (p *HLSProcess) StderrTail() string {
 	if p == nil {
 		return ""
+	}
+	if p.stderrWithheld {
+		return "stderr withheld (encrypted Library)"
 	}
 	return strings.TrimSpace(p.stderr.String())
 }
@@ -2319,6 +2327,11 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 // which an adjusted tempo scales; the output timestamps stay on the output
 // timeline.
 func hlsSegmentArgs(src, dir string, startSegment, segmentSeconds int, rendition Rendition) []string {
+	return segmentArgsFor(fileSegmentIO(src, dir), startSegment, segmentSeconds, rendition)
+}
+
+// segmentArgsFor is hlsSegmentArgs over any segment input and output.
+func segmentArgsFor(io segmentIO, startSegment, segmentSeconds int, rendition Rendition) []string {
 	seek := formatSeconds(rendition.adjust.SourceSeconds(float64(startSegment * segmentSeconds)))
 	var forceKeyframes []string
 	// Forced keyframes align segment boundaries for the re-encode path. A
@@ -2331,7 +2344,7 @@ func hlsSegmentArgs(src, dir string, startSegment, segmentSeconds int, rendition
 	if startSegment == 0 && rendition.KeepPriming {
 		seek = ""
 	}
-	return segmentArgs(src, dir, startSegment, seek, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), rendition.selectedStreamMapArgs(), forceKeyframes, rendition)
+	return segmentArgs(io, startSegment, seek, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), rendition.selectedStreamMapArgs(), forceKeyframes, rendition)
 }
 
 // keyframeSegmentArgs is the StartHLSKeyframeSegments command line: the input
@@ -2352,14 +2365,14 @@ func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration,
 	if start == 0 && rendition.KeepPriming {
 		seek = ""
 	}
-	return segmentArgs(src, dir, startSegment, seek, offset, keyframeSegmentHLSTime, streamMaps, nil, rendition)
+	return segmentArgs(fileSegmentIO(src, dir), startSegment, seek, offset, keyframeSegmentHLSTime, streamMaps, nil, rendition)
 }
 
 // segmentArgs assembles a segmenting command line: seek is the input position
 // ("" for no input seek, see Rendition.KeepPriming), outputOffset the first
 // output timestamp. An audio-only rendition maps just the selected audio
 // stream and drops the video arguments; a video rendition adds streamMaps.
-func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime string, streamMaps, forceKeyframes []string, rendition Rendition) []string {
+func segmentArgs(io segmentIO, startSegment int, seek, outputOffset, hlsTime string, streamMaps, forceKeyframes []string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
 	}
@@ -2368,9 +2381,9 @@ func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime 
 		args = append(args, "-ss", seek)
 	}
 	args = append(args, rendition.inputArgs()...)
-	args = append(args, inputProtocolArgs()...)
+	args = append(args, io.inputOptions...)
 	args = append(args,
-		"-i", src,
+		"-i", io.input,
 	)
 	if rendition.AudioOnly {
 		args = append(args, "-map", audioOnlyMap(rendition))
@@ -2381,25 +2394,52 @@ func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime 
 		args = append(args, rendition.args()...)
 	}
 	args = append(args, rendition.audioArgs()...)
-	return append(args, segmentMuxArgs(dir, startSegment, outputOffset, hlsTime)...)
+	args = append(args, segmentMuxBase(startSegment, outputOffset, hlsTime)...)
+	return append(args, io.outputArgs...)
+}
+
+// segmentIO is where a segmenting encode reads its input and writes its
+// segments: local files, or a loopback endpoint (ADR-0236).
+type segmentIO struct {
+	input        string
+	inputOptions []string
+	// outputArgs follow the shared muxer options: the output's own options,
+	// the segment name template and the playlist operand.
+	outputArgs []string
+}
+
+// fileSegmentIO reads src under the file-only protocol allowlist and writes
+// the segments into dir, each renamed into place when complete.
+func fileSegmentIO(src, dir string) segmentIO {
+	return segmentIO{
+		input:        src,
+		inputOptions: inputProtocolArgs(),
+		outputArgs: []string{
+			"-hls_flags", "temp_file",
+			"-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"),
+			"--", filepath.Join(dir, "live.m3u8"),
+		},
+	}
+}
+
+// segmentMuxBase is the muxer configuration every segmenting encode shares.
+func segmentMuxBase(startSegment int, outputOffset, hlsTime string) []string {
+	return []string{
+		"-output_ts_offset", outputOffset,
+		"-f", "hls",
+		"-hls_time", hlsTime,
+		"-hls_list_size", "0",
+		"-hls_segment_type", "fmp4",
+		"-hls_fmp4_init_filename", "init.mp4",
+		"-start_number", strconv.Itoa(startSegment),
+	}
 }
 
 // segmentMuxArgs is the numbered-segment muxer tail StartHLSSegments
 // documents: timestamps offset to outputOffset, fMP4 segments numbered from
 // startSegment, and an unserved live.m3u8.
 func segmentMuxArgs(dir string, startSegment int, outputOffset, hlsTime string) []string {
-	return []string{
-		"-output_ts_offset", outputOffset,
-		"-f", "hls",
-		"-hls_time", hlsTime,
-		"-hls_list_size", "0",
-		"-hls_flags", "temp_file",
-		"-hls_segment_type", "fmp4",
-		"-hls_fmp4_init_filename", "init.mp4",
-		"-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"),
-		"-start_number", strconv.Itoa(startSegment),
-		"--", filepath.Join(dir, "live.m3u8"),
-	}
+	return append(segmentMuxBase(startSegment, outputOffset, hlsTime), fileSegmentIO("", dir).outputArgs...)
 }
 
 type probeDocument struct {

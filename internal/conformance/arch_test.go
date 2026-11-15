@@ -66,7 +66,7 @@ var archWhitelist = map[string][]string{
 	"migrate":           {"store", "jobs"}, // Migration Wizard import job handler + match chain (ADR-0037)
 	"identify":          {"store", "artwork", "scrape", "plugin"},
 	"ingest":            {"store", "jobs", "scan", "scrape"},
-	"playback":          {"store", "auth", "ffmpeg", "governor", "streamtoken"},
+	"playback":          {"store", "auth", "ffmpeg", "governor", "streamtoken", "encderiv"},
 	"mediahttp":         {"store", "artwork", "genassets", "playback", "streamtoken", "auth"},
 	"proxytee":          {"store", "auth", "scrape", "streamtoken"},   // ADR-0052 §2.1: Stream-Token'd proxy-tee stream + provisional→archived promotion; origin fetch through scrape's SSRF gate
 	"offlinepack":       {"store", "auth", "streamtoken", "encderiv"}, // ADR-0098 area 6: generic, domain-agnostic Offline Pack substrate — pack rows, Pack-subject Stream Token grants, target validation, manifest building + http.HandlerFunc serving with revoke/relock/seal byte denial. Music target resolvers live in the Music plugin, registered via a core adapter; never here.

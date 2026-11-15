@@ -18,10 +18,9 @@ API key, and where to subscribe.
 
 ## What Changes
 
-- A scraper may declare `CredentialHelp` (plugin-sdk v0.3.6): a localized label for its AuthRef
+- A scraper may declare `CredentialHelp` (plugin-sdk v0.3.7): a localized label for its AuthRef
   credential, an https help link and the link's label. Core reads it through
-  `plugin.ScraperExtensionsOf`, which returns nothing against the pinned plugin-sdk v0.3.5; the repin
-  maps the SDK field there.
+  `plugin.ScraperExtensionsOf`, which maps the SDK field.
 - `consoleConfig.plugins.scrapers.credentialHelp { label helpURL helpLabel }` carries it to clients.
   It is plugin data, never a secret value, and is omitted for a scraper without an AuthRef.
 - The Console Plugins provider-key form and the setup wizard label the field with the plugin's

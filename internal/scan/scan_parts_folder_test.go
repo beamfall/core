@@ -11,6 +11,7 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
+	audiobook "github.com/beamfall/plugin-audiobook"
 )
 
 // taggedPartsParser follows the external parts plugin's contract: title from
@@ -327,5 +328,53 @@ func TestCompletionKeepsCheckpointBelowPendingParts(t *testing.T) {
 	// let a batch of images yield onto the same checkpoint forever.
 	if reports != 1 {
 		t.Fatalf("progress reports = %d, want 1 (none for the held image)", reports)
+	}
+}
+
+// TestScanCataloguesUntaggedNumberedPartsFolder (CORE-1834): a folder of
+// untagged parts numbered "01", "Part 2" and "Part 10" beside cover.jpg is one
+// item titled by its folder, whose files play in numeric order (2 before 10),
+// with nothing queued as unmatched. It needs the plugin-audiobook release that
+// accepts untagged numbered parts.
+func TestScanCataloguesUntaggedNumberedPartsFolder(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	dir := filepath.Join(root, "Writer", "Untagged Tale")
+	var parts []string
+	for _, name := range []string{"01.mp3", "Part 2.mp3", "Part 10.mp3"} {
+		parts = append(parts, writeScanFile(t, dir, name, []byte(name)))
+	}
+	writeScanFile(t, dir, "cover.jpg", jpegBytes("cover"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Parts", false, audiobook.PluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{library.ID}}
+	parsers := map[string]FilenameParser{audiobook.PluginID: audiobook.New()}
+	if _, err := ScanWithWorkerGovernor(context.Background(), st, taggedPartsProber{}, nil, parsers, nil, nil, nil, nil, fixedGovernor(1), Request{LibraryID: library.ID, Root: root}); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	records, err := st.UnmatchedRecords(context.Background(), store.LibraryFilter{AllowedIDs: filter.AllowedIDs, Revealed: true})
+	if err != nil || len(records) != 0 {
+		t.Fatalf("unmatched = %#v, %v; want none", records, err)
+	}
+	files, err := st.MediaFilesForLibrary(context.Background(), library.ID)
+	if err != nil || len(files) != len(parts) {
+		t.Fatalf("files = %#v, %v; want only the %d parts", files, err, len(parts))
+	}
+	mediaID := files[0].MediaID
+	media, err := st.Media(context.Background(), mediaID, filter)
+	if err != nil || media.Title != "Untagged Tale" {
+		t.Fatalf("media = %#v, %v; want title Untagged Tale", media, err)
+	}
+	grouped, err := st.MediaFilesForMedia(context.Background(), mediaID, filter)
+	if err != nil || len(grouped) != len(parts) {
+		t.Fatalf("grouped files = %#v, %v; want %d parts in one item", grouped, err, len(parts))
+	}
+	for i, file := range grouped {
+		if file.Path != parts[i] || file.PartOrdinal != i {
+			t.Fatalf("part %d = {path:%q ordinal:%d}, want {path:%q ordinal:%d}", i, file.Path, file.PartOrdinal, parts[i], i)
+		}
 	}
 }

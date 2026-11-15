@@ -38,6 +38,12 @@ type StreamShape struct {
 	// what the mint advertised (CORE-1849). The zero value takes the worst
 	// case for a copied stream.
 	AudioSource store.MediaFileStream
+
+	// Encrypted, when set, is the plaintext source of a session on an
+	// Encrypted Library: the session keeps only encrypted files and FFmpeg
+	// reaches the source through a loopback endpoint (ADR-0236). It is set by
+	// the byte layer, never carried in a grant.
+	Encrypted *EncryptedSource
 }
 
 // StreamShapeFromGrant reads the StreamShape a stream grant carries for

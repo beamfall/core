@@ -437,6 +437,7 @@ func TestRunCaptureExtractsASubtitleWithRealFFmpeg(t *testing.T) {
 		MaxBytes: 1 << 20,
 		Revoked:  func(context.Context) error { return nil },
 		Transcode: func(ctx context.Context, in Input, w io.Writer) error {
+			// io:ffmpeg-extract-subtitle-to-pipe
 			return ffmpeg.New().ExtractSubtitleToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, 1, 1<<20, w)
 		},
 	})

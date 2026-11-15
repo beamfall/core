@@ -46,6 +46,7 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 
 	t.Run("sprite sheets", func(t *testing.T) {
 		out := capture(t, 8<<20, func(ctx context.Context, in ffmpeg.PipeInput, w io.Writer) error {
+			// io:ffmpeg-sprite-sheets-to-pipe
 			return runner.SpriteSheetsToPipe(ctx, in, 1, 80, 3, 2, w)
 		})
 		sheets, err := ffmpeg.SplitJPEGStream(out, 4)
@@ -63,6 +64,7 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 	})
 	t.Run("frame grab", func(t *testing.T) {
 		out := capture(t, 4<<20, func(ctx context.Context, in ffmpeg.PipeInput, w io.Writer) error {
+			// io:ffmpeg-frame-grab-to-pipe
 			return runner.FrameGrabToPipe(ctx, in, 6, 80, w)
 		})
 		frames, err := ffmpeg.SplitJPEGStream(out, 1)
@@ -75,6 +77,7 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 	})
 	t.Run("sample clip", func(t *testing.T) {
 		out := capture(t, 16<<20, func(ctx context.Context, in ffmpeg.PipeInput, w io.Writer) error {
+			// io:ffmpeg-sample-clip-to-pipe
 			return runner.SampleClipToPipe(ctx, in, []float64{1, 6}, 1.5, 80, 12, w)
 		})
 		var types []string
@@ -88,6 +91,7 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 	t.Run("waveform", func(t *testing.T) {
 		var amps []float64
 		capture(t, 1, func(ctx context.Context, in ffmpeg.PipeInput, _ io.Writer) (err error) {
+			// io:ffmpeg-waveform-amplitudes-from-pipe
 			amps, err = runner.WaveformAmplitudesFromPipe(ctx, in)
 			return err
 		})
@@ -98,6 +102,7 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 	t.Run("silence", func(t *testing.T) {
 		var spans [][2]float64
 		capture(t, 1, func(ctx context.Context, in ffmpeg.PipeInput, _ io.Writer) (err error) {
+			// io:ffmpeg-silence-spans-from-pipe
 			spans, err = runner.SilenceSpansFromPipe(ctx, in)
 			return err
 		})
@@ -108,6 +113,7 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 	t.Run("loudness", func(t *testing.T) {
 		var integrated, peak float64
 		capture(t, 1, func(ctx context.Context, in ffmpeg.PipeInput, _ io.Writer) (err error) {
+			// io:ffmpeg-loudness-measure-from-pipe
 			integrated, _, peak, err = runner.LoudnessMeasureFromPipe(ctx, in)
 			return err
 		})
@@ -115,5 +121,44 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 			t.Fatalf("loudness = %v LUFS, peak %v dBTP; want a measured tone", integrated, peak)
 		}
 	})
+	assertNoFiles(t, tmpDir)
+}
+
+// TestRunCaptureTranscodesARenditionWithRealFFmpeg runs the precompute
+// rendition pass (CORE-1963) against an encrypted source served through
+// RunCapture and checks it writes a fragmented MP4 and nothing to the temp dir.
+func TestRunCaptureTranscodesARenditionWithRealFFmpeg(t *testing.T) {
+	if testing.Short() {
+		t.Skip("encodes video")
+	}
+	fixture := ffmpegFixture(t, false)
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	rendition := ffmpeg.Rendition{Height: 120, VideoKbps: 300, AudioCodec: "aac", AudioChannels: 2}
+	out, err := RunCapture(ctx, Capture{
+		Open:     encryptedSource(t, fixture),
+		Size:     int64(len(fixture)),
+		MaxBytes: 32 << 20,
+		Revoked:  func(context.Context) error { return nil },
+		Transcode: func(ctx context.Context, in Input, w io.Writer) error {
+			// io:ffmpeg-rendition-to-pipe
+			return ffmpeg.New().RenditionToPipe(ctx, ffmpeg.PipeInput{URL: in.URL, Secret: in.Secret}, rendition, 4, w)
+		},
+	})
+	if errors.Is(err, ffmpeg.ErrPipeConfinementUnavailable) {
+		t.Skip(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var types []string
+	for _, box := range topLevelBoxes(t, out) {
+		types = append(types, box.typ)
+	}
+	if len(types) < 3 || types[0] != "ftyp" || types[1] != "moov" || !slices.Contains(types, "moof") {
+		t.Fatalf("rendition boxes = %v, want a fragmented MP4", types)
+	}
 	assertNoFiles(t, tmpDir)
 }
