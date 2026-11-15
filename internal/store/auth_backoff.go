@@ -143,9 +143,10 @@ func backoffDelay(step int, base, max time.Duration) time.Duration {
 	return delay
 }
 
-// authFailureScanLimit bounds how many recent attempts one lane read walks.
-// It is far above the failures any shipped policy needs to reach MaxDelay, so
-// a longer run is already held at the cap.
+// authFailureScanLimit bounds how many recent attempts one lane read walks. A
+// run of failures longer than this is replayed as if the failures before it
+// had already reached MaxDelay, so cutting the history short can only keep a
+// lane locked, never reopen it.
 const authFailureScanLimit = 512
 
 // consecutiveAuthFailures returns the length of the current run of failures
@@ -181,13 +182,16 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 	defer rows.Close()
 	// Failures since the last success, newest first.
 	var failures []time.Time
+	scanned, sawSuccess := 0, false
 	for rows.Next() {
 		var occurredMs int64
 		var success int
 		if err := rows.Scan(&occurredMs, &success); err != nil {
 			return 0, time.Time{}, err
 		}
+		scanned++
 		if success != 0 {
+			sawSuccess = true
 			break
 		}
 		// Build directly from millis (not millisToTime, whose zero-guard
@@ -206,8 +210,12 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 	count := 0
 	var last time.Time
 	for i := len(failures) - 1; i >= 0; i-- {
-		if count > 0 && laneForgotten(count, last, failures[i], policy) {
+		switch {
+		case count > 0 && laneForgotten(count, last, failures[i], policy):
 			count = 0
+		case count == 0 && i == len(failures)-1 && !sawSuccess && scanned == authFailureScanLimit:
+			// The run began before the scanned rows: carry it in at the cap.
+			count = failuresToCap(policy)
 		}
 		count++
 		last = failures[i]
@@ -216,6 +224,18 @@ func consecutiveAuthFailuresIn(ctx context.Context, q authAttemptQueryer, action
 		return 0, time.Time{}, nil
 	}
 	return count, last, nil
+}
+
+// failuresToCap is the fewest consecutive failures that arm MaxDelay.
+func failuresToCap(policy AuthBackoff) int {
+	n := policy.FreeAttempts
+	if n < 1 {
+		n = 1
+	}
+	for lockoutAfter(n, policy) < policy.MaxDelay && policy.BaseDelay > 0 {
+		n++
+	}
+	return n
 }
 
 // laneForgotten reports whether a run of failures consecutive failures, the

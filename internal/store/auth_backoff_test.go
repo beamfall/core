@@ -194,14 +194,15 @@ func TestReserveAuthAttemptCountsEveryLaneOrNone(t *testing.T) {
 
 // TestAuthBackoffHoldsTheCapUnderSustainedGuessing pins ADR-0012 §3 against a
 // caller that guesses the moment each lockout ends (CORE-2119): once the delay
-// reaches MaxDelay it must stay there, so a day of guessing yields about one
-// attempt per MaxDelay and not a fresh set of free attempts every Window.
+// reaches MaxDelay it must stay there, so guessing yields about one attempt
+// per MaxDelay and not a fresh set of free attempts every Window. Three days
+// takes the run past authFailureScanLimit stored failures.
 func TestAuthBackoffHoldsTheCapUnderSustainedGuessing(t *testing.T) {
 	st := openBackoffStore(t)
 	ctx := context.Background()
 	policy := AuthBackoff{Window: 5 * time.Minute, FreeAttempts: 5, BaseDelay: 2 * time.Second, MaxDelay: 5 * time.Minute}
 	start := time.Unix(5_000_000, 0).UTC()
-	end := start.Add(24 * time.Hour)
+	end := start.Add(72 * time.Hour)
 
 	const action, key = "test.lane", "subject-E"
 
@@ -221,8 +222,8 @@ func TestAuthBackoffHoldsTheCapUnderSustainedGuessing(t *testing.T) {
 	}
 	// Free attempts, the doubling steps up to the cap, then one per MaxDelay.
 	const climb = 5 + 8
-	if limit := climb + int(24*time.Hour/policy.MaxDelay); guesses > limit {
-		t.Fatalf("a day of guessing at every lockout end: %d attempts, want at most %d", guesses, limit)
+	if limit := climb + int(72*time.Hour/policy.MaxDelay); guesses > limit {
+		t.Fatalf("three days of guessing at every lockout end: %d attempts, want at most %d", guesses, limit)
 	}
 }
 
