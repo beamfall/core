@@ -6,6 +6,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Gauge,
+  Layers,
   Maximize,
   Minimize,
   MonitorPlay,
@@ -53,13 +54,14 @@ import {
   resolveTrickplaySheetURL,
   resolveTrickplayTile,
 } from "../lib/transport";
+import { versionLabel } from "../lib/versionChoice";
 import { useRemotePlayerTarget } from "../remote/remoteControl";
 import { AudioSyncPanel } from "./AudioSyncPanel";
 import { ChapterList } from "./ChapterList";
 import { InfoOverlay } from "./InfoOverlay";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
-import { TransportMenu } from "./TransportMenu";
+import { type MenuRow, TransportMenu } from "./TransportMenu";
 import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
 import type { PlayerState, SwitchResult } from "./usePlayer";
@@ -81,6 +83,7 @@ type OpenKey =
   | "audio"
   | "subtitle"
   | "quality"
+  | "version"
   | "info"
   | "subtitleStyle"
   | "audioSync"
@@ -117,6 +120,7 @@ export function PlayerTransport({
   onRemoteStop,
   onRemoteRestart,
   switchToHls,
+  onSelectVersion,
   onMenuOpenChange,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -160,6 +164,8 @@ export function PlayerTransport({
   onRemoteRestart?: (atSeconds?: number) => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
+  /** Plays another Version of the Media; the Version row is hidden when absent. */
+  onSelectVersion?: (versionID: string) => void;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
   onMenuOpenChange?: (open: boolean) => void;
 }) {
@@ -308,6 +314,15 @@ export function PlayerTransport({
     stop: onRemoteStop ?? onStop,
     restart: onRemoteRestart,
   });
+  // The Media's Versions (CORE-1676), listed by playbackInfo only when there
+  // are two or more; the default Version takes the client's own name.
+  const versionOptions: MenuRow[] = (state.info?.versions ?? []).map((version) => ({
+    id: version.id,
+    label: versionLabel(version, t("versionDefault")),
+    selected: version.selected,
+    disabled: false,
+    reason: "",
+  }));
 
   // Mirror the live <video> time into React state so the chrome re-renders.
   useEffect(() => {
@@ -1053,6 +1068,22 @@ export function PlayerTransport({
                     nudgeAudioDelay={audioSync.nudgeAudioDelay}
                     resetAudioDelay={audioSync.resetAudioDelay}
                     supported={audioSync.audioDelaySupported}
+                  />
+                )}
+                {onSelectVersion && versionOptions.length > 1 && (
+                  <TransportMenu
+                    label={t("version")}
+                    ariaLabel={t("version")}
+                    icon={<Layers />}
+                    container={layerRef}
+                    side={menuSide}
+                    options={versionOptions}
+                    open={openKey === "version"}
+                    onOpenChange={(open) => setOpen("version", open)}
+                    onSelect={(id) => {
+                      closeSettings(true);
+                      onSelectVersion(id);
+                    }}
                   />
                 )}
                 <TransportMenu

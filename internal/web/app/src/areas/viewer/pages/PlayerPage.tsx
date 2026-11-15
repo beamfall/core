@@ -35,6 +35,7 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
   queueNeighbours,
@@ -76,6 +77,7 @@ export function PlayerPage() {
   const location = useLocation();
   const { mediaId } = useParams();
   const { revealed, session } = useSession();
+  const profileID = session?.profileID;
   const identity = useViewerIdentity();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -103,6 +105,13 @@ export function PlayerPage() {
     ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
         ?.id ?? "")
     : undefined;
+  // The Version this profile picked for this Media (CORE-1676): a pick made in
+  // this player, else the one remembered from an earlier visit.
+  const [versionPick, setVersionPick] = useState<{ mediaID: string; id: string } | null>(null);
+  const selectedVersion =
+    versionPick && versionPick.mediaID === mediaId
+      ? versionPick.id
+      : readVersionChoice(profileID, mediaId || "");
 
   const { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust } = usePlayer(
     mediaId || "",
@@ -126,6 +135,17 @@ export function PlayerPage() {
     // "" when a card queue drives playback but has nothing after this item, so
     // an earlier Play all queue is left rather than resumed.
     declaredNextID,
+    selectedVersion,
+  );
+  // A new Version is another file: remember it, then reload at the playhead.
+  const selectVersion = useCallback(
+    (versionID: string) => {
+      if (!mediaId || versionID === selectedVersion) return;
+      writeVersionChoice(profileID, mediaId, versionID);
+      setVersionPick({ mediaID: mediaId, id: versionID });
+      retry();
+    },
+    [mediaId, profileID, selectedVersion, retry],
   );
 
   // The queue stays within the playing item's class (CORE-1490): a track
@@ -604,6 +624,7 @@ export function PlayerPage() {
               onRemoteStop={stopRemotely}
               onRemoteRestart={restart}
               switchToHls={switchToHls}
+              onSelectVersion={selectVersion}
               onMenuOpenChange={setMenuOpen}
             />
           )}

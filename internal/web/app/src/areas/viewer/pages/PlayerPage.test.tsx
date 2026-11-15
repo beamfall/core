@@ -11,13 +11,14 @@ import {
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import type { PlaybackAdjustment, PlaybackInfo } from "../lib/playback";
+import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ revealed: true }),
+  useSession: () => ({ revealed: true, session: { profileID: "profile-a" } }),
   useViewerIdentity: () => "viewer-1",
 }));
 vi.mock("@/lib/graphql", () => ({
@@ -485,6 +486,33 @@ describe("PlayerPage Back", () => {
     renderAt(["/watch/media-alpha"]);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByText("home route")).toBeInTheDocument();
+  });
+});
+
+describe("PlayerPage Version choice (CORE-1676)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+    window.localStorage.clear();
+  });
+
+  it("asks for the profile's remembered Version, and a new pick is remembered and reloads", async () => {
+    writeVersionChoice("profile-a", "media-alpha", "v-remembered");
+    const { retry } = renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "video" } as PlayerState["info"] }),
+    );
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[4]).toBe("v-remembered");
+
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    act(() => props?.onSelectVersion?.("v-uhd"));
+
+    expect(readVersionChoice("profile-a", "media-alpha")).toBe("v-uhd");
+    expect(retry).toHaveBeenCalledOnce();
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[4]).toBe("v-uhd"));
+
+    // Choosing the Version already playing does nothing.
+    act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onSelectVersion?.("v-uhd"));
+    expect(retry).toHaveBeenCalledOnce();
   });
 });
 

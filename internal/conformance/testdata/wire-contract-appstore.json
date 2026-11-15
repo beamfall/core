@@ -29658,6 +29658,13 @@
             ],
             "optional": true
           }
+        },
+        {
+          "name": "selectedVersion",
+          "shape": {
+            "type": "string",
+            "optional": true
+          }
         }
       ]
     },
@@ -29816,6 +29823,50 @@
                   "name": "selector",
                   "shape": {
                     "type": "string"
+                  }
+                }
+              ]
+            },
+            "optional": true
+          }
+        },
+        {
+          "name": "versions",
+          "shape": {
+            "type": "array",
+            "element": {
+              "type": "object",
+              "fields": [
+                {
+                  "name": "id",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "label",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "videoCodec",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "hdr",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "selected",
+                  "shape": {
+                    "type": "boolean"
                   }
                 }
               ]
@@ -30659,6 +30710,13 @@
         },
         {
           "name": "subtitleFileFingerprint",
+          "shape": {
+            "type": "string",
+            "optional": true
+          }
+        },
+        {
+          "name": "fileFingerprint",
           "shape": {
             "type": "string",
             "optional": true

@@ -153,16 +153,19 @@ function Harness({
   mediaID = "media-alpha",
   startAtSeconds,
   nextMediaID,
+  selectedVersion,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
   nextMediaID?: string;
+  selectedVersion?: string;
 }) {
   const { videoRef, state, retry, restart, switchToHls, adjust } = usePlayer(
     mediaID,
     messages,
     startAtSeconds,
     nextMediaID,
+    selectedVersion,
   );
   return (
     <>
@@ -663,12 +666,28 @@ describe("usePlayer", () => {
     expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
   });
 
+  it("asks playback-info for the chosen Version (CORE-1676)", async () => {
+    render(<Harness selectedVersion="v-uhd" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith(
+      "media-alpha",
+      undefined,
+      DEFAULT_ADJUSTMENT,
+      "v-uhd",
+    );
+  });
+
   it("plays only the server-minted stream-token URL from playback-info", async () => {
     render(<Harness />);
 
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
 
-    expect(fetchPlaybackInfo).toHaveBeenCalledWith("media-alpha", undefined, DEFAULT_ADJUSTMENT);
+    expect(fetchPlaybackInfo).toHaveBeenCalledWith(
+      "media-alpha",
+      undefined,
+      DEFAULT_ADJUSTMENT,
+      "",
+    );
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
     fireEvent.canPlay(video);
@@ -698,7 +717,7 @@ describe("usePlayer", () => {
     await waitFor(() =>
       expect(screen.getByTestId("stream-url")).toHaveTextContent("/api/media/direct/adjusted"),
     );
-    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", undefined, adjustment);
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", undefined, adjustment, "");
     const restarted = screen.getByTestId("player") as HTMLVideoElement;
     fireEvent.loadedMetadata(restarted);
     expect(restarted.currentTime).toBe(37.5);
@@ -1301,6 +1320,7 @@ describe("usePlayer", () => {
       "media-alpha",
       "media-next",
       DEFAULT_ADJUSTMENT,
+      "",
     );
     expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });

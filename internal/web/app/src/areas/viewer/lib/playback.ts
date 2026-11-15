@@ -68,6 +68,19 @@ export interface PlaybackAdjustment {
   tempo?: number;
 }
 
+/**
+ * One Version of a Media with two or more (ADR-0009, CORE-1676). `id` is
+ * opaque and stable, sent back as `selectedVersion`; `label` "" is the default
+ * Version, which the client names.
+ */
+export interface PlaybackVersion {
+  id: string;
+  label: string;
+  videoCodec?: string;
+  hdr?: string;
+  selected: boolean;
+}
+
 /** The /api/playback-info response (ADR-0010 playbackInfo), narrowed to what the player reads. */
 export interface PlaybackInfo {
   /** "audio" | "video": the item's playback class; absent when unavailable. */
@@ -86,6 +99,8 @@ export interface PlaybackInfo {
   trackPreferences?: unknown;
   /** The adjustment the stream carries; absent when none was applied. */
   adjustment?: PlaybackAdjustment;
+  /** The Media's Versions, listed only when it has two or more. */
+  versions?: PlaybackVersion[];
 }
 
 /** The /api/preview-info response: Generated Asset URLs only, no playback streams. */
@@ -114,11 +129,14 @@ export function isRevealTerminalStatus(status: number): boolean {
  * omitted. "" means a card queue drives playback and has no next item;
  * undefined means no card queue, so a Play all queue may name the next item.
  * `adjustment` asks for a key or tempo change; the default sends none.
+ * `selectedVersion` names the Version the viewer picked; the server ignores
+ * an id it does not know and chooses itself.
  */
 export async function fetchPlaybackInfo(
   mediaID: string,
   nextMediaID?: string,
   adjustment?: PlaybackAdjustment,
+  selectedVersion?: string,
 ): Promise<PlaybackInfo> {
   // Taken before the probe: a request that resumes after a newer Play all
   // started must not be read as leaving that queue.
@@ -144,6 +162,7 @@ export async function fetchPlaybackInfo(
             tempo: adjustment?.tempo ?? 1,
           },
         }),
+    ...(selectedVersion ? { selectedVersion } : {}),
   });
   // The server issues a declared next item without a title; the Play all
   // queue kept the one its listing gave, so Up Next and the next heading can

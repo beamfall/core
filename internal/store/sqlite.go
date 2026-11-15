@@ -2795,6 +2795,19 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			return Media{}, MediaFile{}, false, err
 		}
 	}
+	// Bytes that turn up in another Library leave their Versions behind: moving
+	// the whole Media would carry its other files into a Library their viewers
+	// may not see. The file detaches into a Media of its own instead.
+	detachedFrom := MediaID("")
+	if mediaID != "" {
+		shared, err := mediaHoldsOtherFilesInAnotherLibraryTx(ctx, tx, mediaID, imported)
+		if err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
+		if shared {
+			detachedFrom, mediaID = mediaID, ""
+		}
+	}
 	if mediaID == "" {
 		if plane.encrypted {
 			mediaID, err = s.allocateEncryptedMediaIDLocked(ctx)
@@ -2803,9 +2816,23 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 			}
 		} else {
 			mediaID = mediaIDForFingerprint(imported.ContentFingerprint)
+			if mediaID == detachedFrom {
+				mediaID = mediaIDForFingerprint(HashMediaFilePath(imported.ContentFingerprint + "\x00" + string(imported.LibraryID)))
+			}
 		}
 	}
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted)
+	// A re-imported file that is not its Media's first Version leaves the row's
+	// probe facts alone: they describe that first Version (see
+	// firstVersionFingerprintSQL), whose file playback trusts them for.
+	keepProbeFacts := false
+	if mediaID != "" && detachedFrom == "" {
+		first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
+		if err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
+		keepProbeFacts = first != "" && first != imported.ContentFingerprint
+	}
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, imported, plane.encrypted, keepProbeFacts)
 	if err != nil {
 		return Media{}, MediaFile{}, false, err
 	}
@@ -2821,6 +2848,15 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	}
 	if err := upsertMediaFileTx(ctx, tx, file, now); err != nil {
 		return Media{}, MediaFile{}, false, err
+	}
+	if detachedFrom != "" {
+		// A detached file is the only file of its new Media: it takes the
+		// default slot whatever Version it held before.
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE media_file SET version_label = '', part_ordinal = 0 WHERE content_fingerprint = ?",
+			imported.ContentFingerprint); err != nil {
+			return Media{}, MediaFile{}, false, err
+		}
 	}
 	// Per-stream inventory: a probe full-replaces the stored
 	// inventory for this content fingerprint (re-probe = full rescan, no partial
@@ -2846,6 +2882,22 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 		return Media{}, MediaFile{}, false, err
 	}
 	return media, file, created, nil
+}
+
+// mediaHoldsOtherFilesInAnotherLibraryTx reports whether mediaID belongs to a
+// Library other than imported's and holds a live file other than imported's.
+func mediaHoldsOtherFilesInAnotherLibraryTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile) (bool, error) {
+	var found int
+	err := tx.QueryRowContext(ctx, `
+		SELECT 1 FROM media m JOIN media_file f ON f.media_id = m.id
+		WHERE m.id = ? AND m.library_id <> ? AND f.content_fingerprint <> ? AND f.missing_at_ms IS NULL
+		LIMIT 1`,
+		mediaID, imported.LibraryID, imported.ContentFingerprint,
+	).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // refuseCatalogedDuplicateTx rejects a managed admission whose content is
@@ -2876,7 +2928,10 @@ func refuseCatalogedDuplicateTx(ctx context.Context, tx *sql.Tx, imported Import
 	return ValidationError("a file with the same content is already in a library")
 }
 
-func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile, encrypted bool) (Media, bool, error) {
+// upsertMediaRowForImportTx inserts or updates the Media row for an imported
+// file. keepProbeFacts leaves an existing row's duration, container, codec and
+// frame size as they are.
+func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile, encrypted, keepProbeFacts bool) (Media, bool, error) {
 	var existed int
 	err := tx.QueryRowContext(ctx, "SELECT 1 FROM media WHERE id = ?", mediaID).Scan(&existed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -2912,14 +2967,15 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 		  year = CASE WHEN media.year_identified = 1 THEN media.year
 		              WHEN excluded.year > 0         THEN excluded.year
 		              ELSE media.year END,
-		  duration_seconds = excluded.duration_seconds,
-		  container = excluded.container,
-		  codec = excluded.codec,
-		  video_width = CASE WHEN excluded.video_width > 0 THEN excluded.video_width ELSE media.video_width END,
-		  video_height = CASE WHEN excluded.video_height > 0 THEN excluded.video_height ELSE media.video_height END,
+		  duration_seconds = CASE WHEN ? THEN media.duration_seconds ELSE excluded.duration_seconds END,
+		  container = CASE WHEN ? THEN media.container ELSE excluded.container END,
+		  codec = CASE WHEN ? THEN media.codec ELSE excluded.codec END,
+		  video_width = CASE WHEN ? OR excluded.video_width <= 0 THEN media.video_width ELSE excluded.video_width END,
+		  video_height = CASE WHEN ? OR excluded.video_height <= 0 THEN media.video_height ELSE excluded.video_height END,
 		  media_class = CASE WHEN ? <> '' THEN ? ELSE media.media_class END,
 		  extra = CASE WHEN excluded.extra = 1 THEN 1 ELSE media.extra END
-	`, media.ID, media.LibraryID, media.Title, media.Summary, nullableInt(media.Year), media.DurationSeconds, media.Container, media.Codec, media.VideoWidth, media.VideoHeight, media.Class, boolInt(imported.Extra), rawClass, rawClass); err != nil {
+	`, media.ID, media.LibraryID, media.Title, media.Summary, nullableInt(media.Year), media.DurationSeconds, media.Container, media.Codec, media.VideoWidth, media.VideoHeight, media.Class, boolInt(imported.Extra),
+		keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, rawClass, rawClass); err != nil {
 		return Media{}, false, err
 	}
 	// Record scan-tier provenance for the built-ins the import supplies. The
@@ -2950,6 +3006,13 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 		return Media{}, false, err
 	}
 	media.Summary = storedSummary.String
+	if keepProbeFacts {
+		if err := tx.QueryRowContext(ctx,
+			"SELECT duration_seconds, container, codec, video_width, video_height FROM media WHERE id = ?", media.ID,
+		).Scan(&media.DurationSeconds, &media.Container, &media.Codec, &media.VideoWidth, &media.VideoHeight); err != nil {
+			return Media{}, false, err
+		}
+	}
 	return media, created, nil
 }
 
@@ -2991,7 +3054,7 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 		}
 	}
 
-	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, ordered[0].File, plane.encrypted)
+	media, created, err := upsertMediaRowForImportTx(ctx, tx, mediaID, ordered[0].File, plane.encrypted, false)
 	if err != nil {
 		return Media{}, nil, false, err
 	}

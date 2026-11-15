@@ -96,6 +96,18 @@ describe("fetchPlaybackInfo", () => {
     expect(postJSON.mock.calls[0][1]).not.toHaveProperty("nextMediaID");
   });
 
+  it("sends a remembered Version only when one is chosen (CORE-1676)", async () => {
+    await fetchPlaybackInfo("media-v", undefined, undefined, "v0123456789abcdef");
+    expect(postJSON).toHaveBeenCalledWith(
+      "/api/playback-info",
+      expect.objectContaining({ mediaID: "media-v", selectedVersion: "v0123456789abcdef" }),
+    );
+
+    postJSON.mockClear();
+    await fetchPlaybackInfo("media-v");
+    expect(postJSON.mock.calls[0][1]).not.toHaveProperty("selectedVersion");
+  });
+
   it("asks for a key or tempo adjustment and omits the recorded one (CORE-1659)", async () => {
     await fetchPlaybackInfo("media-song", undefined, { pitchShiftSemitones: -2, tempo: 0.9 });
     expect(postJSON.mock.calls[0][1]).toMatchObject({

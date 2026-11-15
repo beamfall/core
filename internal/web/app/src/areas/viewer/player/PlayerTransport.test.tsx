@@ -526,6 +526,49 @@ describe("PlayerTransport", () => {
     expect(screen.getByRole("button", { name: "Forward 30s" })).toBeInTheDocument();
   });
 
+  it("offers a Version menu for two or more Versions and reports the pick (CORE-1676)", async () => {
+    const onSelectVersion = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <Harness
+        onSelectVersion={onSelectVersion}
+        playerState={{
+          ...state,
+          info: {
+            versions: [
+              { id: "v-default", label: "", selected: true },
+              { id: "v-uhd", label: "4K", hdr: "hdr10", selected: false },
+            ],
+          } as PlayerState["info"],
+        }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const version = screen.getByRole("combobox", { name: "Version" });
+    expect(version).toHaveTextContent("Default");
+
+    await user.click(version);
+    await user.click(await screen.findByRole("option", { name: "4K" }));
+    expect(onSelectVersion).toHaveBeenCalledWith("v-uhd");
+  });
+
+  it("shows no Version menu for a single Version (CORE-1676)", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        onSelectVersion={vi.fn()}
+        playerState={{
+          ...state,
+          info: {
+            versions: [{ id: "v-default", label: "", selected: true }],
+          } as PlayerState["info"],
+        }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.queryByRole("combobox", { name: "Version" })).not.toBeInTheDocument();
+  });
+
   it("reports the menu closed when the transport unmounts", async () => {
     const onMenuOpenChange = vi.fn();
     const view = render(<Harness onMenuOpenChange={onMenuOpenChange} />);
@@ -542,11 +585,15 @@ function Harness({
   onMenuOpenChange,
   skipInterval,
   locale = "en",
+  onSelectVersion,
+  playerState = state,
 }: {
   onShare?: (seconds: number) => void;
   onMenuOpenChange?: (open: boolean) => void;
   skipInterval?: number;
   locale?: Locale;
+  onSelectVersion?: (versionID: string) => void;
+  playerState?: PlayerState;
 }) {
   const videoRef = createRef<HTMLVideoElement>();
   const hlsRef = createRef<null>();
@@ -558,12 +605,13 @@ function Harness({
         <PlayerTransport
           videoRef={videoRef}
           hlsRef={hlsRef}
-          state={state}
+          state={playerState}
           stageRef={stageRef}
           mediaTitle="Long Weekend"
           onShare={onShare}
           onMenuOpenChange={onMenuOpenChange}
           skipInterval={skipInterval}
+          onSelectVersion={onSelectVersion}
         />
       </div>
     </I18nProvider>

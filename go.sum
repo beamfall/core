@@ -6,6 +6,8 @@ github.com/beamfall/plugin-familyarchive v0.1.5 h1:4KI3sme44aEHF2aX2IhnIXG3uZpsB
 github.com/beamfall/plugin-familyarchive v0.1.5/go.mod h1:tIEZwYTru67oRYRNGmJ3Daz5HFR5JCI6vL9F90AWiLI=
 github.com/beamfall/plugin-filmtv v0.1.7 h1:EhB+7Y8k6Lb8mkbzQXbeiFLhuxUjaRJASttGQDYL0B0=
 github.com/beamfall/plugin-filmtv v0.1.7/go.mod h1:TCnydRSc4wjs/gtRLuMSD9lwDLH6K0WtAs2Nq1vw5Rk=
+github.com/beamfall/plugin-filmtv v0.1.8-0.20261114210809-ee31f58442cf h1:48kRvFoIpuEMwYh1CcM3QamfHnk2KdC5ylSz1D29S1A=
+github.com/beamfall/plugin-filmtv v0.1.8-0.20261114210809-ee31f58442cf/go.mod h1:PyiovKALcQsBoDOLQGQs8+Zp6ttNZaPiMi3gdMLzRB4=
 github.com/beamfall/plugin-karaoke v0.1.1 h1:EztGBQKj2Ya0gjXlZ7wo+eg0DJEq2+CBfoPK5vfd2MU=
 github.com/beamfall/plugin-karaoke v0.1.1/go.mod h1:NbgZZDbUhe1X1Qqx55B9FLG0KXHLTtpVTQOpML+scRc=
 github.com/beamfall/plugin-music v0.1.6 h1:eo6f6B2GxzbvExk6+z3LAW50EmXbMUNi3PZhoqEqO4o=
@@ -16,6 +18,8 @@ github.com/beamfall/plugin-podcasts v0.1.5 h1:S1sX8MVOPM5gCykKFRJgyrNJD5E2eNKnvB
 github.com/beamfall/plugin-podcasts v0.1.5/go.mod h1:2HJTnSGT1TZ3QYblzSvUPhnDBSwYR83coDPugV6JY/Y=
 github.com/beamfall/plugin-sdk v0.3.5-0.20261114233328-6e4761573821 h1:l5tp1rscA4Xshug++DRoLCUSPZAab/ufEBaaOGfnphI=
 github.com/beamfall/plugin-sdk v0.3.5-0.20261114233328-6e4761573821/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
+github.com/beamfall/plugin-sdk v0.3.5-0.20261114233328-f3851ea3ebf3 h1:vXzJUqdX+o1LDdLeFZsk08djm1FKxfRLRQIhp7qzE0I=
+github.com/beamfall/plugin-sdk v0.3.5-0.20261114233328-f3851ea3ebf3/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/brutella/dnssd v1.2.14 h1:qLpTnRTm5peo2jA30hqMIbCuWn8x3sFg3e9o9ODOobw=
