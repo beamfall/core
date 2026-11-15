@@ -207,8 +207,14 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 		args = append(args, "-ss", source)
 	}
 	args = append(args, inputProtocolArgs()...)
+	// The audio map follows the track the playback decision selected
+	// (CORE-1873), else the source's first audio stream.
+	audioMap := "1:a:0"
+	if rendition.AudioStreamIndex != nil {
+		audioMap = fmt.Sprintf("1:%d", *rendition.AudioStreamIndex)
+	}
 	args = append(args, "-i", audioSrc,
-		"-map", "0:v:0", "-map", "1:a:0",
+		"-map", "0:v:0", "-map", audioMap,
 		"-vf", strings.Join(filters, ","),
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds),

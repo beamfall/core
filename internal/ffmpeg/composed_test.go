@@ -354,3 +354,23 @@ func TestStartHLSSegmentsComposedRealEncodeFromOffset(t *testing.T) {
 		})
 	}
 }
+
+// CORE-1873: a selected audio track replaces the first-audio map in both the
+// live and precomputed composed encodes, so the picture plays over the track
+// the viewer picked.
+func TestComposedArgsMapSelectedAudioTrack(t *testing.T) {
+	index := 2
+	rendition := Rendition{VideoKbps: 1500, AudioStreamIndex: &index}
+	picture := ComposedPicture{GraphicsPath: "/lib/song.cdg"}
+	for name, args := range map[string][]string{
+		"live":        composedSegmentArgs("/lib/song.mkv", "/scratch/s/composed", picture, 0, 4, rendition),
+		"precomputed": composedHLSArgs("/lib/song.mkv", "/cache/r/composed", picture, rendition),
+	} {
+		if !containsPair(args, "-map", "1:2") || containsPair(args, "-map", "1:a:0") {
+			t.Errorf("%s: audio map = %q, want -map 1:2 only", name, args)
+		}
+		if !containsPair(args, "-map", "0:v:0") {
+			t.Errorf("%s: picture map missing: %q", name, args)
+		}
+	}
+}
