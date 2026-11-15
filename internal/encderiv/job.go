@@ -244,7 +244,7 @@ func transcodeToStage(ctx context.Context, cancel context.CancelCauseFunc, job *
 		_ = pw.CloseWithError(err)
 		done <- err
 	}()
-	scan := newFragmentReader(pr, job.MaxBytes)
+	scan := newFragmentReader(ctx, pr, job.MaxBytes)
 	err := libencrypt.EncryptStream(file, scan, key)
 	if err != nil {
 		cancel(err)

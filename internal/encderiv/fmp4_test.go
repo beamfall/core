@@ -2,12 +2,15 @@ package encderiv
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"io"
+	"math"
 	"testing"
 	"testing/iotest"
+	"time"
 )
 
 // A synthetic fragmented MP4, shaped like FFmpeg's
@@ -284,7 +287,7 @@ func checkFinalLayout(t *testing.T, final []byte) sidxInfo {
 }
 
 func scanAll(raw []byte, maxBytes int64) (*fragmentReader, []byte, error) {
-	f := newFragmentReader(bytes.NewReader(raw), maxBytes)
+	f := newFragmentReader(context.Background(), bytes.NewReader(raw), maxBytes)
 	out, err := io.ReadAll(f)
 	return f, out, err
 }
@@ -296,7 +299,7 @@ func TestFragmentReaderYieldsBodyAndIndexesEveryFragment(t *testing.T) {
 		"one byte": func(f *fragmentReader) ([]byte, error) { return io.ReadAll(iotest.OneByteReader(f)) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newFragmentReader(iotest.HalfReader(bytes.NewReader(s.raw)), 0)
+			f := newFragmentReader(context.Background(), iotest.HalfReader(bytes.NewReader(s.raw)), 0)
 			out, err := read(f)
 			if err != nil {
 				t.Fatal(err)
@@ -426,6 +429,58 @@ func TestFragmentReaderEnforcesSizeLimit(t *testing.T) {
 	}
 }
 
+func TestFragmentReaderRefusesHostileSampleCountsQuickly(t *testing.T) {
+	head := append(synthFtyp(), synthMoov()...)
+	mdat := mp4Box("mdat", testPayload(64))
+	// The tfhd supplies the default duration and flags, so these truns carry
+	// no per-sample table and their byte length bounds nothing.
+	defaultsOnly := func(counts ...uint32) []byte {
+		parts := [][]byte{mp4FullBox("tfhd", 0, 0x020000|0x08|0x20, u32b(testVideoID), u32b(testFrameDuration), u32b(testSyncFlags))}
+		for _, count := range counts {
+			parts = append(parts, mp4FullBox("trun", 0, 0, u32b(count)))
+		}
+		return mp4Box("moof", mp4FullBox("mfhd", 0, 0, u32b(1)), mp4Box("traf", parts...))
+	}
+	for name, moof := range map[string][]byte{
+		"one trun of 2^32-1 samples": defaultsOnly(math.MaxUint32),
+		"truns summing past the cap": defaultsOnly(maxFragmentSamples/2+1, maxFragmentSamples/2),
+	} {
+		t.Run(name, func(t *testing.T) {
+			start := time.Now()
+			f, _, err := scanAll(bytes.Join([][]byte{head, moof, mdat}, nil), 0)
+			if !errors.Is(err, ErrInvalidOutput) {
+				t.Fatalf("err = %v, want ErrInvalidOutput", err)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Fatalf("refusal took %v", elapsed)
+			}
+			if _, err := f.sidx(); err == nil {
+				t.Fatal("sidx built from a refused stream")
+			}
+		})
+	}
+	if _, _, err := scanAll(bytes.Join([][]byte{head, defaultsOnly(maxFragmentSamples), mdat}, nil), 0); err != nil {
+		t.Fatalf("fragment at the sample cap refused: %v", err)
+	}
+}
+
+func TestFragmentReaderStopsWhenCancelled(t *testing.T) {
+	s := buildSynth(synthFrags(testPayload(30_000)), false)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := newFragmentReader(ctx, bytes.NewReader(s.raw), 0)
+	if _, err := io.ReadFull(f, make([]byte, s.insertAt)); err != nil {
+		t.Fatalf("reading the header boxes: %v", err)
+	}
+	cancel()
+	if _, err := io.ReadAll(f); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if _, err := f.sidx(); err == nil {
+		t.Fatal("sidx built from a cancelled stream")
+	}
+}
+
 func TestFragmentReaderNeverReportsSourceFailureAsCleanEnd(t *testing.T) {
 	s := buildSynth(synthFrags(testPayload(30_000)), false)
 	errBoom := errors.New("transcoder failed")
@@ -438,7 +493,7 @@ func TestFragmentReaderNeverReportsSourceFailureAsCleanEnd(t *testing.T) {
 		"error between boxes":        {io.MultiReader(bytes.NewReader(s.raw[:s.insertAt]), iotest.ErrReader(errBoom)), errBoom},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := io.ReadAll(newFragmentReader(tc.src, 0))
+			_, err := io.ReadAll(newFragmentReader(context.Background(), tc.src, 0))
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
