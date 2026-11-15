@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   clean-checkout-canary:
-    runs-on: ubuntu-latest
+    # Playwright ships no Chromium for ubuntu26.04 (ubuntu-latest since 2026-10-19).
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
