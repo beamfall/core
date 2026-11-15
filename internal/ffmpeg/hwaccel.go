@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -106,7 +107,8 @@ func hwAccelVideoEncoder(accel HWAccel, codec string) string {
 // returns nil only if the encode succeeded. The injected seam: the real
 // implementation execs a time-boxed ffmpeg; tests pass a stub that returns
 // canned results and records which encoders were attempted, so the probe is
-// exercised without real hardware.
+// exercised without real hardware. The probe calls it concurrently for
+// different accelerators, so it must be safe for concurrent use.
 type HWAccelRunner func(ctx context.Context, encoder string) error
 
 // HWAccelOptions configures a probe run. The zero value is a valid production
@@ -127,9 +129,11 @@ type HWAccelOptions struct {
 	// PerProbeTimeout time-boxes each candidate's encode (ADR-0013 §4: a
 	// ~5-second probe). Zero uses defaultHWAccelProbeTimeout.
 	PerProbeTimeout time.Duration
-	// TotalTimeout bounds the entire hardware probe run by construction. Zero
-	// uses defaultHWAccelProbeTimeout, so the default startup probe is about
-	// five seconds total, not five seconds per attempted accelerator.
+	// TotalTimeout bounds the entire hardware probe run by construction.
+	// Candidates probe concurrently, so zero uses one candidate chain's worth
+	// of per-probe budgets (hwAccelProbeChainLength × PerProbeTimeout): the
+	// default startup probe costs about that much however many accelerators
+	// are attempted.
 	TotalTimeout time.Duration
 	// ConfiguredPreference is the operator-selected accelerator, when the stored
 	// preference exactly matches the closed vocabulary. Failed probes for this
@@ -143,13 +147,13 @@ type HWAccelOptions struct {
 const defaultHWAccelProbeTimeout = 5 * time.Second
 
 // HWAccelResult is what the probe verified: the accelerators whose trivial
-// encode actually succeeded, in candidate order. Software transcode is always
+// encode actually succeeded, in closed-vocabulary order. Software transcode is always
 // available and is never listed here (it is the implicit fallback).
 type HWAccelResult struct {
 	// Results has one entry per known accelerator, in closed-vocabulary order.
 	Results []HWAccelProbe
-	// Working lists the accelerators whose probe encode succeeded, in the order
-	// they were attempted. Empty means software-only — a normal, non-error
+	// Working lists the accelerators whose probe encode succeeded, in
+	// closed-vocabulary order. Empty means software-only — a normal, non-error
 	// outcome on a box with no usable hardware encoder.
 	Working []HWAccel
 }
@@ -243,12 +247,23 @@ func hwAccelCandidates(goos string, driPresent bool) []HWAccel {
 // short, time-boxed trivial encode and returns the ones that worked (ADR-0013
 // §4). It never returns an error: a candidate that fails (no device, no driver,
 // timeout) is simply omitted, and an empty result means software-only — both
-// normal outcomes. The context bounds the whole probe; each candidate is
-// additionally time-boxed by PerProbeTimeout.
+// normal outcomes.
+//
+// Candidates are probed concurrently, each on its own chain of time-boxed
+// encodes, so one hung accelerator cannot starve the others: a QSV probe that
+// wedges until its PerProbeTimeout leaves VAAPI and NVENC their full budgets
+// (CORE-2090). Within a candidate the encodes stay sequential, because HEVC is
+// only worth probing once H.264 passed (CORE-2088). The context and
+// TotalTimeout bound the whole run, and the report keeps closed-vocabulary
+// order whatever order the probes finish in.
 func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult {
+	timeout := opts.PerProbeTimeout
+	if timeout <= 0 {
+		timeout = defaultHWAccelProbeTimeout
+	}
 	totalTimeout := opts.TotalTimeout
 	if totalTimeout <= 0 {
-		totalTimeout = defaultHWAccelProbeTimeout
+		totalTimeout = hwAccelProbeChainLength * timeout
 	}
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithTimeout(ctx, totalTimeout)
@@ -266,34 +281,50 @@ func ProbeHardwareAccel(ctx context.Context, opts HWAccelOptions) HWAccelResult 
 	if runner == nil {
 		runner = DefaultHWAccelRunner
 	}
-	timeout := opts.PerProbeTimeout
-	if timeout <= 0 {
-		timeout = defaultHWAccelProbeTimeout
-	}
 
-	result := HWAccelResult{Results: make([]HWAccelProbe, 0, len(allHWAccels))}
 	candidates := hwAccelCandidates(goos, driPresent())
-	for _, candidate := range allHWAccels {
-		status := HWAccelUnavailable
-		if !slices.Contains(candidates, candidate) {
-			result.Results = append(result.Results, HWAccelProbe{Accelerator: candidate, Status: status})
+	probes := make([]HWAccelProbe, len(allHWAccels))
+	var wg sync.WaitGroup
+	for i, candidate := range allHWAccels {
+		probes[i] = HWAccelProbe{Accelerator: candidate, Status: HWAccelUnavailable}
+		if !slices.Contains(candidates, candidate) || ctx.Err() != nil {
 			continue
 		}
-		if ctx.Err() != nil {
-			result.Results = append(result.Results, HWAccelProbe{Accelerator: candidate, Status: status})
-			continue
+		wg.Go(func() {
+			probes[i] = probeHWAccelCandidate(ctx, runner, candidate, timeout, opts.ConfiguredPreference == candidate)
+		})
+	}
+	wg.Wait()
+
+	result := HWAccelResult{Results: probes}
+	for _, probe := range probes {
+		if probe.Status == HWAccelWorking {
+			result.Working = append(result.Working, probe.Accelerator)
 		}
-		hevc := false
-		if err := probeOneHWAccel(ctx, runner, hwAccelEncoder[candidate], timeout); err == nil {
-			status = HWAccelWorking
-			result.Working = append(result.Working, candidate)
-			hevc = ctx.Err() == nil && probeOneHWAccel(ctx, runner, hwAccelHEVCEncoder[candidate], timeout) == nil
-		} else if opts.ConfiguredPreference == candidate {
-			status = HWAccelConfiguredFailed
-		}
-		result.Results = append(result.Results, HWAccelProbe{Accelerator: candidate, Status: status, HEVC: hevc})
 	}
 	return result
+}
+
+// hwAccelProbeChainLength is the most encodes one candidate's chain runs in
+// sequence (H.264, then HEVC). Candidates run concurrently, so the default
+// TotalTimeout is one chain's worth of per-probe budgets: enough for the
+// slowest candidate to finish, and still a fixed bound on boot.
+const hwAccelProbeChainLength = 2
+
+// probeHWAccelCandidate runs one accelerator's chain: the H.264 encode decides
+// whether the accelerator works at all, and only then is its HEVC encoder
+// probed.
+func probeHWAccelCandidate(ctx context.Context, runner HWAccelRunner, candidate HWAccel, timeout time.Duration, configured bool) HWAccelProbe {
+	probe := HWAccelProbe{Accelerator: candidate, Status: HWAccelUnavailable}
+	if err := probeOneHWAccel(ctx, runner, hwAccelEncoder[candidate], timeout); err != nil {
+		if configured {
+			probe.Status = HWAccelConfiguredFailed
+		}
+		return probe
+	}
+	probe.Status = HWAccelWorking
+	probe.HEVC = ctx.Err() == nil && probeOneHWAccel(ctx, runner, hwAccelHEVCEncoder[candidate], timeout) == nil
+	return probe
 }
 
 func probeOneHWAccel(ctx context.Context, runner HWAccelRunner, encoder string, timeout time.Duration) error {
