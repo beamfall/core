@@ -2,8 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { MetadataAttribution } from "@/lib/graphql";
-import type { PlaybackInfo } from "../lib/playback";
 import { I18nProvider } from "@/lib/i18n";
+import type { PlaybackInfo } from "../lib/playback";
 import { InfoOverlay } from "./InfoOverlay";
 
 function renderOverlay(metadataAttribution?: MetadataAttribution) {
@@ -72,13 +72,17 @@ describe("InfoOverlay transcode reason labels (CORE-1853)", () => {
   it("labels the admin remote bitrate cap", () => {
     renderReason("policy-bitrate-ceiling");
     expect(
-      screen.getByText("The source is above the remote bitrate limit set for this server or profile."),
+      screen.getByText(
+        "The source is above the remote bitrate limit set for this server or profile.",
+      ),
     ).toBeInTheDocument();
   });
 
   it("labels the viewer's own quality limit", () => {
     renderReason("bitrate-ceiling");
-    expect(screen.getByText("The source is above the quality limit you chose.")).toBeInTheDocument();
+    expect(
+      screen.getByText("The source is above the quality limit you chose."),
+    ).toBeInTheDocument();
   });
 
   it("shows an unknown reason token verbatim", () => {

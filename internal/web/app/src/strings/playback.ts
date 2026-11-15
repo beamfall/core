@@ -70,7 +70,8 @@ export const playbackStrings = {
     upTo: "up to",
     reasonRequiresTranscode: "This device cannot direct play the source.",
     reasonBitrateCeiling: "The source is above the quality limit you chose.",
-    reasonPolicyBitrateCeiling: "The source is above the remote bitrate limit set for this server or profile.",
+    reasonPolicyBitrateCeiling:
+      "The source is above the remote bitrate limit set for this server or profile.",
     subtitleStyling: "Subtitle styling",
     subtitleSize: "Text size",
     subtitleSizeSmall: "Small",
@@ -169,7 +170,8 @@ export const playbackStrings = {
     upTo: "jusqu’à",
     reasonRequiresTranscode: "Cet appareil ne peut pas lire la source directement.",
     reasonBitrateCeiling: "La source dépasse la limite de qualité que vous avez choisie.",
-    reasonPolicyBitrateCeiling: "La source dépasse la limite de débit distant fixée pour ce serveur ou ce profil.",
+    reasonPolicyBitrateCeiling:
+      "La source dépasse la limite de débit distant fixée pour ce serveur ou ce profil.",
     subtitleStyling: "Style des sous-titres",
     subtitleSize: "Taille du texte",
     subtitleSizeSmall: "Petit",
@@ -263,7 +265,8 @@ export const playbackStrings = {
     upTo: "bis zu",
     reasonRequiresTranscode: "Dieses Gerät kann die Quelle nicht direkt wiedergeben.",
     reasonBitrateCeiling: "Die Quelle liegt über dem von Ihnen gewählten Qualitätslimit.",
-    reasonPolicyBitrateCeiling: "Die Quelle liegt über dem Remote-Bitratenlimit dieses Servers oder Profils.",
+    reasonPolicyBitrateCeiling:
+      "Die Quelle liegt über dem Remote-Bitratenlimit dieses Servers oder Profils.",
     subtitleStyling: "Untertitel-Stil",
     subtitleSize: "Textgröße",
     subtitleSizeSmall: "Klein",
@@ -357,7 +360,8 @@ export const playbackStrings = {
     upTo: "hasta",
     reasonRequiresTranscode: "Este dispositivo no puede reproducir la fuente directamente.",
     reasonBitrateCeiling: "La fuente supera el límite de calidad que elegiste.",
-    reasonPolicyBitrateCeiling: "La fuente supera el límite de tasa de bits remota de este servidor o perfil.",
+    reasonPolicyBitrateCeiling:
+      "La fuente supera el límite de tasa de bits remota de este servidor o perfil.",
     subtitleStyling: "Estilo de subtítulos",
     subtitleSize: "Tamaño del texto",
     subtitleSizeSmall: "Pequeño",
@@ -451,7 +455,8 @@ export const playbackStrings = {
     upTo: "até",
     reasonRequiresTranscode: "Este dispositivo não pode reproduzir a fonte diretamente.",
     reasonBitrateCeiling: "A fonte excede o limite de qualidade que você escolheu.",
-    reasonPolicyBitrateCeiling: "A fonte excede o limite de taxa de bits remota deste servidor ou perfil.",
+    reasonPolicyBitrateCeiling:
+      "A fonte excede o limite de taxa de bits remota deste servidor ou perfil.",
     subtitleStyling: "Estilo das legendas",
     subtitleSize: "Tamanho do texto",
     subtitleSizeSmall: "Pequeno",
