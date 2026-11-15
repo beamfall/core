@@ -1363,11 +1363,18 @@ func (r Rendition) withToneMapAccel(accel HWAccel) Rendition {
 // encoder's own VAAPI device. The two are separate handles — the tone-map runs
 // on an OpenCL device derived from a named VAAPI device, while the encoder
 // keeps the implicit `-vaapi_device` handle it has always used — so neither
-// path can silently repurpose the other's device.
+// path can silently repurpose the other's device. The QSV encoder initialises
+// its own QSV device on the selected render node (CORE-2092) unless a QSV
+// tone-map chain already created one there: a second QSV device would leave
+// the encoder unable to choose and fall back to libmfx's default adapter.
 func (r Rendition) inputArgs() []string {
-	args := r.toneMapChain().InitArgs
-	if r.hwAccel == HWAccelVAAPI {
+	chain := r.toneMapChain()
+	args := chain.InitArgs
+	switch {
+	case r.hwAccel == HWAccelVAAPI:
 		args = append(append([]string(nil), args...), "-vaapi_device", vaapiDevicePath())
+	case r.hwAccel == HWAccelQSV && chain.Backend != HWAccelQSV:
+		args = append(append([]string(nil), args...), qsvInitArgs()...)
 	}
 	return args
 }
@@ -1742,8 +1749,10 @@ var hwToneMapSpecs = map[HWAccel]hwToneMapSpec{
 	},
 	HWAccelQSV: {
 		initArgs: func(devicePath string) []string {
+			// A QSV device string selects the MFX implementation ("hw"); the
+			// render node is the child VA-API device (CORE-2092).
 			return []string{
-				"-init_hw_device", "qsv=hw:" + devicePath,
+				"-init_hw_device", qsvDeviceSpec("hw", devicePath),
 				"-init_hw_device", "opencl=ocl@hw",
 				"-filter_hw_device", "ocl",
 			}

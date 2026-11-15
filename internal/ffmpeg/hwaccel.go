@@ -425,6 +425,11 @@ func hwAccelProbeArgs(encoder string) []string {
 		"-i", "testsrc=duration=0.1:size=128x128:rate=10",
 		"-frames:v", "1",
 	}
+	if encoder == hwAccelEncoder[HWAccelQSV] || encoder == hwAccelHEVCEncoder[HWAccelQSV] {
+		// The probe initialises QSV on the selected node exactly as the encode
+		// does (CORE-2092), so a pass proves the GPU the encode will use.
+		args = append(qsvInitArgs(), args...)
+	}
 	if encoder == hwAccelEncoder[HWAccelVAAPI] || encoder == hwAccelHEVCEncoder[HWAccelVAAPI] {
 		args = []string{
 			"-v", "error",
@@ -443,7 +448,12 @@ func hwAccelProbeArgs(encoder string) []string {
 	return args
 }
 
+// vaapiDevicePath is the render node QSV and VA-API use: the node installed by
+// SetRenderNode (CORE-2092), else the first sorted /dev/dri/renderD*.
 func vaapiDevicePath() string {
+	if selected := selectedRenderNode.Load(); selected != nil {
+		return *selected
+	}
 	entries, err := os.ReadDir("/dev/dri")
 	if err != nil {
 		return "/dev/dri/renderD128"

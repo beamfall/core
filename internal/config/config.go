@@ -184,6 +184,21 @@ type JellyfinCompatConfig struct {
 type HardwareAccelReport struct {
 	Working []string
 	Results []HardwareAccelProbe
+	// RenderNodes are the DRM render nodes found at startup and RenderNode is
+	// the one QSV/VA-API probe, tone-map and encode use (CORE-2092). They are
+	// for the startup log and internal diagnostics only and are never copied
+	// onto the API.
+	RenderNodes []RenderNodeReport
+	RenderNode  string
+}
+
+// RenderNodeReport is one DRM render node and the PCI identity behind it.
+// Vendor is "intel", "amd", "nvidia" or "" for another vendor.
+type RenderNodeReport struct {
+	Path     string `json:"path"`
+	Vendor   string `json:"vendor"`
+	VendorID string `json:"vendorId"`
+	DeviceID string `json:"deviceId"`
 }
 
 // HardwareAccelProbe is one sanitized accelerator probe status. Status is one
