@@ -297,6 +297,8 @@ export function PlayerTransport({
     hlsRef,
     stream: state.stream,
     streams: state.streams,
+    info: state.info,
+    trackControl: state.trackControl,
     switchToHls,
     manualRenditionID,
     setManualRenditionID,

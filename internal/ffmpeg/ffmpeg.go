@@ -2298,6 +2298,11 @@ func segmentArgs(src, dir string, startSegment int, seek, outputOffset, hlsTime 
 		args = append(args, "-map", audioMap)
 	} else {
 		args = append(args, rendition.videoArgs()...)
+		// A picked audio track is mapped with the first video stream; a
+		// burn-in maps its own picture and audio in the filter graph.
+		if _, burnsSubtitle := rendition.burnsSubtitle(); rendition.AudioStreamIndex != nil && !burnsSubtitle {
+			args = append(args, "-map", "0:v:0", "-map", fmt.Sprintf("0:%d", *rendition.AudioStreamIndex))
+		}
 		args = append(args, forceKeyframes...)
 		args = append(args, rendition.args()...)
 	}

@@ -1015,12 +1015,17 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// normal grant into an eviction-capable rank.
 	priority := foregroundPriority(grant, r)
 	burnSubtitleIndex := grant.BurnSubtitleIndex - 1
+	var audioStreamIndex *int
+	if grant.AudioStreamIndex > 0 {
+		index := grant.AudioStreamIndex - 1
+		audioStreamIndex = &index
+	}
 	audioProfile := playback.HLSAudioProfileFromGrant(grant)
 	caps := playback.LadderCapsFromGrant(grant)
 	// A live composed-picture session (no precomputed composed rendition was
 	// Ready at mint) is likewise decided at mint and carried by the grant.
 	shape := playback.StreamShapeFromGrant(grant)
-	path, err := h.hls.FilePathShaped(r.Context(), key, file.Path, media.DurationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, nil, shape, priority, name)
+	path, err := h.hls.FilePathShaped(r.Context(), key, file.Path, media.DurationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
 	if err != nil {
 		// An evicted session is an expected teardown (ADR-0012 §7 revocation,
 		// idle reap, preemption), not a server fault. 503 is retryable, which

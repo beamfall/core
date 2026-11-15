@@ -1,5 +1,5 @@
 import Hls from "hls.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, getIdentityEpochSignal, graphql, resetIdentityEpoch } from "@/lib/api";
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker, ReportPlaybackVars } from "@/lib/graphql/types";
@@ -8,6 +8,7 @@ import {
   hlsStreamOf,
   isRevealTerminalStatus,
   type PlaybackAdjustment,
+  type PlaybackCaptionTrack,
   type PlaybackInfo,
   type PlaybackMessageAction,
   type PlaybackRendition,
@@ -31,6 +32,14 @@ import {
   nextRecoveryStep,
   resetRecoveryBudget,
 } from "./hlsRecovery";
+import {
+  attachCaptionElements,
+  captionLocale,
+  isBurnInCaption,
+  removeCaptionElements,
+  showCaptionElement,
+  shownCaptionElement,
+} from "./streamTracks";
 
 // The player engine, ported from the vanilla play() / startPreparedPlayback /
 // applyPlaybackSource / reportProgress (app.js). It owns the <video> element,
@@ -80,6 +89,33 @@ export interface PlayerState {
   /** Monotonic counter bumped when the live hls.js track set changes; lets the
    *  transport re-derive its audio/subtitle menus off the live tracks. */
   tracksVersion: number;
+  /** Picks among the file's audio and caption tracks (CORE-1709). Optional so
+   *  fixtures that predate it still type as a PlayerState. */
+  trackControl?: StreamTrackControl;
+}
+
+/**
+ * The file-level track choice (CORE-1709): the audio and caption tracks the
+ * playback info lists, whichever route plays them. An audio pick or a burned-in
+ * subtitle asks the server for a stream built for it and reloads at the
+ * playhead; a text caption toggles a <track> in place.
+ */
+export interface StreamTrackControl {
+  /** The caption track showing (or burned in) now; null when subtitles are off. */
+  activeCaptionID(): string | null;
+  /** Plays the audio stream with this file stream index. */
+  selectAudio(streamIndex: number): void;
+  /** Shows the caption track with this id; null turns subtitles off. */
+  selectCaption(id: string | null): void;
+}
+
+/** The viewer's track picks for one Media; unset fields leave the server's choice. */
+interface TrackChoice {
+  mediaID: string;
+  audioIndex?: number;
+  burnIndex?: number;
+  /** The caption picked: an id, null for off, undefined for no pick yet. */
+  captionID?: string | null;
 }
 
 const REPORT_INTERVAL_MS = 15000;
@@ -391,6 +427,14 @@ export function usePlayer(
   // the playhead, and a renewed token keeps the Version that is playing.
   const selectedVersionRef = useRef(selectedVersion);
   selectedVersionRef.current = selectedVersion;
+  // The viewer's audio and caption picks: refs, since a pick that needs a new
+  // stream reloads through retry() at the playhead. Another Media starts with
+  // the server's choice.
+  const trackChoiceRef = useRef<TrackChoice>({ mediaID });
+  if (trackChoiceRef.current.mediaID !== mediaID) trackChoiceRef.current = { mediaID };
+  const captionTracksRef = useRef<PlaybackCaptionTrack[]>([]);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   // Bound by the load effect once a stream is attached.
   const switchRef = useRef<((renditionKey?: string) => SwitchResult) | null>(null);
   const switchToHls = useCallback(
@@ -615,6 +659,14 @@ export function usePlayer(
       }
     };
 
+    // The audio stream and burned-in subtitle this load asks for; undefined
+    // leaves both to the server.
+    const trackRequest = () => {
+      const { audioIndex, burnIndex } = trackChoiceRef.current;
+      if (audioIndex === undefined && burnIndex === undefined) return undefined;
+      return { selectedAudioIndex: audioIndex, selectedSubtitleIndex: burnIndex };
+    };
+
     async function start() {
       // Markers do not depend on playback info, so their request runs in
       // parallel with it; neither markers nor trickplay ever gate attaching
@@ -627,6 +679,7 @@ export function usePlayer(
           nextMediaIDRef.current,
           requestedAdjustment,
           selectedVersionRef.current,
+          trackRequest(),
         );
       } catch (err) {
         if (!alive) return;
@@ -653,6 +706,16 @@ export function usePlayer(
       const video = videoRef.current;
       if (!video) return;
       boundVideo = video;
+      // Every caption track with a WebVTT URL rides as a <track> on every
+      // route; a burned-in pick is in the picture, so none of them shows.
+      captionTracksRef.current = info.captionTracks ?? [];
+      attachCaptionElements(video, info.captionTracks, captionLocale());
+      {
+        const choice = trackChoiceRef.current;
+        if (choice.captionID !== undefined && choice.burnIndex === undefined) {
+          showCaptionElement(video, choice.captionID);
+        }
+      }
       // Stream seconds are song seconds divided by the applied tempo (CORE-1658).
       // A renewal may come back with another tempo (or none), so this changes
       // with the stream actually playing.
@@ -756,6 +819,7 @@ export function usePlayer(
           nextMediaIDRef.current,
           requestedAdjustment,
           selectedVersionRef.current,
+          trackRequest(),
         )
           .then((refreshed) => {
             if (!alive) return;
@@ -768,6 +832,11 @@ export function usePlayer(
             }
             info = refreshed;
             activeStream = fresh;
+            // The renewed token re-signs the caption URLs too.
+            const shownCaption = shownCaptionElement(video);
+            captionTracksRef.current = refreshed.captionTracks ?? [];
+            attachCaptionElements(video, refreshed.captionTracks, captionLocale());
+            showCaptionElement(video, shownCaption);
             songScale = songSecondsPerStreamSecond(refreshed);
             songScaleRef.current = songScale;
             reload(fresh, songPosition / songScale);
@@ -1198,6 +1267,7 @@ export function usePlayer(
         if (tokenRefreshMetadataHandler) {
           video.removeEventListener("loadedmetadata", tokenRefreshMetadataHandler);
         }
+        removeCaptionElements(video);
         video.removeAttribute("src");
         video.load();
       }
@@ -1225,7 +1295,65 @@ export function usePlayer(
     };
   }, [reportProgress, stopProgressReporting]);
 
-  return { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust };
+  const trackControl = useMemo<StreamTrackControl>(() => {
+    const bumpTracks = () =>
+      setState((s) => (s.phase === "playing" ? { ...s, tracksVersion: s.tracksVersion + 1 } : s));
+    const activeCaptionID = () => {
+      const choice = trackChoiceRef.current;
+      if (choice.burnIndex !== undefined) return choice.captionID ?? null;
+      const video = videoRef.current;
+      return video ? shownCaptionElement(video) : null;
+    };
+    return {
+      activeCaptionID,
+      selectAudio(streamIndex) {
+        const playing = stateRef.current.info?.audioTracks?.find((track) => track.selected);
+        if (playing?.streamIndex === streamIndex) return;
+        const choice = trackChoiceRef.current;
+        choice.captionID = activeCaptionID();
+        choice.audioIndex = streamIndex;
+        retry();
+      },
+      selectCaption(id) {
+        const choice = trackChoiceRef.current;
+        const video = videoRef.current;
+        const track = id === null ? undefined : captionTracksRef.current.find((t) => t.id === id);
+        if (id !== null && !track) return;
+        if (track && isBurnInCaption(track)) {
+          if (choice.burnIndex === track.streamIndex) return;
+          choice.burnIndex = track.streamIndex;
+          choice.captionID = id;
+          if (video) showCaptionElement(video, null);
+          retry();
+          return;
+        }
+        choice.captionID = id;
+        if (choice.burnIndex !== undefined) {
+          // The burned-in subtitle leaves the picture: a new stream without it.
+          choice.burnIndex = undefined;
+          retry();
+          return;
+        }
+        if (video) showCaptionElement(video, id);
+        bumpTracks();
+      },
+    };
+  }, [retry]);
+  const exposedState = useMemo<PlayerState>(
+    () => ({ ...state, trackControl }),
+    [state, trackControl],
+  );
+
+  return {
+    videoRef,
+    hlsRef,
+    state: exposedState,
+    retry,
+    restart,
+    switchToHls,
+    adjustment,
+    adjust,
+  };
 }
 
 interface TrackPreferences {

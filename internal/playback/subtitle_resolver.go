@@ -335,19 +335,6 @@ func (s *Service) pinnedSubtitleChoice(ctx context.Context, scope auth.Scope, me
 	return &record
 }
 
-// firstAudioLanguage returns the language tag of the first audio stream in the
-// chosen file — the audio the viewer hears absent a client-side switch, and the
-// audioTrackLang input to the resolver. Empty when the file has no audio stream
-// or the probe recorded no language.
-func firstAudioLanguage(streams []store.MediaFileStream) string {
-	for _, stream := range streams {
-		if stream.Type == "audio" {
-			return stream.Language
-		}
-	}
-	return ""
-}
-
 // trackKindOf reports a caption track's format-independent kind: muxed when it
 // carries a stream index, sidecar otherwise.
 func trackKindOf(t CaptionTrack) string {

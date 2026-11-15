@@ -40,6 +40,13 @@ type InfoRequest struct {
 	// track the client selected for this playbackInfo request. Omitted means no
 	// concrete subtitle track has been selected server-side.
 	SelectedSubtitleIndex *int `json:"selectedSubtitleIndex,omitempty"`
+	// SelectedAudioIndex is the absolute ffprobe stream index of the audio
+	// track the viewer picked (an AudioTrack.StreamIndex). It applies to
+	// MediaID only. A track other than the file's default moves playback off
+	// direct play onto a stream that maps the picked track; an index that names
+	// no audio stream of the negotiated file is ignored and the server selects
+	// as if it were absent.
+	SelectedAudioIndex *int `json:"selectedAudioIndex,omitempty"`
 	// Adjustment optionally asks for a pitch shift and tempo change on an
 	// audio Media's playback. Omitted, or all defaults, changes nothing. It is
 	// validated (an out-of-range value is an invalid request) and applies to
@@ -278,6 +285,13 @@ type InfoResponse struct {
 	// muxed tracks carry streamIndex. Both carry language / forced / SDH role
 	// hints for the client track menu. Omitted when the item has no captions.
 	CaptionTracks []CaptionTrack `json:"captionTracks,omitempty"`
+	// AudioTracks lists every audio stream of the chosen Version's primary
+	// file in stream order, with exactly one marked Selected: the track the
+	// delivered streams play. It is chosen from the request's
+	// SelectedAudioIndex, else the file's default track. A client picks another
+	// track by asking playbackInfo again with its StreamIndex. Omitted when the
+	// file has no audio stream.
+	AudioTracks []AudioTrack `json:"audioTracks,omitempty"`
 	// Loudness is the rung-specific loudness/normalization state for the item
 	// (ADR-0098 area 3): the honest direct-supported / passthrough-unsupported /
 	// server-normalized / unavailable outcome derived from the declared
@@ -338,6 +352,21 @@ type CaptionTrack struct {
 	SDH            bool   `json:"sdh,omitempty"`
 	VisualImpaired bool   `json:"visualImpaired,omitempty"`
 	Commentary     bool   `json:"commentary,omitempty"`
+}
+
+// AudioTrack is one audio stream of the negotiated file as surfaced in
+// playbackInfo. StreamIndex is the absolute ffprobe stream index a client
+// sends back as InfoRequest.SelectedAudioIndex. Default, Commentary and
+// VisualImpaired are generic player roles, never domain vocabulary.
+type AudioTrack struct {
+	StreamIndex    int    `json:"streamIndex"`
+	Codec          string `json:"codec"`
+	Language       string `json:"language,omitempty"`
+	Channels       int    `json:"channels,omitempty"`
+	Default        bool   `json:"default,omitempty"`
+	Commentary     bool   `json:"commentary,omitempty"`
+	VisualImpaired bool   `json:"visualImpaired,omitempty"`
+	Selected       bool   `json:"selected,omitempty"`
 }
 
 // Subtitle track kinds: the closed, format-independent provenance vocabulary of
@@ -658,6 +687,9 @@ type decision struct {
 	// the wrong-language-forced and smart-mode cases cannot be
 	// expressed without it. Empty when the probe recorded no audio language.
 	audioLanguage string
+	// audioTracks lists the chosen file's audio streams with the delivered one
+	// marked Selected (see resolveAudioTrack).
+	audioTracks []AudioTrack
 	// loudness is the parsed loudness measurement for the chosen file (ADR-0098
 	// area 3), read through the AssetsLocator content seam inside decide where the
 	// fingerprint is known; loudnessOK is false when none exists yet. The verdict
@@ -747,7 +779,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// overlay is never written back onto it, which is what makes the
 	// monotone-restrictive rule a property of the code shape.
 	ov := s.quirks.Resolve(req.CapabilityProfile).withClientCeiling(req.CapabilityProfile.MaxStreamingBitrate)
-	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
+	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, req.SelectedAudioIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -763,6 +795,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		TrackPreferences:    trackPreferences(policy),
 		Assets:              main.assets,
 		CaptionTracks:       main.captionTracks,
+		AudioTracks:         main.audioTracks,
 		// Flags describe the device, not the decision, so they are never
 		// suppressed: a client applies them to its player regardless of which
 		// item it fetched.
@@ -795,7 +828,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
-		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, "", ov, ffmpeg.AudioAdjust{})
+		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, nil, "", ov, ffmpeg.AudioAdjust{})
 		if nextErr == nil && next.verdict != "unavailable" {
 			// Attribution tracks what the response actually carries: a next
 			// decision the payload drops would put override IDs on a body whose
@@ -876,7 +909,7 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 // receives matches what the byte layer would actually start at that rank.
 // adjust is the requested pitch shift and tempo change; it applies only to an
 // audio Media served through a transcode, which it then forces.
-func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
+func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix string, profile CapabilityProfile, policy store.Profile, priority Priority, selectedSubtitleIndex, selectedAudioIndex *int, selectedVersion string, ov quirkOverlay, adjust ffmpeg.AudioAdjust) (dec decision, err error) {
 	media, err := s.store.Media(ctx, store.MediaID(mediaID), scope.LibraryFilter())
 	if err != nil {
 		var validation store.ValidationError
@@ -1007,6 +1040,16 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if burnSubtitleIndex := selectedBurnSubtitleIndex(streams, profile, selectedSubtitleIndex, ov); burnSubtitleIndex >= 0 {
 		grant.BurnSubtitleIndex = burnSubtitleIndex + 1
 	}
+	// The audio track: the viewer's pick, else the file's default. A file with several audio streams
+	// names it in the grant so a server stream maps exactly that track instead
+	// of FFmpeg's own choice; one that is not the default rules out direct
+	// play and the untouched precomputed rendition below, which carry the
+	// default track only.
+	audio := resolveAudioTrack(streams, selectedAudioIndex)
+	if len(audio.tracks) > 1 {
+		grant.AudioStreamIndex = audio.chosen + 1
+	}
+	defer func() { dec.audioTracks = audio.tracks }()
 	if s.sessions != nil {
 		// Hand the resume position to the HLS session this decision addresses,
 		// so a resumed transcode starts its encoder once, at that position.
@@ -1058,7 +1101,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// input to subtitle pre-selection. decide has named returns, so
 	// one deferred stamp covers every decision path below this point rather than
 	// repeating the assignment at each return.
-	audioLanguage := firstAudioLanguage(streams)
+	audioLanguage := audio.language()
 	defer func() { dec.audioLanguage = audioLanguage }()
 
 	// The transcode pipeline is policy- and admission-gated before it is
@@ -1128,8 +1171,8 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			adjustment:     adjust,
 		}, nil
 	}
-	directPlay := !barred && canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov)
-	p7BaseLayer := !barred && !directPlay &&
+	directPlay := !barred && !audio.overridesDefault() && canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov)
+	p7BaseLayer := !barred && !directPlay && !audio.overridesDefault() &&
 		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov)
 	if directPlay || p7BaseLayer {
 		grant.Target = streamtoken.TargetMediaDirect
@@ -1173,7 +1216,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}, nil
 	}
 
-	if grant.BurnSubtitleIndex == 0 {
+	if grant.BurnSubtitleIndex == 0 && !audio.overridesDefault() {
 		if cached, ok, err := s.cachedRenditionChoice(ctx, scope, grant, suffix, media.ID, file.ContentFingerprint, profile, sourceVideo, sourceHasAudio, hlsAudio, expiresAt, ov); err != nil {
 			return decision{}, err
 		} else if ok {
@@ -1244,15 +1287,22 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// through and transcode only the audio — far cheaper than a full
 	// re-encode. Resolved as an HLS choice carrying the single audio-copy
 	// rendition.
-	if !barred && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) {
+	// A non-default audio track the client could otherwise play as-is takes
+	// the same rung: the video is copied and only the picked track re-encoded.
+	audioTrackCopy := audio.overridesDefault() && videoCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov)
+	if !barred && (audioTrackCopy || audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov)) {
 		hls, err := s.audioCopyChoice(ctx, grant, suffix, hlsAudio, expiresAt)
 		if err != nil {
 			return decision{}, err
 		}
+		reason := audioCopyReason(streams, profile, ov)
+		if audioTrackCopy && reason == "container-remux" {
+			reason = "audio-transcode-only"
+		}
 		return decision{
 			media:          media,
 			verdict:        "direct-stream",
-			reason:         audioCopyReason(streams, profile, ov),
+			reason:         reason,
 			streams:        []StreamChoice{hls},
 			timeline:       timeline,
 			parts:          parts,
@@ -2255,6 +2305,17 @@ func audioOnlyCodecDeclared(media store.Media, streams []store.MediaFileStream, 
 // with HDR10+/Dolby Vision metadata, still falls through to the full transcode.
 func audioCopyEligible(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
 	containerDeclared := slices.Contains(profile.Containers, media.Container)
+	return videoCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov) &&
+		(!containerDeclared || audioNeedsRework(streams, profile, ov))
+}
+
+// videoCopyEligible reports whether the audio-copy rung may copy this source's
+// video: the container is declared or the remux preserves HDR, no overlay
+// vetoes video passthrough, the video direct-plays, and the selected subtitle
+// needs no burn-in. audioCopyEligible adds that the rung has audio work to do;
+// a non-default audio track pick supplies that work on its own.
+func videoCopyEligible(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
+	containerDeclared := slices.Contains(profile.Containers, media.Container)
 	if !containerDeclared && !remuxPreservesHDR(streams) {
 		return false
 	}
@@ -2262,8 +2323,7 @@ func audioCopyEligible(media store.Media, file store.MediaFile, streams []store.
 		return false
 	}
 	return videoDirectPlayable(media, file, streams, profile) &&
-		subtitleFormatsCompatible(streams, profile, selectedSubtitleIndex, ov) &&
-		(!containerDeclared || audioNeedsRework(streams, profile, ov))
+		subtitleFormatsCompatible(streams, profile, selectedSubtitleIndex, ov)
 }
 
 // audioNeedsRework reports whether the audio-copy rung has work to do: the

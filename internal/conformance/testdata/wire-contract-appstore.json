@@ -30312,6 +30312,13 @@
           }
         },
         {
+          "name": "selectedAudioIndex",
+          "shape": {
+            "type": "integer",
+            "optional": true
+          }
+        },
+        {
           "name": "adjustment",
           "shape": {
             "type": "object",
@@ -31072,6 +31079,72 @@
           }
         },
         {
+          "name": "audioTracks",
+          "shape": {
+            "type": "array",
+            "element": {
+              "type": "object",
+              "fields": [
+                {
+                  "name": "streamIndex",
+                  "shape": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "name": "codec",
+                  "shape": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "name": "language",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "channels",
+                  "shape": {
+                    "type": "integer",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "default",
+                  "shape": {
+                    "type": "boolean",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "commentary",
+                  "shape": {
+                    "type": "boolean",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "visualImpaired",
+                  "shape": {
+                    "type": "boolean",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "selected",
+                  "shape": {
+                    "type": "boolean",
+                    "optional": true
+                  }
+                }
+              ]
+            },
+            "optional": true
+          }
+        },
+        {
           "name": "loudness",
           "shape": {
             "type": "object",
@@ -31371,6 +31444,13 @@
         },
         {
           "name": "burnSubtitleIndex",
+          "shape": {
+            "type": "integer",
+            "optional": true
+          }
+        },
+        {
+          "name": "audioStreamIndex",
           "shape": {
             "type": "integer",
             "optional": true

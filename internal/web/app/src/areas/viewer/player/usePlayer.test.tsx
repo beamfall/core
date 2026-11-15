@@ -674,6 +674,7 @@ describe("usePlayer", () => {
       undefined,
       DEFAULT_ADJUSTMENT,
       "v-uhd",
+      undefined,
     );
   });
 
@@ -687,6 +688,7 @@ describe("usePlayer", () => {
       undefined,
       DEFAULT_ADJUSTMENT,
       "",
+      undefined,
     );
     const video = screen.getByTestId("player");
     expect(video).toHaveAttribute("src", "/api/media/direct/token");
@@ -717,7 +719,13 @@ describe("usePlayer", () => {
     await waitFor(() =>
       expect(screen.getByTestId("stream-url")).toHaveTextContent("/api/media/direct/adjusted"),
     );
-    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith("media-alpha", undefined, adjustment, "");
+    expect(fetchPlaybackInfo).toHaveBeenLastCalledWith(
+      "media-alpha",
+      undefined,
+      adjustment,
+      "",
+      undefined,
+    );
     const restarted = screen.getByTestId("player") as HTMLVideoElement;
     fireEvent.loadedMetadata(restarted);
     expect(restarted.currentTime).toBe(37.5);
@@ -1321,6 +1329,7 @@ describe("usePlayer", () => {
       "media-next",
       DEFAULT_ADJUSTMENT,
       "",
+      undefined,
     );
     expect(screen.getByTestId("up-next")).toHaveTextContent("media-next");
   });
