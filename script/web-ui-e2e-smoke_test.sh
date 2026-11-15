@@ -265,7 +265,7 @@ if grep -q -- '--list' "${SMOKE_TEST_CALLS}"; then
 fi
 expected_projects=(
   unauth viewer player-desktop player-mobile manage console text-expansion a11y-browser auth-matrix
-  ui-states ui-states-mobile
+  ui-states ui-states-mobile music
 )
 for project in "${expected_projects[@]}"; do
   if [[ "$(grep -oE -- "--project ${project}([[:space:]]|$)" "${inventory}" | wc -l | tr -d ' ')" -ne 1 ]]; then
@@ -280,8 +280,8 @@ while IFS= read -r project; do
     exit 1
   fi
 done <"${SMOKE_TEST_REQUIRED_VISUAL_PROJECTS}"
-if [[ "$(grep -o -- '--project [^ ]*' "${inventory}" | wc -l | tr -d ' ')" -ne 11 ]]; then
-  echo "FAIL web-ui-e2e-smoke inventory did not select exactly eleven Chromium projects" >&2
+if [[ "$(grep -o -- '--project [^ ]*' "${inventory}" | wc -l | tr -d ' ')" -ne 12 ]]; then
+  echo "FAIL web-ui-e2e-smoke inventory did not select exactly twelve Chromium projects" >&2
   exit 1
 fi
 if grep -Eq -- '--project web-compat-|\.spec\.ts' "${SMOKE_TEST_CALLS}"; then
