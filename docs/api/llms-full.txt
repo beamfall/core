@@ -900,7 +900,7 @@ matches what the server enforces. A refused field answers `admin session require
 `beamfall mcp` runs a Model Context Protocol server over stdio that proxies to a running server:
 
 ```sh
-BEAMFALL_SERVER=http://127.0.0.1:8096 BEAMFALL_TOKEN="$(cat ~/.beamfall-agent-token)" beamfall mcp
+BEAMFALL_SERVER=http://127.0.0.1:8800 BEAMFALL_TOKEN="$(cat ~/.beamfall-agent-token)" beamfall mcp
 ```
 
 It offers the tools `catalog`, `graphql`, `logs`, `bundle` and `health`, and never prints the token.
