@@ -1462,7 +1462,9 @@ func TestWebShellSecurityHeaders(t *testing.T) {
 		"X-Frame-Options":        "SAMEORIGIN",
 		"X-Content-Type-Options": "nosniff",
 		"Referrer-Policy":        "strict-origin-when-cross-origin",
-		"Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"Content-Security-Policy": "default-src 'self'; " +
+			"script-src 'self' https://www.gstatic.com/cv/js/sender/ https://www.gstatic.com/cast/sdk/libs/sender/ " +
+			"https://www.gstatic.com/eureka/clank/; style-src 'self' 'unsafe-inline'; " +
 			"worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'self'",
 	}
 	for _, path := range paths {
@@ -1475,11 +1477,24 @@ func TestWebShellSecurityHeaders(t *testing.T) {
 				t.Errorf("path %s: header %s = %q, want %q", path, header, got, want)
 			}
 		}
-		// The CSP must keep the XSS backstop intact: no inline SCRIPT allowance.
-		// Scripts inherit default-src 'self'; only style-src relaxes to inline.
+		// The CSP must keep the XSS backstop intact: no inline or eval SCRIPT
+		// allowance and no whole-host script source. The only script origin
+		// beyond 'self' is the Cast sender SDK, path-scoped (CORE-1679); only
+		// style-src relaxes to inline.
 		csp := rec.Header().Get("Content-Security-Policy")
-		if strings.Contains(csp, "script-src") {
-			t.Errorf("path %s: CSP declares a script-src directive (must inherit default-src 'self'): %q", path, csp)
+		for _, directive := range strings.Split(csp, ";") {
+			fields := strings.Fields(directive)
+			if len(fields) == 0 || fields[0] != "script-src" {
+				continue
+			}
+			for _, source := range fields[1:] {
+				if source == "'self'" {
+					continue
+				}
+				if !strings.HasPrefix(source, "https://www.gstatic.com/") || !strings.HasSuffix(source, "/") || source == "https://www.gstatic.com/" {
+					t.Errorf("path %s: script-src allows %q beyond 'self' and the path-scoped Cast sender SDK: %q", path, source, csp)
+				}
+			}
 		}
 	}
 }

@@ -1,6 +1,7 @@
 import { accessBulkStrings } from "./access-bulk";
 import { appShellStrings } from "./app-shell";
 import { backupRetentionStrings } from "./backup-retention";
+import { castStrings } from "./cast";
 import { collectionMarkerStrings } from "./collections-markers";
 import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
@@ -72,6 +73,7 @@ export const en = {
   ...remoteControlStrings.en,
   ...webhookStrings.en,
   ...viewerCollectionStrings.en,
+  ...castStrings.en,
 } as const;
 
 export const fr = {
@@ -111,6 +113,7 @@ export const fr = {
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
   ...viewerCollectionStrings.fr,
+  ...castStrings.fr,
 } as const;
 
 export const de = {
@@ -150,6 +153,7 @@ export const de = {
   ...remoteControlStrings.de,
   ...webhookStrings.de,
   ...viewerCollectionStrings.de,
+  ...castStrings.de,
 } as const;
 
 export const es = {
@@ -189,6 +193,7 @@ export const es = {
   ...remoteControlStrings.es,
   ...webhookStrings.es,
   ...viewerCollectionStrings.es,
+  ...castStrings.es,
 } as const;
 
 export const pt = {
@@ -228,4 +233,5 @@ export const pt = {
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
   ...viewerCollectionStrings.pt,
+  ...castStrings.pt,
 } as const;

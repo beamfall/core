@@ -1,0 +1,27 @@
+/* CORE-1679: the Cast control in the player transport row. */
+.bf-cast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bf-cast-remote {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.bf-cast-seek {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.bf-cast-time {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
