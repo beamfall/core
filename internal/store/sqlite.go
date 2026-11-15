@@ -350,7 +350,7 @@ func walCatalogCopyMatches(ctx context.Context, path string) bool {
 // copyFileBounded copies src to a new 0600 file dst and fails when src holds
 // more than limit bytes.
 func copyFileBounded(src, dst string, limit int64) (int64, error) {
-	in, err := os.Open(src) // #nosec G304 -- src is the catalog or its -wal under the data directory the operator named
+	in, err := os.Open(src) // #nosec G304 G703 -- src is the catalog or its -wal under the data directory the operator named
 	if err != nil {
 		return 0, err
 	}
