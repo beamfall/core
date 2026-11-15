@@ -75,12 +75,12 @@ func (s *Store) checkEncryptedLibraryPurgeableTx(ctx context.Context, tx *sql.Tx
 // removes once the purge has committed.
 func (s *Store) purgeEncryptedLibraryPackItemsTx(ctx context.Context, tx *sql.Tx, id LibraryID, mediaIDs []MediaID, listed bool) ([]string, error) {
 	var ciphertexts []string
-	removeItems := func(where string, args ...any) error {
-		paths, err := queryIDs[string](ctx, tx, `SELECT ciphertext_path FROM offline_pack_item WHERE `+where, args...)
+	removeItems := func(selectPaths, deleteItems string, args ...any) error {
+		paths, err := queryIDs[string](ctx, tx, selectPaths, args...)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM offline_pack_item WHERE `+where, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, deleteItems, args...); err != nil {
 			return err
 		}
 		ciphertexts = append(ciphertexts, paths...)
@@ -88,7 +88,9 @@ func (s *Store) purgeEncryptedLibraryPackItemsTx(ctx context.Context, tx *sql.Tx
 	}
 	if listed {
 		for _, mediaID := range mediaIDs {
-			if err := removeItems(`media_id = ?`, mediaID); err != nil {
+			if err := removeItems(
+				`SELECT ciphertext_path FROM offline_pack_item WHERE media_id = ?`,
+				`DELETE FROM offline_pack_item WHERE media_id = ?`, mediaID); err != nil {
 				return nil, err
 			}
 		}
@@ -112,7 +114,9 @@ func (s *Store) purgeEncryptedLibraryPackItemsTx(ctx context.Context, tx *sql.Tx
 			if err == nil {
 				continue
 			}
-			if err := removeItems(`pack_id = ? AND media_id = ?`, pack, mediaID); err != nil {
+			if err := removeItems(
+				`SELECT ciphertext_path FROM offline_pack_item WHERE pack_id = ? AND media_id = ?`,
+				`DELETE FROM offline_pack_item WHERE pack_id = ? AND media_id = ?`, pack, mediaID); err != nil {
 				return nil, err
 			}
 		}
