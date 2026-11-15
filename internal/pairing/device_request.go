@@ -28,6 +28,7 @@ const (
 	maxDeviceRequests          = 64
 	maxDeviceRequestsPerSource = 3
 	maxDeviceNameRunes         = 64
+	maxDevicePlatformRunes     = 32
 
 	// Device request polls answer with one of these states.
 	DeviceRequestPending  = "pending"
@@ -39,9 +40,13 @@ const (
 	viewerCodeApproveRefused       = "viewer_pairing_codes_disabled:approve"
 )
 
-// DeviceRequest is an unauthenticated device asking to pair.
+// DeviceRequest is an unauthenticated device asking to pair. DeviceName and
+// Platform are untrusted display text. RequestedRole is only a request: the
+// device gets a role solely through an admin's approval (CORE-2063).
 type DeviceRequest struct {
 	DeviceName        string `json:"deviceName"`
+	Platform          string `json:"platform,omitempty"`
+	RequestedRole     string `json:"requestedRole,omitempty"`
 	DistributionClass string `json:"distributionClass,omitempty"`
 	RemoteAddr        string `json:"-"`
 	IsLAN             bool   `json:"-"`
@@ -73,10 +78,14 @@ type DevicePollResponse struct {
 	Enrollment *EnrollResponse `json:"enrollment,omitempty"`
 }
 
-// PendingDeviceRequest is one row of the admin pending list.
+// PendingDeviceRequest is one row of the admin pending list. LAN is derived
+// by the server from where the request arrived, never from the device.
 type PendingDeviceRequest struct {
 	Code              string `json:"code"`
 	DeviceName        string `json:"deviceName"`
+	Platform          string `json:"platform"`
+	RequestedRole     string `json:"requestedRole"`
+	LAN               bool   `json:"lan"`
 	DistributionClass string `json:"distributionClass"`
 	RequestedAt       string `json:"requestedAt"`
 	ExpiresAt         string `json:"expiresAt"`
@@ -108,6 +117,7 @@ type deviceRequestEntry struct {
 	code              string
 	secretHash        [sha256.Size]byte
 	name              string
+	platform          string
 	distributionClass store.DeviceDistributionClass
 	role              store.DeviceRole
 	isLAN             bool
@@ -165,16 +175,28 @@ func (s *Service) RequestDevicePairing(ctx context.Context, req DeviceRequest) (
 	if err != nil {
 		return DeviceRequestResponse{}, err
 	}
+	platform := strings.TrimSpace(req.Platform)
+	if platform != "" {
+		if platform, err = untrustedLabel(platform, maxDevicePlatformRunes); err != nil {
+			return DeviceRequestResponse{}, err
+		}
+	}
 	distributionClass, err := store.NormalizeDeviceDistributionClass(store.DeviceDistributionClass(req.DistributionClass))
 	if err != nil {
 		return DeviceRequestResponse{}, ErrInvalidRequest
 	}
-	role := store.DeviceRoleViewer
 
 	now := s.now()
 	source := deviceRequestSource(req.RemoteAddr)
 	if err := s.deviceRequestThrottle(ctx, source, now); err != nil {
 		return DeviceRequestResponse{}, err
+	}
+	// A role outside viewer and manager (an "admin" role, say) is refused
+	// like a bad code: a device cannot ask its way past the approval path.
+	role, err := parseRole(req.RequestedRole)
+	if err != nil {
+		s.refuseDeviceRequest(ctx, source, now)
+		return DeviceRequestResponse{}, ErrInvalidCode
 	}
 	if !req.IsLAN {
 		cfg, err := s.store.ConsoleConfig(ctx)
@@ -199,6 +221,7 @@ func (s *Service) RequestDevicePairing(ctx context.Context, req DeviceRequest) (
 
 	entry := &deviceRequestEntry{
 		name:              name,
+		platform:          platform,
 		distributionClass: distributionClass,
 		role:              role,
 		isLAN:             req.IsLAN,
@@ -443,6 +466,9 @@ func (e *deviceRequestEntry) pendingView() PendingDeviceRequest {
 	return PendingDeviceRequest{
 		Code:              e.code,
 		DeviceName:        e.name,
+		Platform:          e.platform,
+		RequestedRole:     string(e.role),
+		LAN:               e.isLAN,
 		DistributionClass: string(e.distributionClass),
 		RequestedAt:       e.requestedAt.Format(time.RFC3339),
 		ExpiresAt:         e.expiresAt.Format(time.RFC3339),

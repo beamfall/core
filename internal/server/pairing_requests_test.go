@@ -203,3 +203,33 @@ func TestDevicePairingRequestViewerSwitchRefusesWithInvalidCode(t *testing.T) {
 		t.Fatalf("approval refusal body = %s", approve.Body.String())
 	}
 }
+
+func TestDevicePairingRequestShowsDeviceIdentityToAdmin(t *testing.T) {
+	srv := newTestServer(t)
+	// lan is derived from the connection; a client-supplied value is ignored.
+	rec := devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests", `{"deviceName":"Office Mac","platform":"macos","requestedRole":"manager","lan":false}`, nil)
+	wantDevicePairingStatus(t, rec, http.StatusCreated, "request with identity")
+	req := decodeDevicePairing[pairing.DeviceRequestResponse](t, rec)
+
+	wantDevicePairingStatus(t, devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests", `{"deviceName":"TV","requestedRole":"admin"}`, nil), http.StatusUnauthorized, "request the admin role")
+	wantDevicePairingStatus(t, devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests", `{"deviceName":"TV","platform":"tv\u0007os"}`, nil), http.StatusBadRequest, "control character in platform")
+
+	list := devicePairingCall(t, srv, http.MethodGet, "/api/pairing-requests", "", authorizeManager)
+	wantDevicePairingStatus(t, list, http.StatusOK, "list")
+	var raw struct {
+		Requests []map[string]any `json:"requests"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &raw); err != nil || len(raw.Requests) != 1 {
+		t.Fatalf("list = %s, %v", list.Body.String(), err)
+	}
+	got := raw.Requests[0]
+	if got["code"] != req.Code || got["deviceName"] != "Office Mac" || got["platform"] != "macos" || got["requestedRole"] != "manager" || got["lan"] != true {
+		t.Fatalf("pending entry = %v", got)
+	}
+
+	approve := devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/approve", codeBody(req.Code), authorizeManager)
+	wantDevicePairingStatus(t, approve, http.StatusOK, "approve")
+	if decision := decodeDevicePairing[pairing.DeviceRequestDecisionResponse](t, approve); decision.DeviceRole != "manager" {
+		t.Fatalf("approval role = %+v, want the requested manager role", decision)
+	}
+}

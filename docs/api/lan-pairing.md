@@ -50,7 +50,7 @@ JSON. Secrets travel only in request bodies, never in a URL.
 **`POST /api/pairing-requests`** → `201`
 
 ```json
-{ "deviceName": "Living Room TV", "distributionClass": "direct" }
+{ "deviceName": "Living Room TV", "platform": "tvos", "requestedRole": "viewer", "distributionClass": "direct" }
 ```
 
 ```json
@@ -59,6 +59,11 @@ JSON. Secrets travel only in request bodies, never in a URL.
 
 - `deviceName` is required: at most 64 characters after trimming, with no control or invisible
   formatting characters (bidi overrides, zero-width characters). Otherwise `400`.
+- `platform` is optional, a free label the administrator sees (for example `tvos`, `android`,
+  `macos`, `web`): at most 32 characters after trimming, with the same character rules as
+  `deviceName`. Otherwise `400`.
+- `requestedRole` is optional: `viewer` (default) or `manager`. It is only a request; the
+  administrator grants the role at approval. Any other value, `admin` included, is `401`.
 - `distributionClass` is optional: `direct` (default) or `appStore`.
 - `code` is 8 characters from `A–Z2–7`. Show it on screen so the administrator can match it.
   It is not a credential: it cannot poll, and it never redeems through `/api/enroll`.
@@ -100,12 +105,16 @@ expire before the administrator gets to it.
 **`GET /api/pairing-requests`** → `200`
 
 ```json
-{ "requests": [ { "code": "K7M2QX4D", "deviceName": "Living Room TV", "distributionClass": "direct",
+{ "requests": [ { "code": "K7M2QX4D", "deviceName": "Living Room TV", "platform": "tvos",
+  "requestedRole": "viewer", "lan": true, "distributionClass": "direct",
   "requestedAt": "2026-11-15T12:00:00Z", "expiresAt": "2026-11-15T12:10:00Z" } ] }
 ```
 
 Pending requests only, oldest first. Poll it while the pairing screen is open. It never returns a
-request secret.
+request secret. `platform` is `""` when the device sent none. `requestedRole` is `viewer` or
+`manager`. `lan` is derived by the server from the connection (true when the request came from the
+local network, not through the relay or an undeclared proxy); a client cannot set it. `deviceName`
+and `platform` are untrusted device input: display them as plain text.
 
 **`POST /api/pairing-requests/approve`** → `200`
 
@@ -118,7 +127,7 @@ request secret.
 ```
 
 `profileID` defaults to the administrator's own profile and must name an enabled profile.
-`deviceRole` (`viewer` or `manager`) defaults to the role the device asked for (`viewer`). The code
+`deviceRole` (`viewer` or `manager`) defaults to the device's `requestedRole`. The code
 is matched case-insensitively.
 
 **`POST /api/pairing-requests/deny`** → `200`
@@ -137,8 +146,8 @@ is matched case-insensitively.
 
 | Status | Device routes | Administrator routes |
 |---|---|---|
-| `400` | malformed body, bad `deviceName` or `distributionClass` (`invalid pairing request`) | malformed body, missing `code`, unknown or disabled profile, bad role (`invalid pairing request`) |
-| `401` | unknown, expired, spent, denied-and-read or regenerated-away secret; remote request with remote enrollment off; Viewer pairing codes disabled (`invalid pairing code`) | no valid session (`invalid session`) |
+| `400` | malformed body, bad `deviceName`, `platform` or `distributionClass` (`invalid pairing request`) | malformed body, missing `code`, unknown or disabled profile, bad role (`invalid pairing request`) |
+| `401` | unknown, expired, spent, denied-and-read or regenerated-away secret; remote request with remote enrollment off; Viewer pairing codes disabled; `requestedRole` other than `viewer` or `manager` (`invalid pairing code`) | no valid session (`invalid session`) |
 | `403` | — | session without an active Admin Session (`pairing forbidden`) |
 | `404` | — | unknown, expired, already decided or regenerated-away code; Viewer pairing codes disabled (`invalid pairing code`) |
 | `429` | too many failed attempts or too many pending requests from this address (`pairing attempts throttled`) | — |
@@ -155,5 +164,8 @@ it for a lost session.
 - Off the LAN, requests and collection are refused unless remote enrollment is on in Console
   settings.
 - With Viewer pairing codes disabled, a Viewer request, a Viewer approval and the collection of a
-  Viewer approval are refused with the invalid-code answer.
+  Viewer approval are refused with the invalid-code answer. A `manager` request is still accepted
+  and still waits for approval.
+- No request can obtain the administrator role. A `manager` role is granted only by an
+  administrator's approval.
 - Approvals, denials and enrollments appear in the activity log.

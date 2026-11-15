@@ -384,3 +384,108 @@ func hasActivity(t *testing.T, st *store.Store, action, targetID string) bool {
 	}
 	return false
 }
+
+func TestDeviceRequestNamesTheDeviceToTheAdmin(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	ctx := context.Background()
+	lan, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "Pixel 9", Platform: " android ", RemoteAddr: "192.168.1.20:5000", IsLAN: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	if _, err := h.st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{RemoteEnrollmentEnabled: &enabled}, h.now); err != nil {
+		t.Fatal(err)
+	}
+	h.now = h.now.Add(time.Second)
+	remote, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "Office Mac", Platform: "macos", RequestedRole: "manager", RemoteAddr: "203.0.113.5:5000"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := h.service.ListDeviceRequests(ctx, h.admin())
+	if err != nil || len(list.Requests) != 2 {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+	want := []PendingDeviceRequest{
+		{Code: lan.Code, DeviceName: "Pixel 9", Platform: "android", RequestedRole: "viewer", LAN: true},
+		{Code: remote.Code, DeviceName: "Office Mac", Platform: "macos", RequestedRole: "manager", LAN: false},
+	}
+	for i, got := range list.Requests {
+		w := want[i]
+		if got.Code != w.Code || got.DeviceName != w.DeviceName || got.Platform != w.Platform || got.RequestedRole != w.RequestedRole || got.LAN != w.LAN {
+			t.Fatalf("pending[%d] = %+v, want %+v", i, got, w)
+		}
+	}
+}
+
+func TestDeviceRequestRoleOnlyThroughApproval(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	ctx := context.Background()
+	for _, role := range []string{"admin", "owner", "Manager", "root"} {
+		if _, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "TV", RequestedRole: role, RemoteAddr: "192.168.1.20:5000", IsLAN: true}); !errors.Is(err, ErrInvalidCode) {
+			t.Fatalf("requested role %q = %v, want ErrInvalidCode", role, err)
+		}
+	}
+	// Each refused role counted against the address: the throttle now holds
+	// even a valid request from it.
+	if _, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "TV", RequestedRole: "admin", RemoteAddr: "192.168.1.20:5000", IsLAN: true}); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("fifth refused role = %v", err)
+	}
+	if _, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "TV", RemoteAddr: "192.168.1.20:5000", IsLAN: true}); !errors.Is(err, ErrThrottled) {
+		t.Fatalf("request after refused roles = %v, want ErrThrottled", err)
+	}
+
+	// A manager request is only a request: nothing is enrolled until an
+	// admin approves, and the admin may grant less.
+	other := "192.168.1.30:5000"
+	manager, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "Office Mac", RequestedRole: "manager", RemoteAddr: other, IsLAN: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if polled, err := h.poll(manager.RequestSecret, other); err != nil || polled.Enrollment != nil {
+		t.Fatalf("unapproved manager request = %+v, %v", polled, err)
+	}
+	decision, err := h.approve(h.admin(), manager.Code)
+	if err != nil || decision.DeviceRole != "manager" {
+		t.Fatalf("approve defaults to the requested role: %+v, %v", decision, err)
+	}
+	polled, err := h.poll(manager.RequestSecret, other)
+	if err != nil || polled.Enrollment == nil || polled.Enrollment.DeviceRole != "manager" {
+		t.Fatalf("collect manager approval = %+v, %v", polled, err)
+	}
+
+	downgraded, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "Shared iPad", RequestedRole: "manager", RemoteAddr: other, IsLAN: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.service.ApproveDeviceRequest(ctx, h.admin(), DeviceRequestDecision{Code: downgraded.Code, DeviceRole: "viewer"}); err != nil {
+		t.Fatal(err)
+	}
+	polled, err = h.poll(downgraded.RequestSecret, other)
+	if err != nil || polled.Enrollment == nil || polled.Enrollment.DeviceRole != "viewer" {
+		t.Fatalf("collect downgraded approval = %+v, %v", polled, err)
+	}
+
+	// With Viewer codes disabled a manager request still waits for approval,
+	// and an admin cannot downgrade it to Viewer.
+	disableViewerPairingCodes(t, h.st, h.now)
+	pending, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "Laptop", RequestedRole: "manager", RemoteAddr: other, IsLAN: true})
+	if err != nil {
+		t.Fatalf("manager request with Viewer codes disabled = %v", err)
+	}
+	if _, err := h.service.ApproveDeviceRequest(ctx, h.admin(), DeviceRequestDecision{Code: pending.Code, DeviceRole: "viewer"}); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("downgrade to Viewer with the switch on = %v, want ErrInvalidCode", err)
+	}
+}
+
+func TestDeviceRequestRejectsUntrustedPlatform(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	for _, platform := range []string{"tvos\x00", "ios\u202e", strings.Repeat("p", maxDevicePlatformRunes+1)} {
+		if _, err := h.service.RequestDevicePairing(context.Background(), DeviceRequest{DeviceName: "TV", Platform: platform, RemoteAddr: "192.168.1.20:5000", IsLAN: true}); !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("platform %q = %v, want ErrInvalidRequest", platform, err)
+		}
+	}
+	if _, err := h.service.RequestDevicePairing(context.Background(), DeviceRequest{DeviceName: "TV", RemoteAddr: "192.168.1.20:5000", IsLAN: true}); err != nil {
+		t.Fatalf("request without a platform = %v", err)
+	}
+}

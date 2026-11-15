@@ -1,0 +1,6 @@
+- [x] `internal/pairing`: accept `platform` and `requestedRole`; add `platform`, `requestedRole`, `lan` to pending entries
+- [x] Approval role defaults to the requested role; Viewer switch applies to Viewer only
+- [x] Tests in `internal/pairing` and `internal/server`
+- [x] `docs/api/lan-pairing.md` documents the fields
+- [ ] `make gate`
+- [ ] `openspec archive core-2063-pairing-request-identity` after landing
