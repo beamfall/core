@@ -15,11 +15,12 @@ func (s *Server) requestAccessClass(r *http.Request, method string) (AccessClass
 	probe := r.Clone(r.Context())
 	probe.Method = method
 	_, registered := s.mux.Handler(probe)
-	_, pattern, ok := strings.Cut(registered, " ")
-	if !ok {
+	if !strings.Contains(registered, " ") {
 		return AccessClassUnclassified, false
 	}
-	class, ok := s.accessClasses[method+" "+pattern]
+	// Key on the matched registration, not the request method: HEAD is served
+	// by the GET registration and takes its policy.
+	class, ok := s.accessClasses[registered]
 	return class, ok
 }
 
@@ -28,6 +29,9 @@ func applyAccessPolicy(w http.ResponseWriter, r *http.Request, class AccessClass
 	if !ok {
 		writeError(w, r, http.StatusForbidden, "route access policy unavailable")
 		return false
+	}
+	if policy.noStore {
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	if !applyCORS(w, r, policy) {
 		return false
@@ -50,7 +54,7 @@ func requestHasCredential(r *http.Request) bool {
 	if strings.TrimSpace(r.Header.Get("Authorization")) != "" {
 		return true
 	}
-	if strings.TrimSpace(r.Header.Get("X-Beamfall-Session")) != "" {
+	if strings.TrimSpace(r.Header.Get(auth.SessionHeader)) != "" {
 		return true
 	}
 	_, err := r.Cookie(auth.SessionCookie)
@@ -73,7 +77,13 @@ func applyCORS(w http.ResponseWriter, r *http.Request, policy accessPolicy) bool
 	}
 	if policy.allowCrossOrigin {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		setCORSPreflightHeaders(w, r)
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", strings.Join([]string{
+				auth.CSRFHeader, "Content-Type", "Authorization",
+				auth.SessionHeader, auth.DeviceHeader, auth.DeviceSecretHeader,
+			}, ", "))
+		}
 		return true
 	}
 	if policy.allowTokenByteCrossOrigin && tokenByteGETPath(r) {

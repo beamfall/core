@@ -982,3 +982,24 @@ func TestBeginAdminSessionNotesDecisiveRefusals(t *testing.T) {
 		t.Fatalf("refusal = %+v, want %+v", refusal, want)
 	}
 }
+
+func TestIsEnrolledDeviceSession(t *testing.T) {
+	cases := []struct {
+		name  string
+		scope Scope
+		want  bool
+	}{
+		{"enrolled session", Scope{SessionID: "s", SessionKind: store.SessionKindEnrolled}, true},
+		{"integration session", Scope{SessionID: "s", SessionKind: store.SessionKindIntegration}, false},
+		{"scoped key", Scope{APIKeyID: "k"}, false},
+		{"admin token", Scope{APITokenID: "t"}, false},
+		{"session with key", Scope{SessionID: "s", SessionKind: store.SessionKindEnrolled, APIKeyID: "k"}, false},
+		{"session with admin token", Scope{SessionID: "s", SessionKind: store.SessionKindEnrolled, APITokenID: "t"}, false},
+		{"empty", Scope{}, false},
+	}
+	for _, tc := range cases {
+		if got := tc.scope.IsEnrolledDeviceSession(); got != tc.want {
+			t.Errorf("%s: IsEnrolledDeviceSession() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

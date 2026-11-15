@@ -51,6 +51,10 @@ type accessPolicy struct {
 	allowCrossOrigin          bool
 	allowTokenByteCrossOrigin bool
 	requireCookieCSRF         bool
+	// noStore marks every response no-store. Public /v1 responses depend on
+	// a header credential that shared caches do not key on, so they must
+	// never be stored.
+	noStore bool
 }
 
 // accessPolicies is the transport policy selected by a route's AccessClass.
@@ -61,6 +65,7 @@ var accessPolicies = map[AccessClass]accessPolicy{
 	AccessPublicV1: {
 		requireCredential: true,
 		allowCrossOrigin:  true,
+		noStore:           true,
 	},
 	AccessPrivateUI: {
 		allowTokenByteCrossOrigin: true,

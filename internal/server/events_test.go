@@ -39,12 +39,13 @@ func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	manifests := manifest.NewService(st, clock, nil)
 	tokens := streamtoken.NewService([]byte("test-token-key"), clock)
 	tokens.SetRecorder(st)
+	graphHandler := graph.NewHandler(manifests, authService, st, nil)
 	srv := New(
 		manifests,
 		playback.NewService(st, tokens, clock),
 		beam.NewService(st, authService, clock),
 		pairing.NewService(st, clock),
-		testServerGraphHandler{Handler: graph.NewHandler(manifests, authService, st, nil)},
+		testServerGraphHandler{Handler: graphHandler},
 		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)),
 		authService,
 		st,
@@ -53,6 +54,7 @@ func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	srv.SetPushNotifications(st)
 	srv.SetV1Store(st)
 	srv.SetV1ScanEnqueuer(testV1ScanEnqueuer(st))
+	srv.SetV1ProgressRecorder(graphHandler)
 	return srv, st
 }
 

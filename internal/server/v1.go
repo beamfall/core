@@ -31,6 +31,8 @@ type V1Store interface {
 	SourceItems(ctx context.Context, filter store.LibraryFilter, query store.SourceQuery) ([]store.SourceItem, error)
 	Media(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.Media, error)
 	VisibleMediaBatch(ctx context.Context, ids []store.MediaID, filter store.LibraryFilter) (map[store.MediaID]store.Media, error)
+	MediaIDsByExternalID(ctx context.Context, scheme string, value string) ([]store.MediaID, error)
+	MediaExternalIDsBatch(ctx context.Context, ids []store.MediaID) (map[store.MediaID][]store.MediaExternalID, error)
 	ActiveSessions(ctx context.Context, now time.Time, filter store.LibraryFilter) ([]store.ActiveSession, error)
 	LibraryRoots(ctx context.Context, libraryID store.LibraryID) ([]string, error)
 	AppendSessionControlEventWithActivity(ctx context.Context, target store.SessionID, payload store.SessionControlPayload, activity store.ActivityEntry, now time.Time) error
@@ -66,6 +68,12 @@ func (s *Server) v1Handler(operationID string) http.HandlerFunc {
 		return s.v1LibraryMedia
 	case "getMedia":
 		return s.v1Media
+	case "lookupMediaByExternalID":
+		return s.v1MediaByExternalID
+	case "getPlaybackInfo":
+		return s.v1PlaybackInfo
+	case "reportProgress":
+		return s.v1ReportProgress
 	case "listSessions":
 		return s.v1Sessions
 	case "playbackControl":
@@ -108,8 +116,8 @@ func (s *Server) SetV1ScanEnqueuer(enqueue V1ScanEnqueuer) {
 // written the response (401 for an unresolved credential, 403 for a scoped key
 // missing the required scope) and returns false. A non-scoped-key credential —
 // a session or admin token — never carries an API scope, so HasAPIScope is
-// false and the request is rejected: the /v1/ surface is reachable only by a
-// scoped developer key carrying the named scope.
+// false and the request is rejected. Routes that also accept an enrolled
+// device Session use v1Caller instead (ADR-0234 D1).
 func (s *Server) v1Scope(w http.ResponseWriter, r *http.Request, required store.APIScope) (auth.Scope, bool) {
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil {
@@ -140,7 +148,7 @@ type v1LibrariesResponse struct {
 }
 
 func (s *Server) v1Libraries(w http.ResponseWriter, r *http.Request) {
-	scope, ok := s.v1Scope(w, r, store.ScopeReadCatalog)
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
 	if !ok {
 		return
 	}
@@ -188,7 +196,7 @@ type v1LibraryMediaResponse struct {
 }
 
 func (s *Server) v1LibraryMedia(w http.ResponseWriter, r *http.Request) {
-	scope, ok := s.v1Scope(w, r, store.ScopeReadCatalog)
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
 	if !ok {
 		return
 	}
@@ -256,7 +264,7 @@ const (
 )
 
 func (s *Server) v1Media(w http.ResponseWriter, r *http.Request) {
-	scope, ok := s.v1Scope(w, r, store.ScopeReadCatalog)
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
 	if !ok {
 		return
 	}
@@ -276,14 +284,113 @@ func (s *Server) v1Media(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusNotFound, "media not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, v1MediaItem{
+	externalIDs, err := s.v1.MediaExternalIDsBatch(r.Context(), []store.MediaID{media.ID})
+	if err != nil {
+		writeErrorCause(w, r, http.StatusInternalServerError, "catalog read failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, newV1MediaDetail(media, externalIDs[media.ID]))
+}
+
+// v1ExternalID is one plugin-contributed identifier on a Media detail. Scheme
+// is open vocabulary (lowercase letters, digits, '.', '-'): core names no
+// scheme, plugins and integrations agree on them.
+type v1ExternalID struct {
+	Scheme string `json:"scheme"`
+	Value  string `json:"value"`
+}
+
+// v1MediaDetail is the single-Media wire shape: the list item's fields plus
+// the external identifiers that let an integration match its own records to
+// Beamfall Media. The library list keeps the smaller v1MediaItem.
+type v1MediaDetail struct {
+	ID              string         `json:"id"`
+	LibraryID       string         `json:"libraryID"`
+	Title           string         `json:"title"`
+	Summary         string         `json:"summary,omitempty"`
+	Year            int            `json:"year,omitempty"`
+	DurationSeconds int            `json:"durationSeconds,omitempty"`
+	ExternalIDs     []v1ExternalID `json:"externalIDs,omitempty"`
+}
+
+// v1ExternalIDLimit caps the identifiers one Media detail returns. The store
+// does not cap them, so the wire does, keeping the response bounded.
+const v1ExternalIDLimit = 32
+
+// v1ExternalIDLookupLimit caps the Media one external-ID lookup returns. An
+// identifier normally names one Media; duplicate imports can share it until a
+// dedupe pass resolves them.
+const v1ExternalIDLookupLimit = 20
+
+func newV1MediaDetail(media store.Media, ids []store.MediaExternalID) v1MediaDetail {
+	detail := v1MediaDetail{
 		ID:              string(media.ID),
 		LibraryID:       string(media.LibraryID),
 		Title:           media.Title,
 		Summary:         media.Summary,
 		Year:            media.Year,
 		DurationSeconds: media.DurationSeconds,
-	})
+	}
+	for _, id := range ids[:min(len(ids), v1ExternalIDLimit)] {
+		detail.ExternalIDs = append(detail.ExternalIDs, v1ExternalID{Scheme: id.Scheme, Value: id.Value})
+	}
+	return detail
+}
+
+type v1MediaLookupResponse struct {
+	Media []v1MediaDetail `json:"media"`
+}
+
+// v1MediaByExternalID answers "is this item in the library?" for an
+// integration that knows an item only by another system's identifier. It
+// returns the visible Media carrying scheme=value; Media outside the key's
+// grants are dropped, so an empty list never says whether hidden Media exist.
+func (s *Server) v1MediaByExternalID(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.v1Caller(w, r, store.ScopeReadCatalog)
+	if !ok {
+		return
+	}
+	if s.v1 == nil {
+		writeError(w, r, http.StatusServiceUnavailable, "catalog unavailable")
+		return
+	}
+	query := r.URL.Query()
+	scheme, value := strings.TrimSpace(query.Get("scheme")), strings.TrimSpace(query.Get("value"))
+	if scheme == "" || value == "" {
+		writeError(w, r, http.StatusBadRequest, "scheme and value are required")
+		return
+	}
+	ids, err := s.v1.MediaIDsByExternalID(r.Context(), scheme, value)
+	if err != nil {
+		var validation store.ValidationError
+		if errors.As(err, &validation) {
+			writeError(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeErrorCause(w, r, http.StatusInternalServerError, "catalog read failed", err)
+		return
+	}
+	visible, err := s.v1.VisibleMediaBatch(r.Context(), ids, scope.LibraryFilter())
+	if err != nil {
+		writeErrorCause(w, r, http.StatusInternalServerError, "catalog read failed", err)
+		return
+	}
+	matched := make([]store.MediaID, 0, min(len(ids), v1ExternalIDLookupLimit))
+	for _, id := range ids {
+		if _, ok := visible[id]; ok && len(matched) < v1ExternalIDLookupLimit {
+			matched = append(matched, id)
+		}
+	}
+	externalIDs, err := s.v1.MediaExternalIDsBatch(r.Context(), matched)
+	if err != nil {
+		writeErrorCause(w, r, http.StatusInternalServerError, "catalog read failed", err)
+		return
+	}
+	out := make([]v1MediaDetail, 0, len(matched))
+	for _, id := range matched {
+		out = append(out, newV1MediaDetail(visible[id], externalIDs[id]))
+	}
+	writeJSON(w, http.StatusOK, v1MediaLookupResponse{Media: out})
 }
 
 // v1SessionItem is the wire shape for one active playback session on the /v1/

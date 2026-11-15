@@ -1187,6 +1187,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// here at the composition root since server cannot import internal/scan.
 	srv.SetV1Store(st)
 	srv.SetV1ScanEnqueuer(v1ScanEnqueuer(st, jobWake))
+	srv.SetV1ProgressRecorder(graphHandler)
 	srv.SetBackupIngestEncryptor(appLibEncryptDBCipher{manager: libEncryptManager})
 	// Proxy-tee stream-first archive (ADR-0052 §2.1-2.2): on first play of a
 	// provisional Media the server ranges the origin enclosure to the client

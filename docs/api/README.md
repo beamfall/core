@@ -8,6 +8,7 @@ updated: 2026-07-12
 
 - Human reference: [`reference.md`](reference.md)
 - Home-automation examples: [`home-automation.md`](home-automation.md)
+- Request-tool integration: [`request-tools.md`](request-tools.md)
 - Compact AI reference: [`llms.txt`](llms.txt)
 - Full AI reference: [`llms-full.txt`](llms-full.txt)
 - Machine contract: [`openapi.json`](openapi.json)
