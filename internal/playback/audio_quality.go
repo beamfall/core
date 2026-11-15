@@ -44,17 +44,20 @@ type AudioQuality struct {
 }
 
 // audioQualityFor derives the AudioQuality of a decision whose primary stream
-// is choices[0], playing the source audio stream at index chosen. It returns
-// nil when there is no stream or no chosen audio track to describe.
+// is choices[0], playing the source audio stream at index chosen under the
+// decision's pitch/tempo adjustment. It returns nil when there is no stream or
+// no chosen audio track to describe.
 //
-// The primary stream delivers the source audio bit-for-bit when it is the
-// file itself (direct play), or when it is a live transcode (an "hls-" or
-// "audio-copy-" choice) whose audio profile copies the stream and the chosen
-// track is one the client declared it passes through within its ceilings. A
-// pitch/tempo adjustment, a composed picture and a precomputed rendition are
-// always reported as a transcode: the first two re-time or re-encode the
-// audio, and the server does not vouch for a rendition's audio bits.
-func audioQualityFor(choices []StreamChoice, streams []store.MediaFileStream, chosen int, hlsAudio ffmpeg.AudioProfile, profile CapabilityProfile) *AudioQuality {
+// Delivery follows what happens to the audio. The file itself (direct play)
+// delivers it bit-for-bit. A live transcode does when it copies the audio
+// stream: an "hls-" or "audio-copy-" choice, or a live "composed-" picture,
+// whose audio profile is a copy of a track the client declared it passes
+// through within its ceilings, with no adjustment, which forces a re-encode
+// (ffmpeg.Rendition.audioArgs). A live composed picture maps the file's first
+// audio stream, so it counts only when that is the chosen track. Anything else
+// is a transcode, including a precomputed rendition, whose audio bits the
+// server does not vouch are the source's.
+func audioQualityFor(choices []StreamChoice, streams []store.MediaFileStream, chosen int, hlsAudio ffmpeg.AudioProfile, adjust ffmpeg.AudioAdjust, profile CapabilityProfile) *AudioQuality {
 	if len(choices) == 0 || chosen < 0 {
 		return nil
 	}
@@ -69,16 +72,41 @@ func audioQualityFor(choices []StreamChoice, streams []store.MediaFileStream, ch
 		Lossless:   losslessAudioStream(source),
 		Delivery:   AudioDeliveryTranscode,
 	}
-	primary := choices[0]
-	switch {
-	case primary.Kind == "direct-play":
+	if audioDeliveredDirect(choices[0], streams, source, hlsAudio, adjust, profile) {
 		quality.Delivery = AudioDeliveryDirect
-	case primary.Kind == "hls" && (strings.HasPrefix(primary.ID, "hls-") || strings.HasPrefix(primary.ID, "audio-copy-")):
-		if hlsAudio.Codec == "copy" && passthroughCovers(profile, source) {
-			quality.Delivery = AudioDeliveryDirect
-		}
 	}
 	return quality
+}
+
+// audioDeliveredDirect reports whether the primary stream carries the source
+// audio stream unchanged: direct play, or a live transcode copying that
+// stream to a client that declared passthrough for it.
+func audioDeliveredDirect(primary StreamChoice, streams []store.MediaFileStream, source store.MediaFileStream, hlsAudio ffmpeg.AudioProfile, adjust ffmpeg.AudioAdjust, profile CapabilityProfile) bool {
+	if primary.Kind == "direct-play" {
+		return true
+	}
+	if primary.Kind != "hls" || hlsAudio.Codec != "copy" || !adjust.IsZero() || !passthroughCovers(profile, source) {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(primary.ID, "hls-"), strings.HasPrefix(primary.ID, "audio-copy-"):
+		return true
+	case strings.HasPrefix(primary.ID, "composed-"):
+		return firstAudioIndex(streams) == source.Index
+	}
+	return false
+}
+
+// firstAudioIndex is the absolute index of the file's first audio stream, the
+// one a live composed picture maps, or -1 when the file has none.
+func firstAudioIndex(streams []store.MediaFileStream) int {
+	first := -1
+	for _, stream := range streams {
+		if stream.Type == "audio" && (first < 0 || stream.Index < first) {
+			first = stream.Index
+		}
+	}
+	return first
 }
 
 // passthroughCovers reports whether the client declared passthrough for the

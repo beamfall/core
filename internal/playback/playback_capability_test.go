@@ -479,7 +479,7 @@ func TestHLSAudioProfileTargetsEAC3WhenDeclared(t *testing.T) {
 	audio := hlsAudioProfile(CapabilityProfile{
 		AudioCodecs:     []AudioCodecCap{{Codec: "aac", MaxChannels: 2}, {Codec: "eac3", MaxChannels: 6}},
 		DownstreamAudio: "passthrough",
-	}, nil, LoudnessData{}, false, quirkOverlay{})
+	}, nil, -1, LoudnessData{}, false, quirkOverlay{})
 	if audio.Codec != "eac3" || audio.Channels != 6 {
 		t.Fatalf("audio profile = %+v, want eac3 5.1", audio)
 	}
@@ -489,20 +489,20 @@ func TestHLSAudioProfileUsesAACStereoFloorForStereoSink(t *testing.T) {
 	audio := hlsAudioProfile(CapabilityProfile{
 		AudioCodecs:     []AudioCodecCap{{Codec: "eac3", MaxChannels: 6}},
 		DownstreamAudio: "stereo",
-	}, nil, LoudnessData{}, false, quirkOverlay{})
+	}, nil, -1, LoudnessData{}, false, quirkOverlay{})
 	if audio.Codec != "aac" || audio.Channels != 2 {
 		t.Fatalf("audio profile = %+v, want aac stereo floor", audio)
 	}
 }
 
 func TestHLSAudioGrantCarriesGainOnlyWithMeasurement(t *testing.T) {
-	measured := hlsAudioProfile(CapabilityProfile{}, nil, LoudnessData{GainDB: -3.5}, true, quirkOverlay{})
+	measured := hlsAudioProfile(CapabilityProfile{}, nil, -1, LoudnessData{GainDB: -3.5}, true, quirkOverlay{})
 	grant := withHLSAudioGrant(streamtoken.Grant{}, measured)
 	if grant.HLSAudioGainDB == nil || *grant.HLSAudioGainDB != -3.5 {
 		t.Fatalf("gain grant = %v, want -3.5", grant.HLSAudioGainDB)
 	}
 
-	unmeasured := hlsAudioProfile(CapabilityProfile{}, nil, LoudnessData{GainDB: -3.5}, false, quirkOverlay{})
+	unmeasured := hlsAudioProfile(CapabilityProfile{}, nil, -1, LoudnessData{GainDB: -3.5}, false, quirkOverlay{})
 	grant = withHLSAudioGrant(streamtoken.Grant{}, unmeasured)
 	if grant.HLSAudioGainDB != nil {
 		t.Fatalf("unmeasured gain grant = %v, want nil", grant.HLSAudioGainDB)
@@ -515,12 +515,12 @@ func TestHLSAudioProfileUsesPassthroughOnlyForAVRHint(t *testing.T) {
 		AudioCodecs:     []AudioCodecCap{{Codec: "truehd", MaxChannels: 8}},
 		DownstreamAudio: "passthrough",
 	}
-	if got := hlsAudioProfile(profile, streams, LoudnessData{}, false, quirkOverlay{}); got.Codec != "copy" {
+	if got := hlsAudioProfile(profile, streams, 1, LoudnessData{}, false, quirkOverlay{}); got.Codec != "copy" {
 		t.Fatalf("passthrough audio profile = %+v, want bitstream copy", got)
 	}
 
 	profile.DownstreamAudio = "stereo"
-	if got := hlsAudioProfile(profile, streams, LoudnessData{}, false, quirkOverlay{}); got.Codec == "copy" {
+	if got := hlsAudioProfile(profile, streams, 1, LoudnessData{}, false, quirkOverlay{}); got.Codec == "copy" {
 		t.Fatalf("stereo audio profile = %+v, want PCM/downmix branch", got)
 	}
 }

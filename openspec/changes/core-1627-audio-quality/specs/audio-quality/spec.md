@@ -21,7 +21,8 @@ recorded as zero, which means not recorded.
 A capability profile's `audioCodecs[]` entry MAY declare `maxSampleRate` and `maxBitDepth`; 0 or
 omitted SHALL mean no ceiling. The decision SHALL NOT direct-play or pass through a source audio
 stream whose recorded sample rate or bit depth exceeds the matching codec entry's ceiling, and
-SHALL transcode it instead. A ceiling SHALL NOT refuse a stream whose value was not recorded.
+SHALL transcode it instead. Passthrough SHALL be decided on the selected audio track alone. A
+ceiling SHALL NOT refuse a stream whose value was not recorded.
 
 #### Scenario: Sample rate above the ceiling
 
@@ -37,6 +38,12 @@ SHALL transcode it instead. A ceiling SHALL NOT refuse a stream whose value was 
 
 - **WHEN** the same client requests a FLAC item whose sample rate and bit depth were not recorded
 - **THEN** the decision is `direct-play`
+
+#### Scenario: Another track fits the ceiling
+
+- **WHEN** a client passing TrueHD through up to 48000 Hz selects a 192 kHz TrueHD track of an item
+  whose other TrueHD track is 48 kHz
+- **THEN** the selected track is re-encoded, not copied, and `audioQuality.delivery` is `transcode`
 
 ### Requirement: Playback info states the source audio quality
 

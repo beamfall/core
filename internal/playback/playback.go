@@ -1148,7 +1148,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			}
 		}()
 	}
-	hlsAudio := hlsAudioProfile(profile, streams, loudness, loudnessOK, ov)
+	hlsAudio := hlsAudioProfile(profile, streams, audio.chosen, loudness, loudnessOK, ov)
 	if ov.ceilingBindsAudio(media, file, streams) {
 		hlsAudio = ceilingBoundAudio(hlsAudio)
 	}
@@ -1199,7 +1199,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// describe, so audioQualityFor leaves it nil.
 	defer func() {
 		if err == nil {
-			dec.audioQuality = audioQualityFor(dec.streams, streams, audio.chosen, hlsAudio, profile)
+			dec.audioQuality = audioQualityFor(dec.streams, streams, audio.chosen, hlsAudio, dec.adjustment, profile)
 		}
 	}()
 
@@ -1996,8 +1996,10 @@ func (s *Service) loudnessMeasurement(media store.Media, file store.MediaFile) (
 // device the very codec or channel layout the quirk denies, and the E-AC-3
 // target would re-select a denied E-AC-3. AAC is the last-resort target with no
 // fallback below it, which is why the parser rejects an entry denying it.
-func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream, loudness LoudnessData, loudnessOK bool, ov quirkOverlay) ffmpeg.AudioProfile {
-	if passthroughAudioDeclared(streams, profile) && !ov.vetoesAudioPassthrough(streams) && ov.MaxAudioChannels <= 0 {
+// chosen is the absolute index of the audio stream the transcode maps;
+// passthrough is decided on that stream alone.
+func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream, chosen int, loudness LoudnessData, loudnessOK bool, ov quirkOverlay) ffmpeg.AudioProfile {
+	if passthroughAudioDeclared(streams, chosen, profile) && !ov.vetoesAudioPassthrough(streams) && ov.MaxAudioChannels <= 0 {
 		return ffmpeg.AudioProfile{Codec: "copy"}
 	}
 	audio := ffmpeg.AudioProfile{Codec: "aac", Channels: 2}
@@ -2057,19 +2059,13 @@ func hasAudioStream(streams []store.MediaFileStream) bool {
 	return false
 }
 
-func passthroughAudioDeclared(streams []store.MediaFileStream, profile CapabilityProfile) bool {
-	if !strings.EqualFold(profile.DownstreamAudio, "passthrough") {
-		return false
-	}
-	for _, stream := range streams {
-		if stream.Type != "audio" {
-			continue
-		}
-		if codecCap, ok := passthroughAudioCodecCap(profile.AudioCodecs, stream); ok && !exceedsAudioResolution(codecCap, stream) {
-			return true
-		}
-	}
-	return false
+// passthroughAudioDeclared reports whether the client declared passthrough for
+// the chosen audio stream (an absolute stream index) within its ceilings. Only
+// the chosen track counts: the transcode maps that track alone, so another
+// track the client could pass through must not authorise copying it.
+func passthroughAudioDeclared(streams []store.MediaFileStream, chosen int, profile CapabilityProfile) bool {
+	source, ok := audioStreamAt(streams, chosen)
+	return ok && passthroughCovers(profile, source)
 }
 
 func withHLSAudioGrant(grant streamtoken.Grant, audio ffmpeg.AudioProfile) streamtoken.Grant {
