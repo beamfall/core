@@ -966,6 +966,11 @@ type Store struct {
 	// test land a scan import in that exact window. Never set in production
 	// wiring.
 	managedImportStepHook func(step string)
+	// offlinePackSealHook, when non-nil, fires inside CreateOfflinePack after
+	// the items' Media were found and before the write transaction opens.
+	// Test-only, like convertStepHook: it lets a deterministic test purge the
+	// Media in that exact window. Never set in production wiring.
+	offlinePackSealHook func()
 	// entityIndexes holds the registered plugin-declared field index
 	// postures: kind → field → spec (RegisterEntityFieldIndexes). Guarded by
 	// mu like every other member.

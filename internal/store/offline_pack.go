@@ -84,6 +84,30 @@ type OfflinePackItem struct {
 	CiphertextPath  string
 }
 
+// offlinePackItemsStillPresentTx rechecks, inside the pack's write
+// transaction, that no purge removed an item's Media after it was found.
+// Catalog Media must still have its row. An Encrypted Library's Media stays
+// readable in its private database until the purge's teardown, so its
+// Library row in the catalog, which the purge deletes, stands in for it.
+func offlinePackItemsStillPresentTx(ctx context.Context, tx *sql.Tx, items []OfflinePackItem, planes []catalogPlane) error {
+	for i, item := range items {
+		var present int
+		var err error
+		if planes[i].encrypted {
+			err = tx.QueryRowContext(ctx, `SELECT 1 FROM library WHERE id = ?`, planes[i].libraryID).Scan(&present)
+		} else {
+			err = tx.QueryRowContext(ctx, `SELECT 1 FROM media WHERE id = ?`, item.MediaID).Scan(&present)
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return ValidationError("media not found")
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CreateOfflinePack inserts a pack row plus its frozen, ordered Media list in a
 // single mutation. items must already be the Reveal/Sealed-filtered visible
 // Media (the caller resolves the target through a TargetResolver first); this
@@ -132,16 +156,28 @@ func (s *Store) CreateOfflinePack(ctx context.Context, pack OfflinePack, items [
 	// Library's own database (CORE-1742), so no catalog foreign key can
 	// check them; each must exist on a readable plane. Media of a sealed
 	// Library is not found.
-	for _, item := range items {
-		if _, err := s.catalogPlaneForMediaLocked(ctx, item.MediaID); err != nil {
+	planes := make([]catalogPlane, len(items))
+	for i, item := range items {
+		plane, err := s.catalogPlaneForMediaLocked(ctx, item.MediaID)
+		if err != nil {
 			return OfflinePack{}, err
 		}
+		planes[i] = plane
+	}
+	if s.offlinePackSealHook != nil {
+		s.offlinePackSealHook()
 	}
 	tx, err := s.catalogW.BeginTx(ctx, nil)
 	if err != nil {
 		return OfflinePack{}, err
 	}
 	defer tx.Rollback()
+	// A purge commits its catalog transaction on this same writer, so it
+	// either landed before this transaction (and is seen here) or runs after
+	// it (and the pack items go with the Media) — CORE-1851.
+	if err := offlinePackItemsStillPresentTx(ctx, tx, items, planes); err != nil {
+		return OfflinePack{}, err
+	}
 	var profileExists int
 	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM profile WHERE id = ?`, pack.ProfileID).Scan(&profileExists); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
