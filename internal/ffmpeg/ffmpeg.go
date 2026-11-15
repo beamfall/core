@@ -163,12 +163,14 @@ type ProbeStream struct {
 	// HDR10-compatible), used to tell profile-8.1 from 8.4 etc.
 	DoViProfile    int
 	DoViBLCompatID int
-	// SampleRate, EncoderDelaySamples, EncoderPaddingSamples and
-	// DecodedSamples are an audio stream's gapless facts (CORE-1626), set by
-	// the gapless probe Probe runs on audio-only files: the sample rate, the
-	// priming samples at the start and the padding samples at the end of the
-	// decoded stream as the stream declares them, and the content length in
-	// between (0 when unmeasured). All zero when nothing was declared.
+	// SampleRate is an audio stream's sample rate in Hz (ffprobe sample_rate,
+	// CORE-1627); 0 when unreported or on a non-audio stream.
+	// EncoderDelaySamples, EncoderPaddingSamples and DecodedSamples are an
+	// audio stream's gapless facts (CORE-1626), set by the gapless probe Probe
+	// runs on audio-only files: the priming samples at the start and the
+	// padding samples at the end of the decoded stream as the stream declares
+	// them, and the content length in between (0 when unmeasured). All zero
+	// when nothing was declared.
 	SampleRate            int
 	EncoderDelaySamples   int
 	EncoderPaddingSamples int
@@ -2418,6 +2420,7 @@ type probeDocument struct {
 		ChannelLayout    string            `json:"channel_layout"`
 		BitsPerRawSample string            `json:"bits_per_raw_sample"`
 		BitsPerSample    int               `json:"bits_per_sample"`
+		SampleRate       string            `json:"sample_rate"`
 		SampleAspect     string            `json:"sample_aspect_ratio"`
 		DisplayAspect    string            `json:"display_aspect_ratio"`
 		FieldOrder       string            `json:"field_order"`
@@ -2478,6 +2481,7 @@ func parseProbe(data []byte, path string) (Probe, error) {
 			Channels:           stream.Channels,
 			ChannelLayout:      stream.ChannelLayout,
 			BitDepth:           bitDepthFrom(stream.BitsPerRawSample, stream.BitsPerSample),
+			SampleRate:         sampleRateFrom(stream.CodecType, stream.SampleRate),
 			SampleAspectRatio:  stream.SampleAspect,
 			DisplayAspectRatio: stream.DisplayAspect,
 			FieldOrder:         stream.FieldOrder,
@@ -2577,6 +2581,24 @@ func bitDepthFrom(raw string, perSample int) int {
 	}
 	if perSample >= 1 && perSample <= 64 {
 		return perSample
+	}
+	return 0
+}
+
+// maxProbeSampleRate bounds a reported audio sample rate (Hz). It sits well
+// above the highest PCM and DSD rates FFmpeg reports, so only a corrupt value
+// is dropped.
+const maxProbeSampleRate = 50_000_000
+
+// sampleRateFrom parses ffprobe's sample_rate string for an audio stream
+// (CORE-1627). Non-audio streams, an absent field and an out-of-range value
+// all report 0, which means unreported.
+func sampleRateFrom(codecType, raw string) int {
+	if codecType != "audio" || raw == "" {
+		return 0
+	}
+	if n, ok := parseBoundedInteger(raw, 1, maxProbeSampleRate); ok {
+		return int(n)
 	}
 	return 0
 }

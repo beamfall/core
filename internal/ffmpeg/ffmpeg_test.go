@@ -967,3 +967,34 @@ func TestProbeAudioWithAttachedPicture(t *testing.T) {
 		}
 	}
 }
+
+// CORE-1627: the probe records every audio stream's sample rate and bit depth,
+// not only an audio-only file's (the gapless pass), so playback can gate hi-res
+// direct play and state the source quality.
+func TestParseProbeAudioSampleRateAndBitDepth(t *testing.T) {
+	data := []byte(`{
+  "format": {"format_name": "matroska,webm", "duration": "10.0"},
+  "streams": [
+    {"index": 0, "codec_type": "video", "codec_name": "h264", "bits_per_raw_sample": "8"},
+    {"index": 1, "codec_type": "audio", "codec_name": "flac", "sample_rate": "96000", "bits_per_raw_sample": "24", "bits_per_sample": 0, "channels": 2},
+    {"index": 2, "codec_type": "audio", "codec_name": "pcm_s16le", "sample_rate": "44100", "bits_per_sample": 16, "channels": 2},
+    {"index": 3, "codec_type": "audio", "codec_name": "aac", "sample_rate": "48000", "channels": 6},
+    {"index": 4, "codec_type": "audio", "codec_name": "opus", "sample_rate": "N/A", "channels": 2},
+    {"index": 5, "codec_type": "subtitle", "codec_name": "subrip", "sample_rate": "48000"}
+  ]
+}`)
+	probe, err := parseProbe(data, "/media/Item.mkv")
+	if err != nil {
+		t.Fatalf("parseProbe returned error: %v", err)
+	}
+	want := []struct{ rate, depth int }{{0, 8}, {96000, 24}, {44100, 16}, {48000, 0}, {0, 0}, {0, 0}}
+	if len(probe.Streams) != len(want) {
+		t.Fatalf("Streams = %d, want %d", len(probe.Streams), len(want))
+	}
+	for i, w := range want {
+		got := probe.Streams[i]
+		if got.SampleRate != w.rate || got.BitDepth != w.depth {
+			t.Errorf("stream %d (%s): SampleRate=%d BitDepth=%d, want %d/%d", i, got.Codec, got.SampleRate, got.BitDepth, w.rate, w.depth)
+		}
+	}
+}

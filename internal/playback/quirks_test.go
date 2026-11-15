@@ -1279,7 +1279,7 @@ func TestCanonicalCodecVocabularyMatchesMatcher(t *testing.T) {
 		}
 		profile := quirkClientProfile
 		profile.DownstreamAudio = "passthrough"
-		audio := hlsAudioProfile(profile, nil, LoudnessData{}, false, ov)
+		audio := hlsAudioProfile(profile, nil, -1, LoudnessData{}, false, ov)
 		if audio.Codec != "aac" {
 			t.Fatalf("deny authored as %q still targets %q; want the AAC fallback", spelling, audio.Codec)
 		}

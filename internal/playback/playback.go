@@ -100,9 +100,11 @@ type CapabilityProfile struct {
 	// direct-playable even if it appears in DirectCodecs, and a present codec
 	// must also satisfy its declared profile/resolution/bitrate ceilings.
 	VideoCodecs []VideoCodecCap `json:"videoCodecs,omitempty"`
-	// AudioCodecs is the per-codec audio envelope (codec + channel ceiling).
-	// When non-empty it gates the file's audio streams: a TrueHD track against
-	// a profile that omits TrueHD forces transcode.
+	// AudioCodecs is the per-codec audio envelope (codec + channel, sample rate
+	// and bit depth ceilings). When non-empty it gates the file's audio
+	// streams: a TrueHD track against a profile that omits TrueHD, or a 24-bit
+	// 192 kHz FLAC track against a FLAC envelope capped at 96 kHz, forces
+	// transcode.
 	AudioCodecs []AudioCodecCap `json:"audioCodecs,omitempty"`
 	// HDRFormats lists the HDR transfer formats the engine renders correctly
 	// ("hdr10", "hdr10plus", "dolby-vision-p5", "dolby-vision-p8", "hlg" — the
@@ -245,10 +247,16 @@ type VideoCodecCap struct {
 }
 
 // AudioCodecCap is the direct-play envelope for one audio codec. MaxChannels 0
-// means "no channel ceiling".
+// means "no channel ceiling". MaxSampleRate (Hz) and MaxBitDepth (bits per
+// sample) are the hi-res ceilings the device renders without resampling or
+// truncating (CORE-1627); 0 means no ceiling. Each is checked only when the
+// probe recorded the source stream's value, so a legacy row with no recorded
+// rate or depth is never refused on that axis.
 type AudioCodecCap struct {
-	Codec       string `json:"codec"`
-	MaxChannels int    `json:"maxChannels,omitempty"`
+	Codec         string `json:"codec"`
+	MaxChannels   int    `json:"maxChannels,omitempty"`
+	MaxSampleRate int    `json:"maxSampleRate,omitempty"`
+	MaxBitDepth   int    `json:"maxBitDepth,omitempty"`
 }
 
 // InfoResponse is the playbackInfo payload consumed by clients.
@@ -304,6 +312,11 @@ type InfoResponse struct {
 	// track by asking playbackInfo again with its StreamIndex. Omitted when the
 	// file has no audio stream.
 	AudioTracks []AudioTrack `json:"audioTracks,omitempty"`
+	// AudioQuality states the selected audio track's source codec, sample
+	// rate and bit depth, and whether Streams[0] delivers that audio
+	// bit-for-bit or transcodes it (CORE-1627). Omitted when the item is
+	// unavailable or has no audio stream.
+	AudioQuality *AudioQuality `json:"audioQuality,omitempty"`
 	// Loudness is the rung-specific loudness/normalization state for the item
 	// (ADR-0098 area 3): the honest direct-supported / passthrough-unsupported /
 	// server-normalized / unavailable outcome derived from the declared
@@ -493,6 +506,9 @@ type NextInfo struct {
 	// area 3), so a gapless audio queue carries the next item's normalization
 	// state across the handoff.
 	Loudness *LoudnessInfo `json:"loudness,omitempty"`
+	// AudioQuality mirrors InfoResponse.AudioQuality for the declared next
+	// item, so a queue knows ahead of the handoff whether it stays lossless.
+	AudioQuality *AudioQuality `json:"audioQuality,omitempty"`
 }
 
 // StreamChoice is one playable stream option.
@@ -718,6 +734,10 @@ type decision struct {
 	// audioTracks lists the chosen file's audio streams with the delivered one
 	// marked Selected (see resolveAudioTrack).
 	audioTracks []AudioTrack
+	// audioQuality is the selected audio track's source quality and how the
+	// primary stream delivers it (see audioQualityFor); nil when unavailable
+	// or the file has no audio.
+	audioQuality *AudioQuality
 	// loudness is the parsed loudness measurement for the chosen file (ADR-0098
 	// area 3), read through the AssetsLocator content seam inside decide where the
 	// fingerprint is known; loudnessOK is false when none exists yet. The verdict
@@ -837,6 +857,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		Assets:              main.assets,
 		CaptionTracks:       main.captionTracks,
 		AudioTracks:         main.audioTracks,
+		AudioQuality:        main.audioQuality,
 		// Flags describe the device, not the decision, so they are never
 		// suppressed: a client applies them to its player regardless of which
 		// item it fetched.
@@ -887,6 +908,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 				Assets:        next.assets,
 				CaptionTracks: next.captionTracks,
 				Loudness:      s.loudnessInfo(next, capability),
+				AudioQuality:  next.audioQuality,
 			}
 		}
 	}
@@ -1136,9 +1158,9 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}()
 	}
 	// Passthrough and the encoder target are judged on the track the stream
-	// maps (CORE-1874), not on whichever of the file's tracks a client could
-	// take as is.
-	hlsAudio := hlsAudioProfile(profile, audio.chosenStreams(streams), loudness, loudnessOK, ov)
+	// maps (CORE-1874, CORE-1627), not on whichever of the file's tracks a
+	// client could take as is.
+	hlsAudio := hlsAudioProfile(profile, audio.chosenStreams(streams), audio.chosen, loudness, loudnessOK, ov)
 	if ov.ceilingBindsAudio(media, file, streams) {
 		hlsAudio = ceilingBoundAudio(hlsAudio)
 	}
@@ -1193,6 +1215,15 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	defer func() {
 		if err == nil && dec.reason != "composed-picture" && dec.adjustment.IsZero() {
 			stampGapless(dec.streams, audio.chosenStreams(streams), hlsAudio, dec.timeline.PositionSeconds)
+		}
+	}()
+	// Audio quality (CORE-1627), one deferred stamp for every path below:
+	// the selected track's source facts and whether the primary stream
+	// delivers them bit-for-bit. An unavailable verdict carries no stream to
+	// describe, so audioQualityFor leaves it nil.
+	defer func() {
+		if err == nil {
+			dec.audioQuality = audioQualityFor(dec.streams, streams, audio.chosen, hlsAudio, dec.adjustment, profile)
 		}
 	}()
 
@@ -1990,8 +2021,10 @@ func (s *Service) loudnessMeasurement(media store.Media, file store.MediaFile) (
 // device the very codec or channel layout the quirk denies, and the E-AC-3
 // target would re-select a denied E-AC-3. AAC is the last-resort target with no
 // fallback below it, which is why the parser rejects an entry denying it.
-func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream, loudness LoudnessData, loudnessOK bool, ov quirkOverlay) ffmpeg.AudioProfile {
-	if passthroughAudioDeclared(streams, profile) && !ov.vetoesAudioPassthrough(streams) && ov.MaxAudioChannels <= 0 {
+// chosen is the absolute index of the audio stream the transcode maps;
+// passthrough is decided on that stream alone.
+func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream, chosen int, loudness LoudnessData, loudnessOK bool, ov quirkOverlay) ffmpeg.AudioProfile {
+	if passthroughAudioDeclared(streams, chosen, profile) && !ov.vetoesAudioPassthrough(streams) && ov.MaxAudioChannels <= 0 {
 		return ffmpeg.AudioProfile{Codec: "copy"}
 	}
 	audio := ffmpeg.AudioProfile{Codec: "aac", Channels: 2}
@@ -2051,19 +2084,13 @@ func hasAudioStream(streams []store.MediaFileStream) bool {
 	return false
 }
 
-func passthroughAudioDeclared(streams []store.MediaFileStream, profile CapabilityProfile) bool {
-	if !strings.EqualFold(profile.DownstreamAudio, "passthrough") {
-		return false
-	}
-	for _, stream := range streams {
-		if stream.Type != "audio" {
-			continue
-		}
-		if _, ok := passthroughAudioCodecCap(profile.AudioCodecs, stream); ok {
-			return true
-		}
-	}
-	return false
+// passthroughAudioDeclared reports whether the client declared passthrough for
+// the chosen audio stream (an absolute stream index) within its ceilings. Only
+// the chosen track counts: the transcode maps that track alone, so another
+// track the client could pass through must not authorise copying it.
+func passthroughAudioDeclared(streams []store.MediaFileStream, chosen int, profile CapabilityProfile) bool {
+	source, ok := audioStreamAt(streams, chosen)
+	return ok && passthroughCovers(profile, source)
 }
 
 func withHLSAudioGrant(grant streamtoken.Grant, audio ffmpeg.AudioProfile) streamtoken.Grant {
@@ -2691,8 +2718,19 @@ func audioDirectPlayable(streams []store.MediaFileStream, profile CapabilityProf
 		if maxChannels := effectiveAudioChannelLimit(codecCap, profile.DownstreamAudio); maxChannels > 0 && stream.Channels > maxChannels {
 			return false
 		}
+		if exceedsAudioResolution(codecCap, stream) {
+			return false
+		}
 	}
 	return true
+}
+
+// exceedsAudioResolution reports whether a source audio stream's recorded
+// sample rate or bit depth is over the codec envelope's hi-res ceiling
+// (CORE-1627). An unrecorded value (0) or an unset ceiling never exceeds.
+func exceedsAudioResolution(codecCap AudioCodecCap, stream store.MediaFileStream) bool {
+	return (codecCap.MaxSampleRate > 0 && stream.SampleRate > codecCap.MaxSampleRate) ||
+		(codecCap.MaxBitDepth > 0 && stream.BitDepth > codecCap.MaxBitDepth)
 }
 
 func audioCodecCapForStream(caps []AudioCodecCap, stream store.MediaFileStream) (AudioCodecCap, bool) {

@@ -2,7 +2,10 @@ package contract
 
 import (
 	"net/http"
+	"strings"
 	"testing"
+
+	"github.com/beamfall/core/internal/playback"
 )
 
 func TestManagementManifestIncludesArtworkUploadRoute(t *testing.T) {
@@ -24,4 +27,17 @@ func TestManagementManifestIncludesArtworkUploadRoute(t *testing.T) {
 		}
 	}
 	t.Fatal("management manifest omitted live artwork-upload route")
+}
+
+// TestPlaybackInfoNotesEnumerateAudioDeliveries keeps the published
+// audioQuality.delivery vocabulary in step with the playback package's
+// (CORE-1627): reflection publishes it as a plain string.
+func TestPlaybackInfoNotesEnumerateAudioDeliveries(t *testing.T) {
+	want := "delivery is the closed vocabulary " + strings.Join(playback.AudioDeliveries(), "|")
+	for _, note := range playbackInfoNotes() {
+		if strings.Contains(note, want) {
+			return
+		}
+	}
+	t.Fatalf("playbackInfoNotes does not state %q", want)
 }
