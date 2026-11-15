@@ -112,6 +112,11 @@ class RequireVisualParityStatesReporter {
       return;
     }
 
+    if (missingStates.length > 0 && process.platform !== "darwin") {
+      process.stderr.write(
+        `FAIL web-ui-e2e-smoke visual-parity goldens are macOS-rendered and are not compared on ${process.platform} (CORE-1112); run the smoke on a macOS host\n`,
+      );
+    }
     for (const state of missingStates) {
       process.stderr.write(`FAIL web-ui-e2e-smoke missing-visual-parity-state ${state}\n`);
     }
