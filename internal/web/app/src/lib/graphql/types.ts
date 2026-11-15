@@ -1514,6 +1514,29 @@ export interface FieldLockInfo {
   locked: boolean;
 }
 
+/**
+ * One Media's editable built-in metadata with its field locks
+ * (graph.MediaMetadataInfo, CORE-1715). `refreshable` is false until an
+ * identification recorded the candidate a per-item refresh re-applies.
+ */
+export interface MediaMetadataInfo {
+  mediaID: string;
+  title: string;
+  sortTitle: string;
+  summary: string;
+  year: number;
+  refreshable: boolean;
+  locks: FieldLockInfo[];
+}
+
+/** The built-in fields an item edit may set; an absent field is left alone. */
+export interface MediaMetadataEdit {
+  title?: string;
+  sortTitle?: string;
+  summary?: string;
+  year?: number;
+}
+
 // --- Manage / Console: enforced filters, qBittorrent ingest ---------------
 
 /** A Profile's per-plugin certification ceiling (graph.CertificationCeilingInfo). */

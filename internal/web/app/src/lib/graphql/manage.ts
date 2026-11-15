@@ -41,6 +41,8 @@ import type {
   MarkerInput,
   MediaFieldInput,
   MediaFileDetail,
+  MediaMetadataEdit,
+  MediaMetadataInfo,
   MediaRelationDetail,
   MetadataExportInfo,
   NavOverrideHistoryInfo,
@@ -1318,18 +1320,66 @@ export async function fetchMediaFieldLocks(mediaID: string): Promise<FieldLockIn
 const SET_MEDIA_FIELD_LOCK_MUTATION =
   "mutation SetMediaFieldLock($mediaID: String!, $field: String!, $locked: Boolean!) { setMediaFieldLock(mediaID: $mediaID, field: $field, locked: $locked) { field locked } }";
 
-/** SetMediaFieldLock — lock/unlock one Media field against re-scrape. */
+/**
+ * SetMediaFieldLock — lock/unlock one Media field against identification,
+ * refresh and re-scan. Returns the Media's whole updated lock list.
+ */
 export async function setMediaFieldLock(
   mediaID: string,
   field: string,
   locked: boolean,
-): Promise<FieldLockInfo> {
-  const data = await graphql<{ setMediaFieldLock: FieldLockInfo }>(SET_MEDIA_FIELD_LOCK_MUTATION, {
+): Promise<FieldLockInfo[]> {
+  const data = await graphql<{ setMediaFieldLock: FieldLockInfo[] | null }>(
+    SET_MEDIA_FIELD_LOCK_MUTATION,
+    { mediaID, field, locked },
+  );
+  return data.setMediaFieldLock ?? [];
+}
+
+// --- Per-item metadata editor (CORE-1715) ---------------------------------
+
+const MEDIA_METADATA_SELECTION =
+  "{ mediaID title sortTitle summary year refreshable locks { field locked } }";
+
+const MEDIA_METADATA_QUERY = `query MediaMetadata($mediaID: String!) { mediaMetadata(mediaID: $mediaID) ${MEDIA_METADATA_SELECTION} }`;
+
+/** MediaMetadata — one Media's editable built-in metadata and field locks. */
+export async function fetchMediaMetadata(mediaID: string): Promise<MediaMetadataInfo> {
+  const data = await graphql<{ mediaMetadata: MediaMetadataInfo }>(MEDIA_METADATA_QUERY, {
     mediaID,
-    field,
-    locked,
   });
-  return data.setMediaFieldLock;
+  return data.mediaMetadata;
+}
+
+const EDIT_MEDIA_METADATA_MUTATION = `mutation EditMediaMetadata($mediaID: String!, $title: String, $sortTitle: String, $summary: String, $year: Int) { editMediaMetadata(mediaID: $mediaID, title: $title, sortTitle: $sortTitle, summary: $summary, year: $year) ${MEDIA_METADATA_SELECTION} }`;
+
+/**
+ * EditMediaMetadata — write the supplied built-in fields as a manual edit,
+ * which locks each of them; fields left out are untouched.
+ */
+export async function editMediaMetadata(
+  mediaID: string,
+  edit: MediaMetadataEdit,
+): Promise<MediaMetadataInfo> {
+  const data = await graphql<{ editMediaMetadata: MediaMetadataInfo }>(
+    EDIT_MEDIA_METADATA_MUTATION,
+    { mediaID, ...edit },
+  );
+  return data.editMediaMetadata;
+}
+
+const REFRESH_MEDIA_METADATA_MUTATION = `mutation RefreshMediaMetadata($mediaID: String!) { refreshMediaMetadata(mediaID: $mediaID) ${MEDIA_METADATA_SELECTION} }`;
+
+/**
+ * RefreshMediaMetadata — re-run the provider that last identified the Media
+ * for the same candidate; locked fields keep their values.
+ */
+export async function refreshMediaMetadata(mediaID: string): Promise<MediaMetadataInfo> {
+  const data = await graphql<{ refreshMediaMetadata: MediaMetadataInfo }>(
+    REFRESH_MEDIA_METADATA_MUTATION,
+    { mediaID },
+  );
+  return data.refreshMediaMetadata;
 }
 
 // --- Migration importers (ADR-0037) ---------------------------------------

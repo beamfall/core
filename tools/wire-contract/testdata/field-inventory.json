@@ -932,6 +932,20 @@
       "tier": "session"
     },
     {
+      "field": "editmediametadata",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "locks",
+        "mediaID",
+        "refreshable",
+        "sortTitle",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
       "field": "encryptedlibrarystatus",
       "effect": "read",
       "tier": "admin",
@@ -1539,6 +1553,20 @@
       ]
     },
     {
+      "field": "mediametadata",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "locks",
+        "mediaID",
+        "refreshable",
+        "sortTitle",
+        "summary",
+        "title",
+        "year"
+      ]
+    },
+    {
       "field": "mediarelations",
       "effect": "read",
       "tier": "session",
@@ -2098,6 +2126,20 @@
         "kind",
         "lastOccurredAt",
         "mediaID"
+      ]
+    },
+    {
+      "field": "refreshmediametadata",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "locks",
+        "mediaID",
+        "refreshable",
+        "sortTitle",
+        "summary",
+        "title",
+        "year"
       ]
     },
     {

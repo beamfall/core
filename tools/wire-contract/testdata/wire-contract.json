@@ -383,6 +383,11 @@
       "tier": "session"
     },
     {
+      "field": "editmediametadata",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "encryptedlibrarystatus",
       "effect": "read",
       "tier": "admin"
@@ -618,6 +623,11 @@
       "tier": "session"
     },
     {
+      "field": "mediametadata",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "mediarelations",
       "effect": "read",
       "tier": "session"
@@ -834,6 +844,11 @@
     },
     {
       "field": "recordengagement",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
+      "field": "refreshmediametadata",
       "effect": "write",
       "tier": "session"
     },
@@ -6480,6 +6495,64 @@
       "kind": "object"
     },
     {
+      "field": "editmediametadata",
+      "kind": "object",
+      "children": [
+        {
+          "name": "locks",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "field",
+                "kind": "scalar"
+              },
+              {
+                "name": "locked",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "field",
+              "kind": "scalar"
+            },
+            {
+              "name": "locked",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "refreshable",
+          "kind": "scalar"
+        },
+        {
+          "name": "sortTitle",
+          "kind": "scalar"
+        },
+        {
+          "name": "summary",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "encryptedlibrarystatus",
       "kind": "object",
       "children": [
@@ -10655,6 +10728,64 @@
         },
         {
           "name": "title",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "mediametadata",
+      "kind": "object",
+      "children": [
+        {
+          "name": "locks",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "field",
+                "kind": "scalar"
+              },
+              {
+                "name": "locked",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "field",
+              "kind": "scalar"
+            },
+            {
+              "name": "locked",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "refreshable",
+          "kind": "scalar"
+        },
+        {
+          "name": "sortTitle",
+          "kind": "scalar"
+        },
+        {
+          "name": "summary",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        },
+        {
+          "name": "year",
           "kind": "scalar"
         }
       ]
@@ -15289,6 +15420,64 @@
           "name": "mediaID",
           "kind": "scalar",
           "optional": true
+        }
+      ]
+    },
+    {
+      "field": "refreshmediametadata",
+      "kind": "object",
+      "children": [
+        {
+          "name": "locks",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "field",
+                "kind": "scalar"
+              },
+              {
+                "name": "locked",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "field",
+              "kind": "scalar"
+            },
+            {
+              "name": "locked",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "mediaID",
+          "kind": "scalar"
+        },
+        {
+          "name": "refreshable",
+          "kind": "scalar"
+        },
+        {
+          "name": "sortTitle",
+          "kind": "scalar"
+        },
+        {
+          "name": "summary",
+          "kind": "scalar"
+        },
+        {
+          "name": "title",
+          "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar"
         }
       ]
     },

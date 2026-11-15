@@ -2,6 +2,7 @@ import {
   Archive,
   Bookmark,
   FileCog,
+  FilePen,
   FileQuestion,
   FolderTree,
   ImageIcon,
@@ -48,6 +49,7 @@ import { ConvertPage } from "./pages/ConvertPage";
 import { CurationPage } from "./pages/CurationPage";
 import { EntityPage } from "./pages/EntityPage";
 import { FieldLocksPage } from "./pages/FieldLocksPage";
+import { ItemMetadataPage } from "./pages/ItemMetadataPage";
 import { LibrariesPage } from "./pages/LibrariesPage";
 import { MarkersPage } from "./pages/MarkersPage";
 import { NavOverridePage } from "./pages/NavOverridePage";
@@ -94,6 +96,7 @@ const NAV_GROUPS: NavItem[][] = [
     { to: "/manage/tags", icon: Tags, label: "tagsHeading" },
     { to: "/manage/curation", icon: Sparkles, label: "curationHeading", advanced: true },
     { to: "/manage/entities", icon: Shapes, label: "manageTitle" },
+    { to: "/manage/items", icon: FilePen, label: "itemMetadataHeading" },
     { to: "/manage/artwork", icon: ImageIcon, label: "artworkCandidates" },
     { to: "/manage/markers", icon: Bookmark, label: "markersHeading", advanced: true },
     { to: "/manage/field-locks", icon: Lock, label: "fieldLocksHeading", advanced: true },
@@ -276,6 +279,8 @@ export function ManageArea() {
               <Route path="tags" element={<TagsPage />} />
               <Route path="curation" element={<CurationPage />} />
               <Route path="entities" element={<EntityPage />} />
+              <Route path="items" element={<ItemMetadataPage />} />
+              <Route path="items/:mediaID" element={<ItemMetadataPage />} />
               <Route path="artwork" element={<ArtworkPage />} />
               <Route path="markers" element={<MarkersPage />} />
               <Route path="field-locks" element={<FieldLocksPage />} />

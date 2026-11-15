@@ -79,7 +79,7 @@ func TestMediaMetadataAttributionFromActiveScraper(t *testing.T) {
 	if got := readMediaAttribution(t, handler, "media-alpha"); got != nil {
 		t.Fatalf("attribution before identification = %#v, want none", got)
 	}
-	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "credit", "lookup"); err != nil {
+	if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", "credit", "lookup", "cand-1"); err != nil {
 		t.Fatal(err)
 	}
 	got := readMediaAttribution(t, handler, "media-alpha")
@@ -108,7 +108,7 @@ func TestMediaMetadataAttributionAbsentWhenPluginInactiveOrUndeclared(t *testing
 		{"plugin not active", "inactive", "lookup"},
 		{"scraper no longer declared", "credit", "retired"},
 	} {
-		if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", tc.pluginID, tc.scraperID); err != nil {
+		if err := st.SetMediaMetadataProvenance(ctx, "media-alpha", tc.pluginID, tc.scraperID, "cand-1"); err != nil {
 			t.Fatal(err)
 		}
 		if got := readMediaAttribution(t, handler, "media-alpha"); got != nil {

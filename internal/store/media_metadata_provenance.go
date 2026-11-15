@@ -14,14 +14,19 @@ import (
 type MediaMetadataProvenance struct {
 	PluginID  string
 	ScraperID string
+	// CandidateID is the provider candidate the identification applied, so a
+	// per-item refresh can re-run the same lookup. It is "" for records
+	// written before candidates were kept.
+	CandidateID string
 }
 
 // SetMediaMetadataProvenance records which plugin scraper supplied a Media
-// item's metadata, replacing any earlier record. Deleting the Media row
-// deletes the record (ON DELETE CASCADE).
-func (s *Store) SetMediaMetadataProvenance(ctx context.Context, mediaID MediaID, pluginID, scraperID string) error {
+// item's metadata and the candidate it applied, replacing any earlier record.
+// Deleting the Media row deletes the record (ON DELETE CASCADE).
+func (s *Store) SetMediaMetadataProvenance(ctx context.Context, mediaID MediaID, pluginID, scraperID, candidateID string) error {
 	pluginID = strings.TrimSpace(pluginID)
 	scraperID = strings.TrimSpace(scraperID)
+	candidateID = strings.TrimSpace(candidateID)
 	if mediaID == "" {
 		return ValidationError("media ID is required")
 	}
@@ -39,13 +44,14 @@ func (s *Store) SetMediaMetadataProvenance(ctx context.Context, mediaID MediaID,
 		return ValidationError("media not found")
 	}
 	_, err := s.catalogW.ExecContext(ctx, `
-		INSERT INTO media_metadata_provenance(media_id, plugin_id, scraper_id, updated_at_ms)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO media_metadata_provenance(media_id, plugin_id, scraper_id, candidate_id, updated_at_ms)
+		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(media_id) DO UPDATE SET
 			plugin_id = excluded.plugin_id,
 			scraper_id = excluded.scraper_id,
+			candidate_id = excluded.candidate_id,
 			updated_at_ms = excluded.updated_at_ms`,
-		mediaID, pluginID, scraperID, timeToMillis(time.Now().UTC()))
+		mediaID, pluginID, scraperID, candidateID, timeToMillis(time.Now().UTC()))
 	return err
 }
 
@@ -60,8 +66,8 @@ func (s *Store) MediaMetadataProvenance(ctx context.Context, mediaID MediaID) (M
 	}
 	var record MediaMetadataProvenance
 	err := s.catalogR.QueryRowContext(ctx,
-		`SELECT plugin_id, scraper_id FROM media_metadata_provenance WHERE media_id = ?`, mediaID).
-		Scan(&record.PluginID, &record.ScraperID)
+		`SELECT plugin_id, scraper_id, candidate_id FROM media_metadata_provenance WHERE media_id = ?`, mediaID).
+		Scan(&record.PluginID, &record.ScraperID, &record.CandidateID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return MediaMetadataProvenance{}, false, nil
 	}

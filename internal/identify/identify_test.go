@@ -1469,3 +1469,47 @@ func TestApplyPassesFingerprintVariables(t *testing.T) {
 		t.Fatalf("engine saw variables %+v, want %+v", engine.seenVars, want)
 	}
 }
+
+// artworkLockStore is a metadata store that also reports field provenance, so
+// Apply can see which artwork slots an admin locked (CORE-1715).
+type artworkLockStore struct {
+	fakeStore
+	manual map[string]bool
+}
+
+func (s *artworkLockStore) MediaFieldProvenance(_ context.Context, _ store.MediaID, field string) (store.MutationSource, error) {
+	if s.manual[field] {
+		return store.MutationSourceManual, nil
+	}
+	return store.MutationSourceOperator, nil
+}
+
+func TestApplyKeepsLockedArtworkSlots(t *testing.T) {
+	engine := &fakeEngine{lookupResult: scrape.Result{
+		Fields: map[string]any{"title": "Blue Harvest"},
+		Artwork: map[string]string{
+			artwork.SlotPoster:   "https://img.example.test/p/42.jpg",
+			artwork.SlotBackdrop: "https://img.example.test/b/42.jpg",
+		},
+	}}
+	fetcher := &fakeFetcher{byURL: map[string]fetchedResource{
+		"https://img.example.test/p/42.jpg": {data: []byte("poster-bytes")},
+		"https://img.example.test/b/42.jpg": {data: []byte("backdrop-bytes")},
+	}}
+	art := &fakeArtwork{}
+	locks := &artworkLockStore{manual: map[string]bool{store.ArtworkLockField(artwork.SlotBackdrop): true}}
+	service := identify.NewService(engine, demoBundles(plugin.ScraperSpec{ID: "lookup"}), locks)
+	service.SetArtwork(fetcher, art)
+
+	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	if len(art.imports) != 1 || art.imports[0].slot != artwork.SlotPoster {
+		t.Fatalf("imports = %#v, want only the unlocked poster", art.imports)
+	}
+	for _, url := range fetcher.urls {
+		if url == "https://img.example.test/b/42.jpg" {
+			t.Fatal("locked backdrop slot was fetched")
+		}
+	}
+}

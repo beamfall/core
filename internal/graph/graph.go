@@ -5003,6 +5003,7 @@ var queryFields = map[string]bool{
 	"remoteaccess":           true,
 	"watcherstatus":          true,
 	"mediafieldlocks":        true,
+	"mediametadata":          true,
 	"consoleconfig":          true,
 	"pluginworker":           true,
 	"updatestatus":           true,
@@ -5095,6 +5096,8 @@ var mutationFields = map[string]bool{
 	"bulkassigntags":                     true,
 	"purgetrash":                         true,
 	"setmediafieldlock":                  true,
+	"editmediametadata":                  true,
+	"refreshmediametadata":               true,
 	"bulkeditapply":                      true,
 	"registerimportsource":               true, // admin-gated (see adminFields); apple ADR-0003 §3
 	"importmanagedfile":                  true, // admin-gated (see adminFields); apple ADR-0003 §1
