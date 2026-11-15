@@ -19,6 +19,7 @@ import {
   RescanButton,
   RescanStatus,
   startRescan,
+  useRescanState,
 } from "@/components/beamfall/LibraryRescan";
 import {
   probeRoot,
@@ -53,7 +54,6 @@ import {
   fetchTrashedLibraries,
   fetchWatcherStatus,
   restoreLibrary,
-  scanLibrary,
   setLibraryPreviewClips,
   setLibraryRoots,
   setSkipDetectionEnabled,
@@ -139,6 +139,8 @@ function LibraryCard({
   const [scanRoot, setScanRoot] = useState("");
   const [scanFolders, setScanFolders] = useState<FolderEntryInfo[]>([]);
   const [scanError, setScanError] = useState("");
+  const rescanPhase = useRescanState(library.id).phase;
+  const scanBusy = rescanPhase === "starting" || rescanPhase === "scanning";
   const plugin = plugins.find((p) => p.id === library.pluginID);
   const HeaderIcon = useLibraryIconSymbol(library);
   // Each folder is checked on the server so a missing or unreadable one is
@@ -235,15 +237,14 @@ function LibraryCard({
     onChanged();
   }
 
+  // One folder goes through the same tracker as a full rescan, so the card's
+  // status chip follows it to the end (CORE-2012).
   async function scan(e: FormEvent) {
     e.preventDefault();
-    if (!scanRoot.trim()) return;
+    const root = scanRoot.trim();
+    if (!root) return;
     setScanError("");
-    try {
-      await scanLibrary(library.id, scanRoot.trim());
-    } catch (err) {
-      setScanError(err instanceof Error ? err.message : t("scanFailed"));
-    }
+    if ((await startRescan(library.id, [root])) === "refused") setScanError(t("scanNeedsUnlock"));
   }
 
   const watching = watcher?.state === "watching";
@@ -426,9 +427,9 @@ function LibraryCard({
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" size="sm" disabled={!scanRoot.trim()}>
+              <Button type="submit" size="sm" disabled={!scanRoot.trim() || scanBusy}>
                 <ScanLine className="console-nav-icon" aria-hidden />
-                {t("scan")}
+                {scanBusy ? t("rescanScanning") : t("scan")}
               </Button>
             </form>
             <ErrorLine message={scanError} />

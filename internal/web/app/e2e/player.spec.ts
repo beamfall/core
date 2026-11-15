@@ -316,7 +316,7 @@ test("visual parity covers every migrated player widget state", async ({
   await expectVisualParity(page, testInfo, "player-subtitles-listbox-open-focused-selected");
   await page.keyboard.press("Escape");
 
-  await openTransportState(page, "Quality", "Direct play");
+  await openTransportState(page, "Quality", "Original");
   await expectVisualParity(page, testInfo, "player-quality-listbox-open-focused-selected");
   await page.keyboard.press("Escape");
 

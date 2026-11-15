@@ -46,7 +46,6 @@ import {
 import {
   buildChapterList,
   buildMarkerStripModel,
-  buildRenditionMenuModel,
   chapterSeekTarget,
   formatAriaTime,
   formatClockTime,
@@ -712,11 +711,6 @@ export function PlayerTransport({
       <div className="bf-transport-bottom">
         <div className="bf-player-meta">
           <h2>{mediaTitle || t("playbackDetails")}</h2>
-          {state.stream && (
-            <div className={"bf-route-summary " + routeStateClass(state.decision)}>
-              {routeSummary(t, state, manualRenditionID)}
-            </div>
-          )}
         </div>
 
         <div className="bf-scrub-row">
@@ -1230,44 +1224,4 @@ function useNarrowViewport(): boolean {
     return () => query.removeEventListener?.("change", sync);
   }, []);
   return narrow;
-}
-
-// The route summary borrows the player's honest state coloring: green for
-// direct-play, cyan for remote/relay (design-preview .dark-badge.direct). The
-// transcode/direct-stream states stay neutral — the label carries the meaning.
-function routeStateClass(decision: string): string {
-  if (decision === "direct-play" || decision === "direct") return "is-direct";
-  if (decision === "remote" || decision === "relay") return "is-remote";
-  return "";
-}
-
-function routeLabel(t: ReturnType<typeof useT>, decision: string): string {
-  if (decision === "transcode") return t("serverTranscode");
-  if (decision === "direct-stream") return t("directStream");
-  return t("directPlay");
-}
-
-// The route summary line, ported from updateRouteSummary (app.js): the route
-// label, the active quality (Auto / a pinned rendition / Direct play), and a
-// "manual pin active" note when a rendition is pinned.
-function routeSummary(
-  t: ReturnType<typeof useT>,
-  state: PlayerState,
-  manualRenditionID: string,
-): string {
-  const model = buildRenditionMenuModel({
-    stream: state.stream,
-    manualRenditionID,
-    labels: { auto: t("auto"), directPlay: t("directPlay") },
-  });
-  const selected = model.options.find((option) => option.selected) || model.options[0];
-  const route = routeLabel(t, state.decision);
-  const parts = [route];
-  if (selected && selected.label !== route) {
-    parts.push(selected.label);
-  }
-  if (model.manualPinActive) {
-    parts.push(t("manualPinActive"));
-  }
-  return parts.join(" · ");
 }

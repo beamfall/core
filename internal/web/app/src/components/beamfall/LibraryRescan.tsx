@@ -14,7 +14,7 @@ import { jobProgressDetail } from "@/lib/jobDisplay";
 // within one page load. Jobs carry no library ID on the wire, so the tracker
 // only knows about scans started from this browser tab.
 
-export type RescanPhase = "idle" | "starting" | "scanning" | "done" | "failed";
+export type RescanPhase = "idle" | "starting" | "scanning" | "done" | "failed" | "unknown";
 
 export interface RescanState {
   phase: RescanPhase;
@@ -26,6 +26,8 @@ export interface RescanState {
 
 const IDLE: RescanState = { phase: "idle", jobs: [], error: "" };
 const ACTIVE = new Set(["queued", "running", "yielded"]);
+/** Client-side status for a job that aged out of the jobs list while still active. */
+const UNKNOWN = "unknown";
 const POLL_MS = 1500;
 
 const states = new Map<string, RescanState>();
@@ -50,11 +52,16 @@ export function rescanState(libraryID: string): RescanState {
   return states.get(libraryID) ?? IDLE;
 }
 
-/** Folds a library's scan jobs into one phase: any active job means scanning. */
+/**
+ * Folds a library's scan jobs into one phase: any active job means scanning.
+ * A job that left the jobs list before it was seen finishing is "unknown", and
+ * one unknown job keeps the rescan from claiming success (CORE-2012).
+ */
 export function phaseFor(jobs: JobInfo[]): { phase: RescanPhase; error: string } {
   if (jobs.some((job) => ACTIVE.has(job.status))) return { phase: "scanning", error: "" };
   const failed = jobs.find((job) => job.status === "failed" || job.status === "canceled");
   if (failed) return { phase: "failed", error: failed.error ?? "" };
+  if (jobs.some((job) => job.status === UNKNOWN)) return { phase: "unknown", error: "" };
   return { phase: "done", error: "" };
 }
 
@@ -64,7 +71,7 @@ function foldRescan(jobs: JobInfo[], queueError: string): RescanState {
   const state: RescanState = { jobs, ...folded, queueError: queueError || undefined };
   if (queueError && folded.phase !== "failed") {
     state.error = queueError;
-    if (folded.phase === "done") state.phase = "failed";
+    if (folded.phase === "done" || folded.phase === "unknown") state.phase = "failed";
   }
   return state;
 }
@@ -92,10 +99,11 @@ async function poll() {
   for (const [libraryID, state] of watching) {
     // A slower, older poll must not overwrite a rescan started since it was sent.
     if (states.get(libraryID) !== state) continue;
-    // A job missing from the list has aged out; treat it as finished.
+    // A job missing from the list aged out before it was seen finishing, so
+    // how it ended is unknown; never report it as completed.
     const next = state.jobs.map(
       (job) =>
-        byID.get(job.id) ?? { ...job, status: ACTIVE.has(job.status) ? "completed" : job.status },
+        byID.get(job.id) ?? { ...job, status: ACTIVE.has(job.status) ? UNKNOWN : job.status },
     );
     setState(libraryID, foldRescan(next, state.queueError ?? ""));
   }
@@ -246,13 +254,21 @@ export function RescanStatus({ libraryID, hasRoots }: { libraryID: string; hasRo
   }
   if (state.phase === "idle") return null;
   const running = state.jobs.find((job) => job.status === "running");
-  const detail = running ? jobProgressDetail(running, t) : "";
+  const detail = running
+    ? jobProgressDetail(running, t)
+    : state.phase === "done"
+      ? doneDetail(state.jobs, t)
+      : state.phase === "unknown"
+        ? t("rescanUnknownHint")
+        : "";
   return (
     <div role="status" className="flex flex-wrap items-center gap-2 text-sm">
       {state.phase === "starting" || state.phase === "scanning" ? (
         <StatusChip tone="cyan">{t("rescanScanning")}</StatusChip>
       ) : state.phase === "done" ? (
         <StatusChip tone="green">{t("rescanDone")}</StatusChip>
+      ) : state.phase === "unknown" ? (
+        <StatusChip tone="amber">{t("rescanUnknown")}</StatusChip>
       ) : (
         <StatusChip tone="red">{t("rescanFailed")}</StatusChip>
       )}
@@ -262,4 +278,12 @@ export function RescanStatus({ libraryID, hasRoots }: { libraryID: string; hasRo
       )}
     </div>
   );
+}
+
+/** What a finished rescan checked, from the scan jobs' final file counts. */
+function doneDetail(jobs: JobInfo[], t: ReturnType<typeof useT>): string {
+  const files = jobs
+    .filter((job) => job.status === "completed" && job.progress.unit === "files")
+    .reduce((sum, job) => sum + job.progress.current, 0);
+  return files > 0 ? t("rescanDoneFiles", { count: files }) : "";
 }

@@ -90,4 +90,39 @@ describe("library rescan tracker", () => {
     expect(fetchJobs).toHaveBeenCalledTimes(3);
     expect(active.result.current).toBe(true);
   });
+
+  it("reports a job that aged out of the list as unknown, not finished (CORE-2012)", async () => {
+    render(
+      <I18nProvider>
+        <RescanStatus libraryID="library-1" hasRoots />
+      </I18nProvider>,
+    );
+    await act(() => startRescan("library-1", ["/media"]));
+    // The running job drops off the jobs list before it is seen finishing.
+    vi.mocked(fetchJobs).mockResolvedValue([]);
+    await advance(1500);
+
+    expect(rescanState("library-1").phase).toBe("unknown");
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Scan result unknown");
+    expect(status).toHaveTextContent("scan again");
+    expect(status).not.toHaveTextContent("Scan finished");
+  });
+
+  it("says how many files a finished scan checked (CORE-2012)", async () => {
+    render(
+      <I18nProvider>
+        <RescanStatus libraryID="library-1" hasRoots />
+      </I18nProvider>,
+    );
+    await act(() => startRescan("library-1", ["/media"]));
+    vi.mocked(fetchJobs).mockResolvedValue([
+      { ...job("completed"), progress: { current: 42, total: 42, unit: "files" } },
+    ]);
+    await advance(1500);
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Scan finished");
+    expect(status).toHaveTextContent("Checked 42 files.");
+  });
 });

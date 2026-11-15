@@ -130,8 +130,17 @@ describe("BackupExportPage", () => {
     expect(container.querySelector("#restore")).toBeInTheDocument();
     expect(screen.getByText("Guided restore")).toBeVisible();
     expect(screen.getByText(/beamfall restore --manifest/)).toBeVisible();
-    expect(screen.getByText(/refuses a live server lock/)).toBeVisible();
+    expect(screen.getByText(/won't run while Beamfall is running/)).toBeVisible();
     expect(screen.getByText(/never overwrites a live database: a staged restore/)).toBeVisible();
+  });
+
+  it("links the restore guide by absolute URL so it works from any route (CORE-2013)", () => {
+    renderPage();
+
+    const guide = screen.getByRole("link", { name: "restore guide" });
+    const href = guide.getAttribute("href") ?? "";
+    expect(new URL(href).protocol).toBe("https:");
+    expect(href).toBe("https://github.com/beamfall/core/blob/main/docs/operations/restore.md");
   });
 
   it("loads history for a destination and renders per-set verify state", async () => {

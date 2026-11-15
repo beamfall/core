@@ -70,9 +70,9 @@ describe("RemoteAccessStatus", () => {
     // One plain line names every class, in place of a chip per class (CORE-1117).
     const line = (await screen.findByText(/^Reachable through/)).textContent;
     for (const label of [
-      "LAN (direct)",
-      "Direct HTTPS (ACME)",
-      "Overlay network",
+      "Home network",
+      "Direct HTTPS",
+      "Private network",
       "Self-hosted relay",
       "Hosted relay",
     ]) {
@@ -95,7 +95,7 @@ describe("RemoteAccessStatus", () => {
       "href",
       "https://tailscale.com/download",
     );
-    expect(screen.getByRole("button", { name: "Poll for overlay" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check again" })).toBeInTheDocument();
   });
 
   it("shows the phone test URL when an overlay is present", async () => {
@@ -124,7 +124,24 @@ describe("RemoteAccessStatus", () => {
     renderStatus();
 
     expect(await screen.findByText("Verified")).toBeInTheDocument();
-    expect(screen.getByText(/already reaching Beamfall through an overlay/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/already reaches Beamfall through Tailscale or WireGuard/),
+    ).toBeInTheDocument();
+  });
+
+  it("says no certificate exists yet and how to request one when HTTPS is pending", async () => {
+    // CertState only reads the cache; issuance waits for the first https visit.
+    setRemoteAccess({
+      directHTTPS: { enabled: true, domain: "media.example.test", certState: "pending" },
+      relay: null,
+      plainHTTPPublicWarning: false,
+      endpoints: [{ kind: "lan", url: "http://beamfall.local" }],
+    });
+
+    renderStatus();
+
+    expect(await screen.findByText("No certificate yet")).toBeInTheDocument();
+    expect(screen.getByText(/open your domain with https once/)).toBeInTheDocument();
   });
 
   it("classifies the current endpoint kind by advertised host", () => {
@@ -159,7 +176,7 @@ describe("RemoteAccessStatus", () => {
 
     expect(
       await screen.findByText(
-        /This Console is being reached over plain HTTP from a public address/,
+        /This Console is open over an unencrypted connection from the internet/,
       ),
     ).toBeInTheDocument();
   });

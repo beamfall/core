@@ -707,9 +707,12 @@ function FeaturePlayer({
                 {state.message}
               </p>
               {state.detail ? (
-                <p className="m-0 text-sm text-white/55">
-                  {t("playbackServerReason", { reason: state.detail })}
-                </p>
+                <details className="text-sm text-white/55">
+                  <summary className="cursor-pointer">{t("playbackErrorDetails")}</summary>
+                  <p className="m-0 mt-1 break-words">
+                    {t("playbackServerReason", { reason: state.detail })}
+                  </p>
+                </details>
               ) : null}
               <div className="mt-3">
                 {state.terminal || state.action === "back" ? (

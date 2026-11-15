@@ -42,7 +42,8 @@ describe("PlayerTransport", () => {
     render(<Harness />);
 
     const title = screen.getByRole("heading", { name: "Long Weekend" });
-    expect(screen.getByText("Direct play")).toHaveClass("bf-route-summary");
+    // Route detail lives in the Info overlay, not under the title (CORE-2011).
+    expect(screen.queryByText("Direct play")).not.toBeInTheDocument();
     const seek = screen.getByRole("slider", { name: "Playback position" }).closest(".bf-scrub-row");
     const row = screen.getByRole("button", { name: "Back 10s" }).closest(".bf-transport-row");
     const primary = screen

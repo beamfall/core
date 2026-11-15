@@ -3,7 +3,7 @@ export const profileSearchStrings = {
     // Profile Settings (ADR-0082 — viewer-resident, self-service per-Profile prefs).
     settingsTitle: "Profile settings",
     settingsLead:
-      "Preferences for this profile on this device. Operator policy is managed in the Console.",
+      "Preferences for this profile on this device. Settings for the whole server are in the Console.",
     settingsPlaybackHeading: "Playback",
     settingsAutoSkipHeading: "Auto-skip",
     settingsAutoSkipLead: "Automatically skip these segments instead of showing a skip button.",
@@ -12,8 +12,7 @@ export const profileSearchStrings = {
     settingsAutoSkipCredits: "Skip credits",
     settingsPlaybackSpeedLabel: "Default playback speed",
     settingsTrimSilence: "Remove long pauses",
-    settingsTrimSilenceLead:
-      "Skips long silent gaps between segments when a silence map is available. Smart speed is planned separately.",
+    settingsTrimSilenceLead: "Skips long silent gaps when the server has found them in the file.",
     settingsPrePlay: "Play intros and previews first",
     settingsPrePlayLead:
       "Plays the server's intro clips, then previews where an extension offers them, before a title starts.",
@@ -34,25 +33,27 @@ export const profileSearchStrings = {
     settingsReduceMotionLead: "Minimize non-essential animations across the app.",
     settingsRecommendHeading: "Recommendations",
     settingsRecommendOptIn: "Personalized recommendations",
-    settingsRecommendOptInLead: "Allow recommend-mode search to use this profile's activity.",
+    settingsRecommendOptInLead: "Let “Suggested for you” search use what this profile has watched.",
     settingsCreditsHeading: "Credits",
     settingsCreditsLead: "Metadata on this server comes from these sources.",
-    settingsManagedNote: "Some settings are managed by your operator and are not shown here.",
+    settingsManagedNote:
+      "Some settings are set by the person who runs the server and are not shown here.",
     settingsSaveFailed: "Could not save this preference.",
     settingsUnavailable: "Preferences are unavailable right now.",
     // Mode-aware search (ADR-0083 §30; ported from internal/web/static/strings.js).
-    searchModeLabel: "Search mode",
-    searchModeKeyword: "Keyword",
-    searchModeSemantic: "Semantic",
-    searchModeRecommend: "Recommend",
-    searchModeFellBackToKeyword: "Semantic search unavailable. Showing keyword results.",
+    searchModeLabel: "Search by",
+    searchModeKeyword: "Matching words",
+    searchModeSemantic: "Similar meaning",
+    searchModeRecommend: "Suggested for you",
+    searchModeFellBackToKeyword:
+      "Search by meaning is not available right now, so these results match your words.",
     searchRestrictedNotice: "Some results may be hidden by your access settings.",
     // Leak-safe no-access / stale deep-link terminal surface (ADR-0083 §32).
   },
   fr: {
     settingsTitle: "Paramètres du profil",
     settingsLead:
-      "Préférences de ce profil sur cet appareil. La politique de l’opérateur se gère dans la Console.",
+      "Préférences de ce profil sur cet appareil. Les réglages de tout le serveur se trouvent dans la Console.",
     settingsPlaybackHeading: "Lecture",
     settingsAutoSkipHeading: "Saut automatique",
     settingsAutoSkipLead: "Sauter automatiquement ces segments au lieu d’afficher un bouton.",
@@ -84,19 +85,19 @@ export const profileSearchStrings = {
     settingsRecommendHeading: "Recommandations",
     settingsRecommendOptIn: "Recommandations personnalisées",
     settingsRecommendOptInLead:
-      "Permettre à la recherche en mode recommandation d’utiliser l’activité de ce profil.",
+      "Permettre à la recherche « Suggestions pour vous » d’utiliser ce que ce profil a regardé.",
     settingsCreditsHeading: "Crédits",
     settingsCreditsLead: "Les métadonnées de ce serveur proviennent de ces sources.",
     settingsManagedNote:
-      "Certains paramètres sont gérés par votre opérateur et ne sont pas affichés ici.",
+      "Certains paramètres sont définis par la personne qui gère le serveur et ne sont pas affichés ici.",
     settingsSaveFailed: "Impossible d’enregistrer cette préférence.",
     settingsUnavailable: "Les préférences sont indisponibles pour le moment.",
-    searchModeLabel: "Mode de recherche",
-    searchModeKeyword: "Mots-clés",
-    searchModeSemantic: "Sémantique",
-    searchModeRecommend: "Recommandations",
+    searchModeLabel: "Rechercher par",
+    searchModeKeyword: "Mots correspondants",
+    searchModeSemantic: "Sens proche",
+    searchModeRecommend: "Suggestions pour vous",
     searchModeFellBackToKeyword:
-      "Recherche sémantique indisponible. Résultats par mots-clés affichés.",
+      "La recherche par sens n’est pas disponible pour le moment. Ces résultats correspondent à vos mots.",
     searchRestrictedNotice: "Certains résultats peuvent être masqués par vos réglages d’accès.",
   },
   de: {

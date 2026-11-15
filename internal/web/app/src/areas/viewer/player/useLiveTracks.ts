@@ -217,7 +217,7 @@ export function useLiveTracks({
     stream,
     alternate,
     manualRenditionID,
-    labels: { auto: t("auto"), directPlay: t("directPlay") },
+    labels: { auto: t("auto"), directPlay: t("qualityOriginal") },
   });
 
   const selectAudio = useCallback(
