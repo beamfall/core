@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,5 +190,119 @@ func TestSyncOfflinePackProgressMutation(t *testing.T) {
 	}
 	if synced.ID != created.ID || synced.BytesReady != 4096 || synced.BytesTotal != 8192 || synced.ManifestToken == "" {
 		t.Fatalf("synced = %+v, want updated progress and renewed token for %s", synced, created.ID)
+	}
+}
+
+// TestCreateOfflinePackWithQualityQueuesBackgroundBuild covers the quality
+// path: the mutation returns a building pack at once, a repeat request returns
+// the same pack ID without a second job, and the worker seals it under that ID.
+func TestCreateOfflinePackWithQualityQueuesBackgroundBuild(t *testing.T) {
+	handler, st := newOfflinePackHandler(t)
+	createBody := `{"query":"mutation { createOfflinePack { id targetKind state } }","variables":{"targetKind":"media","targetRef":"media-alpha","quality":"medium"}}`
+	create := func() (id, state string) {
+		t.Helper()
+		data, errs := post(t, handler, createBody, authorizeViewer)
+		if len(errs) != 0 {
+			t.Fatalf("createOfflinePack errors = %#v", errs)
+		}
+		var created struct {
+			ID    string `json:"id"`
+			State string `json:"state"`
+		}
+		if err := json.Unmarshal(data["createOfflinePack"], &created); err != nil {
+			t.Fatalf("decode createOfflinePack: %v", err)
+		}
+		return created.ID, created.State
+	}
+	firstID, state := create()
+	if state != "building" || !offlinepack.ValidPackID(store.OfflinePackID(firstID)) {
+		t.Fatalf("first create = %q/%q, want a building pack with a valid ID", firstID, state)
+	}
+	secondID, _ := create()
+	if secondID != firstID {
+		t.Fatalf("repeat create ID = %q, want %q", secondID, firstID)
+	}
+	jobs, err := st.ListJobs(t.Context(), store.JobStatusQueued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].Class != store.JobClassBackground {
+		t.Fatalf("queued jobs = %+v, want one background build", jobs)
+	}
+	if _, err := handler.jobRunner.RunOne(t.Context(), []store.JobClass{store.JobClassBackground}, time.Now().UTC()); err != nil {
+		t.Fatalf("RunOne: %v", err)
+	}
+	listData, errs := post(t, handler, `{"query":"query { offlinePacks { id state } }"}`, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("offlinePacks errors = %#v", errs)
+	}
+	var packs []struct {
+		ID    string `json:"id"`
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(listData["offlinePacks"], &packs); err != nil {
+		t.Fatalf("decode offlinePacks: %v", err)
+	}
+	if len(packs) != 1 || packs[0].ID != firstID || packs[0].State != "ready" {
+		t.Fatalf("offlinePacks = %+v, want the queued pack ready under ID %q", packs, firstID)
+	}
+}
+
+func TestCreateOfflinePackBuildsPerSelectedVersion(t *testing.T) {
+	handler, st := newOfflinePackHandler(t)
+	ids := map[string]bool{}
+	for _, version := range []string{"Director's Cut", "Theatrical", "Theatrical"} {
+		body, err := json.Marshal(map[string]any{
+			"query": "mutation { createOfflinePack { id } }",
+			"variables": map[string]any{
+				"targetKind": "media", "targetRef": "media-alpha", "quality": "low",
+				"selectedVersions": map[string]string{"media-alpha": version},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, errs := post(t, handler, string(body), authorizeViewer)
+		if len(errs) != 0 {
+			t.Fatalf("createOfflinePack errors = %#v", errs)
+		}
+		var created struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(data["createOfflinePack"], &created); err != nil {
+			t.Fatal(err)
+		}
+		ids[created.ID] = true
+	}
+	jobs, err := st.ListJobs(t.Context(), store.JobStatusQueued)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 2 || len(jobs) != 2 {
+		t.Fatalf("pack IDs = %v, queued jobs = %d; want one build per selected version", ids, len(jobs))
+	}
+}
+
+func TestSelectedVersionsKeyIsCanonical(t *testing.T) {
+	a := selectedVersionsKey(map[store.MediaID]string{"m1": "A", "m2": "B"})
+	b := selectedVersionsKey(map[store.MediaID]string{"m2": "B", "m1": "A"})
+	if a != b || a == selectedVersionsKey(map[store.MediaID]string{"m1": "A,m2=B"}) || selectedVersionsKey(nil) != "" {
+		t.Fatalf("selectedVersionsKey not canonical or collides: %q %q", a, b)
+	}
+}
+
+func TestCreateOfflinePackRejectsUnknownQuality(t *testing.T) {
+	handler, st := newOfflinePackHandler(t)
+	body := `{"query":"mutation { createOfflinePack { id } }","variables":{"targetKind":"media","targetRef":"media-alpha","quality":"ultra"}}`
+	_, errs := post(t, handler, body, authorizeViewer)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "quality must be") {
+		t.Fatalf("errors = %#v, want a quality error", errs)
+	}
+	jobs, err := st.ListJobs(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("jobs = %+v, want none queued", jobs)
 	}
 }

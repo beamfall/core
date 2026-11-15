@@ -1248,6 +1248,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		}
 		return "", "", errors.New("encrypted media object identity unavailable")
 	})
+	offlinePacks.SetTranscoder(offlinePackTranscoder(ffmpegRunner))
 	registerOfflinePackResolvers(offlinePacks, st, executablePlugins, hooks.OfflinePackResolvers)
 	jobRegistry.Register(offlinepack.BuildJobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		_, err := offlinePacks.HandleBuildJob(ctx, job.Payload)
