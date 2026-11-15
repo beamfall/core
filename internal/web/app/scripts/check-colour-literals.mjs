@@ -47,6 +47,25 @@ const UTILITY =
   "(?:bg|text|border(?:-[trblxyse])?|ring(?:-offset)?|from|via|to|fill|stroke|outline|divide|placeholder|decoration|caret|accent|shadow)";
 const TAILWIND = new RegExp(`(?<![\\w-])${UTILITY}-(?:white|black|${PALETTE})(?![\\w-])`);
 
+// Colour-bearing places in TSX where a bare named colour is a literal: inline style object
+// properties (`style={{ color: "red" }}`, `boxShadow: "0 0 4px black"`) and SVG/HTML colour
+// attributes (`fill="white"`, `stopColor={"navy"}`). Hex and colour functions are caught anywhere.
+const STYLE_COLOUR =
+  /(?<![\w-])["']?(?:[A-Za-z-]*[Cc]olou?r|background|fill|stroke|[A-Za-z-]*[Ss]hadow)["']?\s*:\s*(["'`])([^"'`]*)\1/g;
+const ATTRIBUTE_COLOUR =
+  /(?<![\w-])(?:fill|stroke|color|stop-color|stopColor|flood-color|floodColor|lighting-color|lightingColor)=\{?(["'`])([^"'`]*)\1/g;
+
+/** The first bare named colour in a TSX line's style properties or colour attributes. */
+function namedColourInTsx(text) {
+  for (const pattern of [STYLE_COLOUR, ATTRIBUTE_COLOUR]) {
+    for (const match of text.matchAll(pattern)) {
+      const hit = NAMED_WORD.exec(match[2]);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 const stripCssComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
 const stripStrings = (value) => value.replace(/"[^"]*"|'[^']*'/g, '""');
 
@@ -94,7 +113,10 @@ export function checkCss(css) {
   return problems;
 }
 
-/** Problems in one TSX file: colour functions, hex colours and Tailwind palette classes. */
+/**
+ * Problems in one TSX file: colour functions, hex colours, Tailwind palette classes and named
+ * colours in inline styles or colour attributes.
+ */
 export function checkTsx(source) {
   const problems = [];
   source.split("\n").forEach((text, index) => {
@@ -102,7 +124,7 @@ export function checkTsx(source) {
     if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
     const strings = text.match(/"[^"]*"|'[^']*'|`[^`]*`/g) ?? [];
     const hex = strings.map((s) => HEX.exec(s)).find(Boolean);
-    const hit = FUNCTION.exec(text) ?? TAILWIND.exec(text) ?? hex;
+    const hit = FUNCTION.exec(text) ?? TAILWIND.exec(text) ?? hex ?? namedColourInTsx(text);
     if (hit) problems.push({ line: index + 1, text: trimmed, match: hit[0] });
   });
   return problems;

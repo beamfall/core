@@ -37,8 +37,9 @@ export function QrCode({
       className={className}
       data-qr-value={value}
     >
-      <rect width={side} height={side} fill="white" />
-      <path d={path} fill="black" />
+      {/* Fixed design-system primitives, not theme roles: presets never re-skin the code. */}
+      <rect width={side} height={side} style={{ fill: "var(--paper-50)" }} />
+      <path d={path} style={{ fill: "var(--night-950)" }} />
     </svg>
   );
 }

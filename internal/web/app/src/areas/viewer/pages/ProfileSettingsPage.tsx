@@ -102,16 +102,18 @@ export function ProfileSettingsPage() {
 
   // Persist one key, optimistically reflecting it locally. A failed write
   // surfaces an error and reloads the canonical state so the UI never drifts
-  // from the server.
+  // from the server; it resolves false so state held outside prefs can roll back.
   const persist = useCallback(
     async (key: string, value: string, next: Partial<ViewerPreferences>) => {
       setSaveError(false);
       setPrefs((p) => (p ? { ...p, ...next } : p));
       try {
         await setClientPref(key, value);
+        return true;
       } catch {
         setSaveError(true);
         await load();
+        return false;
       }
     },
     [load],
@@ -212,8 +214,11 @@ export function ProfileSettingsPage() {
               <Select
                 value={preset}
                 onValueChange={(v) => {
+                  const previous = preset;
                   setPreset(v as string);
-                  void persist(PREF_KEYS.themePreset, v as string, {});
+                  void persist(PREF_KEYS.themePreset, v as string, {}).then((saved) => {
+                    if (!saved) setPreset(previous);
+                  });
                 }}
               >
                 <SelectTrigger id="settings-theme" className="w-44">

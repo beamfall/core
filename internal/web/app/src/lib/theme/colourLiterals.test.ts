@@ -39,6 +39,33 @@ describe("raw colour lint", () => {
     expect(checkTsx(tsx).map((p) => p.line)).toEqual([1, 2, 3]);
   });
 
+  it("flags named colours in inline styles and SVG colour attributes in TSX", () => {
+    const tsx = [
+      'const a = <div style={{ color: "red" }} />;',
+      'const b = <div style={{ backgroundColor: "White", boxShadow: "0 0 4px black" }} />;',
+      'const c = <path fill="white" />;',
+      'const d = <stop stopColor={"Navy"} />;',
+      'const e = <circle stroke="DarkSlateGray" />;',
+    ].join("\n");
+    expect(checkTsx(tsx).map((p) => p.match.toLowerCase())).toEqual([
+      "red",
+      "white",
+      "white",
+      "navy",
+      "darkslategray",
+    ]);
+  });
+
+  it("accepts role values, currentColor and none in styles and SVG attributes", () => {
+    const tsx = [
+      'const a = <path fill="currentColor" stroke="none" />;',
+      'const b = <div style={{ color: "var(--text)", background: "transparent" }} />;',
+      'const c = <Icon name="red-flag" label="White list" />;',
+      'const d = <stop stopColor="var(--accent)" />;',
+    ].join("\n");
+    expect(checkTsx(tsx)).toEqual([]);
+  });
+
   it("accepts role utilities and ignores comments in TSX", () => {
     const tsx = [
       "// text-white used to be here",

@@ -6,12 +6,15 @@
  * overriding the --theme-* values inline on <html>, so nothing here changes per preset.
  *
  * <html data-theme="light"> selects the light scheme (the device's light/dark/system choice).
- * Media surfaces (.bf-media, .bf-mini-player) stay on the dark scheme in every mode: video and
- * artwork read against a dark stage. No colour literals here or anywhere outside tokens.css
- * (scripts/check-colour-literals.mjs). */
+ * Media surfaces (.bf-media, .bf-mini-player) and the Cinema shell (.theme-cinema: first-run setup
+ * and the sign-in gates, drawn over the dark backdrop) stay on the active preset's dark scheme in
+ * every mode: video, artwork and the backdrop read against a dark stage. `:root .theme-cinema`
+ * outranks the design-system's static .theme-cinema block in tokens.css, so presets still apply.
+ * No colour literals here or anywhere outside tokens.css (scripts/check-colour-literals.mjs). */
 
 :root,
-:where(.bf-media, .bf-mini-player) {
+:where(.bf-media, .bf-mini-player),
+:root .theme-cinema {
   color-scheme: dark;
 
   --bg-root: var(--theme-dark-bg-root);
@@ -69,7 +72,8 @@
 /* Derived names the components use. They follow the scheme because they read the roles. */
 :root,
 :root[data-theme="light"],
-:where(.bf-media, .bf-mini-player) {
+:where(.bf-media, .bf-mini-player),
+:root .theme-cinema {
   --text-primary: var(--text);
   --text-secondary: color-mix(in oklab, var(--text) 72%, var(--text-muted));
   --border-subtle: var(--line);

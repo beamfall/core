@@ -132,6 +132,23 @@ describe("ProfileSettingsPage", () => {
     delete document.documentElement.dataset.theme;
   });
 
+  it("rolls the theme preset back when the save fails (CORE-1179)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(setClientPref).mockRejectedValue(new Error("offline"));
+    renderPage();
+
+    await user.click(await screen.findByLabelText("Theme"));
+    await user.click(await screen.findByRole("option", { name: "Moss" }));
+    expect(setClientPref).toHaveBeenCalledWith("theme.preset", "moss");
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem("beamfall.web.appearance.v1") ?? "{}").preset).toBe(
+        "beamfall",
+      ),
+    );
+    expect(screen.getByLabelText("Theme")).not.toHaveTextContent("Moss");
+    localStorage.clear();
+  });
+
   it("persists the downstream audio preference", async () => {
     const user = userEvent.setup();
     renderPage();
