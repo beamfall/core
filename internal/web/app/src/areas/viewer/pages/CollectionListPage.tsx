@@ -91,6 +91,7 @@ export function CollectionListPage() {
                     <ListVideo aria-hidden className="size-4 shrink-0" />
                     <Link
                       className="min-w-0 flex-1 truncate"
+                      title={collection.name}
                       to={`/collections/${encodeURIComponent(group.library.id)}/${encodeURIComponent(collection.id)}`}
                     >
                       {collection.name}

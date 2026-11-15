@@ -204,7 +204,9 @@ export function CollectionPage() {
               {items.map((item, index) => (
                 <li key={item.id} className="mydata-row">
                   <span className="mydata-muted w-6 text-right tabular-nums">{index + 1}</span>
-                  <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                  <span className="min-w-0 flex-1 truncate" title={item.title}>
+                    {item.title}
+                  </span>
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -335,7 +337,9 @@ function AddEntries({
         <ul className="mydata-list">
           {offered.map((item) => (
             <li key={item.id} className="mydata-row">
-              <span className="min-w-0 flex-1 truncate">{item.title}</span>
+              <span className="min-w-0 flex-1 truncate" title={item.title}>
+                {item.title}
+              </span>
               <Button
                 variant="ghost"
                 size="icon-sm"
