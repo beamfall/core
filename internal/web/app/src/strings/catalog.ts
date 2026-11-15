@@ -1,6 +1,7 @@
 import { accessBulkStrings } from "./access-bulk";
 import { appShellStrings } from "./app-shell";
 import { backupRetentionStrings } from "./backup-retention";
+import { castStrings } from "./cast";
 import { collectionMarkerStrings } from "./collections-markers";
 import { consoleAccessStrings } from "./console-access";
 import { consoleOperationsStrings } from "./console-operations";
@@ -30,6 +31,7 @@ import { setupStrings } from "./setup";
 import { sharedStateStrings } from "./shared-states";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { viewerAccountStrings } from "./viewer-account";
+import { viewerCollectionStrings } from "./viewer-collections";
 import { watchPartyStrings } from "./watch-party";
 import { webhookStrings } from "./webhooks";
 import { whosWatchingStrings } from "./whos-watching";
@@ -70,6 +72,8 @@ export const en = {
   ...karaokeStrings.en,
   ...remoteControlStrings.en,
   ...webhookStrings.en,
+  ...viewerCollectionStrings.en,
+  ...castStrings.en,
 } as const;
 
 export const fr = {
@@ -108,6 +112,8 @@ export const fr = {
   ...karaokeStrings.fr,
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
+  ...viewerCollectionStrings.fr,
+  ...castStrings.fr,
 } as const;
 
 export const de = {
@@ -146,6 +152,8 @@ export const de = {
   ...karaokeStrings.de,
   ...remoteControlStrings.de,
   ...webhookStrings.de,
+  ...viewerCollectionStrings.de,
+  ...castStrings.de,
 } as const;
 
 export const es = {
@@ -184,6 +192,8 @@ export const es = {
   ...karaokeStrings.es,
   ...remoteControlStrings.es,
   ...webhookStrings.es,
+  ...viewerCollectionStrings.es,
+  ...castStrings.es,
 } as const;
 
 export const pt = {
@@ -222,4 +232,6 @@ export const pt = {
   ...karaokeStrings.pt,
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
+  ...viewerCollectionStrings.pt,
+  ...castStrings.pt,
 } as const;
