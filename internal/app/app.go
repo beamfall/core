@@ -789,6 +789,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	identifyService.SetFields(st)
 	identifyService.SetEntities(st)
 	identifyService.SetFingerprints(st)
+	identifyService.SetMediaTitles(parserMediaTitles{store: st, parsers: parsers})
 	registerIdentifyScorers(identifyService, executablePlugins, hooks.IdentifyScorers)
 	// Wire PIPE-1's scan-time pipeline: the Unmatched queue (below-threshold
 	// parking) + the FREEZE-3 import match-pin (rescan respects an operator fix),
@@ -2807,6 +2808,28 @@ func registerIdentifyScorers(service *identify.Service, registry *plugin.Registr
 		}
 		service.RegisterScorer(pluginID, hook.Scorer, hook.Threshold)
 	}
+}
+
+// parserMediaTitles adapts the compiled filename parsers to
+// identify.MediaTitleSource: the plugin parser's MediaTitle for the Media's
+// primary file, or "" when the plugin has no MediaTitler. The probe is empty,
+// so a parser whose title depends on probe values should return "" without
+// them.
+type parserMediaTitles struct {
+	store   *store.Store
+	parsers map[string]scanpkg.FilenameParser
+}
+
+func (t parserMediaTitles) ParsedMediaTitle(ctx context.Context, mediaID store.MediaID, pluginID string) (string, error) {
+	titler, ok := t.parsers[pluginID].(scanpkg.MediaTitler)
+	if !ok {
+		return "", nil
+	}
+	file, err := t.store.PrimaryMediaFile(ctx, mediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		return "", err
+	}
+	return titler.MediaTitle(file.Path, scanpkg.ParseProbe{}), nil
 }
 
 // scanIdentifier adapts identify.Service to scan.Identifier (PIPE-1, ADR-0003
