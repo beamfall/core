@@ -49,6 +49,11 @@ type InfoRequest struct {
 	// viewer picked. It applies to MediaID only; an ID that names none of its
 	// Versions is ignored and the server negotiates as if it were absent.
 	SelectedVersion string `json:"selectedVersion,omitempty"`
+	// RemoteClient marks a request that did not come from the LAN. The
+	// server sets it from the connection, never from the body: a remote
+	// request is capped at the lower of the client's MaxStreamingBitrate and
+	// the admin's remote bitrate policy (CORE-1717).
+	RemoteClient bool `json:"-"`
 }
 
 // PreviewInfoRequest asks for the card-preview Generated Asset only. It is
@@ -141,6 +146,12 @@ type CapabilityProfile struct {
 // CapabilityProfile.MaxStreamingBitrate, and nothing else, kept an item off
 // direct play or the video-copy rung.
 const bitrateCeilingReason = "bitrate-ceiling"
+
+// policyBitrateCeilingReason is the playbackInfo reason when the admin's
+// remote bitrate cap (server-wide or per Profile, CORE-1717), tighter than
+// any ceiling the client declared, kept an item off direct play or the
+// video-copy rung.
+const policyBitrateCeilingReason = "policy-bitrate-ceiling"
 
 // Loudness-normalization modes a client may declare in
 // CapabilityProfile.NormalizationModes (closed vocabulary). They name the kind of
@@ -746,8 +757,18 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// forbids. The declared CapabilityProfile is passed through unmodified — the
 	// overlay is never written back onto it, which is what makes the
 	// monotone-restrictive rule a property of the code shape.
-	ov := s.quirks.Resolve(req.CapabilityProfile).withClientCeiling(req.CapabilityProfile.MaxStreamingBitrate)
-	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
+	//
+	// A remote request carries the admin's remote bitrate cap as its
+	// streaming ceiling when that cap is tighter than the client's own, so
+	// every MaxStreamingBitrate consumer (direct-play veto, cached renditions,
+	// ladder rungs, the HLS session key) honours the lower of the two.
+	capability, policyCeiling, err := s.remoteCappedProfile(ctx, req, policy)
+	if err != nil {
+		return InfoResponse{}, err
+	}
+	ov := s.quirks.Resolve(capability).withClientCeiling(capability.MaxStreamingBitrate)
+	ov.policyCeiling = policyCeiling
+	main, err := s.decide(ctx, scope, mediaID, "main", capability, policy, priority, req.SelectedSubtitleIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -784,7 +805,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// Loudness/normalization state (ADR-0098 area 3): assembled here, the one site
 	// that holds both the rung verdict and the assets token base. Capability-
 	// derived (declared NormalizationModes), never client-name inferred.
-	resp.Loudness = s.loudnessInfo(main, req.CapabilityProfile)
+	resp.Loudness = s.loudnessInfo(main, capability)
 	// Server subtitle pre-selection: authoritative at playback
 	// START only. Resolved here, the one site holding the item's caption tracks,
 	// the Profile policy, and the audio language together.
@@ -795,7 +816,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		// Best-effort: any next item that cannot be served — unknown,
 		// outside the session scope, or with no playable file — is silently
 		// omitted; current playback is never affected.
-		next, nextErr := s.decide(ctx, scope, nextID, "next", req.CapabilityProfile, policy, priority, nil, "", ov, ffmpeg.AudioAdjust{})
+		next, nextErr := s.decide(ctx, scope, nextID, "next", capability, policy, priority, nil, "", ov, ffmpeg.AudioAdjust{})
 		if nextErr == nil && next.verdict != "unavailable" {
 			// Attribution tracks what the response actually carries: a next
 			// decision the payload drops would put override IDs on a body whose
@@ -812,11 +833,33 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 				Parts:         next.parts,
 				Assets:        next.assets,
 				CaptionTracks: next.captionTracks,
-				Loudness:      s.loudnessInfo(next, req.CapabilityProfile),
+				Loudness:      s.loudnessInfo(next, capability),
 			}
 		}
 	}
 	return resp, nil
+}
+
+// remoteCappedProfile returns the CapabilityProfile the decision runs under.
+// A LAN request gets the declared profile unchanged. A remote request gets
+// the lowest non-zero of the server-wide remote cap, the Profile's remote
+// cap and the client's MaxStreamingBitrate as its streaming ceiling; the
+// bool reports that an admin cap, not the client, set that ceiling.
+func (s *Service) remoteCappedProfile(ctx context.Context, req InfoRequest, policy store.Profile) (CapabilityProfile, bool, error) {
+	capability := req.CapabilityProfile
+	if !req.RemoteClient {
+		return capability, false, nil
+	}
+	cfg, err := s.store.ConsoleConfig(ctx)
+	if err != nil {
+		return CapabilityProfile{}, false, err
+	}
+	limit := minNonZero(cfg.RemoteMaxBitrate, policy.RemoteMaxBitrate)
+	if limit <= 0 || (capability.MaxStreamingBitrate > 0 && capability.MaxStreamingBitrate <= limit) {
+		return capability, false, nil
+	}
+	capability.MaxStreamingBitrate = limit
+	return capability, true, nil
 }
 
 // PreviewInfo returns only the Generated Asset URL block needed for card
@@ -1182,7 +1225,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			// direct play the ceiling refused would have beaten it.
 			// An unknown-height bar refuses that rung whatever the ceiling.
 			if !barred && bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) {
-				reason = bitrateCeilingReason
+				reason = ov.ceilingReason()
 			}
 			return decision{
 				media:          media,
@@ -1274,7 +1317,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	reason := "requires-transcode"
 	// Under an unknown-height bar no passthrough rung was open to the ceiling.
 	if !barred && bitrateCeilingForced(media, file, streams, profile, selectedSubtitleIndex, ov) {
-		reason = bitrateCeilingReason
+		reason = ov.ceilingReason()
 	}
 	return decision{
 		media:          media,

@@ -65,6 +65,10 @@ package store
 //     background build has not sealed yet (CORE-1743). It is keyed by pack ID,
 //     read only by the offlinePacks list and retry paths, written a few times
 //     per build, and off every entity-query path.
+//   - 0117 adds profile.remote_max_bitrate, the per-Profile remote playback
+//     bitrate cap (CORE-1717). It is a defaulted scalar column read with the
+//     Profile row at playback decision time; it adds no index and touches no
+//     entity-query table.
 //
 // `make bench` passed on 2026-08-11 for the 0108 bump; the worst measured
 // query was search/fts/revealed at 30.875084 ms against a 60 ms budget (P95
@@ -81,4 +85,4 @@ package store
 // query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
 // loaded shared host. 0113 adds no index or column on any benched table: the
 // provenance table is read only by the media(id) detail read.
-const schemaFreezeCatalogMigrations = 112
+const schemaFreezeCatalogMigrations = 113

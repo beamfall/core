@@ -512,6 +512,7 @@
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
+        "remoteMaxBitrate",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -669,6 +670,7 @@
         "maxConcurrentStreams",
         "name",
         "preferSDH",
+        "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
         "transcodeAllowed"
@@ -2854,6 +2856,7 @@
         "maxConcurrentStreams",
         "name",
         "preferSDH",
+        "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
         "transcodeAllowed"
@@ -2879,6 +2882,7 @@
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
+        "remoteMaxBitrate",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3062,6 +3066,7 @@
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
+        "remoteMaxBitrate",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3077,6 +3082,7 @@
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
+        "remoteMaxBitrate",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3120,6 +3126,7 @@
         "maxConcurrentStreams",
         "name",
         "preferSDH",
+        "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
         "transcodeAllowed"
@@ -3610,6 +3617,7 @@
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
+        "remoteMaxBitrate",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3750,6 +3758,7 @@
         "maxConcurrentStreams",
         "name",
         "preferSDH",
+        "remoteMaxBitrate",
         "subtitleLanguages",
         "subtitleMode",
         "transcodeAllowed"

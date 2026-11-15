@@ -4887,6 +4887,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -5532,6 +5536,10 @@
         },
         {
           "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -17769,6 +17777,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "subtitleLanguages",
           "kind": "list",
           "nullable": true,
@@ -19552,6 +19564,10 @@
         },
         {
           "name": "remoteEnrollmentEnabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -21905,6 +21921,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -23669,6 +23689,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -23819,6 +23843,10 @@
         },
         {
           "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {
@@ -27121,6 +27149,10 @@
           "kind": "scalar"
         },
         {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
           "name": "updateCheckChannel",
           "kind": "scalar"
         },
@@ -27592,6 +27624,10 @@
         },
         {
           "name": "preferSDH",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
           "kind": "scalar"
         },
         {

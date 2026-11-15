@@ -229,6 +229,7 @@ func (s *Server) v1PlaybackInfo(w http.ResponseWriter, r *http.Request) {
 		MediaID:           string(mediaID),
 		CapabilityProfile: req.CapabilityProfile.internal(),
 		Foreground:        true,
+		RemoteClient:      !requestIsLAN(r),
 	})
 	switch {
 	case err == nil:

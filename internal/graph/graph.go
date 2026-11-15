@@ -1739,6 +1739,10 @@ type ProfileInfo struct {
 	SubtitleLanguages    []string `json:"subtitleLanguages"`
 	SubtitleMode         string   `json:"subtitleMode"`
 	PreferSDH            bool     `json:"preferSDH"`
+	// RemoteMaxBitrate is the Profile's playback bitrate cap, in bits per
+	// second, for requests that do not come from the LAN (CORE-1717). 0
+	// means no per-Profile remote cap.
+	RemoteMaxBitrate int `json:"remoteMaxBitrate"`
 	// CertificationCeilings are the Profile's per-plugin certification
 	// ceilings.
 	CertificationCeilings []CertificationCeilingInfo `json:"certificationCeilings"`
@@ -1781,6 +1785,7 @@ func profileInfo(profile store.Profile) ProfileInfo {
 		SubtitleLanguages:     subtitleLanguages,
 		SubtitleMode:          string(profile.SubtitleMode),
 		PreferSDH:             profile.PreferSDH,
+		RemoteMaxBitrate:      profile.RemoteMaxBitrate,
 		CertificationCeilings: ceilings,
 	}
 }
@@ -2090,7 +2095,8 @@ func (h *Handler) setCertificationCeiling(ctx context.Context, req request) (Pro
 
 // profileSettingsFromVariables reads the optional Profile policy variables.
 // Absent (or JSON-null) variables leave the stored value unchanged;
-// maxConcurrentStreams 0 clears the stream cap.
+// maxConcurrentStreams 0 clears the stream cap; remoteMaxBitrate 0 clears the
+// Profile's remote bitrate cap.
 func profileSettingsFromVariables(req request) (store.ProfileSettings, bool, error) {
 	var settings store.ProfileSettings
 	has := false
@@ -2107,6 +2113,11 @@ func profileSettingsFromVariables(req request) (store.ProfileSettings, bool, err
 	if number, ok := v.Number("maxConcurrentStreams"); ok {
 		limit := int(number)
 		settings.MaxConcurrentStreams = &limit
+		has = true
+	}
+	if number, ok := v.Number("remoteMaxBitrate"); ok {
+		limit := remoteMaxBitrateVariable(number)
+		settings.RemoteMaxBitrate = &limit
 		has = true
 	}
 	for name, target := range map[string]**bool{

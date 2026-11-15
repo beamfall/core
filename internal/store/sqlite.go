@@ -1545,11 +1545,11 @@ func (s *Store) profileSQL(ctx context.Context, id ProfileID) (Profile, error) {
 	err := s.catalogR.QueryRowContext(ctx, `
 		SELECT id, name, kind, max_concurrent_streams, transcode_allowed,
 		       disabled, audio_languages, subtitle_languages, subtitle_mode, prefer_sdh,
-		       created_at_ms, is_owner, integration_sign_in
+		       created_at_ms, is_owner, integration_sign_in, remote_max_bitrate
 		FROM profile WHERE id = ?`, id,
 	).Scan(&profile.ID, &profile.Name, &profile.Kind, &maxStreams, &transcodeAllowed,
 		&disabled, &audioLanguages, &subtitleLanguages, &profile.SubtitleMode, &preferSDH,
-		&profile.CreatedAtMs, &isOwner, &integrationSignIn)
+		&profile.CreatedAtMs, &isOwner, &integrationSignIn, &profile.RemoteMaxBitrate)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Profile{}, ValidationError("profile not found")
 	}
@@ -1627,11 +1627,11 @@ func (s *Store) updateProfileSettingsSQL(ctx context.Context, profile Profile) e
 	_, err = s.catalogW.ExecContext(ctx, `
 		UPDATE profile SET name = ?, kind = ?, max_concurrent_streams = ?, transcode_allowed = ?,
 		       disabled = ?, audio_languages = ?, subtitle_languages = ?,
-		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = ?
+		       subtitle_mode = ?, prefer_sdh = ?, integration_sign_in = ?, remote_max_bitrate = ?
 		WHERE id = ?`,
 		profile.Name, profile.Kind, maxStreams, boolInt(profile.TranscodeAllowed), boolInt(profile.Disabled),
 		audioLanguages, subtitleLanguages, profile.SubtitleMode, boolInt(profile.PreferSDH), boolInt(profile.IntegrationSignIn),
-		profile.ID)
+		profile.RemoteMaxBitrate, profile.ID)
 	if err != nil {
 		return err
 	}

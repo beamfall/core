@@ -1230,6 +1230,9 @@ func (s *Server) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		writeDecodeError(w, r, err)
 		return
 	}
+	// Proximity comes from the connection, never the body: an off-LAN request
+	// is held to the admin's remote bitrate cap (CORE-1717).
+	req.RemoteClient = !requestIsLAN(r)
 	resp, err := s.playback.Info(r.Context(), scope, req)
 	if err != nil {
 		writePlaybackError(w, r, "playback info unavailable", err)

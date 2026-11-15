@@ -142,6 +142,10 @@ type Profile struct {
 	// IntegrationSignIn is the explicit per-Profile opt-in for the weaker,
 	// non-enrolled integration Session kind. It defaults off.
 	IntegrationSignIn bool
+	// RemoteMaxBitrate caps this Profile's playback, in bits per second,
+	// when the request does not come from the LAN. 0 means no per-Profile
+	// cap; the server-wide remote cap still applies.
+	RemoteMaxBitrate int
 }
 
 // ProfileCertificationCeiling pins a Profile's ceiling on one plugin's
@@ -202,6 +206,7 @@ type ProfileSettings struct {
 	SubtitleMode         *SubtitleMode
 	PreferSDH            *bool
 	IntegrationSignIn    *bool
+	RemoteMaxBitrate     *int
 }
 
 func (settings ProfileSettings) empty() bool {
@@ -214,7 +219,8 @@ func (settings ProfileSettings) empty() bool {
 		settings.SubtitleLanguages == nil &&
 		settings.SubtitleMode == nil &&
 		settings.PreferSDH == nil &&
-		settings.IntegrationSignIn == nil
+		settings.IntegrationSignIn == nil &&
+		settings.RemoteMaxBitrate == nil
 }
 
 func (settings ProfileSettings) validate() error {
@@ -226,6 +232,11 @@ func (settings ProfileSettings) validate() error {
 	}
 	if settings.MaxConcurrentStreams != nil && *settings.MaxConcurrentStreams < 0 {
 		return ValidationError("maxConcurrentStreams must be non-negative")
+	}
+	if settings.RemoteMaxBitrate != nil {
+		if err := ValidateRemoteMaxBitrate(*settings.RemoteMaxBitrate); err != nil {
+			return err
+		}
 	}
 	if settings.SubtitleMode != nil && !validSubtitleMode(*settings.SubtitleMode) {
 		return ValidationError("subtitleMode must be off, smart, forced-only, or always")
@@ -4066,6 +4077,9 @@ func (s *Store) UpdateProfileSettings(ctx context.Context, id ProfileID, setting
 	}
 	if settings.IntegrationSignIn != nil {
 		profile.IntegrationSignIn = *settings.IntegrationSignIn
+	}
+	if settings.RemoteMaxBitrate != nil {
+		profile.RemoteMaxBitrate = *settings.RemoteMaxBitrate
 	}
 	if err := s.updateProfileSettingsSQL(ctx, profile); err != nil {
 		return Profile{}, err
