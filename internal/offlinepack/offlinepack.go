@@ -142,6 +142,7 @@ type Store interface {
 	PrimaryMediaFile(ctx context.Context, id store.MediaID, filter store.LibraryFilter) (store.MediaFile, error)
 	MediaFilesForMedia(ctx context.Context, id store.MediaID, filter store.LibraryFilter) ([]store.MediaFile, error)
 	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
+	MediaFactsFingerprint(ctx context.Context, id store.MediaID) (fingerprint string, versioned bool, err error)
 	Libraries(ctx context.Context, filter store.LibraryFilter) ([]store.Library, error)
 	Profile(ctx context.Context, id store.ProfileID) (store.Profile, error)
 	TrackOfflinePackBuild(ctx context.Context, build store.OfflinePackBuild, now time.Time) (store.OfflinePackBuild, error)

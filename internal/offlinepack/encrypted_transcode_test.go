@@ -865,6 +865,65 @@ func TestBuildEncryptedTranscodeRefusesATruncatedSourceWithRealFFmpeg(t *testing
 	fx.assertNothingLeft(t)
 }
 
+// TestBuildEncryptedTranscodeChecksTheSelectedVersionsDuration gives
+// media-alpha a second Version of a different length: the default Version runs
+// 120 seconds, the duration the catalog probed from it, and an "extended" cut
+// runs 180 seconds, which the catalog does not record. Each transcode yields
+// 120 seconds of output. That is all of the selected default Version, so it
+// seals; it is two thirds of the selected extended cut, so that build is
+// refused before anything is decrypted rather than checked against the
+// default Version's length.
+func TestBuildEncryptedTranscodeChecksTheSelectedVersionsDuration(t *testing.T) {
+	build := func(t *testing.T, version string) (*encryptedVideoFixture, store.OfflinePack, error) {
+		t.Helper()
+		fx := newEncryptedVideoFixture(t)
+		extended := filepath.Join(t.TempDir(), "media-alpha-extended.mkv")
+		if err := os.WriteFile(extended, []byte("extended-cut"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := fx.st.AddMediaFileVersion(context.Background(), "media-alpha", store.MediaFile{
+			Path: extended, ContentFingerprint: store.HashMediaFilePath(extended), VersionLabel: "extended",
+		}, nil); err != nil {
+			t.Fatalf("AddMediaFileVersion: %v", err)
+		}
+		fx.source.mu.Lock()
+		fx.source.bodies[extended] = fx.body
+		fx.source.mu.Unlock()
+		fx.svc.SetPipeTranscoder(func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
+			src, err := fetchSource(ctx, in.URL)
+			if err != nil {
+				return err
+			}
+			_, err = stdout.Write(fragmentedMP4(src, 4))
+			return err
+		})
+		req := fx.request(QualityMedium)
+		req.SelectedVersions = map[store.MediaID]string{"media-alpha": version}
+		pack, err := fx.svc.BuildPack(context.Background(), fx.scope, req)
+		return fx, pack, err
+	}
+	t.Run("complete default Version", func(t *testing.T) {
+		fx, pack, err := build(t, "")
+		if err != nil {
+			t.Fatalf("BuildPack of the complete default Version: %v", err)
+		}
+		items, err := fx.st.OfflinePackItems(context.Background(), pack.ID)
+		if err != nil || len(items) != 1 {
+			t.Fatalf("pack items = %+v, %v; want the one transcoded item", items, err)
+		}
+	})
+	t.Run("truncated extended cut", func(t *testing.T) {
+		fx, _, err := build(t, "extended")
+		if !errors.Is(err, ErrTranscode) || FailureReason(err) != FailureTranscode {
+			t.Fatalf("BuildPack err = %v, want ErrTranscode", err)
+		}
+		if fx.source.openCount() != 0 {
+			t.Fatalf("decrypted %d times for a Version of unknown duration", fx.source.openCount())
+		}
+		fx.assertNothingLeft(t)
+	})
+}
+
 func TestSweepStagingRemovesOnlyStagingFiles(t *testing.T) {
 	svc, _, _, _ := newFixture(t)
 	packDir := filepath.Join(svc.packRoot, "pack-crashed")
