@@ -244,8 +244,8 @@ const lanHostnameNotAllowed = "lan_hostname_not_allowed"
 
 // writeCodedError is writeError plus a stable code and the LAN addresses the
 // browser can reopen Beamfall at. Clients branch on code; msg is
-// server-localized text for clients that show it as is (CORE-2102). lanUrls is always present, possibly empty,
-// so clients can rely on its shape.
+// server-localized text for clients that render it verbatim (CORE-2102).
+// lanUrls is always present, possibly empty, so clients can rely on its shape.
 func writeCodedError(w http.ResponseWriter, status int, msg, code string, lanURLs []string) {
 	if lanURLs == nil {
 		lanURLs = []string{}
