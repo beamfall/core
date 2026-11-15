@@ -318,6 +318,26 @@ test.describe("UI state inventory enroll locale", () => {
   });
 });
 
+test.describe("UI state inventory setup locale", () => {
+  test.use({ locale: "fr-FR" });
+  test.beforeEach(({ page: _page }, testInfo) => {
+    test.skip(isMobile(testInfo.project.name), "in-page states run at desktop width");
+  });
+
+  test("the setup wizard renders its French catalog strings", async ({ page }, testInfo) => {
+    await gotoScreen(page, "/setup");
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: "Déverrouiller avec le jeton de configuration",
+      }),
+    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Jeton de configuration" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continuer", exact: true })).toBeVisible();
+    coverUiStates(testInfo, "area:setup@locale:fr-FR");
+  });
+});
+
 // Live goldens under e2e/goldens/ for areas the archived set never had (CORE-1305). They capture
 // surfaces no other project mutates: the enroll page, the first setup step on a mocked fresh
 // server, and the search prompt. Exact comparison: the config's defaults, no tolerance.

@@ -1114,3 +1114,28 @@ describe("SetupWizard first-run steps (CORE-1601, CORE-1610, CORE-1600)", () => 
     expect(screen.queryByRole("radio", { name: "home" })).not.toBeInTheDocument();
   });
 });
+
+describe("SetupWizard French catalog (CORE-1310)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("opens a fresh server's token step in French", async () => {
+    mocks.bootstrapResume.mockResolvedValue({ alreadyBootstrapped: false, state: null });
+    render(
+      <I18nProvider initialLocale="fr">
+        <SetupWizard />
+      </I18nProvider>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Déverrouiller avec le jeton de configuration",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Jeton de configuration" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continuer" })).toBeInTheDocument();
+  });
+});
