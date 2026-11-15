@@ -926,9 +926,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// reports "DEK not in memory", which is true for every ordinary unprovisioned
 	// Library too — so gate on Provisioned first or every plain Library would read
 	// as sealed and lose all bytes.
+	// SealedEncrypted also counts a Seal already queued on the Library's lease,
+	// so a derivative job's revocation poll stops its open decrypt stream
+	// instead of waiting behind that Seal for the stream to finish.
 	sealedPredicate := func(libraryID store.LibraryID) bool {
-		id := string(libraryID)
-		return libEncryptManager.Provisioned(id) && libEncryptManager.Sealed(id)
+		return libEncryptManager.SealedEncrypted(string(libraryID))
 	}
 	// Encrypted (provisioned) predicate — Sealed OR Unsealed. The
 	// plaintext-derivative generators fail closed for every Encrypted Library, not
