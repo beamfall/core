@@ -47,6 +47,9 @@ type tvdbServer struct {
 	requests []*http.Request
 	counts   map[string]int
 	server   *httptest.Server
+	// artworkTypeFailures is how many /artwork/types requests fail with a
+	// server error before the fixture is served.
+	artworkTypeFailures int
 }
 
 func newTVDBServer(t *testing.T) *tvdbServer {
@@ -83,7 +86,20 @@ func newTVDBServer(t *testing.T) *tvdbServer {
 		}
 		return "remoteid-none.json"
 	})
-	authorized("/artwork/types", func(*http.Request) string { return "artwork-types.json" })
+	mux.HandleFunc("/artwork/types", func(w http.ResponseWriter, r *http.Request) {
+		s.record(r, nil)
+		s.mu.Lock()
+		fail := s.artworkTypeFailures > 0
+		if fail {
+			s.artworkTypeFailures--
+		}
+		s.mu.Unlock()
+		if fail {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write(tvdbFixture(t, "artwork-types.json"))
+	})
 	s.server = httptest.NewServer(mux)
 	t.Cleanup(s.server.Close)
 	return s
@@ -410,5 +426,41 @@ func TestTVDBArtworkTypesUnavailableKeepsThePoster(t *testing.T) {
 	}
 	if server.count("/artwork/types") != 0 {
 		t.Fatal("undeclared reference document was fetched")
+	}
+}
+
+// A failed reference fetch drops only the artwork that needs it, and the
+// failure is not cached: the next lookup fetches the document again.
+func TestTVDBArtworkTypesFetchFailureIsRetriedNotCached(t *testing.T) {
+	server := newTVDBServer(t)
+	server.artworkTypeFailures = 1
+	engine := newTVDBEngine(pinCredentials(), "eng")
+	engine.clock = newManualClock()
+	spec := tvdbSpec(server.server.URL)
+	lookup := func() Result {
+		t.Helper()
+		result, err := engine.Lookup(context.Background(), spec, "700303", pluginVars(0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	result := lookup()
+	if result.Artwork["poster"] == "" {
+		t.Fatal("poster dropped when the artwork types fetch failed")
+	}
+	for _, kind := range []string{"backdrop", "banner", "logo"} {
+		if _, ok := result.Artwork[kind]; ok {
+			t.Errorf("artwork %s present although its type ids failed to load", kind)
+		}
+	}
+	result = lookup()
+	if got := server.count("/artwork/types"); got != 2 {
+		t.Fatalf("artwork types fetched %d times, want 2 (the failure must not be cached)", got)
+	}
+	for _, kind := range []string{"backdrop", "banner", "logo"} {
+		if result.Artwork[kind] == "" {
+			t.Errorf("artwork %s missing after the artwork types fetch recovered", kind)
+		}
 	}
 }
