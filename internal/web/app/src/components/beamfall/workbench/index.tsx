@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, type LucideProps } from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -244,7 +244,7 @@ export function IconHeading({
   title,
   lead,
 }: {
-  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon: ComponentType<LucideProps>;
   title: string;
   lead?: string;
 }) {
@@ -320,15 +320,16 @@ export function ManageSection({
   defaultOpen = false,
   children,
 }: {
-  title: string;
+  /** Left out on a page's first card, whose title and lead are the page heading's. */
+  title?: string;
   lead?: string;
   actions?: ReactNode;
-  /** Folds the body behind the title; closed unless defaultOpen. */
+  /** Folds the body behind the title; closed unless defaultOpen. Needs a title. */
   collapsible?: boolean;
   defaultOpen?: boolean;
   children: ReactNode;
 }) {
-  if (collapsible) {
+  if (collapsible && title) {
     return (
       <CollapsibleCard
         className="manage-section-collapsible"
@@ -343,15 +344,19 @@ export function ManageSection({
   }
   return (
     <Card className="manage-section">
-      <CardHeader className="manage-section-header flex flex-row items-start justify-between gap-2">
-        <div className="min-w-0 space-y-1">
-          <CardTitle role="heading" aria-level={2} className="manage-section-title">
-            {title}
-          </CardTitle>
-          {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
-        </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-      </CardHeader>
+      {(title || lead || actions) && (
+        <CardHeader className="manage-section-header flex flex-row items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            {title && (
+              <CardTitle role="heading" aria-level={2} className="manage-section-title">
+                {title}
+              </CardTitle>
+            )}
+            {lead && <CardDescription className="manage-section-lead">{lead}</CardDescription>}
+          </div>
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        </CardHeader>
+      )}
       {children ? <CardContent className="manage-section-body">{children}</CardContent> : null}
     </Card>
   );

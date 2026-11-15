@@ -50,8 +50,7 @@ export const migrationStrings = {
     migrationCategorySubscriptions: "Subscriptions",
     migrationCategoryItemState: "Item state (played/unplayed)",
     unmatchedHeading: "Unmatched records",
-    unmatchedLead:
-      "Files and import records that could not be matched to a Library item. Use fix-match or rescan to resolve.",
+    unmatchedLead: "Files Beamfall could not match to a library item. Fix the match or rescan.",
     unmatchedEmpty: "No unmatched records.",
     unmatchedUnavailable: "Could not load unmatched records.",
     unmatchedRescan: "Rescan all unmatched",

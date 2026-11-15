@@ -48,7 +48,7 @@ export const accessBulkStrings = {
     weekdaySaturday: "Saturday",
     bulkOpsHeading: "Bulk edit & file operations",
     bulkOpsLead:
-      "Preview-first edits and organize/merge over many media at once. Every apply is one undoable batch.",
+      "Edit or organize many items at once. Every change is previewed first and can be undone.",
     bulkEditPreviewHeading: "Bulk edit",
     bulkEditMediaIDs: "Media IDs (comma-separated)",
     bulkEditFieldName: "Field name",

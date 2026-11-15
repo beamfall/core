@@ -126,7 +126,7 @@ export function LibrariesPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("libraries")} actions={<RescanAllButton libraries={libraries} />}>
+      <ManageSection actions={<RescanAllButton libraries={libraries} />}>
         {!loading && libraries.length === 0 ? (
           <EmptyLine message={t("libraryEmptyTitle")} />
         ) : (

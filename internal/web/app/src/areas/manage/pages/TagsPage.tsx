@@ -111,8 +111,6 @@ export function TagsPage() {
   return (
     <div className="space-y-4">
       <ManageSection
-        title={t("tagsHeading")}
-        lead={t("tagsLead")}
         actions={
           <>
             <span className="manage-count">{t("tagsCount", { count: liveTags.length })}</span>

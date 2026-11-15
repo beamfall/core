@@ -70,7 +70,7 @@ export function ArtworkPage() {
   };
 
   return (
-    <ManageSection title={t("artworkCandidates")}>
+    <ManageSection>
       <div className="flex items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="artwork-media">{t("fieldLocksMediaLabel")}</Label>

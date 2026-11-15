@@ -45,8 +45,7 @@ export const collectionMarkerStrings = {
 
     // Marker editor (WEB-5E / ADR-0033 / ADR-0048 / ADR-0061).
     markersHeading: "Markers",
-    markersLead:
-      "Load one media item's markers and edit timestamps, titles, skip-segment kinds, and tags. Reorder is by start time.",
+    markersLead: "Load one item's markers, then edit their times, titles and kinds.",
     markersMediaID: "Media ID",
     markersLoad: "Load",
     markersNew: "New marker",

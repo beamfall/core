@@ -278,7 +278,7 @@ export function Devices() {
 
       {/* Remote enrollment is an Advanced setting, kept in view while on (CORE-1117). */}
       <Advanced keep={Boolean(config.data?.remoteEnrollmentEnabled)}>
-        <Section heading="remoteEnrollHeading" lead="remoteEnrollLead">
+        <Section heading="remoteEnrollHeading" lead="remoteEnrollLead" collapsible>
           {config.loading ? (
             <Skeleton className="h-10 w-full" />
           ) : config.failed || !config.data ? (

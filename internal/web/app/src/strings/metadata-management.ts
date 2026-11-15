@@ -10,7 +10,7 @@ export const metadataManagementStrings = {
     watcherStateUnavailable: "Unavailable",
     fieldLocksHeading: "Field locks",
     fieldLocksLead:
-      "Per-field source precedence. A locked field keeps its value through re-scans and scraper passes.",
+      "Choose which source wins for each field. A locked field keeps its value through rescans.",
     fieldLocksMediaLabel: "Media ID",
     fieldLocksLoad: "Load",
     fieldLocksEmpty: "Enter a media ID to view its field locks.",
@@ -43,8 +43,7 @@ export const metadataManagementStrings = {
     qbittorrentError: "Error",
     // Manage Curation editor (WEB-5B, ADR-0001/0005/0061).
     curationHeading: "Curation",
-    curationLead:
-      "Open a Media or Entity by ID to review its plugin-declared fields, ordered relations, backing files, and extras.",
+    curationLead: "Open an item by its ID to review its fields, relations, files and extras.",
     curationSubjectType: "Subject type",
     curationSubjectMedia: "Media",
     curationSubjectEntity: "Entity",

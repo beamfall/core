@@ -131,7 +131,7 @@ export function CurationPage() {
 
   return (
     <div className="space-y-4">
-      <ManageSection title={t("curationHeading")} lead={t("curationLead")}>
+      <ManageSection>
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="curation-type">{t("curationSubjectType")}</Label>

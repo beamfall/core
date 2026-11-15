@@ -287,7 +287,7 @@ export function ItemMetadataPage() {
     setDraft((prev) => ({ ...prev, [field]: value }));
 
   return (
-    <ManageSection title={t("itemMetadataHeading")} lead={t("itemMetadataLead")}>
+    <ManageSection>
       <form
         className="flex items-end gap-3"
         onSubmit={(e) => {

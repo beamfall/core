@@ -406,7 +406,7 @@ button.path-browser-crumb:hover {
 
 .icon-heading-lead {
   margin: 2px 0 0;
-  max-width: 68ch;
+  max-width: 80ch;
   font-size: 14px;
   line-height: 20px;
   color: var(--text-muted);
