@@ -326,7 +326,7 @@ test("visual parity covers every migrated player widget state", async ({
   await subtitleStyling.click();
   const subtitleDialog = page.getByRole("dialog", { name: "Subtitle styling" });
   await expect(subtitleDialog).toBeVisible();
-  const reset = subtitleDialog.getByRole("button", { name: "Reset" });
+  const reset = subtitleDialog.getByRole("button", { name: "Reset", exact: true });
   await reset.focus();
   await expect(reset).toBeFocused();
   // Subtitle choices persist in the server-side Profile (CORE-1681), so a run that already

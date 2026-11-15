@@ -341,7 +341,7 @@ test.describe("console", () => {
     for (const label of ["Codec", "Quality", "Device"]) {
       await expect(page.getByRole("textbox", { name: label })).toBeVisible();
     }
-    await expect(page.getByRole("button", { name: "Save" })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(1);
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
