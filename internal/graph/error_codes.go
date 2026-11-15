@@ -158,6 +158,9 @@ var clientErrorCodes = map[string]ErrorCode{
 	"the previous offline pack build is still finishing; retry shortly":                    ErrorCodeConflict,
 	"queue has items; pass confirmReplace to replace it":                                   ErrorCodeConflict,
 	"session has no active playback":                                                       ErrorCodeConflict,
+	"scan preview token was already used":                                                  ErrorCodeConflict,
+	"scan preview token has expired":                                                       ErrorCodeConflict,
+	"scan preview is stale because the library changed":                                    ErrorCodeConflict,
 
 	"offline pack job did not produce a pack":    ErrorCodeInternal,
 	"playback rendition cache is not configured": ErrorCodeInternal,

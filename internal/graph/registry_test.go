@@ -258,6 +258,8 @@ var originalScopedFields = []string{
 	"runjob",
 	"runeventscompaction",
 	"scanlibrary",
+	"scanpreview",       // CORE-1054: rescan preview with a single-use token
+	"commitscanpreview", // CORE-1054: token-gated rescan commit
 	"schedules",
 	"search",
 	"searchentities",

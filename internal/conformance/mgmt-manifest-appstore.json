@@ -78,6 +78,10 @@
       "effect": "write"
     },
     {
+      "field": "commitscanpreview",
+      "effect": "write"
+    },
+    {
       "field": "consoleconfig",
       "effect": "read"
     },
@@ -311,6 +315,10 @@
     },
     {
       "field": "scanlibrary",
+      "effect": "write"
+    },
+    {
+      "field": "scanpreview",
       "effect": "write"
     },
     {

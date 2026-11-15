@@ -502,6 +502,24 @@
       ]
     },
     {
+      "field": "commitscanpreview",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "updatedAt"
+      ]
+    },
+    {
       "field": "connectionendpoints",
       "effect": "read",
       "tier": "session",
@@ -2766,6 +2784,25 @@
         "startedAt",
         "status",
         "updatedAt"
+      ]
+    },
+    {
+      "field": "scanpreview",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "adds",
+        "auditEventID",
+        "changes",
+        "expiresAt",
+        "libraryID",
+        "missing",
+        "missingSkipped",
+        "previewToken",
+        "roots",
+        "truncated",
+        "unchanged",
+        "updates"
       ]
     },
     {
