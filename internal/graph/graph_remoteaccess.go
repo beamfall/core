@@ -259,10 +259,15 @@ func (h *Handler) setRemoteAccessPortMapping(ctx context.Context, scope auth.Sco
 	if h.portMapping == nil {
 		return RemoteAccessInfo{}, clientError("automatic port mapping is unavailable on this server")
 	}
-	if err := h.store.SetPortMappingEnabled(ctx, enabled, time.Now().UTC()); err != nil {
+	h.portMappingMu.Lock()
+	err := h.store.SetPortMappingEnabled(ctx, enabled, time.Now().UTC())
+	if err == nil {
+		h.portMapping.SetPortMapping(ctx, enabled)
+	}
+	h.portMappingMu.Unlock()
+	if err != nil {
 		return RemoteAccessInfo{}, err
 	}
-	h.portMapping.SetPortMapping(ctx, enabled)
 	h.portMapping.CheckReachability(ctx)
 	targetID := "disabled"
 	if enabled {

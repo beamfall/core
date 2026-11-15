@@ -414,6 +414,9 @@ type Handler struct {
 	// portMapping owns automatic router port mapping and the reachability
 	// self-test (CORE-1969). Nil (the default) leaves both unavailable.
 	portMapping PortMappingController
+	// portMappingMu keeps the persisted opt-in and the applied one in step
+	// when two toggles race.
+	portMappingMu sync.Mutex
 	// watcherProvider reports the fsnotify per-Library Watcher state to the
 	// manager Console. Nil (the default) reports every Library as
 	// unavailable — honest for a build with no Watcher running.

@@ -59,6 +59,8 @@ export const remoteAccessStrings = {
     portMappingReasonGatewayRefused: "The router refused the mapping.",
     portMappingReasonGatewayError: "The router returned an error.",
     portMappingReasonLeaseExpired: "The lease expired before it could be renewed.",
+    portMappingReasonRemovalFailed:
+      "The router did not confirm removing the mapping. The server keeps retrying.",
     portMappingGatewayCode: "Router code",
     reachabilityHeading: "Reachability",
     reachabilityCheck: "Check reachability",
@@ -136,6 +138,8 @@ export const remoteAccessStrings = {
     portMappingReasonGatewayRefused: "Le routeur a refusé la redirection.",
     portMappingReasonGatewayError: "Le routeur a renvoyé une erreur.",
     portMappingReasonLeaseExpired: "Le bail a expiré avant de pouvoir être renouvelé.",
+    portMappingReasonRemovalFailed:
+      "Le routeur n’a pas confirmé la suppression de la redirection. Le serveur réessaie.",
     portMappingGatewayCode: "Code du routeur",
     reachabilityHeading: "Joignabilité",
     reachabilityCheck: "Vérifier la joignabilité",

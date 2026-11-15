@@ -37,6 +37,9 @@ const (
 	PortMapReasonGatewayRefused = "gateway_refused"
 	PortMapReasonGatewayError   = "gateway_error"
 	PortMapReasonLeaseExpired   = "lease_expired"
+	// PortMapReasonRemovalFailed: the gateway did not confirm a removal; the
+	// mapper keeps retrying it until it does.
+	PortMapReasonRemovalFailed = "removal_failed"
 )
 
 // Gateway protocol names reported in PortMapStatus.Protocol.
@@ -129,6 +132,14 @@ type PortMapper struct {
 	status   PortMapStatus
 	next     time.Time // next renew or retry; zero means due now
 	failures int
+
+	// orphan is a mapping whose removal the gateway did not confirm. It is
+	// retried with backoff, enabled or not, and once more on Close, so a
+	// failed delete never leaves a public port open unattended.
+	orphanGW       Gateway
+	orphanExt      uint16
+	orphanNext     time.Time
+	orphanFailures int
 }
 
 // NewPortMapper builds a mapper for internalPort. It starts disabled; nothing
@@ -190,12 +201,15 @@ func (m *PortMapper) SetEnabled(ctx context.Context, enabled bool) PortMapStatus
 	if enabled {
 		m.attempt(ctx)
 	} else {
-		_ = m.release(ctx)
+		err := m.release(ctx)
 		m.mu.Lock()
 		m.gw = nil
 		m.next = time.Time{}
 		m.failures = 0
 		m.status = PortMapStatus{State: PortMapDisabled, InternalPort: m.internalPort}
+		if err != nil {
+			m.status.Reason = PortMapReasonRemovalFailed
+		}
 		m.mu.Unlock()
 	}
 	m.signal()
@@ -211,11 +225,21 @@ func (m *PortMapper) Maintain(ctx context.Context) time.Duration {
 	}
 	defer m.unlockOp()
 	m.mu.Lock()
-	if !m.enabled || m.closed {
+	if m.closed {
 		m.mu.Unlock()
 		return portMapIdleWait
 	}
 	now := m.now()
+	orphanDue := m.orphanGW != nil && !now.Before(m.orphanNext)
+	m.mu.Unlock()
+	if orphanDue {
+		m.retryOrphan(ctx)
+	}
+	m.mu.Lock()
+	if !m.enabled {
+		m.mu.Unlock()
+		return m.wait()
+	}
 	if m.status.State == PortMapMapped && !m.status.ExpiresAt.IsZero() && !now.Before(m.status.ExpiresAt) {
 		m.status.State = PortMapFailed
 		m.status.Reason = PortMapReasonLeaseExpired
@@ -237,10 +261,21 @@ func (m *PortMapper) Maintain(ctx context.Context) time.Duration {
 func (m *PortMapper) wait() time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.enabled || m.closed {
+	if m.closed {
 		return portMapIdleWait
 	}
-	at := m.next
+	var at time.Time
+	if m.enabled {
+		if m.next.IsZero() {
+			return 0
+		}
+		at = m.next
+	} else if m.orphanGW == nil {
+		return portMapIdleWait
+	}
+	if m.orphanGW != nil && (at.IsZero() || m.orphanNext.Before(at)) {
+		at = m.orphanNext
+	}
 	if exp := m.status.ExpiresAt; m.status.State == PortMapMapped && !exp.IsZero() && (at.IsZero() || exp.Before(at)) {
 		at = exp
 	}
@@ -281,7 +316,7 @@ func (m *PortMapper) Close(ctx context.Context) error {
 		return fmt.Errorf("remoteaccess: port mapping removal: %w", err)
 	}
 	defer m.unlockOp()
-	err := m.release(ctx)
+	err := errors.Join(m.release(ctx), m.releaseOrphan(ctx))
 	m.mu.Lock()
 	m.closed = true
 	m.next = time.Time{}
@@ -310,11 +345,74 @@ func (m *PortMapper) release(ctx context.Context) error {
 		return nil
 	}
 	if err := gw.DeleteMapping(ctx, m.internalPort, ext); err != nil {
-		m.logger.Warn("port mapping removal failed", "protocol", gw.Protocol(), "error", err)
+		m.logger.Warn("port mapping removal failed; will retry", "protocol", gw.Protocol(), "error", err)
+		m.mu.Lock()
+		m.orphanGW, m.orphanExt = gw, ext
+		m.orphanFailures = 0
+		m.orphanNext = m.now().Add(portMapRetryMin)
+		m.mu.Unlock()
 		return err
 	}
 	m.logger.Info("port mapping removed", "protocol", gw.Protocol(), "external_port", ext)
+	m.mu.Lock()
+	if m.orphanExt == ext {
+		m.clearOrphanLocked()
+	}
+	m.mu.Unlock()
 	return nil
+}
+
+// releaseOrphan deletes a mapping whose earlier removal failed. Called with
+// the op slot held. A live mapping on the same external port supersedes the
+// orphan rather than being deleted.
+func (m *PortMapper) releaseOrphan(ctx context.Context) error {
+	m.mu.Lock()
+	gw, ext := m.orphanGW, m.orphanExt
+	live := m.status.State == PortMapMapped && m.status.ExternalPort == ext
+	if gw != nil && live {
+		m.clearOrphanLocked()
+	}
+	m.mu.Unlock()
+	if gw == nil || live {
+		return nil
+	}
+	if err := gw.DeleteMapping(ctx, m.internalPort, ext); err != nil {
+		m.logger.Warn("port mapping removal retry failed", "protocol", gw.Protocol(), "external_port", ext, "error", err)
+		return err
+	}
+	m.logger.Info("port mapping removed", "protocol", gw.Protocol(), "external_port", ext)
+	m.mu.Lock()
+	if m.orphanExt == ext {
+		m.clearOrphanLocked()
+	}
+	m.mu.Unlock()
+	return nil
+}
+
+// retryOrphan runs one bounded removal retry and schedules the next one.
+func (m *PortMapper) retryOrphan(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, portMapOpTimeout)
+	defer cancel()
+	if m.releaseOrphan(ctx) == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.orphanFailures++
+	backoff := portMapRetryMax
+	if shift := m.orphanFailures; shift < 5 {
+		backoff = min(portMapRetryMin<<shift, portMapRetryMax)
+	}
+	m.orphanNext = m.now().Add(backoff)
+}
+
+// clearOrphanLocked forgets the orphan; m.mu must be held.
+func (m *PortMapper) clearOrphanLocked() {
+	m.orphanGW, m.orphanExt = nil, 0
+	m.orphanNext, m.orphanFailures = time.Time{}, 0
+	if !m.enabled && m.status.Reason == PortMapReasonRemovalFailed {
+		m.status.Reason = ""
+	}
 }
 
 // attempt requests or renews the mapping. Called with the op slot held.
@@ -351,6 +449,10 @@ func (m *PortMapper) attempt(ctx context.Context) {
 	defer m.mu.Unlock()
 	m.gw = gw
 	m.failures = 0
+	if m.orphanGW != nil && m.orphanExt == granted {
+		// The new grant took the orphan's port: it is live again, not stale.
+		m.clearOrphanLocked()
+	}
 	m.status = PortMapStatus{
 		Enabled:         true,
 		State:           PortMapMapped,

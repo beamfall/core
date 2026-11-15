@@ -279,6 +279,27 @@ describe("PortMapping (CORE-1969)", () => {
     expect(screen.getByText("Not checked yet.")).toBeInTheDocument();
   });
 
+  it("keeps a failed removal visible after the opt-out", async () => {
+    setRemoteAccess({
+      ...lanOnly,
+      portMapping: {
+        enabled: false,
+        state: "disabled",
+        internalPort: 8443,
+        leaseSeconds: 0,
+        reason: "removal_failed",
+      },
+    });
+    renderStatus();
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "The router did not confirm removing the mapping.",
+    );
+    expect(
+      screen.getByRole("checkbox", { name: "Map a router port automatically" }),
+    ).not.toBeChecked();
+  });
+
   it("toggles the opt-in and reruns the self-test on demand", async () => {
     setRemoteAccess({
       ...lanOnly,

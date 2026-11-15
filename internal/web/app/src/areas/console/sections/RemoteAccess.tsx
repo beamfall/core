@@ -108,6 +108,7 @@ const PORT_MAPPING_REASON: Record<string, StringKey> = {
   gateway_refused: "portMappingReasonGatewayRefused",
   gateway_error: "portMappingReasonGatewayError",
   lease_expired: "portMappingReasonLeaseExpired",
+  removal_failed: "portMappingReasonRemovalFailed",
 };
 
 const REACHABILITY_PATH: Record<string, StringKey> = {
@@ -496,19 +497,17 @@ export function PortMapping({
               )}
             </>
           )}
-          {mapping.state === "failed" && mapping.reason && (
-            <p className="text-sm" role="status">
-              <span className="text-muted-foreground">{t("portMappingReason")}: </span>
-              {reasonKey ? t(reasonKey) : ""}{" "}
-              <span className="console-mono text-xs text-muted-foreground">
-                {mapping.reason}
-                {mapping.gatewayCode
-                  ? ` · ${t("portMappingGatewayCode")} ${mapping.gatewayCode}`
-                  : ""}
-              </span>
-            </p>
-          )}
         </div>
+      )}
+      {(mapping.state === "failed" || !mapping.enabled) && mapping.reason && (
+        <p className="text-sm" role="status">
+          <span className="text-muted-foreground">{t("portMappingReason")}: </span>
+          {reasonKey ? t(reasonKey) : ""}{" "}
+          <span className="console-mono text-xs text-muted-foreground">
+            {mapping.reason}
+            {mapping.gatewayCode ? ` · ${t("portMappingGatewayCode")} ${mapping.gatewayCode}` : ""}
+          </span>
+        </p>
       )}
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">

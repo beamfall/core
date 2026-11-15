@@ -19,6 +19,7 @@ type fakeGateway struct {
 	external netip.Addr
 	lease    time.Duration // granted lease; 0 = permanent
 	addErrs  []error       // consumed one per AddMapping; nil entry = success
+	delErrs  []error       // consumed one per DeleteMapping; nil entry = success
 	adds     int
 	deletes  int
 	// addBlock / deleteBlock make the call wait for ctx to end.
@@ -70,8 +71,15 @@ func (g *fakeGateway) DeleteMapping(ctx context.Context, _, _ uint16) error {
 		return ctx.Err()
 	}
 	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.delErrs) > 0 {
+		err := g.delErrs[0]
+		g.delErrs = g.delErrs[1:]
+		if err != nil {
+			return err
+		}
+	}
 	g.deletes++
-	g.mu.Unlock()
 	return nil
 }
 
@@ -400,4 +408,70 @@ func TestPortMapperRunRenewsAndStops(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+func TestPortMapperRetriesAFailedRemoval(t *testing.T) {
+	gw := testGateway()
+	gw.delErrs = []error{&GatewayRefusedError{Protocol: PortMapProtocolNATPMP, Code: 3}, errors.New("timeout")}
+	m, clock := newTestMapper(&fakeDiscoverer{gw: gw})
+	ctx := context.Background()
+	m.SetEnabled(ctx, true)
+
+	st := m.SetEnabled(ctx, false)
+	if st.State != PortMapDisabled || st.Reason != PortMapReasonRemovalFailed {
+		t.Fatalf("status after failed removal = %+v, want disabled with removal_failed", st)
+	}
+	if d := m.Maintain(ctx); d != portMapRetryMin {
+		t.Fatalf("wait = %v, want the first removal retry in %v", d, portMapRetryMin)
+	}
+
+	clock.Advance(portMapRetryMin)
+	if d := m.Maintain(ctx); d != 2*portMapRetryMin {
+		t.Fatalf("wait after a second failure = %v, want backoff %v", d, 2*portMapRetryMin)
+	}
+	clock.Advance(2 * portMapRetryMin)
+	if d := m.Maintain(ctx); d != portMapIdleWait {
+		t.Fatalf("wait after removal = %v, want idle", d)
+	}
+	if _, deletes := gw.counts(); deletes != 1 {
+		t.Fatalf("deletes = %d, want 1", deletes)
+	}
+	if st := m.Status(); st.Reason != "" {
+		t.Fatalf("status after removal = %+v, want the reason cleared", st)
+	}
+}
+
+func TestPortMapperCloseRetriesAFailedRemoval(t *testing.T) {
+	gw := testGateway()
+	gw.delErrs = []error{errors.New("timeout")}
+	m, _ := newTestMapper(&fakeDiscoverer{gw: gw})
+	ctx := context.Background()
+	m.SetEnabled(ctx, true)
+	m.SetEnabled(ctx, false)
+	if err := m.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, deletes := gw.counts(); deletes != 1 {
+		t.Fatalf("deletes = %d, want the orphan removed on Close", deletes)
+	}
+}
+
+func TestPortMapperRegrantSupersedesOrphan(t *testing.T) {
+	gw := testGateway()
+	gw.delErrs = []error{errors.New("timeout")}
+	m, clock := newTestMapper(&fakeDiscoverer{gw: gw})
+	ctx := context.Background()
+	m.SetEnabled(ctx, true)
+	m.SetEnabled(ctx, false)
+	if st := m.SetEnabled(ctx, true); st.State != PortMapMapped {
+		t.Fatalf("re-enable = %+v", st)
+	}
+	clock.Advance(portMapRetryMin)
+	m.Maintain(ctx)
+	if _, deletes := gw.counts(); deletes != 0 {
+		t.Fatalf("deleted the live re-granted mapping: deletes = %d", deletes)
+	}
+	if st := m.Status(); st.State != PortMapMapped {
+		t.Fatalf("status = %+v, want still mapped", st)
+	}
 }
