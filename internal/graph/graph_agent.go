@@ -32,7 +32,7 @@ const agentCatalogGuide = `Beamfall GraphQL for agents.
 POST /api/graphql with {"query": "...", "variables": {...}} and "Authorization: Bearer <token>".
 Mint a token offline with the server stopped: beamfall token create --name <n> --access cli|diagnostics|agent.
 Tiers: cli runs the operator CLI fields; diagnostics also runs every admin read plus jobCancel and jobRetry; agent also runs admin mutations except minting credentials and transferring ownership.
-Each field below lists its kind, whether it needs an Admin Session, the token tiers that may run it, its arguments and its top-level result fields. When argumentsKnown is false the field's arguments are not catalogued (an empty list does not mean it takes none); see docs/api. Select result fields in braces, for example: query { jobs { id status } }.
+Each field below lists its kind, whether it needs an Admin Session, the token tiers that may run it, its arguments and its top-level result fields. Each argument reads "name: kind", marked optional when the field runs without it; an empty list means the field takes none. Select result fields in braces, for example: query { jobs { id status } }.
 A refused field answers "admin session required". Every response carries an X-Beamfall-Request-Id header; pass it to serverLogs(requestId: ...) or diagnosticsBundle to find the matching log lines.
 Debug: serverLogs(limit, contains, level, requestId) and diagnosticsBundle(profiles: ["goroutine","heap","allocs","block","mutex","threadcreate"]).`
 
@@ -86,32 +86,16 @@ func agentCatalog() AgentCatalogInfo {
 	return AgentCatalogInfo{Guide: agentCatalogGuide, Fields: fields}
 }
 
-// agentArgumentHints declares arguments for fields the nested wire schema does
-// not describe (fieldArguments), starting with the job fields an operator's
-// agent uses to inspect and recover work. A field in neither map reports
-// argumentsKnown false.
-var agentArgumentHints = map[string][]NestedArgument{
-	"job":       {{Name: "id", Kind: "string"}},
-	"jobcancel": {{Name: "id", Kind: "string"}},
-	"jobevents": {{Name: "id", Kind: "string"}},
-	"jobretry":  {{Name: "id", Kind: "string"}},
-}
-
-func catalogArgumentSource(field string) ([]NestedArgument, bool) {
-	if args, ok := fieldArguments[field]; ok {
-		return args, true
-	}
-	args, ok := agentArgumentHints[field]
-	return args, ok
-}
-
+// catalogArgumentsKnown reports whether fieldArgumentRegistry describes field.
+// The conformance test keeps the registry in step with fieldHandlerRegistry,
+// so every dispatched field reports true.
 func catalogArgumentsKnown(field string) bool {
-	_, ok := catalogArgumentSource(field)
+	_, ok := fieldArgumentRegistry[field]
 	return ok
 }
 
 func catalogArguments(field string) []string {
-	args, _ := catalogArgumentSource(field)
+	args := fieldArgumentRegistry[field]
 	out := make([]string, 0, len(args))
 	for _, arg := range args {
 		text := arg.Name + ": " + arg.Kind

@@ -28,7 +28,7 @@ func tokenAuthorizer(t *testing.T, st *store.Store, access store.APITokenAccess)
 func TestAgentCatalogListsEveryFieldWithTiers(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
-	const body = `{"query":"query { agentCatalog { guide fields { name kind adminSession tokenTiers arguments resultFields } } }"}`
+	const body = `{"query":"query { agentCatalog { guide fields { name kind adminSession tokenTiers arguments argumentsKnown resultFields } } }"}`
 	for _, access := range tokenTiers {
 		data, errs := post(t, handler, body, tokenAuthorizer(t, st, access))
 		if len(errs) != 0 {
@@ -60,26 +60,16 @@ func TestAgentCatalogListsEveryFieldWithTiers(t *testing.T) {
 				t.Fatalf("%s entry = %+v, want the required id argument", name, entry)
 			}
 		}
+		if rel := byName["entityRelations"]; !slices.Contains(rel.Arguments, "limit: int optional") || !slices.Contains(rel.Arguments, "entityID: string") {
+			t.Fatalf("entityRelations entry = %+v, want the wire arguments plus limit", rel)
+		}
+		if evict := byName["evictPlaybackRenditionCache"]; !evict.ArgumentsKnown || len(evict.Arguments) != 0 {
+			t.Fatalf("evictPlaybackRenditionCache entry = %+v, want no arguments, known", evict)
+		}
 		for _, field := range catalog.Fields {
-			if !field.ArgumentsKnown && len(field.Arguments) != 0 {
-				t.Fatalf("%s lists arguments but reports them unknown", field.Name)
+			if !field.ArgumentsKnown {
+				t.Fatalf("%s reports its arguments unknown", field.Name)
 			}
-		}
-	}
-}
-
-// TestAgentArgumentHintsDoNotShadowWireSchema: a hint is only for a field the
-// nested wire schema does not describe, and names a registered field.
-func TestAgentArgumentHintsDoNotShadowWireSchema(t *testing.T) {
-	for name, args := range agentArgumentHints {
-		if _, ok := fieldArguments[name]; ok {
-			t.Errorf("agentArgumentHints[%q] duplicates fieldArguments", name)
-		}
-		if _, ok := fieldHandlerRegistry[name]; !ok {
-			t.Errorf("agentArgumentHints[%q] names no registered field", name)
-		}
-		if !slices.IsSortedFunc(args, func(a, b NestedArgument) int { return strings.Compare(a.Name, b.Name) }) {
-			t.Errorf("agentArgumentHints[%q] is not sorted", name)
 		}
 	}
 }
