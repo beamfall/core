@@ -10,8 +10,8 @@
   `request` signal, approve and decline on `watchPartyTransport`; Go tests
 - [x] 5. CORE-1765 web: relaxed or host-only start, Approve and Decline in the panel and on the
   notifications page; strings; vitest
-- [ ] 6. CORE-1766 server: `reportDrift` for party members without re-anchoring; Go test
-- [ ] 7. CORE-1766 web: rate-bounded drift report, member Up Next and autoplay defer to the party;
+- [x] 6. CORE-1766 server: `reportDrift` for party members without re-anchoring; Go test
+- [x] 7. CORE-1766 web: rate-bounded drift report, member Up Next and autoplay defer to the party;
   vitest
 - [ ] 8. `openspec validate --all --strict`; wsl preflight; `make gate` on the landing head
 - [ ] 9. `openspec archive core-1763-watch-party-host-control` after landing, before completing

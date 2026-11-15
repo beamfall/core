@@ -9,6 +9,7 @@ import {
   inviteToWatchParty,
   leaveWatchParty,
   leaveWatchPartyKeepalive,
+  reportWatchPartyDrift,
   requestWatchPartyTransport,
   type WatchPartyInfo,
   watchPartyTransport,
@@ -97,6 +98,11 @@ let rosterWaiters: Array<() => void> = [];
 let generation = 0;
 // Counts timeline frames, so a host's transport response older than a frame is dropped.
 let timelineFrames = 0;
+/** Date.now() of the last drift report; the rate bound counts from it. */
+let lastDriftReport = Number.NEGATIVE_INFINITY;
+
+/** A member's player reports its measured drift at most this often (CORE-1766). */
+export const DRIFT_REPORT_INTERVAL_MS = 5000;
 
 function set(patch: Partial<WatchPartyState>): void {
   state = { ...state, ...patch };
@@ -224,6 +230,7 @@ function reset(patch: Partial<WatchPartyState> = {}): void {
   closeStream?.();
   closeStream = null;
   generation++;
+  lastDriftReport = Number.NEGATIVE_INFINITY;
   const waiters = rosterWaiters;
   rosterWaiters = [];
   for (const wake of waiters) wake();
@@ -431,6 +438,29 @@ export async function decidePartyRequest(requestID: string, approve: boolean): P
     if (gen === generation) set(failure(err));
     return false;
   }
+}
+
+/**
+ * Report the player's measured drift from the party timeline, at most once per
+ * DRIFT_REPORT_INTERVAL_MS. The player corrects itself from the timeline; the
+ * report lets the server see and nudge it, so a failed one is not surfaced.
+ * Returns whether a report was sent.
+ */
+export function reportPartyDrift(driftMS: number, now: number = Date.now()): boolean {
+  if (state.status !== "active" || !state.partyID || !Number.isFinite(driftMS)) return false;
+  if (now - lastDriftReport < DRIFT_REPORT_INTERVAL_MS) return false;
+  lastDriftReport = now;
+  void reportWatchPartyDrift(state.partyID, driftMS).catch(() => {});
+  return true;
+}
+
+/**
+ * True when this viewer is a member, not the host, of an active party: its
+ * player's Up Next and autoplay defer to the party, which the host advances
+ * for everyone (CORE-1766).
+ */
+export function watchPartyDefersUpNext(party: WatchPartyState): boolean {
+  return party.status === "active" && !party.isHost;
 }
 
 /**

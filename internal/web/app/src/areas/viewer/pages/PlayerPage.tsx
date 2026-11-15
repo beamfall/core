@@ -65,6 +65,7 @@ import { useStillWatching } from "../player/useStillWatching";
 import { useUpNext } from "../player/useUpNext";
 import { useWatchParty } from "../player/useWatchParty";
 import { WatchPartyPanel, WatchPartySyncIndicator } from "../player/WatchPartyPanel";
+import { watchPartyDefersUpNext } from "../player/watchPartyStore";
 
 // The player (/watch/:mediaId), ported from the vanilla play() + player view
 // (app.js / index.html). Negotiates playback-info, routes to direct play or
@@ -339,6 +340,8 @@ function FeaturePlayer() {
     mediaId: mediaId || "",
     onFollow: followParty,
   });
+  // A party member's Up Next and autoplay defer to the party (CORE-1766).
+  const partyLeads = watchPartyDefersUpNext(watchParty.party);
 
   // Up Next auto-advance: the server-issued next Media (a queue's next item
   // when one was declared, else the server's own next-item pick).
@@ -358,10 +361,11 @@ function FeaturePlayer() {
   );
   const issuedNext = state.info?.next;
   const playNext = useMemo(() => {
+    if (partyLeads) return undefined;
     if (nextInQueue) return () => goToQueueItem(nextInQueue);
     if (issuedNext?.streams) return () => advanceToNext(issuedNext);
     return undefined;
-  }, [nextInQueue, issuedNext, goToQueueItem, advanceToNext]);
+  }, [partyLeads, nextInQueue, issuedNext, goToQueueItem, advanceToNext]);
   // A card queue names its own previous item; without one, a Play all queue
   // that holds this item may (stepping back keeps that queue going).
   const playAllPrevious = useMemo(
@@ -384,12 +388,15 @@ function FeaturePlayer() {
     mediaID: mediaId || "",
     after: resolvedPrefs.stillWatchingAfter,
     next: state.info?.next,
-    enabled: !isAudio,
+    enabled: !isAudio && !partyLeads,
     onContinue: advanceToNext,
   });
   const upNext = useUpNext({
     videoRef,
-    next: isAudio || stillWatching.armed || stillWatching.prompting ? null : state.info?.next,
+    next:
+      isAudio || partyLeads || stillWatching.armed || stillWatching.prompting
+        ? null
+        : state.info?.next,
     onAdvance: advanceToNext,
     onAutoAdvance: (next) => noteAutoAdvance(next.mediaID),
   });

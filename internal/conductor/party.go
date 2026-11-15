@@ -508,3 +508,20 @@ func (g *Group) dropRequestFrom(session store.SessionID) {
 		}
 	}
 }
+
+// PartyReportDrift classifies a Watch Party member's measured drift
+// (CORE-1766). Unlike ReportDrift it never re-anchors: the party timeline is
+// the host's, so a member that drifted past the resync threshold seeks itself
+// back onto it, and the others are not moved. The caller must be a member.
+func (r *Registry) PartyReportDrift(id string, session store.SessionID, drift time.Duration) (DriftDecision, error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return DriftDecision{}, err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.members[session]; !ok {
+		return DriftDecision{}, ErrNotMember
+	}
+	return ClassifyDrift(drift), nil
+}

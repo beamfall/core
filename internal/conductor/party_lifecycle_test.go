@@ -207,3 +207,23 @@ func TestPartyRequests(t *testing.T) {
 		t.Fatalf("TakeRequest after hand-off err = %v, want ErrNoRequest", err)
 	}
 }
+
+func TestPartyReportDriftClassifiesWithoutReanchor(t *testing.T) {
+	fixed := time.Unix(1_700_000_000, 0).UTC()
+	r := NewRegistryWithClock(func() time.Time { return fixed })
+	g := lifecycleParty(t, r, "s-member")
+	before, _ := r.PartyAnchor(g.ID)
+	d, err := r.PartyReportDrift(g.ID, "s-member", 900*time.Millisecond)
+	if err != nil || d.Action != DriftResync {
+		t.Fatalf("PartyReportDrift = %#v, %v; want resync", d, err)
+	}
+	if after, _ := r.PartyAnchor(g.ID); after != before {
+		t.Fatalf("anchor moved %#v -> %#v, want unchanged", before, after)
+	}
+	if d, err := r.PartyReportDrift(g.ID, "s-member", 80*time.Millisecond); err != nil || d.Action != DriftNudge {
+		t.Fatalf("PartyReportDrift(80ms) = %#v, %v; want nudge", d, err)
+	}
+	if _, err := r.PartyReportDrift(g.ID, "s-stranger", 0); !errors.Is(err, ErrNotMember) {
+		t.Fatalf("stranger err = %v, want ErrNotMember", err)
+	}
+}

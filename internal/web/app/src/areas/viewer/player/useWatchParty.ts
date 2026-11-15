@@ -4,6 +4,7 @@ import {
   getWatchParty,
   leaveParty,
   leavePartyOnPageHide,
+  reportPartyDrift,
   sendPartyTransport,
   startWatchParty,
   useWatchPartyState,
@@ -121,6 +122,7 @@ export function useWatchParty({
     }
     setPlayback("playing");
     setDriftMS(Math.round(drift));
+    reportPartyDrift(drift);
   }, [videoRef, correct]);
 
   // Follow the party to another title, or, as host, take it to this one.

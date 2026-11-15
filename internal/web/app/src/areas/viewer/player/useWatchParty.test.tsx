@@ -2,7 +2,12 @@ import { fireEvent, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWatchParty } from "./useWatchParty";
 import { markViewerIntent } from "./viewerIntent";
-import { leavePartyOnPageHide, sendPartyTransport, type WatchPartyState } from "./watchPartyStore";
+import {
+  leavePartyOnPageHide,
+  reportPartyDrift,
+  sendPartyTransport,
+  type WatchPartyState,
+} from "./watchPartyStore";
 
 let party: WatchPartyState;
 
@@ -13,6 +18,7 @@ vi.mock("./watchPartyStore", () => ({
   startWatchParty: vi.fn(async () => true),
   leaveParty: vi.fn(async () => {}),
   leavePartyOnPageHide: vi.fn(),
+  reportPartyDrift: vi.fn(() => true),
 }));
 
 // A <video> stand-in: jsdom implements neither play() nor a settable clock.
@@ -160,5 +166,63 @@ describe("useWatchParty page exit", () => {
     view.unmount();
     window.dispatchEvent(new Event("pagehide"));
     expect(leavePartyOnPageHide).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useWatchParty drift and advance (CORE-1766)", () => {
+  beforeEach(() => {
+    vi.mocked(sendPartyTransport).mockClear();
+    vi.mocked(reportPartyDrift).mockClear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("hands the measured drift of a playing party to the bounded reporter", () => {
+    vi.spyOn(Date, "now").mockReturnValue(20_000);
+    // Started 10 s ago from 0: the shared position is 10 s; the player is 120 ms ahead.
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 10_000, paused: false });
+    const video = new FakeVideo();
+    video.paused = false;
+    video.currentTime = 10.12;
+    const view = mount(video);
+    expect(reportPartyDrift).toHaveBeenCalled();
+    expect(vi.mocked(reportPartyDrift).mock.calls[0]?.[0]).toBeCloseTo(120, 0);
+    view.unmount();
+  });
+
+  it("does not report while the party is paused", () => {
+    party = activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true });
+    const view = mount(new FakeVideo());
+    expect(reportPartyDrift).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it("moves everyone when the host's player advances, and follows on a member's", () => {
+    const videoRef = { current: new FakeVideo() as unknown as HTMLVideoElement };
+    const onFollow = vi.fn();
+    party = {
+      ...activeParty({ item: "m1", positionMS: 0, presentAtMS: 0, paused: true }),
+      isHost: true,
+    };
+    const host = renderHook(
+      ({ mediaId }) => useWatchParty({ videoRef, attached: true, mediaId, onFollow }),
+      { initialProps: { mediaId: "m1" } },
+    );
+    // The host's Up Next takes its player to the next item.
+    host.rerender({ mediaId: "m2" });
+    expect(sendPartyTransport).toHaveBeenCalledWith("m2", 0, false);
+    expect(onFollow).not.toHaveBeenCalled();
+    host.unmount();
+
+    vi.mocked(sendPartyTransport).mockClear();
+    party = activeParty({ item: "m2", positionMS: 0, presentAtMS: 0, paused: false });
+    const guest = renderHook(() =>
+      useWatchParty({ videoRef, attached: true, mediaId: "m1", onFollow }),
+    );
+    expect(onFollow).toHaveBeenCalledWith("m2");
+    expect(sendPartyTransport).not.toHaveBeenCalled();
+    guest.unmount();
   });
 });

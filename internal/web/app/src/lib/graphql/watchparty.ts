@@ -59,6 +59,9 @@ const REQUEST_WATCH_PARTY_TRANSPORT_MUTATION =
 const DECIDE_WATCH_PARTY_REQUEST_MUTATION =
   "mutation DecideWatchPartyRequest($partyID: String!, $request: String, $decline: Boolean) { watchPartyTransport(partyID: $partyID, request: $request, decline: $decline) { item positionMS presentAtMS } }";
 
+const REPORT_DRIFT_MUTATION =
+  "mutation ReportDrift($groupID: String!, $driftMS: Int!) { reportDrift(groupID: $groupID, driftMS: $driftMS) { groupID action rate } }";
+
 const LEAVE_WATCH_PARTY_MUTATION =
   "mutation LeaveWatchParty($partyID: String!, $end: Boolean) { leaveWatchParty(partyID: $partyID, end: $end) { partyID } }";
 
@@ -143,6 +146,28 @@ export async function decideWatchPartyRequest(
     { partyID, request, decline: !approve },
   );
   return data.watchPartyTransport;
+}
+
+/** The server's read of a reported drift: in sync, a rate nudge, or a re-seek. */
+export interface DriftReport {
+  groupID: string;
+  action: "none" | "nudge" | "resync";
+  rate: number;
+}
+
+/**
+ * ReportDrift — tell the server how far this member's player is from the
+ * party timeline, in ms (positive is ahead), so it can nudge it (CORE-1766).
+ */
+export async function reportWatchPartyDrift(
+  partyID: string,
+  driftMS: number,
+): Promise<DriftReport> {
+  const data = await graphql<{ reportDrift: DriftReport }>(REPORT_DRIFT_MUTATION, {
+    groupID: partyID,
+    driftMS: Math.round(driftMS),
+  });
+  return data.reportDrift;
 }
 
 /**

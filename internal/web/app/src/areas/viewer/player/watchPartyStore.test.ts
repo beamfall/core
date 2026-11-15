@@ -9,10 +9,12 @@ import {
   inviteToWatchParty,
   leaveWatchParty,
   leaveWatchPartyKeepalive,
+  reportWatchPartyDrift,
   requestWatchPartyTransport,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
+  DRIFT_REPORT_INTERVAL_MS,
   decidePartyRequest,
   endParty,
   getWatchParty,
@@ -21,9 +23,11 @@ import {
   leaveParty,
   leavePartyOnPageHide,
   MAX_PARTY_REQUESTS,
+  reportPartyDrift,
   resetWatchPartyForTest,
   sendPartyTransport,
   startWatchParty,
+  watchPartyDefersUpNext,
 } from "./watchPartyStore";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -40,6 +44,7 @@ vi.mock("@/lib/graphql", () => ({
   inviteToWatchParty: vi.fn(),
   leaveWatchParty: vi.fn(),
   leaveWatchPartyKeepalive: vi.fn(),
+  reportWatchPartyDrift: vi.fn(),
   requestWatchPartyTransport: vi.fn(),
   watchPartyTransport: vi.fn(),
 }));
@@ -57,6 +62,7 @@ beforeEach(() => {
   vi.mocked(subscribeEvents).mockReturnValue(unsubscribe);
   vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 25, roundTripMS: 4 });
   vi.mocked(leaveWatchParty).mockResolvedValue();
+  vi.mocked(reportWatchPartyDrift).mockResolvedValue({ groupID: "", action: "none", rate: 0 });
 });
 
 afterEach(() => {
@@ -621,5 +627,58 @@ describe("host-only requests (CORE-1765)", () => {
     });
     expect(getWatchParty()).toMatchObject({ isHost: false, requests: [] });
     expect(await decidePartyRequest("r1", true)).toBe(false);
+  });
+});
+
+describe("drift reporting and Up Next deferral (CORE-1766)", () => {
+  async function member(partyID = "p6") {
+    vi.mocked(acceptWatchParty).mockImplementation(async () => {
+      deliver({ groupID: partyID, signal: "roster", paused: true, members: ["Guest", "Host"] });
+      return { partyID, item: "m1", positionMS: 0, presentAtMS: 0 };
+    });
+    await joinWatchParty(partyID);
+  }
+
+  it("reports at most once per interval, whatever the sync rate", async () => {
+    await member();
+    const start = 1_000_000;
+    // The player measures every 250 ms; only the first of each interval is sent.
+    let sent = 0;
+    for (let t = 0; t < 3 * DRIFT_REPORT_INTERVAL_MS; t += 250) {
+      if (reportPartyDrift(40 + t / 1000, start + t)) sent++;
+    }
+    expect(sent).toBe(3);
+    expect(reportWatchPartyDrift).toHaveBeenCalledTimes(3);
+    expect(reportWatchPartyDrift).toHaveBeenNthCalledWith(1, "p6", 40);
+    expect(reportPartyDrift(12, start + 3 * DRIFT_REPORT_INTERVAL_MS)).toBe(true);
+  });
+
+  it("never reports outside a party, and a failed report is not an error", async () => {
+    expect(reportPartyDrift(80, 0)).toBe(false);
+    expect(reportWatchPartyDrift).not.toHaveBeenCalled();
+
+    await member();
+    vi.mocked(reportWatchPartyDrift).mockRejectedValueOnce(new Error("offline"));
+    expect(reportPartyDrift(80, 0)).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getWatchParty().error).toBe("");
+    expect(reportPartyDrift(Number.NaN, DRIFT_REPORT_INTERVAL_MS)).toBe(false);
+  });
+
+  it("starts a new interval after leaving and rejoining", async () => {
+    await member();
+    expect(reportPartyDrift(30, 0)).toBe(true);
+    await leaveParty();
+    await member("p7");
+    expect(reportPartyDrift(30, 1)).toBe(true);
+    expect(reportWatchPartyDrift).toHaveBeenLastCalledWith("p7", 30);
+  });
+
+  it("defers Up Next on a member's player only", async () => {
+    expect(watchPartyDefersUpNext(getWatchParty())).toBe(false);
+    await member();
+    expect(watchPartyDefersUpNext(getWatchParty())).toBe(true);
+    expect(watchPartyDefersUpNext({ ...getWatchParty(), isHost: true })).toBe(false);
   });
 });
