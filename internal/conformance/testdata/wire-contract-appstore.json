@@ -30279,6 +30279,13 @@
                   "type": "number",
                   "optional": true
                 }
+              },
+              {
+                "name": "maxStreamingBitrate",
+                "shape": {
+                  "type": "integer",
+                  "optional": true
+                }
               }
             ]
           }

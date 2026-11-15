@@ -125,7 +125,22 @@ type CapabilityProfile struct {
 	// reference, so a client that prefers a different target re-derives its own
 	// offset from the reported IntegratedLUFS.
 	LoudnessReference float64 `json:"loudnessReference,omitempty"`
+	// MaxStreamingBitrate is the viewer's own streaming ceiling in bits per
+	// second for the whole stream (CORE-1674): the quality limit a user picks
+	// for the network they are on, such as a lower one on cellular. 0 (absent)
+	// means no limit. It is a preference, not a device fact, so the server
+	// folds it into the overlay's bitrate cap: a source above it does not
+	// direct play, a cached rendition above it is not served, and the
+	// transcode ladder stops at the best rung under it. A value below the
+	// ladder floor plays the lowest rung. When the ceiling alone moves an item
+	// off direct play, the decision reason is "bitrate-ceiling".
+	MaxStreamingBitrate int `json:"maxStreamingBitrate,omitempty"`
 }
+
+// bitrateCeilingReason is the playbackInfo reason when the viewer's
+// CapabilityProfile.MaxStreamingBitrate, and nothing else, kept an item off
+// direct play or the video-copy rung.
+const bitrateCeilingReason = "bitrate-ceiling"
 
 // Loudness-normalization modes a client may declare in
 // CapabilityProfile.NormalizationModes (closed vocabulary). They name the kind of
@@ -731,7 +746,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// forbids. The declared CapabilityProfile is passed through unmodified — the
 	// overlay is never written back onto it, which is what makes the
 	// monotone-restrictive rule a property of the code shape.
-	ov := s.quirks.Resolve(req.CapabilityProfile)
+	ov := s.quirks.Resolve(req.CapabilityProfile).withClientCeiling(req.CapabilityProfile.MaxStreamingBitrate)
 	main, err := s.decide(ctx, scope, mediaID, "main", req.CapabilityProfile, policy, priority, req.SelectedSubtitleIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
@@ -1009,6 +1024,9 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}()
 	}
 	hlsAudio := hlsAudioProfile(profile, streams, loudness, loudnessOK, ov)
+	if ov.ceilingBindsAudio(media, file, streams) {
+		hlsAudio = ceilingBoundAudio(hlsAudio)
+	}
 
 	// Generated Asset advertisement: one assets-target token covers
 	// the trickplay manifest + sheets, the preview clip, and Marker
@@ -1159,10 +1177,16 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		if cached, ok, err := s.cachedRenditionChoice(ctx, scope, grant, suffix, media.ID, file.ContentFingerprint, profile, sourceVideo, sourceHasAudio, hlsAudio, expiresAt, ov); err != nil {
 			return decision{}, err
 		} else if ok {
+			reason := "cached-rendition"
+			// The cache is consulted before the video-copy rung, so only a
+			// direct play the ceiling refused would have beaten it.
+			if bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) {
+				reason = bitrateCeilingReason
+			}
 			return decision{
 				media:          media,
 				verdict:        "precomputed-rendition",
-				reason:         "cached-rendition",
+				reason:         reason,
 				streams:        []StreamChoice{cached},
 				timeline:       timeline,
 				parts:          parts,
@@ -1246,10 +1270,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if err != nil {
 		return decision{}, err
 	}
+	reason := "requires-transcode"
+	if bitrateCeilingForced(media, file, streams, profile, selectedSubtitleIndex, ov) {
+		reason = bitrateCeilingReason
+	}
 	return decision{
 		media:          media,
 		verdict:        "transcode",
-		reason:         "requires-transcode",
+		reason:         reason,
 		streams:        []StreamChoice{hls},
 		timeline:       timeline,
 		parts:          parts,
@@ -1588,9 +1616,10 @@ func (s *Service) ladderCaps(profile CapabilityProfile, ov quirkOverlay) ladderC
 	// vocabulary is closed and fixed, so no new streamtoken.Grant field is
 	// needed: withHLSLadderGrant/LadderCapsFromGrant already round-trip both
 	// heights and the byte layer reconstructs the identical rung set.
-	ceiling := ov.heightCeiling()
-	caps.ClientMaxHeight = minNonZero(caps.ClientMaxHeight, ceiling)
-	caps.HEVCMaxHeight = minNonZero(caps.HEVCMaxHeight, ceiling)
+	// Each codec takes its own rung heights: an HEVC rung fits more picture
+	// under the same cap than the H.264 rung of that height.
+	caps.ClientMaxHeight = minNonZero(caps.ClientMaxHeight, ov.heightCeiling())
+	caps.HEVCMaxHeight = minNonZero(caps.HEVCMaxHeight, ov.hevcHeightCeiling())
 	return caps
 }
 
@@ -1818,6 +1847,26 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 	if loudnessOK {
 		gain := loudness.GainDB
 		audio.GainDB = &gain
+	}
+	return audio
+}
+
+// ceilingBindsAudio reports whether a video transcode runs on a ceiling-bound
+// ladder rung, whose 256 kbit/s audio reserve holds only stereo AAC.
+// Audio-only items keep their audio: the ceiling never applies to them.
+func (ov quirkOverlay) ceilingBindsAudio(media store.Media, file store.MediaFile, streams []store.MediaFileStream) bool {
+	return ov.clientMaxBitrate > 0 && !audioOnlyMedia(media, streams) && ov.vetoesVideoPassthrough(media, file, streams)
+}
+
+// ceilingBoundAudio holds a re-encoded stream's audio to stereo AAC under the
+// viewer's streaming ceiling. Each ladder rung reserves 256 kbit/s for audio
+// (bandwidthFor); passthrough or 5.1 E-AC-3 can exceed that on its own, which
+// would push the stream past the ceiling the viewer chose. Stereo AAC at the
+// encoder's default rate fits the reserve.
+func ceilingBoundAudio(audio ffmpeg.AudioProfile) ffmpeg.AudioProfile {
+	audio.Codec = "aac"
+	if audio.Channels <= 0 || audio.Channels > 2 {
+		audio.Channels = 2
 	}
 	return audio
 }
@@ -2231,6 +2280,28 @@ func audioNeedsRework(streams []store.MediaFileStream, profile CapabilityProfile
 	return !audioDirectPlayable(streams, profile) ||
 		ov.vetoesAudioPassthrough(streams) ||
 		(ov.ForceRemux && remuxPreservesHDR(streams))
+}
+
+// bitrateCeilingForced reports whether the viewer's streaming ceiling is the
+// one thing that moved this item off a passthrough rung: under the overlay
+// without the ceiling the source would direct play, play its Dolby Vision
+// base layer, or take the video-copy rung. It is only asked once the ceilinged
+// overlay has already refused those rungs.
+func bitrateCeilingForced(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
+	return bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) ||
+		(ov.clientMaxBitrate > 0 && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov.withoutClientCeiling()))
+}
+
+// bitrateCeilingRefusedDirectPlay reports whether, without the viewer's
+// streaming ceiling, the source would direct play or play its Dolby Vision
+// base layer.
+func bitrateCeilingRefusedDirectPlay(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
+	if ov.clientMaxBitrate <= 0 {
+		return false
+	}
+	base := ov.withoutClientCeiling()
+	return canDirectPlay(media, file, streams, profile, selectedSubtitleIndex, base) ||
+		dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base)
 }
 
 // audioCopyReason names the audio-copy rung honestly. When the rung was
