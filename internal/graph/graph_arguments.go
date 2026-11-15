@@ -107,11 +107,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "targetType", Kind: "string"},
 	},
 	"bulkeditapply": {
-		{Name: "fields", Kind: "list", Optional: true},
+		{Name: "fields", Kind: "list"},
 		{Name: "mediaIDs", Kind: "list"},
 	},
 	"bulkeditpreview": {
-		{Name: "fields", Kind: "list", Optional: true},
+		{Name: "fields", Kind: "list"},
 		{Name: "mediaIDs", Kind: "list"},
 	},
 	"bulkfetchmissingartwork": {
@@ -841,7 +841,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"setfollow": {
 		{Name: "id", Kind: "string", Optional: true},
 		{Name: "on", Kind: "boolean", Optional: true},
-		{Name: "subscriptionID", Kind: "string"},
+		{Name: "subscriptionID", Kind: "string", Optional: true},
 	},
 	"setlibraryaiindexing": {
 		{Name: "enabled", Kind: "boolean"},

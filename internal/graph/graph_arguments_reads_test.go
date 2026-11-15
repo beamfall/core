@@ -21,6 +21,7 @@ type resolverReadAnalysis struct {
 	accessors map[*ast.FuncDecl]map[int]string // param index -> kind
 	direct    map[*ast.FuncDecl][]guardedRead
 	dynamic   map[*ast.FuncDecl][]string
+	escapes   map[*ast.FuncDecl][]string // Variables or an accessor used as a value
 	calls     map[*ast.FuncDecl][]guardedCall
 }
 
@@ -70,6 +71,7 @@ func analyzeResolverReads(t testing.TB) *resolverReadAnalysis {
 		accessors: map[*ast.FuncDecl]map[int]string{},
 		direct:    map[*ast.FuncDecl][]guardedRead{},
 		dynamic:   map[*ast.FuncDecl][]string{},
+		escapes:   map[*ast.FuncDecl][]string{},
 		calls:     map[*ast.FuncDecl][]guardedCall{},
 	}
 	fset := token.NewFileSet()
@@ -146,8 +148,57 @@ func analyzeResolverReads(t testing.TB) *resolverReadAnalysis {
 			}
 			a.dynamic[fn] = append(a.dynamic[fn], fset.Position(key.Pos()).String())
 		})
+		a.walkEscapes(fn, func(node ast.Node) {
+			a.escapes[fn] = append(a.escapes[fn], fset.Position(node.Pos()).String())
+		})
 	}
 	return a
+}
+
+// walkEscapes reports each place fn hands request variables on in a form the
+// read analysis cannot follow: the Variables map (or the vars helper's values)
+// used other than by indexing, and an accessor function named other than as a
+// call.
+func (a *resolverReadAnalysis) walkEscapes(fn *ast.FuncDecl, report func(ast.Node)) {
+	var stack []ast.Node
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		if node == nil {
+			stack = stack[:len(stack)-1]
+			return true
+		}
+		defer func() { stack = append(stack, node) }()
+		var parent ast.Node
+		if len(stack) > 0 {
+			parent = stack[len(stack)-1]
+		}
+		switch node := node.(type) {
+		case *ast.SelectorExpr:
+			if node.Sel.Name != "Variables" && node.Sel.Name != "values" {
+				return true
+			}
+			if index, ok := parent.(*ast.IndexExpr); ok && index.X == node {
+				return true
+			}
+			if assign, ok := parent.(*ast.AssignStmt); ok && len(assign.Lhs) == 1 && assign.Lhs[0] == node {
+				return true
+			}
+			report(node)
+		case *ast.Ident:
+			if call, ok := parent.(*ast.CallExpr); ok && call.Fun == node {
+				return true
+			}
+			if _, ok := parent.(*ast.SelectorExpr); ok {
+				return true // a field or method name; methods are not told apart from fields untyped
+			}
+			for _, callee := range a.resolve(fn, node) {
+				if len(a.accessors[callee]) > 0 {
+					report(node)
+					return true
+				}
+			}
+		}
+		return true
+	})
 }
 
 func mergeReadKind(prior, next string) string {
@@ -409,6 +460,83 @@ var dynamicArgumentReads = map[string][]string{
 	"sessionControlArgsFromVariables": {"direction", "mediaID", "text"},
 	"profileSettingsFromVariables":    {"audioLanguages", "disabled", "preferSDH", "subtitleLanguages", "transcodeAllowed"},
 	"setTranscodeConfig":              {"codec", "device", "quality"},
+}
+
+// rangedTableNames returns the string names in the literal tables fn ranges
+// over: map keys, and the leading string of each struct element.
+func rangedTableNames(fn *ast.FuncDecl) []string {
+	var names []string
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		loop, ok := node.(*ast.RangeStmt)
+		if !ok {
+			return true
+		}
+		table, ok := loop.X.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		for _, elt := range table.Elts {
+			var key ast.Expr
+			switch elt := elt.(type) {
+			case *ast.KeyValueExpr:
+				key = elt.Key
+			case *ast.CompositeLit:
+				if len(elt.Elts) > 0 {
+					key = elt.Elts[0]
+				}
+			}
+			if lit, ok := key.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				if name, err := strconv.Unquote(lit.Value); err == nil {
+					names = append(names, name)
+				}
+			}
+		}
+		return true
+	})
+	slices.Sort(names)
+	return names
+}
+
+// TestDynamicArgumentReadsMatchTheirTables: each dynamicArgumentReads entry
+// lists exactly the names its function's ranged tables hold, so a name added
+// to one of those tables cannot go unlisted.
+func TestDynamicArgumentReadsMatchTheirTables(t *testing.T) {
+	a := analyzeResolverReads(t)
+	for name, want := range dynamicArgumentReads {
+		fns := a.methods[name]
+		if fn, ok := a.funcs[name]; ok {
+			fns = append(fns, fn)
+		}
+		if len(fns) != 1 {
+			t.Errorf("dynamicArgumentReads names %q, which matches %d functions", name, len(fns))
+			continue
+		}
+		want = slices.Sorted(slices.Values(want))
+		if got := rangedTableNames(fns[0]); !slices.Equal(got, want) {
+			t.Errorf("%s ranges over %q, dynamicArgumentReads lists %q", name, got, want)
+		}
+	}
+}
+
+// variableHandoffs are the functions allowed to pass the Variables map on:
+// prepareOperation builds each field's inputs from it, and newVars wraps it for
+// the vars accessors the analysis follows.
+var variableHandoffs = map[string]bool{"prepareOperation": true, "newVars": true}
+
+// TestResolverVariablesDoNotEscapeAnalysis: request variables reach resolvers
+// only through indexing and accessor calls the analysis follows. A function
+// that passes the Variables map on, or takes an accessor as a value, hides its
+// reads; read the variables directly instead.
+func TestResolverVariablesDoNotEscapeAnalysis(t *testing.T) {
+	a := analyzeResolverReads(t)
+	for fn, sites := range a.escapes {
+		if variableHandoffs[fn.Name.Name] {
+			continue
+		}
+		for _, site := range sites {
+			t.Errorf("%s hands request variables on at %s, out of the argument analysis's sight", fn.Name.Name, site)
+		}
+	}
 }
 
 // TestFieldArgumentRegistryCoversResolverReads: fieldArgumentRegistry names
