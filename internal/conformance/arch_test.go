@@ -44,6 +44,7 @@ var archWhitelist = map[string][]string{
 	"governor":          {},                  // leaf; resource arbitration counters
 	"causation":         {},                  // leaf; ADR-0125 server-global Integration Worker chain budget, per-worker action rate, and bounded/coalesced abort surface
 	"backup":            {"libencrypt"},      // leaf; ZK off-site backup transport (ADR-0115 §1/§2/§4/§5, BACKUP-1): BBK1 envelope (ephemeral DEK wrapped under BackupKey) + BucketClient seam; domain-agnostic, no store/graph/entitlement; depends only on libencrypt for the AES-256-GCM DEK wrap + EncryptStream/DecryptStream
+	"encderiv":          {"libencrypt"},      // ADR-0235: Encrypted Library derivative builder — loopback-only per-job source endpoint, pipe-fed fMP4 encrypted under an ephemeral per-job key into owner-only staging; domain-agnostic, no store/graph
 	"libencrypt":        {},                  // leaf; per-Encrypted-Library key model (ADR-0045 §2.4, ENC-2) — DEK/KEK/passphrase-KDF/Recovery-Key + Sealed/Unsealed; domain-agnostic crypto over stdlib + x/crypto, persists via a consumer-side SecretStore seam (no internal deps)
 	"store":             {"serverrole"},      // the only importer of the SQLite driver; imports serverrole for the ADR-0123 §2 attached-authority guard on catalog/engagement authors
 	"racefixture":       {},                  // leaf; test-only deliberately-racy RED-proving fixture for the -race tier (ADR-0121 §3, TEST-CORE-1). Only a doc.go package clause + a *_test.go; no production imports.
@@ -67,9 +68,9 @@ var archWhitelist = map[string][]string{
 	"ingest":            {"store", "jobs", "scan", "scrape"},
 	"playback":          {"store", "auth", "ffmpeg", "governor", "streamtoken"},
 	"mediahttp":         {"store", "artwork", "genassets", "playback", "streamtoken", "auth"},
-	"proxytee":          {"store", "auth", "scrape", "streamtoken"}, // ADR-0052 §2.1: Stream-Token'd proxy-tee stream + provisional→archived promotion; origin fetch through scrape's SSRF gate
-	"offlinepack":       {"store", "auth", "streamtoken"},           // ADR-0098 area 6: generic, domain-agnostic Offline Pack substrate — pack rows, Pack-subject Stream Token grants, target validation, manifest building + http.HandlerFunc serving with revoke/relock/seal byte denial. Music target resolvers live in the Music plugin, registered via a core adapter; never here.
-	"photoexport":       {"store"},                                  // ADR-0045 §2.9 mode 2: bulk photo-export job substrate — emits byte-exact Custodial-Library originals + a Takeout-style sidecar manifest. Reads the plane-aware store walk; decrypts Encrypted-Library bytes through a composition-wired ByteDecryptor seam. Domain-agnostic (invariant 1): album membership is a generic (relation, kind, title) tuple.
+	"proxytee":          {"store", "auth", "scrape", "streamtoken"},   // ADR-0052 §2.1: Stream-Token'd proxy-tee stream + provisional→archived promotion; origin fetch through scrape's SSRF gate
+	"offlinepack":       {"store", "auth", "streamtoken", "encderiv"}, // ADR-0098 area 6: generic, domain-agnostic Offline Pack substrate — pack rows, Pack-subject Stream Token grants, target validation, manifest building + http.HandlerFunc serving with revoke/relock/seal byte denial. Music target resolvers live in the Music plugin, registered via a core adapter; never here.
+	"photoexport":       {"store"},                                    // ADR-0045 §2.9 mode 2: bulk photo-export job substrate — emits byte-exact Custodial-Library originals + a Takeout-style sidecar manifest. Reads the plane-aware store walk; decrypts Encrypted-Library bytes through a composition-wired ByteDecryptor seam. Domain-agnostic (invariant 1): album membership is a generic (relation, kind, title) tuple.
 
 	"plugin":          {"capabilities"}, // near-leaf; package manifests validate capability IDs against the flat namespace (PLUGCONTRACT-CHAIN-1)
 	"qbittorrent":     {"store", "jobs", "jsonstate"},

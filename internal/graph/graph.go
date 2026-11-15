@@ -1856,7 +1856,7 @@ func libraryIDs(ids []store.LibraryID) []string {
 // Filters picker can render and edit them without a second round trip
 // (ADR-0028 §5; matches setCertificationCeiling's return shape). The remote
 // bitrate cap rides along for the same reason, so the Console's Profile policy
-// control can show the stored cap it edits (CORE-1717, CORE-1853); bits per
+// control can display the stored cap it edits (CORE-1717, CORE-1853); bits per
 // second, 0 meaning unlimited. Avatar is the
 // Profile's chosen avatar token, empty when it has none; it is opaque to core
 // and clients fall back to a generated avatar (CORE-1196).

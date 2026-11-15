@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -522,7 +521,7 @@ func TestBuildEncryptedTranscodeStopsWhenAuthorizationEnds(t *testing.T) {
 			fx.profiles.setEdit(func(p *store.Profile) error { p.Library = nil; return nil })
 		}},
 		{"profile gone", func(fx *encryptedVideoFixture) {
-			fx.profiles.setEdit(func(*store.Profile) error { return sql.ErrNoRows })
+			fx.profiles.setEdit(func(*store.Profile) error { return store.ValidationError("profile not found") })
 		}},
 	}
 	for _, tc := range cases {
