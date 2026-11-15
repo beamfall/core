@@ -142,7 +142,7 @@ describe("track preferences (CORE-1680)", () => {
   });
 
   it("picks the track in the most preferred language that is present", () => {
-    expect(preferredLanguageIndex(["eng", "fra"], ["de", "fr-CA", "en"])).toBe(1);
+    expect(preferredLanguageIndex(["eng", "fra"], ["it", "fr-CA", "en"])).toBe(1);
     expect(preferredLanguageIndex(["eng", "fra"], ["ja"])).toBe(-1);
     expect(preferredLanguageIndex(["eng", "fra"], [])).toBe(-1);
   });

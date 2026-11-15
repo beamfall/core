@@ -444,6 +444,19 @@ describe("PlayerTransport", () => {
     expect(screen.getByRole("combobox", { name: speed })).toBeVisible();
     expect(screen.getByRole("button", { name: pip })).toBeVisible();
   });
+  it.each([
+    ["en", "Playback position", "1 minute 1 second of 1 hour 2 minutes 5 seconds"],
+    ["fr", "Position de lecture", "1 minute 1 seconde sur 1 heure 2 minutes 5 secondes"],
+    ["de", "Wiedergabeposition", "1 Minute 1 Sekunde von 1 Stunde 2 Minuten 5 Sekunden"],
+    ["es", "Posición de reproducción", "1 minuto 1 segundo de 1 hora 2 minutos 5 segundos"],
+    ["pt", "Posição de reprodução", "1 minuto 1 segundo de 1 hora 2 minutos 5 segundos"],
+  ] as const)("announces the scrubber time in %s (CORE-0557)", (locale, name, spoken) => {
+    const { video } = renderHarnessVideo({ currentTime: 61, duration: 3725, locale });
+    fireEvent.timeUpdate(video);
+
+    expect(screen.getByRole("slider", { name })).toHaveAttribute("aria-valuetext", spoken);
+  });
+
   it("previews a scrubber drag and seeks once on release (CORE-1360)", () => {
     const { video } = renderHarnessVideo({ currentTime: 10, duration: 100 });
     const seeks: number[] = [];
@@ -623,13 +636,15 @@ function renderHarnessVideo({
   duration = 100,
   volume = 1,
   playbackRate = 1,
+  locale,
 }: {
   currentTime?: number;
   duration?: number;
   volume?: number;
   playbackRate?: number;
+  locale?: Locale;
 } = {}) {
-  const rendered = render(<Harness />);
+  const rendered = render(<Harness locale={locale} />);
   const video = screen.getByTestId("video") as HTMLVideoElement;
   const stage = screen.getByTestId("stage");
   let paused = true;

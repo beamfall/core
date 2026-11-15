@@ -69,6 +69,7 @@ export const appShellStrings = {
     skipToContent: "Aller au contenu principal",
     appTitle: "Beamfall",
     brand: "Beamfall",
+    coreSourceOffer: "Code source correspondant de Beamfall Core",
     navLabel: "Navigation",
     accountMenu: "Menu du compte de {name}",
     switchProfile: "Changer de profil",
@@ -80,6 +81,8 @@ export const appShellStrings = {
     profile: "Profil",
     promoteBrowser: "Promouvoir ce navigateur",
     signOut: "Se déconnecter",
+    signOutHint:
+      "Beamfall oubliera ce navigateur. Pour vous reconnecter, vous aurez besoin d’un nouveau code de jumelage.",
     enrollTitle: "Connecter ce navigateur",
     enrollLead:
       "Entrez un code de jumelage provenant d’un appareil gestionnaire pour inscrire ce navigateur comme visionneuse.",
@@ -93,6 +96,13 @@ export const appShellStrings = {
     adminSignIn: "Se connecter",
     adminSignInFailed: "La connexion a échoué.",
     adminSignInNeedsSecure: "La connexion exige HTTPS ou le réseau local de ce serveur.",
+    adminSignInUseIPAddress:
+      "Ouvrez Beamfall par son adresse IP pour vous connecter avec le mot de passe administrateur.",
+    adminSignInOpenAddress: "Ouvrir {url}",
+    adminSignInOr: "ou",
+    strictRecoveryHint:
+      "Accès verrouillé ? Pour obtenir un code de jumelage, exécutez ceci sur le serveur :",
+    deviceNameDefault: "{browser} sur {os}",
     promoteTitle: "Promouvoir ce navigateur",
     promoteLead:
       "Entrez un code de jumelage gestionnaire pour promouvoir ce navigateur en appareil gestionnaire.",
@@ -105,9 +115,12 @@ export const appShellStrings = {
     restrictionsTitle: "Restrictions",
     restrictionsLead:
       "Entrez le PIN de ce profil pour afficher le contenu restreint pendant cette session.",
+    restrictionsNoPinHint: "Un profil sans code PIN ne peut pas afficher de contenu restreint.",
+    revealNoPin: "Ce profil n’a pas de code PIN : le contenu restreint reste donc masqué.",
     pin: "PIN",
     reveal: "Révéler",
     back: "Retour",
+    profileActionLabel: "Profil : {name}",
     loadMore: "Charger plus",
     manageTitle: "Gérer",
     switchToLightTheme: "Passer au thème clair",
@@ -120,12 +133,12 @@ export const appShellStrings = {
     none: "Aucun",
     createLibrary: "Créer une bibliothèque",
     refresh: "Actualiser",
-    profileActionLabel: "Profil : {name}",
   },
   de: {
     skipToContent: "Zum Hauptinhalt springen",
     appTitle: "Beamfall",
     brand: "Beamfall",
+    coreSourceOffer: "Zugehöriger Quellcode von Beamfall Core",
     navLabel: "Navigation",
     accountMenu: "Kontomenü für {name}",
     switchProfile: "Profil wechseln",
@@ -137,6 +150,8 @@ export const appShellStrings = {
     profile: "Profil",
     promoteBrowser: "Diesen Browser hochstufen",
     signOut: "Abmelden",
+    signOutHint:
+      "Beamfall vergisst diesen Browser. Um dich wieder anzumelden, brauchst du einen neuen Kopplungscode.",
     enrollTitle: "Diesen Browser verbinden",
     enrollLead:
       "Gib einen Kopplungscode von einem Manager-Gerät ein, um diesen Browser als Viewer zu registrieren.",
@@ -151,6 +166,13 @@ export const appShellStrings = {
     adminSignInFailed: "Anmeldung fehlgeschlagen.",
     adminSignInNeedsSecure:
       "Die Anmeldung erfordert HTTPS oder das lokale Netzwerk dieses Servers.",
+    adminSignInUseIPAddress:
+      "Öffne Beamfall über die IP-Adresse, um dich mit dem Admin-Passwort anzumelden.",
+    adminSignInOpenAddress: "{url} öffnen",
+    adminSignInOr: "oder",
+    strictRecoveryHint:
+      "Ausgesperrt? Um einen Kopplungscode zu erhalten, führe das auf dem Server aus:",
+    deviceNameDefault: "{browser} unter {os}",
     promoteTitle: "Diesen Browser hochstufen",
     promoteLead:
       "Gib einen Manager-Kopplungscode ein, um diesen Browser zu einem Manager-Gerät hochzustufen.",
@@ -163,9 +185,12 @@ export const appShellStrings = {
     restrictionsTitle: "Beschränkungen",
     restrictionsLead:
       "Gib die PIN dieses Profils ein, um beschränkte Inhalte für diese Sitzung anzuzeigen.",
+    restrictionsNoPinHint: "Ein Profil ohne PIN kann keine eingeschränkten Inhalte anzeigen.",
+    revealNoPin: "Dieses Profil hat keine PIN, daher bleiben eingeschränkte Inhalte verborgen.",
     pin: "PIN",
     reveal: "Aufdecken",
     back: "Zurück",
+    profileActionLabel: "Profil: {name}",
     loadMore: "Mehr laden",
     manageTitle: "Verwalten",
     switchToLightTheme: "Zum hellen Design wechseln",
@@ -183,6 +208,7 @@ export const appShellStrings = {
     skipToContent: "Saltar al contenido principal",
     appTitle: "Beamfall",
     brand: "Beamfall",
+    coreSourceOffer: "Código fuente correspondiente de Beamfall Core",
     navLabel: "Navegación",
     accountMenu: "Menú de la cuenta de {name}",
     switchProfile: "Cambiar de perfil",
@@ -194,6 +220,8 @@ export const appShellStrings = {
     profile: "Perfil",
     promoteBrowser: "Promover este navegador",
     signOut: "Cerrar sesión",
+    signOutHint:
+      "Beamfall olvidará este navegador. Para volver a iniciar sesión, necesitarás un nuevo código de emparejamiento.",
     enrollTitle: "Conectar este navegador",
     enrollLead:
       "Introduce un código de emparejamiento de un dispositivo administrador para registrar este navegador como visor.",
@@ -207,6 +235,13 @@ export const appShellStrings = {
     adminSignIn: "Iniciar sesión",
     adminSignInFailed: "No se pudo iniciar sesión.",
     adminSignInNeedsSecure: "Iniciar sesión requiere HTTPS o la red local de este servidor.",
+    adminSignInUseIPAddress:
+      "Abre Beamfall con su dirección IP para iniciar sesión con la contraseña de administrador.",
+    adminSignInOpenAddress: "Abrir {url}",
+    adminSignInOr: "o",
+    strictRecoveryHint:
+      "¿Sin acceso? Para obtener un código de emparejamiento, ejecuta esto en el servidor:",
+    deviceNameDefault: "{browser} en {os}",
     promoteTitle: "Promover este navegador",
     promoteLead:
       "Introduce un código de emparejamiento de administrador para promover este navegador a dispositivo administrador.",
@@ -219,9 +254,12 @@ export const appShellStrings = {
     restrictionsTitle: "Restricciones",
     restrictionsLead:
       "Introduce el PIN de este perfil para mostrar contenido restringido durante esta sesión.",
+    restrictionsNoPinHint: "Un perfil sin PIN no puede mostrar contenido restringido.",
+    revealNoPin: "Este perfil no tiene PIN, así que el contenido restringido permanece oculto.",
     pin: "PIN",
     reveal: "Revelar",
     back: "Atrás",
+    profileActionLabel: "Perfil: {name}",
     loadMore: "Cargar más",
     manageTitle: "Gestionar",
     switchToLightTheme: "Cambiar al tema claro",
@@ -239,6 +277,7 @@ export const appShellStrings = {
     skipToContent: "Pular para o conteúdo principal",
     appTitle: "Beamfall",
     brand: "Beamfall",
+    coreSourceOffer: "Código-fonte correspondente do Beamfall Core",
     navLabel: "Navegação",
     accountMenu: "Menu da conta de {name}",
     switchProfile: "Trocar de perfil",
@@ -250,6 +289,8 @@ export const appShellStrings = {
     profile: "Perfil",
     promoteBrowser: "Promover este navegador",
     signOut: "Sair",
+    signOutHint:
+      "O Beamfall esquecerá este navegador. Para entrar novamente, você precisará de um novo código de pareamento.",
     enrollTitle: "Conectar este navegador",
     enrollLead:
       "Insira um código de pareamento de um dispositivo gerente para cadastrar este navegador como visualizador.",
@@ -263,6 +304,12 @@ export const appShellStrings = {
     adminSignIn: "Entrar",
     adminSignInFailed: "Falha ao entrar.",
     adminSignInNeedsSecure: "Entrar exige HTTPS ou a rede local deste servidor.",
+    adminSignInUseIPAddress:
+      "Abra o Beamfall pelo endereço IP para entrar com a senha de administrador.",
+    adminSignInOpenAddress: "Abrir {url}",
+    adminSignInOr: "ou",
+    strictRecoveryHint: "Sem acesso? Para obter um código de pareamento, execute isto no servidor:",
+    deviceNameDefault: "{browser} no {os}",
     promoteTitle: "Promover este navegador",
     promoteLead:
       "Insira um código de pareamento de gerente para promover este navegador a dispositivo gerente.",
@@ -274,9 +321,12 @@ export const appShellStrings = {
     profilesLead: "Escolha um perfil para esta sessão.",
     restrictionsTitle: "Restrições",
     restrictionsLead: "Insira o PIN deste perfil para mostrar conteúdo restrito nesta sessão.",
+    restrictionsNoPinHint: "Um perfil sem PIN não pode exibir conteúdo restrito.",
+    revealNoPin: "Este perfil não tem PIN, então o conteúdo restrito permanece oculto.",
     pin: "PIN",
     reveal: "Revelar",
     back: "Voltar",
+    profileActionLabel: "Perfil: {name}",
     loadMore: "Carregar mais",
     manageTitle: "Gerenciar",
     switchToLightTheme: "Mudar para o tema claro",

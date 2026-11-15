@@ -288,7 +288,7 @@ func (h *Handler) notifyAdultsOfAccessRequest(ctx context.Context, r store.Acces
 			ID:                 notificationID,
 			RecipientProfileID: p.ID,
 			Kind:               store.NotificationAccessRequest,
-			Title:              "Access requested",
+			Title:              storedNotificationTitle(store.NotificationAccessRequest),
 			Ref:                r.ID,
 		}); err != nil {
 			return err

@@ -109,6 +109,31 @@ func TestRebindableAdminSignInRefusalCarriesLANCode(t *testing.T) {
 		}
 	})
 
+	t.Run("the hint follows Accept-Language and the code does not", func(t *testing.T) {
+		for accept, want := range map[string]string{
+			"":                 "Open Beamfall by its IP address to sign in with the admin password.",
+			"pt-BR,pt;q=0.9":   "Abra o Beamfall pelo endereço IP para entrar com a senha de administrador.",
+			"ja, fr;q=0.5":     "Ouvrez Beamfall avec son adresse IP pour vous connecter avec le mot de passe administrateur.",
+			"de;q=0, es;q=0.8": "Abre Beamfall con su dirección IP para iniciar sesión con la contraseña de administrador.",
+		} {
+			req := newJSONRequest(http.MethodPost, "/api/web/admin-signin", strings.NewReader(body))
+			req.Header.Set(auth.CSRFHeader, "1")
+			req.Header.Set("Accept-Language", accept)
+			req.RemoteAddr = "192.168.4.20:51000"
+			req.Host = "attacker.example"
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			raw := decodeBody(t, rec)
+			var msg string
+			if err := json.Unmarshal(raw["error"], &msg); err != nil || msg != want {
+				t.Errorf("Accept-Language %q: error = %s, want %q", accept, raw["error"], want)
+			}
+			if string(raw["code"]) != `"lan_hostname_not_allowed"` {
+				t.Errorf("Accept-Language %q: code = %s", accept, raw["code"])
+			}
+		}
+	})
+
 	t.Run("public source keeps the plain refusal", func(t *testing.T) {
 		rec := postAdminSignIn(srv, "203.0.113.9:51000", "attacker.example", body)
 		if rec.Code != http.StatusForbidden {

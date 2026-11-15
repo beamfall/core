@@ -11,8 +11,8 @@ import (
 
 // CheckLibraryRoots confirms each root exists on the server, is a directory and
 // can be read, before a Library is created with it or pointed at it (CORE-1598).
-// A refusal is a ValidationError that names the path and the reason in plain
-// words, so a client can put it next to the folder field as is.
+// A refusal is a *LibraryRootError: a ValidationError that names the path and
+// the reason in plain words, so a client can put it next to the folder field.
 func CheckLibraryRoots(roots []string) error {
 	for _, root := range roots {
 		if err := checkLibraryRoot(root); err != nil {
@@ -60,25 +60,58 @@ func checkLibraryRoot(root string) error {
 	info, err := os.Stat(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		return ValidationError("The folder " + path + " doesn't exist on the server.")
+		return &LibraryRootError{Reason: LibraryRootMissing, Path: path}
 	case errors.Is(err, fs.ErrPermission):
-		return libraryRootUnreadable(path)
+		return &LibraryRootError{Reason: LibraryRootUnreadable, Path: path}
 	case err != nil:
-		return ValidationError("The server can't open " + path + ".")
+		return &LibraryRootError{Reason: LibraryRootCantOpen, Path: path}
 	case !info.IsDir():
-		return ValidationError(path + " is a file, not a folder.")
+		return &LibraryRootError{Reason: LibraryRootNotFolder, Path: path}
 	}
 	dir, err := os.Open(path) // #nosec G304 -- the owner-chosen folder is only listed to prove it is readable
 	if err != nil {
-		return libraryRootUnreadable(path)
+		return &LibraryRootError{Reason: LibraryRootUnreadable, Path: path}
 	}
 	defer dir.Close()
 	if _, err := dir.Readdirnames(1); err != nil && !errors.Is(err, io.EOF) {
-		return libraryRootUnreadable(path)
+		return &LibraryRootError{Reason: LibraryRootUnreadable, Path: path}
 	}
 	return nil
 }
 
-func libraryRootUnreadable(path string) error {
-	return ValidationError("The server doesn't have permission to read " + path + ".")
+// LibraryRootReason says why CheckLibraryRoots refused a folder.
+type LibraryRootReason string
+
+// The CheckLibraryRoots refusal reasons.
+const (
+	LibraryRootMissing    LibraryRootReason = "missing"
+	LibraryRootCantOpen   LibraryRootReason = "cant-open"
+	LibraryRootNotFolder  LibraryRootReason = "not-folder"
+	LibraryRootUnreadable LibraryRootReason = "unreadable"
+)
+
+// LibraryRootError is a CheckLibraryRoots refusal. It unwraps to the English
+// ValidationError a client shows as is; the graph layer renders the same
+// sentence in the request locale from Reason and Path (CORE-2102).
+type LibraryRootError struct {
+	Reason LibraryRootReason
+	Path   string
+}
+
+func (e *LibraryRootError) Error() string { return string(e.validation()) }
+
+// Unwrap exposes the English ValidationError to errors.As.
+func (e *LibraryRootError) Unwrap() error { return e.validation() }
+
+func (e *LibraryRootError) validation() ValidationError {
+	switch e.Reason {
+	case LibraryRootMissing:
+		return ValidationError("The folder " + e.Path + " doesn't exist on the server.")
+	case LibraryRootNotFolder:
+		return ValidationError(e.Path + " is a file, not a folder.")
+	case LibraryRootUnreadable:
+		return ValidationError("The server doesn't have permission to read " + e.Path + ".")
+	default:
+		return ValidationError("The server can't open " + e.Path + ".")
+	}
 }

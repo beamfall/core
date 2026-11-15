@@ -1,6 +1,7 @@
-// The Console Activity page's read of the activity log (ADR-0012 §11). It
-// selects the acting identifiers the page turns into names, which the
-// narrower `fetchActivityLog` in console.ts does not.
+// The activity log read (ADR-0012 §11), shared by the Console Activity page and
+// the Trash page's recent-changes list. It selects the acting identifiers the
+// Activity page turns into names. The server reads `limit` and `offset` only
+// from variables, so they are passed that way.
 
 import { graphql } from "@/lib/api";
 
@@ -9,6 +10,8 @@ export interface ActivityRecord {
   id: string;
   occurredAt: string;
   action: string;
+  /** Whether the entry's change can still be undone (undoActivity). */
+  reversible?: boolean;
   profileID?: string;
   deviceID?: string;
   targetType?: string;
@@ -23,13 +26,22 @@ export interface ActivityRecord {
 /** The server caps one page at 200 entries (graph.activityLog). */
 export const ACTIVITY_PAGE_SIZE = 200;
 
-const ACTIVITY_RECORDS_QUERY = `query ActivityRecords { activityLog(limit: ${ACTIVITY_PAGE_SIZE}) { id occurredAt action profileID deviceID targetType targetID libraryID tokenID apiKeyID } }`;
+const ACTIVITY_RECORDS_QUERY =
+  "query ActivityRecords($limit: Int, $offset: Int) { activityLog(limit: $limit, offset: $offset) { id occurredAt action reversible profileID deviceID targetType targetID libraryID tokenID apiKeyID } }";
 
-/** The latest activity entries, newest first, reveal-filtered by the server. */
-export async function fetchActivityRecords(signal?: AbortSignal): Promise<ActivityRecord[]> {
+/**
+ * One page of activity entries, newest first, reveal-filtered by the server.
+ * `offset` skips that many newer entries, so the next page starts at the
+ * number of entries already loaded. A page shorter than `limit` is the last.
+ */
+export async function fetchActivityRecords(
+  signal?: AbortSignal,
+  offset = 0,
+  limit = ACTIVITY_PAGE_SIZE,
+): Promise<ActivityRecord[]> {
   const data = await graphql<{ activityLog: ActivityRecord[] | null }>(
     ACTIVITY_RECORDS_QUERY,
-    {},
+    { limit, offset },
     signal,
   );
   return data.activityLog ?? [];

@@ -89,7 +89,7 @@ export function MiniPlayer({
         aria-valuemin={0}
         aria-valuemax={Math.round(time.duration)}
         aria-valuenow={Math.round(time.current)}
-        aria-valuetext={formatAriaTime(time.current, time.duration)}
+        aria-valuetext={formatAriaTime(time.current, time.duration, t)}
       >
         <div className="bf-mini-progress-fill" style={{ width: `${percent}%` }} />
       </div>

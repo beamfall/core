@@ -8,7 +8,8 @@
 //                   health, field locks, importers, watcher, setup state
 //   - console.ts  — remote access, server/transcode config, live sessions,
 //                   access schedules, enforced filters, qBittorrent, API
-//                   tokens, API keys, activity log
+//                   tokens, API keys
+//   - activity.ts — the paged activity log
 //   - auth.ts     — admin session + REST enroll/promote/logout/pairing codes
 //
 // Query strings either match app.js verbatim or are substrate-only typed
@@ -17,6 +18,7 @@
 // + internal/graph/*.go). Platform-generic by HARD invariant #1 (the wire
 // entity is Media); no entitlement/account types (HARD invariant #7).
 
+export * from "./activity";
 export * from "./auth";
 export * from "./console";
 export * from "./manage";

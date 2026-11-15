@@ -1004,16 +1004,6 @@ export interface CreatedScopedAPIKeyInfo {
   info: ScopedAPIKeyInfo;
 }
 
-/** An activity-log entry as the web app selects it (graph.ActivityEntryInfo). */
-export interface ActivityEntryInfo {
-  id: string;
-  occurredAt: string;
-  action: string;
-  reversible: boolean;
-  targetType?: string;
-  targetID?: string;
-}
-
 // --- Manage / Console: health, bulk ops, file ops -------------------------
 
 /** Per-Library health counts (graph.LibraryHealthInfo). */

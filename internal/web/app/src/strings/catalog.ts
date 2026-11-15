@@ -1,10 +1,21 @@
 import { accessBulkStrings } from "./access-bulk";
+import { activityLibraryStrings } from "./activity-library";
+import { activityMediaStrings } from "./activity-media";
+import { activityPageStrings } from "./activity-page";
+import { activityPluginStrings } from "./activity-plugins";
+import { activitySecurityStrings } from "./activity-security";
 import { appShellStrings } from "./app-shell";
 import { backupRetentionStrings } from "./backup-retention";
+import { backupRetentionExportStrings } from "./backup-retention-export";
+import { backupRetentionHistoryStrings } from "./backup-retention-history";
 import { castStrings } from "./cast";
 import { collectionMarkerStrings } from "./collections-markers";
+import { collectionMarkerEditorStrings } from "./collections-markers-editor";
 import { consoleAccessStrings } from "./console-access";
+import { consoleAccessLockStrings } from "./console-access-lock";
 import { consoleOperationsStrings } from "./console-operations";
+import { consoleOperationsCacheStrings } from "./console-operations-cache";
+import { consoleOperationsOpsStrings } from "./console-operations-ops";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
 import { itemMetadataStrings } from "./item-metadata";
@@ -14,30 +25,47 @@ import { libraryOperationsStrings } from "./library-operations";
 import { libraryTrashStrings } from "./library-trash";
 import { listeningStrings } from "./listening";
 import { managedFileStrings } from "./managed-files";
+import { managedFileLibrariesStrings } from "./managed-files-libraries";
+import { managedFileOptionsStrings } from "./managed-files-options";
 import { mediaDetailStrings } from "./media-detail";
 import { metadataManagementStrings } from "./metadata-management";
+import { metadataManagementCurationStrings } from "./metadata-management-curation";
 import { migrationStrings } from "./migration";
+import { migrationCreateStrings } from "./migration-create";
+import { migrationFixmatchStrings } from "./migration-fixmatch";
+import { migrationUnmatchedStrings } from "./migration-unmatched";
 import { miniPlayerStrings } from "./mini-player";
 import { onboardingStrings } from "./onboarding";
 import { pathPickerStrings } from "./path-picker";
 import { playbackStrings } from "./playback";
+import { playbackChapterStrings } from "./playback-chapters";
 import { playerRecoveryStrings } from "./player-recovery";
 import { playerShortcutStrings } from "./player-shortcuts";
 import { pluginStrings } from "./plugins";
+import { pluginConfigStrings } from "./plugins-config";
 import { powerToolStrings } from "./power-tools";
 import { profileSearchStrings } from "./profile-search";
+import { profileSearchLibraryStrings } from "./profile-search-library";
 import { profileDeviceStrings } from "./profiles-devices";
+import { profileDevicePairingStrings } from "./profiles-devices-pairing";
 import { providerKeyStrings } from "./provider-keys";
 import { remoteAccessStrings } from "./remote-access";
+import { remoteAccessMappingStrings } from "./remote-access-mapping";
 import { remoteControlStrings } from "./remote-control";
 import { serverLogStrings } from "./server-logs";
 import { sessionUpdateStrings } from "./sessions-updates";
+import { sessionUpdateHistoryStrings } from "./sessions-updates-history";
+import { sessionUpdateLiveStrings } from "./sessions-updates-live";
+import { sessionUpdateUpdatesStrings } from "./sessions-updates-updates";
 import { setupStrings } from "./setup";
+import { setupFinishStrings } from "./setup-finish";
+import { setupLibraryStrings } from "./setup-library";
 import { sharedStateStrings } from "./shared-states";
 import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { trackMenuStrings } from "./track-menu";
 import { viewerAccountStrings } from "./viewer-account";
+import { viewerAccountMyDataStrings } from "./viewer-account-mydata";
 import { viewerCollectionStrings } from "./viewer-collections";
 import { watchPartyStrings } from "./watch-party";
 import { webhookStrings } from "./webhooks";
@@ -48,30 +76,53 @@ export const en = {
   ...libraryOperationsStrings.en,
   ...pathPickerStrings.en,
   ...consoleAccessStrings.en,
+  ...consoleAccessLockStrings.en,
   ...libraryHealthStrings.en,
   ...consoleOperationsStrings.en,
+  ...consoleOperationsCacheStrings.en,
+  ...consoleOperationsOpsStrings.en,
   ...playbackStrings.en,
+  ...playbackChapterStrings.en,
   ...playerShortcutStrings.en,
   ...subtitleAppearanceStrings.en,
   ...listeningStrings.en,
   ...trackMenuStrings.en,
   ...managedFileStrings.en,
+  ...managedFileLibrariesStrings.en,
+  ...managedFileOptionsStrings.en,
   ...backupRetentionStrings.en,
+  ...backupRetentionHistoryStrings.en,
+  ...backupRetentionExportStrings.en,
   ...sharedStateStrings.en,
   ...viewerAccountStrings.en,
+  ...viewerAccountMyDataStrings.en,
   ...whosWatchingStrings.en,
   ...remoteAccessStrings.en,
+  ...remoteAccessMappingStrings.en,
   ...pluginStrings.en,
+  ...pluginConfigStrings.en,
   ...sessionUpdateStrings.en,
+  ...sessionUpdateLiveStrings.en,
+  ...sessionUpdateHistoryStrings.en,
+  ...sessionUpdateUpdatesStrings.en,
   ...accessBulkStrings.en,
   ...onboardingStrings.en,
   ...profileDeviceStrings.en,
+  ...profileDevicePairingStrings.en,
   ...migrationStrings.en,
+  ...migrationUnmatchedStrings.en,
+  ...migrationFixmatchStrings.en,
+  ...migrationCreateStrings.en,
   ...metadataManagementStrings.en,
+  ...metadataManagementCurationStrings.en,
   ...setupStrings.en,
+  ...setupLibraryStrings.en,
+  ...setupFinishStrings.en,
   ...customizationStrings.en,
   ...collectionMarkerStrings.en,
+  ...collectionMarkerEditorStrings.en,
   ...profileSearchStrings.en,
+  ...profileSearchLibraryStrings.en,
   ...powerToolStrings.en,
   ...itemActionStrings.en,
   ...playerRecoveryStrings.en,
@@ -88,6 +139,11 @@ export const en = {
   ...serverLogStrings.en,
   ...stagedRestoreStrings.en,
   ...miniPlayerStrings.en,
+  ...activityPageStrings.en,
+  ...activitySecurityStrings.en,
+  ...activityLibraryStrings.en,
+  ...activityMediaStrings.en,
+  ...activityPluginStrings.en,
 } as const;
 
 export const fr = {
@@ -95,30 +151,53 @@ export const fr = {
   ...libraryOperationsStrings.fr,
   ...pathPickerStrings.fr,
   ...consoleAccessStrings.fr,
+  ...consoleAccessLockStrings.fr,
   ...libraryHealthStrings.fr,
   ...consoleOperationsStrings.fr,
+  ...consoleOperationsCacheStrings.fr,
+  ...consoleOperationsOpsStrings.fr,
   ...playbackStrings.fr,
+  ...playbackChapterStrings.fr,
   ...playerShortcutStrings.fr,
   ...subtitleAppearanceStrings.fr,
   ...listeningStrings.fr,
   ...trackMenuStrings.fr,
   ...managedFileStrings.fr,
+  ...managedFileLibrariesStrings.fr,
+  ...managedFileOptionsStrings.fr,
   ...backupRetentionStrings.fr,
+  ...backupRetentionHistoryStrings.fr,
+  ...backupRetentionExportStrings.fr,
   ...sharedStateStrings.fr,
   ...viewerAccountStrings.fr,
+  ...viewerAccountMyDataStrings.fr,
   ...whosWatchingStrings.fr,
   ...remoteAccessStrings.fr,
+  ...remoteAccessMappingStrings.fr,
   ...pluginStrings.fr,
+  ...pluginConfigStrings.fr,
   ...sessionUpdateStrings.fr,
+  ...sessionUpdateLiveStrings.fr,
+  ...sessionUpdateHistoryStrings.fr,
+  ...sessionUpdateUpdatesStrings.fr,
   ...accessBulkStrings.fr,
   ...onboardingStrings.fr,
   ...profileDeviceStrings.fr,
+  ...profileDevicePairingStrings.fr,
   ...migrationStrings.fr,
+  ...migrationUnmatchedStrings.fr,
+  ...migrationFixmatchStrings.fr,
+  ...migrationCreateStrings.fr,
   ...metadataManagementStrings.fr,
+  ...metadataManagementCurationStrings.fr,
   ...setupStrings.fr,
+  ...setupLibraryStrings.fr,
+  ...setupFinishStrings.fr,
   ...customizationStrings.fr,
   ...collectionMarkerStrings.fr,
+  ...collectionMarkerEditorStrings.fr,
   ...profileSearchStrings.fr,
+  ...profileSearchLibraryStrings.fr,
   ...powerToolStrings.fr,
   ...itemActionStrings.fr,
   ...playerRecoveryStrings.fr,
@@ -135,6 +214,11 @@ export const fr = {
   ...serverLogStrings.fr,
   ...stagedRestoreStrings.fr,
   ...miniPlayerStrings.fr,
+  ...activityPageStrings.fr,
+  ...activitySecurityStrings.fr,
+  ...activityLibraryStrings.fr,
+  ...activityMediaStrings.fr,
+  ...activityPluginStrings.fr,
 } as const;
 
 export const de = {
@@ -142,30 +226,53 @@ export const de = {
   ...libraryOperationsStrings.de,
   ...pathPickerStrings.de,
   ...consoleAccessStrings.de,
+  ...consoleAccessLockStrings.de,
   ...libraryHealthStrings.de,
   ...consoleOperationsStrings.de,
+  ...consoleOperationsCacheStrings.de,
+  ...consoleOperationsOpsStrings.de,
   ...playbackStrings.de,
+  ...playbackChapterStrings.de,
   ...playerShortcutStrings.de,
   ...subtitleAppearanceStrings.de,
   ...listeningStrings.de,
   ...trackMenuStrings.de,
   ...managedFileStrings.de,
+  ...managedFileLibrariesStrings.de,
+  ...managedFileOptionsStrings.de,
   ...backupRetentionStrings.de,
+  ...backupRetentionHistoryStrings.de,
+  ...backupRetentionExportStrings.de,
   ...sharedStateStrings.de,
   ...viewerAccountStrings.de,
+  ...viewerAccountMyDataStrings.de,
   ...whosWatchingStrings.de,
   ...remoteAccessStrings.de,
+  ...remoteAccessMappingStrings.de,
   ...pluginStrings.de,
+  ...pluginConfigStrings.de,
   ...sessionUpdateStrings.de,
+  ...sessionUpdateLiveStrings.de,
+  ...sessionUpdateHistoryStrings.de,
+  ...sessionUpdateUpdatesStrings.de,
   ...accessBulkStrings.de,
   ...onboardingStrings.de,
   ...profileDeviceStrings.de,
+  ...profileDevicePairingStrings.de,
   ...migrationStrings.de,
+  ...migrationUnmatchedStrings.de,
+  ...migrationFixmatchStrings.de,
+  ...migrationCreateStrings.de,
   ...metadataManagementStrings.de,
+  ...metadataManagementCurationStrings.de,
   ...setupStrings.de,
+  ...setupLibraryStrings.de,
+  ...setupFinishStrings.de,
   ...customizationStrings.de,
   ...collectionMarkerStrings.de,
+  ...collectionMarkerEditorStrings.de,
   ...profileSearchStrings.de,
+  ...profileSearchLibraryStrings.de,
   ...powerToolStrings.de,
   ...itemActionStrings.de,
   ...playerRecoveryStrings.de,
@@ -182,6 +289,11 @@ export const de = {
   ...serverLogStrings.de,
   ...stagedRestoreStrings.de,
   ...miniPlayerStrings.de,
+  ...activityPageStrings.de,
+  ...activitySecurityStrings.de,
+  ...activityLibraryStrings.de,
+  ...activityMediaStrings.de,
+  ...activityPluginStrings.de,
 } as const;
 
 export const es = {
@@ -189,30 +301,53 @@ export const es = {
   ...libraryOperationsStrings.es,
   ...pathPickerStrings.es,
   ...consoleAccessStrings.es,
+  ...consoleAccessLockStrings.es,
   ...libraryHealthStrings.es,
   ...consoleOperationsStrings.es,
+  ...consoleOperationsCacheStrings.es,
+  ...consoleOperationsOpsStrings.es,
   ...playbackStrings.es,
+  ...playbackChapterStrings.es,
   ...playerShortcutStrings.es,
   ...subtitleAppearanceStrings.es,
   ...listeningStrings.es,
   ...trackMenuStrings.es,
   ...managedFileStrings.es,
+  ...managedFileLibrariesStrings.es,
+  ...managedFileOptionsStrings.es,
   ...backupRetentionStrings.es,
+  ...backupRetentionHistoryStrings.es,
+  ...backupRetentionExportStrings.es,
   ...sharedStateStrings.es,
   ...viewerAccountStrings.es,
+  ...viewerAccountMyDataStrings.es,
   ...whosWatchingStrings.es,
   ...remoteAccessStrings.es,
+  ...remoteAccessMappingStrings.es,
   ...pluginStrings.es,
+  ...pluginConfigStrings.es,
   ...sessionUpdateStrings.es,
+  ...sessionUpdateLiveStrings.es,
+  ...sessionUpdateHistoryStrings.es,
+  ...sessionUpdateUpdatesStrings.es,
   ...accessBulkStrings.es,
   ...onboardingStrings.es,
   ...profileDeviceStrings.es,
+  ...profileDevicePairingStrings.es,
   ...migrationStrings.es,
+  ...migrationUnmatchedStrings.es,
+  ...migrationFixmatchStrings.es,
+  ...migrationCreateStrings.es,
   ...metadataManagementStrings.es,
+  ...metadataManagementCurationStrings.es,
   ...setupStrings.es,
+  ...setupLibraryStrings.es,
+  ...setupFinishStrings.es,
   ...customizationStrings.es,
   ...collectionMarkerStrings.es,
+  ...collectionMarkerEditorStrings.es,
   ...profileSearchStrings.es,
+  ...profileSearchLibraryStrings.es,
   ...powerToolStrings.es,
   ...itemActionStrings.es,
   ...playerRecoveryStrings.es,
@@ -229,6 +364,11 @@ export const es = {
   ...serverLogStrings.es,
   ...stagedRestoreStrings.es,
   ...miniPlayerStrings.es,
+  ...activityPageStrings.es,
+  ...activitySecurityStrings.es,
+  ...activityLibraryStrings.es,
+  ...activityMediaStrings.es,
+  ...activityPluginStrings.es,
 } as const;
 
 export const pt = {
@@ -236,30 +376,53 @@ export const pt = {
   ...libraryOperationsStrings.pt,
   ...pathPickerStrings.pt,
   ...consoleAccessStrings.pt,
+  ...consoleAccessLockStrings.pt,
   ...libraryHealthStrings.pt,
   ...consoleOperationsStrings.pt,
+  ...consoleOperationsCacheStrings.pt,
+  ...consoleOperationsOpsStrings.pt,
   ...playbackStrings.pt,
+  ...playbackChapterStrings.pt,
   ...playerShortcutStrings.pt,
   ...subtitleAppearanceStrings.pt,
   ...listeningStrings.pt,
   ...trackMenuStrings.pt,
   ...managedFileStrings.pt,
+  ...managedFileLibrariesStrings.pt,
+  ...managedFileOptionsStrings.pt,
   ...backupRetentionStrings.pt,
+  ...backupRetentionHistoryStrings.pt,
+  ...backupRetentionExportStrings.pt,
   ...sharedStateStrings.pt,
   ...viewerAccountStrings.pt,
+  ...viewerAccountMyDataStrings.pt,
   ...whosWatchingStrings.pt,
   ...remoteAccessStrings.pt,
+  ...remoteAccessMappingStrings.pt,
   ...pluginStrings.pt,
+  ...pluginConfigStrings.pt,
   ...sessionUpdateStrings.pt,
+  ...sessionUpdateLiveStrings.pt,
+  ...sessionUpdateHistoryStrings.pt,
+  ...sessionUpdateUpdatesStrings.pt,
   ...accessBulkStrings.pt,
   ...onboardingStrings.pt,
   ...profileDeviceStrings.pt,
+  ...profileDevicePairingStrings.pt,
   ...migrationStrings.pt,
+  ...migrationUnmatchedStrings.pt,
+  ...migrationFixmatchStrings.pt,
+  ...migrationCreateStrings.pt,
   ...metadataManagementStrings.pt,
+  ...metadataManagementCurationStrings.pt,
   ...setupStrings.pt,
+  ...setupLibraryStrings.pt,
+  ...setupFinishStrings.pt,
   ...customizationStrings.pt,
   ...collectionMarkerStrings.pt,
+  ...collectionMarkerEditorStrings.pt,
   ...profileSearchStrings.pt,
+  ...profileSearchLibraryStrings.pt,
   ...powerToolStrings.pt,
   ...itemActionStrings.pt,
   ...playerRecoveryStrings.pt,
@@ -276,4 +439,9 @@ export const pt = {
   ...serverLogStrings.pt,
   ...stagedRestoreStrings.pt,
   ...miniPlayerStrings.pt,
+  ...activityPageStrings.pt,
+  ...activitySecurityStrings.pt,
+  ...activityLibraryStrings.pt,
+  ...activityMediaStrings.pt,
+  ...activityPluginStrings.pt,
 } as const;

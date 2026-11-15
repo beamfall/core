@@ -41,52 +41,6 @@ export const pluginStrings = {
       "Disable stops all requests to this provider. It does not fall back to a key built into the server.",
     pluginKeyDisabledHint:
       "Disabled: no requests go to this provider, even with a key built into the server. Save a key to turn it back on.",
-    pluginDetails: "Details",
-    pluginDetailsToggle: "Details for {name}",
-    pluginConfigHeading: "Configuration",
-    pluginConfigLead:
-      "Typed, non-secret settings for this plugin. Secrets are managed through scraper credentials, never here.",
-    pluginConfigSave: "Save configuration",
-    pluginConfigSaved: "Configuration saved.",
-    pluginConfigFailed: "Could not save the plugin configuration.",
-    pluginConfigRequired: "Required",
-    pluginConfigInactiveHelp: "Reactivate the plugin to edit its configuration.",
-    pluginConfigEmpty: "This plugin has no configurable settings.",
-    pluginConfigDefault: "Server default",
-    pluginPermissionsHeading: "Permissions",
-    pluginPermissionsLead: "Core-owned grants this plugin requests.",
-    pluginPermissionsEmpty: "This plugin requests no permissions.",
-    pluginPermissionStandard: "Standard",
-    pluginPermissionHighRisk: "High risk",
-    pluginStatusHeading: "Status",
-    pluginStatusEmpty: "This plugin reports no status.",
-    pluginStatusOk: "Healthy",
-    pluginStatusWarn: "Degraded",
-    pluginStatusError: "Error",
-    pluginStatusUnknown: "Unknown",
-    pluginActionsHeading: "Actions",
-    pluginActionsLead:
-      "Server-declared actions. The client renders a trusted control and asks Core to run it.",
-    pluginActionsEmpty: "This plugin declares no actions.",
-    pluginActionRun: "Run",
-    pluginActionUnavailable: "Action execution is not yet available on this server.",
-    pluginActionRequires: "Requires {permissions}",
-    pluginRiskInfo: "Info",
-    pluginRiskLow: "Low",
-    pluginRiskMedium: "Medium",
-    pluginRiskHigh: "High",
-    pluginControlPolicy: "Control policy: {policy}",
-    pluginLifecycleHeading: "Lifecycle",
-    pluginLifecycleLead:
-      "Deactivate is reversible and preserves stored data; uninstall permanently purges it.",
-    pluginUninstall: "Uninstall (purge data)",
-    pluginUninstallHelp:
-      "Permanently remove every item this plugin stored, then leave it deactivated. Irreversible. Purged items are not routed to Trash, but are re-derivable by re-scraping.",
-    pluginLifecycleIrreversible: "Irreversible",
-    pluginUninstallConfirm: "Uninstall this plugin and purge its data?",
-    pluginUninstallConfirmBody:
-      "This permanently removes every item {name} stored across its bound libraries, then deactivates it. Purged items are not recoverable from Trash; the data is re-derivable by re-scraping if you reinstall the plugin later.",
-    pluginUninstallFailed: "Could not uninstall the plugin.",
   },
   fr: {
     consoleConfigHeading: "Configuration du serveur",
@@ -117,18 +71,20 @@ export const pluginStrings = {
     consoleScraperUnavailable: "Indisponible",
     consoleScraperInvalid: "Invalide",
     consoleScraperUnreadable: "Illisible",
+    consoleScraperDisabled: "Désactivé",
     consoleScraperActionFailed: "Impossible de modifier l'identifiant secret du scraper.",
-    pluginLifecycleHeading: "Cycle de vie",
-    pluginLifecycleLead:
-      "La désactivation est réversible et conserve les données stockées; la désinstallation les purge définitivement.",
-    pluginUninstall: "Désinstaller (purger les données)",
-    pluginUninstallHelp:
-      "Supprime définitivement chaque élément stocké par ce module, puis le laisse désactivé. Cette action est irréversible. Les éléments purgés ne sont pas envoyés dans la corbeille, mais peuvent être recréés par une nouvelle extraction.",
-    pluginLifecycleIrreversible: "Irréversible",
-    pluginUninstallConfirm: "Désinstaller ce module et purger ses données?",
-    pluginUninstallConfirmBody:
-      "Cette action supprime définitivement chaque élément stocké par {name} dans les bibliothèques qui lui sont liées, puis le désactive. Les éléments purgés ne peuvent pas être récupérés dans la corbeille; les données peuvent être recréées par une nouvelle extraction si vous réinstallez le module plus tard.",
-    pluginUninstallFailed: "Impossible de désinstaller le module.",
+    pluginKeysHeading: "Clés des fournisseurs",
+    pluginKeysLead:
+      "Ce plugin a besoin d’une clé d’API auprès de son fournisseur de métadonnées pour récupérer les détails et les visuels. Les clés sont gratuites sur demande auprès du fournisseur.",
+    pluginKeyNeeded: "Clé requise",
+    pluginKeyField: "Clé d’API {provider}",
+    pluginKeyPlaceholder: "Collez votre clé d’API",
+    pluginKeyReplacePlaceholder: "Collez une nouvelle clé pour remplacer celle enregistrée",
+    pluginKeySentTo: "Envoyée uniquement à {hosts}",
+    pluginKeyDisableHint:
+      "Désactiver bloque toute requête vers ce fournisseur. Cela ne bascule pas sur une clé intégrée au serveur.",
+    pluginKeyDisabledHint:
+      "Désactivé : aucune requête n’est envoyée à ce fournisseur, même avec une clé intégrée au serveur. Enregistrez une clé pour le réactiver.",
   },
   de: {
     consoleConfigHeading: "Serverkonfiguration",
@@ -159,7 +115,20 @@ export const pluginStrings = {
     consoleScraperUnavailable: "Nicht verfügbar",
     consoleScraperInvalid: "Ungültig",
     consoleScraperUnreadable: "Nicht lesbar",
+    consoleScraperDisabled: "Deaktiviert",
     consoleScraperActionFailed: "Scraper-Zugangsdaten konnten nicht aktualisiert werden.",
+    pluginKeysHeading: "Anbieterschlüssel",
+    pluginKeysLead:
+      "Dieses Plugin braucht einen API-Schlüssel seines Metadatenanbieters, um Details und Cover abzurufen. Die Schlüssel sind beim Anbieter kostenlos erhältlich.",
+    pluginKeyNeeded: "Schlüssel nötig",
+    pluginKeyField: "{provider}-API-Schlüssel",
+    pluginKeyPlaceholder: "Füge deinen API-Schlüssel ein",
+    pluginKeyReplacePlaceholder: "Füge einen neuen Schlüssel ein, um den gespeicherten zu ersetzen",
+    pluginKeySentTo: "Wird nur an {hosts} gesendet",
+    pluginKeyDisableHint:
+      "Deaktivieren stoppt alle Anfragen an diesen Anbieter. Es wird nicht auf einen im Server integrierten Schlüssel ausgewichen.",
+    pluginKeyDisabledHint:
+      "Deaktiviert: Es gehen keine Anfragen an diesen Anbieter, auch nicht mit einem im Server integrierten Schlüssel. Speichere einen Schlüssel, um ihn wieder zu aktivieren.",
   },
   es: {
     consoleConfigHeading: "Configuración del servidor",
@@ -190,7 +159,20 @@ export const pluginStrings = {
     consoleScraperUnavailable: "No disponible",
     consoleScraperInvalid: "Inválida",
     consoleScraperUnreadable: "Ilegible",
+    consoleScraperDisabled: "Desactivado",
     consoleScraperActionFailed: "No se pudo actualizar la credencial del scraper.",
+    pluginKeysHeading: "Claves de proveedores",
+    pluginKeysLead:
+      "Este plugin necesita una clave de API de su proveedor de metadatos para obtener detalles e imágenes. Las claves se solicitan gratis al proveedor.",
+    pluginKeyNeeded: "Falta la clave",
+    pluginKeyField: "Clave de API de {provider}",
+    pluginKeyPlaceholder: "Pega tu clave de API",
+    pluginKeyReplacePlaceholder: "Pega una clave nueva para reemplazar la guardada",
+    pluginKeySentTo: "Se envía solo a {hosts}",
+    pluginKeyDisableHint:
+      "Desactivar detiene todas las solicitudes a este proveedor. No recurre a una clave integrada en el servidor.",
+    pluginKeyDisabledHint:
+      "Desactivado: no se envía ninguna solicitud a este proveedor, ni siquiera con una clave integrada en el servidor. Guarda una clave para reactivarlo.",
   },
   pt: {
     consoleConfigHeading: "Configuração do servidor",
@@ -220,6 +202,19 @@ export const pluginStrings = {
     consoleScraperUnavailable: "Indisponível",
     consoleScraperInvalid: "Inválida",
     consoleScraperUnreadable: "Ilegível",
+    consoleScraperDisabled: "Desativado",
     consoleScraperActionFailed: "Não foi possível atualizar a credencial do scraper.",
+    pluginKeysHeading: "Chaves de provedores",
+    pluginKeysLead:
+      "Este plugin precisa de uma chave de API do provedor de metadados para buscar detalhes e imagens. As chaves podem ser solicitadas gratuitamente ao provedor.",
+    pluginKeyNeeded: "Chave necessária",
+    pluginKeyField: "Chave de API do {provider}",
+    pluginKeyPlaceholder: "Cole sua chave de API",
+    pluginKeyReplacePlaceholder: "Cole uma nova chave para substituir a salva",
+    pluginKeySentTo: "Enviada somente a {hosts}",
+    pluginKeyDisableHint:
+      "Desativar interrompe todas as solicitações a este provedor. Não recorre a uma chave embutida no servidor.",
+    pluginKeyDisabledHint:
+      "Desativado: nenhuma solicitação é enviada a este provedor, nem mesmo com uma chave embutida no servidor. Salve uma chave para reativá-lo.",
   },
 } as const;

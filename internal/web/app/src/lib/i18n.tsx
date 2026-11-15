@@ -1,9 +1,11 @@
 import { createContext, type ReactNode, useContext, useMemo, useState } from "react";
-import { type Locale, STRINGS, type StringKey } from "@/strings";
+import { OFFERED_LOCALE_TAGS, SOURCE_LOCALE } from "@/l10n/locales";
+import { isCatalogLocale, type Locale, STRINGS, type StringKey } from "@/strings";
 
 // Localization (ADR-0034). Strings render as TEXT ONLY, never HTML
 // (ADR-0012 §5) — React's default {expression} escaping enforces this, so a
 // hostile string can never inject markup. Missing keys fall back to `en`.
+// Only locales the shared declaration marks `shipped` are offered (CORE-2104).
 
 interface I18nValue {
   locale: Locale;
@@ -13,35 +15,37 @@ interface I18nValue {
 }
 
 const I18nContext = createContext<I18nValue | null>(null);
-const SUPPORTED_LOCALES: readonly Locale[] = ["en", "fr", "de", "es", "pt"];
+const FALLBACK_LOCALE = SOURCE_LOCALE as Locale;
 
 export interface LocalePreference {
   locale: Locale;
   displayLocale: string;
 }
 
-function isLocale(value: string): value is Locale {
-  return (SUPPORTED_LOCALES as readonly string[]).includes(value);
-}
-
+/** Pick the first browser language whose catalog is offered. `offered` defaults to the shared
+ *  declaration's shipped locales, so an `in-progress` locale is never chosen. */
 export function resolveLocalePreference(
   languages: readonly string[] | undefined,
+  offered: readonly string[] = OFFERED_LOCALE_TAGS,
 ): LocalePreference {
+  const byLowerTag = new Map(
+    offered.filter(isCatalogLocale).map((tag) => [tag.toLowerCase(), tag] as const),
+  );
+  const offeredLocale = (tag: string) => byLowerTag.get(tag.toLowerCase());
   for (const tag of languages || []) {
     const displayLocale = tag.trim();
     if (!displayLocale) continue;
-    const lower = displayLocale.toLowerCase();
-    if (isLocale(lower)) return { locale: lower, displayLocale };
-    const primary = lower.split("-")[0];
-    if (isLocale(primary)) return { locale: primary, displayLocale };
+    const locale = offeredLocale(displayLocale) ?? offeredLocale(displayLocale.split("-")[0]);
+    if (locale) return { locale, displayLocale };
   }
-  const displayLocale = (languages || []).find((tag) => tag.trim() !== "")?.trim() ?? "en";
-  return { locale: "en", displayLocale };
+  const displayLocale =
+    (languages || []).find((tag) => tag.trim() !== "")?.trim() ?? FALLBACK_LOCALE;
+  return { locale: FALLBACK_LOCALE, displayLocale };
 }
 
 function resolveBrowserLocalePreference(): LocalePreference {
   if (typeof navigator === "undefined") {
-    return { locale: "en", displayLocale: "en" };
+    return { locale: FALLBACK_LOCALE, displayLocale: FALLBACK_LOCALE };
   }
   const languages =
     navigator.languages && navigator.languages.length > 0
@@ -248,13 +252,13 @@ export function I18nProvider({
   });
 
   const value = useMemo<I18nValue>(() => {
-    const table = STRINGS[preference.locale] ?? STRINGS.en;
+    const table = STRINGS[preference.locale] ?? STRINGS[FALLBACK_LOCALE];
     return {
       locale: preference.locale,
       displayLocale: preference.displayLocale,
       setLocale,
       t: (key, vars) => {
-        const raw = table[key] ?? STRINGS.en[key] ?? String(key);
+        const raw = table[key] ?? STRINGS[FALLBACK_LOCALE][key] ?? String(key);
         return formatMessage(raw, vars, preference.displayLocale);
       },
     };

@@ -29,82 +29,126 @@ export const backupRetentionStrings = {
       "Start Beamfall again and keep the pre-restore snapshot until the restored server is verified.",
     backupRestoreSafety:
       "The Console never overwrites a live database: a staged restore applies on the next start, before the database opens.",
-    // MIGREV-3 — Backup panel: history + verify + manifest + restore assistant.
-    backupHistoryHeading: "Backup history",
-    backupHistoryLead:
-      "The run record of the backup sets written to this destination: when each ran, its size, and its last integrity verify status. Enter a destination and load its history, or run a backup to publish a new set.",
-    backupHistoryLoad: "Load history",
-    backupHistoryLoading: "Loading…",
-    backupHistoryEmpty: "No backup sets under this destination yet.",
-    backupHistoryNeedDest: "Enter a backup destination to load its history.",
-    backupHistoryUnavailable: "Could not read the backup history for this destination.",
-    backupHistoryCount: "{count} sets",
-    backupColSet: "Set",
-    backupColCaptured: "Captured",
-    backupColSize: "Size",
-    backupColVerify: "Verify",
-    backupVerifyAction: "Verify",
-    backupVerifyRunning: "Verifying…",
-    backupVerified: "Verified",
-    backupVerifyFailed: "Failed",
-    backupVerifyNotRun: "Not verified",
-    backupVerifyPassBanner:
-      "Integrity check passed. All files present and every content hash matches the manifest. This set is safe to restore.",
-    backupVerifyFailBanner:
-      "Integrity check failed. This set is incomplete or was modified after capture and cannot be trusted for restore.",
-    backupManifestHeading: "Manifest detail",
-    backupManifestLead:
-      "The contents of the selected set: its published manifest path and the recovery-key exclusion that restore depends on. Select a set from the history above.",
-    backupManifestNone: "Select a backup set to see its manifest detail.",
-    backupManifestPathLabel: "Manifest path",
-    backupKeysCalloutTitle: "Recovery Keys are NOT in this backup",
-    backupKeysCalloutBody:
-      "This set contains no key material by design. If you lose your Recovery Keys, restoring this backup will not recover encrypted content. Save your Recovery Keys separately and store them somewhere this backup is not.",
-    exportHeading: "Metadata export",
-    exportLead:
-      "Generate the full, self-describing portability export of catalog curation, reveal-filtered to what this session can see. Download as JSON.",
-    exportGenerate: "Generate export",
-    exportGenerating: "Generating…",
-    exportDownload: "Download JSON",
-    exportFailed: "The metadata export could not be generated.",
-    exportSchema: "Schema",
-    exportLibrariesCount: "Libraries",
-    exportMediaCount: "Media",
-    exportCollectionsCount: "Collections",
-    exportExportedAt: "Exported at",
-    trashPolicyHeading: "Trash policy",
-    trashPolicyLead:
-      "Deleted items wait here until the retention window ends. Restore any of them before then.",
-    trashRetainedCount: "{count} retained",
-    purgeHeading: "Purge retained Trash",
-    purgeBeforeLabel: "Purge items trashed before",
-    purgeConfirmGate: "I understand this permanently deletes retained items and cannot be undone.",
-    purgeIrreversible: "Irreversible",
-    purgeAction: "Purge before cutoff",
-    purgeRunning: "Purging…",
-    purgeNeedCutoff: "Pick a cutoff date and time.",
-    purgeFailed: "The purge could not be completed.",
-    purgeDone: "Purged · {count} removed",
-    // Retention rules (ADR-0051, RET-2)
-    retentionRulesTitle: "Retention rules",
-    retentionRulesEmpty: "No retention rules configured.",
-    retentionRulesLoadError: "Could not load retention rules.",
-    retentionRuleAdd: "Add rule",
-    retentionRuleCreate: "Create",
-    retentionRuleDelete: "Delete rule",
-    retentionRuleEnabledToggle: "Toggle enabled",
-    retentionRuleDeleteConfirm: "Delete this retention rule?",
-    retentionRuleNamePlaceholder: "Rule name",
-    retentionRuleSourceExprPlaceholder: "Source expression (JSON)",
-    retentionRuleTargetLibraryIDPlaceholder: "Target library ID",
-    activityUndoHeading: "Activity",
-    activityUndoLead:
-      "Recent changes on this server. Undo opens the item in Trash so you can restore it.",
-    activityUndo: "Undo",
-    activityNoUndo: "No undo",
   },
-  fr: {},
-  de: {},
-  es: {},
-  pt: {},
+  fr: {
+    backupHeading: "Sauvegardes",
+    backupLead:
+      "Lancez une sauvegarde de la base de données vers une destination côté serveur. L’opération renvoie le chemin du manifeste écrit, affiché ci-dessous comme trace d’exécution.",
+    backupDestLabel: "Destination",
+    backupDestPlaceholder: "/var/lib/beamfall/backups/2026-06-20",
+    backupRun: "Lancer la sauvegarde",
+    backupRunning: "En cours…",
+    backupManifestLabel: "Dernier manifeste",
+    backupNoneYet: "Aucune sauvegarde n’a encore été lancée depuis ici.",
+    backupFailed: "La sauvegarde n’a pas pu être lancée.",
+    backupNeedDest: "Saisissez un chemin de destination.",
+    backupRestoreNote:
+      "La restauration est effectuée par l’opérateur depuis la destination, serveur arrêté ; utilisez le parcours de restauration guidée ci-dessous, documenté dans ",
+    backupRestoreNoteDocLabel: "docs/operations/restore.md",
+    backupRestoreNoteDocHref: "docs/operations/restore.md",
+    backupRestoreNoteAfterDoc: ". La Console n’écrase jamais une base de données active.",
+    backupRestoreHeading: "Restauration guidée",
+    backupRestoreLead:
+      "Utilisez-la lorsque le démarrage refuse une base corrompue ou que vous devez revenir à une sauvegarde saine connue.",
+    backupRestoreStepStop:
+      "Arrêtez Beamfall et laissez le répertoire de données corrompu en place.",
+    backupRestoreStepChoose:
+      "Choisissez le manifeste de confiance le plus récent, généralement sous <data-dir>/backups/pre-migration ou dans la destination de sauvegarde indiquée ci-dessus.",
+    backupRestoreStepRun:
+      "Exécutez la commande de restauration hors ligne sur l’hôte du serveur ; elle refuse un verrou de serveur actif et vérifie les empreintes du manifeste avant de toucher au répertoire de données.",
+    backupRestoreStepStart:
+      "Redémarrez Beamfall et conservez l’instantané préalable à la restauration jusqu’à ce que le serveur restauré soit vérifié.",
+    backupRestoreSafety:
+      "La Console n’écrase jamais une base de données active : une restauration planifiée s’applique au prochain démarrage, avant l’ouverture de la base.",
+  },
+  de: {
+    backupHeading: "Backups",
+    backupLead:
+      "Starte ein Datenbank-Backup in ein Ziel auf dem Server. Der Vorgang gibt den Pfad des geschriebenen Manifests zurück, der unten als Ausführungsprotokoll angezeigt wird.",
+    backupDestLabel: "Ziel",
+    backupDestPlaceholder: "/var/lib/beamfall/backups/2026-06-20",
+    backupRun: "Backup starten",
+    backupRunning: "Läuft…",
+    backupManifestLabel: "Letztes Manifest",
+    backupNoneYet: "Von hier aus wurde noch kein Backup gestartet.",
+    backupFailed: "Das Backup konnte nicht gestartet werden.",
+    backupNeedDest: "Gib einen Zielpfad ein.",
+    backupRestoreNote:
+      "Die Wiederherstellung führt der Betreiber vom Ziel aus durch, während der Server gestoppt ist; nutze den geführten Ablauf unten, dokumentiert in ",
+    backupRestoreNoteDocLabel: "docs/operations/restore.md",
+    backupRestoreNoteDocHref: "docs/operations/restore.md",
+    backupRestoreNoteAfterDoc: ". Die Konsole überschreibt nie eine laufende Datenbank.",
+    backupRestoreHeading: "Geführte Wiederherstellung",
+    backupRestoreLead:
+      "Nutze das, wenn der Start eine beschädigte Datenbank ablehnt oder du auf ein bekannt gutes Backup zurückgehen musst.",
+    backupRestoreStepStop: "Stoppe Beamfall und lass das beschädigte Datenverzeichnis unverändert.",
+    backupRestoreStepChoose:
+      "Wähle das neueste vertrauenswürdige Manifest, meist unter <data-dir>/backups/pre-migration oder im oben angezeigten Backup-Ziel.",
+    backupRestoreStepRun:
+      "Führe den Offline-Wiederherstellungsbefehl auf dem Server-Host aus; er lehnt eine aktive Server-Sperre ab und prüft die Manifest-Hashes, bevor er das Datenverzeichnis anfasst.",
+    backupRestoreStepStart:
+      "Starte Beamfall wieder und behalte den Snapshot vor der Wiederherstellung, bis der wiederhergestellte Server überprüft ist.",
+    backupRestoreSafety:
+      "Die Konsole überschreibt nie eine laufende Datenbank: Eine vorbereitete Wiederherstellung wird beim nächsten Start angewendet, bevor die Datenbank geöffnet wird.",
+  },
+  es: {
+    backupHeading: "Copias de seguridad",
+    backupLead:
+      "Ejecuta una copia de seguridad de la base de datos en un destino del servidor. La operación devuelve la ruta del manifiesto escrito, que se muestra abajo como registro de la ejecución.",
+    backupDestLabel: "Destino",
+    backupDestPlaceholder: "/var/lib/beamfall/backups/2026-06-20",
+    backupRun: "Ejecutar copia de seguridad",
+    backupRunning: "Ejecutando…",
+    backupManifestLabel: "Último manifiesto",
+    backupNoneYet: "Aún no se ha ejecutado ninguna copia de seguridad desde aquí.",
+    backupFailed: "No se pudo ejecutar la copia de seguridad.",
+    backupNeedDest: "Introduce una ruta de destino.",
+    backupRestoreNote:
+      "La restauración la realiza el operador desde el destino con el servidor detenido; usa el flujo de restauración guiada de abajo, documentado en ",
+    backupRestoreNoteDocLabel: "docs/operations/restore.md",
+    backupRestoreNoteDocHref: "docs/operations/restore.md",
+    backupRestoreNoteAfterDoc: ". La Consola nunca sobrescribe una base de datos activa.",
+    backupRestoreHeading: "Restauración guiada",
+    backupRestoreLead:
+      "Úsala cuando el inicio rechace una base de datos dañada o necesites volver a una copia de seguridad en buen estado.",
+    backupRestoreStepStop: "Detén Beamfall y deja en su sitio el directorio de datos dañado.",
+    backupRestoreStepChoose:
+      "Elige el manifiesto de confianza más reciente, normalmente en <data-dir>/backups/pre-migration o en el destino de copia de seguridad indicado arriba.",
+    backupRestoreStepRun:
+      "Ejecuta el comando de restauración sin conexión en el host del servidor; rechaza un bloqueo de servidor activo y verifica los hashes del manifiesto antes de tocar el directorio de datos.",
+    backupRestoreStepStart:
+      "Vuelve a iniciar Beamfall y conserva la instantánea previa a la restauración hasta verificar el servidor restaurado.",
+    backupRestoreSafety:
+      "La Consola nunca sobrescribe una base de datos activa: una restauración preparada se aplica en el próximo inicio, antes de abrir la base de datos.",
+  },
+  pt: {
+    backupHeading: "Backups",
+    backupLead:
+      "Execute um backup do banco de dados para um destino no servidor. A operação retorna o caminho do manifesto gravado, exibido abaixo como registro da execução.",
+    backupDestLabel: "Destino",
+    backupDestPlaceholder: "/var/lib/beamfall/backups/2026-06-20",
+    backupRun: "Executar backup",
+    backupRunning: "Executando…",
+    backupManifestLabel: "Último manifesto",
+    backupNoneYet: "Nenhum backup foi executado a partir daqui ainda.",
+    backupFailed: "Não foi possível executar o backup.",
+    backupNeedDest: "Informe um caminho de destino.",
+    backupRestoreNote:
+      "A restauração é feita pelo operador a partir do destino, com o servidor parado; use o fluxo de restauração guiada abaixo, documentado em ",
+    backupRestoreNoteDocLabel: "docs/operations/restore.md",
+    backupRestoreNoteDocHref: "docs/operations/restore.md",
+    backupRestoreNoteAfterDoc: ". O Console nunca sobrescreve um banco de dados em uso.",
+    backupRestoreHeading: "Restauração guiada",
+    backupRestoreLead:
+      "Use quando a inicialização recusar um banco de dados corrompido ou você precisar voltar a um backup em bom estado.",
+    backupRestoreStepStop: "Pare o Beamfall e deixe o diretório de dados corrompido no lugar.",
+    backupRestoreStepChoose:
+      "Escolha o manifesto confiável mais recente, normalmente em <data-dir>/backups/pre-migration ou no destino de backup mostrado acima.",
+    backupRestoreStepRun:
+      "Execute o comando de restauração offline no host do servidor; ele recusa um bloqueio de servidor ativo e verifica os hashes do manifesto antes de tocar no diretório de dados.",
+    backupRestoreStepStart:
+      "Inicie o Beamfall novamente e mantenha o snapshot anterior à restauração até que o servidor restaurado seja verificado.",
+    backupRestoreSafety:
+      "O Console nunca sobrescreve um banco de dados em uso: uma restauração preparada é aplicada na próxima inicialização, antes de o banco de dados ser aberto.",
+  },
 } as const;

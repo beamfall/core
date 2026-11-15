@@ -31,6 +31,7 @@ Generated machine-readable API references live beside the API reference as `llms
 
 - [Architecture and dependency rules](architecture/ARCHITECTURE.md)
 - [Testing architecture](architecture/TESTING.md)
+- [Server text localization](architecture/server-text-localization.md) (who localizes server text)
 - [Domain-language index](../CONTEXT.md)
 - [Glossary](glossary/core-platform-entities.md)
 - [Web app flows and sitemap](web/flows/README.md) (Corvint flow documentation)

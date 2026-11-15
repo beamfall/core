@@ -1,12 +1,15 @@
 import type { ActivityRecord } from "@/lib/graphql/activity";
+import type { StringKey } from "@/strings";
 
 // How the Console Activity page reads the activity log: one sentence per
 // action in the server's closed vocabulary (internal/store/activity.go), a
 // category for filtering, and locale-aware times. activityDisplay.test.ts
-// reads the Go vocabulary and fails when an action has no entry here.
-//
-// The text is English only and lives here, not in the localized string
-// registry, until that registry can take it.
+// reads the Go vocabulary and fails when an action has no entry here. The
+// sentences, categories and page text live in the localized string catalog
+// (src/strings/activity-*.ts, CORE-1208).
+
+/** The `t` of useT(), or any function with its shape. */
+export type Translate = (key: StringKey, values?: Record<string, string | number>) => string;
 
 export type ActivityCategory =
   | "security"
@@ -29,54 +32,41 @@ export const ACTIVITY_CATEGORIES: readonly ActivityCategory[] = [
   "other",
 ];
 
-export const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
-  security: "Security",
-  access: "Profiles & access",
-  library: "Library & media",
-  plugins: "Plugins & features",
-  settings: "Settings",
-  playback: "Playback",
-  system: "System",
-  other: "Other",
+export const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, StringKey> = {
+  security: "activityCategorySecurity",
+  access: "activityCategoryAccess",
+  library: "activityCategoryLibrary",
+  plugins: "activityCategoryPlugins",
+  settings: "activityCategorySettings",
+  playback: "activityCategoryPlayback",
+  system: "activityCategorySystem",
+  other: "activityCategoryOther",
 };
 
-export const ACTIVITY_TEXT = {
-  lead: "What people, devices and plugins changed on this server, newest first.",
-  searchLabel: "Search activity",
-  categoryLabel: "Category",
-  allCategories: "All",
-  when: "When",
-  what: "What happened",
-  showDetails: "Show details",
-  hideDetails: "Hide details",
-  rawAction: "Event key",
-  target: "Target",
-  profile: "Profile",
-  device: "Device",
-  library: "Library",
-  apiToken: "API token",
-  apiKey: "API key",
-  exactTime: "Exact time",
-  showing: "Showing {shown} of the latest {total} events",
-} as const;
-
 /** What an entry's TargetID names, when the action fixes it. */
-type TargetKind = "profile" | "device" | "library" | "plugin" | "capability" | "configDomain";
+type TargetKind =
+  | "profile"
+  | "device"
+  | "library"
+  | "plugin"
+  | "capability"
+  | "configDomain"
+  | "media";
 
 interface ActivityLabel {
   category: ActivityCategory;
   /** `{actor}` and `{target}` are filled in; the result is sentence-cased. */
-  sentence: string;
+  sentence: StringKey;
   /** Stands in for `{target}` when its name cannot be resolved. */
-  noun?: string;
+  noun?: StringKey;
   /** Overrides the entry's own targetType when the action fixes the kind. */
   target?: TargetKind;
 }
 
 function label(
   category: ActivityCategory,
-  sentence: string,
-  noun?: string,
+  sentence: StringKey,
+  noun?: StringKey,
   target?: TargetKind,
 ): ActivityLabel {
   return { category, sentence, noun, target };
@@ -84,221 +74,253 @@ function label(
 
 export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
   // Request lifecycle.
-  "mutation.attempt": label("system", "{actor} started a change"),
-  "mutation.finished": label("system", "A change by {actor} finished"),
+  "mutation.attempt": label("system", "activityEventMutationAttempt"),
+  "mutation.finished": label("system", "activityEventMutationFinished"),
 
   // Security: unlocks, sign-in, credentials, devices.
-  "crypto.lifecycle.prepared": label("security", "{actor} started an encryption key change"),
-  reveal: label("security", "{actor} unlocked restricted libraries"),
-  "reveal.denied": label("security", "An attempt by {actor} to unlock restricted libraries failed"),
-  relock: label("security", "{actor} locked restricted libraries again"),
-  "admin.login": label("security", "{actor} unlocked the Console"),
-  "admin.login.denied": label("security", "An attempt by {actor} to unlock the Console failed"),
-  "admin.password.set": label("security", "{actor} set the admin password"),
-  "signin_security.mode": label("security", "{actor} changed the sign-in security mode"),
-  "token.create": label("security", "{actor} created an API token"),
-  "token.revoke": label("security", "{actor} revoked an API token"),
-  "key.create": label("security", "{actor} created an API key"),
-  "key.revoke": label("security", "{actor} revoked an API key"),
-  "pairing.code": label("security", "{actor} created a device pairing code"),
-  "device.enroll": label("security", "{target} was paired with this server", "a device", "device"),
-  "enroll.denied": label("security", "A device pairing attempt was refused"),
-  "device.promote": label("security", "{target} became a manager device", "a device", "device"),
-  "promote.denied": label("security", "An attempt to make a device a manager was refused"),
-  "device.revoke": label("security", "{actor} revoked {target}", "a device", "device"),
-  "device.role": label("security", "{actor} changed the role of {target}", "a device", "device"),
+  "crypto.lifecycle.prepared": label("security", "activityEventCryptoLifecyclePrepared"),
+  reveal: label("security", "activityEventReveal"),
+  "reveal.denied": label("security", "activityEventRevealDenied"),
+  relock: label("security", "activityEventRelock"),
+  "admin.login": label("security", "activityEventAdminLogin"),
+  "admin.login.denied": label("security", "activityEventAdminLoginDenied"),
+  "admin.password.set": label("security", "activityEventAdminPasswordSet"),
+  "signin_security.mode": label("security", "activityEventSigninSecurityMode"),
+  "token.create": label("security", "activityEventTokenCreate"),
+  "token.revoke": label("security", "activityEventTokenRevoke"),
+  "key.create": label("security", "activityEventKeyCreate"),
+  "key.revoke": label("security", "activityEventKeyRevoke"),
+  "pairing.code": label("security", "activityEventPairingCode"),
+  "device.enroll": label("security", "activityEventDeviceEnroll", "activityNounDevice", "device"),
+  "enroll.denied": label("security", "activityEventEnrollDenied"),
+  "device.promote": label("security", "activityEventDevicePromote", "activityNounDevice", "device"),
+  "promote.denied": label("security", "activityEventPromoteDenied"),
+  "device.revoke": label("security", "activityEventDeviceRevoke", "activityNounDevice", "device"),
+  "device.role": label("security", "activityEventDeviceRole", "activityNounDevice", "device"),
 
   // Profiles and access.
-  "profile.switch": label("access", "{actor} switched profiles"),
+  "profile.switch": label("access", "activityEventProfileSwitch"),
   "profile.library": label(
     "access",
-    "{actor} changed which libraries {target} can see",
-    "a profile",
+    "activityEventProfileLibrary",
+    "activityNounProfile",
     "profile",
   ),
   "profile.access_schedule": label(
     "access",
-    "{actor} changed the access schedule for {target}",
-    "a profile",
+    "activityEventProfileAccessSchedule",
+    "activityNounProfile",
     "profile",
   ),
   "profile.owner_transfer": label(
     "access",
-    "{actor} made {target} the owner",
-    "another profile",
+    "activityEventProfileOwnerTransfer",
+    "activityNounOtherProfile",
     "profile",
   ),
   "library.restriction": label(
     "access",
-    "{actor} changed the restriction on {target}",
-    "a library",
+    "activityEventLibraryRestriction",
+    "activityNounLibrary",
     "library",
   ),
-  "mydata.delete": label("access", "{actor} deleted their own watch data"),
+  "mydata.delete": label("access", "activityEventMydataDelete"),
   "mydata.operator_delete": label(
     "access",
-    "{actor} deleted the watch data of {target}",
-    "a profile",
+    "activityEventMydataOperatorDelete",
+    "activityNounProfile",
     "profile",
   ),
-  "access.request": label("access", "{actor} asked for access to a locked item"),
-  "access.resolve": label("access", "{actor} answered an access request"),
-  "extension.request": label("access", "{actor} asked for more time"),
-  "extension.response": label("access", "{actor} answered a request for more time"),
+  "access.request": label("access", "activityEventAccessRequest"),
+  "access.resolve": label("access", "activityEventAccessResolve"),
+  "extension.request": label("access", "activityEventExtensionRequest"),
+  "extension.response": label("access", "activityEventExtensionResponse"),
   "extension.preauth": label(
     "access",
-    "{actor} changed automatic extra time for {target}",
-    "a profile",
+    "activityEventExtensionPreauth",
+    "activityNounProfile",
     "profile",
   ),
 
   // Library and media.
-  "library.delete": label("library", "{actor} deleted {target}", "a library", "library"),
-  "library.restore": label("library", "{actor} restored {target}", "a library", "library"),
-  "library.purge": label("library", "{actor} permanently deleted {target}", "a library", "library"),
-  "library.roots": label(
+  "library.delete": label(
     "library",
-    "{actor} changed the folders of {target}",
-    "a library",
+    "activityEventLibraryDelete",
+    "activityNounLibrary",
     "library",
   ),
-  "scan.preview": label(
+  "library.restore": label(
     "library",
-    "{actor} previewed a rescan of {target}",
-    "a library",
+    "activityEventLibraryRestore",
+    "activityNounLibrary",
     "library",
   ),
+  "library.purge": label("library", "activityEventLibraryPurge", "activityNounLibrary", "library"),
+  "library.roots": label("library", "activityEventLibraryRoots", "activityNounLibrary", "library"),
+  "scan.preview": label("library", "activityEventScanPreview", "activityNounLibrary", "library"),
   "scan.preview_commit": label(
     "library",
-    "{actor} started a previewed rescan of {target}",
-    "a library",
+    "activityEventScanPreviewCommit",
+    "activityNounLibrary",
     "library",
   ),
-  "library.icon": label("library", "{actor} changed the icon of {target}", "a library", "library"),
+  "library.icon": label("library", "activityEventLibraryIcon", "activityNounLibrary", "library"),
   "library.preview_clips": label(
     "library",
-    "{actor} changed preview clips for {target}",
-    "a library",
+    "activityEventLibraryPreviewClips",
+    "activityNounLibrary",
     "library",
   ),
-  "media.trash": label("library", "{actor} moved {target} to Trash", "an item"),
-  "media.restore": label("library", "{actor} restored {target} from Trash", "an item"),
-  "trash.purge": label("library", "{actor} permanently emptied Trash"),
-  "retention.trash": label("library", "A retention rule moved an item to Trash"),
-  "retention_rule.delete": label("library", "{actor} deleted a retention rule"),
-  "collection.trash": label("library", "{actor} moved a collection to Trash"),
-  "marker.delete": label("library", "{actor} deleted a marker"),
-  "channel.delete": label("library", "{actor} deleted a channel"),
-  "saved_filter.delete": label("library", "{actor} deleted a saved filter"),
-  "smart_collection.delete": label("library", "{actor} deleted a smart collection"),
-  "saved_station.delete": label("library", "{actor} deleted a saved station"),
-  "scrobble.unlink": label("library", "{actor} unlinked a scrobbling account"),
-  "offline_pack_tokens.delete": label("library", "{actor} removed offline download access"),
-  "media.ai_tag_accept": label("library", "{actor} approved a suggested tag"),
-  "artwork.pin": label("library", "{actor} pinned artwork"),
-  "subscription.retention": label("library", "{actor} changed how long a subscription keeps items"),
-  "subscription.entry_association": label(
+  "media.trash": label("library", "activityEventMediaTrash", "activityNounItem", "media"),
+  "media.restore": label("library", "activityEventMediaRestore", "activityNounItem", "media"),
+  "trash.purge": label("library", "activityEventTrashPurge"),
+  "retention.trash": label("library", "activityEventRetentionTrash"),
+  "retention_rule.delete": label("library", "activityEventRetentionRuleDelete"),
+  "collection.trash": label("library", "activityEventCollectionTrash"),
+  "marker.delete": label("library", "activityEventMarkerDelete"),
+  "channel.delete": label("library", "activityEventChannelDelete"),
+  "saved_filter.delete": label("library", "activityEventSavedFilterDelete"),
+  "smart_collection.delete": label("library", "activityEventSmartCollectionDelete"),
+  "saved_station.delete": label("library", "activityEventSavedStationDelete"),
+  "scrobble.unlink": label("library", "activityEventScrobbleUnlink"),
+  "offline_pack_tokens.delete": label("library", "activityEventOfflinePackTokensDelete"),
+  "media.ai_tag_accept": label("library", "activityEventMediaAiTagAccept"),
+  "artwork.pin": label("library", "activityEventArtworkPin", "activityNounItem", "media"),
+  "subscription.retention": label("library", "activityEventSubscriptionRetention"),
+  "subscription.entry_association": label("library", "activityEventSubscriptionEntryAssociation"),
+  "media.bulk_edit": label("library", "activityEventMediaBulkEdit"),
+  "media.organize": label("library", "activityEventMediaOrganize"),
+  "media.merge": label("library", "activityEventMediaMerge"),
+  "media.field_lock": label("library", "activityEventMediaFieldLock", "activityNounItem", "media"),
+  "media.metadata_edit": label(
     "library",
-    "{actor} matched a subscription entry to an item",
+    "activityEventMediaMetadataEdit",
+    "activityNounItem",
+    "media",
   ),
-  "media.bulk_edit": label("library", "{actor} edited several items at once"),
-  "media.organize": label("library", "{actor} reorganized files"),
-  "media.merge": label("library", "{actor} merged items"),
-  "media.field_lock": label("library", "{actor} locked or unlocked a field on an item"),
-  "media.metadata_edit": label("library", "{actor} edited an item's details"),
-  "media.metadata_refresh": label("library", "{actor} refreshed an item's details"),
-  "media.relation": label("library", "{actor} changed how an item is related to others"),
-  "entity.merge": label("library", "{actor} merged two entries"),
-  "entity.relation": label("library", "{actor} changed how an entry is related to others"),
-  "batch.undo": label("library", "{actor} undid a batch change"),
-  "managed_file.create": label("library", "{actor} added a managed file"),
-  "managed_file.move": label("library", "{actor} moved a managed file"),
-  "managed_file.delete": label("library", "{actor} deleted a managed file"),
-  "managed_file.restore": label("library", "{actor} restored a managed file"),
-  "tag.create": label("library", "{actor} created a tag"),
-  "tag.update": label("library", "{actor} changed a tag"),
-  "tag.delete": label("library", "{actor} deleted a tag"),
-  "tag.restore": label("library", "{actor} restored a tag"),
-  "tag.assign": label("library", "{actor} tagged an item"),
-  "tag.bulk_assign": label("library", "{actor} tagged several items at once"),
+  "media.metadata_refresh": label(
+    "library",
+    "activityEventMediaMetadataRefresh",
+    "activityNounItem",
+    "media",
+  ),
+  "media.relation": label("library", "activityEventMediaRelation", "activityNounItem", "media"),
+  "entity.merge": label("library", "activityEventEntityMerge"),
+  "entity.relation": label("library", "activityEventEntityRelation"),
+  "batch.undo": label("library", "activityEventBatchUndo"),
+  "managed_file.create": label("library", "activityEventManagedFileCreate"),
+  "managed_file.move": label("library", "activityEventManagedFileMove"),
+  "managed_file.delete": label("library", "activityEventManagedFileDelete"),
+  "managed_file.restore": label("library", "activityEventManagedFileRestore"),
+  "tag.create": label("library", "activityEventTagCreate"),
+  "tag.update": label("library", "activityEventTagUpdate"),
+  "tag.delete": label("library", "activityEventTagDelete"),
+  "tag.restore": label("library", "activityEventTagRestore"),
+  "tag.assign": label("library", "activityEventTagAssign"),
+  "tag.bulk_assign": label("library", "activityEventTagBulkAssign"),
 
   // Plugins and features.
-  "plugin.activation": label("plugins", "{actor} turned {target} on or off", "a plugin", "plugin"),
+  "plugin.activation": label(
+    "plugins",
+    "activityEventPluginActivation",
+    "activityNounPlugin",
+    "plugin",
+  ),
   "plugin.uninstall": label(
     "plugins",
-    "{actor} uninstalled {target} and deleted its data",
-    "a plugin",
+    "activityEventPluginUninstall",
+    "activityNounPlugin",
     "plugin",
   ),
-  "plugin.grant": label(
+  "plugin.grant": label("plugins", "activityEventPluginGrant", "activityNounPlugin", "plugin"),
+  "plugin.update": label("plugins", "activityEventPluginUpdate", "activityNounPlugin", "plugin"),
+  "plugin.catalog_read": label(
     "plugins",
-    "{actor} changed the permissions of {target}",
-    "a plugin",
+    "activityEventPluginCatalogRead",
+    "activityNounPlugin",
     "plugin",
   ),
-  "plugin.update": label("plugins", "{actor} updated {target}", "a plugin", "plugin"),
-  "plugin.catalog_read": label("plugins", "{target} read the catalog", "a plugin", "plugin"),
-  "plugin.ingest_request": label("plugins", "{target} asked to add files", "a plugin", "plugin"),
+  "plugin.ingest_request": label(
+    "plugins",
+    "activityEventPluginIngestRequest",
+    "activityNounPlugin",
+    "plugin",
+  ),
   "plugin.file_mutation_request": label(
     "plugins",
-    "{target} asked to change files",
-    "a plugin",
+    "activityEventPluginFileMutationRequest",
+    "activityNounPlugin",
     "plugin",
   ),
   "plugin.profile_link": label(
     "plugins",
-    "{target} linked an account for {actor}",
-    "a plugin",
+    "activityEventPluginProfileLink",
+    "activityNounPlugin",
     "plugin",
   ),
   "plugin.outbound_request": label(
     "plugins",
-    "{target} contacted an outside service",
-    "a plugin",
+    "activityEventPluginOutboundRequest",
+    "activityNounPlugin",
     "plugin",
   ),
-  "plugin.metadata_write": label("plugins", "{target} edited metadata", "a plugin", "plugin"),
+  "plugin.metadata_write": label(
+    "plugins",
+    "activityEventPluginMetadataWrite",
+    "activityNounPlugin",
+    "plugin",
+  ),
   "plugin.collection_write": label(
     "plugins",
-    "{target} changed a collection",
-    "a plugin",
+    "activityEventPluginCollectionWrite",
+    "activityNounPlugin",
     "plugin",
   ),
-  "plugin.artwork_write": label("plugins", "{target} set artwork", "a plugin", "plugin"),
+  "plugin.artwork_write": label(
+    "plugins",
+    "activityEventPluginArtworkWrite",
+    "activityNounPlugin",
+    "plugin",
+  ),
   "plugin.watch_state_write": label(
     "plugins",
-    "{target} changed watch state for {actor}",
-    "a plugin",
+    "activityEventPluginWatchStateWrite",
+    "activityNounPlugin",
     "plugin",
   ),
   "plugin.playback_state_read": label(
     "plugins",
-    "{target} read playback progress for {actor}",
-    "a plugin",
+    "activityEventPluginPlaybackStateRead",
+    "activityNounPlugin",
     "plugin",
   ),
   "plugin.dead_letter_retry": label(
     "plugins",
-    "{actor} retried a failed delivery for {target}",
-    "a plugin",
+    "activityEventPluginDeadLetterRetry",
+    "activityNounPlugin",
     "plugin",
   ),
   "capability.toggle": label(
     "plugins",
-    "{actor} turned {target} on or off",
-    "a feature",
+    "activityEventCapabilityToggle",
+    "activityNounFeature",
     "capability",
   ),
 
   // Settings.
-  "config.update": label("settings", "{actor} changed {target}", "server settings", "configDomain"),
-  "schedule.update": label("settings", "{actor} changed a task schedule"),
-  "path_picker.root_added": label("settings", "{actor} allowed a new folder location"),
+  "config.update": label(
+    "settings",
+    "activityEventConfigUpdate",
+    "activityNounServerSettings",
+    "configDomain",
+  ),
+  "schedule.update": label("settings", "activityEventScheduleUpdate"),
+  "path_picker.root_added": label("settings", "activityEventPathPickerRootAdded"),
 
   // Playback.
-  "session.terminate": label("playback", "{actor} ended a playback session"),
-  "session.control": label("playback", "Playback for {actor} was controlled from another device"),
-  "group.control": label("playback", "{actor} changed a synced playback group"),
+  "session.terminate": label("playback", "activityEventSessionTerminate"),
+  "session.control": label("playback", "activityEventSessionControl"),
+  "group.control": label("playback", "activityEventGroupControl"),
 };
 
 /** Names the page has resolved for the identifiers an entry carries. */
@@ -306,17 +328,21 @@ export interface ActivityNames {
   profiles: ReadonlyMap<string, string>;
   devices: ReadonlyMap<string, string>;
   libraries: ReadonlyMap<string, string>;
+  /** Titles of the Media items the viewer may see; hidden items are absent. */
+  media: ReadonlyMap<string, string>;
 }
 
 export const NO_ACTIVITY_NAMES: ActivityNames = {
   profiles: new Map(),
   devices: new Map(),
   libraries: new Map(),
+  media: new Map(),
 };
 
 export interface ActivityRow {
   sentence: string;
   category: ActivityCategory;
+  categoryLabel: string;
   /** False when the action has no sentence and the readable key is shown. */
   known: boolean;
   profileName?: string;
@@ -338,18 +364,19 @@ function sentenceCase(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function actorName(entry: ActivityRecord, names: ActivityNames): string {
+function actorName(entry: ActivityRecord, names: ActivityNames, t: Translate): string {
   const profile = entry.profileID ? names.profiles.get(entry.profileID) : undefined;
   if (profile) return profile;
-  if (entry.tokenID) return "an API token";
-  if (entry.apiKeyID) return "an API key";
-  return entry.profileID ? "a profile that no longer exists" : "someone";
+  if (entry.tokenID) return t("activityActorApiToken");
+  if (entry.apiKeyID) return t("activityActorApiKey");
+  return t(entry.profileID ? "activityActorGoneProfile" : "activityActorSomeone");
 }
 
 function targetName(
   entry: ActivityRecord,
   kind: string | undefined,
   names: ActivityNames,
+  t: Translate,
 ): string | undefined {
   const id = entry.targetID;
   switch (kind) {
@@ -360,13 +387,18 @@ function targetName(
       return names.devices.get(id ?? "") ?? names.devices.get(entry.deviceID ?? "");
     case "library":
       return names.libraries.get(id ?? "") ?? names.libraries.get(entry.libraryID ?? "");
+    case "media":
+      // Only a Media target carries a Media id; the server reveal-filters the title lookup.
+      return entry.targetType === "media" && id ? names.media.get(id) : undefined;
     case "plugin":
-      return id ? `the ${id} plugin` : undefined;
+      return id ? t("activityTargetPlugin", { plugin: id }) : undefined;
     case "capability":
-      return id ? `the ${humanizeActivityKey(id).toLowerCase()} feature` : undefined;
+      return id
+        ? t("activityTargetFeature", { feature: humanizeActivityKey(id).toLowerCase() })
+        : undefined;
     case "configDomain":
       return entry.targetType
-        ? `${humanizeActivityKey(entry.targetType).toLowerCase()} settings`
+        ? t("activityTargetSettings", { area: humanizeActivityKey(entry.targetType).toLowerCase() })
         : undefined;
     default:
       return undefined;
@@ -376,6 +408,7 @@ function targetName(
 /** Turns one entry into the sentence, category and names its row shows. */
 export function describeActivity(
   entry: ActivityRecord,
+  t: Translate,
   names: ActivityNames = NO_ACTIVITY_NAMES,
 ): ActivityRow {
   const known = ACTIVITY_LABELS[entry.action];
@@ -385,23 +418,34 @@ export function describeActivity(
     libraryName: entry.libraryID ? names.libraries.get(entry.libraryID) : undefined,
   };
   if (!known) {
-    return { ...row, sentence: humanizeActivityKey(entry.action), category: "other", known: false };
+    return {
+      ...row,
+      sentence: humanizeActivityKey(entry.action),
+      category: "other",
+      categoryLabel: t(ACTIVITY_CATEGORY_LABELS.other),
+      known: false,
+    };
   }
   const target =
-    targetName(entry, known.target ?? entry.targetType, names) ?? known.noun ?? "something";
-  const sentence = known.sentence
-    .replace("{actor}", actorName(entry, names))
-    .replace("{target}", target);
-  return { ...row, sentence: sentenceCase(sentence), category: known.category, known: true };
+    targetName(entry, known.target ?? entry.targetType, names, t) ??
+    t(known.noun ?? "activityNounSomething");
+  const sentence = t(known.sentence, { actor: actorName(entry, names, t), target });
+  return {
+    ...row,
+    sentence: sentenceCase(sentence),
+    category: known.category,
+    categoryLabel: t(ACTIVITY_CATEGORY_LABELS[known.category]),
+    known: true,
+  };
 }
 
-/** Whether a row matches the search text (sentence, raw key, names, ids). */
+/** Whether a row matches the search text (sentence, category, raw key, names, ids). */
 export function activityMatches(entry: ActivityRecord, row: ActivityRow, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   return [
     row.sentence,
-    ACTIVITY_CATEGORY_LABELS[row.category],
+    row.categoryLabel,
     row.profileName,
     row.deviceName,
     row.libraryName,

@@ -23,9 +23,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ACTIVITY_TEXT, describeActivity } from "@/lib/activityDisplay";
-import { fetchActivityLog, fetchTrashList, purgeTrash, restoreMedia } from "@/lib/graphql";
-import type { ActivityEntryInfo, TrashEntry } from "@/lib/graphql/types";
+import { describeActivity } from "@/lib/activityDisplay";
+import { fetchActivityRecords, fetchTrashList, purgeTrash, restoreMedia } from "@/lib/graphql";
+import type { ActivityRecord } from "@/lib/graphql/activity";
+import type { TrashEntry } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "../lib/schedule";
 
@@ -251,6 +252,8 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
   );
 }
 
+const TRASH_ACTIVITY_LIMIT = 50;
+
 // ActivitySection: the append-only operator feed (latest 50). Reversible rows
 // expose an Undo that jumps to the Retained Trash table where the matching
 // Restore lives; irreversible rows (trash.purge) are flagged with no undo. The
@@ -258,7 +261,7 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
 // recoverable-delete surface, not a new server mutation.
 function ActivitySection() {
   const t = useT();
-  const [entries, setEntries] = useState<ActivityEntryInfo[]>([]);
+  const [entries, setEntries] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -266,7 +269,7 @@ function ActivitySection() {
     setError("");
     setLoading(true);
     try {
-      setEntries(await fetchActivityLog());
+      setEntries(await fetchActivityRecords(undefined, 0, TRASH_ACTIVITY_LIMIT));
     } catch {
       setError(t("activityLogUnavailable"));
     } finally {
@@ -300,8 +303,8 @@ function ActivitySection() {
         <ManageTable>
           <TableHeader>
             <TableRow>
-              <TableHead>{ACTIVITY_TEXT.when}</TableHead>
-              <TableHead>{ACTIVITY_TEXT.what}</TableHead>
+              <TableHead>{t("activityPageWhen")}</TableHead>
+              <TableHead>{t("activityPageWhat")}</TableHead>
               <TableHead className="text-right">{t("activityUndo")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -319,7 +322,9 @@ function ActivitySection() {
                     </TableCell>
                     {/* The same sentence the Console activity log shows; the raw
                         event key stays available on hover for operators. */}
-                    <TableCell title={entry.action}>{describeActivity(entry).sentence}</TableCell>
+                    <TableCell title={entry.action}>
+                      {describeActivity(entry, t).sentence}
+                    </TableCell>
                     <TableCell className="text-right">
                       {reversible ? (
                         <Button type="button" variant="outline" size="sm" onClick={onUndo}>

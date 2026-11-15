@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { DECLARED_LOCALE_TAGS } from "@/l10n/locales";
 import { formatMessage } from "@/lib/i18n";
 
 // Locale-aware number/plural formatting behind the text-only `t` API
 // (ADR-0034). `formatMessage` is the engine `t` calls with the active display
 // locale; these exercise it directly across every supported display locale
-// (`fr-CA` is a display locale that maps to the `fr` catalog).
-const LOCALES = ["en", "fr-CA", "de", "es", "pt"] as const;
+// from the shared declaration (`fr-CA` stands in for `fr` as a display locale that maps to the
+// `fr` catalog).
+const LOCALES = DECLARED_LOCALE_TAGS.map((tag) => (tag === "fr" ? "fr-CA" : tag));
 
 describe("formatMessage — legacy interpolation is unchanged", () => {
   it("replaces bare {name} placeholders exactly as before", () => {

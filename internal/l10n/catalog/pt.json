@@ -1,0 +1,13 @@
+{
+  "library_root.cant_open": "O servidor não consegue abrir {path}.",
+  "library_root.missing": "A pasta {path} não existe no servidor.",
+  "library_root.not_folder": "{path} é um arquivo, não uma pasta.",
+  "library_root.unreadable": "O servidor não tem permissão para ler {path}.",
+  "notification.access_request.title": "Acesso solicitado",
+  "notification.extension_request.title": "Mais tempo solicitado",
+  "notification.watch_party_invite.title": "Convite Watch Party",
+  "notification.watch_party_request.title": "Pedido de salto na Watch Party",
+  "setup.lan_hint.finish_setup": "Abra o Beamfall pelo endereço IP para concluir a configuração sem o token de configuração.",
+  "setup.lan_hint.sign_in": "Abra o Beamfall pelo endereço IP para entrar com a senha de administrador.",
+  "watch_party.participant_fallback": "Participante"
+}

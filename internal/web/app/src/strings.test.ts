@@ -2,11 +2,21 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type Locale, STRINGS, type StringKey, type StringTable } from "./strings";
-import { de, en, es, fr, pt } from "./strings/catalog";
+import { DECLARED_LOCALE_TAGS, LOCALE_DECLARATION } from "./l10n/locales";
+import {
+  type Locale,
+  PARTIAL_CATALOGS,
+  STRINGS,
+  type StringKey,
+  type StringTable,
+} from "./strings";
+import { en } from "./strings/catalog";
 
-const LOCALES = ["en", "fr", "de", "es", "pt"] as const satisfies readonly Locale[];
-const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es, pt };
+// The locale set comes from the shared declaration (CORE-2104), never a hand-written list.
+const LOCALES = DECLARED_LOCALE_TAGS as readonly Locale[];
+const SHIPPED = new Set(
+  LOCALE_DECLARATION.locales.filter((entry) => entry.status === "shipped").map((l) => l.tag),
+);
 
 // Captured after WEB-HLS-RECOVERY-1 added localized playback-recovery keys atop
 // WEBUI-SHELL-RESILIENCE-UPGRADE-BLANK-1 (2026-08-30); updated for CORE-1141 player settings copy,
@@ -56,35 +66,38 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 // merged with the CORE-1620 signed-out Console device copy;
 // merged with the CORE-1970 transcoder resource settings and HDR tone-map disabled copy;
 // updated for the CORE-2077 Library folders, Add folder and file tools copy.
-const BASE_SERIALIZED_LENGTH = 618_753;
-const BASE_REGISTRY_SHA256 = "c78451ace56c75e0c045fa7c6ec58fb83894c57d74c38cb19f60a1095d1c8a43";
-const BASE_KEY_ORDER_SHA256 = "ef627b853653ce67d41060678dedaa910517d5d63a156697f6fb9c99a493a2a1";
-const BASE_PLACEHOLDER_SHA256 = "128ccb0456eaaa19982c815dd9161ab2ecaf11837000fb71cb0f2443cde69cc2";
+// updated for the CORE-1237 one-key plural search result count, the CORE-1208 localized activity
+// log copy and the CORE-1204/1223/1255/1271/1310/2052 completion of the fr, de, es and pt catalogs.
+// merged with the CORE-0557 spoken scrubber time copy.
+const BASE_SERIALIZED_LENGTH = 707_845;
+const BASE_REGISTRY_SHA256 = "89346fb19c56a5d26a807afdc9e65274f19501d881314d589d50cbf259e66169";
+const BASE_KEY_ORDER_SHA256 = "20788b19d60aae365a12e9392b0ee12583df2fd2bc3411499e71ef72062fd0b6";
+const BASE_PLACEHOLDER_SHA256 = "06f5dbc913eaa765e9ab619f67c3bb1ffaccd689bfdb35de397b879a66a4a2e9";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 2_320,
-    partialSha256: "ffd5eaeb852787380e2152651064e932ff1985276face80f0261f38e6a78601c",
-    resolvedSha256: "98cd35801f13220a4635f23be94ed8369f4e57f39004af8bc41eefcc0d634303",
+    partialCount: 2_466,
+    partialSha256: "784627c6fc67802fcc295ca14a38f745ffc27fa06318413c64f413de20c31a98",
+    resolvedSha256: "f4904c88aef95744e16b4caba38edb2cb35f8eb6169dc855143dd0a1fb26b722",
   },
   fr: {
-    partialCount: 1_121,
-    partialSha256: "f56b999163185728189a78613123cb0c70a07301918dbe3c69cb3e0e79958bae",
-    resolvedSha256: "d0ac0c093e8d8f0f09ce247f77d7105d03c1b8e63f6e244479c0b70e929cb9a3",
+    partialCount: 2_466,
+    partialSha256: "67e273bbeeb2226954c28da7fda079d884ccf18f8b9317709752cba1b4964b1c",
+    resolvedSha256: "d60306505a7bb8099914d1fc93d8e02ff7fc47f3a7ef7e6f4d8d495129c8a23d",
   },
   de: {
-    partialCount: 961,
-    partialSha256: "e2609caf4eee7df8443bc27cd081a862dcd7031d7da03c8dae17dbf30a7bd058",
-    resolvedSha256: "380161aaf31178558b3c64ac2e5c44727504c45adf143012004c3a07f0965acc",
+    partialCount: 2_466,
+    partialSha256: "b86312c717cf3d646912e7b12e2a078642ea6104fac5ec7506c776beb23e984d",
+    resolvedSha256: "b0ca5a60182aab7b45e1dde5800aaade8e5ad1a9b3826bf1059aa19ac1185416",
   },
   es: {
-    partialCount: 961,
-    partialSha256: "884193b4dbe14f9e472acdc5b8a283b49092aada290878d48d8ace1a932eb9ce",
-    resolvedSha256: "888a6107aaf6257c30b79cef241756e25410fe7bce320fc2e07761f7323479be",
+    partialCount: 2_466,
+    partialSha256: "5dd8f7682e6656fc2db6af814d131017930f7099882197195ed7e379d6d82838",
+    resolvedSha256: "eecc906dc8647e6ee7fbe8073192a625300b2c2f94395e71c0e3bd583735ad3c",
   },
   pt: {
-    partialCount: 961,
-    partialSha256: "6f9b7c360a0c333246ff681430451e0dc54ebd0cb98c9c70a123e83e9692a776",
-    resolvedSha256: "46543a959cc9663a2aea7ad532076c5c8f454dd5ae7e12202ec574621d0a2a1c",
+    partialCount: 2_466,
+    partialSha256: "3f149c7e0c5f4eae9fd30d6227a0574c64c7cf11cb4bbf59647d0c4d063ec4e8",
+    resolvedSha256: "91eec9dbdcd520f4903af584a658ff0ee61299193696aef0557987f86c0a056b",
   },
 } as const satisfies Record<
   Locale,
@@ -105,13 +118,68 @@ function withEnglishFallback(partial: Partial<StringTable>): StringTable {
   return Object.fromEntries(keys.map((key) => [key, partial[key] ?? en[key]])) as StringTable;
 }
 
+const BRANCHING = new Set(["plural", "select", "selectordinal"]);
+
+/**
+ * The ICU-lite arguments of a message, in order (CORE-1237). A plural or select argument is
+ * `name:type[...]` with the sorted, de-duplicated arguments of its branches, so translated branch
+ * text and a locale's extra plural categories never count as arguments.
+ */
+function messageArguments(message: string): string[] {
+  const names: string[] = [];
+  let i = 0;
+  // Like formatMessage: apostrophe quoting applies only once a message uses a typed argument.
+  const icu = /\{[^{}]*,/.test(message);
+  const skipQuoted = (): boolean => {
+    if (!icu || message[i] !== "'") return false;
+    const close = message[i + 1] === "'" ? i + 1 : message.indexOf("'", i + 1);
+    i = close < 0 ? message.length : close + 1;
+    return true;
+  };
+  const text = (nested: boolean, into: string[]): void => {
+    while (i < message.length && !(nested && message[i] === "}")) {
+      if (skipQuoted()) continue;
+      if (message[i] === "{") argument(into);
+      else i++;
+    }
+  };
+  const argument = (into: string[]): void => {
+    const head = /^\{\s*([A-Za-z_]\w*)\s*(?:,\s*(\w+)\s*)?([,}])/.exec(message.slice(i));
+    if (!head) {
+      i++;
+      return;
+    }
+    i += head[0].length;
+    const [, name, type, delimiter] = head;
+    if (!type || !BRANCHING.has(type) || delimiter !== ",") {
+      into.push(name);
+      if (delimiter === ",") {
+        text(true, []);
+        i++;
+      }
+      return;
+    }
+    const branches: string[] = [];
+    for (;;) {
+      const selector = /^\s*(?:offset:\d+\s+)?(=?[\w-]+)?\s*/.exec(message.slice(i));
+      i += selector?.[0].length ?? 0;
+      if (message[i] !== "{" || !selector?.[1]) break;
+      i++;
+      text(true, branches);
+      i++;
+    }
+    if (message[i] === "}") i++;
+    else branches.push("<malformed>");
+    into.push(`${name}:${type}[${[...new Set(branches)].sort().join(",")}]`);
+  };
+  text(false, names);
+  return names;
+}
+
 function placeholderInventory(table: StringTable): Record<string, string[]> {
   const inventory: Record<string, string[]> = {};
   for (const [key, value] of Object.entries(table)) {
-    // Argument names only: an ICU plural contributes its argument, not its translated branches.
-    const placeholders = [...value.matchAll(/\{\s*([A-Za-z_]\w*)\s*[,}]/g)].map(
-      (match) => match[1],
-    );
+    const placeholders = messageArguments(value);
     if (placeholders.length > 0) inventory[key] = placeholders;
   }
   return inventory;
@@ -142,7 +210,7 @@ describe("localized string assembly", () => {
     }
   });
 
-  it("keeps English complete and resolves every missing locale key through English", () => {
+  it("keeps English and every shipped locale complete; others resolve through English", () => {
     const englishKeys = Object.keys(en) as StringKey[];
 
     expect(Object.values(en).every((value) => typeof value === "string" && value.length > 0)).toBe(
@@ -152,9 +220,8 @@ describe("localized string assembly", () => {
       const partial = PARTIAL_CATALOGS[locale];
       expect(STRINGS[locale]).toEqual(withEnglishFallback(partial));
 
-      if (locale === "en") continue;
-      const missingKeys = englishKeys.filter((key) => partial[key] === undefined);
-      expect(missingKeys.length).toBeGreaterThan(0);
+      const missingKeys = englishKeys.filter((key) => !partial[key]);
+      if (SHIPPED.has(locale)) expect(missingKeys, `${locale} missing keys`).toEqual([]);
       for (const key of missingKeys) expect(STRINGS[locale][key]).toBe(en[key]);
     }
   });
@@ -165,6 +232,43 @@ describe("localized string assembly", () => {
     expect(sha256(JSON.stringify(englishInventory))).toBe(BASE_PLACEHOLDER_SHA256);
     for (const locale of LOCALES) {
       expect(placeholderInventory(STRINGS[locale])).toEqual(englishInventory);
+    }
+  });
+});
+
+describe("placeholder guard (CORE-1237)", () => {
+  const source = "{count, plural, one {# result for “{query}”} other {# results for “{query}”}}";
+
+  it("accepts an ICU plural with translated branches and extra plural categories", () => {
+    const expected = messageArguments(source);
+    expect(expected).toEqual(["count:plural[query]"]);
+    expect(
+      messageArguments(
+        "{count, plural, one {# résultat pour « {query} »} other {# résultats pour « {query} »}}",
+      ),
+    ).toEqual(expected);
+    expect(
+      messageArguments(
+        "{count, plural, one {{query}: # wynik} few {{query}: # wyniki} many {{query}: # wyników} other {{query}: # wyniku}}",
+      ),
+    ).toEqual(expected);
+    expect(messageArguments("{count, plural, one {item} other {items}}")).toEqual([
+      "count:plural[]",
+    ]);
+    expect(messageArguments("{n, number} '{'{name}'}' {name}")).toEqual(["n", "name", "name"]);
+  });
+
+  it("rejects renamed, dropped, extra or retyped arguments and broken plurals", () => {
+    const expected = messageArguments(source);
+    for (const broken of [
+      "{count, plural, one {# résultat pour « {requete} »} other {# résultats}}",
+      "{count, plural, one {# résultat} other {# résultats}}",
+      "{count, plural, one {# résultat pour « {query} » {name}} other {# résultats pour « {query} »}}",
+      "{count} résultats pour « {query} »",
+      "{total, plural, one {# résultat pour « {query} »} other {# résultats pour « {query} »}}",
+      "{count, plural, one {# résultat pour « {query} »} other # résultats pour « {query} »}",
+    ]) {
+      expect(messageArguments(broken), broken).not.toEqual(expected);
     }
   });
 });

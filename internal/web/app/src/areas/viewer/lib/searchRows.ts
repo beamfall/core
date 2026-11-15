@@ -98,14 +98,10 @@ export function searchPagePath(term: string): string {
   return `/search?q=${encodeURIComponent(term)}`;
 }
 
-// The catalog guard compares placeholders across locales, which rules out an
-// inline plural with translated branches, so the count has one key per form.
 export function searchCountLabel(
   t: (key: StringKey, values?: Record<string, string | number>) => string,
   count: number,
   query: string,
 ): string {
-  return count === 1
-    ? t("searchResultCountOne", { query })
-    : t("searchResultCountOther", { count, query });
+  return t("searchResultCount", { count, query });
 }

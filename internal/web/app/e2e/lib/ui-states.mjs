@@ -691,8 +691,6 @@ const NO_CONTROL_DRIVEN = "no test opens this control yet (CORE-1311)";
 const NO_EMPTY_FIXTURE = "no test routes or seeds an empty result for this state yet (CORE-1311)";
 const NO_ERROR_FIXTURE = "no test routes a failure for this state yet (CORE-1311)";
 const NO_LOADING_FIXTURE = "no test holds a response open to show this state yet (CORE-1311)";
-const NO_SETUP_FRENCH =
-  "the setup wizard has no French strings: src/strings/setup.ts ships fr: {} (CORE-1310)";
 const SHELL_NARROW_OVERFLOW =
   "overflows horizontally at phone width: Manage and Console navigation and tables do not fit (CORE-0058)";
 const VIEWER_HEADER_OVERFLOW =
@@ -971,5 +969,4 @@ export const UI_STATE_GAPS = Object.freeze({
   "/console/updates@mobile": SHELL_NARROW_OVERFLOW,
   "/console/config#error:server": NO_ERROR_FIXTURE,
   "/console/config#error:transcode": NO_ERROR_FIXTURE,
-  "area:setup@locale:fr-FR": NO_SETUP_FRENCH,
 });

@@ -1,0 +1,13 @@
+{
+  "library_root.cant_open": "Der Server kann {path} nicht öffnen.",
+  "library_root.missing": "Den Ordner {path} gibt es auf dem Server nicht.",
+  "library_root.not_folder": "{path} ist eine Datei, kein Ordner.",
+  "library_root.unreadable": "Der Server hat keine Berechtigung, {path} zu lesen.",
+  "notification.access_request.title": "Zugriff angefragt",
+  "notification.extension_request.title": "Mehr Zeit angefragt",
+  "notification.watch_party_invite.title": "Watch-Party-Einladung",
+  "notification.watch_party_request.title": "Watch-Party-Spulanfrage",
+  "setup.lan_hint.finish_setup": "Öffne Beamfall über seine IP-Adresse, um die Einrichtung ohne Einrichtungstoken abzuschließen.",
+  "setup.lan_hint.sign_in": "Öffne Beamfall über seine IP-Adresse, um dich mit dem Admin-Passwort anzumelden.",
+  "watch_party.participant_fallback": "Teilnehmer"
+}
