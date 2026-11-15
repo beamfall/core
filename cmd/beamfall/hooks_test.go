@@ -103,6 +103,26 @@ func TestProductionHookAdaptersPreservePluginOutputs(t *testing.T) {
 	if mapper.MarkerField() != music.HydratedField {
 		t.Fatal("music hydration constants drifted")
 	}
+	rehydrator, ok := mapper.(app.HydrationRehydrator)
+	if !ok {
+		t.Fatal("music hydration mapper does not opt into fingerprint-keyed re-hydration")
+	}
+	if rehydrator.FingerprintField() != music.HydratedFingerprintField {
+		t.Fatal("music hydration fingerprint field drifted")
+	}
+	for _, tc := range []struct {
+		recorded, current string
+		want              app.HydrationWrite
+	}{
+		{"", "fp-1", app.HydrationWriteFresh},
+		{"fp-1", "fp-1", app.HydrationWriteSkip},
+		{"fp-1", "", app.HydrationWriteSkip},
+		{"fp-1", "fp-2", app.HydrationWriteReplace},
+	} {
+		if got := rehydrator.DecideHydrationWrite(tc.recorded, tc.current); got != tc.want {
+			t.Errorf("DecideHydrationWrite(%q, %q) = %v, want %v", tc.recorded, tc.current, got, tc.want)
+		}
+	}
 	schemes := mapper.ExternalIDSchemes()
 	if len(schemes) != 1 || schemes[0] != music.SchemeMusicBrainzRecording {
 		t.Fatalf("music hydration external-ID schemes = %v", schemes)

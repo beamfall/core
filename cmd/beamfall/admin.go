@@ -49,7 +49,7 @@ func resetAdminPassword(ctx context.Context, args []string, stdout io.Writer) er
 	if err := refuseServerLock(cfg.DataDir); err != nil {
 		return err
 	}
-	st, err := store.Open(ctx, cfg.DataDir, store.Options{})
+	st, err := store.Open(ctx, cfg.DataDir, store.Options{RequireExisting: true})
 	if err != nil {
 		return err
 	}

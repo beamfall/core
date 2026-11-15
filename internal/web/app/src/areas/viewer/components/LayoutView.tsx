@@ -8,6 +8,7 @@ import { useSession } from "@/lib/session";
 import { applyRenderFocus } from "../lib/renderFocus";
 import { MAX_RENDERED_SECTIONS, SECTION_KINDS } from "../lib/sections";
 import { FilterBar } from "./FilterBar";
+import { FirstScanButton } from "./FirstScanButton";
 import { HydratedSection, type SectionHydrationState } from "./HydratedSection";
 import type { SeeAllTarget } from "./SectionView";
 
@@ -277,10 +278,8 @@ export function LayoutView({
           {t("libraryEmptyOwnerTitle")}
         </p>
         <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyOwnerLead")}</p>
-        <div className="mt-2 flex flex-wrap justify-center gap-2">
-          <Link to="/console/libraries" className={buttonVariants()}>
-            {t("libraryEmptyStartScan")}
-          </Link>
+        <div className="mt-2 flex flex-wrap items-start justify-center gap-2">
+          <FirstScanButton />
           <Link to="/console/migrate" className={buttonVariants({ variant: "outline" })}>
             {t("libraryEmptyMigrate")}
           </Link>

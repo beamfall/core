@@ -2,6 +2,7 @@ import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { Button } from "@/components/ui/button";
+import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
 import type { ClientPref, GenericMediaInfo } from "@/lib/graphql/types";
@@ -15,7 +16,19 @@ import {
   skipIntervalOverrideKey,
   skipIntervalOverrideValue,
 } from "../lib/preferences";
-import { type PlayQueueItem, queueNeighbours, readPlayerNavState } from "../lib/watchQueue";
+import {
+  encodeSubtitleAppearance,
+  resolveSubtitleAppearance,
+  SUBTITLE_APPEARANCE_KEYS,
+  type SubtitleAppearanceField,
+} from "../lib/subtitleAppearance";
+import {
+  type PlayQueueItem,
+  queueNeighbours,
+  queueOfClass,
+  readPlayerNavState,
+  withQueueClasses,
+} from "../lib/watchQueue";
 import { AudioStage } from "../player/AudioStage";
 import { PlayerTransport } from "../player/PlayerTransport";
 import { SkippedOverlay } from "../player/SkippedOverlay";
@@ -55,11 +68,22 @@ export function PlayerPage() {
   // state, with the siblings it was shown with as the play queue. The media(id)
   // read below fills in the title for a deep link, plus artwork and credits.
   const navState = readPlayerNavState(location.state, identity);
-  const queue = navState.queue;
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
   const startAtSeconds = parseTimestampParam(new URLSearchParams(location.search).get("t"));
-  const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
+  // Media classes playback-info has reported (this item's and its declared
+  // next item's), by Media id (CORE-1490).
+  const [learnedClasses, setLearnedClasses] = useState<Record<string, string>>({});
+  const navQueue = navState.queue;
+  const classedQueue = useMemo(
+    () => (navQueue ? withQueueClasses(navQueue, learnedClasses) : undefined),
+    [navQueue, learnedClasses],
+  );
+  const entryClass = classedQueue?.find((item) => item.id === mediaId)?.mediaClass;
+  const declaredNextID = classedQueue
+    ? (queueNeighbours(queueOfClass(classedQueue, entryClass, mediaId || ""), mediaId || "").next
+        ?.id ?? "")
+    : undefined;
 
   const { videoRef, hlsRef, state, retry, switchToHls } = usePlayer(
     mediaId || "",
@@ -82,12 +106,47 @@ export function PlayerPage() {
     startAtSeconds,
     // "" when a card queue drives playback but has nothing after this item, so
     // an earlier Play all queue is left rather than resumed.
-    queue ? (nextInQueue?.id ?? "") : undefined,
+    declaredNextID,
   );
+
+  // The queue stays within the playing item's class (CORE-1490): a track
+  // started from a shelf that mixes tracks and videos steps only through the
+  // tracks. The narrowed queue (with what was learned) is the one carried to
+  // the next item, so a dropped entry stays dropped.
+  const playingClass = state.info?.mediaClass || entryClass;
+  const queue = useMemo(
+    () => (classedQueue ? [...queueOfClass(classedQueue, playingClass, mediaId || "")] : undefined),
+    [classedQueue, playingClass, mediaId],
+  );
+  const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
+  const info = state.info;
+  const mediaIdRef = useRef(mediaId);
+  mediaIdRef.current = mediaId;
+  useEffect(() => {
+    // Keyed on the info document alone: a new route renders once with the
+    // previous item's info before the engine resets, which must not be
+    // credited to the new id.
+    const id = mediaIdRef.current;
+    const learned: Record<string, string> = {};
+    if (id && info?.mediaClass) learned[id] = info.mediaClass;
+    if (info?.next?.mediaID && info.next.mediaClass) {
+      learned[info.next.mediaID] = info.next.mediaClass;
+    }
+    if (Object.keys(learned).length === 0) return;
+    setLearnedClasses((known) =>
+      Object.entries(learned).every(([key, value]) => known[key] === value)
+        ? known
+        : { ...known, ...learned },
+    );
+  }, [info]);
 
   const playing = state.phase === "playing";
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
   const isAudio = state.info?.mediaClass === "audio";
+  // Before playback-info answers, a queue entry that reports its class already
+  // routes a track to the audio stage instead of an empty video frame
+  // (CORE-1309).
+  const showAudioStage = isAudio || (!state.info && entryClass === "audio");
   const credits = media?.credits ?? [];
   // The per-collection skip interval belongs to the item's container Entity
   // (the show, the album …), named by its title; an item with none has no row.
@@ -95,6 +154,7 @@ export function PlayerPage() {
   const collectionID = collection?.entityID || "";
   const resolvedPrefs = resolvePreferences(clientPrefs, collectionID);
   const showSkipInterval = collectionID ? skipIntervalOverrideValue(clientPrefs, collectionID) : "";
+  const subtitleAppearance = useMemo(() => resolveSubtitleAppearance(clientPrefs), [clientPrefs]);
   const collectionTitle = collection
     ? collection.title || displayString(collection.kindDisplayName, displayLocale)
     : "";
@@ -244,17 +304,30 @@ export function PlayerPage() {
     return () => controller.abort();
   }, [mediaId]);
 
+  // Keys edited in this identity epoch keep their local value over a Profile
+  // read, which may predate the write. A Profile switch starts a new epoch.
+  const editedPrefKeys = useRef({ epoch: getIdentityEpochSignal(), keys: new Set<string>() });
+  const editedKeys = useCallback(() => {
+    const epoch = getIdentityEpochSignal();
+    if (editedPrefKeys.current.epoch !== epoch) editedPrefKeys.current = { epoch, keys: new Set() };
+    return editedPrefKeys.current.keys;
+  }, []);
   useEffect(() => {
     let current = true;
     void fetchClientPrefs()
       .then((prefs) => {
-        if (current) setClientPrefs(prefs);
+        if (!current) return;
+        const edited = editedKeys();
+        setClientPrefs((local) => [
+          ...prefs.filter((pref) => !edited.has(pref.key)),
+          ...local.filter((pref) => edited.has(pref.key)),
+        ]);
       })
       .catch(() => {});
     return () => {
       current = false;
     };
-  }, [mediaId]);
+  }, [mediaId, editedKeys]);
 
   const setShowSkipInterval = useCallback(
     (value: SkipInterval | "") => {
@@ -267,6 +340,41 @@ export function PlayerPage() {
       void setClientPref(key, value).catch(() => {});
     },
     [collectionID],
+  );
+
+  // Subtitle appearance roams with the Profile (subtitle.* keys, CORE-1681).
+  // Writes go out one at a time so a slow earlier write cannot land last, and
+  // a write still queued when its identity epoch ends is dropped.
+  const prefWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const storePrefs = useCallback(
+    (entries: ClientPref[]) => {
+      const keys = new Set(entries.map((entry) => entry.key));
+      const edited = editedKeys();
+      for (const key of keys) edited.add(key);
+      setClientPrefs((prefs) => [
+        ...prefs.filter((pref) => !keys.has(pref.key)),
+        ...entries.filter((entry) => entry.value),
+      ]);
+      const epoch = getIdentityEpochSignal();
+      for (const { key, value } of entries) {
+        prefWrites.current = prefWrites.current
+          .then(() => (epoch?.aborted ? undefined : setClientPref(key, value)))
+          .catch(() => {});
+      }
+    },
+    [editedKeys],
+  );
+  const setSubtitleAppearance = useCallback(
+    (field: SubtitleAppearanceField, value: string) =>
+      storePrefs([
+        { key: SUBTITLE_APPEARANCE_KEYS[field], value: encodeSubtitleAppearance(field, value) },
+      ]),
+    [storePrefs],
+  );
+  // Reset clears every key, including any the Profile read has not returned yet.
+  const resetSubtitleAppearance = useCallback(
+    () => storePrefs(Object.values(SUBTITLE_APPEARANCE_KEYS).map((key) => ({ key, value: "" }))),
+    [storePrefs],
   );
 
   const shareAt = useCallback(
@@ -326,7 +434,7 @@ export function PlayerPage() {
         >
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
-          {isAudio && (
+          {showAudioStage && (
             <AudioStage
               title={navTitle}
               artworkURL={artworkURL}
@@ -374,6 +482,9 @@ export function PlayerPage() {
               showSkipIntervalLabel={showSkipIntervalLabel}
               showSkipIntervalCollection={collectionTitle}
               onShowSkipIntervalChange={setShowSkipInterval}
+              subtitleAppearance={subtitleAppearance}
+              onSubtitleAppearanceChange={setSubtitleAppearance}
+              onSubtitleAppearanceReset={resetSubtitleAppearance}
               onShare={shareAt}
               onPreviousInQueue={playPrevious}
               onNextInQueue={playNext}

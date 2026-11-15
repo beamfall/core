@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
+  browseServerFolders,
   createLibrary,
   deleteLibrary,
   fetchFolderTree,
@@ -30,6 +31,7 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 
 vi.mock("@/lib/graphql", () => ({
   addPathPickerRoot: vi.fn(),
+  browseServerFolders: vi.fn(),
   createLibrary: vi.fn(),
   deleteLibrary: vi.fn(),
   fetchFolderTree: vi.fn(),
@@ -131,6 +133,11 @@ describe("Console Libraries scan", () => {
       ],
     });
     vi.mocked(scanLibrary).mockResolvedValue({ id: "scan-job", status: "queued" });
+    vi.mocked(browseServerFolders).mockResolvedValue({
+      name: "library",
+      path: "/Volumes/library",
+      kind: "folder",
+    } as never);
   });
 
   function renderLibraries() {
@@ -146,6 +153,23 @@ describe("Console Libraries scan", () => {
   async function openFolderScan() {
     await screen.findByText("Scan one folder");
   }
+
+  it("marks a folder the server cannot find on the library card (CORE-1606)", async () => {
+    vi.mocked(browseServerFolders).mockRejectedValue(new Error("folder does not exist"));
+    renderLibraries();
+
+    expect(await screen.findByText("Folder not found")).toBeVisible();
+    expect(screen.getByText(/Remove this folder and add the right one below/)).toBeVisible();
+    expect(browseServerFolders).toHaveBeenCalledWith("/Volumes/library", 0);
+  });
+
+  it("shows no folder warning when the server can read the folder", async () => {
+    renderLibraries();
+
+    await screen.findByRole("button", { name: "Rescan library" });
+    await waitFor(() => expect(browseServerFolders).toHaveBeenCalled());
+    expect(screen.queryByText("Folder not found")).toBeNull();
+  });
 
   it("rescans every library folder in one click and follows the jobs", async () => {
     const user = userEvent.setup();

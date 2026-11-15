@@ -39,6 +39,9 @@ export function AudioStage({
           style={{ backgroundImage: `url("${cssURL(artworkURL)}")` }}
         />
       )}
+      {/* Where the pinned Oscillux visualizer will mount (CORE-1309). Visual
+          effects come only from Oscillux (ADR-0228), so core leaves it empty. */}
+      <div aria-hidden="true" className="bf-audio-visualizer" data-visualizer-slot="" />
       <div className="bf-audio-card">
         <div className="bf-audio-artwork">
           {showArtwork && <img src={artworkURL} alt="" onError={() => setFailedURL(artworkURL)} />}

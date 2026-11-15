@@ -1855,38 +1855,6 @@ func (a *App) Run(ctx context.Context) error {
 	a.addr = listener.Addr().String()
 	a.addrMu.Unlock()
 	close(a.addrReady)
-	if a.setupToken != "" {
-		// First-run setup happens on the LAN over cleartext (the TLS-mux serves
-		// both); advertise https only when the ACME direct domain is the served
-		// identity, never for the self-signed baseline.
-		scheme := "http"
-		if directTLSActive {
-			scheme = "https"
-		}
-		// SEC-LOG-1: the one-time bootstrap token is a secret (like a pairing code)
-		// and must never land in a structured/persisted log. The tokened URL goes to
-		// the operator's console (stdout) only; the slog line carries a REDACTED URL.
-		fmt.Fprintf(os.Stdout, "Beamfall first-run setup: %s\n", firstRunSetupURL(scheme, listener.Addr().String(), a.setupToken))
-		// A browser on the local network needs no token (CORE-1105), so name the
-		// addresses it can open; the loopback URL above does not work remotely.
-		interfaceAddrs, _ := net.InterfaceAddrs()
-		lanURLs := lanSetupURLs(scheme, listener.Addr().String(), interfaceAddrs)
-		for _, lanURL := range lanURLs {
-			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from this network (no token needed): %s\n", lanURL)
-		}
-		// A bridged container's interface addresses are not the host's, so also
-		// say which address to use from another device, or that a loopback bind
-		// in a container cannot be reached from it at all (CORE-1097).
-		if hint := remoteSetupHint(scheme, listener.Addr().String()); hint != "" {
-			fmt.Fprintf(os.Stdout, "Beamfall first-run setup from another device: %s\n", hint)
-		}
-		a.logger.Info(
-			"=== Beamfall first-run setup ===",
-			"setupURL", firstRunSetupURLRedacted(scheme, listener.Addr().String()),
-			"lanSetupURLs", lanURLs,
-			"headless", "BEAMFALL_ADMIN_PASSWORD",
-		)
-	}
 	if a.cfg.Discovery.Enabled {
 		advertiser := discovery.New()
 		if err := advertiser.Start(a.cfg.ServerName, listenPort(listener.Addr())); err != nil {
@@ -2036,6 +2004,32 @@ func (a *App) Run(ctx context.Context) error {
 		defer jobsDone.Done()
 		observePersistedRoots(jobsCtx, a.store, a.watcher, a.logger)
 	}()
+	if a.setupToken != "" {
+		// Printed last, once the server is serving, so the one line a new
+		// owner needs is not buried in startup output (CORE-1603). First-run
+		// setup happens on the LAN over cleartext (the TLS-mux serves both);
+		// advertise https only when the ACME direct domain is the served
+		// identity, never for the self-signed baseline.
+		scheme := "http"
+		if directTLSActive {
+			scheme = "https"
+		}
+		listenAddr := listener.Addr().String()
+		// A browser on the local network needs no token (CORE-1105), so name the
+		// addresses it can open; the loopback URL does not work remotely.
+		interfaceAddrs, _ := net.InterfaceAddrs()
+		lanURLs := lanSetupURLs(scheme, listenAddr, interfaceAddrs)
+		// SEC-LOG-1: the one-time bootstrap token is a secret (like a pairing
+		// code) and must never land in a structured/persisted log. The slog line
+		// carries a REDACTED URL; the tokened URL goes to stdout only.
+		a.logger.Info(
+			"=== Beamfall first-run setup ===",
+			"setupURL", firstRunSetupURLRedacted(scheme, listenAddr),
+			"lanSetupURLs", lanURLs,
+			"headless", "BEAMFALL_ADMIN_PASSWORD",
+		)
+		writeFirstRunSetupBlock(os.Stdout, scheme, listenAddr, a.setupToken, lanURLs)
+	}
 
 	select {
 	case <-ctx.Done():
@@ -3095,13 +3089,12 @@ func (l playbackAssetsLocator) WaveformAsset(fingerprint string) (string, bool) 
 	return l.service.WaveformAsset(fingerprint)
 }
 
-func (l playbackAssetsLocator) BeatGridAsset(fingerprint string) (string, bool) {
-	return l.service.BeatGridAsset(fingerprint)
-}
+// BeatGridAsset and SyncLanesAsset keep the reserved wire fields always absent:
+// core no longer analyses beats; clients compute them on device through
+// Oscillux (ADR-0228).
+func (l playbackAssetsLocator) BeatGridAsset(string) (string, bool) { return "", false }
 
-func (l playbackAssetsLocator) SyncLanesAsset(fingerprint string) (string, bool) {
-	return l.service.SyncLanesAsset(fingerprint)
-}
+func (l playbackAssetsLocator) SyncLanesAsset(string) (string, bool) { return "", false }
 
 func (l playbackAssetsLocator) SilenceMapAsset(fingerprint string) (string, bool) {
 	return l.service.SilenceMapAsset(fingerprint)

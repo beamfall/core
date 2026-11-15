@@ -2,35 +2,71 @@ import { ChevronLeft, ChevronRight, Type } from "lucide-react";
 import { useRef } from "react";
 import { Dialog } from "@/components/ui/astryx-primitives";
 import { NativeSelect } from "@/components/ui/select";
-import { useT } from "@/lib/i18n";
-import type { SubtitleBackground } from "./useSubtitleStyling";
+import { useDisplayLocale, useT } from "@/lib/i18n";
+import {
+  SUBTITLE_APPEARANCE_FIELDS,
+  SUBTITLE_APPEARANCE_OPTIONS,
+  type SubtitleAppearance,
+  type SubtitleAppearanceField,
+} from "../lib/subtitleAppearance";
 
 // The subtitle styling/sync panel, ported from renderSubtitleStylePanel
-// (app.js): a role="dialog" with text-size and background selects plus a sync
+// (app.js): a role="dialog" with one select per appearance field (size,
+// background, font, colour, opacity, edge, position; CORE-1681) plus a sync
 // nudger (−0.5s / +0.5s). The styling button only surfaces when a subtitle track
 // exists; the sync controls disable with an honest "unavailable on this route"
-// note when the active route is hls.js (which renders its own cue DOM). Escape
-// closes and returns focus to the trigger.
-const SIZE_OPTIONS: { value: number; key: Parameters<ReturnType<typeof useT>>[0] }[] = [
-  { value: 0.85, key: "subtitleSizeSmall" },
-  { value: 1, key: "subtitleSizeMedium" },
-  { value: 1.25, key: "subtitleSizeLarge" },
-  { value: 1.5, key: "subtitleSizeExtraLarge" },
-];
+// note when the active route is hls.js. Escape closes and returns focus to the
+// trigger.
+type StringKey = Parameters<ReturnType<typeof useT>>[0];
 
-const BG_OPTIONS: { value: SubtitleBackground; key: Parameters<ReturnType<typeof useT>>[0] }[] = [
-  { value: "none", key: "subtitleBgNone" },
-  { value: "dark", key: "subtitleBgDark" },
-  { value: "solid", key: "subtitleBgSolid" },
-];
+const FIELD_LABELS: Record<SubtitleAppearanceField, StringKey> = {
+  size: "subtitleSize",
+  background: "subtitleBackground",
+  font: "subtitleFont",
+  color: "subtitleColor",
+  opacity: "subtitleOpacity",
+  edge: "subtitleEdge",
+  position: "subtitlePosition",
+};
+
+// Opacity options are labelled as locale-formatted percentages instead.
+const OPTION_LABELS: Record<string, StringKey> = {
+  "size:0.85": "subtitleSizeSmall",
+  "size:1": "subtitleSizeMedium",
+  "size:1.25": "subtitleSizeLarge",
+  "size:1.5": "subtitleSizeExtraLarge",
+  "background:none": "subtitleBgNone",
+  "background:dark": "subtitleBgDark",
+  "background:solid": "subtitleBgSolid",
+  "font:sans": "subtitleFontSans",
+  "font:serif": "subtitleFontSerif",
+  "font:mono": "subtitleFontMono",
+  "font:casual": "subtitleFontCasual",
+  "color:#ffffff": "subtitleColorWhite",
+  "color:#ffff00": "subtitleColorYellow",
+  "color:#00ff00": "subtitleColorGreen",
+  "color:#00ffff": "subtitleColorCyan",
+  "color:#0000ff": "subtitleColorBlue",
+  "color:#ff00ff": "subtitleColorMagenta",
+  "color:#ff0000": "subtitleColorRed",
+  "color:#000000": "subtitleColorBlack",
+  "edge:none": "subtitleEdgeNone",
+  "edge:outline": "subtitleEdgeOutline",
+  "edge:drop-shadow": "subtitleEdgeDropShadow",
+  "edge:raised": "subtitleEdgeRaised",
+  "edge:depressed": "subtitleEdgeDepressed",
+  "position:auto": "subtitlePositionAuto",
+  "position:10": "subtitlePositionLow",
+  "position:25": "subtitlePositionHigher",
+  "position:50": "subtitlePositionMiddle",
+  "position:80": "subtitlePositionTop",
+};
 
 export function SubtitleStylePanel({
   open,
   onOpenChange,
-  sizeScale,
-  setSizeScale,
-  background,
-  setBackground,
+  appearance,
+  onAppearanceChange,
   syncOffset,
   nudgeSync,
   reset,
@@ -38,19 +74,20 @@ export function SubtitleStylePanel({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sizeScale: number;
-  setSizeScale: (scale: number) => void;
-  background: SubtitleBackground;
-  setBackground: (bg: SubtitleBackground) => void;
+  appearance: SubtitleAppearance;
+  onAppearanceChange?: (field: SubtitleAppearanceField, value: string) => void;
   syncOffset: number;
   nudgeSync: (delta: number) => void;
   reset: () => void;
   syncSupported: boolean;
 }) {
   const t = useT();
+  const percent = new Intl.NumberFormat(useDisplayLocale(), { style: "percent" });
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const sign = syncOffset > 0 ? "+" : "";
   const syncDisplay = `${sign}${syncOffset.toFixed(1)}s`;
+  const optionLabel = (field: SubtitleAppearanceField, value: string) =>
+    field === "opacity" ? percent.format(Number(value)) : t(OPTION_LABELS[`${field}:${value}`]);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange} modal={false}>
@@ -64,7 +101,7 @@ export function SubtitleStylePanel({
           <ChevronRight aria-hidden="true" className="bf-settings-chevron" />
         </Dialog.Trigger>
         <Dialog.Portal container={anchorRef}>
-          <Dialog.Popup className="bf-player-dialog">
+          <Dialog.Popup className="bf-player-dialog bf-subtitle-dialog">
             <div className="bf-player-dialog-head">
               <Dialog.Close className="bf-player-dialog-back" aria-label={t("back")}>
                 <ChevronLeft aria-hidden="true" />
@@ -72,41 +109,25 @@ export function SubtitleStylePanel({
               <Dialog.Title render={<h3 />}>{t("subtitleStyling")}</Dialog.Title>
             </div>
 
-            <div className="bf-subtitle-row">
-              <label id="bf-subtitle-size-label" htmlFor="bf-subtitle-size">
-                {t("subtitleSize")}
-              </label>
-              <NativeSelect
-                id="bf-subtitle-size"
-                aria-labelledby="bf-subtitle-size-label"
-                value={String(sizeScale)}
-                onValueChange={(value) => setSizeScale(Number(value))}
-              >
-                {SIZE_OPTIONS.map((option) => (
-                  <option key={option.value} value={String(option.value)}>
-                    {t(option.key)}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-
-            <div className="bf-subtitle-row">
-              <label id="bf-subtitle-bg-label" htmlFor="bf-subtitle-bg">
-                {t("subtitleBackground")}
-              </label>
-              <NativeSelect
-                id="bf-subtitle-bg"
-                aria-labelledby="bf-subtitle-bg-label"
-                value={background}
-                onValueChange={(value) => setBackground(value as SubtitleBackground)}
-              >
-                {BG_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {t(option.key)}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
+            {SUBTITLE_APPEARANCE_FIELDS.map((field) => (
+              <div key={field} className="bf-subtitle-row">
+                <label id={`bf-subtitle-${field}-label`} htmlFor={`bf-subtitle-${field}`}>
+                  {t(FIELD_LABELS[field])}
+                </label>
+                <NativeSelect
+                  id={`bf-subtitle-${field}`}
+                  aria-labelledby={`bf-subtitle-${field}-label`}
+                  value={appearance[field]}
+                  onValueChange={(value) => onAppearanceChange?.(field, value)}
+                >
+                  {SUBTITLE_APPEARANCE_OPTIONS[field].map((value) => (
+                    <option key={value} value={value}>
+                      {optionLabel(field, value)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ))}
 
             <div className="bf-subtitle-row">
               <span id="bf-subtitle-sync-label">{t("subtitleSync")}</span>

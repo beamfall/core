@@ -2,7 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchMedia } from "@/lib/graphql";
+import { setIdentityEpochSignal } from "@/lib/api";
+import { fetchClientPrefs, fetchMedia, setClientPref } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
@@ -330,6 +331,93 @@ describe("PlayerPage audio items (CORE-1143)", () => {
   });
 });
 
+describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+  });
+
+  const audioInfo = (next?: { mediaID: string; mediaClass: string }) =>
+    ({ mediaClass: "audio", ...(next ? { next } : {}) }) as PlayerState["info"];
+  const lastTransportProps = () => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+  const lastPlayedID = () => vi.mocked(usePlayer).mock.calls.at(-1)?.[0];
+
+  it("steps only through tracks of a mixed queue whose rows report their class", async () => {
+    renderPlayer(playerState({ phase: "playing", info: audioInfo() }), {
+      title: "Alpha",
+      queue: [
+        { id: "media-prev", title: "Before", mediaClass: "audio" },
+        { id: "media-v1", title: "Film", mediaClass: "video" },
+        { id: "media-alpha", title: "Alpha", mediaClass: "audio" },
+        { id: "media-v2", title: "Clip", mediaClass: "video" },
+        { id: "media-next", title: "After", mediaClass: "audio" },
+      ],
+      queueIdentity: "viewer-1",
+    });
+    expect(screen.getByText("2 of 3")).toBeInTheDocument();
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("media-next");
+
+    act(() => lastTransportProps()?.onNextInQueue?.());
+    await waitFor(() => expect(lastPlayedID()).toBe("media-next"));
+    // The narrowed queue travels with it: the videos stay out.
+    expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  });
+
+  it("drops the declared next item once playback-info reports it is a video", async () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: audioInfo({ mediaID: "media-v1", mediaClass: "video" }),
+      }),
+      {
+        title: "Alpha",
+        queue: [
+          { id: "media-alpha", title: "Alpha" },
+          { id: "media-v1", title: "Film" },
+          { id: "media-t2", title: "Second" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+    );
+    expect(await screen.findByText("1 of 2")).toBeInTheDocument();
+
+    act(() => lastTransportProps()?.onNextInQueue?.());
+    await waitFor(() => expect(lastPlayedID()).toBe("media-t2"));
+    expect(screen.getByText("2 of 2")).toBeInTheDocument();
+  });
+
+  it("shows the audio stage while loading when the queue entry is a track", () => {
+    renderPlayer(playerState({ phase: "loading" }), {
+      title: "Alpha",
+      queue: [
+        { id: "media-alpha", title: "Alpha", mediaClass: "audio" },
+        { id: "media-v1", title: "Film", mediaClass: "video" },
+      ],
+      queueIdentity: "viewer-1",
+    });
+    const stage = document.querySelector(".bf-audio-stage");
+    expect(stage).not.toBeNull();
+    expect(stage).toHaveTextContent("Alpha");
+    expect(stage?.querySelector("[data-visualizer-slot]")).not.toBeNull();
+    // Only the track remains, so there is no "1 of 2" and no next to declare.
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("");
+  });
+
+  it("keeps the video stage while loading a video or an item of unknown class", () => {
+    renderPlayer(playerState({ phase: "loading" }), {
+      title: "Alpha",
+      queue: [
+        { id: "media-alpha", title: "Alpha", mediaClass: "video" },
+        { id: "media-t1", title: "Track" },
+      ],
+      queueIdentity: "viewer-1",
+    });
+    expect(document.querySelector(".bf-audio-stage")).toBeNull();
+    // An entry of unknown class stays queued.
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe("media-t1");
+  });
+});
+
 describe("PlayerPage Back", () => {
   function renderAt(entries: string[]) {
     vi.mocked(usePlayer).mockReturnValue({
@@ -362,5 +450,74 @@ describe("PlayerPage Back", () => {
     renderAt(["/watch/media-alpha"]);
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByText("home route")).toBeInTheDocument();
+  });
+});
+
+describe("PlayerPage subtitle appearance prefs (CORE-1681)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(setClientPref).mockReset();
+  });
+  afterEach(() => vi.mocked(fetchClientPrefs).mockResolvedValue([]));
+
+  function transportProps() {
+    const props = vi.mocked(PlayerTransport).mock.lastCall?.[0];
+    if (!props) throw new Error("PlayerTransport not rendered");
+    return props;
+  }
+
+  it("keeps a choice made before the Profile read returns", async () => {
+    let answer: (prefs: { key: string; value: string }[]) => void = () => {};
+    vi.mocked(fetchClientPrefs).mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    vi.mocked(setClientPref).mockResolvedValue({ key: "" });
+    renderPlayer(playerState({ phase: "playing" }));
+    act(() => transportProps().onSubtitleAppearanceChange?.("color", "#ffff00"));
+    await act(async () =>
+      answer([
+        { key: "subtitle.color", value: "#00ff00" },
+        { key: "subtitle.font", value: "serif" },
+      ]),
+    );
+    expect(transportProps().subtitleAppearance).toMatchObject({ color: "#ffff00", font: "serif" });
+  });
+
+  it("clears every key on Reset, one write at a time", async () => {
+    let finishFirst: () => void = () => {};
+    vi.mocked(setClientPref)
+      .mockReturnValueOnce(new Promise((resolve) => (finishFirst = () => resolve({ key: "" }))))
+      .mockResolvedValue({ key: "" });
+    renderPlayer(playerState({ phase: "playing" }));
+    act(() => transportProps().onSubtitleAppearanceReset?.());
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(1));
+    await act(async () => finishFirst());
+    await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(7));
+    expect(vi.mocked(setClientPref).mock.calls.map(([key, value]) => `${key}=${value}`)).toEqual([
+      "subtitle.size=",
+      "subtitle.background=",
+      "subtitle.font=",
+      "subtitle.color=",
+      "subtitle.opacity=",
+      "subtitle.edge=",
+      "subtitle.position=",
+    ]);
+  });
+
+  it("drops writes still queued when the identity epoch ends", async () => {
+    const epoch = new AbortController();
+    setIdentityEpochSignal(epoch.signal);
+    let finishFirst: () => void = () => {};
+    vi.mocked(setClientPref)
+      .mockReturnValueOnce(new Promise((resolve) => (finishFirst = () => resolve({ key: "" }))))
+      .mockResolvedValue({ key: "" });
+    try {
+      renderPlayer(playerState({ phase: "playing" }));
+      act(() => transportProps().onSubtitleAppearanceReset?.());
+      await waitFor(() => expect(setClientPref).toHaveBeenCalledTimes(1));
+      epoch.abort();
+      await act(async () => finishFirst());
+      expect(setClientPref).toHaveBeenCalledTimes(1);
+    } finally {
+      setIdentityEpochSignal();
+    }
   });
 });

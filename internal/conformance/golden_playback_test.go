@@ -175,12 +175,8 @@ func (l playbackLoudnessLocator) PreviewClipAsset(fp string) (string, bool) {
 func (l playbackLoudnessLocator) WaveformAsset(fp string) (string, bool) {
 	return l.service.WaveformAsset(fp)
 }
-func (l playbackLoudnessLocator) BeatGridAsset(fp string) (string, bool) {
-	return l.service.BeatGridAsset(fp)
-}
-func (l playbackLoudnessLocator) SyncLanesAsset(fp string) (string, bool) {
-	return l.service.SyncLanesAsset(fp)
-}
+func (l playbackLoudnessLocator) BeatGridAsset(string) (string, bool)  { return "", false }
+func (l playbackLoudnessLocator) SyncLanesAsset(string) (string, bool) { return "", false }
 func (l playbackLoudnessLocator) SilenceMapAsset(fp string) (string, bool) {
 	return l.service.SilenceMapAsset(fp)
 }

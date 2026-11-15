@@ -16,6 +16,7 @@ export function AccountMenu() {
   const { profiles, session, isManager } = useSession();
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const signOutHintId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -106,7 +107,15 @@ export function AccountMenu() {
           {session && (
             <>
               <hr className="bf-account-rule" />
-              <SignOutButton className="bf-account-signout w-full" />
+              <SignOutButton
+                className="bf-account-signout w-full"
+                aria-describedby={signOutHintId}
+              />
+              {/* Signing out forgets this browser (CORE-1608): say so before
+                  the click, not after. */}
+              <p id={signOutHintId} className="m-0 px-2.5 pb-1 text-xs text-muted-foreground">
+                {t("signOutHint")}
+              </p>
             </>
           )}
         </div>

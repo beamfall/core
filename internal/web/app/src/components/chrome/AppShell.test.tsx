@@ -95,7 +95,9 @@ describe("AppShell host chrome suppression", () => {
       "href",
       "/settings",
     );
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign out" })).toHaveAccessibleDescription(
+      /forget this browser/,
+    );
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("link", { name: "Manage" })).toBeNull();

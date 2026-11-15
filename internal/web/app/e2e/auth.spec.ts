@@ -109,6 +109,11 @@ async function mockSetupAtLibraryStep(
   page: Page,
   folders: Record<string, MockFolder>,
 ): Promise<void> {
+  // A reload resumes at the Library step only when the wizard remembers that
+  // the plugin step finished in this tab (CORE-1604).
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem("beamfall.setup.resumeStep", "library");
+  });
   await page.route("**/api/setup", async (route) => {
     await route.fulfill({
       contentType: "application/json",

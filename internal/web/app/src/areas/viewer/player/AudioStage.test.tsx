@@ -35,4 +35,13 @@ describe("AudioStage (CORE-1143)", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector(".bf-audio-artwork")).toBeTruthy();
   });
+
+  it("reserves an empty visualizer slot and renders no effect into it (CORE-1309)", () => {
+    const { container } = render(<AudioStage title="Song" artworkURL="" credits={[]} />);
+    const slot = container.querySelector("[data-visualizer-slot]");
+    expect(slot).toBeTruthy();
+    expect(slot?.getAttribute("aria-hidden")).toBe("true");
+    expect(slot?.childElementCount).toBe(0);
+    expect(container.querySelector("canvas")).toBeNull();
+  });
 });

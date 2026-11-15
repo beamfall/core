@@ -193,6 +193,12 @@
   box-shadow: none;
 }
 
+/* The subtitle panel has more rows than the sheet (CORE-1681), so the sheet grows to its
+ * max-height while the panel is open and the heading stays in view (CORE-1814). */
+.bf-settings:has(.bf-subtitle-dialog) {
+  height: 100vh;
+}
+
 .bf-player-dialog-head {
   display: flex;
   align-items: center;
@@ -596,18 +602,24 @@
   }
 }
 
-/* --- Subtitle rendering styling (native ::cue + size scale). ---
- * Sizing rides a CSS custom property; the background variant rides a class on
- * the stage. hls.js renders its own cue DOM, which these rules do not reach —
- * the panel degrades honestly there (size/background still apply to native
- * cues). */
+/* --- Subtitle appearance (native ::cue, CORE-1681). ---
+ * useSubtitleAppearance sets these custom properties and the background class
+ * on the stage from the Profile's subtitle.* prefs. hls.js renders through
+ * native TextTracks by default, so the rules reach both routes. The values
+ * below are the defaults before the hook runs. */
 .bf-player-stage {
   --bf-subtitle-size-scale: 1;
+  --bf-subtitle-color: oklch(100% 0 0);
+  --bf-subtitle-font: system-ui, sans-serif;
+  --bf-subtitle-edge: none;
 }
 
 .bf-player-stage video::cue {
   font-size: calc(1em * var(--bf-subtitle-size-scale));
+  font-family: var(--bf-subtitle-font);
   line-height: 1.3;
+  color: var(--bf-subtitle-color);
+  text-shadow: var(--bf-subtitle-edge);
 }
 
 .bf-player-stage.bf-subtitle-bg-none video::cue {
@@ -645,6 +657,13 @@
   background-size: cover;
   filter: blur(64px) saturate(1.2);
   opacity: 0.35;
+}
+
+/* The empty slot a future Oscillux visualizer mounts into (CORE-1309); core
+ * renders nothing here. */
+.bf-audio-visualizer {
+  position: absolute;
+  inset: 0;
 }
 
 .bf-audio-card {
