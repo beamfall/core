@@ -209,6 +209,9 @@ type Service struct {
 	// pipePoll overrides the encrypted transcode's re-authorization interval;
 	// zero keeps the encderiv default.
 	pipePoll time.Duration
+	// encryptItem seals one pack item: EncryptPackItemTo, which a test
+	// replaces to land a change while an item is being encrypted.
+	encryptItem func(dst io.Writer, cek, manifestDigest []byte, itemIndex uint32, plaintextLen uint64, itemSHA256 []byte, plaintext io.Reader) error
 }
 
 // NewService creates an Offline Pack service with the built-in generic "media"
@@ -225,6 +228,7 @@ func NewService(st Store, authority *Authority, now func() time.Time) *Service {
 		resolvers:       map[string]TargetResolver{},
 		devices:         map[string]deviceRegistration{},
 		buildByteBudget: DefaultBuildByteBudget,
+		encryptItem:     EncryptPackItemTo,
 	}
 	s.resolvers[TargetKindMedia] = explicitMediaResolver{store: st}
 	return s
@@ -562,7 +566,7 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 			_ = reader.Close()
 			return store.OfflinePack{}, err
 		}
-		encodeErr := EncryptPackItemTo(file, cek, manifestDigestRaw, uint32(i), source.size, digest, reader)
+		encodeErr := s.encryptItem(file, cek, manifestDigestRaw, uint32(i), source.size, digest, reader)
 		closeFileErr := file.Close()
 		closeReaderErr := reader.Close()
 		if encodeErr != nil {
@@ -573,6 +577,9 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 		}
 		if closeReaderErr != nil {
 			return store.OfflinePack{}, closeReaderErr
+		}
+		if err := s.reauthorizeStaged(ctx, scope, source); err != nil {
+			return store.OfflinePack{}, err
 		}
 		items[i].CiphertextPath = path
 		progress.step()
@@ -594,6 +601,11 @@ func (s *Service) BuildPack(ctx context.Context, scope auth.Scope, req BuildPack
 			Suite: WrapSuite, DeviceKID: deviceKID,
 			Envelope: base64.RawURLEncoding.EncodeToString(envelope), EnvelopeSHA256: envelopeDigest,
 		},
+	}
+	// Last of all, so nothing revoked while the items were encrypted is
+	// signed or persisted.
+	if err := s.reauthorizeStaged(ctx, scope, sources...); err != nil {
+		return store.OfflinePack{}, err
 	}
 	manifestJWS, err := s.authority.SignManifest(manifestClaims)
 	if err != nil {

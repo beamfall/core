@@ -591,6 +591,107 @@ func TestBuildEncryptedTranscodeSealedBeforeItsSeal(t *testing.T) {
 	fx.assertNothingLeft(t)
 }
 
+// readHook runs its function once read and then reports EOF, so an
+// io.MultiReader can land a change part-way through a stream.
+type readHook func()
+
+func (h readHook) Read([]byte) (int, error) {
+	h()
+	return 0, io.EOF
+}
+
+// TestBuildEncryptedTranscodeRevokedWhileItemsSeal pins that a Seal, a
+// disabled Profile or a withdrawn Library grant landing while the final item
+// is encrypted into the pack, or after it is sealed but before the pack is
+// signed, discards the pack: nothing ready is persisted and nothing is left.
+func TestBuildEncryptedTranscodeRevokedWhileItemsSeal(t *testing.T) {
+	revocations := []struct {
+		name   string
+		revoke func(*encryptedVideoFixture)
+	}{
+		{"library sealed", func(fx *encryptedVideoFixture) { fx.sealed.Store(true) }},
+		{"profile disabled", func(fx *encryptedVideoFixture) {
+			fx.profiles.setEdit(func(p *store.Profile) error { p.Disabled = true; return nil })
+		}},
+		{"library withdrawn", func(fx *encryptedVideoFixture) {
+			fx.profiles.setEdit(func(p *store.Profile) error { p.Library = nil; return nil })
+		}},
+	}
+	for _, rv := range revocations {
+		for _, during := range []bool{true, false} {
+			name := rv.name + "/after the final item is sealed"
+			if during {
+				name = rv.name + "/during the final item's encryption"
+			}
+			t.Run(name, func(t *testing.T) {
+				fx := newEncryptedVideoFixture(t)
+				if fx.scope.AllLibraries {
+					t.Fatal("fixture scope grants every Library; the withdrawn-grant case needs a Profile-scoped session")
+				}
+				fx.svc.SetPipeTranscoder(func(ctx context.Context, in encderiv.Input, stdout io.Writer, _ string, _ []store.MediaFileStream) error {
+					src, err := fetchSource(ctx, in.URL)
+					if err != nil {
+						return err
+					}
+					_, err = stdout.Write(fragmentedMP4(src, 2))
+					return err
+				})
+				// The fixture's target has one item, so the first item
+				// encrypted is the final one.
+				var encrypted atomic.Int32
+				var revokedMid, itemSealed, reportedAfter atomic.Bool
+				fx.svc.encryptItem = func(dst io.Writer, cek, manifestDigest []byte, index uint32, size uint64, digest []byte, src io.Reader) error {
+					encrypted.Add(1)
+					if during {
+						src = io.MultiReader(io.LimitReader(src, 1024), readHook(func() {
+							rv.revoke(fx)
+							revokedMid.Store(true)
+						}), src)
+					}
+					err := EncryptPackItemTo(dst, cek, manifestDigest, index, size, digest, src)
+					itemSealed.Store(true)
+					return err
+				}
+				fx.profiles.mu.Lock()
+				fx.profiles.onProgress = func() {
+					if !itemSealed.Load() {
+						return
+					}
+					reportedAfter.Store(true)
+					if !during {
+						rv.revoke(fx)
+					}
+				}
+				fx.profiles.mu.Unlock()
+				packID, err := NewPackID()
+				if err != nil {
+					t.Fatal(err)
+				}
+				req := fx.request(QualityMedium)
+				req.PackID = packID
+				if _, err := fx.svc.BuildPack(context.Background(), fx.scope, req); !errors.Is(err, encderiv.ErrRevoked) {
+					t.Fatalf("BuildPack err = %v, want ErrRevoked", err)
+				}
+				if encrypted.Load() != 1 || during != revokedMid.Load() {
+					t.Fatalf("items encrypted = %d, revoked mid-item = %v; want 1, %v", encrypted.Load(), revokedMid.Load(), during)
+				}
+				if !reportedAfter.Load() && !during {
+					t.Fatal("the revocation never landed after the item sealed")
+				}
+				// Revoked mid-item, the build stops at that item rather than
+				// counting it sealed.
+				if during && reportedAfter.Load() {
+					t.Fatal("build reported the revoked item sealed")
+				}
+				if _, err := fx.st.OfflinePackByID(context.Background(), packID, fx.scope.ProfileID); !errors.Is(err, store.ErrOfflinePackNotFound) {
+					t.Fatalf("OfflinePackByID err = %v, want no pack", err)
+				}
+				fx.assertNothingLeft(t)
+			})
+		}
+	}
+}
+
 // TestBuildEncryptedTranscodeRefusals pins the refusals that never stage
 // anything: a Sealed Library resolves empty before any transcode, and without
 // the pipe transcoder an Encrypted Library refuses rather than falling back to

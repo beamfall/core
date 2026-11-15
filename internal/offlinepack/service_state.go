@@ -392,10 +392,25 @@ func (s *Service) openPackSource(ctx context.Context, scope auth.Scope, source p
 	if source.staged == nil {
 		return s.openContent(source.libraryID, source.path)
 	}
-	if err := s.buildRevoked(ctx, scope, source.mediaID, source.libraryID); err != nil {
-		return nil, fmt.Errorf("offline pack seal stopped: %w: %w", encderiv.ErrRevoked, err)
+	if err := s.reauthorizeStaged(ctx, scope, source); err != nil {
+		return nil, err
 	}
 	return source.staged.Open()
+}
+
+// reauthorizeStaged re-runs the build's authorization for each staged
+// derivative among sources. The build calls it before and after each one is
+// encrypted into the pack and over all of them before the pack is signed.
+func (s *Service) reauthorizeStaged(ctx context.Context, scope auth.Scope, sources ...packBuildSource) error {
+	for _, source := range sources {
+		if source.staged == nil {
+			continue
+		}
+		if err := s.buildRevoked(ctx, scope, source.mediaID, source.libraryID); err != nil {
+			return fmt.Errorf("offline pack seal stopped: %w: %w", encderiv.ErrRevoked, err)
+		}
+	}
+	return nil
 }
 
 // checkBuildBytes applies the per-item bound and the build byte budget to the
