@@ -200,6 +200,7 @@ func TestRunTranscodesAMoovAtEndSourceWithRealFFmpeg(t *testing.T) {
 	var opens, probeOpens, transcodeOpens atomic.Int32
 	var tee *teeScanner
 	var measured time.Duration
+	// io:ffmpeg-probe-pipe-duration
 	probe := ffprobeDuration(t, &measured)
 	job := Job{
 		Open: func() (io.ReadSeekCloser, error) {
