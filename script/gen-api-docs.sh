@@ -41,6 +41,10 @@ cat > "$OUT/llms.txt" <<EOF
 - [OpenAPI spec](openapi.json): the machine-readable source of truth, pinned against the handlers by internal/server/v1_test.go
 - [Home-automation guide](home-automation.md): event stream and playback-control integration notes
 - [Request-tool guide](request-tools.md): sign-in, availability lookup, targeted scan and arrival events for request-management tools
+
+## Operator agents
+
+- [Agent guide](agents.md): token tiers, the agentCatalog query, serverLogs filters, diagnosticsBundle and the beamfall mcp server on the private /api/graphql surface (not the /v1 contract)
 EOF
 
 {
@@ -52,6 +56,8 @@ EOF
   cat "$SOURCE_ROOT/docs/api/home-automation.md"
   printf '\n---\nsource: docs/api/request-tools.md\n---\n\n'
   cat "$SOURCE_ROOT/docs/api/request-tools.md"
+  printf '\n---\nsource: docs/api/agents.md\n---\n\n'
+  cat "$SOURCE_ROOT/docs/api/agents.md"
   printf '\n---\nsource: docs/api/openapi.json\n---\n\n'
   cat "$SPEC"
 } > "$OUT/llms-full.txt"

@@ -1,7 +1,7 @@
 ---
 name: developer-api-documentation
 description: Human and AI entry points for Beamfall Core's versioned developer API.
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Developer API documentation
@@ -9,6 +9,7 @@ updated: 2026-11-14
 - Human reference: [`reference.md`](reference.md)
 - Home-automation examples: [`home-automation.md`](home-automation.md)
 - Request-tool integration: [`request-tools.md`](request-tools.md)
+- Operator agents (private `/api/graphql`, token tiers, MCP): [`agents.md`](agents.md)
 - Compact AI reference: [`llms.txt`](llms.txt)
 - Full AI reference: [`llms-full.txt`](llms-full.txt)
 - Machine contract: [`openapi.json`](openapi.json)

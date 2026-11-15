@@ -379,6 +379,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	150: dispatchFieldBlock150,
 	151: dispatchFieldBlock151,
 	152: dispatchFieldBlock152,
+	153: dispatchFieldBlock153,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -698,6 +699,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"testwebhook":                        newFieldHandler("testWebhook", "testWebhook", fieldMutation, roleSession|roleAdmin, 150),
 	"setwebhooksettings":                 newFieldHandler("setWebhookSettings", "setWebhookSettings", fieldMutation, roleSession|roleAdmin, 150),
 	"serverlogs":                         newFieldHandler("serverLogs", "serverLogs", fieldRead, roleSession|roleAdmin, 151),
+	"agentcatalog":                       newFieldHandler("agentCatalog", "agentCatalog", fieldRead, roleSession, 153),
+	"diagnosticsbundle":                  newFieldHandler("diagnosticsBundle", "diagnosticsBundle", fieldRead, roleSession|roleAdmin, 153),
 	"stagedrestore":                      newFieldHandler("stagedRestore", "stagedRestore", fieldRead, roleSession|roleAdmin, 152),
 	"inspectbackup":                      newFieldHandler("inspectBackup", "inspectBackup", fieldMutation, roleSession|roleAdmin, 152),
 	"stagerestore":                       newFieldHandler("stageRestore", "stageRestore", fieldMutation, roleSession|roleAdmin, 152),
@@ -4236,6 +4239,24 @@ func dispatchFieldBlock152(dispatch *fieldDispatchContext) response {
 	if fields["cancelstagedrestore"] {
 		removed, err := h.cancelStagedRestore(ctx, scope)
 		if resp := resolveField(dispatch, "cancelstagedrestore", removed, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock153(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["agentcatalog"] {
+		if resp := resolveField(dispatch, "agentcatalog", agentCatalog(), nil); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["diagnosticsbundle"] {
+		bundle, err := h.diagnosticsBundle(req)
+		if resp := resolveField(dispatch, "diagnosticsbundle", bundle, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

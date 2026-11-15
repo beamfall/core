@@ -5126,6 +5126,8 @@ var queryFields = map[string]bool{
 	"webhookdeliveries":      true, // CORE-1697: webhook delivery log
 	"webhooksettings":        true, // CORE-1697: shared webhook options and choices
 	"serverlogs":             true, // CORE-1716: recent redacted server log lines
+	"agentcatalog":           true, // CORE-2096: self-describing field catalog for agents
+	"diagnosticsbundle":      true, // CORE-2097: runtime diagnostics and text profiles
 	"stagedrestore":          true, // CORE-1720: the restore staged for the next start
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
@@ -5456,6 +5458,8 @@ var adminFields = map[string]bool{
 	"setwebhooksettings": true,
 	// Server logs (CORE-1716): recent redacted log lines for the console.
 	"serverlogs": true,
+	// Diagnostics bundle (CORE-2097): build, runtime statistics, logs, profiles.
+	"diagnosticsbundle": true,
 	// Staged restore (CORE-1720): inspect a backup set and stage a restore.
 	"inspectbackup":       true,
 	"stagerestore":        true,

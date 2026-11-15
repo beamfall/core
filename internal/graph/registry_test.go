@@ -113,6 +113,8 @@ var originalScopedFields = []string{
 	"testwebhook",         // CORE-1697: send one test notification
 	"setwebhooksettings",  // CORE-1697: save shared webhook options
 	"serverlogs",          // CORE-1716: recent redacted server log lines
+	"agentcatalog",        // CORE-2096: self-describing field catalog for agents
+	"diagnosticsbundle",   // CORE-2097: runtime diagnostics and text profiles
 	"stagedrestore",       // CORE-1720: the restore staged for the next start
 	"inspectbackup",       // CORE-1720: decrypt a backup set and report its contents
 	"stagerestore",        // CORE-1720: stage a restore for the next start
