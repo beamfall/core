@@ -16,6 +16,7 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
+import { watchPartyDefersUpNext } from "../player/watchPartyStore";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
 vi.mock("@/lib/session", () => ({
@@ -44,6 +45,10 @@ vi.mock("../player/usePlayer", () => ({
   DEFAULT_ADJUSTMENT: { pitchShiftSemitones: 0, tempo: 1 },
 }));
 vi.mock("../player/PlayerTransport", () => ({ PlayerTransport: vi.fn(() => null) }));
+vi.mock("../player/watchPartyStore", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../player/watchPartyStore")>()),
+  watchPartyDefersUpNext: vi.fn(() => false),
+}));
 
 function playerState(overrides: Partial<PlayerState>): PlayerState {
   return {
@@ -899,5 +904,40 @@ describe("PlayerPage Watch together arrival", () => {
   it("keeps the panel closed on an ordinary arrival", () => {
     renderPlayer(playerState({ phase: "playing" }));
     expect(screen.queryByRole("region", { name: "Watch Party" })).toBeNull();
+  });
+});
+
+// feature:watch-party
+describe("PlayerPage in a Watch Party (CORE-1766)", () => {
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+  });
+  afterEach(() => vi.mocked(watchPartyDefersUpNext).mockReturnValue(false));
+
+  const queue = [
+    { id: "media-prev", title: "Before" },
+    { id: "media-alpha", title: "Alpha" },
+    { id: "media-next", title: "After" },
+  ];
+
+  it("hands a member's next item and autoplay to the party", () => {
+    vi.mocked(watchPartyDefersUpNext).mockReturnValue(true);
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue, queueIdentity: "viewer-1" },
+    );
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    expect(props?.onNextInQueue).toBeUndefined();
+    // Only the forward step defers.
+    expect(props?.onPreviousInQueue).toBeTypeOf("function");
+  });
+
+  it("keeps the host's next item, whose advance the party follows", () => {
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "audio" } as PlayerState["info"] }),
+      { title: "Alpha", queue, queueIdentity: "viewer-1" },
+    );
+    expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onNextInQueue).toBeTypeOf("function");
   });
 });

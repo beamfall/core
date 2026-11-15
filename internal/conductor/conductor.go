@@ -256,6 +256,18 @@ type Group struct {
 	// forms paused at position zero on its content; the host's transitions set
 	// it. Always false for an Ambient Group.
 	paused bool
+	// order lists the Watch Party's member sessions in the order they joined.
+	// When the host leaves, the host role passes to the earliest member still
+	// present (CORE-1763). Nil for an Ambient Group.
+	order []store.SessionID
+	// hostProfile is the Profile of the current host session. It starts as
+	// ProfileID and follows the host role on hand-off; ProfileID itself never
+	// changes, because lookup reads it without the group lock.
+	hostProfile store.ProfileID
+	// requests holds members' transport requests waiting for the host's decision
+	// in a host-only party, keyed by request id, at most one per member session
+	// (CORE-1765). Dropped when the host role moves. Nil until the first request.
+	requests map[string]PartyRequest
 }
 
 // Members returns a snapshot copy of the group's members (ADR-0035 §8: the

@@ -21,13 +21,31 @@ export interface PartyTimeline {
   paused: boolean;
 }
 
-export type GroupSyncSignal = "transition" | "nudge" | "roster";
+export type GroupSyncSignal = "transition" | "nudge" | "roster" | "ended" | "request";
+
+const SIGNALS: ReadonlySet<string> = new Set<GroupSyncSignal>([
+  "transition",
+  "nudge",
+  "roster",
+  "ended",
+  "request",
+]);
 
 export interface GroupSyncFrame extends PartyTimeline {
   groupID: string;
   signal: GroupSyncSignal;
   /** Sorted display names, on a roster frame only. */
   members?: string[];
+  /** On a roster sent because the host left: the host role moved (CORE-1763). */
+  handoff?: boolean;
+  /** The new host's display name on a hand-off roster; who ended it on `ended`. */
+  hostName?: string;
+  /** The new host's session, only on the row for the new host's own Profile. */
+  host?: string;
+  /** On a `request` frame (CORE-1765): the id the host decides it by. */
+  request?: string;
+  /** On a `request` frame: the requesting member's display name. */
+  from?: string;
 }
 
 interface GroupSyncPayload {
@@ -38,6 +56,11 @@ interface GroupSyncPayload {
   presentAtMS?: number;
   paused?: boolean;
   members?: string[];
+  handoff?: boolean;
+  hostName?: string;
+  host?: string;
+  request?: string;
+  from?: string;
 }
 
 /** Reads a group.sync SSE frame; anything else, or a malformed one, is null. */
@@ -51,10 +74,10 @@ export function parseGroupSync(event: { type: string; data: unknown }): GroupSyn
   }
   if (!payload || typeof payload.groupID !== "string" || !payload.groupID) return null;
   const signal = payload.signal;
-  if (signal !== "transition" && signal !== "nudge" && signal !== "roster") return null;
+  if (typeof signal !== "string" || !SIGNALS.has(signal)) return null;
   return {
     groupID: payload.groupID,
-    signal,
+    signal: signal as GroupSyncSignal,
     item: typeof payload.item === "string" ? payload.item : "",
     positionMS: finite(payload.positionMS),
     presentAtMS: finite(payload.presentAtMS),
@@ -62,6 +85,13 @@ export function parseGroupSync(event: { type: string; data: unknown }): GroupSyn
     ...(Array.isArray(payload.members)
       ? { members: payload.members.filter((m): m is string => typeof m === "string") }
       : {}),
+    ...(payload.handoff === true ? { handoff: true } : {}),
+    ...(typeof payload.hostName === "string" && payload.hostName
+      ? { hostName: payload.hostName }
+      : {}),
+    ...(typeof payload.host === "string" && payload.host ? { host: payload.host } : {}),
+    ...(typeof payload.request === "string" && payload.request ? { request: payload.request } : {}),
+    ...(typeof payload.from === "string" && payload.from ? { from: payload.from } : {}),
   };
 }
 

@@ -1196,6 +1196,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Reveal-filtered SSE event stream: the store is both the
 	// outbox reader and the reveal-filtered Media lookup the surface gates on.
 	srv.SetEvents(st)
+	srv.SetEventStreamObserver(graphHandler)
 	srv.SetPushNotifications(st)
 	// The /v1/ stable developer contract: the store supplies the
 	// reveal-filtered catalog/session reads, while scan-job construction lives
