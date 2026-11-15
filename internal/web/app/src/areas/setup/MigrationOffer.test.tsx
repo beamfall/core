@@ -26,6 +26,10 @@ function importer(pluginID: string, id: string, name: string): ImporterInfo {
   };
 }
 
+// Waits await one specific state with an explicit ceiling: under full parallel
+// load a render can take well over the one-second default (CORE-1116).
+const LOADED = { timeout: 10_000 };
+
 function renderOffer(onSkip = vi.fn()) {
   render(
     <I18nProvider>
@@ -89,14 +93,15 @@ describe("MigrationOffer (Seam A)", () => {
       .mockResolvedValueOnce([importer("filmtv", "plex", "Plex")]);
     renderOffer();
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument(),
+    await waitFor(
+      () => expect(screen.getByRole("button", { name: /skip for now/i })).toBeInTheDocument(),
+      LOADED,
     );
     expect(screen.getByRole("button", { name: /choose a source/i })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-    expect(await screen.findByText("Plex")).toBeInTheDocument();
+    expect(await screen.findByText("Plex", {}, LOADED)).toBeInTheDocument();
     expect(fetchImporters).toHaveBeenCalledTimes(2);
-  });
+  }, 30_000);
 });
