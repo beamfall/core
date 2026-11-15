@@ -914,7 +914,8 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 			return "", err
 		}
 	}
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, priority)
+	audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
+	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, audioOnlyPeak, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1155,7 +1156,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioOnlyPeak int, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1173,7 +1174,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		}
 		requestedRungs = []Rung{rung}
 	} else if audioOnly || !adjust.IsZero() {
-		requestedRungs = []Rung{audioOnlyRung()}
+		requestedRungs = []Rung{audioOnlyRung(audioOnlyPeak)}
 	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	if existing, ok := s.sessions[key]; ok {

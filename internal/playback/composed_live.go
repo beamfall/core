@@ -33,6 +33,11 @@ type StreamShape struct {
 	// Media is audio-class, so any picture stream it carries is embedded art,
 	// not video to re-encode. A composed picture still takes precedence.
 	AudioOnly bool
+	// AudioSource is the source audio stream the session maps
+	// (AudioSourceStream). It sizes the audio-only rung's BANDWIDTH to match
+	// what the mint advertised (CORE-1849). The zero value takes the worst
+	// case for a copied stream.
+	AudioSource store.MediaFileStream
 }
 
 // StreamShapeFromGrant reads the StreamShape a stream grant carries for
