@@ -42,6 +42,7 @@ import { viewerCollectionStrings } from "./viewer-collections";
 import { watchPartyStrings } from "./watch-party";
 import { webhookStrings } from "./webhooks";
 import { whosWatchingStrings } from "./whos-watching";
+import { workbenchPageStrings } from "./workbench-pages";
 
 export const en = {
   ...appShellStrings.en,
@@ -60,6 +61,7 @@ export const en = {
   ...sharedStateStrings.en,
   ...viewerAccountStrings.en,
   ...whosWatchingStrings.en,
+  ...workbenchPageStrings.en,
   ...remoteAccessStrings.en,
   ...pluginStrings.en,
   ...sessionUpdateStrings.en,
@@ -107,6 +109,7 @@ export const fr = {
   ...sharedStateStrings.fr,
   ...viewerAccountStrings.fr,
   ...whosWatchingStrings.fr,
+  ...workbenchPageStrings.fr,
   ...remoteAccessStrings.fr,
   ...pluginStrings.fr,
   ...sessionUpdateStrings.fr,
@@ -154,6 +157,7 @@ export const de = {
   ...sharedStateStrings.de,
   ...viewerAccountStrings.de,
   ...whosWatchingStrings.de,
+  ...workbenchPageStrings.de,
   ...remoteAccessStrings.de,
   ...pluginStrings.de,
   ...sessionUpdateStrings.de,
@@ -201,6 +205,7 @@ export const es = {
   ...sharedStateStrings.es,
   ...viewerAccountStrings.es,
   ...whosWatchingStrings.es,
+  ...workbenchPageStrings.es,
   ...remoteAccessStrings.es,
   ...pluginStrings.es,
   ...sessionUpdateStrings.es,
@@ -248,6 +253,7 @@ export const pt = {
   ...sharedStateStrings.pt,
   ...viewerAccountStrings.pt,
   ...whosWatchingStrings.pt,
+  ...workbenchPageStrings.pt,
   ...remoteAccessStrings.pt,
   ...pluginStrings.pt,
   ...sessionUpdateStrings.pt,

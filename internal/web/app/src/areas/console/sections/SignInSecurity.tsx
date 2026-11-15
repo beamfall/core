@@ -109,7 +109,7 @@ export function SignInSecurity() {
   }
 
   return (
-    <Section heading="signinSecurityHeading" lead="signinSecurityLead">
+    <Section heading="signinSecurityHeading" lead="signinSecurityLead" collapsible>
       {loadFailed && (
         <div
           role="alert"
