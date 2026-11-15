@@ -1,30 +1,32 @@
-/* Media detail page (CORE-1144). The header is the setup wizard's glass panel
- * (translucent card, hairline border, deep shadow, backdrop blur) over a
- * blurred wash of the item's own artwork; the primary action and progress
- * carry the accent glow. Tokens only; no new colors. */
+/* Media detail page (CORE-1144, CORE-1785). One stage surface: the item's
+ * backdrop full-bleed behind a --bg-root scrim, the poster and copy laid on it
+ * directly (no card inside the stage). The filled Play/Resume is the only
+ * accent fill; every other action is a ghost button. Tokens only, no blur or
+ * ambient effect (those come only from Oscillux), and motion is the backdrop's
+ * opacity fade, removed under reduce-motion. */
 
 [data-register="viewer"] .bf-detail {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 24px;
 }
 
 [data-register="viewer"] .bf-detail-back {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px 6px 8px;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.05);
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 12px 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: transparent;
   color: var(--text-secondary);
   font: inherit;
   font-size: 13px;
   line-height: 18px;
   font-weight: 600;
   cursor: pointer;
-  backdrop-filter: blur(8px);
   transition:
     color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
@@ -32,13 +34,14 @@
 
 [data-register="viewer"] .bf-detail-back:hover {
   color: var(--text-primary);
-  background: rgb(255 255 255 / 0.1);
+  background: var(--control-bg-hover);
 }
 
 [data-register="viewer"] .bf-detail-back:focus-visible,
-[data-register="viewer"] .bf-detail-play:focus-visible {
+[data-register="viewer"] .bf-detail-more:focus-visible,
+[data-register="viewer"] .bf-detail-parents a:focus-visible {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
 
 [data-register="viewer"] .bf-detail-back svg {
@@ -51,66 +54,98 @@
   isolation: isolate;
   overflow: hidden;
   border-radius: var(--radius-card);
-  padding: clamp(16px, 4vw, 48px);
-  background:
-    radial-gradient(
-      circle at 78% 18%,
-      color-mix(in oklab, var(--library-accent, var(--beam-500)) 22%, transparent),
-      transparent 55%
-    ), linear-gradient(150deg, oklch(24% 0.03 248), oklch(14% 0.018 256));
+  padding: clamp(16px, 4vw, 32px);
+  background: var(--bg-surface);
 }
 
-[data-register="viewer"] .bf-detail-wash {
+[data-register="viewer"] .bf-detail-stage[data-backdrop] {
+  padding-top: clamp(24px, 12vw, 160px);
+}
+
+[data-register="viewer"] .bf-detail-backdrop {
   position: absolute;
   inset: 0;
   z-index: -1;
-  overflow: hidden;
 }
 
-[data-register="viewer"] .bf-detail-wash img {
+[data-register="viewer"] .bf-detail-backdrop img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.5;
-  filter: blur(32px) saturate(1.25);
-  transform: scale(1.15);
+  object-position: center top;
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-standard);
 }
 
-[data-register="viewer"] .bf-detail-wash::after {
-  content: "";
+[data-register="viewer"] .bf-detail-backdrop img[data-loaded] {
+  opacity: 1;
+}
+
+[data-register="viewer"] .bf-detail-scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgb(0 0 0 / 0.15), rgb(0 0 0 / 0.55));
+  background:
+    linear-gradient(
+      0deg,
+      var(--bg-root) 0%,
+      color-mix(in oklab, var(--bg-root) 82%, transparent) 40%,
+      color-mix(in oklab, var(--bg-root) 24%, transparent) 100%
+    ),
+    linear-gradient(90deg, color-mix(in oklab, var(--bg-root) 72%, transparent) 0%, transparent 70%);
 }
 
-[data-register="viewer"] .bf-detail-panel {
+[data-register="viewer"] .bf-detail-lockup {
   display: grid;
-  grid-template-columns: minmax(150px, 240px) minmax(0, 1fr);
+  grid-template-columns: minmax(144px, 240px) minmax(0, 1fr);
   align-items: end;
-  gap: clamp(20px, 3vw, 36px);
-  padding: clamp(20px, 3vw, 32px);
-  border: 1px solid rgb(255 255 255 / 0.1);
-  border-radius: 16px;
-  background: color-mix(in oklab, var(--bg-surface) 70%, transparent);
-  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.7);
-  backdrop-filter: blur(24px);
-  animation: bf-detail-in var(--duration-normal) var(--ease-standard) both;
+  gap: 24px;
 }
 
 [data-register="viewer"] .bf-detail-poster {
+  width: 100%;
   border-radius: var(--radius-card);
-  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.65);
+  box-shadow: var(--shadow-card);
 }
 
 [data-register="viewer"] .bf-detail-copy {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 
 [data-register="viewer"] .bf-detail-copy .bf-page-title {
+  margin: 0;
   overflow-wrap: anywhere;
+}
+
+[data-register="viewer"] .bf-detail-parents ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+[data-register="viewer"] .bf-detail-parents li + li::before {
+  content: "/";
+  margin-right: 8px;
+  color: var(--text-muted);
+}
+
+[data-register="viewer"] .bf-detail-parents a {
+  color: var(--text-secondary);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-detail-parents a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
 }
 
 [data-register="viewer"] .bf-detail-facts {
@@ -124,9 +159,9 @@
 
 [data-register="viewer"] .bf-detail-fact {
   padding: 4px 12px;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 16px;
@@ -136,7 +171,7 @@
 [data-register="viewer"] .bf-detail-progress {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   width: min(320px, 100%);
   color: var(--text-muted);
   font-size: 12px;
@@ -145,8 +180,8 @@
 
 [data-register="viewer"] .bf-detail-progress-track {
   height: 4px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.12);
+  border-radius: var(--radius-control);
+  background: var(--line);
   overflow: hidden;
 }
 
@@ -154,21 +189,35 @@
   height: 100%;
   border-radius: inherit;
   background: var(--beam-500);
-  box-shadow: 0 0 12px var(--accent);
 }
 
-[data-register="viewer"] .bf-detail-play {
-  display: inline-flex;
+[data-register="viewer"] .bf-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 2px;
-  box-shadow: 0 0 24px -6px var(--accent);
+}
+
+[data-register="viewer"] .bf-detail-play,
+[data-register="viewer"] .bf-detail-secondary {
+  gap: 8px;
 }
 
 [data-register="viewer"] .bf-detail-play svg {
+  fill: currentColor;
+}
+
+[data-register="viewer"] .bf-detail-play svg,
+[data-register="viewer"] .bf-detail-secondary svg {
   width: 16px;
   height: 16px;
-  fill: currentColor;
+}
+
+[data-register="viewer"] .bf-detail-overview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 [data-register="viewer"] .bf-detail-summary {
@@ -180,6 +229,27 @@
   white-space: pre-line;
 }
 
+[data-register="viewer"] .bf-detail-summary[data-clamped] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+[data-register="viewer"] .bf-detail-more {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 [data-register="viewer"] .bf-detail-error {
   display: flex;
   flex-direction: column;
@@ -187,34 +257,35 @@
   gap: 12px;
 }
 
-@keyframes bf-detail-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  [data-register="viewer"] .bf-detail-panel {
-    animation: none;
+  [data-register="viewer"] .bf-detail-backdrop img,
+  [data-register="viewer"] .bf-detail-back {
+    transition: none;
   }
 }
 
-/* Phone: the poster sits above the copy at a fixed width, the panel tightens. */
+/* Phone: one column, a small poster above the copy, Play full width, so the
+ * title, facts, Play and the start of the overview fit the first screen. */
 @media (max-width: 640px) {
-  [data-register="viewer"] .bf-detail-panel {
+  [data-register="viewer"] .bf-detail {
+    gap: 16px;
+  }
+  [data-register="viewer"] .bf-detail-stage[data-backdrop] {
+    padding-top: 16px;
+  }
+  [data-register="viewer"] .bf-detail-lockup {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
+    gap: 16px;
   }
   [data-register="viewer"] .bf-detail-poster {
-    width: min(160px, 48%);
+    width: 120px;
+  }
+  [data-register="viewer"] .bf-detail-actions > * {
+    flex: 1 1 auto;
   }
   [data-register="viewer"] .bf-detail-play {
-    align-self: stretch;
+    flex-basis: 100%;
     justify-content: center;
   }
 }

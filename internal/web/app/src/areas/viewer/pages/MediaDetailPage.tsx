@@ -1,7 +1,8 @@
-import { ArrowLeft, Film, Play } from "lucide-react";
+import { ArrowLeft, ChevronRight, Film, Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
+import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
@@ -19,35 +20,42 @@ import { NotAvailable } from "../components/NotAvailable";
 import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
+import { useContainerContext } from "../lib/containerContext";
 import {
   fetchMedia,
   fetchMediaDetailFields,
   findCachedSiblings,
   type MediaDetail,
   mediaDetailCacheKey,
+  mediaLinkState,
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
+import { detailFacts, runtimeParts, viewerFacingFields } from "../lib/viewerFields";
 import { type PlayerNavState, readPlayerNavState } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { PlayOnButton } from "../remote/PlayOnButton";
 import "./media-detail.css";
 
 const POSTER_BUCKETS = ["w320", "w640"] as const;
-const POSTER_SIZES = "(max-width: 640px) 160px, 240px";
+const POSTER_SIZES = "(max-width: 640px) 120px, 240px";
+const BACKDROP_BUCKETS = ["w640", "w1280"] as const;
 const TITLE_ID = "bf-media-detail-title";
+/** An overview longer than this is clamped with a More toggle. */
+const OVERVIEW_CLAMP_CHARS = 240;
 
 type Status = "loading" | "ready" | "missing" | "failed";
 
-// One Media item (/media/:mediaId, CORE-1144). Generic by invariant #1: the
-// header shows the item's title, year, summary and whatever fields its plugin
-// declared, each under the plugin's own label; core names none of them.
+// One Media item (/media/:mediaId, CORE-1144, CORE-1785). Generic by
+// invariant #1: an artwork-led lockup of the item's title, facts and one
+// filled Play/Resume, then the fields a viewer reads under the plugin's own
+// labels. Bookkeeping fields (undeclared positions, the class discriminant,
+// flag markers) stay in Manage. Container credits link up to the parent
+// Entity, and the next item in the container's order is one step away.
 //
-// media(id) carries no artwork and no playback position, so both come only
-// from the card that opened the page (identity-bound navigation state, or the
-// same item already hydrated into a section for this identity). A deep link
-// therefore paints a title-led header with a plain Play; the player still
-// resumes from the server timeline either way.
+// media(id) carries artwork slots but no playback position, so progress comes
+// only from the card that opened the page (identity-bound navigation state, or
+// the same item already hydrated into a section for this identity).
 //
 // Instant paint: a detail already loaded for this identity renders from the
 // viewer cache and revalidates behind it. "Unknown media" (missing or hidden,
@@ -115,18 +123,20 @@ export function MediaDetailPage() {
     };
   }, [identity, mediaId, cacheKey, attempt]);
 
+  // Between a route change and the effect, state still holds the previous item.
+  const current = detail?.media.id === mediaId ? detail : null;
+  const media = current?.media;
+  const context = useContainerContext(media, mediaId);
+
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
     if (location.key !== "default") navigate(-1);
     else navigate("/");
   }
 
-  // Between a route change and the effect, state still holds the previous item.
-  const current = detail?.media.id === mediaId ? detail : null;
-  const media = current?.media;
   const title = media?.title || card?.title || "";
 
-  function play() {
+  function watch(fromStart: boolean) {
     // Forward the queue the opening card carried (CORE-1143), still bound to
     // the viewer identity it was listed for.
     const { queue } = readPlayerNavState(location.state, identity);
@@ -135,7 +145,9 @@ export function MediaDetailPage() {
       state.queue = queue;
       state.queueIdentity = identity;
     }
-    navigate(`/watch/${encodeURIComponent(mediaId)}`, { state });
+    // ?t=0 is the player's "from the beginning" (it also skips pre-play).
+    const suffix = fromStart ? "?t=0" : "";
+    navigate(`/watch/${encodeURIComponent(mediaId)}${suffix}`, { state });
   }
 
   const back = (
@@ -176,34 +188,60 @@ export function MediaDetailPage() {
     );
   }
 
-  const poster = card ? artworkSlotURL(card, "poster") || artworkSlotURL(card, "thumb") : "";
-  const wash = card ? artworkSlotURL(card, "backdrop") || poster : "";
+  const art = { ...(card ?? {}), artworkSlots: { ...card?.artworkSlots, ...media?.artworkSlots } };
+  const poster =
+    artworkSlotURL(art as SourceItem, "poster") || artworkSlotURL(art as SourceItem, "thumb");
+  const backdrop = artworkSlotURL(art as SourceItem, "backdrop");
   const progress = resumeProgress(card);
   const summary = media?.summary || card?.summary || "";
-  const fields = current?.fields ?? [];
+  const allFields = current?.fields ?? [];
+  const fields = viewerFacingFields(allFields);
+  const facts = detailFacts(
+    media,
+    allFields,
+    card?.engagement?.durationSeconds ?? context.current?.engagement?.durationSeconds,
+  );
+  const factLabels = [
+    facts.year ? String(facts.year) : "",
+    facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "",
+    facts.rating ?? "",
+    ...facts.categories,
+  ].filter(Boolean);
   const progressText = progress ? t("mediaDetailProgress", { percent: progress.percent }) : "";
+  const next = context.next;
 
   return (
     <AppShell actions={<ViewerActions />}>
       <article className="bf-detail" aria-labelledby={TITLE_ID}>
         {back}
-        <div className="bf-detail-stage">
-          {wash && (
-            <div className="bf-detail-wash" aria-hidden>
-              <img alt="" decoding="async" src={artworkBucketURL(wash, "w640")} />
-            </div>
-          )}
-          <div className="bf-detail-panel">
+        <section className="bf-detail-stage" data-backdrop={backdrop ? "" : undefined}>
+          {backdrop && <DetailBackdrop key={backdrop} url={backdrop} />}
+          <div className="bf-detail-lockup">
             <DetailPoster key={poster} url={poster} />
             <div className="bf-detail-copy">
+              {context.parents.length > 0 && (
+                <nav className="bf-detail-parents" aria-label={t("mediaDetailPartOf")}>
+                  <ol>
+                    {context.parents.map((parent) => (
+                      <li key={parent.id}>
+                        <Link to={`/entity/${encodeURIComponent(parent.id)}`}>{parent.title}</Link>
+                      </li>
+                    ))}
+                  </ol>
+                </nav>
+              )}
               <h1 id={TITLE_ID} className="bf-page-title">
                 {title}
               </h1>
-              {media?.year ? (
-                <ul className="bf-detail-facts">
-                  <li className="bf-detail-fact">{media.year}</li>
+              {factLabels.length > 0 && (
+                <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
+                  {factLabels.map((label) => (
+                    <li key={label} className="bf-detail-fact">
+                      {label}
+                    </li>
+                  ))}
                 </ul>
-              ) : null}
+              )}
               {progress && (
                 <div className="bf-detail-progress">
                   <div
@@ -223,32 +261,57 @@ export function MediaDetailPage() {
                   <span aria-hidden>{progressText}</span>
                 </div>
               )}
-              <button
-                type="button"
-                className="bf-hero-action bf-detail-play"
-                aria-label={t(progress ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
-                  title,
-                })}
-                onClick={play}
-                onPointerEnter={preloadPlayer}
-                onFocus={preloadPlayer}
-              >
-                <Play aria-hidden />
-                {progress ? t("mediaDetailResume") : t("play")}
-              </button>
-              {mediaId && (
-                <PlayOnButton
-                  mediaID={mediaId}
-                  title={title}
-                  positionSeconds={progress?.positionSeconds}
-                />
-              )}
-              {summary && <p className="bf-detail-summary">{summary}</p>}
+              <div className="bf-detail-actions">
+                {/* The one accent-filled action on the page. */}
+                <button
+                  type="button"
+                  className={`${buttonVariants({ size: "lg" })} bf-detail-play`}
+                  aria-label={t(progress ? "mediaDetailResumeLabel" : "mediaDetailPlayLabel", {
+                    title,
+                  })}
+                  onClick={() => watch(false)}
+                  onPointerEnter={preloadPlayer}
+                  onFocus={preloadPlayer}
+                >
+                  <Play aria-hidden />
+                  {progress ? t("mediaDetailResume") : t("play")}
+                </button>
+                {progress && (
+                  <button
+                    type="button"
+                    className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                    aria-label={t("mediaDetailStartOverLabel", { title })}
+                    onClick={() => watch(true)}
+                  >
+                    <RotateCcw aria-hidden />
+                    {t("mediaDetailStartOver")}
+                  </button>
+                )}
+                {next && (
+                  <Link
+                    to={`/media/${encodeURIComponent(next.id)}`}
+                    state={mediaLinkState(next, identity)}
+                    className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                    aria-label={t("mediaDetailNextLabel", { title: next.title })}
+                  >
+                    {t("mediaDetailNext")}
+                    <ChevronRight aria-hidden />
+                  </Link>
+                )}
+                {mediaId && (
+                  <PlayOnButton
+                    mediaID={mediaId}
+                    title={title}
+                    positionSeconds={progress?.positionSeconds}
+                  />
+                )}
+              </div>
+              {summary && <DetailOverview key={summary} text={summary} />}
               {!media && status === "loading" && <Skeleton aria-hidden className="h-4 w-40" />}
               {status === "failed" && !media && retry}
             </div>
           </div>
-        </div>
+        </section>
 
         {fields.length > 0 && (
           <section className="bf-section flex flex-col gap-3" aria-labelledby="bf-media-fields">
@@ -258,7 +321,7 @@ export function MediaDetailPage() {
             <dl className="bf-metadata">
               {fields.map((field, i) => (
                 <div key={`${field.name}-${i}`} className="contents">
-                  <dt>{displayString(field.label, locale) || field.name}</dt>
+                  <dt>{displayString(field.label, locale)}</dt>
                   <dd>{field.value}</dd>
                 </div>
               ))}
@@ -281,6 +344,66 @@ export function MediaDetailPage() {
         )}
       </article>
     </AppShell>
+  );
+}
+
+function formatRuntime(seconds: number, t: ReturnType<typeof useT>): string {
+  const { hours, minutes } = runtimeParts(seconds);
+  return hours > 0
+    ? t("mediaDetailRuntimeHours", { hours, minutes })
+    : t("mediaDetailRuntimeMinutes", { minutes });
+}
+
+function DetailBackdrop({ url }: { url: string }) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <div className="bf-detail-backdrop" aria-hidden>
+      <img
+        alt=""
+        decoding="async"
+        src={artworkBucketURL(url, "w1280")}
+        srcSet={artworkSrcSet(url, BACKDROP_BUCKETS)}
+        sizes="100vw"
+        data-loaded={loaded ? "" : undefined}
+        ref={(img) => {
+          // A cached image can finish before React attaches onLoad.
+          if (img?.complete && img.naturalWidth > 0 && !loaded) setLoaded(true);
+        }}
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+      />
+      <div className="bf-detail-scrim" />
+    </div>
+  );
+}
+
+function DetailOverview({ text }: { text: string }) {
+  const t = useT();
+  const [expanded, setExpanded] = useState(false);
+  const clampable = text.length > OVERVIEW_CLAMP_CHARS;
+  return (
+    <div className="bf-detail-overview">
+      <p
+        id="bf-media-detail-overview"
+        className="bf-detail-summary"
+        data-clamped={clampable && !expanded ? "" : undefined}
+      >
+        {text}
+      </p>
+      {clampable && (
+        <button
+          type="button"
+          className="bf-detail-more"
+          aria-expanded={expanded}
+          aria-controls="bf-media-detail-overview"
+          onClick={() => setExpanded((open) => !open)}
+        >
+          {expanded ? t("mediaDetailOverviewLess") : t("mediaDetailOverviewMore")}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -308,12 +431,12 @@ function DetailPoster({ url }: { url: string }) {
 function DetailSkeleton({ label }: { label: string }) {
   return (
     <div className="bf-detail-stage" role="status" aria-busy="true" aria-label={label}>
-      <div className="bf-detail-panel">
-        <Skeleton aria-hidden className="aspect-[2/3] w-full" />
+      <div className="bf-detail-lockup">
+        <Skeleton aria-hidden className="bf-detail-poster aspect-[2/3]" />
         <div className="bf-detail-copy" aria-hidden>
           <Skeleton className="h-9 w-3/4" />
           <Skeleton className="h-5 w-16 rounded-full" />
-          <Skeleton className="h-10 w-28" />
+          <Skeleton className="h-11 w-28" />
           <Skeleton className="h-4 w-full max-w-xl" />
           <Skeleton className="h-4 w-2/3 max-w-md" />
         </div>
