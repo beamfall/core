@@ -435,7 +435,7 @@ export async function terminateSession(
 
 // --- Device administration (ADR-0081) -------------------------------------
 
-const DEVICES_QUERY = "query Devices { devices { deviceID name role revoked current } }";
+const DEVICES_QUERY = "query Devices { devices { deviceID name role revoked current signedIn } }";
 
 /** Devices — every enrolled device for the Console administration list. */
 export async function fetchDevices(signal?: AbortSignal): Promise<DeviceInfo[]> {

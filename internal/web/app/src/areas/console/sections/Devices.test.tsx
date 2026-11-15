@@ -226,6 +226,15 @@ describe("Devices (ADR-0081 administration)", () => {
     expect(screen.queryByText("PAIR1234")).not.toBeInTheDocument();
   });
 
+  it("shows a browser that signed out as signed out, not active", async () => {
+    vi.mocked(fetchDevices).mockResolvedValue([devices[0], { ...devices[1], signedIn: false }]);
+    renderDevices();
+
+    const row = (await screen.findByText("Living Room TV")).closest("tr")!;
+    expect(within(row).getByText("Signed out")).toBeInTheDocument();
+    expect(within(row).queryByText("Active")).toBeNull();
+  });
+
   it("persists the remote-enrollment toggle", async () => {
     renderDevices();
     const toggle = await screen.findByRole("switch", { name: /allow remote enrollment/i });

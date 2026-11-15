@@ -1285,6 +1285,8 @@ export interface DeviceInfo {
   revoked: boolean;
   /** True for the browser making this request — never offered for revocation. */
   current: boolean;
+  /** False once the device has no session left (it signed out) and must enroll again (CORE-1607). */
+  signedIn?: boolean;
 }
 
 /** Result of revoking one device (graph.RevokeDeviceResult). */

@@ -41,6 +41,7 @@ export const profileDeviceStrings = {
     deviceDemoteConfirm: "Demote this device to viewer?",
     deviceActive: "Active",
     deviceRevoked: "Revoked",
+    deviceSignedOut: "Signed out",
     deviceRevoke: "Revoke",
     deviceRevokeConfirm:
       "Revoke this device? It signs that browser out and invalidates its sessions and stream tokens.",

@@ -213,3 +213,36 @@ func TestListDevicesStoreReturnsEnrolledDevices(t *testing.T) {
 		t.Errorf("ListDevices missing seeded devices, got %v", ids)
 	}
 }
+
+// TestDevicesQueryMarksSignedOutDevices covers CORE-1607: a device whose last
+// session was terminated (sign-out) reads signedIn=false, so Console no longer
+// calls it active, while it stays unrevoked.
+func TestDevicesQueryMarksSignedOutDevices(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	openManagerAdminSession(t, st)
+	for _, id := range []store.SessionID{"session-default", "session-revealed", "session-managed"} {
+		if err := st.TerminateSession(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	data, errs := post(t, handler, `{"query":"query { devices { deviceID revoked signedIn } }"}`, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("devices errors = %#v", errs)
+	}
+	var got []DeviceInfo
+	if err := json.Unmarshal(data["devices"], &got); err != nil {
+		t.Fatalf("decode devices: %v", err)
+	}
+	byID := map[string]DeviceInfo{}
+	for _, d := range got {
+		byID[d.DeviceID] = d
+	}
+	if tv := byID["device-tv"]; tv.SignedIn || tv.Revoked {
+		t.Errorf("device-tv = %+v, want signed out and not revoked", tv)
+	}
+	if mac := byID["device-mac"]; !mac.SignedIn {
+		t.Errorf("device-mac = %+v, want signed in", mac)
+	}
+}

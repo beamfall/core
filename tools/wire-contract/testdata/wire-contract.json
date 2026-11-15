@@ -6532,6 +6532,10 @@
         {
           "name": "role",
           "kind": "scalar"
+        },
+        {
+          "name": "signedIn",
+          "kind": "scalar"
         }
       ]
     },
@@ -20732,6 +20736,10 @@
         },
         {
           "name": "role",
+          "kind": "scalar"
+        },
+        {
+          "name": "signedIn",
           "kind": "scalar"
         }
       ]
