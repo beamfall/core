@@ -614,6 +614,36 @@ func TestHLSArgsMapSelectedAudioStream(t *testing.T) {
 	}
 }
 
+// TestHLSArgsAudioOnlyDropsVideo covers the linear (unknown-duration) HLS
+// encode of an audio-only rendition: only the audio stream is mapped and no
+// video encoder, filter or forced keyframe reaches the argv (CORE-1542).
+func TestHLSArgsAudioOnlyDropsVideo(t *testing.T) {
+	selected := 1
+	for _, tc := range []struct {
+		name      string
+		rendition Rendition
+		wantMap   string
+	}{
+		{"first audio stream", Rendition{AudioOnly: true, AudioCodec: "aac", AudioChannels: 2}, "0:a:0"},
+		{"selected audio stream", Rendition{AudioOnly: true, AudioCodec: "aac", AudioChannels: 2, AudioStreamIndex: &selected}, "0:1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := hlsArgs("/src/track.mp3", "/tmp/hls", tc.rendition)
+			if !containsArgPair(args, "-map", tc.wantMap) {
+				t.Fatalf("audio-only HLS argv = %v, want -map %s", args, tc.wantMap)
+			}
+			for _, video := range []string{"-c:v", "-vf", "-b:v", "-force_key_frames", "0:v:0"} {
+				if containsArg(args, video) {
+					t.Fatalf("audio-only HLS argv carries video argument %q: %v", video, args)
+				}
+			}
+			if !containsArgPair(args, "-c:a", "aac") {
+				t.Fatalf("audio-only HLS argv = %v, want the AAC audio encode", args)
+			}
+		})
+	}
+}
+
 func TestRenditionHardwareVideoArgs(t *testing.T) {
 	tests := []struct {
 		name  string

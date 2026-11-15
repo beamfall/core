@@ -12,7 +12,7 @@ title, summary and year, and nothing re-runs the provider for an already identif
 
 ## What Changes
 
-- Catalog migration `0115_item_metadata_editor`: `media_metadata_provenance.candidate_id`
+- Catalog migration `0116_item_metadata_editor`: `media_metadata_provenance.candidate_id`
   remembers which candidate identified an item, and a new `media_sort_title` table holds an
   optional sort title. Library browse and its letter rail sort by the sort title when one is set.
 - `editMediaMetadata(mediaID, title, sortTitle, summary, year)` writes the given fields at manual

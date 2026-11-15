@@ -1133,6 +1133,49 @@ func TestServingDeniesAfterSealEvenWhenTokenVerifies(t *testing.T) {
 	}
 }
 
+// hidingStore drops the listed Media from VisibleMediaBatch, as a sealed
+// encrypted Library's locked plane does: its rows resolve to nothing at all.
+type hidingStore struct {
+	Store
+	hidden map[store.MediaID]bool
+}
+
+func (h hidingStore) VisibleMediaBatch(ctx context.Context, ids []store.MediaID, filter store.LibraryFilter) (map[store.MediaID]store.Media, error) {
+	rows, err := h.Store.VisibleMediaBatch(ctx, ids, filter)
+	for id := range h.hidden {
+		delete(rows, id)
+	}
+	return rows, err
+}
+
+// TestServingDeniesSealedEncryptedMemberThatNoLongerResolves: once an
+// encrypted Library seals, its members vanish from every read, so the serve
+// re-check must fail closed on a member it cannot resolve.
+func TestServingDeniesSealedEncryptedMemberThatNoLongerResolves(t *testing.T) {
+	svc, authService, _, _ := newFixture(t)
+	scope := scopeFor(t, authService, "session-default")
+	pack, err := svc.BuildPack(context.Background(), scope, BuildPackRequest{
+		TargetKind: TargetKindMedia, TargetRef: "media-alpha",
+	})
+	if err != nil {
+		t.Fatalf("BuildPack: %v", err)
+	}
+	token, err := svc.IssuePackGrant(context.Background(), scope, pack.ID)
+	if err != nil {
+		t.Fatalf("IssuePackGrant: %v", err)
+	}
+	handlers := NewHTTPHandlers(svc, authService)
+
+	svc.store = hidingStore{Store: svc.store, hidden: map[store.MediaID]bool{"media-alpha": true}}
+	if rec := serveManifest(t, handlers, token); rec.Code != http.StatusOK {
+		t.Fatalf("unresolved member with nothing sealed: status = %d, want 200", rec.Code)
+	}
+	svc.SetSealed(func(id store.LibraryID) bool { return id == "library-local" })
+	if rec := serveManifest(t, handlers, token); rec.Code == http.StatusOK {
+		t.Fatalf("sealed encrypted member served: status = 200, want denial")
+	}
+}
+
 func serveManifest(t *testing.T, h *HTTPHandlers, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/pack/manifest/"+token, nil)

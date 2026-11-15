@@ -1,6 +1,6 @@
 ## 1. Server
 
-- [x] 1.1 Catalog migration 0115: `media_metadata_provenance.candidate_id`, `media_sort_title`
+- [x] 1.1 Catalog migration 0116: `media_metadata_provenance.candidate_id`, `media_sort_title`
 - [x] 1.2 Store: rank-gated `UpdateMediaMetadata` with sort title, lockable sort title and artwork slots, held plugin field locks
 - [x] 1.3 Identify: remember the candidate; skip locked artwork slots
 - [x] 1.4 Graph: `mediaMetadata`, `editMediaMetadata`, `refreshMediaMetadata`; activity kinds

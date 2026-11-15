@@ -442,6 +442,8 @@ type Sessions struct {
 	// offLockIdle, when non-nil, is closed when starting, stopping and
 	// detached all drop to zero.
 	offLockIdle chan struct{}
+	// closed is set by Close; once set no session is created.
+	closed bool
 
 	// keyframes holds audio-copy keyframe timelines; it has its own lock.
 	keyframes keyframeCache
@@ -573,10 +575,14 @@ func (s *Sessions) releaseTranscodeLease(session *hlsSession) {
 	}
 }
 
-var segmentName = regexp.MustCompile(`^seg(\d{5})\.m4s$`)
+// segmentName matches a media segment as FFmpeg and the playlists spell it
+// (seg%05d.m4s): five digits, or more past seg99999 without a leading zero.
+// Capping the digits keeps the number within int, and rejecting padded aliases
+// keeps one file name per segment.
+var segmentName = regexp.MustCompile(`^seg(\d{5}|[1-9]\d{5,8})\.m4s$`)
 
 // rungFileName matches the per-rendition artifacts under a rung directory.
-var rungFileName = regexp.MustCompile(`^(index\.m3u8|init\.mp4|seg\d{5}\.m4s)$`)
+var rungFileName = regexp.MustCompile(`^(index\.m3u8|init\.mp4|seg(?:\d{5}|[1-9]\d{5,8})\.m4s)$`)
 
 // initSegmentName is the fMP4 initialization segment every #EXT-X-MAP line
 // points at; ffmpeg writes it once per (re)start with identical parameters.
@@ -892,13 +898,18 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	}
 	// The keyframe timeline lays out the copied-video rung, which a composed
 	// picture or an audio adjustment replaces with a single encoded rung.
+	// An audio-only shape never copies a picture stream through: the audio
+	// class's embedded art is not video.
+	if shape.AudioOnly {
+		audioCopy = false
+	}
 	var timeline *keyframeTimeline
 	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() {
 		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
 			return "", err
 		}
 	}
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, priority)
+	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1138,14 +1149,17 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // served rendition copy the source video and transcode only the audio. A
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
-// audio-only rung.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, priority Priority) (*hlsSession, error) {
+// audio-only rung. audioOnly (an audio-class Media) offers that rung too.
+func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, priority Priority) (*hlsSession, error) {
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
 		s.mu.Unlock()
 		s.runTeardowns(teardowns)
 	}()
+	if s.closed {
+		return nil, ErrSessionEvicted
+	}
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
 	if picture != nil {
 		rung, err := composedLiveRung(caps)
@@ -1153,8 +1167,8 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			return nil, err
 		}
 		requestedRungs = []Rung{rung}
-	} else if !adjust.IsZero() {
-		requestedRungs = []Rung{adjustedAudioRung()}
+	} else if audioOnly || !adjust.IsZero() {
+		requestedRungs = []Rung{audioOnlyRung()}
 	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	if existing, ok := s.sessions[key]; ok {
@@ -1764,14 +1778,17 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 // Close stops every running transcode and removes its working directory. It
 // also waits for encoder starts and teardowns running with the lock released
 // (a start sees its session gone and stops what it spawned), so no encoder,
-// lease or directory outlives it.
+// lease or directory outlives it. Keyframe probes still running are cancelled
+// and waited for, and no session is created once Close has begun.
 func (s *Sessions) Close() {
 	s.mu.Lock()
+	s.closed = true
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		teardowns = append(teardowns, *s.removeLocked(key))
 	}
 	s.mu.Unlock()
+	s.keyframes.close()
 	s.runTeardowns(teardowns)
 	for {
 		s.mu.Lock()

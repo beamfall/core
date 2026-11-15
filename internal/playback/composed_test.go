@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -54,6 +55,13 @@ func staticComposer(picture ComposedPicture, ok bool, err error) PictureComposer
 // insertComposedRendition stores a Ready composed rendition keyed on picture.
 func insertComposedRendition(t *testing.T, st *store.Store, media store.Media, fingerprint string, picture ComposedPicture) store.PlaybackRenditionID {
 	t.Helper()
+	return insertComposedRenditionAt(t, st, media, fingerprint, picture, composedBandwidth)
+}
+
+// insertComposedRenditionAt is insertComposedRendition with the bandwidth the
+// row records, for a row stored by an earlier build.
+func insertComposedRenditionAt(t *testing.T, st *store.Store, media store.Media, fingerprint string, picture ComposedPicture, bandwidth int) store.PlaybackRenditionID {
+	t.Helper()
 	digest, err := picture.digest()
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +70,7 @@ func insertComposedRendition(t *testing.T, st *store.Store, media store.Media, f
 	if err := st.UpsertPlaybackRendition(context.Background(), store.PlaybackRendition{
 		ID: id, MediaID: media.ID, ContentFingerprint: fingerprint,
 		Kind: store.PlaybackRenditionKindHLS, Status: store.PlaybackRenditionReady,
-		RungID: ComposedRungID, Codec: composedCodec, Height: composedHeight, Bandwidth: composedBandwidth,
+		RungID: ComposedRungID, Codec: composedCodec, Height: composedHeight, Bandwidth: bandwidth,
 		Path: t.TempDir(), SizeBytes: 4096, CreatedAt: time.Unix(50, 0).UTC(), LastUsedAt: time.Unix(50, 0).UTC(),
 	}); err != nil {
 		t.Fatalf("UpsertPlaybackRendition: %v", err)
@@ -198,6 +206,12 @@ func TestPrecomputeComposedRenditionEnqueue(t *testing.T) {
 		!strings.Contains(string(jobsOut[0].Payload), string(composedRenditionID(audio.ID, "fp-enqueue", digest))) {
 		t.Fatalf("payload = %s", jobsOut[0].Payload)
 	}
+	// The rendition is advertised and admitted at its whole peak: the 1500k
+	// video maxrate plus the ladder's 256 kbps audio and mux allowance, the
+	// same total as the live 720p composed rung (CORE-1804).
+	if !strings.Contains(string(jobsOut[0].Payload), `"bandwidth":1756000`) {
+		t.Fatalf("payload = %s, want bandwidth 1756000", jobsOut[0].Payload)
+	}
 	for name, run := range map[string]func() ([]store.Job, error){
 		"declined": func() ([]store.Job, error) {
 			return PrecomputeComposedRendition(ctx, st, audio.ID, staticComposer(picture, false, nil), cache, now)
@@ -314,7 +328,7 @@ func TestEnsureComposedRendition(t *testing.T) {
 	audio := importAudioMedia(t, st, filepath.Join(t.TempDir(), "song.mp3"), "fp-ensure")
 	picture := ComposedPicture{TimedText: composedTestText}
 
-	added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), cache, now)
+	added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), nil, cache, now)
 	if err != nil || !added {
 		t.Fatalf("no rendition yet: added %v err %v, want an enqueue", added, err)
 	}
@@ -322,7 +336,7 @@ func TestEnsureComposedRendition(t *testing.T) {
 		t.Fatalf("precompute jobs = %d, want 1", got)
 	}
 	// A queued but unclaimed job dedupes: no second job.
-	if _, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), cache, now); err != nil {
+	if _, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), nil, cache, now); err != nil {
 		t.Fatal(err)
 	}
 	if got := countJobs(t, st, PrecomputeJobKind); got != 1 {
@@ -339,21 +353,67 @@ func TestEnsureComposedRendition(t *testing.T) {
 		if err := st.UpsertPlaybackRendition(ctx, r); err != nil {
 			t.Fatal(err)
 		}
-		if added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), cache, now); err != nil || added {
+		if added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), nil, cache, now); err != nil || added {
 			t.Fatalf("%s rendition exists: added %v err %v, want no enqueue", status, added, err)
 		}
 	}
 
 	edited := ComposedPicture{TimedText: composedTestText + "Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,300,,{\\kf50}again\n"}
-	if added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(edited, true, nil), cache, now); err != nil || !added {
+	if added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(edited, true, nil), nil, cache, now); err != nil || !added {
 		t.Fatalf("edited picture: added %v err %v, want an enqueue for the new digest", added, err)
 	}
-	if added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, false, nil), cache, now); err != nil || added {
+	if added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, false, nil), nil, cache, now); err != nil || added {
 		t.Fatalf("declined: added %v err %v, want none", added, err)
 	}
 	wantErr := errors.New("composer broke")
-	if _, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, wantErr), cache, now); !errors.Is(err, wantErr) {
+	if _, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, wantErr), nil, cache, now); !errors.Is(err, wantErr) {
 		t.Fatalf("composer error = %v, want %v", err, wantErr)
+	}
+}
+
+// TestEnsureComposedRenditionSkipsUnsupportedRecipe covers CORE-1790: the
+// sweep consults the live path's FFmpeg capability check, so a timed-text
+// picture on a build without libass queues no render (none fails and is
+// retried each sweep), while a rendition already stored keeps being served.
+func TestEnsureComposedRenditionSkipsUnsupportedRecipe(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(600, 0).UTC()
+	cache := t.TempDir()
+	audio := importAudioMedia(t, st, filepath.Join(t.TempDir(), "song.mp3"), "fp-unsupported")
+	picture := ComposedPicture{TimedText: composedTestText}
+	var checked []ffmpeg.Rendition
+	noLibass := func(timedText bool, rendition ffmpeg.Rendition) bool {
+		checked = append(checked, rendition)
+		return !timedText
+	}
+
+	for range 2 {
+		added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), noLibass, cache, now)
+		if !errors.Is(err, ErrComposedRecipeUnsupported) || added {
+			t.Fatalf("no libass: added %v err %v, want ErrComposedRecipeUnsupported", added, err)
+		}
+	}
+	if got := countJobs(t, st, PrecomputeJobKind); got != 0 {
+		t.Fatalf("precompute jobs = %d, want 0", got)
+	}
+	if want := composedPrecomputeRendition(composedHeight); len(checked) == 0 || checked[0] != want {
+		t.Fatalf("checked renditions %+v, want the precomputed encode %+v", checked, want)
+	}
+
+	// The package default is the cached check (pinned by TestMain here).
+	withComposedRecipeSupport(t, true, false)
+	if _, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), nil, cache, now); !errors.Is(err, ErrComposedRecipeUnsupported) {
+		t.Fatalf("default check without libass: err %v, want ErrComposedRecipeUnsupported", err)
+	}
+
+	// A rendition already stored (Ready, from a capable build) is left alone.
+	id := insertComposedRendition(t, st, audio, "fp-unsupported", picture)
+	if added, err := EnsureComposedRendition(ctx, st, audio.ID, staticComposer(picture, true, nil), noLibass, cache, now); err != nil || added {
+		t.Fatalf("ready rendition: added %v err %v, want nothing", added, err)
+	}
+	if r, err := st.PlaybackRendition(ctx, id, store.LibraryFilter{AllLibraries: true, Revealed: true}); err != nil || r.Status != store.PlaybackRenditionReady {
+		t.Fatalf("ready rendition = %+v err %v, want untouched", r, err)
 	}
 }
 

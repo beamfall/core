@@ -39,13 +39,15 @@ func setFixtureClass(t *testing.T, st *store.Store, id store.MediaID, class stor
 
 // fakeTranscoder writes fixed bytes per quality and records each call.
 type fakeTranscoder struct {
-	out   map[string][]byte
-	err   error
-	calls []string
+	out     map[string][]byte
+	err     error
+	calls   []string
+	streams [][]store.MediaFileStream
 }
 
-func (f *fakeTranscoder) transcode(_ context.Context, src, dst, quality string) error {
+func (f *fakeTranscoder) transcode(_ context.Context, src, dst, quality string, streams []store.MediaFileStream) error {
 	f.calls = append(f.calls, filepath.Base(src)+"@"+quality)
+	f.streams = append(f.streams, streams)
 	if f.err != nil {
 		_ = os.WriteFile(dst, []byte("partial"), 0o600)
 		return f.err
@@ -210,7 +212,7 @@ func TestBuildTranscodeCancellationStaysVisible(t *testing.T) {
 	svc, authService, st, _ := newFixture(t)
 	setFixtureClass(t, st, "media-alpha", store.MediaClassVideo)
 	ctx, cancel := context.WithCancel(context.Background())
-	svc.SetTranscoder(func(context.Context, string, string, string) error {
+	svc.SetTranscoder(func(context.Context, string, string, string, []store.MediaFileStream) error {
 		cancel()
 		return errors.New("ffmpeg convert: exit status 255")
 	})
@@ -333,5 +335,106 @@ func TestBuildPrefersProfileResolver(t *testing.T) {
 	}
 	if resolver.gotProfile != scope.ProfileID || resolver.plainCalls != 0 {
 		t.Fatalf("resolver saw profile %q and %d plain calls", resolver.gotProfile, resolver.plainCalls)
+	}
+}
+
+// TestBuildHandsTheSourceStreamInventoryToTheTranscoder: the transcoder gets
+// the source file's recorded streams, so it can tone-map an HDR source
+// (CORE-1744).
+func TestBuildHandsTheSourceStreamInventoryToTheTranscoder(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureClass(t, st, "media-alpha", store.MediaClassVideo)
+	filter := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	rows, err := st.VisibleMediaBatch(context.Background(), []store.MediaID{"media-alpha"}, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := st.MediaFilesForMedia(context.Background(), "media-alpha", filter)
+	if err != nil || len(files) == 0 {
+		t.Fatalf("MediaFilesForMedia: %v", err)
+	}
+	streams := []store.MediaFileStream{{Index: 0, Type: "video", Codec: "hevc", ColorTransfer: "smpte2084", ColorPrimaries: "bt2020"}}
+	if _, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: rows["media-alpha"].LibraryID, Path: files[0].Path, Title: rows["media-alpha"].Title, Container: "mkv", Codec: "hevc",
+		Class: store.MediaClassVideo, ContentFingerprint: files[0].ContentFingerprint, Streams: streams,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeTranscoder{out: map[string][]byte{QualityHigh: []byte("transcoded-high")}}
+	svc.SetTranscoder(fake.transcode)
+	scope := scopeFor(t, authService, "session-default")
+	if _, err := svc.BuildPack(context.Background(), scope, BuildPackRequest{
+		TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: QualityHigh,
+	}); err != nil {
+		t.Fatalf("BuildPack: %v", err)
+	}
+	if len(fake.streams) != 1 || len(fake.streams[0]) != 1 || fake.streams[0][0].ColorTransfer != "smpte2084" {
+		t.Fatalf("transcoder streams = %+v, want the HDR10 video stream", fake.streams)
+	}
+}
+
+// setFixtureVideoSize makes id a video whose primary file reports sizeBytes.
+// The file is extended sparsely, so the per-item bound is exercised without
+// writing a file that large.
+func setFixtureVideoSize(t *testing.T, st *store.Store, id store.MediaID, sizeBytes int64) {
+	t.Helper()
+	setFixtureClass(t, st, id, store.MediaClassVideo)
+	files, err := st.MediaFilesForMedia(context.Background(), id, store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil || len(files) == 0 {
+		t.Fatalf("MediaFilesForMedia: %v", err)
+	}
+	if err := os.Truncate(files[0].Path, sizeBytes); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOriginalVideoOverTheItemBoundIsRefusedAtAdmission covers CORE-1745: an
+// Original pack cannot seal a video item over the 4 GiB BFOP bound, so the
+// request is refused with a typed error before any build work.
+func TestOriginalVideoOverTheItemBoundIsRefusedAtAdmission(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureVideoSize(t, st, "media-alpha", int64(MaxItemSize)+1)
+	scope := scopeFor(t, authService, "session-default")
+	for _, quality := range []string{"", QualityOriginal} {
+		req := BuildPackRequest{TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: quality}
+		if err := svc.AdmitBuild(context.Background(), scope, req); !errors.Is(err, ErrOriginalItemTooLarge) {
+			t.Fatalf("AdmitBuild(quality %q) = %v, want ErrOriginalItemTooLarge", quality, err)
+		}
+		if _, err := svc.BuildPack(context.Background(), scope, req); !errors.Is(err, ErrOriginalItemTooLarge) {
+			t.Fatalf("BuildPack(quality %q) = %v, want ErrOriginalItemTooLarge", quality, err)
+		}
+	}
+	if !strings.Contains(ErrOriginalItemTooLarge.Error(), "4 GiB") {
+		t.Fatalf("error %q does not name the 4 GiB limit", ErrOriginalItemTooLarge)
+	}
+}
+
+// TestOriginalVideoAtTheItemBoundIsAdmitted keeps the bound inclusive: an item
+// of exactly 4 GiB is admitted at Original.
+func TestOriginalVideoAtTheItemBoundIsAdmitted(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureVideoSize(t, st, "media-alpha", int64(MaxItemSize))
+	scope := scopeFor(t, authService, "session-default")
+	if err := svc.AdmitBuild(context.Background(), scope, BuildPackRequest{
+		TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: QualityOriginal,
+	}); err != nil {
+		t.Fatalf("AdmitBuild = %v, want nil", err)
+	}
+}
+
+// TestTranscodedQualityPacksAVideoOverTheItemBound: the bound limits only the
+// sealed bytes, so a transcoded quality still packs a source over 4 GiB.
+func TestTranscodedQualityPacksAVideoOverTheItemBound(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureVideoSize(t, st, "media-alpha", int64(MaxItemSize)+1)
+	fake := &fakeTranscoder{out: map[string][]byte{QualityHigh: []byte("transcoded-high")}}
+	svc.SetTranscoder(fake.transcode)
+	scope := scopeFor(t, authService, "session-default")
+	req := BuildPackRequest{TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: QualityHigh}
+	if err := svc.AdmitBuild(context.Background(), scope, req); err != nil {
+		t.Fatalf("AdmitBuild = %v, want nil", err)
+	}
+	if _, err := svc.BuildPack(context.Background(), scope, req); err != nil {
+		t.Fatalf("BuildPack = %v, want a transcoded pack", err)
 	}
 }

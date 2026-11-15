@@ -139,6 +139,13 @@ type keyframeCache struct {
 	store    KeyframeStore
 	done     map[keyframeGeneration]*keyframeTimeline
 	inflight map[keyframeGeneration]*keyframeLoad
+	// closed refuses new probes once close has begun. stopProbes cancels the
+	// probes still running (stopCtx is created with the first probe), and
+	// probes counts them so close can wait for each to return.
+	closed     bool
+	stopCtx    context.Context
+	stopProbes context.CancelFunc
+	probes     sync.WaitGroup
 }
 
 type keyframeLoad struct {
@@ -195,18 +202,30 @@ func (c *keyframeCache) load(ctx context.Context, gen keyframeGeneration, prober
 			return nil, ctx.Err()
 		}
 	}
+	if c.closed {
+		c.mu.Unlock()
+		return nil, ErrSessionEvicted
+	}
 	load := &keyframeLoad{finished: make(chan struct{})}
 	if c.inflight == nil {
 		c.inflight = map[keyframeGeneration]*keyframeLoad{}
 	}
 	c.inflight[gen] = load
 	keyframes := c.store
+	if c.stopCtx == nil {
+		c.stopCtx, c.stopProbes = context.WithCancel(context.Background())
+	}
+	stopCtx := c.stopCtx
+	c.probes.Add(1)
 	c.mu.Unlock()
+	defer c.probes.Done()
 
 	// The probe outlives the request that started it: other first plays may be
-	// waiting on it, and its result is kept.
+	// waiting on it, and its result is kept. Only close cancels it early.
 	probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), keyframeProbeTimeout)
+	stopProbe := context.AfterFunc(stopCtx, cancel)
 	load.timeline, load.err = resolveKeyframes(probeCtx, gen, keyframes, prober)
+	stopProbe()
 	cancel()
 
 	c.mu.Lock()
@@ -231,6 +250,18 @@ func (c *keyframeCache) load(ctx context.Context, gen keyframeGeneration, prober
 	c.mu.Unlock()
 	close(load.finished)
 	return load.timeline, load.err
+}
+
+// close refuses new probes, cancels the running ones and waits for them to
+// return, so no probe outlives the Sessions that started it.
+func (c *keyframeCache) close() {
+	c.mu.Lock()
+	c.closed = true
+	if c.stopProbes != nil {
+		c.stopProbes()
+	}
+	c.mu.Unlock()
+	c.probes.Wait()
 }
 
 // resolveKeyframes reads gen's index from the store, or probes the file and
