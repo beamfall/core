@@ -175,3 +175,86 @@ func TestEnrollmentBindingForBindsOnlyAnOtherwiseVerifiedBuild(t *testing.T) {
 		})
 	}
 }
+
+// TestDecodeFirstPartyBuildCatalogValidatesLinkTimeValue (CORE-1395): the
+// decoder the image build runs accepts exactly what FirstPartyBuildCatalog
+// would accept at boot, so a value that passes the build cannot panic the
+// server.
+func TestDecodeFirstPartyBuildCatalogValidatesLinkTimeValue(t *testing.T) {
+	encoded, err := EncodeFirstPartyBuildManifest([]byte(firstPartyTestManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := DecodeFirstPartyBuildCatalog("  " + encoded + "\n")
+	if err != nil || len(catalog.Builds) != 2 {
+		t.Fatalf("decode = %d builds, %v; want 2", len(catalog.Builds), err)
+	}
+	if empty, err := DecodeFirstPartyBuildCatalog(" "); err != nil || len(empty.Builds) != 0 {
+		t.Fatalf("empty value = %+v, %v; want an empty catalog", empty, err)
+	}
+	for _, bad := range []string{"not base64!", base64.StdEncoding.EncodeToString([]byte(`{"schema":"other"}`))} {
+		if _, err := DecodeFirstPartyBuildCatalog(bad); err == nil {
+			t.Errorf("malformed value %q accepted", bad)
+		}
+	}
+}
+
+// TestAssembleFirstPartyBuildManifestMergesClientRecords (CORE-1395): the
+// per-client record files of one Core release combine into a single manifest
+// that the boot-time parser accepts, and any file the release could not vouch
+// for, or two files claiming the same build or surface floor, fail the
+// assembly instead of being dropped or resolved.
+func TestAssembleFirstPartyBuildManifestMergesClientRecords(t *testing.T) {
+	record := func(id, surface, distribution, role string) string {
+		return `{"buildID":"` + id + `","surface":"` + surface + `","artifactHash":"` + firstPartyTestHash + `","sequence":100,"distributions":["` + distribution + `"],"roles":["` + role + `"]}`
+	}
+	file := func(name string, floors string, records ...string) FirstPartyBuildRecordFile {
+		data := `{"schema":"beamfall.first-party-builds/v1","builds":[` + strings.Join(records, ",") + `]` + floors + `}`
+		return FirstPartyBuildRecordFile{Name: name, Data: []byte(data)}
+	}
+	apple := file("apple.json", `,"minimumSequence":{"ios-viewer":90}`,
+		record("ios-viewer-1.0.0-100", "ios-viewer", "appStore", "viewer"),
+		record("macos-manager-1.0.0-100", "macos-manager", "direct", "manager"))
+	android := file("android.json", "", record("android-viewer-1.0.0-100", "android-viewer", "direct", "viewer"))
+
+	assembled, err := AssembleFirstPartyBuildManifest([]FirstPartyBuildRecordFile{apple, android})
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	catalog, err := ParseFirstPartyBuildManifest(assembled)
+	if err != nil {
+		t.Fatalf("assembled manifest does not parse: %v\n%s", err, assembled)
+	}
+	var ids []string
+	for _, build := range catalog.Builds {
+		ids = append(ids, build.BuildID)
+	}
+	if got := strings.Join(ids, ","); got != "ios-viewer-1.0.0-100,macos-manager-1.0.0-100,android-viewer-1.0.0-100" {
+		t.Fatalf("assembled builds = %s, want file order", got)
+	}
+	if len(catalog.MinimumSequence) != 1 || catalog.MinimumSequence[SurfaceIOSViewer] != 90 {
+		t.Fatalf("assembled floors = %v", catalog.MinimumSequence)
+	}
+	if _, err := EncodeFirstPartyBuildManifest(assembled); err != nil {
+		t.Fatalf("assembled manifest cannot be linked: %v", err)
+	}
+	again, err := AssembleFirstPartyBuildManifest([]FirstPartyBuildRecordFile{apple, android})
+	if err != nil || string(again) != string(assembled) {
+		t.Fatalf("assembly is not deterministic: %v", err)
+	}
+
+	for name, files := range map[string][]FirstPartyBuildRecordFile{
+		"no files":           nil,
+		"duplicate build id": {apple, file("tv.json", "", record("ios-viewer-1.0.0-100", "tvos-viewer", "appStore", "viewer"))},
+		"duplicate in file":  {file("twice.json", "", record("a-1", "ios-viewer", "appStore", "viewer"), record("a-1", "ios-viewer", "appStore", "viewer"))},
+		"duplicate floor":    {apple, file("ios-again.json", `,"minimumSequence":{"ios-viewer":95}`, record("ios-viewer-1.0.1-101", "ios-viewer", "appStore", "viewer"))},
+		"empty record file":  {apple, file("empty.json", "")},
+		"malformed record":   {apple, file("bad.json", "", record("web-1", "core-web-ui", "direct", "viewer"))},
+		"unknown field":      {apple, {Name: "extra.json", Data: []byte(`{"schema":"beamfall.first-party-builds/v1","builds":[],"extra":1}`)}},
+		"not json":           {{Name: "broken.json", Data: []byte(`{`)}},
+	} {
+		if out, err := AssembleFirstPartyBuildManifest(files); err == nil {
+			t.Errorf("%s: assembled %s", name, out)
+		}
+	}
+}

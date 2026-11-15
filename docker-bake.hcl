@@ -22,6 +22,16 @@ variable "GITHUB_SHA" {
   default = ""
 }
 
+# FIRST_PARTY_BUILDS_CATALOG  the link-time first-party native build catalog
+#                             (`beamfall release build-catalog --manifest FILE`);
+#                             the Dockerfile validates it before linking
+#                             (CORE-1395). release.yml passes the value its
+#                             attest job validated and refuses to bake without
+#                             one; empty is only for local development images.
+variable "FIRST_PARTY_BUILDS_CATALOG" {
+  default = ""
+}
+
 group "default" {
   targets = ["beamfall-core"]
 }
@@ -40,8 +50,9 @@ target "beamfall-core" {
   # labels carry the release version and commit. Left empty, the Dockerfile
   # labels the build development+src.<source digest>, never a release.
   args = {
-    BEAMFALL_VERSION = VERSION
-    BEAMFALL_COMMIT  = COMMIT != "" ? COMMIT : GITHUB_SHA
+    BEAMFALL_VERSION            = VERSION
+    BEAMFALL_COMMIT             = COMMIT != "" ? COMMIT : GITHUB_SHA
+    BEAMFALL_FIRST_PARTY_BUILDS = FIRST_PARTY_BUILDS_CATALOG
   }
 
   # Supply-chain attestations for the server OCI image (PANEL-11, ADR-0013 §A):

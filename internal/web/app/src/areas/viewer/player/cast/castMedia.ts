@@ -9,7 +9,7 @@
 // selector resolves the receiver, which the UI reports as a failed load.
 import { postJSON } from "@/lib/api";
 import type { CapabilityProfile } from "../../lib/capabilityProfile";
-import type { PlaybackInfo, PlaybackStream } from "../../lib/playback";
+import type { PlaybackCaptionTrack, PlaybackInfo, PlaybackStream } from "../../lib/playback";
 import type { CastLoadRequestLike, ChromeCastLike } from "./castSdk";
 
 /**
@@ -38,24 +38,17 @@ export const CAST_RECEIVER_PROFILE: CapabilityProfile = {
 };
 
 /** One caption track of a playback-info response; every URL serves WebVTT unless it ends otherwise. */
-export interface CastCaptionTrack {
-  id: string;
-  url?: string;
-  format?: string;
-  language?: string;
-  forced?: boolean;
-  sdh?: boolean;
-}
+export type CastCaptionTrack = PlaybackCaptionTrack;
 
 /** The server's subtitle pre-selection: a language and role identity, not a track id. */
 export interface CastSelectedSubtitle {
   track?: { language?: string; kind?: string; roles?: { forced?: boolean; sdh?: boolean } };
 }
 
-export interface CastPlaybackInfo extends PlaybackInfo {
-  captionTracks?: CastCaptionTrack[];
+/** Playback info as the receiver reads it: the subtitle pre-selection may be absent or null. */
+export type CastPlaybackInfo = Omit<PlaybackInfo, "selectedSubtitleTrack"> & {
   selectedSubtitleTrack?: CastSelectedSubtitle | null;
-}
+};
 
 /** Ask the server for the receiver's route. A new playback session, separate from the local one. */
 export function fetchCastPlaybackInfo(mediaID: string): Promise<CastPlaybackInfo> {

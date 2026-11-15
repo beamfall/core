@@ -21,6 +21,25 @@ case "${CHANNEL}" in
     ;;
 esac
 
+# First-party native build catalog (ADR-0063 build provenance). A release
+# without it refuses every native client (the Mac Manager, Viewer and TV apps),
+# so a missing manifest is an error, checked before any build work (CORE-1395).
+# The manifest is assembled from the client release pipelines' build records
+# with `beamfall release build-catalog --assemble` (docs/release/first-party-builds.md).
+# BEAMFALL_ALLOW_NO_FIRST_PARTY_BUILDS=1 opts a local or test build out; a
+# signed release cannot.
+if [ -n "${FIRST_PARTY_BUILDS:-}" ]; then
+  [ -f "${FIRST_PARTY_BUILDS}" ] || { echo "first-party build manifest not found: ${FIRST_PARTY_BUILDS}" >&2; exit 2; }
+elif [ "${BEAMFALL_ALLOW_NO_FIRST_PARTY_BUILDS:-}" = 1 ] && [ -n "${BEAMFALL_RELEASE_SIGNING_KEY:-}" ]; then
+  echo "FIRST_PARTY_BUILDS is required: a signed release cannot opt out with BEAMFALL_ALLOW_NO_FIRST_PARTY_BUILDS=1" >&2
+  exit 2
+elif [ "${BEAMFALL_ALLOW_NO_FIRST_PARTY_BUILDS:-}" = 1 ]; then
+  echo "WARNING: FIRST_PARTY_BUILDS unset (allowed by BEAMFALL_ALLOW_NO_FIRST_PARTY_BUILDS=1): this build carries no first-party native build catalog and refuses every native client (unknown-build)" >&2
+else
+  echo "FIRST_PARTY_BUILDS is required: a release without the first-party native build catalog refuses every native client (unknown-build). Point it at the release's beamfall.first-party-builds/v1 manifest, or set BEAMFALL_ALLOW_NO_FIRST_PARTY_BUILDS=1 for a local build." >&2
+  exit 2
+fi
+
 if [ -n "${BEAMFALL_RELEASE_SIGNING_KEY:-}" ]; then
   [ -n "${INVOCATION_ID}" ] || { echo "signed releases require INVOCATION_ID" >&2; exit 2; }
   [ -n "${RELEASE_GATE_EVIDENCE_ARCHIVE:-}" ] || { echo "signed releases require RELEASE_GATE_EVIDENCE_ARCHIVE" >&2; exit 2; }
@@ -57,11 +76,8 @@ npm --prefix "${ROOT}/internal/web/app" run build
 # embedded web UI and refuses every native client as an unknown build.
 first_party_ldflag=""
 if [ -n "${FIRST_PARTY_BUILDS:-}" ]; then
-  [ -f "${FIRST_PARTY_BUILDS}" ] || { echo "first-party build manifest not found: ${FIRST_PARTY_BUILDS}" >&2; exit 2; }
   first_party_catalog="$(cd "${ROOT}" && go run ./cmd/beamfall release build-catalog --manifest "${FIRST_PARTY_BUILDS}")"
   first_party_ldflag=" -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${first_party_catalog}"
-else
-  echo "WARNING: FIRST_PARTY_BUILDS unset — this release carries no first-party native build catalog and will refuse every native client (unknown-build)" >&2
 fi
 
 for target in "${targets[@]}"; do

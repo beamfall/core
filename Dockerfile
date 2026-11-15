@@ -30,7 +30,10 @@ ARG TARGETOS
 ARG TARGETARCH
 # First-party native build catalog (ADR-0063): the value printed by
 # `beamfall release build-catalog --manifest FILE`. Empty refuses every native
-# client as an unknown build; only the embedded web UI is known.
+# client as an unknown build; only the embedded web UI is known. A non-empty
+# value is validated with `build-catalog --catalog` (built for the build
+# platform) before it is linked, so a malformed one fails the image build
+# instead of panicking the server at boot (CORE-1395).
 ARG BEAMFALL_FIRST_PARTY_BUILDS=""
 # Build identity (CORE-1096): `docker build --build-arg BEAMFALL_VERSION=v1.2.3
 # --build-arg BEAMFALL_COMMIT=$(git rev-parse HEAD)` stamps `beamfall version`
@@ -40,6 +43,9 @@ ARG BEAMFALL_FIRST_PARTY_BUILDS=""
 ARG BEAMFALL_VERSION=""
 ARG BEAMFALL_COMMIT=""
 RUN set -eu; \
+	if [ -n "${BEAMFALL_FIRST_PARTY_BUILDS}" ]; then \
+		CGO_ENABLED=0 go run ./cmd/beamfall release build-catalog --catalog "${BEAMFALL_FIRST_PARTY_BUILDS}" >/dev/null; \
+	fi; \
 	version="${BEAMFALL_VERSION:-development+src.$(cat /out/source-id)}"; \
 	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${version} -X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS}" -o /out/beamfall ./cmd/beamfall
