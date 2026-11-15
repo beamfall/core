@@ -244,7 +244,12 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
     "plugin",
   ),
   "plugin.metadata_write": label("plugins", "{target} edited metadata", "a plugin", "plugin"),
-  "plugin.collection_write": label("plugins", "{target} changed a collection", "a plugin", "plugin"),
+  "plugin.collection_write": label(
+    "plugins",
+    "{target} changed a collection",
+    "a plugin",
+    "plugin",
+  ),
   "plugin.artwork_write": label("plugins", "{target} set artwork", "a plugin", "plugin"),
   "plugin.watch_state_write": label(
     "plugins",
