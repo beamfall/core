@@ -931,12 +931,19 @@ func parseRole(value string) (store.DeviceRole, error) {
 	}
 }
 
+// normalizeCode canonicalizes a code as a person typed it: case, spaces and
+// hyphens are ignored, and the look-alike letters Crockford base32 leaves out
+// fold onto the digits they are mistaken for (O→0, I and L→1). Minted codes
+// never contain O, I or L, so either reading of a code redeems it.
 func normalizeCode(code string) string {
-	code = strings.ToUpper(strings.TrimSpace(code))
-	code = strings.ReplaceAll(code, " ", "")
-	code = strings.ReplaceAll(code, "-", "")
-	return code
+	return codeFolder.Replace(strings.ToUpper(strings.TrimSpace(code)))
 }
+
+var codeFolder = strings.NewReplacer(" ", "", "-", "", "O", "0", "I", "1", "L", "1")
+
+// codeEncoding is Crockford base32: digits and capitals without I, L, O and U,
+// so a code read off a TV or phone has no 0/O or 1/I/L pairs to confuse.
+var codeEncoding = base32.NewEncoding("0123456789ABCDEFGHJKMNPQRSTVWXYZ").WithPadding(base32.NoPadding)
 
 func codeAttemptKey(code string) string {
 	sum := sha256.Sum256([]byte("pairing-code\x00" + code))
@@ -983,7 +990,7 @@ func randomCode() (string, error) {
 	if _, err := rand.Read(data[:]); err != nil {
 		return "", err
 	}
-	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(data[:]), nil
+	return codeEncoding.EncodeToString(data[:]), nil
 }
 
 func randomID(prefix string) (string, error) {
