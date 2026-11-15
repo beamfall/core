@@ -212,8 +212,7 @@ func TestStreamingCeilingVetoUsesKnownBitrate(t *testing.T) {
 	if got := directPlayRefusalCause(media, file, streams, main10_1080p, nil, under); got != PlayReasonBitrate {
 		t.Fatalf("refusal cause = %q, want %q", got, PlayReasonBitrate)
 	}
-	policy := under
-	policy.policyCeiling = true
+	policy := quirkOverlay{}.withPolicyCeiling(5_000_000)
 	if got := directPlayRefusalCause(media, file, streams, main10_1080p, nil, policy); got != PlayReasonPolicyBitrate {
 		t.Fatalf("refusal cause under the remote cap = %q, want %q (CORE-1854)", got, PlayReasonPolicyBitrate)
 	}

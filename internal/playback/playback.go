@@ -2,6 +2,7 @@
 package playback
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -810,12 +811,15 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 	// streaming ceiling when that cap is tighter than the client's own, so
 	// every MaxStreamingBitrate consumer (direct-play veto, cached renditions,
 	// ladder rungs, the HLS session key) honours the lower of the two.
-	capability, policyCeiling, err := s.remoteCappedProfile(ctx, req, policy)
+	//
+	// The overlay keeps the two apart (CORE-1864): the viewer's ceiling is
+	// raised to the ladder floor and exempts audio-only items, while the
+	// admin's cap is enforced as configured.
+	capability, policyCap, err := s.remoteCappedProfile(ctx, req, policy)
 	if err != nil {
 		return InfoResponse{}, err
 	}
-	ov := s.quirks.Resolve(capability).withClientCeiling(capability.MaxStreamingBitrate)
-	ov.policyCeiling = policyCeiling
+	ov := s.quirks.Resolve(capability).withClientCeiling(req.CapabilityProfile.MaxStreamingBitrate).withPolicyCeiling(policyCap)
 	main, err := s.decide(ctx, scope, mediaID, "main", capability, policy, priority, req.SelectedSubtitleIndex, req.SelectedAudioIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
@@ -892,23 +896,23 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 // remoteCappedProfile returns the CapabilityProfile the decision runs under.
 // A LAN request gets the declared profile unchanged. A remote request gets
 // the lowest non-zero of the server-wide remote cap, the Profile's remote
-// cap and the client's MaxStreamingBitrate as its streaming ceiling; the
-// bool reports that an admin cap, not the client, set that ceiling.
-func (s *Service) remoteCappedProfile(ctx context.Context, req InfoRequest, policy store.Profile) (CapabilityProfile, bool, error) {
+// cap and the client's MaxStreamingBitrate as its streaming ceiling; the int
+// is the admin cap when it, not the client, set that ceiling (0 otherwise).
+func (s *Service) remoteCappedProfile(ctx context.Context, req InfoRequest, policy store.Profile) (CapabilityProfile, int, error) {
 	capability := req.CapabilityProfile
 	if !req.RemoteClient {
-		return capability, false, nil
+		return capability, 0, nil
 	}
 	cfg, err := s.store.ConsoleConfig(ctx)
 	if err != nil {
-		return CapabilityProfile{}, false, err
+		return CapabilityProfile{}, 0, err
 	}
 	limit := minNonZero(cfg.RemoteMaxBitrate, policy.RemoteMaxBitrate)
 	if limit <= 0 || (capability.MaxStreamingBitrate > 0 && capability.MaxStreamingBitrate <= limit) {
-		return capability, false, nil
+		return capability, 0, nil
 	}
 	capability.MaxStreamingBitrate = limit
-	return capability, true, nil
+	return capability, limit, nil
 }
 
 // PreviewInfo returns only the Generated Asset URL block needed for card
@@ -1137,6 +1141,14 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// (CORE-1849): the chosen track, or the first one as 0:a:0 maps it.
 	audioSource := AudioSourceStream(audio.chosenStreams(streams), nil)
 	audioOnlyPeak := audioOnlyBandwidth(hlsAudio, audioSource, false)
+	// An audio-only stream whose peak exceeds the admin's cap drops to stereo
+	// AAC, which fits any sane cap; policyTranscodeRefusal refuses one that
+	// still does not (CORE-1864).
+	if media.Class == store.MediaClassAudio && ov.policyMaxBitrate > 0 && audioOnlyPeak > ov.policyMaxBitrate {
+		hlsAudio = ceilingBoundAudio(hlsAudio)
+		audioOnlyPeak = audioOnlyBandwidth(hlsAudio, audioSource, false)
+	}
+	policyRefusal := ov.policyTranscodeRefusal(media, audioOnlyPeak)
 
 	// Generated Asset advertisement: one assets-target token covers
 	// the trickplay manifest + sheets, the preview clip, and Marker
@@ -1267,7 +1279,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		// ADR-0010 §8: a manual rendition pin is offered on direct-playable
 		// files too (the weak-WiFi case) — but only when the transcode could
 		// actually start right now.
-		if transcodeRefusal == "" && sourceVideo.FullTranscodeRefusal() == "" {
+		if transcodeRefusal == "" && sourceVideo.FullTranscodeRefusal() == "" && policyRefusal == "" {
 			hls, err := s.hlsChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
 			if err != nil {
 				return decision{}, err
@@ -1333,7 +1345,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 				// transcode only the audio, lighter than a re-encode.
 				hls, err = s.degradedAudioCopyChoice(ctx, grant, suffix, hlsAudio, expiresAt)
 			} else {
-				if reason := sourceVideo.FullTranscodeRefusal(); reason != "" {
+				if reason := cmp.Or(sourceVideo.FullTranscodeRefusal(), policyRefusal); reason != "" {
 					return decision{media: media, verdict: "unavailable", reason: reason, streams: []StreamChoice{}, timeline: timeline, parts: parts, assets: assets, captionTracks: captionTracks, overlayApplied: true}, nil
 				}
 				hls, err = s.degradedHLSChoice(ctx, grant, suffix, media, profile, hlsAudio, audioOnlyPeak, expiresAt, ov)
@@ -1386,7 +1398,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 			overlayApplied: true,
 		}, nil
 	}
-	if reason := sourceVideo.FullTranscodeRefusal(); reason != "" {
+	if reason := cmp.Or(sourceVideo.FullTranscodeRefusal(), policyRefusal); reason != "" {
 		return decision{media: media, verdict: "unavailable", reason: reason, streams: []StreamChoice{}, timeline: timeline, parts: parts, assets: assets, captionTracks: captionTracks, overlayApplied: true}, nil
 	}
 
@@ -1996,7 +2008,7 @@ func hlsAudioProfile(profile CapabilityProfile, streams []store.MediaFileStream,
 // ladder rung, whose 256 kbit/s audio reserve holds only stereo AAC.
 // Audio-only items keep their audio: the ceiling never applies to them.
 func (ov quirkOverlay) ceilingBindsAudio(media store.Media, file store.MediaFile, streams []store.MediaFileStream) bool {
-	return ov.clientMaxBitrate > 0 && !audioOnlyMedia(media) && ov.vetoesVideoPassthrough(media, file, streams)
+	return ov.streamCeiling() > 0 && !audioOnlyMedia(media) && ov.vetoesVideoPassthrough(media, file, streams)
 }
 
 // ceilingBoundAudio holds a re-encoded stream's audio to stereo AAC under the
@@ -2514,14 +2526,14 @@ func audioNeedsRework(streams []store.MediaFileStream, profile CapabilityProfile
 // overlay has already refused those rungs.
 func bitrateCeilingForced(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
 	return bitrateCeilingRefusedDirectPlay(media, file, streams, profile, selectedSubtitleIndex, ov) ||
-		(ov.clientMaxBitrate > 0 && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov.withoutClientCeiling()))
+		(ov.streamCeiling() > 0 && audioCopyEligible(media, file, streams, profile, selectedSubtitleIndex, ov.withoutClientCeiling()))
 }
 
 // bitrateCeilingRefusedDirectPlay reports whether, without the viewer's
 // streaming ceiling, the source would direct play or play its Dolby Vision
 // base layer.
 func bitrateCeilingRefusedDirectPlay(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) bool {
-	if ov.clientMaxBitrate <= 0 {
+	if ov.streamCeiling() <= 0 {
 		return false
 	}
 	base := ov.withoutClientCeiling()

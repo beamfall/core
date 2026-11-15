@@ -199,7 +199,7 @@ func topRenditionBandwidth(streams []StreamChoice) int {
 // Vision P7 source whose base layer would direct play without it.
 func directPlayRefusalCause(media store.Media, file store.MediaFile, streams []store.MediaFileStream, profile CapabilityProfile, selectedSubtitleIndex *int, ov quirkOverlay) string {
 	base := ov.withoutClientCeiling()
-	if ov.clientMaxBitrate > 0 && dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base) &&
+	if ov.streamCeiling() > 0 && dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, base) &&
 		!dolbyVisionP7BaseLayer(media, file, streams, profile, selectedSubtitleIndex, ov) {
 		return ov.ceilingCause()
 	}
