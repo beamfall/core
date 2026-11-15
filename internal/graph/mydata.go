@@ -220,7 +220,8 @@ func (h *Handler) myEngagement(ctx context.Context, scope auth.Scope, req reques
 	if now.Before(until) {
 		return MyEngagementExportInfo{}, clientError("reveal PIN attempts throttled")
 	}
-	verifyErr := h.store.VerifyRevealPIN(ctx, scope.ProfileID, trimmedVariable(req, "pin"))
+	pin := trimmedVariable(req, "pin")
+	verifyErr := h.store.VerifyRevealPIN(ctx, scope.ProfileID, pin)
 	switch {
 	case verifyErr == nil, errors.Is(verifyErr, store.ErrRevealPINMismatch):
 		if recordErr := h.store.RecordAuthAttempt(ctx, store.AuthAttempt{
@@ -241,11 +242,14 @@ func (h *Handler) myEngagement(ctx context.Context, scope auth.Scope, req reques
 			return MyEngagementExportInfo{}, err
 		}
 		if profile.Kind != store.ProfileManaged {
-			return MyEngagementExportInfo{}, clientError("reveal PIN must be set before exporting your data")
+			return MyEngagementExportInfo{}, reasonedClientError{
+				message: clientError("reveal PIN must be set before exporting your data"),
+				reason:  ErrorReasonRevealPINNotSet,
+			}
 		}
 		// managed profiles do not hold recovery material, so engagement-only export proceeds
 	case errors.Is(verifyErr, store.ErrRevealPINMismatch):
-		return MyEngagementExportInfo{}, clientError("reveal PIN required to export your data")
+		return MyEngagementExportInfo{}, revealPINRefusal(clientError("reveal PIN required to export your data"), pin)
 	default:
 		return MyEngagementExportInfo{}, verifyErr
 	}
@@ -576,7 +580,8 @@ func (h *Handler) deleteMyEngagement(ctx context.Context, scope auth.Scope, req 
 	if now.Before(until) {
 		return MyDataDeleteResult{}, clientError("reveal PIN attempts throttled")
 	}
-	verifyErr := h.store.VerifyRevealPIN(ctx, scope.ProfileID, trimmedVariable(req, "pin"))
+	pin := trimmedVariable(req, "pin")
+	verifyErr := h.store.VerifyRevealPIN(ctx, scope.ProfileID, pin)
 	// Record an attempt only when there was a real PIN to verify against: a
 	// match (success) or a mismatch (failure). ErrNoRevealPath means the Profile
 	// has no PIN to brute-force, so it neither counts nor records — it would
@@ -596,7 +601,7 @@ func (h *Handler) deleteMyEngagement(ctx context.Context, scope auth.Scope, req 
 	case verifyErr == nil, errors.Is(verifyErr, store.ErrNoRevealPath):
 		// verified, or no reveal PIN exists to confirm against
 	case errors.Is(verifyErr, store.ErrRevealPINMismatch):
-		return MyDataDeleteResult{}, clientError("reveal PIN required to delete your data")
+		return MyDataDeleteResult{}, revealPINRefusal(clientError("reveal PIN required to delete your data"), pin)
 	default:
 		return MyDataDeleteResult{}, verifyErr
 	}

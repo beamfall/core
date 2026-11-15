@@ -3,8 +3,10 @@ package conformance
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -210,6 +212,98 @@ func TestGraphQLErrorCodeVocabularyIsClosed(t *testing.T) {
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("ErrorCodes() = %v, want %v (ARCHITECTURE §7)", got, want)
 	}
+}
+
+// TestGraphQLErrorReasonVocabularyIsClosed pins the extensions.reason
+// vocabulary (CORE-1551) and keeps internal/graph from minting a reason outside
+// it. Growing the vocabulary is a wire-contract change, published like the
+// codes. The package is type-checked on its own (imports stubbed out), so every
+// constant that ends up typed ErrorReason is seen wherever it appears: a const
+// declaration, a struct literal, an assignment or a return. No code may convert
+// a value into an ErrorReason either, since a runtime string escapes that check.
+func TestGraphQLErrorReasonVocabularyIsClosed(t *testing.T) {
+	want := []graph.ErrorReason{"REVEAL_PIN_NOT_SET", "REVEAL_PIN_REQUIRED", "REVEAL_PIN_INCORRECT"}
+	got := graph.ErrorReasons()
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("ErrorReasons() = %v, want %v", got, want)
+	}
+	published := map[string]bool{}
+	for _, reason := range got {
+		published[string(reason)] = true
+	}
+	if failures := reasonVocabularyFailures(t, requireRoot(t, "internal/graph"), published); len(failures) > 0 {
+		t.Fatalf("extensions.reason outside the closed vocabulary:\n%s", strings.Join(failures, "\n"))
+	}
+}
+
+// reasonVocabularyFailures lists every site in dir's non-test Go files that
+// mints an ErrorReason outside published.
+func reasonVocabularyFailures(t *testing.T, dir string, published map[string]bool) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	var files []*ast.File
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, file)
+	}
+	var failures []string
+	fail := func(node ast.Node, format string, args ...any) {
+		pos := fset.Position(node.Pos())
+		failures = append(failures, fmt.Sprintf("%s:%d: %s", vocabRelPath(t, pos.Filename), pos.Line, fmt.Sprintf(format, args...)))
+	}
+	for _, file := range files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "ErrorReason" {
+					fail(call, "converts a value into an ErrorReason; use a published constant")
+				}
+			}
+			return true
+		})
+	}
+	// Imports are stubbed, so the checker reports errors for every use of
+	// another package; those are expected and ignored. ErrorReason and the
+	// types that carry it are local, so their constants still type-check.
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
+	conf := types.Config{Importer: unresolvedImporter{}, Error: func(error) {}}
+	pkg, _ := conf.Check("github.com/beamfall/core/internal/graph", fset, files, info)
+	reasonType := pkg.Scope().Lookup("ErrorReason")
+	if reasonType == nil {
+		t.Fatal("internal/graph declares no ErrorReason type")
+	}
+	for expr, tv := range info.Types {
+		if tv.Value == nil || !types.Identical(tv.Type, reasonType.Type()) {
+			continue
+		}
+		if tv.Value.Kind() != constant.String {
+			fail(expr, "ErrorReason constant is not a string")
+			continue
+		}
+		// "" is the absent reason, which omitempty drops from the wire.
+		if text := constant.StringVal(tv.Value); text != "" && !published[text] {
+			fail(expr, "ErrorReason %q is missing from ErrorReasons", text)
+		}
+	}
+	sort.Strings(failures)
+	return failures
+}
+
+// unresolvedImporter resolves no import, so a package type-checks on its own.
+type unresolvedImporter struct{}
+
+func (unresolvedImporter) Import(path string) (*types.Package, error) {
+	return nil, fmt.Errorf("import %s not resolved", path)
 }
 
 func errorCodeConstName(code graph.ErrorCode) string {

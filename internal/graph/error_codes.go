@@ -55,6 +55,67 @@ type GraphQLErrorWire = graphError
 
 type graphErrorExtensions struct {
 	Code ErrorCode `json:"code"`
+	// Reason refines Code where clients must act differently on refusals that
+	// share one code (CORE-1551). Absent for most errors; see ErrorReasons.
+	Reason ErrorReason `json:"reason,omitempty"`
+}
+
+// ErrorReason is the closed extensions.reason vocabulary. It refines an
+// error's code where a client must tell refusals apart that share one code;
+// clients branch on it, never on the message. Growing the set is a
+// wire-contract change.
+type ErrorReason string
+
+const (
+	// ErrorReasonRevealPINNotSet: the step-up needs a reveal PIN and this
+	// Profile has none. Entering a PIN cannot help; the person sets one first.
+	ErrorReasonRevealPINNotSet ErrorReason = "REVEAL_PIN_NOT_SET"
+	// ErrorReasonRevealPINRequired: the step-up needs the Profile's reveal PIN
+	// and the request carried none.
+	ErrorReasonRevealPINRequired ErrorReason = "REVEAL_PIN_REQUIRED"
+	// ErrorReasonRevealPINIncorrect: the request carried a reveal PIN that does
+	// not match.
+	ErrorReasonRevealPINIncorrect ErrorReason = "REVEAL_PIN_INCORRECT"
+)
+
+// ErrorReasons returns the closed reason vocabulary in its documented order.
+func ErrorReasons() []ErrorReason {
+	return []ErrorReason{
+		ErrorReasonRevealPINNotSet,
+		ErrorReasonRevealPINRequired,
+		ErrorReasonRevealPINIncorrect,
+	}
+}
+
+// reasonedClientError is a clientError that also carries an extensions.reason.
+// It unwraps to its clientError, so the code and message rules apply as usual.
+type reasonedClientError struct {
+	message clientError
+	reason  ErrorReason
+}
+
+func (e reasonedClientError) Error() string { return string(e.message) }
+
+func (e reasonedClientError) Unwrap() error { return e.message }
+
+// errorReason returns err's extensions.reason, or "" when it carries none.
+func errorReason(err error) ErrorReason {
+	var re reasonedClientError
+	if errors.As(err, &re) {
+		return re.reason
+	}
+	return ""
+}
+
+// revealPINRefusal reports a reveal PIN mismatch with the reason that tells a
+// missing PIN from a wrong one. VerifyRevealPIN answers ErrRevealPINMismatch
+// for both, so the empty-PIN check decides.
+func revealPINRefusal(message clientError, pin string) error {
+	reason := ErrorReasonRevealPINIncorrect
+	if pin == "" {
+		reason = ErrorReasonRevealPINRequired
+	}
+	return reasonedClientError{message: message, reason: reason}
 }
 
 func newGraphError(code ErrorCode, message string) graphError {

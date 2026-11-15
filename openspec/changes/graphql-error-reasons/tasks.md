@@ -1,0 +1,4 @@
+- [x] `extensions.reason` and the closed `ErrorReason` vocabulary in `internal/graph`
+- [x] The three My Data refusals carry their reason; graph tests assert each one
+- [x] Conformance test keeps the vocabulary closed and published
+- [x] Wire contract `graphqlErrors.reasons` and note; 2.10.0 published in the lockstep
