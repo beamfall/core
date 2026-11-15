@@ -542,11 +542,13 @@ func (h *Handler) disableScraperCredential(ctx context.Context, scope auth.Scope
 	}
 	// Disable means stop: on a store with a bundled default the opt-out keeps
 	// the scraper from falling back to the built-in key (CORE-1540).
-	disable := func(ref string) error { return h.scraperCredentials.SetSecret(ref, "") }
+	var err error
 	if disabler, ok := h.scraperCredentials.(ScraperCredentialDisabler); ok {
-		disable = disabler.DisableSecret
+		err = disabler.DisableSecret(authRef)
+	} else {
+		err = h.scraperCredentials.SetSecret(authRef, "")
 	}
-	if err := disable(authRef); err != nil {
+	if err != nil {
 		return ScraperCredentialInfo{}, clientError("scraper credential could not be disabled")
 	}
 	if h.scraperCredentialInvalidator != nil {

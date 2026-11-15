@@ -589,7 +589,7 @@ type ScraperCredentialStore interface {
 // ScraperCredentialStore that can fall back to a credential bundled into the
 // build (CORE-1540). DisableSecret removes the owner's secret and stops the
 // AuthRef from resolving to the bundled default; SecretDisabled reports that
-// state so the Console can show it. A store without bundled defaults need not
+// state so the Console can surface it. A store without bundled defaults need not
 // implement it: disabling then just clears the owner's secret.
 type ScraperCredentialDisabler interface {
 	DisableSecret(ref string) error
