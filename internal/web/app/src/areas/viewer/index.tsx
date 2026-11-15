@@ -14,10 +14,14 @@ import { SectionSkeleton } from "./components/HydratedSection";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
 import { EntityPage } from "./pages/EntityPage";
+import { FavoritesPage } from "./pages/FavoritesPage";
+import { HistoryPage } from "./pages/HistoryPage";
 import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
 import { MediaDetailPage } from "./pages/MediaDetailPage";
 import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { PlaylistPage } from "./pages/PlaylistPage";
+import { PlaylistsPage } from "./pages/PlaylistsPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
 import { RemotePage } from "./pages/RemotePage";
@@ -149,6 +153,10 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/mydata" element={<MyDataPage />} />
+        <Route path="/favorites" element={<FavoritesPage />} />
+        <Route path="/history" element={<HistoryPage />} />
+        <Route path="/playlists" element={<PlaylistsPage />} />
+        <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/remote" element={<RemotePage />} />
         <Route path="/profiles" element={<ProfilePickerPage />} />

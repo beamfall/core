@@ -3838,6 +3838,11 @@ type MediaInfo struct {
 	Summary   string `json:"summary,omitempty"`
 	Year      int    `json:"year,omitempty"`
 	Favorited bool   `json:"favorited"`
+	// DurationSeconds and MediaClass are the stored runtime and playback
+	// class; filled only by the media(id) read and omitted when unknown, so a
+	// client can render a track-list row (CORE-1635).
+	DurationSeconds int    `json:"durationSeconds,omitempty"`
+	MediaClass      string `json:"mediaClass,omitempty"`
 	// ArtworkSlots maps each present artwork slot to its URL; filled only by
 	// the media(id) read, omitted when the item carries no artwork.
 	ArtworkSlots map[string]string `json:"artworkSlots,omitempty"`
@@ -3894,6 +3899,8 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 			return h.artwork.ArtworkVersion(media.ID, slot)
 		})
 	}
+	info.DurationSeconds = media.DurationSeconds
+	info.MediaClass = string(media.Class)
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
 	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)
 	return info, nil
@@ -4110,7 +4117,11 @@ type EntityInfo struct {
 	// locale map); omitted when the declaration carries none — clients fall
 	// back to Kind.
 	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
-	Fields          []EntityFieldInfo   `json:"fields"`
+	// Archetype is the plugin-declared shape of Kind ("person", "container",
+	// "category", ...); omitted when undeclared. Clients pick a layout from it
+	// without domain knowledge (CORE-1635).
+	Archetype string            `json:"archetype,omitempty"`
+	Fields    []EntityFieldInfo `json:"fields"`
 }
 
 // EntityDetailInfo is the entity(id) wire shape: the Entity plus the Entities
@@ -4129,7 +4140,9 @@ type EntityDetailInfo struct {
 type RelatedEntityGroupInfo struct {
 	Kind            string              `json:"kind"`
 	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
-	Items           []SourceItem        `json:"items"`
+	// Archetype is the plugin-declared shape of Kind; omitted when undeclared.
+	Archetype string       `json:"archetype,omitempty"`
+	Items     []SourceItem `json:"items"`
 }
 
 // RelatedEntityInfo pairs an Entity with the relation attributes that
@@ -4162,9 +4175,11 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 		for i, item := range group.Items {
 			items[i] = h.sourceItem(item, scope.Revealed)
 		}
+		spec := h.entityKindSpec(ctx, group.LibraryID, group.Kind)
 		info.RelatedEntities = append(info.RelatedEntities, RelatedEntityGroupInfo{
 			Kind:            group.Kind,
-			KindDisplayName: h.entityKindSpec(ctx, group.LibraryID, group.Kind).DisplayName,
+			KindDisplayName: spec.DisplayName,
+			Archetype:       spec.Archetype,
 			Items:           items,
 		})
 	}
@@ -4583,6 +4598,7 @@ func entityInfo(entity store.Entity, kind plugin.EntityKind) EntityInfo {
 		Kind:            entity.Kind,
 		Title:           entity.Title,
 		KindDisplayName: kind.DisplayName,
+		Archetype:       kind.Archetype,
 		Fields:          []EntityFieldInfo{},
 	}
 	specs := map[string]plugin.FieldSpec{}

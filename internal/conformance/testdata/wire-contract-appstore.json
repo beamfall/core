@@ -1963,12 +1963,22 @@
           ]
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
         {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "metadataAttribution",
@@ -5331,12 +5341,22 @@
           ]
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
         {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "metadataAttribution",
@@ -6397,6 +6417,11 @@
       ],
       "children": [
         {
+          "name": "archetype",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "attributes",
           "kind": "map",
           "nullable": true,
@@ -6492,6 +6517,11 @@
       ],
       "children": [
         {
+          "name": "archetype",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "fields",
           "kind": "list",
           "nullable": true,
@@ -6570,6 +6600,11 @@
           "elem": {
             "kind": "object",
             "children": [
+              {
+                "name": "archetype",
+                "kind": "scalar",
+                "optional": true
+              },
               {
                 "name": "items",
                 "kind": "list",
@@ -6770,6 +6805,11 @@
             ]
           },
           "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
             {
               "name": "items",
               "kind": "list",
@@ -7005,6 +7045,11 @@
           "nullable": true,
           "children": [
             {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "fields",
               "kind": "list",
               "nullable": true,
@@ -7170,12 +7215,22 @@
               ]
             },
             {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "favorited",
               "kind": "scalar"
             },
             {
               "name": "id",
               "kind": "scalar"
+            },
+            {
+              "name": "mediaClass",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "metadataAttribution",
@@ -7404,12 +7459,22 @@
           ]
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
         {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "metadataAttribution",
@@ -7791,12 +7856,22 @@
           ]
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
         {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "metadataAttribution",
@@ -10208,12 +10283,22 @@
           ]
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
         {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "metadataAttribution",
@@ -10548,12 +10633,22 @@
               ]
             },
             {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "favorited",
               "kind": "scalar"
             },
             {
               "name": "id",
               "kind": "scalar"
+            },
+            {
+              "name": "mediaClass",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "metadataAttribution",
@@ -19589,12 +19684,22 @@
           ]
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "favorited",
           "kind": "scalar"
         },
         {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "mediaClass",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "metadataAttribution",

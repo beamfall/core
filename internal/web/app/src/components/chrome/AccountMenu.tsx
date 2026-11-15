@@ -1,4 +1,14 @@
-import { Cast, Database, LayoutDashboard, Settings, Users, Wrench } from "lucide-react";
+import {
+  Cast,
+  Database,
+  Heart,
+  History,
+  LayoutDashboard,
+  ListOrdered,
+  Settings,
+  Users,
+  Wrench,
+} from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { SignOutButton } from "@/areas/enroll";
@@ -8,6 +18,7 @@ import { useSession } from "@/lib/session";
 
 // The avatar button and its account menu (CORE-1131): the profile, My Data,
 // Profile settings, the manager surfaces and Sign out, out of the header bar.
+// Favorites, Playlists and History are the Profile's own lists (CORE-1635).
 // A disclosure, not an ARIA menu: plain links in tab order, closed by Escape,
 // an outside click or navigation.
 export function AccountMenu() {
@@ -85,6 +96,18 @@ export function AccountMenu() {
             <Link to="/mydata" className="bf-account-item" aria-current={current("/mydata")}>
               <Database aria-hidden />
               {t("myData")}
+            </Link>
+            <Link to="/favorites" className="bf-account-item" aria-current={current("/favorites")}>
+              <Heart aria-hidden />
+              {t("favoritesTitle")}
+            </Link>
+            <Link to="/playlists" className="bf-account-item" aria-current={current("/playlists")}>
+              <ListOrdered aria-hidden />
+              {t("playlistsTitle")}
+            </Link>
+            <Link to="/history" className="bf-account-item" aria-current={current("/history")}>
+              <History aria-hidden />
+              {t("historyTitle")}
             </Link>
             <Link to="/remote" className="bf-account-item" aria-current={current("/remote")}>
               <Cast aria-hidden />

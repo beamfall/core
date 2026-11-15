@@ -3,6 +3,7 @@ import {
   Circle,
   CircleCheck,
   Link2,
+  ListPlus,
   MoreVertical,
   Play,
   SquareArrowOutUpRight,
@@ -12,6 +13,7 @@ import { Menu } from "@/components/ui/astryx-primitives";
 import type { ItemTarget } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useItemActions } from "../actions";
+import { AddToPlaylistDialog } from "./AddToPlaylistDialog";
 
 const COPIED_RESET_MS = 2000;
 
@@ -20,11 +22,13 @@ const COPIED_RESET_MS = 2000;
 // come from the primitive. The Profile's watched state loads when the menu
 // first opens, so a grid of cards costs no extra requests. A failed load or
 // action is reported on the card itself, because the popup has closed by then;
-// opening the menu again retries a failed load.
+// opening the menu again retries a failed load. Audio Media read "played"
+// rather than "watched"; a Media item can be added to a playlist (CORE-1635).
 export function MediaItemCardMenu({
   title,
   primaryLabel,
   isMedia,
+  isAudio = false,
   href,
   target,
   onPrimary,
@@ -32,6 +36,8 @@ export function MediaItemCardMenu({
   title: string;
   primaryLabel: string;
   isMedia: boolean;
+  /** The Media's class is "audio": the watched entry uses listening wording. */
+  isAudio?: boolean;
   /** Absolute link to the item, for Copy link. */
   href: string;
   /** The item the watched entry acts on. */
@@ -41,6 +47,7 @@ export function MediaItemCardMenu({
   const t = useT();
   const [copied, setCopied] = useState(false);
   const [opened, setOpened] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const { state, pending, failed, retry, setWatched } = useItemActions(target, {
     enabled: opened,
   });
@@ -67,6 +74,9 @@ export function MediaItemCardMenu({
   }
 
   const PrimaryIcon = isMedia ? Play : SquareArrowOutUpRight;
+  const watchedLabel = isAudio
+    ? t(watched ? "itemMarkUnplayed" : "itemMarkPlayed")
+    : t(watched ? "itemMarkUnwatched" : "itemMarkWatched");
 
   return (
     <>
@@ -103,8 +113,14 @@ export function MediaItemCardMenu({
                 ) : (
                   <CircleCheck aria-hidden="true" size={15} />
                 )}
-                {watched ? t("itemMarkUnwatched") : t("itemMarkWatched")}
+                {watchedLabel}
               </Menu.Item>
+              {isMedia && "mediaID" in target && (
+                <Menu.Item className="bf-card-menu-item" onClick={() => setAddOpen(true)}>
+                  <ListPlus aria-hidden="true" size={15} />
+                  {t("addToPlaylist")}
+                </Menu.Item>
+              )}
               <Menu.Item className="bf-card-menu-item" closeOnClick={false} onClick={copyLink}>
                 {copied ? (
                   <Check aria-hidden="true" size={15} />
@@ -117,6 +133,13 @@ export function MediaItemCardMenu({
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      {addOpen && "mediaID" in target && (
+        <AddToPlaylistDialog
+          mediaID={target.mediaID}
+          title={title}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
     </>
   );
 }

@@ -270,6 +270,7 @@ export function MediaItemCard({
         title={item.title}
         primaryLabel={primaryLabel}
         isMedia={isMedia}
+        isAudio={(item as SourceItem & { mediaClass?: string }).mediaClass === "audio"}
         href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
         target={itemTargetFor(item)}
         onPrimary={isMedia ? play : activate}

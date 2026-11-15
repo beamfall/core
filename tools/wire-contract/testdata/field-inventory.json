@@ -126,8 +126,10 @@
       "children": [
         "artworkSlots",
         "credits",
+        "durationSeconds",
         "favorited",
         "id",
+        "mediaClass",
         "metadataAttribution",
         "summary",
         "title",
@@ -626,8 +628,10 @@
       "children": [
         "artworkSlots",
         "credits",
+        "durationSeconds",
         "favorited",
         "id",
+        "mediaClass",
         "metadataAttribution",
         "summary",
         "title",
@@ -967,6 +971,7 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "archetype",
         "attributes",
         "fields",
         "id",
@@ -980,6 +985,7 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "archetype",
         "fields",
         "id",
         "kind",
@@ -1031,8 +1037,10 @@
       "children": [
         "artworkSlots",
         "credits",
+        "durationSeconds",
         "favorited",
         "id",
+        "mediaClass",
         "metadataAttribution",
         "summary",
         "title",
@@ -1106,8 +1114,10 @@
       "children": [
         "artworkSlots",
         "credits",
+        "durationSeconds",
         "favorited",
         "id",
+        "mediaClass",
         "metadataAttribution",
         "summary",
         "title",
@@ -1479,8 +1489,10 @@
       "children": [
         "artworkSlots",
         "credits",
+        "durationSeconds",
         "favorited",
         "id",
+        "mediaClass",
         "metadataAttribution",
         "summary",
         "title",
@@ -2885,8 +2897,10 @@
       "children": [
         "artworkSlots",
         "credits",
+        "durationSeconds",
         "favorited",
         "id",
+        "mediaClass",
         "metadataAttribution",
         "summary",
         "title",

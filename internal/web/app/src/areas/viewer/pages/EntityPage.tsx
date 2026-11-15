@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/viewerCache";
 import { ItemActions } from "../actions";
 import { useEngagementEpoch } from "../actions/engagementSync";
+import { EntityMediaBrowse } from "../components/EntityMediaBrowse";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -24,7 +25,6 @@ import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { readEntityPreview } from "../lib/entityPreview";
 import { seeAllTargetFor } from "../lib/seeall";
-import { playQueueOf } from "../lib/watchQueue";
 
 const entityCacheKey = (id: string) => `entity:${id}`;
 const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
@@ -34,7 +34,8 @@ const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
 // values). When the manifest carries a detail Layout for this Entity's Kind
 // (role: "detail", matching entityKind), its Sections render through the same
 // LayoutView as browse, with entityID riding the variables for entity-media
-// Sources. Otherwise the hand-rolled mediaForEntity list renders. Related
+// Sources. Otherwise the hand-rolled mediaForEntity list renders, laid out by
+// archetype and Media class (EntityMediaBrowse: track list, person). Related
 // Entities (either relation direction, grouped by kind) render before both,
 // so an Entity linked only to other Entities never opens empty. `kind` is a
 // plugin display label, rendered as text only (invariant #1 / #5).
@@ -60,8 +61,6 @@ export function EntityPage() {
   const [fallback, setFallback] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, entityMediaCacheKey(entityId)) ?? null,
   );
-
-  const fallbackQueue = useMemo(() => (fallback ? playQueueOf(fallback) : undefined), [fallback]);
 
   const navPreview = readEntityPreview(location.state, identity, entityId);
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
@@ -215,20 +214,7 @@ export function EntityPage() {
               navigationID={`entity:${entityId || ""}`}
             />
           ) : (
-            fallback &&
-            fallback.length > 0 && (
-              <ul className="bf-grid">
-                {fallback.map((item, index) => (
-                  <MediaItemCard
-                    key={`${item.id}-${index}`}
-                    item={item}
-                    posInSet={index + 1}
-                    setSize={fallback.length}
-                    queue={fallbackQueue}
-                  />
-                ))}
-              </ul>
-            )
+            fallback && <EntityMediaBrowse entity={entity} items={fallback} />
           )}
         </div>
       )}
