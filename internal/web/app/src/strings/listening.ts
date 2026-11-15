@@ -9,6 +9,9 @@ export const listeningStrings = {
     addToPlaylistEmpty: "No playlists yet. Create one on the Playlists page.",
     addToPlaylistAdded: "Added to {name}",
     addToPlaylistFailed: "Couldn't add it to that playlist.",
+    addToPlaylistNoneInLibrary:
+      "No playlists in this item's library yet. Create one on the Playlists page.",
+    addToPlaylistLoadFailed: "Couldn't load the playlists.",
     trackListLabel: "Tracks",
     trackPlay: "Play {title}",
     personTopTracks: "Top tracks",
@@ -48,6 +51,9 @@ export const listeningStrings = {
     addToPlaylistEmpty: "Aucune playlist. Créez-en une depuis la page Playlists.",
     addToPlaylistAdded: "Ajouté à {name}",
     addToPlaylistFailed: "Impossible de l'ajouter à cette playlist.",
+    addToPlaylistNoneInLibrary:
+      "Aucune playlist dans la bibliothèque de cet élément. Créez-en une depuis la page Playlists.",
+    addToPlaylistLoadFailed: "Impossible de charger les playlists.",
     trackListLabel: "Pistes",
     trackPlay: "Lire {title}",
     personTopTracks: "Titres populaires",
@@ -87,6 +93,9 @@ export const listeningStrings = {
     addToPlaylistEmpty: "Noch keine Playlists. Erstelle eine auf der Seite Playlists.",
     addToPlaylistAdded: "Zu {name} hinzugefügt",
     addToPlaylistFailed: "Konnte nicht zu dieser Playlist hinzugefügt werden.",
+    addToPlaylistNoneInLibrary:
+      "Noch keine Playlists in der Bibliothek dieses Elements. Erstelle eine auf der Seite Playlists.",
+    addToPlaylistLoadFailed: "Die Playlists konnten nicht geladen werden.",
     trackListLabel: "Titel",
     trackPlay: "{title} abspielen",
     personTopTracks: "Top-Titel",
@@ -126,6 +135,9 @@ export const listeningStrings = {
     addToPlaylistEmpty: "Aún no hay listas. Crea una en la página Listas.",
     addToPlaylistAdded: "Añadido a {name}",
     addToPlaylistFailed: "No se pudo añadir a esa lista.",
+    addToPlaylistNoneInLibrary:
+      "Aún no hay listas en la biblioteca de este elemento. Crea una en la página Listas.",
+    addToPlaylistLoadFailed: "No se pudieron cargar las listas.",
     trackListLabel: "Pistas",
     trackPlay: "Reproducir {title}",
     personTopTracks: "Canciones más escuchadas",
@@ -165,6 +177,9 @@ export const listeningStrings = {
     addToPlaylistEmpty: "Ainda não há playlists. Crie uma na página Playlists.",
     addToPlaylistAdded: "Adicionado a {name}",
     addToPlaylistFailed: "Não foi possível adicionar a essa playlist.",
+    addToPlaylistNoneInLibrary:
+      "Ainda não há playlists na biblioteca deste item. Crie uma na página Playlists.",
+    addToPlaylistLoadFailed: "Não foi possível carregar as playlists.",
     trackListLabel: "Faixas",
     trackPlay: "Reproduzir {title}",
     personTopTracks: "Faixas principais",

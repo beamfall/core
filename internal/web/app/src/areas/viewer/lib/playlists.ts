@@ -3,6 +3,7 @@ import {
   createCollection,
   deleteCollection,
   fetchCollections,
+  fetchTagAssignments,
   removeCollectionMedia,
   reorderCollectionMedia,
   updateCollection,
@@ -20,6 +21,18 @@ export async function loadPlaylists(libraryIDs: readonly string[]): Promise<Coll
     libraryIDs.map((id) => fetchCollections(id).catch(() => [] as CollectionInfo[])),
   );
   return lists.flat().filter((playlist) => !playlist.trashedAt);
+}
+
+/**
+ * The Library a Media item belongs to, which decides the playlists it can join:
+ * the server keeps a Collection's members in the Collection's own Library
+ * (CORE-1877). The Media read carries no Library, so this uses the
+ * visibility-filtered assignment read, which needs a manager device just as
+ * the playlist mutations do.
+ */
+export async function mediaLibraryID(mediaID: string): Promise<string> {
+  const assignment = await fetchTagAssignments("media", mediaID);
+  return assignment.libraryID;
 }
 
 /** The playlist's member ids in its stored order. */

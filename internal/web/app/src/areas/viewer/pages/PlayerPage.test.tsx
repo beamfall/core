@@ -18,6 +18,7 @@ import { PlayerTransport } from "../player/PlayerTransport";
 import type { PlayerState } from "../player/usePlayer";
 import { DEFAULT_ADJUSTMENT, usePlayer } from "../player/usePlayer";
 import { watchPartyDefersUpNext } from "../player/watchPartyStore";
+import { deliverPlayerCommand } from "../remote/remoteControl";
 import { buildTimestampedLink, PlayerPage } from "./PlayerPage";
 
 vi.mock("@/lib/session", () => ({
@@ -993,6 +994,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
             <Routes>
               <Route path="/" element={<p>home route</p>} />
               <Route path="/search" element={<p>search route</p>} />
+              <Route path="/media/:mediaId" element={<p>media route</p>} />
               <Route path="/watch/:mediaId" element={<PlayerPage />} />
             </Routes>
           </PlayerHost>
@@ -1065,6 +1067,31 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     });
     fireEvent.click(within(region).getByRole("button", { name: "Stop and close player" }));
     await waitFor(() => expect(miniPlayer()).toBeNull());
+    expect(document.querySelector("video")).toBeNull();
+  });
+
+  it("stops and closes on a remote Stop while the audio is docked (CORE-1875)", async () => {
+    renderHosted({ mediaClass: "audio" });
+    await waitFor(() => stageVideo());
+    act(() => {
+      void go("/search");
+    });
+    await waitFor(() => {
+      if (!miniPlayer()) throw new Error("mini player not docked");
+    });
+    act(() => deliverPlayerCommand({ command: "stop", mediaID: "media-alpha" }));
+    await waitFor(() => expect(miniPlayer()).toBeNull());
+    expect(document.querySelector("video")).toBeNull();
+    expect(screen.getByText("search route")).toBeInTheDocument();
+  });
+
+  it("stops audio on a remote Stop in the full player instead of docking it (CORE-1875)", async () => {
+    renderHosted({ mediaClass: "audio" });
+    await waitFor(() => stageVideo());
+    const props = vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0];
+    act(() => props?.onRemoteStop?.());
+    await waitFor(() => expect(screen.getByText("media route")).toBeInTheDocument());
+    expect(miniPlayer()).toBeNull();
     expect(document.querySelector("video")).toBeNull();
   });
 
