@@ -6,9 +6,16 @@ Date: 2026-06-23
 Realizes: ADR-0047,
 ADR-0139.
 
-ADR-0047 owns the binding decisions: Visuals are compiled client shaders, gated by Visual Tier,
-fed by a fixed input vocabulary, and safety-checked before release. This spec owns the mutable
-manifest shape and first-party catalog inventory.
+ADR-0047 owns the binding decisions: Visuals are shaders compiled for each client, gated by
+Visual Tier, fed by a fixed input vocabulary, and safety-checked before release. This spec owns the
+mutable manifest shape and first-party catalog inventory.
+
+Oscillux is the only source of visual effects in Beamfall (ADR-0228, owner decision 2026-11-10;
+`AGPL-3.0-only` per ADR-0233). That covers DSP and beat tracking, Visual shaders and their generated
+platform legs, the post chain, flash limiter, transitions, governors and palettes. Hosts keep device
+and surface glue, selection policy and UI, and consume a pinned, checksum-verified Oscillux release.
+Core and clients add no effect code and hand-port none; an effect that is missing goes into
+Oscillux. Existing client effect copies are migration debt.
 
 ## Safety Contract manifest
 
@@ -272,7 +279,8 @@ ahead of that tick and overlap after it.
     overlap interval, including a deferred landing.
 
 `VISXFADE0927-SHADERS-1`, `VISXFADE0927-WEB-1`, `VISXFADE0927-APPLE-UI-1`, and
-`VISXFADE0927-ANDROID-UI-1` implement these rules on their owned shader and host surfaces.
+`VISXFADE0927-ANDROID-UI-1` implement these rules. The effect and shader rules land in Oscillux and
+reach each client through the pinned Oscillux release; the client tickets own only host surfaces.
 
 ## Music Visuals v1 launch catalog
 

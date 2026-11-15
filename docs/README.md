@@ -9,6 +9,7 @@ restating it.
 - [Operations runbook](operations/runbook.md)
 - [Restore](operations/restore.md)
 - [Deploy](security/runbooks/deploy.md)
+- [First-party build catalog in a Core release](release/first-party-builds.md)
 - [Back up and restore](security/runbooks/backup-restore.md)
 - [Metrics and alerts](security/runbooks/metrics.md)
 - [Incident response](security/runbooks/incident.md)

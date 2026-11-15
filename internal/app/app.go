@@ -2082,13 +2082,6 @@ func (a *App) Run(ctx context.Context) error {
 	}
 }
 
-// runRelayCarrier owns the self-hosted relay carrier lifecycle (ADR-0018/0025):
-// dial + register + carry, and on carrier loss re-dial with bounded exponential
-// backoff until the context is cancelled. Every dial mints a fresh single-use
-// carrier token, so a service-side cancellation propagates in minutes.
-// RelayConnected is only ever set while a yamux session is live
-// and carrying — a dropped carrier reverts the Console state, so the status is
-// truthful rather than reporting a connection that forwards nothing.
 // relayBackendListener opens the loopback TLS listener the relay carrier
 // splices relayed clients onto. Their traffic never crosses the bound port, so
 // it is counted here, below TLS like the direct path, or a server streaming
@@ -2102,6 +2095,13 @@ func relayBackendListener(metrics *hostmetrics.Sampler, tlsConfig *tls.Config) (
 	return tls.NewListener(metrics.Listener(ln), tlsConfig), nil
 }
 
+// runRelayCarrier owns the self-hosted relay carrier lifecycle (ADR-0018/0025):
+// dial + register + carry, and on carrier loss re-dial with bounded exponential
+// backoff until the context is cancelled. Every dial mints a fresh single-use
+// carrier token, so a service-side cancellation propagates in minutes.
+// RelayConnected is only ever set while a yamux session is live
+// and carrying — a dropped carrier reverts the Console state, so the status is
+// truthful rather than reporting a connection that forwards nothing.
 func (a *App) runRelayCarrier(ctx context.Context) {
 	runRelayCarrierLoop(ctx, a.relay, a.logger, time.After)
 }

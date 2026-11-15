@@ -43,6 +43,13 @@ flow-docs:
 flow-docs-check:
 	@script/flow-docs.sh check
 
+# CORE-1516: this public tree must not cite private paths (agent-memory notes,
+# untracked evidence files, private sibling repos). Seconds-long; gate.sh can
+# run it as a static data lint.
+.PHONY: private-pointer-scan
+private-pointer-scan:
+	@python3 script/private-pointer-scan.py
+
 # ADR-0122: a Core wire-contract change carries THREE consumer re-vendor
 # obligations (web, Apple and Android client repositories).
 # The gate step above is guarded on the diff touching a contract source; these

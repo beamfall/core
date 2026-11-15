@@ -41,7 +41,6 @@ GATE_EXIT_OK=0
 #   -> discrepancy 19.257327s (0.77%); reduced 97.35%, driven by the three outer checks (release-workflow-pins
 #   0.31s, vuln-check 3.16s, contract-registry 0.10s) plus the pre-gate web smoke (185.20s) now recorded under
 #   the supervisor; residual ~19s is overlapping-lane double counting plus wrapper overhead.
-# Raw evidence (untracked): .agent-evidence/GATE-OUTER-COORDINATION-1-r2-walltime-vs-metrics.txt (+ *gate-runs.jsonl / *gate.log)
 export GATE_RUN_ID="${GATE_RUN_ID:-direct-$$}"
 
 configure_sandbox_go() {
@@ -623,13 +622,40 @@ gate_record_infrastructure_abort() {  # gate_record_infrastructure_abort <step> 
   printf 'gate infrastructure aborted\nstep=%s\nstatus=%s\n' "$step" "$status" >"$receipt"
 }
 
+# CORE-1815: record a signal that reaches a step's wrapper so run_step can name
+# it. The gate never signals a step that is still running (retirement runs only
+# after `wait` returns, cleanup only at EXIT), so a record means the sender was
+# outside this gate run.
+gate_wrapper_signalled() {  # gate_wrapper_signalled <signal>
+  [ -n "${GATE_STEP_SIGNAL_FILE:-}" ] || return 0
+  printf '%s %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$GATE_STEP_SIGNAL_FILE" 2>/dev/null || true
+}
+
+# Neither Bash nor Python can read the sender from siginfo on macOS, so name the
+# signal and list the processes that commonly send one: other gate
+# coordinators, corvint-tasks and fleet reapers. The words are chosen so the
+# step log's red-line filter does not pick them up.
+gate_report_external_signal() {  # gate_report_external_signal <status> <signal-file>
+  local status="$1" file="$2" record
+  while IFS= read -r record; do
+    printf 'NOTE gate step wrapper received SIG%s at %s; exit status %s\n' \
+      "${record%% *}" "${record#* }" "$status"
+  done <"$file"
+  printf 'NOTE the gate had not signalled this step yet, so the sender is outside this gate run (gate pid %s); sender pid unknown: this host cannot read it from siginfo\n' "$$"
+  printf 'NOTE candidate senders at report time (gate coordinators, corvint-tasks, reapers):\n'
+  { ps -ax -o pid=,ppid=,pgid=,etime=,command= 2>/dev/null || true; } |
+    awk '$5 ~ /(^|\/)(ps|awk|head|sed)$/ { next }
+      /gate[.]sh|gate-entry|make gate|corvint-tasks|reap|supervisor|pauser|pkill|killall/' |
+    head -n "${GATE_SIGNAL_INVENTORY_LINES:-25}" | sed 's/^/NOTE   /'
+}
+
 gate_group_wrapper() {
   local status
   # Exit from a signal trap, rather than from the signal itself, so
   # noninteractive Bash does not print job-control termination notices. The
   # nested command remains in this group for the root cleanup's grace/KILL pass.
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
+  trap 'gate_wrapper_signalled INT; exit 130' INT
+  trap 'gate_wrapper_signalled TERM; exit 143' TERM
   set +m
   set +e
   "$@"
@@ -957,7 +983,7 @@ gate_step_reuse_record() {  # <step> <command> <policy> <material before the ste
 
 run_step() {
   local name="$1" log status rerun start elapsed_ns elapsed_s failure_dir failure_log slug command_pid
-  local owns_group=0 retire_status=0
+  local owns_group=0 retire_status=0 signal_file="" externally_signalled=0
   local step_pgid="" rss_tracker_pid="" rss_tracker_file="" peak_rss_kb=0 pgid_tries
   shift
   rerun="$(format_command "$@")"
@@ -987,9 +1013,11 @@ run_step() {
     "$@" >"$log" 2>&1
     status=$?
   else
+    signal_file="$(mktemp)"
     set -m
     (
       export GATE_PROCESS_GROUP_OWNED=1
+      export GATE_STEP_SIGNAL_FILE="$signal_file"
       gate_group_wrapper "$@"
     ) >"$log" 2>&1 &
     command_pid=$!
@@ -1019,6 +1047,14 @@ run_step() {
     wait "$command_pid" 2>/dev/null
     status=$?
   fi
+  if [ -n "$signal_file" ]; then
+    # Read the record before retiring: retirement sends its own TERM.
+    if [ -s "$signal_file" ] && [ "$status" -gt 128 ]; then
+      externally_signalled=1
+      gate_report_external_signal "$status" "$signal_file" >>"$log"
+    fi
+    rm -f "$signal_file"
+  fi
   if [ "$owns_group" -eq 1 ]; then
     gate_retire_group "$command_pid" || retire_status=$?
     if [ "$retire_status" -ne 0 ]; then
@@ -1037,7 +1073,9 @@ run_step() {
   set -e
   elapsed_ns="$(gate_elapsed_ns "$start")"
   elapsed_s="$((elapsed_ns / 1000000000))"
-  if gate_step_is_infrastructure_abort "$status" "$log"; then
+  # An externally signalled step is an interrupted run, not a red one, even
+  # when the signal also left a residual group for retirement to reap.
+  if [ "$externally_signalled" -eq 1 ] || gate_step_is_infrastructure_abort "$status" "$log"; then
     gate_metric "$name" abort "$status" "$elapsed_ns" "$rerun" "$peak_rss_kb"
     echo "gate infrastructure aborted: step=$name status=$status" >&2
     echo "rerun: $rerun" >&2

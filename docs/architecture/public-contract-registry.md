@@ -25,7 +25,7 @@ accumulation. It cannot recall what is already published.
 ## Decision
 
 Core's public registry records **producer facts only**. Consumer bookkeeping lives in the
-workspace registry (`beamfall-workspace/contracts/registry.json`, private), which already
+private workspace contract registry, which already
 holds the `client-core-wire` pins and runs `consumer-pin-truth.js` and deadline checks.
 
 Public registry row, after the change:
@@ -54,7 +54,7 @@ the consumer; the artifact lives in core's testdata) stay as they are.
 Superseded wire artifacts v1.2.0–v1.15.0 are immutable published identities, so their bytes
 are not rewritten. Nothing pins them: every client consumer pins 2.0.0 (the active artifact is 2.2.0, a permitted minor skew), and
 `newestWireContractArtifact` reads only the newest file. They move out of the public tree into
-`core-private/` as preserved originals for provenance and rollback. `v1.0.0` and `v1.1.0` hold
+a private archive as preserved originals for provenance and rollback. `v1.0.0` and `v1.1.0` hold
 no bookkeeping and stay. The pinned 2.0.0, superseded 2.1.0 and active 2.2.0 artifacts and their byte pins do not change, so no fresh
 artifact identity is needed.
 
@@ -91,7 +91,7 @@ New tests:
    because core still carries the same data.
 2. **Core (this ticket):** strip the core registry, update `check-contract-registry.py`,
    `check_contract_registry_test.py`, `wire_contract_test.go`, `crossrepo-conformance*.sh`
-   and its tests. Move the v1.2–v1.15 artifacts to `core-private/`. Add the absence tests.
+   and its tests. Move the v1.2–v1.15 artifacts to the private archive. Add the absence tests.
    Gate on the exact head, against fresh `origin/main` sibling worktrees.
 3. No consumer repo changes. Client repos read their own vendored wire bytes, not core's
    registry.
@@ -115,7 +115,7 @@ New tests:
 ## Rollback
 
 Revert the core commit. The workspace rows from step 1 are additive and harmless next to a
-restored core registry. The preserved v1.x originals in `core-private/` restore byte for byte.
+restored core registry. The preserved v1.x originals in the private archive restore byte for byte.
 
 ## Out of scope
 

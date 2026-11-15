@@ -27,6 +27,10 @@ global_timeout_seconds=600
 # false-redded passing runs at host load above 120.
 runner_timeout_seconds="${BEAMFALL_WEB_E2E_RUNNER_TIMEOUT_SECONDS:-630}"
 runner_ceiling_seconds="${BEAMFALL_WEB_E2E_RUNNER_CEILING_SECONDS:-2100}"
+# CORE-1063: a watchdog timeout that fires while load1 per CPU is at or above this threshold is
+# reported as load-attributed (exit 125, reason timeout-load) rather than as a hang (exit 124), so
+# a red smoke on an oversubscribed host is not read as a product hang. Both still fail the run.
+load_attribution_per_cpu="${BEAMFALL_WEB_E2E_LOAD_ATTRIBUTION_PER_CPU:-4}"
 
 case "${runner_timeout_seconds}" in
   ''|*[!0-9]*|0)
@@ -40,6 +44,10 @@ case "${runner_ceiling_seconds}" in
     exit 2
     ;;
 esac
+if ! [[ "${load_attribution_per_cpu}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "BEAMFALL_WEB_E2E_LOAD_ATTRIBUTION_PER_CPU must be a non-negative number" >&2
+  exit 2
+fi
 
 record_diagnostics() {
   local status="$1"
@@ -50,6 +58,7 @@ record_diagnostics() {
     printf 'global_timeout_seconds=%s\n' "${global_timeout_seconds}"
     printf 'runner_timeout_seconds=%s\n' "${runner_timeout_seconds}"
     printf 'runner_ceiling_seconds=%s\n' "${runner_ceiling_seconds}"
+    printf 'load_attribution_per_cpu=%s\n' "${load_attribution_per_cpu}"
     if [[ -r "${watchdog_reason_file}" ]]; then
       printf 'watchdog_reason=%s\n' "$(<"${watchdog_reason_file}")"
     fi
@@ -150,7 +159,17 @@ on_signal() {
 
 trap 'on_signal 130 INT' INT
 trap 'on_signal 143 TERM' TERM
-trap 'echo "Playwright smoke runner watchdog: $(cat "${watchdog_reason_file}" 2>/dev/null || echo "no progress for ${runner_timeout_seconds}s"); artifacts and process diagnostics will be retained" >&2; on_signal 124 timeout' ALRM
+on_watchdog() {
+  local reason
+  reason="$(cat "${watchdog_reason_file}" 2>/dev/null || echo "no progress for ${runner_timeout_seconds}s")"
+  echo "Playwright smoke runner watchdog: ${reason}; artifacts and process diagnostics will be retained" >&2
+  if [[ "${reason}" == *"(load-attributed)"* ]]; then
+    on_signal 125 timeout-load
+  else
+    on_signal 124 timeout
+  fi
+}
+trap on_watchdog ALRM
 
 if [[ $# -ne 0 ]]; then
   echo "FAIL web-ui-e2e-smoke caller arguments are not supported expected=0 actual=$#" >&2
@@ -216,8 +235,8 @@ import signal
 import sys
 import time
 
-stall, ceiling, runner, heartbeat, reason = sys.argv[1:]
-stall, ceiling, runner = float(stall), float(ceiling), int(runner)
+stall, ceiling, runner, heartbeat, reason, attribution = sys.argv[1:]
+stall, ceiling, runner, attribution = float(stall), float(ceiling), int(runner), float(attribution)
 started = time.time()
 while True:
     time.sleep(0.25)
@@ -232,6 +251,11 @@ while True:
         message = f"still running after {ceiling:.0f}s (ceiling)"
     else:
         continue
+    per_cpu = os.getloadavg()[0] / (os.cpu_count() or 1)
+    if per_cpu >= attribution:
+        message += f"; host load1 per CPU {per_cpu:.2f} >= {attribution:g} (load-attributed)"
+    else:
+        message += f"; host load1 per CPU {per_cpu:.2f} < {attribution:g} (hang)"
     try:
         with open(reason, "w", encoding="utf-8") as handle:
             handle.write(message + "\n")
@@ -240,7 +264,7 @@ while True:
     os.kill(runner, signal.SIGALRM)
     break
 ' "${runner_timeout_seconds}" "${runner_ceiling_seconds}" "$$" \
-  "${heartbeat_file}" "${watchdog_reason_file}" &
+  "${heartbeat_file}" "${watchdog_reason_file}" "${load_attribution_per_cpu}" &
 watchdog_pid=$!
 
 run_tracked() {

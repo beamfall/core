@@ -49,11 +49,11 @@ mkdir -p "$TMP/dirty/build"
 echo "artifact" >"$TMP/dirty/build/output.bin"
 git -C "$TMP/dirty" add -f .gitignore build/output.bin
 git -C "$TMP/dirty" commit -m "half-tracked drift fixture" >/dev/null
-if BEAMFALL_GATE_ROOT="$TMP/dirty" "$TMP/empty-lint.sh" >/tmp/tracked-vs-gitignore-1.out 2>/tmp/tracked-vs-gitignore-1.err; then
+if BEAMFALL_GATE_ROOT="$TMP/dirty" "$TMP/empty-lint.sh" >"$TMP/tracked-vs-gitignore-1.out" 2>"$TMP/tracked-vs-gitignore-1.err"; then
   echo "expected a new tracked-but-ignored path to fail" >&2
   exit 1
 fi
-grep -q 'NEW tracked-but-ignored path: build/output.bin' /tmp/tracked-vs-gitignore-1.err
+grep -q 'NEW tracked-but-ignored path: build/output.bin' "$TMP/tracked-vs-gitignore-1.err"
 
 # The same file, allowlisted, must pass — and prove the allowlist mechanism
 # itself (not just an empty one) works end to end.
@@ -63,10 +63,10 @@ BEAMFALL_GATE_ROOT="$TMP/dirty" "$TMP/allowed-lint.sh" >/dev/null
 # A stale allowlist entry (path no longer reproduces) must fail — the
 # allowlist is self-pruning, so it can only shrink.
 substitute_allowlist "$LINT" "$TMP/stale-lint.sh" '  "never/reproduces/this/path.txt"'
-if BEAMFALL_GATE_ROOT="$TMP/clean" "$TMP/stale-lint.sh" >/tmp/tracked-vs-gitignore-2.out 2>/tmp/tracked-vs-gitignore-2.err; then
+if BEAMFALL_GATE_ROOT="$TMP/clean" "$TMP/stale-lint.sh" >"$TMP/tracked-vs-gitignore-2.out" 2>"$TMP/tracked-vs-gitignore-2.err"; then
   echo "expected a stale allowlist entry to fail" >&2
   exit 1
 fi
-grep -q 'stale allowlist entry.*never/reproduces/this/path.txt' /tmp/tracked-vs-gitignore-2.err
+grep -q 'stale allowlist entry.*never/reproduces/this/path.txt' "$TMP/tracked-vs-gitignore-2.err"
 
 echo "tracked-vs-gitignore_test: OK"

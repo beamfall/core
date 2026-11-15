@@ -36,8 +36,8 @@ const (
 
 // Admin Session policy (ADR-0007 §4 — "short-lived re-auth"; ADR-0012 §3 —
 // brute-force economics). The ADR pins neither the lifetime nor the lockout
-// curve numerically; both are chosen here and flagged in
-// docs/agent-memory/questions.md for confirmation. The lockout mirrors the
+// curve numerically; both are chosen here and flagged as open questions for
+// confirmation. The lockout mirrors the
 // pairing lane's exponential-backoff curve so admin re-auth is not a separate,
 // weaker brute-force surface.
 const (

@@ -1911,6 +1911,19 @@ describe("usePlayer", () => {
     });
 
     describe("native MEDIA_ERR_NETWORK", () => {
+      // Fake only the backoff clock, and never let it follow wall time
+      // (CORE-1788): with shouldAdvanceTime a loaded host could let a backoff
+      // step fire during a waitFor before the test advanced the clock. While
+      // it is installed, settle the probe with flushProbe instead of waitFor
+      // (testing-library's waitFor drains through a setTimeout).
+      function useBackoffClock(): void {
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      }
+
+      async function flushProbe(): Promise<void> {
+        await act(() => vi.advanceTimersByTimeAsync(0));
+      }
+
       function failNetwork(): HTMLVideoElement {
         const video = screen.getByTestId("player") as HTMLVideoElement;
         Object.defineProperty(video, "error", { configurable: true, value: { code: 2 } });
@@ -1977,14 +1990,15 @@ describe("usePlayer", () => {
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
         const video = screen.getByTestId("player") as HTMLVideoElement;
         video.currentTime = 12;
-        vi.useFakeTimers({ shouldAdvanceTime: true });
+        useBackoffClock();
         try {
           for (const delay of [1000, 2000, 4000]) {
             const loads = vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
             await act(async () => {
               failNetwork();
             });
-            await waitFor(() => expect(screen.getByTestId("recovering")).toHaveTextContent("yes"));
+            await flushProbe();
+            expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
             await act(() => vi.advanceTimersByTimeAsync(delay - 50));
             expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(loads);
             await act(() => vi.advanceTimersByTimeAsync(50));
@@ -1999,9 +2013,8 @@ describe("usePlayer", () => {
           await act(async () => {
             failNetwork();
           });
-          await waitFor(() =>
-            expect(screen.getByTestId("message")).toHaveTextContent("playback failed"),
-          );
+          await flushProbe();
+          expect(screen.getByTestId("message")).toHaveTextContent("playback failed");
           expect(screen.getByTestId("recovering")).toHaveTextContent("no");
           expect(resetIdentityEpoch).not.toHaveBeenCalled();
         } finally {
@@ -2013,13 +2026,14 @@ describe("usePlayer", () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
         render(<Harness />);
         await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
-        vi.useFakeTimers({ shouldAdvanceTime: true });
+        useBackoffClock();
         try {
           for (let round = 0; round < 5; round += 1) {
             await act(async () => {
               failNetwork();
             });
-            await waitFor(() => expect(screen.getByTestId("recovering")).toHaveTextContent("yes"));
+            await flushProbe();
+            expect(screen.getByTestId("recovering")).toHaveTextContent("yes");
             await act(() => vi.advanceTimersByTimeAsync(1000));
             fireEvent.playing(screen.getByTestId("player"));
             expect(screen.getByTestId("recovering")).toHaveTextContent("no");
@@ -2031,18 +2045,18 @@ describe("usePlayer", () => {
       });
 
       it("retries rather than failing when the probe hangs past its timeout", async () => {
-        vi.useFakeTimers({ shouldAdvanceTime: true });
+        vi.spyOn(globalThis, "fetch").mockImplementation(
+          (_url, init) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(new DOMException("aborted", "AbortError")),
+              );
+            }),
+        );
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        useBackoffClock();
         try {
-          vi.spyOn(globalThis, "fetch").mockImplementation(
-            (_url, init) =>
-              new Promise((_resolve, reject) => {
-                init?.signal?.addEventListener("abort", () =>
-                  reject(new DOMException("aborted", "AbortError")),
-                );
-              }),
-          );
-          render(<Harness />);
-          await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
           failNetwork();
           await act(() => vi.advanceTimersByTimeAsync(5001));
           expect(screen.getByTestId("recovering")).toHaveTextContent("yes");

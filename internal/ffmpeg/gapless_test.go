@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,6 +69,56 @@ func TestParseGapless(t *testing.T) {
 				t.Fatalf("facts = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+// gaplessM4AFFmpeg8Fixture is the M4A of gaplessM4AFixture as ffprobe 8
+// reports it: the MP4 demuxer shortens the last packet by the padding but
+// exports no discard_padding side data.
+const gaplessM4AFFmpeg8Fixture = `{
+  "packets": [
+    {"stream_index": 0, "pts": -1024, "duration": 1024, "side_data_list": [{"skip_samples": 1024, "discard_padding": 0}]},
+    {"stream_index": 0, "pts": 0, "duration": 1024},
+    {"stream_index": 0, "pts": 87040, "duration": 1024},
+    {"stream_index": 0, "pts": 88064, "duration": 136}
+  ],
+  "streams": [{"index": 0, "codec_name": "CODEC", "sample_rate": "44100", "time_base": "1/44100"}]
+}`
+
+func TestParseGaplessMeasuresUndeclaredAACPadding(t *testing.T) {
+	facts, err := parseGapless([]byte(strings.Replace(gaplessM4AFFmpeg8Fixture, "CODEC", "aac", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := facts[0], (gaplessFacts{SampleRate: 44100, DelaySamples: 1024, PaddingSamples: 888, DecodedSamples: 88200}); got != want {
+		t.Fatalf("aac facts = %+v, want %+v", got, want)
+	}
+	// A codec whose frames vary in length (Vorbis) has short packets that
+	// are not padding, so its undeclared padding stays unknown.
+	facts, err = parseGapless([]byte(strings.Replace(gaplessM4AFFmpeg8Fixture, "CODEC", "vorbis", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := facts[0].PaddingSamples; got != 0 {
+		t.Fatalf("vorbis padding = %d, want 0 (undeclared)", got)
+	}
+	// Matroska times AAC in milliseconds: at 48 kHz one tick is 48 samples,
+	// so the rounded durations (21 and 16 ms for a 256-sample padding) do
+	// not measure the padding and it stays unknown.
+	facts, err = parseGapless([]byte(`{
+  "packets": [
+    {"stream_index": 0, "pts": -21, "duration": 21, "side_data_list": [{"skip_samples": 1024, "discard_padding": 0}]},
+    {"stream_index": 0, "pts": 0, "duration": 21},
+    {"stream_index": 0, "pts": 1984, "duration": 21},
+    {"stream_index": 0, "pts": 2005, "duration": 16}
+  ],
+  "streams": [{"index": 0, "codec_name": "aac", "sample_rate": "48000", "time_base": "1/1000"}]
+}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := facts[0].PaddingSamples; got != 0 {
+		t.Fatalf("millisecond time base padding = %d, want 0 (unmeasurable)", got)
 	}
 }
 

@@ -1,5 +1,6 @@
 import { Copy, Link2, MonitorSmartphone, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { QrCode } from "@/components/beamfall/QrCode";
 import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,7 @@ import { Advanced } from "@/lib/advancedSettings";
 import {
   fetchConsoleConfig,
   fetchDevices,
+  fetchRemoteAccess,
   mintPairingCode,
   type PairingCode,
   revokeAllDevices,
@@ -17,10 +19,12 @@ import {
   setConsoleConfig,
   setDeviceRole,
 } from "@/lib/graphql";
+import type { RemoteEndpointInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { enrollQrTarget, isLoopbackHost } from "./enrollQr";
 
 // Device administration (ADR-0081), Console half — the operator-facing surface
 // over already-enrolled browsers/devices. Lists every device with its role and
@@ -48,6 +52,45 @@ function useSecondsLeft(expiresAt: string): number {
     return () => window.clearInterval(timer);
   }, [deadline]);
   return Number.isNaN(deadline) ? 0 : seconds;
+}
+
+// The QR a phone camera opens the enroll page from (CORE-1614), with the same
+// URL as text beside it. On loopback it waits for the server's LAN endpoints
+// and, with none, says how to get a QR instead of encoding localhost.
+function EnrollQr() {
+  const t = useT();
+  const { origin, hostname } = window.location;
+  const loopback = isLoopbackHost(hostname);
+  const [endpoints, setEndpoints] = useState<RemoteEndpointInfo[] | null | undefined>(
+    loopback ? undefined : null,
+  );
+  useEffect(() => {
+    if (!loopback) return;
+    const controller = new AbortController();
+    fetchRemoteAccess(controller.signal)
+      .then((info) => setEndpoints(info.endpoints))
+      .catch(() => {
+        if (!controller.signal.aborted) setEndpoints(null);
+      });
+    return () => controller.abort();
+  }, [loopback]);
+
+  if (endpoints === undefined) return null;
+  const target = enrollQrTarget(origin, hostname, import.meta.env.BASE_URL, endpoints);
+  if (!target) {
+    return (
+      <p className="mt-3 text-[12px] leading-snug text-muted-foreground">{t("deviceQrNeedsLan")}</p>
+    );
+  }
+  return (
+    <figure className="mt-3 flex flex-col items-start gap-2">
+      <figcaption className="text-[12px] leading-snug text-muted-foreground">
+        {t("deviceQrScan")}
+      </figcaption>
+      <QrCode value={target} label={t("deviceQrLabel", { url: target })} className="size-40" />
+      <code className="text-[13px] break-all">{target}</code>
+    </figure>
+  );
 }
 
 // The freshly minted pairing-code banner — shown once so the operator can copy
@@ -125,6 +168,7 @@ function PairingCodeBanner({ code }: { code: MintedCode }) {
           {t("deviceCodeCopyLink")}
         </Button>
       </div>
+      <EnrollQr />
       {manualLink && (
         <div className="mt-2">
           <Input

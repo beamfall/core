@@ -5,6 +5,24 @@ import { expectArchivedVisualParity } from "./archived-visual-parity";
 
 const postDir = process.env.TECHDUR_VISUAL_POST_DIR;
 
+// CORE-1112: the live goldens and the archived signatures were rasterized on
+// macOS, where system-ui is SF Pro and no web font is bundled, so on any other
+// host an exact pixel comparison measures the font, not the UI. Other hosts
+// (the Linux preflight, the hosted release workflow) keep every functional
+// assertion and record the skipped comparison as an annotation. The
+// web-ui-e2e smoke requires every state to pass, so it stays macOS-only.
+export const VISUAL_PARITY_HOST_PLATFORM = "darwin";
+
+/** True when this host can compare against the goldens; otherwise annotates the skip. */
+export function onVisualParityHost(testInfo: TestInfo, fileName: string): boolean {
+  if (process.platform === VISUAL_PARITY_HOST_PLATFORM) return true;
+  testInfo.annotations.push({
+    type: "visual-parity-skipped",
+    description: `${fileName}: goldens are rendered on ${VISUAL_PARITY_HOST_PLATFORM}; this host is ${process.platform}`,
+  });
+  return false;
+}
+
 export async function expectSelectedOption(option: Locator): Promise<void> {
   await expect
     .poll(() =>
@@ -84,6 +102,7 @@ export async function expectVisualParity(
       mask: options.mask,
     });
   }
+  if (!onVisualParityHost(testInfo, fileName)) return;
   await expect(page).toHaveScreenshot(fileName, {
     animations: "disabled",
     caret: "hide",
@@ -114,6 +133,7 @@ export async function expectLocatorVisualParity(
       caret: "hide",
     });
   }
+  if (!onVisualParityHost(testInfo, fileName)) return;
   await expect(locator).toHaveScreenshot(fileName, {
     animations: "disabled",
     caret: "hide",

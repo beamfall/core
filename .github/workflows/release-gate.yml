@@ -27,7 +27,9 @@ permissions:
 jobs:
   release-test-gates:
     name: Core release test gates
-    runs-on: ubuntu-latest
+    # CORE-1112: Playwright has no Chromium for ubuntu26.04, which ubuntu-latest now resolves to,
+    # so jobs that install it pin the newest image Playwright supports.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -233,7 +235,9 @@ jobs:
 
   web-e2e-full:
     name: Release web E2E full
-    runs-on: ubuntu-latest
+    # CORE-1112: Playwright has no Chromium for ubuntu26.04, which ubuntu-latest now resolves to,
+    # so jobs that install it pin the newest image Playwright supports.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       AGENT_EVIDENCE_DIR: .agent-evidence/web-e2e-full

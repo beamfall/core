@@ -1,8 +1,7 @@
 // Evidence — AUDITFIX-JOB-LEASE (2026-08-20)
 //
-// Verification run, head 04d4382dcf4d9bdf893271fc919e0c18a1762da9, log
-// .agent-evidence/AUDITFIX-JOB-LEASE-verification.txt (untracked; core forbids
-// tracking .agent-evidence, so the reviewer copy is this comment):
+// Verification run, head 04d4382dcf4d9bdf893271fc919e0c18a1762da9 (the raw
+// log was never tracked, so the reviewer copy is this comment):
 //
 //	rc=0 elapsed_s=0   2026-08-20T00:22:07Z→00:22:07Z  go vet ./internal/store/ ./internal/jobs/
 //	rc=0 elapsed_s=50  2026-08-20T00:22:07Z→00:22:58Z  go test -race -count=1 -timeout 600s ./internal/jobs/

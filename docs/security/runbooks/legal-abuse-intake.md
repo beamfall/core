@@ -84,5 +84,4 @@ traffic:
 - [ ] Verify `abuse@beamfall.com` delivery routes to a monitored human inbox (send + confirm a test).
 - [ ] Name the CSAM responsible officer and record them here and in the internal ledger.
 
-Planned evidence path, created when NGAUDIT-B1 executes:
-`docs/plans/roadmap/evidence/NGAUDIT-B1-legal-set.md`. <!-- doc-links-allow: future ticket evidence -->
+Evidence is recorded against ticket NGAUDIT-B1 when it executes.
