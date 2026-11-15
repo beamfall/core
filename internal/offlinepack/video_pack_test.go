@@ -372,3 +372,69 @@ func TestBuildHandsTheSourceStreamInventoryToTheTranscoder(t *testing.T) {
 		t.Fatalf("transcoder streams = %+v, want the HDR10 video stream", fake.streams)
 	}
 }
+
+// setFixtureVideoSize makes id a video whose primary file reports sizeBytes.
+// The file is extended sparsely, so the per-item bound is exercised without
+// writing a file that large.
+func setFixtureVideoSize(t *testing.T, st *store.Store, id store.MediaID, sizeBytes int64) {
+	t.Helper()
+	setFixtureClass(t, st, id, store.MediaClassVideo)
+	files, err := st.MediaFilesForMedia(context.Background(), id, store.LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil || len(files) == 0 {
+		t.Fatalf("MediaFilesForMedia: %v", err)
+	}
+	if err := os.Truncate(files[0].Path, sizeBytes); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOriginalVideoOverTheItemBoundIsRefusedAtAdmission covers CORE-1745: an
+// Original pack cannot seal a video item over the 4 GiB BFOP bound, so the
+// request is refused with a typed error before any build work.
+func TestOriginalVideoOverTheItemBoundIsRefusedAtAdmission(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureVideoSize(t, st, "media-alpha", int64(MaxItemSize)+1)
+	scope := scopeFor(t, authService, "session-default")
+	for _, quality := range []string{"", QualityOriginal} {
+		req := BuildPackRequest{TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: quality}
+		if err := svc.AdmitBuild(context.Background(), scope, req); !errors.Is(err, ErrOriginalItemTooLarge) {
+			t.Fatalf("AdmitBuild(quality %q) = %v, want ErrOriginalItemTooLarge", quality, err)
+		}
+		if _, err := svc.BuildPack(context.Background(), scope, req); !errors.Is(err, ErrOriginalItemTooLarge) {
+			t.Fatalf("BuildPack(quality %q) = %v, want ErrOriginalItemTooLarge", quality, err)
+		}
+	}
+	if !strings.Contains(ErrOriginalItemTooLarge.Error(), "4 GiB") {
+		t.Fatalf("error %q does not name the 4 GiB limit", ErrOriginalItemTooLarge)
+	}
+}
+
+// TestOriginalVideoAtTheItemBoundIsAdmitted keeps the bound inclusive: an item
+// of exactly 4 GiB is admitted at Original.
+func TestOriginalVideoAtTheItemBoundIsAdmitted(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureVideoSize(t, st, "media-alpha", int64(MaxItemSize))
+	scope := scopeFor(t, authService, "session-default")
+	if err := svc.AdmitBuild(context.Background(), scope, BuildPackRequest{
+		TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: QualityOriginal,
+	}); err != nil {
+		t.Fatalf("AdmitBuild = %v, want nil", err)
+	}
+}
+
+// TestTranscodedQualityPacksAVideoOverTheItemBound: the bound limits only the
+// sealed bytes, so a transcoded quality still packs a source over 4 GiB.
+func TestTranscodedQualityPacksAVideoOverTheItemBound(t *testing.T) {
+	svc, authService, st, _ := newFixture(t)
+	setFixtureVideoSize(t, st, "media-alpha", int64(MaxItemSize)+1)
+	fake := &fakeTranscoder{out: map[string][]byte{QualityHigh: []byte("transcoded-high")}}
+	svc.SetTranscoder(fake.transcode)
+	scope := scopeFor(t, authService, "session-default")
+	req := BuildPackRequest{TargetKind: TargetKindMedia, TargetRef: "media-alpha", Quality: QualityHigh}
+	if err := svc.AdmitBuild(context.Background(), scope, req); err != nil {
+		t.Fatalf("AdmitBuild = %v, want nil", err)
+	}
+	if _, err := svc.BuildPack(context.Background(), scope, req); err != nil {
+		t.Fatalf("BuildPack = %v, want a transcoded pack", err)
+	}
+}

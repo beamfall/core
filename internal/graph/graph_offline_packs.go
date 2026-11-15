@@ -124,7 +124,13 @@ func (h *Handler) createOfflinePack(ctx context.Context, scope auth.Scope, req r
 		if err != nil {
 			return OfflinePackInfo{}, clientError("quality must be original, high, medium or low")
 		}
+		if err := h.admitOfflinePackBuild(ctx, scope, build); err != nil {
+			return OfflinePackInfo{}, err
+		}
 		return h.queueOfflinePackBuild(ctx, scope, build)
+	}
+	if err := h.admitOfflinePackBuild(ctx, scope, build); err != nil {
+		return OfflinePackInfo{}, err
 	}
 	payload, err := offlinepack.BuildJobPayloadFor(scope, build)
 	if err != nil {
@@ -153,6 +159,20 @@ func (h *Handler) createOfflinePack(ctx context.Context, scope auth.Scope, req r
 // offlinePackBuilding is the state a background build reports before its
 // pack row exists.
 const offlinePackBuilding = "building"
+
+// errOriginalPackItemTooLarge answers an Original-quality pack request with a
+// video item over the 4 GiB per-item bound.
+const errOriginalPackItemTooLarge = "original quality is limited to 4 GiB per item; choose high, medium or low quality"
+
+// admitOfflinePackBuild refuses, before any job is queued, a request the
+// build would fail on its per-item bound. Every other admission failure is
+// left to the job, which reports it as before.
+func (h *Handler) admitOfflinePackBuild(ctx context.Context, scope auth.Scope, build offlinepack.BuildPackRequest) error {
+	if err := h.offlinePacks.AdmitBuild(ctx, scope, build); errors.Is(err, offlinepack.ErrOriginalItemTooLarge) {
+		return clientError(errOriginalPackItemTooLarge)
+	}
+	return nil
+}
 
 // queueOfflinePackBuild queues a background build under a pre-assigned pack ID
 // and returns at once. A repeat request while that build is active returns the

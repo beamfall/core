@@ -171,6 +171,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"no transcode config to update":                            ErrorCodeInvalid,
 	"not a date":                                               ErrorCodeInvalid,
 	"not a migration job":                                      ErrorCodeInvalid,
+	errOriginalPackItemTooLarge:                                ErrorCodeInvalid,
 	"not a number":                                             ErrorCodeInvalid,
 	"permission is not declared by the active plugin manifest": ErrorCodeInvalid,
 	"pre-authorization applies to managed profiles only":       ErrorCodeInvalid,

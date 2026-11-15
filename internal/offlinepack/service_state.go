@@ -205,6 +205,9 @@ func (s *Service) preflightBuildSources(ctx context.Context, ids []store.MediaID
 				return nil, err
 			}
 			if size > MaxItemSize {
+				if media.Class == store.MediaClassVideo {
+					return nil, ErrOriginalItemTooLarge
+				}
 				return nil, errors.New("offline pack item exceeds size bound")
 			}
 			if size > s.buildByteBudget-total {
