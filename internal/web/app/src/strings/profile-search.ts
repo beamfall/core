@@ -130,7 +130,7 @@ export const profileSearchStrings = {
     settingsSaveFailed: "Impossible d’enregistrer cette préférence.",
     settingsUnavailable: "Les préférences sont indisponibles pour le moment.",
     searchModeLabel: "Rechercher par",
-    searchModeKeyword: "Mots exacts",
+    searchModeKeyword: "Mots correspondants",
     searchModeSemantic: "Sens proche",
     searchModeRecommend: "Suggestions pour vous",
     searchModeFellBackToKeyword:
