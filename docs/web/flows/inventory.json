@@ -3059,11 +3059,7 @@
         },
         {
           "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
-          "symbol": "AUTH_FIELD"
-        },
-        {
-          "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",
-          "symbol": "AUTH_FIELD_LABEL"
+          "symbol": "PAIRING_CODE_INPUT"
         },
         {
           "path": "internal/web/app/src/areas/enroll/AuthShell.tsx",

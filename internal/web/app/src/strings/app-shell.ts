@@ -37,7 +37,8 @@ export const appShellStrings = {
     // CORE-1607: default name for a browser enrolled without one.
     deviceNameDefault: "{browser} on {os}",
     promoteTitle: "Promote this browser",
-    promoteLead: "Enter a manager pairing code to promote this browser to a manager device.",
+    promoteLead:
+      "Enter a manager pairing code so this browser can manage the server as well as play.",
     managerPairingCode: "Manager pairing code",
     promote: "Promote",
     cancel: "Cancel",

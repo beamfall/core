@@ -25,7 +25,7 @@ export const consoleAccessStrings = {
     // gate as the Console, worded for a page rather than the Console.
     manageLockedTitle: "Admin password needed",
     manageLockedLead:
-      "This page changes server settings. Enter the server admin password to continue.",
+      "This page changes settings for everyone on the server, so it asks for the admin password first.",
     manageUnlockSubmit: "Unlock",
     consoleActiveLead: "Console unlocked. The admin session is active.",
     adminLock: "Lock Console",
@@ -45,15 +45,15 @@ export const consoleAccessStrings = {
     consoleLockedNotAdultLead:
       "This profile can’t administer the server. Switch to an adult owner profile to manage the Console.",
     consoleLockedNoSessionTitle: "Console locked",
-    consoleLockedNoSessionLead: "Enter the server admin password to open an admin session.",
+    consoleLockedNoSessionLead: "Enter the server’s admin password to open the Console.",
     consoleLockedExpiredTitle: "Admin session expired",
     consoleLockedExpiredLead:
-      "The admin session timed out. Re-enter the admin password to continue.",
+      "For safety, admin access ends after a while. Enter the admin password again to pick up where you left off.",
     consoleLockedSwitchedTitle: "Profile switched",
     consoleLockedSwitchedLead:
-      "The profile changed since the admin session opened. Re-enter the admin password.",
+      "You switched profiles, so admin access closed. Enter the admin password again to continue.",
     adminRevealDistinction:
-      "The admin session is separate from Reveal: being an admin doesn’t reveal restricted content, and revealing doesn’t grant admin.",
+      "Admin access is separate from Reveal: unlocking here won’t show restricted content, and Reveal never unlocks admin tools.",
     apiKeysHeading: "API keys",
     apiKeysLead: "Create scoped, named keys for third-party tools. Revoke any time.",
     apiKeyNameLabel: "Key name",

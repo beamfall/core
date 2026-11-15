@@ -1,20 +1,19 @@
 import { ArrowRight } from "lucide-react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  FieldHint,
+  FieldInput,
+  FieldLabel,
+  GlassCard,
+  PageShell,
+  PrimaryAction,
+  SurfaceHeading,
+  SurfaceSection,
+} from "@/components/beamfall/surface";
 import { ApiError, fetchSetupStatus, type SignInSecurityMode } from "@/lib/api";
 import { adminSignIn, enroll } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-import {
-  AuthHeading,
-  AuthShell,
-  AUTH_FIELD as FIELD,
-  AUTH_FIELD_LABEL as FIELD_LABEL,
-  FormFeedback,
-  normalizePairingCode,
-} from "./AuthShell";
+import { FormFeedback, normalizePairingCode, PAIRING_CODE_INPUT } from "./AuthShell";
 import { defaultDeviceName } from "./deviceName";
 import { PairingCodeHelp } from "./PairingCodeHelp";
 
@@ -125,72 +124,65 @@ export function EnrollPage() {
   }
 
   return (
-    <AuthShell>
-      <AuthHeading title={t("enrollTitle")} lead={t("signInLead")} />
-      <form onSubmit={onSubmit} className="space-y-5" noValidate>
-        <div>
-          <Label htmlFor={codeID} className={FIELD_LABEL}>
-            {t("pairingCode")}
-          </Label>
-          <Input
-            id={codeID}
-            ref={codeRef}
-            value={code}
-            onChange={(e) => {
-              setCode(normalizePairingCode(e.target.value));
-              setError(null);
-              setRejected(false);
-            }}
-            className={cn(FIELD, "text-center font-mono text-xl tracking-[0.3em]")}
-            // The pairing code is a credential: no autofill, no spellcheck.
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            autoFocus
-            required
-            aria-invalid={error != null}
-            aria-describedby={error ? `${codeHintID} ${errorID}` : codeHintID}
-          />
-          <p id={codeHintID} className="mb-0 mt-2 text-dense text-muted-foreground">
-            {t(rejected ? "pairingCodeRejectedHint" : "signInCodeHint")}
-          </p>
-        </div>
-        <div>
-          <Label htmlFor={deviceNameID} className={FIELD_LABEL}>
-            {t("deviceName")}
-          </Label>
-          <Input
-            id={deviceNameID}
-            value={deviceName}
-            onChange={(e) => setDeviceName(e.target.value)}
-            className={FIELD}
-            placeholder={fallbackName}
-            autoComplete="off"
-            aria-describedby={deviceNameHintID}
-          />
-          <p id={deviceNameHintID} className="mb-0 mt-2 text-dense text-muted-foreground">
-            {t("signInDeviceNameHint")}
-          </p>
-        </div>
-        <FormFeedback status={status} error={error} errorID={errorID} errorRef={errorRef} />
-        <Button
-          type="submit"
-          disabled={busy}
-          className="h-11 w-full rounded-[10px] text-[15px] font-semibold"
-        >
-          {t("connect")}
-          <ArrowRight aria-hidden className="size-4" />
-        </Button>
-      </form>
-      {securityMode === "home" && (
-        <AdminSignInForm deviceName={deviceName.trim() || fallbackName} />
-      )}
-      {securityMode === "strict" && <StrictRecoveryHint />}
-      <div className="mt-7 border-t border-white/10 pt-6">
-        <PairingCodeHelp />
-      </div>
-    </AuthShell>
+    <PageShell>
+      <GlassCard>
+        <SurfaceHeading title={t("enrollTitle")} lead={t("signInLead")} />
+        <form onSubmit={onSubmit} className="space-y-5" noValidate>
+          <div>
+            <FieldLabel htmlFor={codeID}>{t("pairingCode")}</FieldLabel>
+            <FieldInput
+              id={codeID}
+              ref={codeRef}
+              value={code}
+              onChange={(e) => {
+                setCode(normalizePairingCode(e.target.value));
+                setError(null);
+                setRejected(false);
+              }}
+              className={PAIRING_CODE_INPUT}
+              // The pairing code is a credential: no autofill, no spellcheck.
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus
+              required
+              aria-invalid={error != null}
+              aria-describedby={error ? `${codeHintID} ${errorID}` : codeHintID}
+            />
+            <FieldHint id={codeHintID} className="mt-2">
+              {t(rejected ? "pairingCodeRejectedHint" : "signInCodeHint")}
+            </FieldHint>
+          </div>
+          <div>
+            <FieldLabel htmlFor={deviceNameID}>{t("deviceName")}</FieldLabel>
+            <FieldInput
+              id={deviceNameID}
+              value={deviceName}
+              onChange={(e) => setDeviceName(e.target.value)}
+              placeholder={fallbackName}
+              autoComplete="off"
+              aria-describedby={deviceNameHintID}
+            />
+            <FieldHint id={deviceNameHintID} className="mt-2">
+              {t("signInDeviceNameHint")}
+            </FieldHint>
+          </div>
+          <FormFeedback status={status} error={error} errorID={errorID} errorRef={errorRef} />
+          <PrimaryAction type="submit" disabled={busy} className="w-full">
+            {t("connect")}
+            <ArrowRight aria-hidden className="size-4" />
+          </PrimaryAction>
+        </form>
+        {securityMode === "home" && (
+          <AdminSignInForm deviceName={deviceName.trim() || fallbackName} />
+        )}
+        {securityMode === "strict" && <StrictRecoveryHint />}
+        <SurfaceSection className="mt-7 pt-6">
+          <PairingCodeHelp />
+        </SurfaceSection>
+      </GlassCard>
+    </PageShell>
   );
 }
 
@@ -244,33 +236,30 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
         {t("adminSignInOr")}
       </p>
       {!open ? (
-        <Button
+        <PrimaryAction
           type="button"
           variant="outline"
           onClick={() => {
             setOpen(true);
             requestAnimationFrame(() => passwordRef.current?.focus());
           }}
-          className="h-11 w-full rounded-[10px] border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
+          className={OUTLINE_ACTION}
         >
           {t("adminSignInTitle")}
-        </Button>
+        </PrimaryAction>
       ) : (
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
           <p className="m-0 text-sm leading-relaxed text-muted-foreground">
             {t("adminSignInLead")}
           </p>
           <div>
-            <Label htmlFor={passwordID} className={FIELD_LABEL}>
-              {t("adminPasswordLabel")}
-            </Label>
-            <Input
+            <FieldLabel htmlFor={passwordID}>{t("adminPasswordLabel")}</FieldLabel>
+            <FieldInput
               id={passwordID}
               ref={passwordRef}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={FIELD}
               autoComplete="current-password"
               required
               aria-invalid={error != null}
@@ -285,19 +274,22 @@ function AdminSignInForm({ deviceName }: { deviceName: string }) {
               </a>
             </p>
           )}
-          <Button
+          <PrimaryAction
             type="submit"
             variant="outline"
             disabled={busy || password === ""}
-            className="h-11 w-full rounded-[10px] border-white/15 bg-transparent text-[15px] font-semibold hover:bg-white/[0.06]"
+            className={OUTLINE_ACTION}
           >
             {t("adminSignIn")}
-          </Button>
+          </PrimaryAction>
         </form>
       )}
     </div>
   );
 }
+
+// The full-width quiet action under the code form (the admin password route).
+const OUTLINE_ACTION = "w-full border-white/15 bg-transparent hover:bg-white/[0.06]";
 
 // Strict mode has no password fallback (CORE-1110), so a locked-out owner is
 // told the one way back in: mint a code on the server itself (CORE-1608).
