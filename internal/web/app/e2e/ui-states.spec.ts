@@ -55,6 +55,16 @@ async function libraryNodeHref(page: Page): Promise<string> {
   return href as string;
 }
 
+// The development seed has no Collections; collection and playlist detail read this one.
+const FIXTURE_COLLECTION = {
+  id: "collection-fixture",
+  libraryID: "library-fixture",
+  name: "Fixture Collection",
+  sortOrder: 0,
+  memberCount: 0,
+  members: [],
+};
+
 const FIXTURE_ENTITY = {
   id: "entity-fixture",
   kind: "category",
@@ -91,6 +101,26 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       await page.goto("/web/");
       await page.getByRole("button", { name: "See all" }).first().click();
       await expect(page).toHaveURL(/\/seeall\//);
+      return;
+    case "/collections/:libraryId/:collectionId":
+      await routeOperation(page, "Collections", { data: { collections: [FIXTURE_COLLECTION] } });
+      await routeOperation(page, "CollectionItems", { data: { sourceItems: [] } });
+      await page.goto(`/web/collections/${FIXTURE_COLLECTION.libraryID}/${FIXTURE_COLLECTION.id}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: FIXTURE_COLLECTION.name }),
+      ).toBeVisible();
+      return;
+    case "/playlists/:playlistId":
+      await routeOperation(page, "Collections", { data: { collections: [FIXTURE_COLLECTION] } });
+      await page.goto(`/web/playlists/${FIXTURE_COLLECTION.id}`);
+      await expect(
+        page.getByRole("heading", { level: 1, name: FIXTURE_COLLECTION.name }),
+      ).toBeVisible();
+      return;
+    case "/manage/items/:mediaID":
+      await page.goto("/web/manage/items/media-alpha");
+      // The editor's Details section renders only once the seeded Media has loaded.
+      await expect(page.getByRole("heading", { level: 3, name: "Details" })).toBeVisible();
       return;
     case "/watch/:mediaId":
       await page.goto("/web/watch/media-alpha");
