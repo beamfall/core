@@ -215,7 +215,11 @@ func checkScanRootReadable(root string) error {
 
 // presentFilesUnderRoot counts the library's present files under the scan
 // root and how many of them this scan has not refreshed (the rows the missing
-// pass would flip), using the same millisecond cut as the store.
+// pass would flip), using the same millisecond cut as the store. Unrefreshed
+// rows that are local artwork sidecars, catalogued before CORE-1708, are left
+// out of both counts: the walk skips them on purpose, so they say nothing about
+// the root's health, and counting them would let a library with more artwork
+// than media trip the guard on every rescan and never drop them.
 func (s *scanWalkState) presentFilesUnderRoot(scanStarted time.Time) (present, stale int, err error) {
 	root := filepath.Clean(s.req.Root)
 	prefix := root + string(filepath.Separator)
@@ -224,8 +228,12 @@ func (s *scanWalkState) presentFilesUnderRoot(scanStarted time.Time) (present, s
 		if file.Path != root && !strings.HasPrefix(file.Path, prefix) {
 			return nil
 		}
+		unseen := file.LastSeenAt.IsZero() || file.LastSeenAt.UnixMilli() < cutoff
+		if unseen && isLocalArtworkSidecar(file.Path) {
+			return nil
+		}
 		present++
-		if file.LastSeenAt.IsZero() || file.LastSeenAt.UnixMilli() < cutoff {
+		if unseen {
 			stale++
 		}
 		return nil

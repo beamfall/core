@@ -157,3 +157,49 @@ func TestIsLocalArtworkSidecar(t *testing.T) {
 		}
 	}
 }
+
+// TestRescanDropsArtworkSidecarsThatOutnumberMedia keeps the CORE-0737
+// missing-ratio guard from pinning artwork an older scan catalogued: with
+// twice as many sidecar rows as media files, the rescan still marks every
+// sidecar missing, keeps every clip and logs no guard warning.
+func TestRescanDropsArtworkSidecarsThatOutnumberMedia(t *testing.T) {
+	// feature:scan-pipeline
+	root, st, clips := seedScannedLibrary(t, 10)
+	var sidecars []string
+	for _, clip := range clips {
+		stem := strings.TrimSuffix(clip, filepath.Ext(clip))
+		for _, name := range []string{"poster", "fanart"} {
+			path := stem + "-" + name + ".jpg"
+			writeScanFile(t, root, filepath.Base(path), jpegBytes(filepath.Base(path)))
+			fingerprint, err := store.HashMediaFileContent(path)
+			if err != nil {
+				t.Fatalf("hashing %s: %v", path, err)
+			}
+			if _, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+				LibraryID:          "library-local",
+				Path:               path,
+				Title:              titleFromPath(path),
+				Container:          containerFromPath(path),
+				Class:              store.MediaClassImage,
+				ContentFingerprint: fingerprint,
+			}); err != nil {
+				t.Fatalf("seeding %s: %v", path, err)
+			}
+			sidecars = append(sidecars, path)
+		}
+	}
+	if got := len(liveScanPaths(t, st)); got != len(clips)+len(sidecars) {
+		t.Fatalf("seeded %d live rows, want %d", got, len(clips)+len(sidecars))
+	}
+	time.Sleep(2 * time.Millisecond)
+	logs := captureScanWarnings(t)
+	if _, err := Scan(context.Background(), st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root}); err != nil {
+		t.Fatalf("rescan: %v", err)
+	}
+	if strings.Contains(logs.String(), "not marking files missing") {
+		t.Fatalf("rescan skipped the missing pass: %q", logs.String())
+	}
+	if got := liveScanPaths(t, st); !slices.Equal(got, clips) {
+		t.Fatalf("live files after rescan = %q, want only the clips %q", got, clips)
+	}
+}
