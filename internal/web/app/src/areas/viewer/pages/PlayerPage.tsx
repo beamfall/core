@@ -356,7 +356,11 @@ function FeaturePlayer() {
     },
     [playItem],
   );
-  const issuedNext = state.info?.next;
+  // The server's next issuance, unless the class filter has excluded it
+  // (CORE-1732): playback-info is not asked again when a learned class changes
+  // the declared next item, so a card queue's issuance of another class stays
+  // on the info document after the queue dropped it.
+  const issuedNext = admissibleNext(state.info?.next, queue, playingClass, learnedClasses);
   const playNext = useMemo(() => {
     if (nextInQueue) return () => goToQueueItem(nextInQueue);
     if (issuedNext?.streams) return () => advanceToNext(issuedNext);
@@ -383,13 +387,13 @@ function FeaturePlayer() {
     videoRef,
     mediaID: mediaId || "",
     after: resolvedPrefs.stillWatchingAfter,
-    next: state.info?.next,
+    next: issuedNext,
     enabled: !isAudio,
     onContinue: advanceToNext,
   });
   const upNext = useUpNext({
     videoRef,
-    next: isAudio || stillWatching.armed || stillWatching.prompting ? null : state.info?.next,
+    next: isAudio || stillWatching.armed || stillWatching.prompting ? null : issuedNext,
     onAdvance: advanceToNext,
     onAutoAdvance: (next) => noteAutoAdvance(next.mediaID),
   });
@@ -711,6 +715,22 @@ function FeaturePlayer() {
       )}
     </main>
   );
+}
+
+// A card queue keeps to the playing item's class (CORE-1490), so an issued
+// next item of another class is not played, whether the issuance or a later
+// playback-info read reported that class. Without a card queue the server's
+// pick stands.
+function admissibleNext(
+  next: PlaybackNext | null | undefined,
+  queue: readonly PlayQueueItem[] | undefined,
+  playingClass: string | undefined,
+  learnedClasses: Readonly<Record<string, string>>,
+): PlaybackNext | undefined {
+  if (!next) return undefined;
+  if (!queue || !playingClass) return next;
+  const nextClass = next.mediaClass || learnedClasses[next.mediaID];
+  return nextClass && nextClass !== playingClass ? undefined : next;
 }
 
 // undefined when the link names no position, so playback resumes from saved

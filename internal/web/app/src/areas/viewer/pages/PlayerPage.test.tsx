@@ -440,6 +440,59 @@ describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
   });
 
+  it("never auto-advances into an issued next the learned class removed (CORE-1732)", async () => {
+    // An unclassified queue of a track then a video: playback-info issues the
+    // video as next (with streams) before its class is known.
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "audio",
+          next: {
+            mediaID: "media-v1",
+            mediaClass: "video",
+            streams: [{ kind: "direct-play", url: "/api/media/v1" }],
+          },
+        } as PlayerState["info"],
+      }),
+      {
+        title: "Alpha",
+        queue: [
+          { id: "media-alpha", title: "Alpha" },
+          { id: "media-v1", title: "Film" },
+        ],
+        queueIdentity: "viewer-1",
+      },
+    );
+    // Learning the video's class leaves the track alone in its queue.
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[3]).toBe(""));
+    expect(lastTransportProps()?.onNextInQueue).toBeUndefined();
+
+    fireEvent.ended(stageVideo());
+    await act(async () => {});
+    expect(lastPlayedID()).toBe("media-alpha");
+    expect(vi.mocked(usePlayer).mock.calls.some((call) => call[0] === "media-v1")).toBe(false);
+  });
+
+  it("still advances into an issued next of the playing class without a card queue", async () => {
+    renderPlayer(
+      playerState({
+        phase: "playing",
+        info: {
+          mediaClass: "audio",
+          next: {
+            mediaID: "media-t2",
+            mediaClass: "audio",
+            streams: [{ kind: "direct-play", url: "/api/media/t2" }],
+          },
+        } as PlayerState["info"],
+      }),
+      { title: "Alpha" },
+    );
+    fireEvent.ended(stageVideo());
+    await waitFor(() => expect(lastPlayedID()).toBe("media-t2"));
+  });
+
   it("shows the audio stage while loading when the queue entry is a track", () => {
     renderPlayer(playerState({ phase: "loading" }), {
       title: "Alpha",
