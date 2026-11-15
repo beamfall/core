@@ -1,11 +1,11 @@
 # Console qBittorrent ingest connection and outcomes — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:aebd45d90840183e184200d63458ba48 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:119; symbol: QB\_OUTCOME; span SHA256: 974482f2a9553d3517a2b9ec34f3668717f270709c24d1e6ee63eeada0c060da.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:162; symbol: QB\_OUTCOME; span SHA256: 974482f2a9553d3517a2b9ec34f3668717f270709c24d1e6ee63eeada0c060da.
 
 ```mermaid
 sequenceDiagram
@@ -13,16 +13,16 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 08a07f686f48143f3c5a294496874098
-    Note over S,U: Source contains call useT at line 442 - order unresolved
-    Note over S,U: Source contains call useAsync at line 443 - order unresolved
-    Note over S,U: Source contains call refresh at line 452 - order unresolved
-    Note over S,U: Source contains call t at line 454 - order unresolved
-    Note over S,U: Source contains call t at line 469 - order unresolved
-    Note over S,U: Source contains call t at line 470 - order unresolved
-    Note over S,U: Source contains call map at line 473 - order unresolved
-    Note over S,U: Source contains call t at line 482 - order unresolved
-    Note over S,U: Source contains call t at line 485 - order unresolved
-    Note over S,U: Source contains call t at line 486 - order unresolved
-    Note over S,U: Source contains call map at line 489 - order unresolved
-    Note over S,U: Source contains call t at line 494 - order unresolved
+    Note over S,U: Source contains call useT at line 654 - order unresolved
+    Note over S,U: Source contains call useAsync at line 655 - order unresolved
+    Note over S,U: Source contains call refresh at line 665 - order unresolved
+    Note over S,U: Source contains call t at line 667 - order unresolved
+    Note over S,U: Source contains call t at line 682 - order unresolved
+    Note over S,U: Source contains call t at line 683 - order unresolved
+    Note over S,U: Source contains call map at line 686 - order unresolved
+    Note over S,U: Source contains call t at line 695 - order unresolved
+    Note over S,U: Source contains call t at line 698 - order unresolved
+    Note over S,U: Source contains call t at line 699 - order unresolved
+    Note over S,U: Source contains call map at line 702 - order unresolved
+    Note over S,U: Source contains call t at line 707 - order unresolved
 ```

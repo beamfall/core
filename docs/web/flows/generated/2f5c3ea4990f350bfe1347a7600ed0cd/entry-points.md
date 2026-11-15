@@ -1,11 +1,11 @@
 # Setup: choose sign\-in security mode and create the owner Profile — entry-points
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:43eac2daa98dfdd6da4384369e3f8124 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:113; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:131; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
 
 <!-- flowdocs:paragraph:4e72fcab1861f7b586b09e9a66f5a9bf -->
 Declared entry point: source declares bootstrapSetup; entry dispatch and callers are unresolved\.

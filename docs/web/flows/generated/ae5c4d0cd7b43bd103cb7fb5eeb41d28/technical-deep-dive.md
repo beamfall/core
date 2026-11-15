@@ -1,16 +1,16 @@
 # Admin Session unlock gate \(admin password\) reused by Console — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:25b4d224ac5aa3cd6563469a65a8b480 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:36; symbol: AdminSessionGate; span SHA256: 1c57e2944272208cfdc6a8b847b66f625611ef933a795bad19af3022fb47da32.
+Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:43; symbol: AdminSessionGate; span SHA256: 1c57e2944272208cfdc6a8b847b66f625611ef933a795bad19af3022fb47da32.
 
 <!-- flowdocs:paragraph:5e629913d7784394c16d9d2df5300e0f -->
 Declared member: source declares AdminSessionRenderProps; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:31; symbol: AdminSessionRenderProps; span SHA256: 3d7dd1e0225ffa854f2645406630879a3a222e0da923aa584904746f8c0e8cee.
+Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:38; symbol: AdminSessionRenderProps; span SHA256: 3d7dd1e0225ffa854f2645406630879a3a222e0da923aa584904746f8c0e8cee.
 
 <!-- flowdocs:paragraph:e70d67cf5fc9d26c78ecf22c6445a3b8 -->
 Declared member: source declares ADMIN\_SESSION\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -60,15 +60,15 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:63; symbol: verifyAdminSession
 <!-- flowdocs:paragraph:a4a82ae91435a5934cfceb672f115151 -->
 Declared member: source declares lock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:78; symbol: lock; span SHA256: 06677a5cdaf2d22c49d102127a84a7af7b9f39705c9c620d78175a283c8d3abf.
+Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:85; symbol: lock; span SHA256: 06677a5cdaf2d22c49d102127a84a7af7b9f39705c9c620d78175a283c8d3abf.
 
 <!-- flowdocs:paragraph:2d99ee946585793f823c046f3f2e5533 -->
 Declared member: source declares onUnlock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:88; symbol: onUnlock; span SHA256: 1af32882afea6cb06eb460caef60de67db199292a98eebee2eda75a57825f43b.
+Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:95; symbol: onUnlock; span SHA256: 1af32882afea6cb06eb460caef60de67db199292a98eebee2eda75a57825f43b.
 
 <!-- flowdocs:paragraph:0ddf713c0dd54196d666353ae6587aad -->
 Declared member: source declares refresh; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:64; symbol: refresh; span SHA256: 909277901cb82a2cc4d8d523b1d3b2413716066348eff2836cf39ff1c128bb09.
+Source: internal/web/app/src/areas/enroll/AdminSessionGate\.tsx:71; symbol: refresh; span SHA256: 909277901cb82a2cc4d8d523b1d3b2413716066348eff2836cf39ff1c128bb09.
 

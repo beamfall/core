@@ -1,6 +1,6 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — exceptions
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1d2bea13f9340091de9b2f2d0418f40b -->
 Error reachability, rescue behavior and completeness are unresolved\.
@@ -25,7 +25,7 @@ Source: internal/web/app/src/lib/compat\.ts:124; symbol: ; span SHA256: a3a5b68a
 <!-- flowdocs:paragraph:182086a83b0876c8bd0d2a6f60a1b56c -->
 Source contains a throw statement; runtime reachability is unresolved\.
 
-Source: internal/web/app/src/lib/register\.tsx:46; symbol: ; span SHA256: 0529056b41530662a78fc5213019a6fa7ba5b590a1ac0d7b478af7a97ef735c3.
+Source: internal/web/app/src/lib/register\.tsx:147; symbol: ; span SHA256: 0529056b41530662a78fc5213019a6fa7ba5b590a1ac0d7b478af7a97ef735c3.
 
 <!-- flowdocs:paragraph:620e89dda93127cba44e4852877901e0 -->
 Source contains a throw statement; runtime reachability is unresolved\.

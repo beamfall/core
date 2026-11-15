@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fad205a35a982626c5b6b92999240d7d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -17,9 +17,11 @@ sequenceDiagram
     Note over S,U: Source contains call useState in internal/web/app/src/areas/console/ConfirmButton.tsx at line 45 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/console/ConfirmButton.tsx at line 46 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/areas/console/ConfirmButton.tsx at line 49 - order unresolved
-    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/Section.tsx at line 20 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 25 - order unresolved
-    Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 26 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/Section.tsx at line 27 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 32 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 33 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 45 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/Section.tsx at line 46 - order unresolved
     Note over S,U: Source contains call any in internal/web/app/src/areas/console/adminEpoch.ts at line 38 - order unresolved
     Note over S,U: Source contains call Set in internal/web/app/src/areas/console/index.tsx at line 405 - order unresolved
     Note over S,U: Source contains call useRegister in internal/web/app/src/areas/console/index.tsx at line 495 - order unresolved

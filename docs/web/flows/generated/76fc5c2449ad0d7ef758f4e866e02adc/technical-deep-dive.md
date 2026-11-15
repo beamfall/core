@@ -1,46 +1,56 @@
 # Player audio and subtitle tracks, subtitle styling — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a0e801acdf2855edc648f556d5668f3f -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:440; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:450; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
 
 <!-- flowdocs:paragraph:9fa6bb87061e8aee6fa80b9adcbc5e92 -->
 Declared member: source declares TrackMenuLabels; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:440; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:450; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
 
 <!-- flowdocs:paragraph:94062dfc3d7746a111bfbbfd5dab74b7 -->
 Declared member: source declares TrackMenuOption; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:420; symbol: TrackMenuOption; span SHA256: 42967b6be9a8784c56639b0163ac3256c26b60598a43d689a6d5584675391346.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:430; symbol: TrackMenuOption; span SHA256: 42967b6be9a8784c56639b0163ac3256c26b60598a43d689a6d5584675391346.
 
 <!-- flowdocs:paragraph:fba8100184d402305afeb29384dbc24a -->
 Declared member: source declares TrackMenuSources; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:433; symbol: TrackMenuSources; span SHA256: 69db7970e0af7d1c63535da09ef4a2574a20e2a8f1d23ab999a1cd2bbaed02fd.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:443; symbol: TrackMenuSources; span SHA256: 69db7970e0af7d1c63535da09ef4a2574a20e2a8f1d23ab999a1cd2bbaed02fd.
 
 <!-- flowdocs:paragraph:f882ca346d43ed3c50d43fd2eb642601 -->
 Declared member: source declares TrackSource; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:428; symbol: TrackSource; span SHA256: 6e9d54d1656313b3bc105e873f6244a57d422ada2d5b040bf608869474d2f684.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:438; symbol: TrackSource; span SHA256: 6e9d54d1656313b3bc105e873f6244a57d422ada2d5b040bf608869474d2f684.
 
 <!-- flowdocs:paragraph:8e7c313224ecb3a962a7f288cc4de63c -->
 Declared member: source declares buildTrackMenuModel; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:466; symbol: buildTrackMenuModel; span SHA256: 08ad1dc2bca1f40d9cee935165267b7cd02908df2a1f69fc208938be66ebbd1a.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:476; symbol: buildTrackMenuModel; span SHA256: 08ad1dc2bca1f40d9cee935165267b7cd02908df2a1f69fc208938be66ebbd1a.
 
 <!-- flowdocs:paragraph:448478d3f526005f8329fe5c914ab5ef -->
 Declared member: source declares pickTrackSource; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:448; symbol: pickTrackSource; span SHA256: 4e211b58d74d3f8f12696b30b15183377334a03676ddccc35c31eade974e272f.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:458; symbol: pickTrackSource; span SHA256: 4e211b58d74d3f8f12696b30b15183377334a03676ddccc35c31eade974e272f.
+
+<!-- flowdocs:paragraph:a38504abd628b6b4e90ecbe9dabfef11 -->
+Declared member: source declares SUBTITLE\_BACKGROUNDS; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/subtitleAppearance\.ts:25; symbol: SUBTITLE\_BACKGROUNDS; span SHA256: bb81abbba2751883f7865e9b45bc259174475706dd586dca52fcdf98ca584f08.
+
+<!-- flowdocs:paragraph:ef68434e22bc918f687ed96d1e76010e -->
+Declared member: source declares SUBTITLE\_SIZES; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/subtitleAppearance\.ts:24; symbol: SUBTITLE\_SIZES; span SHA256: eb2376ed50a08d9486513bccbe1c23da21c3f3f3bdc42e8cb38b847c1bd912db.
 
 <!-- flowdocs:paragraph:ee94d85d3e423d9f1002f08571645207 -->
 Declared member: source declares SubtitleStylePanel; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/player/SubtitleStylePanel\.tsx:69; symbol: SubtitleStylePanel; span SHA256: 6b242bf5cb5a8a7b7ec61d23db20e358bcd24dc9ae9e76c946b50d8f67f0e3a5.
+Source: internal/web/app/src/areas/viewer/player/SubtitleStylePanel\.tsx:66; symbol: SubtitleStylePanel; span SHA256: 6b242bf5cb5a8a7b7ec61d23db20e358bcd24dc9ae9e76c946b50d8f67f0e3a5.
 
 <!-- flowdocs:paragraph:207a7635d56ec7ec32cab75a85721210 -->
 Declared member: source declares AudioTrackLike; membership is caller\-declared, not runtime evidence\.
@@ -87,6 +97,11 @@ Declared member: source declares CueWithBase; membership is caller\-declared, no
 
 Source: internal/web/app/src/areas/viewer/player/useSubtitleStyling\.ts:17; symbol: CueWithBase; span SHA256: 77d9ae3c25f0872c9e88ad43043ba7acd283e8f55be06304173a0d93663c5c84.
 
+<!-- flowdocs:paragraph:72fe5286c3344959e28dfd8f9dd70780 -->
+Declared member: source declares SubtitleAppearance; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/lib/subtitleAppearance\.ts:53; symbol: SubtitleAppearance; span SHA256: d330c7d9a0ed354ecb9933df323a96d12556f0e53ef9076dd0f79f2517d58335.
+
 <!-- flowdocs:paragraph:5786fbe0e3680e547cded5b4bbfd3b31 -->
 Declared member: source declares useSubtitleStyling; membership is caller\-declared, not runtime evidence\.
 
@@ -95,7 +110,7 @@ Source: internal/web/app/src/areas/viewer/player/useSubtitleStyling\.ts:22; symb
 <!-- flowdocs:paragraph:ec4373a60b78a44cf1f425f46339af12 -->
 Declared member: source declares option; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:475; symbol: option; span SHA256: bc341488196a366140d66c39e0d63f144171fbb416fcc26ada0e935e84726d1b.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:485; symbol: option; span SHA256: bc341488196a366140d66c39e0d63f144171fbb416fcc26ada0e935e84726d1b.
 
 <!-- flowdocs:paragraph:f2be6db00449352815e342f7f60e1f9d -->
 Declared member: source declares nudge; membership is caller\-declared, not runtime evidence\.

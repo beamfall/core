@@ -1,6 +1,6 @@
 # Player up\-next countdown and play queue navigation — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d3c5a539ef601cb9f5c3f7c7a71d80a2 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -85,7 +85,7 @@ Source: internal/web/app/src/areas/viewer/lib/playQueue\.ts:54; symbol: startPla
 <!-- flowdocs:paragraph:9aac4fdb9f5f756a5038f9ce74c958a4 -->
 Declared member: source declares shouldShowUpNext; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:371; symbol: shouldShowUpNext; span SHA256: 2c57f0680e306e2be448ebb229acd11cc6cb381b084f8e37d0b2c1b8b9952efe.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:381; symbol: shouldShowUpNext; span SHA256: 2c57f0680e306e2be448ebb229acd11cc6cb381b084f8e37d0b2c1b8b9952efe.
 
 <!-- flowdocs:paragraph:06013216d06cb3c6b293836163724a06 -->
 Declared member: source declares MAX\_QUEUE; membership is caller\-declared, not runtime evidence\.

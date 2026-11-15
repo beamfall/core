@@ -1,11 +1,11 @@
 # Setup: pick a library type and folder, create the first Library and scan — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9c4b31b78600baf2f03fad35648f8643 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:18; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:19; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
 
 ```mermaid
 sequenceDiagram
@@ -13,21 +13,21 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 0e9508167e84dcc4aa79ce4d933e508f
-    Note over S,U: Source contains call breadcrumbs in internal/web/app/src/areas/setup/FolderPicker.tsx at line 56 - order unresolved
-    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/FolderPicker.tsx at line 57 - order unresolved
-    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/FolderPicker.tsx at line 61 - order unresolved
-    Note over S,U: Source contains call focus in internal/web/app/src/areas/setup/FolderPicker.tsx at line 64 - order unresolved
-    Note over S,U: Source contains call preventDefault in internal/web/app/src/areas/setup/FolderPicker.tsx at line 72 - order unresolved
-    Note over S,U: Source contains call stopPropagation in internal/web/app/src/areas/setup/FolderPicker.tsx at line 73 - order unresolved
-    Note over S,U: Source contains call onClose in internal/web/app/src/areas/setup/FolderPicker.tsx at line 74 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/setup/FolderPicker.tsx at line 80 - order unresolved
-    Note over S,U: Source contains call onOpenFolder in internal/web/app/src/areas/setup/FolderPicker.tsx at line 95 - order unresolved
-    Note over S,U: Source contains call cn in internal/web/app/src/areas/setup/FolderPicker.tsx at line 123 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/areas/setup/FolderPicker.tsx at line 131 - order unresolved
-    Note over S,U: Source contains call onOpenFolder in internal/web/app/src/areas/setup/FolderPicker.tsx at line 137 - order unresolved
-    Note over S,U: Source contains call split in internal/web/app/src/areas/setup/FolderPicker.tsx at line 28 - order unresolved
-    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/FolderPicker.tsx at line 28 - order unresolved
-    Note over S,U: Source contains call push in internal/web/app/src/areas/setup/FolderPicker.tsx at line 32 - order unresolved
+    Note over S,U: Source contains call breadcrumbs in internal/web/app/src/areas/setup/FolderPicker.tsx at line 57 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/FolderPicker.tsx at line 58 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/FolderPicker.tsx at line 62 - order unresolved
+    Note over S,U: Source contains call focus in internal/web/app/src/areas/setup/FolderPicker.tsx at line 65 - order unresolved
+    Note over S,U: Source contains call preventDefault in internal/web/app/src/areas/setup/FolderPicker.tsx at line 73 - order unresolved
+    Note over S,U: Source contains call stopPropagation in internal/web/app/src/areas/setup/FolderPicker.tsx at line 74 - order unresolved
+    Note over S,U: Source contains call onClose in internal/web/app/src/areas/setup/FolderPicker.tsx at line 75 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/setup/FolderPicker.tsx at line 81 - order unresolved
+    Note over S,U: Source contains call onOpenFolder in internal/web/app/src/areas/setup/FolderPicker.tsx at line 96 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/areas/setup/FolderPicker.tsx at line 124 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/setup/FolderPicker.tsx at line 132 - order unresolved
+    Note over S,U: Source contains call onOpenFolder in internal/web/app/src/areas/setup/FolderPicker.tsx at line 138 - order unresolved
+    Note over S,U: Source contains call split in internal/web/app/src/areas/setup/FolderPicker.tsx at line 29 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/FolderPicker.tsx at line 29 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/setup/FolderPicker.tsx at line 33 - order unresolved
     Note over S,U: Source contains call constructor in internal/web/app/src/areas/setup/orchestrate.ts at line 68 - order unresolved
     Note over S,U: Source contains call super in internal/web/app/src/areas/setup/orchestrate.ts at line 69 - order unresolved
     Note over S,U: Source contains call createLibrary in internal/web/app/src/areas/setup/orchestrate.ts at line 137 - order unresolved

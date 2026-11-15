@@ -1,6 +1,6 @@
 # Player up\-next countdown and play queue navigation — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b5b269684b9427142beb259b4bb203d8 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -29,8 +29,8 @@ sequenceDiagram
     Note over S,U: Source contains call activeQueue in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 161 - order unresolved
     Note over S,U: Source contains call positionOf in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 163 - order unresolved
     Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/playQueue.ts at line 166 - order unresolved
-    Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 384 - order unresolved
-    Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 388 - order unresolved
+    Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 394 - order unresolved
+    Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 398 - order unresolved
     Note over S,U: Source contains call isArray in internal/web/app/src/areas/viewer/lib/watchQueue.ts at line 135 - order unresolved
     Note over S,U: Source contains call filter in internal/web/app/src/areas/viewer/lib/watchQueue.ts at line 137 - order unresolved
     Note over S,U: Source contains call map in internal/web/app/src/areas/viewer/lib/watchQueue.ts at line 144 - order unresolved

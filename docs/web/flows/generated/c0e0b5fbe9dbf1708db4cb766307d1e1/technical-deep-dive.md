@@ -1,6 +1,6 @@
 # Manage operations: jobs, schedules, folder watcher — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c1de3dce91b7f396971bee242a7ee11a -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -65,7 +65,7 @@ Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:203; symbol:
 <!-- flowdocs:paragraph:834af99aadffbd87c233776957b3aa28 -->
 Declared member: source declares SchedulesSection; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:131; symbol: SchedulesSection; span SHA256: cb70d11a533afb5c1ea066e2025d18de18c97c3f6ca9a26a9e4333d6564b5ba3.
+Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:130; symbol: SchedulesSection; span SHA256: cb70d11a533afb5c1ea066e2025d18de18c97c3f6ca9a26a9e4333d6564b5ba3.
 
 <!-- flowdocs:paragraph:78c2f2db22ab54f3bf02679ed6a74237 -->
 Declared member: source declares WATCHER\_STATE\_LABELS; membership is caller\-declared, not runtime evidence\.
@@ -130,7 +130,7 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:412; symbol: setScheduleTrig
 <!-- flowdocs:paragraph:8d3e7355a03f7df5436fed18b2e6c21c -->
 Declared member: source declares onToggle; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:149; symbol: onToggle; span SHA256: b33265846093e8829ec114495ee710a728fd91273644f686468b753584b2619c.
+Source: internal/web/app/src/areas/manage/pages/OperationsPage\.tsx:148; symbol: onToggle; span SHA256: b33265846093e8829ec114495ee710a728fd91273644f686468b753584b2619c.
 
 <!-- flowdocs:paragraph:5cf52845ff87d578fbd6012d770253e1 -->
 Declared member: source declares setField; membership is caller\-declared, not runtime evidence\.

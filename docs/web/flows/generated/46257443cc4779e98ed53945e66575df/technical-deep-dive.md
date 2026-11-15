@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0dba614742002a4ca6c0bbcbdd7b4dda -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -145,7 +145,7 @@ Source: internal/web/app/src/areas/viewer/lib/playback\.ts:168; symbol: PreviewI
 <!-- flowdocs:paragraph:784da6a45ec99353c1f5f38933686272 -->
 Declared member: source declares UNAVAILABLE\_REASONS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:264; symbol: UNAVAILABLE\_REASONS; span SHA256: f8a9b6aae94314387dbc2fc5e8ccb9db4c8b8a829cf54c70f320c2f1e5129c80.
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:265; symbol: UNAVAILABLE\_REASONS; span SHA256: f8a9b6aae94314387dbc2fc5e8ccb9db4c8b8a829cf54c70f320c2f1e5129c80.
 
 <!-- flowdocs:paragraph:1e71e2c086c009732769493e34290c41 -->
 Declared member: source declares UnavailableReasonMessages; membership is caller\-declared, not runtime evidence\.
@@ -160,7 +160,7 @@ Source: internal/web/app/src/areas/viewer/lib/playback\.ts:197; symbol: fetchPla
 <!-- flowdocs:paragraph:241e45fe5ca952b033ca9ce22af4e9ec -->
 Declared member: source declares fetchPreviewInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:315; symbol: fetchPreviewInfo; span SHA256: 5aa44a0568d8f96574af98fb2de8cf99a25c0bbce319896cae82dd4e725f794e.
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:317; symbol: fetchPreviewInfo; span SHA256: 5aa44a0568d8f96574af98fb2de8cf99a25c0bbce319896cae82dd4e725f794e.
 
 <!-- flowdocs:paragraph:6df5973afa8f11138911ddd4c3b171e3 -->
 Declared member: source declares hlsStreamOf; membership is caller\-declared, not runtime evidence\.
@@ -175,32 +175,32 @@ Source: internal/web/app/src/areas/viewer/lib/playback\.ts:179; symbol: isReveal
 <!-- flowdocs:paragraph:d24a248165adb41e6634d7f08b44cde1 -->
 Declared member: source declares serverErrorReason; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:305; symbol: serverErrorReason; span SHA256: bd31be6a1600e66f3d7f23a6a844d4df85626644dbcb66ed7bbe4b83958611eb.
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:307; symbol: serverErrorReason; span SHA256: bd31be6a1600e66f3d7f23a6a844d4df85626644dbcb66ed7bbe4b83958611eb.
 
 <!-- flowdocs:paragraph:18e1f2102a575077fa6b56f0363439b4 -->
 Declared member: source declares unavailableReason; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:282; symbol: unavailableReason; span SHA256: 32c5f269dfa1e2feeb7137087defdc7a2d993600a0f98868f6bb1620677399b3.
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:284; symbol: unavailableReason; span SHA256: 32c5f269dfa1e2feeb7137087defdc7a2d993600a0f98868f6bb1620677399b3.
 
 <!-- flowdocs:paragraph:ed6be69663bb0ef8e0a57dddc8c02f81 -->
 Declared member: source declares unavailableReasonMessage; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/playback\.ts:293; symbol: unavailableReasonMessage; span SHA256: ddba225ff0746418a72a65150b0a718f786ddb598a7a9899d43df2e6788331d6.
+Source: internal/web/app/src/areas/viewer/lib/playback\.ts:295; symbol: unavailableReasonMessage; span SHA256: ddba225ff0746418a72a65150b0a718f786ddb598a7a9899d43df2e6788331d6.
 
 <!-- flowdocs:paragraph:d9a8019de224eab8406935789675cd8b -->
 Declared member: source declares PlaybackStreamLike; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:413; symbol: PlaybackStreamLike; span SHA256: f4565c3c232d59c2c59ffe6e8bbdd32db1f61d0ea6d217711e3bab0c4a6b27fd.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:423; symbol: PlaybackStreamLike; span SHA256: f4565c3c232d59c2c59ffe6e8bbdd32db1f61d0ea6d217711e3bab0c4a6b27fd.
 
 <!-- flowdocs:paragraph:0d3c0a2d86c9d1d59cb078adc91f18df -->
 Declared member: source declares playbackDecision; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:403; symbol: playbackDecision; span SHA256: 33a5a732a700cfdcedf0b8c7c56a626c21e564f75372d20fc0d7de516b29f993.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:413; symbol: playbackDecision; span SHA256: 33a5a732a700cfdcedf0b8c7c56a626c21e564f75372d20fc0d7de516b29f993.
 
 <!-- flowdocs:paragraph:85a5259cc453235768891f5c6c606cfd -->
 Declared member: source declares resumePositionFromInfo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:397; symbol: resumePositionFromInfo; span SHA256: 0f4ee24b755d5bea0f94877f581655c0112522feb31910ef755e5222cfc4cbd5.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:407; symbol: resumePositionFromInfo; span SHA256: 0f4ee24b755d5bea0f94877f581655c0112522feb31910ef755e5222cfc4cbd5.
 
 <!-- flowdocs:paragraph:57117faf501afb34ea5ffa1fcc027d99 -->
 Declared member: source declares HLS\_FRAG\_LOAD\_ERROR; membership is caller\-declared, not runtime evidence\.
@@ -311,6 +311,11 @@ Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:386; symbol: STRE
 Declared member: source declares SwitchResult; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/viewer/player/usePlayer\.ts:344; symbol: SwitchResult; span SHA256: 40ef3d399a9e06726abc902dea0dadcada6cdab821142e5cb586353cb559cf55.
+
+<!-- flowdocs:paragraph:81917910a4e81c0386ed9d68ceb438c7 -->
+Declared member: source declares TrackPreferencePolicy; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/viewer/player/streamTracks\.ts:50; symbol: TrackPreferencePolicy; span SHA256: d93691a0a96503dd40d8f5caab19877a04aa3aa9f7a62c7f6ddc3161f0b33ccb.
 
 <!-- flowdocs:paragraph:daa19b8fe82d10db60838e9f1a615c71 -->
 Declared member: source declares applyTrackPreferences; membership is caller\-declared, not runtime evidence\.

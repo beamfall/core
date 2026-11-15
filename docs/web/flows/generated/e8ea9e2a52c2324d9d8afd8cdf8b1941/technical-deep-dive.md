@@ -1,6 +1,6 @@
 # Viewer search page: modes \(text, semantic, recommend\) and grouped results — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:fb268ba5fc5641d6a895e78705802a11 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -60,7 +60,7 @@ Source: internal/web/app/src/areas/viewer/lib/searchRows\.ts:25; symbol: localiz
 <!-- flowdocs:paragraph:6d790c34b79ea9178aef69a9f71c85f8 -->
 Declared member: source declares searchCountLabel; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/lib/searchRows\.ts:103; symbol: searchCountLabel; span SHA256: 922ab7534653c379f89f77c46029d3a40c870ca276ec7f802ded6dd5ee6ae308.
+Source: internal/web/app/src/areas/viewer/lib/searchRows\.ts:101; symbol: searchCountLabel; span SHA256: 922ab7534653c379f89f77c46029d3a40c870ca276ec7f802ded6dd5ee6ae308.
 
 <!-- flowdocs:paragraph:265a6b0fdcb36e0a38ae52d26c5cfa0e -->
 Declared member: source declares searchPagePath; membership is caller\-declared, not runtime evidence\.
@@ -90,12 +90,12 @@ Source: internal/web/app/src/areas/viewer/lib/searchRows\.ts:42; symbol: searchR
 <!-- flowdocs:paragraph:2cbccd52a57097b8f343d3b515abd04f -->
 Declared member: source declares MODE\_LABEL; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:24; symbol: MODE\_LABEL; span SHA256: f2be0306bddc4a777dce339044aa1cb9ba361da99d93a2b375ee6e193da0dfca.
+Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:26; symbol: MODE\_LABEL; span SHA256: f2be0306bddc4a777dce339044aa1cb9ba361da99d93a2b375ee6e193da0dfca.
 
 <!-- flowdocs:paragraph:7e1a0ae9630ab4e33dbf29a311bd992d -->
 Declared member: source declares SearchEmpty; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:191; symbol: SearchEmpty; span SHA256: f7b022e92842caec2d6f9497ef40319deec1b48aeffc9c1482b3e6102466238b.
+Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:193; symbol: SearchEmpty; span SHA256: f7b022e92842caec2d6f9497ef40319deec1b48aeffc9c1482b3e6102466238b.
 
 <!-- flowdocs:paragraph:a0e8065d562bc294487a64c59ee54fb4 -->
 Declared member: source declares CLIENT\_PREFS\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -120,15 +120,15 @@ Source: internal/web/app/src/lib/graphql/viewer\.ts:266; symbol: fetchSemanticCa
 <!-- flowdocs:paragraph:bb32e7fc3052c9d1c1ee32fd32d96701 -->
 Declared member: source declares clear; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:80; symbol: clear; span SHA256: e21e1e1cbec41def7db16b0e3f8829f446aeb1c1d4a88f8f371a9c2d055e5e6a.
+Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:82; symbol: clear; span SHA256: e21e1e1cbec41def7db16b0e3f8829f446aeb1c1d4a88f8f371a9c2d055e5e6a.
 
 <!-- flowdocs:paragraph:b14a67179c83ad10d4f9f2e22dd6cd28 -->
 Declared member: source declares queue; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:90; symbol: queue; span SHA256: 351f3bcf634ee5894a43a17f048f6fbdaacf3c52566e8558e3e4039189a63c23.
+Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:92; symbol: queue; span SHA256: 351f3bcf634ee5894a43a17f048f6fbdaacf3c52566e8558e3e4039189a63c23.
 
 <!-- flowdocs:paragraph:ff3de23f4a244a8af7e1c95b8f1c4982 -->
 Declared member: source declares setQuery; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:75; symbol: setQuery; span SHA256: bd252e89994ccf5d61d32fbc14c516bbb01fe39368774982c4a5311f42c920ee.
+Source: internal/web/app/src/areas/viewer/pages/SearchPage\.tsx:77; symbol: setQuery; span SHA256: bd252e89994ccf5d61d32fbc14c516bbb01fe39368774982c4a5311f42c920ee.
 

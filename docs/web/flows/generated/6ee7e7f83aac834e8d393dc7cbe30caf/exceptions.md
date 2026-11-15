@@ -1,6 +1,6 @@
 # Server event stream \(/api/events\) with reconnect backoff — exceptions
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:954ab300c84bc5a41adc889b52ca23a9 -->
 Error reachability, rescue behavior and completeness are unresolved\.

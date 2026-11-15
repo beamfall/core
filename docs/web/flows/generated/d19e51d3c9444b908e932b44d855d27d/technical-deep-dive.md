@@ -1,26 +1,41 @@
 # Console libraries: add a library, roots, preview clips, skip detection — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b339e8eea91d08cbbdda27d052e4f8fd -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:455; symbol: Libraries; span SHA256: dcacd18f36956aa52c5168ebf0196dd16fafd6bb483c3909245351f3fcd05dc3.
+Source: internal/web/app/src/areas/console/sections/AddLibrary\.tsx:28; symbol: AddLibrary; span SHA256: ab9e95397d7ea3dbc166cab13fb5e5af59c6450dda53e1165bc373941260ee2f.
+
+<!-- flowdocs:paragraph:61bf0c257d7cbcedf34252c899a66abd -->
+Declared member: source declares AddLibrary; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/AddLibrary\.tsx:28; symbol: AddLibrary; span SHA256: ab9e95397d7ea3dbc166cab13fb5e5af59c6450dda53e1165bc373941260ee2f.
+
+<!-- flowdocs:paragraph:c09a762524390286dd3d15eeb191ec50 -->
+Declared member: source declares CARD; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/areas/console/sections/libraryStyles\.ts:4; symbol: CARD; span SHA256: 8f865116727ff6484bb95e5462188dccaa44c096213258108772e8412bbe746f.
 
 <!-- flowdocs:paragraph:63449bfcd2af54473e45deb360dbfd5a -->
 Declared member: source declares LibraryCard; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:110; symbol: LibraryCard; span SHA256: 0eef856b8120a2f9220360db393e826a75027ce143207e3b633d474ebf8db3cf.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:111; symbol: LibraryCard; span SHA256: 0eef856b8120a2f9220360db393e826a75027ce143207e3b633d474ebf8db3cf.
+
+<!-- flowdocs:paragraph:5ad391efaae3baa47df24ddae8c421f7 -->
+Declared member: source declares libraryTypeOptions; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/libraryTypes\.ts:71; symbol: libraryTypeOptions; span SHA256: cc500eb0feb9df9a9562a04f469fd1912d52b4ed79882f5d55b42ba8c33baa8e.
 
 <!-- flowdocs:paragraph:bcec644aacbc3336bbfd45d77e927b4d -->
 Declared member: source declares SettingRow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:84; symbol: SettingRow; span SHA256: 2a66b2b1b3f7f6b32bd2a1b5ba20c39225d823553ff932b225ae3f7e31ce5f5a.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:85; symbol: SettingRow; span SHA256: 2a66b2b1b3f7f6b32bd2a1b5ba20c39225d823553ff932b225ae3f7e31ce5f5a.
 
 <!-- flowdocs:paragraph:1024a1433910cc25f14e13786526138f -->
 Declared member: source declares lastSegment; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:79; symbol: lastSegment; span SHA256: 905abdd89a542d8fc5d199f30a2cfc0c69da37c54cbd3ab4a34d6a7ade20befb.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:80; symbol: lastSegment; span SHA256: 905abdd89a542d8fc5d199f30a2cfc0c69da37c54cbd3ab4a34d6a7ade20befb.
 
 <!-- flowdocs:paragraph:c6a4c9fe76ecdd0e6c105b776c8bb4b3 -->
 Declared member: source declares CREATE\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.
@@ -125,20 +140,20 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:255; symbol: setSkipDetectio
 <!-- flowdocs:paragraph:65284ab9385cb8652ce0664fbf788bdc -->
 Declared member: source declares loadScanFolders; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:164; symbol: loadScanFolders; span SHA256: ad982cd00c3a0e6acbdaa7d867755ab6ee1ffd1456009f1ff0d0ec22a4e2cf58.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:167; symbol: loadScanFolders; span SHA256: ad982cd00c3a0e6acbdaa7d867755ab6ee1ffd1456009f1ff0d0ec22a4e2cf58.
 
 <!-- flowdocs:paragraph:9ec7892ed7ac4e29915c7d6aebc9e52b -->
 Declared member: source declares refreshLibraries; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:484; symbol: refreshLibraries; span SHA256: e563e00481f6c1171130833731a45d509bb4da0aa2e142283c22810102834fc9.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:504; symbol: refreshLibraries; span SHA256: e563e00481f6c1171130833731a45d509bb4da0aa2e142283c22810102834fc9.
 
 <!-- flowdocs:paragraph:4949808f86911fa8090328976857afc6 -->
 Declared member: source declares saveRoots; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:194; symbol: saveRoots; span SHA256: 89a16fdf30a7aa84e78c56127a14d89fc5899022d47db3385ce76716ff3fc695.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:197; symbol: saveRoots; span SHA256: 89a16fdf30a7aa84e78c56127a14d89fc5899022d47db3385ce76716ff3fc695.
 
 <!-- flowdocs:paragraph:e898cc7f1f06e4f4dfabd37d5ce70ca6 -->
 Declared member: source declares visit; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:173; symbol: visit; span SHA256: eebc3f48b649fd66f887afde26bfaa4193d13227d874a56c5ac25d230510af13.
+Source: internal/web/app/src/areas/console/sections/Libraries\.tsx:176; symbol: visit; span SHA256: eebc3f48b649fd66f887afde26bfaa4193d13227d874a56c5ac25d230510af13.
 

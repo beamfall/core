@@ -1,6 +1,6 @@
 # Unreached code: unmounted modules and GraphQL operations no UI calls — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7e9cb336729240cd551f09192cd9b234 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -35,22 +35,22 @@ Source: internal/web/app/src/areas/console/sections/PlaybackCache\.tsx:20; symbo
 <!-- flowdocs:paragraph:0c52e5a5361d2864c8eefe3c9fe50943 -->
 Declared member: source declares IMPORTER\_PATH; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/MigrationOffer\.tsx:25; symbol: IMPORTER\_PATH; span SHA256: 177111500ca67bd4bdf023263f53951956095043580bc1bffa47a5dc53eb6a5b.
+Source: internal/web/app/src/areas/setup/MigrationOffer\.tsx:26; symbol: IMPORTER\_PATH; span SHA256: 177111500ca67bd4bdf023263f53951956095043580bc1bffa47a5dc53eb6a5b.
 
 <!-- flowdocs:paragraph:2558df1cb5393b33742bcfa81922a9d1 -->
 Declared member: source declares MigrationOffer; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/MigrationOffer\.tsx:27; symbol: MigrationOffer; span SHA256: e9cc236474f4c5a0c4c364e2eeb82705bb0de40a69ac4595534d0b4b050094c2.
+Source: internal/web/app/src/areas/setup/MigrationOffer\.tsx:28; symbol: MigrationOffer; span SHA256: e9cc236474f4c5a0c4c364e2eeb82705bb0de40a69ac4595534d0b4b050094c2.
 
 <!-- flowdocs:paragraph:2aba459fafc98585d6adcab4718b3d49 -->
 Declared member: source declares SET\_RETENTION\_CANDIDATE\_HOLD\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:993; symbol: SET\_RETENTION\_CANDIDATE\_HOLD\_MUTATION; span SHA256: 35e0470531fccee8b7581c346a4df93e24b6bb138f0a4ef4900b65accafae17a.
+Source: internal/web/app/src/lib/graphql/console\.ts:1028; symbol: SET\_RETENTION\_CANDIDATE\_HOLD\_MUTATION; span SHA256: 35e0470531fccee8b7581c346a4df93e24b6bb138f0a4ef4900b65accafae17a.
 
 <!-- flowdocs:paragraph:7c99c67d4bd82235260d6cbebdad68a3 -->
 Declared member: source declares setRetentionCandidateHold; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:1063; symbol: setRetentionCandidateHold; span SHA256: a8b5cf57a30b5a2e02023a8cfcdac3e54f770e9540191f3ad2eb3a23c29af2c8.
+Source: internal/web/app/src/lib/graphql/console\.ts:1098; symbol: setRetentionCandidateHold; span SHA256: a8b5cf57a30b5a2e02023a8cfcdac3e54f770e9540191f3ad2eb3a23c29af2c8.
 
 <!-- flowdocs:paragraph:e1515976e67531ba0a35dca7694168b5 -->
 Declared member: source declares IDENTIFY\_SEARCH\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -85,32 +85,32 @@ Source: internal/web/app/src/lib/graphql/viewer\.ts:222; symbol: search; span SH
 <!-- flowdocs:paragraph:4aad7ee01039639316ea7bc96e898293 -->
 Declared member: source declares EVICT\_PLAYBACK\_CACHE\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:529; symbol: EVICT\_PLAYBACK\_CACHE\_MUTATION; span SHA256: 7d13a9bc5164855523f2fc188944fad8dffaac58913fed2b4f076f5d7e36c5c8.
+Source: internal/web/app/src/lib/graphql/console\.ts:579; symbol: EVICT\_PLAYBACK\_CACHE\_MUTATION; span SHA256: 7d13a9bc5164855523f2fc188944fad8dffaac58913fed2b4f076f5d7e36c5c8.
 
 <!-- flowdocs:paragraph:3a6ad52fb06f7fb1b4ab0dba96677e94 -->
 Declared member: source declares PLAYBACK\_CACHE\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:501; symbol: PLAYBACK\_CACHE\_QUERY; span SHA256: 5b3539d631153ddf6460540bb3e7dad371de6880a4b85f4169851531a923b3d8.
+Source: internal/web/app/src/lib/graphql/console\.ts:551; symbol: PLAYBACK\_CACHE\_QUERY; span SHA256: 5b3539d631153ddf6460540bb3e7dad371de6880a4b85f4169851531a923b3d8.
 
 <!-- flowdocs:paragraph:0927d2bf64146ebf84a00265c7024ce3 -->
 Declared member: source declares PRECOMPUTE\_RENDITIONS\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:514; symbol: PRECOMPUTE\_RENDITIONS\_MUTATION; span SHA256: 5453c36772ff93c6f6686b1ae0695387656a4e8c55b2ec949227380d28ce3fe3.
+Source: internal/web/app/src/lib/graphql/console\.ts:564; symbol: PRECOMPUTE\_RENDITIONS\_MUTATION; span SHA256: 5453c36772ff93c6f6686b1ae0695387656a4e8c55b2ec949227380d28ce3fe3.
 
 <!-- flowdocs:paragraph:71468f9eca9d53ee19ca12cbe37a8676 -->
 Declared member: source declares evictPlaybackRenditionCache; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:533; symbol: evictPlaybackRenditionCache; span SHA256: e0dfb89c9876bc63f3db0885a5dedc24fc2da7961a6ace5110482c2fc2daed8c.
+Source: internal/web/app/src/lib/graphql/console\.ts:583; symbol: evictPlaybackRenditionCache; span SHA256: e0dfb89c9876bc63f3db0885a5dedc24fc2da7961a6ace5110482c2fc2daed8c.
 
 <!-- flowdocs:paragraph:b048ad2f733286d5dc9012479111177c -->
 Declared member: source declares fetchPlaybackCache; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:505; symbol: fetchPlaybackCache; span SHA256: d4fce90959ad5b73cd5a852f992ec63c084788e6eafbc567bf3172715e7435e0.
+Source: internal/web/app/src/lib/graphql/console\.ts:555; symbol: fetchPlaybackCache; span SHA256: d4fce90959ad5b73cd5a852f992ec63c084788e6eafbc567bf3172715e7435e0.
 
 <!-- flowdocs:paragraph:591515ba58f2cb1cd20bbd88894565b2 -->
 Declared member: source declares precomputePlaybackRenditions; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:518; symbol: precomputePlaybackRenditions; span SHA256: 613b6e1bf59075ee265acf897fb82c77a1571385ccc0fa84a63be57b8bf88940.
+Source: internal/web/app/src/lib/graphql/console\.ts:568; symbol: precomputePlaybackRenditions; span SHA256: 613b6e1bf59075ee265acf897fb82c77a1571385ccc0fa84a63be57b8bf88940.
 
 <!-- flowdocs:paragraph:f8862ab0a01fbb3d1ac03d7912e6ce10 -->
 Declared member: source declares IMPORTERS\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -135,5 +135,5 @@ Source: internal/web/app/src/areas/console/sections/PlaybackCache\.tsx:52; symbo
 <!-- flowdocs:paragraph:4d1fa33bed3379410b2d44834fe0864b -->
 Declared member: source declares goToImporter; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/MigrationOffer\.tsx:64; symbol: goToImporter; span SHA256: c4669b9abcb7ff5f7ada62ee594e5752f9e9597cfb79aa9b7f2f41bac39e5be5.
+Source: internal/web/app/src/areas/setup/MigrationOffer\.tsx:65; symbol: goToImporter; span SHA256: c4669b9abcb7ff5f7ada62ee594e5752f9e9597cfb79aa9b7f2f41bac39e5be5.
 

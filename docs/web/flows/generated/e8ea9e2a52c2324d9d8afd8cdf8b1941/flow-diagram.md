@@ -1,6 +1,6 @@
 # Viewer search page: modes \(text, semantic, recommend\) and grouped results — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7869fcca506e4a6b12f352808d0ad882 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -25,27 +25,27 @@ sequenceDiagram
     Note over S,U: Source contains call filter in internal/web/app/src/areas/viewer/lib/searchRows.ts at line 60 - order unresolved
     Note over S,U: Source contains call join in internal/web/app/src/areas/viewer/lib/searchRows.ts at line 60 - order unresolved
     Note over S,U: Source contains call encodeURIComponent in internal/web/app/src/areas/viewer/lib/searchRows.ts at line 88 - order unresolved
-    Note over S,U: Source contains call useI18n in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 43 - order unresolved
-    Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 44 - order unresolved
-    Note over S,U: Source contains call useSearchParams in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 45 - order unresolved
-    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 46 - order unresolved
-    Note over S,U: Source contains call useLiveSearch in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 51 - order unresolved
-    Note over S,U: Source contains call useSearchShortcut in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 52 - order unresolved
-    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 56 - order unresolved
-    Note over S,U: Source contains call allSettled in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 58 - order unresolved
-    Note over S,U: Source contains call fetchSemanticCapability in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 58 - order unresolved
-    Note over S,U: Source contains call fetchClientPrefs in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 58 - order unresolved
-    Note over S,U: Source contains call then in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 58 - order unresolved
-    Note over S,U: Source contains call setCaps in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 60 - order unresolved
-    Note over S,U: Source contains call setPrefs in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 61 - order unresolved
-    Note over S,U: Source contains call availableModes in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 68 - order unresolved
-    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 71 - order unresolved
-    Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 72 - order unresolved
-    Note over S,U: Source contains call setMode in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 72 - order unresolved
-    Note over S,U: Source contains call setQuery in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 81 - order unresolved
-    Note over S,U: Source contains call focus in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 82 - order unresolved
-    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 90 - order unresolved
-    Note over S,U: Source contains call playQueueOf in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 90 - order unresolved
-    Note over S,U: Source contains call flatMap in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 90 - order unresolved
-    Note over S,U: Source contains call setParams in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 77 - order unresolved
+    Note over S,U: Source contains call useI18n in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 45 - order unresolved
+    Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 46 - order unresolved
+    Note over S,U: Source contains call useSearchParams in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 47 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 48 - order unresolved
+    Note over S,U: Source contains call useLiveSearch in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 53 - order unresolved
+    Note over S,U: Source contains call useSearchShortcut in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 54 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 58 - order unresolved
+    Note over S,U: Source contains call allSettled in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 60 - order unresolved
+    Note over S,U: Source contains call fetchSemanticCapability in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 60 - order unresolved
+    Note over S,U: Source contains call fetchClientPrefs in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 60 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 60 - order unresolved
+    Note over S,U: Source contains call setCaps in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 62 - order unresolved
+    Note over S,U: Source contains call setPrefs in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 63 - order unresolved
+    Note over S,U: Source contains call availableModes in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 70 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 73 - order unresolved
+    Note over S,U: Source contains call includes in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 74 - order unresolved
+    Note over S,U: Source contains call setMode in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 74 - order unresolved
+    Note over S,U: Source contains call setQuery in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 83 - order unresolved
+    Note over S,U: Source contains call focus in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 84 - order unresolved
+    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 92 - order unresolved
+    Note over S,U: Source contains call playQueueOf in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 92 - order unresolved
+    Note over S,U: Source contains call flatMap in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 92 - order unresolved
+    Note over S,U: Source contains call setParams in internal/web/app/src/areas/viewer/pages/SearchPage.tsx at line 79 - order unresolved
 ```

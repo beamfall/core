@@ -1,11 +1,11 @@
 # Setup: pick a library type and folder, create the first Library and scan — functional-overview
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:13bb2f19480969b83554b5638aa2bb88 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:18; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:19; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

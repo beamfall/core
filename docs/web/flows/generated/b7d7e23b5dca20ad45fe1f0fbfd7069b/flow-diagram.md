@@ -1,11 +1,11 @@
 # Manage markers: segment edit, bulk delete, trashed markers — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7d953f859a790e0b580890ea7829b735 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:597; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:595; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
 
 ```mermaid
 sequenceDiagram
@@ -13,27 +13,27 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow b7d7e23b5dca20ad45fe1f0fbfd7069b
-    Note over S,U: Source contains call useT at line 606 - order unresolved
-    Note over S,U: Source contains call t at line 616 - order unresolved
-    Note over S,U: Source contains call t at line 621 - order unresolved
-    Note over S,U: Source contains call t at line 622 - order unresolved
-    Note over S,U: Source contains call t at line 625 - order unresolved
-    Note over S,U: Source contains call t at line 630 - order unresolved
-    Note over S,U: Source contains call useT at line 471 - order unresolved
-    Note over S,U: Source contains call useState at line 474 - order unresolved
-    Note over S,U: Source contains call useState at line 475 - order unresolved
-    Note over S,U: Source contains call useT at line 432 - order unresolved
-    Note over S,U: Source contains call t at line 437 - order unresolved
-    Note over S,U: Source contains call t at line 442 - order unresolved
-    Note over S,U: Source contains call t at line 443 - order unresolved
-    Note over S,U: Source contains call t at line 446 - order unresolved
-    Note over S,U: Source contains call t at line 451 - order unresolved
-    Note over S,U: Source contains call useT at line 232 - order unresolved
-    Note over S,U: Source contains call toDraft at line 233 - order unresolved
-    Note over S,U: Source contains call useState at line 234 - order unresolved
-    Note over S,U: Source contains call useEffect at line 238 - order unresolved
-    Note over S,U: Source contains call setDraft at line 239 - order unresolved
-    Note over S,U: Source contains call toDraft at line 239 - order unresolved
+    Note over S,U: Source contains call useT at line 604 - order unresolved
+    Note over S,U: Source contains call t at line 614 - order unresolved
+    Note over S,U: Source contains call t at line 619 - order unresolved
+    Note over S,U: Source contains call t at line 620 - order unresolved
+    Note over S,U: Source contains call t at line 623 - order unresolved
+    Note over S,U: Source contains call t at line 628 - order unresolved
+    Note over S,U: Source contains call useT at line 469 - order unresolved
+    Note over S,U: Source contains call useState at line 472 - order unresolved
+    Note over S,U: Source contains call useState at line 473 - order unresolved
+    Note over S,U: Source contains call useT at line 430 - order unresolved
+    Note over S,U: Source contains call t at line 435 - order unresolved
+    Note over S,U: Source contains call t at line 440 - order unresolved
+    Note over S,U: Source contains call t at line 441 - order unresolved
+    Note over S,U: Source contains call t at line 444 - order unresolved
+    Note over S,U: Source contains call t at line 449 - order unresolved
+    Note over S,U: Source contains call useT at line 230 - order unresolved
+    Note over S,U: Source contains call toDraft at line 231 - order unresolved
+    Note over S,U: Source contains call useState at line 232 - order unresolved
+    Note over S,U: Source contains call useEffect at line 236 - order unresolved
+    Note over S,U: Source contains call setDraft at line 237 - order unresolved
+    Note over S,U: Source contains call toDraft at line 237 - order unresolved
     Note over S,U: Source contains call useT at line 84 - order unresolved
     Note over S,U: Source contains call useState at line 85 - order unresolved
     Note over S,U: Source contains call useState at line 86 - order unresolved
@@ -56,16 +56,16 @@ sequenceDiagram
     Note over S,U: Source contains call setLoaded at line 104 - order unresolved
     Note over S,U: Source contains call setError at line 106 - order unresolved
     Note over S,U: Source contains call t at line 106 - order unresolved
-    Note over S,U: Source contains call useT at line 650 - order unresolved
+    Note over S,U: Source contains call useT at line 648 - order unresolved
     Note over S,U: Source contains call localeCompare at line 80 - order unresolved
-    Note over S,U: Source contains call async at line 504 - order unresolved
-    Note over S,U: Source contains call onError at line 505 - order unresolved
-    Note over S,U: Source contains call all at line 508 - order unresolved
-    Note over S,U: Source contains call map at line 508 - order unresolved
-    Note over S,U: Source contains call deleteMarker at line 508 - order unresolved
-    Note over S,U: Source contains call onApplied at line 509 - order unresolved
-    Note over S,U: Source contains call onError at line 511 - order unresolved
-    Note over S,U: Source contains call t at line 511 - order unresolved
+    Note over S,U: Source contains call async at line 502 - order unresolved
+    Note over S,U: Source contains call onError at line 503 - order unresolved
+    Note over S,U: Source contains call all at line 506 - order unresolved
+    Note over S,U: Source contains call map at line 506 - order unresolved
+    Note over S,U: Source contains call deleteMarker at line 506 - order unresolved
+    Note over S,U: Source contains call onApplied at line 507 - order unresolved
+    Note over S,U: Source contains call onError at line 509 - order unresolved
+    Note over S,U: Source contains call t at line 509 - order unresolved
     Note over S,U: Source contains call async at line 115 - order unresolved
     Note over S,U: Source contains call setError at line 117 - order unresolved
     Note over S,U: Source contains call createMarker at line 119 - order unresolved
@@ -73,52 +73,52 @@ sequenceDiagram
     Note over S,U: Source contains call load at line 120 - order unresolved
     Note over S,U: Source contains call setError at line 122 - order unresolved
     Note over S,U: Source contains call t at line 122 - order unresolved
-    Note over S,U: Source contains call async at line 282 - order unresolved
-    Note over S,U: Source contains call onError at line 283 - order unresolved
-    Note over S,U: Source contains call deleteMarker at line 285 - order unresolved
-    Note over S,U: Source contains call onSaved at line 286 - order unresolved
-    Note over S,U: Source contains call onError at line 288 - order unresolved
-    Note over S,U: Source contains call t at line 288 - order unresolved
+    Note over S,U: Source contains call async at line 280 - order unresolved
+    Note over S,U: Source contains call onError at line 281 - order unresolved
+    Note over S,U: Source contains call deleteMarker at line 283 - order unresolved
+    Note over S,U: Source contains call onSaved at line 284 - order unresolved
+    Note over S,U: Source contains call onError at line 286 - order unresolved
+    Note over S,U: Source contains call t at line 286 - order unresolved
     Note over S,U: Source contains call load at line 112 - order unresolved
-    Note over S,U: Source contains call async at line 652 - order unresolved
-    Note over S,U: Source contains call onError at line 653 - order unresolved
-    Note over S,U: Source contains call restoreMarker at line 655 - order unresolved
-    Note over S,U: Source contains call onRestored at line 656 - order unresolved
-    Note over S,U: Source contains call onError at line 658 - order unresolved
-    Note over S,U: Source contains call t at line 658 - order unresolved
-    Note over S,U: Source contains call async at line 486 - order unresolved
-    Note over S,U: Source contains call onError at line 487 - order unresolved
-    Note over S,U: Source contains call all at line 490 - order unresolved
-    Note over S,U: Source contains call map at line 491 - order unresolved
-    Note over S,U: Source contains call toDraft at line 492 - order unresolved
-    Note over S,U: Source contains call Set at line 493 - order unresolved
-    Note over S,U: Source contains call updateMarker at line 494 - order unresolved
-    Note over S,U: Source contains call setApplied at line 497 - order unresolved
-    Note over S,U: Source contains call onApplied at line 498 - order unresolved
-    Note over S,U: Source contains call onError at line 500 - order unresolved
-    Note over S,U: Source contains call t at line 500 - order unresolved
-    Note over S,U: Source contains call async at line 254 - order unresolved
-    Note over S,U: Source contains call onError at line 255 - order unresolved
-    Note over S,U: Source contains call updateMarker at line 257 - order unresolved
-    Note over S,U: Source contains call onSaved at line 258 - order unresolved
-    Note over S,U: Source contains call onError at line 260 - order unresolved
-    Note over S,U: Source contains call t at line 260 - order unresolved
+    Note over S,U: Source contains call async at line 650 - order unresolved
+    Note over S,U: Source contains call onError at line 651 - order unresolved
+    Note over S,U: Source contains call restoreMarker at line 653 - order unresolved
+    Note over S,U: Source contains call onRestored at line 654 - order unresolved
+    Note over S,U: Source contains call onError at line 656 - order unresolved
+    Note over S,U: Source contains call t at line 656 - order unresolved
+    Note over S,U: Source contains call async at line 484 - order unresolved
+    Note over S,U: Source contains call onError at line 485 - order unresolved
+    Note over S,U: Source contains call all at line 488 - order unresolved
+    Note over S,U: Source contains call map at line 489 - order unresolved
+    Note over S,U: Source contains call toDraft at line 490 - order unresolved
+    Note over S,U: Source contains call Set at line 491 - order unresolved
+    Note over S,U: Source contains call updateMarker at line 492 - order unresolved
+    Note over S,U: Source contains call setApplied at line 495 - order unresolved
+    Note over S,U: Source contains call onApplied at line 496 - order unresolved
+    Note over S,U: Source contains call onError at line 498 - order unresolved
+    Note over S,U: Source contains call t at line 498 - order unresolved
+    Note over S,U: Source contains call async at line 252 - order unresolved
+    Note over S,U: Source contains call onError at line 253 - order unresolved
+    Note over S,U: Source contains call updateMarker at line 255 - order unresolved
+    Note over S,U: Source contains call onSaved at line 256 - order unresolved
+    Note over S,U: Source contains call onError at line 258 - order unresolved
+    Note over S,U: Source contains call t at line 258 - order unresolved
     Note over S,U: Source contains call useCallback at line 126 - order unresolved
     Note over S,U: Source contains call load at line 126 - order unresolved
     Note over S,U: Source contains call useCallback at line 113 - order unresolved
     Note over S,U: Source contains call load at line 113 - order unresolved
-    Note over S,U: Source contains call set at line 252 - order unresolved
-    Note over S,U: Source contains call filter at line 252 - order unresolved
-    Note over S,U: Source contains call setDraft at line 242 - order unresolved
-    Note over S,U: Source contains call async at line 266 - order unresolved
-    Note over S,U: Source contains call onError at line 267 - order unresolved
-    Note over S,U: Source contains call all at line 269 - order unresolved
-    Note over S,U: Source contains call updateMarker at line 270 - order unresolved
-    Note over S,U: Source contains call updateMarker at line 271 - order unresolved
-    Note over S,U: Source contains call toDraft at line 272 - order unresolved
-    Note over S,U: Source contains call onSaved at line 276 - order unresolved
-    Note over S,U: Source contains call onError at line 278 - order unresolved
-    Note over S,U: Source contains call t at line 278 - order unresolved
+    Note over S,U: Source contains call set at line 250 - order unresolved
+    Note over S,U: Source contains call filter at line 250 - order unresolved
+    Note over S,U: Source contains call setDraft at line 240 - order unresolved
+    Note over S,U: Source contains call async at line 264 - order unresolved
+    Note over S,U: Source contains call onError at line 265 - order unresolved
+    Note over S,U: Source contains call all at line 267 - order unresolved
+    Note over S,U: Source contains call updateMarker at line 268 - order unresolved
+    Note over S,U: Source contains call updateMarker at line 269 - order unresolved
+    Note over S,U: Source contains call toDraft at line 270 - order unresolved
+    Note over S,U: Source contains call onSaved at line 274 - order unresolved
+    Note over S,U: Source contains call onError at line 276 - order unresolved
+    Note over S,U: Source contains call t at line 276 - order unresolved
     Note over S,U: Source contains call setSelected at line 129 - order unresolved
     Note over S,U: Source contains call Set at line 130 - order unresolved
     Note over S,U: Source contains call add at line 131 - order unresolved

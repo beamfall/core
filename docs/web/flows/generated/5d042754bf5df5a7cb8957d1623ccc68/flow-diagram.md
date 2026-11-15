@@ -1,11 +1,11 @@
 # First\-run setup wizard shell: token intake, step navigation — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bd078539d1bee603a51632232872fc2b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:1391; symbol: FIELD; span SHA256: b88719071fbc13ba27f154d2f78edd5b2e6531ff428ff3a3279d99dd2dfc11d1.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:81; symbol: RAIL\_KEYS; span SHA256: 804954213aa2717a6c23209fede7901c533f7b7fd28f7c125a105f66b861217d.
 
 ```mermaid
 sequenceDiagram
@@ -13,232 +13,239 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 5d042754bf5df5a7cb8957d1623ccc68
-    Note over S,U: Source contains call useI18n at line 131 - order unresolved
-    Note over S,U: Source contains call useState at line 135 - order unresolved
-    Note over S,U: Source contains call consumeSetupToken at line 140 - order unresolved
-    Note over S,U: Source contains call useState at line 141 - order unresolved
-    Note over S,U: Source contains call useState at line 143 - order unresolved
-    Note over S,U: Source contains call useState at line 144 - order unresolved
-    Note over S,U: Source contains call useState at line 145 - order unresolved
-    Note over S,U: Source contains call useState at line 150 - order unresolved
-    Note over S,U: Source contains call useState at line 151 - order unresolved
-    Note over S,U: Source contains call useState at line 152 - order unresolved
-    Note over S,U: Source contains call useState at line 161 - order unresolved
-    Note over S,U: Source contains call useState at line 164 - order unresolved
-    Note over S,U: Source contains call t at line 164 - order unresolved
-    Note over S,U: Source contains call Set at line 167 - order unresolved
-    Note over S,U: Source contains call useState at line 168 - order unresolved
-    Note over S,U: Source contains call useState at line 182 - order unresolved
-    Note over S,U: Source contains call useState at line 183 - order unresolved
-    Note over S,U: Source contains call useState at line 185 - order unresolved
-    Note over S,U: Source contains call useState at line 190 - order unresolved
-    Note over S,U: Source contains call useState at line 196 - order unresolved
-    Note over S,U: Source contains call useState at line 199 - order unresolved
-    Note over S,U: Source contains call useState at line 200 - order unresolved
-    Note over S,U: Source contains call useState at line 210 - order unresolved
-    Note over S,U: Source contains call useId at line 218 - order unresolved
-    Note over S,U: Source contains call useId at line 219 - order unresolved
-    Note over S,U: Source contains call useId at line 220 - order unresolved
-    Note over S,U: Source contains call useId at line 221 - order unresolved
-    Note over S,U: Source contains call useId at line 222 - order unresolved
-    Note over S,U: Source contains call useId at line 223 - order unresolved
-    Note over S,U: Source contains call useId at line 224 - order unresolved
-    Note over S,U: Source contains call useId at line 225 - order unresolved
-    Note over S,U: Source contains call useId at line 226 - order unresolved
-    Note over S,U: Source contains call useId at line 227 - order unresolved
-    Note over S,U: Source contains call useId at line 228 - order unresolved
-    Note over S,U: Source contains call useEffect at line 230 - order unresolved
-    Note over S,U: Source contains call useEffect at line 240 - order unresolved
-    Note over S,U: Source contains call bootstrapResume at line 242 - order unresolved
-    Note over S,U: Source contains call then at line 243 - order unresolved
-    Note over S,U: Source contains call setTokenStepSkipped at line 249 - order unresolved
-    Note over S,U: Source contains call setStep at line 250 - order unresolved
-    Note over S,U: Source contains call setLanUrl at line 252 - order unresolved
-    Note over S,U: Source contains call setProbing at line 253 - order unresolved
-    Note over S,U: Source contains call setFirstLibraryProgress at line 257 - order unresolved
-    Note over S,U: Source contains call assign at line 263 - order unresolved
-    Note over S,U: Source contains call setBootstrapped at line 269 - order unresolved
-    Note over S,U: Source contains call setResumedFromRestart at line 270 - order unresolved
-    Note over S,U: Source contains call rememberedResumeStep at line 273 - order unresolved
-    Note over S,U: Source contains call setStep at line 274 - order unresolved
-    Note over S,U: Source contains call setProbing at line 275 - order unresolved
-    Note over S,U: Source contains call catch at line 277 - order unresolved
-    Note over S,U: Source contains call setProbing at line 282 - order unresolved
-    Note over S,U: Source contains call useEffect at line 292 - order unresolved
-    Note over S,U: Source contains call contains at line 295 - order unresolved
-    Note over S,U: Source contains call focus at line 300 - order unresolved
-    Note over S,U: Source contains call useEffect at line 312 - order unresolved
-    Note over S,U: Source contains call setSavedChoices at line 316 - order unresolved
-    Note over S,U: Source contains call loadSavedPluginChoices at line 317 - order unresolved
-    Note over S,U: Source contains call then at line 318 - order unresolved
-    Note over S,U: Source contains call setPlugins at line 320 - order unresolved
-    Note over S,U: Source contains call setActivePlugins at line 321 - order unresolved
-    Note over S,U: Source contains call setUpdateCheckEnabled at line 322 - order unresolved
-    Note over S,U: Source contains call setUpdateCheckChannel at line 323 - order unresolved
-    Note over S,U: Source contains call setProviderKeys at line 324 - order unresolved
-    Note over S,U: Source contains call setSavedChoices at line 325 - order unresolved
-    Note over S,U: Source contains call catch at line 327 - order unresolved
-    Note over S,U: Source contains call setSavedChoices at line 329 - order unresolved
-    Note over S,U: Source contains call isAdminSessionRefusal at line 329 - order unresolved
-    Note over S,U: Source contains call setActivePlugins at line 330 - order unresolved
-    Note over S,U: Source contains call Set at line 330 - order unresolved
-    Note over S,U: Source contains call fetchPlugins at line 331 - order unresolved
-    Note over S,U: Source contains call then at line 331 - order unresolved
-    Note over S,U: Source contains call setPlugins at line 332 - order unresolved
-    Note over S,U: Source contains call catch at line 335 - order unresolved
-    Note over S,U: Source contains call fetchPlugins at line 337 - order unresolved
-    Note over S,U: Source contains call then at line 337 - order unresolved
-    Note over S,U: Source contains call setPlugins at line 339 - order unresolved
-    Note over S,U: Source contains call some at line 340 - order unresolved
-    Note over S,U: Source contains call setActivePlugins at line 341 - order unresolved
-    Note over S,U: Source contains call has at line 341 - order unresolved
-    Note over S,U: Source contains call Set at line 341 - order unresolved
-    Note over S,U: Source contains call add at line 341 - order unresolved
-    Note over S,U: Source contains call useEffect at line 353 - order unresolved
-    Note over S,U: Source contains call loadProviderKeys at line 356 - order unresolved
-    Note over S,U: Source contains call then at line 357 - order unresolved
-    Note over S,U: Source contains call setProviderKeys at line 358 - order unresolved
-    Note over S,U: Source contains call catch at line 360 - order unresolved
-    Note over S,U: Source contains call filter at line 367 - order unresolved
-    Note over S,U: Source contains call keyNeeded at line 368 - order unresolved
-    Note over S,U: Source contains call some at line 368 - order unresolved
-    Note over S,U: Source contains call has at line 368 - order unresolved
-    Note over S,U: Source contains call libraryTypeOptions at line 375 - order unresolved
-    Note over S,U: Source contains call filter at line 376 - order unresolved
-    Note over S,U: Source contains call has at line 376 - order unresolved
-    Note over S,U: Source contains call find at line 378 - order unresolved
-    Note over S,U: Source contains call useEffect at line 382 - order unresolved
-    Note over S,U: Source contains call some at line 383 - order unresolved
-    Note over S,U: Source contains call setLibraryType at line 384 - order unresolved
-    Note over S,U: Source contains call useEffect at line 388 - order unresolved
-    Note over S,U: Source contains call URL at line 121 - order unresolved
-    Note over S,U: Source contains call get at line 122 - order unresolved
-    Note over S,U: Source contains call has at line 123 - order unresolved
-    Note over S,U: Source contains call delete at line 125 - order unresolved
-    Note over S,U: Source contains call replaceState at line 126 - order unresolved
-    Note over S,U: Source contains call setError at line 428 - order unresolved
-    Note over S,U: Source contains call setErrorField at line 429 - order unresolved
-    Note over S,U: Source contains call requestAnimationFrame at line 430 - order unresolved
-    Note over S,U: Source contains call focus at line 430 - order unresolved
-    Note over S,U: Source contains call setPickerNode at line 753 - order unresolved
-    Note over S,U: Source contains call setPickerError at line 754 - order unresolved
-    Note over S,U: Source contains call requestAnimationFrame at line 755 - order unresolved
-    Note over S,U: Source contains call focus at line 755 - order unresolved
-    Note over S,U: Source contains call assign at line 628 - order unresolved
-    Note over S,U: Source contains call setPickerBusy at line 727 - order unresolved
-    Note over S,U: Source contains call setPickerError at line 728 - order unresolved
-    Note over S,U: Source contains call browseServerFolders at line 730 - order unresolved
-    Note over S,U: Source contains call setPickerNode at line 731 - order unresolved
-    Note over S,U: Source contains call setPickerError at line 734 - order unresolved
-    Note over S,U: Source contains call t at line 734 - order unresolved
-    Note over S,U: Source contains call setPickerBusy at line 737 - order unresolved
-    Note over S,U: Source contains call setError at line 719 - order unresolved
-    Note over S,U: Source contains call setStep at line 720 - order unresolved
-    Note over S,U: Source contains call max at line 720 - order unresolved
-    Note over S,U: Source contains call preventDefault at line 659 - order unresolved
-    Note over S,U: Source contains call setTokenError at line 661 - order unresolved
-    Note over S,U: Source contains call finishSetup at line 664 - order unresolved
-    Note over S,U: Source contains call validate at line 668 - order unresolved
-    Note over S,U: Source contains call setTokenError at line 671 - order unresolved
-    Note over S,U: Source contains call focusTokenField at line 672 - order unresolved
-    Note over S,U: Source contains call fieldError at line 673 - order unresolved
-    Note over S,U: Source contains call setError at line 676 - order unresolved
-    Note over S,U: Source contains call trim at line 682 - order unresolved
-    Note over S,U: Source contains call setTokenError at line 683 - order unresolved
-    Note over S,U: Source contains call t at line 683 - order unresolved
-    Note over S,U: Source contains call setStep at line 684 - order unresolved
-    Note over S,U: Source contains call focusTokenField at line 685 - order unresolved
-    Note over S,U: Source contains call runBootstrap at line 688 - order unresolved
-    Note over S,U: Source contains call setStep at line 690 - order unresolved
-    Note over S,U: Source contains call runPluginActivation at line 698 - order unresolved
-    Note over S,U: Source contains call rememberResumeStep at line 700 - order unresolved
-    Note over S,U: Source contains call setStep at line 701 - order unresolved
-    Note over S,U: Source contains call runLibraryCreation at line 708 - order unresolved
-    Note over S,U: Source contains call setStep at line 710 - order unresolved
-    Note over S,U: Source contains call setStep at line 714 - order unresolved
-    Note over S,U: Source contains call min at line 714 - order unresolved
-    Note over S,U: Source contains call trim at line 745 - order unresolved
-    Note over S,U: Source contains call loadPickerFolder at line 746 - order unresolved
-    Note over S,U: Source contains call loadPickerFolder at line 747 - order unresolved
-    Note over S,U: Source contains call setPickerError at line 748 - order unresolved
-    Note over S,U: Source contains call t at line 748 - order unresolved
-    Note over S,U: Source contains call fetchJobs at line 398 - order unresolved
-    Note over S,U: Source contains call find at line 399 - order unresolved
-    Note over S,U: Source contains call setScanJob at line 401 - order unresolved
-    Note over S,U: Source contains call setError at line 404 - order unresolved
-    Note over S,U: Source contains call setErrorField at line 412 - order unresolved
-    Note over S,U: Source contains call setError at line 413 - order unresolved
-    Note over S,U: Source contains call t at line 413 - order unresolved
-    Note over S,U: Source contains call setBusy at line 456 - order unresolved
-    Note over S,U: Source contains call setError at line 457 - order unresolved
-    Note over S,U: Source contains call bootstrapSetup at line 459 - order unresolved
-    Note over S,U: Source contains call trim at line 460 - order unresolved
-    Note over S,U: Source contains call t at line 461 - order unresolved
-    Note over S,U: Source contains call trim at line 462 - order unresolved
-    Note over S,U: Source contains call t at line 462 - order unresolved
-    Note over S,U: Source contains call setBootstrapped at line 466 - order unresolved
-    Note over S,U: Source contains call test at line 472 - order unresolved
-    Note over S,U: Source contains call setStep at line 475 - order unresolved
-    Note over S,U: Source contains call fieldError at line 476 - order unresolved
-    Note over S,U: Source contains call t at line 476 - order unresolved
-    Note over S,U: Source contains call setTokenError at line 482 - order unresolved
-    Note over S,U: Source contains call t at line 482 - order unresolved
-    Note over S,U: Source contains call setTokenStepSkipped at line 483 - order unresolved
-    Note over S,U: Source contains call setStep at line 484 - order unresolved
-    Note over S,U: Source contains call focusTokenField at line 485 - order unresolved
-    Note over S,U: Source contains call announceError at line 488 - order unresolved
-    Note over S,U: Source contains call t at line 489 - order unresolved
-    Note over S,U: Source contains call failureMessage at line 489 - order unresolved
-    Note over S,U: Source contains call setToken at line 494 - order unresolved
-    Note over S,U: Source contains call setBusy at line 495 - order unresolved
-    Note over S,U: Source contains call setBusy at line 577 - order unresolved
-    Note over S,U: Source contains call setError at line 578 - order unresolved
-    Note over S,U: Source contains call Error at line 580 - order unresolved
-    Note over S,U: Source contains call t at line 580 - order unresolved
-    Note over S,U: Source contains call createFirstLibrary at line 581 - order unresolved
-    Note over S,U: Source contains call trim at line 582 - order unresolved
-    Note over S,U: Source contains call trim at line 585 - order unresolved
-    Note over S,U: Source contains call setFirstLibraryProgress at line 588 - order unresolved
-    Note over S,U: Source contains call trim at line 591 - order unresolved
-    Note over S,U: Source contains call setScanJob at line 593 - order unresolved
-    Note over S,U: Source contains call setFirstLibraryProgress at line 601 - order unresolved
-    Note over S,U: Source contains call fieldError at line 603 - order unresolved
-    Note over S,U: Source contains call libraryErrorMessage at line 603 - order unresolved
-    Note over S,U: Source contains call setBusy at line 606 - order unresolved
-    Note over S,U: Source contains call setBusy at line 525 - order unresolved
-    Note over S,U: Source contains call setError at line 526 - order unresolved
-    Note over S,U: Source contains call configureUpdateCheck at line 531 - order unresolved
-    Note over S,U: Source contains call activatePlugins at line 536 - order unresolved
-    Note over S,U: Source contains call filter at line 537 - order unresolved
-    Note over S,U: Source contains call has at line 537 - order unresolved
-    Note over S,U: Source contains call map at line 537 - order unresolved
-    Note over S,U: Source contains call filter at line 538 - order unresolved
-    Note over S,U: Source contains call has at line 538 - order unresolved
-    Note over S,U: Source contains call map at line 538 - order unresolved
-    Note over S,U: Source contains call saveProviderKeys at line 540 - order unresolved
-    Note over S,U: Source contains call announceError at line 542 - order unresolved
-    Note over S,U: Source contains call failureMessage at line 542 - order unresolved
-    Note over S,U: Source contains call setBusy at line 545 - order unresolved
-    Note over S,U: Source contains call trim at line 553 - order unresolved
-    Note over S,U: Source contains call setScraperCredential at line 556 - order unresolved
-    Note over S,U: Source contains call setProviderKeys at line 557 - order unresolved
-    Note over S,U: Source contains call map at line 558 - order unresolved
-    Note over S,U: Source contains call setKeySecrets at line 562 - order unresolved
-    Note over S,U: Source contains call announceError at line 564 - order unresolved
-    Note over S,U: Source contains call t at line 564 - order unresolved
-    Note over S,U: Source contains call setActivePlugins at line 764 - order unresolved
-    Note over S,U: Source contains call Set at line 765 - order unresolved
-    Note over S,U: Source contains call has at line 766 - order unresolved
-    Note over S,U: Source contains call delete at line 766 - order unresolved
-    Note over S,U: Source contains call add at line 767 - order unresolved
-    Note over S,U: Source contains call setRootPath at line 759 - order unresolved
-    Note over S,U: Source contains call closePicker at line 760 - order unresolved
-    Note over S,U: Source contains call trim at line 636 - order unresolved
-    Note over S,U: Source contains call t at line 638 - order unresolved
-    Note over S,U: Source contains call trim at line 640 - order unresolved
-    Note over S,U: Source contains call t at line 641 - order unresolved
-    Note over S,U: Source contains call t at line 645 - order unresolved
-    Note over S,U: Source contains call t at line 648 - order unresolved
-    Note over S,U: Source contains call trim at line 652 - order unresolved
-    Note over S,U: Source contains call t at line 652 - order unresolved
+    Note over S,U: Source contains call useI18n in internal/web/app/src/areas/setup/SetupWizard.tsx at line 149 - order unresolved
+    Note over S,U: Source contains call useProviderKeyFieldLabel in internal/web/app/src/areas/setup/SetupWizard.tsx at line 150 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 154 - order unresolved
+    Note over S,U: Source contains call consumeSetupToken in internal/web/app/src/areas/setup/SetupWizard.tsx at line 159 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 160 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 162 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 163 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 164 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 169 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 170 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 171 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 180 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 183 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 183 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/setup/SetupWizard.tsx at line 186 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 187 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 201 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 202 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 204 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 209 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 215 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 218 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 219 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 229 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 237 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 238 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 239 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 240 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 241 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 242 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 243 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 244 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 245 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 246 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/setup/SetupWizard.tsx at line 247 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/SetupWizard.tsx at line 249 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/SetupWizard.tsx at line 259 - order unresolved
+    Note over S,U: Source contains call bootstrapResume in internal/web/app/src/areas/setup/SetupWizard.tsx at line 261 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/areas/setup/SetupWizard.tsx at line 262 - order unresolved
+    Note over S,U: Source contains call setTokenStepSkipped in internal/web/app/src/areas/setup/SetupWizard.tsx at line 268 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 269 - order unresolved
+    Note over S,U: Source contains call setLanUrl in internal/web/app/src/areas/setup/SetupWizard.tsx at line 271 - order unresolved
+    Note over S,U: Source contains call setProbing in internal/web/app/src/areas/setup/SetupWizard.tsx at line 272 - order unresolved
+    Note over S,U: Source contains call setFirstLibraryProgress in internal/web/app/src/areas/setup/SetupWizard.tsx at line 276 - order unresolved
+    Note over S,U: Source contains call assign in internal/web/app/src/areas/setup/SetupWizard.tsx at line 282 - order unresolved
+    Note over S,U: Source contains call setBootstrapped in internal/web/app/src/areas/setup/SetupWizard.tsx at line 288 - order unresolved
+    Note over S,U: Source contains call setResumedFromRestart in internal/web/app/src/areas/setup/SetupWizard.tsx at line 289 - order unresolved
+    Note over S,U: Source contains call rememberedResumeStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 292 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 293 - order unresolved
+    Note over S,U: Source contains call setProbing in internal/web/app/src/areas/setup/SetupWizard.tsx at line 294 - order unresolved
+    Note over S,U: Source contains call catch in internal/web/app/src/areas/setup/SetupWizard.tsx at line 296 - order unresolved
+    Note over S,U: Source contains call setProbing in internal/web/app/src/areas/setup/SetupWizard.tsx at line 301 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/SetupWizard.tsx at line 311 - order unresolved
+    Note over S,U: Source contains call contains in internal/web/app/src/areas/setup/SetupWizard.tsx at line 314 - order unresolved
+    Note over S,U: Source contains call focus in internal/web/app/src/areas/setup/SetupWizard.tsx at line 319 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/SetupWizard.tsx at line 331 - order unresolved
+    Note over S,U: Source contains call setSavedChoices in internal/web/app/src/areas/setup/SetupWizard.tsx at line 335 - order unresolved
+    Note over S,U: Source contains call loadSavedPluginChoices in internal/web/app/src/areas/setup/SetupWizard.tsx at line 336 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/areas/setup/SetupWizard.tsx at line 337 - order unresolved
+    Note over S,U: Source contains call setPlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 339 - order unresolved
+    Note over S,U: Source contains call setActivePlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 340 - order unresolved
+    Note over S,U: Source contains call setUpdateCheckEnabled in internal/web/app/src/areas/setup/SetupWizard.tsx at line 341 - order unresolved
+    Note over S,U: Source contains call setUpdateCheckChannel in internal/web/app/src/areas/setup/SetupWizard.tsx at line 342 - order unresolved
+    Note over S,U: Source contains call setProviderKeys in internal/web/app/src/areas/setup/SetupWizard.tsx at line 343 - order unresolved
+    Note over S,U: Source contains call setSavedChoices in internal/web/app/src/areas/setup/SetupWizard.tsx at line 344 - order unresolved
+    Note over S,U: Source contains call catch in internal/web/app/src/areas/setup/SetupWizard.tsx at line 346 - order unresolved
+    Note over S,U: Source contains call setSavedChoices in internal/web/app/src/areas/setup/SetupWizard.tsx at line 348 - order unresolved
+    Note over S,U: Source contains call isAdminSessionRefusal in internal/web/app/src/areas/setup/SetupWizard.tsx at line 348 - order unresolved
+    Note over S,U: Source contains call setActivePlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 349 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/setup/SetupWizard.tsx at line 349 - order unresolved
+    Note over S,U: Source contains call fetchPlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 350 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/areas/setup/SetupWizard.tsx at line 350 - order unresolved
+    Note over S,U: Source contains call setPlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 351 - order unresolved
+    Note over S,U: Source contains call catch in internal/web/app/src/areas/setup/SetupWizard.tsx at line 354 - order unresolved
+    Note over S,U: Source contains call fetchPlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 356 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/areas/setup/SetupWizard.tsx at line 356 - order unresolved
+    Note over S,U: Source contains call setPlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 358 - order unresolved
+    Note over S,U: Source contains call some in internal/web/app/src/areas/setup/SetupWizard.tsx at line 359 - order unresolved
+    Note over S,U: Source contains call setActivePlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 360 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/setup/SetupWizard.tsx at line 360 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/setup/SetupWizard.tsx at line 360 - order unresolved
+    Note over S,U: Source contains call add in internal/web/app/src/areas/setup/SetupWizard.tsx at line 360 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/SetupWizard.tsx at line 372 - order unresolved
+    Note over S,U: Source contains call loadProviderKeys in internal/web/app/src/areas/setup/SetupWizard.tsx at line 375 - order unresolved
+    Note over S,U: Source contains call then in internal/web/app/src/areas/setup/SetupWizard.tsx at line 376 - order unresolved
+    Note over S,U: Source contains call setProviderKeys in internal/web/app/src/areas/setup/SetupWizard.tsx at line 377 - order unresolved
+    Note over S,U: Source contains call catch in internal/web/app/src/areas/setup/SetupWizard.tsx at line 379 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/SetupWizard.tsx at line 386 - order unresolved
+    Note over S,U: Source contains call keyNeeded in internal/web/app/src/areas/setup/SetupWizard.tsx at line 387 - order unresolved
+    Note over S,U: Source contains call some in internal/web/app/src/areas/setup/SetupWizard.tsx at line 387 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/setup/SetupWizard.tsx at line 387 - order unresolved
+    Note over S,U: Source contains call libraryTypeOptions in internal/web/app/src/areas/setup/SetupWizard.tsx at line 394 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/SetupWizard.tsx at line 395 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/setup/SetupWizard.tsx at line 395 - order unresolved
+    Note over S,U: Source contains call find in internal/web/app/src/areas/setup/SetupWizard.tsx at line 397 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/SetupWizard.tsx at line 401 - order unresolved
+    Note over S,U: Source contains call some in internal/web/app/src/areas/setup/SetupWizard.tsx at line 402 - order unresolved
+    Note over S,U: Source contains call setLibraryType in internal/web/app/src/areas/setup/SetupWizard.tsx at line 403 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/setup/SetupWizard.tsx at line 407 - order unresolved
+    Note over S,U: Source contains call URL in internal/web/app/src/areas/setup/SetupWizard.tsx at line 139 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/areas/setup/SetupWizard.tsx at line 140 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/setup/SetupWizard.tsx at line 141 - order unresolved
+    Note over S,U: Source contains call delete in internal/web/app/src/areas/setup/SetupWizard.tsx at line 143 - order unresolved
+    Note over S,U: Source contains call replaceState in internal/web/app/src/areas/setup/SetupWizard.tsx at line 144 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/surface/index.tsx at line 137 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/surface/index.tsx at line 129 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/surface/index.tsx at line 81 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/components/beamfall/surface/index.tsx at line 49 - order unresolved
+    Note over S,U: Source contains call cn in internal/web/app/src/components/beamfall/surface/index.tsx at line 50 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/components/beamfall/surface/index.tsx at line 59 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 447 - order unresolved
+    Note over S,U: Source contains call setErrorField in internal/web/app/src/areas/setup/SetupWizard.tsx at line 448 - order unresolved
+    Note over S,U: Source contains call requestAnimationFrame in internal/web/app/src/areas/setup/SetupWizard.tsx at line 449 - order unresolved
+    Note over S,U: Source contains call focus in internal/web/app/src/areas/setup/SetupWizard.tsx at line 449 - order unresolved
+    Note over S,U: Source contains call setPickerNode in internal/web/app/src/areas/setup/SetupWizard.tsx at line 772 - order unresolved
+    Note over S,U: Source contains call setPickerError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 773 - order unresolved
+    Note over S,U: Source contains call requestAnimationFrame in internal/web/app/src/areas/setup/SetupWizard.tsx at line 774 - order unresolved
+    Note over S,U: Source contains call focus in internal/web/app/src/areas/setup/SetupWizard.tsx at line 774 - order unresolved
+    Note over S,U: Source contains call assign in internal/web/app/src/areas/setup/SetupWizard.tsx at line 647 - order unresolved
+    Note over S,U: Source contains call setPickerBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 746 - order unresolved
+    Note over S,U: Source contains call setPickerError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 747 - order unresolved
+    Note over S,U: Source contains call browseServerFolders in internal/web/app/src/areas/setup/SetupWizard.tsx at line 749 - order unresolved
+    Note over S,U: Source contains call setPickerNode in internal/web/app/src/areas/setup/SetupWizard.tsx at line 750 - order unresolved
+    Note over S,U: Source contains call setPickerError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 753 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 753 - order unresolved
+    Note over S,U: Source contains call setPickerBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 756 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 738 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 739 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/areas/setup/SetupWizard.tsx at line 739 - order unresolved
+    Note over S,U: Source contains call preventDefault in internal/web/app/src/areas/setup/SetupWizard.tsx at line 678 - order unresolved
+    Note over S,U: Source contains call setTokenError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 680 - order unresolved
+    Note over S,U: Source contains call finishSetup in internal/web/app/src/areas/setup/SetupWizard.tsx at line 683 - order unresolved
+    Note over S,U: Source contains call validate in internal/web/app/src/areas/setup/SetupWizard.tsx at line 687 - order unresolved
+    Note over S,U: Source contains call setTokenError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 690 - order unresolved
+    Note over S,U: Source contains call focusTokenField in internal/web/app/src/areas/setup/SetupWizard.tsx at line 691 - order unresolved
+    Note over S,U: Source contains call fieldError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 692 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 695 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 701 - order unresolved
+    Note over S,U: Source contains call setTokenError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 702 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 702 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 703 - order unresolved
+    Note over S,U: Source contains call focusTokenField in internal/web/app/src/areas/setup/SetupWizard.tsx at line 704 - order unresolved
+    Note over S,U: Source contains call runBootstrap in internal/web/app/src/areas/setup/SetupWizard.tsx at line 707 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 709 - order unresolved
+    Note over S,U: Source contains call runPluginActivation in internal/web/app/src/areas/setup/SetupWizard.tsx at line 717 - order unresolved
+    Note over S,U: Source contains call rememberResumeStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 719 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 720 - order unresolved
+    Note over S,U: Source contains call runLibraryCreation in internal/web/app/src/areas/setup/SetupWizard.tsx at line 727 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 729 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 733 - order unresolved
+    Note over S,U: Source contains call min in internal/web/app/src/areas/setup/SetupWizard.tsx at line 733 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 764 - order unresolved
+    Note over S,U: Source contains call loadPickerFolder in internal/web/app/src/areas/setup/SetupWizard.tsx at line 765 - order unresolved
+    Note over S,U: Source contains call loadPickerFolder in internal/web/app/src/areas/setup/SetupWizard.tsx at line 766 - order unresolved
+    Note over S,U: Source contains call setPickerError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 767 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 767 - order unresolved
+    Note over S,U: Source contains call fetchJobs in internal/web/app/src/areas/setup/SetupWizard.tsx at line 417 - order unresolved
+    Note over S,U: Source contains call find in internal/web/app/src/areas/setup/SetupWizard.tsx at line 418 - order unresolved
+    Note over S,U: Source contains call setScanJob in internal/web/app/src/areas/setup/SetupWizard.tsx at line 420 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 423 - order unresolved
+    Note over S,U: Source contains call setErrorField in internal/web/app/src/areas/setup/SetupWizard.tsx at line 431 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 432 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 432 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 475 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 476 - order unresolved
+    Note over S,U: Source contains call bootstrapSetup in internal/web/app/src/areas/setup/SetupWizard.tsx at line 478 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 479 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 480 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 481 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 481 - order unresolved
+    Note over S,U: Source contains call setBootstrapped in internal/web/app/src/areas/setup/SetupWizard.tsx at line 485 - order unresolved
+    Note over S,U: Source contains call test in internal/web/app/src/areas/setup/SetupWizard.tsx at line 491 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 494 - order unresolved
+    Note over S,U: Source contains call fieldError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 495 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 495 - order unresolved
+    Note over S,U: Source contains call setTokenError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 501 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 501 - order unresolved
+    Note over S,U: Source contains call setTokenStepSkipped in internal/web/app/src/areas/setup/SetupWizard.tsx at line 502 - order unresolved
+    Note over S,U: Source contains call setStep in internal/web/app/src/areas/setup/SetupWizard.tsx at line 503 - order unresolved
+    Note over S,U: Source contains call focusTokenField in internal/web/app/src/areas/setup/SetupWizard.tsx at line 504 - order unresolved
+    Note over S,U: Source contains call announceError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 507 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 508 - order unresolved
+    Note over S,U: Source contains call failureMessage in internal/web/app/src/areas/setup/SetupWizard.tsx at line 508 - order unresolved
+    Note over S,U: Source contains call setToken in internal/web/app/src/areas/setup/SetupWizard.tsx at line 513 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 514 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 596 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 597 - order unresolved
+    Note over S,U: Source contains call Error in internal/web/app/src/areas/setup/SetupWizard.tsx at line 599 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 599 - order unresolved
+    Note over S,U: Source contains call createFirstLibrary in internal/web/app/src/areas/setup/SetupWizard.tsx at line 600 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 601 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 604 - order unresolved
+    Note over S,U: Source contains call setFirstLibraryProgress in internal/web/app/src/areas/setup/SetupWizard.tsx at line 607 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 610 - order unresolved
+    Note over S,U: Source contains call setScanJob in internal/web/app/src/areas/setup/SetupWizard.tsx at line 612 - order unresolved
+    Note over S,U: Source contains call setFirstLibraryProgress in internal/web/app/src/areas/setup/SetupWizard.tsx at line 620 - order unresolved
+    Note over S,U: Source contains call fieldError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 622 - order unresolved
+    Note over S,U: Source contains call libraryErrorMessage in internal/web/app/src/areas/setup/SetupWizard.tsx at line 622 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 625 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 544 - order unresolved
+    Note over S,U: Source contains call setError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 545 - order unresolved
+    Note over S,U: Source contains call configureUpdateCheck in internal/web/app/src/areas/setup/SetupWizard.tsx at line 550 - order unresolved
+    Note over S,U: Source contains call activatePlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 555 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/SetupWizard.tsx at line 556 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/setup/SetupWizard.tsx at line 556 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/setup/SetupWizard.tsx at line 556 - order unresolved
+    Note over S,U: Source contains call filter in internal/web/app/src/areas/setup/SetupWizard.tsx at line 557 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/setup/SetupWizard.tsx at line 557 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/setup/SetupWizard.tsx at line 557 - order unresolved
+    Note over S,U: Source contains call saveProviderKeys in internal/web/app/src/areas/setup/SetupWizard.tsx at line 559 - order unresolved
+    Note over S,U: Source contains call announceError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 561 - order unresolved
+    Note over S,U: Source contains call failureMessage in internal/web/app/src/areas/setup/SetupWizard.tsx at line 561 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/setup/SetupWizard.tsx at line 564 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 572 - order unresolved
+    Note over S,U: Source contains call setScraperCredential in internal/web/app/src/areas/setup/SetupWizard.tsx at line 575 - order unresolved
+    Note over S,U: Source contains call setProviderKeys in internal/web/app/src/areas/setup/SetupWizard.tsx at line 576 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/setup/SetupWizard.tsx at line 577 - order unresolved
+    Note over S,U: Source contains call setKeySecrets in internal/web/app/src/areas/setup/SetupWizard.tsx at line 581 - order unresolved
+    Note over S,U: Source contains call announceError in internal/web/app/src/areas/setup/SetupWizard.tsx at line 583 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 583 - order unresolved
+    Note over S,U: Source contains call setActivePlugins in internal/web/app/src/areas/setup/SetupWizard.tsx at line 783 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/setup/SetupWizard.tsx at line 784 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/setup/SetupWizard.tsx at line 785 - order unresolved
+    Note over S,U: Source contains call delete in internal/web/app/src/areas/setup/SetupWizard.tsx at line 785 - order unresolved
+    Note over S,U: Source contains call add in internal/web/app/src/areas/setup/SetupWizard.tsx at line 786 - order unresolved
+    Note over S,U: Source contains call setRootPath in internal/web/app/src/areas/setup/SetupWizard.tsx at line 778 - order unresolved
+    Note over S,U: Source contains call closePicker in internal/web/app/src/areas/setup/SetupWizard.tsx at line 779 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 655 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 657 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 659 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 660 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 664 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 667 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/setup/SetupWizard.tsx at line 671 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/setup/SetupWizard.tsx at line 671 - order unresolved
 ```

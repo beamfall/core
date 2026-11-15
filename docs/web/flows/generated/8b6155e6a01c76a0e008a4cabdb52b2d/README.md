@@ -1,11 +1,11 @@
 # Player auto\-skip of intro/credits segments with skipped toast — readme
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c8be722eecb358cd99f07475681a142e -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:238; symbol: AUTO\_SKIP\_SEGMENT\_KINDS; span SHA256: 519db138d4e94f43eaab0dfd646f015da47f1acb9e06f0829aa2b9e0c001d6c9.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:248; symbol: AUTO\_SKIP\_SEGMENT\_KINDS; span SHA256: 519db138d4e94f43eaab0dfd646f015da47f1acb9e06f0829aa2b9e0c001d6c9.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -13,8 +13,6 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -27,6 +25,8 @@ Security summaries: not collected; absence is not a clean security finding.
 - duplicate lexical claim identity unresolved
 
 - duplicate logical declaration unresolved
+
+- method extent exceeds 512 lines
 
 - template has no supported literal Angular bindings
 

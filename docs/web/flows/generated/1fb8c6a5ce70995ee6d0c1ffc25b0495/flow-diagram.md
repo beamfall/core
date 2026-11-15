@@ -1,6 +1,6 @@
 # Console access: create and manage Profiles — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:082d93d1fb01651ea0d2deaff818dcc3 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -27,7 +27,7 @@ sequenceDiagram
     Note over S,U: Source contains call refresh in internal/web/app/src/areas/console/sections/Profiles.tsx at line 46 - order unresolved
     Note over S,U: Source contains call map in internal/web/app/src/areas/console/sections/Profiles.tsx at line 52 - order unresolved
     Note over S,U: Source contains call refresh in internal/web/app/src/areas/console/sections/Profiles.tsx at line 53 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/lib/graphql/console.ts at line 786 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/lib/graphql/console.ts at line 821 - order unresolved
     Note over S,U: Source contains call trim in internal/web/app/src/areas/console/sections/Profiles.tsx at line 139 - order unresolved
     Note over S,U: Source contains call setBusy in internal/web/app/src/areas/console/sections/Profiles.tsx at line 141 - order unresolved
     Note over S,U: Source contains call updateProfile in internal/web/app/src/areas/console/sections/Profiles.tsx at line 143 - order unresolved

@@ -1,31 +1,31 @@
 # Manage markers: segment edit, bulk delete, trashed markers — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:85b4e9c2498fdb402caaeb906be9979a -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:597; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:595; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
 
 <!-- flowdocs:paragraph:7023ffbfc2bb2250db03ea31c0d96767 -->
 Declared member: source declares BulkDeleteConfirm; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:597; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:595; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
 
 <!-- flowdocs:paragraph:e9ef76c414e0f4882672bea5db46b772 -->
 Declared member: source declares BulkSection; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:462; symbol: BulkSection; span SHA256: cc5fd469943ba0f38a42c647779cf00affb99187db36533449ef5aa35d3c186a.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:460; symbol: BulkSection; span SHA256: cc5fd469943ba0f38a42c647779cf00affb99187db36533449ef5aa35d3c186a.
 
 <!-- flowdocs:paragraph:bc4c0304ea3128eb66bbce104d247900 -->
 Declared member: source declares ConfirmDelete; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:431; symbol: ConfirmDelete; span SHA256: 27d76b722cf8099ce058cd0b827026bebceedac6b2bf0c8ae01acc4ce97b36c4.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:429; symbol: ConfirmDelete; span SHA256: 27d76b722cf8099ce058cd0b827026bebceedac6b2bf0c8ae01acc4ce97b36c4.
 
 <!-- flowdocs:paragraph:c3245011e72849a517159fcc403ab60d -->
 Declared member: source declares MarkerRow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:211; symbol: MarkerRow; span SHA256: f18be83652007bb46967d665bb4ecc55024232ec2f0403e5dfb73d136689e4ef.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:209; symbol: MarkerRow; span SHA256: f18be83652007bb46967d665bb4ecc55024232ec2f0403e5dfb73d136689e4ef.
 
 <!-- flowdocs:paragraph:139767f9a87795ba498106571cd04a5a -->
 Declared member: source declares SEGMENT\_KINDS; membership is caller\-declared, not runtime evidence\.
@@ -35,7 +35,7 @@ Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:59; symbol: SEG
 <!-- flowdocs:paragraph:74eab67c50278391712c1539eed1bcea -->
 Declared member: source declares TrashedSection; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:641; symbol: TrashedSection; span SHA256: e714e114f7d2d96d8c3d3da267f6e90b8622a80573393d59c7fbd27c04a391fa.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:639; symbol: TrashedSection; span SHA256: e714e114f7d2d96d8c3d3da267f6e90b8622a80573393d59c7fbd27c04a391fa.
 
 <!-- flowdocs:paragraph:47c4f1448d2efc7cee9086a0c6624c43 -->
 Declared member: source declares blankDraft; membership is caller\-declared, not runtime evidence\.
@@ -120,7 +120,7 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:767; symbol: updateMarker; s
 <!-- flowdocs:paragraph:1ed9d59215abd086bd40612af1f3c4af -->
 Declared member: source declares onBulkDelete; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:504; symbol: onBulkDelete; span SHA256: 665fed7140ddaaf50d2a388e55bff83a5d6de7374b7945e044d9bbdfdb430a95.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:502; symbol: onBulkDelete; span SHA256: 665fed7140ddaaf50d2a388e55bff83a5d6de7374b7945e044d9bbdfdb430a95.
 
 <!-- flowdocs:paragraph:7d63d9db502277c6e81bc0ab39532a68 -->
 Declared member: source declares onCreate; membership is caller\-declared, not runtime evidence\.
@@ -130,7 +130,7 @@ Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:115; symbol: on
 <!-- flowdocs:paragraph:acca7cb055b8cc7bc4b0ab6bfcb18ef8 -->
 Declared member: source declares onDelete; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:282; symbol: onDelete; span SHA256: 6ff8d4de84b560f6d2d8cc904b0fb0b38480fbaa86b6748d98bff2959ed8f536.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:280; symbol: onDelete; span SHA256: 6ff8d4de84b560f6d2d8cc904b0fb0b38480fbaa86b6748d98bff2959ed8f536.
 
 <!-- flowdocs:paragraph:29cf6997af373238132671c8ffbb8f97 -->
 Declared member: source declares onLoad; membership is caller\-declared, not runtime evidence\.
@@ -140,17 +140,17 @@ Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:112; symbol: on
 <!-- flowdocs:paragraph:616ba622e18b7ae7095d5c08910c664f -->
 Declared member: source declares onRestore; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:652; symbol: onRestore; span SHA256: 21ceb0f8da48cfee16332294e21cc955602bea1ecfe95ea21ea1ed51420c9c9e.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:650; symbol: onRestore; span SHA256: 21ceb0f8da48cfee16332294e21cc955602bea1ecfe95ea21ea1ed51420c9c9e.
 
 <!-- flowdocs:paragraph:87af1eca1cfc964f9eefa5ee0a6dad41 -->
 Declared member: source declares onRetag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:486; symbol: onRetag; span SHA256: 4819542f0e11a011e8e0d43b624b3b84e095eda7fa0880bac1584515b41fcb5c.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:484; symbol: onRetag; span SHA256: 4819542f0e11a011e8e0d43b624b3b84e095eda7fa0880bac1584515b41fcb5c.
 
 <!-- flowdocs:paragraph:608c5ef13221d169b92713a7422a2184 -->
 Declared member: source declares onSave; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:254; symbol: onSave; span SHA256: 3d64c594d55c18c8c6b1803ae3aed6c3669c98ef6ecebb13768b3a192c66bfd7.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:252; symbol: onSave; span SHA256: 3d64c594d55c18c8c6b1803ae3aed6c3669c98ef6ecebb13768b3a192c66bfd7.
 
 <!-- flowdocs:paragraph:0948f032e3d18fcf4ef10ddd1bffb068 -->
 Declared member: source declares onSaved; membership is caller\-declared, not runtime evidence\.
@@ -165,17 +165,17 @@ Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:113; symbol: re
 <!-- flowdocs:paragraph:10c9452f589b79220016f7a26d0af59c -->
 Declared member: source declares removeTag; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:252; symbol: removeTag; span SHA256: 0137928eadbcdaf691f3863612b8423eca202333e336f50c62563aca6d135168.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:250; symbol: removeTag; span SHA256: 0137928eadbcdaf691f3863612b8423eca202333e336f50c62563aca6d135168.
 
 <!-- flowdocs:paragraph:86017d9d65ca9e0f2357cbe9f065c7bf -->
 Declared member: source declares set; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:242; symbol: set; span SHA256: fa8ed85e594f836705b4a096bd557e2a937e9c1edfbf99dd31a38cc245f2a627.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:240; symbol: set; span SHA256: fa8ed85e594f836705b4a096bd557e2a937e9c1edfbf99dd31a38cc245f2a627.
 
 <!-- flowdocs:paragraph:cf4a4a2cb0bb7189848b41c13bfe1b8e -->
 Declared member: source declares swapWith; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:266; symbol: swapWith; span SHA256: 26e40fce5fe268a9ad421cc077e7a004652b81c25dd25e433edb1e463be2ac98.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:264; symbol: swapWith; span SHA256: 26e40fce5fe268a9ad421cc077e7a004652b81c25dd25e433edb1e463be2ac98.
 
 <!-- flowdocs:paragraph:bc3b2daf736b7f4d461a93dbb147964c -->
 Declared member: source declares toggleSelected; membership is caller\-declared, not runtime evidence\.

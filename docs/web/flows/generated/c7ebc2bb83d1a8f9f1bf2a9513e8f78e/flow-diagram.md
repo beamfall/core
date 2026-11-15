@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5629adbba4881389c5b286a922a7c260 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -13,73 +13,80 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow c7ebc2bb83d1a8f9f1bf2a9513e8f78e
-    Note over S,U: Source contains call useT at line 821 - order unresolved
-    Note over S,U: Source contains call useState at line 822 - order unresolved
-    Note over S,U: Source contains call useState at line 823 - order unresolved
-    Note over S,U: Source contains call displayString at line 824 - order unresolved
-    Note over S,U: Source contains call Set at line 45 - order unresolved
-    Note over S,U: Source contains call useT at line 682 - order unresolved
-    Note over S,U: Source contains call displayString at line 683 - order unresolved
-    Note over S,U: Source contains call t at line 684 - order unresolved
-    Note over S,U: Source contains call onChange at line 692 - order unresolved
-    Note over S,U: Source contains call onChange at line 698 - order unresolved
-    Note over S,U: Source contains call t at line 700 - order unresolved
-    Note over S,U: Source contains call map at line 703 - order unresolved
-    Note over S,U: Source contains call displayString at line 705 - order unresolved
-    Note over S,U: Source contains call onChange at line 720 - order unresolved
-    Note over S,U: Source contains call useT at line 746 - order unresolved
-    Note over S,U: Source contains call displayString at line 751 - order unresolved
-    Note over S,U: Source contains call displayString at line 756 - order unresolved
-    Note over S,U: Source contains call t at line 761 - order unresolved
-    Note over S,U: Source contains call useT at line 292 - order unresolved
-    Note over S,U: Source contains call useShowAdvanced at line 293 - order unresolved
-    Note over S,U: Source contains call useState at line 294 - order unresolved
-    Note over S,U: Source contains call displayString at line 295 - order unresolved
-    Note over S,U: Source contains call has at line 296 - order unresolved
-    Note over S,U: Source contains call useT at line 577 - order unresolved
-    Note over S,U: Source contains call useT at line 422 - order unresolved
-    Note over S,U: Source contains call useShowAdvanced at line 423 - order unresolved
-    Note over S,U: Source contains call t at line 449 - order unresolved
-    Note over S,U: Source contains call map at line 452 - order unresolved
-    Note over S,U: Source contains call t at line 463 - order unresolved
-    Note over S,U: Source contains call map at line 466 - order unresolved
-    Note over S,U: Source contains call t at line 477 - order unresolved
-    Note over S,U: Source contains call map at line 480 - order unresolved
-    Note over S,U: Source contains call useT at line 513 - order unresolved
-    Note over S,U: Source contains call useState at line 514 - order unresolved
-    Note over S,U: Source contains call useState at line 515 - order unresolved
-    Note over S,U: Source contains call displayString at line 516 - order unresolved
-    Note over S,U: Source contains call useT at line 163 - order unresolved
-    Note over S,U: Source contains call useDisplayLocale at line 164 - order unresolved
-    Note over S,U: Source contains call useAsync at line 166 - order unresolved
-    Note over S,U: Source contains call fetchConsoleConfigWithStanding at line 167 - order unresolved
-    Note over S,U: Source contains call useState at line 169 - order unresolved
-    Note over S,U: Source contains call useEffect at line 171 - order unresolved
-    Note over S,U: Source contains call some at line 175 - order unresolved
-    Note over S,U: Source contains call displayString at line 777 - order unresolved
-    Note over S,U: Source contains call t at line 126 - order unresolved
-    Note over S,U: Source contains call setActionFailed at line 196 - order unresolved
-    Note over S,U: Source contains call action at line 198 - order unresolved
-    Note over S,U: Source contains call refresh at line 199 - order unresolved
-    Note over S,U: Source contains call setActionFailed at line 202 - order unresolved
-    Note over S,U: Source contains call useMemo at line 578 - order unresolved
-    Note over S,U: Source contains call fieldValues at line 578 - order unresolved
-    Note over S,U: Source contains call useMemo at line 297 - order unresolved
-    Note over S,U: Source contains call groupProviderKeys at line 297 - order unresolved
-    Note over S,U: Source contains call graphql at line 208 - order unresolved
-    Note over S,U: Source contains call refresh at line 212 - order unresolved
-    Note over S,U: Source contains call trim at line 599 - order unresolved
-    Note over S,U: Source contains call trim at line 600 - order unresolved
-    Note over S,U: Source contains call push at line 602 - order unresolved
-    Note over S,U: Source contains call setBusy at line 605 - order unresolved
-    Note over S,U: Source contains call setSaved at line 606 - order unresolved
-    Note over S,U: Source contains call setFailed at line 607 - order unresolved
-    Note over S,U: Source contains call onSave at line 609 - order unresolved
-    Note over S,U: Source contains call setSaved at line 610 - order unresolved
-    Note over S,U: Source contains call setFailed at line 612 - order unresolved
-    Note over S,U: Source contains call setBusy at line 614 - order unresolved
-    Note over S,U: Source contains call publishMutation at line 188 - order unresolved
-    Note over S,U: Source contains call setPluginConfig at line 188 - order unresolved
-    Note over S,U: Source contains call publishMutation at line 184 - order unresolved
-    Note over S,U: Source contains call setPluginActive at line 184 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 821 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/Plugins.tsx at line 822 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/Plugins.tsx at line 823 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 824 - order unresolved
+    Note over S,U: Source contains call Set in internal/web/app/src/areas/console/sections/Plugins.tsx at line 45 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 682 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 683 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/Plugins.tsx at line 684 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/console/sections/Plugins.tsx at line 692 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/console/sections/Plugins.tsx at line 698 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/Plugins.tsx at line 700 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/console/sections/Plugins.tsx at line 703 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 705 - order unresolved
+    Note over S,U: Source contains call onChange in internal/web/app/src/areas/console/sections/Plugins.tsx at line 720 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 746 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 751 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 756 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/Plugins.tsx at line 761 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 292 - order unresolved
+    Note over S,U: Source contains call useShowAdvanced in internal/web/app/src/areas/console/sections/Plugins.tsx at line 293 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/Plugins.tsx at line 294 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 295 - order unresolved
+    Note over S,U: Source contains call has in internal/web/app/src/areas/console/sections/Plugins.tsx at line 296 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 577 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 422 - order unresolved
+    Note over S,U: Source contains call useShowAdvanced in internal/web/app/src/areas/console/sections/Plugins.tsx at line 423 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/Plugins.tsx at line 449 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/console/sections/Plugins.tsx at line 452 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/Plugins.tsx at line 463 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/console/sections/Plugins.tsx at line 466 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/Plugins.tsx at line 477 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/areas/console/sections/Plugins.tsx at line 480 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 513 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/Plugins.tsx at line 514 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/Plugins.tsx at line 515 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 516 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/sections/Plugins.tsx at line 163 - order unresolved
+    Note over S,U: Source contains call useDisplayLocale in internal/web/app/src/areas/console/sections/Plugins.tsx at line 164 - order unresolved
+    Note over S,U: Source contains call useAsync in internal/web/app/src/areas/console/sections/Plugins.tsx at line 166 - order unresolved
+    Note over S,U: Source contains call fetchConsoleConfigWithStanding in internal/web/app/src/areas/console/sections/Plugins.tsx at line 167 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/sections/Plugins.tsx at line 169 - order unresolved
+    Note over S,U: Source contains call useEffect in internal/web/app/src/areas/console/sections/Plugins.tsx at line 171 - order unresolved
+    Note over S,U: Source contains call some in internal/web/app/src/areas/console/sections/Plugins.tsx at line 175 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/ProviderKeys.tsx at line 53 - order unresolved
+    Note over S,U: Source contains call useProviderKeyFieldLabel in internal/web/app/src/areas/console/ProviderKeys.tsx at line 54 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/ProviderKeys.tsx at line 55 - order unresolved
+    Note over S,U: Source contains call useState in internal/web/app/src/areas/console/ProviderKeys.tsx at line 56 - order unresolved
+    Note over S,U: Source contains call useId in internal/web/app/src/areas/console/ProviderKeys.tsx at line 62 - order unresolved
+    Note over S,U: Source contains call displayString in internal/web/app/src/areas/console/sections/Plugins.tsx at line 777 - order unresolved
+    Note over S,U: Source contains call useT in internal/web/app/src/areas/console/ProviderKeys.tsx at line 37 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/ProviderKeys.tsx at line 39 - order unresolved
+    Note over S,U: Source contains call t in internal/web/app/src/areas/console/sections/Plugins.tsx at line 126 - order unresolved
+    Note over S,U: Source contains call setActionFailed in internal/web/app/src/areas/console/sections/Plugins.tsx at line 196 - order unresolved
+    Note over S,U: Source contains call action in internal/web/app/src/areas/console/sections/Plugins.tsx at line 198 - order unresolved
+    Note over S,U: Source contains call refresh in internal/web/app/src/areas/console/sections/Plugins.tsx at line 199 - order unresolved
+    Note over S,U: Source contains call setActionFailed in internal/web/app/src/areas/console/sections/Plugins.tsx at line 202 - order unresolved
+    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/console/sections/Plugins.tsx at line 578 - order unresolved
+    Note over S,U: Source contains call fieldValues in internal/web/app/src/areas/console/sections/Plugins.tsx at line 578 - order unresolved
+    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/console/sections/Plugins.tsx at line 297 - order unresolved
+    Note over S,U: Source contains call groupProviderKeys in internal/web/app/src/areas/console/sections/Plugins.tsx at line 297 - order unresolved
+    Note over S,U: Source contains call graphql in internal/web/app/src/areas/console/sections/Plugins.tsx at line 208 - order unresolved
+    Note over S,U: Source contains call refresh in internal/web/app/src/areas/console/sections/Plugins.tsx at line 212 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/console/sections/Plugins.tsx at line 599 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/console/sections/Plugins.tsx at line 600 - order unresolved
+    Note over S,U: Source contains call push in internal/web/app/src/areas/console/sections/Plugins.tsx at line 602 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/console/sections/Plugins.tsx at line 605 - order unresolved
+    Note over S,U: Source contains call setSaved in internal/web/app/src/areas/console/sections/Plugins.tsx at line 606 - order unresolved
+    Note over S,U: Source contains call setFailed in internal/web/app/src/areas/console/sections/Plugins.tsx at line 607 - order unresolved
+    Note over S,U: Source contains call onSave in internal/web/app/src/areas/console/sections/Plugins.tsx at line 609 - order unresolved
+    Note over S,U: Source contains call setSaved in internal/web/app/src/areas/console/sections/Plugins.tsx at line 610 - order unresolved
+    Note over S,U: Source contains call setFailed in internal/web/app/src/areas/console/sections/Plugins.tsx at line 612 - order unresolved
+    Note over S,U: Source contains call setBusy in internal/web/app/src/areas/console/sections/Plugins.tsx at line 614 - order unresolved
+    Note over S,U: Source contains call publishMutation in internal/web/app/src/areas/console/sections/Plugins.tsx at line 188 - order unresolved
+    Note over S,U: Source contains call setPluginConfig in internal/web/app/src/areas/console/sections/Plugins.tsx at line 188 - order unresolved
+    Note over S,U: Source contains call publishMutation in internal/web/app/src/areas/console/sections/Plugins.tsx at line 184 - order unresolved
+    Note over S,U: Source contains call setPluginActive in internal/web/app/src/areas/console/sections/Plugins.tsx at line 184 - order unresolved
 ```

@@ -1,11 +1,11 @@
 # Setup: choose sign\-in security mode and create the owner Profile — functional-overview
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:30e1e73555e8b3de05308898e6718350 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:113; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:131; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
 
 <!-- flowdocs:paragraph:61db3d896958b2f1c1f338427452eef0 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.

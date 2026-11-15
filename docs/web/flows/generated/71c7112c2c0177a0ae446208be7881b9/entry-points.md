@@ -1,14 +1,14 @@
 # Console migration: importer wizard, credentials, mapping, match\-rate report — entry-points
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:46030a7aa44038ec90692e2b5f63ec2e -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:134; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:177; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
 
 <!-- flowdocs:paragraph:b7701c1b22deef7495fef1fc1a707fed -->
 Declared entry point: source declares MigrationWizard; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:920; symbol: MigrationWizard; span SHA256: f25bfe93344a7749a4923876541d24ee2a3602ab0a00273c69ab6ada9725552e.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:1133; symbol: MigrationWizard; span SHA256: f25bfe93344a7749a4923876541d24ee2a3602ab0a00273c69ab6ada9725552e.
 

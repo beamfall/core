@@ -1,6 +1,6 @@
 # Console plugins: standing, lifecycle, config editor, provider keys — functional-overview
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:ab4d05d866c55714a9cb14081bc1ae52 -->
 Accepted variations: unknown\. Runtime covered variations: unknown\. Denominator: no accepted variation inventory supplied by this generator\.
@@ -12,10 +12,15 @@ Source contains a JSX conditional candidate; accepted variations and runtime bra
 
 Source: internal/web/app/src/areas/console/sections/Plugins\.tsx:760; symbol: ; span SHA256: 99fbe307329c2699666a523bc41d65f1e43fb1473a79781a28160930f83abfbc.
 
+<!-- flowdocs:paragraph:eb12881b7f7275e28ed6b521f044bc54 -->
+Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
+
+Source: internal/web/app/src/areas/console/ProviderKeys\.tsx:39; symbol: ; span SHA256: 80fe1b9c9112f1b459ff902dc46cf01aa8be80fe4acc19ff2eca2e90bd0c7db3.
+
 <!-- flowdocs:paragraph:9278bfef33df52397a91e573d77cca88 -->
 Source contains a JSX conditional candidate; accepted variations and runtime branches are unknown\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: ; span SHA256: 8dd3bd806c9c85460236240555998ab733acc75debb41fac0e0ab7e545350c68.
+Source: internal/web/app/src/lib/graphql/console\.ts:110; symbol: ; span SHA256: 8dd3bd806c9c85460236240555998ab733acc75debb41fac0e0ab7e545350c68.
 
 | Variation inventory | Runtime coverage | Denominator rule |
 | --- | --- | --- |

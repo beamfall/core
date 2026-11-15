@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:41b41964c0c4920e543ab8d1becb7dd1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -10,12 +10,12 @@ Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:94; symbol: Play
 <!-- flowdocs:paragraph:8af732ea464b9e36ad8409fcdd36dfd9 -->
 Declared member: source declares buildTimestampedLink; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:868; symbol: buildTimestampedLink; span SHA256: c3fb37a335af45dc7c5cae087c62afcf46a82252a78c0690201022ad10dcf83e.
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:872; symbol: buildTimestampedLink; span SHA256: c3fb37a335af45dc7c5cae087c62afcf46a82252a78c0690201022ad10dcf83e.
 
 <!-- flowdocs:paragraph:66a214617dbb1bcb690e947a2e72999d -->
 Declared member: source declares parseTimestampParam; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:862; symbol: parseTimestampParam; span SHA256: 797bd778b40b672d4886813ada3803b727e71de235cee1356f3b44efa985460d.
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:866; symbol: parseTimestampParam; span SHA256: 797bd778b40b672d4886813ada3803b727e71de235cee1356f3b44efa985460d.
 
 <!-- flowdocs:paragraph:1b75ba00eec3c8847e68b95cee156b8a -->
 Declared member: source declares AudioStage; membership is caller\-declared, not runtime evidence\.
@@ -80,15 +80,15 @@ Source: internal/web/app/src/lib/graphql/viewer\.ts:469; symbol: setClientPref; 
 <!-- flowdocs:paragraph:44c0a536d967104974563ca4ad6c2d89 -->
 Declared member: source declares back; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:649; symbol: back; span SHA256: dfddc3cd508dcddafaa86975b777bfc8c318d6883d4d5578069dadf9fbcf6d80.
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:650; symbol: back; span SHA256: dfddc3cd508dcddafaa86975b777bfc8c318d6883d4d5578069dadf9fbcf6d80.
 
 <!-- flowdocs:paragraph:bab5f71e048e8a6d8fcc3fdd9e23464f -->
 Declared member: source declares playNext; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:419; symbol: playNext; span SHA256: 549fbee98e13e47ba9989ac03512f6dc28514550c716cf5d050131e0c83e965d.
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:420; symbol: playNext; span SHA256: 549fbee98e13e47ba9989ac03512f6dc28514550c716cf5d050131e0c83e965d.
 
 <!-- flowdocs:paragraph:7539efee92ad731f49b968bc2b4472fb -->
 Declared member: source declares playPrevious; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:431; symbol: playPrevious; span SHA256: 3e97b13cecdeba1be11dfb641ef8c3be601de36cdc2c1352345b78f107526819.
+Source: internal/web/app/src/areas/viewer/pages/PlayerPage\.tsx:432; symbol: playPrevious; span SHA256: 3e97b13cecdeba1be11dfb641ef8c3be601de36cdc2c1352345b78f107526819.
 

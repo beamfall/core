@@ -1,14 +1,14 @@
 # Manage trash: restore, purge and reversible activity — entry-points
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f3074f8cb405f1a052c7d184019fe007 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:259; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:260; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
 
 <!-- flowdocs:paragraph:3f283b8c7909b41484386960fd2da934 -->
 Declared entry point: source declares TrashPage; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:49; symbol: TrashPage; span SHA256: 826c2664ab13b7d80b65419569dfec7e06c45b79933c55909e76c70c16942358.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:50; symbol: TrashPage; span SHA256: 826c2664ab13b7d80b65419569dfec7e06c45b79933c55909e76c70c16942358.
 

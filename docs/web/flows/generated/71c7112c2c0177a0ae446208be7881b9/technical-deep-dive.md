@@ -1,41 +1,41 @@
 # Console migration: importer wizard, credentials, mapping, match\-rate report — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f24cb76ee579e1bc08cd46cdeb08bcbc -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:134; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:177; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
 
 <!-- flowdocs:paragraph:d9ac37f09ebfde5edf52977225efd3fd -->
 Declared member: source declares CATEGORY\_LABELS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:134; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:177; symbol: CATEGORY\_LABELS; span SHA256: 4aafe40cebd58b74f2169fb9edfec61aa0bc3d3a342b3a83030aca6dc535ee7e.
 
 <!-- flowdocs:paragraph:dfe8a3661b9de2f08f2c367c9110e413 -->
 Declared member: source declares CredentialStep; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:519; symbol: CredentialStep; span SHA256: 982543f07bda8a5fe743d0574257247795b41261d8a24299ca1fae0ffe5fba8a.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:732; symbol: CredentialStep; span SHA256: 982543f07bda8a5fe743d0574257247795b41261d8a24299ca1fae0ffe5fba8a.
 
 <!-- flowdocs:paragraph:fb926b5e5afdf0388798ecbc09a79a9c -->
 Declared member: source declares ImporterWizard; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:702; symbol: ImporterWizard; span SHA256: 7590cfc9d23a8bf7bae1d19d301f39da6d1eda7a13752d47bce97d73a8da113f.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:915; symbol: ImporterWizard; span SHA256: 7590cfc9d23a8bf7bae1d19d301f39da6d1eda7a13752d47bce97d73a8da113f.
 
 <!-- flowdocs:paragraph:b156aedfd1f9d56d5bcfa9df0476c6d7 -->
 Declared member: source declares MappingStep; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:586; symbol: MappingStep; span SHA256: 6185090d84dbd7c2d629c2b7e3949d0f4e0df268497255a3d111c49b21b38ea9.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:799; symbol: MappingStep; span SHA256: 6185090d84dbd7c2d629c2b7e3949d0f4e0df268497255a3d111c49b21b38ea9.
 
 <!-- flowdocs:paragraph:6c4e70f28a82f9f83eb040976d1760e5 -->
 Declared member: source declares MatchRateReport; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:654; symbol: MatchRateReport; span SHA256: 321207af92f501271601c71f3e2f23d753b11ed3240381cafca7f2c3ef88c520.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:867; symbol: MatchRateReport; span SHA256: 321207af92f501271601c71f3e2f23d753b11ed3240381cafca7f2c3ef88c520.
 
 <!-- flowdocs:paragraph:7c9d42b302778610bf8d095f65ea43a0 -->
 Declared member: source declares WizardPhase; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:513; symbol: WizardPhase; span SHA256: d93d150b7b77be6cd0a4eca45493eb2d1281ce27a81963db95935d12256b1d6a.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:726; symbol: WizardPhase; span SHA256: d93d150b7b77be6cd0a4eca45493eb2d1281ce27a81963db95935d12256b1d6a.
 
 <!-- flowdocs:paragraph:7ffeb3e93984ddd9ba5c8454651f3352 -->
 Declared member: source declares CategoryCount; membership is caller\-declared, not runtime evidence\.
@@ -95,17 +95,17 @@ Source: internal/web/app/src/lib/migrationReport\.ts:35; symbol: toggleCategory;
 <!-- flowdocs:paragraph:6a99c74c101d25d94ea65836eaf093eb -->
 Declared member: source declares SCRAPER\_CREDENTIAL\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:208; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
+Source: internal/web/app/src/lib/graphql/console\.ts:246; symbol: SCRAPER\_CREDENTIAL\_FIELDS; span SHA256: 889e4881c381c872d423ff3ae2a36029303bc887796c1f1d232edcf2964edbf7.
 
 <!-- flowdocs:paragraph:4854c09256f21c64e42a53599b0f9cae -->
 Declared member: source declares SET\_SCRAPER\_CREDENTIAL\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:211; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
+Source: internal/web/app/src/lib/graphql/console\.ts:249; symbol: SET\_SCRAPER\_CREDENTIAL\_MUTATION; span SHA256: 7cc89b976674fff28000c424bdf87e1211936eba0d95ed14099687d424344d5b.
 
 <!-- flowdocs:paragraph:059943e30784abf1b2a34f06c719724b -->
 Declared member: source declares setScraperCredential; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:214; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
+Source: internal/web/app/src/lib/graphql/console\.ts:252; symbol: setScraperCredential; span SHA256: a7ab48f46207dd2f992f28fcc70ae9522a15cc8b9ac186d3d64d1fd28fd340fb.
 
 <!-- flowdocs:paragraph:209093a5dc114e84390492d6d303af60 -->
 Declared member: source declares IMPORTERS\_QUERY; membership is caller\-declared, not runtime evidence\.
@@ -165,25 +165,25 @@ Source: internal/web/app/src/lib/graphql/viewer\.ts:79; symbol: fetchProfiles; s
 <!-- flowdocs:paragraph:43bfc1b25f195d14037e1eecf81b9438 -->
 Declared member: source declares clearPoll; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:729; symbol: clearPoll; span SHA256: 609d138fc5e4833a172bf1661aeb6219a0056988ac4b82e89c93b0b0f819851e.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:942; symbol: clearPoll; span SHA256: 609d138fc5e4833a172bf1661aeb6219a0056988ac4b82e89c93b0b0f819851e.
 
 <!-- flowdocs:paragraph:a49656a254ec8ba276ca095b6fff6e8b -->
 Declared member: source declares patchConfig; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:744; symbol: patchConfig; span SHA256: 27583749b10937bd4a60d0fd2bca363ca2caf8601b0f9d114e54839afc2cc966.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:957; symbol: patchConfig; span SHA256: 27583749b10937bd4a60d0fd2bca363ca2caf8601b0f9d114e54839afc2cc966.
 
 <!-- flowdocs:paragraph:d06e39abbc4d05c9deb0ca91fddae9c7 -->
 Declared member: source declares reset; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:790; symbol: reset; span SHA256: ff3b6fe911eec682f1eb9d24bc25e3507814c851fa631e6c20bc7f5bf8f6714c.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:1003; symbol: reset; span SHA256: ff3b6fe911eec682f1eb9d24bc25e3507814c851fa631e6c20bc7f5bf8f6714c.
 
 <!-- flowdocs:paragraph:8b7e4cb6cacfd095540e00224ee90b87 -->
 Declared member: source declares save; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:531; symbol: save; span SHA256: 76cc6995acabd4e215cf9f7cd3506330840c1006670f7772c4a4563a9efdac92.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:744; symbol: save; span SHA256: 76cc6995acabd4e215cf9f7cd3506330840c1006670f7772c4a4563a9efdac92.
 
 <!-- flowdocs:paragraph:573d7a59a58fe3de37e579f0c2bb9def -->
 Declared member: source declares startRun; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:748; symbol: startRun; span SHA256: 470c7773d3ce92e8a998db54405aebaae371089524d8e4050e3e49fae05d295a.
+Source: internal/web/app/src/areas/console/sections/RemoteAccess\.tsx:961; symbol: startRun; span SHA256: 470c7773d3ce92e8a998db54405aebaae371089524d8e4050e3e49fae05d295a.
 

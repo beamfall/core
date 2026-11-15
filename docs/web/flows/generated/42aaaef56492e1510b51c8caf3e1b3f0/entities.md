@@ -1,6 +1,6 @@
 # App routing: /web basename, area code\-splitting, initial\-route preload — entities
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:c6831584a7b428f3fb464275136a8ed6 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

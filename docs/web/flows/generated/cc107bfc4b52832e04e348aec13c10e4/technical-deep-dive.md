@@ -1,6 +1,6 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8221c408ad1cbf321930b1c1e7f73535 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -355,32 +355,32 @@ Source: internal/web/app/src/lib/compat\.ts:64; symbol: terminalResult; span SHA
 <!-- flowdocs:paragraph:64d647f0f7cbe9c068e8b102d9cf439a -->
 Declared member: source declares Register; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/register\.tsx:9; symbol: Register; span SHA256: 2fe563a2f5cabd780a0e84cd54ca6833ceac0b4470699754527d6032dd373dfc.
+Source: internal/web/app/src/lib/register\.tsx:36; symbol: Register; span SHA256: 2fe563a2f5cabd780a0e84cd54ca6833ceac0b4470699754527d6032dd373dfc.
 
 <!-- flowdocs:paragraph:035cfabc53ea1aa95585e8ba42eaf41e -->
 Declared member: source declares RegisterContext; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/register\.tsx:19; symbol: RegisterContext; span SHA256: dafa7635ec6d2d8b9fb4882b7ad19b1243005ebd2f56909acba57bad247a85fb.
+Source: internal/web/app/src/lib/register\.tsx:58; symbol: RegisterContext; span SHA256: dafa7635ec6d2d8b9fb4882b7ad19b1243005ebd2f56909acba57bad247a85fb.
 
 <!-- flowdocs:paragraph:f3e015752e05de2f5aaacc301e2cea54 -->
 Declared member: source declares RegisterProvider; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/register\.tsx:21; symbol: RegisterProvider; span SHA256: 54f2ed45c9bb618137b663caa1ff55b27624bd096ca2ad93e5fdf3932bf880ab.
+Source: internal/web/app/src/lib/register\.tsx:74; symbol: RegisterProvider; span SHA256: 54f2ed45c9bb618137b663caa1ff55b27624bd096ca2ad93e5fdf3932bf880ab.
 
 <!-- flowdocs:paragraph:2b5786ca8551c5946c9cb30d02ebd22a -->
 Declared member: source declares RegisterValue; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/register\.tsx:12; symbol: RegisterValue; span SHA256: 80aad4136cfa4d35a0751b310ba166fcb43e82a12693cef49335c6c1fd332654.
+Source: internal/web/app/src/lib/register\.tsx:39; symbol: RegisterValue; span SHA256: 80aad4136cfa4d35a0751b310ba166fcb43e82a12693cef49335c6c1fd332654.
 
 <!-- flowdocs:paragraph:ae91b2da43da3c8e7f9ca32f2a6092ad -->
 Declared member: source declares Theme; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/register\.tsx:10; symbol: Theme; span SHA256: be9cf6b063727f0e4d2d2fd9f3fc1ea4eb67f13ccc62cdad3ecc7a17cc94b5eb.
+Source: internal/web/app/src/lib/register\.tsx:37; symbol: Theme; span SHA256: be9cf6b063727f0e4d2d2fd9f3fc1ea4eb67f13ccc62cdad3ecc7a17cc94b5eb.
 
 <!-- flowdocs:paragraph:64c2390ab61ee121a5305e0ae4d1b1e7 -->
 Declared member: source declares useRegister; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/register\.tsx:44; symbol: useRegister; span SHA256: cef3ed2a60a7df31fd3a93597ba5cccf7ae31932654a1b8837b3116b31b4e22f.
+Source: internal/web/app/src/lib/register\.tsx:145; symbol: useRegister; span SHA256: cef3ed2a60a7df31fd3a93597ba5cccf7ae31932654a1b8837b3116b31b4e22f.
 
 <!-- flowdocs:paragraph:c6e965a3c2e302ed691d4b6dfe7eba5a -->
 Declared member: source declares SessionContext; membership is caller\-declared, not runtime evidence\.

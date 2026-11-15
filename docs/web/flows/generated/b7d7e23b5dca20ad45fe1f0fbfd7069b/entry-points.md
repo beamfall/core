@@ -1,11 +1,11 @@
 # Manage markers: segment edit, bulk delete, trashed markers — entry-points
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:16eb28f6d455f37622c80a5dbb77c54e -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:597; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
+Source: internal/web/app/src/areas/manage/pages/MarkersPage\.tsx:595; symbol: BulkDeleteConfirm; span SHA256: 06875e3212b9669e3dc36e7164f0f7193644d51ad12ab79d317d837f8da0d044.
 
 <!-- flowdocs:paragraph:d4c8d90a0610f3a642cefa0cf56f891c -->
 Declared entry point: source declares MarkersPage; entry dispatch and callers are unresolved\.

@@ -1,6 +1,6 @@
 # Setup: configure the update\-check channel — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:022e3dd06ca6ba4b152affc45dc0aca8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -40,20 +40,20 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:63; symbol: verifyAdminSession
 <!-- flowdocs:paragraph:ab5fabacac171bcbc8d5325d069289af -->
 Declared member: source declares CONSOLE\_CONFIG\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:66; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
+Source: internal/web/app/src/lib/graphql/console\.ts:104; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
 
 <!-- flowdocs:paragraph:d1aa273b847e97944fd5def4a563279f -->
 Declared member: source declares ConsoleConfigPatch; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:172; symbol: ConsoleConfigPatch; span SHA256: bb928d35d539663a8de47415fff2ece595fbc56665addb8b729d3ebd010264be.
+Source: internal/web/app/src/lib/graphql/console\.ts:210; symbol: ConsoleConfigPatch; span SHA256: bb928d35d539663a8de47415fff2ece595fbc56665addb8b729d3ebd010264be.
 
 <!-- flowdocs:paragraph:f0e6e6823480c2bb9a39947d8afe7135 -->
 Declared member: source declares SET\_CONSOLE\_CONFIG\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:183; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: da6d061e04800276be21c679df560caf0300555cca0629e9e480fceea5daf88f.
+Source: internal/web/app/src/lib/graphql/console\.ts:221; symbol: SET\_CONSOLE\_CONFIG\_MUTATION; span SHA256: da6d061e04800276be21c679df560caf0300555cca0629e9e480fceea5daf88f.
 
 <!-- flowdocs:paragraph:33b9e420d18f0d4ca657b8dd302168b7 -->
 Declared member: source declares setConsoleConfig; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:186; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
+Source: internal/web/app/src/lib/graphql/console\.ts:224; symbol: setConsoleConfig; span SHA256: 0eed1af2eab202efaef46289683c7d5a1392b5f4e27278154bb1cf6e90ab4615.
 

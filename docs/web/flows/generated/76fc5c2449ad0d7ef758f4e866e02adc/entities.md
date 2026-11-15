@@ -1,9 +1,9 @@
 # Player audio and subtitle tracks, subtitle styling — entities
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:6ecd77d7de58b6e5843eaf430ef66aaf -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:440; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:450; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
 

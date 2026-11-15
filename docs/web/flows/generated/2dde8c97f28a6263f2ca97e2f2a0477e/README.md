@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — readme
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:895b31a9129840196493859a58239ced -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
@@ -14,8 +14,6 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
 
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
-
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
 - In\-scope declarations that belong to no declared inventory flow are listed in generation\.json inventory\.unassigned, not generated as flows\.
@@ -28,8 +26,8 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - duplicate logical declaration unresolved
 
+- method extent exceeds 512 lines
+
 - template has no supported literal Angular bindings
 
-Declared inventory flow viewer\.entity: 13 resolved, 1 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/pages/EntityPage\.tsx fallbackQueue: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+Declared inventory flow viewer\.entity: 13 resolved, 0 unresolved members.

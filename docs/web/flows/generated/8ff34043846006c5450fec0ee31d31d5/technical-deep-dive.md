@@ -1,76 +1,76 @@
 # Localization: locale resolution, ICU formatting and string catalogs — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:754800b9f9bea5b43d3c9fb842dbb5ba -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:15; symbol: I18nContext; span SHA256: e413313dc92cbee6475688aa909676d74886583ba788af61ad034122f678f598.
+Source: internal/web/app/src/lib/i18n\.tsx:17; symbol: I18nContext; span SHA256: e413313dc92cbee6475688aa909676d74886583ba788af61ad034122f678f598.
 
 <!-- flowdocs:paragraph:b3727ad9242f13936542aaa4028917f5 -->
 Declared member: source declares I18nContext; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:15; symbol: I18nContext; span SHA256: e413313dc92cbee6475688aa909676d74886583ba788af61ad034122f678f598.
+Source: internal/web/app/src/lib/i18n\.tsx:17; symbol: I18nContext; span SHA256: e413313dc92cbee6475688aa909676d74886583ba788af61ad034122f678f598.
 
 <!-- flowdocs:paragraph:d4173374a48c18b112744e5265ef328b -->
 Declared member: source declares I18nValue; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:8; symbol: I18nValue; span SHA256: 29f44369cd9386f133fc0a92f2cf97846f667089f1dc54cd0fa35edad4ff8f10.
+Source: internal/web/app/src/lib/i18n\.tsx:10; symbol: I18nValue; span SHA256: 29f44369cd9386f133fc0a92f2cf97846f667089f1dc54cd0fa35edad4ff8f10.
 
 <!-- flowdocs:paragraph:dd5e4f53d921c4de796bef3b171f4278 -->
 Declared member: source declares LocalePreference; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:18; symbol: LocalePreference; span SHA256: 18318ab5689a26a23f8c290e691b4d92a2b8c121d9d05f98bd4ff9c84b68c852.
+Source: internal/web/app/src/lib/i18n\.tsx:20; symbol: LocalePreference; span SHA256: 18318ab5689a26a23f8c290e691b4d92a2b8c121d9d05f98bd4ff9c84b68c852.
 
-<!-- flowdocs:paragraph:e5f4b4ec33601b9069bfc3e7ee849739 -->
-Declared member: source declares SUPPORTED\_LOCALES; membership is caller\-declared, not runtime evidence\.
+<!-- flowdocs:paragraph:5e52e1b5b2d7d2e3b0535592b408c50c -->
+Declared member: source declares OFFERED\_LOCALE\_TAGS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:16; symbol: SUPPORTED\_LOCALES; span SHA256: a103bbac3787877756b4912b21ee7b53dac49f7cd43ae33dcf118f5f4eecf3b0.
+Source: internal/web/app/src/l10n/locales\.ts:34; symbol: OFFERED\_LOCALE\_TAGS; span SHA256: df6ae8cd9850b8fc173b6cd30403c3b3c6ab880a3310052de115c93225fa92fb.
 
 <!-- flowdocs:paragraph:03a33edb5c1f93e4a6d242093c54fc18 -->
 Declared member: source declares TYPED\_ARG; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:215; symbol: TYPED\_ARG; span SHA256: bfea86f0eecdb3609661a2b642fd8eb8cc9f04dba41779712b110bd9c7679037.
+Source: internal/web/app/src/lib/i18n\.tsx:219; symbol: TYPED\_ARG; span SHA256: bfea86f0eecdb3609661a2b642fd8eb8cc9f04dba41779712b110bd9c7679037.
 
 <!-- flowdocs:paragraph:53883aa4370b7bbaad9b30ef4db6be4b -->
 Declared member: source declares formatArg; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:154; symbol: formatArg; span SHA256: 486910a28a53945294ab47986c74b73a97c24da12dc5c983096038e878f093f6.
+Source: internal/web/app/src/lib/i18n\.tsx:158; symbol: formatArg; span SHA256: 486910a28a53945294ab47986c74b73a97c24da12dc5c983096038e878f093f6.
 
 <!-- flowdocs:paragraph:85bf32f2d6e715d2b65b41fa7c116672 -->
 Declared member: source declares formatMessage; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:217; symbol: formatMessage; span SHA256: d460388715e85c1676b452b78871b7992a6cb3c94e4136321d756a005d9d8a6c.
+Source: internal/web/app/src/lib/i18n\.tsx:221; symbol: formatMessage; span SHA256: d460388715e85c1676b452b78871b7992a6cb3c94e4136321d756a005d9d8a6c.
 
 <!-- flowdocs:paragraph:3c024153c0d47f83a08e61590cb3b9c5 -->
 Declared member: source declares formatMessageICU; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:170; symbol: formatMessageICU; span SHA256: c331695430f8999127d072dfd6aa6adc8ecb805bf9f190180cd182b16cdeb320.
+Source: internal/web/app/src/lib/i18n\.tsx:174; symbol: formatMessageICU; span SHA256: c331695430f8999127d072dfd6aa6adc8ecb805bf9f190180cd182b16cdeb320.
 
 <!-- flowdocs:paragraph:8c21788e6565fe03a539fb5649d35c20 -->
 Declared member: source declares formatNumberFor; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:67; symbol: formatNumberFor; span SHA256: dab30a26668d0917de69ce9965e739062b8e0495b55db41dc4ea3739e2936702.
+Source: internal/web/app/src/lib/i18n\.tsx:71; symbol: formatNumberFor; span SHA256: dab30a26668d0917de69ce9965e739062b8e0495b55db41dc4ea3739e2936702.
 
-<!-- flowdocs:paragraph:fe2b5b175d26348800d89502aa43802f -->
-Declared member: source declares isLocale; membership is caller\-declared, not runtime evidence\.
+<!-- flowdocs:paragraph:bdfb9ed65eec02b42c24ab19ca6dced5 -->
+Declared member: source declares isCatalogLocale; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:23; symbol: isLocale; span SHA256: 06a8369569437a1c161c9af47b9d5f4bb15cb70b1c5c52e958dffa7f08386f3b.
+Source: internal/web/app/src/strings\.ts:18; symbol: isCatalogLocale; span SHA256: ca39d51f8dbcfa92f59bab0d3c20166020d3e3321e5d9a012ab370be110428dd.
 
 <!-- flowdocs:paragraph:109d13fe7f4399b54543f2baeea89815 -->
 Declared member: source declares parsePluralOptions; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:139; symbol: parsePluralOptions; span SHA256: c6bfca5abac59a374e969f98c212d9d500ef549340714fd56d536d1e915fdbfc.
+Source: internal/web/app/src/lib/i18n\.tsx:143; symbol: parsePluralOptions; span SHA256: c6bfca5abac59a374e969f98c212d9d500ef549340714fd56d536d1e915fdbfc.
 
 <!-- flowdocs:paragraph:2eefe0dfeb7f9767535dcf4619a6ea0c -->
 Declared member: source declares readGroup; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:85; symbol: readGroup; span SHA256: 96f1bac15a65e491907972bc41c57440eebaf20745ef881e54a268decda20172.
+Source: internal/web/app/src/lib/i18n\.tsx:89; symbol: readGroup; span SHA256: 96f1bac15a65e491907972bc41c57440eebaf20745ef881e54a268decda20172.
 
 <!-- flowdocs:paragraph:2af7208b163030ab507baf16cfe1169d -->
 Declared member: source declares resolveBrowserLocalePreference; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:42; symbol: resolveBrowserLocalePreference; span SHA256: 5d9a02026f145175b7902453d0e33a553a0dc6840cf3674bc8b821b598c154c3.
+Source: internal/web/app/src/lib/i18n\.tsx:46; symbol: resolveBrowserLocalePreference; span SHA256: 5d9a02026f145175b7902453d0e33a553a0dc6840cf3674bc8b821b598c154c3.
 
 <!-- flowdocs:paragraph:2d9e6a708e3793bb6027ec7fc3b43cc5 -->
 Declared member: source declares resolveLocalePreference; membership is caller\-declared, not runtime evidence\.
@@ -80,47 +80,47 @@ Source: internal/web/app/src/lib/i18n\.tsx:27; symbol: resolveLocalePreference; 
 <!-- flowdocs:paragraph:2bb42831cbeb3a91a189fa7d2342033e -->
 Declared member: source declares selectPluralCategory; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:75; symbol: selectPluralCategory; span SHA256: 385720a2e4d62642f61b374402b731c78fd45eb83388201d7571f0f633a8bbfe.
+Source: internal/web/app/src/lib/i18n\.tsx:79; symbol: selectPluralCategory; span SHA256: 385720a2e4d62642f61b374402b731c78fd45eb83388201d7571f0f633a8bbfe.
 
 <!-- flowdocs:paragraph:21784142d655323b4aa0bc04ba17b029 -->
 Declared member: source declares splitTopLevel; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:108; symbol: splitTopLevel; span SHA256: f316f08045194b7109d2416ede89194d34cc9ebfd6993be6d753cc0ad67bf3ce.
+Source: internal/web/app/src/lib/i18n\.tsx:112; symbol: splitTopLevel; span SHA256: f316f08045194b7109d2416ede89194d34cc9ebfd6993be6d753cc0ad67bf3ce.
 
 <!-- flowdocs:paragraph:9b60ca1618be9786c76f4dab89f30598 -->
 Declared member: source declares useDisplayLocale; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:281; symbol: useDisplayLocale; span SHA256: 8a14d5c651d2273932c57eac9c57393bfeed77470211acee0b24174fdaafef90.
+Source: internal/web/app/src/lib/i18n\.tsx:285; symbol: useDisplayLocale; span SHA256: 8a14d5c651d2273932c57eac9c57393bfeed77470211acee0b24174fdaafef90.
 
 <!-- flowdocs:paragraph:bbc4d717684566e43285261c9d39c139 -->
 Declared member: source declares useI18n; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:270; symbol: useI18n; span SHA256: a3361b9b66865baf3695a72d9ba55d501810f84041dd6f323a0fc2a5335d89f4.
+Source: internal/web/app/src/lib/i18n\.tsx:274; symbol: useI18n; span SHA256: a3361b9b66865baf3695a72d9ba55d501810f84041dd6f323a0fc2a5335d89f4.
 
 <!-- flowdocs:paragraph:11d223920a2eca1914a30d6d81709243 -->
 Declared member: source declares useT; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:277; symbol: useT; span SHA256: 5cf3878beef4177b28833dd81167d5dc248446d13814e43c7bcf148638329cda.
+Source: internal/web/app/src/lib/i18n\.tsx:281; symbol: useT; span SHA256: 5cf3878beef4177b28833dd81167d5dc248446d13814e43c7bcf148638329cda.
 
 <!-- flowdocs:paragraph:6b36c4097395d7a0a1a4b0e19d6c7912 -->
 Declared member: source declares Locale; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings\.ts:12; symbol: Locale; span SHA256: 432e27c3546d77138ab11bc3c33e2139fd219a0bd01ea5668ddaf0fbd6e93b33.
+Source: internal/web/app/src/strings\.ts:14; symbol: Locale; span SHA256: ab62c49ff878f542d744d90c1b5fb592edb51dd9c574e6e043549400906d325a.
 
 <!-- flowdocs:paragraph:a0eed0f3bdd554ee2578e5c0acbd99c1 -->
 Declared member: source declares STRINGS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings\.ts:14; symbol: STRINGS; span SHA256: 88cbf532cbbb8fc785ad9c03a3239e9af741289ae89044a735e3bdb878a769e3.
+Source: internal/web/app/src/strings\.ts:36; symbol: STRINGS; span SHA256: e6ee46d3a1229f33f2568e19562cf793bf296b24a82b0aa55130befcca5adc63.
 
 <!-- flowdocs:paragraph:0b0693003c38ff5912ba04fd8fcc045b -->
 Declared member: source declares StringKey; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings\.ts:10; symbol: StringKey; span SHA256: 3bf2c01cc63af6369f1bed2ecbb92cdb0dfa8c66a5b4e8c0be0d117fac9c6335.
+Source: internal/web/app/src/strings\.ts:11; symbol: StringKey; span SHA256: 5e35553b8630893b2814ffa2cfa7263d027cb08c5ce3ab4d906a845fc2d55fa3.
 
 <!-- flowdocs:paragraph:dbb3997e094ffb4204e6b29d7ba1ef97 -->
 Declared member: source declares StringTable; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings\.ts:11; symbol: StringTable; span SHA256: 2874e09f9458ec6090e146e551f1704ac7b8e4421d2517fe790a8f8e16f59518.
+Source: internal/web/app/src/strings\.ts:12; symbol: StringTable; span SHA256: 2874e09f9458ec6090e146e551f1704ac7b8e4421d2517fe790a8f8e16f59518.
 
 <!-- flowdocs:paragraph:6e7ffc92ca31bd47210057e39359d4c7 -->
 Declared member: source declares accessBulkStrings; membership is caller\-declared, not runtime evidence\.
@@ -140,27 +140,27 @@ Source: internal/web/app/src/strings/backup\-retention\.ts:1; symbol: backupRete
 <!-- flowdocs:paragraph:c5476b854c7d3b083e3aea3e4eb692b6 -->
 Declared member: source declares de; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:140; symbol: de; span SHA256: bc388bfc92f57f404c5b58d111906b45818182337e4304e14afb4b8cec7a7b3d.
+Source: internal/web/app/src/strings/catalog\.ts:233; symbol: de; span SHA256: bc388bfc92f57f404c5b58d111906b45818182337e4304e14afb4b8cec7a7b3d.
 
 <!-- flowdocs:paragraph:d8560d59cd0babd68ab6199c7db1b58a -->
 Declared member: source declares en; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:46; symbol: en; span SHA256: e65db136999d05392d1d1b17ea1e72a3a62e82e53d133f5cc73c23a757ed2461.
+Source: internal/web/app/src/strings/catalog\.ts:77; symbol: en; span SHA256: e65db136999d05392d1d1b17ea1e72a3a62e82e53d133f5cc73c23a757ed2461.
 
 <!-- flowdocs:paragraph:b51ff324b7e5c588f080248ffcb4d942 -->
 Declared member: source declares es; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:187; symbol: es; span SHA256: f32d997c5a23950f9e8287ccd17f64cf7aef89ed267c04ae160060c6cfbac137.
+Source: internal/web/app/src/strings/catalog\.ts:311; symbol: es; span SHA256: f32d997c5a23950f9e8287ccd17f64cf7aef89ed267c04ae160060c6cfbac137.
 
 <!-- flowdocs:paragraph:83a35a65e3a5687e71750af1feeaea53 -->
 Declared member: source declares fr; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:93; symbol: fr; span SHA256: 51d4db578c97599c2d1695e3fdcc831e6acc9e2645e8105db248530c18e760f3.
+Source: internal/web/app/src/strings/catalog\.ts:155; symbol: fr; span SHA256: 51d4db578c97599c2d1695e3fdcc831e6acc9e2645e8105db248530c18e760f3.
 
 <!-- flowdocs:paragraph:119bfed01cbb4222dbd8279d0e6fb15b -->
 Declared member: source declares pt; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/catalog\.ts:234; symbol: pt; span SHA256: 266485028f4d0bb4488fa67cb59057d5f91433b8d4b5cadfc456b2c8be2e4ae0.
+Source: internal/web/app/src/strings/catalog\.ts:389; symbol: pt; span SHA256: 266485028f4d0bb4488fa67cb59057d5f91433b8d4b5cadfc456b2c8be2e4ae0.
 
 <!-- flowdocs:paragraph:e87593965cb3dabb4a4cf9df9fbd9c70 -->
 Declared member: source declares collectionMarkerStrings; membership is caller\-declared, not runtime evidence\.
@@ -175,12 +175,7 @@ Source: internal/web/app/src/strings/console\-access\.ts:1; symbol: consoleAcces
 <!-- flowdocs:paragraph:86156f30b89e70127df6399fe2461f5d -->
 Declared member: source declares consoleOperationsStrings; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/strings/console\-operations\.ts:46; symbol: consoleOperationsStrings; span SHA256: 965e66ed8af962eb8baf87327db6ec38adad15c20b5da1e862ccc11f4c347b19.
-
-<!-- flowdocs:paragraph:a0b50069bdb6425ba779e7541d297f26 -->
-Declared member: source declares updateSafetyStrings; membership is caller\-declared, not runtime evidence\.
-
-Source: internal/web/app/src/strings/console\-operations\.ts:1; symbol: updateSafetyStrings; span SHA256: 10d93818695c502ea9469bb5147692febbddbe2c9430b19e2b5a5a2516c86575.
+Source: internal/web/app/src/strings/console\-operations\.ts:1; symbol: consoleOperationsStrings; span SHA256: 965e66ed8af962eb8baf87327db6ec38adad15c20b5da1e862ccc11f4c347b19.
 
 <!-- flowdocs:paragraph:90526c53dbb364d6c4c47bd9ca94b937 -->
 Declared member: source declares customizationStrings; membership is caller\-declared, not runtime evidence\.
@@ -290,10 +285,10 @@ Source: internal/web/app/src/strings/whos\-watching\.ts:1; symbol: whosWatchingS
 <!-- flowdocs:paragraph:428950d3592c49868754660de8c28875 -->
 Declared member: source declares setLocale; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:265; symbol: setLocale; span SHA256: 1e2e3175145ae504524a3c2f2884fe519595f3bd6dcb104a578e74f2f4150414.
+Source: internal/web/app/src/lib/i18n\.tsx:269; symbol: setLocale; span SHA256: 1e2e3175145ae504524a3c2f2884fe519595f3bd6dcb104a578e74f2f4150414.
 
 <!-- flowdocs:paragraph:e67c3ff70eebef3bd857effc1839fd1a -->
 Declared member: source declares value; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:250; symbol: value; span SHA256: 9a2b2b49b239a8a17a42cfa5842dab4482bfa1223eb126bca7133e9f1857ed91.
+Source: internal/web/app/src/lib/i18n\.tsx:254; symbol: value; span SHA256: 9a2b2b49b239a8a17a42cfa5842dab4482bfa1223eb126bca7133e9f1857ed91.
 

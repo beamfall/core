@@ -1,31 +1,41 @@
 # Setup: pick a library type and folder, create the first Library and scan — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:208368784b5e7d38c28f28d9158bbde0 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:18; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:19; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
 
 <!-- flowdocs:paragraph:8f33f180ce598d214c63d31725c2ec96 -->
 Declared member: source declares Crumb; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:18; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:19; symbol: Crumb; span SHA256: 8dc484cd4428026505f71f33237f8927be749ec80598b5c47633346e6be964aa.
 
 <!-- flowdocs:paragraph:77e7af1d6f6baf146523bbfbd908f8af -->
 Declared member: source declares FolderPicker; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:47; symbol: FolderPicker; span SHA256: 56637f07f224a16796fbe78c7c3253cd5f8eb8f4f2563bf44e469fdd9b78fe4f.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:48; symbol: FolderPicker; span SHA256: 56637f07f224a16796fbe78c7c3253cd5f8eb8f4f2563bf44e469fdd9b78fe4f.
 
 <!-- flowdocs:paragraph:60bd3f57fc86afa4c6eb00cbac8b47e3 -->
 Declared member: source declares FolderPickerProps; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:37; symbol: FolderPickerProps; span SHA256: 78c56aa3a8eba0ce8973048d3ababf71c313ef85c7e2adaf6b3e2662cede02ff.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:38; symbol: FolderPickerProps; span SHA256: 78c56aa3a8eba0ce8973048d3ababf71c313ef85c7e2adaf6b3e2662cede02ff.
 
 <!-- flowdocs:paragraph:c8bb040de594445bdb9954716e54da17 -->
 Declared member: source declares breadcrumbs; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:26; symbol: breadcrumbs; span SHA256: a6d5bc48934520f383d053b7236b7e7629b881908efac5ac98d2ed34deb9ead1.
+Source: internal/web/app/src/areas/setup/FolderPicker\.tsx:27; symbol: breadcrumbs; span SHA256: a6d5bc48934520f383d053b7236b7e7629b881908efac5ac98d2ed34deb9ead1.
+
+<!-- flowdocs:paragraph:3f14e7f133d5f639c1c72953a9629b79 -->
+Declared member: source declares libraryTypeOptions; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/libraryTypes\.ts:71; symbol: libraryTypeOptions; span SHA256: cc500eb0feb9df9a9562a04f469fd1912d52b4ed79882f5d55b42ba8c33baa8e.
+
+<!-- flowdocs:paragraph:6de3004c9458d2a6172d882cac6d42f4 -->
+Declared member: source declares LibraryTypeOption; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/libraryTypes\.ts:24; symbol: LibraryTypeOption; span SHA256: 5355298ef3ce0882a913f0ce64e669f220681c593ae83e75798ce61ca25a1f97.
 
 <!-- flowdocs:paragraph:28920ec98d2d2dafca21d1b17ad595ea -->
 Declared member: source declares FirstLibraryError; membership is caller\-declared, not runtime evidence\.
@@ -41,6 +51,16 @@ Source: internal/web/app/src/areas/setup/orchestrate\.ts:57; symbol: FirstLibrar
 Declared member: source declares FirstLibraryResult; membership is caller\-declared, not runtime evidence\.
 
 Source: internal/web/app/src/areas/setup/orchestrate\.ts:51; symbol: FirstLibraryResult; span SHA256: 95a64f08e567fe06a2ee1a89b706d26023ee9518a9fbf0e63be72d33e7e59f80.
+
+<!-- flowdocs:paragraph:15881774d7821f89a56b01c4afdb4d4d -->
+Declared member: source declares LibraryTypePlugin; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/libraryTypes\.ts:22; symbol: LibraryTypePlugin; span SHA256: d94e1bb4b5a087d29d033fb1b7910a131e26a0784dad20589c5a0e9333685aab.
+
+<!-- flowdocs:paragraph:08b391242e5cbff9e47e473418040eee -->
+Declared member: source declares FamilyScopeSummary; membership is caller\-declared, not runtime evidence\.
+
+Source: internal/web/app/src/lib/libraryTypes\.ts:16; symbol: FamilyScopeSummary; span SHA256: 38aedcd6fb1ab68c155f37f943d95d6cd2fdfae7bf4af1f6929d409e341ada67.
 
 <!-- flowdocs:paragraph:4a017b3e8056953b4892b89b3105dfff -->
 Declared member: source declares CREATE\_LIBRARY\_MUTATION; membership is caller\-declared, not runtime evidence\.

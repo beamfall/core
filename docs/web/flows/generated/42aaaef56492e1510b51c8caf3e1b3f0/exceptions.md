@@ -1,6 +1,6 @@
 # App routing: /web basename, area code\-splitting, initial\-route preload — exceptions
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:bd00f604d105f90add813a415d625119 -->
 Error reachability, rescue behavior and completeness are unresolved\.

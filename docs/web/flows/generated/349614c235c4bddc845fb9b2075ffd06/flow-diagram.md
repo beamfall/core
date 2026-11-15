@@ -1,6 +1,6 @@
 # Console play history: filters, history table and rankings — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1c42c21ee8caeaea6f5f5e8a17af475b -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -68,5 +68,5 @@ sequenceDiagram
     Note over S,U: Source contains call round in internal/web/app/src/areas/console/sections/PlayHistory.tsx at line 41 - order unresolved
     Note over S,U: Source contains call floor in internal/web/app/src/areas/console/sections/PlayHistory.tsx at line 42 - order unresolved
     Note over S,U: Source contains call floor in internal/web/app/src/areas/console/sections/PlayHistory.tsx at line 43 - order unresolved
-    Note over S,U: Source contains call map in internal/web/app/src/lib/graphql/console.ts at line 786 - order unresolved
+    Note over S,U: Source contains call map in internal/web/app/src/lib/graphql/console.ts at line 821 - order unresolved
 ```

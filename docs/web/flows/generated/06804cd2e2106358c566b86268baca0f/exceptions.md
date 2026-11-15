@@ -1,6 +1,6 @@
 # Manage restrictions — exceptions
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a7466f1f158b67b9f2c3ce694d51b3a3 -->
 Error reachability, rescue behavior and completeness are unresolved\.

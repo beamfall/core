@@ -1,16 +1,16 @@
 # Setup: choose sign\-in security mode and create the owner Profile — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:578eceea91ad250e00cd8afcc5b59a75 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:113; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:131; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
 
 <!-- flowdocs:paragraph:5facf3bc3e66fc4451f3332e0b32f6d3 -->
 Declared member: source declares SECURITY\_MODES; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:113; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
+Source: internal/web/app/src/areas/setup/SetupWizard\.tsx:131; symbol: SECURITY\_MODES; span SHA256: 009350b6896c002518fa268b58f8440741d9067009d6d86cabe95062b7ec28f7.
 
 <!-- flowdocs:paragraph:b3ceba53f8c0d1f6df9c690134af5301 -->
 Declared member: source declares SetupBootstrapResult; membership is caller\-declared, not runtime evidence\.

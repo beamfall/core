@@ -1,6 +1,6 @@
 # Console access: sign\-in security mode — entities
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:d7a9647e377c16a5c3aee3d199edeb7a -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

@@ -1,16 +1,16 @@
 # Manage manual and smart collections — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5b4b3f612d1410c720bddd83a85f1bf9 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:365; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:364; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
 
 <!-- flowdocs:paragraph:8062a19ec866cd59fd9a50df90f9ebb3 -->
 Declared member: source declares CollectionRow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:365; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:364; symbol: CollectionRow; span SHA256: 5ca5177ddfc8b2d4a18487bf9a9fd06dd63e1931236eb8f812e720300a1d9470.
 
 <!-- flowdocs:paragraph:2d9e3ff6ae953057370a6e0b5a2485b2 -->
 Declared member: source declares ManualCollections; membership is caller\-declared, not runtime evidence\.
@@ -20,17 +20,17 @@ Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:123; symbol
 <!-- flowdocs:paragraph:ecc4d705976824dccaf46566a921bc7a -->
 Declared member: source declares MembersEditor; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:492; symbol: MembersEditor; span SHA256: 533ffbeffb7dabae2d79d8e029795c5fd488779a0aec430755f5fd9a681db512.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:491; symbol: MembersEditor; span SHA256: 533ffbeffb7dabae2d79d8e029795c5fd488779a0aec430755f5fd9a681db512.
 
 <!-- flowdocs:paragraph:2bf8ee825d25085185fb5685ec4e84db -->
 Declared member: source declares SmartCollectionEditor; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:777; symbol: SmartCollectionEditor; span SHA256: 61a9d61474258a3fd8ccdbb1e05a527fe4fc8368084ba6132700e2b0e6d76c2e.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:776; symbol: SmartCollectionEditor; span SHA256: 61a9d61474258a3fd8ccdbb1e05a527fe4fc8368084ba6132700e2b0e6d76c2e.
 
 <!-- flowdocs:paragraph:b9478640581b5f0e61a37d652fec156c -->
 Declared member: source declares SmartCollections; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:660; symbol: SmartCollections; span SHA256: a22813af0eb11d9056ced3b2c757d8addb72e987351263c5b7626227e0161799.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:659; symbol: SmartCollections; span SHA256: a22813af0eb11d9056ced3b2c757d8addb72e987351263c5b7626227e0161799.
 
 <!-- flowdocs:paragraph:8e67b54ca04dd2ddc106da15a5fe6367 -->
 Declared member: source declares TOP\_LEVEL; membership is caller\-declared, not runtime evidence\.
@@ -175,12 +175,12 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:923; symbol: updateSmartColl
 <!-- flowdocs:paragraph:a00c01c1683fd19f50b123c8a9cde474 -->
 Declared member: source declares commit; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:390; symbol: commit; span SHA256: f9f9636fe26622c4fb408d3dbc213aab5af1a15ca19dcde08a12d57e8298ec94.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:389; symbol: commit; span SHA256: f9f9636fe26622c4fb408d3dbc213aab5af1a15ca19dcde08a12d57e8298ec94.
 
 <!-- flowdocs:paragraph:9373f639b8c3ccc907baec5fd7453cca -->
 Declared member: source declares onAdd; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:546; symbol: onAdd; span SHA256: b53e57bc331fcb69eaf6834ee81df3ffa709821a4c276affbca571e30c4d83b8.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:545; symbol: onAdd; span SHA256: b53e57bc331fcb69eaf6834ee81df3ffa709821a4c276affbca571e30c4d83b8.
 
 <!-- flowdocs:paragraph:cb78186c01cad72457505a6bfb26322d -->
 Declared member: source declares onCreate; membership is caller\-declared, not runtime evidence\.
@@ -190,12 +190,12 @@ Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:173; symbol
 <!-- flowdocs:paragraph:55691d691c92bc3c0db4ad76c009a142 -->
 Declared member: source declares onMove; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:528; symbol: onMove; span SHA256: fecf12c5dec8b25fdd9c88a77a8c87c1e898e36d11cf96ac2256be35de6ec9be.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:527; symbol: onMove; span SHA256: fecf12c5dec8b25fdd9c88a77a8c87c1e898e36d11cf96ac2256be35de6ec9be.
 
 <!-- flowdocs:paragraph:9557cb47386d8a86f8c0a1107e7880af -->
 Declared member: source declares onRemove; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:537; symbol: onRemove; span SHA256: 97faefcc3b2e7c50c2e5f2ae6e458e8edbff2f9cafd3a5581a771682ebca4a8a.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:536; symbol: onRemove; span SHA256: 97faefcc3b2e7c50c2e5f2ae6e458e8edbff2f9cafd3a5581a771682ebca4a8a.
 
 <!-- flowdocs:paragraph:4c3ff745e9fc423f1e2cbf45e3831c95 -->
 Declared member: source declares onRename; membership is caller\-declared, not runtime evidence\.
@@ -215,12 +215,12 @@ Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:239; symbol
 <!-- flowdocs:paragraph:2e49506d1f2b7504d8e3c9ab7ba3f4aa -->
 Declared member: source declares onSave; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:793; symbol: onSave; span SHA256: 3d64c594d55c18c8c6b1803ae3aed6c3669c98ef6ecebb13768b3a192c66bfd7.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:792; symbol: onSave; span SHA256: 3d64c594d55c18c8c6b1803ae3aed6c3669c98ef6ecebb13768b3a192c66bfd7.
 
 <!-- flowdocs:paragraph:1424637fa1a8a88f609061b074c020be -->
 Declared member: source declares persistOrder; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:514; symbol: persistOrder; span SHA256: 5d371e881c2ae4825bfdf4ee549f6f6ff5a84cdb49f80916042af19bfb1f2a00.
+Source: internal/web/app/src/areas/manage/pages/CollectionsPage\.tsx:513; symbol: persistOrder; span SHA256: 5d371e881c2ae4825bfdf4ee549f6f6ff5a84cdb49f80916042af19bfb1f2a00.
 
 <!-- flowdocs:paragraph:79fac8a477e7edc1ed9072826397a97c -->
 Declared member: source declares reload; membership is caller\-declared, not runtime evidence\.

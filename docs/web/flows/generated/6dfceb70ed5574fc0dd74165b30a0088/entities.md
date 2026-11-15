@@ -1,6 +1,6 @@
 # Manage bulk edit and organize with preview and confirm — entities
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:2d00fef24aabf05648352750d87db656 -->
 Runtime entities and persistence effects are unresolved; lexical calls are listed separately\.

@@ -1,41 +1,41 @@
 # Manage trash: restore, purge and reversible activity — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:17c9749ef4e9f802099d4b5d6a99c8c1 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:259; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:260; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
 
 <!-- flowdocs:paragraph:b3c3ed2b35925653fa14389834d538f7 -->
 Declared member: source declares ActivitySection; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:259; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:260; symbol: ActivitySection; span SHA256: 3e919863e35f12ddc418f5cf97c9e47dd440cd05819cdb3dc85ab4dea03403d4.
 
 <!-- flowdocs:paragraph:c8430e007a594389524e6d1a2185c385 -->
 Declared member: source declares PurgeSection; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:159; symbol: PurgeSection; span SHA256: 460803bbad5407e93b0571e9fecea61b9d14ac1b969e86e6c73beb173aecea89.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:158; symbol: PurgeSection; span SHA256: 460803bbad5407e93b0571e9fecea61b9d14ac1b969e86e6c73beb173aecea89.
 
 <!-- flowdocs:paragraph:c9f5c13243403bae850dd7d55fc914de -->
 Declared member: source declares RETAINED\_TRASH\_ANCHOR; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:47; symbol: RETAINED\_TRASH\_ANCHOR; span SHA256: 7505e1df5dbbc85aad1fc4b436942166531d4aef68bd57cf74ab686c8d851139.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:48; symbol: RETAINED\_TRASH\_ANCHOR; span SHA256: 7505e1df5dbbc85aad1fc4b436942166531d4aef68bd57cf74ab686c8d851139.
 
 <!-- flowdocs:paragraph:556774117a7dd984f876a9ddb6b09d24 -->
 Declared member: source declares REVERSIBLE\_ACTIONS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:46; symbol: REVERSIBLE\_ACTIONS; span SHA256: 324089c18c47d9efee38c22afc16d9c9d0906ebbeb6bd60e3eef4727a020e347.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:47; symbol: REVERSIBLE\_ACTIONS; span SHA256: 324089c18c47d9efee38c22afc16d9c9d0906ebbeb6bd60e3eef4727a020e347.
 
-<!-- flowdocs:paragraph:87337d56f78850332ace5460c3302db2 -->
-Declared member: source declares ACTIVITY\_LOG\_QUERY; membership is caller\-declared, not runtime evidence\.
+<!-- flowdocs:paragraph:658340687ca616e49c8860803ed2b218 -->
+Declared member: source declares ACTIVITY\_RECORDS\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:755; symbol: ACTIVITY\_LOG\_QUERY; span SHA256: 43c011cc1803f3c7444e87a8b0648774414a8641ab8063ce65c1c523cc6a36cb.
+Source: internal/web/app/src/lib/graphql/activity\.ts:29; symbol: ACTIVITY\_RECORDS\_QUERY; span SHA256: 04ea138a916b2c75e103d78aaf50c42876b325e1b2e200d9a9795236d58884e6.
 
-<!-- flowdocs:paragraph:e7e72654fea9ac35686a9b0aa4c573b2 -->
-Declared member: source declares fetchActivityLog; membership is caller\-declared, not runtime evidence\.
+<!-- flowdocs:paragraph:8cea0b7e936eeaf062616650c9f9a1a0 -->
+Declared member: source declares fetchActivityRecords; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:759; symbol: fetchActivityLog; span SHA256: 7a0b83fc8d4571e2c2cfba58455501c76ba2feb04967c6ec685995d9e196e31e.
+Source: internal/web/app/src/lib/graphql/activity\.ts:37; symbol: fetchActivityRecords; span SHA256: 2d36b7983c1a88f99fe56e3184aa42a265e33998e4a73b5744ff1c289c095017.
 
 <!-- flowdocs:paragraph:e59e6ea8da4e5abc0af293ed87e14e79 -->
 Declared member: source declares PURGE\_TRASH\_MUTATION; membership is caller\-declared, not runtime evidence\.
@@ -70,20 +70,20 @@ Source: internal/web/app/src/lib/graphql/manage\.ts:437; symbol: restoreMedia; s
 <!-- flowdocs:paragraph:65850ff24cb7ddbe44479729139d3118 -->
 Declared member: source declares onConfirm; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:170; symbol: onConfirm; span SHA256: 6810ed5c434e60ef6fd32995dea228e67c94c66de1b7db941af508ae1acf060c.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:169; symbol: onConfirm; span SHA256: 6810ed5c434e60ef6fd32995dea228e67c94c66de1b7db941af508ae1acf060c.
 
 <!-- flowdocs:paragraph:c9e1854badfd83ff45b50d89f7a8c799 -->
 Declared member: source declares onRestore; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:77; symbol: onRestore; span SHA256: 08a959361fcaa0ac93584ebdcb2d3a4b276675f7cd5d1d7b61eb4823f2c8a8f9.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:78; symbol: onRestore; span SHA256: 08a959361fcaa0ac93584ebdcb2d3a4b276675f7cd5d1d7b61eb4823f2c8a8f9.
 
 <!-- flowdocs:paragraph:c28f1c633da9ee365848812b3b4405c5 -->
 Declared member: source declares onUndo; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:281; symbol: onUndo; span SHA256: dd6e29f8cecfaf9e545f9bd64f014bb5e27f7f5e4d38053004b166e8d6d75c9e.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:282; symbol: onUndo; span SHA256: dd6e29f8cecfaf9e545f9bd64f014bb5e27f7f5e4d38053004b166e8d6d75c9e.
 
 <!-- flowdocs:paragraph:c3a407b79b893e7b318e01beb1003d88 -->
 Declared member: source declares rows; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:285; symbol: rows; span SHA256: 358be536561de107d0724d036e20f697fecf5b1fae6698e40add684da1f9cba1.
+Source: internal/web/app/src/areas/manage/pages/TrashPage\.tsx:286; symbol: rows; span SHA256: 358be536561de107d0724d036e20f697fecf5b1fae6698e40add684da1f9cba1.
 

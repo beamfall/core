@@ -1,6 +1,6 @@
 # Viewer entity detail page and not\-available state — entry-points
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:176fad5dcc7e5399f51ac61d8eefd259 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.

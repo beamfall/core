@@ -1,11 +1,11 @@
 # Promote an enrolled browser to a manager device — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:b302263363bfe1098fa9cb296b73fc65 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/enroll/PromotePage\.tsx:32; symbol: PromotePage; span SHA256: f5a6481e3b322f72550819d0b73f61a52ac2e6cc5a95d9eaf4f34dba04c53f31.
+Source: internal/web/app/src/areas/enroll/PromotePage\.tsx:31; symbol: PromotePage; span SHA256: f5a6481e3b322f72550819d0b73f61a52ac2e6cc5a95d9eaf4f34dba04c53f31.
 
 <!-- flowdocs:paragraph:3279b5d926c2f245a34a468ac5c8ecc3 -->
 Declared member: source declares promote; membership is caller\-declared, not runtime evidence\.
@@ -15,5 +15,5 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:111; symbol: promote; span SHA
 <!-- flowdocs:paragraph:e313eaf8f662a6326e6303c2b8c78882 -->
 Declared member: source declares onSubmit; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/PromotePage\.tsx:45; symbol: onSubmit; span SHA256: c4a9e8d0a8ebbd294495e5961c4b1213cf2d1bf09c741160fc2dcc57383d9e2f.
+Source: internal/web/app/src/areas/enroll/PromotePage\.tsx:44; symbol: onSubmit; span SHA256: c4a9e8d0a8ebbd294495e5961c4b1213cf2d1bf09c741160fc2dcc57383d9e2f.
 

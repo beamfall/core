@@ -1,11 +1,11 @@
 # Console operations: resource governor, job queue and job log — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:f1ce1ed6efb84e59e8c457a01cb5ac19 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
 
-Source: internal/web/app/src/areas/console/sections/OperationsControls\.tsx:148; symbol: GovernorSettings; span SHA256: abc1dc8faca9781de3fb18b37fb9703e88f622dd772866977a585ed5dcf4a906.
+Source: internal/web/app/src/areas/console/sections/OperationsControls\.tsx:159; symbol: GovernorSettings; span SHA256: abc1dc8faca9781de3fb18b37fb9703e88f622dd772866977a585ed5dcf4a906.
 
 ```mermaid
 sequenceDiagram
@@ -13,46 +13,48 @@ sequenceDiagram
     participant U as Unresolved runtime
     Note over S,U: Lexical inventory only - no witnessed order
     Note over S: Flow 885f6abe7bb1ef95a751a5407b6eaa1d
-    Note over S,U: Source contains call useT at line 149 - order unresolved
-    Note over S,U: Source contains call useAsync at line 150 - order unresolved
-    Note over S,U: Source contains call useState at line 151 - order unresolved
-    Note over S,U: Source contains call useState at line 152 - order unresolved
-    Note over S,U: Source contains call useState at line 153 - order unresolved
-    Note over S,U: Source contains call useState at line 154 - order unresolved
-    Note over S,U: Source contains call useEffect at line 156 - order unresolved
-    Note over S,U: Source contains call setWorkers at line 158 - order unresolved
-    Note over S,U: Source contains call max at line 158 - order unresolved
-    Note over S,U: Source contains call setRetentionDays at line 159 - order unresolved
-    Note over S,U: Source contains call max at line 159 - order unresolved
-    Note over S,U: Source contains call useT at line 85 - order unresolved
-    Note over S,U: Source contains call useAsync at line 86 - order unresolved
-    Note over S,U: Source contains call useEffect at line 88 - order unresolved
-    Note over S,U: Source contains call subscribeEvents at line 88 - order unresolved
-    Note over S,U: Source contains call refresh at line 88 - order unresolved
-    Note over S,U: Source contains call refresh at line 94 - order unresolved
-    Note over S,U: Source contains call t at line 96 - order unresolved
-    Note over S,U: Source contains call t at line 108 - order unresolved
-    Note over S,U: Source contains call t at line 114 - order unresolved
-    Note over S,U: Source contains call t at line 130 - order unresolved
-    Note over S,U: Source contains call t at line 133 - order unresolved
-    Note over S,U: Source contains call t at line 135 - order unresolved
-    Note over S,U: Source contains call useT at line 298 - order unresolved
-    Note over S,U: Source contains call useAsync at line 299 - order unresolved
-    Note over S,U: Source contains call fetchJobEvents at line 299 - order unresolved
-    Note over S,U: Source contains call map at line 308 - order unresolved
-    Note over S,U: Source contains call redactJobLogPayload at line 313 - order unresolved
-    Note over S,U: Source contains call t at line 313 - order unresolved
-    Note over S,U: Source contains call useT at line 326 - order unresolved
-    Note over S,U: Source contains call useAsync at line 327 - order unresolved
-    Note over S,U: Source contains call useState at line 330 - order unresolved
-    Note over S,U: Source contains call useEffect at line 332 - order unresolved
-    Note over S,U: Source contains call subscribeEvents at line 334 - order unresolved
-    Note over S,U: Source contains call refresh at line 335 - order unresolved
-    Note over S,U: Source contains call setLogRefresh at line 336 - order unresolved
-    Note over S,U: Source contains call useT at line 66 - order unresolved
-    Note over S,U: Source contains call t at line 69 - order unresolved
-    Note over S,U: Source contains call t at line 72 - order unresolved
-    Note over S,U: Source contains call reduce at line 51 - order unresolved
-    Note over S,U: Source contains call replace at line 52 - order unresolved
-    Note over S,U: Source contains call jobStatusState at line 36 - order unresolved
+    Note over S,U: Source contains call useT at line 160 - order unresolved
+    Note over S,U: Source contains call useAsync at line 161 - order unresolved
+    Note over S,U: Source contains call useState at line 162 - order unresolved
+    Note over S,U: Source contains call useState at line 163 - order unresolved
+    Note over S,U: Source contains call useState at line 164 - order unresolved
+    Note over S,U: Source contains call useState at line 165 - order unresolved
+    Note over S,U: Source contains call useEffect at line 167 - order unresolved
+    Note over S,U: Source contains call setWorkers at line 169 - order unresolved
+    Note over S,U: Source contains call max at line 169 - order unresolved
+    Note over S,U: Source contains call setRetentionDays at line 170 - order unresolved
+    Note over S,U: Source contains call max at line 170 - order unresolved
+    Note over S,U: Source contains call useT at line 95 - order unresolved
+    Note over S,U: Source contains call useAsync at line 96 - order unresolved
+    Note over S,U: Source contains call useEffect at line 98 - order unresolved
+    Note over S,U: Source contains call subscribeEvents at line 98 - order unresolved
+    Note over S,U: Source contains call refresh at line 98 - order unresolved
+    Note over S,U: Source contains call refresh at line 105 - order unresolved
+    Note over S,U: Source contains call t at line 107 - order unresolved
+    Note over S,U: Source contains call t at line 119 - order unresolved
+    Note over S,U: Source contains call t at line 125 - order unresolved
+    Note over S,U: Source contains call t at line 141 - order unresolved
+    Note over S,U: Source contains call t at line 144 - order unresolved
+    Note over S,U: Source contains call t at line 146 - order unresolved
+    Note over S,U: Source contains call useT at line 309 - order unresolved
+    Note over S,U: Source contains call useAsync at line 310 - order unresolved
+    Note over S,U: Source contains call fetchJobEvents at line 310 - order unresolved
+    Note over S,U: Source contains call map at line 319 - order unresolved
+    Note over S,U: Source contains call jobEventDetail at line 325 - order unresolved
+    Note over S,U: Source contains call redactJobLogPayload at line 325 - order unresolved
+    Note over S,U: Source contains call t at line 326 - order unresolved
+    Note over S,U: Source contains call useT at line 355 - order unresolved
+    Note over S,U: Source contains call useAsync at line 356 - order unresolved
+    Note over S,U: Source contains call useAsync at line 357 - order unresolved
+    Note over S,U: Source contains call useState at line 360 - order unresolved
+    Note over S,U: Source contains call useEffect at line 362 - order unresolved
+    Note over S,U: Source contains call subscribeEvents at line 364 - order unresolved
+    Note over S,U: Source contains call refresh at line 365 - order unresolved
+    Note over S,U: Source contains call setLogRefresh at line 366 - order unresolved
+    Note over S,U: Source contains call useT at line 76 - order unresolved
+    Note over S,U: Source contains call t at line 79 - order unresolved
+    Note over S,U: Source contains call t at line 82 - order unresolved
+    Note over S,U: Source contains call reduce at line 61 - order unresolved
+    Note over S,U: Source contains call replace at line 62 - order unresolved
+    Note over S,U: Source contains call jobStatusState at line 46 - order unresolved
 ```

@@ -1,14 +1,14 @@
 # Localization: locale resolution, ICU formatting and string catalogs — entry-points
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:23fc2f8a0cddc8c1d4327c7486d06752 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:15; symbol: I18nContext; span SHA256: e413313dc92cbee6475688aa909676d74886583ba788af61ad034122f678f598.
+Source: internal/web/app/src/lib/i18n\.tsx:17; symbol: I18nContext; span SHA256: e413313dc92cbee6475688aa909676d74886583ba788af61ad034122f678f598.
 
 <!-- flowdocs:paragraph:ea66a48b0ee3b841a3da84d7b9173b1c -->
 Declared entry point: source declares I18nProvider; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/lib/i18n\.tsx:231; symbol: I18nProvider; span SHA256: bc8286cce6e090a1c7b6445fc9e39dff33a84f01f997f60efdea408ac65ea981.
+Source: internal/web/app/src/lib/i18n\.tsx:235; symbol: I18nProvider; span SHA256: bc8286cce6e090a1c7b6445fc9e39dff33a84f01f997f60efdea408ac65ea981.
 

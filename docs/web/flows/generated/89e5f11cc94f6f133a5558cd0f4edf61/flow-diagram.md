@@ -1,6 +1,6 @@
 # Viewer full library browse: sort, filters, grouping, virtual grid — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5b0d2ac12fe121fe626124cacee60bca -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -21,6 +21,8 @@ sequenceDiagram
     Note over S,U: Source contains call getComputedStyle in internal/web/app/src/areas/viewer/components/useVirtualGrid.ts at line 30 - order unresolved
     Note over S,U: Source contains call parseFloat in internal/web/app/src/areas/viewer/components/useVirtualGrid.ts at line 31 - order unresolved
     Note over S,U: Source contains call isFinite in internal/web/app/src/areas/viewer/components/useVirtualGrid.ts at line 32 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/components/useVirtualGrid.ts at line 55 - order unresolved
+    Note over S,U: Source contains call getBoundingClientRect in internal/web/app/src/areas/viewer/components/useVirtualGrid.ts at line 55 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/components/useVirtualGrid.ts at line 118 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/areas/viewer/components/useVirtualGrid.ts at line 122 - order unresolved
     Note over S,U: Source contains call URLSearchParams in internal/web/app/src/areas/viewer/lib/libraryBrowse.ts at line 85 - order unresolved

@@ -1,6 +1,6 @@
 # Console area shell: route table, section nav, host firewall, session bar — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:3d509693ebc6bc1ba3389a72aeac4b70 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -15,7 +15,7 @@ Source: internal/web/app/src/areas/console/ConfirmButton\.tsx:23; symbol: Confir
 <!-- flowdocs:paragraph:4b8c78ed9b5d0c15b27e44b4929aa817 -->
 Declared member: source declares Section; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/Section\.tsx:9; symbol: Section; span SHA256: aa87c7d6efb6b707400a7f17455efe8dcef3eb19e8126d1f378d6b2ff4c49999.
+Source: internal/web/app/src/areas/console/Section\.tsx:12; symbol: Section; span SHA256: aa87c7d6efb6b707400a7f17455efe8dcef3eb19e8126d1f378d6b2ff4c49999.
 
 <!-- flowdocs:paragraph:8808d13438cd190c70b9bcbffa05d043 -->
 Declared member: source declares adminEpochSignal; membership is caller\-declared, not runtime evidence\.

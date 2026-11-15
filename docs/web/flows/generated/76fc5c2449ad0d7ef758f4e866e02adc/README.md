@@ -1,11 +1,11 @@
 # Player audio and subtitle tracks, subtitle styling — readme
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:7be5e0657418f3029fd1c95ff69fc812 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/areas/viewer/lib/transport\.ts:440; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
+Source: internal/web/app/src/areas/viewer/lib/transport\.ts:450; symbol: TrackMenuLabels; span SHA256: 254b8c899b00bab907d731ac06734822eab5d6277240a1a9c5867ae572c8b104.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -13,8 +13,6 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -28,12 +26,8 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - duplicate logical declaration unresolved
 
+- method extent exceeds 512 lines
+
 - template has no supported literal Angular bindings
 
-Declared inventory flow player\.tracks\-subtitles: 22 resolved, 3 unresolved members.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/SubtitleStylePanel\.tsx BG\_OPTIONS: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/SubtitleStylePanel\.tsx SIZE\_OPTIONS: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
-
-- Unresolved member internal/web/app/src/areas/viewer/player/useSubtitleStyling\.ts SubtitleBackground: symbol is not a top\-level declaration in this path at this revision; name a class or object member&\#39;s enclosing declaration.
+Declared inventory flow player\.tracks\-subtitles: 25 resolved, 0 unresolved members.

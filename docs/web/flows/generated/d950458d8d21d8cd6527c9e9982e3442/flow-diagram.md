@@ -1,6 +1,6 @@
 # Player route: lazy load, timestamp links, info overlay, audio stage — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:8f08f6465223fb0da070854aacfafa6d -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -28,15 +28,15 @@ sequenceDiagram
     Note over S,U: Source contains call then in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 111 - order unresolved
     Note over S,U: Source contains call setDecided in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 112 - order unresolved
     Note over S,U: Source contains call abort in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 114 - order unresolved
-    Note over S,U: Source contains call URL in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 869 - order unresolved
-    Note over S,U: Source contains call set in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
-    Note over S,U: Source contains call String in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
-    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
-    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
-    Note over S,U: Source contains call trim in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 863 - order unresolved
-    Note over S,U: Source contains call Number in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 864 - order unresolved
-    Note over S,U: Source contains call isFinite in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 865 - order unresolved
-    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 865 - order unresolved
+    Note over S,U: Source contains call URL in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 873 - order unresolved
+    Note over S,U: Source contains call set in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 877 - order unresolved
+    Note over S,U: Source contains call String in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 877 - order unresolved
+    Note over S,U: Source contains call max in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 877 - order unresolved
+    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 877 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 867 - order unresolved
+    Note over S,U: Source contains call Number in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 868 - order unresolved
+    Note over S,U: Source contains call isFinite in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 869 - order unresolved
+    Note over S,U: Source contains call floor in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 869 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 23 - order unresolved
     Note over S,U: Source contains call creditLine in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 25 - order unresolved
     Note over S,U: Source contains call creditLine in internal/web/app/src/areas/viewer/player/AudioStage.tsx at line 26 - order unresolved
@@ -66,12 +66,12 @@ sequenceDiagram
     Note over S,U: Source contains call lazyRoute in internal/web/app/src/areas/viewer/player/LazyPlayerPage.ts at line 6 - order unresolved
     Note over S,U: Source contains call preload in internal/web/app/src/areas/viewer/player/preload.ts at line 9 - order unresolved
     Note over S,U: Source contains call catch in internal/web/app/src/areas/viewer/player/preload.ts at line 9 - order unresolved
-    Note over S,U: Source contains call navigate in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 650 - order unresolved
     Note over S,U: Source contains call navigate in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 651 - order unresolved
-    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 419 - order unresolved
-    Note over S,U: Source contains call goToQueueItem in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 421 - order unresolved
-    Note over S,U: Source contains call advanceToNext in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 422 - order unresolved
-    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 431 - order unresolved
-    Note over S,U: Source contains call goToQueueItem in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 432 - order unresolved
-    Note over S,U: Source contains call playItem in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 433 - order unresolved
+    Note over S,U: Source contains call navigate in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 652 - order unresolved
+    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 420 - order unresolved
+    Note over S,U: Source contains call goToQueueItem in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 422 - order unresolved
+    Note over S,U: Source contains call advanceToNext in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 423 - order unresolved
+    Note over S,U: Source contains call useMemo in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 432 - order unresolved
+    Note over S,U: Source contains call goToQueueItem in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 433 - order unresolved
+    Note over S,U: Source contains call playItem in internal/web/app/src/areas/viewer/pages/PlayerPage.tsx at line 434 - order unresolved
 ```

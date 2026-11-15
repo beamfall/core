@@ -1,6 +1,6 @@
 # Session spine: compat handshake, session renewal, identity epoch, request guard — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:1c78e8002cd5e62eb276606e42946313 -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -52,9 +52,10 @@ sequenceDiagram
     Note over S,U: Source contains call performHandshake in internal/web/app/src/lib/compat.ts at line 123 - order unresolved
     Note over S,U: Source contains call isBlocked in internal/web/app/src/lib/compat.ts at line 124 - order unresolved
     Note over S,U: Source contains call Error in internal/web/app/src/lib/compat.ts at line 124 - order unresolved
-    Note over S,U: Source contains call useEffect in internal/web/app/src/lib/register.tsx at line 25 - order unresolved
-    Note over S,U: Source contains call useContext in internal/web/app/src/lib/register.tsx at line 45 - order unresolved
-    Note over S,U: Source contains call Error in internal/web/app/src/lib/register.tsx at line 46 - order unresolved
+    Note over S,U: Source contains call loadAppearance in internal/web/app/src/lib/register.tsx at line 76 - order unresolved
+    Note over S,U: Source contains call useSystemLight in internal/web/app/src/lib/register.tsx at line 78 - order unresolved
+    Note over S,U: Source contains call useContext in internal/web/app/src/lib/register.tsx at line 146 - order unresolved
+    Note over S,U: Source contains call Error in internal/web/app/src/lib/register.tsx at line 147 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/lib/session.tsx at line 110 - order unresolved
     Note over S,U: Source contains call useState in internal/web/app/src/lib/session.tsx at line 111 - order unresolved
     Note over S,U: Source contains call useRef in internal/web/app/src/lib/session.tsx at line 123 - order unresolved

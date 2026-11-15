@@ -1,26 +1,21 @@
 # Enroll a browser with a pairing code — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:5d18aff9816a7846c9ffcaf8db29bb2d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:46; symbol: EnrollPage; span SHA256: c47f9fbfc591d8600ffb4e5bf8ad928e38cf084157f16d18d570897e045204fa.
+Source: internal/web/app/src/areas/enroll/EnrollPage\.tsx:45; symbol: EnrollPage; span SHA256: c47f9fbfc591d8600ffb4e5bf8ad928e38cf084157f16d18d570897e045204fa.
 
-<!-- flowdocs:paragraph:a9c188cd85623cc49dc9e11bb494a268 -->
-Declared member: source declares AUTH\_FIELD; membership is caller\-declared, not runtime evidence\.
+<!-- flowdocs:paragraph:1df4c8d3c16c6fedf54d9d07e171c6ef -->
+Declared member: source declares PAIRING\_CODE\_INPUT; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/AuthShell\.tsx:8; symbol: AUTH\_FIELD; span SHA256: 6ac49d977498901d51f4412027e102dd9ffb94030c2055ffcaf8b1deed57f581.
-
-<!-- flowdocs:paragraph:ceafc80f19e326c9778d139cfdf3aa30 -->
-Declared member: source declares AUTH\_FIELD\_LABEL; membership is caller\-declared, not runtime evidence\.
-
-Source: internal/web/app/src/areas/enroll/AuthShell\.tsx:9; symbol: AUTH\_FIELD\_LABEL; span SHA256: 1767b7f782cdc568ac039fd36f7ff2b3c5ae9efc5973c9b184a060a7d4ee7ae9.
+Source: internal/web/app/src/areas/enroll/AuthShell\.tsx:8; symbol: PAIRING\_CODE\_INPUT; span SHA256: c0c5e62532d7bdbc1429521a9bf5a7cc5f4cb91c24e75efe7f5abef1e6656ecc.
 
 <!-- flowdocs:paragraph:824c465157ba8030327c2d476471493f -->
 Declared member: source declares FormFeedback; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/enroll/AuthShell\.tsx:61; symbol: FormFeedback; span SHA256: c19a21bc814cae366a87df06f27c45dd12684bd998644f9ec10145b97b5b1bdd.
+Source: internal/web/app/src/areas/enroll/AuthShell\.tsx:19; symbol: FormFeedback; span SHA256: c19a21bc814cae366a87df06f27c45dd12684bd998644f9ec10145b97b5b1bdd.
 
 <!-- flowdocs:paragraph:31871fd3ee7ca68c2af07a68bc4cbd2d -->
 Declared member: source declares PairingCodeHelp; membership is caller\-declared, not runtime evidence\.

@@ -1,6 +1,6 @@
 # Console overview: owner tasks, setup checklist, needs\-attention queue — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:a9d3753c8ca19a779b2faae40dc935c4 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -50,27 +50,27 @@ Source: internal/web/app/src/areas/console/sections/SetupChecklist\.tsx:133; sym
 <!-- flowdocs:paragraph:e3447dc68640e18c1f059ca02e8b0fc1 -->
 Declared member: source declares CONSOLE\_CONFIG\_FIELDS; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:66; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
+Source: internal/web/app/src/lib/graphql/console\.ts:104; symbol: CONSOLE\_CONFIG\_FIELDS; span SHA256: b411ac10419f025e04f75e76a7d72f1e56b58a6bb29a48cfc563ac5e494d4524.
 
 <!-- flowdocs:paragraph:67bfb209ce3571837c0f47b8c500b2d1 -->
 Declared member: source declares CONSOLE\_CONFIG\_QUERY; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:69; symbol: CONSOLE\_CONFIG\_QUERY; span SHA256: 807152d4b6fac63afa4aabcd9d0c39bf5450489c0dfe06a584dfdc9ce66b34a8.
+Source: internal/web/app/src/lib/graphql/console\.ts:107; symbol: CONSOLE\_CONFIG\_QUERY; span SHA256: 807152d4b6fac63afa4aabcd9d0c39bf5450489c0dfe06a584dfdc9ce66b34a8.
 
 <!-- flowdocs:paragraph:f18b0d607f20ff986077aa2d2ff6dd4f -->
 Declared member: source declares JOB\_RETRY\_MUTATION; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:294; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
+Source: internal/web/app/src/lib/graphql/console\.ts:332; symbol: JOB\_RETRY\_MUTATION; span SHA256: 2d02c308738e06e82a972af1acbabb50576da86a4b84f7306f3525956bd3a320.
 
 <!-- flowdocs:paragraph:5db075adfd93964bbe99cba829d3005a -->
 Declared member: source declares fetchConsoleConfig; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:72; symbol: fetchConsoleConfig; span SHA256: 8dd3bd806c9c85460236240555998ab733acc75debb41fac0e0ab7e545350c68.
+Source: internal/web/app/src/lib/graphql/console\.ts:110; symbol: fetchConsoleConfig; span SHA256: 8dd3bd806c9c85460236240555998ab733acc75debb41fac0e0ab7e545350c68.
 
 <!-- flowdocs:paragraph:298bc1405b2993608f2c4ef631a146d5 -->
 Declared member: source declares retryJob; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/lib/graphql/console\.ts:298; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
+Source: internal/web/app/src/lib/graphql/console\.ts:336; symbol: retryJob; span SHA256: 067af1a5c4cb1b3ab22e990b1845f78d5acabd803a947bd2bda7c56020c86525.
 
 <!-- flowdocs:paragraph:48d2a0f20e4ce9d1755cea501deea69c -->
 Declared member: source declares JOBS\_QUERY; membership is caller\-declared, not runtime evidence\.

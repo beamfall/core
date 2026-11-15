@@ -1,14 +1,14 @@
 # Console admin gate: locked reasons and unlock — entry-points
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0ab453afa9964a4e22bc62a7234c2e09 -->
 Declared entry points are listed below\. Entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:47; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:51; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
 
 <!-- flowdocs:paragraph:f50088238e9f53a8611b3c46787c6b5e -->
 Declared entry point: source declares AdminGate; entry dispatch and callers are unresolved\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:47; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:51; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
 

@@ -1,6 +1,6 @@
 # Viewer home and node browse: manifest layout, sections, hero — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:0377bd96d26f2eb150933abd096a9f4d -->
 Declared members are listed below; generated call observations do not establish executed behavior\.

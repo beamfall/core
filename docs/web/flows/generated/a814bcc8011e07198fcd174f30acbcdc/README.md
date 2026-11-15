@@ -1,11 +1,11 @@
 # Display helpers: activity, job, provider\-key and string formatting — readme
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:55099768d20e9eccc2aeb6ee70233b62 -->
 Generated source documentation for a declared inventory flow\. Priority: unassigned\. Confidence: lexical candidate\. Trust: generated; membership is caller\-declared and accepted intent is not established\.
 
-Source: internal/web/app/src/lib/activityDisplay\.ts:21; symbol: ACTIVITY\_CATEGORIES; span SHA256: eac40266b552fe415dff37fe55c4034cb547a3cb05938089f1fdae6993192545.
+Source: internal/web/app/src/lib/activityDisplay\.ts:24; symbol: ACTIVITY\_CATEGORIES; span SHA256: eac40266b552fe415dff37fe55c4034cb547a3cb05938089f1fdae6993192545.
 
 
 Security summaries: not collected; absence is not a clean security finding.
@@ -13,8 +13,6 @@ Security summaries: not collected; absence is not a clean security finding.
 - Accepted variation denominator and runtime coverage are unknown unless separately supplied by revalidated corpus evidence\.
 
 - Declared inventory flows: structural and lexical relations between flows are not derived\.
-
-- Declared inventory members that do not resolve are listed in generation\.json inventory\.flows\[\]\.unresolved and in their flow README\.
 
 - Gitlinks are opaque superproject identities; their contents are not inspected\.
 
@@ -28,6 +26,8 @@ Security summaries: not collected; absence is not a clean security finding.
 
 - duplicate logical declaration unresolved
 
+- method extent exceeds 512 lines
+
 - template has no supported literal Angular bindings
 
-Declared inventory flow shared\.display\-helpers: 47 resolved, 0 unresolved members.
+Declared inventory flow shared\.display\-helpers: 46 resolved, 0 unresolved members.

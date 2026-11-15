@@ -1,6 +1,6 @@
 # Playback engine: playback\-info, capability probe, HLS selection and recovery, progress reports — flow-diagram
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:9b7c9e7f9f309297afc68988b7ea478a -->
 Static source inventory only; sequence and runtime ordering are unresolved\.
@@ -30,9 +30,9 @@ sequenceDiagram
     Note over S,U: Source contains call mediaCapabilitiesSupports in internal/web/app/src/areas/viewer/lib/capabilityProfile.ts at line 205 - order unresolved
     Note over S,U: Source contains call push in internal/web/app/src/areas/viewer/lib/capabilityProfile.ts at line 217 - order unresolved
     Note over S,U: Source contains call find in internal/web/app/src/areas/viewer/lib/playback.ts at line 175 - order unresolved
-    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/playback.ts at line 307 - order unresolved
-    Note over S,U: Source contains call trim in internal/web/app/src/areas/viewer/lib/playback.ts at line 308 - order unresolved
-    Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 399 - order unresolved
+    Note over S,U: Source contains call get in internal/web/app/src/areas/viewer/lib/playback.ts at line 309 - order unresolved
+    Note over S,U: Source contains call trim in internal/web/app/src/areas/viewer/lib/playback.ts at line 310 - order unresolved
+    Note over S,U: Source contains call finiteNumber in internal/web/app/src/areas/viewer/lib/transport.ts at line 409 - order unresolved
     Note over S,U: Source contains call nextNetworkStep in internal/web/app/src/areas/viewer/player/hlsRecovery.ts at line 40 - order unresolved
     Note over S,U: Source contains call nextMediaStep in internal/web/app/src/areas/viewer/player/hlsRecovery.ts at line 41 - order unresolved
     Note over S,U: Source contains call trackPreferencePolicy in internal/web/app/src/areas/viewer/player/usePlayer.ts at line 1399 - order unresolved

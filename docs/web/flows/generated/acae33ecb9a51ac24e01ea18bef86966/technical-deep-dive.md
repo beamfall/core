@@ -1,21 +1,21 @@
 # Console admin gate: locked reasons and unlock — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:74dd4d329f220b755dd7ea86aaf6faaf -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:47; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:51; symbol: AdminGate; span SHA256: 7fec3f21e920c5b6baebe521f9c0721935304bf74d69e13ad72c3a8769272c45.
 
 <!-- flowdocs:paragraph:4f7e4cbfc91384964766754aa49cf78b -->
 Declared member: source declares AdminGateCopy; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:39; symbol: AdminGateCopy; span SHA256: 04f4361231f3a7143f3d17e421bc13ce29ccd846980d0107c76d92e9118a7886.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:43; symbol: AdminGateCopy; span SHA256: 04f4361231f3a7143f3d17e421bc13ce29ccd846980d0107c76d92e9118a7886.
 
 <!-- flowdocs:paragraph:ffeeb5cd4d368c85e967d62b8b8f76ea -->
 Declared member: source declares LockedCard; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:286; symbol: LockedCard; span SHA256: 154d0a7996d337f3d348e6bf261d15be6aca8befc7fdae189377ba21f1f7359e.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:290; symbol: LockedCard; span SHA256: 154d0a7996d337f3d348e6bf261d15be6aca8befc7fdae189377ba21f1f7359e.
 
 <!-- flowdocs:paragraph:b6acb80c1a7799677945a4e20b43ef80 -->
 Declared member: source declares LOCK\_REASON\_LEAD; membership is caller\-declared, not runtime evidence\.
@@ -90,20 +90,20 @@ Source: internal/web/app/src/lib/graphql/auth\.ts:63; symbol: verifyAdminSession
 <!-- flowdocs:paragraph:fd500bd7e8cb5c3e47875168c93e6c3e -->
 Declared member: source declares beginRequest; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:97; symbol: beginRequest; span SHA256: 9d3cf248d26566fc0f6ae341ef3f981e8fe5296a8b52517a6ef9beba2157cc2e.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:101; symbol: beginRequest; span SHA256: 9d3cf248d26566fc0f6ae341ef3f981e8fe5296a8b52517a6ef9beba2157cc2e.
 
 <!-- flowdocs:paragraph:a4888331ccca07b2f35c176d336fb6b9 -->
 Declared member: source declares invalidateRequest; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:90; symbol: invalidateRequest; span SHA256: b548ce3f48cacbebf195598bd93f9a1911656ec0d6dca2b99263368fbf37c3bf.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:94; symbol: invalidateRequest; span SHA256: b548ce3f48cacbebf195598bd93f9a1911656ec0d6dca2b99263368fbf37c3bf.
 
 <!-- flowdocs:paragraph:81bdd77bf362eb35b2131de6f72337a6 -->
 Declared member: source declares lock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:232; symbol: lock; span SHA256: e01bede2263f9ba16a986748ede26ae84b276779a6662c58115eeea6f755879c.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:236; symbol: lock; span SHA256: e01bede2263f9ba16a986748ede26ae84b276779a6662c58115eeea6f755879c.
 
 <!-- flowdocs:paragraph:954a27e183f2322a5fc8df533d0410f5 -->
 Declared member: source declares onUnlock; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/console/AdminGate\.tsx:188; symbol: onUnlock; span SHA256: 1af32882afea6cb06eb460caef60de67db199292a98eebee2eda75a57825f43b.
+Source: internal/web/app/src/areas/console/AdminGate\.tsx:192; symbol: onUnlock; span SHA256: 1af32882afea6cb06eb460caef60de67db199292a98eebee2eda75a57825f43b.
 

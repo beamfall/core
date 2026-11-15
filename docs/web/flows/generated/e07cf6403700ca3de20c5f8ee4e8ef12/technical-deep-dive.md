@@ -1,6 +1,6 @@
 # Manage subscriptions and retention kinds — technical-deep-dive
 
-Source revision: 25a58b2a60b350f2a582cb407acbbbc52274a39b. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
+Source revision: 4d9f6ba81afcc8de0179eb7c056488d3e3bd8218. Trust: generated. Freshness: pinned source; run docs flows check for a later revision.
 
 <!-- flowdocs:paragraph:cd4a445434ea1b41ff3aa52b8ba595a8 -->
 Declared members are listed below; generated call observations do not establish executed behavior\.
@@ -15,7 +15,7 @@ Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:43; symbo
 <!-- flowdocs:paragraph:17b5c54320d661177ad3dfa12e628d92 -->
 Declared member: source declares SubscriptionRow; membership is caller\-declared, not runtime evidence\.
 
-Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:246; symbol: SubscriptionRow; span SHA256: 7a877860437668555a65c99e46889827619111ac45f63d84424c845340e74c5c.
+Source: internal/web/app/src/areas/manage/pages/SubscriptionsPage\.tsx:245; symbol: SubscriptionRow; span SHA256: 7a877860437668555a65c99e46889827619111ac45f63d84424c845340e74c5c.
 
 <!-- flowdocs:paragraph:302a04af7a2d58c4b2c5b9f2cb50ca92 -->
 Declared member: source declares ADD\_SUBSCRIPTION\_MUTATION; membership is caller\-declared, not runtime evidence\.
