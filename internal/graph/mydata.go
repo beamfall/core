@@ -683,7 +683,7 @@ type OperatorDeleteProfileDataResult struct {
 // own-Profile-only and never admin-gated.
 //
 // GUARDIAN PATH (§2.6): the schema has no stored supervisor→managed link (the
-// `profile` table is id/name/kind only — see docs/agent-memory/questions.md),
+// `profile` table is id/name/kind only; recorded as an open schema question),
 // so the guardian cannot be gated on a real relationship link. Per §2.6 ("Their
 // guardian ... or the server operator acts through the Console"), both the
 // operator and the guardian act through this same Admin-Session-gated Console

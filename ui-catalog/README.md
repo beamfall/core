@@ -106,5 +106,5 @@ Re-recording baselines is always a deliberate, reviewed commit.
 ## Known finding surfaced by this catalog
 
 Catalog follow-ups are tracked as roadmap/test-gate work, not as local
-agent-memory bug files. The catalog records the real shipped render; when an
+bug notes. The catalog records the real shipped render; when an
 entry is only listed, the `note` names the missing React driver or fixture.

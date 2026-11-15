@@ -1399,7 +1399,6 @@ func TestScanAppliesParserClassForBoundLibrary(t *testing.T) {
 // UTC end: 2026-08-22T00:51:35Z
 // elapsed: 1s (cached confirmation; preceding uncached run reported 256.778s)
 // exit code: 0
-// log: .agent-evidence/SCAN-PERSIST-PARSED-SEASON-EPISODE-1.log
 func TestScanPersistsParsedStructuralFieldsOffline(t *testing.T) {
 	root := t.TempDir()
 	episodePath := writeScanFile(t, root, "Show.S01E03.Title.1080p.mkv", []byte("episode"))

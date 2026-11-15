@@ -87,13 +87,11 @@ func TestSealDirectoryRoundTripUsesEnvelopeV2(t *testing.T) {
 // Focused verify: go test ./internal/backup/... -count=1
 // Head a2d07d5f95a10c2371cd8ce8ead1776ff527b98b; exit 0; elapsed 1 second.
 // UTC 2026-08-20T12:46:24Z–2026-08-20T12:46:25Z.
-// Log: .agent-evidence/SECAUDIT-20260817-BACKUP-DESCRIPTOR-TOCTOU-1-focused.txt
 //
 // Resumption focused verify — SECAUDIT-20260817-BACKUP-DESCRIPTOR-TOCTOU-1
 // Command: GOCACHE=/tmp/beamfall-secaudit-go-cache go test ./internal/backup ./internal/store ./cmd/beamfall ./internal/app -run 'Test(SealDirectoryRoundTripUsesEnvelopeV2|WriteDirectoryTarRejectsFileReplacementAfterValidation|WriteDirectoryTarRejectsComponentReplacementAfterValidation|WriteDirectoryTarRejectsRegularInodeReplacementAfterValidation|SealDirectoryRejectsFileMutationAcrossStagesWithoutPublication|SealDirectoryRejectsComponentReplacementBetweenStatAndOpenWithoutPublication|SealDirectoryRejectsManifestRewriteAfterDiscoveryWithoutPublication|SealDirectoryManifestedRoundTrip|ConfinedArchivePathRejectsSymlinkEscape|ExtractDirectoryTarRejectsSymlinkEscape|BackupCreatesPairedDatabaseSnapshotsAndManifest|BackupIncludesEncryptedLibraryCiphertextSnapshotsAndManifest|RestoreBackupReconstructsEncryptedLibraryCiphertextAndSchemaMetadata|BackupV2RestoresOperationalPayloadAndExcludesRegenerableState|VerifyBackupSetRejectsMissingRequiredDatabases|RestoreRejectsOperationalTamperAndTraversalBeforeMutation|RestoreCommandVerifiesBeforeSnapshot|RestoreCommandSnapshotsCurrentDataDirThenRestores|DatabaseBackupHandlerPrunesToKeepN)$' -count=1
 // Head 0c344de4e3cda41b7239f22725278cc8959f6b88; exit 0; elapsed 6 seconds.
 // UTC 2026-08-21T16:33:00Z–2026-08-21T16:33:06Z.
-// Log: .agent-evidence/SECAUDIT-20260817-BACKUP-DESCRIPTOR-TOCTOU-1-focused.txt
 func TestWriteDirectoryTarRejectsFileReplacementAfterValidation(t *testing.T) {
 	source := t.TempDir()
 	path := filepath.Join(source, "catalog.db")

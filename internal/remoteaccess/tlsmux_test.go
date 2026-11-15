@@ -516,8 +516,7 @@ func waitUntil(t *testing.T, deadline time.Duration, cond func() bool) {
 //   (go test runs the packages in parallel), exit 0
 //   remoteaccess (race) 1.512s · server 61.167s · nodehost 0.820s ·
 //   conformance 17.614s · app 63.582s  (all ok)
-//   log: builder scratchpad AUDITFIX-TLS-MUX-final-verify.log; the same receipt
-//   text lives untracked in .agent-evidence/ for humans.
+//   (the raw log was never tracked; this receipt is the reviewer copy)
 //
 // DELIBERATE-BREAK RECORD (each invariant broken once, observed to fail, then
 // restored; the remoteaccess suite re-ran green after every restore):
@@ -560,7 +559,6 @@ func waitUntil(t *testing.T, deadline time.Duration, cond func() bool) {
 //   command: go test ./internal/remoteaccess/... -race -count=1
 //   UTC 2026-08-20T17:09:02Z -> 2026-08-20T17:09:04Z, elapsed 2s, exit 0
 //   output: ok github.com/beamfall/core/internal/remoteaccess 1.541s
-//   log: .agent-evidence/SECAUDIT-20260820-TLSMUX-ACCEPT-RESILIENCE-1-final-verify.log
 //
 // DELIBERATE-BREAK RECORD (each new regression observed failing, then restored)
 //   command: go test ./internal/remoteaccess/... -race -run

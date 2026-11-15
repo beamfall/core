@@ -17,7 +17,7 @@
 // ledger (cmd/ioe2e) reconciles against the code-derived ffmpeg ops and the
 // testing/io-ops.yaml egress/fs ledger.
 //
-// Plan: docs/plans/core-server-io-integration-e2e-2026-06-21.md (D5/D6/F4);
+// Plan: the core server I/O integration E2E plan (2026-06-21, D5/D6/F4);
 // fast-tier split: roadmap E2E-IO-FAST-TIER.
 //
 // This file is intentionally untagged so the package always has a buildable

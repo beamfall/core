@@ -310,8 +310,8 @@ export async function bootstrapResume(): Promise<SetupResume> {
  * those messages — that would be brittle across server versions and locales and
  * risk a misleading wrong message. Every error maps to the generic
  * `setupFailed` key. Distinguishing bad-path vs permission-denied requires the
- * server to emit a structured error code first (tracked in
- * docs/agent-memory/optimizations.md); until then the recovery affordance — let
+ * server to emit a structured error code first (tracked as an optimization
+ * follow-up); until then the recovery affordance — let
  * the operator edit the path and retry — is what makes the failure actionable,
  * not message precision.
  */

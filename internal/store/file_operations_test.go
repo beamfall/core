@@ -323,17 +323,14 @@ func TestOrganizePreviewAndApplyMovesFilesReversibly(t *testing.T) {
 // command: go test ./internal/store -run '^TestUndoBatchRepointsCatalogWhenOrganizedFileIsMissing$' -count=1
 // start: 2026-08-21T01:27:49Z; end: 2026-08-21T01:27:53Z; elapsed: 4s; exit: 1
 // failure: file_operations_test.go:372: record path after missing-file undo = ".../Voyages/Missing.mp4", want ".../unsorted/missing.mp4"
-// log: .agent-evidence/20260821T012749Z-LCRES-1-planted-red.sK2jNP/output.log
 //
 // Restored implementation (HEAD 816b70bec21df3f975728ff214733de662e74e72):
 // command: go test ./internal/store -run '^TestUndoBatchRepointsCatalogWhenOrganizedFileIsMissing$' -count=1
 // start: 2026-08-21T01:28:31Z; end: 2026-08-21T01:28:35Z; elapsed: 4s; exit: 0
-// log: .agent-evidence/20260821T012831Z-LCRES-1-focused-pass.GgZzmY/output.log
 //
 // Package regression (HEAD 816b70bec21df3f975728ff214733de662e74e72):
 // command: go test ./internal/store -count=1
 // start: 2026-08-21T01:29:08Z; end: 2026-08-21T01:31:20Z; elapsed: 132s; exit: 0
-// log: .agent-evidence/20260821T012908Z-LCRES-1-store-package.roeM1L/output.log
 func TestUndoBatchRepointsCatalogWhenOrganizedFileIsMissing(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
