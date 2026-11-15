@@ -2892,6 +2892,27 @@ func (s *Store) ImportMediaFile(ctx context.Context, imported ImportMediaFile) (
 	if err := s.guardLocked(); err != nil {
 		return Media{}, MediaFile{}, err
 	}
+	return s.importMediaFileLocked(ctx, imported)
+}
+
+// admitManagedMediaFileLocked is ImportManagedFile's catalog admission: the
+// same authority and validation checks as ImportMediaFile, for a caller that
+// already holds s.mu (read). sync.RWMutex read locks are not reentrant, so the
+// admission must not take s.mu again (CORE-1832).
+func (s *Store) admitManagedMediaFileLocked(ctx context.Context, imported ImportMediaFile) (Media, MediaFile, error) {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return Media{}, MediaFile{}, err
+	}
+	if err := validateImportMediaFile(imported); err != nil {
+		return Media{}, MediaFile{}, err
+	}
+	return s.importMediaFileLocked(ctx, imported)
+}
+
+// importMediaFileLocked writes one imported file to its Library's catalog
+// plane and emits the realtime event. Caller holds s.mu (read) and has checked
+// authority, validation and the managed-admission reservation.
+func (s *Store) importMediaFileLocked(ctx context.Context, imported ImportMediaFile) (Media, MediaFile, error) {
 	now := time.Now().UTC()
 	plane, err := s.catalogPlaneForLibraryLocked(ctx, imported.LibraryID)
 	if err != nil {

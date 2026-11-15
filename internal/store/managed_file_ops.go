@@ -428,8 +428,9 @@ func (s *Store) ImportManagedFile(ctx context.Context, libraryID LibraryID, impo
 	// ResolveManagedMediaFile/ConvertManagedFile accept it. On failure, undo the
 	// on-disk write so no un-cataloged orphan is left — unless another
 	// admission has cataloged the file, which the undo must never delete.
+	// s.mu is already held (read), so the admission runs the locked form.
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	_, _, err = s.ImportMediaFile(ctx, ImportMediaFile{
+	_, _, err = s.admitManagedMediaFileLocked(ctx, ImportMediaFile{
 		LibraryID:          libraryID,
 		Path:               target,
 		Title:              stem,
