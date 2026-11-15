@@ -3,6 +3,10 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Wordmark } from "@/areas/enroll/AuthShell";
 import beamfallLogo from "@/assets/beamfall-logo.png";
 import { CinemaBackdrop } from "@/components/beamfall/CinemaBackdrop";
+import {
+  CredentialHelpLink,
+  useProviderKeyFieldLabel,
+} from "@/components/beamfall/CredentialHelpLink";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,6 +133,7 @@ function consumeSetupToken(): string {
 
 export function SetupWizard() {
   const { t, locale } = useI18n();
+  const providerKeyFieldLabel = useProviderKeyFieldLabel();
   // Visual step index (0..6). The bootstrap POST fires when we leave the owner
   // profile step (index 3) forward, because that's the first point where token
   // + admin password + security mode + profile name are all collected.
@@ -1225,7 +1230,7 @@ export function SetupWizard() {
                         return (
                           <div key={key.authRef}>
                             <Label htmlFor={fieldId} className={FIELD_LABEL}>
-                              {t("pluginKeyField", { provider: key.label })}
+                              {providerKeyFieldLabel(key)}
                             </Label>
                             <Input
                               id={fieldId}
@@ -1244,6 +1249,7 @@ export function SetupWizard() {
                             <p className="mb-0 mt-1.5 text-dense leading-snug text-muted-foreground">
                               {t("pluginKeySentTo", { hosts: key.hosts.join(", ") })}
                             </p>
+                            <CredentialHelpLink providerKey={key} />
                           </div>
                         );
                       })}

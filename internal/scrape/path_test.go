@@ -14,6 +14,7 @@ func TestResolveJSONPath(t *testing.T) {
 		"nested": {"inner": {"deep": "value"}},
 		"list": [{"name": "first"}, {"name": "second"}],
 		"releases": [{"region": "US", "rating": "PG-13"}, {"region": "CA", "rating": "14A"}],
+		"kinds": [{"id": 4, "slug": "cover", "group": "b"}, {"id": 7, "slug": "cover", "group": "a"}],
 		"plain": ["a", "b"]
 	}`))
 	if err != nil {
@@ -34,14 +35,19 @@ func TestResolveJSONPath(t *testing.T) {
 		{"plain.1", "b", true},
 		{"releases[region=CA].rating", "14A", true},
 		{"releases[region=GB].rating", "", false},
-		{"empty", "", false},         // null is not a value
-		{"nested", "", false},        // objects are not scalars
-		{"list", "", false},          // arrays are not scalars
-		{"absent", "", false},        // missing key
-		{"list.2.name", "", false},   // index out of range
-		{"list.x.name", "", false},   // non-numeric index
-		{"name.deeper", "", false},   // descend into scalar
-		{"nested.absent", "", false}, // missing nested key
+		{"kinds[slug=cover].id", "4", true},         // first match wins
+		{"kinds[slug=cover,group=a].id", "7", true}, // every condition must hold
+		{"kinds[id=7,slug=cover].group", "a", true}, // numbers compare as text
+		{"kinds[slug=cover,group=c].id", "", false}, // no element matches all
+		{"kinds[slug=cover,=a].id", "", false},      // malformed condition
+		{"empty", "", false},                        // null is not a value
+		{"nested", "", false},                       // objects are not scalars
+		{"list", "", false},                         // arrays are not scalars
+		{"absent", "", false},                       // missing key
+		{"list.2.name", "", false},                  // index out of range
+		{"list.x.name", "", false},                  // non-numeric index
+		{"name.deeper", "", false},                  // descend into scalar
+		{"nested.absent", "", false},                // missing nested key
 	}
 	for _, tc := range cases {
 		got, ok := resolveJSONPath(root, tc.path)
@@ -85,5 +91,36 @@ func TestResolveXMLPath(t *testing.T) {
 func TestParseXMLRejectsGarbage(t *testing.T) {
 	if _, err := parseXML([]byte("<rss><unclosed")); err == nil {
 		t.Fatal("expected parse error")
+	}
+}
+
+// TestResolveAlternatives pins "||" map-path fallbacks (CORE-1128): the first
+// alternative with a non-empty value wins, and the last is taken as is.
+func TestResolveAlternatives(t *testing.T) {
+	root, err := decodeJSON([]byte(`{"blank": "", "name": "Vega", "translations": [{"lang": "x", "name": "Wega"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolve := func(path string) (any, bool) { return resolveJSONScalar(root, path) }
+	cases := []struct {
+		path string
+		want string
+		ok   bool
+	}{
+		{"translations[lang=x].name||name", "Wega", true},
+		{"translations[lang=y].name||name", "Vega", true},
+		{"blank||name", "Vega", true},
+		{"absent || name", "Vega", true},
+		{"name||blank", "Vega", true},
+		{"absent||blank", "", true},
+		{"blank", "", true},
+		{"absent||missing", "", false},
+	}
+	for _, tc := range cases {
+		raw, ok := resolveAlternatives(tc.path, resolve)
+		got, _ := scalarString(raw)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("resolveAlternatives(%q) = (%q, %v), want (%q, %v)", tc.path, got, ok, tc.want, tc.ok)
+		}
 	}
 }

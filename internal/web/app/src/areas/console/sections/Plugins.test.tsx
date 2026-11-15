@@ -335,6 +335,58 @@ describe("Plugins", () => {
     await waitFor(() => expect(field).toHaveValue(""));
   });
 
+  it("names a plugin-declared credential and links where to get it", async () => {
+    // CORE-1127: the plugin labels its credential (a subscriber PIN here) and
+    // links its sign-up page; the field stays write-only like any other key.
+    const help = {
+      label: { en: "Example subscriber PIN" },
+      helpURL: "https://subscribe.example.org",
+      helpLabel: { en: "Subscribe at example.org" },
+    };
+    mockConsoleConfig({
+      ...config,
+      plugins: [
+        {
+          ...keyedPlugin,
+          scrapers: keyedPlugin.scrapers.map((row) => ({ ...row, credentialHelp: help })),
+        },
+      ],
+    });
+    renderPanel();
+
+    const card = await screen.findByRole("article", { name: "Catalog Metadata" });
+    const field = within(card).getByLabelText("Example subscriber PIN");
+    expect(field).toHaveAttribute("type", "password");
+    expect(field).toHaveValue("");
+    const link = within(card).getByRole("link", { name: "Subscribe at example.org" });
+    expect(link).toHaveAttribute("href", "https://subscribe.example.org");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("does not link a credential help page that is not https", async () => {
+    mockConsoleConfig({
+      ...config,
+      plugins: [
+        {
+          ...keyedPlugin,
+          scrapers: keyedPlugin.scrapers.map((row) => ({
+            ...row,
+            credentialHelp: {
+              label: "Example subscriber PIN",
+              helpURL: "javascript:alert(1)",
+              helpLabel: "Subscribe",
+            },
+          })),
+        },
+      ],
+    });
+    renderPanel();
+
+    const card = await screen.findByRole("article", { name: "Catalog Metadata" });
+    expect(within(card).getByLabelText("Example subscriber PIN")).toBeVisible();
+    expect(within(card).queryByRole("link", { name: "Subscribe" })).toBeNull();
+  });
+
   it("says Disable stops a built-in key and shows the disabled state", async () => {
     // CORE-1540: an official build answers this AuthRef with a built-in key, so
     // the row reads configured with no owner key saved. Disable must say it

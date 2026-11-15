@@ -104,7 +104,7 @@ func (s *Service) AutoIdentify(ctx context.Context, mediaID store.MediaID, plugi
 	if !ok {
 		return AutoOutcome{Skipped: true}, nil
 	}
-	candidates, err := s.Search(ctx, pluginID, scraper.ID, parsed.Title, mediaID)
+	candidates, err := s.search(ctx, pluginID, scraper.ID, parsed.Title, mediaID, parsed.Year)
 	if err != nil {
 		return AutoOutcome{}, err
 	}

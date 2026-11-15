@@ -1,4 +1,8 @@
 import { useId, useMemo, useRef, useState } from "react";
+import {
+  CredentialHelpLink,
+  useProviderKeyFieldLabel,
+} from "@/components/beamfall/CredentialHelpLink";
 import { StatusChip, type StatusTone } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +51,7 @@ export function ProviderKeyRow({
   onCredential: (action: () => Promise<unknown>) => Promise<boolean>;
 }) {
   const t = useT();
+  const fieldLabel = useProviderKeyFieldLabel();
   const [secret, setSecret] = useState("");
   const [pending, setPending] = useState(false);
   const { authRef, label, hosts, status } = providerKey;
@@ -71,6 +76,7 @@ export function ProviderKeyRow({
           <div className="text-xs text-muted-foreground">
             {t("pluginKeySentTo", { hosts: hosts.join(", ") })}
           </div>
+          <CredentialHelpLink providerKey={providerKey} />
         </div>
         <KeyStatusChip status={status} />
       </div>
@@ -86,8 +92,12 @@ export function ProviderKeyRow({
           autoComplete="off"
           value={secret}
           className={cn(KEY_INPUT, "min-w-0 flex-1 basis-56")}
-          placeholder={t(configured ? "pluginKeyReplacePlaceholder" : "pluginKeyPlaceholder")}
-          aria-label={t("pluginKeyField", { provider: label })}
+          placeholder={
+            providerKey.credentialHelp && !configured
+              ? fieldLabel(providerKey)
+              : t(configured ? "pluginKeyReplacePlaceholder" : "pluginKeyPlaceholder")
+          }
+          aria-label={fieldLabel(providerKey)}
           onChange={(event) => setSecret(event.target.value)}
         />
         <Button type="submit" size="sm" className="px-4" disabled={pending || !secret.trim()}>

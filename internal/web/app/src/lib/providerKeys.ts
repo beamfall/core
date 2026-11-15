@@ -1,4 +1,4 @@
-import type { PluginScraperInfo } from "@/lib/graphql/types";
+import type { PluginCredentialHelpInfo, PluginScraperInfo } from "@/lib/graphql/types";
 
 /** One AuthRef-scoped scraper credential, presented as a "provider key". */
 export interface ProviderKey {
@@ -11,6 +11,8 @@ export interface ProviderKey {
   status: string;
   error?: string;
   pluginIDs: string[];
+  /** Plugin-declared credential name and sign-up link, if any (CORE-1127). */
+  credentialHelp?: PluginCredentialHelpInfo;
 }
 
 // Drop a trailing parenthetical qualifier: "TMDB (Movies)" -> "TMDB".
@@ -65,6 +67,7 @@ export function groupProviderKeys(scrapers: PluginScraperInfo[]): ProviderKey[] 
       status: first.credentialStatus || "unavailable",
       error: rows.find((row) => row.credentialError)?.credentialError,
       pluginIDs: [...new Set(rows.map((row) => row.pluginID))],
+      credentialHelp: rows.find((row) => row.credentialHelp)?.credentialHelp,
     };
   });
 }

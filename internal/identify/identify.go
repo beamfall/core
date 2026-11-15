@@ -240,6 +240,15 @@ func (s *Service) SetFingerprints(fingerprints FingerprintStore) {
 // empty (free-text-only search). The query may be empty when mediaID is set —
 // a fingerprint-driven scraper queries by content identity, not text.
 func (s *Service) Search(ctx context.Context, pluginID, scraperID, query string, mediaID store.MediaID) ([]Candidate, error) {
+	return s.search(ctx, pluginID, scraperID, query, mediaID, 0)
+}
+
+// search is Search with the item's year when identification knows it (zero
+// when not), substituted for a SearchTemplate's {year}. A year-filtered
+// search that finds nothing runs once more without the year: a file's year
+// can be a later release or air date, and a filter that excludes every
+// candidate must not hide the match an unfiltered search finds.
+func (s *Service) search(ctx context.Context, pluginID, scraperID, query string, mediaID store.MediaID, year int) ([]Candidate, error) {
 	if strings.TrimSpace(query) == "" && mediaID == "" {
 		return nil, errors.New("identify: query or media ID is required")
 	}
@@ -252,9 +261,19 @@ func (s *Service) Search(ctx context.Context, pluginID, scraperID, query string,
 		return nil, err
 	}
 	vars.PluginID = pluginID
+	usesYear := year > 0 && strings.Contains(spec.SearchTemplate, "{year}")
+	if usesYear {
+		vars.Year = year
+	}
 	results, err := s.engine.Search(ctx, spec, query, vars)
 	if err != nil {
 		return nil, err
+	}
+	if usesYear && len(results) == 0 {
+		vars.Year = 0
+		if results, err = s.engine.Search(ctx, spec, query, vars); err != nil {
+			return nil, err
+		}
 	}
 	candidates := make([]Candidate, len(results))
 	for i, result := range results {

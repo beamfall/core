@@ -176,9 +176,15 @@ const (
 	// pick list, not a remote service's whole result set.
 	maxCandidates = 25
 	// loginTokenTTL is how long a login-bearer token is reused before the
-	// exchange runs again. Conservative: real issuers (TheTVDB v4) mint
-	// month-long tokens, and the spec has no way to declare expiry.
-	loginTokenTTL = time.Hour
+	// exchange runs again. TheTVDB v4's swagger documents its tokens as valid
+	// for one month (read 2026-11-15); reuse stops a few days short of that,
+	// a 401 still forces a fresh exchange, and rotating or disabling any
+	// credential the exchange sent drops the token (InvalidateCredential).
+	loginTokenTTL = 27 * 24 * time.Hour
+	// defaultReferenceCacheHours is how long a reference document is reused
+	// when its declaration sets no CacheHours: a week, the usual guidance for
+	// static lookup endpoints.
+	defaultReferenceCacheHours = 7 * 24
 	// userAgent identifies Beamfall on every engine request — remote-source
 	// etiquette (MusicBrainz requires a descriptive User-Agent and throttles
 	// anonymous clients harder without one).
@@ -201,8 +207,18 @@ type Engine struct {
 	clock        requestClock
 
 	mu          sync.Mutex
-	tokens      map[string]cachedToken // login-bearer cache, keyed endpoint+authref
-	lastRequest map[string]time.Time   // rate-limit anchor per scraper ID
+	tokens      map[string]cachedToken     // login-bearer cache, keyed endpoint+authref
+	lastRequest map[string]time.Time       // rate-limit anchor per scraper ID
+	references  map[string]cachedReference // reference documents, keyed by URL
+
+	// extensions reads the scraper declarations the pinned plugin-sdk does
+	// not carry yet; New sets plugin.ScraperExtensionsOf.
+	extensions func(plugin.ScraperSpec) plugin.ScraperExtensions
+}
+
+type cachedReference struct {
+	document any
+	expires  time.Time
 }
 
 type cachedToken struct {
@@ -233,6 +249,8 @@ func New(opts ...Option) *Engine {
 		maxResponseBytes: defaultMaxResponseBytes,
 		tokens:           map[string]cachedToken{},
 		lastRequest:      map[string]time.Time{},
+		references:       map[string]cachedReference{},
+		extensions:       plugin.ScraperExtensionsOf,
 		clock:            realClock{},
 	}
 	for _, opt := range opts {
@@ -264,15 +282,19 @@ func New(opts ...Option) *Engine {
 	return e
 }
 
-// Variables are the fingerprint substitution values sourced
-// from the media file being identified: {oshash}, {phash}, {duration}. The
-// engine always substitutes all three placeholders in both templates — an
-// unknown value substitutes the empty string, so a fingerprint placeholder
-// never leaks literally to a remote API.
+// Variables are the substitution values sourced from the media file being
+// identified: {oshash}, {phash}, {duration} and {year}. The engine always
+// substitutes every placeholder in both templates — an unknown value
+// substitutes the empty string, so a placeholder never leaks literally to a
+// remote API, and a query parameter whose whole value is {year} is dropped
+// when the year is unknown.
 type Variables struct {
 	OSHash          string
 	PHash           string
 	DurationSeconds int
+	// Year is the item's release year when identification knows it (parsed
+	// from the file name or carried by the item); zero when unknown.
+	Year int
 	// PluginID scopes {config.<name>} substitutions to the active bundle.
 	PluginID string
 }
@@ -288,7 +310,28 @@ func (v Variables) substitutions(page int) [][2]string {
 	if page > 0 {
 		pageValue = strconv.Itoa(page)
 	}
-	return [][2]string{{"{oshash}", v.OSHash}, {"{phash}", v.PHash}, {"{duration}", duration}, {"{page}", pageValue}}
+	year := ""
+	if v.Year > 0 {
+		year = strconv.Itoa(v.Year)
+	}
+	return [][2]string{{"{oshash}", v.OSHash}, {"{phash}", v.PHash}, {"{duration}", duration}, {"{page}", pageValue}, {"{year}", year}}
+}
+
+// dropUnknownYear removes query parameters whose whole value is {year} when
+// the year is unknown, so the source sees no filter rather than an empty one.
+func dropUnknownYear(query string, vars Variables) string {
+	if vars.Year > 0 || !strings.Contains(query, "{year}") {
+		return query
+	}
+	params := strings.Split(query, "&")
+	kept := params[:0]
+	for _, param := range params {
+		if _, value, _ := strings.Cut(param, "="); value == "{year}" {
+			continue
+		}
+		kept = append(kept, param)
+	}
+	return strings.Join(kept, "&")
 }
 
 var configPlaceholderPattern = regexp.MustCompile(`\{config\.([a-z0-9][a-z0-9-]*)\}`)
@@ -332,34 +375,74 @@ func (e *Engine) Lookup(ctx context.Context, spec plugin.ScraperSpec, id string,
 	if err != nil {
 		return Result{}, err
 	}
+	if spec.Kind == "rss" {
+		return e.lookupRSS(ctx, spec, id, v, config)
+	}
+	return e.lookupDocument(ctx, spec, spec.LookupTemplate, id, v, config)
+}
+
+// LookupByID executes spec's LookupByIDTemplate for provider (an external id
+// namespace the source can resolve) with {id} replaced by id, and maps the
+// document exactly like Lookup. When the scraper declares an id-lookup record
+// path for provider, the document only resolves the scraper's own record id and the
+// result is the LookupTemplate lookup of that id, so an external id yields
+// the same full record as a search match. A provider the scraper does not
+// declare is an error; rss scrapers have no id lookups.
+func (e *Engine) LookupByID(ctx context.Context, spec plugin.ScraperSpec, provider, id string, vars ...Variables) (Result, error) {
+	template := spec.LookupByIDTemplate[provider]
+	if template == "" {
+		return Result{}, fmt.Errorf("scrape: scraper %q declares no %q id lookup", spec.ID, provider)
+	}
+	if spec.Kind == "rss" {
+		return Result{}, fmt.Errorf("scrape: scraper %q: rss scrapers have no id lookups", spec.ID)
+	}
+	v := variablesArg(vars)
+	config, err := e.configValues(ctx, v)
+	if err != nil {
+		return Result{}, err
+	}
+	recordIDPath := e.extensions(spec).LookupByIDRecordIDPaths[provider]
+	if recordIDPath == "" {
+		return e.lookupDocument(ctx, spec, template, id, v, config)
+	}
+	if spec.Kind != "http-json" || spec.LookupTemplate == "" {
+		return Result{}, fmt.Errorf("scrape: scraper %q: an id-lookup record path needs an http-json LookupTemplate", spec.ID)
+	}
+	root, err := e.fetchJSONDocument(ctx, spec, template, "{id}", id, v, config, 0)
+	if err != nil {
+		return Result{}, err
+	}
+	raw, ok := resolveAlternatives(recordIDPath, func(path string) (any, bool) { return resolveJSONScalar(root, path) })
+	recordID, _ := jsonScalar(raw)
+	if !ok || recordID == "" {
+		return Result{}, fmt.Errorf("scrape: scraper %q: %q id %q resolved to no record", spec.ID, provider, id)
+	}
+	return e.lookupDocument(ctx, spec, spec.LookupTemplate, recordID, v, config)
+}
+
+// lookupDocument fetches one http-json or http-graphql document from template
+// and maps it through FieldMap, ArtworkMap and the entity maps.
+func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, template, id string, v Variables, config map[string]string) (Result, error) {
+	var root any
+	var err error
 	switch spec.Kind {
 	case "http-json":
-		root, err := e.fetchJSONDocument(ctx, spec, spec.LookupTemplate, "{id}", id, v, config, 0)
-		if err != nil {
-			return Result{}, err
-		}
-		result := mapJSON(spec, spec.FieldMap, spec.ArtworkMap, root, config)
-		result.Entities, err = e.resolveEntityMaps(ctx, spec, root, v, config)
-		if err != nil {
-			return Result{}, err
-		}
-		return result, nil
+		root, err = e.fetchJSONDocument(ctx, spec, template, "{id}", id, v, config, 0)
 	case "http-graphql":
-		data, err := e.fetchGraphQLData(ctx, spec, spec.LookupTemplate, "{id}", id, v, config, 0)
-		if err != nil {
-			return Result{}, err
-		}
-		result := mapJSON(spec, spec.FieldMap, spec.ArtworkMap, data, config)
-		result.Entities, err = e.resolveEntityMaps(ctx, spec, data, v, config)
-		if err != nil {
-			return Result{}, err
-		}
-		return result, nil
-	case "rss":
-		return e.lookupRSS(ctx, spec, id, v, config)
+		root, err = e.fetchGraphQLData(ctx, spec, template, "{id}", id, v, config, 0)
 	default:
 		return Result{}, fmt.Errorf("scrape: scraper %q has unknown kind %q", spec.ID, spec.Kind)
 	}
+	if err != nil {
+		return Result{}, err
+	}
+	fieldMap, artworkMap := e.referenceMaps(ctx, spec, config, spec.FieldMap), e.referenceMaps(ctx, spec, config, spec.ArtworkMap)
+	result := mapJSON(spec, fieldMap, artworkMap, root, config)
+	result.Entities, err = e.resolveEntityMaps(ctx, spec, root, v, config)
+	if err != nil {
+		return Result{}, err
+	}
+	return result, nil
 }
 
 // Search executes spec's SearchTemplate with {query} (and the fingerprint
@@ -385,6 +468,7 @@ func (e *Engine) Search(ctx context.Context, spec plugin.ScraperSpec, query stri
 		return nil, fmt.Errorf("scrape: scraper %q has unknown kind %q", spec.ID, spec.Kind)
 	}
 	fieldMap, artworkMap := searchMaps(spec)
+	fieldMap, artworkMap = e.referenceMaps(ctx, spec, config, fieldMap), e.referenceMaps(ctx, spec, config, artworkMap)
 	results := make([]Result, 0, maxCandidates)
 	for page := 1; page <= searchMaxPages(spec) && len(results) < maxCandidates; page++ {
 		var root any
@@ -415,7 +499,11 @@ func (e *Engine) Search(ctx context.Context, spec plugin.ScraperSpec, query stri
 		for _, element := range elements {
 			result := mapJSON(spec, fieldMap, artworkMap, element, config)
 			if spec.CandidateIDPath != "" {
-				result.ID, _ = resolveJSONPath(element, substituteConfig(spec.CandidateIDPath, config, identity))
+				if raw, ok := resolveAlternatives(substituteConfig(spec.CandidateIDPath, config, identity), func(path string) (any, bool) {
+					return resolveJSONScalar(element, path)
+				}); ok {
+					result.ID, _ = scalarString(raw)
+				}
 			}
 			results = append(results, result)
 		}
@@ -524,6 +612,7 @@ func (e *Engine) lookupRSS(ctx context.Context, spec plugin.ScraperSpec, id stri
 func buildURL(endpoint, template, placeholder, value string, vars Variables, config map[string]string, page int) string {
 	pairs := append([][2]string{{placeholder, value}}, vars.substitutions(page)...)
 	path, query, hasQuery := strings.Cut(template, "?")
+	query = dropUnknownYear(query, vars)
 	for _, pair := range pairs {
 		path = strings.ReplaceAll(path, pair[0], escapePathPlaceholder(pair[1]))
 		if hasQuery {
@@ -570,7 +659,7 @@ func mapResult(spec plugin.ScraperSpec, fieldMap, artworkMap map[string]string, 
 	result := Result{Fields: map[string]any{}, Artwork: map[string]string{}}
 	for field, path := range fieldMap {
 		path = substituteConfig(path, config, identity)
-		raw, ok := resolve(path)
+		raw, ok := resolveAlternatives(path, resolve)
 		if !ok {
 			continue
 		}
@@ -591,7 +680,7 @@ func mapResult(spec plugin.ScraperSpec, fieldMap, artworkMap map[string]string, 
 	}
 	for slot, path := range artworkMap {
 		path = substituteConfig(path, config, identity)
-		if raw, ok := resolve(path); ok {
+		if raw, ok := resolveAlternatives(path, resolve); ok {
 			value, ok := scalarString(raw)
 			if !ok {
 				continue

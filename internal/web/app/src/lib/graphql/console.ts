@@ -102,7 +102,7 @@ export async function checkRemoteAccessReachability(
 // --- Console config: workers + plugin activation (ADR-0013) ---------------
 
 const CONSOLE_CONFIG_FIELDS =
-  "backgroundWorkers updateCheckEnabled updateCheckChannel remoteEnrollmentEnabled remoteMaxBitrate viewerPairingCodesDisabled eventsRetentionDays plugins { id displayName active controlPolicy config { name type label required default value configured options { value label } } permissions { kind label description highRisk } status { id label state detail } actions { id label icon risk requiredPermissions inputFields { name type label required default value configured options { value label } } confirmation } scrapers { pluginID scraperID displayName kind endpoint authRef authStyle credentialRequired credentialConfigured credentialStatus credentialError } }";
+  "backgroundWorkers updateCheckEnabled updateCheckChannel remoteEnrollmentEnabled remoteMaxBitrate viewerPairingCodesDisabled eventsRetentionDays plugins { id displayName active controlPolicy config { name type label required default value configured options { value label } } permissions { kind label description highRisk } status { id label state detail } actions { id label icon risk requiredPermissions inputFields { name type label required default value configured options { value label } } confirmation } scrapers { pluginID scraperID displayName kind endpoint authRef authStyle credentialRequired credentialConfigured credentialStatus credentialError credentialHelp { label helpURL helpLabel } } }";
 
 const CONSOLE_CONFIG_QUERY = `query ConsoleConfig { consoleConfig { ${CONSOLE_CONFIG_FIELDS} } }`;
 

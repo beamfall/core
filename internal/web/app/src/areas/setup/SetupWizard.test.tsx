@@ -826,6 +826,36 @@ describe("SetupWizard provider keys (CORE-1115)", () => {
     await waitFor(() => expect(mocks.activatePlugins).toHaveBeenCalled());
     expect(mocks.setScraperCredential).not.toHaveBeenCalled();
   });
+
+  it("labels a plugin-declared credential and links where to get it (CORE-1127)", async () => {
+    mocks.loadProviderKeys.mockResolvedValue(
+      groupProviderKeys([
+        {
+          ...scraper("tv", "Example (TV)"),
+          authRef: "example-subscriber-pin",
+          credentialHelp: {
+            label: { en: "Example subscriber PIN" },
+            helpURL: "https://subscribe.example.org",
+            helpLabel: { en: "Subscribe at example.org" },
+          },
+        },
+      ]),
+    );
+    const user = userEvent.setup();
+    await reachPluginsStep(user);
+
+    const field = await screen.findByLabelText("Example subscriber PIN");
+    expect(field).toHaveAttribute("type", "password");
+    expect(screen.getByRole("link", { name: "Subscribe at example.org" })).toHaveAttribute(
+      "href",
+      "https://subscribe.example.org",
+    );
+    await user.type(field, "1234");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(mocks.setScraperCredential).toHaveBeenCalledWith("example-subscriber-pin", "1234"),
+    );
+  });
 });
 
 describe("SetupWizard resume (CORE-1604)", () => {

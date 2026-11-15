@@ -518,7 +518,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	scraperCredentials := withBundledCredentials(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, BundledCredentials)
 	scrapeEngine := scrape.New(
 		scrape.WithCredentials(scraperCredentials),
-		scrape.WithConfigSource(st),
+		scrape.WithConfigSource(pluginConfigWithDefaults{saved: st, bundles: executablePlugins}),
 	)
 	// Compiled filename-parser hooks, keyed by active plugin ID.
 	// Hook implementations live in first-party plugin modules; Core only wires

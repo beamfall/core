@@ -495,6 +495,9 @@ type Handler struct {
 	// rotates or is disabled. The scrape engine caches login-bearer tokens by
 	// endpoint+AuthRef; mutation success must make old tokens stop being reused.
 	scraperCredentialInvalidator ScraperCredentialInvalidator
+	// scraperExtensions reads the scraper declarations the pinned plugin-sdk
+	// does not carry yet (CORE-1127); nil means plugin.ScraperExtensionsOf.
+	scraperExtensions func(plugin.ScraperSpec) plugin.ScraperExtensions
 	// libEncrypt is the per-Encrypted-Library key model seam (ADR-0045 §2.4,
 	// ENC-2): the composition root wires the libencrypt.Manager (over the 0600
 	// secretFiles secure store) in here. It provisions the DEK + three wraps,

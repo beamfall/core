@@ -1283,6 +1283,15 @@ export interface PluginScraperInfo {
   credentialConfigured: boolean;
   credentialStatus: string;
   credentialError?: string;
+  /** Plugin-declared presentation for the AuthRef credential (CORE-1127). */
+  credentialHelp?: PluginCredentialHelpInfo;
+}
+
+/** How a plugin names its credential and where an owner gets one (never secret bytes). */
+export interface PluginCredentialHelpInfo {
+  label: DisplayString;
+  helpURL?: string;
+  helpLabel?: DisplayString;
 }
 
 /** AuthRef-scoped scraper credential state (never secret bytes). */
