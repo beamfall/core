@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   clean-checkout-canary:
-    # Playwright ships no Chromium for ubuntu26.04 (ubuntu-latest since 2026-10-19).
+    # CORE-1112: Playwright has no Chromium for ubuntu26.04, which ubuntu-latest now resolves to,
+    # so jobs that install it pin the newest image Playwright supports.
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
