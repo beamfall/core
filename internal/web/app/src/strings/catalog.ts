@@ -15,6 +15,7 @@ import { consoleAccessStrings } from "./console-access";
 import { consoleAccessLockStrings } from "./console-access-lock";
 import { consoleOperationsStrings } from "./console-operations";
 import { consoleOperationsCacheStrings } from "./console-operations-cache";
+import { consoleOperationsJobsStrings } from "./console-operations-jobs";
 import { consoleOperationsOpsStrings } from "./console-operations-ops";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
@@ -81,6 +82,7 @@ export const en = {
   ...consoleOperationsStrings.en,
   ...consoleOperationsCacheStrings.en,
   ...consoleOperationsOpsStrings.en,
+  ...consoleOperationsJobsStrings.en,
   ...playbackStrings.en,
   ...playbackChapterStrings.en,
   ...playerShortcutStrings.en,
@@ -156,6 +158,7 @@ export const fr = {
   ...consoleOperationsStrings.fr,
   ...consoleOperationsCacheStrings.fr,
   ...consoleOperationsOpsStrings.fr,
+  ...consoleOperationsJobsStrings.fr,
   ...playbackStrings.fr,
   ...playbackChapterStrings.fr,
   ...playerShortcutStrings.fr,
@@ -231,6 +234,7 @@ export const de = {
   ...consoleOperationsStrings.de,
   ...consoleOperationsCacheStrings.de,
   ...consoleOperationsOpsStrings.de,
+  ...consoleOperationsJobsStrings.de,
   ...playbackStrings.de,
   ...playbackChapterStrings.de,
   ...playerShortcutStrings.de,
@@ -306,6 +310,7 @@ export const es = {
   ...consoleOperationsStrings.es,
   ...consoleOperationsCacheStrings.es,
   ...consoleOperationsOpsStrings.es,
+  ...consoleOperationsJobsStrings.es,
   ...playbackStrings.es,
   ...playbackChapterStrings.es,
   ...playerShortcutStrings.es,
@@ -381,6 +386,7 @@ export const pt = {
   ...consoleOperationsStrings.pt,
   ...consoleOperationsCacheStrings.pt,
   ...consoleOperationsOpsStrings.pt,
+  ...consoleOperationsJobsStrings.pt,
   ...playbackStrings.pt,
   ...playbackChapterStrings.pt,
   ...playerShortcutStrings.pt,
