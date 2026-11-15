@@ -1,7 +1,7 @@
 # pairing-code-format Specification
 
 ## Purpose
-TBD - created by archiving change core-2132-pairing-code-alphabet. Update Purpose after archive.
+Keep pairing codes readable off a TV or phone: mint them without look-alike characters, and accept a code typed with a look-alike reading.
 
 ## Requirements
 
