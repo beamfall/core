@@ -1,5 +1,5 @@
 {
-  "schemaFingerprint": "14b92cf1662f4c6582783312f4a92d58b5c70189235b0494e7e64dccdb766c2d",
+  "schemaFingerprint": "c3767aca1c46d97a90818953e806c502a965621f0dc0de00b0e894daf069fc76",
   "tables": {
     "catalog.access_grant": {
       "rows": 1,
@@ -334,8 +334,8 @@
       "checksum": "78db107c4d13509a4581394e44b0bacc109b78bcfb28331592e09f2030821dbd"
     },
     "catalog.schema_migrations": {
-      "rows": 111,
-      "checksum": "525316f8b9e8119db9e9c170a3e22bb734c53dbf0d5107a15b9a025808eb3856"
+      "rows": 112,
+      "checksum": "811d1fef8e5f21b4a11097d52aa1c5031b7c267a705ac1926c2d5f24d57286eb"
     },
     "catalog.scoped_api_key": {
       "rows": 1,
@@ -355,7 +355,7 @@
     },
     "catalog.server_config": {
       "rows": 1,
-      "checksum": "dce5daf519c1aff404b59520a94c406932726dc12c2159e8bc7209959e0b022c"
+      "checksum": "d851f18419a52f296e118f0b9dfb2b04d37f626e22881ddc9cfe1e6ce7a020dd"
     },
     "catalog.smart_collection": {
       "rows": 1,
@@ -451,7 +451,7 @@
     },
     "encrypted:library-acc-archive.media_file": {
       "rows": 1,
-      "checksum": "881fcf396f95b28483ff304bc61256bf1381ccfa329618e9acc4b096ec610e85"
+      "checksum": "89d79c0e53bcfbe05bd1014c5e08f9e91a3a62bfa5011572ebe1a70f1e2ed786"
     },
     "encrypted:library-acc-archive.media_file_font_attachment": {
       "rows": 1,
@@ -471,7 +471,7 @@
     },
     "encrypted:library-acc-archive.schema_migrations": {
       "rows": 5,
-      "checksum": "f9879f652e3f310d7fc32d01bdcaffef3d31fe43268556382c5ae874e83bc967"
+      "checksum": "7041a967125c0f49878a040a902c0f78972aef552163a3050dea59ae27f4fb47"
     },
     "events.activity_entry": {
       "rows": 1,
@@ -487,7 +487,7 @@
     },
     "events.engagement_event": {
       "rows": 3,
-      "checksum": "b91cc474173039d6dfcceac2eb6d31e3d78e3f9f1010f38ca32215655a14cee4"
+      "checksum": "729c6e6906b5ccaf9f3f6dbcf057a57c0f10b876ec5c2d8f216089d8ea850e31"
     },
     "events.event_outbox": {
       "rows": 1,
@@ -543,7 +543,7 @@
     },
     "events.schema_migrations": {
       "rows": 22,
-      "checksum": "ed79514a2bd3d7b0dd7718922738801bb58f6894cfc9721b12e63c02dfbe405d"
+      "checksum": "050f97fec00beb4d98e5915f280bf267a1fe4c3c8e678d6f675c317cde9bbc9a"
     },
     "events.stream_token_ledger": {
       "rows": 1,
@@ -555,7 +555,7 @@
     }
   },
   "schemaVersions": {
-    "catalog": 111,
+    "catalog": 112,
     "encrypted:library-acc-archive": 5,
     "events": 22
   },
