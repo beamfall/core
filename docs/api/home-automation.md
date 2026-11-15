@@ -18,7 +18,7 @@ automation:
 |---|---|---|
 | `GET /v1/sessions` | `read-sessions` | Discover active playback sessions, Profile-filtered for Profile-bound keys. |
 | `GET /v1/events` | `events-subscribe` | Subscribe to the stable SSE envelope. |
-| `POST /v1/playback-control` | `playback-control` | Publish `pause`, `resume`, `skip-media`, or `skip-track` to a visible active session. |
+| `POST /v1/playback-control` | `playback-control` | Publish `pause`, `resume`, `stop`, `skip-media`, `skip-track`, `mute`, or `unmute` to a visible active session. |
 | Webhook Emitter Integration Plugin | operator configured | Push selected SSE event kinds to HMAC-signed HTTP endpoints. |
 
 The stable SSE/webhook envelope is:

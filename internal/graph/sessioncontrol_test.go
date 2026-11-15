@@ -184,6 +184,9 @@ func TestControlSessionSameProfileAuthorized(t *testing.T) {
 		if p.ProfileID != "profile-default" || p.MediaID != "media-alpha" {
 			t.Errorf("payload profile/media = %q/%q, want profile-default/media-alpha", p.ProfileID, p.MediaID)
 		}
+		if len(p.PlayingMediaIDs) != 1 || p.PlayingMediaIDs[0] != "media-alpha" {
+			t.Errorf("payload playingMediaIDs = %v, want [media-alpha]", p.PlayingMediaIDs)
+		}
 	}
 	if controlCount != 4 {
 		t.Errorf("session-control events = %d, want 4", controlCount)
@@ -250,6 +253,20 @@ func TestControlSessionRevealGate(t *testing.T) {
 		t.Fatalf("control error leaked the restricted media id: %#v", errs)
 	}
 
+	// A visible row for the same session does not unlock it: one hidden row
+	// makes the whole session uncontrollable, whichever row sorts first.
+	recordActive(t, st, "session-default", "profile-default", "device-tv", "media-direct", "media-alpha", false)
+	for _, command := range []string{"pause", "play-media"} {
+		vars := map[string]any{"sessionID": "session-default", "command": command}
+		if command == "play-media" {
+			vars["mediaID"] = "media-alpha"
+		}
+		_, errs = controlSessionVars(t, handler, vars, authorizeManager)
+		if len(errs) == 0 || !strings.Contains(errs[0].Message, "not controllable") {
+			t.Fatalf("unrevealed %s with a mixed-visibility session errors = %#v, want not controllable", command, errs)
+		}
+	}
+
 	// A revealed same-Profile caller (session-revealed) can control it.
 	data, errs := controlSessionPost(t, handler, "session-default", "pause", authorizeRevealed)
 	if len(errs) != 0 {
@@ -261,6 +278,28 @@ func TestControlSessionRevealGate(t *testing.T) {
 	}
 	if result.SessionID != "session-default" {
 		t.Errorf("revealed control echo = %q, want session-default", result.SessionID)
+	}
+
+	// The transport command carries every Media the session holds a token for
+	// as the receiver's anchor set; a play-media replacing it carries none.
+	if _, errs := controlSessionVars(t, handler, map[string]any{
+		"sessionID": "session-default", "command": "play-media", "mediaID": "media-alpha",
+	}, authorizeRevealed); len(errs) != 0 {
+		t.Fatalf("revealed play-media errors = %#v", errs)
+	}
+	payloads := sessionControlPayloads(t, st)
+	if len(payloads) != 2 {
+		t.Fatalf("outbox payloads = %d, want 2", len(payloads))
+	}
+	playing := map[store.MediaID]bool{}
+	for _, id := range payloads[0].PlayingMediaIDs {
+		playing[id] = true
+	}
+	if len(payloads[0].PlayingMediaIDs) != 2 || !playing["media-alpha"] || !playing["media-archive"] {
+		t.Errorf("pause playingMediaIDs = %v, want media-alpha and media-archive", payloads[0].PlayingMediaIDs)
+	}
+	if payloads[1].Command != store.SessionCommandPlayMedia || len(payloads[1].PlayingMediaIDs) != 0 {
+		t.Errorf("play-media payload = %#v, want no playingMediaIDs", payloads[1])
 	}
 }
 

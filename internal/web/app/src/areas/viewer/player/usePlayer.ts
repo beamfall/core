@@ -23,6 +23,7 @@ import {
   resumePositionFromInfo,
   type TrickplayManifest,
 } from "../lib/transport";
+import { remoteHoldsAutoplay, remotePlayStateMark } from "../remote/remoteControl";
 import {
   freshRecoveryBudget,
   HLS_FRAG_LOAD_ERROR,
@@ -365,7 +366,8 @@ export function usePlayer(
     /** The stream stops before the item's end: the file is truncated or damaged. */
     sourceEndsEarly?: string;
   } & UnavailableReasonMessages,
-  startAtSeconds = 0,
+  /** Where to open, in seconds; undefined resumes from saved progress. */
+  startAtSeconds?: number,
   /** A card queue's next item, declared to playback-info for a pre-minted handoff; "" when that queue has none. */
   nextMediaID?: string,
 ) {
@@ -399,6 +401,19 @@ export function usePlayer(
     retryFromRef.current = { mediaID, position: lastPositionRef.current };
     setRetryKey((key) => key + 1);
   }, [mediaID]);
+  // A restart (another device's play-media for this Media) sets the player up
+  // afresh: a new progress queue and reporting timer, and an opening position
+  // that replaces any resume seek still waiting on metadata. An undefined
+  // position resumes from saved progress, as a fresh open does.
+  const restartRef = useRef<{ mediaID: string; at: number | undefined } | null>(null);
+  const restart = useCallback(
+    (atSeconds?: number) => {
+      retryFromRef.current = null;
+      restartRef.current = { mediaID, at: atSeconds };
+      setRetryKey((key) => key + 1);
+    },
+    [mediaID],
+  );
 
   // The key and tempo asked for this Media (CORE-1659); another Media starts
   // as recorded. A ref feeds the load effect, which a change re-runs.
@@ -499,9 +514,16 @@ export function usePlayer(
       identitySignal?.addEventListener("abort", stopForIdentityChange, { once: true });
     }
     const msg = messagesRef.current;
+    // A pause sent from another device after this load began, or after
+    // playback last started (here or remotely), holds this load's own starts,
+    // reloads (recovery, a renewed token) included.
+    let startMark = remotePlayStateMark();
     setState(emptyState());
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
     retryFromRef.current = null;
+    const restartFrom = restartRef.current?.mediaID === mediaID ? restartRef.current : null;
+    restartRef.current = null;
+    const startAt = restartFrom ? restartFrom.at : startAtSeconds;
     lastPositionRef.current = retryFrom;
     presentedPositionRef.current = null;
     const requestedAdjustment = adjustmentRef.current;
@@ -650,7 +672,12 @@ export function usePlayer(
           lastPositionRef.current = video.currentTime * songScale;
         }
       };
-      videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate]);
+      const onPlay = () => {
+        // The play event is queued: one from before a remote pause fires after
+        // that pause has applied, and a paused element has not started.
+        if (!video.paused) startMark = remotePlayStateMark();
+      };
+      videoListeners.push(["playing", onPlaying], ["timeupdate", onTimeUpdate], ["play", onPlay]);
       for (const [type, listener] of videoListeners) video.addEventListener(type, listener);
 
       // HLS streams (server transcode and direct-stream audio-copy) need the
@@ -759,6 +786,7 @@ export function usePlayer(
       ) => {
         const useHlsJs = engine === "hlsjs";
         const streamURL = target.url ?? "";
+        const shouldPlay = () => options.play && !remoteHoldsAutoplay(mediaID, startMark);
         // hls.js takes the resume point as its startPosition and loads (and
         // seeks to) it directly; only the native <video src> route seeks on
         // metadata, so a resumed HLS session never fetches from 0 first.
@@ -948,7 +976,7 @@ export function usePlayer(
           hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, bumpTracks);
           hls.loadSource(streamURL);
           hls.attachMedia(video);
-          if (options.play) void video.play().catch(() => {});
+          if (shouldPlay()) void video.play().catch(() => {});
         } else {
           // Fail-closed unsupported-codec state (ADR-0084 §Amendment A): the
           // native <video src> route (direct-play, direct-stream, native HLS) is
@@ -1015,7 +1043,7 @@ export function usePlayer(
           video.addEventListener("error", videoErrorHandler);
           video.src = streamURL;
           videoCanPlayHandler = () => {
-            if (alive && options.play) {
+            if (alive && shouldPlay()) {
               void video.play().catch(() => {});
             }
           };
@@ -1073,11 +1101,7 @@ export function usePlayer(
 
       // The opening song position, as a stream position.
       const opening =
-        retryFrom > 0
-          ? retryFrom
-          : startAtSeconds > 0
-            ? startAtSeconds
-            : resumePositionFromInfo(info);
+        retryFrom > 0 ? retryFrom : startAt !== undefined ? startAt : resumePositionFromInfo(info);
       attachEngine(stream, initialEngine, opening / songScale, { play: true });
 
       setState({
@@ -1185,7 +1209,7 @@ export function usePlayer(
     };
   }, [reportProgress, stopProgressReporting]);
 
-  return { videoRef, hlsRef, state, retry, switchToHls, adjustment, adjust };
+  return { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust };
 }
 
 interface TrackPreferences {

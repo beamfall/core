@@ -30,36 +30,37 @@ const PARTIAL_CATALOGS: Record<Locale, Partial<StringTable>> = { en, fr, de, es,
 // merged with the CORE-1659 karaoke key and tempo copy;
 // merged with the CORE-1671 subtitle offset and audio delay copy, the CORE-1682 player keyboard
 // shortcut sheet copy and the CORE-1683 player chapter list copy;
-// merged with the CORE-1689 "still watching" prompt and setting copy.
-const BASE_SERIALIZED_LENGTH = 506_764;
-const BASE_REGISTRY_SHA256 = "1cb23c4df7a0b784b8e9a2065360422e62f023793284b2a913fc00032881dc50";
-const BASE_KEY_ORDER_SHA256 = "edbc8d9330cae97464576e837cb6222b24b3ad5ecdf608ca0ce7a0a6dd779f52";
-const BASE_PLACEHOLDER_SHA256 = "1519f40421f2e06be4aaaf507354e64e53129a800d34fae0c3c8307f631d8269";
+// merged with the CORE-1689 "still watching" prompt and setting copy;
+// merged with the CORE-1678 remote control and Play on copy.
+const BASE_SERIALIZED_LENGTH = 512_724;
+const BASE_REGISTRY_SHA256 = "d75b22fe99692e78ff34a80accf132cae8a93a4e6acc09a6dfecf66a79b55525";
+const BASE_KEY_ORDER_SHA256 = "16b3fe1e9e35cc080ae9581c42d13d77cbddf552e96af0946b1b4d7e9a89e204";
+const BASE_PLACEHOLDER_SHA256 = "dd2c93779bcdc36ae92eb1bf81b8b17377363c53169ee618a7e4330eeba023f1";
 const BASE_CATALOGS = {
   en: {
-    partialCount: 1_910,
-    partialSha256: "b284f5cd1c61978137215a7cdc13c619be1efee63113e2b61ec42a4655f7205c",
-    resolvedSha256: "281c3a0475277cc0fba065e6c06b7599844403b09186975b19ca665a285393bd",
+    partialCount: 1_938,
+    partialSha256: "a3aad91e18342459470afec74ef74d0b751ff8a334776f4ed3df6ff125428188",
+    resolvedSha256: "9ee3bcd8c659708d7527e518d04de69ebb6b5469bfc6a686c69d58af84cf251a",
   },
   fr: {
-    partialCount: 944,
-    partialSha256: "73516dbb9f80654225cde518d5882225a8409d0986a21ce5d8fe097b510e37b0",
-    resolvedSha256: "71e770aaebf92e9d62ba80aece82a7937bd93d77de6a1c4a17084b34f456bd7d",
+    partialCount: 972,
+    partialSha256: "051e5c8e2c794669bbc2cedf3bdfda59ffddd48c315b7e6ad925d57d0fb6bf97",
+    resolvedSha256: "5b26f37ae54a18c05b44dae43cbd3b37de43a6564cb156503fc99c0adfccacb9",
   },
   de: {
-    partialCount: 834,
-    partialSha256: "d20302b37ca5cf1b3c54337fdc01a7745a93ad43d3a16fd3e22b9617bef413e7",
-    resolvedSha256: "6763aa085c08c92faf9d53d7d94a3ee14b67cc4bb681d7172b91051df594dff0",
+    partialCount: 862,
+    partialSha256: "56d2085fafc02f344f65fcc43aa254adc335f51b488c459e229a2b26e6c2ec83",
+    resolvedSha256: "d7584bfaa940ee5316ca9e2571da99b76e9b052f697a653918754647886a1c04",
   },
   es: {
-    partialCount: 834,
-    partialSha256: "ad3b7854a943989c383122faf2e83311ff48f2b85533ee363559803f4c013c09",
-    resolvedSha256: "f0d97b5ff13ca9afaa57b7a385f0a4e97311b77165ca160ac030f04f6efcb242",
+    partialCount: 862,
+    partialSha256: "418e9f250028a4be025b41dca85224debd5a1ac7e72d4da6ce85e507447cd5c4",
+    resolvedSha256: "24d7903f55929d2595f25022a05b5ce397518dc7115faf4cafcd044e653620ec",
   },
   pt: {
-    partialCount: 834,
-    partialSha256: "b357061c0ea0f4ae639ae144b46dddfd1e9e6c5e902cacfdeb05f90991158669",
-    resolvedSha256: "defc0ad2f5970fbe9c0d6d22cef6ca8e404c4281fb687210c3843c42f6fe8bfa",
+    partialCount: 862,
+    partialSha256: "b98a2f360ab814278a40765458320797c2c77c52f5e3fcb611789092c94d9851",
+    resolvedSha256: "167e090a1c7af899b00146be456484956b7273c62e56d31d92cde60b4f4cfe3e",
   },
 } as const satisfies Record<
   Locale,

@@ -104,7 +104,7 @@ export function PlayerPage() {
         ?.id ?? "")
     : undefined;
 
-  const { videoRef, hlsRef, state, retry, switchToHls, adjustment, adjust } = usePlayer(
+  const { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust } = usePlayer(
     mediaId || "",
     {
       couldNotReachServer: t("couldNotReachServer"),
@@ -478,6 +478,12 @@ export function PlayerPage() {
     else navigate("/", { replace: true });
   }
 
+  // A remote stop ends playback on a known page. Going back could land on an
+  // earlier watch route (a remote play-media pushes one) and start that player.
+  function stopRemotely() {
+    navigate(mediaId ? `/media/${encodeURIComponent(mediaId)}` : "/", { replace: true });
+  }
+
   return (
     <main className="flex min-h-screen flex-col bg-[oklch(8%_0.012_255)]">
       <h1 className="sr-only">{navTitle || t("brand")}</h1>
@@ -594,6 +600,9 @@ export function PlayerPage() {
               onShare={shareAt}
               onPreviousInQueue={playPrevious}
               onNextInQueue={playNext}
+              onStop={back}
+              onRemoteStop={stopRemotely}
+              onRemoteRestart={restart}
               switchToHls={switchToHls}
               onMenuOpenChange={setMenuOpen}
             />
@@ -626,10 +635,12 @@ export function PlayerPage() {
   );
 }
 
-function parseTimestampParam(raw: string | null): number {
-  if (!raw) return 0;
+// undefined when the link names no position, so playback resumes from saved
+// progress; an explicit ?t=0 starts from the beginning.
+function parseTimestampParam(raw: string | null): number | undefined {
+  if (raw === null || raw.trim() === "") return undefined;
   const seconds = Number(raw);
-  return Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) : undefined;
 }
 
 export function buildTimestampedLink(mediaId: string, seconds: number): string {

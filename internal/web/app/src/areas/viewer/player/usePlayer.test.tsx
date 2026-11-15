@@ -11,6 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
+import { deliverPlayerCommand, resetAppliedControlEvents } from "../remote/remoteControl";
 import { DEFAULT_ADJUSTMENT, selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
 
 vi.mock("@/lib/graphql", () => ({
@@ -150,14 +151,14 @@ const messages = {
 
 function Harness({
   mediaID = "media-alpha",
-  startAtSeconds = 0,
+  startAtSeconds,
   nextMediaID,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
   nextMediaID?: string;
 }) {
-  const { videoRef, state, retry, switchToHls, adjust } = usePlayer(
+  const { videoRef, state, retry, restart, switchToHls, adjust } = usePlayer(
     mediaID,
     messages,
     startAtSeconds,
@@ -192,6 +193,9 @@ function Harness({
       </button>
       <button type="button" onClick={() => adjust({ pitchShiftSemitones: 1, tempo: 0.8 })}>
         adjust
+      </button>
+      <button type="button" onClick={() => restart(0)}>
+        restart
       </button>
       {/* The revealed playback document, surfaced so a test can assert it stops
           being addressable once the reveal goes terminal. */}
@@ -712,6 +716,94 @@ describe("usePlayer", () => {
     });
   });
 
+  it("does not start itself after another device paused it while it set up", async () => {
+    resetAppliedControlEvents();
+    render(<Harness />);
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player");
+    fireEvent.canPlay(video);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    resetAppliedControlEvents();
+  });
+
+  it("lets a reload start again once playback was started after a remote pause", async () => {
+    resetAppliedControlEvents();
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      streams: [
+        { kind: "direct-play", url: "/api/media/direct/token" },
+        { kind: "hls", url: "/api/media/hls/token/master.m3u8" },
+      ],
+    });
+    render(<Harness />);
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.canPlay(video);
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video); // started here after the remote pause
+    Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+    fireEvent.error(video); // decode failure fails over to HLS
+    await waitFor(() => expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce());
+    resetAppliedControlEvents();
+  });
+
+  it("keeps a remote pause sent after playback started through a reload", async () => {
+    resetAppliedControlEvents();
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      streams: [
+        { kind: "direct-play", url: "/api/media/direct/token" },
+        { kind: "hls", url: "/api/media/hls/token/master.m3u8" },
+      ],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.canPlay(video);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video);
+
+    Object.defineProperty(video, "paused", { configurable: true, value: true });
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
+    Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+    fireEvent.error(video); // decode failure fails over to HLS
+    await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    resetAppliedControlEvents();
+  });
+
+  it("keeps a remote pause that lands before its autoplay's play event", async () => {
+    resetAppliedControlEvents();
+    vi.mocked(Hls.isSupported).mockReturnValue(true);
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      streams: [
+        { kind: "direct-play", url: "/api/media/direct/token" },
+        { kind: "hls", url: "/api/media/hls/token/master.m3u8" },
+      ],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.canPlay(video);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+
+    deliverPlayerCommand({ command: "pause", playingMediaIDs: ["media-alpha"] });
+    fireEvent.play(video); // the autoplay's queued event, after the pause applied
+    Object.defineProperty(video, "error", { configurable: true, value: { code: 3 } });
+    fireEvent.error(video);
+    await waitFor(() => expect(fakeHlsInstances).toHaveLength(1));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    resetAppliedControlEvents();
+  });
+
   it("honors a timestamped playback deep link over resume", async () => {
     vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
       decision: "direct-play",
@@ -725,6 +817,52 @@ describe("usePlayer", () => {
     fireEvent.loadedMetadata(video);
 
     expect(video.currentTime).toBe(37);
+  });
+
+  it("restarts at the requested position over a resume seek still waiting on metadata", async () => {
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      timeline: { positionSeconds: 91 },
+      streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    fireEvent.loadedMetadata(video);
+
+    expect(video.currentTime).toBe(0);
+  });
+
+  it("reports progress again after a restart of finished Media", async () => {
+    const pending = capturePendingProgress();
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    let video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, value: 120 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 120 });
+    fireEvent.ended(video);
+    await waitFor(() => expect(pending.requests).toHaveLength(1));
+    expect(pending.requests[0].variables).toMatchObject({ finished: true });
+    pending.requests[0].resolve();
+
+    fireEvent.click(screen.getByRole("button", { name: "restart" }));
+    await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    video = screen.getByTestId("player") as HTMLVideoElement;
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 5 });
+    fireEvent.pause(video);
+
+    await waitFor(() => expect(pending.requests).toHaveLength(2));
+    expect(pending.requests[1].variables).toMatchObject({
+      mediaID: "media-alpha",
+      positionSeconds: 5,
+      finished: false,
+    });
+    pending.requests[1].resolve();
   });
 
   it("removes the previous media resume listener before the next media loads metadata", async () => {

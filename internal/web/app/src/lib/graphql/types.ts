@@ -382,6 +382,37 @@ export interface MySessionInfo {
   expiresAt?: string;
 }
 
+/** One active playback in the caller's Profile (graph.ProfileSessionInfo). Title and
+ * libraryID are empty when the Media is outside the caller's current visibility. */
+export interface ProfileSessionInfo {
+  sessionID: string;
+  deviceID: string;
+  deviceName: string;
+  deviceRole: string;
+  current: boolean;
+  mediaID?: string;
+  title?: string;
+  positionSeconds: number;
+  durationSeconds: number;
+}
+
+/** controlSession arguments; each verb takes only its own (store.SessionControlArgs). */
+export interface ControlSessionVars {
+  sessionID: string;
+  command: string;
+  direction?: "next" | "previous";
+  positionMs?: number;
+  volume?: number;
+  trackID?: string;
+  mediaID?: string;
+  text?: string;
+}
+
+export interface ControlSessionResult {
+  sessionID: string;
+  command: string;
+}
+
 export interface MyStreamTokenInfo {
   targetKind: string;
   expiresAt: string;

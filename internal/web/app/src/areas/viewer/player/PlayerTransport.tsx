@@ -53,6 +53,7 @@ import {
   resolveTrickplaySheetURL,
   resolveTrickplayTile,
 } from "../lib/transport";
+import { useRemotePlayerTarget } from "../remote/remoteControl";
 import { AudioSyncPanel } from "./AudioSyncPanel";
 import { ChapterList } from "./ChapterList";
 import { InfoOverlay } from "./InfoOverlay";
@@ -112,6 +113,9 @@ export function PlayerTransport({
   onShare,
   onPreviousInQueue,
   onNextInQueue,
+  onStop,
+  onRemoteStop,
+  onRemoteRestart,
   switchToHls,
   onMenuOpenChange,
 }: {
@@ -148,6 +152,12 @@ export function PlayerTransport({
   onPreviousInQueue?: () => void;
   /** Play the queue's next item; the control is hidden when absent. */
   onNextInQueue?: () => void;
+  /** Leaves the player when another device sends stop; without it stop only pauses. */
+  onStop?: () => void;
+  /** Stop requested by another device; falls back to onStop. */
+  onRemoteStop?: () => void;
+  /** Another device's play-media for this Media: set up afresh at that position. */
+  onRemoteRestart?: (atSeconds?: number) => void;
   /** Switches direct play to its HLS rendition stream at the current position. */
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
@@ -285,6 +295,18 @@ export function PlayerTransport({
     manualRenditionID,
     setManualRenditionID,
     onSubtitleChanged: subtitle.applySync,
+  });
+
+  // Commands from the Profile's other devices drive this player (CORE-1678).
+  useRemotePlayerTarget({
+    video: () => videoRef.current,
+    mediaID,
+    selectAudio: tracks.selectAudio,
+    selectSubtitle: tracks.selectSubtitle,
+    next: onNextInQueue,
+    previous: onPreviousInQueue,
+    stop: onRemoteStop ?? onStop,
+    restart: onRemoteRestart,
   });
 
   // Mirror the live <video> time into React state so the chrome re-renders.

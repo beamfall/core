@@ -425,8 +425,9 @@ func (e *eventOutboxReadError) Unwrap() error {
 //     playback), that Media is reveal-filtered through the subscriber's live
 //     filter exactly like a created/updated event — a command for restricted
 //     Media never reaches an unrevealed subscriber, so the transport channel is
-//     not a reveal side-channel. A command with no Media (none resolved at issue
-//     time) skips the Media read and rides only the Profile gate.
+//     not a reveal side-channel. Each entry of playingMediaIDs (the receiver's
+//     anchor set) is filtered the same way. A command with no Media (none
+//     resolved at issue time) skips the Media read and rides only the Profile gate.
 func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, profileID store.ProfileID, filter store.LibraryFilter) bool {
 	if event.AggregateType == store.OutboxAggregateSession {
 		var payload store.SessionControlPayload
@@ -439,11 +440,16 @@ func (s *Server) eventPermitted(ctx context.Context, event store.OutboxEvent, pr
 		if profileID == "" || payload.ProfileID != profileID {
 			return false
 		}
-		if payload.MediaID == "" {
-			return true
+		// Every Media the command names, the receiver's anchor set included,
+		// must be visible to this subscriber: one hidden entry withholds it.
+		named := payload.PlayingMediaIDs
+		if payload.MediaID != "" {
+			named = append([]store.MediaID{payload.MediaID}, named...)
 		}
-		if _, err := s.events.Media(ctx, payload.MediaID, filter); err != nil {
-			return false
+		for _, mediaID := range named {
+			if _, err := s.events.Media(ctx, mediaID, filter); err != nil {
+				return false
+			}
 		}
 		return true
 	}

@@ -20,10 +20,12 @@ import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProfilePickerPage } from "./pages/ProfilePickerPage";
 import { ProfileSettingsPage } from "./pages/ProfileSettingsPage";
+import { RemotePage } from "./pages/RemotePage";
 import { SearchPage } from "./pages/SearchPage";
 import { SeeAllPage } from "./pages/SeeAllPage";
 import { LazyPlayerPage } from "./player/LazyPlayerPage";
 import "./player/player-deferred.css";
+import { RemoteMessage, useRemoteReceiver } from "./remote/RemoteReceiver";
 
 function ViewerSessionError({ onRetry }: { onRetry: () => Promise<void> }) {
   const t = useT();
@@ -131,31 +133,37 @@ export function ViewerArea() {
 }
 
 // The bound viewer: its routes, plus the one event subscription that keeps
-// engagement-derived views current with changes made on other clients.
+// engagement-derived views current with changes made on other clients and
+// carries remote commands from the Profile's other devices.
 function ViewerRoutes({ profileID }: { profileID: string }) {
-  useEngagementEvents();
+  const remote = useRemoteReceiver(profileID);
+  useEngagementEvents(remote.onEvent);
   return (
-    <Routes key={profileID}>
-      <Route path="/" element={<BrowsePage home />} />
-      <Route path="/n/:nodeId" element={<BrowsePage />} />
-      <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
-      <Route path="/entity/:entityId" element={<EntityPage />} />
-      <Route path="/media/:mediaId" element={<MediaDetailPage />} />
-      <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
-      <Route path="/search" element={<SearchPage />} />
-      <Route path="/mydata" element={<MyDataPage />} />
-      <Route path="/notifications" element={<NotificationsPage />} />
-      <Route path="/profiles" element={<ProfilePickerPage />} />
-      <Route path="/settings" element={<ProfileSettingsPage />} />
-      <Route
-        path="/watch/:mediaId"
-        element={
-          <Suspense fallback={<div className="min-h-screen bg-black" />}>
-            <LazyPlayerPage />
-          </Suspense>
-        }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes key={profileID}>
+        <Route path="/" element={<BrowsePage home />} />
+        <Route path="/n/:nodeId" element={<BrowsePage />} />
+        <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+        <Route path="/entity/:entityId" element={<EntityPage />} />
+        <Route path="/media/:mediaId" element={<MediaDetailPage />} />
+        <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/mydata" element={<MyDataPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/remote" element={<RemotePage />} />
+        <Route path="/profiles" element={<ProfilePickerPage />} />
+        <Route path="/settings" element={<ProfileSettingsPage />} />
+        <Route
+          path="/watch/:mediaId"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-black" />}>
+              <LazyPlayerPage />
+            </Suspense>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <RemoteMessage message={remote.message} onDismiss={remote.dismissMessage} />
+    </>
   );
 }
