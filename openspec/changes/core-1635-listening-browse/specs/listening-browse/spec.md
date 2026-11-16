@@ -1,3 +1,8 @@
+## Purpose
+
+Let a listener browse audio in the web viewer from generic signals core owns (Entity archetype,
+Media class, server order and the scan's stored positions), never from plugin Kind names.
+
 ## ADDED Requirements
 
 ### Requirement: Archetype and class drive the Entity listing layout

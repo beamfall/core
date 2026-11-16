@@ -32,8 +32,7 @@ come from generic signals the server already owns, not from plugin Kind names.
 
 ## Gaps (not in this change)
 
-- Disc grouping: the disc a Media belongs to is a plugin Media field, which `media(id)` does not
-  expose, and the SDK has no generic field role that names a grouping. Rows are numbered in server
-  order without disc headings until such a role exists.
+- Disc grouping: delivered by `core-1635-web-music-browse` from core's stored `sequence` and
+  `index` Media fields, with no schema change.
 - A per-person server ranking of top tracks; the Profile's own `top-tracks` ranking is used.
 - Playlist membership across Libraries: the server rejects it and the viewer reports the failure.
