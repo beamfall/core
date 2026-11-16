@@ -788,3 +788,104 @@ func TestScanSummaryCountsDuplicateContentOnceOnResume(t *testing.T) {
 		}
 	}
 }
+
+func TestScanSummaryCountsVersionQueuedOnlyAfterCompleteCheckpoint(t *testing.T) {
+	// feature:scan-pipeline
+	// A finished walk whose Version Media was not Unmatched (identification
+	// failed) did not count it. A job reclaimed from that complete checkpoint
+	// walks a later identical-byte copy, identification now queues the Media,
+	// and the reclaimed job counts it once (CORE-2196).
+	for _, workers := range []int{1, 4} {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			root := t.TempDir()
+			writeScanFile(t, root, "Title (2000) - 1080p.mkv", []byte("1080p"))
+			st := storetest.Open(t)
+			req := Request{LibraryID: partsLibrary(t, st), Root: root}
+			parsers := map[string]FilenameParser{"parts": labelledTitleParser{}}
+			started := time.Now().UTC()
+			scan := func(identifier Identifier, checkpoint jobCheckpoint) (Result, error) {
+				return scanFromCheckpoint(context.Background(), st, nil, nil, parsers, nil, identifier, nil, nil, fixedGovernor(workers), nil, req, checkpoint, started, nil)
+			}
+			whole, err := scan(nil, jobCheckpoint{})
+			if err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			if whole.MediaImported != 1 || whole.MediaUnmatched != 0 {
+				t.Fatalf("scan imported=%d unmatched=%d, want 1 and 0", whole.MediaImported, whole.MediaUnmatched)
+			}
+			data, err := marshalScanCheckpoint(whole.checkpoint("complete"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := checkpointFromJob(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeScanFile(t, root, "Title (2000) - 4K.mkv", []byte("1080p"))
+			recovered, err := scan(queueAllIdentifier{st}, saved)
+			if err != nil {
+				t.Fatalf("recovered scan: %v", err)
+			}
+			if queued, err := st.IsUnmatched(context.Background(), recovered.Files[len(recovered.Files)-1].MediaID); err != nil || !queued {
+				t.Fatalf("recovered scan did not queue the Media: %t %v", queued, err)
+			}
+			if recovered.MediaImported != 1 || recovered.MediaUnmatched != 1 {
+				t.Fatalf("recovered scan imported=%d unmatched=%d, want 1 and 1", recovered.MediaImported, recovered.MediaUnmatched)
+			}
+		})
+	}
+}
+
+func TestScanSummaryCountsDuplicateContentOnceAfterCrash(t *testing.T) {
+	// feature:scan-pipeline
+	// A job that saved its checkpoint after a.mkv, imported the identical
+	// b.mkv (which moves the content's file row to b.mkv) and crashed before
+	// saving again, recovers from the saved checkpoint and counts the shared
+	// Media once (CORE-2197).
+	for _, rescan := range []bool{false, true} {
+		for _, workers := range []int{1, 4} {
+			t.Run(fmt.Sprintf("rescan=%t/workers=%d", rescan, workers), func(t *testing.T) {
+				root := t.TempDir()
+				for _, name := range []string{"a.mkv", "b.mkv"} {
+					writeScanFile(t, root, name, []byte("same bytes"))
+				}
+				st := storetest.Open(t)
+				req := Request{LibraryID: partsLibrary(t, st), Root: root}
+				scan := func(checkpoint jobCheckpoint, started time.Time, progress func(jobCheckpoint, store.JobProgress) error) (Result, error) {
+					return scanFromCheckpoint(context.Background(), st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(workers), nil, req, checkpoint, started, progress)
+				}
+				if rescan {
+					if _, err := scan(jobCheckpoint{}, time.Now().UTC(), nil); err != nil {
+						t.Fatalf("first scan: %v", err)
+					}
+				}
+				started := time.Now().UTC()
+				var saved jobCheckpoint
+				crashAtSecondFile := func(c jobCheckpoint, progress store.JobProgress) error {
+					if progress.Current >= 2 {
+						return jobs.ErrYielded // the crash: this checkpoint is never saved
+					}
+					data, err := marshalScanCheckpoint(c)
+					if err != nil {
+						return err
+					}
+					saved, err = checkpointFromJob(data)
+					return err
+				}
+				if _, err := scan(jobCheckpoint{}, started, crashAtSecondFile); !errors.Is(err, jobs.ErrYielded) {
+					t.Fatalf("scan did not crash: %v", err)
+				}
+				if saved.LastPath == "" {
+					t.Fatalf("crashed scan saved no resume point: %+v", saved)
+				}
+				recovered, err := scan(saved, started, nil)
+				if err != nil {
+					t.Fatalf("recovered scan: %v", err)
+				}
+				if recovered.FilesSeen != 2 || recovered.MediaImported != 1 {
+					t.Fatalf("recovered scan seen=%d imported=%d, want 2 and 1", recovered.FilesSeen, recovered.MediaImported)
+				}
+			})
+		}
+	}
+}

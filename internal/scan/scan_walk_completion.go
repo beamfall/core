@@ -32,6 +32,12 @@ func (s *scanWalkState) completeFirst() error {
 		return fmt.Errorf("%w: %w", errImageDerivation, completed.err)
 	}
 	s.pendingCompletions = s.pendingCompletions[1:]
+	if completed.fingerprint != "" {
+		if s.completedFingerprints == nil {
+			s.completedFingerprints = map[string]store.MediaID{}
+		}
+		s.completedFingerprints[completed.fingerprint] = completed.mediaID
+	}
 	s.result.FilesSeen++
 	tally := s.applyTally(completed.path)
 	s.result.Files = append(s.result.Files, ImportedFile{
@@ -73,20 +79,50 @@ func (s *scanWalkState) completeFirst() error {
 	return nil
 }
 
+// keepCountedMediaBeforeMove runs before the walk imports bytes at path that
+// its own file row does not hold. The catalog keeps one file row per content
+// fingerprint, so the import moves the row of any other file with the same
+// bytes to path, and with it the only trace that the other file was walked.
+// When this job already counted that file's Media, the Media goes into the
+// checkpoint's GroupMedia, and a job that reports progress saves the
+// checkpoint before the move: a job that resumes from it, even after a crash,
+// then counts the Media once (CORE-2197).
+func (s *scanWalkState) keepCountedMediaBeforeMove(path, fingerprint string) error {
+	mediaID, ok := s.completedFingerprints[fingerprint]
+	if !ok {
+		var err error
+		if mediaID, err = s.countedInEarlierPass(path, fingerprint); err != nil || mediaID == "" {
+			return err
+		}
+	}
+	if s.result.groupMedia[mediaID] {
+		return nil
+	}
+	s.result.seenMedia[mediaID] = true
+	s.noteGroupMedia(mediaID)
+	if s.progress == nil {
+		return nil
+	}
+	return s.progress(s.resumeCheckpoint(), store.JobProgress{
+		Current: int64(s.result.FilesSeen),
+		Total:   int64(s.result.totalFiles),
+		Unit:    "files",
+		Message: "Scanning",
+	})
+}
+
 // countedInEarlierPass returns the Media an earlier pass of this job already
-// counted for the bytes a resumed walk is about to import at path, or "".
-// The catalog keeps one file row per content fingerprint, so importing a
-// second file with the same bytes moves the row to it. Before that move, a row
-// at another path under the root, at or before the resume point and seen
-// since the scan started, is a file an earlier pass completed and counted
-// (CORE-2197).
+// counted for the bytes a resumed walk is about to import at path, or "". A
+// row with those bytes at another path under the root, at or before the
+// resume point and seen since the scan started, is a file an earlier pass
+// completed and counted. Only a resumed walk asks the store.
 func (s *scanWalkState) countedInEarlierPass(path, fingerprint string) (store.MediaID, error) {
 	resumeAt := s.checkpoint.LastPath
 	if resumeAt == "" {
 		return "", nil
 	}
 	mediaID, ok, err := s.st.MediaFileExistsByFingerprint(s.ctx, fingerprint)
-	if err != nil || !ok || s.result.seenMedia[mediaID] {
+	if err != nil || !ok || s.result.groupMedia[mediaID] {
 		return "", err
 	}
 	files, err := s.st.MediaFilesForMedia(s.ctx, mediaID, store.LibraryFilter{AllLibraries: true})

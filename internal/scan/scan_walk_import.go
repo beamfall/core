@@ -259,12 +259,10 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 		return s.ctx.Err()
 	}
-	// A file whose own row already holds these bytes moved no row from
-	// another file, so only other bytes need the earlier-pass check.
-	var counted store.MediaID
+	// A file whose own row already holds these bytes takes no row from
+	// another file, so only other bytes can move a counted file's row.
 	if !task.stored.OK || task.stored.ContentFingerprint != fingerprint {
-		var err error
-		if counted, err = s.countedInEarlierPass(path, fingerprint); err != nil {
+		if err := s.keepCountedMediaBeforeMove(path, fingerprint); err != nil {
 			s.dropTallies(path)
 			return err
 		}
@@ -275,10 +273,6 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		return skipManagedAdmissionInFlight(err, path)
 	}
 	s.committed = path
-	if counted != "" && counted == media.ID && !s.result.seenMedia[media.ID] {
-		s.result.seenMedia[media.ID] = true
-		s.noteGroupMedia(media.ID)
-	}
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
 	if isImage {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {

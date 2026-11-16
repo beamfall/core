@@ -102,6 +102,10 @@ func (s *scanWalkState) countUnmatchedVersions() {
 		}
 		if queued {
 			s.result.MediaUnmatched++
+			if s.result.countedVersionMedia == nil {
+				s.result.countedVersionMedia = map[store.MediaID]bool{}
+			}
+			s.result.countedVersionMedia[store.MediaID(id)] = true
 		}
 	}
 }

@@ -60,14 +60,14 @@ func marshalScanCheckpoint(checkpoint jobCheckpoint) ([]byte, error) {
 }
 
 func (r Result) checkpoint(stage string) jobCheckpoint {
-	// A finished walk has already counted its Version Media in MediaUnmatched
-	// (countUnmatchedVersions), so the complete checkpoint moves them to
-	// CountedVersionMedia: a job reclaimed after a crash before CompleteJob
-	// resumes from it and must not count them again, even when it walks a new
-	// Version of one (CORE-2194, CORE-2196).
-	versionMedia, counted := mediaIDs(r.versionMedia), mediaIDs(r.countedVersionMedia)
+	// A finished walk has already counted its Unmatched Version Media in
+	// MediaUnmatched (countUnmatchedVersions), which keeps them in
+	// CountedVersionMedia, so the complete checkpoint drops VersionMedia: a job
+	// reclaimed after a crash before CompleteJob resumes from it and must not
+	// count them again, even when it walks a new Version of one. A Version
+	// Media the walk did not count stays countable (CORE-2194, CORE-2196).
+	versionMedia := mediaIDs(r.versionMedia)
 	if stage == "complete" {
-		counted = slices.Compact(slices.Sorted(slices.Values(append(counted, versionMedia...))))
 		versionMedia = nil
 	}
 	return jobCheckpoint{
@@ -83,7 +83,7 @@ func (r Result) checkpoint(stage string) jobCheckpoint {
 		MediaUnmatched:      r.MediaUnmatched,
 		UnmatchedRecords:    pendingIDs(r.unmatchedRecords),
 		VersionMedia:        versionMedia,
-		CountedVersionMedia: counted,
+		CountedVersionMedia: mediaIDs(r.countedVersionMedia),
 		GroupMedia:          mediaIDs(r.groupMedia),
 	}
 }

@@ -29,25 +29,28 @@ type scanWalkState struct {
 	libraryPluginID    string
 	// imagesAreContent is set when the Library's Plugin declares the image
 	// Media class, so sidecar-named images stay items (CORE-0043).
-	imagesAreContent    bool
-	backfillStale       map[store.MediaID]struct{}
-	req                 Request
-	checkpoint          jobCheckpoint
-	scanStarted         time.Time
-	progress            func(jobCheckpoint, store.JobProgress) error
-	workers             int
-	workBudget          chan struct{}
-	result              Result
-	pendingParts        []parsedPartImport
-	directoryContexts   map[string]ParseContext
-	directoryPreflights map[string]*contextualDirectoryPreflight
-	versionAnchors      map[string]versionAnchor
-	versionDirsSeeded   map[string]bool
-	sidecars            *sidecarDiscovery
-	deriveCtx           context.Context
-	cancelDerivations   context.CancelFunc
-	derivativeWG        sync.WaitGroup
-	pendingCompletions  []*completedFile
+	imagesAreContent bool
+	backfillStale    map[store.MediaID]struct{}
+	req              Request
+	checkpoint       jobCheckpoint
+	scanStarted      time.Time
+	// completedFingerprints maps the bytes of each file this pass completed
+	// to its Media (keepCountedMediaBeforeMove, CORE-2197).
+	completedFingerprints map[string]store.MediaID
+	progress              func(jobCheckpoint, store.JobProgress) error
+	workers               int
+	workBudget            chan struct{}
+	result                Result
+	pendingParts          []parsedPartImport
+	directoryContexts     map[string]ParseContext
+	directoryPreflights   map[string]*contextualDirectoryPreflight
+	versionAnchors        map[string]versionAnchor
+	versionDirsSeeded     map[string]bool
+	sidecars              *sidecarDiscovery
+	deriveCtx             context.Context
+	cancelDerivations     context.CancelFunc
+	derivativeWG          sync.WaitGroup
+	pendingCompletions    []*completedFile
 	// tallies holds what this scan did to each file until the file completes
 	// and its counts reach the result (see noteFile).
 	tallies map[string]fileTally
