@@ -273,15 +273,24 @@ func (s *Store) MergeKeepAsVersion(ctx context.Context, libraryID LibraryID, med
 	if err := s.guardLocked(); err != nil {
 		return false, err
 	}
-	if err := s.mergeKeepAsVersionSQL(ctx, mediaID, candidate, upgrade, now); err != nil {
+	// An Encrypted Library's Media and inventory live in its own plane, like
+	// import; a Sealed one refuses with ErrEncryptedLibraryDBDisabled.
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return false, err
+	}
+	if err := mergeKeepAsVersionSQL(ctx, plane, mediaID, candidate, upgrade, now); err != nil {
 		return false, err
 	}
 	// The active Version changed identity-wise (it absorbed an encode, possibly
 	// swapping which file is active), so announce an update. A failed outbox
 	// append never fails the merge — the catalog write already committed (the
-	// same posture as ImportMediaFile / MergeApply).
-	if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, now); eventErr != nil {
-		slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", mediaID, "error", eventErr)
+	// same posture as ImportMediaFile / MergeApply). An Encrypted Library's
+	// Media never enter the global outbox, as with ImportMediaFileVersion.
+	if !plane.encrypted {
+		if eventErr := s.appendMediaEventLocked(ctx, MediaEventUpdated, mediaID, nil, now); eventErr != nil {
+			slog.Warn("media outbox event append failed", "kind", MediaEventUpdated, "media", mediaID, "error", eventErr)
+		}
 	}
 	return upgrade, nil
 }
@@ -290,8 +299,8 @@ func (s *Store) MergeKeepAsVersion(ctx context.Context, libraryID LibraryID, med
 // the (media_id, version_label, part_ordinal) available-slot uniqueness is never
 // transiently violated: when promoting, the prior default Version is demoted to
 // the keep label BEFORE the candidate claims the default slot.
-func (s *Store) mergeKeepAsVersionSQL(ctx context.Context, mediaID MediaID, candidate QualityCandidate, upgrade bool, now time.Time) error {
-	tx, err := s.catalogW.BeginTx(ctx, nil)
+func mergeKeepAsVersionSQL(ctx context.Context, plane catalogPlane, mediaID MediaID, candidate QualityCandidate, upgrade bool, now time.Time) error {
+	tx, err := plane.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -343,7 +352,7 @@ func (s *Store) mergeKeepAsVersionSQL(ctx context.Context, mediaID MediaID, cand
 		return err
 	}
 	if candidate.Streams != nil {
-		if err := replaceMediaFileInventoryTx(ctx, tx, false, candidate.ContentFingerprint, candidate.Streams, nil); err != nil {
+		if err := replaceMediaFileInventoryTx(ctx, tx, plane.encrypted, candidate.ContentFingerprint, candidate.Streams, nil); err != nil {
 			return err
 		}
 	}
