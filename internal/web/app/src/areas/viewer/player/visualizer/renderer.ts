@@ -1,5 +1,6 @@
 // Draws one Oscillux visual on a WebGL2 canvas. A frame is, in order: the visual's pass into a
-// feedback target, Oscillux's present pass (its overlay block packed by the wasm core) into an
+// feedback target (during a switch, the outgoing visual's pass too and Oscillux's switch pass
+// blending the two), Oscillux's present pass (its overlay block packed by the wasm core) into an
 // RGBA8 frame, the seven passes of Oscillux's frame flash limiter, and a blit of the limited
 // frame to the canvas. The pass order, bindings and limiter clock follow the release's own
 // reference hosts (hosts/web/host.js and tools/shader/limiter-check.mjs at the pinned rev).
@@ -48,6 +49,40 @@ const OVERLAY_FLOAT = 4;
 const OVERLAY_BYTES = 320;
 const POST_FLOAT = 84;
 
+// The switch between visuals (CORE-2219): Oscillux's Luma Key at full motion, focus halfway,
+// over 1.2 s with smoothstep easing, timed by the wasm core's transition scheduler
+// (shaders/switch/README.md at the pinned rev). The incoming visual starts at once: no pre-roll.
+const SWITCH_STYLE = 0;
+const SWITCH_SECONDS = 1.2;
+const SWITCH_EASING_SMOOTHSTEP = 1;
+const SWITCH_FOCUS = 0.5;
+const TRANSITION_DONE = 4;
+
+/**
+ * What a request for a visual does: nothing ("same"), replace the visual now ("instant": the
+ * first visual, before the first frame, or under reduced motion), wait for the switch in
+ * progress to end ("queue"), or blend to it ("blend").
+ */
+export function switchAction(
+  current: string | null,
+  switching: boolean,
+  next: string,
+  reducedMotion: boolean,
+): "same" | "instant" | "queue" | "blend" {
+  if (switching && !reducedMotion) return "queue";
+  if (current === next) return "same";
+  if (current === null || reducedMotion) return "instant";
+  return "blend";
+}
+
+interface Layer {
+  visual: Visual;
+  program: WebGLProgram;
+  locations: Map<string, WebGLUniformLocation | null>;
+  /** The visual's image input. */
+  image: WebGLTexture;
+}
+
 interface Target {
   tex: WebGLTexture;
   fbo: WebGLFramebuffer;
@@ -78,6 +113,9 @@ interface Size {
   height: number;
   /** The visual's feedback pair: [current, next]. */
   feedback: Target[];
+  /** During a switch, the outgoing visual's feedback pair and the switch pass's output. */
+  outgoing: Target[] | null;
+  blend: Target | null;
   /** The presented frame, the limiter's input. */
   frame: WebGLTexture;
   /** The present pass's history pair, each framebuffer writing the frame and one history. */
@@ -93,24 +131,31 @@ export class Renderer {
   private readonly regions: InstanceType<Oscillux["OverlayRegions"]>;
   private readonly feedbackFormat: { internal: number; type: number };
   private readonly quad: WebGLBuffer;
-  private readonly image: WebGLTexture;
+  // The current visual's image input; during a switch the outgoing visual keeps the one it had.
+  private image: WebGLTexture;
+  private readonly transition: InstanceType<Oscillux["Transition"]>;
+  private readonly switchUbo: WebGLBuffer;
+  private readonly switchBlock = new Float32Array(12);
   private readonly presentUbo: WebGLBuffer;
   private readonly limiterUbo: WebGLBuffer;
   private readonly presentBlock = new Float32Array(PRESENT_FLOATS);
   private readonly limiterBlock = new Float32Array(8);
   private readonly visualVertex: string;
   private present: WebGLProgram;
+  private switchPass: WebGLProgram;
   private limiter: WebGLProgram[];
   private readonly shaders: WebGLShader[] = [];
   // Every program linked, for dispose.
   private readonly linked: WebGLProgram[] = [];
   private disposed = false;
   private readonly programs = new Map<string, WebGLProgram>();
-  private visual: {
-    visual: Visual;
-    program: WebGLProgram;
-    locations: Map<string, WebGLUniformLocation | null>;
-  } | null = null;
+  private visual: Layer | null = null;
+  private outgoing: Layer | null = null;
+  // The visual asked for while a switch runs, started when it ends.
+  private pending: { visual: Visual; program: WebGLProgram } | null = null;
+  // The visual last asked for: an older request still compiling is dropped.
+  private wanted: Visual | null = null;
+  private reducedMotion = false;
   private size: Size | null = null;
   private time = 0;
   private clockMs = 0;
@@ -131,12 +176,13 @@ export class Renderer {
       preserveDrawingBuffer: false,
     });
     if (!gl) return null;
-    const [vertex, present, ...limiter] = await Promise.all([
+    const [vertex, present, blend, ...limiter] = await Promise.all([
       shaderSource("visuals/vertex.web.vert"),
       shaderSource("post/present.frag"),
+      shaderSource("switch/switch.frag"),
       ...LIMITER.map((name) => shaderSource(`limiter/${name}.frag`)),
     ]);
-    return new Renderer(gl, osc, vertex, present, limiter);
+    return new Renderer(gl, osc, vertex, present, blend, limiter);
   }
 
   private constructor(
@@ -144,6 +190,7 @@ export class Renderer {
     osc: Oscillux,
     vertex: string,
     present: string,
+    blend: string,
     limiter: string[],
   ) {
     this.gl = gl;
@@ -158,6 +205,16 @@ export class Renderer {
       this.overlay.contrastRatio = 4.5;
       this.overlay.premultipliedAlpha = false;
       this.regions = new osc.OverlayRegions();
+      const config = new osc.TransitionConfig();
+      try {
+        config.easing = SWITCH_EASING_SMOOTHSTEP;
+        config.fallbackSeconds = SWITCH_SECONDS;
+        config.preRollSeconds = 0;
+        config.autoAdvanceBars = 0;
+        this.transition = new osc.Transition(config);
+      } finally {
+        config.free();
+      }
       this.feedbackFormat = gl.getExtension("EXT_color_buffer_float")
         ? { internal: gl.RGBA16F, type: gl.HALF_FLOAT }
         : { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE };
@@ -178,6 +235,9 @@ export class Renderer {
       this.limiterUbo = must(gl.createBuffer());
       gl.bindBuffer(gl.UNIFORM_BUFFER, this.limiterUbo);
       gl.bufferData(gl.UNIFORM_BUFFER, this.limiterBlock.byteLength, gl.DYNAMIC_DRAW);
+      this.switchUbo = must(gl.createBuffer());
+      gl.bindBuffer(gl.UNIFORM_BUFFER, this.switchUbo);
+      gl.bufferData(gl.UNIFORM_BUFFER, this.switchBlock.byteLength, gl.DYNAMIC_DRAW);
 
       // Offscreen passes draw into targets read back with a top-left origin, so the visual's
       // vertex shader flips y; the present pass draws in canvas orientation.
@@ -197,6 +257,18 @@ export class Renderer {
       );
       gl.uniform1i(gl.getUniformLocation(this.present, "uBloom"), 4);
 
+      // The switch pass works in the offscreen targets' top-left orientation, as its uv does.
+      this.switchPass = this.link(LIMITER_VERTEX, blend);
+      gl.useProgram(this.switchPass);
+      gl.uniformBlockBinding(
+        this.switchPass,
+        gl.getUniformBlockIndex(this.switchPass, "SwitchBlock"),
+        0,
+      );
+      ["uFrom", "uTo", "uPhoto"].forEach((name, unit) =>
+        gl.uniform1i(gl.getUniformLocation(this.switchPass, name), unit),
+      );
+
       this.limiter = LIMITER.map((name, i) => {
         const p = this.link(LIMITER_VERTEX, limiter[i]);
         gl.useProgram(p);
@@ -212,14 +284,105 @@ export class Renderer {
     }
   }
 
-  /** Compiles a visual (once) and draws it from the next frame on. The new visual reads the
-   * old one's last frame as its feedback and the clock runs on, so a track change hands over
-   * through the visual's own trails instead of cutting to black (CORE-2218). */
+  /**
+   * Compiles a visual (once) and switches to it. The incoming visual starts from the outgoing
+   * one's last frame as its feedback and the clock runs on (CORE-2218); Oscillux's switch pass
+   * then blends the two over 1.2 s (CORE-2219). A request during a switch waits for it to end;
+   * under reduced motion the visual changes at once.
+   */
   async use(visual: Visual): Promise<void> {
-    if (this.visual?.visual.id === visual.id) return;
+    this.wanted = visual;
+    if (!this.outgoing && this.visual?.visual.id === visual.id) return;
     const program = await this.prepare(visual);
-    if (!program) return;
-    this.visual = { visual, program, locations: new Map() };
+    if (!program || this.wanted !== visual) return;
+    this.apply(visual, program);
+  }
+
+  private apply(visual: Visual, program: WebGLProgram): void {
+    const size = this.size;
+    const action = switchAction(
+      this.visual?.visual.id ?? null,
+      !!this.outgoing,
+      visual.id,
+      this.reducedMotion || !size,
+    );
+    if (action === "queue") {
+      this.pending = this.visual?.visual.id === visual.id ? null : { visual, program };
+      return;
+    }
+    this.pending = null;
+    if (action === "same") return;
+    if (action === "instant") {
+      this.endSwitch();
+      this.visual = { visual, program, locations: new Map(), image: this.image };
+      return;
+    }
+    // blend: the current visual goes out with its feedback and image; the incoming one gets a
+    // copy of that feedback and shares the image until setImage hands it its own.
+    const gl = this.gl;
+    const s = size as Size;
+    const { internal, type } = this.feedbackFormat;
+    const feedback = this.feedbackPair(s.width, s.height, internal, type);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.feedback[0].fbo);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, feedback[0].fbo);
+    gl.blitFramebuffer(
+      0,
+      0,
+      s.width,
+      s.height,
+      0,
+      0,
+      s.width,
+      s.height,
+      gl.COLOR_BUFFER_BIT,
+      gl.NEAREST,
+    );
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    s.outgoing = s.feedback;
+    s.feedback = feedback;
+    this.outgoing = this.visual;
+    this.visual = { visual, program, locations: new Map(), image: this.image };
+    const status = this.transition.request(this.time, 0, 0, 0, 0, 0, 0);
+    if (status !== 0) {
+      console.warn("visualizer: switch", this.osc.statusString(status));
+      this.endSwitch();
+    }
+  }
+
+  // Drops the outgoing visual, its feedback, its image (when not shared) and the blend target.
+  private endSwitch(): void {
+    const out = this.outgoing;
+    if (!out) return;
+    this.outgoing = null;
+    this.transition.reset();
+    const gl = this.gl;
+    if (out.image !== this.image) gl.deleteTexture(out.image);
+    const s = this.size;
+    if (!s) return;
+    for (const t of [...(s.outgoing ?? []), ...(s.blend ? [s.blend] : [])]) {
+      gl.deleteTexture(t.tex);
+      gl.deleteFramebuffer(t.fbo);
+    }
+    s.outgoing = null;
+    s.blend = null;
+  }
+
+  // The switch's eased progress this frame, or null with no switch running. A switch that has
+  // ended is dropped here, and a visual queued behind it starts.
+  private switchProgress(reducedMotion: boolean): number | null {
+    if (!this.outgoing) return null;
+    if (!reducedMotion) {
+      const status = this.transition.status(this.time);
+      if (status === 0 && this.transition.state !== TRANSITION_DONE) {
+        return this.transition.progress;
+      }
+    }
+    this.endSwitch();
+    const next = this.pending;
+    this.pending = null;
+    if (next) this.apply(next.visual, next.program);
+    return this.outgoing ? 0 : null;
   }
 
   /** Compiles a visual ahead of its first use, so switching to it later does not stall a frame. */
@@ -236,24 +399,25 @@ export class Renderer {
 
   /** Draws one frame at width x height device pixels, dt seconds after the last. */
   draw(width: number, height: number, dt: number, audio: AudioFrame, reducedMotion: boolean): void {
-    const v = this.visual;
-    if (!v) return;
+    if (!this.visual) return;
     const gl = this.gl;
+    this.reducedMotion = reducedMotion;
     const size = this.resize(Math.max(MIN_WIDTH, width), Math.max(MIN_HEIGHT, height));
     const { width: W, height: H } = size;
     this.time += dt;
+    const p = this.switchProgress(reducedMotion);
+    const v = this.visual;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
 
-    // 1. The visual, reading its previous frame.
-    const [prev, next] = size.feedback;
-    gl.useProgram(v.program);
-    this.setVisualUniforms(v, W, H, dt, audio, reducedMotion);
-    bind(gl, 0, this.image);
-    bind(gl, 1, prev.tex);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);
-    gl.viewport(0, 0, W, H);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    size.feedback = [next, prev];
+    // 1. The visual, reading its previous frame; during a switch the outgoing one too.
+    const next = this.drawVisual(v, size.feedback, W, H, dt, audio, reducedMotion);
+    size.feedback.reverse();
+    let shown = next;
+    if (p !== null && this.outgoing && size.outgoing) {
+      const from = this.drawVisual(this.outgoing, size.outgoing, W, H, dt, audio, reducedMotion);
+      size.outgoing.reverse();
+      shown = this.blend(size, from, next, p, audio);
+    }
 
     // 2. The present pass, into the frame and the next history.
     this.packPresent(W, H, dt, reducedMotion);
@@ -262,8 +426,8 @@ export class Renderer {
     gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.presentBlock);
     gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, this.presentUbo);
     const [histPrev, histNext] = size.history;
-    bind(gl, 0, next.tex);
-    bind(gl, 1, next.tex);
+    bind(gl, 0, shown.tex);
+    bind(gl, 1, shown.tex);
     bind(gl, 2, histPrev.tex);
     bind(gl, 3, null);
     bind(gl, 4, null);
@@ -282,13 +446,75 @@ export class Renderer {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
   }
 
+  // Draws a visual from feedback[0] into feedback[1] and returns that target.
+  private drawVisual(
+    v: Layer,
+    feedback: Target[],
+    W: number,
+    H: number,
+    dt: number,
+    audio: AudioFrame,
+    reducedMotion: boolean,
+  ): Target {
+    const gl = this.gl;
+    const [prev, next] = feedback;
+    gl.useProgram(v.program);
+    this.setVisualUniforms(v, W, H, dt, audio, reducedMotion);
+    bind(gl, 0, v.image);
+    bind(gl, 1, prev.tex);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, next.fbo);
+    gl.viewport(0, 0, W, H);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    return next;
+  }
+
+  // Oscillux's switch pass from the outgoing frame to the incoming one at progress p, into the
+  // blend target: SwitchBlock switch0 = (p, beatPhase, energy, focus), switch1 = (motion,
+  // aspect, style, 0), size = (W, H, 0, 0); textures from, to and photo (the incoming image,
+  // which Luma Key does not read).
+  private blend(size: Size, from: Target, to: Target, p: number, audio: AudioFrame): Target {
+    const gl = this.gl;
+    const W = size.width;
+    const H = size.height;
+    if (!size.blend) {
+      const { internal, type } = this.feedbackFormat;
+      const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
+      size.blend = { tex, fbo: this.framebuffer([tex]) };
+    }
+    const energy = Math.min(1, Math.max(0, audio.values.level));
+    this.switchBlock.set([
+      p,
+      audio.values.beatPhase,
+      energy,
+      SWITCH_FOCUS,
+      1,
+      W / H,
+      SWITCH_STYLE,
+      0,
+      W,
+      H,
+      0,
+      0,
+    ]);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, this.switchUbo);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.switchBlock);
+    gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, this.switchUbo);
+    this.pass(this.switchPass, size.blend.fbo, W, H, [from.tex, to.tex, this.image]);
+    return size.blend;
+  }
+
   /**
    * Sets the visual's image input: the track's artwork, or the neutral stand-in for null. The
-   * texture keeps its own copy, so the caller may close the bitmap afterwards.
+   * texture keeps its own copy, so the caller may close the bitmap afterwards. During a switch
+   * the outgoing visual keeps the image it had.
    */
   setImage(image: ImageBitmap | null): void {
     if (this.disposed) return;
     const gl = this.gl;
+    if (this.outgoing && this.outgoing.image === this.image) {
+      this.image = must(gl.createTexture());
+      if (this.visual) this.visual.image = this.image;
+    }
     gl.bindTexture(gl.TEXTURE_2D, this.image);
     if (image) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, image);
@@ -304,6 +530,7 @@ export class Renderer {
     if (this.disposed) return;
     this.disposed = true;
     const gl = this.gl;
+    this.endSwitch();
     this.freeSize();
     for (const p of this.linked) gl.deleteProgram(p);
     for (const s of this.shaders) gl.deleteShader(s);
@@ -311,17 +538,20 @@ export class Renderer {
     gl.deleteBuffer(this.quad ?? null);
     gl.deleteBuffer(this.presentUbo ?? null);
     gl.deleteBuffer(this.limiterUbo ?? null);
+    gl.deleteBuffer(this.switchUbo ?? null);
     gl.deleteTexture(this.image ?? null);
     this.linked.length = 0;
     this.shaders.length = 0;
     this.programs.clear();
     this.visual = null;
+    this.pending = null;
+    this.transition?.free();
     this.regions?.free();
     this.overlay?.free();
   }
 
   private setVisualUniforms(
-    v: NonNullable<Renderer["visual"]>,
+    v: Layer,
     W: number,
     H: number,
     dt: number,
@@ -430,18 +660,15 @@ export class Renderer {
   // The targets for a W x H canvas, rebuilt (and cleared) when the size changes.
   private resize(W: number, H: number): Size {
     if (this.size && this.size.width === W && this.size.height === H) return this.size;
+    // A size change ends a switch, as in the reference host.
+    this.endSwitch();
     this.freeSize();
     const gl = this.gl;
     const canvas = gl.canvas as HTMLCanvasElement;
     canvas.width = W;
     canvas.height = H;
     const { internal, type } = this.feedbackFormat;
-    const feedback = [0, 1].map(() => {
-      const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
-      const fbo = this.framebuffer([tex]);
-      gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
-      return { tex, fbo };
-    });
+    const feedback = this.feedbackPair(W, H, internal, type);
     const frame = this.storage(W, H, gl.RGBA8);
     const history = [0, 1].map(() => {
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.NEAREST);
@@ -482,8 +709,27 @@ export class Renderer {
     // The limiter starts with no sub-block tracked.
     for (const f of limiter.fG) this.clearUint(f, 1);
     for (const f of limiter.fState) this.clearUint(f, 3);
-    this.size = { width: W, height: H, feedback, frame, history, limiter };
+    this.size = {
+      width: W,
+      height: H,
+      feedback,
+      outgoing: null,
+      blend: null,
+      frame,
+      history,
+      limiter,
+    };
     return this.size;
+  }
+
+  private feedbackPair(W: number, H: number, internal: number, type: number): Target[] {
+    const gl = this.gl;
+    return [0, 1].map(() => {
+      const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
+      const fbo = this.framebuffer([tex]);
+      gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
+      return { tex, fbo };
+    });
   }
 
   private freeSize(): void {

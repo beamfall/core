@@ -9,7 +9,7 @@ licence terms to them. `pin.json` records the release assets and their SHA-256 s
   notices and third-party licences.
 - `glsl300/`: the subset of `oscillux-glsl300.zip` the viewer draws: `index.json` (the bundle's
   own SHA-256 list for every file kept here), the shared vertex shader, nine visuals, the
-  present pass, the seven frame flash limiter passes and `legal/`.
+  present pass, the switch pass, the seven frame flash limiter passes and `legal/`.
 - `visuals.json`: the manifest fields of those nine visuals, copied from
   `shaders/manifest.json` at the pinned rev (its SHA-256 is in the file).
 
