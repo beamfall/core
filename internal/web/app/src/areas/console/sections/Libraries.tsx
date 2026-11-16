@@ -454,7 +454,7 @@ function LibraryCard({
             </section>
           </Advanced>
         </div>
-        <footer className="flex justify-end border-t border-foreground/[0.07] px-4 py-3">
+        <footer className="flex justify-end border-t border-[var(--border-subtle)] px-4 py-3">
           <DeleteLibraryButton library={library} onDeleted={onDeleted} />
         </footer>
       </CollapsibleCard>

@@ -598,7 +598,7 @@ function LibraryRow({
           </div>
         </details>
       )}
-      <footer className="mt-4 flex justify-end border-t border-foreground/[0.07] pt-3">
+      <footer className="mt-4 flex justify-end border-t border-[var(--border-subtle)] pt-3">
         <DeleteLibraryButton library={library} onDeleted={onDeleted} />
       </footer>
     </article>

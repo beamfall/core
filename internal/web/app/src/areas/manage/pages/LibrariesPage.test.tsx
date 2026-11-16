@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import {
+  deleteLibrary,
   fetchFolderTree,
   fetchJobs,
   fetchLibraries,
@@ -24,6 +25,7 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 vi.mock("@/lib/graphql", () => ({
   createLibrary: vi.fn(),
   createManagedFolder: vi.fn(),
+  deleteLibrary: vi.fn(),
   deleteManagedPath: vi.fn(),
   fetchFolderTree: vi.fn(),
   fetchJobs: vi.fn(),
@@ -140,6 +142,40 @@ describe("LibrariesPage folder tree", () => {
     expect(screen.getByRole("button", { name: "Rescan all libraries" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Rescan library" }));
     await waitFor(() => expect(scanLibrary).toHaveBeenCalledWith("library-1", "/fresh"));
+  });
+
+  it("deletes a library from its card and reloads the list (CORE-1486)", async () => {
+    const first = {
+      id: "library-1",
+      title: "Library One",
+      pluginID: null,
+      roots: ["/media"],
+      previewClips: true,
+      restricted: false,
+    };
+    const second = { ...first, id: "library-2", title: "Library Two" };
+    vi.mocked(fetchLibraries).mockResolvedValueOnce([first, second]).mockResolvedValue([second]);
+    vi.mocked(deleteLibrary).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <LibrariesPage />
+      </I18nProvider>,
+    );
+
+    const card = (await screen.findByRole("heading", { name: "Library One" })).closest("article");
+    if (!card) throw new Error("library card missing");
+    await user.click(within(card).getByRole("button", { name: "Delete library" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Delete Library One?" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete library" }));
+
+    expect(deleteLibrary).toHaveBeenCalledWith("library-1");
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Library One" })).not.toBeInTheDocument(),
+    );
+    expect(fetchLibraries).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("heading", { name: "Library Two" })).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("exposes tree a11y semantics and keyboard selection", async () => {

@@ -63,7 +63,7 @@ export function DeleteLibraryButton({
   return (
     <AlertDialog open={open} onOpenChange={changeOpen}>
       <AlertDialogTrigger asChild ref={triggerRef}>
-        <Button variant="destructive" size="sm">
+        <Button variant="danger" size="sm">
           <Trash2 aria-hidden="true" />
           {t("deleteLibrary")}
         </Button>

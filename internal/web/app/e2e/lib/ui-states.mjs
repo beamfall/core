@@ -325,6 +325,7 @@ export const IN_PAGE_STATES = Object.freeze({
     { kind: "select", name: "new-plugin" },
     { kind: "menu", name: "path-picker" },
     { kind: "dialog", name: "confirm-delete-path" },
+    { kind: "dialog", name: "delete-library" },
   ],
   "/manage/operations": [
     { kind: "loading", name: "jobs" },
@@ -546,6 +547,7 @@ export const IN_PAGE_STATES = Object.freeze({
     { kind: "select", name: "new-plugin" },
     { kind: "select", name: "scan-root" },
     { kind: "menu", name: "path-picker" },
+    { kind: "dialog", name: "delete-library" },
   ],
   "/console/plugins": [
     { kind: "loading", name: "page" },
@@ -778,6 +780,7 @@ export const UI_STATE_GAPS = Object.freeze({
   "/manage/libraries#select:new-plugin": NO_CONTROL_DRIVEN,
   "/manage/libraries#menu:path-picker": NO_CONTROL_DRIVEN,
   "/manage/libraries#dialog:confirm-delete-path": NO_CONTROL_DRIVEN,
+  "/manage/libraries#dialog:delete-library": NO_CONTROL_DRIVEN,
   "/manage/operations#loading:jobs": NO_LOADING_FIXTURE,
   "/manage/operations#empty:jobs": NO_EMPTY_FIXTURE,
   "/manage/operations#empty:schedules": NO_EMPTY_FIXTURE,
@@ -908,6 +911,7 @@ export const UI_STATE_GAPS = Object.freeze({
   "/console/libraries#select:new-plugin": NO_CONTROL_DRIVEN,
   "/console/libraries#select:scan-root": NO_CONTROL_DRIVEN,
   "/console/libraries#menu:path-picker": NO_CONTROL_DRIVEN,
+  "/console/libraries#dialog:delete-library": NO_CONTROL_DRIVEN,
   "/console/libraries@mobile": SHELL_NARROW_OVERFLOW,
   "/console/plugins#loading:page": NO_LOADING_FIXTURE,
   "/console/plugins#error:page": NO_ERROR_FIXTURE,

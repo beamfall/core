@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -55,6 +55,21 @@ describe("DeleteLibraryButton", () => {
     expect(dialog).toHaveTextContent("restore it from Recently deleted");
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
     expect(deleteLibrary).not.toHaveBeenCalled();
+  });
+
+  it("keeps the per-card trigger quiet and fills only the confirm step (CORE-1486)", async () => {
+    const user = userEvent.setup();
+    renderButton();
+
+    const trigger = screen.getByRole("button", { name: "Delete library" });
+    expect(trigger).toHaveClass("text-destructive");
+    expect(trigger).not.toHaveClass("bg-destructive");
+
+    await user.click(trigger);
+    const dialog = screen.getByRole("alertdialog", { name: "Delete Films?" });
+    expect(within(dialog).getByRole("button", { name: "Delete library" })).toHaveClass(
+      "bg-destructive",
+    );
   });
 
   it("closes on Cancel and Escape without deleting and returns focus to the control", async () => {
