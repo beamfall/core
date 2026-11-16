@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -146,9 +148,8 @@ func TestScanSummaryRefusalCompletesEarlierFiles(t *testing.T) {
 
 func TestScanSummaryCountsUnmatchedPartGroupOnce(t *testing.T) {
 	// feature:scan-pipeline
-	// A part group yielded after its first part was reported re-imports the
-	// rest on resume, which identifies the same Media again; the summary
-	// counts it in the Unmatched queue once (CORE-2194).
+	// A part group yielded at its report resumes past it; the summary counts
+	// its Media in the Unmatched queue once (CORE-2194, CORE-2195).
 	for _, workers := range []int{1, 4} {
 		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
 			root := t.TempDir()
@@ -176,12 +177,7 @@ func TestScanSummaryCountsUnmatchedPartGroupOnce(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resumed scan: %v", err)
 			}
-			// The resume re-imports the unreported parts as a group of their
-			// own, on the same Media (CORE-2195 tracks keeping the group whole).
-			files, err := st.MediaFilesForLibrary(context.Background(), req.LibraryID)
-			if err != nil || len(files) == 0 || files[0].MediaID != before[0].MediaID {
-				t.Fatalf("resumed parts left the Media: %+v %v", files, err)
-			}
+			assertPartGroupWhole(t, st, req.LibraryID, []string{"01.mp3", "03.mp3"})
 			if queued, err := st.IsUnmatched(context.Background(), before[0].MediaID); err != nil || !queued {
 				t.Fatalf("Media not in the Unmatched queue: %v %v", queued, err)
 			}
@@ -540,6 +536,143 @@ func TestScanSummaryKeepsVersionCountOnCompleteCheckpointRecovery(t *testing.T) 
 			if recovered.FilesSeen != 2 || recovered.MediaImported != 1 || recovered.MediaUnmatched != 1 {
 				t.Fatalf("recovered scan seen=%d imported=%d unmatched=%d, want 2, 1 and 1", recovered.FilesSeen, recovered.MediaImported, recovered.MediaUnmatched)
 			}
+		})
+	}
+}
+
+// numberedPartsParser parses NN.mp3 as part NN of one group.
+type numberedPartsParser struct{}
+
+func (numberedPartsParser) Parse(path string, _ ParseProbe) (ParsedMedia, bool) {
+	index, err := strconv.Atoi(strings.TrimSuffix(filepath.Base(path), ".mp3"))
+	if err != nil || index < 1 {
+		return ParsedMedia{}, false
+	}
+	return ParsedMedia{Title: "Group", Class: "collection", PartGroup: "g", Index: index}, true
+}
+
+// assertPartGroupWhole checks that names are the live files of one Media, in
+// source order.
+func assertPartGroupWhole(t *testing.T, st *store.Store, libraryID store.LibraryID, names []string) {
+	t.Helper()
+	files, err := st.MediaFilesForLibrary(context.Background(), libraryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != len(names) {
+		t.Fatalf("live files = %+v, want %v on one Media", files, names)
+	}
+	ordinals := map[string]int{}
+	for _, file := range files {
+		if file.MediaID != files[0].MediaID {
+			t.Fatalf("parts are not one Media: %+v", files)
+		}
+		ordinals[filepath.Base(file.Path)] = file.PartOrdinal
+	}
+	for i, name := range names {
+		if ordinal, ok := ordinals[name]; !ok || ordinal != i {
+			t.Fatalf("part %s ordinal = %d (live %v), want %d; files %+v", name, ordinal, ok, i, files)
+		}
+	}
+}
+
+func TestScanResumeKeepsPartGroupWhole(t *testing.T) {
+	// feature:scan-pipeline
+	// A scan stopped at a part group's progress report resumes with every part
+	// of the group on one Media, in source order, and counts the scan as an
+	// uninterrupted one does (CORE-2195).
+	names := []string{"01.mp3", "03.mp3"}
+	parsers := map[string]FilenameParser{"parts": cancellingPartsParser{}}
+	for _, workers := range []int{1, 4} {
+		for _, stop := range []error{jobs.ErrYielded, context.Canceled} {
+			t.Run(fmt.Sprintf("workers=%d/%v", workers, stop), func(t *testing.T) {
+				scanFresh := func(progress func(jobCheckpoint, store.JobProgress) error) (*store.Store, Request, time.Time, Result, error) {
+					root := t.TempDir()
+					for _, name := range names {
+						writeScanFile(t, root, name, []byte(name))
+					}
+					st := storetest.Open(t)
+					req := Request{LibraryID: partsLibrary(t, st), Root: root}
+					started := time.Now().UTC()
+					result, err := scanFromCheckpoint(context.Background(), st, nil, nil, parsers, nil, queueAllIdentifier{st}, nil, nil, fixedGovernor(workers), nil, req, jobCheckpoint{}, started, progress)
+					return st, req, started, result, err
+				}
+				_, _, _, whole, err := scanFresh(nil)
+				if err != nil {
+					t.Fatalf("uninterrupted scan: %v", err)
+				}
+				var checkpoint jobCheckpoint
+				stopAtFirstReport := func(c jobCheckpoint, _ store.JobProgress) error {
+					checkpoint = c
+					return stop
+				}
+				st, req, started, stopped, err := scanFresh(stopAtFirstReport)
+				if !errors.Is(err, stop) {
+					t.Fatalf("scan did not stop: %v", err)
+				}
+				if stopped.interrupted != nil {
+					checkpoint = *stopped.interrupted
+				}
+				resumed, err := scanFromCheckpoint(context.Background(), st, nil, nil, parsers, nil, queueAllIdentifier{st}, nil, nil, fixedGovernor(workers), nil, req, checkpoint, started, nil)
+				if err != nil {
+					t.Fatalf("resumed scan: %v", err)
+				}
+				assertPartGroupWhole(t, st, req.LibraryID, names)
+				got := [5]int{resumed.FilesSeen, resumed.FilesAdded, resumed.FilesChanged, resumed.MediaImported, resumed.MediaUnmatched}
+				want := [5]int{whole.FilesSeen, whole.FilesAdded, whole.FilesChanged, whole.MediaImported, whole.MediaUnmatched}
+				if got != want {
+					t.Fatalf("resumed seen/added/changed/imported/unmatched = %v, uninterrupted %v", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestScanFinishesPartGroupLargerThanYieldBatch(t *testing.T) {
+	// feature:scan-pipeline
+	// A job yields every few progress reports. A part group with more parts
+	// than that still finishes, whole, instead of resuming onto itself
+	// forever (CORE-2195).
+	const batch, parts = 2, 5
+	for _, workers := range []int{1, 4} {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			root := t.TempDir()
+			var names []string
+			for i := 1; i <= parts; i++ {
+				name := fmt.Sprintf("%02d.mp3", i)
+				names = append(names, name)
+				writeScanFile(t, root, name, []byte(name))
+			}
+			st := storetest.Open(t)
+			req := Request{LibraryID: partsLibrary(t, st), Root: root}
+			parsers := map[string]FilenameParser{"parts": numberedPartsParser{}}
+			started := time.Now().UTC()
+			var checkpoint jobCheckpoint
+			for run := 1; ; run++ {
+				if run > parts+2 {
+					t.Fatalf("scan still yielding after %d runs, checkpoint %+v", run-1, checkpoint)
+				}
+				reports := 0
+				yieldEveryBatch := func(c jobCheckpoint, _ store.JobProgress) error {
+					checkpoint = c
+					if reports++; reports >= batch {
+						return jobs.ErrYielded
+					}
+					return nil
+				}
+				result, err := scanFromCheckpoint(context.Background(), st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(workers), nil, req, checkpoint, started, yieldEveryBatch)
+				if errors.Is(err, jobs.ErrYielded) {
+					continue
+				}
+				if err != nil {
+					t.Fatalf("run %d: %v", run, err)
+				}
+				if result.FilesSeen != parts || result.FilesAdded != parts || result.MediaImported != 1 {
+					t.Fatalf("scan seen=%d added=%d imported=%d, want %d, %d and 1", result.FilesSeen, result.FilesAdded, result.MediaImported, parts, parts)
+				}
+				break
+			}
+			assertPartGroupWhole(t, st, req.LibraryID, names)
 		})
 	}
 }

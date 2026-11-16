@@ -206,10 +206,13 @@ func (s *scanWalkState) flushPendingParts() error {
 		}
 		s.autoIdentify(last, media.ID, first.imported.ContentFingerprint, first.parsed, "scan: auto-identify failed")
 	}
-	// On an error unreportedParts stays set, so the checkpoint a stopped scan
-	// returns still counts the parts not yet reported.
-	for i, file := range files {
-		s.unreportedParts = paths[i+1:]
+	// The group reports once, after its last part. The resume point stays
+	// before the group until then: a resume from a part inside it would
+	// re-walk only the later parts and import them as a group of their own,
+	// which drops the earlier parts from the Media. One report per group also
+	// keeps a group larger than a job's batch from yielding inside it and
+	// resuming onto it again forever (CORE-2195).
+	for _, file := range files {
 		s.result.FilesSeen++
 		s.applyTally(file.Path)
 		s.result.Files = append(s.result.Files, ImportedFile{
@@ -225,19 +228,17 @@ func (s *scanWalkState) flushPendingParts() error {
 			s.result.MediaImported++
 			s.noteGroupMedia(media.ID)
 		}
-		if s.progress != nil {
-			if err := s.progress(s.resumeCheckpoint(), store.JobProgress{
-				Current: int64(s.result.FilesSeen),
-				Total:   int64(s.result.totalFiles),
-				Unit:    "files",
-				Message: "Scanning",
-			}); err != nil {
-				return err
-			}
-		}
 	}
 	s.unreportedParts = nil
 	s.releaseHeld()
+	if s.progress != nil {
+		return s.progress(s.resumeCheckpoint(), store.JobProgress{
+			Current: int64(s.result.FilesSeen),
+			Total:   int64(s.result.totalFiles),
+			Unit:    "files",
+			Message: "Scanning",
+		})
+	}
 	return nil
 }
 

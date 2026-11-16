@@ -139,24 +139,28 @@ func TestScanSummaryCountsRefusedFolderOnce(t *testing.T) {
 
 func TestScanSummaryKeepsPartGroupAcrossYield(t *testing.T) {
 	// feature:scan-pipeline
-	// A part group larger than one batch is imported at once, then reported
-	// file by file; the yield partway through must not drop the added counts
-	// of the parts reported after it.
+	// A part group larger than one batch is imported at once and reported
+	// once, so the job never yields inside it: it finishes in one run with
+	// every part counted and on one Media (CORE-2195).
 	root := t.TempDir()
 	dir := filepath.Join(root, "Writer", "Long")
 	prober := taggedPartsProber{}
 	parts := scanJobFileBatchSize + 2
+	var names []string
 	for i := 1; i <= parts; i++ {
 		name := zeroPad(i) + " - Part.mp3"
+		names = append(names, name)
 		writeScanFile(t, dir, name, []byte(name))
 		prober[name] = map[string]string{"album": "Long", "track": strconv.Itoa(i)}
 	}
 	st := storetest.Open(t)
+	library := partsLibrary(t, st)
 	handler := Handler(st, prober, nil, map[string]FilenameParser{"parts": taggedPartsParser{}}, nil, nil)
-	summary := runSummaryScanToCompletion(t, st, handler, "job-summary-parts", partsLibrary(t, st), root, 2)
+	summary := runSummaryScanToCompletion(t, st, handler, "job-summary-parts", library, root, 1)
 	if want := (ScanSummary{FilesChecked: parts, Added: parts}); summary != want {
 		t.Fatalf("summary = %+v, want %+v", summary, want)
 	}
+	assertPartGroupWhole(t, st, library, names)
 }
 
 func TestScanSummaryCountsImportBeforeCancellation(t *testing.T) {
