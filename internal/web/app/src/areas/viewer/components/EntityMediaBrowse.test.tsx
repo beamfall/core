@@ -154,6 +154,42 @@ describe("EntityMediaBrowse", () => {
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/t2|t1:audio,t2:audio,t3:audio");
   });
 
+  it("reads stored positions only for a container's track list", async () => {
+    renderBrowse(album, tracks);
+    await screen.findByRole("list", { name: "Tracks" });
+    expect(vi.mocked(fetchMediaRows).mock.calls[0][2]).toEqual({ positions: true });
+    cleanup();
+    vi.mocked(fetchMediaRows).mockClear();
+    renderBrowse(artist, tracks);
+    await screen.findByRole("list", { name: "Top tracks" });
+    expect(vi.mocked(fetchMediaRows).mock.calls[0][2]).toEqual({ positions: false });
+  });
+
+  it("groups a container's tracks under a heading per stored sequence, playing on across groups", async () => {
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      t1: { ...rows.t1, sequence: 2, index: 1 },
+      t2: { ...rows.t2, sequence: 1, index: 2 },
+      t3: { ...rows.t3, sequence: 1, index: 1 },
+    });
+    renderBrowse(album, tracks);
+    const first = await screen.findByRole("list", { name: "Disc 1" });
+    expect(screen.getByRole("heading", { level: 3, name: "Disc 1" })).toBeInTheDocument();
+    expect(
+      within(first)
+        .getAllByRole("button", { name: /^Play / })
+        .map((button) => button.textContent),
+    ).toEqual(["1Track Three", "2Track TwoTest Artist, Guest Artist1:35"]);
+    const second = screen.getByRole("list", { name: "Disc 2" });
+    expect(
+      within(second)
+        .getAllByRole("button", { name: /^Play / })
+        .map((button) => button.textContent),
+    ).toEqual(["1Track One3:21"]);
+    expect(screen.queryByRole("list", { name: "Tracks" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Play Track One" }));
+    expect(screen.getByTestId("watch")).toHaveTextContent("/watch/t1|t3:audio,t2:audio,t1:audio");
+  });
+
   it("splits an audio person's page into top tracks and the containers it appears on", async () => {
     vi.mocked(fetchSourceItems).mockResolvedValue([
       { id: "t3", kind: "media", title: "Track Three" },

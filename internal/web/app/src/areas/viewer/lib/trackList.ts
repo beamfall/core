@@ -1,3 +1,4 @@
+import type { MediaRow } from "@/lib/graphql/browse";
 import type { GenericMediaInfo, RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
 import { type PlayerNavState, type PlayQueueItem, queueWindow } from "./watchQueue";
 
@@ -6,7 +7,12 @@ import { type PlayerNavState, type PlayQueueItem, queueWindow } from "./watchQue
 // the server's own ordering — never from a plugin's kind names or field names.
 //
 // - A "container" Entity whose member Media are all class "audio" renders as a
-//   numbered track list in server order (mediaForEntity order). A row names the
+//   numbered track list in server order (mediaForEntity order). When core's
+//   scan stored a "sequence" on every track and they hold at least two values,
+//   the list groups by sequence, ascending (a multi-disc album). Within a group
+//   (or the whole list) the stored "index" numbers and orders the rows when
+//   every row has one and none repeats; otherwise rows keep server order and
+//   are numbered from 1. A row names the
 //   track's "person" credits only when they differ from the container's own
 //   people: its related "person" Entities, or, when it declares none, the people
 //   credited on every track.
@@ -24,8 +30,10 @@ type ClassedItem = SourceItem & { mediaClass?: string };
 /** One row of a track list. */
 export interface TrackRow {
   item: SourceItem;
-  /** 1-based position in server order. */
+  /** The stored index, else the 1-based position within its group. */
   number: number;
+  /** The stored sequence this row groups under; set only when the list is grouped. */
+  group?: number;
   /** Credited people, shown only when they differ from the container's own. */
   artist?: string;
   durationSeconds?: number;
@@ -79,23 +87,75 @@ export function ownerPeople(
   return new Set([...credited[0]].filter((id) => credited.every((ids) => ids.has(id))));
 }
 
-/** The track rows of an audio container, numbered in server order. */
+/** The stored sequence of every item, or null when the list does not group. */
+function groupSequences(
+  media: readonly SourceItem[],
+  rows: Readonly<Record<string, MediaRow>>,
+): number[] | null {
+  const sequences = media.map((item) => rows[item.id]?.sequence);
+  if (sequences.some((sequence) => sequence === undefined)) return null;
+  return new Set(sequences).size > 1 ? (sequences as number[]) : null;
+}
+
+/** One group's items in display order with their numbers. */
+function numberGroup(
+  media: readonly SourceItem[],
+  rows: Readonly<Record<string, MediaRow>>,
+): { item: SourceItem; number: number }[] {
+  const indexes = media.map((item) => rows[item.id]?.index);
+  const stored =
+    indexes.every((index) => index !== undefined) && new Set(indexes).size === indexes.length;
+  if (!stored) return media.map((item, position) => ({ item, number: position + 1 }));
+  return media
+    .map((item, position) => ({ item, number: indexes[position] as number }))
+    .sort((a, b) => a.number - b.number);
+}
+
+/**
+ * The track rows of an audio container in display order: grouped by stored
+ * sequence when the list groups, numbered by stored index or by position.
+ */
 export function trackRows(
   items: readonly SourceItem[],
-  rows: Readonly<Record<string, GenericMediaInfo>>,
+  rows: Readonly<Record<string, MediaRow>>,
   owners: ReadonlySet<string>,
 ): TrackRow[] {
-  return items
-    .filter((item) => item.kind === "media")
-    .map((item, index) => {
+  const media = items.filter((item) => item.kind === "media");
+  const sequences = groupSequences(media, rows);
+  const groups: { group?: number; media: SourceItem[] }[] = [];
+  if (sequences) {
+    for (const sequence of [...new Set(sequences)].sort((a, b) => a - b)) {
+      groups.push({
+        group: sequence,
+        media: media.filter((_, position) => sequences[position] === sequence),
+      });
+    }
+  } else {
+    groups.push({ media });
+  }
+  return groups.flatMap(({ group, media: members }) =>
+    numberGroup(members, rows).map(({ item, number }) => {
       const row = rows[item.id];
       const people = personCredits(row);
       const differs = people.some((credit) => !owners.has(credit.entityID));
-      const track: TrackRow = { item, number: index + 1 };
+      const track: TrackRow = { item, number };
+      if (group !== undefined) track.group = group;
       if (differs) track.artist = people.map((credit) => credit.title).join(", ");
       if (row?.durationSeconds) track.durationSeconds = row.durationSeconds;
       return track;
-    });
+    }),
+  );
+}
+
+/** Consecutive rows that share a group, in order; one ungrouped run when none is grouped. */
+export function trackGroups(tracks: readonly TrackRow[]): { group?: number; rows: TrackRow[] }[] {
+  const out: { group?: number; rows: TrackRow[] }[] = [];
+  for (const track of tracks) {
+    const last = out[out.length - 1];
+    if (last && last.group === track.group) last.rows.push(track);
+    else out.push({ group: track.group, rows: [track] });
+  }
+  return out;
 }
 
 /** m:ss, or h:mm:ss from an hour up; empty when unknown. */

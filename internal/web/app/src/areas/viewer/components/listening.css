@@ -8,6 +8,21 @@
   list-style: none;
 }
 
+[data-register="viewer"] .bf-track-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+[data-register="viewer"] .bf-track-group-title {
+  margin: 8px 0 0;
+  padding: 0 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
 [data-register="viewer"] .bf-track {
   position: relative;
   display: flex;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { MediaRow } from "@/lib/graphql/browse";
 import type { GenericMediaInfo, RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
 import {
   appearsOn,
@@ -8,6 +9,7 @@ import {
   ownerPeople,
   playState,
   topTracks,
+  trackGroups,
   trackRows,
 } from "./trackList";
 
@@ -18,12 +20,7 @@ const media = (id: string, title: string, extra: Partial<SourceItem> = {}): Sour
   ...extra,
 });
 
-function row(
-  id: string,
-  title: string,
-  people: string[],
-  extra: Partial<GenericMediaInfo> = {},
-): GenericMediaInfo {
+function row(id: string, title: string, people: string[], extra: Partial<MediaRow> = {}): MediaRow {
   return {
     id,
     title,
@@ -65,6 +62,70 @@ describe("track list rules", () => {
       [2, "Track Two", "Test Artist, Guest Artist", 59],
       [3, "Track Three", undefined, undefined],
     ]);
+  });
+
+  it("groups by stored sequence and numbers each group by its stored index", () => {
+    const discs = [
+      media("d2a", "Track Four"),
+      media("d1b", "Track Two"),
+      media("d1a", "Track One"),
+      media("d2b", "Track Five"),
+    ];
+    const positioned = {
+      d1a: row("d1a", "Track One", ["person-a"], { sequence: 1, index: 1 }),
+      d1b: row("d1b", "Track Two", ["person-a"], { sequence: 1, index: 2 }),
+      d2a: row("d2a", "Track Four", ["person-a"], { sequence: 2, index: 1 }),
+      d2b: row("d2b", "Track Five", ["person-a"], { sequence: 2, index: 2 }),
+    };
+    const tracks = trackRows(discs, positioned, new Set(["person-a"]));
+    expect(tracks.map((track) => [track.group, track.number, track.item.title])).toEqual([
+      [1, 1, "Track One"],
+      [1, 2, "Track Two"],
+      [2, 1, "Track Four"],
+      [2, 2, "Track Five"],
+    ]);
+    expect(
+      trackGroups(tracks).map((group) => [group.group, group.rows.map((r) => r.item.id)]),
+    ).toEqual([
+      [1, ["d1a", "d1b"]],
+      [2, ["d2a", "d2b"]],
+    ]);
+  });
+
+  it("keeps server order and position numbers when a group's stored index repeats", () => {
+    const repeated = {
+      t1: row("t1", "Track One", ["person-a"], { sequence: 1, index: 4 }),
+      t2: row("t2", "Track Two", ["person-a"], { sequence: 1, index: 4 }),
+      t3: row("t3", "Track Three", ["person-a"], { sequence: 2 }),
+    };
+    expect(
+      trackRows(items, repeated, new Set(["person-a"])).map((t) => [t.group, t.number]),
+    ).toEqual([
+      [1, 1],
+      [1, 2],
+      [2, 1],
+    ]);
+  });
+
+  it("does not group unless every track has a sequence and they differ", () => {
+    const partial = {
+      t1: row("t1", "Track One", ["person-a"], { sequence: 1, index: 3 }),
+      t2: row("t2", "Track Two", ["person-a"], { sequence: 2, index: 1 }),
+      t3: row("t3", "Track Three", ["person-a"], { index: 2 }),
+    };
+    const ungrouped = trackRows(items, partial, new Set(["person-a"]));
+    expect(ungrouped.map((t) => [t.group, t.number, t.item.id])).toEqual([
+      [undefined, 1, "t2"],
+      [undefined, 2, "t3"],
+      [undefined, 3, "t1"],
+    ]);
+    expect(trackGroups(ungrouped)).toHaveLength(1);
+    const single = {
+      t1: row("t1", "Track One", ["person-a"], { sequence: 1 }),
+      t2: row("t2", "Track Two", ["person-a"], { sequence: 1 }),
+      t3: row("t3", "Track Three", ["person-a"], { sequence: 1 }),
+    };
+    expect(trackRows(items, single, new Set()).every((t) => t.group === undefined)).toBe(true);
   });
 
   it("skips non-Media items when numbering", () => {
