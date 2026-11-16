@@ -180,6 +180,12 @@ func OpenDirectory(ctx context.Context, key BackupKey, envelopePath, destDir str
 		decryptDone <- decryptResult{info: info, err: decryptErr}
 	}()
 	extractErr := extractDirectoryTar(ctx, reader, destDir)
+	if extractErr == nil {
+		// The tar reader stops at the end-of-archive marker. Read the rest of
+		// the plaintext so the decrypt side finishes writing and authenticates
+		// the whole envelope; closing the pipe first fails its last write.
+		_, extractErr = io.Copy(io.Discard, reader)
+	}
 	_ = reader.CloseWithError(extractErr)
 	decrypted := <-decryptDone
 	if decrypted.err != nil {
