@@ -101,6 +101,11 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 		joined = errors.Join(joined, r.subtitles.ReconcileEncryptedSubtitles(libraryID, libencrypt.HasObjectHeader))
 	}
 	joined = errors.Join(joined, playback.ReconcileEncryptedPrecomputedRenditions(r.precomputeCache, libraryID, libencrypt.HasObjectHeader))
+	// Every live fingerprint is now attributed, so the Library's generated-asset
+	// ledger is complete and a purge may trust it (CORE-2193).
+	if joined == nil && r.assets != nil {
+		joined = r.assets.MarkEncryptedReferencesComplete(libraryID)
+	}
 	if joined != nil {
 		return fmt.Errorf("encrypted-library %s derivative reconcile: %w", libraryID, joined)
 	}

@@ -155,6 +155,11 @@ type Service struct {
 	trickplay  sync.Mutex
 	publish    sync.Mutex
 	publishErr error
+	// purgedEncrypted holds the Encrypted Libraries whose assets were purged
+	// in this process; publication for them is refused under the publish
+	// lock (CORE-2193). A restart ends every in-flight generation, and a
+	// purged Library has no catalog row to start a new one from.
+	purgedEncrypted map[store.LibraryID]bool
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area

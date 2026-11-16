@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -15,15 +16,36 @@ import (
 )
 
 // encryptedAssetPurger removes a purged Encrypted Library's generated-asset
-// ciphertext that no other Encrypted Library references (CORE-2193).
+// ciphertext that no other Encrypted Library references (CORE-2193). Ciphertext
+// the sweep has to keep, because a Library's reference ledger is incomplete,
+// is logged: it is unreadable once the purged Library's keys are erased.
 type encryptedAssetPurger struct {
-	assets *genassets.Service
+	assets    *genassets.Service
+	libraries encryptedLibraryLister
+	logger    *slog.Logger
+}
+
+// encryptedLibraryLister lists every Encrypted Library still in the catalog.
+// Satisfied by *store.Store.
+type encryptedLibraryLister interface {
+	EncryptedLibraryIDs(ctx context.Context) ([]store.LibraryID, error)
 }
 
 var _ store.EncryptedLibraryDerivativePurger = encryptedAssetPurger{}
 
-func (p encryptedAssetPurger) PurgeEncryptedDerivatives(_ context.Context, libraryID store.LibraryID) error {
-	return p.assets.PurgeEncryptedLibraryAssets(libraryID, libencrypt.HasObjectHeader)
+func (p encryptedAssetPurger) PurgeEncryptedDerivatives(ctx context.Context, libraryID store.LibraryID) error {
+	others, err := p.libraries.EncryptedLibraryIDs(ctx)
+	if err != nil {
+		return err
+	}
+	result, err := p.assets.PurgeEncryptedLibraryAssets(libraryID, others, libencrypt.HasObjectHeader)
+	if err != nil {
+		return err
+	}
+	if result.Unswept != "" && p.logger != nil {
+		p.logger.Warn("encrypted-library purge kept generated-asset ciphertext", "library", libraryID, "reason", result.Unswept)
+	}
+	return nil
 }
 
 // assetPipeRunner is the FFmpeg seam the encrypted asset generator drives.

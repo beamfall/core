@@ -917,7 +917,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// references (CORE-2193). A purge that committed before a crash or a failed
 	// teardown is finished now, before its keys are reported as orphans.
 	st.SetEncryptedLibraryKeyEraser(libraryKeyEraser{manager: libEncryptManager})
-	st.SetEncryptedLibraryDerivativePurgers(mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot}, encryptedAssetPurger{assets: assetService})
+	st.SetEncryptedLibraryDerivativePurgers(mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot}, encryptedAssetPurger{assets: assetService, libraries: st, logger: logger})
 	if err := st.CompletePendingLibraryPurges(ctx); err != nil {
 		logger.Warn("encrypted-library purge teardown incomplete; the retention sweep retries it", "error", err)
 	}

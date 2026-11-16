@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -259,4 +260,45 @@ func TestEncryptedDerivativeReconcilerSweepsEncryptedPrecompute(t *testing.T) {
 		t.Fatalf("ciphertext precompute generation removed: %v", err)
 	}
 	mustBeGone(t, "plaintext generation in the encrypted precompute tree", leaked)
+}
+
+// encryptedLibraryIDs is a fixed encryptedLibraryLister.
+type encryptedLibraryIDs []store.LibraryID
+
+func (ids encryptedLibraryIDs) EncryptedLibraryIDs(context.Context) ([]store.LibraryID, error) {
+	return ids, nil
+}
+
+// TestEncryptedAssetPurgeTrustsLedgerOnlyAfterUnsealReconcile pins the
+// CORE-2193 review fix through the production adapters: the unseal reconcile
+// marks a Library's generated-asset ledger complete, so its purge sweeps
+// without a warning, while purging a Library never reconciled since the
+// ledger existed logs that its ciphertext may remain.
+func TestEncryptedAssetPurgeTrustsLedgerOnlyAfterUnsealReconcile(t *testing.T) {
+	dataDir := t.TempDir()
+	assetSvc := genassets.NewService(nil, nil, dataDir)
+	reconciler := newEncryptedDerivativeReconciler(nil, assetSvc, nil, nil, filepath.Join(dataDir, "playback-cache"))
+	reconciled, stale := store.LibraryID("library-reconciled"), store.LibraryID("library-stale")
+	if err := reconciler.ReconcileEncryptedDerivatives(context.Background(), reconciled, nil); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var logged strings.Builder
+	purger := encryptedAssetPurger{
+		assets:    assetSvc,
+		libraries: encryptedLibraryIDs{reconciled},
+		logger:    slog.New(slog.NewTextHandler(&logged, nil)),
+	}
+
+	if err := purger.PurgeEncryptedDerivatives(context.Background(), reconciled); err != nil {
+		t.Fatalf("purge reconciled Library: %v", err)
+	}
+	if logged.Len() != 0 {
+		t.Fatalf("purge of a reconciled Library warned: %s", logged.String())
+	}
+	if err := purger.PurgeEncryptedDerivatives(context.Background(), stale); err != nil {
+		t.Fatalf("purge stale Library: %v", err)
+	}
+	if !strings.Contains(logged.String(), "kept generated-asset ciphertext") {
+		t.Fatalf("purge of a never-reconciled Library did not report kept ciphertext: %q", logged.String())
+	}
 }

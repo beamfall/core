@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -22,7 +23,33 @@ import (
 // so a purge can tell which directories it alone referenced without the
 // Library's keys or database. The encrypted subtitle cache attributes its
 // objects to a Library folder the same way.
+//
+// Ciphertext written before the ledger existed is attributed only when its
+// Library's unseal reconcile backfills the ledger, so a ledger is trusted to
+// be complete only once encryptedRefsComplete is in it: the reconcile writes
+// it after the backfill, and every new Encrypted Library is unsealed (so
+// reconciled) when it is provisioned. A purge deletes nothing while any other
+// Encrypted Library's ledger is incomplete, since that Library may share any
+// directory.
 const encryptedRefsDir = ".encrypted-refs"
+
+// encryptedRefsComplete marks a ledger as listing every directory its Library
+// references. Fingerprint directories never begin with a dot.
+const encryptedRefsComplete = ".complete"
+
+// ErrEncryptedLibraryPurged refuses to publish an asset for an Encrypted
+// Library whose generated assets have been purged: a generation that chose
+// its target before the purge must not recreate ciphertext the purge removed.
+var ErrEncryptedLibraryPurged = errors.New("generated assets: the Encrypted Library has been purged")
+
+// EncryptedAssetPurge reports what an Encrypted Library's asset purge could
+// not remove. The leftovers are ciphertext that is unreadable once the
+// Library's keys are erased.
+type EncryptedAssetPurge struct {
+	// Unswept explains why some of the Library's ciphertext may remain on
+	// disk; it is empty after a complete sweep.
+	Unswept string
+}
 
 // encryptedRefsLibraryRel is one Library's ledger folder. The Library ID is
 // hashed so a caller-influenced ID can never form a path element of its own.
@@ -31,55 +58,159 @@ func encryptedRefsLibraryRel(libraryID store.LibraryID) string {
 	return filepath.Join(encryptedRefsDir, hex.EncodeToString(sum[:16]))
 }
 
-// recordEncryptedReference marks fingerprintDir as referenced by libraryID.
-// The caller holds the publish lock.
+// recordEncryptedReference durably marks fingerprintDir as referenced by
+// libraryID, so the marker is on disk before any ciphertext it covers. The
+// caller holds the publish lock.
 func recordEncryptedReference(root *os.Root, libraryID store.LibraryID, fingerprintDir string) error {
+	return writeLedgerMarker(root, libraryID, fingerprintDir)
+}
+
+// MarkEncryptedReferencesComplete records that libraryID's ledger lists every
+// generated-asset directory it references. The unseal reconcile calls it once
+// every live fingerprint has been reconciled and attributed.
+func (s *Service) MarkEncryptedReferencesComplete(libraryID store.LibraryID) error {
+	if libraryID == "" {
+		return nil
+	}
+	s.publish.Lock()
+	defer s.publish.Unlock()
+	if s.purgedEncrypted[libraryID] {
+		return ErrEncryptedLibraryPurged
+	}
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(s.dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return writeLedgerMarker(root, libraryID, encryptedRefsComplete)
+}
+
+// writeLedgerMarker writes an empty marker in libraryID's ledger and syncs it
+// and every directory above it. An existing marker was synced when written.
+func writeLedgerMarker(root *os.Root, libraryID store.LibraryID, name string) error {
 	rel := encryptedRefsLibraryRel(libraryID)
+	marker := filepath.Join(rel, name)
+	if _, err := root.Lstat(marker); err == nil {
+		return nil
+	}
 	if err := ensureRootDir(root, encryptedRefsDir); err != nil {
 		return err
 	}
 	if err := ensureRootDir(root, rel); err != nil {
 		return err
 	}
-	return root.WriteFile(filepath.Join(rel, fingerprintDir), nil, 0o600)
+	file, err := root.OpenFile(marker, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := errors.Join(file.Sync(), file.Close()); err != nil {
+		return err
+	}
+	return syncRootDirs(root, rel, encryptedRefsDir, ".")
+}
+
+// syncRootDirs fsyncs each directory under root, so entries created in or
+// removed from it are durable.
+func syncRootDirs(root *os.Root, dirs ...string) error {
+	for _, dir := range dirs {
+		f, err := root.Open(dir)
+		if err != nil {
+			return err
+		}
+		if err := errors.Join(f.Sync(), f.Close()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // PurgeEncryptedLibraryAssets removes a purged Encrypted Library's generated
-// asset ciphertext that no other Encrypted Library's ledger references, then
-// collects the generations left unreferenced and drops the Library's ledger.
-// In a directory the Library alone referenced only files isObject recognises
-// as ciphertext are removed: a public Library's plaintext assets at the same
-// fingerprint stay. A directory another Encrypted Library also references is
-// kept whole, since without either Library's keys the files cannot be told
-// apart; the last of them to be purged removes it. It needs no keys and no
-// store access, so it runs after the Library's database is gone. Any failure
-// leaves the ledger in place, so a retried purge repeats the whole sweep.
-func (s *Service) PurgeEncryptedLibraryAssets(libraryID store.LibraryID, isObject func(io.Reader) (bool, error)) error {
+// asset ciphertext that no other Encrypted Library references, then collects
+// the generations left unreferenced and drops the Library's ledger. others
+// lists every Encrypted Library still in the catalog. In a directory the
+// Library alone referenced only files isObject recognises as ciphertext are
+// removed: a public Library's plaintext assets at the same fingerprint stay. A
+// directory another Encrypted Library also references is kept whole, since
+// without either Library's keys the files cannot be told apart; the last of
+// them to be purged removes it. While any other Encrypted Library's ledger is
+// incomplete nothing is removed, and a Library whose own ledger is incomplete
+// can leave directories it never recorded; both are reported in Unswept. It
+// needs no keys and no store access, so it runs after the Library's database
+// is gone. From the first call on, publication for the Library is refused. The
+// deletions are synced before the ledger is dropped, and any failure leaves
+// the ledger in place, so a retried purge repeats the whole sweep.
+func (s *Service) PurgeEncryptedLibraryAssets(libraryID store.LibraryID, others []store.LibraryID, isObject func(io.Reader) (bool, error)) (EncryptedAssetPurge, error) {
+	var result EncryptedAssetPurge
 	if libraryID == "" {
-		return nil
+		return result, nil
 	}
 	if isObject == nil {
-		return errors.New("generated assets: purge needs an encrypted-object header check")
+		return result, errors.New("generated assets: purge needs an encrypted-object header check")
 	}
 	s.publish.Lock()
 	defer s.publish.Unlock()
+	if s.purgedEncrypted == nil {
+		s.purgedEncrypted = map[store.LibraryID]bool{}
+	}
+	s.purgedEncrypted[libraryID] = true
 	root, err := os.OpenRoot(s.dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+		return result, nil
 	}
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer root.Close()
 	own := encryptedRefsLibraryRel(libraryID)
 	markers, err := fs.ReadDir(root.FS(), own)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return result, err
 	}
+	ownComplete, err := ledgerComplete(root, libraryID)
 	if err != nil {
-		return err
+		return result, err
 	}
-	shared, err := otherEncryptedReferences(root, filepath.Base(own))
+	incomplete := 0
+	for _, other := range others {
+		if other == libraryID {
+			continue
+		}
+		complete, err := ledgerComplete(root, other)
+		if err != nil {
+			return result, err
+		}
+		if !complete {
+			incomplete++
+		}
+	}
+	switch {
+	case incomplete > 0:
+		result.Unswept = fmt.Sprintf("%d other Encrypted Libraries have not recorded the generated assets they share; ciphertext kept", incomplete)
+	case !ownComplete:
+		result.Unswept = "the Library never recorded every generated asset it references; unrecorded ciphertext kept"
+	}
+	if incomplete == 0 && len(markers) > 0 {
+		if err := s.removeUnsharedCiphertext(root, filepath.Base(own), markers, isObject); err != nil {
+			return result, err
+		}
+	}
+	if err := root.RemoveAll(own); err != nil {
+		return result, err
+	}
+	if err := syncRootDirs(root, encryptedRefsDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return result, err
+	}
+	return result, nil
+}
+
+// removeUnsharedCiphertext removes the ciphertext in every directory the own
+// ledger lists and no other ledger does, collects the generations left
+// unreferenced, and syncs both before the caller drops the ledger.
+func (s *Service) removeUnsharedCiphertext(root *os.Root, own string, markers []fs.DirEntry, isObject func(io.Reader) (bool, error)) error {
+	shared, err := otherEncryptedReferences(root, own)
 	if err != nil {
 		return err
 	}
@@ -97,17 +228,29 @@ func (s *Service) PurgeEncryptedLibraryAssets(libraryID store.LibraryID, isObjec
 	if _, err := collectUnreferencedGenerations(root); err != nil {
 		return err
 	}
-	return root.RemoveAll(own)
+	return syncRootDirs(root, assetGenerationDir, ".")
+}
+
+// ledgerComplete reports whether libraryID's ledger is marked complete.
+func ledgerComplete(root *os.Root, libraryID store.LibraryID) (bool, error) {
+	_, err := root.Lstat(filepath.Join(encryptedRefsLibraryRel(libraryID), encryptedRefsComplete))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // otherEncryptedReferences returns the fingerprint directories any Library's
 // ledger other than own references.
 func otherEncryptedReferences(root *os.Root, own string) (map[string]bool, error) {
+	shared := map[string]bool{}
 	libraries, err := fs.ReadDir(root.FS(), encryptedRefsDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return shared, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	shared := map[string]bool{}
 	for _, library := range libraries {
 		if library.Name() == own || !library.IsDir() {
 			continue
@@ -124,7 +267,8 @@ func otherEncryptedReferences(root *os.Root, own string) (map[string]bool, error
 }
 
 // removeCiphertextAssets removes every regular file in dir that carries an
-// encrypted-object header, and dir itself once it is empty.
+// encrypted-object header, and dir itself once it is empty. A directory that
+// keeps entries is synced so the removals are durable.
 func removeCiphertextAssets(root *os.Root, dir string, isObject func(io.Reader) (bool, error)) error {
 	info, err := root.Lstat(dir)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -157,12 +301,16 @@ func removeCiphertextAssets(root *os.Root, dir string, isObject func(io.Reader) 
 			joined = errors.Join(joined, err)
 		}
 	}
-	if joined == nil && remaining == 0 {
-		if err := root.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
+	if joined != nil {
+		return joined
 	}
-	return joined
+	if remaining > 0 {
+		return syncRootDirs(root, dir)
+	}
+	if err := root.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // dirHasEntries reports whether dir exists under root and holds anything.

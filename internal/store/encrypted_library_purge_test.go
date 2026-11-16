@@ -345,3 +345,23 @@ func TestPurgeEncryptedLibraryDerivativeFailureIsRetried(t *testing.T) {
 		t.Fatal("retry did not clear the pending row")
 	}
 }
+
+// TestEncryptedLibraryIDsListsTrashedUntilPurged pins the list the
+// generated-asset purge checks ledgers against (CORE-2193): a trashed
+// Encrypted Library still holds ciphertext and is listed, a purged one is not.
+func TestEncryptedLibraryIDsListsTrashedUntilPurged(t *testing.T) {
+	ctx := context.Background()
+	st, id, _ := trashedEncryptedLibrary(t)
+	st.SetEncryptedLibraryKeyEraser(&fakeKeyEraser{})
+	ids, err := st.EncryptedLibraryIDs(ctx)
+	if err != nil || !slices.Equal(ids, []LibraryID{id}) {
+		t.Fatalf("EncryptedLibraryIDs before purge = %v, %v; want [%s]", ids, err, id)
+	}
+	if _, err := st.PurgeLibrary(ctx, id); err != nil {
+		t.Fatalf("PurgeLibrary: %v", err)
+	}
+	ids, err = st.EncryptedLibraryIDs(ctx)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("EncryptedLibraryIDs after purge = %v, %v; want none", ids, err)
+	}
+}

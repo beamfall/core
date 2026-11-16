@@ -232,6 +232,9 @@ func (p *assetPublication) commit(stageName, publicName string) error {
 		return fmt.Errorf("%w: staged output is not a regular file", ErrPublicationConflict)
 	}
 	if p.encrypted != nil {
+		if p.service.purgedEncrypted[p.encrypted.libraryID] {
+			return ErrEncryptedLibraryPurged
+		}
 		// Attribute the fingerprint to the Library before its ciphertext is
 		// public, so a purge never meets an asset it cannot attribute.
 		if err := recordEncryptedReference(p.root, p.encrypted.libraryID, assetFingerprintDir(p.source)); err != nil {
