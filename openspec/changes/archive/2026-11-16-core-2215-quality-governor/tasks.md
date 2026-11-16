@@ -1,0 +1,6 @@
+- [ ] Wasm `Governor` with the reference defaults, fed the frame interval outside switches, freed on dispose
+- [ ] Level ladder (scale, detail reduction) as in the Oscillux reference host
+- [ ] Visual feedback and switch render at the scaled size; present, history and limiter stay at full size
+- [ ] Level changes between switches keep the visual's trails and the limiter state
+- [ ] Tests: ladder mapping and render size
+- [x] Verified live: frame pacing at full-screen size (build 8d04d3b9 on the Unraid server, 1920x1080 at DPR 2, a 3840x2160 canvas, in the Mac's in-app browser during playback). Aurora, kaleidoscope and the rest hold 60 fps (p95 17.6 ms) at the top level. Nebula steps down from level 3 to 0 within seconds and settles near 54 fps, alternating between levels 0 and 1 (p95 33 ms); that remaining shortfall is a follow-up ticket. Not yet observed on the owner's own browser and display.
