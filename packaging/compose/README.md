@@ -16,16 +16,21 @@ Docker Compose is the **reference deployment** for self-hosting Beamfall Core
 The four base overlays are mutually exclusive — run exactly one. Layer
 `compose.public.yml` on top of a base overlay to expose the server over HTTPS.
 
-## Immutable image reference (required)
+## Image reference (required)
 
-The templates fail closed: they refuse to start unless `BEAMFALL_IMAGE` is set
-to an immutable digest reference (`ghcr.io/beamfall/core@sha256:…`). Mutable
-channel tags (`stable`, `beta`) are rejected by release policy because runtime
-tag resolution is not what the release signed. Every GitHub release publishes a
-`beamfall-deploy-manifests.tar.gz` bundle containing pre-rendered, digest-pinned
-copies of these files plus a binding manifest tying that digest to the release's
-cosign-signed image — use a rendered file directly, or copy its digest into
-`BEAMFALL_IMAGE`.
+Every GitHub release publishes a `beamfall-deploy-manifests.tar.gz` bundle
+containing pre-rendered copies of these files pinned to the release's image
+digest, plus a binding manifest tying that digest to the release's
+cosign-signed image. Running a rendered file from that bundle is the supported
+way to run a release.
+
+The source templates in this directory refuse to start unless `BEAMFALL_IMAGE`
+is set, but they accept any image reference; they do not check that it is a
+digest. For a published image, set it to the release digest
+(`ghcr.io/beamfall/core@sha256:…`) from the bundle. For an image you built from
+source, set it to your own tag (for example `beamfall-core:local`). Do not use
+a mutable channel tag (`stable`, `beta`) for a release: what the tag resolves to
+at pull time is not what the release signed.
 
 ## Quick start (CPU)
 
@@ -61,7 +66,7 @@ attribute the relay to a declared proxy.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `BEAMFALL_IMAGE` | — | **Required.** Immutable image reference `ghcr.io/beamfall/core@sha256:…` from the release deployment bundle; the template fails closed without it. |
+| `BEAMFALL_IMAGE` | — | **Required.** Image reference; the template refuses to start without it but accepts any value. Use `ghcr.io/beamfall/core@sha256:…` from the release deployment bundle, or your own tag for a source build. |
 | `BEAMFALL_MEDIA_DIR` | `/srv/media` | Host media library, mounted read-only. |
 | `BEAMFALL_HTTP_BIND` | `127.0.0.1` | Host bind address for the HTTP port. |
 | `BEAMFALL_HTTP_PORT` | `8800` | Host HTTP port. |

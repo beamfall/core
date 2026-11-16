@@ -190,10 +190,13 @@ beamfall scan --token "$TOKEN" --library-id <id> --root <root>
 
 The reference deployment lives in [`packaging/compose`](packaging/compose/README.md), with overlays
 for CPU-only, Intel VA-API/QSV, and NVIDIA transcoding, plus an optional Caddy overlay for public
-HTTPS. The templates fail closed unless `BEAMFALL_IMAGE` is an immutable
-`ghcr.io/beamfall/core@sha256:…` digest taken from a release, so the image you run is the one the
-release signed. [Unraid](packaging/unraid/beamfall-core.xml) and [TrueNAS](packaging/truenas/README.md)
-templates follow the same contract. None of them can be used until a release is published.
+HTTPS. Each release publishes digest-pinned renders of these templates bound to its cosign-signed
+image; running those is the supported way to run a release. The source templates require
+`BEAMFALL_IMAGE` but accept any reference: use the release's `ghcr.io/beamfall/core@sha256:…`
+digest for a published image, or your own tag for an image built from source. A mutable channel tag
+is not what a release signed. [Unraid](packaging/unraid/beamfall-core.xml) and [TrueNAS](packaging/truenas/README.md)
+templates follow the same release contract; the release paths cannot be used until a release is
+published.
 
 ## Build / test
 

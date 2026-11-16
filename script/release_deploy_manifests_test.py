@@ -151,5 +151,24 @@ class ReleaseDeployManifestsTests(unittest.TestCase):
         )
 
 
+class RepositoryTemplatesRenderTests(unittest.TestCase):
+    """The committed source templates accept any BEAMFALL_IMAGE, so the
+    digest guarantee lives in the rendered bundle (CORE-2188)."""
+
+    def test_committed_templates_render_digest_only(self) -> None:
+        root = MODULE_PATH.parent.parent
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.assertEqual([], module.render(DIGEST, "v1.2.3", out, root))
+            self.assertEqual([], module.verify(DIGEST, out))
+            pinned = f"{module.IMAGE_REPO}@{DIGEST}"
+            for name in module.TEMPLATES:
+                content = (out / name).read_text(encoding="utf-8")
+                with self.subTest(name=name):
+                    self.assertIn(pinned, content)
+                    self.assertNotIn("BEAMFALL_IMAGE", content)
+                    self.assertIsNone(module.TAG_REF_RE.search(content))
+
+
 if __name__ == "__main__":
     unittest.main()

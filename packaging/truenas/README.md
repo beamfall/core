@@ -14,10 +14,11 @@ Docker Compose spec:
    digest-pinned copy from the release's `beamfall-deploy-manifests.tar.gz`
    bundle, which already carries the image reference.
 3. In the environment section, set:
-   - `BEAMFALL_IMAGE` — **required** when pasting this source template:
-     the immutable `ghcr.io/beamfall/core@sha256:…` reference from the release
-     deployment bundle. The template fails closed without it; mutable channel
-     tags are rejected by release policy.
+   - `BEAMFALL_IMAGE` — **required** when pasting this source template.
+     The template refuses to start without it but accepts any reference: use
+     the `ghcr.io/beamfall/core@sha256:…` digest reference from the release
+     deployment bundle, not a mutable channel tag, which is not what the
+     release signed.
    - `BEAMFALL_DATA_HOST_PATH` — server state + SQLite (read-write dataset).
    - `BEAMFALL_MEDIA_HOST_PATH` — media library (mounted read-only).
    - `BEAMFALL_TRANSCODE_HOST_PATH` — transcode scratch (read-write dataset).
