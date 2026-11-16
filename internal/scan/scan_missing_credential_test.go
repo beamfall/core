@@ -101,12 +101,66 @@ func TestScanReportsMissingCredentialOnce(t *testing.T) {
 	if strings.Contains(out, "core1101-title") && strings.Contains(out, "auto-identify failed") {
 		t.Fatalf("per-file auto-identify WARN still logged:\n%s", out)
 	}
-	msg := missingCredentialsMessage(result.MissingCredentials)
-	if !strings.Contains(msg, ref) || !strings.HasPrefix(msg, "Scan complete") {
+	msg := missingCredentialsMessage(result.MissingCredentials, identifier)
+	if strings.Contains(msg, ref) || !strings.HasPrefix(msg, "Scan complete") || !strings.Contains(msg, unknownProviderLabel) {
 		t.Fatalf("completion message = %q", msg)
 	}
-	if got := missingCredentialsMessage(nil); got != "Scan complete" {
+	if got := missingCredentialsMessage(nil, identifier); got != "Scan complete" {
 		t.Fatalf("clean completion message = %q, want unchanged", got)
+	}
+}
+
+// labelingIdentifier is a failingIdentifier that also names credential refs.
+type labelingIdentifier struct {
+	failingIdentifier
+	labels map[string]string
+}
+
+func (l *labelingIdentifier) CredentialLabel(ref string) string { return l.labels[ref] }
+
+// TestScanStatusNamesMissingCredentialByProvider (CORE-2187): the scan job's
+// status text and WARN name a missing provider credential by the plugin's
+// display name and the credential's label, and say where to add it. The
+// status text never shows the internal scoped ref.
+func TestScanStatusNamesMissingCredentialByProvider(t *testing.T) {
+	// feature:scan-pipeline
+	const ref = "bfplugin-73796e746865746963-6b6579"
+	const label = "Synthetic Catalog: Catalog API key"
+	root := t.TempDir()
+	writeScanFile(t, root, "core2187-title.mp4", []byte("video bytes"))
+	st := storetest.Open(t)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Films", false, "filmtv", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	identifier := &labelingIdentifier{
+		failingIdentifier: failingIdentifier{err: fmt.Errorf("identify: %w", missingCredentialErr{ref: ref})},
+		labels:            map[string]string{ref: label},
+	}
+	logs := captureScanLogs(t)
+
+	result, err := Scan(ctx, st, nil, nil, nil, nil, identifier, Request{LibraryID: library.ID, Root: root})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	msg := missingCredentialsMessage(result.MissingCredentials, identifier)
+	want := "Scan complete; items not identified: provider credential not configured (" + label + "); add it in the console under Plugins, then rescan"
+	if msg != want {
+		t.Fatalf("completion message = %q, want %q", msg, want)
+	}
+	if strings.Contains(msg, "bfplugin-") {
+		t.Fatalf("completion message shows the internal ref: %q", msg)
+	}
+	if out := logs.String(); !strings.Contains(out, `provider="`+label+`"`) {
+		t.Fatalf("WARN does not name the provider:\n%s", out)
+	}
+
+	// Two refs with the same label are named once; an unnamed ref falls back
+	// to a generic phrase, never the ref.
+	got := missingCredentialsMessage([]string{ref, ref + "0", "bfplugin-unknown"}, &labelingIdentifier{labels: map[string]string{ref: label, ref + "0": label}})
+	if strings.Count(got, label) != 1 || !strings.Contains(got, unknownProviderLabel) || strings.Contains(got, "bfplugin-") {
+		t.Fatalf("mixed completion message = %q", got)
 	}
 }
 

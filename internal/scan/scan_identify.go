@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -17,6 +18,29 @@ type MissingCredentialError interface {
 	// MissingCredential names the credential ref (the scraper AuthRef). It
 	// is plugin data, never the secret or its file path.
 	MissingCredential() string
+}
+
+// CredentialLabeler is an optional Identifier capability that names a
+// provider credential ref for the owner: the plugin's display name and the
+// credential's label, for example "Example Plugin: API key". The ref is the
+// internal scoped id (bfplugin-<hex>-<hex>), which status text must never
+// carry (CORE-2187). An unknown ref yields "".
+type CredentialLabeler interface {
+	CredentialLabel(ref string) string
+}
+
+// unknownProviderLabel stands in for a ref no labeler can name, so the
+// status text still never carries the internal id.
+const unknownProviderLabel = "a plugin's provider credential"
+
+// credentialLabel names ref for status text and logs.
+func credentialLabel(identifier Identifier, ref string) string {
+	if labeler, ok := identifier.(CredentialLabeler); ok {
+		if label := labeler.CredentialLabel(ref); label != "" {
+			return label
+		}
+	}
+	return unknownProviderLabel
 }
 
 // autoIdentify runs the best-effort identification pass for one Media. A
@@ -51,22 +75,28 @@ func (s *scanWalkState) noteMissingCredential(ref string) {
 	slog.Warn("scan: provider credential not configured; items stay unidentified until it is added",
 		"library", string(s.req.LibraryID),
 		"plugin", s.libraryPluginID,
+		"provider", credentialLabel(s.identifier, ref),
 		"credential", ref,
 		"hint", "save the key as a 0600 file named after the credential in the data directory's secrets folder (or set it with the setScraperCredential admin mutation), then rescan")
 }
 
 // missingCredentialsMessage is the completed scan job's progress message: it
-// names the credential to add instead of a bare "complete".
-func missingCredentialsMessage(refs []string) string {
+// names each credential to add by its plugin and label, and where to add it,
+// instead of a bare "complete". It never shows the internal ref (CORE-2187).
+func missingCredentialsMessage(refs []string, identifier Identifier) string {
 	if len(refs) == 0 {
 		return "Scan complete"
 	}
-	msg := "Scan complete; items not identified: provider credential not configured ("
-	for i, ref := range refs {
-		if i > 0 {
-			msg += ", "
+	labels := make([]string, 0, len(refs))
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		label := credentialLabel(identifier, ref)
+		if seen[label] {
+			continue
 		}
-		msg += ref
+		seen[label] = true
+		labels = append(labels, label)
 	}
-	return msg + "); add it and rescan"
+	return "Scan complete; items not identified: provider credential not configured (" +
+		strings.Join(labels, ", ") + "); add it in the console under Plugins, then rescan"
 }

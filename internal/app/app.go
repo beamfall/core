@@ -2985,6 +2985,41 @@ func (a *scanIdentifier) AutoIdentify(ctx context.Context, mediaID store.MediaID
 	return err
 }
 
+// CredentialLabel names a scoped scraper credential ref for scan status text
+// (CORE-2187): the owning plugin's display name and the credential's label
+// from the scraper's CredentialHelp, or "provider key" when it declares none.
+// A ref no registered plugin declares yields "".
+func (a *scanIdentifier) CredentialLabel(ref string) string {
+	if a.registry == nil {
+		return ""
+	}
+	pluginID, _, err := plugin.ParseScopedCredentialRef(ref)
+	if err != nil {
+		return ""
+	}
+	bundle, ok := a.registry.Bundle(pluginID)
+	if !ok {
+		return ""
+	}
+	name := bundle.DisplayName.Resolve("")
+	if name == "" {
+		name = string(pluginID)
+	}
+	for _, scraper := range bundle.Scrapers {
+		if scraper.AuthRef != ref {
+			continue
+		}
+		label := "provider key"
+		if help := plugin.ScraperExtensionsOf(scraper).CredentialHelp; help != nil {
+			if resolved := help.Label.Resolve(""); resolved != "" {
+				label = resolved
+			}
+		}
+		return name + ": " + label
+	}
+	return ""
+}
+
 // PluginMediaClasses reports the Media classes the active bundle declares, so
 // the scan keeps sidecar-named images as items in a Library whose Plugin holds
 // images as content (CORE-0043). An inactive or unknown Plugin declares none.
