@@ -264,6 +264,38 @@
           "default": 0.2
         }
       ]
+    },
+    {
+      "id": "drift",
+      "header": "// Drift: Liquid-glass caustic linework over dark glass; artwork becomes a low-frequency tint.",
+      "palette": [
+        7,
+        0,
+        7,
+        0
+      ],
+      "trailDecay": 0.52,
+      "post": {
+        "bloomStrength": 0.34,
+        "bloomThreshold": 0.98,
+        "chroma": 0.0025,
+        "vignette": 0.72,
+        "grain": 0.014
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.4
+        },
+        {
+          "uniform": "param1",
+          "default": 0.5
+        },
+        {
+          "uniform": "param2",
+          "default": 0.5
+        }
+      ]
     }
   ]
 }
