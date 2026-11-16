@@ -424,6 +424,9 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 		ColorPrimaries:   h.sourceVideo.ColorPrimaries,
 		DoViProfile:      h.sourceVideo.DoViProfile,
 		DoViBLCompatID:   h.sourceVideo.DoViBLCompatID,
+
+		SourceVideoCodec:    h.sourceVideo.Codec,
+		SourceVideoBitDepth: h.sourceVideo.BitDepth,
 	}
 	if h.burnSubtitleIndex >= 0 {
 		rendition = rendition.WithBurnSubtitle(h.burnSubtitleIndex)

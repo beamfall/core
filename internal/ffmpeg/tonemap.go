@@ -660,9 +660,14 @@ func DefaultToneMapRunner(ctx context.Context, render ToneMapRender) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
+	return runProbeFFmpeg(ctx, ffmpegPath, toneMapProbeArgs(render))
+}
+
+// runProbeFFmpeg runs one supervised probe render and returns its stdout.
+func runProbeFFmpeg(ctx context.Context, ffmpegPath string, args []string) ([]byte, error) {
 	// #nosec G204 -- path is resolved from PATH; the argv is this package's own
 	// synthetic source plus the production filter chain, never operator input.
-	cmd := exec.CommandContext(ctx, ffmpegPath, toneMapProbeArgs(render)...)
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
 	frame := &boundedBuffer{limit: captureLimitBytes}
 	if err := supervise(ctx, cmd, frame, io.Discard); err != nil {
 		return nil, err

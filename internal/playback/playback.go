@@ -2844,6 +2844,9 @@ type VideoSignal struct {
 	ColorPrimaries string
 	DoViProfile    int
 	DoViBLCompatID int
+	// Codec and BitDepth are the primary video stream's, as probed.
+	Codec    string
+	BitDepth int
 }
 
 func VideoSignalFromStreams(streams []store.MediaFileStream) VideoSignal {
@@ -2856,6 +2859,8 @@ func VideoSignalFromStreams(streams []store.MediaFileStream) VideoSignal {
 		ColorPrimaries: video.ColorPrimaries,
 		DoViProfile:    video.DoViProfile,
 		DoViBLCompatID: video.DoViBLCompatID,
+		Codec:          video.Codec,
+		BitDepth:       video.BitDepth,
 	}
 }
 

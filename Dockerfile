@@ -68,6 +68,9 @@ FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2
 ARG TARGETARCH
 COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock /tmp/
 
+# intel-opencl-icd is Intel's OpenCL runtime, for the GPU tone-map (CORE-2156).
+# Debian ships it for amd64 only; without it the host probe keeps the software
+# chain.
 RUN set -eux; \
 	FFMPEG_PIN_SHA256="$(sed -n 's/^FFMPEG_PIN_SHA256=//p' /tmp/ffmpeg.lock)"; \
 	FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg.lock)"; \
@@ -82,6 +85,7 @@ RUN set -eux; \
 		amd64) \
 			ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"; \
 			ffmpeg_sha="$FFMPEG_LINUX_AMD64_SHA256"; \
+			apt-get install -y --no-install-recommends intel-opencl-icd; \
 			;; \
 		arm64) \
 			ffmpeg_url="$FFMPEG_LINUX_ARM64_URL"; \
