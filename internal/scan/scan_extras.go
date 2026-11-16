@@ -10,7 +10,8 @@ import (
 
 // extraFolderNames are the established (Plex/Kodi/Jellyfin) directory names
 // whose contents are Extras. A file anywhere under a directory
-// with one of these names — case-insensitively — is an Extra. These are
+// with one of these names — case-insensitively — below the Library root is an
+// Extra. These are
 // filesystem CONVENTIONS the scanner recognises, not stored labels: the
 // detected bit is the generic media.extra flag (invariant #1), never the
 // folder's word.
@@ -36,27 +37,19 @@ var extraNameSuffixes = []string{
 }
 
 // isExtraPath reports whether a scanned file is an Extra by the established
-// folder/suffix conventions. It looks at the path's own
-// directory components and its filename stem; it does not stat the filesystem.
-func isExtraPath(path string) bool {
+// folder/suffix conventions. It looks at the filename stem and at the
+// directory components between the Library root and the file; the root
+// itself and the folders above it never count, so a Library stored under a
+// folder named "Trailers" or "Extras" still holds main Media (CORE-2189). It
+// does not stat the filesystem.
+func isExtraPath(root, path string) bool {
 	stem := strings.ToLower(titleFromPath(path))
 	for _, suffix := range extraNameSuffixes {
 		if strings.HasSuffix(stem, suffix) {
 			return true
 		}
 	}
-	dir := filepath.Dir(path)
-	for {
-		base := strings.ToLower(filepath.Base(dir))
-		if extraFolderNames[base] {
-			return true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return false
-		}
-		dir = parent
-	}
+	return extraContainerDir(root, path) != ""
 }
 
 type extraParentTitleKey struct {
@@ -64,7 +57,9 @@ type extraParentTitleKey struct {
 	title string
 }
 
-func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryID store.LibraryID) error {
+// linkExtraRelationsForLibrary links each Extra in the Library to its main
+// Media. root is the scanned Library root that bounds the folder conventions.
+func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryID store.LibraryID, root string) error {
 	byDir := map[string][]store.MediaID{}
 	byDirTitle := map[extraParentTitleKey]store.MediaID{}
 	ambiguousTitle := map[extraParentTitleKey]bool{}
@@ -78,7 +73,7 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 		if imported.MediaID == "" || imported.Path == "" {
 			return nil
 		}
-		if isExtraPath(imported.Path) {
+		if isExtraPath(root, imported.Path) {
 			extras = append(extras, imported)
 			return nil
 		}
@@ -98,7 +93,7 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 		delete(byDirTitle, key)
 	}
 	for _, file := range extras {
-		parentID := extraParentMediaID(file.Path, byDir, byDirTitle)
+		parentID := extraParentMediaID(root, file.Path, byDir, byDirTitle)
 		if parentID == "" {
 			continue
 		}
@@ -109,7 +104,7 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 	return nil
 }
 
-func extraParentMediaID(path string, byDir map[string][]store.MediaID, byDirTitle map[extraParentTitleKey]store.MediaID) store.MediaID {
+func extraParentMediaID(root, path string, byDir map[string][]store.MediaID, byDirTitle map[extraParentTitleKey]store.MediaID) store.MediaID {
 	dir := filepath.Clean(filepath.Dir(path))
 	stem := strings.ToLower(titleFromPath(path))
 	for _, suffix := range extraNameSuffixes {
@@ -121,7 +116,7 @@ func extraParentMediaID(path string, byDir map[string][]store.MediaID, byDirTitl
 			return byDirTitle[extraParentTitleKey{dir: dir, title: parentTitle}]
 		}
 	}
-	if extrasDir := extraContainerDir(path); extrasDir != "" {
+	if extrasDir := extraContainerDir(root, path); extrasDir != "" {
 		candidates := byDir[filepath.Clean(filepath.Dir(extrasDir))]
 		if len(candidates) == 1 {
 			return candidates[0]
@@ -130,16 +125,24 @@ func extraParentMediaID(path string, byDir map[string][]store.MediaID, byDirTitl
 	return ""
 }
 
-func extraContainerDir(path string) string {
+// extraContainerDir returns the nearest ancestor folder of path, strictly
+// below root, whose name is an Extras convention; "" when there is none or
+// path is not under root.
+func extraContainerDir(root, path string) string {
+	if root == "" {
+		return ""
+	}
+	root = filepath.Clean(root)
 	dir := filepath.Clean(filepath.Dir(path))
-	for {
+	for dir != root {
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+			return ""
+		}
 		if extraFolderNames[strings.ToLower(filepath.Base(dir))] {
 			return dir
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
+		dir = filepath.Dir(dir)
 	}
+	return ""
 }

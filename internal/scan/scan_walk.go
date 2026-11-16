@@ -148,7 +148,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	if err := state.markMissingIfPlausible(scanStarted); err != nil {
 		return Result{}, err
 	}
-	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID); err != nil {
+	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID, req.Root); err != nil {
 		return Result{}, err
 	}
 	return state.result, nil

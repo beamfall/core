@@ -46,7 +46,7 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		ContentFingerprint: stored.ContentFingerprint,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),
-		Extra:              isExtraPath(path),
+		Extra:              isExtraPath(s.req.Root, path),
 		Sidecars:           s.sidecars.discover(path),
 	}
 	if imageClassForPath(path) {
@@ -167,7 +167,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		OSHash:             task.oshash,
 		SizeBytes:          task.info.size,
 		ModTime:            task.info.modTime.UTC(),
-		Extra:              isExtraPath(path),
+		Extra:              isExtraPath(s.req.Root, path),
 		Sidecars:           s.sidecars.discover(path),
 	}
 	isImage := imageClassForPath(path)

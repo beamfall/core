@@ -195,7 +195,7 @@ func estimateRoot(ctx context.Context, root string, imagesAreContent bool, est *
 		if !mediaExtensions[ext] {
 			return nil
 		}
-		if isExtraPath(path) || isArtworkCompanion(path, imagesAreContent) {
+		if isExtraPath(root, path) || isArtworkCompanion(path, imagesAreContent) {
 			return nil
 		}
 		if videoExtensions[ext] {
