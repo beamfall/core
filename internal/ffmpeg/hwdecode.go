@@ -19,10 +19,14 @@ import (
 )
 
 const (
-	// deviceDecodeSampleSize is the edge of the encoded sample. A hardware
+	// deviceDecodeSampleSize is the edge of the encoded sample and
+	// deviceDecodeProbeHeight the height the chain scales it to. A hardware
 	// HEVC decoder refuses the tone-map probe's 16x16 frame, and 64 is the
-	// smallest size the decoders tested here accept.
-	deviceDecodeSampleSize = 64
+	// smallest size the decoders tested here accept. The sample is twice the
+	// target so the device scaler has to resize: at equal sizes scale_vaapi
+	// passes frames through and a host with a broken scaler would certify.
+	deviceDecodeSampleSize  = 128
+	deviceDecodeProbeHeight = 64
 
 	defaultDeviceDecodeRenderTimeout = 8 * time.Second
 	// Four renders: the sample encode and three legs.
@@ -74,7 +78,7 @@ func ProbeDeviceDecode(ctx context.Context, opts DeviceDecodeOptions) ToneMapPro
 		Backend:      run.backend,
 		DeviceDecode: true,
 		Download:     true,
-		Height:       deviceDecodeSampleSize,
+		Height:       deviceDecodeProbeHeight,
 	})
 	if !candidate.DeviceDecode {
 		return run.unsupported(ToneMapFailureChainUnrunnable)

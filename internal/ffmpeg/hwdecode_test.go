@@ -195,11 +195,11 @@ func TestDeviceDecodeProbeRunsTheProductionChainAgainstADecodedControl(t *testin
 	}
 
 	sample := fake.calls[0]
-	if !slices.Contains(sample, "smpte2084") || !slices.Contains(sample, "nullsrc=s=64x64:r=1:d=0.1") {
-		t.Fatalf("sample argv = %v, want a 64x64 PQ encode", sample)
+	if !slices.Contains(sample, "smpte2084") || !slices.Contains(sample, "nullsrc=s=128x128:r=1:d=0.1") {
+		t.Fatalf("sample argv = %v, want a 128x128 PQ encode", sample)
 	}
 
-	want := BuildToneMapChain(ToneMapChainRequest{Backend: HWAccelQSV, DeviceDecode: true, Download: true, Height: deviceDecodeSampleSize})
+	want := BuildToneMapChain(ToneMapChainRequest{Backend: HWAccelQSV, DeviceDecode: true, Download: true, Height: deviceDecodeProbeHeight})
 	candidate := fake.calls[1]
 	input := slices.Index(candidate, "-i")
 	for _, arg := range append(slices.Clone(want.InitArgs), want.InputArgs...) {

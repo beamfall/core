@@ -117,6 +117,9 @@ func (spec PrecomputeSpec) Rendition() ffmpeg.Rendition {
 		ColorPrimaries: spec.SourceVideo.ColorPrimaries,
 		DoViProfile:    spec.SourceVideo.DoViProfile,
 		DoViBLCompatID: spec.SourceVideo.DoViBLCompatID,
+
+		SourceVideoCodec:    spec.SourceVideo.Codec,
+		SourceVideoBitDepth: spec.SourceVideo.BitDepth,
 	}
 }
 

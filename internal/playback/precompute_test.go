@@ -1044,3 +1044,15 @@ func insertPrecomputeCacheRow(t *testing.T, st *store.Store, mediaID store.Media
 		t.Fatalf("UpsertPlaybackRendition %s: %v", id, err)
 	}
 }
+
+// A precomputed rung must carry the source codec and bit depth, or the
+// device-decode chain can never be chosen for it (CORE-2156).
+func TestPrecomputeSpecRenditionCarriesSourceCodecAndBitDepth(t *testing.T) {
+	spec := PrecomputeSpec{Height: 1080, Bandwidth: 8_000_000, SourceVideo: VideoSignal{
+		ColorTransfer: "smpte2084", Codec: "hevc", BitDepth: 10,
+	}}
+	got := spec.Rendition()
+	if got.SourceVideoCodec != "hevc" || got.SourceVideoBitDepth != 10 {
+		t.Fatalf("Rendition source = %q/%d, want hevc/10", got.SourceVideoCodec, got.SourceVideoBitDepth)
+	}
+}
