@@ -93,8 +93,9 @@ Commands:
   serve                  run the Beamfall Core server (default)
   capabilities [--version]
                          print runtime capabilities, or build metadata with --version
-  apply-config           apply a console config document from stdin
-  export-config          export a console config document
+  apply-config           apply a console config document (workers, plugins,
+                         libraries) from stdin
+  export-config          export a console config document, libraries included
   library list           list library ids and names through the running server
   backup                 request a server-side backup
   mcp                    run a Model Context Protocol stdio server for AI agents

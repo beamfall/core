@@ -14,7 +14,7 @@ Where Beamfall Core logs go and how to read them during an investigation.
    `session`, `api_token`, `scoped_key`, `stream_token`), never its value. The line is written at
    Warn when the response took one second or longer to start, at Info when the status is 5xx, and
    at Debug otherwise, so the default log level shows only failed and slow requests; run with
-   `--log-level debug` to see every request. A long download or an open event stream that started
+   `--log-level debug` (or change the level while the server runs, below) to see every request. A long download or an open event stream that started
    promptly is not slow. The same `requestID` is in the `X-Beamfall-Request-Id` response header,
    so a client report or a 5xx log line leads straight to its access line.
 5. A refused credential produces one `auth refused` record at Warn that is written whatever the
@@ -24,6 +24,14 @@ Where Beamfall Core logs go and how to read them during an investigation.
    password or pairing code. Scope-resolution refusals are recorded only when the response was 401
    or 403; explicit sign-ins (admin re-auth, integration sign-in, enrollment) are recorded on every
    refusal. Counts are in `beamfall_auth_refusals_total{reason}` (see [metrics](metrics.md)).
+6. To change the log level without a restart, write a level (`debug`, `info`, `warn` or `error`)
+   to `<data-dir>/log-level` and send the server `SIGHUP` (`kill -HUP <pid>`, or
+   `docker kill --signal=HUP <container>`). The new level applies at once, and a Warn
+   `log level changed` record names the old and new level. Delete the file and send `SIGHUP` again
+   to return to the level the server was started with. An invalid value is logged at Warn and the
+   level stays as it was. The file is read only on `SIGHUP`, so a restart always starts at the
+   configured `--log-level` / `BEAMFALL_LOG_LEVEL`. `SIGHUP` does not stop the server. Not
+   available on Windows.
 
 ## Targets
 - Log retention + shipping destination: keep local/supervisor logs for at least the 7 daily + 4 weekly

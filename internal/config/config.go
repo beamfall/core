@@ -481,7 +481,7 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 		cfg.TranscodeScratchDirExplicit = cfg.TranscodeScratchDir != ""
 	}
 	if value, ok := lookupEnv("BEAMFALL_LOG_LEVEL"); ok && value != "" {
-		level, err := parseLogLevel(value)
+		level, err := ParseLogLevel(value)
 		if err != nil {
 			return Config{}, fmt.Errorf("invalid BEAMFALL_LOG_LEVEL %q: %w", value, err)
 		}
@@ -814,7 +814,9 @@ func validate(cfg Config) (Config, error) {
 	return cfg, nil
 }
 
-func parseLogLevel(value string) (slog.Level, error) {
+// ParseLogLevel parses a log level name (debug, info, warn, error, in any case
+// and with surrounding space, or an offset such as info+2).
+func ParseLogLevel(value string) (slog.Level, error) {
 	var level slog.Level
 	if err := level.UnmarshalText([]byte(strings.ToUpper(strings.TrimSpace(value)))); err != nil {
 		return 0, err

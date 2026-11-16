@@ -23,7 +23,12 @@ func serve(ctx context.Context, args []string) error {
 		}
 		return err
 	}
-	slog.SetDefault(newOperatorLogger(os.Stderr, cfg.LogLevel))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	level := new(slog.LevelVar)
+	level.Set(cfg.LogLevel)
+	slog.SetDefault(newOperatorLogger(os.Stderr, level))
+	newLogLevelReloader(level, cfg.DataDir, slog.Default()).watch(ctx)
 	// Enable FFmpeg invocation hardening: point the spawn seam at
 	// this server binary so every ffmpeg/ffprobe run re-execs through the
 	// ffmpeg-shim subcommand (rlimits + Linux landlock confinement). Only the
@@ -59,7 +64,7 @@ func startServer(ctx context.Context, cfg config.Config) (*app.App, func(), erro
 	return beamfall, release, nil
 }
 
-func newOperatorLogger(w io.Writer, level slog.Level) *slog.Logger {
+func newOperatorLogger(w io.Writer, level slog.Leveler) *slog.Logger {
 	// The handler also keeps the most recent lines, redacted, for the console
 	// server-log read (CORE-1716); stderr output is unchanged.
 	return slog.New(logtail.NewTextHandler(w, logtail.NewRing(logtail.DefaultCapacity), &slog.HandlerOptions{Level: level}))

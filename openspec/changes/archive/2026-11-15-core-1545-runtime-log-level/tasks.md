@@ -1,0 +1,4 @@
+- [x] Config: export `ParseLogLevel`
+- [x] Serve: operator logger level from a `slog.LevelVar`; SIGHUP re-reads `<data dir>/log-level`
+- [x] Tests: file level applied, missing file restores the start-up level, invalid value keeps the level, unreadable file
+- [x] Logs runbook: SIGHUP procedure
