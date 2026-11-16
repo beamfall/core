@@ -58,6 +58,31 @@ const SWITCH_EASING_SMOOTHSTEP = 1;
 const SWITCH_FOCUS = 0.5;
 const TRANSITION_DONE = 4;
 
+// The quality ladder the Oscillux governor steps through (CORE-2215), as in the reference web
+// host (hosts/web/host.js at the pinned rev): the visual's render scale and its detail reduction
+// (presentation1.y) per level, lowest quality first.
+export const QUALITY_LADDER: readonly { scale: number; reduce: number }[] = [
+  { scale: 0.5, reduce: 1 },
+  { scale: 0.67, reduce: 0.6 },
+  { scale: 0.83, reduce: 0.25 },
+  { scale: 1, reduce: 0 },
+];
+const TOP_LEVEL = QUALITY_LADDER.length - 1;
+
+/** The visual's render size and detail reduction for a W x H canvas at a governor level. */
+export function renderQuality(
+  W: number,
+  H: number,
+  level: number,
+): { width: number; height: number; reduce: number } {
+  const step = QUALITY_LADDER[Math.min(TOP_LEVEL, Math.max(0, Math.trunc(level)))];
+  return {
+    width: Math.max(1, Math.round(W * step.scale)),
+    height: Math.max(1, Math.round(H * step.scale)),
+    reduce: step.reduce,
+  };
+}
+
 /**
  * What a request for a visual does: nothing ("same"), replace the visual now ("instant": the
  * first visual, before the first frame, or under reduced motion), wait for the switch in
@@ -111,6 +136,9 @@ interface Limiter {
 interface Size {
   width: number;
   height: number;
+  /** The visual's render size at the governor's level: its feedback, and a switch's targets. */
+  renderWidth: number;
+  renderHeight: number;
   /** The visual's feedback pair: [current, next]. */
   feedback: Target[];
   /** During a switch, the outgoing visual's feedback pair and the switch pass's output. */
@@ -134,6 +162,9 @@ export class Renderer {
   // The current visual's image input; during a switch the outgoing visual keeps the one it had.
   private image: WebGLTexture;
   private readonly transition: InstanceType<Oscillux["Transition"]>;
+  // Oscillux's quality governor and the level the targets are built for (CORE-2215).
+  private readonly governor: InstanceType<Oscillux["Governor"]>;
+  private level = TOP_LEVEL;
   private readonly switchUbo: WebGLBuffer;
   private readonly switchBlock = new Float32Array(12);
   private readonly presentUbo: WebGLBuffer;
@@ -214,6 +245,16 @@ export class Renderer {
         this.transition = new osc.Transition(config);
       } finally {
         config.free();
+      }
+      // The reference defaults, timed by the frame interval as the reference host does without
+      // a GPU timer query, starting at full quality.
+      const quality = new osc.GovernorConfig();
+      try {
+        quality.maxLevel = TOP_LEVEL;
+        quality.initialLevel = TOP_LEVEL;
+        this.governor = new osc.Governor(quality);
+      } finally {
+        quality.free();
       }
       this.feedbackFormat = gl.getExtension("EXT_color_buffer_float")
         ? { internal: gl.RGBA16F, type: gl.HALF_FLOAT }
@@ -319,26 +360,17 @@ export class Renderer {
     }
     // blend: the current visual goes out with its feedback and image; the incoming one gets a
     // copy of that feedback and shares the image until setImage hands it its own.
-    const gl = this.gl;
     const s = size as Size;
     const { internal, type } = this.feedbackFormat;
-    const feedback = this.feedbackPair(s.width, s.height, internal, type);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, s.feedback[0].fbo);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, feedback[0].fbo);
-    gl.blitFramebuffer(
-      0,
-      0,
-      s.width,
-      s.height,
-      0,
-      0,
-      s.width,
-      s.height,
-      gl.COLOR_BUFFER_BIT,
-      gl.NEAREST,
+    const feedback = this.feedbackPair(s.renderWidth, s.renderHeight, internal, type);
+    this.copy(
+      s.feedback[0],
+      s.renderWidth,
+      s.renderHeight,
+      feedback[0],
+      s.renderWidth,
+      s.renderHeight,
     );
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     s.outgoing = s.feedback;
     s.feedback = feedback;
     this.outgoing = this.visual;
@@ -406,21 +438,31 @@ export class Renderer {
     const { width: W, height: H } = size;
     this.time += dt;
     const p = this.switchProgress(reducedMotion);
+    // The governor times frames outside a switch only, and its level changes between switches,
+    // as in the reference host.
+    if (p === null) {
+      this.governor.record(dt * 1000);
+      this.setLevel(size, this.governor.level);
+    }
     const v = this.visual;
+    const { renderWidth: rW, renderHeight: rH } = size;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
 
-    // 1. The visual, reading its previous frame; during a switch the outgoing one too.
-    const next = this.drawVisual(v, size.feedback, W, H, dt, audio, reducedMotion);
+    // 1. The visual at its render size, reading its previous frame; during a switch the
+    // outgoing one too.
+    const next = this.drawVisual(v, size.feedback, rW, rH, dt, audio, reducedMotion);
     size.feedback.reverse();
     let shown = next;
     if (p !== null && this.outgoing && size.outgoing) {
-      const from = this.drawVisual(this.outgoing, size.outgoing, W, H, dt, audio, reducedMotion);
+      const from = this.drawVisual(this.outgoing, size.outgoing, rW, rH, dt, audio, reducedMotion);
       size.outgoing.reverse();
       shown = this.blend(size, from, next, p, audio);
     }
 
-    // 2. The present pass, into the frame and the next history.
+    // 2. The present pass at the canvas size, into the frame and the next history. It samples
+    // the visual with normalized coordinates, so a smaller render size scales up here.
     this.packPresent(W, H, dt, reducedMotion);
+    gl.viewport(0, 0, W, H);
     gl.useProgram(this.present);
     gl.bindBuffer(gl.UNIFORM_BUFFER, this.presentUbo);
     gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.presentBlock);
@@ -469,13 +511,13 @@ export class Renderer {
   }
 
   // Oscillux's switch pass from the outgoing frame to the incoming one at progress p, into the
-  // blend target: SwitchBlock switch0 = (p, beatPhase, energy, focus), switch1 = (motion,
-  // aspect, style, 0), size = (W, H, 0, 0); textures from, to and photo (the incoming image,
-  // which Luma Key does not read).
+  // blend target at the render size: SwitchBlock switch0 = (p, beatPhase, energy, focus),
+  // switch1 = (motion, aspect, style, 0), size = (W, H, 0, 0); textures from, to and photo (the
+  // incoming image, which Luma Key does not read).
   private blend(size: Size, from: Target, to: Target, p: number, audio: AudioFrame): Target {
     const gl = this.gl;
-    const W = size.width;
-    const H = size.height;
+    const W = size.renderWidth;
+    const H = size.renderHeight;
     if (!size.blend) {
       const { internal, type } = this.feedbackFormat;
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
@@ -546,6 +588,7 @@ export class Renderer {
     this.visual = null;
     this.pending = null;
     this.transition?.free();
+    this.governor?.free();
     this.regions?.free();
     this.overlay?.free();
   }
@@ -580,7 +623,13 @@ export class Renderer {
     gl.uniform4fv(at("u.motion"), MOTION);
     gl.uniform4fv(at("u.palette"), t.palette);
     gl.uniform4fv(at("u.presentation0"), PRESENTATION);
-    gl.uniform4f(at("u.presentation1"), this.presentBlock[OVERLAY_FLOAT], 0, 0, 0);
+    gl.uniform4f(
+      at("u.presentation1"),
+      this.presentBlock[OVERLAY_FLOAT],
+      QUALITY_LADDER[this.level].reduce,
+      0,
+      0,
+    );
     gl.uniform4fv(at("u.safeRect"), SAFE_RECT);
     for (const k of AUDIO_KEYS) gl.uniform1f(at(`u.${k}`), audio.values[k]);
     gl.uniform4fv(at("u.spectrum[0]"), audio.spectrum);
@@ -668,7 +717,8 @@ export class Renderer {
     canvas.width = W;
     canvas.height = H;
     const { internal, type } = this.feedbackFormat;
-    const feedback = this.feedbackPair(W, H, internal, type);
+    const render = renderQuality(W, H, this.level);
+    const feedback = this.feedbackPair(render.width, render.height, internal, type);
     const frame = this.storage(W, H, gl.RGBA8);
     const history = [0, 1].map(() => {
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.NEAREST);
@@ -712,6 +762,8 @@ export class Renderer {
     this.size = {
       width: W,
       height: H,
+      renderWidth: render.width,
+      renderHeight: render.height,
       feedback,
       outgoing: null,
       blend: null,
@@ -720,6 +772,55 @@ export class Renderer {
       limiter,
     };
     return this.size;
+  }
+
+  // Moves the visual to a governor level between switches: only its feedback pair is rebuilt,
+  // at the new render size, with the last frame scaled in so the trails carry on. The present
+  // history and the flash limiter stay at the canvas size and keep their state.
+  private setLevel(size: Size, level: number): void {
+    if (level === this.level) return;
+    this.level = Math.min(TOP_LEVEL, Math.max(0, level));
+    const render = renderQuality(size.width, size.height, this.level);
+    if (render.width === size.renderWidth && render.height === size.renderHeight) return;
+    const { internal, type } = this.feedbackFormat;
+    const feedback = this.feedbackPair(render.width, render.height, internal, type);
+    this.copy(
+      size.feedback[0],
+      size.renderWidth,
+      size.renderHeight,
+      feedback[0],
+      render.width,
+      render.height,
+    );
+    for (const t of size.feedback) {
+      this.gl.deleteTexture(t.tex);
+      this.gl.deleteFramebuffer(t.fbo);
+    }
+    size.feedback = feedback;
+    size.renderWidth = render.width;
+    size.renderHeight = render.height;
+  }
+
+  // Copies one target into another, scaling with linear filtering when the sizes differ.
+  private copy(from: Target, fw: number, fh: number, to: Target, tw: number, th: number): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from.fbo);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, to.fbo);
+    const scaled = fw !== tw || fh !== th;
+    gl.blitFramebuffer(
+      0,
+      0,
+      fw,
+      fh,
+      0,
+      0,
+      tw,
+      th,
+      gl.COLOR_BUFFER_BIT,
+      scaled ? gl.LINEAR : gl.NEAREST,
+    );
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
   }
 
   private feedbackPair(W: number, H: number, internal: number, type: number): Target[] {
