@@ -1,0 +1,269 @@
+{
+  "source": {
+    "repo": "oscillux",
+    "path": "shaders/manifest.json",
+    "rev": "ea319a10f2c4e90cbcf5d64f928a85bd97ae197e",
+    "release": "v0.2.0",
+    "sha256": "c4e85d3cc2e85c623abdf3c29c07dd00a41e1ce8e502b376f36428a5f7647710",
+    "license": "AGPL-3.0-only",
+    "note": "The listed fields of the vendored visuals, copied unchanged from the manifest at the pinned rev. Data only: the shader bytes are in glsl300/."
+  },
+  "visuals": [
+    {
+      "id": "aurora",
+      "header": "// Aurora: Undulating volumetric light curtains.",
+      "palette": [
+        23,
+        0,
+        23,
+        0
+      ],
+      "trailDecay": 0.54,
+      "post": {
+        "bloomStrength": 0.32,
+        "bloomThreshold": 1.12,
+        "chroma": 0.0015,
+        "vignette": 0.6,
+        "grain": 0.016
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.5
+        },
+        {
+          "uniform": "param1",
+          "default": 0.5
+        },
+        {
+          "uniform": "param2",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "id": "nebula",
+      "header": "// Nebula: Volumetric fluid/smoke stirred by bands.",
+      "palette": [
+        8,
+        0,
+        8,
+        0
+      ],
+      "trailDecay": 0.87,
+      "post": {
+        "bloomStrength": 0.86,
+        "bloomThreshold": 0.78,
+        "chroma": 0.004,
+        "vignette": 0.48,
+        "grain": 0.038
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.5
+        },
+        {
+          "uniform": "param1",
+          "default": 0.5
+        },
+        {
+          "uniform": "param2",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "id": "plasma",
+      "header": "// Plasma: Domain-warped plasma: bass folds the field, treble frays it into glints.",
+      "palette": [
+        4,
+        0,
+        4,
+        0
+      ],
+      "trailDecay": 0.82,
+      "post": {
+        "bloomStrength": 0.74,
+        "bloomThreshold": 0.86,
+        "chroma": 0.0025,
+        "vignette": 0.54,
+        "grain": 0.03
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.55
+        },
+        {
+          "uniform": "param1",
+          "default": 0.55
+        },
+        {
+          "uniform": "param2",
+          "default": 0.55
+        }
+      ]
+    },
+    {
+      "id": "spectrum",
+      "header": "// Spectrum: Neon glass skyline: spectrum columns, spark shafts, circuit floor, molten waveform ribbon.",
+      "palette": [
+        23,
+        0,
+        23,
+        0
+      ],
+      "trailDecay": 0.78,
+      "post": {
+        "bloomStrength": 0.6,
+        "bloomThreshold": 1.02,
+        "chroma": 0.0025,
+        "vignette": 0.52,
+        "grain": 0.022
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.6
+        },
+        {
+          "uniform": "param1",
+          "default": 0.5
+        },
+        {
+          "uniform": "param2",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "id": "tunnel",
+      "header": "// Tunnel: Opaque 3D flythrough; speed locks to BPM.",
+      "palette": [
+        2,
+        0,
+        2,
+        0
+      ],
+      "trailDecay": 0.95,
+      "post": {
+        "bloomStrength": 0.9,
+        "bloomThreshold": 0.78,
+        "chroma": 0.007,
+        "vignette": 0.56,
+        "grain": 0.04
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.5
+        },
+        {
+          "uniform": "param1",
+          "default": 0.4
+        },
+        {
+          "uniform": "param2",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "id": "kaleidoscope",
+      "header": "// Kaleidoscope: Spectrum folded into a morphing mandala.",
+      "palette": [
+        19,
+        0,
+        19,
+        0
+      ],
+      "trailDecay": 0.93,
+      "post": {
+        "bloomStrength": 0.76,
+        "bloomThreshold": 0.86,
+        "chroma": 0.005,
+        "vignette": 0.46,
+        "grain": 0.028
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.5
+        },
+        {
+          "uniform": "param1",
+          "default": 0.4
+        },
+        {
+          "uniform": "param2",
+          "default": 0.5
+        }
+      ]
+    },
+    {
+      "id": "particles",
+      "header": "// Particles: GPU swarm bursting on the beat.",
+      "palette": [
+        1,
+        0,
+        1,
+        0
+      ],
+      "trailDecay": 0.94,
+      "post": {
+        "bloomStrength": 0.74,
+        "bloomThreshold": 0.86,
+        "chroma": 0.004,
+        "vignette": 0.42,
+        "grain": 0.03
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.5
+        },
+        {
+          "uniform": "param1",
+          "default": 0.6
+        },
+        {
+          "uniform": "param2",
+          "default": 0.4
+        }
+      ]
+    },
+    {
+      "id": "waveform",
+      "header": "// Waveform: Prismatic oscilloscope threads: stacked spectral wave wires with transient pins on black.",
+      "palette": [
+        5,
+        0,
+        5,
+        0
+      ],
+      "trailDecay": 0.82,
+      "post": {
+        "bloomStrength": 0.52,
+        "bloomThreshold": 0.98,
+        "chroma": 0.002,
+        "vignette": 0.42,
+        "grain": 0.018
+      },
+      "params": [
+        {
+          "uniform": "param0",
+          "default": 0.4
+        },
+        {
+          "uniform": "param1",
+          "default": 0.5
+        },
+        {
+          "uniform": "param2",
+          "default": 0.2
+        }
+      ]
+    }
+  ]
+}

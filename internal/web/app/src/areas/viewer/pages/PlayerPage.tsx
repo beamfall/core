@@ -754,6 +754,9 @@ function FeaturePlayer({
                 artworkURL={artworkURL}
                 credits={credits}
                 queuePosition={queuePosition}
+                videoRef={videoRef}
+                stream={state.stream}
+                trackKey={mediaId || navTitle}
               />
             )}
             {showSpinner && (

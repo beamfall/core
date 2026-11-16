@@ -1,0 +1,9 @@
+{
+  "license": "AGPL-3.0-only",
+  "main": "oscillux.js",
+  "name": "@oscillux/core",
+  "sideEffects": false,
+  "type": "module",
+  "types": "oscillux.d.ts",
+  "version": "0.2.0"
+}

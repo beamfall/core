@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { type RefObject, useState } from "react";
 import type { MediaCredit } from "@/lib/graphql/types";
+import type { PlaybackStream } from "../lib/playback";
+import { Visualizer } from "./visualizer/Visualizer";
 
 // The audio surface (CORE-1143): an audio item has no picture, so the stage
 // shows its artwork, title and linked Entities instead of a black <video>.
@@ -13,12 +15,20 @@ export function AudioStage({
   artworkURL,
   credits,
   queuePosition,
+  videoRef,
+  stream = null,
+  trackKey = "",
 }: {
   title: string;
   artworkURL: string;
   credits: readonly MediaCredit[];
   /** "3 of 12" when the item plays from a queue. */
   queuePosition?: string;
+  /** The playing element and its stream, which the visualizer analyses. */
+  videoRef?: RefObject<HTMLVideoElement | null>;
+  stream?: PlaybackStream | null;
+  /** Stable per item: picks the visual. */
+  trackKey?: string;
 }) {
   const [failedURL, setFailedURL] = useState("");
   const showArtwork = !!artworkURL && failedURL !== artworkURL;
@@ -39,9 +49,13 @@ export function AudioStage({
           style={{ backgroundImage: `url("${cssURL(artworkURL)}")` }}
         />
       )}
-      {/* Where the pinned Oscillux visualizer will mount (CORE-1309). Visual
-          effects come only from Oscillux (ADR-0228), so core leaves it empty. */}
-      <div aria-hidden="true" className="bf-audio-visualizer" data-visualizer-slot="" />
+      {/* The pinned Oscillux visualizer (CORE-1309). Visual effects come only
+          from Oscillux (ADR-0228); the slot stays empty where it cannot draw. */}
+      <div aria-hidden="true" className="bf-audio-visualizer" data-visualizer-slot="">
+        {videoRef && (
+          <Visualizer videoRef={videoRef} stream={stream} trackKey={trackKey || title} />
+        )}
+      </div>
       <div className="bf-audio-card">
         <div className="bf-audio-artwork">
           {showArtwork && <img src={artworkURL} alt="" onError={() => setFailedURL(artworkURL)} />}

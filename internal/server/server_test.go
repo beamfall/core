@@ -1465,7 +1465,7 @@ func TestWebShellSecurityHeaders(t *testing.T) {
 		"X-Content-Type-Options": "nosniff",
 		"Referrer-Policy":        "strict-origin-when-cross-origin",
 		"Content-Security-Policy": "default-src 'self'; " +
-			"script-src 'self' https://www.gstatic.com/cv/js/sender/ https://www.gstatic.com/cast/sdk/libs/sender/ " +
+			"script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/cv/js/sender/ https://www.gstatic.com/cast/sdk/libs/sender/ " +
 			"https://www.gstatic.com/eureka/clank/; style-src 'self' 'unsafe-inline'; " +
 			"worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'self'",
 	}
@@ -1482,7 +1482,8 @@ func TestWebShellSecurityHeaders(t *testing.T) {
 		// The CSP must keep the XSS backstop intact: no inline or eval SCRIPT
 		// allowance and no whole-host script source. The only script origin
 		// beyond 'self' is the Cast sender SDK, path-scoped (CORE-1679); only
-		// style-src relaxes to inline.
+		// style-src relaxes to inline. 'wasm-unsafe-eval' compiles WebAssembly
+		// only (the Oscillux visualizer, CORE-1309), never JavaScript eval.
 		csp := rec.Header().Get("Content-Security-Policy")
 		for _, directive := range strings.Split(csp, ";") {
 			fields := strings.Fields(directive)
@@ -1490,7 +1491,7 @@ func TestWebShellSecurityHeaders(t *testing.T) {
 				continue
 			}
 			for _, source := range fields[1:] {
-				if source == "'self'" {
+				if source == "'self'" || source == "'wasm-unsafe-eval'" {
 					continue
 				}
 				if !strings.HasPrefix(source, "https://www.gstatic.com/") || !strings.HasSuffix(source, "/") || source == "https://www.gstatic.com/" {

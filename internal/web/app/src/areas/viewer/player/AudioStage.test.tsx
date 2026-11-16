@@ -36,7 +36,7 @@ describe("AudioStage (CORE-1143)", () => {
     expect(container.querySelector(".bf-audio-artwork")).toBeTruthy();
   });
 
-  it("reserves an empty visualizer slot and renders no effect into it (CORE-1309)", () => {
+  it("reserves the visualizer slot and leaves it empty without a player (CORE-1309)", () => {
     const { container } = render(<AudioStage title="Song" artworkURL="" credits={[]} />);
     const slot = container.querySelector("[data-visualizer-slot]");
     expect(slot).toBeTruthy();

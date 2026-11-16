@@ -11,7 +11,8 @@
       "**",
       "!src/l10n/locales.json",
       "!src/styles/tokens.css",
-      "!src/lib/theme/theme.generated.ts"
+      "!src/lib/theme/theme.generated.ts",
+      "!vendor/oscillux"
     ]
   },
   "formatter": {

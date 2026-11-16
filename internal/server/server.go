@@ -501,10 +501,12 @@ func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 		// backstop stays intact. The one script exception is the Google Cast
 		// sender SDK (CORE-1679), which the player loads on demand in a
 		// Cast-capable browser: its loader and the framework it pulls, scoped
-		// to their gstatic paths.
+		// to their gstatic paths. 'wasm-unsafe-eval' lets the audio visualizer
+		// compile the same-origin Oscillux WebAssembly core (CORE-1309); it
+		// permits WebAssembly compilation only, never JavaScript eval.
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' "+castSenderScriptSources+"; "+
+				"script-src 'self' 'wasm-unsafe-eval' "+castSenderScriptSources+"; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"worker-src 'self' blob:; "+
 				"media-src 'self' blob:; "+
