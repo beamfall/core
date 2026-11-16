@@ -14,7 +14,9 @@ import (
 )
 
 const (
-	CatalogURL             = "https://registry.beamfall.com/catalog-index.v1.json"
+	// CatalogURL is the schema 2 catalog. The registry leaves the last schema 1
+	// artifact frozen at catalog-index.v1.json for older servers.
+	CatalogURL             = "https://registry.beamfall.com/catalog-index.v2.json"
 	catalogResponseMaxSize = 1 << 20
 )
 
@@ -59,7 +61,7 @@ func (c *CatalogConsumer) Check(ctx context.Context, installed []ID) (CatalogAva
 	}
 	candidate, err := catalogindex.ParseAndVerify(candidateRaw, c.registryKeys(), 0)
 	if err != nil {
-		return filterCatalog(cached, installed, cachedRaw != nil), errors.Join(cacheErr, fmt.Errorf("%w: %v", ErrCatalogCorrupt, err))
+		return filterCatalog(cached, installed, cachedRaw != nil), errors.Join(cacheErr, fmt.Errorf("%w: %w", ErrCatalogCorrupt, err))
 	}
 	if cachedRaw != nil && candidate.Sequence < cached.Sequence {
 		return filterCatalog(cached, installed, true), ErrCatalogRollback
@@ -82,8 +84,13 @@ func (c *CatalogConsumer) loadCache() ([]byte, catalogindex.Index, error) {
 		return nil, catalogindex.Index{}, fmt.Errorf("read plugin catalog cache: %w", err)
 	}
 	index, err := catalogindex.ParseAndVerify(raw, c.registryKeys(), 0)
+	if errors.Is(err, catalogindex.ErrLegacySchema) {
+		// A schema 1 cache from before the schema 2 upgrade is not corrupt,
+		// only superseded: treat it as absent so the next fetch replaces it.
+		return nil, catalogindex.Index{}, nil
+	}
 	if err != nil {
-		return nil, catalogindex.Index{}, fmt.Errorf("%w: cached index: %v", ErrCatalogCorrupt, err)
+		return nil, catalogindex.Index{}, fmt.Errorf("%w: cached index: %w", ErrCatalogCorrupt, err)
 	}
 	return raw, index, nil
 }

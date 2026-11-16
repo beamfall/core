@@ -33,6 +33,7 @@ func TestCatalogConsumerRecoveryTable(t *testing.T) {
 	index7 := signedCatalog(t, private, 7, "filmtv")
 	index8 := signedCatalog(t, private, 8, "music")
 	modified8 := bytes.Replace(index8, []byte("music"), []byte("audiobook"), 1)
+	legacy8 := legacyCatalog(t, private, 8, "music")
 
 	tests := []struct {
 		name       string
@@ -50,6 +51,8 @@ func TestCatalogConsumerRecoveryTable(t *testing.T) {
 		{name: "unreachable no cache", fetchErr: errors.New("offline"), wantErr: ErrCatalogUnavailable},
 		{name: "corrupt keeps cache", cache: index7, response: modified8, wantID: "filmtv", wantStale: true, wantErr: ErrCatalogCorrupt, wantCached: index7},
 		{name: "rollback keeps cache", cache: index8, response: index7, wantID: "music", wantStale: true, wantErr: ErrCatalogRollback, wantCached: index8},
+		{name: "legacy response refused keeps cache", cache: index7, response: legacy8, wantID: "filmtv", wantStale: true, wantErr: catalogindex.ErrLegacySchema, wantCached: index7},
+		{name: "legacy cache replaced", cache: legacy8, response: index7, wantID: "filmtv", wantCached: index7},
 	}
 
 	for _, tc := range tests {
@@ -63,7 +66,7 @@ func TestCatalogConsumerRecoveryTable(t *testing.T) {
 			consumer := NewCatalogConsumer(path, roots)
 			consumer.client = catalogClient(t, tc.response, tc.fetchErr)
 			got, err := consumer.Check(context.Background(), []ID{"filmtv", "music", "audiobook"})
-			if !errors.Is(err, tc.wantErr) {
+			if !errors.Is(err, tc.wantErr) || (errors.Is(tc.wantErr, catalogindex.ErrLegacySchema) && !errors.Is(err, ErrCatalogCorrupt)) {
 				t.Fatalf("Check error = %v, want %v", err, tc.wantErr)
 			}
 			if got.Stale != tc.wantStale {
@@ -138,45 +141,101 @@ func catalogResponse(raw []byte) *http.Response {
 	}
 }
 
-// signedCatalog uses first-party plugin ids: catalogindex admission is first-party-only
-// and rejects any other id as ErrInvalid.
+// signedCatalog builds a schema 2 index with TEST FIXTURE legal evidence. It
+// uses first-party plugin ids: catalogindex admission is first-party-only and
+// rejects any other id as ErrInvalid.
 func signedCatalog(t *testing.T, private ed25519.PrivateKey, sequence uint64, pluginID string) []byte {
 	t.Helper()
-	index := catalogindex.Index{
+	_, reviewer, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const license = "LicenseRef-Test-Fixture"
+	const reviewerID = "Test fixture reviewer (not a real person)"
+	policy, err := catalogindex.SignPolicy(catalogindex.Policy{
+		PolicyID:              "TEST-FIXTURE-POLICY-not-for-production",
+		IssuedAt:              time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+		Licenses:              []catalogindex.PolicyLicense{{Expression: license}},
+		Reviewers:             []catalogindex.PolicyReviewer{{KeyID: "reviewer", Identity: reviewerID, PublicKey: base64.RawURLEncoding.EncodeToString(reviewer.Public().(ed25519.PublicKey))}},
+		AttestationMaxAgeDays: 365,
+	}, "test", private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policyDigest, err := catalogindex.PolicyDigest(policy.Policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := catalogEntry(pluginID)
+	entry.Legal = catalogindex.Legal{
+		LicenseExpression: license,
+		Notices:           []catalogindex.Notice{{Path: "LICENSE", SHA256: strings.Repeat("b", 64)}},
+		SourceRepository:  "https://example.invalid/fixture/" + pluginID,
+		SourceCommit:      strings.Repeat("c", 40),
+		SourceSHA256:      strings.Repeat("d", 64),
+		ProvenanceSHA256:  strings.Repeat("e", 64),
+		RightsAttestation: catalogindex.RightsAttestation{
+			ReviewerKeyID:    "reviewer",
+			ReviewerIdentity: reviewerID,
+			ReviewedAt:       time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC),
+			Disposition:      catalogindex.DispositionApproved,
+		},
+	}
+	entry.Legal.RightsAttestation, err = catalogindex.SignRightsAttestation(entry, policyDigest, reviewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := catalogindex.SignIndex(catalogindex.Index{
 		SchemaVersion: catalogindex.SchemaVersion,
 		Sequence:      sequence,
-		IssuedAt:      time.Date(2026, 7, 27, 0, 0, 0, 0, time.UTC),
-		Entries: []catalogindex.Entry{{
-			PluginID:       pluginID,
-			Version:        "1.0.0",
-			SDKFloor:       "0.1.0",
-			SDKCeiling:     "1.0.0",
-			ArtifactSHA256: strings.Repeat("a", 64),
-			DeliveryRef:    "delivery-" + strings.TrimPrefix(pluginID, "plugin."),
-		}},
+		IssuedAt:      time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC),
+		Entries:       []catalogindex.Entry{entry},
+	}, policy, "test", private)
+	if err != nil {
+		t.Fatal(err)
 	}
+	raw, err := json.Marshal(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// legacyCatalog builds a validly signed schema 1 index, the format the registry
+// froze at catalog-index.v1.json.
+func legacyCatalog(t *testing.T, private ed25519.PrivateKey, sequence uint64, pluginID string) []byte {
+	t.Helper()
+	index := struct {
+		SchemaVersion int                  `json:"schema_version"`
+		Sequence      uint64               `json:"sequence"`
+		IssuedAt      time.Time            `json:"issued_at"`
+		Entries       []catalogindex.Entry `json:"entries"`
+	}{1, sequence, time.Date(2026, 7, 27, 0, 0, 0, 0, time.UTC), []catalogindex.Entry{catalogEntry(pluginID)}}
 	payload, err := json.Marshal(struct {
-		Index         catalogindex.Index `json:"index"`
-		RegistryKeyID string             `json:"registry_key_id"`
+		Index         any    `json:"index"`
+		RegistryKeyID string `json:"registry_key_id"`
 	}{index, "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var generic any
-	if err := json.Unmarshal(payload, &generic); err != nil {
-		t.Fatal(err)
-	}
-	payload, err = json.Marshal(generic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := json.Marshal(catalogindex.SignedIndex{
-		Index:         index,
-		RegistryKeyID: "test",
-		Signature:     base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, payload)),
+	raw, err := json.Marshal(map[string]any{
+		"index":           index,
+		"registry_key_id": "test",
+		"signature":       base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, payload)),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func catalogEntry(pluginID string) catalogindex.Entry {
+	return catalogindex.Entry{
+		PluginID:       pluginID,
+		Version:        "1.0.0",
+		SDKFloor:       "0.4.0",
+		SDKCeiling:     "0.4.0",
+		ArtifactSHA256: strings.Repeat("a", 64),
+		DeliveryRef:    "delivery-" + pluginID,
+	}
 }

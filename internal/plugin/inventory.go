@@ -383,6 +383,7 @@ func cloneCatalogEntry(entry *catalogindex.Entry) *catalogindex.Entry {
 		return nil
 	}
 	cloned := *entry
+	cloned.Legal.Notices = append([]catalogindex.Notice(nil), entry.Legal.Notices...)
 	return &cloned
 }
 
