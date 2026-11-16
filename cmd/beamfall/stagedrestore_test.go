@@ -39,7 +39,7 @@ func stagedRestoreFixture(t *testing.T) string {
 		_ = st.Close()
 		t.Fatalf("backup: %v", err)
 	}
-	escrow, err := backupcore.ReadBootstrapEscrow(dataDir, time.Now())
+	escrow, err := backupcore.ReadBootstrapEscrow(dataDir)
 	if err != nil {
 		_ = st.Close()
 		t.Fatalf("read backup key: %v", err)

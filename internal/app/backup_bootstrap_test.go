@@ -17,9 +17,10 @@ import (
 // TestBackupBootstrapFirstBootAndConsoleRequestLifecycle pins the bootstrap
 // escrow lifecycle to the PRODUCTION entry points instead of the backupcore
 // functions directly: App.New must mint the first-boot escrow (the
-// ensureBackupBootstrap call in app.go's New), and App.Handler must re-mint an
-// expired one on a console request (app.go's backupBootstrapHTTPHandler
-// wrapping). This test never calls ensureBackupBootstrap or constructs
+// ensureBackupBootstrap call in app.go's New), and App.Handler must keep an
+// unconfirmed one past its window and reinstall its public wrap key on a
+// console request (app.go's backupBootstrapHTTPHandler wrapping). This test
+// never calls ensureBackupBootstrap or constructs
 // backupBootstrapHTTPHandler itself — deleting either production invocation
 // breaks this test instead of leaving it green.
 func TestBackupBootstrapFirstBootAndConsoleRequestLifecycle(t *testing.T) {
@@ -32,7 +33,7 @@ func TestBackupBootstrapFirstBootAndConsoleRequestLifecycle(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 
-	first, err := backupcore.ReadBootstrapEscrow(dataDir, time.Now())
+	first, err := backupcore.ReadBootstrapEscrow(dataDir)
 	if err != nil {
 		t.Fatalf("first-boot escrow unavailable: %v", err)
 	}
@@ -45,21 +46,33 @@ func TestBackupBootstrapFirstBootAndConsoleRequestLifecycle(t *testing.T) {
 	}
 
 	backdateBootstrapEscrow(t, dataDir)
+	if err := os.Remove(filepath.Join(dataDir, "backup-wrap-public.key")); err != nil {
+		t.Fatal(err)
+	}
 
 	recorder := httptest.NewRecorder()
 	beamfall.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/graphql", nil))
 	if recorder.Code == http.StatusInternalServerError {
-		t.Fatalf("console request failed the bootstrap re-mint: %d %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("console request failed the bootstrap check: %d %s", recorder.Code, recorder.Body.String())
 	}
-	fresh, err := backupcore.ReadBootstrapEscrow(dataDir, time.Now())
+	// CORE-2175: the unconfirmed escrow outlives its window, and the console
+	// request reinstalls its public wrap key.
+	if _, err := backupcore.LoadPublicWrapKey(dataDir); err != nil {
+		t.Fatalf("console request did not reinstall the public wrap key: %v", err)
+	}
+	kept, err := backupcore.ReadBootstrapEscrow(dataDir)
 	if err != nil {
-		t.Fatalf("re-minted escrow unavailable: %v", err)
+		t.Fatalf("escrow past its window unavailable: %v", err)
 	}
-	if fresh.ID == first.ID {
-		t.Fatal("expired bootstrap escrow was not re-minted at console request")
+	if kept.ID != first.ID {
+		t.Fatal("the end of the window replaced the unconfirmed escrow")
+	}
+	confirmationID, err := kept.ConfirmationID()
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if err := backupcore.AcknowledgeBootstrapEscrow(dataDir, fresh.ID, func(backupcore.BackupKey) error {
+	if err := backupcore.AcknowledgeBootstrapEscrow(dataDir, confirmationID, func(backupcore.BackupKey) error {
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -73,7 +86,7 @@ func TestBackupBootstrapFirstBootAndConsoleRequestLifecycle(t *testing.T) {
 		t.Fatalf("restart New returned error: %v", err)
 	}
 	defer restarted.Close()
-	if _, err := backupcore.ReadBootstrapEscrow(dataDir, time.Now()); !errors.Is(err, backupcore.ErrBootstrapEscrowNotFound) {
+	if _, err := backupcore.ReadBootstrapEscrow(dataDir); !errors.Is(err, backupcore.ErrBootstrapEscrowNotFound) {
 		t.Fatalf("acknowledged lifecycle re-created escrow across restart: %v", err)
 	}
 	if _, err := backupcore.LoadPublicWrapKey(dataDir); err != nil {
@@ -82,8 +95,8 @@ func TestBackupBootstrapFirstBootAndConsoleRequestLifecycle(t *testing.T) {
 }
 
 // backdateBootstrapEscrow rewrites the on-disk bootstrap escrow file (the
-// format backupcore.CreateBootstrapEscrow writes) so it is already expired,
-// without waiting out the real 30-day backupcore.BootstrapEscrowLifetime. It
+// format backupcore.CreateBootstrapEscrow writes) so its window has already
+// passed, without waiting out the real 30-day backupcore.BootstrapEscrowLifetime. It
 // round-trips every field except the two timestamps, so the escrow ID and key
 // are unchanged — only its recorded age moves.
 func backdateBootstrapEscrow(t *testing.T, dataDir string) {

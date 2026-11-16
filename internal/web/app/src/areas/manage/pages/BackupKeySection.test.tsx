@@ -84,22 +84,25 @@ describe("BackupKeySection (CORE-2032)", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("warns with the days left before the server replaces the key", async () => {
-    mockStatus.mockResolvedValue({ ...PENDING, daysLeft: 1 });
+  it("warns that every backup opens only with the unsaved key, past its save-by date too", async () => {
+    mockStatus.mockResolvedValue({ ...PENDING, daysLeft: 0 });
     renderSection();
-    expect(await screen.findByText(/1 day is left/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/including those already taken, opens only with this key/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/replaces/)).not.toBeInTheDocument();
     expect(screen.queryByText(PLACEHOLDER_KEY)).not.toBeInTheDocument();
   });
 
   it("reveals the key only on request and keeps it out of storage and the URL", async () => {
     const user = userEvent.setup();
     renderSection();
-    expect(await screen.findByText(/30 days are left/)).toBeInTheDocument();
+    expect(await screen.findByText(/Your backup key is not saved yet/)).toBeInTheDocument();
     expect(mockReveal).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Show backup key" }));
     expect(await screen.findByText(PLACEHOLDER_KEY)).toBeInTheDocument();
-    expect(screen.getByText(/Backups taken before you confirm use a temporary key/)).toBeVisible();
+    expect(screen.queryByText(/temporary key/)).not.toBeInTheDocument();
     expect(window.location.href).not.toContain(PLACEHOLDER_KEY);
     expect(JSON.stringify({ ...window.localStorage })).not.toContain(PLACEHOLDER_KEY);
     expect(JSON.stringify({ ...window.sessionStorage })).not.toContain(PLACEHOLDER_KEY);
@@ -113,7 +116,9 @@ describe("BackupKeySection (CORE-2032)", () => {
     await user.click(screen.getByLabelText("I have saved this backup key somewhere safe"));
     await user.click(confirm);
 
-    expect(await screen.findByText(/Backup key confirmed\. Take a new backup/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Backup key confirmed\. Every backup set opens with this key/),
+    ).toBeInTheDocument();
     expect(mockAck).toHaveBeenCalledWith("escrow-1", expect.any(AbortSignal));
     expect(mockAck.mock.calls[0]).not.toContain(PLACEHOLDER_KEY);
     expect(screen.queryByText(PLACEHOLDER_KEY)).not.toBeInTheDocument();

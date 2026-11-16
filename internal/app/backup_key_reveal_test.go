@@ -140,8 +140,11 @@ func TestConsoleBackupKeyRevealAndAcknowledge(t *testing.T) {
 	if again := consoleRevealBackupKey(t, beamfall); again != revealed {
 		t.Fatal("revealing twice before confirming returned a different key")
 	}
-	if errs := consoleAcknowledgeBackupKey(t, beamfall, "not-the-escrow"); len(errs) == 0 || errs[0] != "the backup key changed; reveal it again" {
-		t.Fatalf("acknowledge with a stale escrow ID: errors %q", errs)
+	bareEscrowID, _, _ := strings.Cut(revealed.EscrowID, ".")
+	for _, stale := range []string{"not-the-escrow", bareEscrowID} {
+		if errs := consoleAcknowledgeBackupKey(t, beamfall, stale); len(errs) == 0 || errs[0] != "the backup key changed; reveal it again" {
+			t.Fatalf("acknowledge with stale ID %q: errors %q", stale, errs)
+		}
 	}
 	if errs := consoleAcknowledgeBackupKey(t, beamfall, revealed.EscrowID); len(errs) != 0 {
 		t.Fatalf("acknowledgeBackupKey errors %q", errs)
@@ -160,46 +163,62 @@ func TestConsoleBackupKeyRevealAndAcknowledge(t *testing.T) {
 	if errs := consoleInspect(t, beamfall, after, revealed.BackupKey); len(errs) != 0 {
 		t.Fatalf("backup taken after confirming does not open with the revealed key: %q", errs)
 	}
-	// A set taken before confirming was sealed to the temporary bootstrap key;
-	// the console says so next to the key.
-	if errs := consoleInspect(t, beamfall, before, revealed.BackupKey); len(errs) == 0 {
-		t.Fatal("a set taken before confirming opened with the confirmed key; update the console note")
+	// CORE-2175: confirming keeps the key, so a set taken before confirming
+	// opens with it too.
+	if errs := consoleInspect(t, beamfall, before, revealed.BackupKey); len(errs) != 0 {
+		t.Fatalf("backup taken before confirming does not open with the revealed key: %q", errs)
+	}
+	if errs := consoleAcknowledgeBackupKey(t, beamfall, revealed.EscrowID); len(errs) != 0 {
+		t.Fatalf("confirming the confirmed key again: errors %q", errs)
 	}
 }
 
-// CORE-2032 criterion 1: without a way to see the key, the lapsed bootstrap
-// window replaced it and orphaned earlier sets. The server still replaces it,
-// so the console now shows the new window and refuses to confirm the old key.
-func TestConsoleBackupKeyExpiryReplacesThePendingKey(t *testing.T) {
+// CORE-2175: the end of the window no longer replaces an unconfirmed key.
+// The console keeps showing it, and confirming it late keeps the sets taken on
+// either side of the window restorable.
+func TestConsoleBackupKeyIsKeptPastItsWindow(t *testing.T) {
 	beamfall, cfg := newBackupKeyApp(t)
 	openConsoleAdminSession(t, beamfall)
 	first := consoleRevealBackupKey(t, beamfall)
+	before := consoleBackup(t, beamfall, filepath.Join(cfg.DataDir, "backups-before"))
 
 	backdateBootstrapEscrow(t, cfg.DataDir)
-	if pending, days := consoleBackupKeyStatus(t, beamfall); !pending || days != 30 {
-		t.Fatalf("status after the window lapsed: pending=%v daysLeft=%d, want a fresh 30-day window", pending, days)
+	if pending, days := consoleBackupKeyStatus(t, beamfall); !pending || days != 0 {
+		t.Fatalf("status after the window: pending=%v daysLeft=%d, want pending with 0 days", pending, days)
 	}
-	if errs := consoleAcknowledgeBackupKey(t, beamfall, first.EscrowID); len(errs) == 0 || errs[0] != "the backup key changed; reveal it again" {
-		t.Fatalf("acknowledging the lapsed key: errors %q", errs)
+	after := consoleBackup(t, beamfall, filepath.Join(cfg.DataDir, "backups-after"))
+	late := consoleRevealBackupKey(t, beamfall)
+	if late.EscrowID != first.EscrowID || late.BackupKey != first.BackupKey {
+		t.Fatal("the end of the window replaced the pending key")
 	}
-	fresh := consoleRevealBackupKey(t, beamfall)
-	if fresh.EscrowID == first.EscrowID || fresh.BackupKey == first.BackupKey {
-		t.Fatal("the lapsed window did not replace the pending key")
+	if errs := consoleAcknowledgeBackupKey(t, beamfall, first.EscrowID); len(errs) != 0 {
+		t.Fatalf("confirming after the window: errors %q", errs)
+	}
+	for name, set := range map[string]string{"before": before, "after": after} {
+		if errs := consoleInspect(t, beamfall, set, first.BackupKey); len(errs) != 0 {
+			t.Fatalf("set taken %s the window does not open with the confirmed key: %q", name, errs)
+		}
 	}
 }
 
-func TestBackupKeyEscrowRefusesExpiredAcknowledgement(t *testing.T) {
+func TestBackupKeyEscrowConfirmsPastItsWindow(t *testing.T) {
 	dataDir := t.TempDir()
-	start := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	escrow, err := backupcore.CreateBootstrapEscrow(dataDir, start)
+	start := time.Now().UTC().Add(-2 * backupcore.BootstrapEscrowLifetime)
+	if _, err := backupcore.CreateBootstrapEscrow(dataDir, start); err != nil {
+		t.Fatal(err)
+	}
+	adapter := backupKeyEscrow{dataDir: dataDir}
+	confirmationID, _, _, err := adapter.Reveal()
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapter := backupKeyEscrow{dataDir: dataDir, now: func() time.Time { return escrow.ExpiresAt }}
-	if err := adapter.Acknowledge(escrow.ID); !errors.Is(err, graph.ErrBackupKeyNotPending) {
-		t.Fatalf("acknowledge at expiry = %v, want ErrBackupKeyNotPending", err)
+	if err := adapter.Acknowledge(confirmationID); err != nil {
+		t.Fatalf("acknowledge = %v", err)
 	}
 	if pending, _, err := adapter.Pending(); err != nil || pending {
-		t.Fatalf("pending after expiry = %v, %v", pending, err)
+		t.Fatalf("pending after acknowledgement = %v, %v", pending, err)
+	}
+	if _, _, _, err := adapter.Reveal(); !errors.Is(err, graph.ErrBackupKeyNotPending) {
+		t.Fatalf("reveal after acknowledgement = %v, want ErrBackupKeyNotPending", err)
 	}
 }

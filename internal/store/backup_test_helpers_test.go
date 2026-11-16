@@ -23,7 +23,7 @@ func installBackupTestSealer(st *Store, dataDir string) {
 
 func bootstrapBackupTestCredentials(t *testing.T, dataDir string, now time.Time) (SnapshotOpener, string) {
 	t.Helper()
-	escrow, err := backupcore.ReadBootstrapEscrow(dataDir, now)
+	escrow, err := backupcore.ReadBootstrapEscrow(dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}

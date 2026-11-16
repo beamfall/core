@@ -10,8 +10,10 @@ import (
 )
 
 // Console backup key (CORE-2032). The server mints a backup key on first start
-// and keeps it in a 30-day bootstrap escrow. The owner reveals the key that
-// confirming installs, saves it, and confirms; confirming removes the escrow.
+// and keeps it in a bootstrap escrow until the owner confirms it, past the
+// 30-day save-by date if need be (CORE-2175). The owner reveals the key, saves
+// it, and confirms; confirming keeps that key, so every backup set opens with
+// it, and removes the escrow.
 // Every field is Admin-Session gated in execute(), and no API token tier may
 // reveal or confirm the key (agentTokenDenied). The key is returned only by
 // revealBackupKey and is never logged.
@@ -19,21 +21,22 @@ import (
 // BackupKeyEscrow is the data directory's backup key escrow behind the console
 // fields.
 type BackupKeyEscrow interface {
-	// Pending reports whether a key is waiting to be confirmed and when its
-	// bootstrap window ends.
+	// Pending reports whether a key is waiting to be confirmed and its
+	// save-by date.
 	Pending() (bool, time.Time, error)
-	// Reveal returns the active escrow ID, the key confirming installs, and
-	// the window's end. It returns ErrBackupKeyNotPending when nothing waits.
+	// Reveal returns the ID that confirms the pending key, the key, and its
+	// save-by date. It returns ErrBackupKeyNotPending when nothing waits.
 	Reveal() (escrowID, backupKey string, expiresAt time.Time, err error)
-	// Acknowledge confirms escrowID: ErrBackupKeyNotPending when nothing
-	// waits, ErrBackupKeyChanged when escrowID is not the active escrow.
+	// Acknowledge confirms the key escrowID names: ErrBackupKeyNotPending
+	// when nothing waits, ErrBackupKeyChanged when escrowID does not name the
+	// pending key.
 	Acknowledge(escrowID string) error
 }
 
 var (
 	// ErrBackupKeyNotPending: no backup key is waiting to be confirmed.
 	ErrBackupKeyNotPending = errors.New("no backup key is waiting to be saved")
-	// ErrBackupKeyChanged: the escrow being confirmed is not the active one.
+	// ErrBackupKeyChanged: the key being confirmed is not the pending one.
 	ErrBackupKeyChanged = errors.New("the backup key changed; reveal it again")
 )
 
@@ -47,8 +50,8 @@ func (h *Handler) SetBackupKeyEscrow(escrow BackupKeyEscrow) {
 type BackupKeyStatusInfo struct {
 	Pending   bool   `json:"pending"`
 	ExpiresAt string `json:"expiresAt"`
-	// DaysLeft is the whole days, rounded up, until the bootstrap window ends
-	// and the server replaces the key.
+	// DaysLeft is the whole days, rounded up, until the save-by date. The key
+	// stays pending after it until the owner confirms it.
 	DaysLeft int `json:"daysLeft"`
 }
 

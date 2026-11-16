@@ -46,7 +46,7 @@ func newStageFixture(t *testing.T) stageFixture {
 	if err != nil {
 		t.Fatalf("backup: %v", err)
 	}
-	escrow, err := backupcore.ReadBootstrapEscrow(dataDir, time.Now())
+	escrow, err := backupcore.ReadBootstrapEscrow(dataDir)
 	if err != nil {
 		t.Fatalf("read backup key: %v", err)
 	}

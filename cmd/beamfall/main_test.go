@@ -279,7 +279,7 @@ func TestRestoreCommandVerifiesBeforeSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	escrow, err := backupcore.ReadBootstrapEscrow(sourceDir, time.Now())
+	escrow, err := backupcore.ReadBootstrapEscrow(sourceDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestRestoreCommandSnapshotsCurrentDataDirThenRestores(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	escrow, err := backupcore.ReadBootstrapEscrow(sourceDir, time.Now())
+	escrow, err := backupcore.ReadBootstrapEscrow(sourceDir)
 	if err != nil {
 		t.Fatal(err)
 	}

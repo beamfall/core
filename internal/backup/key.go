@@ -20,8 +20,6 @@ const (
 
 var wrapKeyDerivationInfo = []byte("beamfall backup x25519 recipient v2")
 
-const acknowledgedBackupKeyDerivationInfo = "beamfall backup escrow acknowledgement replacement v1"
-
 // PublicWrapKey is the non-secret X25519 recipient key used to seal backup
 // DEKs. It is the only wrapping key material a running box needs to retain.
 type PublicWrapKey struct {
@@ -76,31 +74,6 @@ type BackupKey struct {
 // stored server-side in recoverable form ("you must save this" gate, ADR-0115 §4).
 func MintBackupKey() (BackupKey, error) {
 	rk, err := libencrypt.MintRecoveryKey()
-	if err != nil {
-		return BackupKey{}, err
-	}
-	return BackupKey{rk: rk}, nil
-}
-
-func deriveAcknowledgedBackupKey(bootstrap BackupKey, acknowledgementID string) (BackupKey, error) {
-	secret := bootstrap.Bytes()
-	if len(secret) != 32 || acknowledgementID == "" {
-		zero(secret)
-		return BackupKey{}, libencrypt.ErrUnwrap
-	}
-	defer zero(secret)
-	derived, err := hkdf.Key(
-		sha256.New,
-		secret,
-		[]byte(acknowledgementID),
-		acknowledgedBackupKeyDerivationInfo,
-		32,
-	)
-	if err != nil {
-		return BackupKey{}, fmt.Errorf("backup: derive acknowledged key: %w", err)
-	}
-	defer zero(derived)
-	rk, err := libencrypt.RecoveryKeyFromBytes(derived)
 	if err != nil {
 		return BackupKey{}, err
 	}

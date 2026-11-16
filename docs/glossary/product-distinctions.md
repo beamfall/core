@@ -760,8 +760,9 @@ _Avoid_: encrypting it (rollback must never require the Backup Key), per-databas
 The user-held, shown-once, Recovery-Key-shaped credential that decrypts every Backup Set,
 local or off-site. The server keeps only a public wrap key, so unattended backups encrypt
 without the secret ever resting on the box; losing the Backup Key loses every set sealed
-under it.
-_Avoid_: server-side escrow beyond the bounded first-boot save-gate, conflating with the
+under it. The first-boot key stays in a server-side escrow until the owner confirms saving it,
+and confirming keeps that key, so sets taken before confirming still open with it (CORE-2175).
+_Avoid_: server-side escrow beyond the first-boot save-gate, conflating with the
 Encrypted-Library **Recovery Key** (same shape, different secret).
 
 **Restore Drill** *(2026-07-07, ADR-0192)*:

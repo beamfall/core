@@ -186,9 +186,7 @@ export function BackupKeySection() {
           </p>
         ) : status?.pending ? (
           <div className="space-y-3 rounded-md border border-[var(--state-warning)]/45 bg-[var(--state-warning)]/5 px-3 py-3">
-            <p className="text-sm font-semibold">
-              {t("backupKeyPending", { days: status.daysLeft })}
-            </p>
+            <p className="text-sm font-semibold">{t("backupKeyPending")}</p>
             {revealed ? (
               <div className="space-y-3">
                 <p className="text-sm font-semibold">{t("backupKeyLabel")}</p>
@@ -206,7 +204,6 @@ export function BackupKeySection() {
                     {t("backupKeyPrint")}
                   </Button>
                 </div>
-                <p className="text-sm text-muted-foreground">{t("backupKeyBeforeNote")}</p>
                 <p className="text-sm text-muted-foreground">{t("backupKeyNotStored")}</p>
                 <label className="flex items-center gap-2 text-sm">
                   <input

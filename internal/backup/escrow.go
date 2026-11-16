@@ -8,13 +8,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	// BootstrapEscrowLifetime is the maximum time a bootstrap BackupKey remains
-	// recoverable from local storage.
+	// BootstrapEscrowLifetime is the save-by window recorded on a bootstrap
+	// escrow. The escrow is kept past it until the owner confirms the key
+	// (CORE-2175): wiping it would orphan every set sealed to that key.
 	BootstrapEscrowLifetime = 30 * 24 * time.Hour
 
 	bootstrapEscrowFileName = "backup-key-bootstrap-escrow.json"
@@ -26,22 +28,37 @@ const (
 var (
 	// ErrBootstrapEscrowNotFound indicates that no bootstrap credential remains.
 	ErrBootstrapEscrowNotFound = errors.New("backup: bootstrap escrow not found")
-	// ErrBootstrapEscrowExpired indicates that the 30-day bootstrap window ended.
-	ErrBootstrapEscrowExpired = errors.New("backup: bootstrap escrow expired")
-	// ErrBootstrapEscrowChanged rejects acknowledgement of a stale escrow ID.
+	// ErrBootstrapEscrowChanged rejects a confirmation ID that does not name
+	// the active escrow's key.
 	ErrBootstrapEscrowChanged = errors.New("backup: bootstrap escrow changed")
 
 	bootstrapEscrowMu sync.Mutex
 )
 
-// BootstrapEscrow is a short-lived, owner-only bootstrap credential. ID must be
-// supplied when acknowledging so a stale client cannot erase a newer escrow.
+// BootstrapEscrow is the owner-only bootstrap credential kept until the owner
+// confirms the key. Every backup set sealed while it is pending is sealed to
+// Key's public wrap key, and Key is the key the owner confirms.
 type BootstrapEscrow struct {
 	ID        string
 	Key       BackupKey
 	CreatedAt time.Time
 	ExpiresAt time.Time
 }
+
+// ConfirmationID names this escrow and its key: the escrow ID and the public
+// wrap key fingerprint. Acknowledging requires it, so a client that was shown
+// a different key (a stale page, or an escrow ID alone) cannot confirm this one.
+func (e BootstrapEscrow) ConfirmationID() (string, error) {
+	public, err := e.Key.PublicWrapKey()
+	if err != nil {
+		return "", fmt.Errorf("backup: derive bootstrap public wrap key: %w", err)
+	}
+	return e.ID + confirmationIDSeparator + public.Fingerprint(), nil
+}
+
+// confirmationIDSeparator cannot occur in an escrow ID or a fingerprint, which
+// are both unpadded base64url.
+const confirmationIDSeparator = "."
 
 type bootstrapEscrowDisk struct {
 	Version   int       `json:"version"`
@@ -51,15 +68,17 @@ type bootstrapEscrowDisk struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+// acknowledgementJournal is written only by binaries from before CORE-2175;
+// recoverAcknowledgement still reads it.
 type acknowledgementJournal struct {
 	Version           int    `json:"version"`
 	EscrowID          string `json:"escrow_id"`
 	ReplacementPublic string `json:"replacement_public_key"`
 }
 
-// CreateBootstrapEscrow returns an existing unexpired bootstrap escrow, or
-// creates a fresh one and installs its matching public wrap key. An expired
-// escrow is durably wiped before a fresh key is minted.
+// CreateBootstrapEscrow returns the existing bootstrap escrow, past its save-by
+// date or not, or creates a fresh one, and installs its matching public wrap
+// key. It mints nothing once a key has been confirmed.
 func CreateBootstrapEscrow(dataDir string, now time.Time) (BootstrapEscrow, error) {
 	bootstrapEscrowMu.Lock()
 	defer bootstrapEscrowMu.Unlock()
@@ -67,20 +86,16 @@ func CreateBootstrapEscrow(dataDir string, now time.Time) (BootstrapEscrow, erro
 	if err := validateEscrowDataDir(dataDir); err != nil {
 		return BootstrapEscrow{}, err
 	}
-	if _, err := recoverAcknowledgement(dataDir); err != nil {
+	if err := recoverAcknowledgement(dataDir); err != nil {
 		return BootstrapEscrow{}, err
 	}
 	existing, err := readBootstrapEscrow(dataDir)
 	switch {
-	case err == nil && now.Before(existing.ExpiresAt):
+	case err == nil:
 		if err := installEscrowPublicKey(dataDir, existing); err != nil {
 			return BootstrapEscrow{}, err
 		}
 		return existing, nil
-	case err == nil:
-		if err := wipeExpiredBootstrap(dataDir); err != nil {
-			return BootstrapEscrow{}, fmt.Errorf("backup: wipe expired bootstrap escrow: %w", err)
-		}
 	case !errors.Is(err, ErrBootstrapEscrowNotFound):
 		return BootstrapEscrow{}, err
 	default:
@@ -117,27 +132,21 @@ func CreateBootstrapEscrow(dataDir string, now time.Time) (BootstrapEscrow, erro
 	return escrow, nil
 }
 
-// ReadBootstrapEscrow returns the active bootstrap credential. Expired
-// credentials are durably wiped and reported as ErrBootstrapEscrowExpired.
-func ReadBootstrapEscrow(dataDir string, now time.Time) (BootstrapEscrow, error) {
+// ReadBootstrapEscrow returns the pending bootstrap credential, past its
+// save-by date or not, and makes sure its public wrap key is installed.
+func ReadBootstrapEscrow(dataDir string) (BootstrapEscrow, error) {
 	bootstrapEscrowMu.Lock()
 	defer bootstrapEscrowMu.Unlock()
 
 	if err := validateEscrowDataDir(dataDir); err != nil {
 		return BootstrapEscrow{}, err
 	}
-	if _, err := recoverAcknowledgement(dataDir); err != nil {
+	if err := recoverAcknowledgement(dataDir); err != nil {
 		return BootstrapEscrow{}, err
 	}
 	escrow, err := readBootstrapEscrow(dataDir)
 	if err != nil {
 		return BootstrapEscrow{}, err
-	}
-	if !now.Before(escrow.ExpiresAt) {
-		if err := wipeExpiredBootstrap(dataDir); err != nil {
-			return BootstrapEscrow{}, fmt.Errorf("backup: wipe expired bootstrap escrow: %w", err)
-		}
-		return BootstrapEscrow{}, ErrBootstrapEscrowExpired
 	}
 	if err := installEscrowPublicKey(dataDir, escrow); err != nil {
 		return BootstrapEscrow{}, err
@@ -146,52 +155,46 @@ func ReadBootstrapEscrow(dataDir string, now time.Time) (BootstrapEscrow, error)
 }
 
 // PendingBackupKey is the backup key the owner must save before confirming
-// it: the key AcknowledgeBootstrapEscrow installs for EscrowID.
+// it, and the ID that confirms it.
 type PendingBackupKey struct {
-	EscrowID  string
-	Key       BackupKey
-	ExpiresAt time.Time
+	ConfirmationID string
+	Key            BackupKey
+	ExpiresAt      time.Time
 }
 
-// RevealBootstrapEscrow returns the key acknowledging the active escrow
-// installs, so the owner can save it first (CORE-2032). It is the same key
-// AcknowledgeBootstrapEscrow presents, so it opens every backup sealed after
-// acknowledgement. An expired escrow is wiped, as ReadBootstrapEscrow does.
-func RevealBootstrapEscrow(dataDir string, now time.Time) (PendingBackupKey, error) {
-	escrow, err := ReadBootstrapEscrow(dataDir, now)
+// RevealBootstrapEscrow returns the pending key so the owner can save it
+// before confirming (CORE-2032). It is the escrowed key itself: every backup
+// set sealed while the escrow is pending, and every set sealed after
+// confirming, opens with it (CORE-2175).
+func RevealBootstrapEscrow(dataDir string) (PendingBackupKey, error) {
+	escrow, err := ReadBootstrapEscrow(dataDir)
 	if err != nil {
 		return PendingBackupKey{}, err
 	}
-	key, err := deriveAcknowledgedBackupKey(escrow.Key, escrow.ID)
+	confirmationID, err := escrow.ConfirmationID()
 	if err != nil {
-		return PendingBackupKey{}, fmt.Errorf("backup: derive acknowledged key: %w", err)
+		return PendingBackupKey{}, err
 	}
-	return PendingBackupKey{EscrowID: escrow.ID, Key: key, ExpiresAt: escrow.ExpiresAt}, nil
+	return PendingBackupKey{ConfirmationID: confirmationID, Key: escrow.Key, ExpiresAt: escrow.ExpiresAt}, nil
 }
 
-func wipeExpiredBootstrap(dataDir string) error {
-	if err := removeAndSync(filepath.Join(dataDir, publicWrapKeyFileName)); err != nil {
-		return err
-	}
-	return removeAndSync(bootstrapEscrowPath(dataDir))
-}
-
-// AcknowledgeBootstrapEscrow derives the permanent BackupKey and passes it to
-// present before changing durable state. The derivation is domain-separated and
-// retry-stable for this escrow ID, so a crash after presentation can never
-// invalidate the key already delivered to the operator. present must return nil
-// only after the key has been shown or otherwise durably delivered. The key is
-// never written to the acknowledgement journal.
+// AcknowledgeBootstrapEscrow confirms the escrowed BackupKey named by
+// confirmationID (BootstrapEscrow.ConfirmationID). It passes the key to present
+// before changing durable state; present must return nil only after the key has
+// been shown or otherwise durably delivered.
 //
-// After presentation succeeds, acknowledgement rotates the public wrap key and
-// durably wipes the bootstrap escrow. Recovery from an interrupted operation
-// retains either the old usable escrow or the newly installed public key.
-func AcknowledgeBootstrapEscrow(dataDir, escrowID string, present func(BackupKey) error) error {
-	return acknowledgeBootstrapEscrow(dataDir, escrowID, present, nil)
+// The confirmed key is the escrowed key, not a replacement, so every set
+// already sealed to it stays restorable. Acknowledgement makes sure the
+// installed public wrap key is that key's, then durably wipes the escrow. The
+// escrow goes last, so a crash at any point leaves either the pending escrow or
+// the confirmed key's public wrap key installed, and a retry finishes the job.
+// Confirming a key that is already confirmed is a no-op.
+func AcknowledgeBootstrapEscrow(dataDir, confirmationID string, present func(BackupKey) error) error {
+	return acknowledgeBootstrapEscrow(dataDir, confirmationID, present, nil)
 }
 
 func acknowledgeBootstrapEscrow(
-	dataDir, escrowID string,
+	dataDir, confirmationID string,
 	present func(BackupKey) error,
 	interrupt func(string) error,
 ) error {
@@ -201,54 +204,38 @@ func acknowledgeBootstrapEscrow(
 	if err := validateEscrowDataDir(dataDir); err != nil {
 		return err
 	}
-	if escrowID == "" {
-		return errors.New("backup: bootstrap escrow ID is required")
+	if confirmationID == "" {
+		return errors.New("backup: bootstrap escrow confirmation ID is required")
 	}
 	if present == nil {
 		return errors.New("backup: bootstrap key presenter is required")
 	}
-	recoveredEscrowID, err := recoverAcknowledgement(dataDir)
-	if err != nil {
+	if err := recoverAcknowledgement(dataDir); err != nil {
 		return err
-	}
-	if recoveredEscrowID == escrowID {
-		return nil
 	}
 	escrow, err := readBootstrapEscrow(dataDir)
+	if errors.Is(err, ErrBootstrapEscrowNotFound) && confirmedKeyInstalled(dataDir, confirmationID) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	if escrow.ID != escrowID {
+	want, err := escrow.ConfirmationID()
+	if err != nil {
+		return err
+	}
+	if confirmationID != want {
 		return ErrBootstrapEscrowChanged
 	}
 
-	replacement, err := deriveAcknowledgedBackupKey(escrow.Key, escrow.ID)
-	if err != nil {
-		return fmt.Errorf("backup: derive acknowledged key: %w", err)
-	}
-	if err := present(replacement); err != nil {
+	if err := present(escrow.Key); err != nil {
 		return fmt.Errorf("backup: present acknowledged key: %w", err)
 	}
 	if err := interruptAt(interrupt, "after-present"); err != nil {
 		return err
 	}
-	replacementPublic, err := replacement.PublicWrapKey()
-	if err != nil {
-		return fmt.Errorf("backup: derive acknowledged public wrap key: %w", err)
-	}
-	journal := acknowledgementJournal{
-		Version:           bootstrapEscrowVersion,
-		EscrowID:          escrow.ID,
-		ReplacementPublic: replacementPublic.String(),
-	}
-	if err := writeJSONPrivate(ackJournalPath(dataDir), journal); err != nil {
-		return fmt.Errorf("backup: journal acknowledgement: %w", err)
-	}
-	if err := interruptAt(interrupt, "after-journal"); err != nil {
+	if err := installEscrowPublicKey(dataDir, escrow); err != nil {
 		return err
-	}
-	if _, err := StorePublicWrapKey(dataDir, replacementPublic); err != nil {
-		return fmt.Errorf("backup: rotate acknowledged public wrap key: %w", err)
 	}
 	if err := interruptAt(interrupt, "after-public-key"); err != nil {
 		return err
@@ -256,58 +243,64 @@ func acknowledgeBootstrapEscrow(
 	if err := removeAndSync(bootstrapEscrowPath(dataDir)); err != nil {
 		return fmt.Errorf("backup: wipe acknowledged bootstrap escrow: %w", err)
 	}
-	if err := interruptAt(interrupt, "after-escrow-wipe"); err != nil {
-		return err
-	}
-	if err := removeAndSync(ackJournalPath(dataDir)); err != nil {
-		return fmt.Errorf("backup: finish acknowledgement: %w", err)
-	}
 	return nil
 }
 
-func recoverAcknowledgement(dataDir string) (string, error) {
+// confirmedKeyInstalled reports whether the installed public wrap key is the
+// one confirmationID names, that is, whether that key was already confirmed.
+func confirmedKeyInstalled(dataDir, confirmationID string) bool {
+	_, fingerprint, ok := strings.Cut(confirmationID, confirmationIDSeparator)
+	if !ok || fingerprint == "" {
+		return false
+	}
+	current, err := LoadPublicWrapKey(dataDir)
+	return err == nil && current.Fingerprint() == fingerprint
+}
+
+// recoverAcknowledgement finishes or abandons an acknowledgement journal left
+// by a binary from before CORE-2175 that crashed mid-acknowledgement while it
+// still installed a replacement key. Acknowledgement no longer writes one.
+func recoverAcknowledgement(dataDir string) error {
 	path := ackJournalPath(dataDir)
 	raw, err := readPrivateFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", nil
+		return nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("backup: read acknowledgement journal: %w", err)
+		return fmt.Errorf("backup: read acknowledgement journal: %w", err)
 	}
 	var journal acknowledgementJournal
 	if err := json.Unmarshal(raw, &journal); err != nil {
-		return "", fmt.Errorf("backup: decode acknowledgement journal: %w", err)
+		return fmt.Errorf("backup: decode acknowledgement journal: %w", err)
 	}
 	if journal.Version != bootstrapEscrowVersion || journal.EscrowID == "" {
-		return "", errors.New("backup: invalid acknowledgement journal")
+		return errors.New("backup: invalid acknowledgement journal")
 	}
 	replacementRaw, err := base64.RawURLEncoding.DecodeString(journal.ReplacementPublic)
 	if err != nil {
-		return "", fmt.Errorf("backup: decode acknowledgement public key: %w", err)
+		return fmt.Errorf("backup: decode acknowledgement public key: %w", err)
 	}
 	replacement, err := ParsePublicWrapKey(replacementRaw)
 	if err != nil {
-		return "", err
+		return err
 	}
 	current, err := LoadPublicWrapKey(dataDir)
-	rotated := err == nil && current.String() == replacement.String()
-	if rotated {
+	if err == nil && current.String() == replacement.String() {
+		// The replacement key is installed: that acknowledgement had already
+		// presented it, so finish it as the old binary would have.
 		escrow, escrowErr := readBootstrapEscrow(dataDir)
 		if escrowErr == nil && escrow.ID == journal.EscrowID {
 			if err := removeAndSync(bootstrapEscrowPath(dataDir)); err != nil {
-				return "", fmt.Errorf("backup: recover acknowledgement escrow wipe: %w", err)
+				return fmt.Errorf("backup: recover acknowledgement escrow wipe: %w", err)
 			}
 		} else if escrowErr != nil && !errors.Is(escrowErr, ErrBootstrapEscrowNotFound) {
-			return "", escrowErr
+			return escrowErr
 		}
 	}
 	if err := removeAndSync(path); err != nil {
-		return "", fmt.Errorf("backup: recover acknowledgement journal: %w", err)
+		return fmt.Errorf("backup: recover acknowledgement journal: %w", err)
 	}
-	if rotated {
-		return journal.EscrowID, nil
-	}
-	return "", nil
+	return nil
 }
 
 func readBootstrapEscrow(dataDir string) (BootstrapEscrow, error) {

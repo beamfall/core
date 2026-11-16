@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	backupcore "github.com/beamfall/core/internal/backup"
 	"github.com/beamfall/core/internal/libencrypt"
@@ -433,7 +432,7 @@ func restoreFailureFixture(t *testing.T) (string, string, string) {
 		_ = source.Close()
 		t.Fatalf("backup source: %v", err)
 	}
-	escrow, err := backupcore.ReadBootstrapEscrow(sourceDir, time.Now())
+	escrow, err := backupcore.ReadBootstrapEscrow(sourceDir)
 	if err != nil {
 		_ = source.Close()
 		t.Fatalf("read backup key escrow: %v", err)
