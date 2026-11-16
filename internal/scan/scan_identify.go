@@ -75,18 +75,26 @@ func (s *scanWalkState) noteUnmatched(path string, mediaID store.MediaID) {
 	}
 }
 
-// noteUnmatchedRecord counts a folder-level Unmatched record for the scan
-// summary once per scan, however many of the folder's files were refused
-// (CORE-2040).
-func (s *scanWalkState) noteUnmatchedRecord(id string) {
-	if s.result.unmatchedRecords[id] {
-		return
+// noteUnmatchedRecord records a folder-level Unmatched record once per scan,
+// however many of the folder's files were refused, and counts it in the summary
+// only while it is still pending in the review queue: a refusal the operator
+// already resolved or suppressed leaves nothing Unmatched (CORE-2040).
+func (s *scanWalkState) noteUnmatchedRecord(id string) error {
+	if _, noted := s.result.unmatchedRecords[id]; noted {
+		return nil
+	}
+	pending, err := s.st.UnmatchedRecordPending(s.ctx, id)
+	if err != nil {
+		return err
 	}
 	if s.result.unmatchedRecords == nil {
 		s.result.unmatchedRecords = map[string]bool{}
 	}
-	s.result.unmatchedRecords[id] = true
-	s.result.MediaUnmatched++
+	s.result.unmatchedRecords[id] = pending
+	if pending {
+		s.result.MediaUnmatched++
+	}
+	return nil
 }
 
 // noteMissingCredential records ref in the scan result and logs it the first

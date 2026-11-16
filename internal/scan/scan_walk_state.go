@@ -49,7 +49,10 @@ type scanWalkState struct {
 	pendingCompletions  []*completedFile
 	// tallies holds what this scan did to each file until the file completes
 	// and its counts reach the result (see noteFile).
-	tallies           map[string]fileTally
+	tallies map[string]fileTally
+	// unreportedParts are the files of the part group being reported that
+	// are already in the catalog but not yet counted (see resumeCheckpoint).
+	unreportedParts   []string
 	localArtwork      LocalArtworkImporter
 	containerArtwork  ContainerArtworkImporter
 	containerResolver ContainerEntityResolver

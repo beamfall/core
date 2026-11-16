@@ -1,6 +1,8 @@
 package scan
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/beamfall/core/internal/store"
@@ -15,8 +17,9 @@ type completedFile struct {
 }
 
 func (s *scanWalkState) completeFirst() error {
+	// The file stays pending until its derivation succeeds, so a scan stopped
+	// while waiting still carries it in the resume checkpoint.
 	completed := s.pendingCompletions[0]
-	s.pendingCompletions = s.pendingCompletions[1:]
 	select {
 	case <-completed.done:
 	case <-s.ctx.Done():
@@ -25,6 +28,7 @@ func (s *scanWalkState) completeFirst() error {
 	if completed.err != nil {
 		return fmt.Errorf("%w: %w", errImageDerivation, completed.err)
 	}
+	s.pendingCompletions = s.pendingCompletions[1:]
 	s.result.FilesSeen++
 	s.applyTally(completed.path)
 	s.result.Files = append(s.result.Files, ImportedFile{
@@ -77,15 +81,16 @@ func (s *scanWalkState) noteFile(path string, note func(*fileTally)) {
 }
 
 // resumeCheckpoint is the resume point for the scan so far. A completion still
-// pending is already in the catalog, so a resume takes its file through the
-// fast path and never tallies it again: its added or changed count rides in
-// the checkpoint now, while the result counts it only once it completes. Its
-// unmatched count does not, because the fast path counts a queued item again
-// (retryAutoIdentify).
+// pending, like each part of a group already imported but not yet reported
+// (unreportedParts), is already in the catalog, so a resume takes its file
+// through the fast path and never tallies it again: its added or changed count
+// rides in the checkpoint now, while the result counts it only once it
+// completes. Its unmatched count does not, because the fast path counts a
+// queued item again (retryAutoIdentify).
 func (s *scanWalkState) resumeCheckpoint() jobCheckpoint {
 	checkpoint := s.result.checkpoint("scanning")
-	for _, pending := range s.pendingCompletions {
-		tally := s.tallies[pending.path]
+	carry := func(path string) {
+		tally := s.tallies[path]
 		if tally.added {
 			checkpoint.FilesAdded++
 		}
@@ -93,7 +98,30 @@ func (s *scanWalkState) resumeCheckpoint() jobCheckpoint {
 			checkpoint.FilesChanged++
 		}
 	}
+	for _, pending := range s.pendingCompletions {
+		carry(pending.path)
+	}
+	for _, path := range s.unreportedParts {
+		carry(path)
+		// A part ordered before the resume point is never walked again, so
+		// the checkpoint counts it as seen too.
+		if compareWalkOrder(s.req.Root, path, checkpoint.LastPath) < 0 {
+			checkpoint.FilesSeen++
+		}
+	}
 	return checkpoint
+}
+
+// stopped ends a scan that failed or yielded. A cancelled scan returns its
+// resume point, so the next run still counts the files this one already put
+// in the catalog (CORE-2040).
+func (s *scanWalkState) stopped(err error) (Result, error) {
+	err = s.flushDeferredArtworkOnYield(err)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		checkpoint := s.resumeCheckpoint()
+		return Result{interrupted: &checkpoint}, err
+	}
+	return Result{}, err
 }
 
 func (s *scanWalkState) applyTally(path string) {

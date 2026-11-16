@@ -169,7 +169,9 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 			return jobs.Result{Checkpoint: latest}, jobs.ErrYielded
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			if len(latest) == 0 {
+			if result.interrupted != nil {
+				latest, _ = marshalScanCheckpoint(*result.interrupted)
+			} else if len(latest) == 0 {
 				latest, _ = marshalScanCheckpoint(checkpoint)
 			}
 			return jobs.Result{Checkpoint: latest, RunAfter: time.Now().UTC()}, jobs.ErrYielded

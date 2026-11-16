@@ -185,7 +185,13 @@ func (s *scanWalkState) flushPendingParts() error {
 	if s.identifier != nil && s.libraryPluginID != "" {
 		s.autoIdentify(first.imported.Path, media.ID, first.imported.ContentFingerprint, first.parsed, "scan: auto-identify failed")
 	}
-	for _, file := range files {
+	paths := make([]string, len(files))
+	for i, file := range files {
+		paths[i] = file.Path
+	}
+	defer func() { s.unreportedParts = nil }()
+	for i, file := range files {
+		s.unreportedParts = paths[i+1:]
 		s.result.FilesSeen++
 		s.applyTally(file.Path)
 		s.result.Files = append(s.result.Files, ImportedFile{
@@ -274,7 +280,9 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 	if err != nil {
 		return err
 	}
-	s.noteUnmatchedRecord(recordID)
+	if err := s.noteUnmatchedRecord(recordID); err != nil {
+		return err
+	}
 	s.result.FilesSeen++
 	s.result.LastPath = path
 	if s.progress != nil {

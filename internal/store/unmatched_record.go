@@ -145,6 +145,26 @@ func (s *Store) QueueUnmatchedRecordOnce(ctx context.Context, rec UnmatchedRecor
 	return "", err
 }
 
+// UnmatchedRecordPending reports whether the record with id is still awaiting
+// review: it exists and has not been resolved or suppressed.
+func (s *Store) UnmatchedRecordPending(ctx context.Context, id string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var resolvedAt sql.NullInt64
+	err := s.catalogR.QueryRowContext(ctx,
+		"SELECT resolved_at_ms FROM unmatched_record WHERE id = ?", id).Scan(&resolvedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !resolvedAt.Valid, nil
+}
+
 // ResolveUnmatchedRecord marks one Media-independent record resolved, stamping
 // the resolution audit (ADR-0068 associate-vs-create: resolvedMediaID is the
 // Media the record was associated with, or that resolution created — empty when

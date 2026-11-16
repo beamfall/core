@@ -299,9 +299,12 @@ type Result struct {
 	MediaUnmatched int
 	seenMedia      map[store.MediaID]bool
 	totalFiles     int
-	// unmatchedRecords holds the folder-level Unmatched records counted in
-	// MediaUnmatched (see noteUnmatchedRecord).
+	// unmatchedRecords holds the folder-level Unmatched records this scan
+	// noted, true for the pending ones counted in MediaUnmatched (see
+	// noteUnmatchedRecord).
 	unmatchedRecords map[string]bool
+	// interrupted is the resume point of a scan stopped by cancellation.
+	interrupted *jobCheckpoint
 }
 
 // ImportedFile records one file observed by a scan.

@@ -3,7 +3,6 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"path/filepath"
 	"slices"
 )
@@ -70,8 +69,21 @@ func (r Result) checkpoint(stage string) jobCheckpoint {
 		FilesAdded:         r.FilesAdded,
 		FilesChanged:       r.FilesChanged,
 		MediaUnmatched:     r.MediaUnmatched,
-		UnmatchedRecords:   slices.Sorted(maps.Keys(r.unmatchedRecords)),
+		UnmatchedRecords:   pendingIDs(r.unmatchedRecords),
 	}
+}
+
+// pendingIDs lists the noted records that were counted as pending, sorted so
+// the checkpoint is stable.
+func pendingIDs(noted map[string]bool) []string {
+	var ids []string
+	for id, pending := range noted {
+		if pending {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 // setOf is the set of ids, or nil when there are none.
