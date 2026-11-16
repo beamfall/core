@@ -3,7 +3,9 @@ package scan
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 )
 
 func requestFromJobPayload(payload []byte) (Request, error) {
@@ -68,7 +70,20 @@ func (r Result) checkpoint(stage string) jobCheckpoint {
 		FilesAdded:         r.FilesAdded,
 		FilesChanged:       r.FilesChanged,
 		MediaUnmatched:     r.MediaUnmatched,
+		UnmatchedRecords:   slices.Sorted(maps.Keys(r.unmatchedRecords)),
 	}
+}
+
+// setOf is the set of ids, or nil when there are none.
+func setOf(ids []string) map[string]bool {
+	if len(ids) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
 }
 
 func cleanCheckpointPath(path string) string {

@@ -49,7 +49,7 @@ func (s *scanWalkState) completeFirst() error {
 	// resume onto the same files and yield again, forever, once a pending
 	// group is followed by a batch's worth of images.
 	if s.progress != nil && !held {
-		return s.progress(s.result.checkpoint("scanning"), store.JobProgress{
+		return s.progress(s.resumeCheckpoint(), store.JobProgress{
 			Current: int64(s.result.FilesSeen),
 			Total:   int64(s.result.totalFiles),
 			Unit:    "files",
@@ -74,6 +74,26 @@ func (s *scanWalkState) noteFile(path string, note func(*fileTally)) {
 	tally := s.tallies[path]
 	note(&tally)
 	s.tallies[path] = tally
+}
+
+// resumeCheckpoint is the resume point for the scan so far. A completion still
+// pending is already in the catalog, so a resume takes its file through the
+// fast path and never tallies it again: its added or changed count rides in
+// the checkpoint now, while the result counts it only once it completes. Its
+// unmatched count does not, because the fast path counts a queued item again
+// (retryAutoIdentify).
+func (s *scanWalkState) resumeCheckpoint() jobCheckpoint {
+	checkpoint := s.result.checkpoint("scanning")
+	for _, pending := range s.pendingCompletions {
+		tally := s.tallies[pending.path]
+		if tally.added {
+			checkpoint.FilesAdded++
+		}
+		if tally.changed {
+			checkpoint.FilesChanged++
+		}
+	}
+	return checkpoint
 }
 
 func (s *scanWalkState) applyTally(path string) {

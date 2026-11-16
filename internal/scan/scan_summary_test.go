@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -71,6 +72,53 @@ func TestScanJobRecordsSummary(t *testing.T) {
 	}
 }
 
+// TestScanSummarySurvivesWorkerPoolYield: with several workers, files whose
+// imports committed before the batch yield are still counted as added, though
+// the resumed run takes them through the fast path (CORE-2040).
+func TestScanSummarySurvivesWorkerPoolYield(t *testing.T) {
+	// feature:scan-pipeline
+	const files = scanJobFileBatchSize + 3
+	root := t.TempDir()
+	for i := 0; i < files; i++ {
+		writeScanFile(t, root, "clip-"+zeroPad(i)+".mp4", []byte("clip "+zeroPad(i)))
+	}
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Clips", false, "filmtv", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := HandlerWithWorkerGovernor(st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(4))
+	summary := runSummaryScanToCompletion(t, st, handler, "job-summary-yield", library.ID, root, 2)
+	if want := (ScanSummary{FilesChecked: files, Added: files}); summary != want {
+		t.Fatalf("yielded scan summary = %+v, want %+v", summary, want)
+	}
+}
+
+// TestScanSummaryCountsRefusedFolderOnce: a folder the parser refuses as
+// ambiguous is one item in the Unmatched queue, so the summary counts it once
+// however many of its files were refused, across a batch yield too (CORE-2040).
+func TestScanSummaryCountsRefusedFolderOnce(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	dir := filepath.Join(root, "ambiguous")
+	for i := 0; i < scanJobFileBatchSize+2; i++ {
+		writeScanFile(t, dir, "part-"+zeroPad(i)+".mkv", []byte("part "+zeroPad(i)))
+	}
+	writeScanFile(t, root, "single.mp4", []byte("single"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(context.Background(), "Contextual", false, "contextual", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := Handler(st, nil, nil, map[string]FilenameParser{"contextual": contextualRefusalParser{}}, nil, nil)
+	for pass, added := range []int{1, 0} {
+		summary := runSummaryScanToCompletion(t, st, handler, "job-summary-refused-"+zeroPad(pass), library.ID, root, 2)
+		if want := (ScanSummary{FilesChecked: scanJobFileBatchSize + 3, Added: added, Unmatched: 1}); summary != want {
+			t.Fatalf("pass %d summary = %+v, want %+v", pass+1, summary, want)
+		}
+	}
+}
+
 func runSummaryScan(t *testing.T, st *store.Store, registry *jobs.Registry, id string, libraryID store.LibraryID, root string) ScanSummary {
 	t.Helper()
 	ctx := context.Background()
@@ -84,14 +132,42 @@ func runSummaryScan(t *testing.T, st *store.Store, registry *jobs.Registry, id s
 	if _, err := registry.RunOne(ctx, nil, time.Now().UTC()); err != nil {
 		t.Fatalf("RunOne: %v", err)
 	}
-	done, err := st.Job(ctx, job.ID)
+	return completedScanSummary(t, st, job.ID)
+}
+
+// runSummaryScanToCompletion runs a scan job through wantRuns runs, each on a
+// fresh registry as after a restart, and returns its summary.
+func runSummaryScanToCompletion(t *testing.T, st *store.Store, handler jobs.Handler, id string, libraryID store.LibraryID, root string, wantRuns int) ScanSummary {
+	t.Helper()
+	ctx := context.Background()
+	job, err := NewJob(JobRequest{ID: store.JobID(id), LibraryID: libraryID, Root: root, CreatedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	for run := 0; run < wantRuns; run++ {
+		registry := jobs.NewRegistry(st, "summary-worker-"+zeroPad(run))
+		registry.Register(JobKind, handler)
+		if _, err := registry.RunOne(ctx, nil, time.Now().UTC()); err != nil {
+			t.Fatalf("run %d: %v", run+1, err)
+		}
+	}
+	return completedScanSummary(t, st, job.ID)
+}
+
+func completedScanSummary(t *testing.T, st *store.Store, id store.JobID) ScanSummary {
+	t.Helper()
+	ctx := context.Background()
+	done, err := st.Job(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if done.Status != store.JobStatusCompleted {
 		t.Fatalf("status = %q error=%q, want completed", done.Status, done.Error)
 	}
-	events, err := st.ListJobEvents(ctx, job.ID)
+	events, err := st.ListJobEvents(ctx, id)
 	if err != nil {
 		t.Fatal(err)
 	}

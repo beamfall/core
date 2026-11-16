@@ -75,6 +75,20 @@ func (s *scanWalkState) noteUnmatched(path string, mediaID store.MediaID) {
 	}
 }
 
+// noteUnmatchedRecord counts a folder-level Unmatched record for the scan
+// summary once per scan, however many of the folder's files were refused
+// (CORE-2040).
+func (s *scanWalkState) noteUnmatchedRecord(id string) {
+	if s.result.unmatchedRecords[id] {
+		return
+	}
+	if s.result.unmatchedRecords == nil {
+		s.result.unmatchedRecords = map[string]bool{}
+	}
+	s.result.unmatchedRecords[id] = true
+	s.result.MediaUnmatched++
+}
+
 // noteMissingCredential records ref in the scan result and logs it the first
 // time this scan (including earlier runs of a yielded scan job) sees it.
 func (s *scanWalkState) noteMissingCredential(ref string) {

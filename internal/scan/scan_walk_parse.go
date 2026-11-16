@@ -201,7 +201,7 @@ func (s *scanWalkState) flushPendingParts() error {
 			s.result.MediaImported++
 		}
 		if s.progress != nil {
-			if err := s.progress(s.result.checkpoint("scanning"), store.JobProgress{
+			if err := s.progress(s.resumeCheckpoint(), store.JobProgress{
 				Current: int64(s.result.FilesSeen),
 				Total:   int64(s.result.totalFiles),
 				Unit:    "files",
@@ -263,20 +263,22 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 	if err := s.flushPendingParts(); err != nil {
 		return err
 	}
-	if _, err := s.st.QueueUnmatchedRecordOnce(s.ctx, store.UnmatchedRecord{
+	recordID, err := s.st.QueueUnmatchedRecordOnce(s.ctx, store.UnmatchedRecord{
 		Origin:         store.UnmatchedOriginScan,
 		LibraryID:      s.req.LibraryID,
 		ImporterID:     s.libraryPluginID,
 		SourceHandle:   filepath.Clean(filepath.Dir(path)),
 		CandidateTitle: parsed.Title,
 		FailureReason:  store.UnmatchedReasonAmbiguous,
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
+	s.noteUnmatchedRecord(recordID)
 	s.result.FilesSeen++
 	s.result.LastPath = path
 	if s.progress != nil {
-		return s.progress(s.result.checkpoint("scanning"), store.JobProgress{
+		return s.progress(s.resumeCheckpoint(), store.JobProgress{
 			Current: int64(s.result.FilesSeen),
 			Total:   int64(s.result.totalFiles),
 			Unit:    "files",

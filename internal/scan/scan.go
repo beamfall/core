@@ -272,6 +272,9 @@ type jobCheckpoint struct {
 	FilesAdded     int `json:"files_added,omitempty"`
 	FilesChanged   int `json:"files_changed,omitempty"`
 	MediaUnmatched int `json:"media_unmatched,omitempty"`
+	// UnmatchedRecords lists the folder-level Unmatched records already
+	// counted in MediaUnmatched, so a resumed scan counts each folder once.
+	UnmatchedRecords []string `json:"unmatched_records,omitempty"`
 }
 
 // Result summarizes a completed scan.
@@ -288,14 +291,17 @@ type Result struct {
 	// FilesAdded and FilesChanged count the files this scan catalogued for the
 	// first time and the ones it re-read because their size or mtime moved.
 	// FilesMissing counts the files the post-walk pass marked missing, and
-	// MediaUnmatched the items this scan left in the Unmatched queue
-	// (CORE-2040).
+	// MediaUnmatched the items and refused folders this scan left in the
+	// Unmatched queue (CORE-2040).
 	FilesAdded     int
 	FilesChanged   int
 	FilesMissing   int
 	MediaUnmatched int
 	seenMedia      map[store.MediaID]bool
 	totalFiles     int
+	// unmatchedRecords holds the folder-level Unmatched records counted in
+	// MediaUnmatched (see noteUnmatchedRecord).
+	unmatchedRecords map[string]bool
 }
 
 // ImportedFile records one file observed by a scan.
