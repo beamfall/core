@@ -57,10 +57,16 @@ func TestDeviceDecodeChainKeepsEveryFrameOnTheDevice(t *testing.T) {
 // verdict is on.
 func TestDeviceDecodeLeavesIneligibleRenditionsUnchanged(t *testing.T) {
 	cases := map[string]func(Rendition) Rendition{
-		"h264 source":     func(r Rendition) Rendition { r.SourceVideoCodec = "h264"; return r },
-		"unknown codec":   func(r Rendition) Rendition { r.SourceVideoCodec = ""; return r },
-		"8-bit source":    func(r Rendition) Rendition { r.SourceVideoBitDepth = 8; return r },
-		"dolby vision 8":  func(r Rendition) Rendition { r.DoViProfile = 8; return r },
+		"h264 source":    func(r Rendition) Rendition { r.SourceVideoCodec = "h264"; return r },
+		"unknown codec":  func(r Rendition) Rendition { r.SourceVideoCodec = ""; return r },
+		"8-bit source":   func(r Rendition) Rendition { r.SourceVideoBitDepth = 8; return r },
+		"dolby vision 7": func(r Rendition) Rendition { r.DoViProfile = 7; return r },
+		"dolby vision 5": func(r Rendition) Rendition { r.DoViProfile = 5; r.ColorTransfer = ""; return r },
+		"dolby vision 8 over an sdr base": func(r Rendition) Rendition {
+			r.DoViProfile = 8
+			r.ColorTransfer = "bt709"
+			return r
+		},
 		"sdr source":      func(r Rendition) Rendition { r.ColorTransfer = "bt709"; return r },
 		"burned subtitle": func(r Rendition) Rendition { return r.WithBurnSubtitle(2) },
 		"interlaced":      func(r Rendition) Rendition { r.FieldOrder = "tt"; return r },
@@ -106,6 +112,28 @@ func TestSelectRenditionDeviceDecodeNeverProbesIneligibleRenditions(t *testing.T
 	sdr.ColorTransfer = "bt709"
 	if selectRenditionDeviceDecode(sdr) {
 		t.Fatal("SDR rendition selected the device chain")
+	}
+}
+
+// TestDeviceDecodeServesADolbyVisionProfile8BaseLayer: a profile 8 source is
+// classed by its base layer, so it takes the same chain and the same verdict
+// as a plain PQ or HLG source.
+func TestDeviceDecodeServesADolbyVisionProfile8BaseLayer(t *testing.T) {
+	plain := deviceDecodeRendition(HWAccelQSV).withDeviceDecode(true)
+	for transfer, want := range map[string]TransferClass{"smpte2084": TransferClassPQ, "arib-std-b67": TransferClassHLG} {
+		dv := deviceDecodeRendition(HWAccelQSV)
+		dv.DoViProfile = 8
+		dv.ColorTransfer = transfer
+		if class, ok := dv.deviceDecodeClass(); !ok || class != want {
+			t.Fatalf("%s base: class %q ok=%v, want %q", transfer, class, ok, want)
+		}
+		dv = dv.withDeviceDecode(true)
+		if !dv.usesDeviceDecode() {
+			t.Fatalf("%s base: device chain not used", transfer)
+		}
+		if !slices.Equal(dv.inputArgs(), plain.inputArgs()) || !slices.Equal(dv.videoFilters(), plain.videoFilters()) {
+			t.Fatalf("%s base: argv differs from the plain source\n %v %v", transfer, dv.inputArgs(), dv.videoFilters())
+		}
 	}
 }
 

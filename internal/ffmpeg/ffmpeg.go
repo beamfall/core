@@ -1409,10 +1409,24 @@ func (r Rendition) withDeviceDecode(on bool) Rendition {
 	return r
 }
 
+// deviceDecodeClass is the transfer class the device-decode chain tone-maps
+// for this source. A Dolby Vision profile 8 stream is classed by its base
+// layer: the device decoder reads that layer alone, which is the picture the
+// software chain tone-maps for the same source. Profile 7 carries a second
+// layer and stays on the software chain.
+func (r Rendition) deviceDecodeClass() (TransferClass, bool) {
+	profile := r.DoViProfile
+	if profile == 8 {
+		profile = 0
+	}
+	class, classified := TransferClassFor(r.ColorTransfer, profile)
+	return class, classified && HardwareCertifiableClass(class)
+}
+
 // deviceDecodeEligible reports whether this rendition's shape allows the
-// device-decode chain: an HEVC PQ or HLG source that is re-encoded on QSV or
-// VA-API with nothing that needs a system-memory filter. It says nothing about
-// the host; the device-decode probe decides that.
+// device-decode chain: an HEVC source with a PQ or HLG picture that is
+// re-encoded on QSV or VA-API with nothing that needs a system-memory filter.
+// It says nothing about the host; the device-decode probe decides that.
 func (r Rendition) deviceDecodeEligible() bool {
 	if _, known := deviceDecodeTargets[r.hwAccel]; !known {
 		return false
@@ -1420,8 +1434,7 @@ func (r Rendition) deviceDecodeEligible() bool {
 	if r.CopyVideo || r.AudioOnly || r.ToneMapUnavailable() || !r.needsToneMap() {
 		return false
 	}
-	class, classified := TransferClassFor(r.ColorTransfer, r.DoViProfile)
-	if !classified || !HardwareCertifiableClass(class) {
+	if _, certifiable := r.deviceDecodeClass(); !certifiable {
 		return false
 	}
 	if r.SourceVideoCodec != "hevc" || (r.SourceVideoBitDepth != 0 && r.SourceVideoBitDepth != 10) {

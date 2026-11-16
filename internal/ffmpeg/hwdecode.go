@@ -246,6 +246,6 @@ var selectRenditionDeviceDecode = func(r Rendition) bool {
 	if !r.deviceDecodeEligible() {
 		return false
 	}
-	class, _ := TransferClassFor(r.ColorTransfer, r.DoViProfile)
+	class, _ := r.deviceDecodeClass()
 	return DeviceDecodeCapabilityFor(r.hwAccel, class).Status == ToneMapWorking
 }

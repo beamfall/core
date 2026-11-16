@@ -4,14 +4,19 @@
 
 The server SHALL decode, scale and tone-map an eligible HDR source on the selected render node and
 hand device frames to the encoder, once the device-decode probe certified that chain for the
-encoder backend and transfer class. A source is eligible when it is HEVC with a PQ or HLG transfer,
+encoder backend and transfer class. A source is eligible when it is HEVC with a PQ or HLG picture,
 the verified encoder is QSV or VA-API, and nothing in the rendition needs a system-memory filter.
-In every other case the server SHALL emit the arguments it emitted without device decode.
+Otherwise the server SHALL emit the arguments it emitted without device decode.
 
 #### Scenario: A verified source stays on the device
 
 - **WHEN** the encoder is QSV, the source is HEVC PQ at rendition height 1080 and the device-decode probe passed
 - **THEN** the argv carries `-hwaccel vaapi -hwaccel_output_format vaapi` before `-i`, its filter graph is `scale_vaapi`, `hwmap` to OpenCL, `tonemap_opencl`, `hwmap` back to QSV, and it has no `hwupload`, `hwdownload` or software `scale`
+
+#### Scenario: A Dolby Vision profile 8 source uses its base layer
+
+- **WHEN** the source is HEVC Dolby Vision profile 8 with a PQ or HLG base layer and the device-decode probe passed for that class
+- **THEN** the argv equals the one produced for a plain HEVC PQ source
 
 #### Scenario: An unverified host keeps the software path
 
@@ -20,7 +25,7 @@ In every other case the server SHALL emit the arguments it emitted without devic
 
 #### Scenario: An ineligible source keeps its arguments
 
-- **WHEN** the source is H.264, or carries Dolby Vision profile 8, or the rendition burns in a subtitle
+- **WHEN** the source is H.264, or carries Dolby Vision profile 5 or 7, or the rendition burns in a subtitle
 - **THEN** the argv equals the one produced without device decode
 
 ### Requirement: The device-decode probe certifies the shipped chain against a decoded control

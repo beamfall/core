@@ -1,7 +1,7 @@
-- [ ] ffmpeg: `tonemap_mode=max` on the OpenCL leg; control leg downloads in the upload format
-- [ ] ffmpeg: device-decode chain in `BuildToneMapChain`, wired into `inputArgs` and `videoFilters`
-- [ ] ffmpeg: device-decode probe with a decoded control and a cached verdict
-- [ ] playback: pass the source video codec to the rendition
-- [ ] Image: install `intel-opencl-icd`
-- [ ] Tests: verified argv, unverified and ineligible argv unchanged, probe verdicts
-- [ ] Evidence: before and after speed on the Unraid Intel host
+- [x] ffmpeg: `tonemap_mode=max` on the OpenCL leg; control leg downloads in the upload format
+- [x] ffmpeg: device-decode chain in `BuildToneMapChain`, wired into `inputArgs` and `videoFilters`
+- [x] ffmpeg: device-decode probe with a decoded control and a cached verdict
+- [x] playback: pass the source video codec to the rendition
+- [x] Image: install `intel-opencl-icd`
+- [x] Tests: verified argv, unverified and ineligible argv unchanged, probe verdicts
+- [x] Evidence: before and after speed on the Unraid Intel host
