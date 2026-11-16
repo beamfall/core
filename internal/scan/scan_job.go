@@ -181,10 +181,42 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 	if err != nil {
 		return jobs.Result{}, err
 	}
+	if err := appendScanSummary(ctx, st, job.ID, result); err != nil {
+		return jobs.Result{}, err
+	}
 	return jobs.Result{}, st.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, store.JobProgress{
 		Current: int64(result.FilesSeen),
 		Total:   int64(result.totalFiles),
 		Unit:    "files",
 		Message: missingCredentialsMessage(result.MissingCredentials, identifier),
 	}, time.Now().UTC())
+}
+
+// ScanSummaryEvent is the job event type a completed scan job records with
+// its ScanSummary payload (CORE-2040).
+const ScanSummaryEvent = "scan-summary"
+
+// ScanSummary is what a completed scan did: files checked, catalogued for the
+// first time, re-read because they changed on disk and marked missing, and
+// items left in the Unmatched queue.
+type ScanSummary struct {
+	FilesChecked int `json:"filesChecked"`
+	Added        int `json:"added"`
+	Changed      int `json:"changed"`
+	Missing      int `json:"missing"`
+	Unmatched    int `json:"unmatched"`
+}
+
+func appendScanSummary(ctx context.Context, st *store.Store, id store.JobID, result Result) error {
+	payload, err := json.Marshal(ScanSummary{
+		FilesChecked: result.FilesSeen,
+		Added:        result.FilesAdded,
+		Changed:      result.FilesChanged,
+		Missing:      result.FilesMissing,
+		Unmatched:    result.MediaUnmatched,
+	})
+	if err != nil {
+		return err
+	}
+	return st.AppendJobEvent(ctx, id, ScanSummaryEvent, payload, time.Now().UTC())
 }

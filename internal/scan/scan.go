@@ -268,6 +268,10 @@ type jobCheckpoint struct {
 	// MissingCredentials carries Result.MissingCredentials across job
 	// yields, so a resumed scan does not report them again (CORE-1101).
 	MissingCredentials []string `json:"missing_credentials,omitempty"`
+	// The scan summary counts likewise survive yields (CORE-2040).
+	FilesAdded     int `json:"files_added,omitempty"`
+	FilesChanged   int `json:"files_changed,omitempty"`
+	MediaUnmatched int `json:"media_unmatched,omitempty"`
 }
 
 // Result summarizes a completed scan.
@@ -281,8 +285,17 @@ type Result struct {
 	// configured. Each is reported once per scan instead of failing every
 	// file (CORE-1101).
 	MissingCredentials []string
-	seenMedia          map[store.MediaID]bool
-	totalFiles         int
+	// FilesAdded and FilesChanged count the files this scan catalogued for the
+	// first time and the ones it re-read because their size or mtime moved.
+	// FilesMissing counts the files the post-walk pass marked missing, and
+	// MediaUnmatched the items this scan left in the Unmatched queue
+	// (CORE-2040).
+	FilesAdded     int
+	FilesChanged   int
+	FilesMissing   int
+	MediaUnmatched int
+	seenMedia      map[store.MediaID]bool
+	totalFiles     int
 }
 
 // ImportedFile records one file observed by a scan.

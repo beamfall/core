@@ -21,6 +21,10 @@ export const managedFileStrings = {
     rescanUnknownHint:
       "Beamfall lost track of this scan before it ended. Check the library, or scan again.",
     rescanDoneFiles: "{count, plural, one {Checked # file.} other {Checked # files.}}",
+    rescanDoneAdded: "{count, plural, one {# added} other {# added}}",
+    rescanDoneChanged: "{count, plural, one {# updated} other {# updated}}",
+    rescanDoneMissing: "{count, plural, one {# missing} other {# missing}}",
+    rescanDoneUnmatched: "{count, plural, one {# needs a match} other {# need a match}}",
     rescanNeedsFolder: "Add a folder to this library before scanning.",
     scanNeedsUnlock: "Your Console session has ended. Unlock the Console, then scan again.",
     scanOneFolder: "Scan one folder",
@@ -75,6 +79,10 @@ export const managedFileStrings = {
     rescanUnknownHint:
       "Beamfall a perdu la trace de cette analyse avant sa fin. Vérifiez la bibliothèque ou relancez l’analyse.",
     rescanDoneFiles: "{count, plural, one {# fichier vérifié.} other {# fichiers vérifiés.}}",
+    rescanDoneAdded: "{count, plural, one {# ajouté} other {# ajoutés}}",
+    rescanDoneChanged: "{count, plural, one {# mis à jour} other {# mis à jour}}",
+    rescanDoneMissing: "{count, plural, one {# manquant} other {# manquants}}",
+    rescanDoneUnmatched: "{count, plural, one {# à associer} other {# à associer}}",
     rescanNeedsFolder: "Ajoutez un dossier à cette bibliothèque avant de l’analyser.",
     scanNeedsUnlock:
       "Votre session Console a pris fin. Déverrouillez la Console, puis relancez l’analyse.",
@@ -137,6 +145,11 @@ export const managedFileStrings = {
     rescanUnknownHint:
       "Beamfall hat diesen Scan vor seinem Ende aus den Augen verloren. Prüfe die Bibliothek oder scanne erneut.",
     rescanDoneFiles: "{count, plural, one {# Datei geprüft.} other {# Dateien geprüft.}}",
+    rescanDoneAdded: "{count, plural, one {# hinzugefügt} other {# hinzugefügt}}",
+    rescanDoneChanged: "{count, plural, one {# aktualisiert} other {# aktualisiert}}",
+    rescanDoneMissing: "{count, plural, one {# fehlt} other {# fehlen}}",
+    rescanDoneUnmatched:
+      "{count, plural, one {# braucht eine Zuordnung} other {# brauchen eine Zuordnung}}",
     rescanNeedsFolder: "Füge dieser Bibliothek einen Ordner hinzu, bevor du sie scannst.",
     scanNeedsUnlock:
       "Deine Console-Sitzung ist abgelaufen. Entsperre die Console und scanne dann erneut.",
@@ -197,6 +210,11 @@ export const managedFileStrings = {
     rescanUnknownHint:
       "Beamfall perdió el seguimiento de este análisis antes de que terminara. Revisa la biblioteca o vuelve a analizar.",
     rescanDoneFiles: "{count, plural, one {Se revisó # archivo.} other {Se revisaron # archivos.}}",
+    rescanDoneAdded: "{count, plural, one {# añadido} other {# añadidos}}",
+    rescanDoneChanged: "{count, plural, one {# actualizado} other {# actualizados}}",
+    rescanDoneMissing: "{count, plural, one {# no encontrado} other {# no encontrados}}",
+    rescanDoneUnmatched:
+      "{count, plural, one {# necesita coincidencia} other {# necesitan coincidencia}}",
     rescanNeedsFolder: "Añade una carpeta a esta biblioteca antes de analizarla.",
     scanNeedsUnlock: "Tu sesión de la Consola terminó. Desbloquea la Consola y vuelve a analizar.",
     scanOneFolder: "Analizar una carpeta",
@@ -257,6 +275,11 @@ export const managedFileStrings = {
     rescanUnknownHint:
       "O Beamfall perdeu o acompanhamento desta verificação antes do fim. Confira a biblioteca ou verifique de novo.",
     rescanDoneFiles: "{count, plural, one {# arquivo verificado.} other {# arquivos verificados.}}",
+    rescanDoneAdded: "{count, plural, one {# adicionado} other {# adicionados}}",
+    rescanDoneChanged: "{count, plural, one {# atualizado} other {# atualizados}}",
+    rescanDoneMissing: "{count, plural, one {# ausente} other {# ausentes}}",
+    rescanDoneUnmatched:
+      "{count, plural, one {# precisa de correspondência} other {# precisam de correspondência}}",
     rescanNeedsFolder: "Adicione uma pasta a esta biblioteca antes de verificar.",
     scanNeedsUnlock: "Sua sessão do Console terminou. Desbloqueie o Console e verifique de novo.",
     scanOneFolder: "Verificar uma pasta",

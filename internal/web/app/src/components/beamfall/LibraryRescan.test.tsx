@@ -1,8 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
-import { fetchJobs, scanLibrary } from "@/lib/graphql";
+import { fetchJobEvents, fetchJobs, scanLibrary } from "@/lib/graphql";
 import type { JobInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import {
@@ -13,10 +14,19 @@ import {
   useAnyRescanActive,
 } from "./LibraryRescan";
 
-vi.mock("@/lib/graphql", () => ({ fetchJobs: vi.fn(), scanLibrary: vi.fn() }));
+vi.mock("@/lib/graphql", () => ({
+  fetchJobEvents: vi.fn(),
+  fetchJobs: vi.fn(),
+  scanLibrary: vi.fn(),
+}));
 
 function job(status: string): JobInfo {
-  return { id: "job-1", kind: "scan", status, progress: { current: 0, total: 0, unit: "" } };
+  return {
+    id: "job-1",
+    kind: "scan",
+    status,
+    progress: { current: 0, total: 0, unit: "" },
+  };
 }
 
 // Lets pending reads settle and runs the timers due within ms.
@@ -33,6 +43,7 @@ beforeEach(() => {
   vi.mocked(fetchJobs)
     .mockReset()
     .mockResolvedValue([job("running")]);
+  vi.mocked(fetchJobEvents).mockReset().mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -117,12 +128,58 @@ describe("library rescan tracker", () => {
     );
     await act(() => startRescan("library-1", ["/media"]));
     vi.mocked(fetchJobs).mockResolvedValue([
-      { ...job("completed"), progress: { current: 42, total: 42, unit: "files" } },
+      {
+        ...job("completed"),
+        progress: { current: 42, total: 42, unit: "files" },
+      },
     ]);
     await advance(1500);
 
     const status = screen.getByRole("status");
     expect(status).toHaveTextContent("Scan finished");
     expect(status).toHaveTextContent("Checked 42 files.");
+  });
+
+  it("says what a finished scan added and what needs a match (CORE-2040)", async () => {
+    render(
+      <MemoryRouter>
+        <I18nProvider>
+          <RescanStatus libraryID="library-1" hasRoots />
+        </I18nProvider>
+      </MemoryRouter>,
+    );
+    await act(() => startRescan("library-1", ["/media"]));
+    vi.mocked(fetchJobs).mockResolvedValue([
+      {
+        ...job("completed"),
+        progress: { current: 1204, total: 1204, unit: "files" },
+      },
+    ]);
+    vi.mocked(fetchJobEvents).mockResolvedValue([
+      {
+        id: "1",
+        jobID: "job-1",
+        occurredAt: "",
+        type: "running",
+        payload: '{"status":"running"}',
+      },
+      {
+        id: "2",
+        jobID: "job-1",
+        occurredAt: "",
+        type: "scan-summary",
+        payload: '{"filesChecked":1204,"added":12,"changed":0,"missing":0,"unmatched":3}',
+      },
+    ]);
+    await advance(1500);
+
+    expect(fetchJobEvents).toHaveBeenCalledWith("job-1");
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Checked 1,204 files. 12 added · 3 need a match");
+    expect(status).not.toHaveTextContent("updated");
+    expect(screen.getByRole("link", { name: "Fix unmatched items" })).toHaveAttribute(
+      "href",
+      "/manage/unmatched",
+    );
   });
 });

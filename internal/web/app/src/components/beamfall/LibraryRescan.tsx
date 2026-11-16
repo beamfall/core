@@ -1,9 +1,10 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
+import { Link } from "react-router";
 import { StatusChip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { isAuthRejection } from "@/lib/api";
-import { fetchJobs, scanLibrary } from "@/lib/graphql";
+import { fetchJobEvents, fetchJobs, scanLibrary } from "@/lib/graphql";
 import type { JobInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { jobProgressDetail } from "@/lib/jobDisplay";
@@ -22,7 +23,19 @@ export interface RescanState {
   error: string;
   /** Why a folder failed to queue; it outlives polling so the rescan can't end as a clean success. */
   queueError?: string;
+  /** What the finished scans did, summed from their scan-summary job events (CORE-2040). */
+  summary?: ScanSummary;
 }
+
+/** The scan job's "scan-summary" event payload (scan.ScanSummary). */
+export interface ScanSummary {
+  added: number;
+  changed: number;
+  missing: number;
+  unmatched: number;
+}
+
+const SUMMARY_EVENT = "scan-summary";
 
 const IDLE: RescanState = { phase: "idle", jobs: [], error: "" };
 const ACTIVE = new Set(["queued", "running", "yielded"]);
@@ -57,7 +70,10 @@ export function rescanState(libraryID: string): RescanState {
  * A job that left the jobs list before it was seen finishing is "unknown", and
  * one unknown job keeps the rescan from claiming success (CORE-2012).
  */
-export function phaseFor(jobs: JobInfo[]): { phase: RescanPhase; error: string } {
+export function phaseFor(jobs: JobInfo[]): {
+  phase: RescanPhase;
+  error: string;
+} {
   if (jobs.some((job) => ACTIVE.has(job.status))) return { phase: "scanning", error: "" };
   const failed = jobs.find((job) => job.status === "failed" || job.status === "canceled");
   if (failed) return { phase: "failed", error: failed.error ?? "" };
@@ -68,7 +84,11 @@ export function phaseFor(jobs: JobInfo[]): { phase: RescanPhase; error: string }
 /** Like phaseFor, but a folder that never queued turns a finished rescan into a failure. */
 function foldRescan(jobs: JobInfo[], queueError: string): RescanState {
   const folded = phaseFor(jobs);
-  const state: RescanState = { jobs, ...folded, queueError: queueError || undefined };
+  const state: RescanState = {
+    jobs,
+    ...folded,
+    queueError: queueError || undefined,
+  };
   if (queueError && folded.phase !== "failed") {
     state.error = queueError;
     if (folded.phase === "done" || folded.phase === "unknown") state.phase = "failed";
@@ -103,10 +123,47 @@ async function poll() {
     // how it ended is unknown; never report it as completed.
     const next = state.jobs.map(
       (job) =>
-        byID.get(job.id) ?? { ...job, status: ACTIVE.has(job.status) ? UNKNOWN : job.status },
+        byID.get(job.id) ?? {
+          ...job,
+          status: ACTIVE.has(job.status) ? UNKNOWN : job.status,
+        },
     );
-    setState(libraryID, foldRescan(next, state.queueError ?? ""));
+    const folded = foldRescan(next, state.queueError ?? "");
+    setState(libraryID, folded);
+    if (folded.phase === "done") void loadSummary(libraryID, folded);
   }
+}
+
+/** Sums the finished scans' summary events; a scan without one adds nothing. */
+async function loadSummary(libraryID: string, state: RescanState) {
+  const completed = state.jobs.filter((job) => job.status === "completed");
+  const results = await Promise.allSettled(completed.map(async (job) => fetchJobEvents(job.id)));
+  const summary: ScanSummary = {
+    added: 0,
+    changed: 0,
+    missing: 0,
+    unmatched: 0,
+  };
+  let found = false;
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    const event = result.value.find((ev) => ev.type === SUMMARY_EVENT && ev.payload);
+    if (!event) continue;
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(event.payload ?? "") as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    found = true;
+    for (const key of Object.keys(summary) as (keyof ScanSummary)[]) {
+      const value = payload[key];
+      if (typeof value === "number" && value > 0) summary[key] += value;
+    }
+  }
+  // A rescan started since must not pick up this one's summary.
+  if (!found || states.get(libraryID) !== state) return;
+  setState(libraryID, { ...state, summary });
 }
 
 function ensurePolling() {
@@ -257,7 +314,7 @@ export function RescanStatus({ libraryID, hasRoots }: { libraryID: string; hasRo
   const detail = running
     ? jobProgressDetail(running, t)
     : state.phase === "done"
-      ? doneDetail(state.jobs, t)
+      ? doneDetail(state.jobs, state.summary, t)
       : state.phase === "unknown"
         ? t("rescanUnknownHint")
         : "";
@@ -273,6 +330,11 @@ export function RescanStatus({ libraryID, hasRoots }: { libraryID: string; hasRo
         <StatusChip tone="red">{t("rescanFailed")}</StatusChip>
       )}
       {detail && <span className="text-muted-foreground">{detail}</span>}
+      {state.phase === "done" && (state.summary?.unmatched ?? 0) > 0 && (
+        <Link to="/manage/unmatched" className="underline underline-offset-2">
+          {t("fixUnmatched")}
+        </Link>
+      )}
       {state.phase === "failed" && state.error && (
         <span className="text-muted-foreground">{state.error}</span>
       )}
@@ -280,10 +342,23 @@ export function RescanStatus({ libraryID, hasRoots }: { libraryID: string; hasRo
   );
 }
 
-/** What a finished rescan checked, from the scan jobs' final file counts. */
-function doneDetail(jobs: JobInfo[], t: ReturnType<typeof useT>): string {
+/**
+ * What a finished rescan checked, from the scan jobs' final file counts, then
+ * what it added, updated, found missing and left needing a match (CORE-2040).
+ */
+function doneDetail(
+  jobs: JobInfo[],
+  summary: ScanSummary | undefined,
+  t: ReturnType<typeof useT>,
+): string {
   const files = jobs
     .filter((job) => job.status === "completed" && job.progress.unit === "files")
     .reduce((sum, job) => sum + job.progress.current, 0);
-  return files > 0 ? t("rescanDoneFiles", { count: files }) : "";
+  const parts: string[] = [];
+  if (summary?.added) parts.push(t("rescanDoneAdded", { count: summary.added }));
+  if (summary?.changed) parts.push(t("rescanDoneChanged", { count: summary.changed }));
+  if (summary?.missing) parts.push(t("rescanDoneMissing", { count: summary.missing }));
+  if (summary?.unmatched) parts.push(t("rescanDoneUnmatched", { count: summary.unmatched }));
+  const checked = files > 0 ? t("rescanDoneFiles", { count: files }) : "";
+  return [checked, parts.join(" · ")].filter(Boolean).join(" ");
 }

@@ -26,6 +26,7 @@ func (s *scanWalkState) completeFirst() error {
 		return fmt.Errorf("%w: %w", errImageDerivation, completed.err)
 	}
 	s.result.FilesSeen++
+	s.applyTally(completed.path)
 	s.result.Files = append(s.result.Files, ImportedFile{
 		Path:               completed.path,
 		MediaID:            completed.mediaID,
@@ -56,6 +57,40 @@ func (s *scanWalkState) completeFirst() error {
 		})
 	}
 	return nil
+}
+
+// fileTally is what a scan did to one file, for the scan summary (CORE-2040).
+type fileTally struct {
+	added, changed, unmatched bool
+}
+
+// noteFile records what the scan did to path. The counts reach the result
+// only when the file completes (applyTally), so a yielded scan's checkpoint
+// counts only the files it will not walk again.
+func (s *scanWalkState) noteFile(path string, note func(*fileTally)) {
+	if s.tallies == nil {
+		s.tallies = map[string]fileTally{}
+	}
+	tally := s.tallies[path]
+	note(&tally)
+	s.tallies[path] = tally
+}
+
+func (s *scanWalkState) applyTally(path string) {
+	tally, ok := s.tallies[path]
+	if !ok {
+		return
+	}
+	delete(s.tallies, path)
+	if tally.added {
+		s.result.FilesAdded++
+	}
+	if tally.changed {
+		s.result.FilesChanged++
+	}
+	if tally.unmatched {
+		s.result.MediaUnmatched++
+	}
 }
 
 func (s *scanWalkState) queueCompletion(path string, mediaID store.MediaID, fingerprint string, derive bool) error {

@@ -187,6 +187,7 @@ func (s *scanWalkState) flushPendingParts() error {
 	}
 	for _, file := range files {
 		s.result.FilesSeen++
+		s.applyTally(file.Path)
 		s.result.Files = append(s.result.Files, ImportedFile{
 			Path:               file.Path,
 			MediaID:            media.ID,

@@ -48,7 +48,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		progress:            progress,
 		workers:             workers,
 		workBudget:          make(chan struct{}, workers),
-		result:              Result{FilesSeen: checkpoint.FilesSeen, MediaImported: checkpoint.MediaImported, LastPath: checkpoint.LastPath, MissingCredentials: append([]string(nil), checkpoint.MissingCredentials...), seenMedia: map[store.MediaID]bool{}, totalFiles: checkpoint.TotalFiles},
+		result:              Result{FilesSeen: checkpoint.FilesSeen, MediaImported: checkpoint.MediaImported, LastPath: checkpoint.LastPath, MissingCredentials: append([]string(nil), checkpoint.MissingCredentials...), FilesAdded: checkpoint.FilesAdded, FilesChanged: checkpoint.FilesChanged, MediaUnmatched: checkpoint.MediaUnmatched, seenMedia: map[store.MediaID]bool{}, totalFiles: checkpoint.TotalFiles},
 		directoryContexts:   map[string]ParseContext{},
 		directoryPreflights: map[string]*contextualDirectoryPreflight{},
 		versionAnchors:      map[string]versionAnchor{},
@@ -204,7 +204,11 @@ func (s *scanWalkState) markMissingIfPlausible(scanStarted time.Time) error {
 		slog.Warn("scan: not marking files missing", "library", string(s.req.LibraryID), "root", s.req.Root, "reason", reason, "present", present, "unseen", stale)
 		return nil
 	}
-	return s.st.MarkMissingMediaFilesNotSeenSince(s.ctx, s.req.LibraryID, s.req.Root, scanStarted)
+	if err := s.st.MarkMissingMediaFilesNotSeenSince(s.ctx, s.req.LibraryID, s.req.Root, scanStarted); err != nil {
+		return err
+	}
+	s.result.FilesMissing = stale
+	return nil
 }
 
 func checkScanRootReadable(root string) error {

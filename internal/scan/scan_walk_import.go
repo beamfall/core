@@ -148,8 +148,12 @@ func (s *scanWalkState) retryAutoIdentify(path string, mediaID store.MediaID, fi
 		return err
 	}
 	queued, err := s.st.IsUnmatched(s.ctx, mediaID)
-	if err != nil || queued {
+	if err != nil {
 		return err
+	}
+	if queued {
+		s.noteFile(path, func(t *fileTally) { t.unmatched = true })
+		return nil
 	}
 	s.autoIdentify(path, mediaID, fingerprint, parsed, "scan: auto-identify retry failed")
 	return nil
@@ -226,6 +230,15 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			imported.Year = parsed.Year
 		}
 	}
+	// The fast path took every file whose size and mtime are unchanged, so a
+	// file here is new to the catalog or changed on disk (CORE-2040).
+	s.noteFile(path, func(t *fileTally) {
+		if task.stored.OK {
+			t.changed = true
+		} else {
+			t.added = true
+		}
+	})
 	if s.isParsedPart(parsed, parsedOK) {
 		if err := s.queueParsedPart(imported, parsed, parsedFields, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
 			return err

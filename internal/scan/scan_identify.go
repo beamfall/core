@@ -50,6 +50,7 @@ func credentialLabel(identifier Identifier, ref string) string {
 func (s *scanWalkState) autoIdentify(path string, mediaID store.MediaID, fingerprint string, parsed ParsedMedia, failure string) {
 	err := s.identifier.AutoIdentify(s.ctx, mediaID, s.libraryPluginID, fingerprint, parsed)
 	if err == nil {
+		s.noteUnmatched(path, mediaID)
 		return
 	}
 	var missing MissingCredentialError
@@ -58,6 +59,20 @@ func (s *scanWalkState) autoIdentify(path string, mediaID store.MediaID, fingerp
 		return
 	}
 	slog.Warn(failure, "path", path, "media", string(mediaID), "error", err.Error())
+}
+
+// noteUnmatched counts the item for the scan summary when identification
+// left it in the Unmatched queue (CORE-2040). A failed lookup only loses the
+// count; the queue itself is unaffected.
+func (s *scanWalkState) noteUnmatched(path string, mediaID store.MediaID) {
+	queued, err := s.st.IsUnmatched(s.ctx, mediaID)
+	if err != nil {
+		slog.Warn("scan: unmatched lookup failed", "media", string(mediaID), "error", err.Error())
+		return
+	}
+	if queued {
+		s.noteFile(path, func(t *fileTally) { t.unmatched = true })
+	}
 }
 
 // noteMissingCredential records ref in the scan result and logs it the first

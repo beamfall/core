@@ -47,12 +47,15 @@ type scanWalkState struct {
 	cancelDerivations   context.CancelFunc
 	derivativeWG        sync.WaitGroup
 	pendingCompletions  []*completedFile
-	localArtwork        LocalArtworkImporter
-	containerArtwork    ContainerArtworkImporter
-	containerResolver   ContainerEntityResolver
-	containerArt        map[store.EntityID]*containerArtChoice
-	localReleases       map[localArtSlot]bool
-	localMatched        map[localArtSlot]bool
+	// tallies holds what this scan did to each file until the file completes
+	// and its counts reach the result (see noteFile).
+	tallies           map[string]fileTally
+	localArtwork      LocalArtworkImporter
+	containerArtwork  ContainerArtworkImporter
+	containerResolver ContainerEntityResolver
+	containerArt      map[store.EntityID]*containerArtChoice
+	localReleases     map[localArtSlot]bool
+	localMatched      map[localArtSlot]bool
 	// extrasRoot is the configured Library root holding req.Root; it bounds
 	// the Extras folder conventions even when req.Root is a subfolder.
 	extrasRoot string

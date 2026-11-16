@@ -65,6 +65,9 @@ func (r Result) checkpoint(stage string) jobCheckpoint {
 		TotalFiles:         r.totalFiles,
 		MediaImported:      r.MediaImported,
 		MissingCredentials: append([]string(nil), r.MissingCredentials...),
+		FilesAdded:         r.FilesAdded,
+		FilesChanged:       r.FilesChanged,
+		MediaUnmatched:     r.MediaUnmatched,
 	}
 }
 
