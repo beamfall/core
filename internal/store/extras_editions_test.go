@@ -73,9 +73,9 @@ func TestExtraExcludedFromBrowseButFetchable(t *testing.T) {
 	}
 }
 
-// TestExtraFlagIsStickyAcrossRescan proves a re-import that no longer carries
-// the Extra bit (e.g. a renamed parent folder) does not silently un-exclude an
-// already-flagged Extra.
+// TestExtraFlagIsStickyAcrossRescan proves a re-import that does not decide
+// the Extra bit (ExtraFromPath unset, as for uploads and managed imports)
+// does not silently un-exclude an already-flagged Extra.
 func TestExtraFlagIsStickyAcrossRescan(t *testing.T) {
 	st := openSeeded(t)
 	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
@@ -88,6 +88,33 @@ func TestExtraFlagIsStickyAcrossRescan(t *testing.T) {
 	items := mustSourceItems(t, st, filter, SourceQuery{Kind: "", LibraryID: "library-local"})
 	if containsMediaID(items, extra) {
 		t.Fatalf("Extra bit was cleared by a re-scan: %q leaked into browse", extra)
+	}
+}
+
+// TestPathDecidedImportClearsStaleExtraFlag (CORE-2189): an import whose
+// Extra bit the scan decided from the path replaces the stored bit, so a
+// rescan repairs a file once misclassified as an Extra.
+func TestPathDecidedImportClearsStaleExtraFlag(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+
+	extra := importForTest(t, st, "clip02", "Clip Two", true)
+	if _, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+		LibraryID:          "library-local",
+		Path:               "/library/clip02.mkv",
+		Title:              "Clip Two",
+		Container:          "mkv",
+		Codec:              "h264",
+		ContentFingerprint: "sha256:clip02",
+		ExtraFromPath:      true,
+	}); err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+
+	items := mustSourceItems(t, st, filter, SourceQuery{Kind: "", LibraryID: "library-local"})
+	if !containsMediaID(items, extra) {
+		t.Fatalf("path-decided re-import kept the stale Extra bit: %q missing from browse", extra)
 	}
 }
 

@@ -91,6 +91,11 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		}
 		state.backfillStale = stale
 	}
+	extrasRoot, err := extrasRootFor(ctx, st, req.LibraryID, req.Root)
+	if err != nil {
+		return Result{}, err
+	}
+	state.extrasRoot = extrasRoot
 	if state.result.totalFiles == 0 {
 		err := filepath.Walk(req.Root, func(path string, info fs.FileInfo, err error) error {
 			if err == nil {
@@ -112,7 +117,6 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	defer state.derivativeWG.Wait()
 	defer state.cancelDerivations()
 
-	var err error
 	if workers > 1 {
 		err = runScanPipeline(ctx, req.Root, workers, state.admitEntry, state.fill, state.consumeTask, state.skipOrPropagate)
 	} else {
@@ -148,7 +152,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	if err := state.markMissingIfPlausible(scanStarted); err != nil {
 		return Result{}, err
 	}
-	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID, req.Root); err != nil {
+	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID, state.extrasRoot); err != nil {
 		return Result{}, err
 	}
 	return state.result, nil

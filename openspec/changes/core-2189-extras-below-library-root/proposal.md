@@ -15,8 +15,16 @@ every file it holds as an Extra: nothing reached browse, and the first-scan esti
   every folder above it are ignored. The filename suffix conventions are unchanged.
 - The scan walk, the version grouping pass, the Extra-to-main linking pass and the first-scan
   estimate all apply the same root-bounded rule.
+- The bound is the configured Library root that holds the scanned folder, not the scan's own
+  folder: a scan aimed at a subfolder (for example `<root>/<title>/Extras`) still sees the
+  folders between the Library root and it. A scanned folder under no configured root bounds
+  itself.
+- A scan import now sets the stored Extra flag from the path both ways, so a rescan repairs a file
+  that an earlier scan marked as an Extra. Imports that do not classify by path (uploads, managed
+  imports and converts) still never clear the flag.
 
 ## Impact
 
-- `internal/scan` only. No schema, migration, wire or web change. Libraries already scanned under
-  such a folder keep their stored Extra flag until the next scan reimports the files.
+- `internal/scan`, plus one import field and the Media upsert in `internal/store`. No schema,
+  migration, wire or web change. Libraries already scanned under such a folder show their files
+  as main Media after the next scan of the Library.

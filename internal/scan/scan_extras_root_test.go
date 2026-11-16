@@ -103,3 +103,81 @@ func TestEstimateCountsLibraryUnderExtrasFolder(t *testing.T) {
 		t.Fatalf("EstimatedFiles = %d, want 1 (the feature; the Trailers/ file below the root is an Extra)", est.EstimatedFiles)
 	}
 }
+
+// TestSubfolderScanBoundsExtrasByLibraryRoot (CORE-2189): a scan aimed at a
+// folder inside the Library still bounds the Extras conventions by the
+// configured Library root, so scanning <root>/Feature/Extras imports its new
+// file as an Extra rather than as main Media.
+func TestSubfolderScanBoundsExtrasByLibraryRoot(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	writeScanFile(t, root, "Synthetic Feature/Synthetic Feature.mp4", []byte("feature content"))
+	writeScanFile(t, root, "Synthetic Feature/Extras/Behind It.mp4", []byte("extra content"))
+	st := storetest.Open(t)
+	ctx := context.Background()
+	if err := st.SetLibraryRoots(ctx, "library-local", []string{root}); err != nil {
+		t.Fatalf("SetLibraryRoots: %v", err)
+	}
+
+	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: filepath.Join(root, "Synthetic Feature")}); err != nil {
+		t.Fatalf("Scan feature folder: %v", err)
+	}
+	writeScanFile(t, root, "Synthetic Feature/Extras/New Clip.mp4", []byte("new extra content"))
+	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: filepath.Join(root, "Synthetic Feature", "Extras")}); err != nil {
+		t.Fatalf("Scan Extras folder: %v", err)
+	}
+
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
+	items, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "recently-added"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSourceItemWithTitle(items, "Synthetic Feature") {
+		t.Fatalf("browse Source omitted the main Media: %#v", items)
+	}
+	for _, title := range []string{"Behind It", "New Clip"} {
+		if hasSourceItemWithTitle(items, title) {
+			t.Fatalf("subfolder scan imported Extras/ file %q as main Media: %#v", title, items)
+		}
+	}
+}
+
+// TestRescanClearsStaleExtraFlagFromAboveRootFolder (CORE-2189): a file
+// stored as an Extra because of a folder that is not below its Library root
+// (the pre-fix classification) is main Media again after a rescan.
+func TestRescanClearsStaleExtraFlagFromAboveRootFolder(t *testing.T) {
+	// feature:scan-pipeline
+	parent := t.TempDir()
+	root := filepath.Join(parent, "Trailers", "Films")
+	writeScanFile(t, root, "Synthetic Feature.mp4", []byte("feature content"))
+	st := storetest.Open(t)
+	ctx := context.Background()
+
+	// With no configured roots the scan Root bounds the conventions, so a scan
+	// of the parent stores the file as an Extra under Trailers/.
+	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: parent}); err != nil {
+		t.Fatalf("Scan parent: %v", err)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
+	items, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "recently-added"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasSourceItemWithTitle(items, "Synthetic Feature") {
+		t.Fatalf("setup: file below Trailers/ was not stored as an Extra: %#v", items)
+	}
+
+	if err := st.SetLibraryRoots(ctx, "library-local", []string{root}); err != nil {
+		t.Fatalf("SetLibraryRoots: %v", err)
+	}
+	if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root}); err != nil {
+		t.Fatalf("Rescan: %v", err)
+	}
+	items, err = st.SourceItems(ctx, filter, store.SourceQuery{Kind: "recently-added"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSourceItemWithTitle(items, "Synthetic Feature") {
+		t.Fatalf("rescan kept the stale Extra flag; main Media missing from browse: %#v", items)
+	}
+}

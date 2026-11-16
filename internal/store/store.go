@@ -649,11 +649,14 @@ type ImportMediaFile struct {
 	// DEFAULT from the discovery surfaces — browse Sources, continue-watching,
 	// dedupe, and stats — while staying directly addressable. This is the
 	// generic SHAPE bit (invariant #1): the specific extra TYPE (trailer, BTS,
-	// deleted clip, …) is plugin display vocabulary, never stored in Core. On a
-	// re-scan the bit is sticky once set: a later pass that no longer recognises
-	// the convention (e.g. a renamed parent folder) does not silently
-	// un-exclude the Extra.
+	// deleted clip, …) is plugin display vocabulary, never stored in Core. An
+	// import that does not decide the bit (ExtraFromPath unset: uploads,
+	// managed imports and converts) never clears it: once set it stays set.
 	Extra bool
+	// ExtraFromPath marks an import whose Extra bit the scan decided from the
+	// file's path. The stored bit then follows Extra both ways, so a rescan
+	// repairs a stale classification (CORE-2189).
+	ExtraFromPath bool
 	// managedAdmission marks a managed import or convert. Such an admission
 	// is refused when its fingerprint is already live at another path or in
 	// another library, instead of repointing that row (content_fingerprint is

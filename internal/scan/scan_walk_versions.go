@@ -101,7 +101,7 @@ func (s *scanWalkState) seedVersionAnchors(dir string) error {
 		if refused {
 			continue
 		}
-		candidate := store.ImportMediaFile{Path: file.Path, Extra: isExtraPath(s.req.Root, file.Path)}
+		candidate := store.ImportMediaFile{Path: file.Path, Extra: isExtraPath(s.extrasRoot, file.Path)}
 		if imageClassForPath(file.Path) {
 			candidate.Class = store.MediaClassImage
 		}

@@ -53,6 +53,9 @@ type scanWalkState struct {
 	containerArt        map[store.EntityID]*containerArtChoice
 	localReleases       map[localArtSlot]bool
 	localMatched        map[localArtSlot]bool
+	// extrasRoot is the configured Library root holding req.Root; it bounds
+	// the Extras folder conventions even when req.Root is a subfolder.
+	extrasRoot string
 	// walkMediaFiles counts the media-file candidates this run's walk saw,
 	// including ones a resumed checkpoint skips as already done. Zero means
 	// the root walked empty, so the post-walk missing pass must not run.

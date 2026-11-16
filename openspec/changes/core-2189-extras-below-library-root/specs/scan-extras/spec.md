@@ -17,3 +17,20 @@ SHALL apply the same rule.
 - **WHEN** the same Library holds `<title>/Extras/<clip>`
 - **THEN** that clip is an Extra linked to the main Media in `<title>`, and the estimate does not
   count it
+
+### Requirement: A subfolder scan and a rescan use the configured Library root
+
+The Library root that bounds the Extras folder conventions SHALL be the configured root of the
+Library that holds the scanned folder, also when a scan targets a subfolder. A scan SHALL set the
+stored Extra flag of each file it imports from this rule, clearing a flag that no longer applies.
+
+#### Scenario: Scan of a subfolder inside the Library
+
+- **WHEN** a Library rooted at `<root>` is scanned only at `<root>/<title>/Extras`
+- **THEN** a new file in that folder imports as an Extra, not as main Media
+
+#### Scenario: Rescan repairs a stale Extra flag
+
+- **WHEN** a file was stored as an Extra because of a folder at or above its Library root, and the
+  Library is scanned again
+- **THEN** the file is main Media and appears in browse

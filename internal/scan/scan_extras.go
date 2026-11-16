@@ -58,7 +58,8 @@ type extraParentTitleKey struct {
 }
 
 // linkExtraRelationsForLibrary links each Extra in the Library to its main
-// Media. root is the scanned Library root that bounds the folder conventions.
+// Media. root is the Library root that bounds the folder conventions (see
+// extrasRootFor).
 func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryID store.LibraryID, root string) error {
 	byDir := map[string][]store.MediaID{}
 	byDirTitle := map[extraParentTitleKey]store.MediaID{}
@@ -123,6 +124,34 @@ func extraParentMediaID(root, path string, byDir map[string][]store.MediaID, byD
 		}
 	}
 	return ""
+}
+
+// extrasRootFor returns the folder that bounds the Extras folder conventions
+// for a scan of scanRoot: the longest configured root of the Library that
+// holds scanRoot, so a scan aimed at a folder inside the Library (even an
+// Extras folder) still sees the folders between the Library root and it. A
+// scanRoot under no configured root bounds itself.
+func extrasRootFor(ctx context.Context, st *store.Store, libraryID store.LibraryID, scanRoot string) (string, error) {
+	roots, err := st.LibraryRoots(ctx, libraryID)
+	if err != nil {
+		return "", err
+	}
+	scanRoot = filepath.Clean(scanRoot)
+	best := ""
+	for _, root := range roots {
+		root = filepath.Clean(root)
+		rel, err := filepath.Rel(root, scanRoot)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+			continue
+		}
+		if len(root) > len(best) {
+			best = root
+		}
+	}
+	if best == "" {
+		return scanRoot, nil
+	}
+	return best, nil
 }
 
 // extraContainerDir returns the nearest ancestor folder of path, strictly

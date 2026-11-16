@@ -2978,9 +2978,9 @@ func upsertMediaRowForImportTx(ctx context.Context, tx *sql.Tx, mediaID MediaID,
 		  video_width = CASE WHEN ? OR excluded.video_width <= 0 THEN media.video_width ELSE excluded.video_width END,
 		  video_height = CASE WHEN ? OR excluded.video_height <= 0 THEN media.video_height ELSE excluded.video_height END,
 		  media_class = CASE WHEN ? <> '' THEN ? ELSE media.media_class END,
-		  extra = CASE WHEN excluded.extra = 1 THEN 1 ELSE media.extra END
+		  extra = CASE WHEN ? OR excluded.extra = 1 THEN excluded.extra ELSE media.extra END
 	`, media.ID, media.LibraryID, media.Title, media.Summary, nullableInt(media.Year), media.DurationSeconds, media.Container, media.Codec, media.VideoWidth, media.VideoHeight, media.Class, boolInt(imported.Extra),
-		keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, rawClass, rawClass); err != nil {
+		keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, keepProbeFacts, rawClass, rawClass, imported.ExtraFromPath); err != nil {
 		return Media{}, false, err
 	}
 	// Record scan-tier provenance for the built-ins the import supplies. The
