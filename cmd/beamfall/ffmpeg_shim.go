@@ -34,15 +34,27 @@ type ffmpegShimRequest struct {
 	argv   []string // the target binary and its arguments
 	// requireLandlock makes kernel confinement a precondition.
 	requireLandlock bool
-	// dri grants the GPU render nodes and the OpenCL ICD registry.
+	// gpu is the device grant the job's hardware needs, if any.
+	gpu gpuGrant
+}
+
+// gpuGrant selects the GPU device grants added to a confined job's ruleset.
+// Each is requested only for a job, or the probe of a job, that runs on that
+// hardware; the zero value grants no device.
+type gpuGrant struct {
+	// dri grants the DRM render nodes and the OpenCL ICD registry (QSV,
+	// VA-API; CORE-2158).
 	dri bool
+	// nvidia grants the NVIDIA device nodes and driver paths (NVENC, CUDA;
+	// CORE-2182).
+	nvidia bool
 }
 
 // parseShimArgs splits the shim argv into the read-only paths, read-write paths,
 // the target command (binary + its args), and the confinement flags. The
 // grammar is:
 //
-//	[--require-landlock] [--dri] --ro <dir> ... --rw <dir> ... -- <binary> <args...>
+//	[--require-landlock] [--dri] [--nvidia] --ro <dir> ... --rw <dir> ... -- <binary> <args...>
 //
 // --require-landlock turns the best-effort Linux landlock confinement into a
 // precondition: a kernel without landlock, or with a landlock ABI below 3 that
@@ -50,8 +62,9 @@ type ffmpegShimRequest struct {
 // rlimits or a partial ruleset. The encrypted-library pipe transcode sets it, because
 // that child reads decrypted bytes over loopback and must never run unconfined.
 // --dri adds the render-node and OpenCL registry grants a QSV or VA-API job
-// needs (CORE-2158); internal/ffmpeg sets it only for such a job or its probe.
-// A bare "--" terminates the flag section; everything after it is the command,
+// needs (CORE-2158), and --nvidia the NVIDIA device and driver grants an NVENC
+// or CUDA job needs (CORE-2182); internal/ffmpeg sets each only for such a job
+// or its probe. A bare "--" terminates the flag section; everything after it is the command,
 // taken verbatim (so a media path that looks like a flag is never reinterpreted
 // here). At least the binary must follow "--".
 func parseShimArgs(args []string) (ffmpegShimRequest, error) {
@@ -75,7 +88,10 @@ func parseShimArgs(args []string) (ffmpegShimRequest, error) {
 			req.requireLandlock = true
 			i++
 		case "--dri":
-			req.dri = true
+			req.gpu.dri = true
+			i++
+		case "--nvidia":
+			req.gpu.nvidia = true
 			i++
 		case "--":
 			req.argv = args[i+1:]

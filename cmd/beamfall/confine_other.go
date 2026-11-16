@@ -15,14 +15,14 @@ import (
 // confinement. The roPaths/rwPaths/binary set is computed identically on every
 // platform (so it is unit-testable here); only the kernel enforcement is
 // Linux-only. binary is the exec target whose directory must remain reachable;
-// the GPU grant flag has nothing to grant here.
-func applyConfinement(_, _ []string, _ string, _ bool) error { return nil }
+// the GPU grants have nothing to grant here.
+func applyConfinement(_, _ []string, _ string, _ gpuGrant) error { return nil }
 
 // applyRequiredConfinement refuses everywhere landlock is absent. A spawn that
 // asks for mandatory confinement (--require-landlock) must not fall back to
 // rlimits; on darwin that child is confined by sandbox-exec before it reaches
 // this shim, so the shim is never asked to require landlock there.
-func applyRequiredConfinement(_, _ []string, _ string, _ bool) error {
+func applyRequiredConfinement(_, _ []string, _ string, _ gpuGrant) error {
 	return fmt.Errorf("ffmpeg-shim: landlock confinement is required but unavailable on %s", runtime.GOOS)
 }
 

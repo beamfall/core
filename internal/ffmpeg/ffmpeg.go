@@ -1402,12 +1402,6 @@ func (r Rendition) withToneMapAccel(accel HWAccel) Rendition {
 // withDeviceDecode returns a copy that decodes, scales and tone-maps on the
 // encoder's device when on is true. The tone-map then runs on the encoder's
 // backend, so toneMapAccel follows hwAccel.
-// needsDRI reports whether the rendition's encode or tone-map runs on a QSV or
-// VA-API device, and so whether its confined job needs the GPU grant.
-func (r Rendition) needsDRI() bool {
-	return driAccel(r.hwAccel) || driAccel(r.toneMapAccel)
-}
-
 func (r Rendition) withDeviceDecode(on bool) Rendition {
 	r.deviceDecode = on
 	if on {
@@ -2416,8 +2410,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	args := hlsArgs(src, dir, rendition)
 	// Confine to the source file's directory (read-only) and the segment output
 	// directory (read-write), plus the GPU when the rendition runs on one.
-	conf := dirConfinement(src, dir)
-	conf.DRI = rendition.needsDRI()
+	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
 	var cmd *exec.Cmd
 	if background {
 		cmd = r.generationCommand(ctx, conf, ffmpegPath, args...)
@@ -2586,8 +2579,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
 	args := buildArgs(rendition)
-	conf := dirConfinement(src, dir)
-	conf.DRI = rendition.needsDRI()
+	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
 	cmd := r.confinedCommand(ctx, ffmpegPath, conf, args)
 	process, err := startHLSProcess(cmd)
 	if err != nil {

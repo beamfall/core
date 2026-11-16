@@ -91,7 +91,7 @@ func shimCommand(ctx context.Context, shimPath, binPath string, conf confinement
 
 // buildShimArgs assembles the argv for the ffmpeg-shim subcommand:
 //
-//	ffmpeg-shim [--dri] --ro <dir> [--ro <dir>...] --rw <dir> [--rw <dir>...] -- <ffmpeg> <args...>
+//	ffmpeg-shim [--dri] [--nvidia] --ro <dir> [--ro <dir>...] --rw <dir> [--rw <dir>...] -- <ffmpeg> <args...>
 //
 // The rlimit values are not passed on the command line — they are compile-time
 // consts the shim reads directly — keeping the argv tied to the per-job paths
@@ -101,6 +101,9 @@ func buildShimArgs(conf confinement, binPath string, args []string) []string {
 	out := []string{shimSubcommand}
 	if conf.DRI {
 		out = append(out, "--dri")
+	}
+	if conf.NVIDIA {
+		out = append(out, "--nvidia")
 	}
 	for _, p := range conf.ReadOnly {
 		out = append(out, "--ro", p)
@@ -122,7 +125,7 @@ var probeShimPath atomic.Pointer[string]
 
 // SetProbeHardeningShim makes the encoder, tone-map and device-decode probes
 // run FFmpeg through the hardening shim at path, under the confinement their
-// transcode gets (CORE-2158), so a verdict never certifies a chain the
+// transcode gets (CORE-2158, CORE-2182), so a verdict never certifies a chain the
 // confined job cannot open. An empty path, the default, execs FFmpeg directly,
 // for the same reason SetHardeningShim defaults off.
 //
@@ -152,6 +155,12 @@ func probeCommand(ctx context.Context, ffmpegPath string, conf confinement, args
 // VA-API. NVENC, VideoToolbox, AMF and the software path need neither.
 func driAccel(accel HWAccel) bool {
 	return accel == HWAccelQSV || accel == HWAccelVAAPI
+}
+
+// nvidiaAccel reports whether an accelerator's encode or tone-map opens the
+// NVIDIA device nodes: NVENC, whose tone-map runs on CUDA.
+func nvidiaAccel(accel HWAccel) bool {
+	return accel == HWAccelNVENC
 }
 
 // ShimEnvVar names an explicit override for the shim binary path. When set, it
@@ -185,11 +194,25 @@ func DefaultShimPath() string {
 // grant is the minimal set that keeps a legitimate job working.
 //
 // DRI adds the render nodes and the OpenCL ICD registry for a job that encodes
-// or tone-maps on QSV or VA-API (CORE-2158); every other job leaves it false.
+// or tone-maps on QSV or VA-API (CORE-2158), and NVIDIA the NVIDIA device nodes
+// and driver paths for one on NVENC/CUDA (CORE-2182); every other job leaves
+// both false.
 type confinement struct {
 	ReadOnly  []string
 	ReadWrite []string
 	DRI       bool
+	NVIDIA    bool
+}
+
+// withGPU returns a copy carrying the GPU grants a job whose encode or
+// tone-map runs on the given accelerators needs, so a transcode and the probe
+// that qualifies it derive their grants the same way.
+func (c confinement) withGPU(accels ...HWAccel) confinement {
+	for _, accel := range accels {
+		c.DRI = c.DRI || driAccel(accel)
+		c.NVIDIA = c.NVIDIA || nvidiaAccel(accel)
+	}
+	return c
 }
 
 // readConfinement confines a read-only job (e.g. ffprobe, waveform analysis)

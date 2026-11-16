@@ -67,6 +67,7 @@ func fakeFFmpegOnPath(t *testing.T) string {
 // shimFlags splits one recorded shim argv into its confinement and target.
 type shimFlags struct {
 	dri    bool
+	nvidia bool
 	ro, rw []string
 	target []string
 }
@@ -81,6 +82,8 @@ func parseRecordedShim(t *testing.T, args []string) shimFlags {
 		switch args[i] {
 		case "--dri":
 			flags.dri = true
+		case "--nvidia":
+			flags.nvidia = true
 		case "--ro":
 			i++
 			flags.ro = append(flags.ro, args[i])
@@ -98,7 +101,10 @@ func parseRecordedShim(t *testing.T, args []string) shimFlags {
 	return flags
 }
 
-func TestHLSShimGetsDRIOnlyForQSVOrVAAPI(t *testing.T) {
+// TestHLSShimGetsOnlyItsAcceleratorsGPUGrant proves a transcode asks for --dri
+// only for a QSV or VA-API encode or tone-map, and --nvidia only for an NVENC
+// encode or CUDA tone-map (CORE-2158, CORE-2182).
+func TestHLSShimGetsOnlyItsAcceleratorsGPUGrant(t *testing.T) {
 	shim, invocations := fakeShim(t)
 	fakeFFmpegOnPath(t)
 	originalToneMap, originalDecode := selectRenditionToneMapBackend, selectRenditionDeviceDecode
@@ -110,16 +116,20 @@ func TestHLSShimGetsDRIOnlyForQSVOrVAAPI(t *testing.T) {
 	}
 
 	cases := []struct {
-		name    string
-		encode  HardwareEncode
-		toneMap HWAccel
-		wantDRI bool
+		name       string
+		encode     HardwareEncode
+		toneMap    HWAccel
+		wantDRI    bool
+		wantNVIDIA bool
 	}{
-		{"software", HardwareEncode{}, "", false},
-		{"vaapi encode", HardwareEncode{Accel: HWAccelVAAPI}, "", true},
-		{"qsv encode", HardwareEncode{Accel: HWAccelQSV}, "", true},
-		{"nvenc encode", HardwareEncode{Accel: HWAccelNVENC}, "", false},
-		{"software encode, vaapi tone-map", HardwareEncode{}, HWAccelVAAPI, true},
+		{"software", HardwareEncode{}, "", false, false},
+		{"vaapi encode", HardwareEncode{Accel: HWAccelVAAPI}, "", true, false},
+		{"qsv encode", HardwareEncode{Accel: HWAccelQSV}, "", true, false},
+		{"nvenc encode", HardwareEncode{Accel: HWAccelNVENC}, "", false, true},
+		{"nvenc encode, cuda tone-map", HardwareEncode{Accel: HWAccelNVENC}, HWAccelNVENC, false, true},
+		{"software encode, vaapi tone-map", HardwareEncode{}, HWAccelVAAPI, true, false},
+		{"software encode, cuda tone-map", HardwareEncode{}, HWAccelNVENC, false, true},
+		{"videotoolbox encode", HardwareEncode{Accel: HWAccelVideoToolbox}, "", false, false},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -145,8 +155,9 @@ func TestHLSShimGetsDRIOnlyForQSVOrVAAPI(t *testing.T) {
 			_ = proc.Wait()
 			calls := invocations()
 			flags := parseRecordedShim(t, calls[len(calls)-1])
-			if flags.dri != tc.wantDRI {
-				t.Errorf("%s %s: --dri = %v, want %v", tc.name, name, flags.dri, tc.wantDRI)
+			if flags.dri != tc.wantDRI || flags.nvidia != tc.wantNVIDIA {
+				t.Errorf("%s %s: --dri = %v --nvidia = %v, want %v and %v",
+					tc.name, name, flags.dri, flags.nvidia, tc.wantDRI, tc.wantNVIDIA)
 			}
 			if !slices.Equal(flags.rw, []string{dir}) || !slices.Equal(flags.ro, []string{filepath.Dir(src)}) {
 				t.Errorf("%s %s: ro %q rw %q, want the job paths only", tc.name, name, flags.ro, flags.rw)
@@ -163,12 +174,12 @@ func TestEncoderAndToneMapProbesRunThroughTheShim(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	check := func(what string, wantDRI bool) {
+	check := func(what string, want confinement) {
 		t.Helper()
 		calls := invocations()
 		flags := parseRecordedShim(t, calls[len(calls)-1])
-		if flags.dri != wantDRI {
-			t.Errorf("%s: --dri = %v, want %v", what, flags.dri, wantDRI)
+		if flags.dri != want.DRI || flags.nvidia != want.NVIDIA {
+			t.Errorf("%s: --dri = %v --nvidia = %v, want %v and %v", what, flags.dri, flags.nvidia, want.DRI, want.NVIDIA)
 		}
 		if len(flags.ro) != 0 || len(flags.rw) != 0 {
 			t.Errorf("%s: job paths ro %q rw %q, want none", what, flags.ro, flags.rw)
@@ -177,24 +188,29 @@ func TestEncoderAndToneMapProbesRunThroughTheShim(t *testing.T) {
 			t.Errorf("%s: target %q, want %s", what, flags.target, ffmpegPath)
 		}
 	}
+	dri, nvidia := confinement{DRI: true}, confinement{NVIDIA: true}
 	for _, tc := range []struct {
 		encoder string
-		wantDRI bool
-	}{{"h264_vaapi", true}, {"h264_qsv", true}, {"hevc_vaapi", true}, {"h264_nvenc", false}, {"h264_videotoolbox", false}} {
+		want    confinement
+	}{
+		{"h264_vaapi", dri}, {"h264_qsv", dri}, {"hevc_vaapi", dri},
+		{"h264_nvenc", nvidia}, {"hevc_nvenc", nvidia}, {"av1_nvenc", nvidia},
+		{"h264_videotoolbox", confinement{}},
+	} {
 		if err := DefaultHWAccelRunner(ctx, HWAccelEncode{Encoder: tc.encoder}); err != nil {
 			t.Fatalf("encoder probe %s: %v", tc.encoder, err)
 		}
-		check("encoder probe "+tc.encoder, tc.wantDRI)
+		check("encoder probe "+tc.encoder, tc.want)
 	}
 	for _, tc := range []struct {
 		backend HWAccel
-		wantDRI bool
-	}{{HWAccelVAAPI, true}, {HWAccelQSV, true}, {"", false}} {
+		want    confinement
+	}{{HWAccelVAAPI, dri}, {HWAccelQSV, dri}, {HWAccelNVENC, nvidia}, {"", confinement{}}} {
 		frame, err := DefaultToneMapRunner(ctx, ToneMapRender{Source: toneMapProbeSource, Backend: tc.backend})
 		if err != nil || len(frame) != toneMapProbeFrameBytes {
 			t.Fatalf("tone-map render %q = %d bytes, %v", tc.backend, len(frame), err)
 		}
-		check("tone-map render "+string(tc.backend), tc.wantDRI)
+		check("tone-map render "+string(tc.backend), tc.want)
 	}
 }
 

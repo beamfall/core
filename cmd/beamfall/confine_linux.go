@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -31,10 +32,11 @@ import (
 // access set is masked to the kernel's reported landlock ABI so newer access
 // bits never make create_ruleset reject the request on an older kernel.
 //
-// dri adds the GPU grants a QSV or VA-API job needs (see hardwareDeviceRules);
-// every other job runs without them.
-func applyConfinement(roPaths, rwPaths []string, binary string, dri bool) error {
-	return applyFFmpegConfinement(roPaths, rwPaths, binary, dri, false)
+// gpu adds the device grants a QSV or VA-API job (hardwareDeviceRules) or an
+// NVENC or CUDA job (nvidiaDeviceRules) needs; every other job runs without
+// them.
+func applyConfinement(roPaths, rwPaths []string, binary string, gpu gpuGrant) error {
+	return applyFFmpegConfinement(roPaths, rwPaths, binary, gpu, false)
 }
 
 // applyRequiredConfinement is applyConfinement with kernel support made a
@@ -43,8 +45,8 @@ func applyConfinement(roPaths, rwPaths []string, binary string, dri bool) error 
 // rather than running the child on rlimits or a partial ruleset. The
 // encrypted-library pipe transcode uses it (--require-landlock), because that
 // child reads decrypted bytes.
-func applyRequiredConfinement(roPaths, rwPaths []string, binary string, dri bool) error {
-	return applyFFmpegConfinement(roPaths, rwPaths, binary, dri, true)
+func applyRequiredConfinement(roPaths, rwPaths []string, binary string, gpu gpuGrant) error {
+	return applyFFmpegConfinement(roPaths, rwPaths, binary, gpu, true)
 }
 
 // errLandlockRequired reports a mandatory confinement the kernel cannot give.
@@ -54,7 +56,7 @@ var errLandlockRequired = errors.New("landlock confinement is required but unava
 // seam so the required-confinement refusal is testable on a landlock kernel.
 var ffmpegLandlockABI = landlockABI
 
-func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, dri, required bool) error {
+func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, gpu gpuGrant, required bool) error {
 	abi := ffmpegLandlockABI()
 	if required && !requiredLandlockEnforceable(abi) {
 		if abi < 1 {
@@ -81,7 +83,7 @@ func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, dri, requi
 	}
 	defer unix.Close(rulesetFD)
 
-	for _, rule := range ffmpegRules(roPaths, rwPaths, binary, abi, dri) {
+	for _, rule := range ffmpegRules(roPaths, rwPaths, binary, abi, gpu) {
 		add := addPathRule
 		if rule.optional {
 			add = addPathRuleOptional
@@ -113,7 +115,7 @@ type landlockRule struct {
 
 // ffmpegRules is the complete ffmpeg-shim ruleset for one job, computed before
 // any of it is installed so its contents are testable.
-func ffmpegRules(roPaths, rwPaths []string, binary string, abi int, dri bool) []landlockRule {
+func ffmpegRules(roPaths, rwPaths []string, binary string, abi int, gpu gpuGrant) []landlockRule {
 	handled := handledAccess(abi)
 	read := readAccess()
 	var rules []landlockRule
@@ -140,8 +142,11 @@ func ffmpegRules(roPaths, rwPaths []string, binary string, abi int, dri bool) []
 	}
 	// /dev/null is the null muxer's only write sink (waveform analysis).
 	rules = append(rules, landlockRule{path: "/dev/null", access: nullDeviceAccess(), optional: true})
-	if dri {
+	if gpu.dri {
 		rules = append(rules, hardwareDeviceRules(abi)...)
+	}
+	if gpu.nvidia {
+		rules = append(rules, nvidiaDeviceRules(abi)...)
 	}
 	return rules
 }
@@ -169,7 +174,7 @@ func hardwareDeviceRules(abi int) []landlockRule {
 	rules := []landlockRule{{path: driDir, access: unix.LANDLOCK_ACCESS_FS_READ_DIR, optional: true}}
 	nodes, _ := filepath.Glob(filepath.Join(driDir, "renderD*")) // only ErrBadPattern, and the pattern is fixed
 	for _, node := range nodes {
-		rules = append(rules, landlockRule{path: node, access: renderNodeAccess(abi), optional: true})
+		rules = append(rules, landlockRule{path: node, access: gpuNodeAccess(abi), optional: true})
 		if dev, ok := renderNodeSysfsDevice(node); ok {
 			rules = append(rules, landlockRule{path: dev, access: readAccess(), optional: true})
 		}
@@ -196,11 +201,92 @@ var renderNodeSysfsDevice = func(node string) (string, bool) {
 	return dev, true
 }
 
-// renderNodeAccess is the file-valid access set for a render node (a character
-// device, which rejects directory rights with EINVAL). Device ioctl is a
-// handled right only from landlock ABI 5; below that the kernel does not fence
-// ioctl at all.
-func renderNodeAccess(abi int) uint64 {
+// The NVIDIA paths an NVENC or CUDA job opens, held as variables so a test can
+// point them at a fixture tree.
+var (
+	nvidiaDevDir  = "/dev"
+	nvidiaProcDir = "/proc/driver/nvidia"
+	sysfsDir      = "/sys"
+)
+
+// nvidiaDeviceRules grants what libcuda needs to initialize a GPU for NVENC
+// and the CUDA tone-map, and no more (CORE-2182): read, write and device ioctl
+// on the control node (nvidiactl), the unified-memory node CUDA allocates
+// through (nvidia-uvm) and each GPU node (nvidia0, nvidia1, …), opened by name,
+// so /dev is never listable; read-only access to /proc/driver/nvidia, where
+// libcuda reads the driver parameters and version and enumerates the GPUs; and
+// read-only access to each GPU's own sysfs PCI device directory. Never granted:
+// nvidia-modeset (display only, which NVIDIA's own container runtime withholds
+// from compute and video workloads), nvidia-uvm-tools (the profiler event
+// interface), the nvidia-caps MIG nodes, and the rest of /dev, /proc and /sys.
+// The driver libraries (libcuda, libnvidia-encode, the PTX JIT) load from the
+// library trees runtimePaths already grants. Every path is optional: a host
+// without the driver gets no rule, and the probe that runs under this same
+// ruleset then reports NVENC unavailable.
+func nvidiaDeviceRules(abi int) []landlockRule {
+	nodes := []string{filepath.Join(nvidiaDevDir, "nvidiactl"), filepath.Join(nvidiaDevDir, "nvidia-uvm")}
+	matches, _ := filepath.Glob(filepath.Join(nvidiaDevDir, "nvidia[0-9]*")) // only ErrBadPattern, and the pattern is fixed
+	for _, node := range matches {
+		if isNVIDIAGPUNode(filepath.Base(node)) {
+			nodes = append(nodes, node)
+		}
+	}
+	var rules []landlockRule
+	for _, node := range nodes {
+		rules = append(rules, landlockRule{path: node, access: gpuNodeAccess(abi), optional: true})
+	}
+	rules = append(rules, landlockRule{path: nvidiaProcDir, access: readAccess(), optional: true})
+	for _, dev := range nvidiaGPUSysfsDevices() {
+		rules = append(rules, landlockRule{path: dev, access: readAccess(), optional: true})
+	}
+	return rules
+}
+
+// isNVIDIAGPUNode reports whether name is a per-GPU node, "nvidia" followed by
+// the minor number alone, so no other nvidia-prefixed entry matches.
+func isNVIDIAGPUNode(name string) bool {
+	minor, ok := strings.CutPrefix(name, "nvidia")
+	if !ok || minor == "" {
+		return false
+	}
+	for _, c := range minor {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// nvidiaGPUSysfsDevices resolves each GPU the driver lists under
+// /proc/driver/nvidia/gpus (one directory per PCI bus ID) to its sysfs device
+// directory. NVIDIA nodes are registered without a sysfs class device, so
+// /sys/dev/char has no entry for them, unlike a render node. Only a target
+// beneath /sys/devices is returned. It runs before confinement, and landlock
+// checks the resolved path, which is why the grant names the link's target.
+func nvidiaGPUSysfsDevices() []string {
+	entries, err := os.ReadDir(filepath.Join(nvidiaProcDir, "gpus"))
+	if err != nil {
+		return nil
+	}
+	devicesRoot, err := filepath.EvalSymlinks(filepath.Join(sysfsDir, "devices"))
+	if err != nil {
+		return nil
+	}
+	var devs []string
+	for _, entry := range entries {
+		dev, err := filepath.EvalSymlinks(filepath.Join(sysfsDir, "bus", "pci", "devices", entry.Name()))
+		if err == nil && strings.HasPrefix(dev, devicesRoot+string(filepath.Separator)) {
+			devs = append(devs, dev)
+		}
+	}
+	return devs
+}
+
+// gpuNodeAccess is the file-valid access set for a GPU device node, a DRM
+// render node or an NVIDIA node (a character device, which rejects directory
+// rights with EINVAL). Device ioctl is a handled right only from landlock ABI
+// 5; below that the kernel does not fence ioctl at all.
+func gpuNodeAccess(abi int) uint64 {
 	return unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE |
 		(handledAccess(abi) & unix.LANDLOCK_ACCESS_FS_IOCTL_DEV)
 }

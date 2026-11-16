@@ -92,8 +92,8 @@ func TestParseShimArgs(t *testing.T) {
 	if req.requireLandlock {
 		t.Error("requireLandlock set without --require-landlock")
 	}
-	if req.dri {
-		t.Error("dri set without --dri")
+	if req.gpu != (gpuGrant{}) {
+		t.Errorf("gpu = %+v without --dri or --nvidia", req.gpu)
 	}
 }
 
@@ -127,7 +127,7 @@ func TestParseShimArgsDRI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseShimArgs: %v", err)
 	}
-	if !req.dri {
+	if !req.gpu.dri {
 		t.Error("dri not set")
 	}
 	if req.requireLandlock {
@@ -139,8 +139,30 @@ func TestParseShimArgsDRI(t *testing.T) {
 	if !reflect.DeepEqual(req.argv, []string{"/usr/bin/ffmpeg", "--dri"}) {
 		t.Errorf("argv = %q", req.argv)
 	}
-	if req, err := parseShimArgs([]string{"--", "/usr/bin/ffmpeg", "--dri"}); err != nil || req.dri {
-		t.Errorf("--dri after -- set dri = %v (err %v)", req.dri, err)
+	if req, err := parseShimArgs([]string{"--", "/usr/bin/ffmpeg", "--dri"}); err != nil || req.gpu.dri {
+		t.Errorf("--dri after -- set dri = %v (err %v)", req.gpu.dri, err)
+	}
+}
+
+// TestParseShimArgsNVIDIA pins the NVIDIA grant flag (CORE-2182): a bare flag
+// before "--" that sets no other grant, combinable with --dri, and a verbatim
+// token after "--".
+func TestParseShimArgsNVIDIA(t *testing.T) {
+	req, err := parseShimArgs([]string{"--nvidia", "--rw", "/out", "--", "/usr/bin/ffmpeg", "--nvidia"})
+	if err != nil {
+		t.Fatalf("parseShimArgs: %v", err)
+	}
+	if req.gpu != (gpuGrant{nvidia: true}) || req.requireLandlock {
+		t.Errorf("gpu = %+v, requireLandlock = %v, want the NVIDIA grant only", req.gpu, req.requireLandlock)
+	}
+	if !reflect.DeepEqual(req.rw, []string{"/out"}) || !reflect.DeepEqual(req.argv, []string{"/usr/bin/ffmpeg", "--nvidia"}) {
+		t.Errorf("rw = %q, argv = %q", req.rw, req.argv)
+	}
+	if req, err := parseShimArgs([]string{"--dri", "--nvidia", "--", "/usr/bin/ffmpeg"}); err != nil || req.gpu != (gpuGrant{dri: true, nvidia: true}) {
+		t.Errorf("--dri --nvidia gpu = %+v (err %v), want both grants", req.gpu, err)
+	}
+	if req, err := parseShimArgs([]string{"--", "/usr/bin/ffmpeg", "--nvidia"}); err != nil || req.gpu.nvidia {
+		t.Errorf("--nvidia after -- set nvidia = %v (err %v)", req.gpu.nvidia, err)
 	}
 }
 

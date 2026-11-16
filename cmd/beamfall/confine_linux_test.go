@@ -52,7 +52,7 @@ func TestLandlockDeniesUnlistedEtcFileAndAllowsInput(t *testing.T) {
 		if os.Getenv("BEAMFALL_LANDLOCK_ALLOW") == "1" {
 			ro = []string{os.Getenv("BEAMFALL_LANDLOCK_GRANT")}
 		}
-		if err := applyConfinement(ro, nil, os.Args[0], false); err != nil {
+		if err := applyConfinement(ro, nil, os.Args[0], gpuGrant{}); err != nil {
 			os.Exit(3)
 		}
 		_, err := os.ReadFile(path)
@@ -124,7 +124,7 @@ func TestLocalInferenceConfinementFailsClosedWithoutLandlock(t *testing.T) {
 	if !errors.Is(err, integrationhost.ErrLocalInferenceConfinementUnavailable) {
 		t.Fatalf("error = %v, want ErrLocalInferenceConfinementUnavailable", err)
 	}
-	if onThrowawayThread(func() error { return applyConfinement([]string{"/tmp"}, nil, os.Args[0], false) }) != nil {
+	if onThrowawayThread(func() error { return applyConfinement([]string{"/tmp"}, nil, os.Args[0], gpuGrant{}) }) != nil {
 		t.Fatal("the ffmpeg profile must keep its own best-effort posture")
 	}
 }
@@ -442,10 +442,10 @@ func TestRequiredFFmpegConfinementRefusesWithoutLandlock(t *testing.T) {
 	original := ffmpegLandlockABI
 	t.Cleanup(func() { ffmpegLandlockABI = original })
 	ffmpegLandlockABI = func() int { return 0 }
-	if err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg", false); !errors.Is(err, errLandlockRequired) {
+	if err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg", gpuGrant{}); !errors.Is(err, errLandlockRequired) {
 		t.Fatalf("applyRequiredConfinement without landlock = %v, want errLandlockRequired", err)
 	}
-	if err := applyConfinement(nil, nil, "/usr/bin/ffmpeg", false); err != nil {
+	if err := applyConfinement(nil, nil, "/usr/bin/ffmpeg", gpuGrant{}); err != nil {
 		t.Fatalf("best-effort applyConfinement without landlock = %v, want nil", err)
 	}
 }
@@ -459,7 +459,7 @@ func TestRequiredFFmpegConfinementRefusesLandlockWithoutTruncate(t *testing.T) {
 	t.Cleanup(func() { ffmpegLandlockABI = original })
 	for _, abi := range []int{1, 2} {
 		ffmpegLandlockABI = func() int { return abi }
-		err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg", false)
+		err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg", gpuGrant{})
 		if !errors.Is(err, errLandlockRequired) || !strings.Contains(err.Error(), "truncate") {
 			t.Fatalf("applyRequiredConfinement on landlock ABI %d = %v, want an errLandlockRequired naming truncate", abi, err)
 		}
@@ -540,12 +540,12 @@ func TestFFmpegRulesGrantGPUPathsOnlyWithDRI(t *testing.T) {
 		}
 		return out
 	}
-	if got := gpu(ffmpegRules([]string{"/media"}, []string{"/out"}, "/usr/bin/ffmpeg", 5, false)); len(got) != 0 {
+	if got := gpu(ffmpegRules([]string{"/media"}, []string{"/out"}, "/usr/bin/ffmpeg", 5, gpuGrant{})); len(got) != 0 {
 		t.Fatalf("ruleset without --dri grants GPU paths: %v", got)
 	}
 	sysfsDir := filepath.Join(filepath.Dir(dri), "sys", "renderD128")
 	for _, abi := range []int{1, 3, 4, 5, 6} {
-		got := gpu(ffmpegRules(nil, nil, "/usr/bin/ffmpeg", abi, true))
+		got := gpu(ffmpegRules(nil, nil, "/usr/bin/ffmpeg", abi, gpuGrant{dri: true}))
 		fileRW := uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE)
 		if abi >= 5 {
 			fileRW |= unix.LANDLOCK_ACCESS_FS_IOCTL_DEV
@@ -620,7 +620,7 @@ func TestLandlockDRIGrantEnforced(t *testing.T) {
 		runtime.LockOSThread()
 		setDRIPaths(t, os.Getenv("BEAMFALL_LANDLOCK_DRI_DIR"), os.Getenv("BEAMFALL_LANDLOCK_DRI_VENDORS"))
 		withDRI := os.Getenv("BEAMFALL_LANDLOCK_DRI") == "1"
-		if err := applyConfinement(nil, nil, os.Args[0], withDRI); err != nil {
+		if err := applyConfinement(nil, nil, os.Args[0], gpuGrant{dri: withDRI}); err != nil {
 			os.Exit(3)
 		}
 		openErr := func(path string, flag int) error {
@@ -660,6 +660,240 @@ func TestLandlockDRIGrantEnforced(t *testing.T) {
 			"BEAMFALL_LANDLOCK_DRI_DIR="+dri, "BEAMFALL_LANDLOCK_DRI_VENDORS="+vendors)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Errorf("--dri=%s child: %v %s", withDRI, err, out)
+		}
+	}
+}
+
+// nvidiaFixture points the NVIDIA grant paths at a temporary tree for one
+// test: the device nodes an NVIDIA host carries (as regular files, so no
+// privilege is needed), the driver's procfs directory listing three GPUs, and
+// a sysfs tree in which the first GPU's bus ID links to its PCI device
+// directory, the second has no link and the third links outside /sys/devices.
+func nvidiaFixture(t *testing.T) (root string) {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := filepath.Join(root, "dev")
+	proc := filepath.Join(root, "proc", "driver", "nvidia")
+	sys := filepath.Join(root, "sys")
+	files := []string{
+		filepath.Join(dev, "nvidiactl"), filepath.Join(dev, "nvidia-uvm"), filepath.Join(dev, "nvidia-uvm-tools"),
+		filepath.Join(dev, "nvidia-modeset"), filepath.Join(dev, "nvidia0"), filepath.Join(dev, "nvidia1"),
+		filepath.Join(dev, "nvidia1a"), filepath.Join(dev, "nvidia-caps", "nvidia-cap1"), filepath.Join(dev, "sda"),
+		filepath.Join(proc, "params"),
+		filepath.Join(proc, "gpus", "0000:01:00.0", "information"),
+		filepath.Join(proc, "gpus", "0000:02:00.0", "information"),
+		filepath.Join(proc, "gpus", "0000:03:00.0", "information"),
+		filepath.Join(sys, "devices", "pci0000:00", "0000:01:00.0", "numa_node"),
+		filepath.Join(sys, "devices", "pci0000:00", "0000:00:02.0", "vendor"),
+		filepath.Join(root, "outside", "secret"),
+	}
+	for _, file := range files {
+		if err := os.MkdirAll(filepath.Dir(file), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pci := filepath.Join(sys, "bus", "pci", "devices")
+	if err := os.MkdirAll(pci, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for link, target := range map[string]string{
+		"0000:01:00.0": "../../../devices/pci0000:00/0000:01:00.0",
+		"0000:03:00.0": filepath.Join(root, "outside"),
+	} {
+		if err := os.Symlink(target, filepath.Join(pci, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setNVIDIAPaths(t, root)
+	return root
+}
+
+func setNVIDIAPaths(t *testing.T, root string) {
+	t.Helper()
+	oldDev, oldProc, oldSys := nvidiaDevDir, nvidiaProcDir, sysfsDir
+	t.Cleanup(func() { nvidiaDevDir, nvidiaProcDir, sysfsDir = oldDev, oldProc, oldSys })
+	nvidiaDevDir = filepath.Join(root, "dev")
+	nvidiaProcDir = filepath.Join(root, "proc", "driver", "nvidia")
+	sysfsDir = filepath.Join(root, "sys")
+}
+
+// TestFFmpegRulesGrantNVIDIAPathsOnlyWithNVIDIA pins the CORE-2182 ruleset:
+// without --nvidia nothing NVIDIA is granted, --dri alone grants none of it,
+// and with --nvidia exactly the control, unified-memory and per-GPU nodes get
+// file-valid read/write (plus device ioctl from ABI 5), the driver's procfs
+// directory is read-only, and so is the one GPU sysfs directory that resolves
+// beneath /sys/devices. The display, tools and MIG nodes are never granted.
+func TestFFmpegRulesGrantNVIDIAPathsOnlyWithNVIDIA(t *testing.T) {
+	root := nvidiaFixture(t)
+	nvidia := func(rules []landlockRule) map[string]landlockRule {
+		out := map[string]landlockRule{}
+		for _, rule := range rules {
+			if strings.HasPrefix(rule.path, root) {
+				out[rule.path] = rule
+			}
+		}
+		return out
+	}
+	for _, gpu := range []gpuGrant{{}, {dri: true}} {
+		if got := nvidia(ffmpegRules([]string{"/media"}, []string{"/out"}, "/usr/bin/ffmpeg", 5, gpu)); len(got) != 0 {
+			t.Fatalf("ruleset with %+v grants NVIDIA paths: %v", gpu, got)
+		}
+	}
+	dev := filepath.Join(root, "dev")
+	proc := filepath.Join(root, "proc", "driver", "nvidia")
+	sysfsGPU := filepath.Join(root, "sys", "devices", "pci0000:00", "0000:01:00.0")
+	for _, abi := range []int{1, 3, 4, 5, 6} {
+		rules := ffmpegRules(nil, nil, "/usr/bin/ffmpeg", abi, gpuGrant{nvidia: true})
+		for _, rule := range rules {
+			if rule.path == driDir || strings.HasPrefix(rule.path, driDir+"/") {
+				t.Errorf("ABI %d: --nvidia alone grants DRI path %q", abi, rule.path)
+			}
+		}
+		fileRW := uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE)
+		if abi >= 5 {
+			fileRW |= unix.LANDLOCK_ACCESS_FS_IOCTL_DEV
+		}
+		want := map[string]landlockRule{
+			proc:     {path: proc, access: readAccess(), optional: true},
+			sysfsGPU: {path: sysfsGPU, access: readAccess(), optional: true},
+		}
+		for _, node := range []string{"nvidiactl", "nvidia-uvm", "nvidia0", "nvidia1"} {
+			path := filepath.Join(dev, node)
+			want[path] = landlockRule{path: path, access: fileRW, optional: true}
+		}
+		if got := nvidia(rules); !maps.Equal(got, want) {
+			t.Errorf("ABI %d NVIDIA rules = %+v, want %+v", abi, got, want)
+		}
+	}
+}
+
+// TestNVIDIARulesOnMissingPathsGrantNoGPU proves a host without the NVIDIA
+// driver gets no per-GPU node or sysfs rule, and that every NVIDIA rule is
+// optional, so its absence never fails the job's confinement.
+func TestNVIDIARulesOnMissingPathsGrantNoGPU(t *testing.T) {
+	setNVIDIAPaths(t, filepath.Join(t.TempDir(), "absent"))
+	for _, rule := range nvidiaDeviceRules(5) {
+		if !rule.optional {
+			t.Errorf("NVIDIA rule %q is mandatory", rule.path)
+		}
+		if isNVIDIAGPUNode(filepath.Base(rule.path)) || strings.Contains(rule.path, "/sys/") {
+			t.Errorf("GPU path %q granted on a host without one", rule.path)
+		}
+	}
+}
+
+func TestIsNVIDIAGPUNode(t *testing.T) {
+	for name, want := range map[string]bool{
+		"nvidia0": true, "nvidia12": true, "nvidia": false, "nvidiactl": false, "nvidia-uvm": false,
+		"nvidia-modeset": false, "nvidia1a": false, "nvidia-caps": false, "xnvidia0": false,
+	} {
+		if got := isNVIDIAGPUNode(name); got != want {
+			t.Errorf("isNVIDIAGPUNode(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestNVIDIADeviceRulesAreLandlockValid installs the NVIDIA rules into a real
+// ruleset, with /dev/null standing in for the character-device nodes, which
+// reject directory rights with EINVAL.
+func TestNVIDIADeviceRulesAreLandlockValid(t *testing.T) {
+	abi := landlockABI()
+	if abi < 1 {
+		t.Skip("Landlock is unavailable on this kernel")
+	}
+	root := nvidiaFixture(t)
+	for _, node := range []string{"nvidiactl", "nvidia-uvm", "nvidia0"} {
+		path := filepath.Join(root, "dev", node)
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("/dev/null", path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	attr := unix.LandlockRulesetAttr{Access_fs: handledAccess(abi)}
+	rulesetFD, err := landlockCreateRuleset(&attr)
+	if err != nil {
+		t.Fatalf("landlockCreateRuleset: %v", err)
+	}
+	defer unix.Close(rulesetFD)
+	for _, rule := range nvidiaDeviceRules(abi) {
+		if err := addPathBeneath(rulesetFD, rule.path, rule.access); err != nil {
+			t.Errorf("rule %q (access %#x) rejected: %v", rule.path, rule.access, err)
+		}
+	}
+}
+
+// TestLandlockNVIDIAGrantEnforced runs the confinement for real in a child:
+// with --nvidia the granted nodes open read-write and the driver's procfs and
+// the GPU's sysfs directory read but never write, while the display, tools and
+// MIG nodes, a /dev listing, another PCI device and the link's outside target
+// stay denied; without --nvidia every NVIDIA path is denied.
+func TestLandlockNVIDIAGrantEnforced(t *testing.T) {
+	if os.Getenv("BEAMFALL_LANDLOCK_NVIDIA_HELPER") == "1" {
+		runtime.LockOSThread()
+		root := os.Getenv("BEAMFALL_LANDLOCK_NVIDIA_ROOT")
+		setNVIDIAPaths(t, root)
+		withNVIDIA := os.Getenv("BEAMFALL_LANDLOCK_NVIDIA") == "1"
+		if err := applyConfinement(nil, nil, os.Args[0], gpuGrant{nvidia: withNVIDIA}); err != nil {
+			os.Exit(3)
+		}
+		openErr := func(path string, flag int) error {
+			f, err := os.OpenFile(filepath.Join(root, path), flag, 0) // #nosec G304 G703 -- fixture paths beneath a temporary directory
+			if err == nil {
+				_ = f.Close()
+			}
+			return err
+		}
+		denied := func(err error) bool { return errors.Is(err, os.ErrPermission) }
+		_, listErr := os.ReadDir(filepath.Join(root, "dev"))
+		alwaysDenied := []error{
+			openErr("dev/nvidia-modeset", os.O_RDWR), openErr("dev/nvidia-uvm-tools", os.O_RDWR),
+			openErr("dev/nvidia-caps/nvidia-cap1", os.O_RDONLY), openErr("dev/nvidia1a", os.O_RDONLY),
+			openErr("dev/sda", os.O_RDONLY), listErr,
+			openErr("proc/driver/nvidia/params", os.O_WRONLY),
+			openErr("sys/devices/pci0000:00/0000:01:00.0/numa_node", os.O_WRONLY),
+			openErr("sys/devices/pci0000:00/0000:00:02.0/vendor", os.O_RDONLY),
+			openErr("outside/secret", os.O_RDONLY),
+		}
+		for _, err := range alwaysDenied {
+			if !denied(err) {
+				os.Exit(4)
+			}
+		}
+		granted := []error{
+			openErr("dev/nvidiactl", os.O_RDWR), openErr("dev/nvidia-uvm", os.O_RDWR),
+			openErr("dev/nvidia0", os.O_RDWR), openErr("dev/nvidia1", os.O_RDWR),
+			openErr("proc/driver/nvidia/params", os.O_RDONLY),
+			openErr("proc/driver/nvidia/gpus/0000:01:00.0/information", os.O_RDONLY),
+			openErr("sys/devices/pci0000:00/0000:01:00.0/numa_node", os.O_RDONLY),
+		}
+		for _, err := range granted {
+			if withNVIDIA && err != nil {
+				os.Exit(5)
+			}
+			if !withNVIDIA && !denied(err) {
+				os.Exit(6)
+			}
+		}
+		os.Exit(0)
+	}
+	if landlockABI() < 1 {
+		t.Skip("Landlock is unavailable on this kernel")
+	}
+	root := nvidiaFixture(t)
+	for _, withNVIDIA := range []string{"1", "0"} {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestLandlockNVIDIAGrantEnforced$") // #nosec G204 G702 -- re-execs this test binary
+		cmd.Env = append(os.Environ(), "BEAMFALL_LANDLOCK_NVIDIA_HELPER=1",
+			"BEAMFALL_LANDLOCK_NVIDIA="+withNVIDIA, "BEAMFALL_LANDLOCK_NVIDIA_ROOT="+root)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("--nvidia=%s child: %v %s", withNVIDIA, err, out)
 		}
 	}
 }

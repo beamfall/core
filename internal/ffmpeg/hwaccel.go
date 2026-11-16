@@ -535,7 +535,7 @@ func DefaultHWAccelRunner(ctx context.Context, encode HWAccelEncode) error {
 		return err
 	}
 	args := hwAccelProbeArgs(encode)
-	conf := confinement{DRI: driAccel(hwAccelOfEncoder(encode.Encoder))}
+	conf := confinement{}.withGPU(hwAccelOfEncoder(encode.Encoder))
 	cmd := probeCommand(ctx, ffmpegPath, conf, args)
 	// Under the bounded supervisor (tree kill + reap on the probe's time-box)
 	// with output discarded: the probe's verdict is the exit status alone.

@@ -34,7 +34,7 @@ func runFFmpegShim(req ffmpegShimRequest) error {
 	if req.requireLandlock {
 		confine = applyRequiredConfinement
 	}
-	if err := confine(req.ro, req.rw, req.argv[0], req.dri); err != nil {
+	if err := confine(req.ro, req.rw, req.argv[0], req.gpu); err != nil {
 		return fmt.Errorf("ffmpeg-shim: applying filesystem confinement: %w", err)
 	}
 	if err := execShimTarget(req.argv[0], req.argv, os.Environ()); err != nil {

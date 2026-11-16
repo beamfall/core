@@ -99,7 +99,7 @@ func ProbeDeviceDecode(ctx context.Context, opts DeviceDecodeOptions) ToneMapPro
 	defer func() { _ = os.RemoveAll(sampleDir) }()
 	runner := opts.Run
 	if runner == nil {
-		runner = confinedDeviceDecodeRunner(confinement{ReadOnly: []string{sampleDir}, DRI: driAccel(run.backend)})
+		runner = confinedDeviceDecodeRunner(confinement{ReadOnly: []string{sampleDir}}.withGPU(run.backend))
 	}
 	ctx, cancel := context.WithTimeout(ctx, run.total)
 	defer cancel()

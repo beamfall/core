@@ -661,13 +661,13 @@ func highlightSample(frame []byte) float64 {
 // runs under the bounded supervisor so a wedged child's tree is killed and
 // reaped rather than orphaned. Through the probe shim it gets the confinement
 // of a transcode on the same backend: no job paths (the source is lavfi) and
-// the GPU grant only for QSV or VA-API.
+// the GPU grant only for its QSV, VA-API or NVENC/CUDA backend.
 func DefaultToneMapRunner(ctx context.Context, render ToneMapRender) ([]byte, error) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return nil, err
 	}
-	return runProbeFFmpeg(ctx, ffmpegPath, confinement{DRI: driAccel(render.Backend)}, toneMapProbeArgs(render))
+	return runProbeFFmpeg(ctx, ffmpegPath, confinement{}.withGPU(render.Backend), toneMapProbeArgs(render))
 }
 
 // runProbeFFmpeg runs one supervised probe render under conf and returns its

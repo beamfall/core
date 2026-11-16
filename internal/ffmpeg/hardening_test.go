@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -36,6 +37,47 @@ func TestBuildShimArgsDRI(t *testing.T) {
 	want := []string{shimSubcommand, "--dri", "--ro", "/media/in", "--", "/usr/bin/ffmpeg", "-i", "x"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildShimArgs with DRI:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestBuildShimArgsNVIDIA pins the NVIDIA grant flag (CORE-2182): a bare
+// --nvidia before the path flags, after --dri when both are asked for.
+func TestBuildShimArgsNVIDIA(t *testing.T) {
+	got := buildShimArgs(confinement{ReadOnly: []string{"/media/in"}, NVIDIA: true}, "/usr/bin/ffmpeg", []string{"-i", "x"})
+	want := []string{shimSubcommand, "--nvidia", "--ro", "/media/in", "--", "/usr/bin/ffmpeg", "-i", "x"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buildShimArgs with NVIDIA:\n got %q\nwant %q", got, want)
+	}
+	got = buildShimArgs(confinement{DRI: true, NVIDIA: true}, "/usr/bin/ffmpeg", nil)
+	want = []string{shimSubcommand, "--dri", "--nvidia", "--", "/usr/bin/ffmpeg"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buildShimArgs with DRI and NVIDIA:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestConfinementWithGPU pins which accelerators carry which grant, the one
+// derivation the transcodes and their probes share.
+func TestConfinementWithGPU(t *testing.T) {
+	for _, tc := range []struct {
+		accels []HWAccel
+		want   confinement
+	}{
+		{nil, confinement{}},
+		{[]HWAccel{""}, confinement{}},
+		{[]HWAccel{HWAccelVAAPI}, confinement{DRI: true}},
+		{[]HWAccel{HWAccelQSV}, confinement{DRI: true}},
+		{[]HWAccel{HWAccelNVENC}, confinement{NVIDIA: true}},
+		{[]HWAccel{HWAccelVideoToolbox}, confinement{}},
+		{[]HWAccel{"", HWAccelNVENC}, confinement{NVIDIA: true}},
+		{[]HWAccel{HWAccelNVENC, HWAccelVAAPI}, confinement{DRI: true, NVIDIA: true}},
+	} {
+		if got := (confinement{}).withGPU(tc.accels...); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("withGPU(%q) = %+v, want %+v", tc.accels, got, tc.want)
+		}
+	}
+	base := confinement{ReadOnly: []string{"/in"}, ReadWrite: []string{"/out"}}
+	if got := base.withGPU(HWAccelNVENC); !slices.Equal(got.ReadOnly, base.ReadOnly) || !slices.Equal(got.ReadWrite, base.ReadWrite) {
+		t.Errorf("withGPU dropped the job paths: %+v", got)
 	}
 }
 
