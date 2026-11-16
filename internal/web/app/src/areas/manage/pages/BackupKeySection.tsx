@@ -2,16 +2,31 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { withAdminEpoch } from "@/areas/console/adminEpoch";
 import { ErrorLine, ManageSection } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { ApiError } from "@/lib/api";
-import { acknowledgeBackupKey, fetchBackupKeyStatus, revealBackupKey } from "@/lib/graphql";
+import { ApiError, getIdentityEpochSignal } from "@/lib/api";
+import {
+  acknowledgeBackupKey,
+  fetchAdminSession,
+  fetchBackupKeyStatus,
+  revealBackupKey,
+} from "@/lib/graphql";
 import type { BackupKeyStatusInfo, RevealedBackupKeyInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 
 // Backup key (CORE-2032): while the server's bootstrap backup key is not yet
 // saved, the owner reveals it here in an Admin Session, saves it, and confirms.
 // The key lives only in this component's state: it is never written to
-// storage, a URL or a log, and it is dropped on confirm, on unmount and the
-// moment the Admin-Session epoch ends (areas/console/adminEpoch).
+// storage, a URL, a shared cache or a log, and it is dropped on confirm, on
+// unmount, on an identity change and the moment the Admin Session ends.
+//
+// The section renders on /console/backups, where AdminGate publishes the
+// Admin-Session epoch, and on /manage/backups, where no epoch is published
+// (the Manage gate only prompts after a refusal). So the revealed key keeps
+// its own session lifecycle on every route: it reads the Admin Session's
+// expiry, drops the key when that window lapses, and re-reads the session
+// while the key is on screen so a lock from anywhere drops it too.
+
+// How often the Admin Session is re-read while the key is on screen.
+export const BACKUP_KEY_SESSION_RECHECK_MS = 15_000;
 
 // useAdminScope composes this component's lifetime with the current
 // Admin-Session epoch. A signal it returns aborts on unmount or when the
@@ -61,11 +76,54 @@ export function BackupKeySection() {
     loadStatus();
   }, [loadStatus]);
 
-  const forgetKey = () => {
+  const forgetKey = useCallback(() => {
     setRevealed(null);
     setSaved(false);
     setCopied(false);
-  };
+  }, []);
+
+  // While a key is on screen, bind it to the Admin Session: the Console epoch
+  // (when published), the identity epoch, the session's own expiry and a
+  // periodic re-read. Any of them ending drops the key; a failed read does too.
+  const revealedEscrow = revealed?.escrowID ?? "";
+  useEffect(() => {
+    if (!revealedEscrow) return;
+    const own = new AbortController();
+    const identity = getIdentityEpochSignal();
+    const watch = AbortSignal.any(
+      identity ? [scope(), identity, own.signal] : [scope(), own.signal],
+    );
+    let disposed = false;
+    let expiryTimer: number | undefined;
+    const drop = () => {
+      if (!disposed && mounted.current) forgetKey();
+    };
+    const check = () => {
+      fetchAdminSession(watch)
+        .then((session) => {
+          if (watch.aborted) return;
+          const left = session.expiresAt ? Date.parse(session.expiresAt) - Date.now() : Number.NaN;
+          if (!session.active || !(left > 0)) {
+            drop();
+            return;
+          }
+          window.clearTimeout(expiryTimer);
+          if (left <= 2_147_483_647) expiryTimer = window.setTimeout(drop, left);
+        })
+        .catch(() => {
+          if (!watch.aborted) drop();
+        });
+    };
+    watch.addEventListener("abort", drop);
+    check();
+    const recheck = window.setInterval(check, BACKUP_KEY_SESSION_RECHECK_MS);
+    return () => {
+      disposed = true;
+      window.clearTimeout(expiryTimer);
+      window.clearInterval(recheck);
+      own.abort();
+    };
+  }, [revealedEscrow, scope, mounted, forgetKey]);
 
   const onReveal = async () => {
     setError("");
@@ -74,9 +132,6 @@ export function BackupKeySection() {
     try {
       const next = await revealBackupKey(signal);
       if (signal.aborted) return;
-      signal.addEventListener("abort", () => {
-        if (mounted.current) forgetKey();
-      });
       setRevealed(next);
     } catch (err) {
       if (!signal.aborted) setError(refusal(err, t("backupKeyUnavailable")));
