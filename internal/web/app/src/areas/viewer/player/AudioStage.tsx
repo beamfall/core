@@ -1,6 +1,7 @@
-import { type RefObject, useState } from "react";
+import { type CSSProperties, type RefObject, useState } from "react";
 import type { MediaCredit } from "@/lib/graphql/types";
 import type { PlaybackStream } from "../lib/playback";
+import { useLayers } from "./useLayers";
 import { Visualizer } from "./visualizer/Visualizer";
 
 // The audio surface (CORE-1143): an audio item has no picture, so the stage
@@ -40,15 +41,15 @@ export function AudioStage({
     " · ",
   );
 
+  const meta = { position: queuePosition ?? "", title, people, collections, others };
+  const metaLayers = useLayers(trackKey || title, meta, META_LEAVE_MS);
+  const art = showArtwork ? artworkURL : "";
+
   return (
     <div className="bf-audio-stage">
-      {showArtwork && (
-        <div
-          aria-hidden="true"
-          className="bf-audio-backdrop"
-          style={{ backgroundImage: `url("${cssURL(artworkURL)}")` }}
-        />
-      )}
+      <div aria-hidden="true" className="bf-audio-backdrop">
+        <ArtworkLayers url={art} leaveMs={BACKDROP_LEAVE_MS} />
+      </div>
       {/* The pinned Oscillux visualizer (CORE-1309). Visual effects come only
           from Oscillux (ADR-0228); the slot stays empty where it cannot draw. */}
       <div aria-hidden="true" className="bf-audio-visualizer" data-visualizer-slot="">
@@ -57,24 +58,96 @@ export function AudioStage({
             videoRef={videoRef}
             stream={stream}
             trackKey={trackKey || title}
-            artworkURL={showArtwork ? artworkURL : ""}
+            artworkURL={art}
           />
         )}
       </div>
       <div className="bf-audio-card">
         <div className="bf-audio-artwork">
-          {showArtwork && <img src={artworkURL} alt="" onError={() => setFailedURL(artworkURL)} />}
+          <ArtworkLayers url={art} leaveMs={ART_LEAVE_MS} onError={setFailedURL} />
         </div>
         <div className="bf-audio-meta">
-          {queuePosition && <p className="bf-audio-position">{queuePosition}</p>}
-          <p className="bf-audio-title">{title}</p>
-          {people && <p className="bf-audio-people">{people}</p>}
-          {collections && <p className="bf-audio-collections">{collections}</p>}
-          {others && <p className="bf-audio-others">{others}</p>}
+          {metaLayers.map(({ id, value: m, leaving }) => (
+            <div
+              key={id}
+              className="bf-audio-meta-layer"
+              data-state={leaving ? "out" : "in"}
+              aria-hidden={leaving || undefined}
+            >
+              {m.position && (
+                <p className="bf-audio-position" style={line(0)}>
+                  {m.position}
+                </p>
+              )}
+              <p className="bf-audio-title" style={line(1)}>
+                {m.title}
+              </p>
+              {m.people && (
+                <p className="bf-audio-people" style={line(2)}>
+                  {m.people}
+                </p>
+              )}
+              {m.collections && (
+                <p className="bf-audio-collections" style={line(3)}>
+                  {m.collections}
+                </p>
+              )}
+              {m.others && (
+                <p className="bf-audio-others" style={line(4)}>
+                  {m.others}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
+}
+
+// Track-change motion (CORE-2218). The durations match the CSS transitions in
+// player-deferred.css; the outgoing layer is dropped once its animation ends.
+const ART_LEAVE_MS = 700;
+const BACKDROP_LEAVE_MS = 900;
+const META_LEAVE_MS = 320;
+
+// Each line rises in a beat after the one above it.
+function line(index: number): CSSProperties {
+  return { "--bf-line": index } as CSSProperties;
+}
+
+// The artwork crossfade: the incoming image waits, hidden, until it has
+// loaded, then settles in over the outgoing one, which stays underneath until
+// then so the frame never flashes empty. No artwork fades the old one out.
+function ArtworkLayers({
+  url,
+  leaveMs,
+  onError,
+}: {
+  url: string;
+  leaveMs: number;
+  onError?: (url: string) => void;
+}) {
+  const [shown, setShown] = useState<ReadonlySet<number>>(() => new Set());
+  const layers = useLayers(url, url, leaveMs, (id) => shown.has(id));
+  const ready = layers.every((l) => l.leaving || shown.has(l.id));
+  return layers.map(({ id, value, leaving }) => {
+    // A layer that never loaded has nothing to show on its way out.
+    if (leaving && !shown.has(id)) return null;
+    let state = shown.has(id) ? "in" : "pending";
+    if (leaving) state = ready ? "out" : "under";
+    return (
+      <img
+        key={id}
+        className="bf-audio-art-layer"
+        src={value}
+        alt=""
+        data-state={state}
+        onLoad={() => setShown((s) => new Set(s).add(id))}
+        onError={() => !leaving && onError?.(value)}
+      />
+    );
+  });
 }
 
 function creditLine(
@@ -87,9 +160,4 @@ function creditLine(
     .map((credit) => credit.title)
     .filter(Boolean)
     .join(separator);
-}
-
-// The artwork URL lands inside a CSS url("…"); escape what would end it.
-function cssURL(url: string): string {
-  return url.replace(/["\\\n]/g, (ch) => `\\${ch === "\n" ? "a " : ch}`);
 }

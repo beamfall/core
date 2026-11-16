@@ -1,0 +1,6 @@
+- [ ] `useLayers` keeps the outgoing layer until the incoming one is ready, then drops it
+- [ ] Artwork and backdrop crossfade only after the incoming image loads
+- [ ] Title and credit lines lift out and rise in with a stagger
+- [ ] Reduced motion swaps instantly
+- [ ] Tests: layer lifecycle for artwork (load, none, failure) and words
+- [ ] Verified in the browser on a track change

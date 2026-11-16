@@ -857,8 +857,6 @@
 .bf-audio-backdrop {
   position: absolute;
   inset: -64px;
-  background-position: center;
-  background-size: cover;
   filter: blur(64px) saturate(1.2);
   opacity: 0.35;
 }
@@ -887,6 +885,7 @@
 }
 
 .bf-audio-artwork {
+  position: relative;
   flex: none;
   height: min(100%, 420px, 42vw);
   aspect-ratio: 1;
@@ -900,19 +899,86 @@
   box-shadow: 0 24px 64px color-mix(in oklab, var(--shadow-color) 55%, transparent);
 }
 
-.bf-audio-artwork img {
+/* Track-change motion (CORE-2218). Artwork layers stack in one frame: the
+   incoming image stays hidden until it has loaded, then settles in (fade, a
+   slight zoom down and a defocus pull) over the outgoing one, which sinks back
+   and dims underneath; useLayers drops it when the motion is done. */
+.bf-audio-art-layer {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition:
+    opacity 700ms var(--ease-emphasis),
+    transform 700ms var(--ease-emphasis),
+    filter 700ms var(--ease-emphasis);
+}
+
+.bf-audio-art-layer[data-state="pending"] {
+  opacity: 0;
+  transform: scale(1.06);
+  filter: blur(14px) saturate(1.3);
+}
+
+.bf-audio-art-layer[data-state="out"] {
+  opacity: 0;
+  transform: scale(0.96);
+  filter: brightness(0.6);
+}
+
+/* The backdrop's layers only crossfade: the frame above already blurs them. */
+.bf-audio-backdrop .bf-audio-art-layer {
+  transform: none;
+  filter: none;
+  transition: opacity 900ms var(--ease-standard);
 }
 
 .bf-audio-meta {
-  display: flex;
+  --bf-meta-pad-y: 0px;
+  --bf-meta-pad-x: 0px;
+  position: relative;
   min-width: 0;
+  color: var(--on-scrim);
+}
+
+.bf-audio-meta-layer {
+  display: flex;
   flex-direction: column;
   gap: 6px;
-  color: var(--on-scrim);
+}
+
+/* The incoming words rise into focus line by line; the outgoing ones lift
+   away, laid over the incoming block so the card does not grow. */
+.bf-audio-meta-layer[data-state="in"] > * {
+  animation: bf-audio-line-in 560ms var(--ease-emphasis) both;
+  animation-delay: calc(140ms + var(--bf-line, 0) * 60ms);
+}
+
+.bf-audio-meta-layer[data-state="out"] {
+  position: absolute;
+  top: var(--bf-meta-pad-y);
+  left: var(--bf-meta-pad-x);
+  right: var(--bf-meta-pad-x);
+  animation: bf-audio-meta-out 280ms var(--ease-standard) both;
+  pointer-events: none;
+}
+
+@keyframes bf-audio-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(8px);
+  }
+}
+
+@keyframes bf-audio-meta-out {
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+    filter: blur(6px);
+  }
 }
 
 .bf-audio-position {
@@ -954,8 +1020,10 @@
    lines drop their transparency, so every line keeps WCAG AA contrast even
    over a white frame (CORE-2216). Without a visual nothing changes. */
 .bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-meta {
-  margin: -16px -20px;
-  padding: 16px 20px;
+  --bf-meta-pad-y: 16px;
+  --bf-meta-pad-x: 20px;
+  margin: calc(-1 * var(--bf-meta-pad-y)) calc(-1 * var(--bf-meta-pad-x));
+  padding: var(--bf-meta-pad-y) var(--bf-meta-pad-x);
   border-radius: var(--radius-card);
   background: color-mix(in oklab, var(--scrim) 78%, transparent);
   -webkit-backdrop-filter: blur(24px);
@@ -979,5 +1047,23 @@
   .bf-audio-artwork {
     height: auto;
     width: min(64vw, 36vh);
+  }
+}
+
+/* Reduced motion swaps items instantly: no zoom, fade or rise, and the
+   outgoing layer is hidden at once. */
+@media (prefers-reduced-motion: reduce) {
+  .bf-audio-art-layer,
+  .bf-audio-backdrop .bf-audio-art-layer {
+    transition: none;
+  }
+
+  .bf-audio-art-layer[data-state="out"],
+  .bf-audio-meta-layer[data-state="out"] {
+    display: none;
+  }
+
+  .bf-audio-meta-layer[data-state="in"] > * {
+    animation: none;
   }
 }
