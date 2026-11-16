@@ -33,6 +33,7 @@ type scanWalkState struct {
 	backfillStale       map[store.MediaID]struct{}
 	req                 Request
 	checkpoint          jobCheckpoint
+	scanStarted         time.Time
 	progress            func(jobCheckpoint, store.JobProgress) error
 	workers             int
 	workBudget          chan struct{}

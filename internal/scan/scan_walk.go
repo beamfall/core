@@ -45,6 +45,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		imageDeriver:        imageDeriver,
 		req:                 req,
 		checkpoint:          checkpoint,
+		scanStarted:         scanStarted,
 		progress:            progress,
 		workers:             workers,
 		workBudget:          make(chan struct{}, workers),

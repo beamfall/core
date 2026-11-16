@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -49,7 +51,7 @@ func (s *scanWalkState) completeFirst() error {
 	if newMedia {
 		s.result.seenMedia[completed.mediaID] = true
 		s.result.MediaImported++
-		if s.result.versionMedia[completed.mediaID] {
+		if s.result.versionMedia[completed.mediaID] || slices.ContainsFunc(s.pendingCompletions, func(pending *completedFile) bool { return pending.mediaID == completed.mediaID }) {
 			s.noteGroupMedia(completed.mediaID)
 		}
 	}
@@ -69,6 +71,40 @@ func (s *scanWalkState) completeFirst() error {
 		})
 	}
 	return nil
+}
+
+// countedInEarlierPass returns the Media an earlier pass of this job already
+// counted for the bytes a resumed walk is about to import at path, or "".
+// The catalog keeps one file row per content fingerprint, so importing a
+// second file with the same bytes moves the row to it. Before that move, a row
+// at another path under the root, at or before the resume point and seen
+// since the scan started, is a file an earlier pass completed and counted
+// (CORE-2197).
+func (s *scanWalkState) countedInEarlierPass(path, fingerprint string) (store.MediaID, error) {
+	resumeAt := s.checkpoint.LastPath
+	if resumeAt == "" {
+		return "", nil
+	}
+	mediaID, ok, err := s.st.MediaFileExistsByFingerprint(s.ctx, fingerprint)
+	if err != nil || !ok || s.result.seenMedia[mediaID] {
+		return "", err
+	}
+	files, err := s.st.MediaFilesForMedia(s.ctx, mediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		return "", err
+	}
+	root := filepath.Clean(s.req.Root)
+	prefix := root + string(filepath.Separator)
+	cutoff := s.scanStarted.UnixMilli()
+	for _, file := range files {
+		if file.ContentFingerprint != fingerprint || file.Path == path || !strings.HasPrefix(file.Path, prefix) {
+			continue
+		}
+		if file.LastSeenAt.UnixMilli() >= cutoff && compareWalkOrder(root, file.Path, resumeAt) <= 0 {
+			return mediaID, nil
+		}
+	}
+	return "", nil
 }
 
 // noteGroupMedia records a Media of several files counted in MediaImported,
@@ -221,6 +257,12 @@ func (s *scanWalkState) applyTally(path string) fileTally {
 func (s *scanWalkState) queueCompletion(path string, mediaID store.MediaID, fingerprint string, derive bool) error {
 	s.applyLocalArtwork(path, mediaID)
 	s.committed = ""
+	// Content deduplication can resolve a second file to a Media an earlier
+	// file already counted. The checkpoint keeps such a Media, so a resume
+	// that walks the second file again does not count it twice (CORE-2197).
+	if s.result.seenMedia[mediaID] {
+		s.noteGroupMedia(mediaID)
+	}
 	completed := &completedFile{path: path, mediaID: mediaID, fingerprint: fingerprint, done: make(chan struct{})}
 	s.pendingCompletions = append(s.pendingCompletions, completed)
 	if derive && s.imageDeriver != nil {

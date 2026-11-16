@@ -725,3 +725,66 @@ func TestScanSummaryKeepsVersionCountWhenRecoveryWalksNewVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestScanSummaryCountsDuplicateContentOnceOnResume(t *testing.T) {
+	// feature:scan-pipeline
+	// Two files with identical bytes share one Media through content
+	// deduplication. A scan stopped after the first completes counts that
+	// Media once across its passes, as an uninterrupted scan does
+	// (CORE-2197).
+	for _, rescan := range []bool{false, true} {
+		for _, workers := range []int{1, 4} {
+			for _, stop := range []error{jobs.ErrYielded, context.Canceled} {
+				t.Run(fmt.Sprintf("rescan=%t/workers=%d/%v", rescan, workers, stop), func(t *testing.T) {
+					scanFresh := func(progress func(jobCheckpoint, store.JobProgress) error) (*store.Store, Request, time.Time, Result, error) {
+						root := t.TempDir()
+						for _, name := range []string{"a.mkv", "b.mkv"} {
+							writeScanFile(t, root, name, []byte("same bytes"))
+						}
+						st := storetest.Open(t)
+						req := Request{LibraryID: partsLibrary(t, st), Root: root}
+						if rescan {
+							if _, err := scanFromCheckpoint(context.Background(), st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(workers), nil, req, jobCheckpoint{}, time.Now().UTC(), nil); err != nil {
+								t.Fatalf("first scan: %v", err)
+							}
+						}
+						started := time.Now().UTC()
+						result, err := scanFromCheckpoint(context.Background(), st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(workers), nil, req, jobCheckpoint{}, started, progress)
+						return st, req, started, result, err
+					}
+					_, _, _, whole, err := scanFresh(nil)
+					if err != nil {
+						t.Fatalf("uninterrupted scan: %v", err)
+					}
+					if whole.FilesSeen != 2 || whole.MediaImported != 1 {
+						t.Fatalf("uninterrupted scan seen=%d imported=%d, want 2 and 1", whole.FilesSeen, whole.MediaImported)
+					}
+					var checkpoint jobCheckpoint
+					stopAtFirstReport := func(c jobCheckpoint, _ store.JobProgress) error {
+						checkpoint = c
+						return stop
+					}
+					st, req, started, stopped, err := scanFresh(stopAtFirstReport)
+					if !errors.Is(err, stop) {
+						t.Fatalf("scan did not stop: %v", err)
+					}
+					if stopped.interrupted != nil {
+						checkpoint = *stopped.interrupted
+					}
+					if checkpoint.LastPath == "" {
+						t.Fatalf("stopped scan left no resume point: %+v", checkpoint)
+					}
+					resumed, err := scanFromCheckpoint(context.Background(), st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(workers), nil, req, checkpoint, started, nil)
+					if err != nil {
+						t.Fatalf("resumed scan: %v", err)
+					}
+					got := [4]int{resumed.FilesSeen, resumed.FilesAdded, resumed.FilesChanged, resumed.MediaImported}
+					want := [4]int{whole.FilesSeen, whole.FilesAdded, whole.FilesChanged, whole.MediaImported}
+					if got != want {
+						t.Fatalf("resumed seen/added/changed/imported = %v, uninterrupted %v", got, want)
+					}
+				})
+			}
+		}
+	}
+}
