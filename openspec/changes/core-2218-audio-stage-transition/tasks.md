@@ -1,12 +1,12 @@
-- [ ] `useLayers` keeps the outgoing layer until the incoming one is ready, then drops it
-- [ ] Artwork and backdrop crossfade only after the incoming image loads
-- [ ] Title and credit lines lift out and rise in with a stagger
-- [ ] Reduced motion swaps instantly
-- [ ] Tests: layer lifecycle for artwork (load, none, failure) and words
-- [ ] Verified in the browser on a track change
-- [ ] Visualizer keeps its renderer while the next source loads and draws while it loads
-- [ ] Next item's analysis decoded ahead; audio values ease across the change
-- [ ] Visual switch keeps feedback and clock; visuals compiled while idle; same artwork keeps the visual
-- [ ] Narrow layout: artwork fits the remaining height, no repeated title, play controls in the row
-- [ ] Same artwork across tracks: no artwork transition, no visual or image flicker while details load
-- [ ] Narrow layout: long title clamps to two lines, credit lines to one
+- [x] `useLayers` keeps the outgoing layer until the incoming one is ready, then drops it
+- [x] Artwork and backdrop crossfade only after the incoming image loads
+- [x] Title and credit lines lift out and rise in with a stagger
+- [x] Reduced motion swaps instantly
+- [x] Tests: layer lifecycle for artwork (load, none, failure) and words
+- [x] Verified in the browser on a track change
+- [x] Visualizer keeps its renderer while the next source loads and draws while it loads
+- [x] Next item's analysis decoded ahead; audio values ease across the change
+- [x] Visual switch keeps feedback and clock; visuals compiled while idle; same artwork keeps the visual
+- [x] Narrow layout: artwork fits the remaining height, no repeated title, play controls in the row
+- [x] Same artwork across tracks: no artwork transition, no visual or image flicker while details load
+- [x] Narrow layout: long title clamps to two lines, credit lines to one

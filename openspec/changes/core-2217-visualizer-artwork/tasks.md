@@ -1,6 +1,6 @@
-- [ ] AudioStage passes `artworkURL` to the Visualizer
-- [ ] Visualizer loads the same-origin artwork as a downscaled bitmap per URL and hands it to the renderer
-- [ ] Renderer uploads the bitmap as `uImage` and restores the neutral stand-in on `null`
-- [ ] Drift vendored byte-identical from Oscillux v0.2.1 and added to the rotation
-- [ ] Tests: same-origin artwork is fetched, cross-origin and empty URLs are not
-- [ ] Verified in the browser on an image-input visual
+- [x] AudioStage passes `artworkURL` to the Visualizer
+- [x] Visualizer loads the same-origin artwork as a downscaled bitmap per URL and hands it to the renderer
+- [x] Renderer uploads the bitmap as `uImage` and restores the neutral stand-in on `null`
+- [x] Drift vendored byte-identical from Oscillux v0.2.1 and added to the rotation
+- [x] Tests: same-origin artwork is fetched, cross-origin and empty URLs are not
+- [x] Verified in the browser on an image-input visual
