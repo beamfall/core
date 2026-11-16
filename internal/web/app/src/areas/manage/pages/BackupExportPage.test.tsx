@@ -57,6 +57,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchBackupKeyStatus: vi.fn(),
   revealBackupKey: vi.fn(),
   acknowledgeBackupKey: vi.fn(),
+  fetchAdminSession: vi.fn(),
   // PathPickerField (used by the destination field) pulls these from the module.
   fetchPathPicker: vi.fn(),
   addPathPickerRoot: vi.fn(),

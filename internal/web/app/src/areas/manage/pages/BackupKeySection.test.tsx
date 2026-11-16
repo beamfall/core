@@ -3,21 +3,32 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdminEpochSignal } from "@/areas/console/adminEpoch";
-import { ApiError } from "@/lib/api";
-import { acknowledgeBackupKey, fetchBackupKeyStatus, revealBackupKey } from "@/lib/graphql";
+import { ApiError, setIdentityEpochSignal } from "@/lib/api";
+import {
+  acknowledgeBackupKey,
+  fetchAdminSession,
+  fetchBackupKeyStatus,
+  revealBackupKey,
+} from "@/lib/graphql";
 import type { BackupKeyStatusInfo, RevealedBackupKeyInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
-import { BackupKeySection } from "./BackupKeySection";
+import { BACKUP_KEY_SESSION_RECHECK_MS, BackupKeySection } from "./BackupKeySection";
 
 vi.mock("@/lib/graphql", () => ({
   fetchBackupKeyStatus: vi.fn(),
   revealBackupKey: vi.fn(),
   acknowledgeBackupKey: vi.fn(),
+  fetchAdminSession: vi.fn(),
 }));
 
 const mockStatus = vi.mocked(fetchBackupKeyStatus);
 const mockReveal = vi.mocked(revealBackupKey);
 const mockAck = vi.mocked(acknowledgeBackupKey);
+const mockAdminSession = vi.mocked(fetchAdminSession);
+
+function sessionFor(ms: number) {
+  return { active: true, expiresAt: new Date(Date.now() + ms).toISOString() };
+}
 
 // Not a real key: the section treats the value as opaque text.
 const PLACEHOLDER_KEY = "placeholder-backup-key";
@@ -52,6 +63,8 @@ async function revealKey() {
 
 beforeEach(() => {
   setAdminEpochSignal();
+  setIdentityEpochSignal();
+  mockAdminSession.mockReset().mockImplementation(async () => sessionFor(60 * 60_000));
   mockStatus.mockReset().mockResolvedValue(PENDING);
   mockReveal.mockReset().mockResolvedValue(REVEALED);
   mockAck.mockReset().mockResolvedValue(SAVED);
@@ -59,6 +72,8 @@ beforeEach(() => {
 
 afterEach(() => {
   setAdminEpochSignal();
+  setIdentityEpochSignal();
+  vi.useRealTimers();
 });
 
 describe("BackupKeySection (CORE-2032)", () => {
@@ -154,5 +169,44 @@ describe("BackupKeySection (CORE-2032)", () => {
     act(() => adminEpoch.abort());
     await act(async () => resolveReveal(REVEALED));
     expect(screen.queryByText(PLACEHOLDER_KEY)).not.toBeInTheDocument();
+  });
+  // /manage/backups publishes no Admin epoch, so these run with none: the key
+  // must follow the Admin Session on its own.
+  describe("without a published Admin epoch (the Manage route)", () => {
+    it("drops the key when the Admin Session window lapses", async () => {
+      mockAdminSession.mockImplementation(async () => sessionFor(150));
+      await revealKey();
+      await waitFor(() => expect(screen.queryByText(PLACEHOLDER_KEY)).not.toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "Show backup key" })).toBeInTheDocument();
+    });
+
+    it("drops the key when the Admin Session is locked elsewhere", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      await revealKey();
+      await waitFor(() => expect(mockAdminSession).toHaveBeenCalledTimes(1));
+      expect(screen.getByText(PLACEHOLDER_KEY)).toBeInTheDocument();
+
+      mockAdminSession.mockResolvedValue({ active: false, expiresAt: "" });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(BACKUP_KEY_SESSION_RECHECK_MS);
+      });
+      expect(screen.queryByText(PLACEHOLDER_KEY)).not.toBeInTheDocument();
+    });
+
+    it("drops the key when the session cannot be read", async () => {
+      mockAdminSession.mockImplementation(
+        () => new Promise((_, reject) => setTimeout(() => reject(new Error("offline")), 50)),
+      );
+      await revealKey();
+      await waitFor(() => expect(screen.queryByText(PLACEHOLDER_KEY)).not.toBeInTheDocument());
+    });
+
+    it("drops the key on an identity change (Profile switch, relock)", async () => {
+      const identity = new AbortController();
+      setIdentityEpochSignal(identity.signal);
+      await revealKey();
+      act(() => identity.abort());
+      expect(screen.queryByText(PLACEHOLDER_KEY)).not.toBeInTheDocument();
+    });
   });
 });
