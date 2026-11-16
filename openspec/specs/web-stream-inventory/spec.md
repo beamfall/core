@@ -69,10 +69,7 @@ renegotiate SHALL switch playback to HLS at the current position with that rendi
 
 On a `MediaError` code 3 or 4 during direct play, the player SHALL switch once to the HLS stream at
 the current position when one is offered and playable, and otherwise SHALL show the
-unsupported-codec message. The unsupported-codec message SHALL say that this browser cannot decode
-the format and SHALL NOT ask anyone to turn on transcoding or conversion for the Profile; a Profile
-setting is named only by the `transcode-disallowed` refusal, which the server returns when the
-Profile's `transcodeAllowed` is false.
+unsupported-codec message.
 
 #### Scenario: Decode failure before playback began
 
@@ -93,6 +90,13 @@ Profile's `transcodeAllowed` is false.
 
 - **WHEN** direct play has switched to HLS
 - **THEN** the playback details dialog shows the server transcode route, not direct play
+
+### Requirement: The unsupported-codec message names no Profile setting
+
+The unsupported-codec message SHALL say that this browser cannot decode the format and SHALL NOT ask
+anyone to turn on transcoding or conversion for the Profile. A Profile setting is named only by the
+`transcode-disallowed` refusal, which the server returns when the Profile's `transcodeAllowed` is
+false.
 
 #### Scenario: Decode failure with no HLS stream
 
