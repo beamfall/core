@@ -5,9 +5,7 @@
 The server SHALL return the pending backup key only through the `revealBackupKey` mutation, only
 to an Admin Session, and never to an API token of any tier. The key returned SHALL be the key whose
 public wrap key every Backup Set taken since the escrow was created is sealed to, and the same key
-confirming keeps. The `escrowID` returned SHALL confirm only that key. `backupKeyStatus` SHALL
-report whether a key is pending, the save-by date the window started with and the whole days left
-until it, and SHALL NOT carry the key or the escrow ID.
+confirming keeps. The `escrowID` returned SHALL confirm only that key.
 
 #### Scenario: Owner reveals the pending key
 
@@ -66,3 +64,14 @@ SHALL NOT wipe the escrow, change the installed public wrap key or mint a new ke
 - **WHEN** a backup is taken, the save-by date passes, another backup is taken and the owner then
   confirms the revealed key
 - **THEN** both backups open with the confirmed key
+
+### Requirement: Backup key status never carries the key
+
+`backupKeyStatus` SHALL report whether a key is pending, the save-by date the window started with
+and the whole days left until it, and SHALL NOT carry the key or the escrow ID.
+
+#### Scenario: Status while a key is pending
+
+- **WHEN** a bootstrap escrow is pending and the Console reads `backupKeyStatus`
+- **THEN** the reply says a key is pending with its save-by date and days left, and holds neither
+  the key nor the escrow ID
