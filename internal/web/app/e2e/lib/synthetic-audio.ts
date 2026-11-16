@@ -15,6 +15,8 @@ export interface SyntheticTrack {
   /** Tone pitch in Hz; distinct per track so a spec can tell them apart. */
   frequency: number;
   seconds: number;
+  /** Silence before and after the tone, declared as the stream's gapless trim (CORE-1626). */
+  gapless?: { delaySamples: number; paddingSamples: number };
 }
 
 export const TEST_ALBUM = { id: "entity-test-album", title: "Test Album" };
@@ -27,10 +29,24 @@ export const TEST_TRACKS: SyntheticTrack[] = [
 
 const cacheDir = join(tmpdir(), "beamfall-e2e-synthetic-audio");
 
-/** A mono 44.1 kHz WAV of the track's tone, rendered once per machine and cached. */
-export function syntheticToneWAV(track: Pick<SyntheticTrack, "frequency" | "seconds">): Buffer {
+/**
+ * A mono 44.1 kHz WAV of the track's tone (wrapped in its declared silence),
+ * rendered once per machine and cached.
+ */
+export function syntheticToneWAV(
+  track: Pick<SyntheticTrack, "frequency" | "seconds" | "gapless">,
+): Buffer {
   mkdirSync(cacheDir, { recursive: true });
-  const file = join(cacheDir, `sine-${track.frequency}hz-${track.seconds}s.wav`);
+  const silence = track.gapless
+    ? `-pad${track.gapless.delaySamples}-${track.gapless.paddingSamples}`
+    : "";
+  const file = join(cacheDir, `sine-${track.frequency}hz-${track.seconds}s${silence}.wav`);
+  const filter = track.gapless
+    ? [
+        "-af",
+        `adelay=delays=${track.gapless.delaySamples}S:all=1,apad=pad_len=${track.gapless.paddingSamples}`,
+      ]
+    : [];
   if (!existsSync(file)) {
     execFileSync("ffmpeg", [
       "-hide_banner",
@@ -41,6 +57,7 @@ export function syntheticToneWAV(track: Pick<SyntheticTrack, "frequency" | "seco
       "lavfi",
       "-i",
       `sine=frequency=${track.frequency}:sample_rate=44100:duration=${track.seconds}`,
+      ...filter,
       "-ac",
       "1",
       "-c:a",
@@ -74,7 +91,12 @@ function fulfilBytes(route: Route, body: Buffer, contentType: string) {
 }
 
 function streamsOf(track: SyntheticTrack) {
-  return [{ kind: "direct-play", url: syntheticStreamURL(track) }];
+  const gapless = track.gapless && {
+    sampleRate: 44100,
+    encoderDelaySamples: track.gapless.delaySamples,
+    encoderPaddingSamples: track.gapless.paddingSamples,
+  };
+  return [{ kind: "direct-play", url: syntheticStreamURL(track), ...(gapless ? { gapless } : {}) }];
 }
 
 /**

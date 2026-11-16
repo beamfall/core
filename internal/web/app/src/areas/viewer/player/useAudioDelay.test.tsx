@@ -16,6 +16,7 @@ class FakeAudioContext {
     this.state = "suspended";
   });
   createMediaElementSource = createMediaElementSource;
+  createGain = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 } }));
   createDelay = vi.fn(() => ({
     connect: vi.fn(),
     disconnect: vi.fn(),

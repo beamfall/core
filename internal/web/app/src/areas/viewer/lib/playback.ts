@@ -26,6 +26,15 @@ export interface PlaybackStream {
   /** The bytes URL: a direct /api/media/... path, or an HLS .m3u8 for transcode. */
   url?: string;
   renditions?: PlaybackRendition[];
+  /** The encoder delay and end padding to trim for gapless joins (CORE-1626). */
+  gapless?: PlaybackGapless;
+}
+
+/** Samples a lossy encoder added at the start and the end of the stream. */
+export interface PlaybackGapless {
+  sampleRate: number;
+  encoderDelaySamples: number;
+  encoderPaddingSamples: number;
 }
 
 /** The canonical resume timeline (ADR-0010): seconds into the Media. */

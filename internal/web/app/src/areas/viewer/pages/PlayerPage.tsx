@@ -62,6 +62,7 @@ import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
+import { useGaplessAudio } from "../player/useGaplessAudio";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
@@ -461,6 +462,21 @@ function FeaturePlayer({
     video.addEventListener("ended", playNext);
     return () => video.removeEventListener("ended", playNext);
   }, [isAudio, playing, playNext, videoRef]);
+  // Album tracks join without a gap (CORE-1634): the item the end of this
+  // track advances to is decoded ahead and scheduled to start where it stops.
+  useGaplessAudio({
+    videoRef,
+    mediaID: mediaId || "",
+    stream: state.stream,
+    next: state.info?.next ?? undefined,
+    advanceID: nextInQueue?.id ?? issuedNext?.mediaID,
+    enabled:
+      playing &&
+      showAudioStage &&
+      !karaokeSong &&
+      state.mediaID === (mediaId || "") &&
+      playNext !== undefined,
+  });
 
   // The card's appearance reveals chrome once; the card itself stays visible
   // and clickable regardless of auto-hide (player-deferred.css).
