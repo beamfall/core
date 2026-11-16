@@ -469,11 +469,17 @@ export function usePlayer(
   // the viewer was rather than at the opening ?t= or server resume point
   // (CORE-1364).
   const lastPositionRef = useRef(0);
-  const retryFromRef = useRef<{ mediaID: string; position: number } | null>(null);
-  const retry = useCallback(() => {
-    retryFromRef.current = { mediaID, position: lastPositionRef.current };
-    setRetryKey((key) => key + 1);
-  }, [mediaID]);
+  const retryFromRef = useRef<{ mediaID: string; position: number; paused?: boolean } | null>(null);
+  // A quality change (CORE-1971) reloads this way too and passes `paused`, so
+  // a paused player stays paused where Try again would start it.
+  const retry = useCallback(
+    (options?: { paused?: boolean }) => {
+      const paused = options?.paused === true;
+      retryFromRef.current = { mediaID, position: lastPositionRef.current, paused };
+      setRetryKey((key) => key + 1);
+    },
+    [mediaID],
+  );
   // A restart (another device's play-media for this Media) sets the player up
   // afresh: a new progress queue and reporting timer, and an opening position
   // that replaces any resume seek still waiting on metadata. An undefined
@@ -593,6 +599,7 @@ export function usePlayer(
     let startMark = remotePlayStateMark();
     setState(emptyState());
     const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
+    const retryPaused = retryFromRef.current?.mediaID === mediaID && !!retryFromRef.current.paused;
     retryFromRef.current = null;
     const restartFrom = restartRef.current?.mediaID === mediaID ? restartRef.current : null;
     restartRef.current = null;
@@ -1219,7 +1226,7 @@ export function usePlayer(
       // The opening song position, as a stream position.
       const opening =
         retryFrom > 0 ? retryFrom : startAt !== undefined ? startAt : resumePositionFromInfo(info);
-      attachEngine(stream, initialEngine, opening / songScale, { play: true });
+      attachEngine(stream, initialEngine, opening / songScale, { play: !retryPaused });
 
       setState({
         phase: "playing",

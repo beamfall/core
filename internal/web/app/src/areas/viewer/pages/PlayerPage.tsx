@@ -718,7 +718,7 @@ function FeaturePlayer({
                 {state.terminal || state.action === "back" ? (
                   <Button onClick={back}>{t("backToBrowse")}</Button>
                 ) : (
-                  <Button onClick={retry}>{t("tryAgain")}</Button>
+                  <Button onClick={() => retry()}>{t("tryAgain")}</Button>
                 )}
               </div>
             </div>
