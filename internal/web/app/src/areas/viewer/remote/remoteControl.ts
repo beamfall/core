@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { setListenerMuted } from "../player/listenerMute";
 
 // The receiving side of cross-device session control (CORE-1678). The server
 // publishes a `session.control` event per command to every subscriber in the
@@ -180,12 +181,12 @@ export function applyPlayerCommand(
     case "set-volume":
       if (!video || command.volume === undefined) return false;
       video.volume = Math.max(0, Math.min(100, command.volume)) / 100;
-      if (command.volume > 0) video.muted = false;
+      if (command.volume > 0) setListenerMuted(video, false);
       return true;
     case "mute":
     case "unmute":
       if (!video) return false;
-      video.muted = command.command === "mute";
+      setListenerMuted(video, command.command === "mute");
       return true;
     case "select-audio-track":
       if (!target.selectAudio || !isTrackIndex(command.trackID)) return false;

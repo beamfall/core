@@ -60,6 +60,7 @@ import { ChapterList } from "./ChapterList";
 import { CastControl } from "./cast/CastControl";
 import { CAST_RECEIVER_PLAYBACK_READY } from "./cast/castMedia";
 import { InfoOverlay } from "./InfoOverlay";
+import { listenerMuted, setListenerMuted } from "./listenerMute";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { type MenuRow, TransportMenu } from "./TransportMenu";
@@ -346,7 +347,7 @@ export function PlayerTransport({
       setDuration(Number.isFinite(video.duration) ? video.duration * songScale : 0);
       setPaused(video.paused);
       setVolumeState(video.volume);
-      setMuted(video.muted);
+      setMuted(listenerMuted(video));
       setPlaybackRate(video.playbackRate);
       setBuffered(bufferedEnd(video) * songScale);
     };
@@ -418,9 +419,9 @@ export function PlayerTransport({
       if (!video) return;
       const clamped = Math.max(0, Math.min(1, next));
       video.volume = clamped;
-      if (clamped > 0) video.muted = false;
+      if (clamped > 0) setListenerMuted(video, false);
       setVolumeState(clamped);
-      setMuted(video.muted);
+      setMuted(listenerMuted(video));
     },
     [videoRef],
   );
@@ -540,8 +541,8 @@ export function PlayerTransport({
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    video.muted = !video.muted;
-    setMuted(video.muted);
+    setListenerMuted(video, !listenerMuted(video));
+    setMuted(listenerMuted(video));
   }, [videoRef]);
 
   usePlayerShortcuts({

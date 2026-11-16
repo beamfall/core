@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlaybackStream } from "../lib/playback";
-import {
-  audioContextCtor,
-  type ElementGraph,
-  elementGraph,
-  ensureElementGraph,
-  makeDelay,
-  routeElement,
-  setElementDelay,
-} from "./elementAudioGraph";
 import { AUDIO_DELAY_LIMIT, clampSync, readSync, writeSync } from "./playbackSync";
 import { engineFor } from "./usePlayer";
 
@@ -16,16 +7,47 @@ import { engineFor } from "./usePlayer";
 // on a media element, so the element's sound is routed through a Web Audio
 // DelayNode. A delay line can only hold sound back: positive values (audio
 // later) apply, and the control says plainly that the browser cannot play audio
-// early. The element's graph (shared with the gapless join, elementAudioGraph)
-// is built only once a non-zero delay is wanted and the AudioContext is
-// running, because createMediaElementSource is permanent for the element and a
-// suspended context would silence it.
+// early. The graph is built only once a non-zero delay is wanted and the
+// AudioContext is running, because createMediaElementSource is permanent for
+// the element and a suspended context would silence it.
+
+interface DelayGraph {
+  context: AudioContext;
+  source: MediaElementAudioSourceNode | null;
+  delay: DelayNode | null;
+}
 
 // Swaps in an empty delay line so sound buffered before a seek is not played
 // over the new position.
-function flushDelay(graph: ElementGraph) {
-  if (!graph.delay) return;
-  setElementDelay(graph, makeDelay(graph, graph.delay.delayTime.value));
+function flushDelay(graph: DelayGraph) {
+  const { context, source, delay } = graph;
+  if (!source || !delay) return;
+  const fresh = context.createDelay(AUDIO_DELAY_LIMIT);
+  fresh.delayTime.setValueAtTime(delay.delayTime.value, context.currentTime);
+  source.disconnect();
+  delay.disconnect();
+  source.connect(fresh);
+  fresh.connect(context.destination);
+  graph.delay = fresh;
+}
+
+// One graph per element: createMediaElementSource may only be called once.
+const graphs = new WeakMap<HTMLMediaElement, DelayGraph>();
+
+/** True while an audio delay holds the element's sound back. */
+export function audioDelayHolds(video: HTMLMediaElement): boolean {
+  return (graphs.get(video)?.delay?.delayTime.value ?? 0) > 0;
+}
+
+type AudioContextCtor = typeof AudioContext;
+
+export function audioContextCtor(): AudioContextCtor | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as {
+    AudioContext?: AudioContextCtor;
+    webkitAudioContext?: AudioContextCtor;
+  };
+  return w.AudioContext ?? w.webkitAudioContext ?? null;
 }
 
 /**
@@ -86,11 +108,13 @@ export function useAudioDelay({
     const video = videoRef.current;
     if (!video) return;
     const seconds = Math.max(0, delayRef.current);
-    let graph = elementGraph(video);
+    let graph = graphs.get(video);
     if (!graph) {
       if (seconds === 0 || !audioDelayRoutable(video, nativeHlsRef.current)) return;
-      graph = ensureElementGraph(video) ?? undefined;
-      if (!graph) return;
+      const Ctor = audioContextCtor();
+      if (!Ctor) return;
+      graph = { context: new Ctor(), source: null, delay: null };
+      graphs.set(video, graph);
     }
     const { context } = graph;
     // A paused element leaves the context suspended, so the delay line holds
@@ -110,13 +134,16 @@ export function useAudioDelay({
       );
       return;
     }
-    // A delay line and a gapless join do not line up; the delay wins.
-    if (seconds > 0) graph.handBack?.();
-    if (graph.delay) {
-      graph.delay.delayTime.setValueAtTime(seconds, context.currentTime);
-    } else if (seconds > 0 && routeElement(video, graph)) {
-      setElementDelay(graph, makeDelay(graph, seconds));
+    if (!graph.delay) {
+      if (seconds === 0) return;
+      const source = context.createMediaElementSource(video);
+      const delay = context.createDelay(AUDIO_DELAY_LIMIT);
+      source.connect(delay);
+      delay.connect(context.destination);
+      graph.source = source;
+      graph.delay = delay;
     }
+    graph.delay.delayTime.setValueAtTime(seconds, context.currentTime);
   }, [videoRef]);
 
   // A different item (or Profile) brings its own persisted delay.
@@ -134,19 +161,19 @@ export function useAudioDelay({
     // An existing graph carries the element's sound even at zero delay, so it
     // must be resumed after an interruption however the delay is set.
     const retry = () => {
-      if (delayRef.current > 0 || elementGraph(video)) apply();
+      if (delayRef.current > 0 || graphs.has(video)) apply();
     };
     const hold = () => {
       // The element also pauses when it reaches the end; let the delayed tail
       // play out rather than freezing it.
       if (video.ended) return;
-      const graph = elementGraph(video);
+      const graph = graphs.get(video);
       // Suspend even when the context does not report "running" yet: a resume
       // may still be pending, and the context applies the calls in order.
       if (graph && graph.context.state !== "closed") void graph.context.suspend().catch(() => {});
     };
     const flush = () => {
-      const graph = elementGraph(video);
+      const graph = graphs.get(video);
       if (graph) flushDelay(graph);
     };
     video.addEventListener("play", retry);

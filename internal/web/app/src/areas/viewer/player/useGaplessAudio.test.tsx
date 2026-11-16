@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybackGapless, PlaybackNext, PlaybackStream } from "../lib/playback";
+import { listenerMuted, setListenerMuted } from "./listenerMute";
 import {
   declaredPadding,
   decodableStream,
@@ -91,12 +92,15 @@ let probedSeconds = 2;
 let decodedSeconds = 2;
 const gains: ReturnType<typeof param>[] = [];
 
+let contextState: AudioContextState = "running";
+
+// No createMediaElementSource: the join must never route the element.
 class FakeAudioContext {
-  state = "running";
+  state = contextState;
   currentTime = 5;
   destination = {};
   resume = vi.fn(async () => {});
-  createMediaElementSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
+  close = vi.fn(async () => {});
   createGain = vi.fn(() => {
     const gain = param(1);
     gains.push(gain);
@@ -125,6 +129,7 @@ const createElement = document.createElement.bind(document);
 beforeEach(() => {
   sources.length = 0;
   gains.length = 0;
+  contextState = "running";
   probedSeconds = 2;
   decodedSeconds = 2;
   // The duration probe: a detached audio element that reports its metadata at once.
@@ -200,15 +205,61 @@ function render(element: HTMLVideoElement) {
 }
 
 describe("useGaplessAudio", () => {
-  it("starts the next track where the element ends and silences the element there", async () => {
-    render(playing());
+  it("starts the next track where the element ends and mutes the element from its end", async () => {
+    const element = playing();
+    render(element);
     await vi.waitFor(() => expect(sources).toHaveLength(1));
     // Context time 5 plus the 0.8 s the element has left; the whole 2 s track.
     const [at, offset, duration] = sources[0].start.mock.calls[0];
     expect(at).toBeCloseTo(5.8, 9);
     expect([offset, duration]).toEqual([0, 2]);
-    const elementGain = gains[0];
-    expect(elementGain.setValueAtTime).toHaveBeenCalledWith(0, at);
+    // The element plays out its own track, then shadows the decoded one unheard.
+    expect(element.muted).toBe(false);
+    act(() => {
+      element.dispatchEvent(new Event("ended"));
+    });
+    expect(element.muted).toBe(true);
+    expect(listenerMuted(element)).toBe(false);
+  });
+
+  it("waits for a running context before it joins", async () => {
+    contextState = "suspended";
+    render(playing());
+    await settle();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sources).toHaveLength(0);
+  });
+
+  it("applies the listener's mute to the decoded track while the element is held muted", async () => {
+    const element = playing();
+    render(element);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    act(() => {
+      element.dispatchEvent(new Event("ended"));
+    });
+    const output = gains[0];
+    act(() => setListenerMuted(element, true));
+    expect(listenerMuted(element)).toBe(true);
+    expect(output.value).toBe(0);
+    act(() => setListenerMuted(element, false));
+    expect(output.value).toBe(1);
+    expect(element.muted).toBe(true);
+    expect(sources[0].stop).not.toHaveBeenCalled();
+  });
+
+  it("hands the sound back when something else unmutes the held element", async () => {
+    const element = playing();
+    render(element);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    act(() => {
+      element.dispatchEvent(new Event("ended"));
+    });
+    act(() => {
+      element.muted = false;
+      element.dispatchEvent(new Event("volumechange"));
+    });
+    expect(sources[0].stop).toHaveBeenCalled();
+    expect(element.muted).toBe(false);
   });
 
   it("chains the track after a decoded one on the audio clock", async () => {
@@ -226,12 +277,13 @@ describe("useGaplessAudio", () => {
     render(element);
     await vi.waitFor(() => expect(sources).toHaveLength(1));
     act(() => {
+      element.dispatchEvent(new Event("ended"));
+    });
+    act(() => {
       element.dispatchEvent(new Event("pause"));
     });
     expect(sources[0].stop).toHaveBeenCalled();
-    const elementGain = gains[0];
-    expect(elementGain.cancelScheduledValues).toHaveBeenCalled();
-    expect(elementGain.setValueAtTime).toHaveBeenLastCalledWith(1, 5);
+    expect(element.muted).toBe(false);
   });
 
   it("hands the sound back when another item replaces the joined one", async () => {

@@ -12,6 +12,11 @@ import { expect, test } from "./lib/test";
 // measured at each join: the first (media element to decoded track) and the
 // second (decoded to decoded, chained on the audio clock). Untrimmed, the
 // declared silence alone would leave about 82 ms.
+//
+// The player never routes its media element through Web Audio; the decoded
+// tracks play on a context of their own. To hear both on one clock, this spec
+// routes the element into that context itself, as a recording tap: it measures
+// where the join is scheduled, not the output latency a device adds to each.
 
 const SAMPLE_RATE = 44100;
 const gapless = { delaySamples: 2112, paddingSamples: 1500 };
@@ -21,9 +26,11 @@ const TRACKS: SyntheticTrack[] = [
   { id: "media-gapless-three", title: "Gapless Three", frequency: 880, seconds: 4, gapless },
 ];
 
-/** Silence the spec allows at the first join, element to decoded (ms). */
+/** One tone peaks at 1/8 full scale; two at once go above this. */
+const SINGLE_TONE_CEILING = 0.14;
+/** Silence (or overlap) the spec allows at the first join, element to decoded (ms). */
 const FIRST_JOIN_TOLERANCE_MS = 20;
-/** Silence the spec allows at a later join, decoded to decoded (ms). */
+/** Silence (or overlap) the spec allows at a later join, decoded to decoded (ms). */
 const CHAINED_JOIN_TOLERANCE_MS = 2;
 
 declare global {
@@ -59,7 +66,7 @@ registerProcessor("output-recorder", OutputRecorder);
 
 // Every AudioContext's destination is replaced by a pass-through node that the
 // recorder listens to, so whatever the page connects to the output is captured
-// in order.
+// in order, and the page's media element is routed into the same tap.
 function recordAudioOutput(recorderSource: string) {
   const Real = window.AudioContext;
   const recorderURL = URL.createObjectURL(new Blob([recorderSource], { type: "text/javascript" }));
@@ -71,6 +78,8 @@ function recordAudioOutput(recorderSource: string) {
       const tap = this.createGain();
       tap.connect(output);
       Object.defineProperty(this, "destination", { value: tap });
+      const element = document.querySelector("video");
+      if (element) this.createMediaElementSource(element).connect(tap);
       const capture = {
         sampleRate: this.sampleRate,
         chunks: [] as { frame: number; data: number[] }[],
@@ -100,6 +109,10 @@ interface Join {
   to: number;
   /** Longest near-silent run around the tone change (ms). */
   silenceMs: number;
+  /** How long both tones sound at once around the tone change (ms). */
+  overlapMs: number;
+  /** Sample index of the first window of the new tone. */
+  at: number;
 }
 
 // The track tone of each 10 ms window, by zero crossings (0 when silent or mixed).
@@ -132,7 +145,21 @@ function measureJoins(samples: Float32Array, sampleRate: number): Join[] {
         run = Math.abs(samples[i]) < 0.01 ? run + 1 : 0;
         longest = Math.max(longest, run);
       }
-      joins.push({ from: last, to: pitch, silenceMs: (longest / sampleRate) * 1000 });
+      // Span of samples louder than one tone, from the old tone's last window on.
+      let first = -1;
+      let lastLoud = -1;
+      for (let i = lastIndex * window; i < (index + 1) * window; i++) {
+        if (Math.abs(samples[i]) < SINGLE_TONE_CEILING) continue;
+        if (first < 0) first = i;
+        lastLoud = i;
+      }
+      joins.push({
+        from: last,
+        to: pitch,
+        silenceMs: (longest / sampleRate) * 1000,
+        overlapMs: first < 0 ? 0 : ((lastLoud - first + 1) / sampleRate) * 1000,
+        at: index * window,
+      });
     }
     last = pitch;
     lastIndex = index;
@@ -205,10 +232,16 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
     [660, 880],
   ]);
   expect(joins[0].silenceMs).toBeLessThanOrEqual(FIRST_JOIN_TOLERANCE_MS);
+  expect(joins[0].overlapMs).toBeLessThanOrEqual(FIRST_JOIN_TOLERANCE_MS);
   expect(joins[1].silenceMs).toBeLessThanOrEqual(CHAINED_JOIN_TOLERANCE_MS);
-  // The silent element never sounds under the decoded track: two tones at
-  // once would peak above a single tone's 1/8 full scale.
+  expect(joins[1].overlapMs).toBeLessThanOrEqual(CHAINED_JOIN_TOLERANCE_MS);
+  // Away from the joins, the muted element never sounds under the decoded
+  // track: two tones at once would peak above a single tone.
+  const near = Math.round((capture.sampleRate * 2 * FIRST_JOIN_TOLERANCE_MS) / 1000);
   let peak = 0;
-  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
-  expect(peak).toBeLessThan(0.14);
+  samples.forEach((sample, i) => {
+    if (joins.some((join) => Math.abs(i - join.at) <= near)) return;
+    peak = Math.max(peak, Math.abs(sample));
+  });
+  expect(peak).toBeLessThan(SINGLE_TONE_CEILING);
 });

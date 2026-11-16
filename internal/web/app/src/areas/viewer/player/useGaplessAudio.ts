@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { PlaybackGapless, PlaybackNext, PlaybackStream } from "../lib/playback";
-import { elementGraph, ensureElementGraph, routeElement } from "./elementAudioGraph";
-import { audioDelayRoutable, browserPlaysNativeHls } from "./useAudioDelay";
+import { holdMute, listenerMuted, muteHeld, releaseMute } from "./listenerMute";
+import { audioContextCtor, audioDelayHolds } from "./useAudioDelay";
 
 // Gapless track joins for the web player (CORE-1634). The media element loads
 // one track at a time, so an album's track change waits for the next stream to
@@ -9,13 +9,16 @@ import { audioDelayRoutable, browserPlaysNativeHls } from "./useAudioDelay";
 // decoded ahead and scheduled on the Web Audio clock to start where the current
 // track stops, with the server's encoder delay and padding (CORE-1626) trimmed.
 //
-// The media element stays the player: after the join it plays the same track
-// silently (its gain in the shared element graph is zero), kept close to what
-// is heard, so the transport, progress beacons, Media Session and the advance
-// keep following it. While a decoded track plays, the one after it is chained
-// on the same clock, so every later join is sample-accurate. Anything else the
-// listener does (pause, seek, a rate change, another item) hands sound back to
-// the element at its own position.
+// The decoded tracks play on an AudioContext of their own. The media element is
+// never routed through Web Audio: a MediaElementSource is permanent, and the
+// same element later plays items Web Audio cannot hear (native HLS, CORE-1671),
+// so one path serves every browser. The element stays the player: after the
+// join it plays the same track muted (the listener's own mute is kept apart,
+// listenerMute), close to what is heard, so the transport, progress beacons,
+// Media Session and the advance keep following it. While a decoded track
+// plays, the one after it is chained on the same clock, so every later join is
+// sample-accurate. Anything else the listener does (pause, seek, a rate
+// change, another item) hands sound back to the element at its own position.
 
 /** How long before a track's end the next one is fetched and decoded. */
 export const PREPARE_AHEAD_SECONDS = 30;
@@ -127,9 +130,7 @@ interface Segment {
 
 interface Bridge {
   context: AudioContext;
-  /** The element's share of the output. */
-  elementGain: GainNode;
-  /** The decoded tracks' share; follows the element's volume and mute. */
+  /** The decoded tracks' output; follows the element's volume and the listener's mute. */
   output: GainNode;
   segments: Segment[];
   /** Set across a seek this module makes, so it is not taken for the listener's. */
@@ -140,33 +141,36 @@ interface Bridge {
 
 const bridges = new WeakMap<HTMLMediaElement, Bridge>();
 
-function elementVolume(video: HTMLMediaElement): number {
-  return video.muted ? 0 : video.volume;
+function listenerVolume(video: HTMLMediaElement): number {
+  return listenerMuted(video) ? 0 : video.volume;
 }
 
-// The element's bridge, routing the element through the shared graph first.
-// Null while the context is not running.
+// The element's bridge with its own context, made when absent. Nothing routes
+// the element into it.
 function bridgeFor(video: HTMLMediaElement): Bridge | null {
   const existing = bridges.get(video);
   if (existing) return existing;
-  const graph = ensureElementGraph(video);
-  if (!graph) return null;
-  const elementGain = routeElement(video, graph);
-  if (!elementGain) return null;
-  const output = graph.context.createGain();
-  output.gain.value = elementVolume(video);
-  output.connect(graph.context.destination);
+  const Ctor = audioContextCtor();
+  if (!Ctor) return null;
+  const context = new Ctor();
+  const output = context.createGain();
+  output.gain.value = listenerVolume(video);
+  output.connect(context.destination);
   const bridge: Bridge = {
-    context: graph.context,
-    elementGain,
+    context,
     output,
     segments: [],
     ownSeek: false,
     elementPlaying: !video.paused,
   };
   bridges.set(video, bridge);
-  graph.handBack = () => handBack(video);
   return bridge;
+}
+
+// Starts the context if it waits for one; a browser that wants a gesture
+// starts it on the listener's next one.
+function wake(bridge: Bridge) {
+  if (bridge.context.state === "suspended") void bridge.context.resume().catch(() => {});
 }
 
 // Lets go of a finished segment's decoded audio.
@@ -182,20 +186,26 @@ function release(node: AudioBufferSourceNode) {
 /** Stops the decoded audio and gives the element its sound back. */
 export function handBack(video: HTMLMediaElement) {
   const bridge = bridges.get(video);
-  if (!bridge) return;
-  const segments = bridge.segments;
-  bridge.segments = [];
-  for (const segment of segments) {
-    try {
-      segment.node.stop();
-    } catch {
-      // Never started (or already stopped): nothing to silence.
+  if (bridge) {
+    const segments = bridge.segments;
+    bridge.segments = [];
+    for (const segment of segments) {
+      try {
+        segment.node.stop();
+      } catch {
+        // Never started (or already stopped): nothing to silence.
+      }
+      release(segment.node);
     }
-    release(segment.node);
   }
-  const { gain } = bridge.elementGain;
-  gain.cancelScheduledValues(0);
-  gain.setValueAtTime(1, bridge.context.currentTime);
+  releaseMute(video);
+}
+
+// The element shadows a decoded track from its own end on: muted, so only the
+// decoded track is heard.
+function shadow(video: HTMLMediaElement) {
+  const bridge = bridges.get(video);
+  if (bridge && bridge.segments.length > 0) holdMute(video);
 }
 
 function schedule(
@@ -221,7 +231,7 @@ function schedule(
     if (!bridge.segments.includes(segment)) return;
     bridge.segments = bridge.segments.filter((other) => other !== segment);
     release(node);
-    // The last decoded track is over and nothing follows it: the silent element
+    // The last decoded track is over and nothing follows it: the muted element
     // has ended too, or ends within the drift, and then gets its sound back.
     if (bridge.segments.length === 0 && (video.ended || video.paused)) handBack(video);
   };
@@ -263,18 +273,23 @@ export function useGaplessAudio({
     const video = videoRef.current;
     const bridge = video ? bridges.get(video) : undefined;
     if (!video || !bridge || bridge.segments.length === 0) return;
-    if (!segmentFor(bridge, mediaID)) handBack(video);
+    if (segmentFor(bridge, mediaID)) shadow(video);
+    else handBack(video);
   }, [mediaID, videoRef]);
 
-  // Leaving the player takes the sound back.
+  // Leaving the player takes the sound back and closes the context.
   useEffect(() => {
     const video = videoRef.current;
     return () => {
-      if (video) handBack(video);
+      if (!video) return;
+      handBack(video);
+      const bridge = bridges.get(video);
+      bridges.delete(video);
+      if (bridge) void bridge.context.close().catch(() => {});
     };
   }, [videoRef]);
 
-  // The listener's own actions, and the silent element kept in step.
+  // The listener's own actions, and the muted element kept in step.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -300,16 +315,32 @@ export function useGaplessAudio({
       if (video.playbackRate !== 1 && active()) handBack(video);
     };
     const onVolume = () => {
+      // Only this module mutes a held element; anything unmuting it would
+      // sound under the decoded track, so the element takes the sound back.
+      if (muteHeld(video) && !video.muted) {
+        handBack(video);
+        return;
+      }
       const bridge = bridges.get(video);
-      if (bridge) bridge.output.gain.value = elementVolume(video);
+      if (bridge) bridge.output.gain.value = listenerVolume(video);
     };
     const onLoad = () => {
       const bridge = bridges.get(video);
-      if (bridge) bridge.elementPlaying = false;
+      if (!bridge) return;
+      bridge.elementPlaying = false;
+      // The element loads the next track while a decoded one plays: it must
+      // not be heard.
+      shadow(video);
     };
     const keepInStep = () => {
       const bridge = active();
-      if (!bridge || !bridge.elementPlaying || video.seeking) return;
+      if (!bridge) return;
+      // A delay line holds the element's sound back; the decoded track cannot follow it.
+      if (audioDelayHolds(video)) {
+        handBack(video);
+        return;
+      }
+      if (!bridge.elementPlaying || video.seeking) return;
       const segment = segmentFor(bridge, mediaIDRef.current);
       if (!segment) return;
       const heard = bridge.context.currentTime - segment.start + segment.offset;
@@ -324,11 +355,13 @@ export function useGaplessAudio({
     };
     const onEnded = () => {
       const bridge = bridges.get(video);
-      if (bridge && bridge.segments.length === 0) handBack(video);
+      if (!bridge) return;
+      if (bridge.segments.length === 0) handBack(video);
+      else shadow(video);
     };
-    const onPlay = () => {
-      const graph = elementGraph(video);
-      if (graph && graph.context.state === "suspended") void graph.context.resume().catch(() => {});
+    const onGesture = () => {
+      const bridge = bridges.get(video);
+      if (bridge) wake(bridge);
     };
     video.addEventListener("pause", onPause);
     video.addEventListener("seeking", onSeeking);
@@ -339,7 +372,9 @@ export function useGaplessAudio({
     video.addEventListener("playing", onPlaying);
     video.addEventListener("timeupdate", keepInStep);
     video.addEventListener("ended", onEnded);
-    video.addEventListener("play", onPlay);
+    video.addEventListener("play", onGesture);
+    document.addEventListener("pointerdown", onGesture, true);
+    document.addEventListener("keydown", onGesture, true);
     return () => {
       video.removeEventListener("pause", onPause);
       video.removeEventListener("seeking", onSeeking);
@@ -350,7 +385,9 @@ export function useGaplessAudio({
       video.removeEventListener("playing", onPlaying);
       video.removeEventListener("timeupdate", keepInStep);
       video.removeEventListener("ended", onEnded);
-      video.removeEventListener("play", onPlay);
+      video.removeEventListener("play", onGesture);
+      document.removeEventListener("pointerdown", onGesture, true);
+      document.removeEventListener("keydown", onGesture, true);
     };
   }, [videoRef]);
 
@@ -367,9 +404,9 @@ export function useGaplessAudio({
   useEffect(() => {
     const video = videoRef.current;
     if (!enabled || !video || !nextURL) return;
-    if (!audioDelayRoutable(video) || browserPlaysNativeHls(video)) return;
-    const existing = bridges.get(video);
-    if (existing && segmentFor(existing, nextID)) return;
+    const bridge = bridgeFor(video);
+    if (!bridge || segmentFor(bridge, nextID)) return;
+    wake(bridge);
     const [rate, delay, pad] = nextTrim.split(":").map(Number);
     const trimFor: PlaybackGapless | undefined = nextTrim
       ? { sampleRate: rate, encoderDelaySamples: delay, encoderPaddingSamples: pad }
@@ -384,10 +421,7 @@ export function useGaplessAudio({
 
     const prepare = async () => {
       decoding = true;
-      const graph = ensureElementGraph(video);
-      if (!graph) return;
       try {
-        if (graph.context.state !== "running") await graph.context.resume();
         // Not NaN, not endless, not too long to hold decoded.
         const seconds = await probeDuration(nextURL, controller.signal);
         if (controller.signal.aborted || !(seconds <= MAX_DECODED_SECONDS)) return;
@@ -397,7 +431,7 @@ export function useGaplessAudio({
         });
         if (!response.ok) return;
         const bytes = await response.arrayBuffer();
-        const buffer = await graph.context.decodeAudioData(bytes);
+        const buffer = await bridge.context.decodeAudioData(bytes);
         // The metadata understated it: drop it rather than hold it.
         if (controller.signal.aborted || buffer.duration > MAX_DECODED_SECONDS) return;
         decoded = { buffer, trim: trimWindow(buffer, trimFor) };
@@ -409,10 +443,8 @@ export function useGaplessAudio({
 
     const join = () => {
       if (!decoded || scheduled) return;
-      // An audio delay holds the element's sound back; a join would not line up.
-      if ((elementGraph(video)?.delay?.delayTime.value ?? 0) > 0) return;
-      const bridge = bridgeFor(video);
-      if (!bridge) return;
+      // A suspended context would start the track late; a delay line would not line up.
+      if (bridge.context.state !== "running" || audioDelayHolds(video)) return;
       const current = segmentFor(bridge, mediaIDRef.current);
       if (current) {
         // Decoded to decoded: chained on the clock, to the sample.
@@ -429,6 +461,8 @@ export function useGaplessAudio({
         return;
       }
       if (video.paused || video.seeking || video.playbackRate !== 1) return;
+      // The decoded track starts where the element's declared padding begins;
+      // the element's own padding plays out beneath it.
       const endsIn = remaining() - padding;
       if (!Number.isFinite(endsIn)) return;
       if (endsIn > JOIN_AHEAD_SECONDS) {
@@ -437,9 +471,14 @@ export function useGaplessAudio({
         return;
       }
       if (endsIn < JOIN_MARGIN_SECONDS) return;
-      const at = bridge.context.currentTime + endsIn;
-      schedule(bridge, nextID, decoded.buffer, decoded.trim, at, video);
-      bridge.elementGain.gain.setValueAtTime(0, at);
+      schedule(
+        bridge,
+        nextID,
+        decoded.buffer,
+        decoded.trim,
+        bridge.context.currentTime + endsIn,
+        video,
+      );
       scheduled = true;
       decoded = null;
     };
@@ -447,7 +486,7 @@ export function useGaplessAudio({
     const check = () => {
       if (controller.signal.aborted) return;
       // The track heard and one scheduled after it are the most held at once.
-      const held = bridges.get(video)?.segments.length ?? 0;
+      const held = bridge.segments.length;
       if (!decoding && held < 2 && remaining() <= PREPARE_AHEAD_SECONDS) void prepare();
       join();
     };
