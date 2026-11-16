@@ -53,7 +53,12 @@ export function AudioStage({
           from Oscillux (ADR-0228); the slot stays empty where it cannot draw. */}
       <div aria-hidden="true" className="bf-audio-visualizer" data-visualizer-slot="">
         {videoRef && (
-          <Visualizer videoRef={videoRef} stream={stream} trackKey={trackKey || title} />
+          <Visualizer
+            videoRef={videoRef}
+            stream={stream}
+            trackKey={trackKey || title}
+            artworkURL={showArtwork ? artworkURL : ""}
+          />
         )}
       </div>
       <div className="bf-audio-card">

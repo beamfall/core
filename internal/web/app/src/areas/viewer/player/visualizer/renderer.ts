@@ -168,21 +168,9 @@ export class Renderer {
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-      // The visual's image input: a neutral stand-in, as no artwork is sampled yet.
+      // The visual's image input: a neutral stand-in until setImage hands it the artwork.
       this.image = must(gl.createTexture());
-      gl.bindTexture(gl.TEXTURE_2D, this.image);
-      gl.texImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA8,
-        1,
-        1,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        new Uint8Array([128, 128, 128, 255]),
-      );
-      filter(gl, gl.LINEAR);
+      this.setImage(null);
 
       this.presentUbo = must(gl.createBuffer());
       gl.bindBuffer(gl.UNIFORM_BUFFER, this.presentUbo);
@@ -286,6 +274,23 @@ export class Renderer {
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+  }
+
+  /**
+   * Sets the visual's image input: the track's artwork, or the neutral stand-in for null. The
+   * texture keeps its own copy, so the caller may close the bitmap afterwards.
+   */
+  setImage(image: ImageBitmap | null): void {
+    if (this.disposed) return;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.image);
+    if (image) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, image);
+    } else {
+      const grey = new Uint8Array([128, 128, 128, 255]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, grey);
+    }
+    filter(gl, gl.LINEAR);
   }
 
   /** Releases every GL and Oscillux resource; safe on a partly built renderer, and twice. */

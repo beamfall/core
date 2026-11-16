@@ -2,6 +2,7 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PlaybackStream } from "../../lib/playback";
 import { decodable } from "../useGaplessAudio";
 import { decodeTrack, silentFrame, TrackAnalysis } from "./analysis";
+import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
 import { Renderer } from "./renderer";
 import { visualFor } from "./visuals";
@@ -28,11 +29,14 @@ export function Visualizer({
   videoRef,
   stream,
   trackKey,
+  artworkURL = "",
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   stream: PlaybackStream | null;
   /** Stable per track: picks the visual. */
   trackKey: string;
+  /** The track's artwork: the visual's image input when it is served from this origin. */
+  artworkURL?: string;
 }) {
   const url = (decodable(stream) && stream?.url) || "";
   const [failed, setFailed] = useState(false);
@@ -40,6 +44,7 @@ export function Visualizer({
   const rendererRef = useRef<Renderer | null>(null);
   const analysisRef = useRef<TrackAnalysis | null>(null);
   const keyRef = useRef(trackKey);
+  const imageRef = useRef<ImageBitmap | null>(null);
   const enabled = !!url && !failed && canVisualize();
 
   // The renderer and its draw loop, for as long as the slot is shown.
@@ -89,6 +94,7 @@ export function Visualizer({
         }
         if (!alive) return renderer.dispose();
         rendererRef.current = renderer;
+        renderer.setImage(imageRef.current);
         return renderer.use(visualFor(keyRef.current)).then(() => {
           if (alive) frame = requestAnimationFrame(tick);
         });
@@ -116,6 +122,33 @@ export function Visualizer({
       setFailed(true);
     });
   }, [trackKey]);
+
+  // The track's artwork as the visual's image input, applied now or once the renderer is ready.
+  // Without usable artwork the neutral stand-in stays.
+  useEffect(() => {
+    if (!enabled) return;
+    const abort = new AbortController();
+    let image: ImageBitmap | null = null;
+    loadArtwork(artworkURL, abort.signal)
+      .then((bitmap) => {
+        if (abort.signal.aborted) return bitmap?.close();
+        if (!bitmap) return;
+        image = bitmap;
+        imageRef.current = bitmap;
+        rendererRef.current?.setImage(bitmap);
+      })
+      .catch((err) => {
+        if (!abort.signal.aborted) console.warn("visualizer: no artwork", err);
+      });
+    return () => {
+      abort.abort();
+      if (imageRef.current === image) {
+        imageRef.current = null;
+        rendererRef.current?.setImage(null);
+      }
+      image?.close();
+    };
+  }, [enabled, artworkURL]);
 
   // The track's analysis. Until it is decoded the visual draws with silence.
   useEffect(() => {
