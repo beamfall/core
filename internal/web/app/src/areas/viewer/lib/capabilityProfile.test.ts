@@ -87,6 +87,51 @@ describe("probeCapabilityProfile", () => {
     });
 
     expect(profile.containers).toEqual(["mp4", "mp3", "m4a", "flac"]);
-    expect(profile.audioCodecs).toEqual([{ codec: "mp3", maxChannels: 2 }]);
+    expect(profile.audioCodecs).toEqual([
+      { codec: "flac", maxChannels: 2 },
+      { codec: "mp3", maxChannels: 2 },
+    ]);
+  });
+
+  // Safari 27 answers Media Capabilities "unsupported" for a bare FLAC or mp3
+  // file, and in MSE, while its audio element plays both: the music track must
+  // still direct-play there, or it is transcoded and loses its visual.
+  it("declares a bare audio file's codec the audio element plays though Media Capabilities refuses it", async () => {
+    const safari = {
+      canPlayType: (type: string) =>
+        (
+          ({
+            'video/mp4; codecs="avc1.640028"': "probably",
+            "audio/mpeg": "maybe",
+            'audio/mp4; codecs="mp4a.40.2"': "probably",
+            'audio/mp4; codecs="flac"': "probably",
+            "audio/flac": "maybe",
+          }) as Record<string, CanPlayTypeResult>
+        )[type] ?? "",
+    };
+    const profile = await probeCapabilityProfile({
+      video: safari,
+      mediaCapabilities: fakeMediaCapabilities(
+        (config) =>
+          config.audio?.contentType === 'audio/mp4; codecs="mp4a.40.2"' ||
+          Boolean(config.video?.contentType.includes("avc1")),
+      ),
+      clientPrefs: [],
+    });
+
+    expect(profile.containers).toEqual(["mp4", "mp3", "m4a", "flac"]);
+    expect(profile.audioCodecs.map((cap) => cap.codec)).toEqual(["aac", "flac", "mp3"]);
+  });
+
+  it("leaves out a file codec the audio element cannot play", async () => {
+    const profile = await probeCapabilityProfile({
+      video: fakeVideo(["avc1", "mp4a.40.2"]),
+      mediaCapabilities: fakeMediaCapabilities((config) =>
+        Boolean(config.audio?.contentType.includes("mp4a")),
+      ),
+      clientPrefs: [],
+    });
+
+    expect(profile.audioCodecs.map((cap) => cap.codec)).toEqual(["aac"]);
   });
 });

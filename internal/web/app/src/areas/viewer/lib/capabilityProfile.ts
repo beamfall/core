@@ -15,6 +15,13 @@ interface AudioCodecCandidate {
    * direct audio file (a bare mp3 track).
    */
   source?: "file";
+  /**
+   * The bare audio file this codec arrives in when a music track direct-plays
+   * (CORE-1143). An audio element plays it when canPlayType says so, whatever
+   * Media Capabilities answers: Safari reports a bare FLAC or mp3 file as
+   * unsupported there while playing both.
+   */
+  file?: string;
 }
 
 interface ContainerCandidate {
@@ -89,9 +96,15 @@ const AUDIO_CANDIDATES: AudioCodecCandidate[] = [
   { codec: "ac3", contentType: 'audio/mp4; codecs="ac-3"', maxChannels: 6 },
   { codec: "eac3", contentType: 'audio/mp4; codecs="ec-3"', maxChannels: 6 },
   { codec: "opus", contentType: 'audio/webm; codecs="opus"', maxChannels: 2 },
-  { codec: "flac", contentType: 'audio/mp4; codecs="flac"', maxChannels: 2 },
-  { codec: "mp3", contentType: "audio/mpeg", maxChannels: 2, source: "file" },
-  { codec: "vorbis", contentType: 'audio/ogg; codecs="vorbis"', maxChannels: 2, source: "file" },
+  { codec: "flac", contentType: 'audio/mp4; codecs="flac"', maxChannels: 2, file: "audio/flac" },
+  { codec: "mp3", contentType: "audio/mpeg", maxChannels: 2, source: "file", file: "audio/mpeg" },
+  {
+    codec: "vorbis",
+    contentType: 'audio/ogg; codecs="vorbis"',
+    maxChannels: 2,
+    source: "file",
+    file: 'audio/ogg; codecs="vorbis"',
+  },
 ];
 
 const CONTAINER_CANDIDATES: ContainerCandidate[] = [
@@ -190,7 +203,8 @@ async function probeAudioCodec(
   });
   if (
     supported !== true &&
-    !(supported === null && canPlayTypeSupported(video, candidate.contentType))
+    !(supported === null && canPlayTypeSupported(video, candidate.contentType)) &&
+    !(candidate.file && video && canPlayTypeSupported(video, candidate.file))
   ) {
     return null;
   }
