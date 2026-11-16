@@ -963,7 +963,8 @@
   text-shadow: 0 1px 2px color-mix(in oklab, var(--scrim) 60%, transparent);
 }
 
-.bf-audio-stage:has(.bf-audio-visualizer-canvas) :is(.bf-audio-position, .bf-audio-collections, .bf-audio-others) {
+.bf-audio-stage:has(.bf-audio-visualizer-canvas)
+  :is(.bf-audio-position, .bf-audio-collections, .bf-audio-others) {
   color: color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted));
 }
 
