@@ -192,8 +192,17 @@ function Harness({
       <output data-testid="waiting-for-network">{state.waitingForNetwork ? "yes" : "no"}</output>
       <output data-testid="action">{state.action ?? ""}</output>
       <output data-testid="detail">{state.detail ?? ""}</output>
-      <button type="button" onClick={retry}>
+      <button type="button" onClick={() => retry()}>
         retry
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const video = screen.getByTestId("player") as HTMLVideoElement;
+          retry({ paused: video.paused });
+        }}
+      >
+        renegotiate
       </button>
       <button type="button" onClick={() => adjust({ pitchShiftSemitones: 1, tempo: 0.8 })}>
         adjust
@@ -743,6 +752,36 @@ describe("usePlayer", () => {
       durationSeconds: 80,
     });
   });
+
+  // CORE-1971: a quality change re-requests playback info at the playhead and
+  // leaves the play state as the viewer had it.
+  it.each([
+    ["paused", true, 0],
+    ["playing", false, 1],
+  ])(
+    "keeps a %s player that way at the same position after a quality change",
+    async (_name, paused, plays) => {
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      fireEvent.loadedMetadata(video);
+      video.currentTime = 30;
+      fireEvent.timeUpdate(video);
+      Object.defineProperty(video, "paused", { configurable: true, value: paused });
+      vi.mocked(HTMLMediaElement.prototype.play).mockClear();
+      const loads = vi.mocked(fetchPlaybackInfo).mock.calls.length;
+
+      fireEvent.click(screen.getByRole("button", { name: "renegotiate" }));
+
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(loads + 1));
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const reloaded = screen.getByTestId("player") as HTMLVideoElement;
+      fireEvent.loadedMetadata(reloaded);
+      fireEvent.canPlay(reloaded);
+      expect(reloaded.currentTime).toBe(30);
+      expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(plays);
+    },
+  );
 
   it("does not start itself after another device paused it while it set up", async () => {
     resetAppliedControlEvents();

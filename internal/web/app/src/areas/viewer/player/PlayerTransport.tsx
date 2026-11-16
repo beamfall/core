@@ -168,9 +168,10 @@ export function PlayerTransport({
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Plays another Version of the Media; the Version row is hidden when absent. */
   onSelectVersion?: (versionID: string) => void;
-  /** Re-requests playback info at the current position; a quality pick then
-   *  becomes this browser's remembered ceiling (CORE-1971). */
-  onRenegotiate?: () => void;
+  /** Re-requests playback info at the current position, keeping the play state
+   *  it is told; a quality pick then becomes this browser's remembered ceiling
+   *  (CORE-1971). */
+  onRenegotiate?: (options: { paused: boolean }) => void;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
   onMenuOpenChange?: (open: boolean) => void;
 }) {
@@ -297,6 +298,10 @@ export function PlayerTransport({
   // Audio-only items have nothing to line the sound up with.
   const audioSyncAvailable = state.info?.mediaClass !== "audio";
 
+  const renegotiate = useCallback(
+    () => onRenegotiate?.({ paused: videoRef.current?.paused === true }),
+    [onRenegotiate, videoRef],
+  );
   const tracks = useLiveTracks({
     videoRef,
     hlsRef,
@@ -308,7 +313,7 @@ export function PlayerTransport({
     manualRenditionID,
     setManualRenditionID,
     onSubtitleChanged: subtitle.applySync,
-    renegotiate: onRenegotiate,
+    renegotiate: onRenegotiate ? renegotiate : undefined,
   });
 
   // Commands from the Profile's other devices drive this player (CORE-1678).
