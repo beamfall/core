@@ -153,7 +153,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "mediaIDs", Kind: "list"},
 	},
 	"cancelstagedrestore": {},
-	"capabilitystates":    {},
+	"acknowledgebackupkey": {
+		{Name: "escrowID", Kind: "string"},
+	},
+	"capabilitystates": {},
 	"channels": {
 		{Name: "libraryID", Kind: "string"},
 	},
@@ -982,8 +985,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"smartcollections": {
 		{Name: "libraryID", Kind: "string"},
 	},
-	"sourceitems":   fieldArguments["sourceitems"],
-	"stagedrestore": {},
+	"sourceitems":     fieldArguments["sourceitems"],
+	"stagedrestore":   {},
+	"revealbackupkey": {},
+	"backupkeystatus": {},
 	"stagerestore": {
 		{Name: "backupKey", Kind: "string"},
 		{Name: "envelope", Kind: "string"},

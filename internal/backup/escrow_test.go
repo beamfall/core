@@ -309,3 +309,48 @@ func TestAcknowledgePresenterFailureLeavesBootstrapUsable(t *testing.T) {
 		t.Fatal("presenter failure changed bootstrap escrow")
 	}
 }
+
+func TestRevealBootstrapEscrowIsTheAcknowledgedKey(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	escrow, err := CreateBootstrapEscrow(dataDir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := RevealBootstrapEscrow(dataDir, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.EscrowID != escrow.ID || !pending.ExpiresAt.Equal(escrow.ExpiresAt) {
+		t.Fatalf("pending = %s %s, want %s %s", pending.EscrowID, pending.ExpiresAt, escrow.ID, escrow.ExpiresAt)
+	}
+	if bytes.Equal(pending.Key.Bytes(), escrow.Key.Bytes()) {
+		t.Fatal("reveal returned the bootstrap key, not the key acknowledgement installs")
+	}
+	var presented BackupKey
+	if err := AcknowledgeBootstrapEscrow(dataDir, pending.EscrowID, func(key BackupKey) error {
+		presented = key
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(presented.Bytes(), pending.Key.Bytes()) {
+		t.Fatal("revealed key differs from the key acknowledgement installed")
+	}
+	if _, err := RevealBootstrapEscrow(dataDir, now); !errors.Is(err, ErrBootstrapEscrowNotFound) {
+		t.Fatalf("reveal after acknowledgement = %v, want ErrBootstrapEscrowNotFound", err)
+	}
+}
+
+func TestRevealBootstrapEscrowRefusesExpired(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	escrow, err := CreateBootstrapEscrow(dataDir, time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RevealBootstrapEscrow(dataDir, escrow.ExpiresAt); !errors.Is(err, ErrBootstrapEscrowExpired) {
+		t.Fatalf("reveal at expiry = %v, want ErrBootstrapEscrowExpired", err)
+	}
+}

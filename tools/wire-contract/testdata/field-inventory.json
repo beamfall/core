@@ -65,6 +65,16 @@
       ]
     },
     {
+      "field": "acknowledgebackupkey",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "daysLeft",
+        "expiresAt",
+        "pending"
+      ]
+    },
+    {
       "field": "activity",
       "effect": "read",
       "tier": "session",
@@ -297,6 +307,16 @@
         "error",
         "sizeBytes",
         "valid"
+      ]
+    },
+    {
+      "field": "backupkeystatus",
+      "effect": "read",
+      "tier": "admin",
+      "children": [
+        "daysLeft",
+        "expiresAt",
+        "pending"
       ]
     },
     {
@@ -2612,6 +2632,17 @@
       "tier": "session",
       "children": [
         "revealed"
+      ]
+    },
+    {
+      "field": "revealbackupkey",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "backupKey",
+        "daysLeft",
+        "escrowID",
+        "expiresAt"
       ]
     },
     {

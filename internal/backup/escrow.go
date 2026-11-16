@@ -145,6 +145,30 @@ func ReadBootstrapEscrow(dataDir string, now time.Time) (BootstrapEscrow, error)
 	return escrow, nil
 }
 
+// PendingBackupKey is the backup key the owner must save before confirming
+// it: the key AcknowledgeBootstrapEscrow installs for EscrowID.
+type PendingBackupKey struct {
+	EscrowID  string
+	Key       BackupKey
+	ExpiresAt time.Time
+}
+
+// RevealBootstrapEscrow returns the key acknowledging the active escrow
+// installs, so the owner can save it first (CORE-2032). It is the same key
+// AcknowledgeBootstrapEscrow presents, so it opens every backup sealed after
+// acknowledgement. An expired escrow is wiped, as ReadBootstrapEscrow does.
+func RevealBootstrapEscrow(dataDir string, now time.Time) (PendingBackupKey, error) {
+	escrow, err := ReadBootstrapEscrow(dataDir, now)
+	if err != nil {
+		return PendingBackupKey{}, err
+	}
+	key, err := deriveAcknowledgedBackupKey(escrow.Key, escrow.ID)
+	if err != nil {
+		return PendingBackupKey{}, fmt.Errorf("backup: derive acknowledged key: %w", err)
+	}
+	return PendingBackupKey{EscrowID: escrow.ID, Key: key, ExpiresAt: escrow.ExpiresAt}, nil
+}
+
 func wipeExpiredBootstrap(dataDir string) error {
 	if err := removeAndSync(filepath.Join(dataDir, publicWrapKeyFileName)); err != nil {
 		return err

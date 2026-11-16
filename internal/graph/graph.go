@@ -584,6 +584,9 @@ type Handler struct {
 	// restoreStager stages console restores for the next start (CORE-1720).
 	// Nil means the build has none; the fields then report it unavailable.
 	restoreStager RestoreStager
+	// backupKeyEscrow reveals and confirms the backup key (CORE-2032). Nil
+	// means nothing is pending.
+	backupKeyEscrow BackupKeyEscrow
 }
 
 // OfflinePackService is the consumer-side seam for the Offline Pack substrate
@@ -5212,6 +5215,7 @@ var queryFields = map[string]bool{
 	"agentcatalog":           true, // CORE-2096: self-describing field catalog for agents
 	"diagnosticsbundle":      true, // CORE-2097: runtime diagnostics and text profiles
 	"stagedrestore":          true, // CORE-1720: the restore staged for the next start
+	"backupkeystatus":        true, // CORE-2032: whether the backup key still has to be saved
 	"libraryhealthitems":     true,
 	"libraryduplicategroups": true,
 	"metadataexport":         true,
@@ -5372,6 +5376,8 @@ var mutationFields = map[string]bool{
 	"inspectbackup":                      true, // CORE-1720: decrypt a backup set and report its contents
 	"stagerestore":                       true, // CORE-1720: stage a restore for the next start
 	"cancelstagedrestore":                true, // CORE-1720: drop a staged restore
+	"revealbackupkey":                    true, // CORE-2032: reveal the backup key to save
+	"acknowledgebackupkey":               true, // CORE-2032: confirm the backup key is saved
 	"scanlibrary":                        true,
 	"scanpreview":                        true, // CORE-1054: plan a rescan and mint a single-use token
 	"commitscanpreview":                  true, // CORE-1054: spend the token and enqueue the rescan
@@ -5548,6 +5554,10 @@ var adminFields = map[string]bool{
 	"stagerestore":        true,
 	"cancelstagedrestore": true,
 	"stagedrestore":       true,
+	// Backup key (CORE-2032): reveal and confirm the bootstrap backup key.
+	"backupkeystatus":      true,
+	"revealbackupkey":      true,
+	"acknowledgebackupkey": true,
 	// Authorized native→server import transport (apple ADR-0003 §1/§3,
 	// POWERTOOLS-6B): the Admin Session tier the loopback bearer authenticates as
 	// — only the native Companion authority can register a source token or import.

@@ -10,6 +10,10 @@
       "effect": "read"
     },
     {
+      "field": "acknowledgebackupkey",
+      "effect": "write"
+    },
+    {
       "field": "addpathpickerroot",
       "effect": "write"
     },
@@ -31,6 +35,10 @@
     },
     {
       "field": "backuphistory",
+      "effect": "read"
+    },
+    {
+      "field": "backupkeystatus",
       "effect": "read"
     },
     {
@@ -296,6 +304,10 @@
     {
       "field": "retentionrules",
       "effect": "read"
+    },
+    {
+      "field": "revealbackupkey",
+      "effect": "write"
     },
     {
       "field": "revokealldevices",

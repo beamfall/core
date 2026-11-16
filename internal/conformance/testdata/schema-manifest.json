@@ -25,6 +25,11 @@
     "tier": "admin"
   },
   {
+    "field": "acknowledgebackupkey",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "activity",
     "effect": "read",
     "tier": "session"
@@ -106,6 +111,11 @@
   },
   {
     "field": "backuphistory",
+    "effect": "read",
+    "tier": "admin"
+  },
+  {
+    "field": "backupkeystatus",
     "effect": "read",
     "tier": "admin"
   },
@@ -1023,6 +1033,11 @@
     "field": "reveal",
     "effect": "write",
     "tier": "session"
+  },
+  {
+    "field": "revealbackupkey",
+    "effect": "write",
+    "tier": "admin"
   },
   {
     "field": "revokeaccessgrant",

@@ -205,6 +205,8 @@ var clientErrorCodes = map[string]ErrorCode{
 	"device revoked": ErrorCodeUnauthenticated,
 
 	"access request already resolved":                   ErrorCodeConflict,
+	"no backup key is waiting to be saved":              ErrorCodeConflict,
+	"the backup key changed; reveal it again":           ErrorCodeConflict,
 	"encrypted library is already provisioned":          ErrorCodeConflict,
 	"job is not terminal":                               ErrorCodeConflict,
 	"job is terminal":                                   ErrorCodeConflict,
