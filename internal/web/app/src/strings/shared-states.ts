@@ -37,7 +37,7 @@ export const sharedStateStrings = {
     transcodedPlaybackUnsupported:
       "This browser can't play this video. Try another browser or device.",
     playbackUnsupportedCodec:
-      "This browser can't play this file's format. Try another browser, or ask the person who runs the server to turn on converting for this profile.",
+      "This browser can't play this file's format. Try another browser or device.",
     playbackFailed: "Playback failed. Please try again.",
     couldNotSwitchProfile: "Could not switch the profile.",
     couldNotCreateLibrary: "Could not create the library.",
@@ -93,7 +93,7 @@ export const sharedStateStrings = {
     transcodedPlaybackUnsupported:
       "Ce navigateur ne peut pas lire cette vidéo. Essayez un autre navigateur ou appareil.",
     playbackUnsupportedCodec:
-      "Ce navigateur ne peut pas lire le format de ce fichier. Essayez un autre navigateur, ou demandez à la personne qui gère le serveur d’activer la conversion pour ce profil.",
+      "Ce navigateur ne peut pas lire le format de ce fichier. Essayez un autre navigateur ou un autre appareil.",
     playbackFailed: "La lecture a échoué. Veuillez réessayer.",
     couldNotSwitchProfile: "Impossible de changer de profil.",
     couldNotCreateLibrary: "Impossible de créer la bibliothèque.",
@@ -151,7 +151,7 @@ export const sharedStateStrings = {
     transcodedPlaybackUnsupported:
       "Dieser Browser kann dieses Video nicht abspielen. Versuchen Sie einen anderen Browser oder ein anderes Gerät.",
     playbackUnsupportedCodec:
-      "Dieser Browser kann das Format dieser Datei nicht abspielen. Versuchen Sie einen anderen Browser, oder bitten Sie die Person, die den Server betreibt, die Konvertierung für dieses Profil einzuschalten.",
+      "Dieser Browser kann das Format dieser Datei nicht abspielen. Versuchen Sie einen anderen Browser oder ein anderes Gerät.",
     playbackFailed: "Wiedergabe fehlgeschlagen. Bitte erneut versuchen.",
     couldNotSwitchProfile: "Das Profil konnte nicht gewechselt werden.",
     couldNotCreateLibrary: "Die Bibliothek konnte nicht erstellt werden.",
@@ -206,7 +206,7 @@ export const sharedStateStrings = {
     transcodedPlaybackUnsupported:
       "Este navegador no puede reproducir este video. Prueba con otro navegador o dispositivo.",
     playbackUnsupportedCodec:
-      "Este navegador no puede reproducir el formato de este archivo. Prueba con otro navegador, o pide a la persona que administra el servidor que active la conversión para este perfil.",
+      "Este navegador no puede reproducir el formato de este archivo. Prueba con otro navegador o dispositivo.",
     playbackFailed: "Error de reproducción. Inténtalo de nuevo.",
     couldNotSwitchProfile: "No se pudo cambiar el perfil.",
     couldNotCreateLibrary: "No se pudo crear la biblioteca.",
@@ -261,7 +261,7 @@ export const sharedStateStrings = {
     transcodedPlaybackUnsupported:
       "Este navegador não consegue reproduzir este vídeo. Tente outro navegador ou dispositivo.",
     playbackUnsupportedCodec:
-      "Este navegador não consegue reproduzir o formato deste arquivo. Tente outro navegador, ou peça à pessoa que administra o servidor para ativar a conversão para este perfil.",
+      "Este navegador não consegue reproduzir o formato deste arquivo. Tente outro navegador ou dispositivo.",
     playbackFailed: "Falha na reprodução. Tente novamente.",
     couldNotSwitchProfile: "Não foi possível trocar o perfil.",
     couldNotCreateLibrary: "Não foi possível criar a biblioteca.",

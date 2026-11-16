@@ -41,6 +41,15 @@ type ContainerEntityResolver interface {
 	ContainerEntityForMedia(ctx context.Context, id store.MediaID) (store.EntityID, int, bool, error)
 }
 
+// PluginMediaClassResolver is the optional seam that reports the Media classes
+// a Plugin declares. Media class is all core knows about a Plugin's content, so
+// a Library whose Plugin declares the image class holds images as content and
+// keeps sidecar-named images as items (CORE-0043). The Identifier may
+// implement it; without it every Library skips recognised sidecars.
+type PluginMediaClassResolver interface {
+	PluginMediaClasses(pluginID string) []store.MediaClass
+}
+
 // Local artwork scopes. A file-scope name is "<stem>-<name>" for the Media
 // whose file stem it carries; a folder-scope name applies when the folder holds
 // exactly one non-image media file; a folder-dir scope name is a subdirectory
@@ -72,6 +81,7 @@ var localArtworkVocabulary = []localArtworkName{
 	{localArtworkFile, "thumb", "thumb"},
 	{localArtworkFile, "landscape", "thumb"},
 	{localArtworkFile, "logo", ""},
+	{localArtworkFile, "banner", ""},
 	{localArtworkFolder, "poster", "poster"},
 	{localArtworkFolder, "folder", "poster"},
 	{localArtworkFolder, "cover", "poster"},

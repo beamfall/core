@@ -2022,6 +2022,24 @@ func TestScanIdentifierQueuesManualPolicyMatches(t *testing.T) {
 	}
 }
 
+func TestScanIdentifierReportsActiveBundleMediaClasses(t *testing.T) {
+	registry, err := plugin.NewRegistry([]plugin.Bundle{testHydrationBundle()})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	adapter := &scanIdentifier{registry: registry}
+	var _ scanpkg.PluginMediaClassResolver = adapter
+	if got := adapter.PluginMediaClasses(testHydrationPluginID); !slices.Equal(got, []store.MediaClass{store.MediaClassAudio}) {
+		t.Fatalf("PluginMediaClasses(active) = %v, want [audio]", got)
+	}
+	if got := adapter.PluginMediaClasses("absent-plugin"); got != nil {
+		t.Fatalf("PluginMediaClasses(absent) = %v, want nil", got)
+	}
+	if got := (&scanIdentifier{}).PluginMediaClasses(testHydrationPluginID); got != nil {
+		t.Fatalf("PluginMediaClasses(no registry) = %v, want nil", got)
+	}
+}
+
 func TestScanIdentifierDoesNotQueueAutoPolicyScraperlessPlugin(t *testing.T) {
 	const pluginID = "scraperless-stub"
 	queue := &appFakeQueue{}

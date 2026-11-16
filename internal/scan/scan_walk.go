@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -71,6 +72,9 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 			return Result{}, err
 		}
 		state.libraryPluginID = pluginID
+		if resolver, ok := identifier.(PluginMediaClassResolver); ok && pluginID != "" {
+			state.imagesAreContent = slices.Contains(resolver.PluginMediaClasses(pluginID), store.MediaClassImage)
+		}
 		state.localExtractors = localExtractors[pluginID]
 		if pluginID != "" {
 			state.parser = parsers[pluginID]
@@ -216,7 +220,7 @@ func checkScanRootReadable(root string) error {
 // presentFilesUnderRoot counts the library's present files under the scan
 // root and how many of them this scan has not refreshed (the rows the missing
 // pass would flip), using the same millisecond cut as the store. Unrefreshed
-// rows that are local artwork sidecars, catalogued before CORE-1708, are left
+// rows that are artwork companions, catalogued before CORE-1708, are left
 // out of both counts: the walk skips them on purpose, so they say nothing about
 // the root's health, and counting them would let a library with more artwork
 // than media trip the guard on every rescan and never drop them.
@@ -229,7 +233,7 @@ func (s *scanWalkState) presentFilesUnderRoot(scanStarted time.Time) (present, s
 			return nil
 		}
 		unseen := file.LastSeenAt.IsZero() || file.LastSeenAt.UnixMilli() < cutoff
-		if unseen && isLocalArtworkSidecar(file.Path) {
+		if unseen && s.isArtworkCompanion(file.Path) {
 			return nil
 		}
 		present++

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -3137,5 +3138,105 @@ func TestScanPassesContentFingerprintToMetadataHydrator(t *testing.T) {
 	}
 	if got := hydrator.calls[1].ContentFingerprint; got == "" || got == first {
 		t.Fatalf("re-tagged fingerprint = %q, want a new non-empty fingerprint (first %q)", got, first)
+	}
+}
+
+// classDeclaringIdentifier is an Identifier that also reports the Media
+// classes each Plugin declares, as the composition root's adapter does.
+type classDeclaringIdentifier struct {
+	recordingIdentifier
+	classes map[string][]store.MediaClass
+}
+
+func (c *classDeclaringIdentifier) PluginMediaClasses(pluginID string) []store.MediaClass {
+	return c.classes[pluginID]
+}
+
+// writeCompanionArtworkFixture lays out one episode with the companion images
+// a media manager writes beside it.
+func writeCompanionArtworkFixture(t *testing.T, root string) {
+	t.Helper()
+	writeScanFile(t, root, "Show/Season 1/Show.S01E03.mkv", []byte("episode bytes"))
+	for _, name := range []string{"Show.S01E03-thumb.jpg", "Show.S01E03-poster.jpg", "Show.S01E03-fanart.jpg", "Show.S01E03-banner.jpg", "poster.jpg", "fanart.jpg", "folder.jpg"} {
+		writeScanFile(t, root, "Show/Season 1/"+name, jpegBytes(name))
+	}
+}
+
+// scanCompanionLibrary scans the companion fixture into a Library bound to a
+// Plugin declaring classes, and returns the class of every catalogued Media
+// keyed by path, plus the classes the Library's all-items feed holds.
+func scanCompanionLibrary(t *testing.T, workers int, classes []store.MediaClass) (byPath map[string]store.MediaClass, feed []store.MediaClass) {
+	t.Helper()
+	ctx := context.Background()
+	const pluginID = "class-fixture-plugin"
+	root := t.TempDir()
+	writeCompanionArtworkFixture(t, root)
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Fixture", false, pluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	identifier := &classDeclaringIdentifier{classes: map[string][]store.MediaClass{pluginID: classes}}
+	if _, err := ScanWithWorkerGovernor(ctx, st, nil, nil, nil, nil, identifier, nil, nil, fixedGovernor(workers), Request{LibraryID: library.ID, Root: root}, nil); err != nil {
+		t.Fatalf("workers=%d scan: %v", workers, err)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{library.ID}}
+	files, err := st.MediaFilesForLibrary(ctx, library.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath = map[string]store.MediaClass{}
+	for _, file := range files {
+		media, err := st.Media(ctx, file.MediaID, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byPath[file.Path] = media.Class
+	}
+	items, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "all-items", LibraryID: library.ID, Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		media, err := st.Media(ctx, item.ID, filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		feed = append(feed, media.Class)
+	}
+	return byPath, feed
+}
+
+func TestScanKeepsCompanionArtworkOutOfVideoLibrary(t *testing.T) {
+	// feature:scan-pipeline
+	for _, workers := range []int{1, 4} {
+		byPath, feed := scanCompanionLibrary(t, workers, []store.MediaClass{store.MediaClassVideo})
+		if len(byPath) != 1 {
+			t.Fatalf("workers=%d catalogued %v, want only the episode", workers, byPath)
+		}
+		for path, class := range byPath {
+			if filepath.Base(path) != "Show.S01E03.mkv" || class != store.MediaClassVideo {
+				t.Fatalf("workers=%d catalogued %s as %q, want the episode as video", workers, path, class)
+			}
+		}
+		if !slices.Equal(feed, []store.MediaClass{store.MediaClassVideo}) {
+			t.Fatalf("workers=%d all-items feed classes = %v, want one video and no image", workers, feed)
+		}
+	}
+}
+
+func TestScanCataloguesCompanionNamedImagesInImageLibrary(t *testing.T) {
+	// feature:scan-pipeline
+	for _, workers := range []int{1, 4} {
+		byPath, _ := scanCompanionLibrary(t, workers, []store.MediaClass{store.MediaClassImage, store.MediaClassVideo})
+		images := 0
+		for _, class := range byPath {
+			if class == store.MediaClassImage {
+				images++
+			}
+		}
+		if len(byPath) != 8 || images != 7 {
+			t.Fatalf("workers=%d catalogued %v, want the episode and all 7 images", workers, byPath)
+		}
 	}
 }

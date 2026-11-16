@@ -16,17 +16,20 @@ import (
 )
 
 type scanWalkState struct {
-	ctx                 context.Context
-	st                  *store.Store
-	prober              Prober
-	grabber             FrameGrabber
-	parser              FilenameParser
-	identifier          Identifier
-	localExtractors     []LocalExtractor
-	metadataHydrator    MetadataHydrator
-	metadataCapability  MetadataHydrationCapability
-	imageDeriver        ImageDeriver
-	libraryPluginID     string
+	ctx                context.Context
+	st                 *store.Store
+	prober             Prober
+	grabber            FrameGrabber
+	parser             FilenameParser
+	identifier         Identifier
+	localExtractors    []LocalExtractor
+	metadataHydrator   MetadataHydrator
+	metadataCapability MetadataHydrationCapability
+	imageDeriver       ImageDeriver
+	libraryPluginID    string
+	// imagesAreContent is set when the Library's Plugin declares the image
+	// Media class, so sidecar-named images stay items (CORE-0043).
+	imagesAreContent    bool
 	backfillStale       map[store.MediaID]struct{}
 	req                 Request
 	checkpoint          jobCheckpoint
@@ -74,7 +77,14 @@ func (s *scanWalkState) releaseBudget() {
 
 func (s *scanWalkState) isSupportedMediaFile(path string, info fs.FileInfo) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext] && !isLocalArtworkSidecar(path)
+	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext] && !s.isArtworkCompanion(path)
+}
+
+// isArtworkCompanion reports whether path is local artwork beside media that
+// the walk must not catalogue as an item: a recognised sidecar (CORE-1708) in
+// a Library whose Plugin does not hold images as content (CORE-0043).
+func (s *scanWalkState) isArtworkCompanion(path string) bool {
+	return !s.imagesAreContent && isLocalArtworkSidecar(path)
 }
 
 func (s *scanWalkState) directoryContext(path string) ParseContext {
@@ -133,7 +143,7 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 	if !info.Mode().IsRegular() {
 		return nil, nil
 	}
-	if isLocalArtworkSidecar(path) {
+	if s.isArtworkCompanion(path) {
 		return nil, nil
 	}
 	if now().Sub(info.ModTime()) < stabilityWindow {

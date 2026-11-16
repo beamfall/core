@@ -2985,6 +2985,21 @@ func (a *scanIdentifier) AutoIdentify(ctx context.Context, mediaID store.MediaID
 	return err
 }
 
+// PluginMediaClasses reports the Media classes the active bundle declares, so
+// the scan keeps sidecar-named images as items in a Library whose Plugin holds
+// images as content (CORE-0043). An inactive or unknown Plugin declares none.
+func (a *scanIdentifier) PluginMediaClasses(pluginID string) []store.MediaClass {
+	bundle, ok := activeBundle(a.registry, pluginID)
+	if !ok {
+		return nil
+	}
+	classes := make([]store.MediaClass, 0, len(bundle.MediaClasses))
+	for _, class := range bundle.MediaClasses {
+		classes = append(classes, store.MediaClass(class))
+	}
+	return classes
+}
+
 type validatingLocalExtractor struct {
 	inner     scanpkg.LocalExtractor
 	relations map[string]string

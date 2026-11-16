@@ -143,6 +143,8 @@ func TestIsLocalArtworkSidecar(t *testing.T) {
 		"seasonxx-poster.jpg":    false,
 		"Clip-fanart.jpg":        true,
 		"clip-LOGO.png":          true,
+		"Clip-banner.jpg":        true,
+		"Clip-thumb.jpg":         true,
 		"Still-thumb.jpg":        false, // the stem belongs to an image, not playable media
 		"other-poster.jpg":       false,
 		"poster.gif":             false,

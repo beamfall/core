@@ -72,36 +72,37 @@ const SHIPPED = new Set(
 // merged with the CORE-2109 Console job purpose, target and Scan now copy.
 // merged with the CORE-2011/2012/2013/0292 plain-language Console, player and scan copy.
 // merged with the CORE-1118/1119/1121/1123/1125/1179 surface leads and Appearance copy;
-// merged with the CORE-2120 Live sessions end-session copy.
-const BASE_SERIALIZED_LENGTH = 739_384;
-const BASE_REGISTRY_SHA256 = "da9b4259726a53f79b2f15111845c45da333797d37bca4a91e3361a71305798d";
+// merged with the CORE-2120 Live sessions end-session copy;
+// updated for the CORE-0043 unsupported-codec copy, which no longer names a Profile setting.
+const BASE_SERIALIZED_LENGTH = 739_024;
+const BASE_REGISTRY_SHA256 = "a2f3b7eb6ae84d8db0e43f70646370ff8852968203ee1eef887bb341dc86632a";
 const BASE_KEY_ORDER_SHA256 = "766869a45f17e8aeb6f382c94083f93c45822b60f533dfdaec78f70278e6d7df";
 const BASE_PLACEHOLDER_SHA256 = "f30b97db64cd37762a4cd94843467188a6be1de557d1cc019ad9e2cf9c35e17c";
 const BASE_CATALOGS = {
   en: {
     partialCount: 2_547,
-    partialSha256: "196a6fae1f476b199fb255e2cfdaac9c2bfaa274b359be1a5f0e0f847e91c00a",
-    resolvedSha256: "d02d4510c11d2fa49cbb17fad227c111ac80e6eb4a2626b9d3cacd92f241d04d",
+    partialSha256: "470ac84ac9a26c5b6acdc117cc3dcc3f26e0e946fd73410dbd87107cfa3ba958",
+    resolvedSha256: "5191a9cf7e32e47951ae0f61118cfe824462af369305cff3a382475c522cb07a",
   },
   fr: {
     partialCount: 2_547,
-    partialSha256: "9e9a484e8d7164eff403b1a4c37d647683d5ad403e2540f656dc2857f427f3b0",
-    resolvedSha256: "04d3f154fc538e794e1638426d73b116e088f3eed50ad9a7629a7d1d75193557",
+    partialSha256: "70927df5d3f9021f8c2f1e99aa456305d69bf15d4e324c4ab721189508eb6cc2",
+    resolvedSha256: "b9d924b01bf9b2cf330bbdc61e6599700c7651b7985afa408e41f5b58d5d17b6",
   },
   de: {
     partialCount: 2_547,
-    partialSha256: "37813e29d40c414fadb7c730979ec9b6aca089493b00f655e5b5aae9a5b85f55",
-    resolvedSha256: "7da0d6f9e5cd60852552940a1775a0c2f3842ac1d7c636fc8fc33b59eec686c6",
+    partialSha256: "5d86980decbdde2cf0accd509bd3975139743f5acfac7c05969ded87703cbcaa",
+    resolvedSha256: "09884a264ab8c36b70cb3c02598a22524efd794417871a738e97a58647eb41c1",
   },
   es: {
     partialCount: 2_547,
-    partialSha256: "51c757012176f2f937c7c1a9f4a59aba8b7a2b8d33867719ca73835b277e37fe",
-    resolvedSha256: "f5426897d83c160803c14ebc9dc58be856d79f6f5a66ac7f05d9bdc59da4272d",
+    partialSha256: "41b335eecd823bc767f64312f1af23e1a78dee38b00b2fa41560718eced2459d",
+    resolvedSha256: "634eb841e5e9ada7e753804d0de58bc580ba3e1a234d619c0606f9c690568f10",
   },
   pt: {
     partialCount: 2_547,
-    partialSha256: "6044fbdf350af6d9b091b22b2755b9000c6fd2b682518e1af702470838dd14ba",
-    resolvedSha256: "7d95cd1a57377787398bd4eff6e31627baf6d900e187f8124ff6e38803bc04f4",
+    partialSha256: "0395575a7405c8c5afab05b0fa3459b6ea3081ef4959a766619649f6d05a1b5e",
+    resolvedSha256: "566ce1c00799f52b679308d6fc9083f88ed86ae76c62fcbc260595d40cb499d8",
   },
 } as const satisfies Record<
   Locale,
@@ -211,6 +212,17 @@ describe("localized string assembly", () => {
       expect(sha256(sortedSerialization(partial))).toBe(baseline.partialSha256);
       expect(Object.keys(STRINGS[locale])).toEqual(englishKeys);
       expect(sha256(JSON.stringify(STRINGS[locale]))).toBe(baseline.resolvedSha256);
+    }
+  });
+
+  it("names a Profile setting only in the transcode-disallowed copy (CORE-0043)", () => {
+    // The unsupported-codec message covers a browser that cannot decode the file, whatever the
+    // Profile allows; only the server's transcode-disallowed refusal may point at the setting.
+    const profileWord = /profile|profil|perfil/i;
+    for (const locale of LOCALES) {
+      expect(STRINGS[locale].playbackUnsupportedCodec, locale).not.toMatch(profileWord);
+      expect(STRINGS[locale].playbackUnsupportedCodec, locale).not.toMatch(/conver|konvert/i);
+      expect(STRINGS[locale].playbackTranscodeDisallowed, locale).toMatch(profileWord);
     }
   });
 
