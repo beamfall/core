@@ -174,7 +174,7 @@ func TestNewServiceRecoversCrashedStagingBeforeGeneration(t *testing.T) {
 
 func TestReconcileEncryptedFingerprintRefusesWithoutHeaderCheck(t *testing.T) {
 	svc := newPublicationTestService(t)
-	if err := svc.ReconcileEncryptedFingerprint("sha256:a", nil); err == nil {
+	if err := svc.ReconcileEncryptedFingerprint("", "sha256:a", nil); err == nil {
 		t.Fatal("ReconcileEncryptedFingerprint with a nil header check succeeded; want a refusal")
 	}
 }
@@ -184,7 +184,7 @@ func TestReconcileEncryptedFingerprintPurgesPlaintextAndItsGeneration(t *testing
 	if err := svc.publishBytes("media-a", "sha256:a", "waveform:v1", WaveformName, []byte("private-derivative")); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.ReconcileEncryptedFingerprint("sha256:a", libencrypt.HasObjectHeader); err != nil {
+	if err := svc.ReconcileEncryptedFingerprint("", "sha256:a", libencrypt.HasObjectHeader); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(svc.WaveformPath("sha256:a")); !errors.Is(err, os.ErrNotExist) {

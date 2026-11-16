@@ -321,8 +321,10 @@ func (s *Service) assetDir(fingerprint string) string {
 // (plaintext, stray or misnamed entries) is a leak and is hard-deleted: it is
 // losslessly regenerable from the encrypted original, so invariant #6
 // recoverability does not attach to it. Generations left unreferenced are then
-// collected. A missing directory is fine (the common case).
-func (s *Service) ReconcileEncryptedFingerprint(fingerprint string, isObject func(io.Reader) (bool, error)) error {
+// collected. A missing directory is fine (the common case). A directory that
+// still holds assets is recorded in libraryID's reference ledger, so assets
+// published before the ledger existed are attributed for a later purge.
+func (s *Service) ReconcileEncryptedFingerprint(libraryID store.LibraryID, fingerprint string, isObject func(io.Reader) (bool, error)) error {
 	if fingerprint == "" {
 		return nil
 	}
@@ -342,7 +344,14 @@ func (s *Service) ReconcileEncryptedFingerprint(fingerprint string, isObject fun
 	if err := ensureRootDir(root, assetGenerationDir); err != nil {
 		return err
 	}
-	joined := reconcileEncryptedDir(root, assetFingerprintDir(fingerprint), isObject)
+	dir := assetFingerprintDir(fingerprint)
+	joined := reconcileEncryptedDir(root, dir, isObject)
+	if kept, err := dirHasEntries(root, dir); err != nil || (kept && libraryID != "") {
+		if err == nil {
+			err = recordEncryptedReference(root, libraryID, dir)
+		}
+		joined = errors.Join(joined, err)
+	}
 	_, err = collectUnreferencedGenerations(root)
 	return errors.Join(joined, err)
 }

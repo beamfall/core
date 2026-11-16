@@ -231,6 +231,13 @@ func (p *assetPublication) commit(stageName, publicName string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: staged output is not a regular file", ErrPublicationConflict)
 	}
+	if p.encrypted != nil {
+		// Attribute the fingerprint to the Library before its ciphertext is
+		// public, so a purge never meets an asset it cannot attribute.
+		if err := recordEncryptedReference(p.root, p.encrypted.libraryID, assetFingerprintDir(p.source)); err != nil {
+			return err
+		}
+	}
 	contentHash, err := p.contentHash(stagePath, publicName)
 	if err != nil {
 		return err
@@ -394,7 +401,7 @@ func collectUnreferencedGenerations(root *os.Root) (int, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if path == assetStagingDir || path == assetGenerationDir {
+		if path == assetStagingDir || path == assetGenerationDir || path == encryptedRefsDir {
 			return fs.SkipDir
 		}
 		if entry.IsDir() {

@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -302,7 +303,8 @@ func assertNoPlaintextOnDisk(t *testing.T, base, generatedDir string) {
 		case len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') && json.Valid(trimmed):
 			t.Errorf("plaintext JSON on disk: %s", path)
 		}
-		if rel, relErr := filepath.Rel(generatedDir, path); relErr == nil && filepath.IsLocal(rel) {
+		// The reference ledger holds empty per-Library markers, not assets.
+		if rel, relErr := filepath.Rel(generatedDir, path); relErr == nil && filepath.IsLocal(rel) && !strings.HasPrefix(rel, encryptedRefsDir+string(filepath.Separator)) {
 			if ok, _ := libencrypt.HasObjectHeader(bytes.NewReader(data)); !ok {
 				t.Errorf("generated asset is not a ciphertext object: %s", path)
 			}
@@ -458,7 +460,7 @@ func TestReconcileEncryptedFingerprintKeepsOnlyCiphertext(t *testing.T) {
 	if err := os.WriteFile(junk, []byte("junk"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.svc.ReconcileEncryptedFingerprint(f.audioFP, libencrypt.HasObjectHeader); err != nil {
+	if err := f.svc.ReconcileEncryptedFingerprint(f.audio.LibraryID, f.audioFP, libencrypt.HasObjectHeader); err != nil {
 		t.Fatalf("ReconcileEncryptedFingerprint: %v", err)
 	}
 	for _, removed := range []string{stray, junk} {

@@ -87,7 +87,7 @@ func newEncryptedDerivativeReconciler(art *artwork.Service, assets *genassets.Se
 func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx context.Context, libraryID store.LibraryID, live []store.MediaDerivativeKey) error {
 	var joined error
 	for _, key := range live {
-		joined = errors.Join(joined, r.purgeMedia(key))
+		joined = errors.Join(joined, r.purgeMedia(libraryID, key))
 	}
 	// Transcode session dirs are not media-attributable (they are keyed by an
 	// in-memory counter, not by Media/Library), so the 5th class is swept once as
@@ -109,8 +109,10 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 
 // purgeMedia removes every derivative class for one live Media: the MediaID-keyed
 // classes (artwork, precompute) once, and the fingerprint-keyed classes
-// (generated assets, subtitle sidecars) once per content fingerprint.
-func (r *encryptedDerivativeReconciler) purgeMedia(key store.MediaDerivativeKey) error {
+// (generated assets, subtitle sidecars) once per content fingerprint. A
+// generated-asset directory that keeps ciphertext is attributed to libraryID,
+// so the Library's purge can remove it (CORE-2193).
+func (r *encryptedDerivativeReconciler) purgeMedia(libraryID store.LibraryID, key store.MediaDerivativeKey) error {
 	var joined error
 	if r.artwork != nil {
 		joined = errors.Join(joined, r.artwork.PurgeMediaArtwork(key.MediaID))
@@ -118,7 +120,7 @@ func (r *encryptedDerivativeReconciler) purgeMedia(key store.MediaDerivativeKey)
 	joined = errors.Join(joined, playback.PurgePrecomputedRenditionsForMedia(r.precomputeCache, key.MediaID))
 	for _, fingerprint := range key.Fingerprints {
 		if r.assets != nil {
-			joined = errors.Join(joined, r.assets.ReconcileEncryptedFingerprint(fingerprint, libencrypt.HasObjectHeader))
+			joined = errors.Join(joined, r.assets.ReconcileEncryptedFingerprint(libraryID, fingerprint, libencrypt.HasObjectHeader))
 		}
 		if r.subtitles != nil {
 			joined = errors.Join(joined, r.subtitles.PurgeSubtitlesForFingerprint(fingerprint))

@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -292,7 +293,8 @@ func assertNoPlaintextAssets(t *testing.T, generatedDir string, dirs ...string) 
 			if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[') && json.Valid(trimmed) {
 				t.Errorf("plaintext JSON on disk: %s", path)
 			}
-			if rel, relErr := filepath.Rel(generatedDir, path); relErr == nil && filepath.IsLocal(rel) {
+			// The reference ledger holds empty per-Library markers, not assets.
+			if rel, relErr := filepath.Rel(generatedDir, path); relErr == nil && filepath.IsLocal(rel) && !strings.Contains(filepath.ToSlash(rel), ".encrypted-refs/") {
 				if ok, _ := libencrypt.HasObjectHeader(bytes.NewReader(raw)); !ok {
 					t.Errorf("generated asset is not a ciphertext object: %s", path)
 				}

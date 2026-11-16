@@ -11,7 +11,20 @@ import (
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/mediahttp"
+	"github.com/beamfall/core/internal/store"
 )
+
+// encryptedAssetPurger removes a purged Encrypted Library's generated-asset
+// ciphertext that no other Encrypted Library references (CORE-2193).
+type encryptedAssetPurger struct {
+	assets *genassets.Service
+}
+
+var _ store.EncryptedLibraryDerivativePurger = encryptedAssetPurger{}
+
+func (p encryptedAssetPurger) PurgeEncryptedDerivatives(_ context.Context, libraryID store.LibraryID) error {
+	return p.assets.PurgeEncryptedLibraryAssets(libraryID, libencrypt.HasObjectHeader)
+}
 
 // assetPipeRunner is the FFmpeg seam the encrypted asset generator drives.
 // Satisfied by *ffmpeg.Runner.
