@@ -137,6 +137,14 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	if err := s.replayEntityFieldIndexesForEncryptedDBLocked(ctx, s.encryptedDBs[libraryID]); err != nil {
 		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 	}
+	// A rendition run that aborted while this Library was Sealed could not
+	// record its failure, and a crash leaves the same residue: fail those rows
+	// now so cache health stays honest. Runs still in flight keep their rows
+	// (CORE-2054).
+	plane := catalogPlane{libraryID: libraryID, encrypted: true, writer: writer, reader: reader}
+	if _, err := s.failStalePlaybackRenditionGenerationsLocked(ctx, plane, timeNowUTC()); err != nil {
+		return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
+	}
 	// Snapshot-before-flip derivative reconcile (ADR-0045 §reconcile): the media
 	// inventory is enumerable only now that the DB is registered, so this is the
 	// exact point at which protected-plane derivative invariants can be

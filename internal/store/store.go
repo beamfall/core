@@ -1014,6 +1014,12 @@ type Store struct {
 	// purged encrypted Library's key material. Without it an encrypted Library
 	// cannot be purged. Guarded by mu; called only with mu released.
 	encKeyEraser EncryptedLibraryKeyEraser
+	// liveRenditionGenerations names the playback rendition generations this
+	// process has started and not yet published or failed. The stale-generation
+	// sweep fails every other generating row: those runs died with an earlier
+	// process or could not record their failure while their Library was Sealed
+	// (CORE-2054). Guarded by mu.
+	liveRenditionGenerations map[PlaybackRenditionID]int64
 	// snapshotSealer is the app-injected Backup Set encryption/verification
 	// seam. The store owns snapshot consistency and publication, while the
 	// backup package owns envelope cryptography. Set once at composition.

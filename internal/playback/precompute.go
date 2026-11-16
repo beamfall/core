@@ -360,13 +360,18 @@ func PurgePrecomputedRenditionsForMedia(cacheRoot string, mediaID store.MediaID)
 // SweepPrecomputeResidue runs before job workers resume. Every staging entry
 // belongs to a process that can no longer be running, while immutable published
 // generation directories survive only when a ready catalog row references
-// them. This bounds both pre-publish and rename-before-CAS crash residue.
+// them. This bounds both pre-publish and rename-before-CAS crash residue. Rows
+// still generating from a run this process does not own are failed first
+// (CORE-2054); the returned count covers removed filesystem entries only.
 func SweepPrecomputeResidue(ctx context.Context, st *store.Store, cacheRoot string) (int, error) {
 	if st == nil {
 		return 0, errors.New("store is required")
 	}
 	if strings.TrimSpace(cacheRoot) == "" {
 		return 0, errors.New("cache root is required")
+	}
+	if _, err := st.FailStalePlaybackRenditionGenerations(ctx, time.Now().UTC()); err != nil {
+		return 0, err
 	}
 	removed := 0
 	stagingRoot := filepath.Join(cacheRoot, ".precompute-staging")

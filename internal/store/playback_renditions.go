@@ -182,6 +182,10 @@ func (s *Store) StartPlaybackRenditionGeneration(ctx context.Context, r Playback
 	if err := tx.Commit(); err != nil {
 		return 0, "", err
 	}
+	if s.liveRenditionGenerations == nil {
+		s.liveRenditionGenerations = make(map[PlaybackRenditionID]int64)
+	}
+	s.liveRenditionGenerations[r.ID] = generation
 	return generation, previousPath, nil
 }
 
@@ -246,7 +250,11 @@ func (s *Store) PublishPlaybackRenditionGeneration(ctx context.Context, r Playba
 	if changed != 1 {
 		return ErrPlaybackRenditionGenerationStale
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.forgetLiveRenditionGenerationLocked(r.ID, generation)
+	return nil
 }
 
 // verifyPlaybackRenditionJobLeaseLocked is the lease half of the precompute
@@ -273,13 +281,16 @@ func (s *Store) verifyPlaybackRenditionJobLeaseLocked(ctx context.Context, id Jo
 }
 
 // FailPlaybackRenditionGeneration fails only the named epoch. A stale cleanup
-// can therefore never overwrite a replacement generation's state.
+// can therefore never overwrite a replacement generation's state. The run's
+// in-process claim is dropped even when the row is unreachable (its Library is
+// Sealed), so the next Unseal's stale-generation sweep fails the row instead.
 func (s *Store) FailPlaybackRenditionGeneration(ctx context.Context, id PlaybackRenditionID, generation int64, now time.Time) error {
 	if id == "" || generation <= 0 {
 		return errors.New("playback rendition ID and generation are required")
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forgetLiveRenditionGenerationLocked(id, generation)
 	if err := s.guardLocked(); err != nil {
 		return err
 	}
@@ -296,6 +307,92 @@ func (s *Store) FailPlaybackRenditionGeneration(ctx context.Context, id Playback
 		WHERE id = ? AND status = ? AND created_at_ms = ?
 	`, PlaybackRenditionFailed, timeToMillis(now.UTC()), id, PlaybackRenditionGenerating, generation)
 	return err
+}
+
+// forgetLiveRenditionGenerationLocked drops the in-process claim on id when it
+// still names generation; a newer run's claim is left alone.
+func (s *Store) forgetLiveRenditionGenerationLocked(id PlaybackRenditionID, generation int64) {
+	if s.liveRenditionGenerations[id] == generation {
+		delete(s.liveRenditionGenerations, id)
+	}
+}
+
+// FailStalePlaybackRenditionGenerations fails every generating rendition row,
+// in the shared catalog and each Unsealed Encrypted Library DB, that no run in
+// this process owns. Those rows were left by a server that stopped mid-run;
+// left alone they count as generating in PlaybackRenditionCacheHealth forever.
+// Startup calls it before job workers resume (CORE-2054).
+func (s *Store) FailStalePlaybackRenditionGenerations(ctx context.Context, now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.guardLocked(); err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, plane := range s.playbackRenditionPlanesLocked() {
+		failed, err := s.failStalePlaybackRenditionGenerationsLocked(ctx, plane, now)
+		total += failed
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
+// failStalePlaybackRenditionGenerationsLocked fails plane's generating rows
+// that no live in-process run owns. Each write carries the observed epoch, so
+// a generation started concurrently is never clobbered. Callers hold s.mu
+// exclusively, which orders the sweep against Start and the live-claim map.
+func (s *Store) failStalePlaybackRenditionGenerationsLocked(ctx context.Context, plane catalogPlane, now time.Time) (int, error) {
+	type staleGeneration struct {
+		id         PlaybackRenditionID
+		generation int64
+	}
+	rows, err := plane.writer.QueryContext(ctx, `
+		SELECT id, created_at_ms FROM playback_rendition WHERE status = ?
+	`, PlaybackRenditionGenerating)
+	if err != nil {
+		return 0, err
+	}
+	var stale []staleGeneration
+	for rows.Next() {
+		var g staleGeneration
+		if err := rows.Scan(&g.id, &g.generation); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		if live, ok := s.liveRenditionGenerations[g.id]; ok && live == g.generation {
+			continue
+		}
+		stale = append(stale, g)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	failed := 0
+	for _, g := range stale {
+		result, err := plane.writer.ExecContext(ctx, `
+			UPDATE playback_rendition
+			SET status = ?, size_bytes = 0, last_used_at_ms = ?
+			WHERE id = ? AND status = ? AND created_at_ms = ?
+		`, PlaybackRenditionFailed, timeToMillis(now.UTC()), g.id, PlaybackRenditionGenerating, g.generation)
+		if err != nil {
+			return failed, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return failed, err
+		}
+		failed += int(changed)
+	}
+	if failed > 0 && s.logger != nil {
+		s.logger.InfoContext(ctx, "failed playback rendition generations left generating by an earlier server process or a Seal",
+			"count", failed, "encryptedLibrary", plane.encrypted)
+	}
+	return failed, nil
 }
 
 // ReadyPlaybackRenditionPaths returns the immutable generation directories

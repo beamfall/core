@@ -751,6 +751,36 @@ func TestSweepPrecomputeResidueRecoversCrashWithoutDeletingReadyGeneration(t *te
 	}
 }
 
+// TestSweepPrecomputeResidueFailsGenerationsLeftByCrash pins CORE-2054: a
+// rendition row left generating by a server that stopped mid-run is failed at
+// startup, so cache health no longer counts it as generating forever.
+func TestSweepPrecomputeResidueFailsGenerationsLeftByCrash(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	mediaID := importProbedMedia(t, st, "fp-precompute-stale", "mkv", "hevc", 1920, 1080, []store.MediaFileStream{
+		videoStream("hevc", "Main 10", 0, ""),
+	})
+	at := time.Unix(845, 0).UTC()
+	if err := st.UpsertPlaybackRendition(ctx, store.PlaybackRendition{
+		ID: "crash-generating", MediaID: mediaID, ContentFingerprint: "sha256:crash-generating",
+		Kind: store.PlaybackRenditionKindHLS, Status: store.PlaybackRenditionGenerating, RungID: "480p",
+		Codec: "h264", Height: 480, Bandwidth: 1_756_000, Path: filepath.Join(t.TempDir(), "crash-generating"),
+		CreatedAt: at, LastUsedAt: at,
+	}); err != nil {
+		t.Fatalf("UpsertPlaybackRendition: %v", err)
+	}
+	if _, err := SweepPrecomputeResidue(ctx, st, t.TempDir()); err != nil {
+		t.Fatalf("SweepPrecomputeResidue: %v", err)
+	}
+	stats, err := st.PlaybackRenditionCacheHealth(ctx)
+	if err != nil {
+		t.Fatalf("PlaybackRenditionCacheHealth: %v", err)
+	}
+	if stats.Generating != 0 || stats.Failed != 1 {
+		t.Fatalf("stats = %+v, want 0 generating and 1 failed", stats)
+	}
+}
+
 func TestFFmpegPrecomputeGeneratorRejectsUnsafeSpecBeforeTouchingRungDir(t *testing.T) {
 	root := t.TempDir()
 	outputDir := filepath.Join(root, "output")
