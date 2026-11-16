@@ -4,3 +4,7 @@
 - [ ] Reduced motion swaps instantly
 - [ ] Tests: layer lifecycle for artwork (load, none, failure) and words
 - [ ] Verified in the browser on a track change
+- [ ] Visualizer keeps its renderer while the next source loads and draws while it loads
+- [ ] Next item's analysis decoded ahead; audio values ease across the change
+- [ ] Visual switch keeps feedback and clock; visuals compiled while idle; same artwork keeps the visual
+- [ ] Narrow layout: artwork fits the remaining height, no repeated title, play controls in the row

@@ -212,20 +212,26 @@ export class Renderer {
     }
   }
 
-  /** Compiles a visual (once) and draws it from the next frame on. */
+  /** Compiles a visual (once) and draws it from the next frame on. The new visual reads the
+   * old one's last frame as its feedback and the clock runs on, so a track change hands over
+   * through the visual's own trails instead of cutting to black (CORE-2218). */
   async use(visual: Visual): Promise<void> {
     if (this.visual?.visual.id === visual.id) return;
-    let program = this.programs.get(visual.id);
-    if (!program) {
-      const source = await shaderSource(`visuals/${visual.id}.web.frag`);
-      // Disposed while the source loaded: allocate nothing more.
-      if (this.disposed) return;
-      program = this.link(this.visualVertex, source);
-      this.programs.set(visual.id, program);
-    }
+    const program = await this.prepare(visual);
+    if (!program) return;
     this.visual = { visual, program, locations: new Map() };
-    if (this.size) for (const t of this.size.feedback) this.clear(t.fbo, [0, 0, 0, 1]);
-    this.time = 0;
+  }
+
+  /** Compiles a visual ahead of its first use, so switching to it later does not stall a frame. */
+  async prepare(visual: Visual): Promise<WebGLProgram | null> {
+    const ready = this.programs.get(visual.id);
+    if (ready) return ready;
+    const source = await shaderSource(`visuals/${visual.id}.web.frag`);
+    // Disposed while the source loaded: allocate nothing more.
+    if (this.disposed) return null;
+    const program = this.programs.get(visual.id) ?? this.link(this.visualVertex, source);
+    this.programs.set(visual.id, program);
+    return program;
   }
 
   /** Draws one frame at width x height device pixels, dt seconds after the last. */
@@ -534,11 +540,6 @@ export class Renderer {
       throw new Error("visualizer: incomplete framebuffer");
     }
     return f;
-  }
-
-  private clear(fbo: WebGLFramebuffer, rgba: number[]): void {
-    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, fbo);
-    this.gl.clearBufferfv(this.gl.COLOR, 0, rgba);
   }
 
   private clearUint(fbo: WebGLFramebuffer, attachments: number): void {

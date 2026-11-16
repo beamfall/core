@@ -1036,17 +1036,46 @@
   color: color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted));
 }
 
-/* Narrow windows stack the artwork above the words. */
+/* The card already names the playing item, so the transport's title would
+   only repeat it over the card; it stays for screen readers. */
+.bf-player-stage:has(.bf-audio-stage) .bf-player-meta h2 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Narrow windows stack the artwork above the words. The artwork takes the
+   height the words leave, so a short window shrinks it instead of clipping it
+   under the top bar or the transport. */
 @media (max-width: 640px) {
   .bf-audio-card {
-    flex-direction: column;
-    justify-content: center;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    justify-items: center;
+    align-content: center;
+    gap: clamp(12px, 3vh, 24px);
     text-align: center;
   }
 
   .bf-audio-artwork {
-    height: auto;
-    width: min(64vw, 36vh);
+    height: min(100%, 64vw);
+    width: auto;
+    min-height: 0;
+  }
+
+  .bf-audio-meta {
+    max-width: 100%;
+  }
+
+  /* The phone transport centres its play controls over the picture; on the
+     audio stage that is the card, so they sit in the bottom row instead. */
+  .bf-player-stage:has(.bf-audio-stage) .bf-primary-controls {
+    position: static;
+    gap: 2px;
+    transform: none;
   }
 }
 

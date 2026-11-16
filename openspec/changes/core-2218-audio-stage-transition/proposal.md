@@ -19,7 +19,18 @@ empty fallback while the next artwork loads.
 - An item without artwork fades the old artwork out to the fallback frame.
 - `prefers-reduced-motion` swaps instantly.
 - Host UI motion only: this animates page chrome, not a visual effect, so it stays in the web app
-  (ADR-0228 covers the visualizer, which is unchanged).
+  (ADR-0228).
+- The visualizer keeps moving across a track change. Its renderer stays up while the next source
+  loads, and it keeps drawing while that source loads instead of waiting for play. It decodes the
+  next item's analysis ahead and eases its audio values from one item to the next. The visual
+  switch keeps the previous frame as feedback and keeps the clock running, so the new Oscillux
+  visual's own trails hand over instead of a cut to black. Items that share artwork keep one
+  visual, and the other visuals compile while the page is idle. All of this is host glue and
+  selection policy: no effect code is added. A designed visual-to-visual transition would come
+  from Oscillux.
+- Narrow and short windows: the artwork fits the height the words leave, the transport no longer
+  repeats the title over the card, and on a phone the play controls sit in the transport row
+  instead of over the card.
 
 ## Impact
 

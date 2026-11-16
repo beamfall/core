@@ -2,6 +2,7 @@ import { render } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioStage } from "../AudioStage";
+import { easeFrame, silentFrame } from "./analysis";
 import { canVisualize, Visualizer } from "./Visualizer";
 import { VISUALS, visualFor } from "./visuals";
 
@@ -61,6 +62,40 @@ describe("Visualizer (CORE-1309)", () => {
       expect(container.querySelector("canvas")).toBeNull();
       unmount();
     }
+  });
+});
+
+describe("Visualizer track change (CORE-2218)", () => {
+  it("keeps the canvas while the next source loads", () => {
+    withWebGL2();
+    const ref = createRef<HTMLVideoElement>();
+    const { container, rerender } = render(
+      <Visualizer videoRef={ref} stream={direct} trackKey="m1" />,
+    );
+    const canvas = container.querySelector("canvas");
+    expect(canvas).toBeTruthy();
+    rerender(<Visualizer videoRef={ref} stream={null} trackKey="m2" />);
+    expect(container.querySelector("canvas")).toBe(canvas);
+    rerender(
+      <Visualizer videoRef={ref} stream={{ kind: "transcode", url: "/x.m3u8" }} trackKey="m2" />,
+    );
+    expect(container.querySelector("canvas")).toBeNull();
+  });
+});
+
+describe("easeFrame", () => {
+  it("glides levels and spectrum and takes the beat clock as it is", () => {
+    const shown = silentFrame();
+    const target = silentFrame();
+    target.values.bass = 1;
+    target.values.beatCount = 7;
+    target.spectrum[3] = 0.8;
+    easeFrame(shown, target, 0.25);
+    expect(shown.values.bass).toBeCloseTo(0.25);
+    expect(shown.spectrum[3]).toBeCloseTo(0.2);
+    expect(shown.values.beatCount).toBe(7);
+    easeFrame(shown, target, 1);
+    expect(shown.values.bass).toBe(1);
   });
 });
 

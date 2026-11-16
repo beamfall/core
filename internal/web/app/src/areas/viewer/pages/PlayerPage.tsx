@@ -62,7 +62,7 @@ import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
-import { useGaplessAudio } from "../player/useGaplessAudio";
+import { decodableStream, useGaplessAudio } from "../player/useGaplessAudio";
 import { useMediaLoading } from "../player/useMediaLoading";
 import { useMediaSession } from "../player/useMediaSession";
 import { usePlayer } from "../player/usePlayer";
@@ -757,6 +757,11 @@ function FeaturePlayer({
                 videoRef={videoRef}
                 stream={state.stream}
                 trackKey={mediaId || navTitle}
+                next={
+                  issuedNext
+                    ? { key: issuedNext.mediaID, stream: decodableStream(issuedNext) }
+                    : null
+                }
               />
             )}
             {showSpinner && (

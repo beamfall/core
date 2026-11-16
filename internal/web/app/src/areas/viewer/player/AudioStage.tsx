@@ -2,7 +2,7 @@ import { type CSSProperties, type RefObject, useState } from "react";
 import type { MediaCredit } from "@/lib/graphql/types";
 import type { PlaybackStream } from "../lib/playback";
 import { useLayers } from "./useLayers";
-import { Visualizer } from "./visualizer/Visualizer";
+import { type NextTrack, Visualizer } from "./visualizer/Visualizer";
 
 // The audio surface (CORE-1143): an audio item has no picture, so the stage
 // shows its artwork, title and linked Entities instead of a black <video>.
@@ -19,6 +19,7 @@ export function AudioStage({
   videoRef,
   stream = null,
   trackKey = "",
+  next = null,
 }: {
   title: string;
   artworkURL: string;
@@ -30,6 +31,8 @@ export function AudioStage({
   stream?: PlaybackStream | null;
   /** Stable per item: picks the visual. */
   trackKey?: string;
+  /** The item played next, which the visualizer prepares ahead. */
+  next?: NextTrack | null;
 }) {
   const [failedURL, setFailedURL] = useState("");
   const showArtwork = !!artworkURL && failedURL !== artworkURL;
@@ -58,7 +61,9 @@ export function AudioStage({
             videoRef={videoRef}
             stream={stream}
             trackKey={trackKey || title}
+            visualKey={artworkKey(art) || trackKey || title}
             artworkURL={art}
+            next={next}
           />
         )}
       </div>

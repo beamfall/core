@@ -194,3 +194,19 @@ export class TrackAnalysis {
     this.chain = null;
   }
 }
+
+/**
+ * Eases `shown` toward `target` by weight w (0..1) in place: the levels and spectrum glide so a
+ * track change or a late analysis does not snap the visual. Beat phase and count are clock
+ * values, not levels, so they are taken from the target as they are.
+ */
+export function easeFrame(shown: AudioFrame, target: AudioFrame, w: number): AudioFrame {
+  for (const key of MAPPED) shown.values[key] += (target.values[key] - shown.values[key]) * w;
+  for (const key of ["beat", "beatPhase", "beatCount", "barPhase", "downbeat"] as const) {
+    shown.values[key] = target.values[key];
+  }
+  for (let i = 0; i < shown.spectrum.length; i++) {
+    shown.spectrum[i] += (target.spectrum[i] - shown.spectrum[i]) * w;
+  }
+  return shown;
+}
