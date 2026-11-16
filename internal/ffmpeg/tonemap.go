@@ -189,6 +189,10 @@ type ToneMapRender struct {
 	Filters []string
 	// Source is the synthetic lavfi source chain for this transfer class.
 	Source string
+	// Backend is the probed accelerator, the same for every render of one
+	// probe, so each render runs under the confinement that backend's
+	// transcode gets.
+	Backend HWAccel
 }
 
 // ToneMapRunner renders one probe frame, returning the raw single-plane gray
@@ -559,6 +563,7 @@ func (run toneMapProbeRun) render(ctx context.Context, chain ToneMapChain) ([]by
 		InitArgs: chain.InitArgs,
 		Filters:  chain.Filters,
 		Source:   run.source,
+		Backend:  run.backend,
 	})
 	if err != nil {
 		return nil, classifyToneMapRenderError(err)
@@ -654,20 +659,23 @@ func highlightSample(frame []byte) float64 {
 // synthetic-source render whose single frame lands on stdout. It carries the
 // least-privilege protocol allowlist and -nostdin like every other spawn, and
 // runs under the bounded supervisor so a wedged child's tree is killed and
-// reaped rather than orphaned.
+// reaped rather than orphaned. Through the probe shim it gets the confinement
+// of a transcode on the same backend: no job paths (the source is lavfi) and
+// the GPU grant only for QSV or VA-API.
 func DefaultToneMapRunner(ctx context.Context, render ToneMapRender) ([]byte, error) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return nil, err
 	}
-	return runProbeFFmpeg(ctx, ffmpegPath, toneMapProbeArgs(render))
+	return runProbeFFmpeg(ctx, ffmpegPath, confinement{DRI: driAccel(render.Backend)}, toneMapProbeArgs(render))
 }
 
-// runProbeFFmpeg runs one supervised probe render and returns its stdout.
-func runProbeFFmpeg(ctx context.Context, ffmpegPath string, args []string) ([]byte, error) {
+// runProbeFFmpeg runs one supervised probe render under conf and returns its
+// stdout.
+func runProbeFFmpeg(ctx context.Context, ffmpegPath string, conf confinement, args []string) ([]byte, error) {
 	// #nosec G204 -- path is resolved from PATH; the argv is this package's own
 	// synthetic source plus the production filter chain, never operator input.
-	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	cmd := probeCommand(ctx, ffmpegPath, conf, args)
 	frame := &boundedBuffer{limit: captureLimitBytes}
 	if err := supervise(ctx, cmd, frame, io.Discard); err != nil {
 		return nil, err

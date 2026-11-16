@@ -526,14 +526,17 @@ func devDRIPresent() bool {
 // source (testsrc → null muxer) so success means the full driver+device+build
 // path works, with no real media file. ctx (already time-boxed by the probe)
 // bounds the run. A missing ffmpeg binary or any non-zero exit reports the
-// accelerator as not working.
+// accelerator as not working. Through the probe shim it runs under the
+// confinement of a transcode on the same encoder, so a device the confined
+// job cannot open fails here too.
 func DefaultHWAccelRunner(ctx context.Context, encode HWAccelEncode) error {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return err
 	}
 	args := hwAccelProbeArgs(encode)
-	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	conf := confinement{DRI: driAccel(hwAccelOfEncoder(encode.Encoder))}
+	cmd := probeCommand(ctx, ffmpegPath, conf, args)
 	// Under the bounded supervisor (tree kill + reap on the probe's time-box)
 	// with output discarded: the probe's verdict is the exit status alone.
 	return supervise(ctx, cmd, io.Discard, io.Discard)

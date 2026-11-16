@@ -70,7 +70,7 @@ func TestMain(m *testing.M) {
 // TestParseShimArgs pins the shim argv parser: --ro/--rw collect their paths,
 // "--" terminates the flag section, and the remainder is the verbatim command.
 func TestParseShimArgs(t *testing.T) {
-	ro, rw, argv, requireLandlock, err := parseShimArgs([]string{
+	req, err := parseShimArgs([]string{
 		"--ro", "/media/in",
 		"--rw", "/var/out",
 		"--rw", "/tmp/seg",
@@ -80,17 +80,20 @@ func TestParseShimArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseShimArgs: %v", err)
 	}
-	if !reflect.DeepEqual(ro, []string{"/media/in"}) {
-		t.Errorf("ro = %q", ro)
+	if !reflect.DeepEqual(req.ro, []string{"/media/in"}) {
+		t.Errorf("ro = %q", req.ro)
 	}
-	if !reflect.DeepEqual(rw, []string{"/var/out", "/tmp/seg"}) {
-		t.Errorf("rw = %q", rw)
+	if !reflect.DeepEqual(req.rw, []string{"/var/out", "/tmp/seg"}) {
+		t.Errorf("rw = %q", req.rw)
 	}
-	if !reflect.DeepEqual(argv, []string{"/usr/bin/ffmpeg", "-i", "/media/in/m.mkv"}) {
-		t.Errorf("argv = %q", argv)
+	if !reflect.DeepEqual(req.argv, []string{"/usr/bin/ffmpeg", "-i", "/media/in/m.mkv"}) {
+		t.Errorf("argv = %q", req.argv)
 	}
-	if requireLandlock {
+	if req.requireLandlock {
 		t.Error("requireLandlock set without --require-landlock")
+	}
+	if req.dri {
+		t.Error("dri set without --dri")
 	}
 }
 
@@ -98,34 +101,60 @@ func TestParseShimArgs(t *testing.T) {
 // bare flag before "--", and the same token after "--" stays part of the
 // verbatim command.
 func TestParseShimArgsRequireLandlock(t *testing.T) {
-	ro, rw, argv, requireLandlock, err := parseShimArgs([]string{
+	req, err := parseShimArgs([]string{
 		"--require-landlock", "--", "/usr/bin/ffmpeg", "--require-landlock",
 	})
 	if err != nil {
 		t.Fatalf("parseShimArgs: %v", err)
 	}
-	if !requireLandlock {
+	if !req.requireLandlock {
 		t.Error("requireLandlock not set")
 	}
-	if len(ro) != 0 || len(rw) != 0 {
-		t.Errorf("ro = %q, rw = %q, want none", ro, rw)
+	if len(req.ro) != 0 || len(req.rw) != 0 {
+		t.Errorf("ro = %q, rw = %q, want none", req.ro, req.rw)
 	}
-	if !reflect.DeepEqual(argv, []string{"/usr/bin/ffmpeg", "--require-landlock"}) {
-		t.Errorf("argv = %q", argv)
+	if !reflect.DeepEqual(req.argv, []string{"/usr/bin/ffmpeg", "--require-landlock"}) {
+		t.Errorf("argv = %q", req.argv)
+	}
+}
+
+// TestParseShimArgsDRI pins the GPU grant flag (CORE-2158): a bare flag before
+// "--" that sets nothing else, and a verbatim token after it.
+func TestParseShimArgsDRI(t *testing.T) {
+	req, err := parseShimArgs([]string{
+		"--dri", "--ro", "/media/in", "--", "/usr/bin/ffmpeg", "--dri",
+	})
+	if err != nil {
+		t.Fatalf("parseShimArgs: %v", err)
+	}
+	if !req.dri {
+		t.Error("dri not set")
+	}
+	if req.requireLandlock {
+		t.Error("--dri set requireLandlock")
+	}
+	if !reflect.DeepEqual(req.ro, []string{"/media/in"}) || len(req.rw) != 0 {
+		t.Errorf("ro = %q, rw = %q", req.ro, req.rw)
+	}
+	if !reflect.DeepEqual(req.argv, []string{"/usr/bin/ffmpeg", "--dri"}) {
+		t.Errorf("argv = %q", req.argv)
+	}
+	if req, err := parseShimArgs([]string{"--", "/usr/bin/ffmpeg", "--dri"}); err != nil || req.dri {
+		t.Errorf("--dri after -- set dri = %v (err %v)", req.dri, err)
 	}
 }
 
 func TestParseShimArgsRejectsMissingCommand(t *testing.T) {
-	if _, _, _, _, err := parseShimArgs([]string{"--ro", "/x", "--"}); err == nil {
+	if _, err := parseShimArgs([]string{"--ro", "/x", "--"}); err == nil {
 		t.Fatal("parseShimArgs accepted an empty command after --")
 	}
-	if _, _, _, _, err := parseShimArgs([]string{"--ro", "/x"}); err == nil {
+	if _, err := parseShimArgs([]string{"--ro", "/x"}); err == nil {
 		t.Fatal("parseShimArgs accepted args with no -- terminator")
 	}
-	if _, _, _, _, err := parseShimArgs([]string{"--ro"}); err == nil {
+	if _, err := parseShimArgs([]string{"--ro"}); err == nil {
 		t.Fatal("parseShimArgs accepted --ro with no path")
 	}
-	if _, _, _, _, err := parseShimArgs([]string{"--bogus", "--", "/bin/true"}); err == nil {
+	if _, err := parseShimArgs([]string{"--bogus", "--", "/bin/true"}); err == nil {
 		t.Fatal("parseShimArgs accepted an unknown flag")
 	}
 }

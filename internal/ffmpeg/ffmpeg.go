@@ -339,7 +339,7 @@ func (r *Runner) SetHardeningShim(shimPath string) {
 // to set the death signal.
 func (r *Runner) generationCommand(ctx context.Context, conf confinement, ffmpegPath string, args ...string) *exec.Cmd {
 	binPath, binArgs := r.niceWrap(ffmpegPath, args)
-	return r.hardenedCommand(ctx, binPath, conf.ReadOnly, conf.ReadWrite, binArgs)
+	return r.confinedCommand(ctx, binPath, conf, binArgs)
 }
 
 // niceWrap prefixes `nice -n N` to a background FFmpeg run when a generation
@@ -1402,6 +1402,12 @@ func (r Rendition) withToneMapAccel(accel HWAccel) Rendition {
 // withDeviceDecode returns a copy that decodes, scales and tone-maps on the
 // encoder's device when on is true. The tone-map then runs on the encoder's
 // backend, so toneMapAccel follows hwAccel.
+// needsDRI reports whether the rendition's encode or tone-map runs on a QSV or
+// VA-API device, and so whether its confined job needs the GPU grant.
+func (r Rendition) needsDRI() bool {
+	return driAccel(r.hwAccel) || driAccel(r.toneMapAccel)
+}
+
 func (r Rendition) withDeviceDecode(on bool) Rendition {
 	r.deviceDecode = on
 	if on {
@@ -2409,13 +2415,14 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	}
 	args := hlsArgs(src, dir, rendition)
 	// Confine to the source file's directory (read-only) and the segment output
-	// directory (read-write).
+	// directory (read-write), plus the GPU when the rendition runs on one.
 	conf := dirConfinement(src, dir)
+	conf.DRI = rendition.needsDRI()
 	var cmd *exec.Cmd
 	if background {
 		cmd = r.generationCommand(ctx, conf, ffmpegPath, args...)
 	} else {
-		cmd = r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, args)
+		cmd = r.confinedCommand(ctx, ffmpegPath, conf, args)
 	}
 	process, err := startHLSProcess(cmd)
 	if err != nil {
@@ -2580,7 +2587,8 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	}
 	args := buildArgs(rendition)
 	conf := dirConfinement(src, dir)
-	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, args)
+	conf.DRI = rendition.needsDRI()
+	cmd := r.confinedCommand(ctx, ffmpegPath, conf, args)
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)

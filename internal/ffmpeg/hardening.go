@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 )
 
 // FFmpeg invocation hardening. Every ffmpeg/ffprobe spawn is
@@ -66,33 +67,91 @@ const shimSubcommand = "ffmpeg-shim"
 // The server knows it is the real beamfall binary and enables the shim
 // explicitly; everyone else gets the un-hardened direct exec they had before.
 func (r *Runner) hardenedCommand(ctx context.Context, binPath string, roPaths, rwPaths []string, args []string) *exec.Cmd {
-	if r.shimPath == "" {
+	return r.confinedCommand(ctx, binPath, confinement{ReadOnly: roPaths, ReadWrite: rwPaths}, args)
+}
+
+// confinedCommand is hardenedCommand for a full confinement, including the
+// GPU grant a hardware job needs.
+func (r *Runner) confinedCommand(ctx context.Context, binPath string, conf confinement, args []string) *exec.Cmd {
+	return shimCommand(ctx, r.shimPath, binPath, conf, args)
+}
+
+// shimCommand wraps binPath in the shim at shimPath under conf, or execs it
+// directly when shimPath is empty. Transcodes take shimPath from their Runner
+// and hardware probes from SetProbeHardeningShim, so a probe runs under the
+// same wrapping as the job it certifies.
+func shimCommand(ctx context.Context, shimPath, binPath string, conf confinement, args []string) *exec.Cmd {
+	if shimPath == "" {
 		return exec.CommandContext(ctx, binPath, args...)
 	}
-	shimArgs := buildShimArgs(roPaths, rwPaths, binPath, args)
-	return exec.CommandContext(ctx, r.shimPath, shimArgs...)
+	// #nosec G204 -- shimPath is this server binary and the argv is built as a
+	// []string by buildShimArgs, never a shell string.
+	return exec.CommandContext(ctx, shimPath, buildShimArgs(conf, binPath, args)...)
 }
 
 // buildShimArgs assembles the argv for the ffmpeg-shim subcommand:
 //
-//	ffmpeg-shim --ro <dir> [--ro <dir>...] --rw <dir> [--rw <dir>...] -- <ffmpeg> <args...>
+//	ffmpeg-shim [--dri] --ro <dir> [--ro <dir>...] --rw <dir> [--rw <dir>...] -- <ffmpeg> <args...>
 //
 // The rlimit values are not passed on the command line — they are compile-time
 // consts the shim reads directly — keeping the argv tied to the per-job paths
 // only. The "--" terminator separates shim flags from the ffmpeg command so a
 // path that looks like a flag cannot be misparsed by the shim's own flag set.
-func buildShimArgs(roPaths, rwPaths []string, binPath string, args []string) []string {
+func buildShimArgs(conf confinement, binPath string, args []string) []string {
 	out := []string{shimSubcommand}
-	for _, p := range roPaths {
+	if conf.DRI {
+		out = append(out, "--dri")
+	}
+	for _, p := range conf.ReadOnly {
 		out = append(out, "--ro", p)
 	}
-	for _, p := range rwPaths {
+	for _, p := range conf.ReadWrite {
 		out = append(out, "--rw", p)
 	}
 	out = append(out, "--")
 	out = append(out, binPath)
 	out = append(out, args...)
 	return out
+}
+
+// probeShimPath is the shim the hardware probes run through. The probes are
+// package functions, and the encoder probe runs before any Runner exists, so
+// the server entrypoint sets it once with SetProbeHardeningShim alongside the
+// Runner's own shim.
+var probeShimPath atomic.Pointer[string]
+
+// SetProbeHardeningShim makes the encoder, tone-map and device-decode probes
+// run FFmpeg through the hardening shim at path, under the confinement their
+// transcode gets (CORE-2158), so a verdict never certifies a chain the
+// confined job cannot open. An empty path, the default, execs FFmpeg directly,
+// for the same reason SetHardeningShim defaults off.
+//
+//io:ignore — config setter, not an I/O operation (cmd/ioe2e ledger).
+func SetProbeHardeningShim(path string) {
+	if path == "" {
+		probeShimPath.Store(nil)
+		return
+	}
+	probeShimPath.Store(&path)
+}
+
+func probeShim() string {
+	if path := probeShimPath.Load(); path != nil {
+		return *path
+	}
+	return ""
+}
+
+// probeCommand builds one hardware probe's FFmpeg command under conf.
+func probeCommand(ctx context.Context, ffmpegPath string, conf confinement, args []string) *exec.Cmd {
+	return shimCommand(ctx, probeShim(), ffmpegPath, conf, args)
+}
+
+// driAccel reports whether an accelerator's encode or tone-map opens a DRM
+// render node and, for the OpenCL tone-map, the OpenCL ICD registry: QSV and
+// VA-API. NVENC, VideoToolbox, AMF and the software path need neither.
+func driAccel(accel HWAccel) bool {
+	return accel == HWAccelQSV || accel == HWAccelVAAPI
 }
 
 // ShimEnvVar names an explicit override for the shim binary path. When set, it
@@ -124,9 +183,13 @@ func DefaultShimPath() string {
 // not confined). Directories — not files — are granted: ffmpeg opens sidecars,
 // temp files, and segment files alongside the named paths, and a directory
 // grant is the minimal set that keeps a legitimate job working.
+//
+// DRI adds the render nodes and the OpenCL ICD registry for a job that encodes
+// or tone-maps on QSV or VA-API (CORE-2158); every other job leaves it false.
 type confinement struct {
 	ReadOnly  []string
 	ReadWrite []string
+	DRI       bool
 }
 
 // readConfinement confines a read-only job (e.g. ffprobe, waveform analysis)

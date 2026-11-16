@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -38,13 +39,18 @@ const (
 // binary.
 type DeviceDecodeRunner func(ctx context.Context, args []string) ([]byte, error)
 
-// DefaultDeviceDecodeRunner is the production DeviceDecodeRunner.
-func DefaultDeviceDecodeRunner(ctx context.Context, args []string) ([]byte, error) {
-	ffmpegPath, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		return nil, err
+// confinedDeviceDecodeRunner is the production DeviceDecodeRunner for one
+// probe: every command runs under conf, the confinement of a transcode on the
+// probed backend with the probe's private sample directory as its only job
+// path.
+func confinedDeviceDecodeRunner(conf confinement) DeviceDecodeRunner {
+	return func(ctx context.Context, args []string) ([]byte, error) {
+		ffmpegPath, err := exec.LookPath("ffmpeg")
+		if err != nil {
+			return nil, err
+		}
+		return runProbeFFmpeg(ctx, ffmpegPath, conf, args)
 	}
-	return runProbeFFmpeg(ctx, ffmpegPath, args)
 }
 
 // DeviceDecodeOptions configures one device-decode probe. The embedded
@@ -52,7 +58,8 @@ func DefaultDeviceDecodeRunner(ctx context.Context, args []string) ([]byte, erro
 // timeouts; its Runner is unused.
 type DeviceDecodeOptions struct {
 	ToneMapOptions
-	// Run executes each command. nil uses DefaultDeviceDecodeRunner.
+	// Run executes each command. nil runs FFmpeg confined to the sample's
+	// directory, with the GPU grant for a QSV or VA-API backend.
 	Run DeviceDecodeRunner
 }
 
@@ -83,20 +90,26 @@ func ProbeDeviceDecode(ctx context.Context, opts DeviceDecodeOptions) ToneMapPro
 	if !candidate.DeviceDecode {
 		return run.unsupported(ToneMapFailureChainUnrunnable)
 	}
+	// The sample lives in a private directory, the one path a confined leg may
+	// read, so no other file in the temporary directory is exposed to it.
+	sampleDir, err := os.MkdirTemp("", "beamfall-device-decode-*")
+	if err != nil {
+		return run.unsupported(ToneMapFailureInconclusive)
+	}
+	defer func() { _ = os.RemoveAll(sampleDir) }()
 	runner := opts.Run
 	if runner == nil {
-		runner = DefaultDeviceDecodeRunner
+		runner = confinedDeviceDecodeRunner(confinement{ReadOnly: []string{sampleDir}, DRI: driAccel(run.backend)})
 	}
 	ctx, cancel := context.WithTimeout(ctx, run.total)
 	defer cancel()
 
 	probe := deviceDecodeProbe{run: run, exec: runner}
-	sample, cleanup, failure := probe.writeSample(ctx)
+	sample, failure := probe.writeSample(ctx, sampleDir)
 	if failure != ToneMapFailureNone {
 		// Without a sample nothing was measured, whatever the cause.
 		return run.unsupported(failure)
 	}
-	defer cleanup()
 
 	toneMapped, failure := probe.render(ctx, sample, candidate)
 	if failure != ToneMapFailureNone {
@@ -132,33 +145,27 @@ type deviceDecodeProbe struct {
 	exec DeviceDecodeRunner
 }
 
-// writeSample encodes the class's fixture as HEVC Main10 and stores it in a
-// temporary file, so the legs read it under the same file-only protocol
-// allowlist as a real transcode.
-func (p deviceDecodeProbe) writeSample(ctx context.Context) (string, func(), ToneMapFailure) {
+// writeSample encodes the class's fixture as HEVC Main10 and stores it in
+// dir, so the legs read it under the same file-only protocol allowlist and
+// directory confinement as a real transcode.
+func (p deviceDecodeProbe) writeSample(ctx context.Context, dir string) (string, ToneMapFailure) {
 	renderCtx, cancel := context.WithTimeout(ctx, p.run.perRender)
 	defer cancel()
 	encoded, err := p.exec(renderCtx, deviceDecodeSampleArgs(p.run.source, p.run.class))
 	if err != nil {
 		if failure := classifyToneMapRenderError(err); failure != ToneMapFailureChainUnrunnable {
-			return "", nil, failure
+			return "", failure
 		}
-		return "", nil, ToneMapFailureInconclusive
+		return "", ToneMapFailureInconclusive
 	}
 	if len(encoded) == 0 {
-		return "", nil, ToneMapFailureInconclusive
+		return "", ToneMapFailureInconclusive
 	}
-	file, err := os.CreateTemp("", "beamfall-device-decode-*.hevc")
-	if err != nil {
-		return "", nil, ToneMapFailureInconclusive
+	sample := filepath.Join(dir, "sample.hevc")
+	if err := os.WriteFile(sample, encoded, 0o600); err != nil {
+		return "", ToneMapFailureInconclusive
 	}
-	cleanup := func() { _ = os.Remove(file.Name()) }
-	_, writeErr := file.Write(encoded)
-	if closeErr := file.Close(); writeErr != nil || closeErr != nil {
-		cleanup()
-		return "", nil, ToneMapFailureInconclusive
-	}
-	return file.Name(), cleanup, ToneMapFailureNone
+	return sample, ToneMapFailureNone
 }
 
 // render runs one leg over the sample and returns its 16x16 gray frame.

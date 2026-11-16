@@ -89,7 +89,7 @@ func TestLocalInferenceHardeningFailsClosedOffLinux(t *testing.T) {
 	if err := applyLocalInferenceConfinement([]string{"/input"}, []string{"/work"}, "/bin/echo"); !errors.Is(err, integrationhost.ErrLocalInferenceConfinementUnavailable) {
 		t.Fatalf("confinement error = %v, want ErrLocalInferenceConfinementUnavailable", err)
 	}
-	if applyNoNetwork() != nil || applyConfinement([]string{"/input"}, []string{"/work"}, "/bin/echo") != nil {
+	if applyNoNetwork() != nil || applyConfinement([]string{"/input"}, []string{"/work"}, "/bin/echo", false) != nil {
 		t.Fatal("the ffmpeg profile must keep its own best-effort posture")
 	}
 }

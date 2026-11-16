@@ -11,8 +11,7 @@ import (
 // order, the "--" terminator, then the binary and its args verbatim.
 func TestBuildShimArgs(t *testing.T) {
 	got := buildShimArgs(
-		[]string{"/media/in"},
-		[]string{"/var/out", "/tmp/seg"},
+		confinement{ReadOnly: []string{"/media/in"}, ReadWrite: []string{"/var/out", "/tmp/seg"}},
 		"/usr/bin/ffmpeg",
 		[]string{"-i", "/media/in/movie.mkv", "--", "/var/out/x.jpg"},
 	)
@@ -27,6 +26,16 @@ func TestBuildShimArgs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildShimArgs:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestBuildShimArgsDRI pins the GPU grant flag (CORE-2158): a bare --dri
+// before the path flags, only when the confinement asks for it.
+func TestBuildShimArgsDRI(t *testing.T) {
+	got := buildShimArgs(confinement{ReadOnly: []string{"/media/in"}, DRI: true}, "/usr/bin/ffmpeg", []string{"-i", "x"})
+	want := []string{shimSubcommand, "--dri", "--ro", "/media/in", "--", "/usr/bin/ffmpeg", "-i", "x"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("buildShimArgs with DRI:\n got %q\nwant %q", got, want)
 	}
 }
 

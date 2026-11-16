@@ -33,8 +33,10 @@ func serve(ctx context.Context, args []string) error {
 	// this server binary so every ffmpeg/ffprobe run re-execs through the
 	// ffmpeg-shim subcommand (rlimits + Linux landlock confinement). Only the
 	// real serve entrypoint sets this; test harnesses that call app.New leave it
-	// empty so a test binary never re-execs itself.
+	// empty so a test binary never re-execs itself. The hardware probes take the
+	// same shim, so they certify the confinement a transcode will run under.
 	cfg.FFmpegHardeningShimPath = ffmpeg.DefaultShimPath()
+	ffmpeg.SetProbeHardeningShim(cfg.FFmpegHardeningShimPath)
 	cfg.IntegrationWorkerHardeningShimPath = integrationhost.DefaultShimPath()
 	beamfall, release, err := startServer(ctx, cfg)
 	if err != nil {

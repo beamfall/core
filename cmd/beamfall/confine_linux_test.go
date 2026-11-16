@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +52,7 @@ func TestLandlockDeniesUnlistedEtcFileAndAllowsInput(t *testing.T) {
 		if os.Getenv("BEAMFALL_LANDLOCK_ALLOW") == "1" {
 			ro = []string{os.Getenv("BEAMFALL_LANDLOCK_GRANT")}
 		}
-		if err := applyConfinement(ro, nil, os.Args[0]); err != nil {
+		if err := applyConfinement(ro, nil, os.Args[0], false); err != nil {
 			os.Exit(3)
 		}
 		_, err := os.ReadFile(path)
@@ -123,7 +124,7 @@ func TestLocalInferenceConfinementFailsClosedWithoutLandlock(t *testing.T) {
 	if !errors.Is(err, integrationhost.ErrLocalInferenceConfinementUnavailable) {
 		t.Fatalf("error = %v, want ErrLocalInferenceConfinementUnavailable", err)
 	}
-	if onThrowawayThread(func() error { return applyConfinement([]string{"/tmp"}, nil, os.Args[0]) }) != nil {
+	if onThrowawayThread(func() error { return applyConfinement([]string{"/tmp"}, nil, os.Args[0], false) }) != nil {
 		t.Fatal("the ffmpeg profile must keep its own best-effort posture")
 	}
 }
@@ -341,7 +342,7 @@ func confineShimHelper(mode string) {
 	}
 	switch mode {
 	case "ffmpeg":
-		err = runFFmpegShim(nil, nil, probe, false)
+		err = runFFmpegShim(ffmpegShimRequest{argv: probe})
 	case "local-inference":
 		err = runLocalInferenceShim(
 			os.Getenv("BEAMFALL_CONFINE_SHIM_INPUT"),
@@ -441,10 +442,10 @@ func TestRequiredFFmpegConfinementRefusesWithoutLandlock(t *testing.T) {
 	original := ffmpegLandlockABI
 	t.Cleanup(func() { ffmpegLandlockABI = original })
 	ffmpegLandlockABI = func() int { return 0 }
-	if err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg"); !errors.Is(err, errLandlockRequired) {
+	if err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg", false); !errors.Is(err, errLandlockRequired) {
 		t.Fatalf("applyRequiredConfinement without landlock = %v, want errLandlockRequired", err)
 	}
-	if err := applyConfinement(nil, nil, "/usr/bin/ffmpeg"); err != nil {
+	if err := applyConfinement(nil, nil, "/usr/bin/ffmpeg", false); err != nil {
 		t.Fatalf("best-effort applyConfinement without landlock = %v, want nil", err)
 	}
 }
@@ -458,7 +459,7 @@ func TestRequiredFFmpegConfinementRefusesLandlockWithoutTruncate(t *testing.T) {
 	t.Cleanup(func() { ffmpegLandlockABI = original })
 	for _, abi := range []int{1, 2} {
 		ffmpegLandlockABI = func() int { return abi }
-		err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg")
+		err := applyRequiredConfinement(nil, nil, "/usr/bin/ffmpeg", false)
 		if !errors.Is(err, errLandlockRequired) || !strings.Contains(err.Error(), "truncate") {
 			t.Fatalf("applyRequiredConfinement on landlock ABI %d = %v, want an errLandlockRequired naming truncate", abi, err)
 		}
@@ -471,5 +472,168 @@ func TestRequiredFFmpegConfinementRefusesLandlockWithoutTruncate(t *testing.T) {
 	}
 	if readAccess()&unix.LANDLOCK_ACCESS_FS_TRUNCATE != 0 {
 		t.Fatal("readAccess grants truncate on a read-only path")
+	}
+}
+
+// driFixture points the GPU grant paths at a temporary tree for one test: two
+// render nodes, a primary node and an OpenCL registry, all regular files so no
+// privilege is needed to make them.
+func driFixture(t *testing.T) (dri, vendors string) {
+	t.Helper()
+	root := t.TempDir()
+	dri = filepath.Join(root, "dri")
+	vendors = filepath.Join(root, "OpenCL", "vendors")
+	for _, dir := range []string{dri, vendors} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, file := range []string{
+		filepath.Join(dri, "renderD128"), filepath.Join(dri, "renderD129"),
+		filepath.Join(dri, "card0"), filepath.Join(vendors, "intel.icd"),
+	} {
+		if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setDRIPaths(t, dri, vendors)
+	return dri, vendors
+}
+
+func setDRIPaths(t *testing.T, dri, vendors string) {
+	t.Helper()
+	oldDRI, oldVendors := driDir, openCLVendorsDir
+	t.Cleanup(func() { driDir, openCLVendorsDir = oldDRI, oldVendors })
+	driDir, openCLVendorsDir = dri, vendors
+}
+
+// TestFFmpegRulesGrantGPUPathsOnlyWithDRI pins the CORE-2158 ruleset: without
+// --dri nothing under the DRI or OpenCL trees is granted; with it, the DRI
+// directory is listable only, each render node gets file-valid read/write
+// (plus device ioctl from ABI 5), no primary node is granted, and the OpenCL
+// registry is read-only.
+func TestFFmpegRulesGrantGPUPathsOnlyWithDRI(t *testing.T) {
+	dri, vendors := driFixture(t)
+	gpu := func(rules []landlockRule) map[string]landlockRule {
+		out := map[string]landlockRule{}
+		for _, rule := range rules {
+			if strings.HasPrefix(rule.path, filepath.Dir(dri)) {
+				out[rule.path] = rule
+			}
+		}
+		return out
+	}
+	if got := gpu(ffmpegRules([]string{"/media"}, []string{"/out"}, "/usr/bin/ffmpeg", 5, false)); len(got) != 0 {
+		t.Fatalf("ruleset without --dri grants GPU paths: %v", got)
+	}
+	for _, abi := range []int{1, 3, 4, 5, 6} {
+		got := gpu(ffmpegRules(nil, nil, "/usr/bin/ffmpeg", abi, true))
+		fileRW := uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE)
+		if abi >= 5 {
+			fileRW |= unix.LANDLOCK_ACCESS_FS_IOCTL_DEV
+		}
+		want := map[string]landlockRule{
+			dri:                              {path: dri, access: unix.LANDLOCK_ACCESS_FS_READ_DIR, optional: true},
+			filepath.Join(dri, "renderD128"): {path: filepath.Join(dri, "renderD128"), access: fileRW, optional: true},
+			filepath.Join(dri, "renderD129"): {path: filepath.Join(dri, "renderD129"), access: fileRW, optional: true},
+			vendors:                          {path: vendors, access: readAccess(), optional: true},
+		}
+		if !maps.Equal(got, want) {
+			t.Errorf("ABI %d GPU rules = %+v, want %+v", abi, got, want)
+		}
+	}
+}
+
+// TestFFmpegRulesDRIOnMissingPathsGrantsNothing proves a host without a GPU or
+// an ICD registry gets no render-node rule, and that every GPU rule is
+// optional, so its absence never fails the job's confinement.
+func TestFFmpegRulesDRIOnMissingPathsGrantsNothing(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent")
+	setDRIPaths(t, filepath.Join(missing, "dri"), filepath.Join(missing, "vendors"))
+	for _, rule := range hardwareDeviceRules(5) {
+		if !rule.optional {
+			t.Errorf("GPU rule %q is mandatory", rule.path)
+		}
+		if strings.Contains(rule.path, "renderD") {
+			t.Errorf("render node %q granted on a host without one", rule.path)
+		}
+	}
+}
+
+// TestHardwareDeviceRulesAreLandlockValid installs the GPU rules into a real
+// ruleset. A render node is a character device, which rejects directory
+// rights with EINVAL; /dev/null stands in for one.
+func TestHardwareDeviceRulesAreLandlockValid(t *testing.T) {
+	abi := landlockABI()
+	if abi < 1 {
+		t.Skip("Landlock is unavailable on this kernel")
+	}
+	dri, vendors := driFixture(t)
+	node := filepath.Join(dri, "renderD128")
+	if err := os.Remove(node); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/null", node); err != nil {
+		t.Fatal(err)
+	}
+	setDRIPaths(t, dri, vendors)
+
+	attr := unix.LandlockRulesetAttr{Access_fs: handledAccess(abi)}
+	rulesetFD, err := landlockCreateRuleset(&attr)
+	if err != nil {
+		t.Fatalf("landlockCreateRuleset: %v", err)
+	}
+	defer unix.Close(rulesetFD)
+	for _, rule := range hardwareDeviceRules(abi) {
+		if err := addPathBeneath(rulesetFD, rule.path, rule.access); err != nil {
+			t.Errorf("rule %q (access %#x) rejected: %v", rule.path, rule.access, err)
+		}
+	}
+}
+
+// TestLandlockDRIGrantEnforced runs the confinement for real in a child: with
+// --dri a render node opens read-write and the registry reads, the primary node
+// stays denied, and without --dri the render node is denied too.
+func TestLandlockDRIGrantEnforced(t *testing.T) {
+	if os.Getenv("BEAMFALL_LANDLOCK_DRI_HELPER") == "1" {
+		runtime.LockOSThread()
+		setDRIPaths(t, os.Getenv("BEAMFALL_LANDLOCK_DRI_DIR"), os.Getenv("BEAMFALL_LANDLOCK_DRI_VENDORS"))
+		withDRI := os.Getenv("BEAMFALL_LANDLOCK_DRI") == "1"
+		if err := applyConfinement(nil, nil, os.Args[0], withDRI); err != nil {
+			os.Exit(3)
+		}
+		openErr := func(path string, flag int) error {
+			f, err := os.OpenFile(path, flag, 0) // #nosec G304 -- fixture paths beneath a temporary directory
+			if err == nil {
+				_ = f.Close()
+			}
+			return err
+		}
+		render := openErr(filepath.Join(driDir, "renderD128"), os.O_RDWR)
+		icd := openErr(filepath.Join(openCLVendorsDir, "intel.icd"), os.O_RDONLY)
+		icdWrite := openErr(filepath.Join(openCLVendorsDir, "intel.icd"), os.O_WRONLY)
+		card := openErr(filepath.Join(driDir, "card0"), os.O_RDONLY)
+		if !errors.Is(card, os.ErrPermission) || !errors.Is(icdWrite, os.ErrPermission) {
+			os.Exit(4)
+		}
+		if withDRI && (render != nil || icd != nil) {
+			os.Exit(5)
+		}
+		if !withDRI && (!errors.Is(render, os.ErrPermission) || !errors.Is(icd, os.ErrPermission)) {
+			os.Exit(6)
+		}
+		os.Exit(0)
+	}
+	if landlockABI() < 1 {
+		t.Skip("Landlock is unavailable on this kernel")
+	}
+	dri, vendors := driFixture(t)
+	for _, withDRI := range []string{"1", "0"} {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestLandlockDRIGrantEnforced$") // #nosec G204 G702 -- re-execs this test binary
+		cmd.Env = append(os.Environ(), "BEAMFALL_LANDLOCK_DRI_HELPER=1", "BEAMFALL_LANDLOCK_DRI="+withDRI,
+			"BEAMFALL_LANDLOCK_DRI_DIR="+dri, "BEAMFALL_LANDLOCK_DRI_VENDORS="+vendors)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("--dri=%s child: %v %s", withDRI, err, out)
+		}
 	}
 }

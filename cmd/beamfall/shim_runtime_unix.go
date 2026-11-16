@@ -25,20 +25,20 @@ var execShimTarget = replaceProcess
 // shim exits, so no other goroutine ever runs on the confined thread.
 func lockShimThread() { runtime.LockOSThread() }
 
-func runFFmpegShim(roPaths, rwPaths, argv []string, requireLandlock bool) error {
+func runFFmpegShim(req ffmpegShimRequest) error {
 	lockShimThread()
 	if err := applyRlimits(ffmpeg.DefaultRlimits()); err != nil {
 		return fmt.Errorf("ffmpeg-shim: applying rlimits: %w", err)
 	}
 	confine := applyConfinement
-	if requireLandlock {
+	if req.requireLandlock {
 		confine = applyRequiredConfinement
 	}
-	if err := confine(roPaths, rwPaths, argv[0]); err != nil {
+	if err := confine(req.ro, req.rw, req.argv[0], req.dri); err != nil {
 		return fmt.Errorf("ffmpeg-shim: applying filesystem confinement: %w", err)
 	}
-	if err := execShimTarget(argv[0], argv, os.Environ()); err != nil {
-		return fmt.Errorf("ffmpeg-shim: exec %q: %w", argv[0], err)
+	if err := execShimTarget(req.argv[0], req.argv, os.Environ()); err != nil {
+		return fmt.Errorf("ffmpeg-shim: exec %q: %w", req.argv[0], err)
 	}
 	return nil
 }

@@ -30,8 +30,11 @@ import (
 // where the kernel offers it, never a broken job where it does not. The handled
 // access set is masked to the kernel's reported landlock ABI so newer access
 // bits never make create_ruleset reject the request on an older kernel.
-func applyConfinement(roPaths, rwPaths []string, binary string) error {
-	return applyFFmpegConfinement(roPaths, rwPaths, binary, false)
+//
+// dri adds the GPU grants a QSV or VA-API job needs (see hardwareDeviceRules);
+// every other job runs without them.
+func applyConfinement(roPaths, rwPaths []string, binary string, dri bool) error {
+	return applyFFmpegConfinement(roPaths, rwPaths, binary, dri, false)
 }
 
 // applyRequiredConfinement is applyConfinement with kernel support made a
@@ -40,8 +43,8 @@ func applyConfinement(roPaths, rwPaths []string, binary string) error {
 // rather than running the child on rlimits or a partial ruleset. The
 // encrypted-library pipe transcode uses it (--require-landlock), because that
 // child reads decrypted bytes.
-func applyRequiredConfinement(roPaths, rwPaths []string, binary string) error {
-	return applyFFmpegConfinement(roPaths, rwPaths, binary, true)
+func applyRequiredConfinement(roPaths, rwPaths []string, binary string, dri bool) error {
+	return applyFFmpegConfinement(roPaths, rwPaths, binary, dri, true)
 }
 
 // errLandlockRequired reports a mandatory confinement the kernel cannot give.
@@ -51,7 +54,7 @@ var errLandlockRequired = errors.New("landlock confinement is required but unava
 // seam so the required-confinement refusal is testable on a landlock kernel.
 var ffmpegLandlockABI = landlockABI
 
-func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, required bool) error {
+func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, dri, required bool) error {
 	abi := ffmpegLandlockABI()
 	if required && !requiredLandlockEnforceable(abi) {
 		if abi < 1 {
@@ -65,11 +68,7 @@ func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, required b
 		return nil
 	}
 
-	handled := handledAccess(abi)
-	readAccess := readAccess()
-	writeAccess := writeAccessFor(abi)
-
-	attr := unix.LandlockRulesetAttr{Access_fs: handled}
+	attr := unix.LandlockRulesetAttr{Access_fs: handledAccess(abi)}
 	rulesetFD, err := landlockCreateRuleset(&attr)
 	if err != nil {
 		if errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EOPNOTSUPP) {
@@ -82,40 +81,14 @@ func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, required b
 	}
 	defer unix.Close(rulesetFD)
 
-	// Read-only grants: the job's input directories.
-	for _, p := range roPaths {
-		if err := addPathRule(rulesetFD, p, readAccess); err != nil {
+	for _, rule := range ffmpegRules(roPaths, rwPaths, binary, abi, dri) {
+		add := addPathRule
+		if rule.optional {
+			add = addPathRuleOptional
+		}
+		if err := add(rulesetFD, rule.path, rule.access); err != nil {
 			return err
 		}
-	}
-	// Read-write grants: the job's output directories.
-	for _, p := range rwPaths {
-		if err := addPathRule(rulesetFD, p, readAccess|writeAccess); err != nil {
-			return err
-		}
-	}
-	// Read+execute grants for the runtime: the binary's directory and the
-	// system library/loader directories, so ffmpeg and its shared objects load.
-	for _, p := range runtimePaths(binary) {
-		if err := addPathRuleOptional(rulesetFD, p, readAccess|(handled&unix.LANDLOCK_ACCESS_FS_EXECUTE)); err != nil {
-			return err
-		}
-	}
-	// Runtime configuration is granted file-by-file (or by the smallest known
-	// data directory), never by exposing the whole /etc tree.
-	for _, p := range runtimeConfigPaths() {
-		if err := addPathRuleOptional(rulesetFD, p, unix.LANDLOCK_ACCESS_FS_READ_FILE); err != nil {
-			return err
-		}
-	}
-	for _, p := range runtimeDataPaths() {
-		if err := addPathRuleOptional(rulesetFD, p, readAccess); err != nil {
-			return err
-		}
-	}
-	// /dev/null is the null muxer's only write sink (waveform analysis).
-	if err := addPathRuleOptional(rulesetFD, "/dev/null", nullDeviceAccess()); err != nil {
-		return err
 	}
 
 	// PR_SET_NO_NEW_PRIVS is a precondition of landlock_restrict_self for an
@@ -128,6 +101,83 @@ func applyFFmpegConfinement(roPaths, rwPaths []string, binary string, required b
 		return fmt.Errorf("landlock_restrict_self: %w", err)
 	}
 	return nil
+}
+
+// landlockRule is one PATH_BENEATH grant. An optional rule's path may be
+// absent on this host, and is then skipped; a job path must exist.
+type landlockRule struct {
+	path     string
+	access   uint64
+	optional bool
+}
+
+// ffmpegRules is the complete ffmpeg-shim ruleset for one job, computed before
+// any of it is installed so its contents are testable.
+func ffmpegRules(roPaths, rwPaths []string, binary string, abi int, dri bool) []landlockRule {
+	handled := handledAccess(abi)
+	read := readAccess()
+	var rules []landlockRule
+	// Read-only grants: the job's input directories.
+	for _, p := range roPaths {
+		rules = append(rules, landlockRule{path: p, access: read})
+	}
+	// Read-write grants: the job's output directories.
+	for _, p := range rwPaths {
+		rules = append(rules, landlockRule{path: p, access: read | writeAccessFor(abi)})
+	}
+	// Read+execute grants for the runtime: the binary's directory and the
+	// system library/loader directories, so ffmpeg and its shared objects load.
+	for _, p := range runtimePaths(binary) {
+		rules = append(rules, landlockRule{path: p, access: read | (handled & unix.LANDLOCK_ACCESS_FS_EXECUTE), optional: true})
+	}
+	// Runtime configuration is granted file-by-file (or by the smallest known
+	// data directory), never by exposing the whole /etc tree.
+	for _, p := range runtimeConfigPaths() {
+		rules = append(rules, landlockRule{path: p, access: unix.LANDLOCK_ACCESS_FS_READ_FILE, optional: true})
+	}
+	for _, p := range runtimeDataPaths() {
+		rules = append(rules, landlockRule{path: p, access: read, optional: true})
+	}
+	// /dev/null is the null muxer's only write sink (waveform analysis).
+	rules = append(rules, landlockRule{path: "/dev/null", access: nullDeviceAccess(), optional: true})
+	if dri {
+		rules = append(rules, hardwareDeviceRules(abi)...)
+	}
+	return rules
+}
+
+// The GPU paths a QSV or VA-API job opens, held as variables so a test can
+// point them at a fixture tree.
+var (
+	driDir           = "/dev/dri"
+	openCLVendorsDir = "/etc/OpenCL/vendors"
+)
+
+// hardwareDeviceRules grants what VA-API, QSV and the OpenCL tone-map need and
+// no more (CORE-2158): listing of the DRI directory, so libva and oneVPL can
+// enumerate adapters; read, write and device ioctl on each render node, which
+// the kernel designs for unprivileged compute and encode; and read-only access
+// to the OpenCL ICD registry, whose .icd files name the vendor library under
+// the already granted /usr/lib. The DRM primary (card*) nodes carry modesetting
+// and are never granted, nor is /sys. Every path is optional: a host without a
+// GPU or an ICD gets no rule, and the probe that runs under this same ruleset
+// then reports the chain unavailable.
+func hardwareDeviceRules(abi int) []landlockRule {
+	rules := []landlockRule{{path: driDir, access: unix.LANDLOCK_ACCESS_FS_READ_DIR, optional: true}}
+	nodes, _ := filepath.Glob(filepath.Join(driDir, "renderD*")) // only ErrBadPattern, and the pattern is fixed
+	for _, node := range nodes {
+		rules = append(rules, landlockRule{path: node, access: renderNodeAccess(abi), optional: true})
+	}
+	return append(rules, landlockRule{path: openCLVendorsDir, access: readAccess(), optional: true})
+}
+
+// renderNodeAccess is the file-valid access set for a render node (a character
+// device, which rejects directory rights with EINVAL). Device ioctl is a
+// handled right only from landlock ABI 5; below that the kernel does not fence
+// ioctl at all.
+func renderNodeAccess(abi int) uint64 {
+	return unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE |
+		(handledAccess(abi) & unix.LANDLOCK_ACCESS_FS_IOCTL_DEV)
 }
 
 // localInferenceLandlockABI is the kernel-support probe, held as a seam so the

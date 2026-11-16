@@ -21,55 +21,71 @@ import (
 // gone — so it is transparent to the caller's CombinedOutput()/Output() capture
 // of the real binary's streams.
 func ffmpegShim(_ context.Context, args []string) error {
-	roPaths, rwPaths, argv, requireLandlock, err := parseShimArgs(args)
+	req, err := parseShimArgs(args)
 	if err != nil {
 		return err
 	}
-	return runFFmpegShim(roPaths, rwPaths, argv, requireLandlock)
+	return runFFmpegShim(req)
+}
+
+// ffmpegShimRequest is one parsed shim invocation.
+type ffmpegShimRequest struct {
+	ro, rw []string // job directories, read-only and read-write
+	argv   []string // the target binary and its arguments
+	// requireLandlock makes kernel confinement a precondition.
+	requireLandlock bool
+	// dri grants the GPU render nodes and the OpenCL ICD registry.
+	dri bool
 }
 
 // parseShimArgs splits the shim argv into the read-only paths, read-write paths,
-// the target command (binary + its args), and whether kernel confinement is
-// mandatory. The grammar is:
+// the target command (binary + its args), and the confinement flags. The
+// grammar is:
 //
-//	[--require-landlock] --ro <dir> ... --rw <dir> ... -- <binary> <args...>
+//	[--require-landlock] [--dri] --ro <dir> ... --rw <dir> ... -- <binary> <args...>
 //
 // --require-landlock turns the best-effort Linux landlock confinement into a
 // precondition: a kernel without landlock, or with a landlock ABI below 3 that
 // cannot fence truncate(2), refuses the launch instead of running ffmpeg on
 // rlimits or a partial ruleset. The encrypted-library pipe transcode sets it, because
 // that child reads decrypted bytes over loopback and must never run unconfined.
+// --dri adds the render-node and OpenCL registry grants a QSV or VA-API job
+// needs (CORE-2158); internal/ffmpeg sets it only for such a job or its probe.
 // A bare "--" terminates the flag section; everything after it is the command,
 // taken verbatim (so a media path that looks like a flag is never reinterpreted
 // here). At least the binary must follow "--".
-func parseShimArgs(args []string) (ro, rw, argv []string, requireLandlock bool, err error) {
+func parseShimArgs(args []string) (ffmpegShimRequest, error) {
+	var req ffmpegShimRequest
 	i := 0
 	for i < len(args) {
 		switch args[i] {
 		case "--ro":
 			if i+1 >= len(args) {
-				return nil, nil, nil, false, errors.New("ffmpeg-shim: --ro requires a path")
+				return ffmpegShimRequest{}, errors.New("ffmpeg-shim: --ro requires a path")
 			}
-			ro = append(ro, args[i+1])
+			req.ro = append(req.ro, args[i+1]) // #nosec G602 -- bounds checked just above
 			i += 2
 		case "--rw":
 			if i+1 >= len(args) {
-				return nil, nil, nil, false, errors.New("ffmpeg-shim: --rw requires a path")
+				return ffmpegShimRequest{}, errors.New("ffmpeg-shim: --rw requires a path")
 			}
-			rw = append(rw, args[i+1])
+			req.rw = append(req.rw, args[i+1]) // #nosec G602 -- bounds checked just above
 			i += 2
 		case "--require-landlock":
-			requireLandlock = true
+			req.requireLandlock = true
+			i++
+		case "--dri":
+			req.dri = true
 			i++
 		case "--":
-			argv = args[i+1:]
+			req.argv = args[i+1:]
 			i = len(args)
 		default:
-			return nil, nil, nil, false, fmt.Errorf("ffmpeg-shim: unexpected argument %q", args[i])
+			return ffmpegShimRequest{}, fmt.Errorf("ffmpeg-shim: unexpected argument %q", args[i])
 		}
 	}
-	if len(argv) == 0 {
-		return nil, nil, nil, false, errors.New("ffmpeg-shim: missing command after --")
+	if len(req.argv) == 0 {
+		return ffmpegShimRequest{}, errors.New("ffmpeg-shim: missing command after --")
 	}
-	return ro, rw, argv, requireLandlock, nil
+	return req, nil
 }
