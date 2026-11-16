@@ -61,27 +61,30 @@ func marshalScanCheckpoint(checkpoint jobCheckpoint) ([]byte, error) {
 
 func (r Result) checkpoint(stage string) jobCheckpoint {
 	// A finished walk has already counted its Version Media in MediaUnmatched
-	// (countUnmatchedVersions), so the complete checkpoint drops them: a job
-	// reclaimed after a crash before CompleteJob resumes from it and must not
-	// count them again (CORE-2194).
-	versionMedia := mediaIDs(r.versionMedia)
+	// (countUnmatchedVersions), so the complete checkpoint moves them to
+	// CountedVersionMedia: a job reclaimed after a crash before CompleteJob
+	// resumes from it and must not count them again, even when it walks a new
+	// Version of one (CORE-2194, CORE-2196).
+	versionMedia, counted := mediaIDs(r.versionMedia), mediaIDs(r.countedVersionMedia)
 	if stage == "complete" {
+		counted = slices.Compact(slices.Sorted(slices.Values(append(counted, versionMedia...))))
 		versionMedia = nil
 	}
 	return jobCheckpoint{
-		Version:            1,
-		Stage:              stage,
-		LastPath:           r.LastPath,
-		FilesSeen:          r.FilesSeen,
-		TotalFiles:         r.totalFiles,
-		MediaImported:      r.MediaImported,
-		MissingCredentials: append([]string(nil), r.MissingCredentials...),
-		FilesAdded:         r.FilesAdded,
-		FilesChanged:       r.FilesChanged,
-		MediaUnmatched:     r.MediaUnmatched,
-		UnmatchedRecords:   pendingIDs(r.unmatchedRecords),
-		VersionMedia:       versionMedia,
-		GroupMedia:         mediaIDs(r.groupMedia),
+		Version:             1,
+		Stage:               stage,
+		LastPath:            r.LastPath,
+		FilesSeen:           r.FilesSeen,
+		TotalFiles:          r.totalFiles,
+		MediaImported:       r.MediaImported,
+		MissingCredentials:  append([]string(nil), r.MissingCredentials...),
+		FilesAdded:          r.FilesAdded,
+		FilesChanged:        r.FilesChanged,
+		MediaUnmatched:      r.MediaUnmatched,
+		UnmatchedRecords:    pendingIDs(r.unmatchedRecords),
+		VersionMedia:        versionMedia,
+		CountedVersionMedia: counted,
+		GroupMedia:          mediaIDs(r.groupMedia),
 	}
 }
 

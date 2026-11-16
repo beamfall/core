@@ -676,3 +676,52 @@ func TestScanFinishesPartGroupLargerThanYieldBatch(t *testing.T) {
 		})
 	}
 }
+
+func TestScanSummaryKeepsVersionCountWhenRecoveryWalksNewVersion(t *testing.T) {
+	// feature:scan-pipeline
+	// A job reclaimed after a crash between its complete checkpoint and
+	// CompleteJob resumes from that checkpoint. A Version added in between
+	// joins a Media the finished walk already counted as Unmatched, which
+	// must not count it again (CORE-2196).
+	for _, workers := range []int{1, 4} {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			root := t.TempDir()
+			writeScanFile(t, root, "Title (2000) - 1080p.mkv", []byte("1080p"))
+			st := storetest.Open(t)
+			req := Request{LibraryID: partsLibrary(t, st), Root: root}
+			parsers := map[string]FilenameParser{"parts": labelledTitleParser{}}
+			identifier := queueAllIdentifier{st}
+			started := time.Now().UTC()
+			scan := func(checkpoint jobCheckpoint) (Result, error) {
+				return scanFromCheckpoint(context.Background(), st, nil, nil, parsers, nil, identifier, nil, nil, fixedGovernor(workers), nil, req, checkpoint, started, nil)
+			}
+			whole, err := scan(jobCheckpoint{})
+			if err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			if whole.FilesSeen != 1 || whole.MediaImported != 1 || whole.MediaUnmatched != 1 {
+				t.Fatalf("scan seen=%d imported=%d unmatched=%d, want 1, 1 and 1", whole.FilesSeen, whole.MediaImported, whole.MediaUnmatched)
+			}
+			data, err := marshalScanCheckpoint(whole.checkpoint("complete"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := checkpointFromJob(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeScanFile(t, root, "Title (2000) - 4K.mkv", []byte("4K"))
+			recovered, err := scan(saved)
+			if err != nil {
+				t.Fatalf("recovered scan: %v", err)
+			}
+			files, err := st.MediaFilesForLibrary(context.Background(), req.LibraryID)
+			if err != nil || len(files) != 2 || files[0].MediaID != files[1].MediaID {
+				t.Fatalf("versions are not one Media: %+v %v", files, err)
+			}
+			if recovered.MediaImported != 1 || recovered.MediaUnmatched != 1 {
+				t.Fatalf("recovered scan imported=%d unmatched=%d, want 1 and 1", recovered.MediaImported, recovered.MediaUnmatched)
+			}
+		})
+	}
+}

@@ -87,10 +87,14 @@ func (s *scanWalkState) noteVersion(key, path string, mediaID store.MediaID) {
 }
 
 // countUnmatchedVersions counts each Version Media the scan walked that is
-// still in the Unmatched queue once the walk is done. A failed lookup only
-// loses the count, as in noteUnmatched.
+// still in the Unmatched queue once the walk is done, except the ones a
+// finished walk of the same job already counted. A failed lookup only loses
+// the count, as in noteUnmatched.
 func (s *scanWalkState) countUnmatchedVersions() {
 	for _, id := range mediaIDs(s.result.versionMedia) {
+		if s.result.countedVersionMedia[store.MediaID(id)] {
+			continue
+		}
 		queued, err := s.st.IsUnmatched(s.ctx, store.MediaID(id))
 		if err != nil {
 			slog.Warn("scan: unmatched lookup failed", "media", id, "error", err.Error())

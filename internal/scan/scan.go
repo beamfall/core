@@ -279,6 +279,11 @@ type jobCheckpoint struct {
 	// finished scan counts each one still Unmatched once, however its
 	// Versions are spread across directories and passes (CORE-2194).
 	VersionMedia []string `json:"version_media,omitempty"`
+	// CountedVersionMedia lists the Version Media a finished walk already
+	// counted, kept by the complete checkpoint: a job reclaimed after a crash
+	// before it completed resumes from there and may walk a new Version of
+	// one of them, which must not count it again (CORE-2196).
+	CountedVersionMedia []string `json:"counted_version_media,omitempty"`
 	// GroupMedia lists the Media of several files (Versions, parts) already
 	// counted in MediaImported, so a resumed scan does not count them again.
 	GroupMedia []string `json:"group_media,omitempty"`
@@ -310,10 +315,11 @@ type Result struct {
 	// noted, true for the pending ones counted in MediaUnmatched (see
 	// noteUnmatchedRecord).
 	unmatchedRecords map[string]bool
-	// versionMedia and groupMedia back jobCheckpoint.VersionMedia and
-	// GroupMedia.
-	versionMedia map[store.MediaID]bool
-	groupMedia   map[store.MediaID]bool
+	// versionMedia, countedVersionMedia and groupMedia back
+	// jobCheckpoint.VersionMedia, CountedVersionMedia and GroupMedia.
+	versionMedia        map[store.MediaID]bool
+	countedVersionMedia map[store.MediaID]bool
+	groupMedia          map[store.MediaID]bool
 	// interrupted is the resume point of a scan stopped by cancellation.
 	interrupted *jobCheckpoint
 }
