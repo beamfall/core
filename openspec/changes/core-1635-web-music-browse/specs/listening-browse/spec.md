@@ -29,10 +29,16 @@ heading and list. Within a group, or the whole list, rows SHALL be numbered and 
 
 ### Requirement: Play from a grouped listing queues every group
 
-Starting playback from any row of a grouped listing SHALL open the player on that Media with every
-listed row queued in display order, across groups.
+Starting playback from any row of an audio container's listing, or from the page's primary Play
+action, SHALL use the listing's display order: the primary action starts the next-up track in that
+order, and the player SHALL queue every listed row in display order, across groups.
 
 #### Scenario: Play from the second disc
 
 - **WHEN** a listener plays a track in the second group
 - **THEN** the queue holds the first group's rows, then the second group's, in display order
+
+#### Scenario: Primary Play with the second disc first in server order
+
+- **WHEN** server order lists a second-disc track first and the listener uses the page's Play action
+- **THEN** playback starts on the first disc's first track with the display order queued

@@ -21,7 +21,8 @@ be grouped by disc, and each row can show its stored number, without a wire or s
   `sequence`, ascending, under a "Disc {number}" heading per group. Within each group, or the whole
   list when it does not group, rows are numbered and ordered by stored `index` when every row has
   one and none repeats; otherwise they keep server order and are numbered from 1.
-- Play from any row queues every row in display order, across groups.
+- Play from any row, and the page's primary Play action, start and queue the rows in display
+  order, across groups: the Entity page reads the rows once and both entry points share that order.
 - One new string key (`trackGroupLabel`) in the `listening` shard, in every shipped locale.
 
 No GraphQL schema, wire contract, conformance golden or plugin change.

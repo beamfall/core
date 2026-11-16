@@ -1,67 +1,47 @@
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSourceItems } from "@/lib/graphql";
-import { fetchMediaRows, type MediaRow } from "@/lib/graphql/browse";
+import type { MediaRow } from "@/lib/graphql/browse";
 import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import {
-  AUDIO_CLASS,
   appearsOn,
-  hasKnownNonAudio,
+  audioQueue,
+  containerTrackRows,
   isAudioListing,
-  ownerPeople,
+  type TrackRow,
   topTracks,
   trackGroups,
   trackRows,
 } from "../lib/trackList";
-import { playQueueOf } from "../lib/watchQueue";
 import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
 import { TrackList } from "./TrackList";
+import type { ListingRows } from "./useListingRows";
 
 // The Media an Entity page lists when its Kind has no detail Layout. The
 // layout follows the generic rules in lib/trackList (CORE-1635): an audio
 // "container" lists numbered tracks, grouped under a heading per stored
 // sequence when it has several (discs), an audio "person" lists top tracks and
 // the containers it appears on; anything else lists its children grouped by
-// kind (ContainerChildren, CORE-1786). Only those two archetypes read
-// per-Media rows, and only when no listed item is already known to be
-// something other than audio; only a container reads the stored positions.
+// kind (ContainerChildren, CORE-1786). The page reads the per-Media rows
+// (useListingRows) and passes them in, so its Play action and this list use
+// one track order (containerTrackRows).
 export function EntityMediaBrowse({
   entity,
   items,
   label,
+  listing,
 }: {
   entity: EntityInfo | null;
   items: SourceItem[];
   /** Accessible name of the child list the non-audio layout renders. */
   label: string;
+  /** The page's per-Media rows (useListingRows), shared with its Play action. */
+  listing: ListingRows;
 }) {
-  const archetype = entity?.archetype;
-  const wantsRows =
-    (archetype === "container" || archetype === "person") &&
-    items.some((item) => item.kind === "media") &&
-    !hasKnownNonAudio(items);
-  const positions = archetype === "container";
-  const [rows, setRows] = useState<Record<string, MediaRow> | null>(null);
-  const ids = items
-    .filter((item) => item.kind === "media")
-    .map((item) => item.id)
-    .join("\n");
-
-  useEffect(() => {
-    setRows(null);
-    if (!wantsRows || !ids) return;
-    const controller = new AbortController();
-    fetchMediaRows(ids.split("\n"), controller.signal, { positions })
-      .then(setRows)
-      .catch(() => {
-        if (!controller.signal.aborted) setRows({});
-      });
-    return () => controller.abort();
-  }, [wantsRows, ids, positions]);
-
-  if (wantsRows && rows === null) {
+  const { wanted, rows } = listing;
+  if (wanted && rows === null) {
     return (
       <div aria-hidden className="flex flex-col gap-2">
         <Skeleton className="bf-shimmer h-12 w-full" />
@@ -70,31 +50,15 @@ export function EntityMediaBrowse({
       </div>
     );
   }
-  if (entity && rows && isAudioListing(items, rows)) {
-    if (archetype === "container")
-      return <ContainerTracks entity={entity} items={items} rows={rows} />;
-    if (archetype === "person")
-      return <PersonListening entity={entity} items={items} rows={rows} />;
-  }
+  const tracks = containerTrackRows(entity, items, rows);
+  if (tracks) return <ContainerTracks tracks={tracks} />;
+  if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
+    return <PersonListening entity={entity} items={items} rows={rows} />;
   return <ContainerChildren items={items} label={label} />;
 }
 
-/** Marks rows the page verified as audio, so the player's queue knows their class. */
-function audioQueue(items: readonly SourceItem[]) {
-  return playQueueOf(items.map((item) => ({ ...item, mediaClass: AUDIO_CLASS })));
-}
-
-function ContainerTracks({
-  entity,
-  items,
-  rows,
-}: {
-  entity: EntityInfo;
-  items: SourceItem[];
-  rows: Record<string, MediaRow>;
-}) {
+function ContainerTracks({ tracks }: { tracks: TrackRow[] }) {
   const t = useT();
-  const tracks = trackRows(items, rows, ownerPeople(entity.relatedEntities, items, rows));
   // One queue in display order, so playback runs on across groups.
   const queue = audioQueue(tracks.map((track) => track.item));
   return (

@@ -8,6 +8,7 @@ import type { EntityInfo, GenericMediaInfo, SourceItem } from "@/lib/graphql/typ
 import { I18nProvider } from "@/lib/i18n";
 import { readPlayerNavState } from "../lib/watchQueue";
 import { EntityMediaBrowse } from "./EntityMediaBrowse";
+import { useListingRows } from "./useListingRows";
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
@@ -120,15 +121,18 @@ function WatchProbe() {
   );
 }
 
+// The page reads the rows (useListingRows) and passes them in, as EntityPage does.
+function Browse({ entity, items }: { entity: EntityInfo; items: SourceItem[] }) {
+  const listing = useListingRows(entity, items);
+  return <EntityMediaBrowse entity={entity} items={items} label="Children" listing={listing} />;
+}
+
 function renderBrowse(entity: EntityInfo, items: SourceItem[]) {
   return render(
     <I18nProvider initialLocale="en">
       <MemoryRouter initialEntries={["/entity"]}>
         <Routes>
-          <Route
-            path="/entity"
-            element={<EntityMediaBrowse entity={entity} items={items} label="Children" />}
-          />
+          <Route path="/entity" element={<Browse entity={entity} items={items} />} />
           <Route path="/watch/:id" element={<WatchProbe />} />
         </Routes>
       </MemoryRouter>

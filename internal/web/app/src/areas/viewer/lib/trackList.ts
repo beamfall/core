@@ -1,6 +1,11 @@
 import type { MediaRow } from "@/lib/graphql/browse";
-import type { GenericMediaInfo, RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
-import { type PlayerNavState, type PlayQueueItem, queueWindow } from "./watchQueue";
+import type {
+  EntityInfo,
+  GenericMediaInfo,
+  RelatedEntityGroup,
+  SourceItem,
+} from "@/lib/graphql/types";
+import { type PlayerNavState, type PlayQueueItem, playQueueOf, queueWindow } from "./watchQueue";
 
 // Listening layout rules (CORE-1635). Core stays domain-agnostic: the layout is
 // chosen from the Entity's archetype, the Media class the server reports and
@@ -145,6 +150,26 @@ export function trackRows(
       return track;
     }),
   );
+}
+
+/**
+ * The track rows an audio container lists, in display order, or null when the
+ * Entity is not an audio container. The page's primary Play action and the
+ * track list both read this order, so they start and queue the same rows.
+ */
+export function containerTrackRows(
+  entity: EntityInfo | null,
+  items: readonly SourceItem[],
+  rows: Readonly<Record<string, MediaRow>> | null,
+): TrackRow[] | null {
+  if (!entity || !rows || entity.archetype !== "container") return null;
+  if (!isAudioListing(items, rows)) return null;
+  return trackRows(items, rows, ownerPeople(entity.relatedEntities, items, rows));
+}
+
+/** A play queue of rows the page verified as audio, so the player knows their class. */
+export function audioQueue(items: readonly SourceItem[]): PlayQueueItem[] {
+  return playQueueOf(items.map((item) => ({ ...item, mediaClass: AUDIO_CLASS })));
 }
 
 /** Consecutive rows that share a group, in order; one ungrouped run when none is grouped. */

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
+import { fetchMediaRows, type MediaRow } from "@/lib/graphql/browse";
 import type { EntityInfo, Layout, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
@@ -21,6 +22,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchEntity: vi.fn(),
   fetchMediaForEntity: vi.fn(),
 }));
+vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
 vi.mock("@/lib/session", () => ({
   useSession: () => ({ manifest: { layouts: mocks.layouts } }),
   useViewerIdentity: () => mocks.identity,
@@ -30,7 +32,10 @@ vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
 vi.mock("../components/ViewerActions", () => ({ ViewerActions: () => null }));
-vi.mock("../actions", () => ({ ItemActions: () => null }));
+vi.mock("../actions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../actions")>()),
+  ItemActions: () => null,
+}));
 vi.mock("../components/NotAvailable", () => ({ NotAvailable: () => <p>not available</p> }));
 vi.mock("../components/MediaItemCard", () => ({
   MediaItemCard: ({ item }: { item: SourceItem }) => <li>{item.title}</li>,
@@ -87,6 +92,7 @@ beforeEach(() => {
   mocks.identity = identity;
   mocks.layouts = [];
   vi.mocked(fetchEntity).mockReset();
+  vi.mocked(fetchMediaRows).mockReset().mockResolvedValue({});
   vi.mocked(fetchMediaForEntity)
     .mockReset()
     .mockReturnValue(new Promise(() => {}));
@@ -441,5 +447,74 @@ describe("EntityPage container lockup", () => {
     const { container: root } = renderEntity();
     await act(async () => {});
     expect(root.querySelectorAll(".bg-primary")).toHaveLength(0);
+  });
+});
+
+describe("EntityPage audio container order", () => {
+  // Server order puts the second disc's track first; the list and both play
+  // entry points follow the stored disc and track positions instead.
+  const record: EntityInfo = { ...entity, kind: "record", archetype: "container" } as EntityInfo;
+  const tracks: SourceItem[] = [
+    { id: "d2t1", kind: "media", title: "Second Disc Opener" },
+    { id: "d1t1", kind: "media", title: "First Disc Opener" },
+    { id: "d1t2", kind: "media", title: "First Disc Closer" },
+  ];
+  const row = (id: string, title: string, sequence: number, index: number): MediaRow => ({
+    id,
+    title,
+    favorited: false,
+    mediaClass: "audio",
+    credits: [],
+    sequence,
+    index,
+  });
+
+  beforeEach(() => {
+    vi.mocked(fetchEntity).mockResolvedValue(record);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(tracks);
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      d2t1: row("d2t1", "Second Disc Opener", 2, 1),
+      d1t1: row("d1t1", "First Disc Opener", 1, 1),
+      d1t2: row("d1t2", "First Disc Closer", 1, 2),
+    });
+  });
+
+  function playerState() {
+    const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
+    const [mediaId] = player.split(" ", 1);
+    const state = JSON.parse(player.slice(mediaId.length + 1));
+    return { mediaId, queue: state.queue.map((item: { id: string }) => item.id) };
+  }
+
+  it("starts the primary Play action on the first listed track with the listed order queued", async () => {
+    const { container: root } = renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(fetchMediaRows).toHaveBeenCalledWith(["d2t1", "d1t1", "d1t2"], expect.any(AbortSignal), {
+      positions: true,
+    });
+    const primary = root.querySelector(".bg-primary") as HTMLElement;
+    expect(primary).toHaveAccessibleName("Play First Disc Opener");
+    fireEvent.click(primary);
+    expect(playerState()).toEqual({ mediaId: "d1t1", queue: ["d1t1", "d1t2", "d2t1"] });
+  });
+
+  it("plays a row with the same listed order queued", async () => {
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(screen.getByRole("list", { name: "Disc 1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Play Second Disc Opener" }));
+    expect(playerState()).toEqual({ mediaId: "d2t1", queue: ["d1t1", "d1t2", "d2t1"] });
+  });
+
+  it("offers no primary Play action until the order is known", async () => {
+    vi.mocked(fetchMediaRows).mockReturnValue(new Promise(() => {}));
+    const { container: root } = renderEntity();
+    await act(async () => {});
+    expect(root.querySelector(".bg-primary")).toBeNull();
+    expect(fetchMediaForEntity).toHaveBeenCalledTimes(1);
   });
 });

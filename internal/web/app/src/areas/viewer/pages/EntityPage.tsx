@@ -24,16 +24,19 @@ import { LayoutView } from "../components/LayoutView";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
+import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
 import { readEntityPreview } from "../lib/entityPreview";
 import { seeAllTargetFor } from "../lib/seeall";
+import { audioQueue, containerTrackRows } from "../lib/trackList";
 import { fieldDisplayValue, viewerFacingFields } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import "./media-detail.css";
 import "./entity-detail.css";
 
+const NO_ITEMS: SourceItem[] = [];
 const entityCacheKey = (id: string) => `entity:${id}`;
 const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
 
@@ -99,19 +102,41 @@ export function EntityPage() {
   // Layout renders them (CORE-1786: one accent action on every container).
   const needsDirectMedia = !notFound;
 
-  const directNext = useMemo(() => (fallback ? nextUpChild(fallback) : null), [fallback]);
+  // The listed Media's rows, read once for the track list and this page's
+  // Play action, so both start and queue an audio container's tracks in the
+  // order the list shows (grouped and numbered by stored position, CORE-1635).
+  const listedItems = needsFallback ? fallback : null;
+  const listing = useListingRows(entity, listedItems ?? NO_ITEMS);
+  const trackOrder = useMemo(
+    () =>
+      containerTrackRows(entity, listedItems ?? NO_ITEMS, listing.rows)?.map(
+        (track) => track.item,
+      ) ?? null,
+    [entity, listedItems, listing.rows],
+  );
+  // Until an audio container's order is known, offer no Play action that could
+  // start the wrong track.
+  const orderPending = listing.wanted && listing.rows === null && entity?.archetype === "container";
+  const ordered = trackOrder ?? fallback;
+  const directNext = useMemo(
+    () => (ordered && !orderPending ? nextUpChild(ordered) : null),
+    [ordered, orderPending],
+  );
   // No playable Media of its own: play on through the next-up child container.
   const childContainer = useMemo(
-    () => (fallback && !directNext ? nextUpChildContainer(entity?.relatedEntities) : null),
-    [fallback, directNext, entity],
+    () =>
+      fallback && !orderPending && !directNext
+        ? nextUpChildContainer(entity?.relatedEntities)
+        : null,
+    [fallback, orderPending, directNext, entity],
   );
   const childItems =
     childContainer && childMedia?.id === childContainer.id ? childMedia.items : null;
-  const queueSource = directNext ? fallback : childItems;
-  const fallbackQueue = useMemo(
-    () => (queueSource ? playQueueOf(queueSource) : undefined),
-    [queueSource],
-  );
+  const fallbackQueue = useMemo(() => {
+    if (directNext && trackOrder) return audioQueue(trackOrder);
+    const queueSource = directNext ? fallback : childItems;
+    return queueSource ? playQueueOf(queueSource) : undefined;
+  }, [directNext, trackOrder, fallback, childItems]);
   const nextUp = useMemo(
     () => directNext ?? (childItems ? nextUpChild(childItems) : null),
     [directNext, childItems],
@@ -326,6 +351,7 @@ export function EntityPage() {
               <EntityMediaBrowse
                 entity={entity}
                 items={fallback}
+                listing={listing}
                 label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
               />
             )
