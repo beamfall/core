@@ -2061,6 +2061,43 @@ describe("usePlayer", () => {
         }
       });
 
+      // CORE-1971: a quality change made while paused must stay paused when the
+      // new stream then faults; its empty `played` is not a pending autoplay.
+      it("keeps a paused quality change paused through a fault reload", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
+        render(<Harness />);
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        const first = screen.getByTestId("player") as HTMLVideoElement;
+        fireEvent.loadedMetadata(first);
+        first.currentTime = 30;
+        fireEvent.timeUpdate(first);
+        Object.defineProperty(first, "paused", { configurable: true, value: true });
+        const loads = vi.mocked(fetchPlaybackInfo).mock.calls.length;
+        fireEvent.click(screen.getByRole("button", { name: "renegotiate" }));
+        await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(loads + 1));
+        await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+        const video = screen.getByTestId("player") as HTMLVideoElement;
+        Object.defineProperty(video, "paused", { configurable: true, value: true });
+        Object.defineProperty(video, "played", { configurable: true, value: { length: 0 } });
+        fireEvent.loadedMetadata(video);
+        vi.mocked(HTMLMediaElement.prototype.play).mockClear();
+        useBackoffClock();
+        try {
+          const reloads = vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length;
+          await act(async () => {
+            failNetwork();
+          });
+          await flushProbe();
+          await act(() => vi.advanceTimersByTimeAsync(1000));
+          expect(vi.mocked(HTMLMediaElement.prototype.load).mock.calls.length).toBe(reloads + 1);
+          fireEvent.loadedMetadata(video);
+          fireEvent.canPlay(video);
+          expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
       it("refills the backoff budget once playback resumes", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 500 }));
         render(<Harness />);

@@ -1121,7 +1121,8 @@ export function usePlayer(
             // renegotiates the stream, and any other fault reloads the source at
             // the playhead on the same 1/2/4 s backoff hls.js uses.
             if (code === 2) {
-              const play = !video.paused || video.played.length === 0;
+              // A paused quality change (CORE-1971) leaves `played` empty too.
+              const play = !video.paused || (!retryPaused && video.played.length === 0);
               const position = playheadPosition();
               const reloadAtPlayhead = () => {
                 if (alive && activeStream === target) reloadNative(target, position, play);
@@ -1205,7 +1206,9 @@ export function usePlayer(
         // A rendition pick keeps the viewer's pause. The failover also plays when
         // playback never began: the error can fire before `canplay`, while the
         // element is still paused only because autoplay had not yet kicked in.
-        const play = !video.paused || (renditionKey === undefined && video.played.length === 0);
+        const play =
+          !video.paused ||
+          (renditionKey === undefined && !retryPaused && video.played.length === 0);
         detachEngine();
         activeStream = sibling;
         attachEngine(sibling, engine, position, { play, pinRendition });
