@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdminEpochSignal, withAdminEpoch } from "@/areas/console/adminEpoch";
 import {
+  acknowledgeBackupKey,
   addCollectionMedia,
   assignTag,
   bulkAssignTags,
@@ -15,6 +16,7 @@ import {
   deleteTag,
   dismissUnmatched,
   fetchBackupHistory,
+  fetchBackupKeyStatus,
   fetchMetadataExport,
   fetchStagedRestore,
   fetchTrashedLibraries,
@@ -31,6 +33,7 @@ import {
   restoreMarker,
   restoreMedia,
   restoreTag,
+  revealBackupKey,
   runBackup,
   setLibraryIcon,
   stageRestore,
@@ -55,6 +58,7 @@ const recordedSignals: (AbortSignal | null | undefined)[] = [];
 // the whole matrix, so a reader that drops its signal fails on both counts.
 const MANAGE_READS: [string, (signal: AbortSignal) => Promise<unknown>][] = [
   ["fetchBackupHistory", (s) => fetchBackupHistory("/backups", s)],
+  ["fetchBackupKeyStatus", (s) => fetchBackupKeyStatus(s)],
   ["fetchMetadataExport", (s) => fetchMetadataExport(s)],
   ["fetchStagedRestore", (s) => fetchStagedRestore(s)],
 ];
@@ -645,5 +649,23 @@ describe("manage mutation request recording", () => {
       replaceIdentity: true,
     });
     expect(recorded[3].query).toBe("mutation CancelStagedRestore { cancelStagedRestore }");
+  });
+
+  it("backup key requests never send the key back; acknowledge names the escrow only (CORE-2032)", async () => {
+    await fetchBackupKeyStatus();
+    await revealBackupKey();
+    await acknowledgeBackupKey("escrow-1");
+    expect(recorded[0].query).toBe(
+      "query BackupKeyStatus { backupKeyStatus { pending expiresAt daysLeft } }",
+    );
+    expect(recorded[0].variables).toEqual({});
+    expect(recorded[1].query).toBe(
+      "mutation RevealBackupKey { revealBackupKey { escrowID backupKey expiresAt daysLeft } }",
+    );
+    expect(recorded[1].variables).toEqual({});
+    expect(recorded[2].query).toContain(
+      "acknowledgeBackupKey(escrowID: $escrowID) { pending expiresAt daysLeft }",
+    );
+    expect(recorded[2].variables).toEqual({ escrowID: "escrow-1" });
   });
 });

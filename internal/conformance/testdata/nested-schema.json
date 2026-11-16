@@ -175,6 +175,24 @@
     ]
   },
   {
+    "field": "acknowledgebackupkey",
+    "kind": "object",
+    "children": [
+      {
+        "name": "daysLeft",
+        "kind": "scalar"
+      },
+      {
+        "name": "expiresAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "pending",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "activity",
     "kind": "object",
     "children": [
@@ -1320,6 +1338,24 @@
       },
       {
         "name": "valid",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "backupkeystatus",
+    "kind": "object",
+    "children": [
+      {
+        "name": "daysLeft",
+        "kind": "scalar"
+      },
+      {
+        "name": "expiresAt",
+        "kind": "scalar"
+      },
+      {
+        "name": "pending",
         "kind": "scalar"
       }
     ]
@@ -16314,6 +16350,28 @@
     "children": [
       {
         "name": "revealed",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "revealbackupkey",
+    "kind": "object",
+    "children": [
+      {
+        "name": "backupKey",
+        "kind": "scalar"
+      },
+      {
+        "name": "daysLeft",
+        "kind": "scalar"
+      },
+      {
+        "name": "escrowID",
+        "kind": "scalar"
+      },
+      {
+        "name": "expiresAt",
         "kind": "scalar"
       }
     ]

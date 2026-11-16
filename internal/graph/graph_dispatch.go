@@ -181,13 +181,16 @@ var diagnosticsTokenMutations = map[string]bool{
 }
 
 // agentTokenDenied are the admin fields no token tier may run (CORE-2095):
-// minting or registering a credential, and moving server ownership. These stay
-// Admin Session only, so a token can never mint another credential.
+// minting or registering a credential, moving server ownership, and revealing
+// or confirming the backup key (CORE-2032). These stay Admin Session only, so a
+// token can never mint another credential or read the backup key.
 var agentTokenDenied = map[string]bool{
 	"createapitoken":       true,
 	"createapikey":         true,
 	"registerimportsource": true,
 	"transferprofileowner": true,
+	"revealbackupkey":      true,
+	"acknowledgebackupkey": true,
 }
 
 // adminTokenMayRun reports whether the request authenticated with an admin API
@@ -380,6 +383,7 @@ var fieldDispatchRuns = [...]fieldDispatchFunc{
 	151: dispatchFieldBlock151,
 	152: dispatchFieldBlock152,
 	153: dispatchFieldBlock153,
+	154: dispatchFieldBlock154,
 }
 
 var fieldHandlerRegistry = map[string]fieldHandler{
@@ -705,6 +709,9 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"inspectbackup":                      newFieldHandler("inspectBackup", "inspectBackup", fieldMutation, roleSession|roleAdmin, 152),
 	"stagerestore":                       newFieldHandler("stageRestore", "stageRestore", fieldMutation, roleSession|roleAdmin, 152),
 	"cancelstagedrestore":                newFieldHandler("cancelStagedRestore", "cancelStagedRestore", fieldMutation, roleSession|roleAdmin, 152),
+	"backupkeystatus":                    newFieldHandler("backupKeyStatus", "backupKeyStatus", fieldRead, roleSession|roleAdmin, 154),
+	"revealbackupkey":                    newFieldHandler("revealBackupKey", "revealBackupKey", fieldMutation, roleSession|roleAdmin, 154),
+	"acknowledgebackupkey":               newFieldHandler("acknowledgeBackupKey", "acknowledgeBackupKey", fieldMutation, roleSession|roleAdmin, 154),
 }
 
 func dispatchFieldBlock000(dispatch *fieldDispatchContext) response {
@@ -4257,6 +4264,33 @@ func dispatchFieldBlock153(dispatch *fieldDispatchContext) response {
 	if fields["diagnosticsbundle"] {
 		bundle, err := h.diagnosticsBundle(req)
 		if resp := resolveField(dispatch, "diagnosticsbundle", bundle, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	return response{}
+}
+
+func dispatchFieldBlock154(dispatch *fieldDispatchContext) response {
+	h := dispatch.handler
+	ctx := dispatch.ctx
+	scope := dispatch.scope
+	req := dispatch.req
+	fields := dispatch.fields
+	if fields["backupkeystatus"] {
+		status, err := h.backupKeyStatus()
+		if resp := resolveField(dispatch, "backupkeystatus", status, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["revealbackupkey"] {
+		revealed, err := h.revealBackupKey(ctx, scope)
+		if resp := resolveField(dispatch, "revealbackupkey", revealed, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["acknowledgebackupkey"] {
+		status, err := h.acknowledgeBackupKey(ctx, scope, req)
+		if resp := resolveField(dispatch, "acknowledgebackupkey", status, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

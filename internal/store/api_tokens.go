@@ -35,8 +35,8 @@ const (
 	APITokenAccessCLI APITokenAccess = "cli"
 	// APITokenAccessDiagnostics adds every admin read.
 	APITokenAccessDiagnostics APITokenAccess = "diagnostics"
-	// APITokenAccessAgent adds admin mutations except credential minting and
-	// owner transfer.
+	// APITokenAccessAgent adds admin mutations except credential minting, owner
+	// transfer and revealing or confirming the backup key.
 	APITokenAccessAgent APITokenAccess = "agent"
 )
 

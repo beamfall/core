@@ -33,6 +33,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "../lib/schedule";
+import { BackupKeySection } from "./BackupKeySection";
 
 // Backup panel (MIGREV-3 / ADR-0077 dec. 2-3): the standalone Manage Backup page.
 // It surfaces the MIGREV-1 backend in-app —
@@ -49,6 +50,8 @@ import { formatDateTime } from "../lib/schedule";
 //      data as a rollback copy, so the Console never overwrites a live database.
 //      The offline restore CLI stays documented below it.
 //   5. Metadata export: the reveal-filtered portability export, downloaded JSON.
+// Above them, while the bootstrap backup key is unsaved, BackupKeySection lets
+// the owner reveal and confirm it (CORE-2032).
 // The backend backupHistory/verifyBackup return only a sanitized pass/fail and a
 // reason — never a checksum of an arbitrary server file — so this page derives
 // its verify states from `valid` + `error`, not from client-computed hashes.
@@ -112,6 +115,7 @@ export function BackupExportPage() {
 
   return (
     <div className="space-y-4">
+      <BackupKeySection />
       <BackupHistorySection
         dest={dest}
         setDest={setDest}

@@ -102,24 +102,27 @@ var originalScopedFields = []string{
 	"createprofile",
 	"currentsession",
 	"deletelibrary",
-	"trashedlibraries",    // CORE-1201: deleted Libraries that can still be restored
-	"restorelibrary",      // CORE-1201: bring a deleted Library back
-	"purgelibrary",        // CORE-1201: permanently remove a deleted Library
-	"webhooks",            // CORE-1697: console-managed webhook endpoints
-	"webhookdeliveries",   // CORE-1697: webhook delivery log
-	"webhooksettings",     // CORE-1697: shared webhook options
-	"savewebhook",         // CORE-1697: add or edit a webhook endpoint
-	"deletewebhook",       // CORE-1697: remove a webhook endpoint
-	"testwebhook",         // CORE-1697: send one test notification
-	"setwebhooksettings",  // CORE-1697: save shared webhook options
-	"serverlogs",          // CORE-1716: recent redacted server log lines
-	"agentcatalog",        // CORE-2096: self-describing field catalog for agents
-	"diagnosticsbundle",   // CORE-2097: runtime diagnostics and text profiles
-	"stagedrestore",       // CORE-1720: the restore staged for the next start
-	"inspectbackup",       // CORE-1720: decrypt a backup set and report its contents
-	"stagerestore",        // CORE-1720: stage a restore for the next start
-	"cancelstagedrestore", // CORE-1720: drop a staged restore
-	"deletemanagedpath",   // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
+	"trashedlibraries",     // CORE-1201: deleted Libraries that can still be restored
+	"restorelibrary",       // CORE-1201: bring a deleted Library back
+	"purgelibrary",         // CORE-1201: permanently remove a deleted Library
+	"webhooks",             // CORE-1697: console-managed webhook endpoints
+	"webhookdeliveries",    // CORE-1697: webhook delivery log
+	"webhooksettings",      // CORE-1697: shared webhook options
+	"savewebhook",          // CORE-1697: add or edit a webhook endpoint
+	"deletewebhook",        // CORE-1697: remove a webhook endpoint
+	"testwebhook",          // CORE-1697: send one test notification
+	"setwebhooksettings",   // CORE-1697: save shared webhook options
+	"serverlogs",           // CORE-1716: recent redacted server log lines
+	"agentcatalog",         // CORE-2096: self-describing field catalog for agents
+	"diagnosticsbundle",    // CORE-2097: runtime diagnostics and text profiles
+	"stagedrestore",        // CORE-1720: the restore staged for the next start
+	"inspectbackup",        // CORE-1720: decrypt a backup set and report its contents
+	"stagerestore",         // CORE-1720: stage a restore for the next start
+	"cancelstagedrestore",  // CORE-1720: drop a staged restore
+	"backupkeystatus",      // CORE-2032: whether the backup key still has to be saved
+	"revealbackupkey",      // CORE-2032: reveal the backup key to save
+	"acknowledgebackupkey", // CORE-2032: confirm the backup key is saved
+	"deletemanagedpath",    // WEB-5C (ADR-0061): manager-scoped recoverable managed file/folder delete
 	"deletemarker",
 	"deletetag",
 	"deletemyengagement",

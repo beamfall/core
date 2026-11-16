@@ -1415,6 +1415,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Console staged restore (CORE-1720): the next start applies it before
 	// the store opens (cmd/beamfall applyStagedRestore).
 	graphHandler.SetRestoreStager(restorestage.New(cfg.DataDir, st))
+	graphHandler.SetBackupKeyEscrow(backupKeyEscrow{dataDir: cfg.DataDir, now: time.Now})
 	// Scrobble Integration Plugin: an opt-in consumer of the
 	// unwatched→watched transition (the graph playback path, NOT a new SSE event
 	// kind). Dormant unless the operator has activated an adapter in

@@ -28,6 +28,11 @@
       "tier": "admin"
     },
     {
+      "field": "acknowledgebackupkey",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "activity",
       "effect": "read",
       "tier": "session"
@@ -109,6 +114,11 @@
     },
     {
       "field": "backuphistory",
+      "effect": "read",
+      "tier": "admin"
+    },
+    {
+      "field": "backupkeystatus",
       "effect": "read",
       "tier": "admin"
     },
@@ -1028,6 +1038,11 @@
       "tier": "session"
     },
     {
+      "field": "revealbackupkey",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "revokeaccessgrant",
       "effect": "write",
       "tier": "session"
@@ -1786,6 +1801,24 @@
               "kind": "scalar"
             }
           ]
+        }
+      ]
+    },
+    {
+      "field": "acknowledgebackupkey",
+      "kind": "object",
+      "children": [
+        {
+          "name": "daysLeft",
+          "kind": "scalar"
+        },
+        {
+          "name": "expiresAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "pending",
+          "kind": "scalar"
         }
       ]
     },
@@ -2935,6 +2968,24 @@
         },
         {
           "name": "valid",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "backupkeystatus",
+      "kind": "object",
+      "children": [
+        {
+          "name": "daysLeft",
+          "kind": "scalar"
+        },
+        {
+          "name": "expiresAt",
+          "kind": "scalar"
+        },
+        {
+          "name": "pending",
           "kind": "scalar"
         }
       ]
@@ -17929,6 +17980,28 @@
       "children": [
         {
           "name": "revealed",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "revealbackupkey",
+      "kind": "object",
+      "children": [
+        {
+          "name": "backupKey",
+          "kind": "scalar"
+        },
+        {
+          "name": "daysLeft",
+          "kind": "scalar"
+        },
+        {
+          "name": "escrowID",
+          "kind": "scalar"
+        },
+        {
+          "name": "expiresAt",
           "kind": "scalar"
         }
       ]
@@ -32941,6 +33014,10 @@
         "effect": "read"
       },
       {
+        "field": "acknowledgebackupkey",
+        "effect": "write"
+      },
+      {
         "field": "addpathpickerroot",
         "effect": "write"
       },
@@ -32962,6 +33039,10 @@
       },
       {
         "field": "backuphistory",
+        "effect": "read"
+      },
+      {
+        "field": "backupkeystatus",
         "effect": "read"
       },
       {
@@ -33227,6 +33308,10 @@
       {
         "field": "retentionrules",
         "effect": "read"
+      },
+      {
+        "field": "revealbackupkey",
+        "effect": "write"
       },
       {
         "field": "revokealldevices",
