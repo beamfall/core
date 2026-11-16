@@ -1,0 +1,6 @@
+- [x] Vendor `switch/switch.frag` byte-identical from the pinned release; README and `pin.json`
+- [x] Renderer keeps an outgoing visual with its own feedback and image during a switch
+- [x] Switch pass blends outgoing to incoming before present, timed by the wasm transition scheduler
+- [x] Requests during a switch queue; reduced motion changes at once; resize ends a switch
+- [x] Tests: switch decision (blend, same, instant, queue)
+- [ ] Verified live across an album change with per-frame canvas sampling
