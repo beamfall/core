@@ -7,6 +7,8 @@
 - [x] 1.3 Tests: stale precondition refused with the new Profile's queue untouched, matching
       precondition applies, absent precondition unchanged, concurrent `switchProfile` never puts
       the item in the new Profile's queue (under -race)
+- [x] 1.4 A supplied blank `expectedProfileID` is refused as `INVALID` on all five mutations;
+      `stationStart` checks the precondition before resolving its seed
 
 ## 2. Wire contract
 

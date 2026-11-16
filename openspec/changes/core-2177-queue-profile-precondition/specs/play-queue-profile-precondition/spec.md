@@ -5,8 +5,8 @@
 `queueAdd`, `queueRemove`, `queueMove`, `queueClear` and `stationStart` SHALL accept an optional
 `expectedProfileID` argument. When it is present and is not the Profile the caller's session is
 bound to when the write applies, the server SHALL change no Play Queue and SHALL answer with
-error code `CONFLICT` and `extensions.reason` `PROFILE_MISMATCH`. When it is absent the mutation
-SHALL behave exactly as before.
+error code `CONFLICT` and `extensions.reason` `PROFILE_MISMATCH`. When it is absent or null the
+mutation SHALL behave exactly as before.
 
 #### Scenario: A write made for the previous Profile is refused after a switch
 
@@ -24,6 +24,26 @@ SHALL behave exactly as before.
 
 - **WHEN** a client sends a queue mutation without `expectedProfileID`
 - **THEN** it applies to the session's current Profile as it did before
+
+### Requirement: A supplied precondition is validated before the write resolves
+
+A supplied blank or whitespace-only `expectedProfileID` SHALL be refused with error code `INVALID`
+and change no Play Queue. The mismatch check SHALL run before any resolution that depends on the
+caller's Profile, such as a Station seed.
+
+#### Scenario: A blank precondition is malformed, not absent
+
+- **WHEN** a client sends any of the five mutations with `expectedProfileID` set to `""` or to
+  whitespace
+- **THEN** the reply is `INVALID`
+- **AND** no Play Queue changes
+
+#### Scenario: A Station seed only the previous Profile can see is a mismatch
+
+- **WHEN** a session switches from Profile A to Profile B and then sends `stationStart` with
+  `expectedProfileID` Profile A and a seed only Profile A can see
+- **THEN** the reply is `CONFLICT` with reason `PROFILE_MISMATCH`, not an unknown-seed error
+- **AND** no Play Queue changes
 
 ### Requirement: The Profile check is atomic with the queue write
 

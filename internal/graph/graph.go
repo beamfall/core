@@ -3902,21 +3902,40 @@ var errProfileMismatch = reasonedClientError{
 // Profile a switchProfile moved the session to. A Profile-bound API key has no
 // session to rebind, so its fixed Profile is the whole check.
 func (h *Handler) withExpectedProfile(ctx context.Context, scope auth.Scope, req request, write func() error) error {
-	expected := store.ProfileID(trimmedVariable(req, "expectedProfileID"))
-	if expected == "" {
+	expected, err := checkExpectedProfile(scope, req)
+	if err != nil {
+		return err
+	}
+	if expected == "" || scope.SessionID == "" {
 		return write()
 	}
-	if expected != scope.ProfileID {
-		return errProfileMismatch
-	}
-	if scope.SessionID == "" {
-		return write()
-	}
-	err := h.store.RunWhileSessionBound(ctx, scope.SessionID, expected, write)
+	err = h.store.RunWhileSessionBound(ctx, scope.SessionID, expected, write)
 	if errors.Is(err, store.ErrSessionProfileMismatch) {
 		return errProfileMismatch
 	}
 	return err
+}
+
+// checkExpectedProfile reads the optional expectedProfileID and refuses it up
+// front when it is not the Profile this request resolved to. Omitted or null
+// means no precondition (""); a supplied value must name a Profile, so a blank
+// one is refused rather than read as absent. It never touches the store, so a
+// resolver can run it before costly work; withExpectedProfile still makes the
+// binding check atomic with the write.
+func checkExpectedProfile(scope auth.Scope, req request) (store.ProfileID, error) {
+	value, supplied := req.Variables["expectedProfileID"]
+	if !supplied || value == nil {
+		return "", nil
+	}
+	id, _ := value.(string)
+	expected := store.ProfileID(strings.TrimSpace(id))
+	if expected == "" {
+		return "", clientError("expectedProfileID cannot be empty")
+	}
+	if expected != scope.ProfileID {
+		return "", errProfileMismatch
+	}
+	return expected, nil
 }
 
 // queueOps applies the requested Play Queue mutations, all under one

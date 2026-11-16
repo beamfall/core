@@ -431,6 +431,11 @@ func parseStationRequest(req request) (stationSeed, stationRules, stationTuning,
 // (ADR-0098 §Stations). Hidden queue entries are preserved by the store. Passing
 // the same `seed` the preview used commits the identical window.
 func (h *Handler) stationStart(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
+	// Refuse a write made for another Profile before resolving its seed, which
+	// may be visible only to that Profile (CORE-2177).
+	if _, err := checkExpectedProfile(scope, req); err != nil {
+		return nil, err
+	}
 	seed, rules, tuning, err := parseStationRequest(req)
 	if err != nil {
 		return nil, err

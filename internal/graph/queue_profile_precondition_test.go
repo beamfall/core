@@ -119,6 +119,91 @@ func TestStationStartHonoursExpectedProfile(t *testing.T) {
 	}
 }
 
+// A Play Queue write whose seed only the Profile it was made for can see is
+// refused as a Profile mismatch after a switch, not reported as an unknown
+// seed: the precondition runs before the seed resolves.
+func TestStationStartForAnotherProfilesSeedIsAMismatch(t *testing.T) {
+	// feature:music-stations
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	// The managed Profile gets a music Library of its own, so the station has a
+	// candidate space there, but not the fixture's, which holds the seed track.
+	if _, err := st.CreateLibrary(t.Context(), "Other Tunes", false, stationPluginID, pqManaged); err != nil {
+		t.Fatal(err)
+	}
+	pqSwitchViewerToManaged(t, h)
+	start := `mutation Start($seedKind: String!, $seedID: String!, $expectedProfileID: String) { stationStart(seedKind: $seedKind, seedID: $seedID, expectedProfileID: $expectedProfileID) { id } }`
+
+	resp := postGraphJSON(t, h, authorizeViewer, start, map[string]any{"seedKind": "track", "seedID": string(fx.trackA), "expectedProfileID": pqDefault})
+	pqWantMismatch(t, "stationStart with an A-only seed", resp.Errors)
+	if got := pqQueue(t, st, pqManaged); len(got) != 0 {
+		t.Fatalf("stationStart wrote %v into %s's queue", got, pqManaged)
+	}
+	// Without the precondition the seed is simply not visible to the new
+	// Profile, which is what the precondition spares the client from guessing.
+	resp = postGraphJSON(t, h, authorizeViewer, start, map[string]any{"seedKind": "track", "seedID": string(fx.trackA)})
+	if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeNotFound {
+		t.Fatalf("stationStart without precondition errors = %#v, want NOT_FOUND", resp.Errors)
+	}
+}
+
+// A supplied but blank expectedProfileID is malformed, not absent: it never
+// falls back to the session's current Profile.
+func TestBlankExpectedProfileIsRefusedOnEveryQueueMutation(t *testing.T) {
+	// feature:play-queue
+	st := storetest.Open(t)
+	h := newStationTestHandler(t, st)
+	fx := seedMusicFixture(t, st)
+	pqSwitchViewerToManaged(t, h)
+	if err := st.QueueAdd(t.Context(), pqManaged, "media-alpha", nil, store.LibraryFilter{AllLibraries: true}); err != nil {
+		t.Fatal(err)
+	}
+	// A second Media the managed Profile can see, so a queueAdd that slipped
+	// through would visibly change the queue.
+	lib, err := st.CreateLibrary(t.Context(), "Managed Tunes", false, stationPluginID, pqManaged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra, _, err := st.ImportMediaFile(t.Context(), store.ImportMediaFile{
+		LibraryID: lib.ID, Path: "/managed/c.flac", Title: "Track C", Container: "flac", Codec: "flac",
+		Class: store.MediaClassAudio, ContentFingerprint: "fp-managed-c", DurationSecondsHint: 200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		field, query string
+		vars         map[string]any
+	}{
+		{"queueAdd", pqAdd, map[string]any{"mediaID": string(extra.ID)}},
+		{"queueRemove", `mutation M($expectedProfileID: String) { queueRemove(mediaID: "media-alpha", expectedProfileID: $expectedProfileID) { id } }`, map[string]any{}},
+		{"queueMove", `mutation M($expectedProfileID: String) { queueMove(mediaID: "media-alpha", position: 0, expectedProfileID: $expectedProfileID) { id } }`, map[string]any{}},
+		{"queueClear", `mutation M($expectedProfileID: String) { queueClear(expectedProfileID: $expectedProfileID) { id } }`, map[string]any{}},
+		{"stationStart", `mutation Start($seedKind: String!, $seedID: String!, $expectedProfileID: String) { stationStart(seedKind: $seedKind, seedID: $seedID, confirmReplace: true, expectedProfileID: $expectedProfileID) { id } }`,
+			map[string]any{"seedKind": "artist", "seedID": string(fx.artistID)}},
+	}
+	for _, tc := range cases {
+		for _, blank := range []string{"", "   "} {
+			tc.vars["expectedProfileID"] = blank
+			resp := postGraphJSON(t, h, authorizeViewer, tc.query, tc.vars)
+			if len(resp.Errors) != 1 || resp.Errors[0].Extensions.Code != ErrorCodeInvalid {
+				t.Fatalf("%s with expectedProfileID %q errors = %#v, want one INVALID", tc.field, blank, resp.Errors)
+			}
+			if got := pqQueue(t, st, pqManaged); !slices.Equal(got, []string{"media-alpha"}) {
+				t.Fatalf("%s with expectedProfileID %q changed the queue to %v", tc.field, blank, got)
+			}
+		}
+	}
+	// An inline literal is a supplied value too.
+	if _, errs := post(t, h, `{"query":"mutation { queueClear(expectedProfileID: \"\") { id } }"}`, authorizeViewer); len(errs) != 1 || errs[0].Extensions.Code != ErrorCodeInvalid {
+		t.Fatalf("queueClear with an inline blank literal errors = %#v, want one INVALID", errs)
+	}
+	if got := pqQueue(t, st, pqManaged); !slices.Equal(got, []string{"media-alpha"}) {
+		t.Fatalf("queueClear with an inline blank literal changed the queue to %v", got)
+	}
+}
+
 func TestQueueWriteWithMatchingExpectedProfileApplies(t *testing.T) {
 	// feature:play-queue
 	st := storetest.Open(t)
