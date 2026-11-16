@@ -343,7 +343,7 @@ func (s *Store) mergeKeepAsVersionSQL(ctx context.Context, mediaID MediaID, cand
 		return err
 	}
 	if candidate.Streams != nil {
-		if err := replaceMediaFileInventoryTx(ctx, tx, candidate.ContentFingerprint, candidate.Streams, nil); err != nil {
+		if err := replaceMediaFileInventoryTx(ctx, tx, false, candidate.ContentFingerprint, candidate.Streams, nil); err != nil {
 			return err
 		}
 	}

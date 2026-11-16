@@ -180,7 +180,7 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 	}
 
 	if imported.Streams != nil || imported.FontAttachments != nil {
-		if err := replaceMediaFileInventoryTx(ctx, tx, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
+		if err := replaceMediaFileInventoryTx(ctx, tx, plane.encrypted, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
 			return MediaFile{}, err
 		}
 	}

@@ -62,6 +62,12 @@ package store
 //     The latency bench passed for the 0007 bump on 2026-11-15; the worst
 //     measured query was search/fts/revealed at 28.48125 ms against a 60 ms
 //     budget, at a host load average near 30.
+//   - encrypted-library 0008 (CORE-2055) additively mirrors catalog 0050's
+//     media_file_stream columns (stream_type and the codec/disposition/HDR
+//     facts) and its (content_fingerprint, filename) font-attachment key, so
+//     the shared inventory writer works on an Encrypted Library; the frozen
+//     0002 columns stay. Both tables are read per file, off the entity-query
+//     hot path.
 //
 // Every entry above rode the `make bench` gate at the migration that introduced
 // it, and each sits off the entity-query hot path.
@@ -71,5 +77,5 @@ package store
 //   - mute/retention/podcast predicates
 const (
 	schemaFreezeEventsMigrations           = 22
-	schemaFreezeEncryptedLibraryMigrations = 7
+	schemaFreezeEncryptedLibraryMigrations = 8
 )

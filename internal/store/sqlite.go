@@ -1181,7 +1181,7 @@ func insertSeedCatalog(ctx context.Context, tx *sql.Tx, seed seedData) error {
 		}
 	}
 	for _, inv := range seed.mediaFileStreams {
-		if err := replaceMediaFileInventoryTx(ctx, tx, inv.fingerprint, inv.streams, nil); err != nil {
+		if err := replaceMediaFileInventoryTx(ctx, tx, false, inv.fingerprint, inv.streams, nil); err != nil {
 			return err
 		}
 	}
@@ -2640,7 +2640,14 @@ func upsertMediaFileTx(ctx context.Context, tx *sql.Tx, file MediaFile, now time
 // table reads it back — ADR-0010 §4). A fingerprint with no inventory (a
 // probe-less scan) returns an empty slice, not an error.
 func (s *Store) mediaFileStreamsSQL(ctx context.Context, fingerprint string) ([]MediaFileStream, error) {
-	rows, err := s.catalogR.QueryContext(ctx, `
+	return mediaFileStreamsFromPlane(ctx, s.catalogR, fingerprint)
+}
+
+// mediaFileStreamsFromPlane reads one fingerprint's stream inventory from a
+// specific catalog plane (the global catalog or a per-Library encrypted DB —
+// ADR-0045 §2.3), like mediaFileSidecarCaptionsFromPlane.
+func mediaFileStreamsFromPlane(ctx context.Context, db *sql.DB, fingerprint string) ([]MediaFileStream, error) {
+	rows, err := db.QueryContext(ctx, `
 		SELECT stream_index, stream_type, codec, profile, level, language,
 		  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 		  channels, channel_layout, bit_depth,
@@ -2710,37 +2717,55 @@ func mediaFileSidecarCaptionsFromPlane(ctx context.Context, db *sql.DB, fingerpr
 	return captions, rows.Err()
 }
 
-func replaceMediaFileInventoryTx(ctx context.Context, tx *sql.Tx, fingerprint string, streams []MediaFileStream, attachments []MediaFileFontAttachment) error {
+func replaceMediaFileInventoryTx(ctx context.Context, tx *sql.Tx, encrypted bool, fingerprint string, streams []MediaFileStream, attachments []MediaFileFontAttachment) error {
 	if _, err := tx.ExecContext(ctx, "DELETE FROM media_file_stream WHERE content_fingerprint = ?", fingerprint); err != nil {
 		return err
 	}
+	// An Encrypted Library's routed schema (encrypted_library 0002) keeps two
+	// frozen NOT NULL columns without defaults that the catalog lacks: the
+	// legacy stream kind `type` and the font attachment `stream_index`. That
+	// plane fills them alongside the shared columns (CORE-2055).
+	streamLegacyColumns, streamLegacyValues := "", ""
+	fontLegacyColumns, fontLegacyValues := "", ""
+	if encrypted {
+		streamLegacyColumns, streamLegacyValues = ", type", ", ?"
+		fontLegacyColumns, fontLegacyValues = ", stream_index", ", ?"
+	}
 	for _, stream := range streams {
+		args := []any{fingerprint, stream.Index, stream.Type, stream.Codec, stream.Profile, stream.Level, stream.Language,
+			boolInt(stream.Default), boolInt(stream.Forced), boolInt(stream.HearingImpaired),
+			boolInt(stream.VisualImpaired), boolInt(stream.Commentary),
+			stream.Channels, stream.ChannelLayout, stream.BitDepth,
+			stream.ColorTransfer, stream.ColorPrimaries, boolInt(stream.HDR10Plus), stream.DoViProfile, stream.DoViBLCompatID,
+			stream.SampleRate, stream.EncoderDelaySamples, stream.EncoderPaddingSamples, stream.DecodedSamples}
+		if encrypted {
+			args = append(args, stream.Type)
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO media_file_stream(
 			  content_fingerprint, stream_index, stream_type, codec, profile, level, language,
 			  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 			  channels, channel_layout, bit_depth,
 			  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id,
-			  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, fingerprint, stream.Index, stream.Type, stream.Codec, stream.Profile, stream.Level, stream.Language,
-			boolInt(stream.Default), boolInt(stream.Forced), boolInt(stream.HearingImpaired),
-			boolInt(stream.VisualImpaired), boolInt(stream.Commentary),
-			stream.Channels, stream.ChannelLayout, stream.BitDepth,
-			stream.ColorTransfer, stream.ColorPrimaries, boolInt(stream.HDR10Plus), stream.DoViProfile, stream.DoViBLCompatID,
-			stream.SampleRate, stream.EncoderDelaySamples, stream.EncoderPaddingSamples, stream.DecodedSamples); err != nil {
+			  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples`+streamLegacyColumns+`)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`+streamLegacyValues+`)
+		`, args...); err != nil {
 			return err
 		}
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM media_file_font_attachment WHERE content_fingerprint = ?", fingerprint); err != nil {
 		return err
 	}
-	for _, att := range attachments {
+	for i, att := range attachments {
+		args := []any{fingerprint, att.Filename, att.MimeType}
+		if encrypted {
+			args = append(args, i)
+		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO media_file_font_attachment(content_fingerprint, filename, mime_type)
-			VALUES (?, ?, ?)
+			INSERT INTO media_file_font_attachment(content_fingerprint, filename, mime_type`+fontLegacyColumns+`)
+			VALUES (?, ?, ?`+fontLegacyValues+`)
 			ON CONFLICT(content_fingerprint, filename) DO UPDATE SET mime_type = excluded.mime_type
-		`, fingerprint, att.Filename, att.MimeType); err != nil {
+		`, args...); err != nil {
 			return err
 		}
 	}
@@ -2869,7 +2894,7 @@ func (s *Store) importMediaFileSQL(ctx context.Context, plane catalogPlane, impo
 	// leaving the stored inventory intact — the same empty-never-clobbers posture
 	// as the fingerprint hashes.
 	if imported.Streams != nil || imported.FontAttachments != nil {
-		if err := replaceMediaFileInventoryTx(ctx, tx, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
+		if err := replaceMediaFileInventoryTx(ctx, tx, plane.encrypted, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
 			return Media{}, MediaFile{}, false, err
 		}
 	}
@@ -3081,7 +3106,7 @@ func (s *Store) importMediaFilePartsSQL(ctx context.Context, plane catalogPlane,
 			return Media{}, nil, false, err
 		}
 		if imported.Streams != nil || imported.FontAttachments != nil {
-			if err := replaceMediaFileInventoryTx(ctx, tx, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
+			if err := replaceMediaFileInventoryTx(ctx, tx, plane.encrypted, imported.ContentFingerprint, imported.Streams, imported.FontAttachments); err != nil {
 				return Media{}, nil, false, err
 			}
 		}
@@ -3179,7 +3204,7 @@ func (s *Store) addMediaFileVersionSQL(ctx context.Context, file MediaFile, stre
 		return err
 	}
 	if streams != nil {
-		if err := replaceMediaFileInventoryTx(ctx, tx, file.ContentFingerprint, streams, nil); err != nil {
+		if err := replaceMediaFileInventoryTx(ctx, tx, plane.encrypted, file.ContentFingerprint, streams, nil); err != nil {
 			return err
 		}
 	}
