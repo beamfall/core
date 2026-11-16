@@ -119,19 +119,6 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 		handler.ServeHTTP(rec, req)
 		return response{status: rec.Code, body: rec.Body.Bytes(), elapsed: time.Since(started)}
 	}
-	// Timing is compared on the per-case minimum of three samples: the minimum keeps a systematic
-	// enumeration oracle visible while discarding scheduler noise that a loaded -race gate adds on
-	// top of the uniform failure floor.
-	measured := func(body string) response {
-		best := request(body)
-		for range 2 {
-			if again := request(body); again.elapsed < best.elapsed {
-				best = again
-			}
-		}
-		return best
-	}
-
 	calibrationBody := `{"Username":"Timing Calibration","Pw":"wrong"}`
 	calibrate := func() response {
 		// The successful request resets this Profile's backoff lane so every ambient sample
@@ -143,6 +130,28 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 		}
 		return failed
 	}
+	// Timing is compared on per-case minimums over interleaved rounds (CORE-1481). Each round
+	// samples every case once, each followed by a same-case calibration sample, so a scheduler
+	// burst on a loaded -race gate lands on cases and calibration alike instead of on one case's
+	// back-to-back samples. A systematic enumeration oracle shifts every sample of its case, so
+	// it survives the minimum; transient noise does not.
+	const rounds = 4
+	var all []response
+	sample := func(bodies []string, responses, ambient []response) {
+		for range rounds {
+			for i, body := range bodies {
+				got := request(body)
+				cal := calibrate()
+				all = append(all, got, cal)
+				if responses[i].elapsed == 0 || got.elapsed < responses[i].elapsed {
+					responses[i] = got
+				}
+				if ambient[i].elapsed == 0 || cal.elapsed < ambient[i].elapsed {
+					ambient[i] = cal
+				}
+			}
+		}
+	}
 	failureBodies := []string{
 		`{"Username":"missing-profile-sensitive-name","Pw":"2468"}`,
 		`{"Username":"Default","Pw":"wrong"}`,
@@ -150,17 +159,14 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 		`{"Username":"Managed","Pw":"anything"}`,
 		`{"Username":`,
 	}
-	responses := make([]response, 0, len(failureBodies)+1)
-	ambient := []response{calibrate()}
-	for _, body := range failureBodies {
-		responses = append(responses, measured(body))
-		ambient = append(ambient, calibrate())
-	}
+	lockoutBodies := []string{`{"Username":"Default","Pw":"2468"}`}
+	responses := make([]response, len(failureBodies)+len(lockoutBodies))
+	ambient := make([]response, len(responses))
+	sample(failureBodies, responses, ambient)
 	for range 8 {
 		_ = request(`{"Username":"Default","Pw":"wrong"}`)
 	}
-	responses = append(responses, measured(`{"Username":"Default","Pw":"2468"}`))
-	ambient = append(ambient, calibrate())
+	sample(lockoutBodies, responses[len(failureBodies):], ambient[len(failureBodies):])
 
 	ambientFastest := ambient[0].elapsed
 	ambientSlowest := ambient[0].elapsed
@@ -191,12 +197,12 @@ func TestAuthenticateByNameFailureResponsesAreUniform(t *testing.T) {
 			slowest = got.elapsed
 		}
 	}
-	for i, got := range ambient {
+	for i, got := range all {
 		if got.status != want.status || !bytes.Equal(got.body, want.body) {
-			t.Fatalf("calibration failure %d response = %d/%q, want %d/%q", i, got.status, got.body, want.status, want.body)
+			t.Fatalf("sample %d response = %d/%q, want %d/%q", i, got.status, got.body, want.status, want.body)
 		}
 		if got.elapsed < 70*time.Millisecond {
-			t.Fatalf("calibration failure %d elapsed = %s, escaped uniform timing class", i, got.elapsed)
+			t.Fatalf("sample %d elapsed = %s, escaped uniform timing class", i, got.elapsed)
 		}
 	}
 	// The fixed margin covers bounded path work after the common floor. At idle it is tighter
