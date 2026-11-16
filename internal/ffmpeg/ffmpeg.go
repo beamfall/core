@@ -159,8 +159,9 @@ type ProbeStream struct {
 	HDR10Plus bool
 	// DoViProfile is the Dolby Vision profile (5/7/8) from the stream's DOVI
 	// configuration record side data; 0 when the stream carries no DV.
-	// DoViBLCompatID is the base-layer signal compatibility ID (e.g. 6 =
-	// HDR10-compatible), used to tell profile-8.1 from 8.4 etc.
+	// DoViBLCompatID is the base-layer signal compatibility ID (1 = HDR10,
+	// 2 = SDR, 4 = HLG, 6 = Ultra HD Blu-ray HDR10), used to tell profile 8.1
+	// from 8.2 and 8.4.
 	DoViProfile    int
 	DoViBLCompatID int
 	// SampleRate is an audio stream's sample rate in Hz (ffprobe sample_rate,

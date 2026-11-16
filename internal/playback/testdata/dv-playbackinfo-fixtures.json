@@ -36,7 +36,19 @@
   },
   "cases": [
     {
-      "name": "P8.1 file + Shield direct-plays",
+      "name": "P8.1 file (BL compat ID 1, HDR10 base) + Shield direct-plays",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "video": { "profile": "Main 10", "doViProfile": 8, "doViBLCompatID": 1, "colorTransfer": "smpte2084" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "shield",
+      "wantDecision": "direct-play",
+      "wantReason": ""
+    },
+    {
+      "name": "P8 file with BL compat ID 6 (UHD Blu-ray HDR10 base) + Shield direct-plays",
       "container": "mp4",
       "codec": "hevc",
       "width": 3840,
@@ -46,6 +58,18 @@
       "profile": "shield",
       "wantDecision": "direct-play",
       "wantReason": ""
+    },
+    {
+      "name": "P8.2 file (BL compat ID 2, SDR base) + Shield transcodes, never false p8 match",
+      "container": "mp4",
+      "codec": "hevc",
+      "width": 3840,
+      "height": 2160,
+      "video": { "profile": "Main 10", "doViProfile": 8, "doViBLCompatID": 2, "colorTransfer": "bt709" },
+      "audio": { "codec": "eac3", "channels": 6 },
+      "profile": "shield",
+      "wantDecision": "transcode",
+      "wantReason": "requires-transcode"
     },
     {
       "name": "P5 file + Shield (advertises dolby-vision-p5) direct-plays",
@@ -96,7 +120,7 @@
       "wantReason": "dolby-vision-p7-base-layer"
     },
     {
-      "name": "P8.4 file (no HDR10 base) + Shield transcodes, never false p8 match",
+      "name": "P8.4 file (BL compat ID 4, HLG base) + Shield transcodes, never false p8 match",
       "container": "mp4",
       "codec": "hevc",
       "width": 3840,
@@ -113,7 +137,7 @@
       "codec": "hevc",
       "width": 3840,
       "height": 2160,
-      "video": { "profile": "Main 10", "doViProfile": 8, "doViBLCompatID": 6, "colorTransfer": "smpte2084" },
+      "video": { "profile": "Main 10", "doViProfile": 8, "doViBLCompatID": 1, "colorTransfer": "smpte2084" },
       "audio": { "codec": "eac3", "channels": 6 },
       "profile": "chromecast",
       "wantDecision": "transcode",

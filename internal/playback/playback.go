@@ -2678,7 +2678,7 @@ func hdr10BaseLayerRenderable(profile CapabilityProfile) bool {
 }
 
 // dolbyVisionP7BaseLayer reports whether a Dolby Vision P7 file (HDR10-compatible
-// base, BLCompatID 6) can direct-play its base layer while dropping the undecodable
+// base, BLCompatID 1 or 6) can direct-play its base layer while dropping the undecodable
 // enhancement layer. No CapabilityProfile ever advertises
 // "dolby-vision-p7", so this is the only path a P7 stream direct-plays. It fires
 // only when the container gates, the profile can render the HDR10 base layer, the
@@ -2779,8 +2779,10 @@ func effectiveAudioChannelLimit(codecCap AudioCodecCap, downstreamAudio string) 
 }
 
 // Dolby Vision HDR tokens (closed per-profile vocabulary, ADR-0017 §4). Match on
-// probed DoViProfile + DoViBLCompatID: BLCompatID 6 is the HDR10-compatible base
-// layer. hdrDolbyVisionP5/P8 are the advertisable tokens the Android capability
+// probed DoViProfile + DoViBLCompatID. Two compatibility IDs carry an HDR10
+// base layer: 1 (HDR10, the streaming profile 8.1 that WEB-DL sources ship) and
+// 6 (the Ultra HD Blu-ray HDR10 variant profile 7 uses). 2 (SDR base, 8.2) and
+// 4 (HLG base, 8.4) do not. hdrDolbyVisionP5/P8 are the advertisable tokens the Android capability
 // profile / device-quirks table declare verbatim; hdrDolbyVisionP7 is emitted but
 // never advertised (its FEL is undecodable on every client — the base-layer
 // honesty path in dolbyVisionP7BaseLayer). hdrDolbyVisionGeneric is the sentinel
@@ -2791,8 +2793,15 @@ const (
 	hdrDolbyVisionP7      = "dolby-vision-p7"
 	hdrDolbyVisionP8      = "dolby-vision-p8"
 	hdrDolbyVisionGeneric = "dolby-vision"
-	doViBLCompatHDR10     = 6 // HDR10-compatible base layer
+	doViBLCompatHDR10     = 1 // HDR10 base layer (profile 8.1)
+	doViBLCompatBluRay    = 6 // Ultra HD Blu-ray HDR10 base layer
 )
+
+// doViHDR10BaseLayer reports whether a Dolby Vision base-layer compatibility ID
+// names an HDR10-compatible base layer (ADR-0017 §4: P8.1 direct-plays).
+func doViHDR10BaseLayer(blCompatID int) bool {
+	return blCompatID == doViBLCompatHDR10 || blCompatID == doViBLCompatBluRay
+}
 
 // dolbyVisionP7BaseLayerReason is the honest playbackInfo reason for a P7 stream
 // that direct-plays its HDR10-compatible base layer while dropping the undecodable
@@ -2820,15 +2829,16 @@ func hdrFormat(video store.MediaFileStream) string {
 }
 
 // dolbyVisionFormat maps a Dolby Vision stream to its closed-vocabulary token.
-// Only P5, P8.1 (BLCompatID 6), and P7 (BLCompatID 6) get a per-profile token;
-// every other DV shape returns the un-advertised generic sentinel.
+// Only P5, and P8 and P7 over an HDR10-compatible base layer (BLCompatID 1 or
+// 6), get a per-profile token; every other DV shape, including P8.2 (SDR base)
+// and P8.4 (HLG base), returns the un-advertised generic sentinel.
 func dolbyVisionFormat(video store.MediaFileStream) string {
 	switch {
 	case video.DoViProfile == 5:
 		return hdrDolbyVisionP5
-	case video.DoViProfile == 8 && video.DoViBLCompatID == doViBLCompatHDR10:
+	case video.DoViProfile == 8 && doViHDR10BaseLayer(video.DoViBLCompatID):
 		return hdrDolbyVisionP8
-	case video.DoViProfile == 7 && video.DoViBLCompatID == doViBLCompatHDR10:
+	case video.DoViProfile == 7 && doViHDR10BaseLayer(video.DoViBLCompatID):
 		return hdrDolbyVisionP7
 	default:
 		return hdrDolbyVisionGeneric

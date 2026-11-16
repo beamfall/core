@@ -102,3 +102,38 @@ func TestDolbyVisionPlaybackInfoFixtures(t *testing.T) {
 		})
 	}
 }
+
+// TestDolbyVisionFormatByBaseLayerCompatibility pins the per-profile Dolby Vision
+// token for each base-layer compatibility ID (CORE-2157, ADR-0017 §4). ID 1 is
+// the HDR10 base of streaming profile 8.1 and 6 the Ultra HD Blu-ray HDR10 base;
+// both carry the advertisable profile token. 2 (SDR base) and 4 (HLG base) are
+// not HDR10, so they take the un-advertised generic sentinel.
+func TestDolbyVisionFormatByBaseLayerCompatibility(t *testing.T) {
+	cases := []struct {
+		name       string
+		profile    int
+		blCompatID int
+		want       string
+	}{
+		{"P8.1 HDR10 base", 8, 1, hdrDolbyVisionP8},
+		{"P8.2 SDR base", 8, 2, hdrDolbyVisionGeneric},
+		{"P8.4 HLG base", 8, 4, hdrDolbyVisionGeneric},
+		{"P8 Blu-ray HDR10 base", 8, 6, hdrDolbyVisionP8},
+		{"P8 no base compatibility", 8, 0, hdrDolbyVisionGeneric},
+		{"P7 HDR10 base", 7, 1, hdrDolbyVisionP7},
+		{"P7 Blu-ray HDR10 base", 7, 6, hdrDolbyVisionP7},
+		{"P7 SDR base", 7, 2, hdrDolbyVisionGeneric},
+		{"P5 no base", 5, 0, hdrDolbyVisionP5},
+		{"P4 SDR base", 4, 2, hdrDolbyVisionGeneric},
+		{"P9 SDR base", 9, 2, hdrDolbyVisionGeneric},
+		{"P10 HDR10 base", 10, 1, hdrDolbyVisionGeneric},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			video := store.MediaFileStream{Type: "video", Codec: "hevc", DoViProfile: tc.profile, DoViBLCompatID: tc.blCompatID, ColorTransfer: "smpte2084"}
+			if got := hdrFormat(video); got != tc.want {
+				t.Errorf("hdrFormat(profile %d, BL compat %d) = %q, want %q", tc.profile, tc.blCompatID, got, tc.want)
+			}
+		})
+	}
+}

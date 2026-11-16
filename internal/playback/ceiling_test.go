@@ -315,7 +315,7 @@ func TestStreamingCeilingHoldsAudioToStereoAAC(t *testing.T) {
 func TestStreamingCeilingNamesItselfForDolbyVisionP7(t *testing.T) {
 	service, st, scope := capabilityTestService(t)
 	p7 := videoStream("hevc", "Main 10", 7, "smpte2084")
-	p7.DoViBLCompatID = doViBLCompatHDR10
+	p7.DoViBLCompatID = doViBLCompatBluRay
 	mediaID := importProbedMediaSized(t, st, "fp-ceiling-p7", "mkv", "hevc", 1920, 1080, ceilingSourceBytes, []store.MediaFileStream{
 		p7,
 		audioStream(1, "eac3", 6),
