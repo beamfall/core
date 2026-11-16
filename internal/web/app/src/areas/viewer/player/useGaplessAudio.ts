@@ -248,18 +248,28 @@ function release(node: AudioBufferSourceNode) {
   }
 }
 
+function stop(segment: Segment) {
+  try {
+    segment.node.stop();
+  } catch {
+    // Never started (or already stopped): nothing to silence.
+  }
+  release(segment.node);
+}
+
 // Stops the decoded audio; the decoded tracks are kept to start again.
 function silence(bridge: Bridge) {
   const segments = bridge.segments;
   bridge.segments = [];
-  for (const segment of segments) {
-    try {
-      segment.node.stop();
-    } catch {
-      // Never started (or already stopped): nothing to silence.
-    }
-    release(segment.node);
-  }
+  for (const segment of segments) stop(segment);
+}
+
+// Stops one item's decoded audio, its track kept.
+function cancel(bridge: Bridge, mediaID: string) {
+  const segment = segmentFor(bridge, mediaID);
+  if (!segment) return;
+  bridge.segments = bridge.segments.filter((other) => other !== segment);
+  stop(segment);
 }
 
 function clearPending(bridge: Bridge) {
@@ -506,7 +516,10 @@ export function useGaplessAudio({
       if (!bridge || bridge.ownSeek) return;
       // A resume seek while a new source loads is the engine's, not the listener's.
       if (!bridge.elementPlaying || (bridge.segments.length === 0 && !bridge.pending)) return;
-      const resumes = muteHeld(video) && bridge.tracks.has(mediaIDRef.current);
+      // Held over its decoded track, or waiting for it to decode, the element
+      // starts again from where the listener seeks.
+      const id = mediaIDRef.current;
+      const resumes = muteHeld(video) && (bridge.tracks.has(id) || bridge.pending?.mediaID === id);
       interrupt(bridge);
       if (resumes && !video.paused && !arm(bridge, video, mediaIDRef.current)) handBack(video);
     };
@@ -624,17 +637,40 @@ export function useGaplessAudio({
   // follows it to join, and it is decodable.
   const leadURL = nextURL && decodable(stream) ? (stream?.url ?? "") : "";
   const leadTrim = gaplessKey(stream?.gapless);
+  const nextIDRef = useRef(nextID);
+  nextIDRef.current = nextID;
 
-  // The element's own track, decoded when it starts from silence (arm). Only
-  // the track heard and the next are kept.
+  // Only the decoded track heard and the next are kept, whatever the item plays.
+  useEffect(() => {
+    const video = videoRef.current;
+    const bridge = video ? bridges.get(video) : undefined;
+    if (!bridge) return;
+    for (const id of [...bridge.tracks.keys()]) {
+      if (id !== mediaID && id !== nextID) bridge.tracks.delete(id);
+    }
+  }, [videoRef, mediaID, nextID]);
+
+  // The join turned off on the item it was on (a Watch Party leads, say): the
+  // element takes the sound back. At an advance the item changes first and is
+  // handled above, so the joined track plays on.
+  const joinedID = useRef("");
+  useEffect(() => {
+    if (enabled) {
+      joinedID.current = mediaID;
+      return;
+    }
+    const video = videoRef.current;
+    if (!video || joinedID.current !== mediaID) return;
+    joinedID.current = "";
+    if (bridges.has(video)) handBack(video);
+  }, [enabled, videoRef, mediaID]);
+
+  // The element's own track, decoded when it starts from silence (arm).
   useEffect(() => {
     const video = videoRef.current;
     if (!enabled || !video || !leadURL) return;
     const bridge = bridgeFor(video);
     if (!bridge) return;
-    for (const id of [...bridge.tracks.keys()]) {
-      if (id !== mediaID && id !== nextID) bridge.tracks.delete(id);
-    }
     bridge.lead = { mediaID, url: leadURL, gapless: gaplessFromKey(leadTrim) };
     return () => {
       if (bridge.lead?.mediaID === mediaID) bridge.lead = null;
@@ -698,6 +734,14 @@ export function useGaplessAudio({
       );
     };
 
+    // A join timed by the element's position no longer holds once it stalls.
+    // Not yet heard, it is cancelled and scheduled again when the element plays.
+    const onStall = () => {
+      const segment = segmentFor(bridge, nextID);
+      if (!segment || segmentFor(bridge, mediaIDRef.current)) return;
+      if (segment.start > bridge.context.currentTime) cancel(bridge, nextID);
+    };
+
     const check = () => {
       if (controller.signal.aborted) return;
       // The track heard and the next are the most held at once.
@@ -707,11 +751,24 @@ export function useGaplessAudio({
     };
 
     video.addEventListener("timeupdate", check);
+    video.addEventListener("playing", check);
+    video.addEventListener("waiting", onStall);
+    video.addEventListener("stalled", onStall);
     check();
     return () => {
       controller.abort();
       clearTimeout(timer);
       video.removeEventListener("timeupdate", check);
+      video.removeEventListener("playing", check);
+      video.removeEventListener("waiting", onStall);
+      video.removeEventListener("stalled", onStall);
+      // A next item replaced or removed must not play; one that became the
+      // current item plays on.
+      if (nextID === nextIDRef.current || nextID === mediaIDRef.current) return;
+      if (!segmentFor(bridge, nextID)) return;
+      cancel(bridge, nextID);
+      // Nothing decoded left to hear: the element is heard.
+      if (bridge.segments.length === 0 && !bridge.pending) handBack(video);
     };
   }, [enabled, videoRef, nextID, nextURL, nextTrim, padding]);
 }

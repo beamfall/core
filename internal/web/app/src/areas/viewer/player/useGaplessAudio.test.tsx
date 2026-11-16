@@ -242,21 +242,42 @@ function nextItem(mediaID: string): PlaybackNext {
   } as PlaybackNext;
 }
 
+interface Props {
+  mediaID: string;
+  next: PlaybackNext;
+  /** The stream the element plays; a direct-play stream of the item by default. */
+  stream?: PlaybackStream;
+  enabled?: boolean;
+}
+
 function render(element: HTMLVideoElement) {
   // Stable, as the player's own ref is.
   const videoRef = { current: element };
   return renderHook(
-    ({ mediaID, next }: { mediaID: string; next: PlaybackNext }) =>
+    ({ mediaID, next, stream, enabled = true }: Props) =>
       useGaplessAudio({
         videoRef,
         mediaID,
-        stream: { kind: "direct-play", url: `/api/media/${mediaID}/stream` },
+        stream: stream ?? { kind: "direct-play", url: `/api/media/${mediaID}/stream` },
         next,
         advanceID: next.mediaID,
-        enabled: true,
+        enabled,
       }),
-    { initialProps: { mediaID: "m1", next: nextItem("m2") } },
+    { initialProps: { mediaID: "m1", next: nextItem("m2") } as Props },
   );
+}
+
+// The next fetch waits until the returned function lets it answer.
+function holdNextFetch(): () => void {
+  let answer = () => {};
+  vi.mocked(fetch).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        answer = () =>
+          resolve({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) } as Response);
+      }),
+  );
+  return () => answer();
 }
 
 describe("useGaplessAudio", () => {
@@ -312,7 +333,9 @@ describe("useGaplessAudio", () => {
     expect(element.muted).toBe(true);
     element.currentTime = 1.25;
     play();
-    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5, 1.25, 0.75);
+    // m1 from where the element resumes, m2 chained after it.
+    expect(sources.at(-2)?.start).toHaveBeenCalledWith(5, 1.25, 0.75);
+    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5.75, 0, 2);
     expect(element.muted).toBe(true);
   });
 
@@ -364,6 +387,82 @@ describe("useGaplessAudio", () => {
     expect(element.muted).toBe(true);
     act(() => contexts[0].run());
     expect(sources[0].start).toHaveBeenCalledWith(5, 0, 2);
+  });
+
+  it("restarts the wait where the listener seeks while the track still decodes", async () => {
+    const { element, play } = starting();
+    render(element);
+    await settle();
+    const answer = holdNextFetch();
+    play();
+    await settle();
+    expect(sources).toHaveLength(0);
+    act(() => {
+      element.currentTime = 0.5;
+      element.dispatchEvent(new Event("seeking"));
+      element.dispatchEvent(new Event("seeked"));
+    });
+    answer();
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    expect(sources[0].start).toHaveBeenCalledWith(5, 0.5, 1.5);
+    expect(element.muted).toBe(true);
+  });
+
+  it("stops a scheduled join when the next item is replaced", async () => {
+    const hook = render(playing());
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    hook.rerender({ mediaID: "m1", next: nextItem("m3") });
+    expect(sources[0].stop).toHaveBeenCalled();
+    expect(sources[0].disconnect).toHaveBeenCalled();
+    // The replacement is decoded and joined in its place.
+    await vi.waitFor(() => expect(sources).toHaveLength(2));
+    expect(sources[1].start.mock.calls[0][0]).toBeCloseTo(5.8, 9);
+  });
+
+  it("hands the sound back when the join is turned off on the same item", async () => {
+    const { element, play } = starting();
+    const hook = render(element);
+    await settle();
+    play();
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    expect(element.muted).toBe(true);
+    // A Watch Party leads: the player stops following the queue.
+    hook.rerender({ mediaID: "m1", next: nextItem("m2"), enabled: false });
+    expect(sources[0].stop).toHaveBeenCalled();
+    expect(element.muted).toBe(false);
+  });
+
+  it("schedules a join from the element again after it buffers", async () => {
+    const element = playing();
+    render(element);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    act(() => {
+      element.dispatchEvent(new Event("waiting"));
+    });
+    expect(sources[0].stop).toHaveBeenCalled();
+    // Playing again 0.5 s from the end, at context time 6.
+    contexts[0].currentTime = 6;
+    act(() => {
+      element.currentTime = 9.5;
+      element.dispatchEvent(new Event("playing"));
+    });
+    expect(sources).toHaveLength(2);
+    expect(sources[1].start.mock.calls[0][0]).toBeCloseTo(6.5, 9);
+  });
+
+  it("drops the decoded tracks of a previous item that an HLS item replaces", async () => {
+    const { element, play } = starting();
+    const hook = render(element);
+    await settle();
+    play();
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    hook.rerender({
+      mediaID: "m5",
+      next: nextItem("m6"),
+      stream: { kind: "hls", url: "/api/media/m5/master.m3u8" },
+    });
+    await settle();
+    expect(fetch).toHaveBeenCalledWith("/api/media/m6/stream", expect.anything());
   });
 
   it("lets the element play a track it cannot decode at once", async () => {
