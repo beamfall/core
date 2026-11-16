@@ -589,15 +589,20 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "libraryID", Kind: "string"},
 	},
 	"queueadd": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "position", Kind: "number", Optional: true},
 	},
-	"queueclear": {},
+	"queueclear": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
+	},
 	"queuemove": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 		{Name: "position", Kind: "number"},
 	},
 	"queueremove": {
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "mediaID", Kind: "string"},
 	},
 	"recordengagement": {
@@ -1016,6 +1021,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"stationstart": {
 		{Name: "confirmReplace", Kind: "boolean", Optional: true},
+		{Name: "expectedProfileID", Kind: "string", Optional: true},
 		{Name: "rulesJSON", Kind: "string", Optional: true},
 		{Name: "seed", Kind: "string", Optional: true},
 		{Name: "seedID", Kind: "string"},

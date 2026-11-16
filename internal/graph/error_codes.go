@@ -76,6 +76,10 @@ const (
 	// ErrorReasonRevealPINIncorrect: the request carried a reveal PIN that does
 	// not match.
 	ErrorReasonRevealPINIncorrect ErrorReason = "REVEAL_PIN_INCORRECT"
+	// ErrorReasonProfileMismatch: the write named, in expectedProfileID, a
+	// Profile the session is no longer bound to (CORE-2177). Nothing was
+	// written; the client drops the write instead of retrying it.
+	ErrorReasonProfileMismatch ErrorReason = "PROFILE_MISMATCH"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -84,6 +88,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINNotSet,
 		ErrorReasonRevealPINRequired,
 		ErrorReasonRevealPINIncorrect,
+		ErrorReasonProfileMismatch,
 	}
 }
 
@@ -220,6 +225,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"another offline pack build for the same selection is running; retry when it finishes": ErrorCodeConflict,
 	"the previous offline pack build is still finishing; retry shortly":                    ErrorCodeConflict,
 	"queue has items; pass confirmReplace to replace it":                                   ErrorCodeConflict,
+	"the session is bound to another profile":                                              ErrorCodeConflict,
 	"session has no active playback":                                                       ErrorCodeConflict,
 	"scan preview token was already used":                                                  ErrorCodeConflict,
 	"scan preview token has expired":                                                       ErrorCodeConflict,

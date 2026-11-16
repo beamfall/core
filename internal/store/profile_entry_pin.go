@@ -226,6 +226,8 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 	if profileID == "" {
 		return ValidationError("profile ID is required")
 	}
+	s.sessionBindMu.Lock()
+	defer s.sessionBindMu.Unlock()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {

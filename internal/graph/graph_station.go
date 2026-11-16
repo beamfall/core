@@ -443,7 +443,9 @@ func (h *Handler) stationStart(ctx context.Context, scope auth.Scope, req reques
 	for i, c := range candidates {
 		mediaIDs[i] = store.MediaID(c.MediaID)
 	}
-	err = h.store.QueueReplaceWithStation(ctx, scope.ProfileID, mediaIDs, boolVar(req, "confirmReplace"), scope.LibraryFilter())
+	err = h.withExpectedProfile(ctx, scope, req, func() error {
+		return h.store.QueueReplaceWithStation(ctx, scope.ProfileID, mediaIDs, boolVar(req, "confirmReplace"), scope.LibraryFilter())
+	})
 	if errors.Is(err, store.ErrQueueReplaceNeedsConfirm) {
 		return nil, clientError("queue has items; pass confirmReplace to replace it")
 	}

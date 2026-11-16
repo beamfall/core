@@ -184,6 +184,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"RevokeAccessGrant":                       {},
 	"RevokeDevice":                            {},
 	"RevokeScopedAPIKey":                      {},
+	"RunWhileSessionBound":                    {},
 	"SavedFilterByID":                         {},
 	"SavedFilters":                            {},
 	"SavedStationByID":                        {},

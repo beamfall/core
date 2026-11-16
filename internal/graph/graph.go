@@ -3887,7 +3887,54 @@ func (h *Handler) notifyWatched(ctx context.Context, profileID store.ProfileID, 
 	})
 }
 
+// errProfileMismatch refuses a write whose expectedProfileID is not the
+// Profile the session is bound to (CORE-2177).
+var errProfileMismatch = reasonedClientError{
+	message: clientError("the session is bound to another profile"),
+	reason:  ErrorReasonProfileMismatch,
+}
+
+// withExpectedProfile runs write under the request's optional
+// expectedProfileID precondition (CORE-2177). Absent, write runs as before.
+// Present, write runs only if the session is bound to that Profile when it
+// applies: the store holds every Profile rebind off from the check until write
+// returns, so a write a client made for one Profile can never land in the
+// Profile a switchProfile moved the session to. A Profile-bound API key has no
+// session to rebind, so its fixed Profile is the whole check.
+func (h *Handler) withExpectedProfile(ctx context.Context, scope auth.Scope, req request, write func() error) error {
+	expected := store.ProfileID(trimmedVariable(req, "expectedProfileID"))
+	if expected == "" {
+		return write()
+	}
+	if expected != scope.ProfileID {
+		return errProfileMismatch
+	}
+	if scope.SessionID == "" {
+		return write()
+	}
+	err := h.store.RunWhileSessionBound(ctx, scope.SessionID, expected, write)
+	if errors.Is(err, store.ErrSessionProfileMismatch) {
+		return errProfileMismatch
+	}
+	return err
+}
+
+// queueOps applies the requested Play Queue mutations, all under one
+// expectedProfileID check when the request carries one.
 func (h *Handler) queueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
+	var data map[string]any
+	err := h.withExpectedProfile(ctx, scope, req, func() error {
+		var err error
+		data, err = h.applyQueueOps(ctx, scope, fields, req)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (h *Handler) applyQueueOps(ctx context.Context, scope auth.Scope, fields map[string]bool, req request) (map[string]any, error) {
 	data := map[string]any{}
 	if fields["queueadd"] {
 		mediaID := store.MediaID(trimmedVariable(req, "mediaID"))

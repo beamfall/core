@@ -955,6 +955,10 @@ type Store struct {
 	catalogPath    string
 	eventsPath     string
 	logger         *slog.Logger
+	// sessionBindMu holds Profile rebinds of every session (write lock) off
+	// while a write bound to a session's Profile checks the binding and
+	// commits (read lock); see RunWhileSessionBound. Take it before mu.
+	sessionBindMu sync.RWMutex
 	// convertStepHook, when non-nil, fires at each named ownership-succession
 	// fence point inside ConvertManagedFile. Test-only: it lets a
 	// deterministic interleaving test expire or hand over the job lease at an
@@ -1837,6 +1841,8 @@ func (s *Store) Profiles(ctx context.Context) ([]Profile, error) {
 // survives a Profile switch.
 // Disabled Profiles refuse the rebind like they refuse new sessions.
 func (s *Store) SetSessionProfile(ctx context.Context, id SessionID, profileID ProfileID) error {
+	s.sessionBindMu.Lock()
+	defer s.sessionBindMu.Unlock()
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
