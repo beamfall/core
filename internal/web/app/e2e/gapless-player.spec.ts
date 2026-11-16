@@ -167,7 +167,9 @@ function measureJoins(samples: Float32Array, sampleRate: number): Join[] {
   return joins;
 }
 
-test.use({ bypassCSP: true });
+// The app's service worker would answer the page's API requests itself, and
+// Firefox and WebKit do not let page.route see requests a service worker makes.
+test.use({ bypassCSP: true, serviceWorkers: "block" });
 
 test("album tracks join without a gap, the declared silence trimmed", async ({ page }) => {
   test.setTimeout(60_000);
@@ -204,15 +206,20 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
       contexts[0],
     );
     if (!busiest) return null;
-    // Render quanta are numbered; a missing one would read as a false gap. Breaks before the
-    // first sound (the recorder starting up) cannot touch a join, so the check starts there.
-    const firstSound = busiest.chunks.findIndex((chunk) => chunk.data.some((v) => Math.abs(v) > 0));
+    // Render quanta are numbered; a missing one would hide or fake a gap. Each break is
+    // kept with its sample offset, so only one near a join fails the run (an audio thread
+    // starting up can skip quanta well before the first join).
     const breaks = busiest.chunks.flatMap((chunk, i, all) => {
-      if (firstSound < 0 || i <= firstSound) return [];
+      if (i === 0) return [];
       const expected = all[i - 1].frame + all[i - 1].data.length;
       return chunk.frame === expected
         ? []
-        : [`chunk ${i}: frame ${chunk.frame}, expected ${expected}`];
+        : [
+            {
+              at: i * chunk.data.length,
+              note: `chunk ${i}: frame ${chunk.frame}, expected ${expected}`,
+            },
+          ];
     });
     return {
       sampleRate: busiest.sampleRate,
@@ -222,11 +229,18 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
   });
   expect(capture, "the page made no AudioContext").not.toBeNull();
   if (!capture) return;
-  expect(capture.breaks, "the recorder missed render quanta").toEqual([]);
   const samples = Float32Array.from(capture.samples);
   const joins = measureJoins(samples, capture.sampleRate);
   // Logged so a run states the measured silence, not only pass or fail.
   console.log(`[gapless] joins ${JSON.stringify(joins)}`);
+  const second = capture.sampleRate;
+  const nearJoin = capture.breaks.filter((b) =>
+    joins.some((join) => Math.abs(b.at - join.at) <= second),
+  );
+  expect(
+    nearJoin.map((b) => b.note),
+    "the recorder missed render quanta near a join",
+  ).toEqual([]);
   expect(joins.map((join) => [join.from, join.to])).toEqual([
     [440, 660],
     [660, 880],

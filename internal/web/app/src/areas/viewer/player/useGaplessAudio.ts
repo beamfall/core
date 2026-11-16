@@ -28,6 +28,12 @@ const JOIN_AHEAD_SECONDS = 1;
 const JOIN_MARGIN_SECONDS = 0.05;
 /** How far the silent element may drift from what is heard. */
 export const SYNC_TOLERANCE_SECONDS = 0.25;
+/**
+ * The silent element is moved at most this often. An engine can report its
+ * old position for a while after a seek (WebKit's GStreamer backend does), and
+ * correcting every report would seek it in a loop.
+ */
+export const STEP_INTERVAL_SECONDS = 1;
 /** A declared delay or padding is trimmed only when its samples stay below this peak. */
 export const QUIET_PEAK = 0.01;
 /**
@@ -133,8 +139,10 @@ interface Bridge {
   /** The decoded tracks' output; follows the element's volume and the listener's mute. */
   output: GainNode;
   segments: Segment[];
-  /** Set across a seek this module makes, so it is not taken for the listener's. */
+  /** Set from a seek this module makes until it completes, so it is not taken for the listener's. */
   ownSeek: boolean;
+  /** Context time of this module's last seek. */
+  steppedAt: number;
   /** True once the element plays its current source (reset when it loads another). */
   elementPlaying: boolean;
 }
@@ -146,7 +154,10 @@ function listenerVolume(video: HTMLMediaElement): number {
 }
 
 // The element's bridge with its own context, made when absent. Nothing routes
-// the element into it.
+// the element into it. A silent source plays on the context for its whole life:
+// an engine can let its output idle while nothing plays and start it again late,
+// losing the start of the first decoded track (WebKit's GStreamer backend loses
+// about 0.4 s).
 function bridgeFor(video: HTMLMediaElement): Bridge | null {
   const existing = bridges.get(video);
   if (existing) return existing;
@@ -156,11 +167,16 @@ function bridgeFor(video: HTMLMediaElement): Bridge | null {
   const output = context.createGain();
   output.gain.value = listenerVolume(video);
   output.connect(context.destination);
+  const keepAwake = context.createConstantSource();
+  keepAwake.offset.value = 0;
+  keepAwake.connect(output);
+  keepAwake.start();
   const bridge: Bridge = {
     context,
     output,
     segments: [],
     ownSeek: false,
+    steppedAt: Number.NEGATIVE_INFINITY,
     elementPlaying: !video.paused,
   };
   bridges.set(video, bridge);
@@ -303,11 +319,8 @@ export function useGaplessAudio({
     };
     const onSeeking = () => {
       const bridge = bridges.get(video);
-      if (!bridge) return;
-      if (bridge.ownSeek) {
-        bridge.ownSeek = false;
-        return;
-      }
+      // An engine may report one seek more than once before it completes.
+      if (!bridge || bridge.ownSeek) return;
       // A resume seek while a new source loads is the engine's, not the listener's.
       if (bridge.elementPlaying && bridge.segments.length > 0) handBack(video);
     };
@@ -328,6 +341,8 @@ export function useGaplessAudio({
       const bridge = bridges.get(video);
       if (!bridge) return;
       bridge.elementPlaying = false;
+      // A new source abandons a seek in flight.
+      bridge.ownSeek = false;
       // The element loads the next track while a decoded one plays: it must
       // not be heard.
       shadow(video);
@@ -340,13 +355,20 @@ export function useGaplessAudio({
         handBack(video);
         return;
       }
-      if (!bridge.elementPlaying || video.seeking) return;
+      if (!bridge.elementPlaying || video.seeking || bridge.ownSeek) return;
+      const now = bridge.context.currentTime;
+      if (now - bridge.steppedAt < STEP_INTERVAL_SECONDS) return;
       const segment = segmentFor(bridge, mediaIDRef.current);
       if (!segment) return;
-      const heard = bridge.context.currentTime - segment.start + segment.offset;
+      const heard = now - segment.start + segment.offset;
       if (heard <= 0 || Math.abs(video.currentTime - heard) <= SYNC_TOLERANCE_SECONDS) return;
       bridge.ownSeek = true;
+      bridge.steppedAt = now;
       video.currentTime = heard;
+    };
+    const onSeeked = () => {
+      const bridge = bridges.get(video);
+      if (bridge) bridge.ownSeek = false;
     };
     const onPlaying = () => {
       const bridge = bridges.get(video);
@@ -365,6 +387,7 @@ export function useGaplessAudio({
     };
     video.addEventListener("pause", onPause);
     video.addEventListener("seeking", onSeeking);
+    video.addEventListener("seeked", onSeeked);
     video.addEventListener("ratechange", onRate);
     video.addEventListener("volumechange", onVolume);
     video.addEventListener("emptied", onLoad);
@@ -378,6 +401,7 @@ export function useGaplessAudio({
     return () => {
       video.removeEventListener("pause", onPause);
       video.removeEventListener("seeking", onSeeking);
+      video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("ratechange", onRate);
       video.removeEventListener("volumechange", onVolume);
       video.removeEventListener("emptied", onLoad);

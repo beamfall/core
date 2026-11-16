@@ -22,9 +22,11 @@ keep a short silence.
   Web Audio. A media element source cannot be removed and the player reuses one element across
   items, so routing it would silence a later item Web Audio cannot hear (native HLS, the CORE-1671
   regression fixed in commit 9f637c65). One path therefore serves Chrome, Safari and Firefox,
-  whatever stream the current item plays.
+  whatever stream the current item plays. A silent source keeps the context's output running, since
+  an engine can idle it while nothing plays and lose the start of the first decoded track.
 - The media element keeps driving the transport, progress, Media Session and the advance: from the
-  end of its track it plays the next track muted, kept within a quarter second of what is heard. The
+  end of its track it plays the next track muted, moved back within a quarter second of what is
+  heard at most once a second (an engine can report its old position for a while after a seek). The
   listener's own mute is kept apart while the element is held muted, so the transport and remote
   control show and change the listener's choice. While the
   decoded audio plays, the following track is chained on the same clock, so later joins are

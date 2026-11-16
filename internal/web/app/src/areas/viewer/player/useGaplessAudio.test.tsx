@@ -91,11 +91,20 @@ const sources: FakeSource[] = [];
 let probedSeconds = 2;
 let decodedSeconds = 2;
 const gains: ReturnType<typeof param>[] = [];
+const constants: {
+  offset: ReturnType<typeof param>;
+  connect: ReturnType<typeof vi.fn>;
+  start: ReturnType<typeof vi.fn>;
+}[] = [];
 
 let contextState: AudioContextState = "running";
+const contexts: FakeAudioContext[] = [];
 
 // No createMediaElementSource: the join must never route the element.
 class FakeAudioContext {
+  constructor() {
+    contexts.push(this);
+  }
   state = contextState;
   currentTime = 5;
   destination = {};
@@ -105,6 +114,11 @@ class FakeAudioContext {
     const gain = param(1);
     gains.push(gain);
     return { connect: vi.fn(), disconnect: vi.fn(), gain };
+  });
+  createConstantSource = vi.fn(() => {
+    const source = { offset: param(1), connect: vi.fn(), start: vi.fn() };
+    constants.push(source);
+    return source;
   });
   createBufferSource = vi.fn(() => {
     const source: FakeSource & { connect: ReturnType<typeof vi.fn> } = {
@@ -129,6 +143,8 @@ const createElement = document.createElement.bind(document);
 beforeEach(() => {
   sources.length = 0;
   gains.length = 0;
+  constants.length = 0;
+  contexts.length = 0;
   contextState = "running";
   probedSeconds = 2;
   decodedSeconds = 2;
@@ -222,6 +238,14 @@ describe("useGaplessAudio", () => {
     expect(listenerMuted(element)).toBe(false);
   });
 
+  it("keeps the context's output awake with a silent source", async () => {
+    render(playing());
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    expect(constants).toHaveLength(1);
+    expect(constants[0].offset.value).toBe(0);
+    expect(constants[0].start).toHaveBeenCalledTimes(1);
+  });
+
   it("waits for a running context before it joins", async () => {
     contextState = "suspended";
     render(playing());
@@ -260,6 +284,41 @@ describe("useGaplessAudio", () => {
     });
     expect(sources[0].stop).toHaveBeenCalled();
     expect(element.muted).toBe(false);
+  });
+
+  it("moves the silent element to what is heard at most once a second", async () => {
+    const element = playing();
+    const hook = render(element);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    const context = contexts[0];
+    // The join at 5.8: the element loads m2 and starts it from 0.
+    act(() => {
+      element.dispatchEvent(new Event("ended"));
+      element.currentTime = 0;
+      element.dispatchEvent(new Event("loadstart"));
+    });
+    hook.rerender({ mediaID: "m2", next: nextItem("m3") });
+    context.currentTime = 6.5;
+    act(() => {
+      element.dispatchEvent(new Event("playing"));
+    });
+    expect(element.currentTime).toBeCloseTo(0.7, 9);
+    // An engine that reports the old position, and the seek more than once,
+    // is neither sought again nor taken for the listener.
+    const tick = (time: number, reported: number, ...events: string[]) =>
+      act(() => {
+        context.currentTime = time;
+        element.currentTime = reported;
+        for (const type of events) element.dispatchEvent(new Event(type));
+      });
+    tick(6.6, 0, "seeking", "seeking", "timeupdate");
+    expect(element.currentTime).toBe(0);
+    tick(6.9, 0, "seeked", "timeupdate");
+    expect(element.currentTime).toBe(0);
+    tick(7.6, 0, "timeupdate");
+    expect(element.currentTime).toBeCloseTo(1.8, 9);
+    expect(element.muted).toBe(true);
+    expect(sources[0].stop).not.toHaveBeenCalled();
   });
 
   it("chains the track after a decoded one on the audio clock", async () => {

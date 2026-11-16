@@ -63,8 +63,7 @@ soon as it finishes or is stopped, and hold at most two decoded tracks at once.
 The decoded next track SHALL start on the Web Audio clock where the current track's audio stops.
 The first join after the media element played the current track SHALL leave no silence, and no
 overlap of the two tracks, longer than 20 ms beyond the source's own; each later join between two
-decoded tracks SHALL leave neither longer than 2 ms. The muted media element SHALL stay within
-0.25 s of what is heard, so the transport, progress reports and the advance keep following it.
+decoded tracks SHALL leave neither longer than 2 ms.
 
 #### Scenario: Element to decoded track
 
@@ -75,6 +74,16 @@ decoded tracks SHALL leave neither longer than 2 ms. The muted media element SHA
 
 - **WHEN** the second album track ends with the third decoded
 - **THEN** the third track is heard within 2 ms of the second track's last sample
+
+### Requirement: The muted element follows what is heard
+
+While a decoded track is heard, the muted media element SHALL be moved back within 0.25 s of what is
+heard, at most once a second, so the transport, progress reports and the advance keep following it.
+
+#### Scenario: Element drifts from the decoded track
+
+- **WHEN** the muted element is more than 0.25 s from the decoded track's position
+- **THEN** it is moved to that position, and not again within the next second
 
 ### Requirement: The server's gapless trim is applied once
 
