@@ -2,13 +2,11 @@
 
 ### Requirement: Verified HDR sources decode, scale and tone-map on the device
 
-When a transcode needs an HDR-to-SDR tone-map, the source video is HEVC with a PQ or HLG transfer
-and no Dolby Vision profile 7 or 8, the verified encoder is QSV or VA-API, and the rendition has
-no subtitle burn-in, interlaced source, non-square pixels or composed picture, the server SHALL
-decode, scale and tone-map on the selected render node and hand device frames to the encoder,
-provided the device-decode probe certified that chain for the encoder backend and transfer class
-on this host and FFmpeg build. In every other case the server SHALL emit the arguments it emitted
-before this requirement existed.
+The server SHALL decode, scale and tone-map an eligible HDR source on the selected render node and
+hand device frames to the encoder, once the device-decode probe certified that chain for the
+encoder backend and transfer class. A source is eligible when it is HEVC with a PQ or HLG transfer,
+the verified encoder is QSV or VA-API, and nothing in the rendition needs a system-memory filter.
+In every other case the server SHALL emit the arguments it emitted without device decode.
 
 #### Scenario: A verified source stays on the device
 
