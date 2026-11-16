@@ -89,20 +89,19 @@ func (s *Service) MarkEncryptedReferencesComplete(libraryID store.LibraryID) err
 }
 
 // writeLedgerMarker writes an empty marker in libraryID's ledger and syncs it
-// and every directory above it. An existing marker was synced when written.
+// and every directory above it. An existing marker is synced again: an
+// earlier write may have created it and then failed to sync, so its presence
+// alone does not prove it is durable.
 func writeLedgerMarker(root *os.Root, libraryID store.LibraryID, name string) error {
 	rel := encryptedRefsLibraryRel(libraryID)
 	marker := filepath.Join(rel, name)
-	if _, err := root.Lstat(marker); err == nil {
-		return nil
-	}
 	if err := ensureRootDir(root, encryptedRefsDir); err != nil {
 		return err
 	}
 	if err := ensureRootDir(root, rel); err != nil {
 		return err
 	}
-	file, err := root.OpenFile(marker, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	file, err := root.OpenFile(marker, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
