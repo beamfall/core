@@ -18,6 +18,40 @@ server, no Beamfall account, and no telemetry. It is free software under the [AG
 > published from it yet, so today the way to run Core is to [build it from source](#from-source).
 > See [Project status](#project-status) for exactly what is and isn't in place.
 
+## New to Beamfall? Start here
+
+There is no installer yet, so the first run means building Beamfall yourself. In short:
+
+1. **Check what you need.** A Mac or Linux computer that stays on and can read your media files,
+   with Git, [Go](go.mod), FFmpeg, and Node.js with npm installed. The server does not run on
+   Windows yet.
+2. **Download and build it:**
+
+   ```sh
+   git clone https://github.com/beamfall/core.git
+   cd core
+   npm --prefix internal/web/app ci
+   npm --prefix internal/web/app run build
+   go build -o beamfall ./cmd/beamfall
+   ```
+
+3. **Start it** and leave the terminal open:
+
+   ```sh
+   ./beamfall serve --addr 0.0.0.0:8800 --data-dir "$HOME/beamfall-data"
+   ```
+
+4. **Finish setup in your browser.** Open the address the server prints under "From this network"
+   from any browser on your home network. Setup asks for an admin password, the kinds of media you
+   have and the folder that holds them, then scans it. Select a title and press Play.
+
+**Need help?** Search or ask in [GitHub Issues](https://github.com/beamfall/core/issues). Posts
+there are public, so leave out passwords, tokens and pairing codes. Report security problems
+privately instead, as [Contributing and security](#contributing-and-security) describes.
+
+A step-by-step owner guide with screenshots is written but not published yet. Until it is, the
+rest of this README and [`docs/README.md`](docs/README.md) are the reference.
+
 ## Features
 
 ### Playback
