@@ -88,6 +88,11 @@ type Estimate struct {
 	// the wizard estimate). They drive the per-kind deferrable counts.
 	EstimatedVideoFiles int `json:"estimatedVideoFiles"`
 	EstimatedAudioFiles int `json:"estimatedAudioFiles"`
+	// EstimatedImageFiles counts still images (CORE-2184). They are inline scan
+	// work but get no Generated Assets, so they feed no DeferrableWork entry.
+	// Internal only: the client-core-wire schema has no image field, so it is
+	// not serialised; EstimatedFiles still includes them.
+	EstimatedImageFiles int `json:"-"`
 	// EstimatedInlineSeconds is the projected wall-clock of the inline,
 	// playability-gating scan (discover + fingerprint + probe + import). Seconds,
 	// rounded, so the wire shape carries no sub-second noise the wizard would
@@ -106,7 +111,7 @@ type Estimate struct {
 // videoExtensions is the video subset of the scan's media allowlist — the
 // estimate classifies a file as video vs audio by extension alone (the real
 // class is the probe's job; this is a cheap wizard guess). Any allowlisted
-// extension not here is audio. Keep in sync with mediaExtensions in scan.go.
+// extension not here (and not an image) is audio. Keep in sync with mediaExtensions in scan.go.
 var videoExtensions = map[string]bool{
 	"mp4": true, "m4v": true, "mov": true, "mkv": true, "webm": true,
 	"avi": true, "wmv": true, "asf": true, "ts": true, "m2ts": true,
@@ -134,7 +139,7 @@ func EstimateRoots(ctx context.Context, roots []string, imagesAreContent bool) (
 			return Estimate{}, err
 		}
 	}
-	est.EstimatedFiles = est.EstimatedVideoFiles + est.EstimatedAudioFiles
+	est.EstimatedFiles = est.EstimatedVideoFiles + est.EstimatedAudioFiles + est.EstimatedImageFiles
 	est.EstimatedInlineSeconds = int((time.Duration(est.EstimatedFiles) * inlineCostPerFile).Round(time.Second).Seconds())
 	// The deferrable breakdown mirrors the ADR-0033 Generated Asset family and
 	// the asset-sweep's per-class generators (genassets.SweepHandler): video
@@ -198,7 +203,9 @@ func estimateRoot(ctx context.Context, root string, imagesAreContent bool, est *
 		if isExtraPath(root, path) || isArtworkCompanion(path, imagesAreContent) {
 			return nil
 		}
-		if videoExtensions[ext] {
+		if imageExtensions[ext] {
+			est.EstimatedImageFiles++
+		} else if videoExtensions[ext] {
 			est.EstimatedVideoFiles++
 		} else {
 			est.EstimatedAudioFiles++

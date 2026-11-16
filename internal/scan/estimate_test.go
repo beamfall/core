@@ -187,3 +187,41 @@ func TestEstimateCountsSidecarNamedImagesByPluginClass(t *testing.T) {
 		})
 	}
 }
+
+// TestEstimateImagesAreNotAudio is the CORE-2184 acceptance: still images are
+// inline work but never forecast waveform or silence-map backlog.
+func TestEstimateImagesAreNotAudio(t *testing.T) {
+	cases := []struct {
+		name                       string
+		files                      []string
+		files_, video, audio, imgs int
+	}{
+		{"images only", []string{"a.jpg", "b.PNG", "c.heic"}, 3, 0, 0, 3},
+		{"mixed", []string{"a.jpg", "b.mp4", "c.flac"}, 3, 1, 1, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, f := range tc.files {
+				writeScanFile(t, root, f, []byte("x"))
+			}
+			est, err := EstimateRoots(context.Background(), []string{root}, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if est.EstimatedFiles != tc.files_ || est.EstimatedVideoFiles != tc.video ||
+				est.EstimatedAudioFiles != tc.audio || est.EstimatedImageFiles != tc.imgs {
+				t.Fatalf("estimate = %+v, want files=%d video=%d audio=%d images=%d", est, tc.files_, tc.video, tc.audio, tc.imgs)
+			}
+			for _, w := range est.DeferrableWork {
+				want := tc.video
+				if w.Kind == DeferrableWaveform || w.Kind == DeferrableSilenceMap {
+					want = tc.audio
+				}
+				if w.EstimatedCount != want {
+					t.Errorf("%s count = %d, want %d", w.Kind, w.EstimatedCount, want)
+				}
+			}
+		})
+	}
+}
