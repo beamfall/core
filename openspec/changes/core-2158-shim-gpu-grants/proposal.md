@@ -14,8 +14,10 @@ retry. The probe does not predict the job it certifies.
 
 - The shim gains a `--dri` flag. With it, and only on Linux, the ruleset adds, each only when
   present: `/dev/dri` directory listing (no file access), read, write and (landlock ABI 5+)
-  device-ioctl on each `/dev/dri/renderD*` render node, and read-only `/etc/OpenCL/vendors`.
-  Primary (`card*`) nodes, `/sys` and vendor device nodes are never granted.
+  device-ioctl on each `/dev/dri/renderD*` render node, read-only on each render node's own
+  sysfs PCI device directory (libdrm's `drmGetDevice2` reads the vendor and device IDs there and
+  the iHD and Mesa drivers fail without them), and read-only `/etc/OpenCL/vendors`. Primary
+  (`card*`) nodes, the rest of `/sys` and vendor device nodes are never granted.
 - An HLS transcode asks for `--dri` only when its rendition encodes or tone-maps on QSV or VA-API.
   Software, audio-only, composed, pipe and encrypted-live jobs keep the unchanged ruleset.
 - The encoder, tone-map and device-decode probes run through the same shim with the same grants

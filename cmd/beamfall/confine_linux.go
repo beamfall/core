@@ -158,17 +158,42 @@ var (
 // enumerate adapters; read, write and device ioctl on each render node, which
 // the kernel designs for unprivileged compute and encode; and read-only access
 // to the OpenCL ICD registry, whose .icd files name the vendor library under
-// the already granted /usr/lib. The DRM primary (card*) nodes carry modesetting
-// and are never granted, nor is /sys. Every path is optional: a host without a
-// GPU or an ICD gets no rule, and the probe that runs under this same ruleset
+// the already granted /usr/lib; and read-only access to each render node's own
+// PCI device directory in sysfs, where libdrm's drmGetDevice2 reads the vendor,
+// device and subsystem IDs that the iHD and Mesa drivers refuse to initialize
+// without. The DRM primary (card*) nodes carry modesetting and are never
+// granted, nor is any other part of /sys. Every path is optional: a host without
+// a GPU or an ICD gets no rule, and the probe that runs under this same ruleset
 // then reports the chain unavailable.
 func hardwareDeviceRules(abi int) []landlockRule {
 	rules := []landlockRule{{path: driDir, access: unix.LANDLOCK_ACCESS_FS_READ_DIR, optional: true}}
 	nodes, _ := filepath.Glob(filepath.Join(driDir, "renderD*")) // only ErrBadPattern, and the pattern is fixed
 	for _, node := range nodes {
 		rules = append(rules, landlockRule{path: node, access: renderNodeAccess(abi), optional: true})
+		if dev, ok := renderNodeSysfsDevice(node); ok {
+			rules = append(rules, landlockRule{path: dev, access: readAccess(), optional: true})
+		}
 	}
 	return append(rules, landlockRule{path: openCLVendorsDir, access: readAccess(), optional: true})
+}
+
+// renderNodeSysfsDevice resolves a render node to the sysfs directory of the
+// device behind it (/sys/dev/char/MAJOR:MINOR/device, symlinks followed, which
+// is a /sys/devices/pci… directory on a PCI GPU). It runs before confinement,
+// so the shim can still stat and resolve; landlock checks the opened file's
+// resolved path, which is why the grant names the link's target. It is a
+// variable so a test can map fixture nodes to fixture directories.
+var renderNodeSysfsDevice = func(node string) (string, bool) {
+	var st unix.Stat_t
+	if err := unix.Stat(node, &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFCHR {
+		return "", false
+	}
+	link := fmt.Sprintf("/sys/dev/char/%d:%d/device", unix.Major(st.Rdev), unix.Minor(st.Rdev))
+	dev, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		return "", false
+	}
+	return dev, true
 }
 
 // renderNodeAccess is the file-valid access set for a render node (a character

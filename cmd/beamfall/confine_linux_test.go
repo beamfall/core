@@ -496,15 +496,32 @@ func driFixture(t *testing.T) (dri, vendors string) {
 			t.Fatal(err)
 		}
 	}
+	sysfs := filepath.Join(root, "sys", "renderD128")
+	if err := os.MkdirAll(sysfs, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sysfs, "vendor"), []byte("0x8086\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	setDRIPaths(t, dri, vendors)
 	return dri, vendors
 }
 
 func setDRIPaths(t *testing.T, dri, vendors string) {
 	t.Helper()
-	oldDRI, oldVendors := driDir, openCLVendorsDir
-	t.Cleanup(func() { driDir, openCLVendorsDir = oldDRI, oldVendors })
+	oldDRI, oldVendors, oldSysfs := driDir, openCLVendorsDir, renderNodeSysfsDevice
+	t.Cleanup(func() { driDir, openCLVendorsDir, renderNodeSysfsDevice = oldDRI, oldVendors, oldSysfs })
 	driDir, openCLVendorsDir = dri, vendors
+	// Fixture render nodes are regular files with no sysfs device; map each to
+	// <fixture root>/sys/<node name> when the fixture made that directory. It
+	// sits outside the DRI directory so the renderD* glob never matches it.
+	renderNodeSysfsDevice = func(node string) (string, bool) {
+		dev := filepath.Join(filepath.Dir(dri), "sys", filepath.Base(node))
+		if info, err := os.Stat(dev); err == nil && info.IsDir() { // #nosec G703 -- fixture path beneath a temporary directory
+			return dev, true
+		}
+		return "", false
+	}
 }
 
 // TestFFmpegRulesGrantGPUPathsOnlyWithDRI pins the CORE-2158 ruleset: without
@@ -526,6 +543,7 @@ func TestFFmpegRulesGrantGPUPathsOnlyWithDRI(t *testing.T) {
 	if got := gpu(ffmpegRules([]string{"/media"}, []string{"/out"}, "/usr/bin/ffmpeg", 5, false)); len(got) != 0 {
 		t.Fatalf("ruleset without --dri grants GPU paths: %v", got)
 	}
+	sysfsDir := filepath.Join(filepath.Dir(dri), "sys", "renderD128")
 	for _, abi := range []int{1, 3, 4, 5, 6} {
 		got := gpu(ffmpegRules(nil, nil, "/usr/bin/ffmpeg", abi, true))
 		fileRW := uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE)
@@ -536,7 +554,10 @@ func TestFFmpegRulesGrantGPUPathsOnlyWithDRI(t *testing.T) {
 			dri:                              {path: dri, access: unix.LANDLOCK_ACCESS_FS_READ_DIR, optional: true},
 			filepath.Join(dri, "renderD128"): {path: filepath.Join(dri, "renderD128"), access: fileRW, optional: true},
 			filepath.Join(dri, "renderD129"): {path: filepath.Join(dri, "renderD129"), access: fileRW, optional: true},
-			vendors:                          {path: vendors, access: readAccess(), optional: true},
+			// renderD128's own sysfs device directory, read-only; renderD129
+			// has none in the fixture and gets no sysfs rule.
+			sysfsDir: {path: sysfsDir, access: readAccess(), optional: true},
+			vendors:  {path: vendors, access: readAccess(), optional: true},
 		}
 		if !maps.Equal(got, want) {
 			t.Errorf("ABI %d GPU rules = %+v, want %+v", abi, got, want)
@@ -613,13 +634,18 @@ func TestLandlockDRIGrantEnforced(t *testing.T) {
 		icd := openErr(filepath.Join(openCLVendorsDir, "intel.icd"), os.O_RDONLY)
 		icdWrite := openErr(filepath.Join(openCLVendorsDir, "intel.icd"), os.O_WRONLY)
 		card := openErr(filepath.Join(driDir, "card0"), os.O_RDONLY)
-		if !errors.Is(card, os.ErrPermission) || !errors.Is(icdWrite, os.ErrPermission) {
+		sysfsVendor := filepath.Join(filepath.Dir(driDir), "sys", "renderD128", "vendor")
+		vendor := openErr(sysfsVendor, os.O_RDONLY)
+		vendorWrite := openErr(sysfsVendor, os.O_WRONLY)
+		if !errors.Is(card, os.ErrPermission) || !errors.Is(icdWrite, os.ErrPermission) ||
+			!errors.Is(vendorWrite, os.ErrPermission) {
 			os.Exit(4)
 		}
-		if withDRI && (render != nil || icd != nil) {
+		if withDRI && (render != nil || icd != nil || vendor != nil) {
 			os.Exit(5)
 		}
-		if !withDRI && (!errors.Is(render, os.ErrPermission) || !errors.Is(icd, os.ErrPermission)) {
+		if !withDRI && (!errors.Is(render, os.ErrPermission) || !errors.Is(icd, os.ErrPermission) ||
+			!errors.Is(vendor, os.ErrPermission)) {
 			os.Exit(6)
 		}
 		os.Exit(0)

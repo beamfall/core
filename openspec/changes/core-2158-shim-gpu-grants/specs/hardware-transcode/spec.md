@@ -23,6 +23,17 @@ job without a QSV or VA-API encode or tone-map SHALL NOT receive any of these gr
 - **WHEN** the ruleset grants the render nodes
 - **THEN** no `/dev/dri/card*` node is granted
 
+### Requirement: Each granted render node's sysfs device is readable
+
+With the render-node grants, the ruleset SHALL also grant read-only access to each render node's
+own sysfs device directory, the resolved `/sys/dev/char/MAJOR:MINOR/device`, where libdrm reads
+the PCI IDs the drivers need. It SHALL NOT grant any other part of `/sys`.
+
+#### Scenario: Driver discovery reads the render node's device
+
+- **WHEN** the ruleset grants a render node whose sysfs device directory resolves
+- **THEN** that directory is granted read-only and no other sysfs path is granted
+
 ### Requirement: Hardware probes run under the transcode's confinement
 
 The encoder, tone-map and device-decode probes SHALL run FFmpeg through the same hardening shim

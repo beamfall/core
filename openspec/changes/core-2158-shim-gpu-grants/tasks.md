@@ -1,7 +1,7 @@
 ## 1. Shim
 
 - [x] 1.1 `--dri` shim flag, parsed and threaded to the Linux ruleset
-- [x] 1.2 Ruleset: `/dev/dri` listing, `renderD*` read/write/ioctl, `/etc/OpenCL/vendors` read-only, each only when present
+- [x] 1.2 Ruleset: `/dev/dri` listing, `renderD*` read/write/ioctl, each render node's sysfs device directory read-only, `/etc/OpenCL/vendors` read-only, each only when present
 - [x] 1.3 Tests: ruleset contents with and without `--dri`, ioctl only at ABI 5+, no `card*` node
 
 ## 2. Transcodes
