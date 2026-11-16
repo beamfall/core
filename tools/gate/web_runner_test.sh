@@ -6,6 +6,9 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 cp "$ROOT/internal/web/app/package.json" "$TMP/package.json"
+# The check script also runs the colour-literal lint; the fixture has no source to lint.
+mkdir -p "$TMP/scripts"
+: >"$TMP/scripts/check-colour-literals.mjs"
 
 mkdir -p "$TMP/bin"
 for command in biome tsc vite vitest; do
