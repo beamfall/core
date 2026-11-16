@@ -1,0 +1,6 @@
+- [ ] Wasm `Governor` with the reference defaults, fed the frame interval outside switches, freed on dispose
+- [ ] Level ladder (scale, detail reduction) as in the Oscillux reference host
+- [ ] Visual feedback and switch render at the scaled size; present, history and limiter stay at full size
+- [ ] Level changes between switches keep the visual's trails and the limiter state
+- [ ] Tests: ladder mapping and render size
+- [ ] Verified live: frame pacing at full-screen size on the owner's setup
