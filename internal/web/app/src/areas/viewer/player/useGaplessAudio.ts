@@ -188,6 +188,8 @@ interface Bridge {
   steppedAt: number;
   /** True once the element plays its current source (reset when it loads another). */
   elementPlaying: boolean;
+  /** Set while the element waits for data, until it plays again. */
+  stalled: boolean;
 }
 
 const bridges = new WeakMap<HTMLMediaElement, Bridge>();
@@ -225,6 +227,7 @@ function bridgeFor(video: HTMLMediaElement): Bridge | null {
     ownSeek: false,
     steppedAt: Number.NEGATIVE_INFINITY,
     elementPlaying: !video.paused,
+    stalled: false,
   };
   // A start held for a gesture's resume goes ahead once the context runs.
   context.addEventListener?.("statechange", () => startPending(bridge, video));
@@ -458,6 +461,8 @@ export function useGaplessAudio({
 }) {
   const mediaIDRef = useRef(mediaID);
   mediaIDRef.current = mediaID;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   // A new item: the decoded track it names carries on (the element now
   // shadows it); any other item takes the sound back.
@@ -492,6 +497,8 @@ export function useGaplessAudio({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    // Only while the join is on does a start from silence go to Web Audio.
+    const armed = (bridge: Bridge) => enabledRef.current && arm(bridge, video, mediaIDRef.current);
     const active = () => {
       const bridge = bridges.get(video);
       return bridge && bridge.segments.length > 0 ? bridge : undefined;
@@ -521,7 +528,7 @@ export function useGaplessAudio({
       const id = mediaIDRef.current;
       const resumes = muteHeld(video) && (bridge.tracks.has(id) || bridge.pending?.mediaID === id);
       interrupt(bridge);
-      if (resumes && !video.paused && !arm(bridge, video, mediaIDRef.current)) handBack(video);
+      if (resumes && !video.paused && !armed(bridge)) handBack(video);
     };
     const onRate = () => {
       if (video.playbackRate !== 1 && active()) handBack(video);
@@ -573,10 +580,15 @@ export function useGaplessAudio({
       if (bridge.pending) bridge.pending.from = video.currentTime;
       startPending(bridge, video);
     };
+    const onStalled = () => {
+      const bridge = bridges.get(video);
+      if (bridge) bridge.stalled = true;
+    };
     const onPlaying = () => {
       const bridge = bridges.get(video);
       if (!bridge) return;
       bridge.elementPlaying = true;
+      bridge.stalled = false;
       startPending(bridge, video);
       keepInStep();
     };
@@ -586,7 +598,7 @@ export function useGaplessAudio({
       if (!bridge) return;
       wake(bridge);
       // Nothing to start on Web Audio: the element is heard.
-      if (bridge.segments.length === 0 && !arm(bridge, video, mediaIDRef.current)) handBack(video);
+      if (bridge.segments.length === 0 && !armed(bridge)) handBack(video);
     };
     const onEnded = () => {
       const bridge = bridges.get(video);
@@ -606,6 +618,8 @@ export function useGaplessAudio({
     video.addEventListener("emptied", onLoad);
     video.addEventListener("loadstart", onLoad);
     video.addEventListener("playing", onPlaying);
+    video.addEventListener("waiting", onStalled);
+    video.addEventListener("stalled", onStalled);
     video.addEventListener("timeupdate", keepInStep);
     video.addEventListener("ended", onEnded);
     video.addEventListener("play", onPlay);
@@ -620,6 +634,8 @@ export function useGaplessAudio({
       video.removeEventListener("emptied", onLoad);
       video.removeEventListener("loadstart", onLoad);
       video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("waiting", onStalled);
+      video.removeEventListener("stalled", onStalled);
       video.removeEventListener("timeupdate", keepInStep);
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("play", onPlay);
@@ -662,7 +678,13 @@ export function useGaplessAudio({
     const video = videoRef.current;
     if (!video || joinedID.current !== mediaID) return;
     joinedID.current = "";
-    if (bridges.has(video)) handBack(video);
+    const bridge = bridges.get(video);
+    if (!bridge) return;
+    handBack(video);
+    // Nothing decoded is kept to start again while the join is off.
+    bridge.leadDecode?.controller.abort();
+    bridge.leadDecode = null;
+    bridge.tracks.clear();
   }, [enabled, videoRef, mediaID]);
 
   // The element's own track, decoded when it starts from silence (arm).
@@ -713,7 +735,7 @@ export function useGaplessAudio({
       }
       // A held element is not heard: its own decoded track starts first.
       if (muteHeld(video) || bridge.pending) return;
-      if (video.paused || video.seeking || video.playbackRate !== 1) return;
+      if (video.paused || video.seeking || bridge.stalled || video.playbackRate !== 1) return;
       // The decoded track starts where the element's declared padding begins;
       // the element's own padding plays out beneath it.
       const endsIn = remaining() - padding;

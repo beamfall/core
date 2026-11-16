@@ -450,6 +450,37 @@ describe("useGaplessAudio", () => {
     expect(sources[1].start.mock.calls[0][0]).toBeCloseTo(6.5, 9);
   });
 
+  it("schedules no join from a stalled element when the decode finishes", async () => {
+    const element = playing();
+    const answer = holdNextFetch();
+    render(element);
+    await settle();
+    act(() => {
+      element.dispatchEvent(new Event("waiting"));
+    });
+    answer();
+    await settle();
+    expect(sources).toHaveLength(0);
+    act(() => {
+      element.dispatchEvent(new Event("playing"));
+    });
+    expect(sources).toHaveLength(1);
+  });
+
+  it("starts nothing on Web Audio again after the join is turned off", async () => {
+    const { element, play, pause } = starting();
+    const hook = render(element);
+    await settle();
+    play();
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    hook.rerender({ mediaID: "m1", next: nextItem("m2"), enabled: false });
+    const scheduled = sources.length;
+    pause();
+    play();
+    expect(element.muted).toBe(false);
+    expect(sources).toHaveLength(scheduled);
+  });
+
   it("drops the decoded tracks of a previous item that an HLS item replaces", async () => {
     const { element, play } = starting();
     const hook = render(element);
