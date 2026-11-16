@@ -1287,6 +1287,11 @@ type Rendition struct {
 	DoViBLCompatID    int
 	SampleAspectRatio string
 	FieldOrder        string
+	// SourceVideoCodec and SourceVideoBitDepth describe the source's primary
+	// video stream. They decide whether the source can be decoded on the
+	// device (see withDeviceDecode); zero values keep the software decode.
+	SourceVideoCodec    string
+	SourceVideoBitDepth int
 	// AudioOnly drops the video: the encode writes only the selected audio
 	// stream (an audio-only HLS rendition).
 	AudioOnly bool
@@ -1310,6 +1315,10 @@ type Rendition struct {
 	// 2026-07-26 D4 requires a *separately verified* per-transfer-class verdict
 	// before a tone-map may run on a device. "" is the software chain.
 	toneMapAccel HWAccel
+	// deviceDecode keeps decode, scale and tone-map on the encoder's device
+	// (CORE-2156). It is set only after the device-decode probe certified that
+	// chain for hwAccel and this source's transfer class.
+	deviceDecode bool
 	// picture, when set, replaces the source's video with a composed picture
 	// (see WithComposedPicture). The zero value composes nothing.
 	picture ComposedPicture
@@ -1389,6 +1398,61 @@ func (r Rendition) withToneMapAccel(accel HWAccel) Rendition {
 	return r
 }
 
+// withDeviceDecode returns a copy that decodes, scales and tone-maps on the
+// encoder's device when on is true. The tone-map then runs on the encoder's
+// backend, so toneMapAccel follows hwAccel.
+func (r Rendition) withDeviceDecode(on bool) Rendition {
+	r.deviceDecode = on
+	if on {
+		r.toneMapAccel = r.hwAccel
+	}
+	return r
+}
+
+// deviceDecodeClass is the transfer class the device-decode chain tone-maps
+// for this source. A Dolby Vision profile 8 stream is classed by its base
+// layer: the device decoder reads that layer alone, which is the picture the
+// software chain tone-maps for the same source. Profile 7 carries a second
+// layer and stays on the software chain.
+func (r Rendition) deviceDecodeClass() (TransferClass, bool) {
+	profile := r.DoViProfile
+	if profile == 8 {
+		profile = 0
+	}
+	class, classified := TransferClassFor(r.ColorTransfer, profile)
+	return class, classified && HardwareCertifiableClass(class)
+}
+
+// deviceDecodeEligible reports whether this rendition's shape allows the
+// device-decode chain: an HEVC source with a PQ or HLG picture that is
+// re-encoded on QSV or VA-API with nothing that needs a system-memory filter.
+// It says nothing about the host; the device-decode probe decides that.
+func (r Rendition) deviceDecodeEligible() bool {
+	if _, known := deviceDecodeTargets[r.hwAccel]; !known {
+		return false
+	}
+	if r.CopyVideo || r.AudioOnly || r.ToneMapUnavailable() || !r.needsToneMap() {
+		return false
+	}
+	if _, certifiable := r.deviceDecodeClass(); !certifiable {
+		return false
+	}
+	if r.SourceVideoCodec != "hevc" || (r.SourceVideoBitDepth != 0 && r.SourceVideoBitDepth != 10) {
+		return false
+	}
+	if _, composed := r.Picture(); composed {
+		return false
+	}
+	return r.burnSubtitleIndex == 0 && !interlacedFieldOrder(r.FieldOrder) && !nonSquareSampleAspect(r.SampleAspectRatio)
+}
+
+// usesDeviceDecode reports whether this rendition emits the device-decode
+// chain. Clearing hwAccel or toneMapAccel (the encrypted-live and pipe paths)
+// turns it off.
+func (r Rendition) usesDeviceDecode() bool {
+	return r.deviceDecode && r.toneMapAccel == r.hwAccel && r.deviceDecodeEligible()
+}
+
 // inputArgs returns the pre-input arguments: the tone-map chain's device
 // initialisation (ADR-0075 Amendment 2026-07-26 D1a §1) followed by the
 // encoder's own VAAPI device. The two are separate handles — the tone-map runs
@@ -1400,6 +1464,11 @@ func (r Rendition) withToneMapAccel(accel HWAccel) Rendition {
 // the encoder unable to choose and fall back to libmfx's default adapter.
 func (r Rendition) inputArgs() []string {
 	chain := r.toneMapChain()
+	if chain.DeviceDecode {
+		// The chain's own devices serve the decoder and the encoder; a second
+		// encoder device would leave the encoder unable to choose.
+		return append(slices.Clone(chain.InitArgs), chain.InputArgs...)
+	}
 	args := chain.InitArgs
 	switch {
 	case r.hwAccel == HWAccelVAAPI:
@@ -1578,6 +1647,11 @@ func (r Rendition) audioArgs() []string {
 // what the probe certifies (D8).
 func (r Rendition) videoFilters() []string {
 	chain := r.toneMapChain()
+	if chain.DeviceDecode {
+		// Decode, scale and tone-map all ran on the device, and the frames are
+		// already in the encoder's format.
+		return slices.Clone(chain.Filters)
+	}
 	filters := append([]string(nil), chain.Filters...)
 	if interlacedFieldOrder(r.FieldOrder) {
 		filters = append(filters, "yadif=deint=interlaced")
@@ -1651,6 +1725,9 @@ func (r Rendition) toneMapChain() ToneMapChain {
 	// only in args().
 	if r.CopyVideo || r.ToneMapUnavailable() || !r.needsToneMap() {
 		return ToneMapChain{}
+	}
+	if r.usesDeviceDecode() {
+		return BuildToneMapChain(ToneMapChainRequest{Backend: r.hwAccel, DeviceDecode: true, Height: r.Height})
 	}
 	return BuildToneMapChain(ToneMapChainRequest{
 		Backend:  r.toneMapAccel,
@@ -1747,6 +1824,12 @@ func hdrToSDRFilters() []string {
 type ToneMapChain struct {
 	// InitArgs are the device-initialisation arguments, emitted before -i.
 	InitArgs []string
+	// InputArgs are the input options a device-decode chain adds before -i,
+	// after InitArgs. Empty for every other chain.
+	InputArgs []string
+	// DeviceDecode reports that the chain decodes on the device, so its
+	// filters start from device frames and end in the encoder's format.
+	DeviceDecode bool
 	// Filters are the filter-graph legs, in order.
 	Filters []string
 	// Backend is the accelerator the tone-map itself runs on; "" is software.
@@ -1769,6 +1852,12 @@ type ToneMapChainRequest struct {
 	// False keeps frames on the device, which is only correct where the
 	// encoder consumes that device's frames.
 	Download bool
+	// DeviceDecode builds the chain that also decodes and scales on the device
+	// (CORE-2156). Backend must be QSV or VAAPI.
+	DeviceDecode bool
+	// Height caps the device scale at the rendition height; 0 keeps the
+	// source height. Only a device-decode chain reads it.
+	Height int
 }
 
 // hwToneMapSpec is one backend's hardware tone-map recipe. Every filter name
@@ -1805,11 +1894,15 @@ type hwToneMapSpec struct {
 // desat=0, peak=1000, BT.709 limited-range output) so a hardware rendition and
 // a software one target the same picture. tonemap_opencl and tonemap_cuda were
 // read from the pinned jellyfin-ffmpeg 7.1.4-3 linux/arm64 artifact;
+// tonemap_opencl sets tonemap_mode=max: measured on an Intel UHD 630 it lands
+// within 7 code values of tonemapx on the probe fixture at three saturation
+// levels, where the default mode left highlights 55 code values brighter
+// (CORE-2156).
 // tonemap_videotoolbox exists on no build available to this tree, so its
 // spelling is recorded as the darwin candidate and VideoToolbox stays
 // uncertified until a darwin manifest section records it (D1a §5, D5).
 const (
-	toneMapOpenCLFilter       = "tonemap_opencl=tonemap=bt2390:t=bt709:m=bt709:p=bt709:r=tv:desat=0:peak=1000:format=nv12"
+	toneMapOpenCLFilter       = "tonemap_opencl=tonemap=bt2390:tonemap_mode=max:t=bt709:m=bt709:p=bt709:r=tv:desat=0:peak=1000:format=nv12"
 	toneMapCUDAFilter         = "tonemap_cuda=tonemap=bt2390:t=bt709:m=bt709:p=bt709:r=tv:desat=0:peak=1000:format=nv12"
 	toneMapVideoToolboxFilter = "tonemap_videotoolbox=tonemap=bt2390:t=bt709:m=bt709:p=bt709:r=tv:desat=0:peak=1000:format=nv12"
 )
@@ -1871,6 +1964,9 @@ var hwToneMapSpecs = map[HWAccel]hwToneMapSpec{
 // certified — rather than silently falling back to software under a hardware
 // label.
 func BuildToneMapChain(req ToneMapChainRequest) ToneMapChain {
+	if req.DeviceDecode {
+		return buildDeviceDecodeChain(req)
+	}
 	if req.Backend == "" {
 		return ToneMapChain{Filters: hdrToSDRFilters()}
 	}
@@ -1911,11 +2007,72 @@ func toneMapChainWithoutTransform(chain ToneMapChain) ToneMapChain {
 	}
 	filters := make([]string, 0, len(chain.Filters))
 	for _, leg := range chain.Filters {
-		if leg != spec.toneMap {
+		switch leg {
+		case spec.toneMap:
+		case "format=" + spec.downloadFormat:
+			// Without the tone-map the device still holds what was uploaded,
+			// and hwdownload only returns a frame in its own format.
+			filters = append(filters, "format="+spec.uploadFormat)
+		default:
 			filters = append(filters, leg)
 		}
 	}
 	return ToneMapChain{InitArgs: chain.InitArgs, Filters: filters, Backend: chain.Backend}
+}
+
+// deviceDecodeTargets maps an encoder backend to the hardware pixel format its
+// encoder consumes, which is also the device type the tone-mapped frames are
+// mapped back onto.
+var deviceDecodeTargets = map[HWAccel]string{
+	HWAccelQSV:   "qsv",
+	HWAccelVAAPI: "vaapi",
+}
+
+// deviceDecodeScaleFilter decodes to 10-bit device frames at the rendition
+// height. min(ih, H) never upscales, as in the software chain.
+func deviceDecodeScaleFilter(height int) string {
+	if height <= 0 {
+		return "scale_vaapi=format=p010"
+	}
+	return fmt.Sprintf("scale_vaapi=w=-2:h=min(ih\\,%d):format=p010", height)
+}
+
+// buildDeviceDecodeChain is the chain that keeps every frame on the GPU
+// (CORE-2156): VA-API decode, scale_vaapi, an OpenCL tone-map on the same
+// device, and a reverse map onto the encoder's device. Every leg was run on an
+// Intel UHD 630 with jellyfin-ffmpeg 7.1.4; the device-decode probe runs them
+// again on each host before a transcode may use them.
+func buildDeviceDecodeChain(req ToneMapChainRequest) ToneMapChain {
+	target, known := deviceDecodeTargets[req.Backend]
+	if !known {
+		return ToneMapChain{}
+	}
+	node := req.DevicePath
+	if node == "" {
+		node = vaapiDevicePath()
+	}
+	init := []string{"-init_hw_device", "vaapi=va:" + node}
+	if req.Backend == HWAccelQSV {
+		init = append(init, "-init_hw_device", "qsv=qs@va")
+	}
+	init = append(init, "-init_hw_device", "opencl=ocl@va", "-filter_hw_device", "ocl")
+	filters := []string{
+		deviceDecodeScaleFilter(req.Height),
+		"hwmap=derive_device=opencl",
+		toneMapOpenCLFilter,
+		"hwmap=derive_device=" + target + ":reverse=1",
+		"format=" + target,
+	}
+	if req.Download {
+		filters = append(filters, "hwdownload", "format=nv12")
+	}
+	return ToneMapChain{
+		InitArgs:     init,
+		InputArgs:    []string{"-hwaccel", "vaapi", "-hwaccel_device", "va", "-hwaccel_output_format", "vaapi"},
+		DeviceDecode: true,
+		Filters:      filters,
+		Backend:      req.Backend,
+	}
 }
 
 // ToneMapChainFilterNames lists every filter name a backend's chain can emit.
@@ -2243,6 +2400,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	if !rendition.AudioOnly {
 		rendition = r.hardwareRendition(rendition)
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+		rendition = rendition.withDeviceDecode(selectRenditionDeviceDecode(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -2413,6 +2571,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	if !rendition.AudioOnly {
 		rendition = r.hardwareRendition(rendition)
 		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+		rendition = rendition.withDeviceDecode(selectRenditionDeviceDecode(rendition))
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
