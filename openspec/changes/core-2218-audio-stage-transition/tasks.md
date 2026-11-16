@@ -8,3 +8,5 @@
 - [ ] Next item's analysis decoded ahead; audio values ease across the change
 - [ ] Visual switch keeps feedback and clock; visuals compiled while idle; same artwork keeps the visual
 - [ ] Narrow layout: artwork fits the remaining height, no repeated title, play controls in the row
+- [ ] Same artwork across tracks: no artwork transition, no visual or image flicker while details load
+- [ ] Narrow layout: long title clamps to two lines, credit lines to one

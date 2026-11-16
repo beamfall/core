@@ -186,31 +186,43 @@ export function Visualizer({
   }, [visualKey]);
 
   // The track's artwork as the visual's image input, applied now or once the renderer is ready.
-  // Without usable artwork the neutral stand-in stays.
+  // The previous image stays until the next one has loaded, so a change never shows the neutral
+  // stand-in for a few frames (CORE-2218); without usable artwork the stand-in returns.
   useEffect(() => {
     if (!enabled) return;
     const abort = new AbortController();
-    let image: ImageBitmap | null = null;
+    const swap = (bitmap: ImageBitmap | null) => {
+      const old = imageRef.current;
+      imageRef.current = bitmap;
+      rendererRef.current?.setImage(bitmap);
+      if (old !== bitmap) old?.close();
+    };
     loadArtwork(artworkURL, abort.signal)
       .then((bitmap) => {
         if (abort.signal.aborted) return bitmap?.close();
-        if (!bitmap) return;
-        image = bitmap;
-        imageRef.current = bitmap;
-        rendererRef.current?.setImage(bitmap);
+        swap(bitmap);
       })
       .catch((err) => {
-        if (!abort.signal.aborted) console.warn("visualizer: no artwork", err);
+        if (abort.signal.aborted) return;
+        console.warn("visualizer: no artwork", err);
+        swap(null);
       });
-    return () => {
-      abort.abort();
-      if (imageRef.current === image) {
-        imageRef.current = null;
-        rendererRef.current?.setImage(null);
-      }
-      image?.close();
-    };
+    return () => abort.abort();
   }, [enabled, artworkURL]);
+
+  // The last image goes with the slot.
+  useEffect(() => {
+    if (enabled) return;
+    imageRef.current?.close();
+    imageRef.current = null;
+  }, [enabled]);
+  useEffect(
+    () => () => {
+      imageRef.current?.close();
+      imageRef.current = null;
+    },
+    [],
+  );
 
   // The track's analysis: decoded ahead when it was the next track, else decoded now. Until it
   // is ready the visual glides toward rest.

@@ -356,6 +356,11 @@ function FeaturePlayer({
   const artworkURL = media
     ? media.artworkSlots?.poster || media.artworkSlots?.thumb || media.artworkSlots?.backdrop || ""
     : "";
+  // While the next item's media read is in flight the audio stage keeps the last artwork, so
+  // tracks that share a picture do not crossfade it through an empty frame (CORE-2218).
+  const [stageArtwork, setStageArtwork] = useState(artworkURL);
+  if (media && stageArtwork !== artworkURL) setStageArtwork(artworkURL);
+  const audioArtworkURL = media || !mediaId ? artworkURL : stageArtwork;
   const queueIndex = queue && mediaId ? queue.findIndex((item) => item.id === mediaId) : -1;
   const queuePosition =
     queue && queue.length > 1 && queueIndex >= 0
@@ -751,7 +756,7 @@ function FeaturePlayer({
             {showAudioStage && (
               <AudioStage
                 title={navTitle}
-                artworkURL={artworkURL}
+                artworkURL={audioArtworkURL}
                 credits={credits}
                 queuePosition={queuePosition}
                 videoRef={videoRef}

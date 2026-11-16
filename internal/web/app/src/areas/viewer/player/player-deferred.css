@@ -1070,6 +1070,26 @@
     max-width: 100%;
   }
 
+  /* A long title or credit line would push the artwork down to a thumbnail:
+     the words keep to a few clamped lines (the full text stays in the DOM). */
+  .bf-audio-title {
+    font-size: clamp(20px, 6vw, 28px);
+  }
+
+  .bf-audio-title,
+  .bf-audio-people,
+  .bf-audio-collections,
+  .bf-audio-others {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+  }
+
+  .bf-audio-title {
+    -webkit-line-clamp: 2;
+  }
+
   /* The phone transport centres its play controls over the picture; on the
      audio stage that is the card, so they sit in the bottom row instead. */
   .bf-player-stage:has(.bf-audio-stage) .bf-primary-controls {

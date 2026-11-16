@@ -47,6 +47,12 @@ export function AudioStage({
   const meta = { position: queuePosition ?? "", title, people, collections, others };
   const metaLayers = useLayers(trackKey || title, meta, META_LEAVE_MS);
   const art = showArtwork ? artworkURL : "";
+  // Tracks of one album name the same picture by different URLs: the visual keeps the first,
+  // so it neither reloads the image nor switches visuals between them.
+  const artKey = artworkKey(art);
+  const [visualArt, setVisualArt] = useState({ key: artKey, url: art });
+  if (visualArt.key !== artKey) setVisualArt({ key: artKey, url: art });
+  const visualArtURL = visualArt.key === artKey ? visualArt.url : art;
 
   return (
     <div className="bf-audio-stage">
@@ -61,8 +67,8 @@ export function AudioStage({
             videoRef={videoRef}
             stream={stream}
             trackKey={trackKey || title}
-            visualKey={artworkKey(art) || trackKey || title}
-            artworkURL={art}
+            visualKey={artKey || trackKey || title}
+            artworkURL={visualArtURL}
             next={next}
           />
         )}

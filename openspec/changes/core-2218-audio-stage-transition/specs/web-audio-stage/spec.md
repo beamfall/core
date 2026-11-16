@@ -52,6 +52,8 @@ artwork SHALL keep the same visual.
 
 - **WHEN** the next item has the same artwork as the current one
 - **THEN** the visual stays the same
+- **AND** the artwork does not transition, and no other visual or neutral image shows while the
+  next item's details load
 
 ### Requirement: The audio stage fits narrow and short windows
 
@@ -64,3 +66,9 @@ transport row rather than over the card.
 
 - **WHEN** the audio stage is shown in a window about 414 by 515 pixels and the controls are shown
 - **THEN** the artwork, title and credits are fully visible, and no control covers them
+
+#### Scenario: Long title on a short phone window
+
+- **WHEN** the item's title or credits would wrap to many lines on a narrow window
+- **THEN** the title keeps to two lines and each credit line to one, and the artwork keeps its
+  room
