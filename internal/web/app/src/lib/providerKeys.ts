@@ -3,7 +3,7 @@ import type { PluginCredentialHelpInfo, PluginScraperInfo } from "@/lib/graphql/
 /** One AuthRef-scoped scraper credential, presented as a "provider key". */
 export interface ProviderKey {
   authRef: string;
-  /** Human label derived from the plugin's own scraper display names. */
+  /** Human label from the plugin's scraper display names; "" when it declares none. */
   label: string;
   /** Endpoint hosts the key is sent to. */
   hosts: string[];
@@ -23,11 +23,12 @@ function stripQualifier(name: string): string {
 /**
  * Label a credential from the scrapers that share it. Core knows no provider
  * names, so the label comes from plugin data: the shared base of the scraper
- * display names, falling back to the AuthRef.
+ * display names. Empty when none is declared: the AuthRef is an internal ref,
+ * never shown (CORE-2190), so the UI supplies a localized generic name.
  */
-export function providerKeyLabel(names: string[], authRef: string): string {
+export function providerKeyLabel(names: string[]): string {
   const bases = names.map(stripQualifier).filter(Boolean);
-  if (bases.length === 0) return authRef;
+  if (bases.length === 0) return "";
   if (bases.every((base) => base === bases[0])) return bases[0];
   let prefix = bases[0];
   for (const base of bases.slice(1)) {
@@ -58,10 +59,7 @@ export function groupProviderKeys(scrapers: PluginScraperInfo[]): ProviderKey[] 
     const first = rows[0];
     return {
       authRef,
-      label: providerKeyLabel(
-        rows.map((row) => row.displayName || ""),
-        authRef,
-      ),
+      label: providerKeyLabel(rows.map((row) => row.displayName || "")),
       hosts: [...new Set(rows.map((row) => endpointHost(row.endpoint)).filter(Boolean))],
       required: rows.some((row) => row.credentialRequired),
       status: first.credentialStatus || "unavailable",

@@ -12,7 +12,13 @@ export function useProviderKeyFieldLabel(): (key: ProviderKey) => string {
   const locale = useDisplayLocale();
   return (key) =>
     displayString(key.credentialHelp?.label, locale) ||
-    t("pluginKeyField", { provider: key.label });
+    (key.label ? t("pluginKeyField", { provider: key.label }) : t("pluginKeyFieldGeneric"));
+}
+
+/** The provider's name for prose, never the credential ref (CORE-2190). */
+export function useProviderKeyName(): (key: ProviderKey) => string {
+  const t = useT();
+  return (key) => key.label || t("pluginKeyProviderGeneric");
 }
 
 // CredentialHelpLink (CORE-1127): the plugin-declared page where an owner gets

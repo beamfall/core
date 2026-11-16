@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import {
   CredentialHelpLink,
   useProviderKeyFieldLabel,
+  useProviderKeyName,
 } from "@/components/beamfall/CredentialHelpLink";
 import {
   FieldButton,
@@ -148,6 +149,7 @@ function consumeSetupToken(): string {
 export function SetupWizard() {
   const { t, locale } = useI18n();
   const providerKeyFieldLabel = useProviderKeyFieldLabel();
+  const providerKeyName = useProviderKeyName();
   // Visual step index (0..6). The bootstrap POST fires when we leave the owner
   // profile step (index 3) forward, because that's the first point where token
   // + admin password + security mode + profile name are all collected.
@@ -580,7 +582,7 @@ export function SetupWizard() {
         );
         setKeySecrets((prev) => ({ ...prev, [key.authRef]: "" }));
       } catch {
-        announceError(t("setupKeySaveFailed", { provider: key.label }));
+        announceError(t("setupKeySaveFailed", { provider: providerKeyName(key) }));
         return false;
       }
     }

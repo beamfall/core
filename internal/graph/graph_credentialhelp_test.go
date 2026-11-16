@@ -86,3 +86,38 @@ func TestConsoleConfigOmitsCredentialHelpByDefault(t *testing.T) {
 		}
 	}
 }
+
+// TestPluginStatusCredentialRowNamesPluginAndLabel pins CORE-2190: the plugin
+// Credential status row's detail is "<plugin>: <label>", never the internal
+// bfplugin credential ref.
+func TestPluginStatusCredentialRowNamesPluginAndLabel(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newConsoleHandler(t, st)
+	handler.scraperExtensions = func(plugin.ScraperSpec) plugin.ScraperExtensions {
+		return plugin.ScraperExtensions{CredentialHelp: &plugin.CredentialHelp{Label: plugin.L("Subscriber PIN")}}
+	}
+	openManagerAdminSession(t, st)
+	data, errs := post(t, handler,
+		`{"query":"query { consoleConfig { plugins { id displayName status { id detail } } } }"}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("consoleConfig errors = %#v", errs)
+	}
+	var cfg ConsoleConfigInfo
+	mustUnmarshal(t, data["consoleConfig"], &cfg)
+	var rows int
+	for _, p := range cfg.Plugins {
+		for _, row := range p.Status {
+			if !strings.HasPrefix(row.ID, "credential-") {
+				continue
+			}
+			rows++
+			if strings.Contains(row.Detail, "bfplugin-") || !strings.HasSuffix(row.Detail, ": Subscriber PIN") {
+				t.Fatalf("%s credential detail = %q", p.ID, row.Detail)
+			}
+		}
+	}
+	if rows == 0 {
+		t.Fatal("no credential status rows")
+	}
+}

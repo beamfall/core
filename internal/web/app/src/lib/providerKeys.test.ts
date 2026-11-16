@@ -20,17 +20,17 @@ function scraper(over: Partial<PluginScraperInfo>): PluginScraperInfo {
 
 describe("providerKeyLabel", () => {
   it("collapses qualifiers shared by one provider", () => {
-    expect(providerKeyLabel(["Example (Movies)", "Example (TV)"], "ref")).toBe("Example");
+    expect(providerKeyLabel(["Example (Movies)", "Example (TV)"])).toBe("Example");
   });
   it("strips the qualifier from a single scraper name", () => {
-    expect(providerKeyLabel(["OtherDB (Series)"], "ref")).toBe("OtherDB");
+    expect(providerKeyLabel(["OtherDB (Series)"])).toBe("OtherDB");
   });
   it("uses the common prefix of differing names", () => {
-    expect(providerKeyLabel(["Acme Books", "Acme Covers"], "ref")).toBe("Acme");
+    expect(providerKeyLabel(["Acme Books", "Acme Covers"])).toBe("Acme");
   });
-  it("falls back to the first name, then the AuthRef", () => {
-    expect(providerKeyLabel(["Alpha", "Beta"], "ref")).toBe("Alpha");
-    expect(providerKeyLabel([""], "ref")).toBe("ref");
+  it("falls back to the first name, then empty, never the AuthRef", () => {
+    expect(providerKeyLabel(["Alpha", "Beta"])).toBe("Alpha");
+    expect(providerKeyLabel([""])).toBe("");
   });
 });
 
