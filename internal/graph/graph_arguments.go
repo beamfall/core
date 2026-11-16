@@ -780,6 +780,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"scanestimate": {
 		{Name: "libraryID", Kind: "string"},
+		{Name: "pluginID", Kind: "string"},
 		{Name: "root", Kind: "string"},
 	},
 	"scanlibrary": {

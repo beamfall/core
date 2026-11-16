@@ -30,7 +30,7 @@ func TestPreviewRootsPlansChangesWithoutWriting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	preview, err := PreviewRoots(ctx, st, "library-local", []string{root}, 0)
+	preview, err := PreviewRoots(ctx, st, "library-local", []string{root}, 0, false)
 	if err != nil {
 		t.Fatalf("PreviewRoots: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestPreviewRootsBoundsTheList(t *testing.T) {
 	for _, name := range []string{"clip-a.mp4", "clip-b.mp4", "clip-c.mp4"} {
 		writeScanFile(t, root, name, []byte(name))
 	}
-	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 2)
+	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 2, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestPreviewRootsAppliesMissingGuard(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 0)
+	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestPreviewRootsGuardCountsPlannedAdds(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		writeScanFile(t, root, "added-"+zeroPad(i)+".mp4", []byte("added "+zeroPad(i)))
 	}
-	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, MaxPreviewChangeLimit)
+	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, MaxPreviewChangeLimit, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestPreviewRootsSkipsSettlingFiles(t *testing.T) {
 	if err := os.WriteFile(fresh, []byte("still copying"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 0)
+	preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestPreviewRootsFailsOnUnavailableRoot(t *testing.T) {
 	if err := os.RemoveAll(root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 0); err == nil || !strings.Contains(err.Error(), "is unavailable") {
+	if _, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 0, false); err == nil || !strings.Contains(err.Error(), "is unavailable") {
 		t.Fatalf("PreviewRoots error = %v, want unavailable root", err)
 	}
 }
@@ -181,5 +181,41 @@ func TestLibraryStateDigestMovesWhenTheLibraryChanges(t *testing.T) {
 	}
 	if rescanned == first {
 		t.Fatal("digest did not move after a rescan refreshed the catalog")
+	}
+}
+
+// TestPreviewRootsCountsSidecarNamedImagesByPluginClass is the CORE-2180
+// acceptance for the preview: a "-thumb" image beside a video is an add for a
+// plugin that declares the image class and is left out for a video-only one,
+// matching what the scan imports.
+func TestPreviewRootsCountsSidecarNamedImagesByPluginClass(t *testing.T) {
+	root, st, _ := seedScannedLibrary(t, 1)
+	video := writeScanFile(t, root, "IMG_1.mov", []byte("a short clip"))
+	thumb := writeScanFile(t, root, "IMG_1-thumb.jpg", []byte("a still frame"))
+	for _, tc := range []struct {
+		name             string
+		imagesAreContent bool
+		want             []string
+	}{
+		{"image class", true, []string{video, thumb}},
+		{"video only", false, []string{video}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			preview, err := PreviewRoots(context.Background(), st, "library-local", []string{root}, 0, tc.imagesAreContent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var adds []string
+			for _, change := range preview.Changes {
+				if change.Kind == PreviewChangeAdd {
+					adds = append(adds, change.Path)
+				}
+			}
+			slices.Sort(adds)
+			want := slices.Sorted(slices.Values(tc.want))
+			if preview.Adds != len(want) || !slices.Equal(adds, want) {
+				t.Fatalf("preview adds = %d %q, want %q", preview.Adds, adds, want)
+			}
+		})
 	}
 }

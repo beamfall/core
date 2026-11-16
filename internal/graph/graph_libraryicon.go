@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
@@ -21,6 +22,17 @@ func (h *Handler) libraryMediaClasses(library store.Library) []string {
 		return nil
 	}
 	return bundle.MediaClasses
+}
+
+// pluginHoldsImages reports whether a registered plugin declares the image
+// Media class, so the scan preview and estimate count sidecar-named images the
+// scan imports as items (CORE-0043, CORE-2180).
+func (h *Handler) pluginHoldsImages(pluginID string) bool {
+	if pluginID == "" || h.plugins == nil {
+		return false
+	}
+	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
+	return ok && slices.Contains(bundle.MediaClasses, string(store.MediaClassImage))
 }
 
 // setLibraryIcon stores the owner's icon choice for a Library (CORE-1200).

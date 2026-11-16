@@ -125,10 +125,12 @@ var videoExtensions = map[string]bool{
 // It does NOT apply the file-stability window (a settling file still counts as
 // future scan work) and does NOT consult the store — the wizard runs before any
 // scan or even any Library row, so the estimate is filesystem-only.
-func EstimateRoots(ctx context.Context, roots []string) (Estimate, error) {
+// imagesAreContent reports that the target plugin declares the image class, so
+// recognised sidecar-named images count, as the scan imports them (CORE-2180).
+func EstimateRoots(ctx context.Context, roots []string, imagesAreContent bool) (Estimate, error) {
 	est := Estimate{InlineWorkGatesPlayability: true}
 	for _, root := range roots {
-		if err := estimateRoot(ctx, root, &est); err != nil {
+		if err := estimateRoot(ctx, root, imagesAreContent, &est); err != nil {
 			return Estimate{}, err
 		}
 	}
@@ -154,7 +156,7 @@ func EstimateRoots(ctx context.Context, roots []string) (Estimate, error) {
 // Extra filters the real scan applies (so the count reflects what would import,
 // not raw file count), and classifies each kept file as video or audio by
 // extension.
-func estimateRoot(ctx context.Context, root string, est *Estimate) error {
+func estimateRoot(ctx context.Context, root string, imagesAreContent bool, est *Estimate) error {
 	if root == "" {
 		return nil
 	}
@@ -193,7 +195,7 @@ func estimateRoot(ctx context.Context, root string, est *Estimate) error {
 		if !mediaExtensions[ext] {
 			return nil
 		}
-		if isExtraPath(path) || isLocalArtworkSidecar(path) {
+		if isExtraPath(path) || isArtworkCompanion(path, imagesAreContent) {
 			return nil
 		}
 		if videoExtensions[ext] {

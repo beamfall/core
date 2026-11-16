@@ -64,8 +64,10 @@ type Preview struct {
 // PreviewRoots walks roots for libraryID and returns the planned changes,
 // listing at most limit of them. It applies the scan's directory exclusions,
 // media gates and stability window, and its missing-pass guard. An unreadable
-// root fails the preview, as it fails the scan.
-func PreviewRoots(ctx context.Context, st *store.Store, libraryID store.LibraryID, roots []string, limit int) (Preview, error) {
+// root fails the preview, as it fails the scan. imagesAreContent reports that
+// the Library's plugin declares the image class, so recognised sidecar-named
+// images count as items, as the scan imports them (CORE-0043, CORE-2180).
+func PreviewRoots(ctx context.Context, st *store.Store, libraryID store.LibraryID, roots []string, limit int, imagesAreContent bool) (Preview, error) {
 	if st == nil {
 		return Preview{}, errors.New("store is required")
 	}
@@ -82,7 +84,7 @@ func PreviewRoots(ctx context.Context, st *store.Store, libraryID store.LibraryI
 	}); err != nil {
 		return Preview{}, err
 	}
-	p := previewState{preview: Preview{Changes: []PreviewChange{}, MissingSkipped: []string{}}, limit: limit, stored: stored}
+	p := previewState{preview: Preview{Changes: []PreviewChange{}, MissingSkipped: []string{}}, limit: limit, stored: stored, imagesAreContent: imagesAreContent}
 	var missing []PreviewChange
 	for _, root := range roots {
 		rootMissing, err := p.walkRoot(ctx, root)
@@ -98,9 +100,10 @@ func PreviewRoots(ctx context.Context, st *store.Store, libraryID store.LibraryI
 }
 
 type previewState struct {
-	preview Preview
-	limit   int
-	stored  map[string]store.MediaFile
+	preview          Preview
+	limit            int
+	stored           map[string]store.MediaFile
+	imagesAreContent bool
 }
 
 func (p *previewState) record(change PreviewChange) {
@@ -150,7 +153,7 @@ func (p *previewState) walkRoot(ctx context.Context, root string) ([]PreviewChan
 			return nil
 		}
 		path = filepath.Clean(path)
-		if !previewSupportedMediaFile(path, info) || now().Sub(info.ModTime()) < stabilityWindow {
+		if !previewSupportedMediaFile(path, info, p.imagesAreContent) || now().Sub(info.ModTime()) < stabilityWindow {
 			return nil
 		}
 		walked++
@@ -177,7 +180,7 @@ func (p *previewState) walkRoot(ctx context.Context, root string) ([]PreviewChan
 		if path != root && !strings.HasPrefix(path, prefix) {
 			continue
 		}
-		if !seen[path] && isLocalArtworkSidecar(path) {
+		if !seen[path] && isArtworkCompanion(path, p.imagesAreContent) {
 			continue
 		}
 		present++
@@ -195,9 +198,9 @@ func (p *previewState) walkRoot(ctx context.Context, root string) ([]PreviewChan
 	return missing, nil
 }
 
-func previewSupportedMediaFile(path string, info fs.FileInfo) bool {
+func previewSupportedMediaFile(path string, info fs.FileInfo, imagesAreContent bool) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext] && !isLocalArtworkSidecar(path)
+	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext] && !isArtworkCompanion(path, imagesAreContent)
 }
 
 // previewUnchanged is the scan's fast-path test (workerTask.fill): a file the

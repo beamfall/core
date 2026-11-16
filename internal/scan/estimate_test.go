@@ -36,7 +36,7 @@ func TestEstimateSplitsInlineFromDeferrable(t *testing.T) {
 	writeScanFile(t, root, ".DS_Store", []byte("junk"))
 	writeScanFile(t, root, "Extras/trailer.mkv", []byte("an extra"))
 
-	est, err := EstimateRoots(context.Background(), []string{root})
+	est, err := EstimateRoots(context.Background(), []string{root}, false)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}
@@ -98,11 +98,11 @@ func TestEstimateScalesWithFileCount(t *testing.T) {
 		writeScanFile(t, large, name, []byte(name))
 	}
 
-	smallEst, err := EstimateRoots(context.Background(), []string{small})
+	smallEst, err := EstimateRoots(context.Background(), []string{small}, false)
 	if err != nil {
 		t.Fatalf("EstimateRoots(small): %v", err)
 	}
-	largeEst, err := EstimateRoots(context.Background(), []string{large})
+	largeEst, err := EstimateRoots(context.Background(), []string{large}, false)
 	if err != nil {
 		t.Fatalf("EstimateRoots(large): %v", err)
 	}
@@ -131,7 +131,7 @@ func TestEstimateMultipleRootsAggregate(t *testing.T) {
 	writeScanFile(t, rootB, "b.flac", []byte("b"))
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 
-	est, err := EstimateRoots(context.Background(), []string{rootA, rootB, missing})
+	est, err := EstimateRoots(context.Background(), []string{rootA, rootB, missing}, false)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestEstimateMultipleRootsAggregate(t *testing.T) {
 // — the wizard renders a stable shape, never a null.
 func TestEstimateEmptyRootYieldsStableShape(t *testing.T) {
 	// feature:first-scan-estimate
-	est, err := EstimateRoots(context.Background(), []string{t.TempDir()})
+	est, err := EstimateRoots(context.Background(), []string{t.TempDir()}, false)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}
@@ -158,5 +158,32 @@ func TestEstimateEmptyRootYieldsStableShape(t *testing.T) {
 	}
 	if !est.InlineWorkGatesPlayability {
 		t.Error("InlineWorkGatesPlayability = false on empty tree, want true (invariant of the split)")
+	}
+}
+
+// TestEstimateCountsSidecarNamedImagesByPluginClass is the CORE-2180
+// acceptance for the estimate: a "-thumb" image beside a video counts for a
+// plugin that declares the image class and is left out for a video-only one.
+func TestEstimateCountsSidecarNamedImagesByPluginClass(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, root, "IMG_1.mov", []byte("a short clip"))
+	writeScanFile(t, root, "IMG_1-thumb.jpg", []byte("a still frame"))
+	for _, tc := range []struct {
+		name             string
+		imagesAreContent bool
+		want             int
+	}{
+		{"image class", true, 2},
+		{"video only", false, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			est, err := EstimateRoots(context.Background(), []string{root}, tc.imagesAreContent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if est.EstimatedFiles != tc.want || est.EstimatedVideoFiles != 1 {
+				t.Fatalf("estimate = %d files (%d video), want %d (1 video)", est.EstimatedFiles, est.EstimatedVideoFiles, tc.want)
+			}
+		})
 	}
 }

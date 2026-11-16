@@ -84,7 +84,13 @@ func (s *scanWalkState) isSupportedMediaFile(path string, info fs.FileInfo) bool
 // the walk must not catalogue as an item: a recognised sidecar (CORE-1708) in
 // a Library whose Plugin does not hold images as content (CORE-0043).
 func (s *scanWalkState) isArtworkCompanion(path string) bool {
-	return !s.imagesAreContent && isLocalArtworkSidecar(path)
+	return isArtworkCompanion(path, s.imagesAreContent)
+}
+
+// isArtworkCompanion is the walk's sidecar rule, shared with the preview and
+// the estimate so they count what the scan imports (CORE-2180).
+func isArtworkCompanion(path string, imagesAreContent bool) bool {
+	return !imagesAreContent && isLocalArtworkSidecar(path)
 }
 
 func (s *scanWalkState) directoryContext(path string) ParseContext {

@@ -160,7 +160,11 @@ func (h *Handler) scanPreview(ctx context.Context, scope auth.Scope, req request
 	if err != nil {
 		return ScanPreviewInfo{}, err
 	}
-	plan, err := scan.PreviewRoots(ctx, h.store, libraryID, roots, int(limit))
+	pluginID, err := h.store.LibraryPluginID(ctx, libraryID)
+	if err != nil {
+		return ScanPreviewInfo{}, err
+	}
+	plan, err := scan.PreviewRoots(ctx, h.store, libraryID, roots, int(limit), h.pluginHoldsImages(pluginID))
 	if err != nil {
 		return ScanPreviewInfo{}, err
 	}

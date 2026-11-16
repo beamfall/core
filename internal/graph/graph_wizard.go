@@ -430,14 +430,18 @@ type DeferrableWorkInfo struct {
 // re-estimate-an-existing-Library case), mirroring scanLibrary's root
 // resolution. The walk is cheap (count + extension classify, no hash/probe), so
 // the wizard can call it interactively. An admin-gated read: it discloses a
-// filesystem layout, an operator-only concern (wired in execute()).
+// filesystem layout, an operator-only concern (wired in execute()). A raw root
+// takes an optional `pluginID` naming the plugin the Library will bind, so
+// sidecar-named images count when that plugin holds images (CORE-2180).
 func (h *Handler) scanEstimate(ctx context.Context, scope auth.Scope, req request) (ScanEstimateInfo, error) {
 	root := trimmedVariable(req, "root")
 	libraryID := trimmedVariable(req, "libraryID")
 	var roots []string
+	var pluginID string
 	switch {
 	case root != "":
 		roots = []string{root}
+		pluginID = trimmedVariable(req, "pluginID")
 	case libraryID != "":
 		// Resolve an existing Library's roots, but only one the scope can see —
 		// the same visibility gate scanLibrary applies before touching
@@ -454,10 +458,15 @@ func (h *Handler) scanEstimate(ctx context.Context, scope auth.Scope, req reques
 			return ScanEstimateInfo{}, err
 		}
 		roots = persisted
+		bound, err := h.store.LibraryPluginID(ctx, store.LibraryID(libraryID))
+		if err != nil {
+			return ScanEstimateInfo{}, err
+		}
+		pluginID = bound
 	default:
 		return ScanEstimateInfo{}, clientError("root or libraryID is required")
 	}
-	est, err := scan.EstimateRoots(ctx, roots)
+	est, err := scan.EstimateRoots(ctx, roots, h.pluginHoldsImages(pluginID))
 	if err != nil {
 		return ScanEstimateInfo{}, err
 	}
