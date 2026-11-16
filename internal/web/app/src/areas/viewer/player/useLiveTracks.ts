@@ -2,6 +2,7 @@ import type Hls from "hls.js";
 import { useCallback, useState } from "react";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { hlsStreamOf, type PlaybackInfo, type PlaybackStream } from "../lib/playback";
+import { type QualityChoice, readQualityChoice, writeQualityChoice } from "../lib/qualityChoice";
 import {
   buildRenditionMenuModel,
   buildTrackMenuModel,
@@ -92,6 +93,7 @@ export function useLiveTracks({
   manualRenditionID,
   setManualRenditionID,
   onSubtitleChanged,
+  renegotiate,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   hlsRef: React.RefObject<Hls | null>;
@@ -108,6 +110,9 @@ export function useLiveTracks({
   setManualRenditionID: (id: string) => void;
   /** Called after a subtitle selection so an active sync offset can re-apply. */
   onSubtitleChanged: () => void;
+  /** Re-requests playback info at the current position; a quality pick then
+   *  becomes a remembered ceiling instead of a client-side pin (CORE-1971). */
+  renegotiate?: () => void;
 }): LiveTracks {
   // A local nudge so a selection re-renders even when hls.js fires no event
   // (e.g. native <video> track toggles).
@@ -115,6 +120,7 @@ export function useLiveTracks({
   const nudge = useCallback(() => setNudge((n) => n + 1), []);
   const t = useT();
   const locale = useDisplayLocale();
+  const [remembered, setRemembered] = useState<QualityChoice | null>(readQualityChoice);
 
   const video = videoRef.current;
   const hls = hlsRef.current;
@@ -217,6 +223,7 @@ export function useLiveTracks({
     stream,
     alternate,
     manualRenditionID,
+    rememberedID: remembered?.id ?? "",
     labels: { auto: t("auto"), directPlay: t("qualityOriginal") },
   });
 
@@ -288,6 +295,31 @@ export function useLiveTracks({
   const selectQuality = useCallback(
     (id: string) => {
       const h = hlsRef.current;
+      if (id === "auto" || id === "direct") {
+        // Forgetting a remembered step lifts its ceiling: re-request under Auto.
+        if (remembered) {
+          writeQualityChoice(null);
+          setRemembered(null);
+          if (renegotiate) {
+            setManualRenditionID("");
+            renegotiate();
+            return;
+          }
+        }
+      } else if (renegotiate) {
+        // The same list the menu rows came from: the stream, or its HLS sibling.
+        const ladder = (stream?.kind === "hls" ? stream : hlsStreamOf(streams))?.renditions;
+        const pick = ladder?.[renditionIndex(ladder, id)];
+        // A step without a bandwidth cannot be a ceiling: pin it as before.
+        if (pick?.bandwidth) {
+          const choice = { id, maxBitrate: pick.bandwidth };
+          writeQualityChoice(choice);
+          setRemembered(choice);
+          setManualRenditionID("");
+          renegotiate();
+          return;
+        }
+      }
       if (id === "auto") {
         setManualRenditionID("");
         if (h) selectHlsLevel(h, -1);
@@ -310,7 +342,7 @@ export function useLiveTracks({
       }
       nudge();
     },
-    [hlsRef, stream, streams, switchToHls, setManualRenditionID, nudge],
+    [hlsRef, stream, streams, switchToHls, setManualRenditionID, nudge, remembered, renegotiate],
   );
 
   return {

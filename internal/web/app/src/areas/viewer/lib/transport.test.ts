@@ -173,6 +173,36 @@ describe("buildRenditionMenuModel", () => {
     ]);
   });
 
+  it("marks a remembered step the stream lists unless a pin overrides it (CORE-1971)", () => {
+    const remembered = buildRenditionMenuModel({ stream: hls, rememberedID: "720" });
+    expect(remembered.manualPinActive).toBe(false);
+    expect(remembered.options.map((o) => [o.id, o.selected])).toEqual([
+      ["auto", false],
+      ["1080", false],
+      ["720", true],
+    ]);
+
+    const pinned = buildRenditionMenuModel({
+      stream: hls,
+      rememberedID: "720",
+      manualRenditionID: "1080",
+    });
+    expect(pinned.options.filter((o) => o.selected).map((o) => o.id)).toEqual(["1080"]);
+
+    const unlisted = buildRenditionMenuModel({ stream: hls, rememberedID: "2160" });
+    expect(unlisted.options.filter((o) => o.selected).map((o) => o.id)).toEqual(["auto"]);
+  });
+
+  it("offers Auto beside Original on direct play while a step is remembered (CORE-1971)", () => {
+    const model = buildRenditionMenuModel({ stream: direct, alternate: hls, rememberedID: "720" });
+    expect(model.options.map((o) => [o.id, o.selected])).toEqual([
+      ["auto", false],
+      ["direct", true],
+      ["1080", false],
+      ["720", false],
+    ]);
+  });
+
   it("drops renditions that carry no usable key", () => {
     const model = buildRenditionMenuModel({
       stream: { kind: "hls", url: "/h", renditions: [{}, { height: 480 }] },

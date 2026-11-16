@@ -1,9 +1,10 @@
 import { act, renderHook } from "@testing-library/react";
 import type Hls from "hls.js";
 import { createRef, type ReactNode, useState } from "react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import type { PlaybackInfo, PlaybackStream } from "../lib/playback";
+import { readQualityChoice, writeQualityChoice } from "../lib/qualityChoice";
 import { SUBTITLES_UNAVAILABLE_ID, useLiveTracks } from "./useLiveTracks";
 import type { StreamTrackControl } from "./usePlayer";
 
@@ -69,6 +70,90 @@ describe("useLiveTracks quality selection", () => {
     expect(result.current.manualPinActive).toBe(true);
     // Held for the manifest parse, not applied to a level list that is not there yet.
     expect(hls.currentLevel).toBe(-1);
+  });
+});
+
+describe("useLiveTracks remembered quality step (CORE-1971)", () => {
+  const ladder: PlaybackStream = {
+    kind: "hls",
+    url: "/stream.m3u8",
+    renditions: [
+      { id: "1080p", height: 1080, bandwidth: 8_256_000 },
+      { id: "720p", height: 720, bandwidth: 4_256_000 },
+    ],
+  };
+  const directPlay: PlaybackStream = { kind: "direct-play", url: "/file.mkv" };
+
+  afterEach(() => writeQualityChoice(null));
+
+  function renderRenegotiating(stream: PlaybackStream, streams: PlaybackStream[] = [stream]) {
+    const renegotiate = vi.fn();
+    const switchToHls = vi.fn(() => "hlsjs" as const);
+    const hook = renderHook(
+      () => {
+        const [manualRenditionID, setManualRenditionID] = useState("");
+        return useLiveTracks({
+          videoRef: createRef<HTMLVideoElement>(),
+          hlsRef: { current: null },
+          stream,
+          streams,
+          switchToHls,
+          manualRenditionID,
+          setManualRenditionID,
+          onSubtitleChanged: () => {},
+          renegotiate,
+        });
+      },
+      { wrapper },
+    );
+    return { ...hook, renegotiate, switchToHls };
+  }
+
+  const selectedIDs = (options: { id: string; selected: boolean }[]) =>
+    options.filter((option) => option.selected).map((option) => option.id);
+
+  it("remembers a step from direct play and re-requests instead of switching to HLS", () => {
+    const { result, renegotiate, switchToHls } = renderRenegotiating(directPlay, [
+      directPlay,
+      ladder,
+    ]);
+    act(() => result.current.selectQuality("720p"));
+    expect(readQualityChoice()).toEqual({ id: "720p", maxBitrate: 4_256_000 });
+    expect(renegotiate).toHaveBeenCalledTimes(1);
+    expect(switchToHls).not.toHaveBeenCalled();
+    expect(selectedIDs(result.current.qualityOptions)).toEqual(["direct"]);
+    expect(result.current.qualityOptions[0].id).toBe("auto");
+  });
+
+  it("marks the remembered step after the re-request and forgets it on Auto", () => {
+    writeQualityChoice({ id: "720p", maxBitrate: 4_256_000 });
+    const { result, renegotiate } = renderRenegotiating(ladder);
+    expect(selectedIDs(result.current.qualityOptions)).toEqual(["720p"]);
+
+    act(() => result.current.selectQuality("auto"));
+    expect(readQualityChoice()).toBeNull();
+    expect(renegotiate).toHaveBeenCalledTimes(1);
+    expect(selectedIDs(result.current.qualityOptions)).toEqual(["auto"]);
+  });
+
+  it("forgets the step when Original is chosen on direct play", () => {
+    writeQualityChoice({ id: "720p", maxBitrate: 4_256_000 });
+    const { result, renegotiate } = renderRenegotiating(directPlay, [directPlay, ladder]);
+    act(() => result.current.selectQuality("direct"));
+    expect(readQualityChoice()).toBeNull();
+    expect(renegotiate).toHaveBeenCalledTimes(1);
+    expect(result.current.qualityOptions.map((option) => option.id)).toEqual([
+      "direct",
+      "1080p",
+      "720p",
+    ]);
+  });
+
+  it("changes nothing on Auto when no step is remembered", () => {
+    const { result, renegotiate } = renderRenegotiating(ladder);
+    act(() => result.current.selectQuality("auto"));
+    expect(renegotiate).not.toHaveBeenCalled();
+    expect(readQualityChoice()).toBeNull();
   });
 });
 

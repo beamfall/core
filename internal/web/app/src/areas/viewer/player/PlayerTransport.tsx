@@ -122,6 +122,7 @@ export function PlayerTransport({
   onRemoteRestart,
   switchToHls,
   onSelectVersion,
+  onRenegotiate,
   onMenuOpenChange,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -167,6 +168,9 @@ export function PlayerTransport({
   switchToHls?: (renditionKey?: string) => SwitchResult;
   /** Plays another Version of the Media; the Version row is hidden when absent. */
   onSelectVersion?: (versionID: string) => void;
+  /** Re-requests playback info at the current position; a quality pick then
+   *  becomes this browser's remembered ceiling (CORE-1971). */
+  onRenegotiate?: () => void;
   /** Reports whether any menu/overlay is open (drives auto-hide suppression). */
   onMenuOpenChange?: (open: boolean) => void;
 }) {
@@ -304,6 +308,7 @@ export function PlayerTransport({
     manualRenditionID,
     setManualRenditionID,
     onSubtitleChanged: subtitle.applySync,
+    renegotiate: onRenegotiate,
   });
 
   // Commands from the Profile's other devices drive this player (CORE-1678).

@@ -1,6 +1,7 @@
 import { ApiError, postJSON } from "@/lib/api";
 import { probeCapabilityProfile } from "./capabilityProfile";
 import { leavePlayQueue, nextInPlayQueue, playQueueHandle, playQueueTitle } from "./playQueue";
+import { withQualityCeiling } from "./qualityChoice";
 
 // Playback-info request + its wire shape (ADR-0010 playbackInfo contract).
 //
@@ -204,7 +205,7 @@ export async function fetchPlaybackInfo(
   // Taken before the probe: a request that resumes after a newer Play all
   // started must not be read as leaving that queue.
   const queue = playQueueHandle();
-  const capabilityProfile = await probeCapabilityProfile();
+  const capabilityProfile = withQualityCeiling(await probeCapabilityProfile());
   // A Play all / Shuffle queue names its next item so the server pre-mints
   // Up Next for it (ADR-0029: the queue is client-owned). Playback a catalog
   // card's queue drives (CORE-1143) has left the Play all queue, which ends

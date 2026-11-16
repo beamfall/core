@@ -586,11 +586,14 @@ export interface RenditionMenuLabels {
  * buildRenditionMenuModel (player-transport.js): a single "Direct play" row when
  * the stream has no renditions; otherwise a leading "Auto" plus one row per
  * rendition, with the manually-pinned rendition (if any) marked selected.
+ * A remembered quality step (CORE-1971) is marked when no pin overrides it,
+ * and direct play then offers Auto to forget it.
  */
 export function buildRenditionMenuModel({
   stream,
   alternate = null,
   manualRenditionID = "",
+  rememberedID = "",
   labels = {},
 }: {
   stream: PlaybackStream | null;
@@ -598,6 +601,8 @@ export function buildRenditionMenuModel({
    *  the viewer can step down from direct play (ADR-0010 section 8). */
   alternate?: PlaybackStream | null;
   manualRenditionID?: string;
+  /** The quality step this browser remembers, as a rendition key. */
+  rememberedID?: string;
   labels?: RenditionMenuLabels;
 }): RenditionMenuModel {
   const renditions = stream && Array.isArray(stream.renditions) ? stream.renditions : [];
@@ -618,25 +623,25 @@ export function buildRenditionMenuModel({
     disabled: false,
     reason: "",
   };
+  const auto = (selected: boolean): RenditionMenuOption => ({
+    id: "auto",
+    label: labels.auto || "Auto",
+    selected,
+    disabled: false,
+    reason: "",
+  });
   if (!renditions.length) {
     const stepDown = alternate && Array.isArray(alternate.renditions) ? alternate.renditions : [];
     return {
       manualPinActive: false,
-      options: [direct, ...rows(stepDown, "")],
+      options: [...(rememberedID ? [auto(false)] : []), direct, ...rows(stepDown, "")],
     };
   }
+  const remembered = renditionIndex(renditions, rememberedID) >= 0 ? rememberedID : "";
+  const pinned = manualRenditionID || remembered;
   return {
     manualPinActive: !!manualRenditionID,
-    options: [
-      {
-        id: "auto",
-        label: labels.auto || "Auto",
-        selected: !manualRenditionID,
-        disabled: false,
-        reason: "",
-      },
-      ...rows(renditions, manualRenditionID),
-    ],
+    options: [auto(!pinned), ...rows(renditions, pinned)],
   };
 }
 

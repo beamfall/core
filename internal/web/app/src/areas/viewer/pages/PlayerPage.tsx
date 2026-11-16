@@ -798,6 +798,7 @@ function FeaturePlayer({
                 onRemoteRestart={restart}
                 switchToHls={switchToHls}
                 onSelectVersion={selectVersion}
+                onRenegotiate={retry}
                 onMenuOpenChange={setMenuOpen}
               />
             )}

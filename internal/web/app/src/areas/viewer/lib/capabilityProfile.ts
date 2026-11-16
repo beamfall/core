@@ -44,6 +44,8 @@ export interface CapabilityProfile {
   hdrFormats?: string[];
   subtitleFormats: string[];
   downstreamAudio: string;
+  /** The viewer's quality step in bit/s (CORE-1971); absent means Auto. */
+  maxStreamingBitrate?: number;
 }
 
 interface ProbeDeps {

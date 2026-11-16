@@ -11,6 +11,7 @@ import {
   type UnavailableReasonMessages,
   unavailableReason,
 } from "./playback";
+import { writeQualityChoice } from "./qualityChoice";
 
 const postJSON = vi.hoisted(() =>
   vi.fn(async (_path: string, _body: object): Promise<object> => ({})),
@@ -106,6 +107,24 @@ describe("fetchPlaybackInfo", () => {
     postJSON.mockClear();
     await fetchPlaybackInfo("media-v");
     expect(postJSON.mock.calls[0][1]).not.toHaveProperty("selectedVersion");
+  });
+
+  it("caps the profile at the remembered quality step, and not under Auto (CORE-1971)", async () => {
+    writeQualityChoice({ id: "720p", maxBitrate: 4_256_000 });
+    try {
+      await fetchPlaybackInfo("media-q");
+      expect(postJSON.mock.calls[0][1]).toMatchObject({
+        capabilityProfile: { maxStreamingBitrate: 4_256_000 },
+      });
+    } finally {
+      writeQualityChoice(null);
+    }
+
+    postJSON.mockClear();
+    await fetchPlaybackInfo("media-q");
+    expect(
+      (postJSON.mock.calls[0][1] as { capabilityProfile: object }).capabilityProfile,
+    ).not.toHaveProperty("maxStreamingBitrate");
   });
 
   it("asks for a key or tempo adjustment and omits the recorded one (CORE-1659)", async () => {
