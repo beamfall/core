@@ -377,6 +377,47 @@ def digest_key_findings(spec: dict, recorded: dict[str, str]) -> list[str]:
     return findings
 
 
+def check_binding_pins(obligation: dict, producer: Path, consumer: Path) -> list[str]:
+    """Findings for generated bindings that no longer name core's active wire artifact (CORE-2178).
+
+    A binding records the artifact path, version and sha256 it was generated from.
+    The active artifact is the one contracts/registry.json names for the boundary.
+    """
+    spec = obligation.get("bindingPins")
+    if not spec:
+        return []
+    registry = json.loads((producer / spec["registry"]).read_text(encoding="utf-8"))
+    entry = next((c for c in registry["boundaries"] if c.get("boundary") == spec["boundary"]), None)
+    if entry is None:
+        return [f"{spec['registry']} has no {spec['boundary']} boundary"]
+    artifact_file = producer / entry["artifact"]
+    if not artifact_file.is_file():
+        return [f"producer artifact absent: {entry['artifact']}"]
+    digest = sha256_of(artifact_file)
+    findings: list[str] = []
+    for rel in spec["consumers"]:
+        binding_file = consumer / rel
+        if not binding_file.is_file():
+            findings.append(f"vendored binding absent: {rel}")
+            continue
+        try:
+            binding = json.loads(binding_file.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            findings.append(f"unparseable binding {rel}: {exc}")
+            continue
+        for key, want in (
+            ("artifact", entry["artifact"]),
+            ("artifactVersion", entry["version"]),
+            ("artifactSha256", digest),
+        ):
+            if binding.get(key) != want:
+                findings.append(
+                    f"binding drift: {rel} records {key}={binding.get(key)!r}, "
+                    f"core now publishes {want!r}"
+                )
+    return findings
+
+
 def result_for(
     obligation: dict, consumer_repo: str, status: str, findings: list[str] | None = None
 ) -> Result:
@@ -416,6 +457,7 @@ def evaluate(
         ahead_keys = ahead_digest_keys(obligation, consumer, advisories)
         digest = [line for line in digest if not any(f" for {key}," in line for key in ahead_keys)]
     findings += digest
+    findings += check_binding_pins(obligation, producer, consumer)
     if findings:
         result.status = STALE
         result.findings = findings + advisories
@@ -468,18 +510,21 @@ def workspace_results(
         for obligation_id in assigned_ids:
             obligation = obligations_by_id.get(obligation_id)
             if obligation is None:
+                # The manifest may land before the Core that defines the obligation, so an
+                # unknown ID is advisory. A typo still fails: the real obligation is then
+                # unassigned and ERRORs below.
                 results.append(
                     Result(
                         obligation_id=obligation_id,
                         consumer_repo=entry["name"],
                         artifact=WORKSPACE_MANIFEST,
                         asserted_by=WORKSPACE_MANIFEST,
-                        refresh="remove or correct the unknown obligation ID in "
-                        f"{WORKSPACE_MANIFEST}",
-                        status=ERROR,
+                        refresh="land the Core change that defines the obligation, or "
+                        f"correct the ID in {WORKSPACE_MANIFEST}",
+                        status=SKIPPED,
                         findings=[
-                            f"{WORKSPACE_MANIFEST} assigns unknown Core contract "
-                            f"obligation {obligation_id}"
+                            f"{WORKSPACE_MANIFEST} assigns obligation {obligation_id} "
+                            "that this Core does not define (Core may predate it)"
                         ],
                     )
                 )

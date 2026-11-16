@@ -27,6 +27,29 @@ CHECK = CORE / "script" / "consumer-pin-freshness.py"
 REGISTRY = json.loads(
     (CORE / "script" / "consumer-pin-obligations.json").read_text(encoding="utf-8")
 )
+# CORE-2178: the Android binding obligation is exercised through an effective registry
+# (the real one plus this entry unless already registered), so these controls hold both
+# before and after script/consumer-pin-obligations.json registers it.
+ANDROID_OBLIGATION = {
+    "id": "android-core-wire-binding",
+    "consumerProbe": "app-mobile/src/test/kotlin/com/beamfall/mobile/CoreWireContractArtifactTest.kt",
+    "artifact": "app-mobile/src/test/resources/core-wire/client-core-wire.generated.json + app-tv/src/test/resources/core-wire/client-core-wire.generated.json",
+    "assertedBy": "CoreWireContractArtifactTest.generatedMobileBindingMatchesCoreWireArtifact (mobile), ContractRegistryTest and CoreWireContractArtifactTest (tv)",
+    "refresh": "in the consumer repo: regenerate both client-core-wire.generated.json bindings from the client-core-wire artifact named in <core>/contracts/registry.json (artifact, artifactVersion, artifactSha256, producerRevision), then rerun the mobile and tv CoreWireContractArtifactTest",
+    "bindingPins": {
+        "registry": "contracts/registry.json",
+        "boundary": "client-core-wire",
+        "consumers": [
+            "app-mobile/src/test/resources/core-wire/client-core-wire.generated.json",
+            "app-tv/src/test/resources/core-wire/client-core-wire.generated.json",
+        ],
+    },
+}
+EFFECTIVE = dict(REGISTRY)
+EFFECTIVE["obligations"] = [
+    o for o in REGISTRY["obligations"] if o["id"] != ANDROID_OBLIGATION["id"]
+] + [ANDROID_OBLIGATION]
+EFFECTIVE_REGISTRY_FILE = "effective-obligations.json"
 WORKSPACE_MANIFEST = "workspace-repos.json"
 
 FAILURES: list[str] = []
@@ -34,10 +57,12 @@ FIXTURE_CONSUMERS = {
     "apple-ui-wire-contract-pin": "beamfall-apple-ui",
     "apple-core-goldens": "beamfall-apple",
     "apple-core-corpus": "beamfall-apple",
+    "android-core-wire-binding": "beamfall-android",
 }
 FIXTURE_CLASSES = {
     "beamfall-apple": "client-shell",
     "beamfall-apple-ui": "client-library",
+    "beamfall-android": "client-shell",
 }
 
 
@@ -48,7 +73,8 @@ def consumer_name(obligation: dict) -> str:
 def build_workspace(root: Path) -> None:
     """A fresh-by-construction workspace: every vendored copy taken from core."""
     repos: dict[str, dict] = {}
-    for obligation in REGISTRY["obligations"]:
+    (root / EFFECTIVE_REGISTRY_FILE).write_text(json.dumps(EFFECTIVE), encoding="utf-8")
+    for obligation in EFFECTIVE["obligations"]:
         name = consumer_name(obligation)
         entry = repos.setdefault(
             name,
@@ -72,7 +98,7 @@ def build_workspace(root: Path) -> None:
         ),
         encoding="utf-8",
     )
-    for obligation in REGISTRY["obligations"]:
+    for obligation in EFFECTIVE["obligations"]:
         consumer = root / consumer_name(obligation)
         probe = consumer / obligation["consumerProbe"]
         probe.parent.mkdir(parents=True, exist_ok=True)
@@ -80,6 +106,7 @@ def build_workspace(root: Path) -> None:
         vendor_byte_copies(obligation, consumer)
         vendor_digest_files(obligation, consumer)
         vendor_digest_manifest(obligation, consumer)
+        vendor_binding_pins(obligation, consumer)
 
 
 def vendor_byte_copies(obligation: dict, consumer: Path) -> None:
@@ -87,6 +114,24 @@ def vendor_byte_copies(obligation: dict, consumer: Path) -> None:
         destination = consumer / pair["consumer"]
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(CORE / pair["producer"], destination)
+
+
+def vendor_binding_pins(obligation: dict, consumer: Path) -> None:
+    spec = obligation.get("bindingPins")
+    if not spec:
+        return
+    registry = json.loads((CORE / spec["registry"]).read_text(encoding="utf-8"))
+    entry = next(b for b in registry["boundaries"] if b["boundary"] == spec["boundary"])
+    binding = {
+        "schemaVersion": 1,
+        "artifact": entry["artifact"],
+        "artifactVersion": entry["version"],
+        "artifactSha256": sha256_of(CORE / entry["artifact"]),
+    }
+    for rel in spec["consumers"]:
+        destination = consumer / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(binding, indent=2) + "\n", encoding="utf-8")
 
 
 def vendor_digest_manifest(obligation: dict, consumer: Path) -> None:
@@ -131,6 +176,9 @@ def run_check(root: Path, *args: str, require_consumers: bool = False):
     }
     if require_consumers:
         env["BEAMFALL_REQUIRE_CONSUMERS"] = "1"
+    effective = root / EFFECTIVE_REGISTRY_FILE
+    if effective.is_file() and "--obligations" not in args:
+        args = (*args, "--obligations", str(effective))
     return subprocess.run(
         [sys.executable, str(CHECK), *args],
         capture_output=True,
@@ -161,7 +209,7 @@ def expect_red(label: str, completed, *needles: str) -> None:
 
 
 def obligation_by_id(obligation_id: str) -> dict:
-    for obligation in REGISTRY["obligations"]:
+    for obligation in EFFECTIVE["obligations"]:
         if obligation["id"] == obligation_id:
             return obligation
     raise SystemExit(f"test fixture drift: no obligation {obligation_id}")
@@ -171,9 +219,44 @@ def control_all_current(root: Path) -> None:
     build_workspace(root)
     completed = run_check(root, "--all")
     expect(
-        "all three artifacts current -> PASS",
+        "all artifacts current -> PASS",
         completed.returncode == 0 and "PASS" in completed.stdout,
         completed.stdout + completed.stderr,
+    )
+
+
+def control_stale_android_binding(root: Path) -> None:
+    """CORE-2178: a wire bump must red until BOTH android bindings follow it."""
+    build_workspace(root)
+    spec = obligation_by_id("android-core-wire-binding")["bindingPins"]
+    for rel in spec["consumers"]:
+        target = root / "beamfall-android" / rel
+        original = target.read_text(encoding="utf-8")
+        binding = json.loads(original)
+        binding["artifactVersion"] = "2.12.0"
+        binding["artifactSha256"] = "0" * 64
+        target.write_text(json.dumps(binding), encoding="utf-8")
+        expect_red(
+            f"stale android binding {rel} -> RED naming repo, file and refresh",
+            run_check(root, "--all"),
+            "beamfall-android",
+            rel,
+            "binding drift",
+            "artifactVersion='2.12.0'",
+            "regenerate both client-core-wire.generated.json",
+        )
+        target.write_text(original, encoding="utf-8")
+    completed = run_check(root, "--all")
+    expect(
+        "android bindings restored to the active artifact -> PASS",
+        completed.returncode == 0 and "PASS" in completed.stdout,
+        completed.stdout + completed.stderr,
+    )
+    (root / "beamfall-android" / spec["consumers"][1]).unlink()
+    expect_red(
+        "absent android tv binding -> RED",
+        run_check(root, "--all"),
+        "vendored binding absent",
     )
 
 
@@ -371,6 +454,38 @@ def control_linked_worktree_outside_workspace(root: Path) -> None:
     )
     expect("a non-git directory with no manifest above it resolves to None", none_found is None,
            f"found={none_found}")
+
+
+def control_unknown_obligation_id_is_advisory(root: Path) -> None:
+    """The manifest may assign an ID a Core that predates it does not define yet."""
+    build_workspace(root)
+    manifest_file = root / WORKSPACE_MANIFEST
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    for entry in manifest["repositories"]:
+        if entry["name"] == "beamfall-apple":
+            entry["coreContractObligations"].append("future-obligation")
+    manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+    completed = run_check(root, "--all")
+    output = completed.stdout + completed.stderr
+    expect(
+        "unknown obligation ID in manifest -> advisory, not a failure",
+        completed.returncode == 0
+        and "assigns obligation future-obligation that this Core does not define "
+        "(Core may predate it)" in output
+        and "ERROR" not in output,
+        f"rc={completed.returncode}\n{output}",
+    )
+    # A typo leaves the real obligation unassigned, which still fails.
+    for entry in manifest["repositories"]:
+        if entry["name"] == "beamfall-apple":
+            entry["coreContractObligations"].remove("apple-core-goldens")
+            entry["coreContractObligations"].append("apple-core-goldenz")
+    manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+    expect_red(
+        "typo'd obligation ID -> RED because the real obligation is unassigned",
+        run_check(root, "--all"),
+        "no workspace-repos.json repo declares Core contract obligation apple-core-goldens",
+    )
 
 
 def control_unknown_consumer_repo(root: Path) -> None:
@@ -651,6 +766,7 @@ def control_consumer_ahead_behind_matching(root: Path) -> None:
 CONTROLS = [
     control_all_current,
     control_corpus_registry_covers_all_files,
+    control_stale_android_binding,
     control_stale_byte_pin,
     control_stale_goldens_digest,
     control_malformed_goldens_manifest,
@@ -660,6 +776,7 @@ CONTROLS = [
     control_absent_consumer,
     control_no_workspace_manifest,
     control_linked_worktree_outside_workspace,
+    control_unknown_obligation_id_is_advisory,
     control_unknown_consumer_repo,
     control_worktree_of_listed_repo_is_not_unlisted,
     control_manifest_drives_consumer_name,
