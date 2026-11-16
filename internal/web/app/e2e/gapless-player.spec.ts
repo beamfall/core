@@ -9,14 +9,17 @@ import { expect, test } from "./lib/test";
 // Three short tone tracks, each wrapped in the silence its stream declares as
 // encoder delay and padding, play through two joins. Everything the page sends
 // to the Web Audio output is recorded, and the silence between the tones is
-// measured at each join: the first (media element to decoded track) and the
-// second (decoded to decoded, chained on the audio clock). Untrimmed, the
-// declared silence alone would leave about 82 ms.
+// measured at each join. Untrimmed, the declared silence alone would leave
+// about 82 ms.
 //
-// The player never routes its media element through Web Audio; the decoded
-// tracks play on a context of their own. To hear both on one clock, this spec
-// routes the element into that context itself, as a recording tap: it measures
-// where the join is scheduled, not the output latency a device adds to each.
+// The player never routes its media element through Web Audio. A decodable
+// track that starts from silence plays on the player's own context from its
+// first sample, the element held muted beside it, so every track here is on
+// that one context and every join is decoded to decoded, chained on its clock.
+// The recording tap sits before the device: it measures the joins as
+// scheduled and rendered, not what a device's output path adds afterwards. A
+// first track the element played instead would be missing from the capture,
+// and the element must stay muted throughout.
 
 const SAMPLE_RATE = 44100;
 const gapless = { delaySamples: 2112, paddingSamples: 1500 };
@@ -28,14 +31,16 @@ const TRACKS: SyntheticTrack[] = [
 
 /** One tone peaks at 1/8 full scale; two at once go above this. */
 const SINGLE_TONE_CEILING = 0.14;
-/** Silence (or overlap) the spec allows at the first join, element to decoded (ms). */
-const FIRST_JOIN_TOLERANCE_MS = 20;
-/** Silence (or overlap) the spec allows at a later join, decoded to decoded (ms). */
-const CHAINED_JOIN_TOLERANCE_MS = 2;
+/** Silence (or overlap) the spec allows at a join between decoded tracks (ms). */
+const JOIN_TOLERANCE_MS = 2;
+/** How far either side of a join the single-tone peak check looks away (ms). */
+const PEAK_WINDOW_MS = 20;
 
 declare global {
   interface Window {
     __gaplessCapture?: { sampleRate: number; chunks: { frame: number; data: number[] }[] }[];
+    /** Times the element played unmuted, which the player must never let it. */
+    __gaplessAudible?: number;
   }
 }
 
@@ -43,7 +48,8 @@ declare global {
 // render quantum the way a main-thread recorder can under a busy page. Its
 // module loads from a blob: URL, which the page's script-src would refuse and
 // Playwright cannot route (worklet fetches bypass page.route), so this spec
-// bypasses the CSP; nothing under test depends on it.
+// bypasses the CSP; nothing under test depends on it. WebKit refuses the blob:
+// module regardless and records on the main thread instead (below).
 const RECORDER_SOURCE = `
 class OutputRecorder extends AudioWorkletProcessor {
   constructor() { super(); this.blocks = []; this.frame = -1; }
@@ -66,7 +72,7 @@ registerProcessor("output-recorder", OutputRecorder);
 
 // Every AudioContext's destination is replaced by a pass-through node that the
 // recorder listens to, so whatever the page connects to the output is captured
-// in order, and the page's media element is routed into the same tap.
+// in order. The element is not routed: it must stay muted, which is counted.
 function recordAudioOutput(recorderSource: string) {
   const Real = window.AudioContext;
   const recorderURL = URL.createObjectURL(new Blob([recorderSource], { type: "text/javascript" }));
@@ -78,30 +84,84 @@ function recordAudioOutput(recorderSource: string) {
       const tap = this.createGain();
       tap.connect(output);
       Object.defineProperty(this, "destination", { value: tap });
-      const element = document.querySelector("video");
-      if (element) this.createMediaElementSource(element).connect(tap);
       const capture = {
         sampleRate: this.sampleRate,
         chunks: [] as { frame: number; data: number[] }[],
       };
       window.__gaplessCapture?.push(capture);
-      void this.audioWorklet.addModule(recorderURL).then(() => {
-        const recorder = new AudioWorkletNode(this, "output-recorder", {
-          channelCount: 1,
-          channelCountMode: "explicit",
-        });
-        recorder.port.onmessage = (event) => {
-          capture.chunks.push({ frame: event.data.frame, data: Array.from(event.data.data) });
-        };
-        const sink = this.createGain();
-        sink.gain.value = 0;
-        tap.connect(recorder);
-        recorder.connect(sink);
-        sink.connect(output);
-      });
+      const sink = this.createGain();
+      sink.gain.value = 0;
+      sink.connect(output);
+      void this.audioWorklet.addModule(recorderURL).then(
+        () => {
+          const recorder = new AudioWorkletNode(this, "output-recorder", {
+            channelCount: 1,
+            channelCountMode: "explicit",
+          });
+          recorder.port.onmessage = (event) => {
+            capture.chunks.push({ frame: event.data.frame, data: Array.from(event.data.data) });
+          };
+          tap.connect(recorder);
+          recorder.connect(sink);
+        },
+        () => {
+          // WebKit refuses a blob: worklet module even with the CSP bypassed. A
+          // main-thread recorder stands in; each block carries its own frame
+          // number, so a block it misses still shows as a break. WebKit's
+          // playbackTime can be one render quantum off while the input stays
+          // contiguous, so a stamp within a quantum of the next frame counts as it;
+          // a missed block moves the stamp by a whole buffer.
+          const size = 4096;
+          const quantum = 128;
+          const recorder = this.createScriptProcessor(size, 1, 1);
+          let next = -1;
+          recorder.onaudioprocess = (event) => {
+            const stamp = Math.round(event.playbackTime * this.sampleRate);
+            const frame = next >= 0 && Math.abs(stamp - next) <= quantum ? next : stamp;
+            next = frame + size;
+            capture.chunks.push({
+              frame,
+              data: Array.from(event.inputBuffer.getChannelData(0)),
+            });
+          };
+          tap.connect(recorder);
+          recorder.connect(sink);
+        },
+      );
     }
   }
   window.AudioContext = Recording;
+  window.__gaplessAudible = 0;
+  document.addEventListener(
+    "timeupdate",
+    (event) => {
+      const element = event.target as HTMLMediaElement;
+      if (!element.paused && !element.muted && window.__gaplessAudible !== undefined) {
+        window.__gaplessAudible++;
+      }
+    },
+    true,
+  );
+}
+
+// Refuses media playback until the first pointer press, as a browser that
+// wants a gesture for sound does. Engines differ in what they let autoplay
+// (Playwright's WebKit allows it, a strict Safari setting does not), and a
+// page that started on its own would race the spec's click on Play.
+function blockAutoplay() {
+  const play = HTMLMediaElement.prototype.play;
+  let activated = false;
+  document.addEventListener(
+    "pointerdown",
+    () => {
+      activated = true;
+    },
+    true,
+  );
+  HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+    if (activated) return play.call(this);
+    return Promise.reject(new DOMException("No gesture yet", "NotAllowedError"));
+  };
 }
 
 interface Join {
@@ -173,6 +233,7 @@ test.use({ bypassCSP: true, serviceWorkers: "block" });
 
 test("album tracks join without a gap, the declared silence trimmed", async ({ page }) => {
   test.setTimeout(60_000);
+  await page.addInitScript(blockAutoplay);
   await page.addInitScript(recordAudioOutput, RECORDER_SOURCE);
   await routeSyntheticAlbum(page, TRACKS);
   await page.goto(`/web/watch/${TRACKS[0].id}`);
@@ -182,10 +243,11 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
   await expect
     .poll(() => video.evaluate((element: HTMLVideoElement) => element.duration))
     .toBeCloseTo(expectedDuration, 2);
-  // A real click gives the page the activation its AudioContext needs.
-  const paused = await video.evaluate((element: HTMLVideoElement) => element.paused);
-  if (paused) await page.getByRole("button", { name: "Play", exact: true }).click();
-  else await page.getByRole("heading", { name: "Gapless One", level: 2 }).click();
+  // Autoplay is refused (see blockAutoplay), so the album starts the way it
+  // does in a browser that wants a gesture for sound: a real click on Play,
+  // which also gives the page the activation its AudioContext needs.
+  await expect(video).toHaveJSProperty("paused", true);
+  await page.getByRole("button", { name: "Play", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: "Gapless Three", level: 2 })).toBeVisible({
     timeout: 20_000,
@@ -196,8 +258,6 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
       timeout: 10_000,
     })
     .toBeGreaterThan(1.5);
-  // The silent element follows the heard track closely.
-  await page.waitForTimeout(500);
 
   const capture = await page.evaluate(() => {
     const contexts = window.__gaplessCapture ?? [];
@@ -222,6 +282,7 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
           ];
     });
     return {
+      audible: window.__gaplessAudible ?? 0,
       sampleRate: busiest.sampleRate,
       breaks,
       samples: busiest.chunks.flatMap((chunk) => chunk.data),
@@ -241,17 +302,19 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
     nearJoin.map((b) => b.note),
     "the recorder missed render quanta near a join",
   ).toEqual([]);
+  expect(capture.audible, "the element played unmuted").toBe(0);
+  // All three tracks were heard on the context, the first one included.
   expect(joins.map((join) => [join.from, join.to])).toEqual([
     [440, 660],
     [660, 880],
   ]);
-  expect(joins[0].silenceMs).toBeLessThanOrEqual(FIRST_JOIN_TOLERANCE_MS);
-  expect(joins[0].overlapMs).toBeLessThanOrEqual(FIRST_JOIN_TOLERANCE_MS);
-  expect(joins[1].silenceMs).toBeLessThanOrEqual(CHAINED_JOIN_TOLERANCE_MS);
-  expect(joins[1].overlapMs).toBeLessThanOrEqual(CHAINED_JOIN_TOLERANCE_MS);
-  // Away from the joins, the muted element never sounds under the decoded
-  // track: two tones at once would peak above a single tone.
-  const near = Math.round((capture.sampleRate * 2 * FIRST_JOIN_TOLERANCE_MS) / 1000);
+  for (const join of joins) {
+    expect(join.silenceMs).toBeLessThanOrEqual(JOIN_TOLERANCE_MS);
+    expect(join.overlapMs).toBeLessThanOrEqual(JOIN_TOLERANCE_MS);
+  }
+  // Away from the joins, no two tracks ever sound at once: two tones would
+  // peak above a single tone.
+  const near = Math.round((capture.sampleRate * PEAK_WINDOW_MS) / 1000);
   let peak = 0;
   samples.forEach((sample, i) => {
     if (joins.some((join) => Math.abs(i - join.at) <= near)) return;

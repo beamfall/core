@@ -6,6 +6,7 @@ import {
   declaredPadding,
   decodableStream,
   MAX_DECODED_SECONDS,
+  START_WAIT_SECONDS,
   trimWindow,
   useGaplessAudio,
 } from "./useGaplessAudio";
@@ -109,6 +110,15 @@ class FakeAudioContext {
   currentTime = 5;
   destination = {};
   resume = vi.fn(async () => {});
+  stateListeners: (() => void)[] = [];
+  addEventListener = vi.fn((type: string, listener: () => void) => {
+    if (type === "statechange") this.stateListeners.push(listener);
+  });
+  /** What a resume a gesture allowed does. */
+  run() {
+    this.state = "running";
+    for (const listener of this.stateListeners) listener();
+  }
   close = vi.fn(async () => {});
   createGain = vi.fn(() => {
     const gain = param(1);
@@ -196,6 +206,35 @@ function playing() {
   return element;
 }
 
+// A paused element at the start of a 2 s track; play() starts it.
+function starting() {
+  const element = document.createElement("video");
+  element.src = "/api/media/m1/stream";
+  let paused = true;
+  let time = 0;
+  Object.defineProperty(element, "paused", { configurable: true, get: () => paused });
+  Object.defineProperty(element, "duration", { configurable: true, get: () => 2 });
+  Object.defineProperty(element, "currentTime", {
+    configurable: true,
+    get: () => time,
+    set: (value: number) => {
+      time = value;
+    },
+  });
+  const play = () =>
+    act(() => {
+      paused = false;
+      element.dispatchEvent(new Event("play"));
+      element.dispatchEvent(new Event("playing"));
+    });
+  const pause = () =>
+    act(() => {
+      paused = true;
+      element.dispatchEvent(new Event("pause"));
+    });
+  return { element, play, pause };
+}
+
 function nextItem(mediaID: string): PlaybackNext {
   return {
     mediaID,
@@ -244,6 +283,98 @@ describe("useGaplessAudio", () => {
     expect(constants).toHaveLength(1);
     expect(constants[0].offset.value).toBe(0);
     expect(constants[0].start).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a track that plays from silence on Web Audio, the element held muted", async () => {
+    const { element, play } = starting();
+    render(element);
+    await settle();
+    play();
+    expect(element.muted).toBe(true);
+    expect(listenerMuted(element)).toBe(false);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    // m1 from where the element starts, now; then m2 chained after it.
+    expect(sources[0].start).toHaveBeenCalledWith(5, 0, 2);
+    act(() => {
+      element.dispatchEvent(new Event("timeupdate"));
+    });
+    expect(sources[1].start).toHaveBeenCalledWith(7, 0, 2);
+  });
+
+  it("stops the decoded track on pause and starts it again where the element resumes", async () => {
+    const { element, play, pause } = starting();
+    render(element);
+    await settle();
+    play();
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    pause();
+    expect(sources[0].stop).toHaveBeenCalled();
+    expect(element.muted).toBe(true);
+    element.currentTime = 1.25;
+    play();
+    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5, 1.25, 0.75);
+    expect(element.muted).toBe(true);
+  });
+
+  it("starts the decoded track again where the listener seeks", async () => {
+    const { element, play } = starting();
+    render(element);
+    await settle();
+    play();
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    act(() => {
+      element.currentTime = 0.5;
+      element.dispatchEvent(new Event("seeking"));
+    });
+    expect(sources[0].stop).toHaveBeenCalled();
+    act(() => {
+      element.dispatchEvent(new Event("seeked"));
+    });
+    expect(sources.at(-1)?.start).toHaveBeenCalledWith(5, 0.5, 1.5);
+    expect(element.muted).toBe(true);
+  });
+
+  it("lets the element play on its own from where it started when the decode is late", async () => {
+    contextState = "suspended";
+    const { element, play } = starting();
+    render(element);
+    await settle();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      play();
+      expect(element.muted).toBe(true);
+      element.currentTime = 1.5;
+      act(() => vi.advanceTimersByTime(START_WAIT_SECONDS * 1000));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(element.muted).toBe(false);
+    expect(element.currentTime).toBe(0);
+    expect(sources).toHaveLength(0);
+  });
+
+  it("starts the held track once a gesture's resume runs the context", async () => {
+    contextState = "suspended";
+    const { element, play } = starting();
+    render(element);
+    await settle();
+    play();
+    await settle();
+    expect(sources).toHaveLength(0);
+    expect(element.muted).toBe(true);
+    act(() => contexts[0].run());
+    expect(sources[0].start).toHaveBeenCalledWith(5, 0, 2);
+  });
+
+  it("lets the element play a track it cannot decode at once", async () => {
+    const { element, play } = starting();
+    render(element);
+    await settle();
+    probedSeconds = MAX_DECODED_SECONDS + 1;
+    play();
+    expect(element.muted).toBe(true);
+    await vi.waitFor(() => expect(element.muted).toBe(false));
+    expect(sources).toHaveLength(0);
   });
 
   it("waits for a running context before it joins", async () => {

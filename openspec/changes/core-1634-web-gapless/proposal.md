@@ -31,13 +31,23 @@ keep a short silence.
   control show and change the listener's choice. While the
   decoded audio plays, the following track is chained on the same clock, so later joins are
   sample-accurate.
-- A pause, seek, rate change, an advance to anything other than the decoded track, an audio delay,
-  anything else unmuting the element, or leaving the player hands sound back to the media element
-  at its own position.
-- Decoded audio is bounded: a next track whose metadata declares more than 12 minutes (or no
-  duration) is not decoded, each decoded track is released when it finishes, and at most two are
-  held (the one heard and the next).
-- A focused Playwright test measures the silence between test tones at each join.
+- When a decodable track starts from silence (the listener presses play, or seeks while nothing
+  is heard), the element is held muted and the track itself is decoded and started on the context
+  at the element's position. Album playback is then on one output path from its first sample, and
+  every join is decoded to decoded: sound never passes from the element's output path to the
+  context's mid-play, so a latency difference between the two (about 115 ms on WebKit) is never
+  heard. If the track cannot start within 2 s, or cannot be decoded, the element plays it audibly
+  from where it started, and its first join is timed against the element.
+- A pause stops the decoded audio and keeps the element muted; playing again or a seek starts the
+  decoded track again at the element's position.
+- A rate change, an advance to anything other than the decoded track, an audio delay, anything
+  else unmuting the element, or leaving the player hands sound back to the media element at its
+  own position.
+- Decoded audio is bounded: a track whose metadata declares more than 12 minutes (or no duration)
+  is not decoded, each decoded track is released when it finishes or the item moves past it, and
+  at most two are held (the one heard and the next).
+- A focused Playwright test measures the silence between test tones at each join, with every track
+  on the context.
 
 ## Non-goals
 
@@ -45,8 +55,8 @@ keep a short silence.
   stream is on another origin, video, composed pictures and karaoke songs.
 - An audio delay above zero: the gapless join stays off while one is set, and the audio delay keeps
   its own element routing (CORE-1671), which the join never uses.
-- Keeping the decoded audio across a pause or seek; the next join after one again starts from the
-  element.
+- Routing the element through the context for progressive sources: a media element source is
+  permanent, and the reused element would then silence a later native HLS item.
 - Visual effects: this change schedules audio only.
 
 ## Capabilities

@@ -24,6 +24,23 @@ delay is set and no Watch Party leads the player.
 - **WHEN** the next track's only stream is an HLS transcode
 - **THEN** nothing is decoded and the track changes through the media element as before
 
+### Requirement: A decodable track that starts from silence plays on Web Audio
+
+When playback of a music track without a picture starts from silence (a play or a seek) and that
+track meets the conditions for decoding a next track, the player SHALL hold the element muted, decode
+the track and start it on Web Audio at the element's position. If it cannot start within 2 s, or the
+track cannot be decoded, the element SHALL play it audibly from that position instead.
+
+#### Scenario: Album playback starts
+
+- **WHEN** the listener plays an album's first track, a direct-play stream of a few minutes
+- **THEN** the track is heard from Web Audio, the element muted beside it
+
+#### Scenario: Decode too slow
+
+- **WHEN** the track has not started on Web Audio 2 s after the listener pressed play
+- **THEN** the element plays it with sound from where it started
+
 ### Requirement: The media element is never routed through Web Audio
 
 The decoded tracks SHALL play on an audio output of their own. The join SHALL NOT create a media
@@ -44,9 +61,10 @@ listener's own mute, which applies to the decoded track.
 
 ### Requirement: Decoded audio is bounded
 
-The web player SHALL NOT decode a next track whose metadata declares more than 12 minutes or no
-finite duration, nor keep one that decodes longer than that. It SHALL release each decoded track as
-soon as it finishes or is stopped, and hold at most two decoded tracks at once.
+The web player SHALL NOT decode a track whose metadata declares more than 12 minutes or no finite
+duration, nor keep one that decodes longer than that. It SHALL release each decoded track as soon as
+it finishes or the item moves past it, and hold at most two decoded tracks at once: the one heard
+and the next.
 
 #### Scenario: Long next track
 
@@ -61,14 +79,19 @@ soon as it finishes or is stopped, and hold at most two decoded tracks at once.
 ### Requirement: Track changes join without a gap
 
 The decoded next track SHALL start on the Web Audio clock where the current track's audio stops.
-The first join after the media element played the current track SHALL leave no silence, and no
-overlap of the two tracks, longer than 20 ms beyond the source's own; each later join between two
-decoded tracks SHALL leave neither longer than 2 ms.
+A join between two decoded tracks SHALL leave no silence, and no overlap of the two tracks, longer
+than 2 ms beyond the source's own. A join after the media element played the current track audibly
+SHALL leave neither longer than 20 ms.
+
+#### Scenario: First track to second
+
+- **WHEN** the first album track, started on Web Audio, ends with the second decoded
+- **THEN** the second track is heard within 2 ms of the first track's last sample
 
 #### Scenario: Element to decoded track
 
-- **WHEN** the first album track ends with the second decoded
-- **THEN** the second track is heard within 20 ms of the first track's last sample
+- **WHEN** the element played the current track audibly and it ends with the next decoded
+- **THEN** the next track is heard within 20 ms of the current track's last sample
 
 #### Scenario: Decoded track to decoded track
 
@@ -104,15 +127,31 @@ since the browser's decoder has already trimmed it.
 - **WHEN** the declared delay span of the decoded track holds sound
 - **THEN** the track starts at its first decoded sample
 
-### Requirement: Any other playback change hands sound back to the element
+### Requirement: Pause and seek keep a decoded track on Web Audio
 
-A pause, a seek, a playback rate change, an advance to any item other than the decoded track,
-unmounting the player, turning on an audio delay, or anything other than the join unmuting the
-element SHALL stop the decoded audio and restore the media element's sound, with the listener's own
-mute, at the element's own position. The element's volume and the listener's mute SHALL apply to the
-decoded audio while it plays.
+A pause SHALL stop the decoded audio and keep the element muted. Playing again, or a seek, SHALL
+start the decoded track again at the element's position, so a track heard from Web Audio is never
+handed to the element mid-play.
 
 #### Scenario: Seek during a decoded track
 
 - **WHEN** the listener seeks while a decoded track plays
-- **THEN** the decoded audio stops and the element plays from the seek position at its own volume
+- **THEN** the decoded track is heard from the seek position and the element stays muted
+
+#### Scenario: Pause and resume
+
+- **WHEN** the listener pauses a decoded track and plays it again
+- **THEN** it is heard again from where it paused
+
+### Requirement: Any other playback change hands sound back to the element
+
+A playback rate change, an advance to any item other than the decoded track, unmounting the player,
+turning on an audio delay, or anything other than the player unmuting the element SHALL stop the
+decoded audio and restore the media element's sound, with the listener's own mute, at the element's
+own position. The element's volume and the listener's mute SHALL apply to the decoded audio while it
+plays.
+
+#### Scenario: Playback rate change during a decoded track
+
+- **WHEN** the listener changes the playback rate while a decoded track plays
+- **THEN** the decoded audio stops and the element plays from its position at its own volume
