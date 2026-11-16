@@ -950,6 +950,23 @@
   );
 }
 
+/* Over a live visual the words sit on a blurred scrim plate, and the muted
+   lines drop their transparency, so every line keeps WCAG AA contrast even
+   over a white frame (CORE-2216). Without a visual nothing changes. */
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-meta {
+  margin: -16px -20px;
+  padding: 16px 20px;
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--scrim) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  text-shadow: 0 1px 2px color-mix(in oklab, var(--scrim) 60%, transparent);
+}
+
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) :is(.bf-audio-position, .bf-audio-collections, .bf-audio-others) {
+  color: color-mix(in oklab, var(--on-scrim) 52%, var(--on-scrim-muted));
+}
+
 /* Narrow windows stack the artwork above the words. */
 @media (max-width: 640px) {
   .bf-audio-card {
