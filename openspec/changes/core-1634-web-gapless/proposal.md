@@ -26,12 +26,19 @@ keep a short silence.
   or leaving the player hands sound back to the media element at its own position.
 - The element's sound is routed through one shared Web Audio graph per element, used by both the
   audio delay (CORE-1671) and the gapless join, since a media element can feed only one source node.
+- Decoded audio is bounded: a next track whose metadata declares more than 12 minutes (or no
+  duration) is not decoded, each decoded track is released when it finishes, and at most two are
+  held (the one heard and the next).
 - A focused Playwright test measures the silence between test tones at each join.
 
 ## Non-goals
 
-- Browsers that play HLS through their own engine (Safari): the element is never routed through Web
-  Audio there (CORE-1671), so they keep the element advance, with its gap.
+- Browsers that play HLS through their own engine (Safari), even for direct-play files: the player
+  reuses one media element across items and a media element source cannot be removed, so routing
+  it for a direct-play track leaves a later native-HLS item (a transcoded next item, or a switch to
+  HLS mid-track) silent. CORE-1671 hit exactly this and keyed routing to the browser's HLS engine
+  (commit 9f637c65); this change keeps that rule, so Safari keeps the element advance and its gap.
+  Joining there needs a design that never routes the element (task 8).
 - HLS transcodes as the next track (they are segmented, not one decodable file), a next track whose
   stream is on another origin, video, composed pictures and karaoke songs.
 - An audio delay above zero: the gapless join stays off while one is set.

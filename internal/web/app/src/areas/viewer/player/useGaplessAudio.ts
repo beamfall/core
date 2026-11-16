@@ -27,6 +27,12 @@ const JOIN_MARGIN_SECONDS = 0.05;
 export const SYNC_TOLERANCE_SECONDS = 0.25;
 /** A declared delay or padding is trimmed only when its samples stay below this peak. */
 export const QUIET_PEAK = 0.01;
+/**
+ * A next track longer than this is left to the element advance: decoded, a
+ * stereo track holds about 23 MB a minute at 48 kHz. At most two decoded
+ * tracks (the one heard and the next) are held at once.
+ */
+export const MAX_DECODED_SECONDS = 12 * 60;
 
 export interface TrimWindow {
   /** Seconds skipped at the start of the decoded track. */
@@ -84,6 +90,32 @@ export function decodableStream(next?: PlaybackNext): PlaybackStream | undefined
   });
 }
 
+/**
+ * The duration the media at `url` declares in its metadata (NaN when it
+ * declares none), read by a detached element so nothing is downloaded whole.
+ */
+export function probeDuration(url: string, signal: AbortSignal): Promise<number> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve(Number.NaN);
+    const probe = document.createElement("audio");
+    const done = (seconds: number) => {
+      probe.removeEventListener("loadedmetadata", onMetadata);
+      probe.removeEventListener("error", onError);
+      signal.removeEventListener("abort", onError);
+      probe.removeAttribute("src");
+      probe.load();
+      resolve(seconds);
+    };
+    const onMetadata = () => done(probe.duration);
+    const onError = () => done(Number.NaN);
+    probe.addEventListener("loadedmetadata", onMetadata);
+    probe.addEventListener("error", onError);
+    signal.addEventListener("abort", onError);
+    probe.preload = "metadata";
+    probe.src = url;
+  });
+}
+
 interface Segment {
   mediaID: string;
   node: AudioBufferSourceNode;
@@ -137,6 +169,16 @@ function bridgeFor(video: HTMLMediaElement): Bridge | null {
   return bridge;
 }
 
+// Lets go of a finished segment's decoded audio.
+function release(node: AudioBufferSourceNode) {
+  node.disconnect();
+  try {
+    node.buffer = null;
+  } catch {
+    // An engine that refuses the reset frees it with the node.
+  }
+}
+
 /** Stops the decoded audio and gives the element its sound back. */
 export function handBack(video: HTMLMediaElement) {
   const bridge = bridges.get(video);
@@ -149,7 +191,7 @@ export function handBack(video: HTMLMediaElement) {
     } catch {
       // Never started (or already stopped): nothing to silence.
     }
-    segment.node.disconnect();
+    release(segment.node);
   }
   const { gain } = bridge.elementGain;
   gain.cancelScheduledValues(0);
@@ -178,7 +220,7 @@ function schedule(
   node.onended = () => {
     if (!bridge.segments.includes(segment)) return;
     bridge.segments = bridge.segments.filter((other) => other !== segment);
-    node.disconnect();
+    release(node);
     // The last decoded track is over and nothing follows it: the silent element
     // has ended too, or ends within the drift, and then gets its sound back.
     if (bridge.segments.length === 0 && (video.ended || video.paused)) handBack(video);
@@ -346,6 +388,9 @@ export function useGaplessAudio({
       if (!graph) return;
       try {
         if (graph.context.state !== "running") await graph.context.resume();
+        // Not NaN, not endless, not too long to hold decoded.
+        const seconds = await probeDuration(nextURL, controller.signal);
+        if (controller.signal.aborted || !(seconds <= MAX_DECODED_SECONDS)) return;
         const response = await fetch(nextURL, {
           credentials: "same-origin",
           signal: controller.signal,
@@ -353,7 +398,8 @@ export function useGaplessAudio({
         if (!response.ok) return;
         const bytes = await response.arrayBuffer();
         const buffer = await graph.context.decodeAudioData(bytes);
-        if (controller.signal.aborted) return;
+        // The metadata understated it: drop it rather than hold it.
+        if (controller.signal.aborted || buffer.duration > MAX_DECODED_SECONDS) return;
         decoded = { buffer, trim: trimWindow(buffer, trimFor) };
         check();
       } catch {
@@ -379,6 +425,7 @@ export function useGaplessAudio({
           video,
         );
         scheduled = true;
+        decoded = null;
         return;
       }
       if (video.paused || video.seeking || video.playbackRate !== 1) return;
@@ -394,11 +441,14 @@ export function useGaplessAudio({
       schedule(bridge, nextID, decoded.buffer, decoded.trim, at, video);
       bridge.elementGain.gain.setValueAtTime(0, at);
       scheduled = true;
+      decoded = null;
     };
 
     const check = () => {
       if (controller.signal.aborted) return;
-      if (!decoding && remaining() <= PREPARE_AHEAD_SECONDS) void prepare();
+      // The track heard and one scheduled after it are the most held at once.
+      const held = bridges.get(video)?.segments.length ?? 0;
+      if (!decoding && held < 2 && remaining() <= PREPARE_AHEAD_SECONDS) void prepare();
       join();
     };
 

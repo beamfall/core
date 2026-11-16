@@ -6,4 +6,5 @@
 - [x] 4. Hand sound back to the element on pause, seek, rate change, unplanned advance and unmount; mirror volume and mute
 - [x] 5. Unit tests for the trim, the scheduling and the hand-back
 - [x] 6. Playwright test measuring the silence between test tones at each join (Chromium)
-- [ ] 7. Follow-up: Safari (native HLS engine) and HLS next tracks
+- [x] 7. Bound decoded audio: skip a next track over 12 minutes, release each finished track, hold at most two
+- [ ] 8. Follow-up: Safari direct-play joins without routing the element (decoded audio on its own output, the element silenced while it shadows), and HLS next tracks

@@ -177,19 +177,25 @@ test("album tracks join without a gap, the declared silence trimmed", async ({ p
       contexts[0],
     );
     if (!busiest) return null;
-    // Render quanta are numbered; a missing one would read as a false gap.
-    const contiguous = busiest.chunks.every(
-      (chunk, i, all) => i === 0 || chunk.frame === all[i - 1].frame + all[i - 1].data.length,
-    );
+    // Render quanta are numbered; a missing one would read as a false gap. Breaks before the
+    // first sound (the recorder starting up) cannot touch a join, so the check starts there.
+    const firstSound = busiest.chunks.findIndex((chunk) => chunk.data.some((v) => Math.abs(v) > 0));
+    const breaks = busiest.chunks.flatMap((chunk, i, all) => {
+      if (firstSound < 0 || i <= firstSound) return [];
+      const expected = all[i - 1].frame + all[i - 1].data.length;
+      return chunk.frame === expected
+        ? []
+        : [`chunk ${i}: frame ${chunk.frame}, expected ${expected}`];
+    });
     return {
       sampleRate: busiest.sampleRate,
-      contiguous,
+      breaks,
       samples: busiest.chunks.flatMap((chunk) => chunk.data),
     };
   });
   expect(capture, "the page made no AudioContext").not.toBeNull();
   if (!capture) return;
-  expect(capture.contiguous, "the recorder missed a render quantum").toBe(true);
+  expect(capture.breaks, "the recorder missed render quanta").toEqual([]);
   const samples = Float32Array.from(capture.samples);
   const joins = measureJoins(samples, capture.sampleRate);
   // Logged so a run states the measured silence, not only pass or fail.

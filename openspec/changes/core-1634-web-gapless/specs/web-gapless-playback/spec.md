@@ -19,6 +19,22 @@ through Web Audio, no audio delay is set and no Watch Party leads the player.
 - **WHEN** the next track's only stream is an HLS transcode
 - **THEN** nothing is decoded and the track changes through the media element as before
 
+### Requirement: Decoded audio is bounded
+
+The web player SHALL NOT decode a next track whose metadata declares more than 12 minutes or no
+finite duration, nor keep one that decodes longer than that. It SHALL release each decoded track as
+soon as it finishes or is stopped, and hold at most two decoded tracks at once.
+
+#### Scenario: Long next track
+
+- **WHEN** the next album track declares a duration of 13 minutes
+- **THEN** nothing is fetched or decoded and the track changes through the media element as before
+
+#### Scenario: Decoded track finishes
+
+- **WHEN** a decoded track plays to its end
+- **THEN** its decoded audio is released
+
 ### Requirement: Track changes join without a gap
 
 The decoded next track SHALL start on the Web Audio clock where the current track's audio stops.
