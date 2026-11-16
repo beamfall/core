@@ -540,7 +540,8 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // Nebula — frequency + beat.
 //
 // Volumetric smoke threaded with spectrum lightning around a dark core.
-// Performance path: layered analytic shells, not a full raymarch (12 shells).
+// Performance path: layered analytic shells, not a full raymarch: 12 shells at full
+// detail, down to 6 as the host raises presentation1.y, each weighted to keep density.
 // DARK CORE enforced: radial carve + density clamp keeps the center black.
 // Lightning filaments driven by treble; swirl driven by bassImpact.
 //
@@ -577,14 +578,18 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec3  col      = vec3(0.0);
     float transmit = 1.0;
 
-    const int   LAYERS     = 12;
-    const float INV_LAYERS = 1.0 / float(LAYERS);
+    // presentation1.y is the host's detail reduction in [0, 1]; it raises it to hold frame rate.
+    float detail      = 1.0 - clamp(u.presentation1.y, 0.0, 1.0);
+    int   layers      = 6 + int(floor(6.0 * detail + 0.5));
+    float invLayers   = 1.0 / float(layers);
+    float layerWeight = 12.0 / float(layers);
     float radius = length(p0);
     float outerMask = 1.0 - smoothstep(1.05, 1.48, radius);
     float coreMask = smoothstep(coreRadius, coreRadius + 0.28, radius);
 
-    for (int i = 0; i < LAYERS; ++i) {
-        float fi = (float(i) + 0.5) * INV_LAYERS;
+    for (int i = 0; i < 12; ++i) {
+        if (i >= layers) break;
+        float fi = (float(i) + 0.5) * invLayers;
         float depth = 1.0 - fi;
         float sliceAngle = t * 0.55 + swirlAmt * fi * 1.65 + impact * fi * 2.0 + sin(beatRadians(u, fi * 0.23)) * 0.16;
         float shell = mix(1.28, 0.72, fi) * (1.0 + (phaseBreath - 0.5) * 0.045 * (1.0 - fi));
@@ -614,7 +619,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float beatFlash = impact * depth * 1.3;
         vec3 beatCol = palVisual(0.08 + specCentroid * 0.1, u);
 
-        float alpha = min(dens * 0.16, 0.075);
+        float alpha = min(dens * 0.16, 0.075) * layerWeight;
         vec3 emissive = smokeCol * (dens * 0.85 * emitScale + beatFlash * dens)
                       + litCol * (lightning * (1.8 + trebleE * 1.6) * emitScale + beatFlash * 0.18)
                       + beatCol * (beatFlash * 0.45 * dens);

@@ -1,21 +1,21 @@
 {
-  "release": "v0.2.1",
-  "rev": "6f21c91d1212beacd3b3ca0a4706294b9a559d2b",
+  "release": "v0.2.2",
+  "rev": "7682232e0082e520bee10575406b3229bbbcd9d2",
   "license": "AGPL-3.0-only",
-  "source": "https://github.com/beamfall/oscillux/releases/tag/v0.2.1",
+  "source": "https://github.com/beamfall/oscillux/releases/tag/v0.2.2",
   "assets": {
     "oscillux-glsl300.zip": {
-      "sha256": "41ddfe26578709b6840cbf49e1f71410f391ff8cb0a7039d6c2302bf18e2cccb",
+      "sha256": "d2009334751d16cb98d7ad1424c0a746838530a9692b36bb0e0393a9ff4d904d",
       "vendoredAs": "glsl300/",
       "subset": "index.json, legal/, post/present.frag, switch/switch.frag, limiter/*.frag, visuals/vertex.web.vert and the nine visuals in visuals.json, byte-identical to the zip"
     },
     "oscillux-wasm.tgz": {
-      "sha256": "f70a0ec4104a64a20345da55fca424c609a16c866a608a4a07c6af91d23976cc",
+      "sha256": "404381ae609a7c3255ecaece562940555cfe002dfdc95d796b093a5820a4493d",
       "vendoredAs": "wasm/",
       "subset": "the whole package/ directory, byte-identical"
     },
-    "oscillux-v0.2.1.manifest.json": {
-      "sha256": "73c1cfa073dba8543c857b8ffbf2510f271cc8689f2c5faad575565048086337"
+    "oscillux-v0.2.2.manifest.json": {
+      "sha256": "9112595c84c9b458b76d7d8f0e3ed70a95a4b016b83e91d6f41daae491b63258"
     }
   }
 }
