@@ -2,6 +2,7 @@ package scan
 
 import (
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 
@@ -65,7 +66,40 @@ func (s *scanWalkState) attachVersion(key string, imported store.ImportMediaFile
 	if err != nil {
 		return "", false, err
 	}
+	s.noteVersion(key, imported.Path, anchor.mediaID)
 	return anchor.mediaID, true, nil
+}
+
+// noteVersion records path as a file of the Version Media mediaID. A Media's
+// Unmatched state is the Media's, not a file's: identifying a later Version
+// can queue or clear it after an earlier Version was walked. So no Version
+// file carries the count; the finished scan counts each Version Media once
+// (countUnmatchedVersions, CORE-2194).
+func (s *scanWalkState) noteVersion(key, path string, mediaID store.MediaID) {
+	if key == "" {
+		return
+	}
+	if s.result.versionMedia == nil {
+		s.result.versionMedia = map[store.MediaID]bool{}
+	}
+	s.result.versionMedia[mediaID] = true
+	s.noteFile(path, func(t *fileTally) { t.unmatched = false })
+}
+
+// countUnmatchedVersions counts each Version Media the scan walked that is
+// still in the Unmatched queue once the walk is done. A failed lookup only
+// loses the count, as in noteUnmatched.
+func (s *scanWalkState) countUnmatchedVersions() {
+	for _, id := range mediaIDs(s.result.versionMedia) {
+		queued, err := s.st.IsUnmatched(s.ctx, store.MediaID(id))
+		if err != nil {
+			slog.Warn("scan: unmatched lookup failed", "media", id, "error", err.Error())
+			continue
+		}
+		if queued {
+			s.result.MediaUnmatched++
+		}
+	}
 }
 
 // seedVersionAnchors adds, once per directory, an anchor for each title a

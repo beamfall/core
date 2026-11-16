@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+
+	"github.com/beamfall/core/internal/store"
 )
 
 func requestFromJobPayload(payload []byte) (Request, error) {
@@ -58,6 +60,14 @@ func marshalScanCheckpoint(checkpoint jobCheckpoint) ([]byte, error) {
 }
 
 func (r Result) checkpoint(stage string) jobCheckpoint {
+	// A finished walk has already counted its Version Media in MediaUnmatched
+	// (countUnmatchedVersions), so the complete checkpoint drops them: a job
+	// reclaimed after a crash before CompleteJob resumes from it and must not
+	// count them again (CORE-2194).
+	versionMedia := mediaIDs(r.versionMedia)
+	if stage == "complete" {
+		versionMedia = nil
+	}
 	return jobCheckpoint{
 		Version:            1,
 		Stage:              stage,
@@ -70,6 +80,8 @@ func (r Result) checkpoint(stage string) jobCheckpoint {
 		FilesChanged:       r.FilesChanged,
 		MediaUnmatched:     r.MediaUnmatched,
 		UnmatchedRecords:   pendingIDs(r.unmatchedRecords),
+		VersionMedia:       versionMedia,
+		GroupMedia:         mediaIDs(r.groupMedia),
 	}
 }
 
@@ -94,6 +106,28 @@ func setOf(ids []string) map[string]bool {
 	set := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		set[id] = true
+	}
+	return set
+}
+
+// mediaIDs lists the Media in set, sorted so the checkpoint is stable.
+func mediaIDs(set map[store.MediaID]bool) []string {
+	ids := make([]string, 0, len(set))
+	for id := range set {
+		ids = append(ids, string(id))
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// mediaSetOf is the set of Media ids; it is never nil, so it can be written to.
+func mediaSetOf(ids []string) map[store.MediaID]bool {
+	set := make(map[store.MediaID]bool, len(ids))
+	for _, id := range ids {
+		set[store.MediaID(id)] = true
 	}
 	return set
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -48,9 +49,12 @@ func (s *scanWalkState) completeFirst() error {
 	if newMedia {
 		s.result.seenMedia[completed.mediaID] = true
 		s.result.MediaImported++
+		if s.result.versionMedia[completed.mediaID] {
+			s.noteGroupMedia(completed.mediaID)
+		}
 	}
 	if held {
-		s.held = append(s.held, heldCompletion{path: completed.path, tally: tally, newMedia: newMedia})
+		s.held = append(s.held, heldCompletion{path: completed.path, mediaID: completed.mediaID, tally: tally, newMedia: newMedia})
 	}
 	// A held completion reports no progress: each report counts toward the
 	// job's batch, and a batch that yields with the checkpoint held would
@@ -67,6 +71,25 @@ func (s *scanWalkState) completeFirst() error {
 	return nil
 }
 
+// noteGroupMedia records a Media of several files counted in MediaImported,
+// so a resumed scan that walks its other files does not count it again.
+func (s *scanWalkState) noteGroupMedia(mediaID store.MediaID) {
+	if s.result.groupMedia == nil {
+		s.result.groupMedia = map[store.MediaID]bool{}
+	}
+	s.result.groupMedia[mediaID] = true
+}
+
+// completePending completes every queued file, in order.
+func (s *scanWalkState) completePending() error {
+	for len(s.pendingCompletions) > 0 {
+		if err := s.completeFirst(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // fileTally is what a scan did to one file, for the scan summary (CORE-2040).
 type fileTally struct {
 	added, changed, unmatched bool
@@ -76,6 +99,7 @@ type fileTally struct {
 // pending part group: a resume from there walks it again.
 type heldCompletion struct {
 	path     string
+	mediaID  store.MediaID
 	tally    fileTally
 	newMedia bool
 }
@@ -148,6 +172,9 @@ func (s *scanWalkState) resumeCheckpoint() jobCheckpoint {
 		}
 		if held.tally.unmatched {
 			checkpoint.MediaUnmatched--
+		}
+		if held.newMedia {
+			checkpoint.GroupMedia = slices.DeleteFunc(checkpoint.GroupMedia, func(id string) bool { return id == string(held.mediaID) })
 		}
 	}
 	for _, path := range s.unreportedParts {

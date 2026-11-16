@@ -48,7 +48,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		progress:            progress,
 		workers:             workers,
 		workBudget:          make(chan struct{}, workers),
-		result:              Result{FilesSeen: checkpoint.FilesSeen, MediaImported: checkpoint.MediaImported, LastPath: checkpoint.LastPath, MissingCredentials: append([]string(nil), checkpoint.MissingCredentials...), FilesAdded: checkpoint.FilesAdded, FilesChanged: checkpoint.FilesChanged, MediaUnmatched: checkpoint.MediaUnmatched, seenMedia: map[store.MediaID]bool{}, totalFiles: checkpoint.TotalFiles, unmatchedRecords: setOf(checkpoint.UnmatchedRecords)},
+		result:              Result{FilesSeen: checkpoint.FilesSeen, MediaImported: checkpoint.MediaImported, LastPath: checkpoint.LastPath, MissingCredentials: append([]string(nil), checkpoint.MissingCredentials...), FilesAdded: checkpoint.FilesAdded, FilesChanged: checkpoint.FilesChanged, MediaUnmatched: checkpoint.MediaUnmatched, seenMedia: mediaSetOf(checkpoint.GroupMedia), totalFiles: checkpoint.TotalFiles, unmatchedRecords: setOf(checkpoint.UnmatchedRecords), versionMedia: mediaSetOf(checkpoint.VersionMedia), groupMedia: mediaSetOf(checkpoint.GroupMedia)},
 		directoryContexts:   map[string]ParseContext{},
 		directoryPreflights: map[string]*contextualDirectoryPreflight{},
 		versionAnchors:      map[string]versionAnchor{},
@@ -148,6 +148,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 			return state.stopped(err)
 		}
 	}
+	state.countUnmatchedVersions()
 	state.applyDeferredArtwork()
 	if err := state.markMissingIfPlausible(scanStarted); err != nil {
 		return Result{}, err

@@ -275,6 +275,13 @@ type jobCheckpoint struct {
 	// UnmatchedRecords lists the folder-level Unmatched records already
 	// counted in MediaUnmatched, so a resumed scan counts each folder once.
 	UnmatchedRecords []string `json:"unmatched_records,omitempty"`
+	// VersionMedia lists the Version Media the scan walked so far; the
+	// finished scan counts each one still Unmatched once, however its
+	// Versions are spread across directories and passes (CORE-2194).
+	VersionMedia []string `json:"version_media,omitempty"`
+	// GroupMedia lists the Media of several files (Versions, parts) already
+	// counted in MediaImported, so a resumed scan does not count them again.
+	GroupMedia []string `json:"group_media,omitempty"`
 }
 
 // Result summarizes a completed scan.
@@ -303,6 +310,10 @@ type Result struct {
 	// noted, true for the pending ones counted in MediaUnmatched (see
 	// noteUnmatchedRecord).
 	unmatchedRecords map[string]bool
+	// versionMedia and groupMedia back jobCheckpoint.VersionMedia and
+	// GroupMedia.
+	versionMedia map[store.MediaID]bool
+	groupMedia   map[store.MediaID]bool
 	// interrupted is the resume point of a scan stopped by cancellation.
 	interrupted *jobCheckpoint
 }

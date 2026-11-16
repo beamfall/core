@@ -151,10 +151,8 @@ func (s *scanWalkState) flushPendingParts() error {
 	// Complete every file consumed before the group is flushed. An image
 	// consumed between the parts may still be queued, and completing it after
 	// the group would move the resume checkpoint back below the later parts.
-	for len(s.pendingCompletions) > 0 {
-		if err := s.completeFirst(); err != nil {
-			return err
-		}
+	if err := s.completePending(); err != nil {
+		return err
 	}
 	parts := s.pendingParts
 	s.pendingParts = nil
@@ -177,6 +175,13 @@ func (s *scanWalkState) flushPendingParts() error {
 		}
 		return err
 	}
+	// The group is in the catalog from here, so a scan stopped before
+	// reporting it still counts every part (see resumeCheckpoint).
+	paths := make([]string, len(files))
+	for i, file := range files {
+		paths[i] = file.Path
+	}
+	s.unreportedParts = paths
 	first := parts[0]
 	fields := append([]store.MediaField(nil), first.fields...)
 	fields = appendParsedStructuralMediaFields(fields, first.parsed)
@@ -188,12 +193,18 @@ func (s *scanWalkState) flushPendingParts() error {
 	if err := ensurePartBoundaryMarkers(s.ctx, s.st, s.prober, parts, media.ID, now()); err != nil {
 		return err
 	}
+	// The group's Unmatched count rides on its last part in walk order, which
+	// part numbers need not follow. A scan stopped before reporting that part
+	// walks it again on resume and re-imports it with the rest as a group,
+	// which counts the Media there, once (CORE-2194).
 	if s.identifier != nil && s.libraryPluginID != "" {
-		s.autoIdentify(first.imported.Path, media.ID, first.imported.ContentFingerprint, first.parsed, "scan: auto-identify failed")
-	}
-	paths := make([]string, len(files))
-	for i, file := range files {
-		paths[i] = file.Path
+		last := paths[0]
+		for _, path := range paths[1:] {
+			if compareWalkOrder(s.req.Root, path, last) > 0 {
+				last = path
+			}
+		}
+		s.autoIdentify(last, media.ID, first.imported.ContentFingerprint, first.parsed, "scan: auto-identify failed")
 	}
 	// On an error unreportedParts stays set, so the checkpoint a stopped scan
 	// returns still counts the parts not yet reported.
@@ -212,6 +223,7 @@ func (s *scanWalkState) flushPendingParts() error {
 		if !s.result.seenMedia[media.ID] {
 			s.result.seenMedia[media.ID] = true
 			s.result.MediaImported++
+			s.noteGroupMedia(media.ID)
 		}
 		if s.progress != nil {
 			if err := s.progress(s.resumeCheckpoint(), store.JobProgress{
@@ -290,6 +302,11 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 		return err
 	}
 	if err := s.noteUnmatchedRecord(recordID); err != nil {
+		return err
+	}
+	// The refusal moves the resume point to path, so every file consumed
+	// before it completes first, or a resume would skip it (CORE-2194).
+	if err := s.completePending(); err != nil {
 		return err
 	}
 	s.result.FilesSeen++
