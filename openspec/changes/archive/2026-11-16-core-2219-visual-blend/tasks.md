@@ -3,4 +3,4 @@
 - [x] Switch pass blends outgoing to incoming before present, timed by the wasm transition scheduler
 - [x] Requests during a switch queue; reduced motion changes at once; resize ends a switch
 - [x] Tests: switch decision (blend, same, instant, queue)
-- [ ] Verified live across an album change with per-frame canvas sampling
+- [x] Verified live with per-frame canvas sampling (2026-11-16, build 03f4d644: a 1.18 s eased blend, driven through the renderer's use() because album queues share one artwork key)
