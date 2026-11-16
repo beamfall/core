@@ -1406,7 +1406,15 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 			}
 		}
 	}
+	mutated := false
 	for _, occurrence := range plan.occurrences {
+		if mutated {
+			refreshed, resp := h.reauthorizeAfterMutation(ctx, scope, occurrence.canonical)
+			if len(resp.Errors) > 0 {
+				return completePrivilegedOutcomes(resp, plan, out.privilegedOutcomes)
+			}
+			scope = refreshed
+		}
 		occurrenceRequest := req
 		occurrenceRequest.Variables = occurrence.input
 		dispatch := fieldDispatchContext{
@@ -1432,8 +1440,36 @@ func (h *Handler) execute(ctx context.Context, scope auth.Scope, req request, pl
 			out.Data[key] = value
 		}
 		out.Errors = append(out.Errors, dispatch.errs...)
+		mutated = mutated || mutationFields[occurrence.canonical]
 	}
 	return completePrivilegedOutcomes(out, plan, out.privilegedOutcomes)
+}
+
+// reauthorizeAfterMutation re-resolves a session scope after an earlier
+// mutation field of the same operation ran, and authorizes the next field
+// against it (CORE-0742). A field such as switchProfile, reveal, relock or an
+// Admin Session change alters the session's Profile, Library grants, Reveal
+// state or Admin authority; every later field must act on that, never on the
+// scope resolved when the request arrived. Admin API tokens carry no session
+// and cannot change their authority mid-request, so they keep their scope.
+func (h *Handler) reauthorizeAfterMutation(ctx context.Context, scope auth.Scope, field string) (auth.Scope, response) {
+	if !scope.IsEnrolledDeviceSession() {
+		return scope, response{}
+	}
+	refreshed, err := h.auth.Scope(ctx, scope.SessionID)
+	if err != nil {
+		return auth.Scope{}, response{
+			Errors:               []graphError{newGraphError(ErrorCodeUnauthenticated, "invalid session")},
+			authorizationRefused: true,
+		}
+	}
+	probe := fieldDispatchContext{scope: refreshed, fields: map[string]bool{field: true}}
+	for _, order := range selectedFieldDispatchOrders(probe.fields) {
+		if resp := authorizeDispatchOrder(&probe, order); len(resp.Errors) > 0 {
+			return auth.Scope{}, resp
+		}
+	}
+	return refreshed, response{}
 }
 
 func completePrivilegedOutcomes(resp response, plan operationPlan, outcomes map[string]observability.AuditOutcome) response {
