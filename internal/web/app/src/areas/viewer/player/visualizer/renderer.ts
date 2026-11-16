@@ -369,10 +369,10 @@ export class Renderer {
   }
 
   // The switch's eased progress this frame, or null with no switch running. A switch that has
-  // ended is dropped here, and a visual queued behind it starts.
+  // ended (or that a resize cut short) is dropped here, and a visual queued behind it starts.
   private switchProgress(reducedMotion: boolean): number | null {
-    if (!this.outgoing) return null;
-    if (!reducedMotion) {
+    if (!this.outgoing && !this.pending) return null;
+    if (this.outgoing && !reducedMotion) {
       const status = this.transition.status(this.time);
       if (status === 0 && this.transition.state !== TRANSITION_DONE) {
         return this.transition.progress;
