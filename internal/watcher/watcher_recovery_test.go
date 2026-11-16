@@ -455,6 +455,9 @@ func TestDegradeWarningCarriesSuppressedCountAfterInterval(t *testing.T) {
 	if got := logs.count("failures_since_last_warning=2"); got != 1 {
 		t.Fatalf("suppressed count missing from the second warning: %d", got)
 	}
+	// The watch reports Active before it writes the restored line, so wait
+	// for the line rather than reading the log as soon as flap returns.
+	waitFor(t, "second restored line", func() bool { return logs.count(restoredLine) >= 2 })
 	if got := logs.count(restoredLine); got != 2 {
 		t.Fatalf("restored lines = %d, want one per written warning", got)
 	}
