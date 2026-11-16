@@ -82,6 +82,38 @@ func TestInfoStillOffersDirectPlayWhenTranscodeDisallowed(t *testing.T) {
 	if resp.Decision != "direct-play" {
 		t.Fatalf("Decision = %q, want direct-play", resp.Decision)
 	}
+	// The withheld HLS stream is named so a client whose decoder rejects the
+	// file can say converting is off for this Profile (CORE-2181).
+	if resp.Reason != "transcode-disallowed" {
+		t.Fatalf("Reason = %q, want transcode-disallowed", resp.Reason)
+	}
+	for _, stream := range resp.Streams {
+		if stream.Kind != "direct-play" {
+			t.Fatalf("stream kind %q offered, want only direct-play", stream.Kind)
+		}
+	}
+}
+
+func TestInfoDirectPlayCarriesNoReasonWhenTranscodeAllowed(t *testing.T) {
+	service, _, scope := newPolicyTestService(t, "session-default")
+
+	resp, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID:           "media-alpha",
+		CapabilityProfile: CapabilityProfile{Containers: []string{"mp4"}, DirectCodecs: []string{"h264"}},
+	})
+	if err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+	if resp.Decision != "direct-play" || resp.Reason != "" {
+		t.Fatalf("Decision, Reason = %q, %q, want direct-play with no reason", resp.Decision, resp.Reason)
+	}
+	hls := false
+	for _, stream := range resp.Streams {
+		hls = hls || stream.Kind == "hls"
+	}
+	if !hls {
+		t.Fatal("no HLS stream offered beside direct play")
+	}
 }
 
 // startTranscode starts a fake HLS transcode under the given session key so

@@ -57,6 +57,7 @@ export function InfoOverlay({
       reasonRequiresTranscode: t("reasonRequiresTranscode"),
       reasonBitrateCeiling: t("reasonBitrateCeiling"),
       reasonPolicyBitrateCeiling: t("reasonPolicyBitrateCeiling"),
+      reasonTranscodeDisallowed: t("reasonTranscodeDisallowed"),
     },
   });
 

@@ -1159,6 +1159,13 @@ export function usePlayer(
             // Direct play the browser cannot decode falls over to the HLS
             // sibling once, at the position playback had reached.
             if (undecodable && target.kind !== "hls" && switchToHls()) return;
+            // No HLS to fall over to because the Profile disallows converting
+            // (CORE-2181): say so, not that the format alone is the problem.
+            const transcodeDisallowed = messagesRef.current.transcodeDisallowed;
+            if (undecodable && info.reason === "transcode-disallowed" && transcodeDisallowed) {
+              showMessage(transcodeDisallowed, { action: "back" });
+              return;
+            }
             showMessage(
               undecodable
                 ? messagesRef.current.playbackUnsupportedCodec

@@ -663,6 +663,7 @@ export interface RouteDetailLabels {
   reasonRequiresTranscode?: string;
   reasonBitrateCeiling?: string;
   reasonPolicyBitrateCeiling?: string;
+  reasonTranscodeDisallowed?: string;
 }
 
 function reasonLabel(reason: string, labels: RouteDetailLabels): string {
@@ -679,6 +680,10 @@ function reasonLabel(reason: string, labels: RouteDetailLabels): string {
       labels.reasonPolicyBitrateCeiling ||
       "The source is above the remote bitrate limit set for this server or profile."
     );
+  }
+  // Direct play with no converted stream offered: the Profile disallows converting (CORE-2181).
+  if (reason === "transcode-disallowed") {
+    return labels.reasonTranscodeDisallowed || "Converting is turned off for this profile.";
   }
   // Unknown machine token: render it verbatim rather than inventing copy.
   return reason;

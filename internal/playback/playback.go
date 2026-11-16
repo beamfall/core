@@ -1327,6 +1327,11 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		reason := ""
 		if p7BaseLayer {
 			reason = dolbyVisionP7BaseLayerReason
+		} else if transcodeRefusal == "transcode-disallowed" {
+			// The Profile gate withheld the HLS stream (CORE-2181): a client
+			// whose decoder then rejects the file can say converting is off
+			// for this Profile rather than blame the format alone.
+			reason = transcodeRefusal
 		}
 		return decision{
 			media:          media,

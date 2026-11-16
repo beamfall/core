@@ -78,6 +78,11 @@ describe("InfoOverlay transcode reason labels (CORE-1853)", () => {
     ).toBeInTheDocument();
   });
 
+  it("labels a Profile that disallows converting (CORE-2181)", () => {
+    renderReason("transcode-disallowed");
+    expect(screen.getByText("Converting is turned off for this profile.")).toBeInTheDocument();
+  });
+
   it("labels the viewer's own quality limit", () => {
     renderReason("bitrate-ceiling");
     expect(

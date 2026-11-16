@@ -27,6 +27,7 @@ export const playbackChapterStrings = {
     reasonBitrateCeiling: "The source is above the quality limit you chose.",
     reasonPolicyBitrateCeiling:
       "The source is above the remote bitrate limit set for this server or profile.",
+    reasonTranscodeDisallowed: "Converting is turned off for this profile.",
     subtitleStyling: "Subtitle styling",
     subtitleSize: "Text size",
     subtitleSizeSmall: "Small",
@@ -95,6 +96,7 @@ export const playbackChapterStrings = {
     reasonBitrateCeiling: "La source dépasse la limite de qualité que vous avez choisie.",
     reasonPolicyBitrateCeiling:
       "La source dépasse la limite de débit distant fixée pour ce serveur ou ce profil.",
+    reasonTranscodeDisallowed: "La conversion est désactivée pour ce profil.",
     subtitleStyling: "Style des sous-titres",
     subtitleSize: "Taille du texte",
     subtitleSizeSmall: "Petit",
@@ -162,6 +164,7 @@ export const playbackChapterStrings = {
     reasonBitrateCeiling: "Die Quelle liegt über dem von Ihnen gewählten Qualitätslimit.",
     reasonPolicyBitrateCeiling:
       "Die Quelle liegt über dem Remote-Bitratenlimit dieses Servers oder Profils.",
+    reasonTranscodeDisallowed: "Die Konvertierung ist für dieses Profil deaktiviert.",
     subtitleStyling: "Untertitel-Stil",
     subtitleSize: "Textgröße",
     subtitleSizeSmall: "Klein",
@@ -229,6 +232,7 @@ export const playbackChapterStrings = {
     reasonBitrateCeiling: "La fuente supera el límite de calidad que elegiste.",
     reasonPolicyBitrateCeiling:
       "La fuente supera el límite de tasa de bits remota de este servidor o perfil.",
+    reasonTranscodeDisallowed: "La conversión está desactivada para este perfil.",
     subtitleStyling: "Estilo de subtítulos",
     subtitleSize: "Tamaño del texto",
     subtitleSizeSmall: "Pequeño",
@@ -296,6 +300,7 @@ export const playbackChapterStrings = {
     reasonBitrateCeiling: "A fonte excede o limite de qualidade que você escolheu.",
     reasonPolicyBitrateCeiling:
       "A fonte excede o limite de taxa de bits remota deste servidor ou perfil.",
+    reasonTranscodeDisallowed: "A conversão está desativada para este perfil.",
     subtitleStyling: "Estilo das legendas",
     subtitleSize: "Tamanho do texto",
     subtitleSizeSmall: "Pequeno",

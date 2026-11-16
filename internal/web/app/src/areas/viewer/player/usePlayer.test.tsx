@@ -147,6 +147,7 @@ const messages = {
   terminalUnavailable: "terminal unavailable",
   mediaNotAvailable: "media not available",
   streamLimitReached: "stream limit reached",
+  transcodeDisallowed: "transcode disallowed",
   sourceEndsEarly: "source ends early",
 };
 
@@ -1747,6 +1748,26 @@ describe("usePlayer", () => {
       await waitFor(() =>
         expect(screen.getByTestId("message")).toHaveTextContent("unsupported codec"),
       );
+      expect(fakeHlsInstances).toHaveLength(0);
+      expect(screen.getByTestId("message")).not.toHaveTextContent("transcode disallowed");
+    });
+
+    it("says converting is off when the Profile withheld the HLS stream (CORE-2181)", async () => {
+      vi.mocked(Hls.isSupported).mockReturnValue(true);
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+        decision: "direct-play",
+        reason: "transcode-disallowed",
+        streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+      });
+      render(<Harness />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      Object.defineProperty(video, "error", { configurable: true, value: { code: 4 } });
+      fireEvent.error(video);
+      await waitFor(() =>
+        expect(screen.getByTestId("message")).toHaveTextContent("transcode disallowed"),
+      );
+      expect(screen.getByTestId("action")).toHaveTextContent("back");
       expect(fakeHlsInstances).toHaveLength(0);
     });
 
