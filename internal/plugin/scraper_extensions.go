@@ -38,3 +38,24 @@ func ScraperExtensionsOf(spec ScraperSpec) ScraperExtensions {
 		LookupByIDRecordIDPaths: spec.LookupByIDRecordIDPaths,
 	}
 }
+
+// CredentialDisplayLabel names a scraper credential for owner-facing status
+// text as "<plugin>: <label>" (CORE-2187, CORE-2190), never by its internal
+// ref: the label comes from help, else "provider key", and the plugin name
+// falls back to its ID.
+func CredentialDisplayLabel(bundle Bundle, help *CredentialHelp) string {
+	name := bundle.DisplayName.Resolve("")
+	if name == "" {
+		name = string(bundle.ID)
+	}
+	label := "provider key"
+	if help != nil {
+		if resolved := help.Label.Resolve(""); resolved != "" {
+			label = resolved
+		}
+	}
+	if name == "" {
+		return label
+	}
+	return name + ": " + label
+}

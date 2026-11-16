@@ -435,23 +435,13 @@ func (h *Handler) pluginStatusInfo(active bool, bundle plugin.Bundle) []PluginSt
 }
 
 // credentialDisplayLabel names a scraper credential for the Credential status
-// row as "<plugin>: <label>" (CORE-2190), never by its internal ref: the label
-// comes from the scraper's CredentialHelp, else "provider key".
+// row by plugin and label (CORE-2190), never by its internal ref.
 func (h *Handler) credentialDisplayLabel(bundle plugin.Bundle, scraper plugin.ScraperSpec) string {
-	name := bundle.DisplayName.Resolve("")
-	if name == "" {
-		name = string(bundle.ID)
+	var help *plugin.CredentialHelp
+	if info := h.scraperCredentialHelp(scraper); info != nil {
+		help = &plugin.CredentialHelp{Label: info.Label}
 	}
-	label := "provider key"
-	if help := h.scraperCredentialHelp(scraper); help != nil {
-		if resolved := help.Label.Resolve(""); resolved != "" {
-			label = resolved
-		}
-	}
-	if name == "" {
-		return label
-	}
-	return name + ": " + label
+	return plugin.CredentialDisplayLabel(bundle, help)
 }
 
 func pluginActionInfo(actions []plugin.ActionSpec) []PluginActionDescriptor {

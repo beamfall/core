@@ -3004,21 +3004,10 @@ func (a *scanIdentifier) CredentialLabel(ref string) string {
 	if !ok {
 		return ""
 	}
-	name := bundle.DisplayName.Resolve("")
-	if name == "" {
-		name = string(pluginID)
-	}
 	for _, scraper := range bundle.Scrapers {
-		if scraper.AuthRef != ref {
-			continue
+		if scraper.AuthRef == ref {
+			return plugin.CredentialDisplayLabel(bundle, plugin.ScraperExtensionsOf(scraper).CredentialHelp)
 		}
-		label := "provider key"
-		if help := plugin.ScraperExtensionsOf(scraper).CredentialHelp; help != nil {
-			if resolved := help.Label.Resolve(""); resolved != "" {
-				label = resolved
-			}
-		}
-		return name + ": " + label
 	}
 	return ""
 }
