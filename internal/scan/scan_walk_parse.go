@@ -169,7 +169,13 @@ func (s *scanWalkState) flushPendingParts() error {
 	if err != nil {
 		// A member a managed import is still admitting skips the whole group
 		// this pass; the next scan groups it with the cataloged file.
-		return skipManagedAdmissionInFlight(err, parts[0].imported.Path)
+		if err = skipManagedAdmissionInFlight(err, parts[0].imported.Path); err == nil {
+			for _, part := range parts {
+				s.dropTallies(part.imported.Path)
+			}
+			s.releaseHeld()
+		}
+		return err
 	}
 	first := parts[0]
 	fields := append([]store.MediaField(nil), first.fields...)
@@ -189,7 +195,8 @@ func (s *scanWalkState) flushPendingParts() error {
 	for i, file := range files {
 		paths[i] = file.Path
 	}
-	defer func() { s.unreportedParts = nil }()
+	// On an error unreportedParts stays set, so the checkpoint a stopped scan
+	// returns still counts the parts not yet reported.
 	for i, file := range files {
 		s.unreportedParts = paths[i+1:]
 		s.result.FilesSeen++
@@ -217,6 +224,8 @@ func (s *scanWalkState) flushPendingParts() error {
 			}
 		}
 	}
+	s.unreportedParts = nil
+	s.releaseHeld()
 	return nil
 }
 

@@ -30,7 +30,7 @@ func (s *scanWalkState) completeFirst() error {
 	}
 	s.pendingCompletions = s.pendingCompletions[1:]
 	s.result.FilesSeen++
-	s.applyTally(completed.path)
+	tally := s.applyTally(completed.path)
 	s.result.Files = append(s.result.Files, ImportedFile{
 		Path:               completed.path,
 		MediaID:            completed.mediaID,
@@ -44,9 +44,13 @@ func (s *scanWalkState) completeFirst() error {
 	if !held {
 		s.result.LastPath = completed.path
 	}
-	if !s.result.seenMedia[completed.mediaID] {
+	newMedia := !s.result.seenMedia[completed.mediaID]
+	if newMedia {
 		s.result.seenMedia[completed.mediaID] = true
 		s.result.MediaImported++
+	}
+	if held {
+		s.held = append(s.held, heldCompletion{path: completed.path, tally: tally, newMedia: newMedia})
 	}
 	// A held completion reports no progress: each report counts toward the
 	// job's batch, and a batch that yields with the checkpoint held would
@@ -68,6 +72,32 @@ type fileTally struct {
 	added, changed, unmatched bool
 }
 
+// heldCompletion is a file completed while the resume point was held below a
+// pending part group: a resume from there walks it again.
+type heldCompletion struct {
+	path     string
+	tally    fileTally
+	newMedia bool
+}
+
+// releaseHeld moves the resume point past the held completions once no part
+// group holds it back any more.
+func (s *scanWalkState) releaseHeld() {
+	for _, held := range s.held {
+		if compareWalkOrder(s.req.Root, held.path, s.result.LastPath) > 0 {
+			s.result.LastPath = held.path
+		}
+	}
+	s.held = nil
+}
+
+// dropTallies forgets the files a scan skipped without cataloguing them.
+func (s *scanWalkState) dropTallies(paths ...string) {
+	for _, path := range paths {
+		delete(s.tallies, path)
+	}
+}
+
 // noteFile records what the scan did to path. The counts reach the result
 // only when the file completes (applyTally), so a yielded scan's checkpoint
 // counts only the files it will not walk again.
@@ -80,13 +110,14 @@ func (s *scanWalkState) noteFile(path string, note func(*fileTally)) {
 	s.tallies[path] = tally
 }
 
-// resumeCheckpoint is the resume point for the scan so far. A completion still
-// pending, like each part of a group already imported but not yet reported
-// (unreportedParts), is already in the catalog, so a resume takes its file
-// through the fast path and never tallies it again: its added or changed count
-// rides in the checkpoint now, while the result counts it only once it
-// completes. Its unmatched count does not, because the fast path counts a
-// queued item again (retryAutoIdentify).
+// resumeCheckpoint is the resume point for the scan so far. A file imported
+// but not yet queued (committed), a completion still pending, and each part of
+// a group already imported but not yet reported (unreportedParts) are already
+// in the catalog, so a resume takes them through the fast path and never
+// tallies them again: their added or changed counts ride in the checkpoint
+// now, while the result counts them only once they complete. Their unmatched
+// counts do not, because the fast path counts a queued item again
+// (retryAutoIdentify).
 func (s *scanWalkState) resumeCheckpoint() jobCheckpoint {
 	checkpoint := s.result.checkpoint("scanning")
 	carry := func(path string) {
@@ -98,8 +129,26 @@ func (s *scanWalkState) resumeCheckpoint() jobCheckpoint {
 			checkpoint.FilesChanged++
 		}
 	}
+	if s.committed != "" {
+		carry(s.committed)
+	}
 	for _, pending := range s.pendingCompletions {
 		carry(pending.path)
+	}
+	// A held completion past the resume point is walked again on resume, so
+	// the checkpoint keeps only its added or changed count, as for a pending
+	// completion.
+	for _, held := range s.held {
+		if compareWalkOrder(s.req.Root, held.path, checkpoint.LastPath) <= 0 {
+			continue
+		}
+		checkpoint.FilesSeen--
+		if held.newMedia {
+			checkpoint.MediaImported--
+		}
+		if held.tally.unmatched {
+			checkpoint.MediaUnmatched--
+		}
 	}
 	for _, path := range s.unreportedParts {
 		carry(path)
@@ -124,10 +173,10 @@ func (s *scanWalkState) stopped(err error) (Result, error) {
 	return Result{}, err
 }
 
-func (s *scanWalkState) applyTally(path string) {
+func (s *scanWalkState) applyTally(path string) fileTally {
 	tally, ok := s.tallies[path]
 	if !ok {
-		return
+		return fileTally{}
 	}
 	delete(s.tallies, path)
 	if tally.added {
@@ -139,10 +188,12 @@ func (s *scanWalkState) applyTally(path string) {
 	if tally.unmatched {
 		s.result.MediaUnmatched++
 	}
+	return tally
 }
 
 func (s *scanWalkState) queueCompletion(path string, mediaID store.MediaID, fingerprint string, derive bool) error {
 	s.applyLocalArtwork(path, mediaID)
+	s.committed = ""
 	completed := &completedFile{path: path, mediaID: mediaID, fingerprint: fingerprint, done: make(chan struct{})}
 	s.pendingCompletions = append(s.pendingCompletions, completed)
 	if derive && s.imageDeriver != nil {

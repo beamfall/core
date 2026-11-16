@@ -52,7 +52,13 @@ type scanWalkState struct {
 	tallies map[string]fileTally
 	// unreportedParts are the files of the part group being reported that
 	// are already in the catalog but not yet counted (see resumeCheckpoint).
-	unreportedParts   []string
+	unreportedParts []string
+	// committed is the file whose import is in the catalog but not yet queued
+	// for completion (see resumeCheckpoint).
+	committed string
+	// held are the files completed while a part group was pending, which the
+	// resume point has not passed yet (see completeFirst).
+	held              []heldCompletion
 	localArtwork      LocalArtworkImporter
 	containerArtwork  ContainerArtworkImporter
 	containerResolver ContainerEntityResolver

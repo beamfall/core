@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -260,4 +261,95 @@ func completedScanSummary(t *testing.T, st *store.Store, id store.JobID) ScanSum
 	}
 	t.Fatalf("no %s event among %d job events", ScanSummaryEvent, len(events))
 	return ScanSummary{}
+}
+
+func TestScanSummaryKeepsUnreportedPartsOnCancellation(t *testing.T) {
+	// feature:scan-pipeline
+	// A scan cancelled while reporting a part group has catalogued every part;
+	// the parts not yet reported still count in its resume point.
+	root := t.TempDir()
+	prober := taggedPartsProber{}
+	for i, name := range []string{"a.mp3", "b.mp3", "c.mp3"} {
+		writeScanFile(t, root, name, []byte(name))
+		prober[name] = map[string]string{"album": "Group", "track": strconv.Itoa(3 - i)}
+	}
+	st := storetest.Open(t)
+	req := Request{LibraryID: partsLibrary(t, st), Root: root}
+	parsers := map[string]FilenameParser{"parts": taggedPartsParser{}}
+	cancelAtFirstReport := func(jobCheckpoint, store.JobProgress) error { return context.Canceled }
+	result, err := scanFromCheckpoint(context.Background(), st, prober, nil, parsers, nil, nil, nil, nil, fixedGovernor(1), nil, req, jobCheckpoint{}, time.Now().UTC(), cancelAtFirstReport)
+	if !errors.Is(err, context.Canceled) || result.interrupted == nil {
+		t.Fatalf("cancelled scan: err=%v interrupted=%v", err, result.interrupted)
+	}
+	assertResumedSummary(t, st, prober, parsers, nil, req, *result.interrupted, 3, 3)
+}
+
+// cancellingPartsParser parses 01 and 03 as the parts of one group and
+// cancels the scan when it reaches cancelAt.
+type cancellingPartsParser struct {
+	cancelAt string
+	cancel   context.CancelFunc
+}
+
+func (p cancellingPartsParser) Parse(path string, _ ParseProbe) (ParsedMedia, bool) {
+	name := filepath.Base(path)
+	if name == p.cancelAt && p.cancel != nil {
+		p.cancel()
+	}
+	switch name {
+	case "01.mp3":
+		return ParsedMedia{Title: "Group", Class: "collection", PartGroup: "g", Index: 1}, true
+	case "03.mp3":
+		return ParsedMedia{Title: "Group", Class: "collection", PartGroup: "g", Index: 2}, true
+	}
+	return ParsedMedia{}, false
+}
+
+func TestScanSummaryCountsHeldImageOnceAcrossCancellation(t *testing.T) {
+	// feature:scan-pipeline
+	// An image completed between pending parts does not move the resume
+	// point, so a resume walks it again; it must not count as checked twice.
+	root := t.TempDir()
+	for _, name := range []string{"01.mp3", "02.jpg", "03.mp3"} {
+		writeScanFile(t, root, name, []byte(name))
+	}
+	st := storetest.Open(t)
+	req := Request{LibraryID: partsLibrary(t, st), Root: root}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	parsers := map[string]FilenameParser{"parts": cancellingPartsParser{cancelAt: "03.mp3", cancel: cancel}}
+	result, err := scanFromCheckpoint(ctx, st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(1), nil, req, jobCheckpoint{}, time.Now().UTC(), nil)
+	if !errors.Is(err, context.Canceled) || result.interrupted == nil {
+		t.Fatalf("cancelled scan: err=%v interrupted=%v", err, result.interrupted)
+	}
+	assertResumedSummary(t, st, nil, map[string]FilenameParser{"parts": cancellingPartsParser{}}, nil, req, *result.interrupted, 3, 3)
+}
+
+func TestScanSummaryCountsImportCancelledBeforeCompletion(t *testing.T) {
+	// feature:scan-pipeline
+	// A file imported but cancelled before its completion was queued (here in
+	// metadata hydration) is in the catalog; the resume point counts it.
+	root := t.TempDir()
+	writeScanFile(t, root, "one.jpg", []byte("image"))
+	st := storetest.Open(t)
+	req := Request{LibraryID: partsLibrary(t, st), Root: root}
+	hydrator := &fakeMetadataHydrator{capability: MetadataHydrationCapability{MediaClasses: []store.MediaClass{store.MediaClassImage}}, err: context.Canceled}
+	result, err := scanFromCheckpoint(context.Background(), st, nil, nil, nil, nil, nil, nil, map[string]MetadataHydrator{"parts": hydrator}, fixedGovernor(1), nil, req, jobCheckpoint{}, time.Now().UTC(), nil)
+	if !errors.Is(err, context.Canceled) || result.interrupted == nil || len(hydrator.calls) != 1 {
+		t.Fatalf("cancelled scan: err=%v interrupted=%v hydrations=%d", err, result.interrupted, len(hydrator.calls))
+	}
+	assertResumedSummary(t, st, nil, nil, nil, req, *result.interrupted, 1, 1)
+}
+
+// assertResumedSummary resumes a stopped scan from checkpoint and checks how
+// many files the whole scan checked and added.
+func assertResumedSummary(t *testing.T, st *store.Store, prober Prober, parsers map[string]FilenameParser, hydrators map[string]MetadataHydrator, req Request, checkpoint jobCheckpoint, wantSeen, wantAdded int) {
+	t.Helper()
+	resumed, err := scanFromCheckpoint(context.Background(), st, prober, nil, parsers, nil, nil, nil, hydrators, fixedGovernor(1), nil, req, checkpoint, time.Now().UTC(), nil)
+	if err != nil {
+		t.Fatalf("resumed scan: %v", err)
+	}
+	if resumed.FilesSeen != wantSeen || resumed.FilesAdded != wantAdded {
+		t.Fatalf("resumed scan seen=%d added=%d, want %d and %d", resumed.FilesSeen, resumed.FilesAdded, wantSeen, wantAdded)
+	}
 }

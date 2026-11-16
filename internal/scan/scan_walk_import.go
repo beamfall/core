@@ -260,8 +260,10 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	media, _, err := s.st.ImportMediaFile(s.ctx, imported)
 	if err != nil {
+		s.dropTallies(path)
 		return skipManagedAdmissionInFlight(err, path)
 	}
+	s.committed = path
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)
 	if isImage {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
