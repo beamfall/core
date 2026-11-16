@@ -2,6 +2,7 @@
 // decoded copy of the playing track. The player never routes its <video> element through Web
 // Audio (gapless playback and the audio delay own that graph), so the analysis reads the
 // track's own bytes instead and runs ahead of the playhead, which it samples by media time.
+import { MAX_DECODED_SECONDS, probeDuration } from "../useGaplessAudio";
 import type { Oscillux } from "./oscillux";
 
 /** The analysis rate: mono at 24 kHz keeps a decoded track near 5.8 MB a minute. */
@@ -48,13 +49,21 @@ export function silentFrame(): AudioFrame {
   return { values, spectrum: new Float32Array(64) };
 }
 
-/** Fetches a direct-play stream and decodes it to mono at the analysis rate. */
-export async function decodeTrack(url: string, signal: AbortSignal): Promise<Float32Array> {
+/**
+ * Fetches a direct-play stream and decodes it to mono at the analysis rate, or null for an item
+ * longer than the gapless player's decode cap (or of no declared length): decoding a long
+ * recording whole would hold hundreds of megabytes and could take the tab, and playback, down.
+ */
+export async function decodeTrack(url: string, signal: AbortSignal): Promise<Float32Array | null> {
+  const seconds = await probeDuration(url, signal);
+  signal.throwIfAborted();
+  if (!(seconds <= MAX_DECODED_SECONDS)) return null;
   const res = await fetch(url, { signal, credentials: "same-origin" });
   if (!res.ok) throw new Error(`visualizer: stream ${res.status}`);
   const bytes = await res.arrayBuffer();
   signal.throwIfAborted();
   const buffer = await new OfflineAudioContext(1, 1, ANALYSIS_RATE).decodeAudioData(bytes);
+  if (buffer.duration > MAX_DECODED_SECONDS) return null;
   if (buffer.numberOfChannels === 1) return buffer.getChannelData(0);
   const mono = new Float32Array(buffer.length);
   for (let c = 0; c < buffer.numberOfChannels; c++) {

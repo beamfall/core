@@ -124,7 +124,8 @@ export function Visualizer({
     let analysis: TrackAnalysis | null = null;
     Promise.all([loadOscillux(), decodeTrack(url, abort.signal)])
       .then(([osc, pcm]) => {
-        if (abort.signal.aborted) return;
+        // Too long to decode: the visual keeps drawing, idle.
+        if (abort.signal.aborted || !pcm) return;
         analysis = new TrackAnalysis(osc, pcm);
         analysisRef.current = analysis;
       })

@@ -102,6 +102,9 @@ export class Renderer {
   private present: WebGLProgram;
   private limiter: WebGLProgram[];
   private readonly shaders: WebGLShader[] = [];
+  // Every program linked, for dispose.
+  private readonly linked: WebGLProgram[] = [];
+  private disposed = false;
   private readonly programs = new Map<string, WebGLProgram>();
   private visual: {
     visual: Visual;
@@ -145,67 +148,80 @@ export class Renderer {
   ) {
     this.gl = gl;
     this.osc = osc;
-    this.overlay = new osc.OverlayConfig();
-    this.overlay.outputLevels = 255;
-    this.overlay.intensity = 1;
-    this.overlay.alpha = 1;
-    this.overlay.contrastRatio = 4.5;
-    this.overlay.premultipliedAlpha = false;
-    this.regions = new osc.OverlayRegions();
-    this.feedbackFormat = gl.getExtension("EXT_color_buffer_float")
-      ? { internal: gl.RGBA16F, type: gl.HALF_FLOAT }
-      : { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE };
+    // Whatever was allocated before a failure is released here, as no caller holds the
+    // instance to dispose it.
+    try {
+      this.overlay = new osc.OverlayConfig();
+      this.overlay.outputLevels = 255;
+      this.overlay.intensity = 1;
+      this.overlay.alpha = 1;
+      this.overlay.contrastRatio = 4.5;
+      this.overlay.premultipliedAlpha = false;
+      this.regions = new osc.OverlayRegions();
+      this.feedbackFormat = gl.getExtension("EXT_color_buffer_float")
+        ? { internal: gl.RGBA16F, type: gl.HALF_FLOAT }
+        : { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE };
 
-    this.quad = must(gl.createBuffer());
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      this.quad = must(gl.createBuffer());
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-    // The visual's image input: a neutral stand-in, as no artwork is sampled yet.
-    this.image = must(gl.createTexture());
-    gl.bindTexture(gl.TEXTURE_2D, this.image);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA8,
-      1,
-      1,
-      0,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      new Uint8Array([128, 128, 128, 255]),
-    );
-    filter(gl, gl.LINEAR);
+      // The visual's image input: a neutral stand-in, as no artwork is sampled yet.
+      this.image = must(gl.createTexture());
+      gl.bindTexture(gl.TEXTURE_2D, this.image);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA8,
+        1,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        new Uint8Array([128, 128, 128, 255]),
+      );
+      filter(gl, gl.LINEAR);
 
-    this.presentUbo = must(gl.createBuffer());
-    gl.bindBuffer(gl.UNIFORM_BUFFER, this.presentUbo);
-    gl.bufferData(gl.UNIFORM_BUFFER, this.presentBlock.byteLength, gl.DYNAMIC_DRAW);
-    this.limiterUbo = must(gl.createBuffer());
-    gl.bindBuffer(gl.UNIFORM_BUFFER, this.limiterUbo);
-    gl.bufferData(gl.UNIFORM_BUFFER, this.limiterBlock.byteLength, gl.DYNAMIC_DRAW);
+      this.presentUbo = must(gl.createBuffer());
+      gl.bindBuffer(gl.UNIFORM_BUFFER, this.presentUbo);
+      gl.bufferData(gl.UNIFORM_BUFFER, this.presentBlock.byteLength, gl.DYNAMIC_DRAW);
+      this.limiterUbo = must(gl.createBuffer());
+      gl.bindBuffer(gl.UNIFORM_BUFFER, this.limiterUbo);
+      gl.bufferData(gl.UNIFORM_BUFFER, this.limiterBlock.byteLength, gl.DYNAMIC_DRAW);
 
-    // Offscreen passes draw into targets read back with a top-left origin, so the visual's
-    // vertex shader flips y; the present pass draws in canvas orientation.
-    this.visualVertex = vertex.replace(
-      "gl_Position = vec4(aPos, 0.0, 1.0);",
-      "gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);",
-    );
-    this.present = this.link(vertex, present);
-    gl.useProgram(this.present);
-    gl.uniformBlockBinding(this.present, gl.getUniformBlockIndex(this.present, "PresentBlock"), 0);
-    ["uA", "uB", "uH"].forEach((name, unit) =>
-      gl.uniform1i(gl.getUniformLocation(this.present, name), unit),
-    );
-    gl.uniform1i(gl.getUniformLocation(this.present, "uBloom"), 4);
+      // Offscreen passes draw into targets read back with a top-left origin, so the visual's
+      // vertex shader flips y; the present pass draws in canvas orientation.
+      this.visualVertex = vertex.replace(
+        "gl_Position = vec4(aPos, 0.0, 1.0);",
+        "gl_Position = vec4(aPos.x, -aPos.y, 0.0, 1.0);",
+      );
+      this.present = this.link(vertex, present);
+      gl.useProgram(this.present);
+      gl.uniformBlockBinding(
+        this.present,
+        gl.getUniformBlockIndex(this.present, "PresentBlock"),
+        0,
+      );
+      ["uA", "uB", "uH"].forEach((name, unit) =>
+        gl.uniform1i(gl.getUniformLocation(this.present, name), unit),
+      );
+      gl.uniform1i(gl.getUniformLocation(this.present, "uBloom"), 4);
 
-    this.limiter = LIMITER.map((name, i) => {
-      const p = this.link(LIMITER_VERTEX, limiter[i]);
-      gl.useProgram(p);
-      gl.uniformBlockBinding(p, gl.getUniformBlockIndex(p, "LimiterBlock"), 0);
-      LIMITER_SAMPLERS[name].forEach((s, unit) => gl.uniform1i(gl.getUniformLocation(p, s), unit));
-      return p;
-    });
+      this.limiter = LIMITER.map((name, i) => {
+        const p = this.link(LIMITER_VERTEX, limiter[i]);
+        gl.useProgram(p);
+        gl.uniformBlockBinding(p, gl.getUniformBlockIndex(p, "LimiterBlock"), 0);
+        LIMITER_SAMPLERS[name].forEach((s, unit) =>
+          gl.uniform1i(gl.getUniformLocation(p, s), unit),
+        );
+        return p;
+      });
+    } catch (err) {
+      this.dispose();
+      throw err;
+    }
   }
 
   /** Compiles a visual (once) and draws it from the next frame on. */
@@ -214,6 +230,8 @@ export class Renderer {
     let program = this.programs.get(visual.id);
     if (!program) {
       const source = await shaderSource(`visuals/${visual.id}.web.frag`);
+      // Disposed while the source loaded: allocate nothing more.
+      if (this.disposed) return;
       program = this.link(this.visualVertex, source);
       this.programs.set(visual.id, program);
     }
@@ -270,19 +288,25 @@ export class Renderer {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
   }
 
+  /** Releases every GL and Oscillux resource; safe on a partly built renderer, and twice. */
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     const gl = this.gl;
     this.freeSize();
-    for (const p of [this.present, ...this.limiter, ...this.programs.values()]) gl.deleteProgram(p);
+    for (const p of this.linked) gl.deleteProgram(p);
     for (const s of this.shaders) gl.deleteShader(s);
-    gl.deleteBuffer(this.quad);
-    gl.deleteBuffer(this.presentUbo);
-    gl.deleteBuffer(this.limiterUbo);
-    gl.deleteTexture(this.image);
+    // Fields a failed constructor never reached are undefined; GL treats them as null.
+    gl.deleteBuffer(this.quad ?? null);
+    gl.deleteBuffer(this.presentUbo ?? null);
+    gl.deleteBuffer(this.limiterUbo ?? null);
+    gl.deleteTexture(this.image ?? null);
+    this.linked.length = 0;
+    this.shaders.length = 0;
     this.programs.clear();
     this.visual = null;
-    this.regions.free();
-    this.overlay.free();
+    this.regions?.free();
+    this.overlay?.free();
   }
 
   private setVisualUniforms(
@@ -521,18 +545,20 @@ export class Renderer {
   private link(vertex: string, fragment: string): WebGLProgram {
     const gl = this.gl;
     const p = must(gl.createProgram());
+    // Owned from creation, so a failure below leaves them to dispose.
+    this.linked.push(p);
     for (const [type, source] of [
       [gl.VERTEX_SHADER, vertex],
       [gl.FRAGMENT_SHADER, fragment],
     ] as const) {
       const s = must(gl.createShader(type));
+      this.shaders.push(s);
       gl.shaderSource(s, source);
       gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS) && !gl.isContextLost()) {
         throw new Error(`visualizer: shader: ${gl.getShaderInfoLog(s)}`);
       }
       gl.attachShader(p, s);
-      this.shaders.push(s);
     }
     gl.bindAttribLocation(p, 0, "aPos");
     gl.linkProgram(p);
