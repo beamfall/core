@@ -128,8 +128,19 @@ function ArtworkLayers({
   leaveMs: number;
   onError?: (url: string) => void;
 }) {
+  // Tracks of one album carry their own artwork URLs for the same picture; the
+  // ?v= token is a content hash, so the same picture keeps its layer (and its
+  // first URL, so nothing reloads) instead of crossfading to itself.
+  const key = artworkKey(url);
+  const [first, setFirst] = useState({ key, url });
+  if (first.key !== key) setFirst({ key, url });
+  const src = first.key === key ? first.url : url;
   const [shown, setShown] = useState<ReadonlySet<number>>(() => new Set());
-  const layers = useLayers(url, url, leaveMs, (id) => shown.has(id));
+  const layers = useLayers(key, src, leaveMs, (id) => shown.has(id));
+  // A cached image can load before the hidden starting state is painted;
+  // revealing it a frame later keeps the settle-in animation.
+  const reveal = (id: number) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => setShown((s) => new Set(s).add(id))));
   const ready = layers.every((l) => l.leaving || shown.has(l.id));
   return layers.map(({ id, value, leaving }) => {
     // A layer that never loaded has nothing to show on its way out.
@@ -143,11 +154,24 @@ function ArtworkLayers({
         src={value}
         alt=""
         data-state={state}
-        onLoad={() => setShown((s) => new Set(s).add(id))}
+        onLoad={() => reveal(id)}
         onError={() => !leaving && onError?.(value)}
       />
     );
   });
+}
+
+// The picture an artwork URL names: its slot and content token when it has one
+// (/api/media/artwork/<media>/<slot>?v=<hash>), else the URL itself.
+export function artworkKey(url: string): string {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url, "http://local");
+    const v = parsed.searchParams.get("v");
+    return v ? `${parsed.pathname.split("/").pop()}?v=${v}` : url;
+  } catch {
+    return url;
+  }
 }
 
 function creditLine(

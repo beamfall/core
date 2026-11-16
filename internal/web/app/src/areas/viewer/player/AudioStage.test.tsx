@@ -54,6 +54,11 @@ describe("AudioStage track change (CORE-2218)", () => {
       i.getAttribute("src"),
       i.dataset.state,
     ]);
+  // The reveal waits two frames so the hidden start state is painted first.
+  const load = (img: Element) => {
+    fireEvent.load(img);
+    act(() => vi.advanceTimersByTime(40));
+  };
 
   it("keeps the old artwork under the new one until it loads, then drops it", () => {
     vi.useFakeTimers();
@@ -61,7 +66,7 @@ describe("AudioStage track change (CORE-2218)", () => {
       <AudioStage title="A" trackKey="a" artworkURL="/a.jpg" credits={[]} />,
     );
     expect(art(container)).toEqual([["/a.jpg", "pending"]]);
-    fireEvent.load(container.querySelector(".bf-audio-artwork img")!);
+    load(container.querySelector(".bf-audio-artwork img")!);
     expect(art(container)).toEqual([["/a.jpg", "in"]]);
 
     rerender(<AudioStage title="B" trackKey="b" artworkURL="/b.jpg" credits={[]} />);
@@ -72,7 +77,7 @@ describe("AudioStage track change (CORE-2218)", () => {
     act(() => vi.advanceTimersByTime(5000));
     expect(art(container)).toHaveLength(2);
 
-    fireEvent.load(container.querySelectorAll(".bf-audio-artwork img")[1]!);
+    load(container.querySelectorAll(".bf-audio-artwork img")[1]!);
     expect(art(container)).toEqual([
       ["/a.jpg", "out"],
       ["/b.jpg", "in"],
@@ -86,11 +91,45 @@ describe("AudioStage track change (CORE-2218)", () => {
     const { container, rerender } = render(
       <AudioStage title="A" trackKey="a" artworkURL="/a.jpg" credits={[]} />,
     );
-    fireEvent.load(container.querySelector(".bf-audio-artwork img")!);
+    load(container.querySelector(".bf-audio-artwork img")!);
     rerender(<AudioStage title="B" trackKey="b" artworkURL="" credits={[]} />);
     expect(art(container)).toEqual([["/a.jpg", "out"]]);
     act(() => vi.advanceTimersByTime(700));
     expect(art(container)).toEqual([]);
+  });
+
+  it("keeps the same picture in place when the next track shares it", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(
+      <AudioStage
+        title="A"
+        trackKey="a"
+        artworkURL="/api/media/artwork/m-a/poster?v=h1"
+        credits={[]}
+      />,
+    );
+    load(container.querySelector(".bf-audio-artwork img")!);
+    rerender(
+      <AudioStage
+        title="B"
+        trackKey="b"
+        artworkURL="/api/media/artwork/m-b/poster?v=h1"
+        credits={[]}
+      />,
+    );
+    expect(art(container)).toEqual([["/api/media/artwork/m-a/poster?v=h1", "in"]]);
+    rerender(
+      <AudioStage
+        title="C"
+        trackKey="c"
+        artworkURL="/api/media/artwork/m-c/poster?v=h2"
+        credits={[]}
+      />,
+    );
+    expect(art(container)).toEqual([
+      ["/api/media/artwork/m-a/poster?v=h1", "under"],
+      ["/api/media/artwork/m-c/poster?v=h2", "pending"],
+    ]);
   });
 
   it("lifts the old words away while the new ones come in", () => {
