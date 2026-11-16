@@ -149,7 +149,10 @@ type encryptedPrecomputePurger struct {
 	cacheRoot string
 }
 
-var _ graph.EncryptedDerivativePurger = encryptedPrecomputePurger{}
+var (
+	_ graph.EncryptedDerivativePurger        = encryptedPrecomputePurger{}
+	_ store.EncryptedLibraryDerivativePurger = encryptedPrecomputePurger{}
+)
 
 func (p encryptedPrecomputePurger) PurgeEncryptedDerivatives(_ context.Context, libraryID store.LibraryID) error {
 	return playback.PurgeEncryptedPrecomputedRenditions(p.cacheRoot, libraryID)

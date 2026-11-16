@@ -41,6 +41,23 @@ func (s *Store) SetEncryptedLibraryKeyEraser(e EncryptedLibraryKeyEraser) {
 	s.encKeyEraser = e
 }
 
+// EncryptedLibraryDerivativePurger removes one Library's whole encrypted
+// derivative cache: regenerable ciphertext kept outside its private database,
+// such as precomputed renditions and the encrypted subtitle cache. A missing
+// cache must succeed. The DEK rewrap uses the same purgers.
+type EncryptedLibraryDerivativePurger interface {
+	PurgeEncryptedDerivatives(ctx context.Context, libraryID LibraryID) error
+}
+
+// SetEncryptedLibraryDerivativePurgers installs the derivative purge seams,
+// once at wiring time like SetEncryptedLibraryKeyEraser. A purge removes each
+// purged encrypted Library's derivatives through them.
+func (s *Store) SetEncryptedLibraryDerivativePurgers(purgers ...EncryptedLibraryDerivativePurger) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.encDerivativePurgers = slices.Clone(purgers)
+}
+
 // checkEncryptedLibraryPurgeableTx refuses an encrypted Library purge the store
 // could not finish. Without a key eraser the keys would outlive the Library. A
 // Library whose private-database folder name another encrypted Library shares
@@ -235,16 +252,22 @@ func (s *Store) namesOtherSealedEncryptedLibraryTx(ctx context.Context, tx *sql.
 // commit leaves the Library whole and restorable. Once it has committed the
 // Library is purged, and the pending row it wrote records the teardown still
 // owed: the plaintext working copy (with its WAL/SHM) is wiped first, then the
-// ciphertext and its pre-migration backups are removed, then the keys are
-// erased even if a file step failed, because erased keys alone make any
+// ciphertext and its pre-migration backups are removed, then each installed
+// purger removes the Library's encrypted derivative caches (with no lock held),
+// then the keys are erased even if a file step failed, because erased keys alone make any
 // leftover ciphertext unreadable. The pending row survives any failure, and
 // CompletePendingLibraryPurges retries it. Keys are never erased before the
 // commit: that would leave a Library that is still listed but can never be
 // decrypted.
 func (s *Store) completeLibraryPurge(ctx context.Context, id LibraryID) error {
-	eraser, fileErr := s.removePurgedEncryptedLibraryFiles(id)
+	eraser, purgers, fileErr := s.removePurgedEncryptedLibraryFiles(id)
 	if eraser == nil && fileErr == nil {
 		fileErr = errors.New("no encrypted-library key eraser is installed")
+	}
+	for _, purger := range purgers {
+		if err := purger.PurgeEncryptedDerivatives(ctx, id); err != nil {
+			fileErr = errors.Join(fileErr, fmt.Errorf("purge encrypted derivatives: %w", err))
+		}
 	}
 	var keyErr error
 	if eraser != nil {
@@ -267,12 +290,13 @@ func (s *Store) completeLibraryPurge(ctx context.Context, id LibraryID) error {
 // removePurgedEncryptedLibraryFiles closes and unregisters the Library's
 // private-database plane and removes every file it kept: the plaintext working
 // copy and its sidecars, the ciphertext, and the pre-migration backups. It
-// returns the installed key eraser, read under the same lock.
-func (s *Store) removePurgedEncryptedLibraryFiles(id LibraryID) (EncryptedLibraryKeyEraser, error) {
+// returns the installed key eraser and derivative purgers, read under the same
+// lock.
+func (s *Store) removePurgedEncryptedLibraryFiles(id LibraryID) (EncryptedLibraryKeyEraser, []EncryptedLibraryDerivativePurger, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.guardLocked(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	paths := s.encryptedLibraryDBPaths(id)
 	var joined error
@@ -294,7 +318,7 @@ func (s *Store) removePurgedEncryptedLibraryFiles(id LibraryID) (EncryptedLibrar
 		cleanupEncryptedLibraryWorkingDir(filepath.Dir(paths.working), paths.working),
 		os.RemoveAll(filepath.Dir(paths.ciphertext)),
 		os.RemoveAll(s.encryptedLibraryBackupDir(id)))
-	return s.encKeyEraser, joined
+	return s.encKeyEraser, s.encDerivativePurgers, joined
 }
 
 // CompletePendingLibraryPurges finishes every encrypted Library purge whose

@@ -911,9 +911,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// below, once the Library list is readable.
 	libEncryptManager := libencrypt.NewManager(secretFiles{dir: filepath.Join(cfg.DataDir, "secrets"), dataDir: cfg.DataDir})
 	// A purged encrypted Library's private database and keys are destroyed
-	// through this seam. A purge that committed before a crash or a failed
+	// through this seam, and its encrypted derivative caches (precomputed
+	// renditions, subtitles) through the same purgers the DEK rewrap uses
+	// (CORE-2057). A purge that committed before a crash or a failed
 	// teardown is finished now, before its keys are reported as orphans.
 	st.SetEncryptedLibraryKeyEraser(libraryKeyEraser{manager: libEncryptManager})
+	st.SetEncryptedLibraryDerivativePurgers(mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot})
 	if err := st.CompletePendingLibraryPurges(ctx); err != nil {
 		logger.Warn("encrypted-library purge teardown incomplete; the retention sweep retries it", "error", err)
 	}

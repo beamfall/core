@@ -262,3 +262,86 @@ func TestCompletePendingLibraryPurgesFinishesACrashStrandedPurgeAtStart(t *testi
 		t.Fatalf("repeat completion = %v, eraser calls %v", err, eraser.calls)
 	}
 }
+
+// fakeDerivativePurger stands in for the app's encrypted derivative caches
+// (precomputed renditions, the encrypted subtitle cache).
+type fakeDerivativePurger struct {
+	mu    sync.Mutex
+	calls []LibraryID
+	err   error
+}
+
+func (p *fakeDerivativePurger) PurgeEncryptedDerivatives(_ context.Context, libraryID LibraryID) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls = append(p.calls, libraryID)
+	return p.err
+}
+
+func (p *fakeDerivativePurger) setErr(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.err = err
+}
+
+func (p *fakeDerivativePurger) callsSnapshot() []LibraryID {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.calls)
+}
+
+// TestPurgeEncryptedLibraryRemovesItsEncryptedDerivatives pins CORE-2057: a
+// purge removes the Library's encrypted derivative ciphertext through every
+// installed purger, not only its private database.
+func TestPurgeEncryptedLibraryRemovesItsEncryptedDerivatives(t *testing.T) {
+	ctx := context.Background()
+	st, id, _ := trashedEncryptedLibrary(t)
+	st.SetEncryptedLibraryKeyEraser(&fakeKeyEraser{})
+	precompute, subtitles := &fakeDerivativePurger{}, &fakeDerivativePurger{}
+	st.SetEncryptedLibraryDerivativePurgers(precompute, subtitles)
+
+	if _, err := st.PurgeLibrary(ctx, id); err != nil {
+		t.Fatalf("PurgeLibrary: %v", err)
+	}
+	for name, purger := range map[string]*fakeDerivativePurger{"precompute": precompute, "subtitles": subtitles} {
+		if got := purger.callsSnapshot(); !slices.Equal(got, []LibraryID{id}) {
+			t.Fatalf("%s purger calls = %v, want one for %s", name, got, id)
+		}
+	}
+	if serverConfigKeyExists(t, st, libraryPurgePendingConfigPrefix+string(id)) {
+		t.Fatal("a completed purge left its pending row")
+	}
+}
+
+// TestPurgeEncryptedLibraryDerivativeFailureIsRetried pins CORE-2057's retry:
+// a derivative purge that fails keeps the teardown owed (keys are still
+// erased), and the next sweep finishes it.
+func TestPurgeEncryptedLibraryDerivativeFailureIsRetried(t *testing.T) {
+	ctx := context.Background()
+	st, id, _ := trashedEncryptedLibrary(t)
+	eraser := &fakeKeyEraser{}
+	st.SetEncryptedLibraryKeyEraser(eraser)
+	purger := &fakeDerivativePurger{err: errors.New("cache busy")}
+	st.SetEncryptedLibraryDerivativePurgers(purger)
+
+	if _, err := st.PurgeLibrary(ctx, id); err != nil {
+		t.Fatalf("PurgeLibrary with failing derivative purge: %v", err)
+	}
+	if !serverConfigKeyExists(t, st, libraryPurgePendingConfigPrefix+string(id)) {
+		t.Fatal("failed derivative purge left no pending row")
+	}
+	if eraser.callCount() != 1 {
+		t.Fatalf("keys were not erased despite the derivative failure: calls %v", eraser.calls)
+	}
+
+	purger.setErr(nil)
+	if err := st.CompletePendingLibraryPurges(ctx); err != nil {
+		t.Fatalf("CompletePendingLibraryPurges: %v", err)
+	}
+	if got := purger.callsSnapshot(); !slices.Equal(got, []LibraryID{id, id}) {
+		t.Fatalf("derivative purger calls = %v, want the retry", got)
+	}
+	if serverConfigKeyExists(t, st, libraryPurgePendingConfigPrefix+string(id)) {
+		t.Fatal("retry did not clear the pending row")
+	}
+}

@@ -1014,6 +1014,10 @@ type Store struct {
 	// purged encrypted Library's key material. Without it an encrypted Library
 	// cannot be purged. Guarded by mu; called only with mu released.
 	encKeyEraser EncryptedLibraryKeyEraser
+	// encDerivativePurgers are the app-injected seams that remove a purged
+	// encrypted Library's regenerable derivative ciphertext (CORE-2057).
+	// Guarded by mu; called only with mu released.
+	encDerivativePurgers []EncryptedLibraryDerivativePurger
 	// liveRenditionGenerations names the playback rendition generations this
 	// process has started and not yet published or failed. The stale-generation
 	// sweep fails every other generating row: those runs died with an earlier
