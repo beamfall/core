@@ -10,9 +10,9 @@
 
 ## 2. Console
 
-- [ ] 2.1 Backups warns with the days left while the key is unconfirmed
-- [ ] 2.2 Reveal with copy and print, confirm calls `acknowledgeBackupKey`
-- [ ] 2.3 Vitest for status, reveal, confirm and the refused confirm
+- [x] 2.1 Backups warns with the days left while the key is unconfirmed
+- [x] 2.2 Reveal with copy and print, confirm calls `acknowledgeBackupKey`
+- [x] 2.3 Vitest for status, reveal, confirm and the refused confirm
 
 ## 3. Docs
 

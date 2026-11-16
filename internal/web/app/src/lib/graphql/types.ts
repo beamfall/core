@@ -802,6 +802,27 @@ export interface StagedRestoreInfo {
 }
 
 /**
+ * Whether a bootstrap backup key still waits to be saved (graph.BackupKeyStatusInfo,
+ * CORE-2032). It never carries the key.
+ */
+export interface BackupKeyStatusInfo {
+  pending: boolean;
+  expiresAt: string;
+  daysLeft: number;
+}
+
+/**
+ * The pending backup key, revealed to the owner in an Admin Session
+ * (graph.RevealedBackupKeyInfo, CORE-2032). Keep it in component state only.
+ */
+export interface RevealedBackupKeyInfo {
+  escrowID: string;
+  backupKey: string;
+  expiresAt: string;
+  daysLeft: number;
+}
+
+/**
  * The full metadata export (graph.MetadataExportInfo, ADR-0005 §5). The lists
  * are left untyped here because the UI only summarizes counts and downloads the
  * whole payload verbatim — the Go resolver is the schema of record.

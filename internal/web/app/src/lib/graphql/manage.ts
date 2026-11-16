@@ -12,6 +12,7 @@ import type {
   BackupContentsInfo,
   BackupHistoryEntry,
   BackupInfo,
+  BackupKeyStatusInfo,
   BatchResultInfo,
   BulkEditChangeInfo,
   BulkOpResult,
@@ -53,6 +54,7 @@ import type {
   PathPickerRootInfo,
   PluginSummary,
   RelationWriteResult,
+  RevealedBackupKeyInfo,
   ScanLibraryResult,
   ScheduleEnabledResult,
   ScheduleInfo,
@@ -555,6 +557,54 @@ const CANCEL_STAGED_RESTORE_MUTATION = "mutation CancelStagedRestore { cancelSta
 export async function cancelStagedRestore(): Promise<boolean> {
   const data = await graphql<{ cancelStagedRestore: boolean }>(CANCEL_STAGED_RESTORE_MUTATION, {});
   return data.cancelStagedRestore;
+}
+
+const BACKUP_KEY_STATUS_QUERY =
+  "query BackupKeyStatus { backupKeyStatus { pending expiresAt daysLeft } }";
+
+/** BackupKeyStatus — whether a bootstrap backup key still waits to be saved (CORE-2032). */
+export async function fetchBackupKeyStatus(signal?: AbortSignal): Promise<BackupKeyStatusInfo> {
+  const data = await graphql<{ backupKeyStatus: BackupKeyStatusInfo }>(
+    BACKUP_KEY_STATUS_QUERY,
+    {},
+    signal,
+  );
+  return data.backupKeyStatus;
+}
+
+const REVEAL_BACKUP_KEY_MUTATION =
+  "mutation RevealBackupKey { revealBackupKey { escrowID backupKey expiresAt daysLeft } }";
+
+/**
+ * RevealBackupKey — the pending backup key, for the owner in an Admin Session.
+ * The key arrives only in the response body; callers keep it in memory.
+ */
+export async function revealBackupKey(signal?: AbortSignal): Promise<RevealedBackupKeyInfo> {
+  const data = await graphql<{ revealBackupKey: RevealedBackupKeyInfo }>(
+    REVEAL_BACKUP_KEY_MUTATION,
+    {},
+    signal,
+  );
+  return data.revealBackupKey;
+}
+
+const ACKNOWLEDGE_BACKUP_KEY_MUTATION =
+  "mutation AcknowledgeBackupKey($escrowID: String!) { acknowledgeBackupKey(escrowID: $escrowID) { pending expiresAt daysLeft } }";
+
+/**
+ * AcknowledgeBackupKey — confirm the revealed key is saved. The escrow ID names
+ * which key; the key itself is never sent back.
+ */
+export async function acknowledgeBackupKey(
+  escrowID: string,
+  signal?: AbortSignal,
+): Promise<BackupKeyStatusInfo> {
+  const data = await graphql<{ acknowledgeBackupKey: BackupKeyStatusInfo }>(
+    ACKNOWLEDGE_BACKUP_KEY_MUTATION,
+    { escrowID },
+    signal,
+  );
+  return data.acknowledgeBackupKey;
 }
 
 const METADATA_EXPORT_QUERY =

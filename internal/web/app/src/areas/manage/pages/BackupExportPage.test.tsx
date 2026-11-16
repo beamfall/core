@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import {
   cancelStagedRestore,
   fetchBackupHistory,
+  fetchBackupKeyStatus,
   fetchMetadataExport,
   fetchStagedRestore,
   inspectBackup,
@@ -52,6 +53,10 @@ vi.mock("@/lib/graphql", () => ({
   inspectBackup: vi.fn(),
   stageRestore: vi.fn(),
   cancelStagedRestore: vi.fn(),
+  // BackupKeySection (CORE-2032) reads the pending-key status on mount.
+  fetchBackupKeyStatus: vi.fn(),
+  revealBackupKey: vi.fn(),
+  acknowledgeBackupKey: vi.fn(),
   // PathPickerField (used by the destination field) pulls these from the module.
   fetchPathPicker: vi.fn(),
   addPathPickerRoot: vi.fn(),
@@ -64,6 +69,7 @@ const mockStaged = vi.mocked(fetchStagedRestore);
 const mockInspect = vi.mocked(inspectBackup);
 const mockStage = vi.mocked(stageRestore);
 const mockCancel = vi.mocked(cancelStagedRestore);
+const mockKeyStatus = vi.mocked(fetchBackupKeyStatus);
 
 const NOTHING_STAGED: StagedRestoreInfo = {
   staged: false,
@@ -76,6 +82,7 @@ const NOTHING_STAGED: StagedRestoreInfo = {
 
 beforeEach(() => {
   mockStaged.mockResolvedValue(NOTHING_STAGED);
+  mockKeyStatus.mockResolvedValue({ pending: false, expiresAt: "", daysLeft: 0 });
 });
 
 afterEach(() => {
