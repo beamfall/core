@@ -18,5 +18,7 @@ export default defineConfig({
     globals: true,
     include: ["src/**/*.{test,spec}.{ts,tsx}", "sw-plugin.test.ts"],
     passWithNoTests: true,
+    // Node 25+ shadows jsdom's localStorage/sessionStorage (CORE-2185).
+    setupFiles: ["src/test/jsdomStorage.ts"],
   },
 });
