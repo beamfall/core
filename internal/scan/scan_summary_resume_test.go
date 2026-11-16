@@ -889,3 +889,55 @@ func TestScanSummaryCountsDuplicateContentOnceAfterCrash(t *testing.T) {
 		}
 	}
 }
+
+func TestScanFinishesDuplicateImagesBetweenPendingParts(t *testing.T) {
+	// feature:scan-pipeline
+	// Identical-byte image pairs between numbered parts complete while the
+	// parts hold the resume point. Reports about them cannot move or save the
+	// checkpoint, so they must not use up the job's yield batch: a job with
+	// more such pairs than its batch still finishes, counting each pair's
+	// Media once (CORE-2197).
+	const batch, pairs = 4, 6
+	for _, workers := range []int{1, 4} {
+		t.Run(fmt.Sprintf("workers=%d", workers), func(t *testing.T) {
+			root := t.TempDir()
+			for _, name := range []string{"01.mp3", "99.mp3"} {
+				writeScanFile(t, root, name, []byte(name))
+			}
+			for i := range pairs {
+				for _, copy := range []string{"a", "b"} {
+					writeScanFile(t, root, fmt.Sprintf("50-%03d%s.jpg", i, copy), jpegBytes(fmt.Sprintf("pair %d", i)))
+				}
+			}
+			st := storetest.Open(t)
+			req := Request{LibraryID: partsLibrary(t, st), Root: root}
+			parsers := map[string]FilenameParser{"parts": numberedPartsParser{}}
+			started := time.Now().UTC()
+			var checkpoint jobCheckpoint
+			for run := 1; ; run++ {
+				if run > 2+(2+2*pairs)/batch+2 {
+					t.Fatalf("scan still yielding after %d runs, checkpoint %+v", run-1, checkpoint)
+				}
+				reports := 0
+				yieldEveryBatch := func(c jobCheckpoint, _ store.JobProgress) error {
+					checkpoint = c
+					if reports++; reports >= batch {
+						return jobs.ErrYielded
+					}
+					return nil
+				}
+				result, err := scanFromCheckpoint(context.Background(), st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(workers), nil, req, checkpoint, started, yieldEveryBatch)
+				if errors.Is(err, jobs.ErrYielded) {
+					continue
+				}
+				if err != nil {
+					t.Fatalf("run %d: %v", run, err)
+				}
+				if result.FilesSeen != 2+2*pairs || result.MediaImported != 1+pairs {
+					t.Fatalf("scan seen=%d imported=%d, want %d and %d", result.FilesSeen, result.MediaImported, 2+2*pairs, 1+pairs)
+				}
+				break
+			}
+		})
+	}
+}

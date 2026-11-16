@@ -103,7 +103,15 @@ func (s *scanWalkState) keepCountedMediaBeforeMove(path, fingerprint string) err
 	if s.progress == nil {
 		return nil
 	}
-	return s.progress(s.resumeCheckpoint(), store.JobProgress{
+	// A Media counted only by a held completion leaves the checkpoint, which
+	// re-walks that file. Saving it would change nothing yet count toward the
+	// job's yield batch, and a run of such files would yield onto the same
+	// checkpoint forever.
+	checkpoint := s.resumeCheckpoint()
+	if !slices.Contains(checkpoint.GroupMedia, string(mediaID)) {
+		return nil
+	}
+	return s.progress(checkpoint, store.JobProgress{
 		Current: int64(s.result.FilesSeen),
 		Total:   int64(s.result.totalFiles),
 		Unit:    "files",
