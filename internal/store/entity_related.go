@@ -1,8 +1,11 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
+	"slices"
+	"strings"
 )
 
 // RelatedEntityGroup is one Entity kind's share of the Entities related to a
@@ -18,7 +21,7 @@ type RelatedEntityGroup struct {
 // through Entity-to-Entity relations in both directions: the Entities it
 // points at and the Entities pointing at it. Groups follow kind name; within
 // a group rows carrying a relation sort order come first in that order, then
-// title and id. An Entity reached through several rows appears once (at its
+// the rest by title in natural order (a "2" before a "10", CORE-2362) and id. An Entity reached through several rows appears once (at its
 // lowest sort order), the context Entity never does, and trashed Entities or
 // Entities in Libraries the filter hides are omitted. The context Entity must
 // itself be visible; a hidden one errors like a missing one, as
@@ -79,6 +82,9 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 	}
 	defer rows.Close()
 	groups := []RelatedEntityGroup{}
+	// ordered counts each group's leading rows that carry a sort order; the
+	// rest are re-sorted by natural title below.
+	ordered := []int{}
 	for rows.Next() {
 		var (
 			id        EntityID
@@ -92,6 +98,10 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 		}
 		if len(groups) == 0 || groups[len(groups)-1].Kind != kind {
 			groups = append(groups, RelatedEntityGroup{Kind: kind, LibraryID: libraryID})
+			ordered = append(ordered, 0)
+		}
+		if sortOrder.Valid {
+			ordered[len(ordered)-1]++
 		}
 		group := &groups[len(groups)-1]
 		// Library-level restricted flag, annotated as mediaForEntitySQL does;
@@ -103,5 +113,45 @@ func (s *Store) RelatedEntityGroups(ctx context.Context, entityID EntityID, filt
 			Restricted: restricted[libraryID],
 		})
 	}
-	return groups, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range groups {
+		slices.SortStableFunc(groups[i].Items[ordered[i]:], func(a, b SourceItem) int {
+			return cmp.Or(naturalCompare(a.Title, b.Title), cmp.Compare(a.Title, b.Title), cmp.Compare(a.ID, b.ID))
+		})
+	}
+	return groups, nil
+}
+
+func asciiDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// naturalCompare orders two titles case-insensitively with each run of digits
+// compared by its numeric value, so "Part 2" sorts before "Part 10".
+func naturalCompare(a, b string) int {
+	ar, br := []rune(strings.ToLower(a)), []rune(strings.ToLower(b))
+	i, j := 0, 0
+	for i < len(ar) && j < len(br) {
+		if asciiDigit(ar[i]) && asciiDigit(br[j]) {
+			ai, bj := i, j
+			for i < len(ar) && asciiDigit(ar[i]) {
+				i++
+			}
+			for j < len(br) && asciiDigit(br[j]) {
+				j++
+			}
+			an := strings.TrimLeft(string(ar[ai:i]), "0")
+			bn := strings.TrimLeft(string(br[bj:j]), "0")
+			if c := cmp.Or(cmp.Compare(len(an), len(bn)), cmp.Compare(an, bn)); c != 0 {
+				return c
+			}
+			continue
+		}
+		if c := cmp.Compare(ar[i], br[j]); c != 0 {
+			return c
+		}
+		i++
+		j++
+	}
+	return cmp.Compare(len(ar)-i, len(br)-j)
 }

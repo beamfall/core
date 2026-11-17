@@ -834,7 +834,8 @@ type SourceItem struct {
 	Summary    string
 	Restricted bool
 	// MediaClass is a media-kind item's playback class ("audio", "video"),
-	// set by AnnotateMediaClass; empty for entities and unknown classes.
+	// set by AnnotateMediaClass; an entity item carries the class its linked
+	// Media share (CORE-2362). Empty for unknown or mixed classes.
 	MediaClass MediaClass
 	// Year is a media-kind item's stored year, set by AnnotateMediaClass in
 	// the same read; 0 for entities and for Media with no year (CORE-2269).
@@ -854,6 +855,9 @@ type SourceItem struct {
 	// Engagement is the acting Profile's playback state for this item, set by
 	// AnnotateEngagement; nil means no state.
 	Engagement *SourceEngagement
+	// Byline names the people a card credits under its title, set by the
+	// graph from MediaEntityLinks (CORE-2362); nil means none.
+	Byline []string
 }
 
 // PairingCode is a short-lived enrollment grant.
