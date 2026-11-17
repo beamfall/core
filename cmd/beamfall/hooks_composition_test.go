@@ -91,7 +91,9 @@ func TestFirstPartyParserHooksHaveExactPluginIdentities(t *testing.T) {
 }
 
 // A music library's scanner gets the plugin's parser, so an embedded TITLE tag
-// names the track and a tag-poor rip still loses its track-ordinal prefix.
+// names the track and a tag-poor rip still loses its track-ordinal prefix. A
+// bare-ordinal stem keeps the stem as its title and fills the track index; the
+// plugin's scorer keeps that title from auto-applying (plugin-music v0.1.10).
 func TestFirstPartyMusicParserTitlesTracksFromTagsThenFilename(t *testing.T) {
 	parser := firstPartyHooks().Parsers[music.PluginID]
 	if parser == nil {
@@ -104,16 +106,20 @@ func TestFirstPartyMusicParserTitlesTracksFromTagsThenFilename(t *testing.T) {
 		tags      map[string]string
 		wantTitle string
 		wantOK    bool
+		wantIndex int
 	}{
 		{name: "title tag wins", path: path, tags: map[string]string{"TITLE": "Opening Light (Live)", "track": "3"}, wantTitle: "Opening Light (Live)", wantOK: true},
 		{name: "no tags falls back to filename", path: path, wantTitle: "Opening Light", wantOK: true},
-		{name: "bare ordinal is left to the scanner default", path: "/music/Artist/Album/07.flac"},
+		{name: "bare ordinal is the stem title and the track index", path: "/music/Artist/Album/07.flac", wantTitle: "07", wantOK: true, wantIndex: 7},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			parsed, ok := parser.Parse(tt.path, sdk.ParseProbe{HasAudio: true, Tags: tt.tags})
 			if ok != tt.wantOK || parsed.Title != tt.wantTitle {
 				t.Fatalf("Parse = (title %q, ok %v), want (title %q, ok %v)", parsed.Title, ok, tt.wantTitle, tt.wantOK)
+			}
+			if tt.wantIndex != 0 && parsed.Index != tt.wantIndex {
+				t.Fatalf("Parse index = %d, want %d", parsed.Index, tt.wantIndex)
 			}
 		})
 	}
