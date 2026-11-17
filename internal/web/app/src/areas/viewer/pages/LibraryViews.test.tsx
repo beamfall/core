@@ -214,10 +214,11 @@ describe("Library views (CORE-2362)", () => {
 
     expect(await screen.findByText("4 items")).toBeInTheDocument();
     const switcher = await screen.findByRole("group", { name: "Browse by" });
-    expect(within(switcher).getAllByRole("button").map((chip) => chip.textContent)).toEqual([
-      "All items",
-      "Folders",
-    ]);
+    expect(
+      within(switcher)
+        .getAllByRole("button")
+        .map((chip) => chip.textContent),
+    ).toEqual(["All items", "Folders"]);
   });
 
   it("offers a retry when a kind's grid cannot be read", async () => {
