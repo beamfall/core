@@ -610,6 +610,18 @@ a.console-task:hover .console-task-icon {
   line-height: 18px;
 }
 
+/* A code someone reads off this screen and types on another device: large, spaced, and
+   selected whole on one click. */
+.console-secret-code {
+  padding: 12px 14px;
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-align: center;
+  user-select: all;
+}
+
 /* --- Empty / unavailable states: quiet, centered in their card --- */
 
 .console-empty {

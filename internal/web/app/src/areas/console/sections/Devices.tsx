@@ -146,12 +146,8 @@ function PairingCodeBanner({ code }: { code: MintedCode }) {
         {t("deviceCodeShownFor", { role: roleLabel })}
       </p>
       <div className="console-secret-row">
-        <code className="console-secret-value">{code.code}</code>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void navigator.clipboard?.writeText(code.code)}
-        >
+        <code className="console-secret-value console-secret-code">{code.code}</code>
+        <Button variant="outline" onClick={() => void navigator.clipboard?.writeText(code.code)}>
           <Copy className="console-nav-icon" aria-hidden />
           {t("copy")}
         </Button>
