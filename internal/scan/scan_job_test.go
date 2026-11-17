@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -120,5 +121,67 @@ func TestScanJobYieldsWhenRunBudgetIsSpent(t *testing.T) {
 	}
 	if summary := completedScanSummary(t, st, job.ID); summary.FilesChecked != 3 || summary.Added != 3 {
 		t.Fatalf("resumed scan summary = %+v, want all 3 files added", summary)
+	}
+}
+
+// TestScanJobRunBudgetStartsAtFirstCheckpoint: the run budget counts from the
+// run's first checkpoint, so the walk a resumed run makes back to its resume
+// point does not spend it. When that walk outlasted the budget, every run
+// yielded at its first checkpoint and a scan crept forward a few files per
+// attempt (CORE-2353). The clock steps a minute per reading against a
+// two-minute budget, so each run checkpoints exactly three files; reading it
+// before the first checkpoint would cut that to two.
+func TestScanJobRunBudgetStartsAtFirstCheckpoint(t *testing.T) {
+	// feature:scan-pipeline
+	ctx := context.Background()
+	root := t.TempDir()
+	const files = 7
+	for i := 0; i < files; i++ {
+		writeScanFile(t, root, fmt.Sprintf("clip-%d.mp4", i), []byte(fmt.Sprintf("clip-%d", i)))
+	}
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Clips", false, "filmtv", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	savedBudget, savedClock := scanJobRunBudget, scanJobClock
+	t.Cleanup(func() { scanJobRunBudget, scanJobClock = savedBudget, savedClock })
+	scanJobRunBudget = 2 * time.Minute
+	tick := time.Date(2026, 11, 17, 19, 46, 43, 0, time.UTC)
+	scanJobClock = func() time.Time {
+		tick = tick.Add(time.Minute)
+		return tick
+	}
+
+	job, err := NewJob(JobRequest{ID: "job-budget-resume", LibraryID: library.ID, Root: root, CreatedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	registry := jobs.NewRegistry(st, "worker")
+	registry.Register(JobKind, Handler(st, nil, nil, nil, nil, nil))
+	for _, want := range []struct {
+		status  store.JobStatus
+		current int64
+	}{
+		{store.JobStatusYielded, 3},
+		{store.JobStatusYielded, 6},
+		{store.JobStatusCompleted, files},
+	} {
+		if _, err := registry.RunOne(ctx, nil, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+		got, err := st.Job(ctx, job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != want.status || got.Progress.Current != want.current {
+			t.Fatalf("after a run job = %s at %d files, want %s at %d", got.Status, got.Progress.Current, want.status, want.current)
+		}
+	}
+	if summary := completedScanSummary(t, st, job.ID); summary.FilesChecked != files || summary.Added != files {
+		t.Fatalf("resumed scan summary = %+v, want all %d files added", summary, files)
 	}
 }

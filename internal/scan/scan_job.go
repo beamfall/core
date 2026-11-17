@@ -168,7 +168,12 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 	}
 	var latest []byte
 	filesThisRun := 0
-	runStarted := time.Now()
+	// The budget counts from the run's first checkpoint, not from the claim:
+	// a resumed run walks the whole tree up to its checkpoint again before it
+	// reaches new work, and on a large slow share that walk alone outlasted
+	// the budget, so every run yielded at its first checkpoint and a scan
+	// advanced by a few files per attempt (CORE-2353).
+	var workStarted time.Time
 	tally := newIdentifyTally(checkpoint.Unidentified)
 	result, err := scanFromCheckpoint(withIdentifyTally(ctx, tally), st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, imageDeriver, req, checkpoint, scanStarted, func(checkpoint jobCheckpoint, progress store.JobProgress) error {
 		checkpoint.Unidentified = tally.snapshot()
@@ -181,7 +186,11 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 			return err
 		}
 		filesThisRun++
-		if filesThisRun >= scanJobFileBatchSize || time.Since(runStarted) >= scanJobRunBudget {
+		now := scanJobClock()
+		if workStarted.IsZero() {
+			workStarted = now
+		}
+		if filesThisRun >= scanJobFileBatchSize || now.Sub(workStarted) >= scanJobRunBudget {
 			return jobs.ErrYielded
 		}
 		return nil

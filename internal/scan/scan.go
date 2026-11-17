@@ -149,12 +149,17 @@ const JobKind store.JobKind = "scan"
 // A scan job yields after scanJobFileBatchSize checkpointed files or after
 // scanJobRunBudget of work, whichever comes first, so other background jobs
 // (a scheduled backup, another Library's scan) get a worker within about
-// that long. The time bound matters when files are slow to import: at the
-// tens of seconds a file that online identification can cost, a 100-file
-// batch held a worker for most of an hour (CORE-2306).
+// that long once the run reaches new work. The time bound matters when files
+// are slow to import: at the tens of seconds a file that online
+// identification can cost, a 100-file batch held a worker for most of an hour
+// (CORE-2306). The budget starts at the run's first checkpoint, after the walk
+// back to the resume point (CORE-2353).
 const scanJobFileBatchSize = 100
 
 var scanJobRunBudget = 2 * time.Minute
+
+// scanJobClock times the run budget. Tests replace it.
+var scanJobClock = time.Now
 
 var errImageDerivation = errors.New("required image derivatives incomplete")
 
