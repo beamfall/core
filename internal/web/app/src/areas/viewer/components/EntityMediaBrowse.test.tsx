@@ -208,6 +208,42 @@ describe("EntityMediaBrowse", () => {
     expect(screen.getByRole("heading", { name: "Appears on" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Test Mix/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Test Album/ })).not.toBeInTheDocument();
+    // Every track already shows in the top list, so there is no second list.
+    expect(screen.queryByRole("list", { name: "All tracks" })).not.toBeInTheDocument();
+  });
+
+  it("lists every track under the top tracks when the top list leaves some out (CORE-2362)", async () => {
+    const many: SourceItem[] = Array.from({ length: 12 }, (_, index) => ({
+      id: `m${index + 1}`,
+      kind: "media",
+      title: `Song ${index + 1}`,
+    }));
+    vi.mocked(fetchMediaRows).mockResolvedValue(
+      Object.fromEntries(
+        many.map((item) => [
+          item.id,
+          {
+            id: item.id,
+            title: item.title,
+            favorited: false,
+            mediaClass: "audio",
+            credits: [credit("person-a", "Test Artist", "person")],
+          } as GenericMediaInfo,
+        ]),
+      ),
+    );
+    renderBrowse(artist, many);
+    const all = await screen.findByRole("list", { name: "All tracks" });
+    const plays = within(all).getAllByRole("button", { name: /^Play / });
+    expect(plays).toHaveLength(12);
+    expect(plays[11]).toHaveAccessibleName("Play Song 12");
+    const top = screen.getByRole("list", { name: "Top tracks" });
+    expect(within(top).getAllByRole("button", { name: /^Play / })).toHaveLength(10);
+
+    fireEvent.click(plays[11]);
+    const watch = await screen.findByTestId("watch");
+    expect(watch).toHaveTextContent("/watch/m12|");
+    expect(watch).toHaveTextContent("m1:audio");
   });
 
   it("lists child rows when the listed Media is not audio", async () => {

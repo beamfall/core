@@ -15,6 +15,29 @@
   line-height: 18px;
 }
 
+/* An audio container's people under its title (CORE-2362). */
+[data-register="viewer"] .bf-entity-people {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+[data-register="viewer"] .bf-entity-people a {
+  color: var(--text-primary);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+[data-register="viewer"] .bf-entity-people a:hover {
+  text-decoration: underline;
+}
+
+[data-register="viewer"] .bf-entity-people a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 [data-register="viewer"] .bf-children-groups {
   display: flex;
   flex-direction: column;

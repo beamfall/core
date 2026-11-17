@@ -518,3 +518,151 @@ describe("EntityPage audio container order", () => {
     expect(fetchMediaForEntity).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () => {
+  const tracksLayout = {
+    id: "record-detail",
+    role: "detail",
+    entityKind: "record",
+    sections: [
+      { id: "tracks", kind: "list", title: { en: "Rows" }, source: { kind: "entity-media" } },
+    ],
+  } as unknown as Layout;
+  const record = {
+    ...entity,
+    kind: "record",
+    archetype: "container",
+    relatedEntities: [
+      {
+        kind: "maker",
+        archetype: "person",
+        kindDisplayName: { en: "Makers" },
+        items: [{ id: "p1", kind: "entity", title: "Maker A" }],
+      },
+    ],
+  } as EntityInfo;
+  const track = (id: string, title: string, mediaClass = "audio"): SourceItem => ({
+    id,
+    kind: "media",
+    title,
+    mediaClass,
+  });
+  const row = (
+    id: string,
+    title: string,
+    index: number,
+    credits: MediaRow["credits"],
+  ): MediaRow => ({
+    id,
+    title,
+    favorited: false,
+    mediaClass: "audio",
+    durationSeconds: 125,
+    credits,
+    index,
+  });
+  const credit = (entityID: string, title: string) => ({
+    entityID,
+    title,
+    kind: "maker",
+    archetype: "person",
+    relation: "credit",
+  });
+  const maker = credit("p1", "Maker A");
+  const guest = credit("p2", "Guest B");
+
+  beforeEach(() => {
+    mocks.layouts = [tracksLayout];
+    vi.mocked(fetchEntity).mockResolvedValue(record);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      track("t2", "Second Song"),
+      track("t1", "First Song"),
+      track("t3", "Third Song"),
+    ]);
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      t2: row("t2", "Second Song", 2, [maker, guest]),
+      t1: row("t1", "First Song", 1, [maker]),
+      t3: row("t3", "Third Song", 3, [maker]),
+    });
+  });
+
+  it("lists the tracks in order with artist and duration instead of the Layout's rows", async () => {
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(screen.queryByText("detail layout record-detail")).toBeNull();
+    const list = screen.getByRole("list", { name: "Tracks" });
+    const titles = within(list)
+      .getAllByRole("button", { name: /^Play / })
+      .map((button) => button.getAttribute("aria-label"));
+    expect(titles).toEqual(["Play First Song", "Play Second Song", "Play Third Song"]);
+    // A row names its people only when they go beyond the container's own.
+    expect(within(list).getByText("Maker A, Guest B")).toBeInTheDocument();
+    expect(within(list).queryAllByText("Maker A")).toHaveLength(0);
+    expect(within(list).getAllByText("2:05")).toHaveLength(3);
+  });
+
+  it("names the container's people under the title as links instead of a card group", async () => {
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    const link = screen.getByRole("link", { name: "Maker A" });
+    expect(link).toHaveAttribute("href", "/entity/p1");
+    expect(screen.queryByRole("heading", { name: "Makers" })).toBeNull();
+  });
+
+  it("shuffles every track into the queue", async () => {
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole("button", { name: "Shuffle" }));
+    const player = screen.getByRole("status", { name: "player" }).textContent ?? "";
+    const [mediaId] = player.split(" ", 1);
+    const state = JSON.parse(player.slice(mediaId.length + 1));
+    const queue = state.queue.map((item: { id: string }) => item.id);
+    expect([...queue].sort()).toEqual(["t1", "t2", "t3"]);
+    expect(queue[0]).toBe(mediaId);
+    expect(state.queue.every((item: { mediaClass?: string }) => item.mediaClass === "audio")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the Layout for a container whose Media are not audio", async () => {
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      track("v1", "First Part", "video"),
+      track("v2", "Second Part", "video"),
+    ]);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(screen.getByText("detail layout record-detail")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Shuffle" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Makers" })).toBeInTheDocument();
+  });
+
+  it("renders the Layout at once when the opening link says the Media are not audio", () => {
+    vi.mocked(fetchEntity).mockReturnValue(new Promise(() => {}));
+    renderEntity(
+      entityLinkState(
+        { id: "e1", title: "Preview", kind: "record", mediaClass: "video" },
+        identity,
+      ),
+    );
+    expect(screen.getByText("detail layout record-detail")).toBeInTheDocument();
+  });
+
+  it("holds the Layout back while an audio container's Media are unknown", () => {
+    vi.mocked(fetchEntity).mockReturnValue(new Promise(() => {}));
+    renderEntity(
+      entityLinkState(
+        { id: "e1", title: "Preview", kind: "record", mediaClass: "audio" },
+        identity,
+      ),
+    );
+    expect(screen.queryByText("detail layout record-detail")).toBeNull();
+  });
+});

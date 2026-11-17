@@ -49,6 +49,8 @@ export const profileSearchLibraryStrings = {
     libraryBrowseClearFilters: "Clear filters",
     libraryBrowseNoMatches: "Nothing in this library matches these filters.",
     libraryBrowseLoadFailed: "Could not load this library.",
+    libraryViewSwitchLabel: "Browse by",
+    libraryViewAll: "All items",
     seeAllLoadFailed: "Could not load these items.",
   },
   fr: {
@@ -100,6 +102,8 @@ export const profileSearchLibraryStrings = {
     libraryBrowseClearFilters: "Effacer les filtres",
     libraryBrowseNoMatches: "Rien dans cette bibliothèque ne correspond à ces filtres.",
     libraryBrowseLoadFailed: "Impossible de charger cette bibliothèque.",
+    libraryViewSwitchLabel: "Parcourir par",
+    libraryViewAll: "Tous les éléments",
     seeAllLoadFailed: "Impossible de charger ces éléments.",
   },
   de: {
@@ -151,6 +155,8 @@ export const profileSearchLibraryStrings = {
     libraryBrowseClearFilters: "Filter zurücksetzen",
     libraryBrowseNoMatches: "Nichts in dieser Bibliothek passt zu diesen Filtern.",
     libraryBrowseLoadFailed: "Diese Bibliothek konnte nicht geladen werden.",
+    libraryViewSwitchLabel: "Durchsuchen nach",
+    libraryViewAll: "Alle Einträge",
     seeAllLoadFailed: "Diese Einträge konnten nicht geladen werden.",
   },
   es: {
@@ -202,6 +208,8 @@ export const profileSearchLibraryStrings = {
     libraryBrowseClearFilters: "Borrar filtros",
     libraryBrowseNoMatches: "Nada en esta biblioteca coincide con estos filtros.",
     libraryBrowseLoadFailed: "No se pudo cargar esta biblioteca.",
+    libraryViewSwitchLabel: "Explorar por",
+    libraryViewAll: "Todos los elementos",
     seeAllLoadFailed: "No se pudieron cargar estos elementos.",
   },
   pt: {
@@ -253,6 +261,8 @@ export const profileSearchLibraryStrings = {
     libraryBrowseClearFilters: "Limpar filtros",
     libraryBrowseNoMatches: "Nada nesta biblioteca corresponde a esses filtros.",
     libraryBrowseLoadFailed: "Não foi possível carregar esta biblioteca.",
+    libraryViewSwitchLabel: "Navegar por",
+    libraryViewAll: "Todos os itens",
     seeAllLoadFailed: "Não foi possível carregar estes itens.",
   },
 } as const;

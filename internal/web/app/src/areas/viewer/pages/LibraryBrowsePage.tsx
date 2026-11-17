@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, ChevronLeft, LayoutGrid, List, Play, Shuffle, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -45,8 +45,10 @@ import {
   readLibraryViewMode,
   writeLibraryViewMode,
 } from "../lib/libraryBrowse";
+import { LIBRARY_VIEW_PARAM } from "../lib/libraryViews";
 import { startPlayQueue } from "../lib/playQueue";
 import { type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
+import { LibraryViews } from "./LibraryViews";
 
 const ALL = "all";
 // Grouping values are free text from the library, so their option values are
@@ -84,7 +86,8 @@ const LETTER_RAIL_MIN_ITEMS = 60;
 // Library browse (/n/:nodeId/all, CORE-1190): every item of one Library the
 // profile may see, counted, sorted and filtered by the server (libraryItems)
 // and windowed here. Sort and filters live in the URL so a view can be linked
-// and survives Back; the grid/list choice is remembered per library.
+// and survives Back; the grid/list choice is remembered per library. It is
+// the Media view of the Library's views (LibraryViews, CORE-2362).
 export function LibraryBrowsePage() {
   const t = useT();
   const { nodeId } = useParams();
@@ -111,12 +114,21 @@ export function LibraryBrowsePage() {
       <Navigate to={{ pathname: nodePath(node.id, "/all"), search: location.search }} replace />
     );
   }
+  const { libraryID } = node;
   return (
-    <LibraryBrowse
-      key={node.libraryID}
-      libraryID={node.libraryID}
+    <LibraryViews
+      key={libraryID}
+      libraryID={libraryID}
       nodeID={node.id}
       title={node.title}
+      media={(switcher) => (
+        <LibraryBrowse
+          libraryID={libraryID}
+          nodeID={node.id}
+          title={node.title}
+          switcher={switcher}
+        />
+      )}
     />
   );
 }
@@ -125,10 +137,13 @@ function LibraryBrowse({
   libraryID,
   nodeID,
   title,
+  switcher,
 }: {
   libraryID: string;
   nodeID: string;
   title: Parameters<typeof displayString>[0];
+  /** The Library's view switcher, shown under the heading. */
+  switcher?: ReactNode;
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -339,7 +354,10 @@ function LibraryBrowse({
   }, [showLetterRail, letters, listColumns, loadedTick]);
 
   function update(patch: Partial<LibraryBrowseState>) {
-    setSearchParams(browseStateParams({ ...state, ...patch }), { replace: true });
+    const params = browseStateParams({ ...state, ...patch });
+    const view = searchParams.get(LIBRARY_VIEW_PARAM);
+    if (view) params.set(LIBRARY_VIEW_PARAM, view);
+    setSearchParams(params, { replace: true });
   }
 
   function chooseViewMode(mode: LibraryViewMode) {
@@ -513,6 +531,7 @@ function LibraryBrowse({
             </div>
           </div>
         </div>
+        {switcher}
 
         <div className="flex flex-wrap items-end gap-3">
           <BrowseSelect
