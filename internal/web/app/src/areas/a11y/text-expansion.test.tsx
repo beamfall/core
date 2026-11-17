@@ -211,7 +211,9 @@ const CLIP_UTILITY =
 // the collection name link in the list and on the member title in the reorder list
 // and the add-members list. CSS ellipsis only; the full text stays in the DOM and a
 // `title`, and each member row's buttons are labelled with the member title.
-const CLIP_BASELINE = 32;
+// 2026-11-17 (CORE-2353): -1 → 31. The Console Operations rewrite dropped the
+// `console-mono truncate` span on the job row; the job name now wraps.
+const CLIP_BASELINE = 31;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
