@@ -1066,7 +1066,14 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	shape := playback.StreamShapeFromGrant(grant, media)
 	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
 	shape.Encrypted = secure
-	path, err := h.hls.FilePathShaped(r.Context(), key, file.Path, media.DurationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
+	// A Media stored without a runtime is probed on demand so a new session
+	// writes a VOD playlist covering the whole file (CORE-2314). An Encrypted
+	// Library's file is ciphertext on disk and is never probed in place.
+	durationSeconds := media.DurationSeconds
+	if durationSeconds <= 0 && secure == nil {
+		durationSeconds = h.hls.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path)
+	}
+	path, err := h.hls.FilePathShaped(r.Context(), key, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
 	if err != nil {
 		// An evicted session is an expected teardown (ADR-0012 §7 revocation,
 		// idle reap, preemption), not a server fault. 503 is retryable, which

@@ -1031,3 +1031,60 @@ func TestParseProbeAudioSampleRateAndBitDepth(t *testing.T) {
 		}
 	}
 }
+
+// CORE-2314: a file whose container declares no duration still gets one from
+// its streams or its DURATION tags, so playback can write a full-length VOD
+// playlist instead of a growing one.
+func TestParseProbeDurationFallbacks(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want int
+	}{
+		{
+			name: "format duration wins",
+			json: `{"streams": [{"index": 0, "codec_type": "video", "codec_name": "h264", "duration": "50.0"}],
+				"format": {"format_name": "matroska,webm", "duration": "7152.4"}}`,
+			want: 7152,
+		},
+		{
+			name: "longest stream duration",
+			json: `{"streams": [
+				{"index": 0, "codec_type": "video", "codec_name": "h264", "duration": "7151.6"},
+				{"index": 1, "codec_type": "audio", "codec_name": "aac", "duration": "7152.2"}
+			], "format": {"format_name": "matroska,webm"}}`,
+			want: 7152,
+		},
+		{
+			name: "mkvmerge stream DURATION tag",
+			json: `{"streams": [
+				{"index": 0, "codec_type": "video", "codec_name": "hevc", "tags": {"DURATION": "01:59:12.345000000"}},
+				{"index": 1, "codec_type": "audio", "codec_name": "eac3", "tags": {"DURATION-eng": "01:59:10.000000000"}}
+			], "format": {"format_name": "matroska,webm", "duration": ""}}`,
+			want: 7152,
+		},
+		{
+			name: "format DURATION tag",
+			json: `{"streams": [{"index": 0, "codec_type": "video", "codec_name": "hevc"}],
+				"format": {"format_name": "matroska,webm", "tags": {"duration": "00:42:00.5"}}}`,
+			want: 2521,
+		},
+		{
+			name: "malformed tags are ignored",
+			json: `{"streams": [{"index": 0, "codec_type": "video", "codec_name": "hevc", "tags": {"DURATION": "1:99:00"}}],
+				"format": {"format_name": "matroska,webm", "tags": {"DURATION": "soon"}}}`,
+			want: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			probe, err := parseProbe([]byte(tt.json), "fixture.mkv")
+			if err != nil {
+				t.Fatalf("parseProbe: %v", err)
+			}
+			if probe.DurationSeconds != tt.want {
+				t.Fatalf("DurationSeconds = %d, want %d", probe.DurationSeconds, tt.want)
+			}
+		})
+	}
+}

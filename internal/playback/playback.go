@@ -1056,6 +1056,15 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		// Every rung below judges the negotiated Version by its own file facts.
 		media = versionFacts(media, file, streams, !alternate)
 	}
+	// A Media stored without a runtime (its container declared none) is
+	// probed on demand, so the timeline and a live session's playlist cover
+	// the whole file instead of ending where the encoder is (CORE-2314).
+	if media.DurationSeconds <= 0 && len(parts) <= 1 {
+		if seconds := s.probedDuration(ctx, media, file); seconds > 0 {
+			media.DurationSeconds = seconds
+			timeline.DurationSeconds = seconds
+		}
+	}
 	barred := unknownHeightBarred(media, profile, alternate || versioned || len(versions) > 0)
 	// One deferred stamp covers every decision return below, like
 	// audioLanguage: the picker lists the same Versions whatever the verdict,
