@@ -537,6 +537,150 @@ describe("PlayerPage class-narrowed queue (CORE-1490, CORE-1309)", () => {
   });
 });
 
+// An advance resets the engine for the next item, but the audio stage, its
+// words and the transport stay up until that item's data arrives (CORE-2363).
+describe("PlayerPage audio advance (CORE-2363)", () => {
+  const queue = [
+    { id: "media-prev", title: "Before" },
+    { id: "media-alpha", title: "Alpha" },
+    { id: "media-next", title: "After" },
+  ];
+  const audio = { mediaClass: "audio" } as PlayerState["info"];
+  const videoRef: { current: HTMLVideoElement | null } = { current: null };
+  let states: Record<string, PlayerState> = {};
+  let releaseNext: (info: never) => void = () => undefined;
+
+  function track(id: string, title: string, artist: string) {
+    return {
+      id,
+      title,
+      artworkSlots: { poster: `/art/${id}.jpg` },
+      credits: [{ entityID: `p-${id}`, title: artist, kind: "artist", archetype: "person" }],
+    } as never;
+  }
+
+  beforeEach(() => {
+    vi.mocked(usePlayer).mockReset();
+    vi.mocked(PlayerTransport).mockClear();
+    states = {
+      "media-alpha": playerState({ phase: "playing", mediaID: "media-alpha", info: audio }),
+    };
+    // The engine for an item it has not loaded yet: playback-info in flight.
+    vi.mocked(usePlayer).mockImplementation((mediaID) => ({
+      videoRef,
+      hlsRef: { current: null },
+      state: states[mediaID] ?? playerState({ phase: "loading", mediaID: undefined }),
+      retry: vi.fn(),
+      restart: vi.fn(),
+      switchToHls: vi.fn(() => false as const),
+      adjustment: DEFAULT_ADJUSTMENT,
+      adjust: vi.fn(),
+    }));
+    // The next item's media read waits until the test releases it.
+    vi.mocked(fetchMedia).mockImplementation((id) =>
+      id === "media-next"
+        ? new Promise((resolve) => {
+            releaseNext = resolve;
+          })
+        : Promise.resolve(track("media-alpha", "Alpha", "Ann")),
+    );
+  });
+  afterEach(() => vi.mocked(fetchMedia).mockResolvedValue(null));
+
+  // The queue reports no classes, so only the playing item's info names it a track.
+  function renderAdvance() {
+    const tree = () => (
+      <I18nProvider>
+        <MemoryRouter
+          initialEntries={[
+            {
+              pathname: "/watch/media-alpha",
+              state: { skipPrePlay: true, title: "Alpha", queue, queueIdentity: "viewer-1" },
+            },
+          ]}
+        >
+          <Routes>
+            <Route path="/watch/*" element={<PlayerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    const view = render(tree());
+    return () => view.rerender(tree());
+  }
+
+  async function advanceFromFirstTrack(): Promise<HTMLElement> {
+    const stage = document.querySelector<HTMLElement>(".bf-audio-stage");
+    if (!stage) throw new Error("no audio stage");
+    expect(await within(stage).findByText("Ann")).toBeInTheDocument();
+    presentFirstFrame();
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onNextInQueue?.());
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[0]).toBe("media-next"));
+    return stage;
+  }
+
+  it("keeps the stage and the item on it until the next item's data arrives, then swaps", async () => {
+    renderAdvance();
+    const stage = await advanceFromFirstTrack();
+
+    // Loading the next item: the same stage, the previous words and picture,
+    // no spinner, and the transport still mounted.
+    expect(document.querySelector(".bf-audio-stage")).toBe(stage);
+    expect(within(stage).getByText("Ann")).toBeInTheDocument();
+    expect(within(stage).getByText("2 of 3")).toBeInTheDocument();
+    expect(stage.querySelector(".bf-audio-artwork img")).toHaveAttribute(
+      "src",
+      "/art/media-alpha.jpg",
+    );
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.state.phase).toBe("loading");
+
+    await act(async () => releaseNext(track("media-next", "After", "Bo")));
+    expect(await within(stage).findByText("Bo")).toBeInTheDocument();
+    expect(within(stage).getByText("3 of 3")).toBeInTheDocument();
+    expect(document.querySelector(".bf-audio-stage")).toBe(stage);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("swaps when the next item starts playing before its media read answers", async () => {
+    const rerender = renderAdvance();
+    const stage = await advanceFromFirstTrack();
+    expect(within(stage).getByText("Ann")).toBeInTheDocument();
+
+    states["media-next"] = playerState({ phase: "playing", mediaID: "media-next", info: audio });
+    rerender();
+    expect(document.querySelector(".bf-audio-stage")).toBe(stage);
+    expect(within(stage).getByText("3 of 3")).toBeInTheDocument();
+  });
+
+  it("drops the stage once the next item's playback-info names a video", async () => {
+    const rerender = renderAdvance();
+    await advanceFromFirstTrack();
+    expect(document.querySelector(".bf-audio-stage")).not.toBeNull();
+
+    states["media-next"] = playerState({
+      phase: "playing",
+      mediaID: "media-next",
+      info: { mediaClass: "video" } as PlayerState["info"],
+    });
+    rerender();
+    expect(document.querySelector(".bf-audio-stage")).toBeNull();
+  });
+
+  it("shows a small cue, not a cover, while an audio item loads", () => {
+    renderPlayer(playerState({ phase: "loading" }), {
+      title: "Alpha",
+      queue: [{ id: "media-alpha", title: "Alpha", mediaClass: "audio" }],
+      queueIdentity: "viewer-1",
+    });
+    expect(document.querySelector(".bf-audio-stage")).not.toBeNull();
+    const cue = screen.getByRole("status");
+    expect(cue).toHaveTextContent("Loading…");
+    expect(cue).not.toHaveClass("inset-0");
+  });
+});
+
 describe("PlayerPage Back", () => {
   function renderAt(entries: string[]) {
     vi.mocked(usePlayer).mockReturnValue({
