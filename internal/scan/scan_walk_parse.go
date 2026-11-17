@@ -98,7 +98,7 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 }
 
 // probeSiblings probes a folder's media files for the contextual preflight,
-// in parallel within the scan's worker budget: a season folder holds dozens of
+// in parallel within the scan's worker budget: a folder often holds dozens of media
 // files, and probing them one after another stalled the ordered walk for the
 // sum of their probe times on a slow share (CORE-2353). Images are never
 // probed, and a failed probe yields the empty ParseProbe, as before. The
