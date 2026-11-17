@@ -19,6 +19,7 @@ import { consoleOperationsStrings } from "./console-operations";
 import { consoleOperationsCacheStrings } from "./console-operations-cache";
 import { consoleOperationsJobsStrings } from "./console-operations-jobs";
 import { consoleOperationsOpsStrings } from "./console-operations-ops";
+import { consoleOverviewAttentionStrings } from "./console-overview-attention";
 import { customizationStrings } from "./customization";
 import { itemActionStrings } from "./item-actions";
 import { itemMetadataStrings } from "./item-metadata";
@@ -87,6 +88,7 @@ export const en = {
   ...consoleOperationsCacheStrings.en,
   ...consoleOperationsOpsStrings.en,
   ...consoleOperationsJobsStrings.en,
+  ...consoleOverviewAttentionStrings.en,
   ...playbackStrings.en,
   ...playbackChapterStrings.en,
   ...playerShortcutStrings.en,
@@ -167,6 +169,7 @@ export const fr = {
   ...consoleOperationsCacheStrings.fr,
   ...consoleOperationsOpsStrings.fr,
   ...consoleOperationsJobsStrings.fr,
+  ...consoleOverviewAttentionStrings.fr,
   ...playbackStrings.fr,
   ...playbackChapterStrings.fr,
   ...playerShortcutStrings.fr,
@@ -247,6 +250,7 @@ export const de = {
   ...consoleOperationsCacheStrings.de,
   ...consoleOperationsOpsStrings.de,
   ...consoleOperationsJobsStrings.de,
+  ...consoleOverviewAttentionStrings.de,
   ...playbackStrings.de,
   ...playbackChapterStrings.de,
   ...playerShortcutStrings.de,
@@ -327,6 +331,7 @@ export const es = {
   ...consoleOperationsCacheStrings.es,
   ...consoleOperationsOpsStrings.es,
   ...consoleOperationsJobsStrings.es,
+  ...consoleOverviewAttentionStrings.es,
   ...playbackStrings.es,
   ...playbackChapterStrings.es,
   ...playerShortcutStrings.es,
@@ -407,6 +412,7 @@ export const pt = {
   ...consoleOperationsCacheStrings.pt,
   ...consoleOperationsOpsStrings.pt,
   ...consoleOperationsJobsStrings.pt,
+  ...consoleOverviewAttentionStrings.pt,
   ...playbackStrings.pt,
   ...playbackChapterStrings.pt,
   ...playerShortcutStrings.pt,

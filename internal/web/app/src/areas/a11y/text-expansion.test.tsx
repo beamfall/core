@@ -50,6 +50,8 @@ import { expandDisplayString, STRESS } from "@/test/pseudo";
 // no graphql. A config control with a `select` type exercises the Radix Select
 // value slot (a known line-clamp-1 clip surface — see the spec ledger).
 vi.mock("@/lib/graphql", () => ({
+  // Plugins asks for keys only for plugins a Library uses (CORE-2311).
+  fetchLibraries: vi.fn().mockResolvedValue([]),
   fetchConsoleConfig: vi.fn().mockResolvedValue({
     backgroundWorkers: 2,
     updateCheckEnabled: false,

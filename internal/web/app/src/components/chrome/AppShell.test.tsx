@@ -8,6 +8,8 @@ import { AppShell } from "./AppShell";
 
 vi.mock("@/lib/graphql", () => ({
   fetchNotifications: vi.fn().mockResolvedValue([]),
+  // The activity link reads jobs only with an active Admin Session (CORE-2318).
+  fetchAdminSession: vi.fn().mockResolvedValue({ active: true }),
   fetchJobs: vi
     .fn()
     .mockResolvedValue([
