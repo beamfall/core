@@ -1028,6 +1028,9 @@ func SweepHandler(service *Service) jobs.Handler {
 			// generation; cache hits make this a stat on later passes.
 			if service.HasPoster(id) {
 				service.GenerateDerivatives(ctx, id)
+				// Records the colour of a poster that has none, or whose
+				// bytes changed; a current record makes this a small read.
+				_, _ = service.DominantColor(id)
 			}
 			checkpoint.LastID = string(id)
 			processed++
@@ -1106,6 +1109,7 @@ func (s *Service) importMediaArtwork(ctx context.Context, id store.MediaID, slot
 	if err := s.importArtwork(ctx, dst, string(id), slot, data); err != nil {
 		return err
 	}
+	s.recordDominantColor(dst, slot)
 	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -1153,6 +1157,7 @@ func (s *Service) ImportEntityPoster(ctx context.Context, id store.EntityID, dat
 	if err := s.importArtwork(ctx, dst, string(id), SlotPoster, data); err != nil {
 		return err
 	}
+	s.recordDominantColor(dst, SlotPoster)
 	if err := os.Remove(inheritedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}

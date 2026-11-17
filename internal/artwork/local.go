@@ -254,6 +254,7 @@ func (s *Service) importLocal(ctx context.Context, dst, owner, slot, root, src s
 		}
 		return false, err
 	}
+	s.recordDominantColor(dst, slot)
 	if err := os.Remove(generatedMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, err
 	}

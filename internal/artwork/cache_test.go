@@ -112,8 +112,10 @@ func TestArtworkVersionRehashesAfterReimport(t *testing.T) {
 	if !ok || got == first || got != mustContentVersion(t, poster) {
 		t.Fatalf("ArtworkVersion after re-import = (%q, %v), want the new content token (old %q)", got, ok, first)
 	}
-	if hashes.Load() != 2 {
-		t.Fatalf("hashes = %d, want 2", hashes.Load())
+	// The old poster, the import binding the new poster's colour to its
+	// version, and this read of a file too fresh to memoise.
+	if hashes.Load() != 3 {
+		t.Fatalf("hashes = %d, want 3", hashes.Load())
 	}
 }
 
