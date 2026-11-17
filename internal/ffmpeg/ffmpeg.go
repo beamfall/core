@@ -485,9 +485,10 @@ func (r *Runner) ExtractEmbeddedArtwork(ctx context.Context, src string, width i
 	return true, nil
 }
 
-// ScaleImage re-encodes the src image as a JPEG scaled to at most width
-// pixels wide (keeping aspect, never upscaling), writing dst atomically via a
-// temp file in dst's directory.
+// ScaleImage re-encodes the src image scaled to at most width pixels wide
+// (keeping aspect, never upscaling), writing dst atomically via a temp file in
+// dst's directory. A dst ending in .png is an RGBA PNG, so the source's alpha
+// channel survives; every other dst is a JPEG.
 func (r *Runner) ScaleImage(ctx context.Context, src string, width int, dst string) (err error) {
 	if err := checkPath(src); err != nil {
 		return err
@@ -504,15 +505,20 @@ func (r *Runner) ScaleImage(ctx context.Context, src string, width int, dst stri
 		return err
 	}
 	defer out.joinDiscardError(&err)
-	cmd := r.generationCommand(ctx, transformConfinement(src, out.Path), ffmpegPath,
+	args := []string{
 		"-v", "error",
 		"-protocol_whitelist", productionProtocolAllowlist,
 		"-i", src,
 		"-frames:v", "1",
 		"-vf", fmt.Sprintf("scale=min(%d\\,iw):-2", width),
-		"-f", "image2",
-		"-y", "--", out.Path,
-	)
+	}
+	// The temp output has no image extension, so image2 picks JPEG unless the
+	// codec is named.
+	if strings.EqualFold(filepath.Ext(dst), ".png") {
+		args = append(args, "-c:v", "png", "-pix_fmt", "rgba")
+	}
+	args = append(args, "-f", "image2", "-y", "--", out.Path)
+	cmd := r.generationCommand(ctx, transformConfinement(src, out.Path), ffmpegPath, args...)
 	if detail, err := r.runDetail(ctx, cmd); err != nil {
 		return fmt.Errorf("ffmpeg image scale: %s", detail)
 	}
