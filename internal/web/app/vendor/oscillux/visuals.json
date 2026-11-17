@@ -2,8 +2,8 @@
   "source": {
     "repo": "oscillux",
     "path": "shaders/manifest.json",
-    "rev": "3f5f2c35bdf5163aac7bd7584197eeffe15ce345",
-    "release": "v0.2.6",
+    "rev": "dfae7c132d42170f0f2b2c0ba3d70833800cfc1d",
+    "release": "v0.2.7",
     "sha256": "8c01327c34768cbcd4f10c4a256385bf070b5b04f133e06b830754961f47f718",
     "license": "AGPL-3.0-only",
     "note": "The listed fields of every visual, in the manifest catalogOrder, copied unchanged from the manifest at the pinned rev. Data only: the shader bytes are in glsl300/."
