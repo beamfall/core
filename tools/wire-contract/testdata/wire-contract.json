@@ -2598,6 +2598,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -7859,6 +7864,11 @@
                     {
                       "name": "title",
                       "kind": "scalar"
+                    },
+                    {
+                      "name": "year",
+                      "kind": "scalar",
+                      "optional": true
                     }
                   ]
                 },
@@ -7958,6 +7968,11 @@
                   {
                     "name": "title",
                     "kind": "scalar"
+                  },
+                  {
+                    "name": "year",
+                    "kind": "scalar",
+                    "optional": true
                   }
                 ]
               },
@@ -8084,6 +8099,11 @@
                   {
                     "name": "title",
                     "kind": "scalar"
+                  },
+                  {
+                    "name": "year",
+                    "kind": "scalar",
+                    "optional": true
                   }
                 ]
               },
@@ -8183,6 +8203,11 @@
                 {
                   "name": "title",
                   "kind": "scalar"
+                },
+                {
+                  "name": "year",
+                  "kind": "scalar",
+                  "optional": true
                 }
               ]
             },
@@ -10573,6 +10598,11 @@
               {
                 "name": "title",
                 "kind": "scalar"
+              },
+              {
+                "name": "year",
+                "kind": "scalar",
+                "optional": true
               }
             ]
           },
@@ -10672,6 +10702,11 @@
             {
               "name": "title",
               "kind": "scalar"
+            },
+            {
+              "name": "year",
+              "kind": "scalar",
+              "optional": true
             }
           ]
         },
@@ -11979,6 +12014,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -16403,6 +16443,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -16505,6 +16550,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -16607,6 +16657,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -16709,6 +16764,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -19524,6 +19584,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -19633,6 +19698,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -19830,6 +19900,11 @@
                 "name": "year",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "year",
+                "kind": "scalar",
+                "optional": true
               }
             ]
           },
@@ -19966,6 +20041,11 @@
             {
               "name": "title",
               "kind": "scalar"
+            },
+            {
+              "name": "year",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "year",
@@ -27832,6 +27912,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -28396,6 +28481,11 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "year",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },

@@ -1,7 +1,7 @@
-- [ ] `internal/store`: `SourceItem.Year`, filled by the per-card media read that sets `MediaClass`
-- [ ] `internal/graph`: `SourceItem.year`; semantic `sourceItems` cards carry year and class too
-- [ ] Tests: year present, key omitted without a year, Entity cards, restricted and locked unchanged
-- [ ] Wire contract 2.17.0 published and goldens regenerated with the added field
+- [x] `internal/store`: `SourceItem.Year`, filled by the per-card media read that sets `MediaClass`
+- [x] `internal/graph`: `SourceItem.year`; semantic `sourceItems` cards carry year and class too
+- [x] Tests: year present, key omitted without a year, Entity cards, restricted and locked unchanged
+- [x] Wire contract 2.17.0 published and goldens regenerated with the added field
 - [ ] `make gate`
 - [ ] `openspec archive core-2269-card-year` after landing
 

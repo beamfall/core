@@ -836,6 +836,9 @@ type SourceItem struct {
 	// MediaClass is a media-kind item's playback class ("audio", "video"),
 	// set by AnnotateMediaClass; empty for entities and unknown classes.
 	MediaClass MediaClass
+	// Year is a media-kind item's stored year, set by AnnotateMediaClass in
+	// the same read; 0 for entities and for Media with no year (CORE-2269).
+	Year int
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.
