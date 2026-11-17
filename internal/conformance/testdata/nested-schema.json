@@ -8662,6 +8662,302 @@
     ]
   },
   {
+    "field": "libraryfolder",
+    "kind": "object",
+    "children": [
+      {
+        "name": "crumbs",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "name",
+              "kind": "scalar"
+            },
+            {
+              "name": "path",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "name",
+            "kind": "scalar"
+          },
+          {
+            "name": "path",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "folders",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "mediaCount",
+              "kind": "scalar"
+            },
+            {
+              "name": "name",
+              "kind": "scalar"
+            },
+            {
+              "name": "path",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "mediaCount",
+            "kind": "scalar"
+          },
+          {
+            "name": "name",
+            "kind": "scalar"
+          },
+          {
+            "name": "path",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "items",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "engagement",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "completed",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "durationSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "positionSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "remainingCount",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "totalCount",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "locked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "muted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "restricted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "summary",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            },
+            {
+              "name": "year",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "artwork",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "dominantColor",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "poster",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
+            "name": "artworkSlots",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "engagement",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "completed",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "positionSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "remainingCount",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "totalCount",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "locked",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "mediaClass",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "restricted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "summary",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          },
+          {
+            "name": "year",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
+      },
+      {
+        "name": "path",
+        "kind": "scalar"
+      },
+      {
+        "name": "rootCount",
+        "kind": "scalar"
+      },
+      {
+        "name": "total",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "libraryhealth",
     "kind": "object",
     "children": [

@@ -145,16 +145,10 @@ func ValidLibraryBrowseQuality(quality string) bool {
 // sorted here rather than in one SQL statement.
 func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query LibraryBrowseQuery) (LibraryBrowseResult, error) {
 	empty := LibraryBrowseResult{Items: []SourceItem{}, Letters: []LibraryBrowseLetter{}}
-	if query.LibraryID == "" {
+	filter, ok := narrowLibraryFilter(filter, query.LibraryID)
+	if !ok {
 		return empty, nil
 	}
-	if len(filter.AllowedIDs) == 0 && !filter.AllLibraries {
-		return empty, nil
-	}
-	if len(filter.AllowedIDs) > 0 && !slices.Contains(filter.AllowedIDs, query.LibraryID) {
-		return empty, nil
-	}
-	filter.AllowedIDs = []LibraryID{query.LibraryID}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -170,67 +164,11 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	}
 	offset := max(query.Offset, 0)
 
-	libraries, err := loadLibraries(ctx, s.catalogR)
-	if err != nil {
+	set, err := s.libraryVisibleSetLocked(ctx, filter, query.ProfileID)
+	if err != nil || len(set.visible) == 0 {
 		return empty, err
 	}
-	// AllowedIDs is the one browsed Library, so at most one is visible and its
-	// catalog plane holds every row this read needs.
-	var visible []LibraryID
-	reader := s.catalogR
-	// certify renders the certification clause for the plane being read: an
-	// Encrypted Library's own catalog has no library table to join.
-	certify := func() (string, []any) {
-		return certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
-	}
-	for _, library := range libraries {
-		if !libraryVisible(library, filter) {
-			continue
-		}
-		if library.Encrypted {
-			// A sealed Encrypted Library has no readable plane: it browses empty.
-			db := s.encryptedDBs[library.ID]
-			if db == nil || db.state != "unsealed-registered" || db.reader == nil {
-				continue
-			}
-			reader = db.reader
-			pluginID := ""
-			if library.PluginID != nil {
-				pluginID = *library.PluginID
-			}
-			certify = func() (string, []any) {
-				return planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
-			}
-		}
-		visible = append(visible, library.ID)
-	}
-	if len(visible) == 0 {
-		return empty, nil
-	}
-
-	candidates, err := libraryBrowseCandidates(ctx, reader, certify, visible, nil)
-	if err != nil {
-		return empty, err
-	}
-	// Sort titles live on the catalog plane only; an Encrypted Library's items
-	// sort by their titles.
-	if reader == s.catalogR {
-		sortTitles := map[MediaID]string{}
-		for _, libraryID := range visible {
-			if err := librarySortTitles(ctx, reader, libraryID, sortTitles); err != nil {
-				return empty, err
-			}
-		}
-		for i := range candidates {
-			candidates[i].sortTitle = sortTitles[candidates[i].item.ID]
-		}
-	}
-	if query.ProfileID != "" {
-		candidates, err = s.libraryBrowseUnmutedLocked(ctx, reader, query.ProfileID, filter, candidates)
-		if err != nil {
-			return empty, err
-		}
-	}
+	reader, visible, certify, candidates := set.reader, set.visible, set.certify, set.candidates
 	result := LibraryBrowseResult{Items: []SourceItem{}, Letters: []LibraryBrowseLetter{}}
 	result.Facets = libraryBrowseFacets(candidates)
 	for _, kind := range query.FacetEntityKinds {
@@ -278,22 +216,31 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 			result.Items[i] = c.item
 		}
 	}
-	if err := s.annotateRestrictedLocked(ctx, nil, result.Items); err != nil {
+	if err := s.annotateLibraryItemsLocked(ctx, reader, filter, query.ProfileID, result.Items); err != nil {
 		return empty, err
 	}
-	// The Mute badge is read from the browsed Library's own plane, the same one
-	// the Mute filter above read, so an Encrypted Library's items are badged too.
-	if query.ProfileID != "" {
-		if err := s.annotateMutedLocked(ctx, reader, query.ProfileID, result.Items); err != nil {
-			return empty, err
+	return result, nil
+}
+
+// annotateLibraryItemsLocked badges one page of a Library view's items:
+// restricted, muted and locked. The Mute badge is read from the browsed
+// Library's own plane, the same one the Mute filter read, so an Encrypted
+// Library's items are badged too. The caller holds s.mu.
+func (s *Store) annotateLibraryItemsLocked(ctx context.Context, reader *sql.DB, filter LibraryFilter, profileID ProfileID, items []SourceItem) error {
+	if err := s.annotateRestrictedLocked(ctx, nil, items); err != nil {
+		return err
+	}
+	if profileID != "" {
+		if err := s.annotateMutedLocked(ctx, reader, profileID, items); err != nil {
+			return err
 		}
 	}
 	if !filter.PlaybackGate {
-		if err := s.annotateLockedLocked(ctx, filter.Certification, result.Items, filter.GrantedMediaIDs); err != nil {
-			return empty, err
+		if err := s.annotateLockedLocked(ctx, filter.Certification, items, filter.GrantedMediaIDs); err != nil {
+			return err
 		}
 	}
-	return result, nil
+	return nil
 }
 
 func libraryBrowseCandidates(ctx context.Context, reader *sql.DB, certify func() (string, []any), visible []LibraryID, entityFilter *EntityFilter) ([]libraryBrowseCandidate, error) {
@@ -609,4 +556,99 @@ func sortLibraryBrowse(candidates []libraryBrowseCandidate, query LibraryBrowseQ
 		}
 		return 1
 	})
+}
+
+// narrowLibraryFilter narrows a caller's Library filter to the one browsed
+// Library, reporting false when the caller may not see it at all.
+func narrowLibraryFilter(filter LibraryFilter, libraryID LibraryID) (LibraryFilter, bool) {
+	if libraryID == "" {
+		return filter, false
+	}
+	if len(filter.AllowedIDs) == 0 && !filter.AllLibraries {
+		return filter, false
+	}
+	if len(filter.AllowedIDs) > 0 && !slices.Contains(filter.AllowedIDs, libraryID) {
+		return filter, false
+	}
+	filter.AllowedIDs = []LibraryID{libraryID}
+	return filter, true
+}
+
+// libraryVisibleSet is every Media of one browsed Library the caller may see,
+// with the catalog plane it was read from. visible is empty when the Library is
+// hidden from the caller or is a sealed Encrypted Library.
+type libraryVisibleSet struct {
+	reader     *sql.DB
+	visible    []LibraryID
+	certify    func() (string, []any)
+	candidates []libraryBrowseCandidate
+}
+
+// libraryVisibleSetLocked reads the visible, unmuted Media of the one Library
+// a narrowed filter allows. Visibility (reveal, allow-list, certification,
+// trash, extras, per-Profile Mute) is the all-items Source's, so every Library
+// view built on it hides exactly what a rail would hide. The caller holds s.mu.
+func (s *Store) libraryVisibleSetLocked(ctx context.Context, filter LibraryFilter, profileID ProfileID) (libraryVisibleSet, error) {
+	set := libraryVisibleSet{reader: s.catalogR}
+	libraries, err := loadLibraries(ctx, s.catalogR)
+	if err != nil {
+		return libraryVisibleSet{}, err
+	}
+	// AllowedIDs is the one browsed Library, so at most one is visible and its
+	// catalog plane holds every row this read needs.
+	// certify renders the certification clause for the plane being read: an
+	// Encrypted Library's own catalog has no library table to join.
+	set.certify = func() (string, []any) {
+		return certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+	}
+	for _, library := range libraries {
+		if !libraryVisible(library, filter) {
+			continue
+		}
+		if library.Encrypted {
+			// A sealed Encrypted Library has no readable plane: it browses empty.
+			db := s.encryptedDBs[library.ID]
+			if db == nil || db.state != "unsealed-registered" || db.reader == nil {
+				continue
+			}
+			set.reader = db.reader
+			pluginID := ""
+			if library.PluginID != nil {
+				pluginID = *library.PluginID
+			}
+			set.certify = func() (string, []any) {
+				return planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+			}
+		}
+		set.visible = append(set.visible, library.ID)
+	}
+	if len(set.visible) == 0 {
+		return set, nil
+	}
+
+	candidates, err := libraryBrowseCandidates(ctx, set.reader, set.certify, set.visible, nil)
+	if err != nil {
+		return libraryVisibleSet{}, err
+	}
+	// Sort titles live on the catalog plane only; an Encrypted Library's items
+	// sort by their titles.
+	if set.reader == s.catalogR {
+		sortTitles := map[MediaID]string{}
+		for _, libraryID := range set.visible {
+			if err := librarySortTitles(ctx, set.reader, libraryID, sortTitles); err != nil {
+				return libraryVisibleSet{}, err
+			}
+		}
+		for i := range candidates {
+			candidates[i].sortTitle = sortTitles[candidates[i].item.ID]
+		}
+	}
+	if profileID != "" {
+		candidates, err = s.libraryBrowseUnmutedLocked(ctx, set.reader, profileID, filter, candidates)
+		if err != nil {
+			return libraryVisibleSet{}, err
+		}
+	}
+	set.candidates = candidates
+	return set, nil
 }

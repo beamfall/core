@@ -441,6 +441,12 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "partyID", Kind: "string"},
 	},
 	"libraries": {},
+	"libraryfolder": {
+		{Name: "libraryID", Kind: "string"},
+		{Name: "limit", Kind: "int", Optional: true},
+		{Name: "offset", Kind: "int", Optional: true},
+		{Name: "path", Kind: "string", Optional: true},
+	},
 	"libraryduplicategroups": {
 		{Name: "libraryID", Kind: "string"},
 	},

@@ -1,4 +1,14 @@
-import { ArrowDown, ArrowUp, ChevronLeft, LayoutGrid, List, Play, Shuffle, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronLeft,
+  FolderTree,
+  LayoutGrid,
+  List,
+  Play,
+  Shuffle,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -45,8 +55,10 @@ import {
   readLibraryViewMode,
   writeLibraryViewMode,
 } from "../lib/libraryBrowse";
+import { folderSearch, isFolderView } from "../lib/libraryFolders";
 import { startPlayQueue } from "../lib/playQueue";
 import { type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
+import { LibraryFolders } from "./LibraryFolders";
 
 const ALL = "all";
 // Grouping values are free text from the library, so their option values are
@@ -84,11 +96,14 @@ const LETTER_RAIL_MIN_ITEMS = 60;
 // Library browse (/n/:nodeId/all, CORE-1190): every item of one Library the
 // profile may see, counted, sorted and filtered by the server (libraryItems)
 // and windowed here. Sort and filters live in the URL so a view can be linked
-// and survives Back; the grid/list choice is remembered per library.
+// and survives Back; the grid/list choice is remembered per library. The
+// folder view (view=folders, CORE-2359) browses the same Library by folder.
 export function LibraryBrowsePage() {
   const t = useT();
   const { nodeId } = useParams();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const displayLocale = useDisplayLocale();
   const { manifest, loading } = useSession();
 
   if (loading && !manifest) {
@@ -109,6 +124,16 @@ export function LibraryBrowsePage() {
   if (nodeId !== nodeSlug(node.id)) {
     return (
       <Navigate to={{ pathname: nodePath(node.id, "/all"), search: location.search }} replace />
+    );
+  }
+  if (isFolderView(searchParams)) {
+    return (
+      <LibraryFolders
+        key={node.libraryID}
+        libraryID={node.libraryID}
+        nodeID={node.id}
+        heading={displayString(node.title, displayLocale)}
+      />
     );
   }
   return (
@@ -633,6 +658,15 @@ function LibraryBrowse({
             >
               <List aria-hidden className="size-4" />
               {t("libraryBrowseViewList")}
+            </button>
+            <button
+              type="button"
+              className="bf-chip"
+              aria-pressed={false}
+              onClick={() => navigate({ search: folderSearch() })}
+            >
+              <FolderTree aria-hidden className="size-4" />
+              {t("libraryBrowseViewFolders")}
             </button>
           </div>
         </div>

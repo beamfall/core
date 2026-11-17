@@ -1495,6 +1495,19 @@
       ]
     },
     {
+      "field": "libraryfolder",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "crumbs",
+        "folders",
+        "items",
+        "path",
+        "rootCount",
+        "total"
+      ]
+    },
+    {
       "field": "libraryhealth",
       "effect": "read",
       "tier": "admin",
