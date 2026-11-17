@@ -47,6 +47,8 @@ export const profileDevicePairingStrings = {
     signinSecurityStrictConfirmBody:
       "The admin password will no longer sign a browser in. If you are ever locked out, get a pairing code by running this on the server:",
     signinSecurityStrictConfirm: "Switch to Strict",
+    deviceRevokedGroup: "{count, plural, one {# revoked device} other {# revoked devices}}",
+    deviceIDDetail: "ID …{id}",
   },
   fr: {
     deviceActive: "Actif",
@@ -97,6 +99,8 @@ export const profileDevicePairingStrings = {
     signinSecurityStrictConfirmBody:
       "Le mot de passe administrateur ne connectera plus aucun navigateur. Si vous êtes un jour bloqué, obtenez un code de jumelage en exécutant ceci sur le serveur :",
     signinSecurityStrictConfirm: "Passer en mode strict",
+    deviceRevokedGroup: "{count, plural, one {# appareil révoqué} other {# appareils révoqués}}",
+    deviceIDDetail: "ID …{id}",
   },
   de: {
     deviceActive: "Aktiv",
@@ -147,6 +151,8 @@ export const profileDevicePairingStrings = {
     signinSecurityStrictConfirmBody:
       "Das Admin-Passwort meldet dann keinen Browser mehr an. Falls du dich einmal aussperrst, hol dir einen Kopplungscode, indem du Folgendes auf dem Server ausführst:",
     signinSecurityStrictConfirm: "Auf Strikt umstellen",
+    deviceRevokedGroup: "{count, plural, one {# widerrufenes Gerät} other {# widerrufene Geräte}}",
+    deviceIDDetail: "ID …{id}",
   },
   es: {
     deviceActive: "Activo",
@@ -197,6 +203,9 @@ export const profileDevicePairingStrings = {
     signinSecurityStrictConfirmBody:
       "La contraseña de administrador ya no iniciará sesión en ningún navegador. Si alguna vez te quedas sin acceso, obtén un código de emparejamiento ejecutando esto en el servidor:",
     signinSecurityStrictConfirm: "Cambiar a Estricto",
+    deviceRevokedGroup:
+      "{count, plural, one {# dispositivo revocado} other {# dispositivos revocados}}",
+    deviceIDDetail: "ID …{id}",
   },
   pt: {
     deviceActive: "Ativo",
@@ -245,5 +254,8 @@ export const profileDevicePairingStrings = {
     signinSecurityStrictConfirmBody:
       "A senha de administrador não vai mais conectar nenhum navegador. Se você ficar sem acesso, obtenha um código de pareamento executando isto no servidor:",
     signinSecurityStrictConfirm: "Mudar para Estrito",
+    deviceRevokedGroup:
+      "{count, plural, one {# dispositivo revogado} other {# dispositivos revogados}}",
+    deviceIDDetail: "ID …{id}",
   },
 } as const;

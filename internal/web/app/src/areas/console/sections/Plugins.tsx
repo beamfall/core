@@ -23,6 +23,7 @@ import { graphql } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import {
   fetchConsoleConfig,
+  fetchLibraries,
   type PluginActionDescriptor,
   type PluginActivationInfo,
   type PluginConfigFieldInfo,
@@ -33,7 +34,7 @@ import {
   uninstallPluginData,
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { groupProviderKeys, keyNeeded } from "@/lib/providerKeys";
+import { groupProviderKeys, keyNeededForLibraries, libraryPluginIDs } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
@@ -129,9 +130,12 @@ function provenanceChip(provenance: string, t: ReturnType<typeof useT>): ReactNo
 }
 
 // A Trusted plugin's badge is Advanced detail; a warning (unsigned, tampered,
-// revoked) always shows (CORE-1117).
+// revoked) always shows (CORE-1117). A First-Party plugin can be Unsigned only
+// when it ships inside the server executable (plugin.derivePluginProvenance):
+// it has no artifact to sign, so Unsigned is not a warning there (CORE-2322).
 function trustBadge(
   trustState: string,
+  provenance: string,
   t: ReturnType<typeof useT>,
   showAdvanced: boolean,
 ): ReactNode {
@@ -139,6 +143,7 @@ function trustBadge(
     return showAdvanced ? <StatusChip tone="green">{t("pluginTrustTrusted")}</StatusChip> : null;
   }
   if (trustState === "Unsigned") {
+    if (provenance === "First-Party") return null;
     return <StatusChip tone="neutral">{t("pluginTrustUnsigned")}</StatusChip>;
   }
   if (trustState !== "Tampered" && trustState !== "Revoked") return null;
@@ -166,6 +171,9 @@ export function Plugins() {
   const { data, loading, failed, refresh, replace } = useAsync((signal) =>
     fetchConsoleConfigWithStanding(signal, previousPlugins.current),
   );
+  // "Key needed" is for plugins some Library uses (CORE-2311).
+  const libraries = useAsync(fetchLibraries);
+  const libraryPlugins = useMemo(() => libraryPluginIDs(libraries.data), [libraries.data]);
   const [actionFailed, setActionFailed] = useState(false);
   const plugins = data?.plugins ?? [];
   useEffect(() => {
@@ -246,6 +254,7 @@ export function Plugins() {
                 key={p.id}
                 plugin={p}
                 displayLocale={displayLocale}
+                libraryPlugins={libraryPlugins}
                 onToggle={(active) => toggle(p.id, active)}
                 onCredential={credentialAction}
                 onSaveConfig={saveConfig}
@@ -271,6 +280,7 @@ const CARD =
 function PluginCard({
   plugin,
   displayLocale,
+  libraryPlugins,
   onToggle,
   onCredential,
   onSaveConfig,
@@ -279,6 +289,7 @@ function PluginCard({
 }: {
   plugin: PluginWithStanding;
   displayLocale: string;
+  libraryPlugins: Set<string> | null;
   onToggle: (active: boolean) => Promise<void>;
   onCredential: (action: () => Promise<unknown>) => Promise<boolean>;
   onSaveConfig: (
@@ -295,10 +306,10 @@ function PluginCard({
   const name = displayString(plugin.displayName, displayLocale);
   const builtIn = BUILT_IN_PLUGIN_IDS.has(plugin.id);
   const keys = useMemo(() => groupProviderKeys(plugin.scrapers ?? []), [plugin.scrapers]);
-  const missingKey = keys.some(keyNeeded);
+  const missingKey = keys.some((key) => keyNeededForLibraries(key, libraryPlugins));
   const detailsID = `plugin-details-${plugin.id}`;
   const provenance = showAdvanced ? provenanceChip(plugin.provenance, t) : null;
-  const trust = trustBadge(plugin.trustState, t, showAdvanced);
+  const trust = trustBadge(plugin.trustState, plugin.provenance, t, showAdvanced);
   // Normal Details hold the control policy, config and status; with none of
   // those the toggle would open an empty panel, so it is left out.
   const hasDetails =

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { PluginScraperInfo } from "@/lib/graphql/types";
-import { groupProviderKeys, keyNeeded, providerKeyLabel } from "./providerKeys";
+import {
+  groupProviderKeys,
+  keyNeeded,
+  keyNeededForLibraries,
+  libraryPluginIDs,
+  providerKeyDisplayStatus,
+  providerKeyLabel,
+} from "./providerKeys";
 
 function scraper(over: Partial<PluginScraperInfo>): PluginScraperInfo {
   return {
@@ -81,5 +88,31 @@ describe("groupProviderKeys", () => {
     ]);
     expect(key.credentialHelp).toEqual(help);
     expect(other.credentialHelp).toBeUndefined();
+  });
+});
+
+describe("optional and unused provider keys (CORE-2311)", () => {
+  const [missingRequired] = groupProviderKeys([
+    scraper({ credentialRequired: true, credentialStatus: "missing" }),
+  ]);
+  const [missingOptional] = groupProviderKeys([
+    scraper({ credentialRequired: false, credentialStatus: "missing" }),
+  ]);
+
+  it("shows a missing key the plugin can work without as optional", () => {
+    expect(providerKeyDisplayStatus(missingRequired)).toBe("missing");
+    expect(providerKeyDisplayStatus(missingOptional)).toBe("optional");
+    expect(keyNeeded(missingOptional)).toBe(false);
+  });
+
+  it("counts a needed key only when a Library uses one of its plugins", () => {
+    expect(libraryPluginIDs(null)).toBeNull();
+    const used = libraryPluginIDs([{ pluginID: "meta" }, { pluginID: null }]);
+    const unused = libraryPluginIDs([{ pluginID: "other" }]);
+    expect(keyNeededForLibraries(missingRequired, used)).toBe(true);
+    expect(keyNeededForLibraries(missingRequired, unused)).toBe(false);
+    // Unknown Libraries keep the plain rule rather than hiding a real need.
+    expect(keyNeededForLibraries(missingRequired, null)).toBe(true);
+    expect(keyNeededForLibraries(missingOptional, used)).toBe(false);
   });
 });

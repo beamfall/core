@@ -77,3 +77,28 @@ export function groupProviderKeys(scrapers: PluginScraperInfo[]): ProviderKey[] 
 export function keyNeeded(key: ProviderKey): boolean {
   return key.required && key.status !== "configured" && key.status !== "disabled";
 }
+
+/**
+ * The status to show for a key: a missing key the plugins can work without
+ * reads "optional", not "missing" (CORE-2311: TheTVDB, AniList and Google Books
+ * add matches but TV, anime and books still match without them).
+ */
+export function providerKeyDisplayStatus(key: ProviderKey): string {
+  return key.status === "missing" && !key.required ? "optional" : key.status;
+}
+
+/**
+ * The plugin ids that some Library uses, or null while that is unknown. A key
+ * only plugins with no Library use is not a setup step yet (CORE-2311).
+ */
+export function libraryPluginIDs(
+  libraries: { pluginID: string | null }[] | null | undefined,
+): Set<string> | null {
+  if (!libraries) return null;
+  return new Set(libraries.flatMap((library) => (library.pluginID ? [library.pluginID] : [])));
+}
+
+/** keyNeeded, limited to keys a plugin with a Library uses when that is known. */
+export function keyNeededForLibraries(key: ProviderKey, pluginIDs: Set<string> | null): boolean {
+  return keyNeeded(key) && (pluginIDs === null || key.pluginIDs.some((id) => pluginIDs.has(id)));
+}

@@ -13,7 +13,13 @@ import {
   validateScraperCredential,
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
-import { groupProviderKeys, keyNeeded, type ProviderKey } from "@/lib/providerKeys";
+import {
+  groupProviderKeys,
+  keyNeededForLibraries,
+  libraryPluginIDs,
+  type ProviderKey,
+  providerKeyDisplayStatus,
+} from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { CARD } from "./sections/libraryStyles";
@@ -26,6 +32,8 @@ import { useAsync } from "./useAsync";
 const KEY_STATUS: Record<string, { label: StringKey; tone: StatusTone }> = {
   configured: { label: "consoleScraperConfigured", tone: "green" },
   missing: { label: "consoleScraperMissing", tone: "amber" },
+  // A missing key the plugins can work without (CORE-2311).
+  optional: { label: "consoleScraperOptional", tone: "neutral" },
   unavailable: { label: "consoleScraperUnavailable", tone: "neutral" },
   invalid: { label: "consoleScraperInvalid", tone: "red" },
   unreadable: { label: "consoleScraperUnreadable", tone: "red" },
@@ -78,7 +86,7 @@ export function ProviderKeyRow({
           </div>
           <CredentialHelpLink providerKey={providerKey} />
         </div>
-        <KeyStatusChip status={status} />
+        <KeyStatusChip status={providerKeyDisplayStatus(providerKey)} />
       </div>
       <form
         className="mt-2.5 flex flex-wrap items-center gap-2"
@@ -138,9 +146,14 @@ export function ProviderKeyRow({
 
 // MissingProviderKeys (CORE-1534): on the Libraries page, the keys an active
 // plugin requires and nobody has configured, since without them a Library's
-// items import unmatched. A row the owner touches stays for the visit, so a
+// items import unmatched. Only plugins some Library uses count (CORE-2311). A row the owner touches stays for the visit, so a
 // save shows "configured" and a later Disable shows "missing" again in place.
-export function MissingProviderKeys() {
+export function MissingProviderKeys({
+  libraries,
+}: {
+  /** The page's Libraries, or null until they load. */
+  libraries: { pluginID: string | null }[] | null;
+}) {
   const t = useT();
   const config = useAsync(fetchConsoleConfig);
   const touched = useRef(new Set<string>());
@@ -155,7 +168,9 @@ export function MissingProviderKeys() {
       ),
     [config.data],
   );
-  const shown = keys.filter((key) => keyNeeded(key) || touched.current.has(key.authRef));
+  const pluginIDs = useMemo(() => libraryPluginIDs(libraries), [libraries]);
+  const needed = (key: ProviderKey) => keyNeededForLibraries(key, pluginIDs);
+  const shown = keys.filter((key) => needed(key) || touched.current.has(key.authRef));
   if (shown.length === 0) return null;
 
   async function credentialAction(authRef: string, action: () => Promise<unknown>) {
@@ -171,7 +186,7 @@ export function MissingProviderKeys() {
     }
   }
 
-  const missing = shown.some(keyNeeded);
+  const missing = shown.some(needed);
   return (
     <section aria-labelledby="library-provider-keys" className={cn(CARD, "px-4 pt-3")}>
       <h3 id="library-provider-keys" className="m-0 text-sm font-semibold">

@@ -353,7 +353,7 @@ func (h *Handler) pluginScraperInfo(pluginID string, bundle plugin.Bundle) []Plu
 			Endpoint:             scraper.Endpoint,
 			AuthRef:              scraper.AuthRef,
 			AuthStyle:            authStyle,
-			CredentialRequired:   scraper.AuthRef != "",
+			CredentialRequired:   h.scraperCredentialRequired(bundle, scraper),
 			CredentialConfigured: status.configured,
 			CredentialStatus:     status.status,
 			CredentialError:      status.err,
@@ -362,6 +362,40 @@ func (h *Handler) pluginScraperInfo(pluginID string, bundle plugin.Bundle) []Plu
 		})
 	}
 	return items
+}
+
+// scraperCredentialRequired reports whether identification needs scraper's
+// key (CORE-2311). A key is optional when the plugin marks it OptionalAuth, or
+// when another searchable scraper of the same plugin and implied class works
+// without a key or with one already usable (a saved key or a build's default
+// key): the TV class matches through the default TMDB key, so a TheTVDB PIN is
+// never "needed".
+func (h *Handler) scraperCredentialRequired(bundle plugin.Bundle, scraper plugin.ScraperSpec) bool {
+	if scraper.AuthRef == "" || scraper.OptionalAuth {
+		return false
+	}
+	class := scraperImpliedClass(scraper)
+	for _, other := range bundle.Scrapers {
+		if other.ID == scraper.ID || other.AuthRef == scraper.AuthRef {
+			continue
+		}
+		if other.SearchTemplate == "" || other.CandidateIDPath == "" || scraperImpliedClass(other) != class {
+			continue
+		}
+		if other.AuthRef == "" || h.scraperCredentialStatus(other.AuthRef).configured {
+			return false
+		}
+	}
+	return true
+}
+
+// scraperImpliedClass is the media class a scraper identifies, as the
+// identification pipeline reads it.
+func scraperImpliedClass(scraper plugin.ScraperSpec) string {
+	if class, ok := scraper.ImpliedMediaFields["media.class"]; ok {
+		return class
+	}
+	return scraper.ImpliedMediaFields["class"]
 }
 
 // scraperCredentialHelp returns the plugin's presentation for scraper's

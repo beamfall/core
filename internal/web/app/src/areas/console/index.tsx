@@ -34,14 +34,17 @@ import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { Button } from "@/components/ui/button";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
-import { fetchJobs, fetchSetupState } from "@/lib/graphql";
+import { fetchBackupKeyStatus, fetchLibraryHealth, fetchSetupState } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
+import { jobKindLabel, jobTargetDetail } from "@/lib/jobDisplay";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { BackupExportPage } from "../manage/pages/BackupExportPage";
 import { AdminGate } from "./AdminGate";
+import { fetchConsoleJobs, redactJobLogPayload, unresolvedFailedJobs } from "./lib/jobQueue";
+import { healthAttention, libraryFoldersLink } from "./lib/overviewAttention";
 import { PairingRequestsProvider } from "./lib/pairingRequests";
 import { OwnerTasks } from "./OwnerTasks";
 import { PairingPrompt } from "./PairingPrompt";
@@ -127,7 +130,12 @@ function Overview() {
   // (CORE-1606); the checklist leads the page until first value is reached.
   const rootProblems = useAsync(fetchLibraryRootProblems).data ?? [];
   const browse = useAsync(fetchHasBrowsableContent);
-  const jobs = useAsync(fetchJobs);
+  const jobs = useAsync(fetchConsoleJobs);
+  // Needs attention also reads Library health, failed jobs and the backup key
+  // (CORE-2310), so it agrees with the pages that report them. Each read is
+  // best-effort: a failed one adds no rows.
+  const health = useAsync(fetchLibraryHealth);
+  const backupKey = useAsync(fetchBackupKeyStatus);
   // Decide only once every answer is in, so a set-up server's Overview does
   // not flash the checklist at the top and then drop it to the bottom.
   const checklistFirst =
@@ -144,31 +152,45 @@ function Overview() {
       to: "/console/access",
       label: "consoleOverviewNeedsOwner" as const,
     },
+    backupKey.data?.pending && {
+      to: "/console/backups",
+      label: "consoleAttentionBackupKey" as const,
+    },
   ].filter(Boolean) as { to: string; label: StringKey }[];
+  const failedJobs = unresolvedFailedJobs(jobs.failed ? [] : (jobs.data ?? []));
+  const healthRows = healthAttention(health.failed ? null : health.data);
+  const attentionCount = queue.length + rootProblems.length + failedJobs.length + healthRows.length;
 
   const libraryState =
     needsLibrary || rootProblems.length > 0 ? "setupChecklistNext" : "consoleOverviewReady";
 
   return (
     <div className="space-y-10">
-      <Section heading="consoleOverviewHeading" lead="consoleOverviewLead">
+      {/* The page h1 already names the route, so this Section titles the status strip. */}
+      <Section heading="consoleOverviewStatus" lead="consoleOverviewLead">
         <div className="console-status-strip">
           {(
             [
-              ["consoleOverviewServer", "consoleOverviewReady"],
-              ["libraries", libraryState],
-              ["jobs", "consoleOverviewReady"],
+              ["consoleOverviewServer", t("consoleOverviewReady"), false],
+              ["libraries", t(libraryState), libraryState === "setupChecklistNext"],
+              [
+                "jobs",
+                failedJobs.length > 0
+                  ? t("consoleOverviewJobsFailed", { count: failedJobs.length })
+                  : t("consoleOverviewReady"),
+                failedJobs.length > 0,
+              ],
             ] as const
-          ).map(([label, state]) => (
+          ).map(([label, state, warn]) => (
             <div className="console-status-cell" key={label}>
               <span className="console-status-label">{t(label)}</span>
               <span className="console-status-value">
                 <span
                   className="console-status-dot"
-                  data-tone={state === "setupChecklistNext" ? "amber" : "green"}
+                  data-tone={warn ? "amber" : "green"}
                   aria-hidden
                 />
-                {t(state)}
+                {state}
               </span>
             </div>
           ))}
@@ -180,7 +202,7 @@ function Overview() {
       </Section>
 
       <Section heading="consoleNeedsAttentionHeading" lead="consoleNeedsAttentionLead">
-        {queue.length === 0 && rootProblems.length === 0 ? (
+        {attentionCount === 0 ? (
           <EmptyState message="consoleNeedsAttentionEmpty" />
         ) : (
           <div className="console-card">
@@ -188,12 +210,47 @@ function Overview() {
               <Link
                 className="console-triage-row"
                 key={`${problem.libraryID}:${problem.root}`}
-                to="/console/libraries"
+                to={libraryFoldersLink(problem.libraryID)}
               >
                 <span className="min-w-0 break-all">
                   {t("libraryRootAttention", { library: problem.title, path: problem.root })}
                 </span>
                 <StatusChip tone="red">{t(ROOT_PROBLEM_LABEL[problem.reason])}</StatusChip>
+              </Link>
+            ))}
+            {failedJobs.map((job) => (
+              <Link
+                className="console-triage-row"
+                key={job.id}
+                // A failed job on a Library folder is fixed at that folder (CORE-2309).
+                to={
+                  job.target?.libraryID && job.target.root
+                    ? libraryFoldersLink(job.target.libraryID)
+                    : "/console/operations"
+                }
+              >
+                <span className="min-w-0 break-words">
+                  {t("consoleAttentionJobFailed", { job: jobKindLabel(job.kind, t) })}
+                  {jobTargetDetail(job) && (
+                    <span className="block text-xs text-muted-foreground break-all">
+                      {jobTargetDetail(job)}
+                    </span>
+                  )}
+                  {job.error && (
+                    <span className="block text-xs text-[var(--state-danger)] break-words">
+                      {redactJobLogPayload(job.error)}
+                    </span>
+                  )}
+                </span>
+                <StatusChip tone="red">{t("jobStatusFailed")}</StatusChip>
+              </Link>
+            ))}
+            {healthRows.map((row) => (
+              <Link className="console-triage-row" key={row.dimension} to={row.to}>
+                <span>
+                  {t("consoleAttentionHealthCount", { label: t(row.label), count: row.count })}
+                </span>
+                <StatusChip tone="amber">{t("setupChecklistNext")}</StatusChip>
               </Link>
             ))}
             {queue.map((row) => (
@@ -464,7 +521,11 @@ function ConsoleNav({ groups }: { groups: NavGroup[] }) {
     <div className="console-nav">
       {visibleNavGroups(groups, advanced, pathname).map((group) => (
         <div className="console-nav-group" key={group.label}>
-          <p className="console-nav-group-label">{t(group.label)}</p>
+          {/* A group of one destination with the group's own name (Overview) shows
+              only the link, so the name is not repeated (CORE-2310). */}
+          {!(group.items.length === 1 && group.items[0].label === group.label) && (
+            <p className="console-nav-group-label">{t(group.label)}</p>
+          )}
           {group.items.map((item) => {
             const Icon = item.icon;
             return (

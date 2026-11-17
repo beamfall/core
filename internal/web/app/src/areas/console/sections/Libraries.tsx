@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import { LibraryIconPicker, useLibraryIconSymbol } from "@/components/beamfall/LibraryIconPicker";
 import {
@@ -135,6 +135,13 @@ function LibraryCard({
   useEffect(() => {
     setSavedRoots(null);
   }, [library.roots]);
+  // An Overview attention row links to /console/libraries#folders-<id>: that
+  // card opens on its folders and scrolls into view (CORE-2309).
+  const foldersID = `folders-${library.id}`;
+  const targeted = useLocation().hash === `#${foldersID}`;
+  useEffect(() => {
+    if (targeted) document.getElementById(foldersID)?.scrollIntoView?.({ block: "start" });
+  }, [targeted, foldersID]);
   const [newRoot, setNewRoot] = useState("");
   const [rootsError, setRootsError] = useState("");
   const [scanRoot, setScanRoot] = useState("");
@@ -309,15 +316,12 @@ function LibraryCard({
         flush
         level={4}
         title={t("libraryFoldersAndOptions")}
-        defaultOpen={roots.length === 0 || Object.keys(rootProblems).length > 0}
+        defaultOpen={targeted || roots.length === 0 || Object.keys(rootProblems).length > 0}
       >
         <div className="space-y-4 px-4 pb-4">
           <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            <section aria-labelledby={`folders-${library.id}`} className="space-y-2">
-              <h4
-                id={`folders-${library.id}`}
-                className="m-0 text-sm font-semibold text-foreground"
-              >
+            <section aria-labelledby={foldersID} className="space-y-2">
+              <h4 id={foldersID} className="m-0 text-sm font-semibold text-foreground">
                 {t("libraryFolders")}
               </h4>
               {roots.length > 0 && (
@@ -596,7 +600,7 @@ export function Libraries() {
         </>
       }
     >
-      <MissingProviderKeys />
+      <MissingProviderKeys libraries={libs.data} />
 
       {(adding || empty) && (
         <AddLibrary

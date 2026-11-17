@@ -737,10 +737,16 @@ a.console-step:hover {
   background: var(--state-danger);
 }
 
+/* The progress read stays on one line (CORE-2308): "620 / 1000 files" wrapped
+ * into a 64px column on a phone. Long reads truncate; the title holds them. */
 .console-job-num {
-  width: 64px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
   text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Per-job action tail (mockup .jactions): Logs + Cancel/Retry, right of the
@@ -779,6 +785,57 @@ a.console-step:hover {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text-primary);
+}
+/* When the job ran and how long, and a failed job's error text (CORE-2308). */
+.console-job-when {
+  flex: 1 0 100%;
+  margin-top: -4px;
+  color: var(--text-secondary);
+}
+.console-job-error {
+  flex: 1 0 100%;
+  margin: -4px 0 0;
+  color: var(--state-danger);
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+/* Finished runs, one row per kind, folded under the live queue. */
+.console-job-history {
+  margin-top: 12px;
+}
+.console-job-history > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+/* On a phone the bar takes its own full-width line under the name and status,
+ * so it stays legible instead of shrinking to a sliver. */
+@media (max-width: 639px) {
+  .console-job-row-ops .console-job-name {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+  .console-job-row-ops .console-jbar {
+    order: 1;
+    flex: 1 0 100%;
+    height: 6px;
+  }
+  .console-job-row-ops .console-job-num {
+    order: 2;
+    max-width: 100%;
+    text-align: left;
+  }
+  .console-job-row-ops .console-job-actions {
+    order: 2;
+  }
+  .console-job-row-ops .console-job-when,
+  .console-job-row-ops .console-job-error,
+  .console-job-row-ops .console-job-about,
+  .console-job-row-ops .console-job-log {
+    order: 3;
+  }
 }
 .console-job-help {
   margin: 0 0 8px;

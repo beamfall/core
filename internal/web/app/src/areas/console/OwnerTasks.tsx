@@ -15,11 +15,13 @@ import { StatusChip } from "@/components/beamfall/workbench";
 import {
   fetchConsoleConfig,
   fetchLibraries,
+  fetchLibraryHealth,
   fetchUnmatchedQueue,
   fetchWatcherStatus,
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
-import { groupProviderKeys, keyNeeded } from "@/lib/providerKeys";
+import { groupProviderKeys, keyNeededForLibraries, libraryPluginIDs } from "@/lib/providerKeys";
+import { unmatchedTotal } from "./lib/overviewAttention";
 import { Section } from "./Section";
 import { useAsync } from "./useAsync";
 
@@ -66,18 +68,25 @@ export function OwnerTasks() {
   const scanning = useAnyRescanActive();
   const libraries = useAsync(fetchLibraries);
   const unmatched = useAsync(fetchUnmatchedQueue);
+  const health = useAsync(fetchLibraryHealth);
   const config = useAsync(fetchConsoleConfig);
   const watchers = useAsync(fetchWatcherStatus);
   const allWatched =
     (watchers.data ?? []).length > 0 &&
     (watchers.data ?? []).every((watcher) => watcher.state === "watching");
 
+  // Keys count only for plugins some Library uses: an unused plugin's key is
+  // not a setup step (CORE-2311).
+  const pluginIDs = libraryPluginIDs(libraries.data);
   const neededKeys = config.data
     ? config.data.plugins
         .filter((plugin) => plugin.active)
         .flatMap((plugin) => groupProviderKeys(plugin.scrapers ?? []))
-        .filter(keyNeeded).length
+        .filter((key) => keyNeededForLibraries(key, pluginIDs)).length
     : null;
+  // The unmatched queue read is capped, so the count comes from Library health
+  // when that answers (CORE-2310); the queue length is the fallback.
+  const unmatchedCount = unmatchedTotal(health.data) ?? unmatched.data?.length ?? null;
 
   return (
     <Section heading="ownerTasksHeading" lead="ownerTasksLead">
@@ -113,9 +122,9 @@ export function OwnerTasks() {
           title={t("fixUnmatched")}
           lead={t("taskUnmatchedLead")}
           status={
-            unmatched.data && (
-              <StatusChip tone={unmatched.data.length > 0 ? "amber" : "green"}>
-                {t("taskUnmatchedCount", { count: unmatched.data.length })}
+            unmatchedCount !== null && (
+              <StatusChip tone={unmatchedCount > 0 ? "amber" : "green"}>
+                {t("taskUnmatchedCount", { count: unmatchedCount })}
               </StatusChip>
             )
           }

@@ -7,6 +7,7 @@ import { graphql } from "@/lib/api";
 import {
   disableScraperCredential,
   fetchConsoleConfig,
+  fetchLibraries,
   setPluginActive,
   setPluginConfig,
   setScraperCredential,
@@ -19,6 +20,7 @@ import { Plugins } from "./Plugins";
 
 vi.mock("@/lib/graphql", () => ({
   fetchConsoleConfig: vi.fn(),
+  fetchLibraries: vi.fn(),
   setPluginActive: vi.fn(),
   setPluginConfig: vi.fn(),
   uninstallPluginData: vi.fn(),
@@ -174,7 +176,15 @@ beforeEach(() => {
   vi.mocked(setPluginConfig).mockReset();
   vi.mocked(uninstallPluginData).mockReset();
   mockConsoleConfig(config);
+  // A Library uses the keyed fixture plugin, so its keys are a setup step.
+  mockLibraryPlugins(["catalog"]);
 });
+
+function mockLibraryPlugins(pluginIDs: string[]) {
+  vi.mocked(fetchLibraries).mockResolvedValue(
+    pluginIDs.map((pluginID) => ({ pluginID })) as Awaited<ReturnType<typeof fetchLibraries>>,
+  );
+}
 
 afterEach(() => {
   setAdminEpochSignal();
@@ -307,6 +317,34 @@ describe("Plugins", () => {
     expect(draft).toBeInTheDocument();
     expect(draft).toHaveValue("https://draft.example.org");
     expect(otherKey).toHaveValue("other-key-draft");
+  });
+
+  it("does not nag for a key when no Library uses the plugin (CORE-2311)", async () => {
+    mockConsoleConfig({ ...config, plugins: [keyedPlugin] });
+    mockLibraryPlugins([]);
+    renderPanel();
+
+    const card = await screen.findByRole("article", { name: "Catalog Metadata" });
+    await waitFor(() => expect(fetchLibraries).toHaveBeenCalled());
+    await waitFor(() => expect(within(card).queryByText("Key needed")).not.toBeInTheDocument());
+  });
+
+  it("labels a key the plugin can match without as optional (CORE-2311)", async () => {
+    const optional = {
+      ...keyedPlugin,
+      scrapers: (keyedPlugin.scrapers ?? []).map((scraper) => ({
+        ...scraper,
+        credentialRequired: false,
+      })),
+    };
+    mockConsoleConfig({ ...config, plugins: [optional] });
+    renderPanel();
+
+    const card = await screen.findByRole("article", { name: "Catalog Metadata" });
+    await openDetails("Catalog Metadata");
+    expect(within(card).getByText("Optional")).toBeVisible();
+    expect(within(card).queryByText("Missing")).not.toBeInTheDocument();
+    expect(within(card).queryByText("Key needed")).not.toBeInTheDocument();
   });
 
   it("shows a missing provider key in the card with a human label", async () => {
@@ -788,6 +826,18 @@ describe("Plugins in the Normal view (CORE-1117)", () => {
     expect(screen.queryByText("First-party")).not.toBeInTheDocument();
     expect(screen.queryByText("Trusted")).not.toBeInTheDocument();
     expect(screen.getByText("Unsigned")).toBeVisible();
+  });
+
+  // CORE-2322: plugins built into the server have no artifact to sign; their
+  // Unsigned standing is not a warning.
+  it("shows no Unsigned warning on a First-Party plugin built into the server", async () => {
+    mockConsoleConfig({
+      ...config,
+      plugins: [standingPlugin("filmtv", "Film & TV", "First-Party", "Unsigned")],
+    });
+    renderPanel();
+    await screen.findByText("Film & TV");
+    expect(screen.queryByText("Unsigned")).not.toBeInTheDocument();
   });
 
   it("drops the Details toggle when Normal would open an empty panel", async () => {

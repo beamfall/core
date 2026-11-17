@@ -32,6 +32,8 @@ import { expectNoAxeViolations, expectNoPositiveTabindex } from "@/test/axe";
 // A single combined module mock for the two data-backed surfaces (Console
 // Plugins, Manage TrashPage). The Viewer SectionView needs no graphql.
 vi.mock("@/lib/graphql", () => ({
+  // Plugins asks for keys only for plugins a Library uses (CORE-2311).
+  fetchLibraries: vi.fn().mockResolvedValue([]),
   // Console: Plugins
   fetchConsoleConfig: vi.fn().mockResolvedValue({
     backgroundWorkers: 2,

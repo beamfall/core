@@ -43,6 +43,7 @@ export const pluginStrings = {
       "Disable stops all requests to this provider. It does not fall back to a key built into the server.",
     pluginKeyDisabledHint:
       "Disabled: no requests go to this provider, even with a key built into the server. Save a key to turn it back on.",
+    consoleScraperOptional: "Optional",
   },
   fr: {
     consoleConfigHeading: "Configuration du serveur",
@@ -89,6 +90,7 @@ export const pluginStrings = {
       "Désactiver bloque toute requête vers ce fournisseur. Cela ne bascule pas sur une clé intégrée au serveur.",
     pluginKeyDisabledHint:
       "Désactivé : aucune requête n’est envoyée à ce fournisseur, même avec une clé intégrée au serveur. Enregistrez une clé pour le réactiver.",
+    consoleScraperOptional: "Facultative",
   },
   de: {
     consoleConfigHeading: "Serverkonfiguration",
@@ -135,6 +137,7 @@ export const pluginStrings = {
       "Deaktivieren stoppt alle Anfragen an diesen Anbieter. Es wird nicht auf einen im Server integrierten Schlüssel ausgewichen.",
     pluginKeyDisabledHint:
       "Deaktiviert: Es gehen keine Anfragen an diesen Anbieter, auch nicht mit einem im Server integrierten Schlüssel. Speichere einen Schlüssel, um ihn wieder zu aktivieren.",
+    consoleScraperOptional: "Optional",
   },
   es: {
     consoleConfigHeading: "Configuración del servidor",
@@ -181,6 +184,7 @@ export const pluginStrings = {
       "Desactivar detiene todas las solicitudes a este proveedor. No recurre a una clave integrada en el servidor.",
     pluginKeyDisabledHint:
       "Desactivado: no se envía ninguna solicitud a este proveedor, ni siquiera con una clave integrada en el servidor. Guarda una clave para reactivarlo.",
+    consoleScraperOptional: "Opcional",
   },
   pt: {
     consoleConfigHeading: "Configuração do servidor",
@@ -226,5 +230,6 @@ export const pluginStrings = {
       "Desativar interrompe todas as solicitações a este provedor. Não recorre a uma chave embutida no servidor.",
     pluginKeyDisabledHint:
       "Desativado: nenhuma solicitação é enviada a este provedor, nem mesmo com uma chave embutida no servidor. Salve uma chave para reativá-lo.",
+    consoleScraperOptional: "Opcional",
   },
 } as const;

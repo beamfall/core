@@ -115,7 +115,7 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
       vi.mocked(fetchSourceItems).mockResolvedValue([
         { id: "m1", kind: "media", title: "x", artworkSlots: [] },
       ] as never);
-      vi.mocked(fetchJobs).mockResolvedValue([scanJob(status), scanJob("running")]);
+      vi.mocked(fetchJobs).mockResolvedValue([scanJob(status)]);
 
       renderChecklist();
 
@@ -123,8 +123,39 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
       await waitFor(() => expect(scan).toHaveTextContent("Next step"));
       expect(scan).not.toHaveTextContent("Done");
       expect(screen.queryByText(/you're all set/i)).toBeNull();
+      // Items are browsable, so the footer never says there is nothing to browse (CORE-2310).
+      expect(screen.getByText(/no recent scan has finished/i)).toBeInTheDocument();
+      expect(screen.queryByText(/nothing to browse/i)).toBeNull();
     },
   );
+
+  it("shows a running scan as Scanning, not as a step still to start (CORE-2310)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue(oneItem);
+    vi.mocked(fetchJobs).mockResolvedValue([scanJob("failed"), scanJob("running")]);
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(scan).toHaveTextContent("Scanning…"));
+    expect(scan).not.toHaveTextContent("Done");
+    expect(screen.getByText(/a scan is running/i)).toBeInTheDocument();
+    expect(screen.queryByText(/you're all set/i)).toBeNull();
+  });
+
+  it("marks the first scan Done when items are browsable and the only scan on record failed before it found files (CORE-2310)", async () => {
+    // Completed scans are pruned after a day, so a server whose catalog came
+    // in long ago may show only a later scan that failed at once.
+    vi.mocked(fetchSetupState).mockResolvedValue(complete);
+    vi.mocked(fetchSourceItems).mockResolvedValue(oneItem);
+    vi.mocked(fetchJobs).mockResolvedValue([scanJob("failed", 0)]);
+
+    renderChecklist();
+
+    const scan = await screen.findByRole("link", { name: /start your first scan/i });
+    await waitFor(() => expect(scan).toHaveTextContent("Done"));
+    expect(screen.getByText(/you're all set/i)).toBeInTheDocument();
+  });
 
   it("marks the first scan Done once a scan completed with items in the catalog", async () => {
     vi.mocked(fetchSetupState).mockResolvedValue(complete);
@@ -192,7 +223,7 @@ describe("SetupChecklist (Seam B funnel spine)", () => {
     renderChecklist();
 
     const scan = await screen.findByRole("link", { name: /start your first scan/i });
-    await waitFor(() => expect(scan).toHaveTextContent("Next step"));
+    await waitFor(() => expect(scan).toHaveTextContent("Scanning…"));
 
     vi.mocked(fetchJobs).mockResolvedValue([scanJob("completed")]);
     await userEvent.click(screen.getByRole("button", { name: /refresh/i }));

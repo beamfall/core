@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   fetchJobs,
+  fetchLibraries,
   fetchSchedules,
   fetchWatcherStatus,
   setScheduleEnabled,
@@ -58,6 +59,28 @@ export function OperationsPage() {
       <WatcherSection />
     </div>
   );
+}
+
+// Per-Library schedules carry the Library ID in their schedule ID
+// (schedule.ScanScheduleID, playback precompute); the kind label alone cannot
+// tell them apart.
+const LIBRARY_SCHEDULE_PREFIXES = ["scan:", "playback-precompute:"];
+
+/** The Library a per-Library schedule belongs to, or null for a server-wide one. */
+export function scheduleLibraryID(scheduleID: string): string | null {
+  const prefix = LIBRARY_SCHEDULE_PREFIXES.find((p) => scheduleID.startsWith(p));
+  const libraryID = prefix ? scheduleID.slice(prefix.length) : "";
+  return libraryID || null;
+}
+
+/** The Library title for a per-Library schedule, its raw ID when the Library is unknown. */
+export function scheduleLibraryLabel(
+  scheduleID: string,
+  titles: ReadonlyMap<string, string>,
+): string | null {
+  const libraryID = scheduleLibraryID(scheduleID);
+  if (!libraryID) return null;
+  return titles.get(libraryID) || scheduleID;
 }
 
 function JobsSection() {
@@ -130,10 +153,17 @@ function JobsSection() {
 function SchedulesSection() {
   const t = useT();
   const [schedules, setSchedules] = useState<ScheduleInfo[]>([]);
+  const [libraryTitles, setLibraryTitles] = useState<ReadonlyMap<string, string>>(new Map());
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setError("");
+    // Titles only label rows; without them a row shows its raw schedule ID.
+    void fetchLibraries()
+      .then((libraries) =>
+        setLibraryTitles(new Map(libraries.map((library) => [library.id, library.title]))),
+      )
+      .catch(() => {});
     try {
       setSchedules(await fetchSchedules());
     } catch {
@@ -189,6 +219,7 @@ function SchedulesSection() {
             <ScheduleRow
               key={schedule.id}
               schedule={schedule}
+              library={scheduleLibraryLabel(schedule.id, libraryTitles)}
               onToggle={onToggle}
               onSaveTrigger={onSaveTrigger}
             />
@@ -202,10 +233,12 @@ function SchedulesSection() {
 
 function ScheduleRow({
   schedule,
+  library,
   onToggle,
   onSaveTrigger,
 }: {
   schedule: ScheduleInfo;
+  library: string | null;
   onToggle: (s: ScheduleInfo, enabled: boolean) => Promise<void>;
   onSaveTrigger: (s: ScheduleInfo, kind: TriggerKind, fields: TriggerFields) => Promise<void>;
 }) {
@@ -223,6 +256,7 @@ function ScheduleRow({
           <span className="font-semibold text-[var(--text-primary)]">
             {jobKindLabel(schedule.jobKind, t)}
           </span>
+          {library && <span className="break-all text-sm text-muted-foreground">{library}</span>}
           {schedule.orphaned && <StatusBadge state="amber">{t("orphaned")}</StatusBadge>}
         </div>
         <Label className="flex items-center gap-2">

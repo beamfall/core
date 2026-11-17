@@ -1,0 +1,8 @@
+- [x] Overview attention from failed jobs, Library health, backup key and folder problems (CORE-2310, CORE-2309)
+- [x] First-value step: Scanning state, content-pending footer, pruned-scan tolerance (CORE-2310)
+- [x] Unmatched count from Library health (CORE-2310)
+- [x] Job queue order, history fold, times, durations and error (CORE-2308)
+- [x] Optional provider keys; keys asked only for plugins a Library uses (CORE-2311)
+- [x] Header activity reads jobs only with an Admin Session (CORE-2318)
+- [x] Tests: vitest for each behaviour, Go test for `credentialRequired`
+- [ ] Landing batch: rebuild `internal/web/app-dist` and refresh visual goldens if they moved

@@ -235,6 +235,36 @@ describe("Devices (ADR-0081 administration)", () => {
     expect(within(row).queryByText("Active")).toBeNull();
   });
 
+  // CORE-2324: same-named devices are told apart by their ID tail, and revoked
+  // devices are folded away from the live list.
+  it("tells same-named devices apart and folds revoked devices away", async () => {
+    vi.mocked(fetchDevices).mockResolvedValue([
+      {
+        deviceID: "dev-aaa111",
+        name: "Chrome on macOS",
+        role: "manager",
+        revoked: false,
+        current: true,
+      },
+      {
+        deviceID: "dev-bbb222",
+        name: "Chrome on macOS",
+        role: "viewer",
+        revoked: false,
+        current: false,
+      },
+      { deviceID: "dev-ccc333", name: "Old Phone", role: "viewer", revoked: true, current: false },
+    ]);
+    renderDevices();
+
+    expect(await screen.findByText("ID …aaa111")).toBeInTheDocument();
+    expect(screen.getByText("ID …bbb222")).toBeInTheDocument();
+    const fold = screen.getByText("1 revoked device").closest("details")!;
+    expect(fold).not.toHaveAttribute("open");
+    expect(within(fold).getByText("Old Phone")).toBeInTheDocument();
+    expect(screen.getByText("ID …bbb222").closest("details")).toBeNull();
+  });
+
   it("persists the remote-enrollment toggle", async () => {
     renderDevices();
     const toggle = await screen.findByRole("switch", { name: /allow remote enrollment/i });

@@ -8,6 +8,7 @@ import type { JobInfo, SetupState } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { jobProgressDetail } from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
+import { isLiveJob } from "../lib/jobQueue";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
@@ -39,8 +40,14 @@ interface FirstValueProgress {
    * imported), or jobs loaded with no scan on record, so the content arrived
    * some other way (a restore or an import). An empty completed scan beside a
    * failed one that left items is neither.
+   *
+   * Finished jobs are pruned after a day, so a scan on record that failed
+   * before bringing any file in, beside browsable content, does not undo it
+   * (CORE-2310): the content came from an earlier scan or another route.
    */
   contentLanded: boolean;
+  /** A scan is queued, running or yielded right now. */
+  scanning: boolean;
 }
 
 interface SpineItem {
@@ -110,10 +117,19 @@ function firstValueProgress(browsable: boolean | null, jobs: JobInfo[] | null): 
   const scanBroughtFiles = scans.some(
     (job) => job.status === "completed" && job.progress.current > 0,
   );
+  const scanning = scans.some((job) => isLiveJob(job.status));
+  // A scan still under way, or one that stopped after bringing files in, means
+  // the content on hand may be a partial first import.
+  const unfinishedImport =
+    scanning ||
+    scans.some(
+      (job) => (job.status === "failed" || job.status === "canceled") && job.progress.current > 0,
+    );
   return {
     browsable: browsable === true,
     // Jobs that failed to load are unknown, never "no scan on record".
-    contentLanded: scanBroughtFiles || (jobs !== null && scans.length === 0),
+    contentLanded: scanBroughtFiles || (jobs !== null && !unfinishedImport),
+    scanning,
   };
 }
 
@@ -161,9 +177,13 @@ export function SetupChecklist() {
   // (see FirstValueProgress) → finished; otherwise (no browsable content, only
   // an unfinished scan behind it, or a probe still loading / failed) → keep
   // guiding toward first value.
+  // It never says there is nothing to browse while a scan runs or items are
+  // already browsable (CORE-2310).
   function footerMessage(): string {
     if (!data?.complete) return t("setupIncomplete");
     if (progress.browsable && progress.contentLanded) return t("setupChecklistFirstValue");
+    if (progress.scanning) return t("setupChecklistScanRunning");
+    if (progress.browsable) return t("setupChecklistContentPending");
     return t("setupChecklistEmptyNextStep");
   }
 
@@ -208,6 +228,8 @@ export function SetupChecklist() {
                   <span className="console-step-label">{t(item.label)}</span>
                   {done ? (
                     <StatusChip tone="green">{t("setupChecklistDone")}</StatusChip>
+                  ) : item.label === "setupChecklistScan" && progress.scanning ? (
+                    <StatusChip tone="cyan">{t("rescanScanning")}</StatusChip>
                   ) : item.optional ? (
                     <StatusChip tone="neutral">{t("setupChecklistOptional")}</StatusChip>
                   ) : (
