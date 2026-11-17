@@ -5723,6 +5723,10 @@ func TestMediaReadCarriesCredits(t *testing.T) {
 	if full.MediaClass != "audio" || full.DurationSeconds <= 0 {
 		t.Fatalf("media class/duration = %q/%d, want audio with a runtime", full.MediaClass, full.DurationSeconds)
 	}
+	// The readable watch address carries the owning Library (CORE-2329).
+	if full.LibraryID != string(media.LibraryID) || full.LibraryID == "" {
+		t.Fatalf("media libraryID = %q, want %q", full.LibraryID, media.LibraryID)
+	}
 	got := full.Credits
 	want := []MediaCreditInfo{
 		{EntityID: "entity-record", Title: "The Record", Kind: "record", KindDisplayName: plugin.L("Record"), Archetype: "container", Relation: "record-cut"},

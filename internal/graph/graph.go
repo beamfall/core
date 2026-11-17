@@ -4176,6 +4176,9 @@ type MediaInfo struct {
 	// client can render a track-list row (CORE-1635).
 	DurationSeconds int    `json:"durationSeconds,omitempty"`
 	MediaClass      string `json:"mediaClass,omitempty"`
+	// LibraryID names the owning Library so a client can build a readable
+	// address for the item (CORE-2329); filled only by the media(id) read.
+	LibraryID string `json:"libraryID,omitempty"`
 	// ArtworkSlots maps each present artwork slot to its URL; filled only by
 	// the media(id) read, omitted when the item carries no artwork.
 	ArtworkSlots map[string]string `json:"artworkSlots,omitempty"`
@@ -4234,6 +4237,7 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	}
 	info.DurationSeconds = media.DurationSeconds
 	info.MediaClass = string(media.Class)
+	info.LibraryID = string(media.LibraryID)
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
 	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)
 	return info, nil
