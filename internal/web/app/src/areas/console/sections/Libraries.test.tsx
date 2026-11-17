@@ -18,6 +18,7 @@ import {
   fetchPathPicker,
   fetchPlugins,
   fetchSkipDetectionEnabled,
+  refreshLibraryMetadata,
   scanLibrary,
   setLibraryRoots,
   setLibraryShowOnHome,
@@ -56,6 +57,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchWatcherStatus: vi
     .fn()
     .mockResolvedValue([{ libraryID: "library-1", title: "Library", state: "watching" }]),
+  refreshLibraryMetadata: vi.fn(),
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
   setLibraryShowOnHome: vi.fn(),
@@ -543,6 +545,45 @@ describe("Console Libraries scan", () => {
     await waitFor(() =>
       expect(screen.queryByRole("article", { name: "Library" })).not.toBeInTheDocument(),
     );
+  });
+
+  it("refreshes all of a Library's metadata only after a confirm that warns it takes a while (CORE-1136)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(refreshLibraryMetadata).mockResolvedValue({ id: "job-1", status: "queued" });
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    await user.click(within(card).getByRole("button", { name: "Refresh all metadata" }));
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Refresh metadata for every item in this library?",
+    });
+    expect(within(dialog).getByText(/Locked fields keep their values/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/may take a while/)).toBeInTheDocument();
+    expect(refreshLibraryMetadata).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Refresh all metadata" }));
+
+    await waitFor(() => expect(refreshLibraryMetadata).toHaveBeenCalledWith("library-1"));
+    const status = await within(card).findByRole("status");
+    expect(status).toHaveTextContent("Metadata refresh queued.");
+    expect(within(status).getByRole("link", { name: "Follow it in Operations" })).toHaveAttribute(
+      "href",
+      "/console/operations",
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the refresh dialog open and says so when the server refuses (CORE-1136)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(refreshLibraryMetadata).mockRejectedValue(new Error("admin session required"));
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    await user.click(within(card).getByRole("button", { name: "Refresh all metadata" }));
+    const dialog = screen.getByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Refresh all metadata" }));
+
+    expect(await within(dialog).findByText("admin session required")).toBeInTheDocument();
+    expect(within(card).queryByText("Metadata refresh queued.")).not.toBeInTheDocument();
   });
 
   it("keeps a Library off Home with its Show on Home switch and reloads the list (CORE-2360)", async () => {
