@@ -390,6 +390,9 @@ type Handler struct {
 	// partyMu serializes Watch Party timeline moves with their fan-out
 	// (graph_watchparty.go partyTransition).
 	partyMu sync.Mutex
+	// leadWatch holds the pending silence check of each playing lead party
+	// (graph_groupconductor.go watchLeadLocked). Guarded by partyMu.
+	leadWatch map[string]*time.Timer
 
 	manifest        *manifest.Service
 	auth            *auth.Service

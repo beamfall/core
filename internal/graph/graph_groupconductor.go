@@ -386,6 +386,9 @@ func (h *Handler) reportLeadPosition(ctx context.Context, scope auth.Scope, part
 	if err != nil {
 		return ReportDriftResult{}, partyClientError(err)
 	}
+	if !transition.Paused {
+		h.watchLeadLocked(partyID, conductor.LeadSilence)
+	}
 	if !restate {
 		return ReportDriftResult{GroupID: partyID, Action: "none"}, nil
 	}
@@ -393,4 +396,42 @@ func (h *Handler) reportLeadPosition(ctx context.Context, scope auth.Scope, part
 		return ReportDriftResult{}, err
 	}
 	return ReportDriftResult{GroupID: partyID, Action: "anchor"}, nil
+}
+
+// watchLeadLocked schedules a silence check of a playing lead party after wait,
+// unless one is already pending (CORE-2266). The caller holds partyMu.
+func (h *Handler) watchLeadLocked(partyID string, wait time.Duration) {
+	if _, pending := h.leadWatch[partyID]; pending {
+		return
+	}
+	if h.leadWatch == nil {
+		h.leadWatch = make(map[string]*time.Timer)
+	}
+	h.leadWatch[partyID] = time.AfterFunc(wait, func() {
+		h.leadSilenceCheck(context.Background(), partyID)
+	})
+}
+
+// leadSilenceCheck holds a lead party whose lead has fallen silent and tells
+// every member Profile, so followers stop instead of running ahead of the
+// lead's audio. A party whose lead is still reporting is checked again when it
+// would next be due; a paused or ended party is dropped from the watch until
+// the lead moves it again.
+func (h *Handler) leadSilenceCheck(ctx context.Context, partyID string) {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	delete(h.leadWatch, partyID)
+	transition, members, held, wait, err := h.conductor.HoldSilentLead(partyID)
+	if err != nil {
+		return // ended in the meantime
+	}
+	if held {
+		host, _ := h.partyHostProfile(partyID)
+		// Best effort: the lead's next report re-states the timeline.
+		_ = h.broadcastPartyTransition(ctx, partyID, host, members, transition)
+		return
+	}
+	if wait > 0 {
+		h.watchLeadLocked(partyID, wait)
+	}
 }
