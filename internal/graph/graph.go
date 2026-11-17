@@ -141,9 +141,12 @@ type SourceItem struct {
 // SourceItemArtwork describes an item's stored artwork. Poster is the
 // canonical serve path; clients append the compiled-in derivative bucket
 // vocabulary (?bucket=w320/w640/w1280, ADR-0014 §2) — buckets are named by
-// shape and never enumerated per item.
+// shape and never enumerated per item. DominantColor is the poster's most
+// common colour as lowercase #rrggbb, for tinting a surface before the poster
+// loads; it is omitted when the poster holds no decodable colour.
 type SourceItemArtwork struct {
-	Poster string `json:"poster"`
+	Poster        string `json:"poster"`
+	DominantColor string `json:"dominantColor,omitempty"`
 }
 
 // JobInfo describes one durable background job without exposing raw payloads.
@@ -211,10 +214,14 @@ type OperationsGovernorInfo struct {
 // token per slot; *artwork.Service satisfies it (interface at the consumer —
 // graph asks whether a slot exists and, when it does, for its version so the
 // emitted URL is content-addressed and caches hard, ADR-0014 §2). ok=false
-// means the slot has no stored artwork (omit the URL — reveal-safe).
+// means the slot has no stored artwork (omit the URL — reveal-safe). The
+// dominant-colour methods report a stored poster's colour as lowercase
+// #rrggbb; ok=false means there is no poster or no colour to read from it.
 type ArtworkLocator interface {
 	ArtworkVersion(id store.MediaID, slot string) (string, bool)
 	EntityArtworkVersion(id store.EntityID, slot string) (string, bool)
+	DominantColor(id store.MediaID) (string, bool)
+	EntityDominantColor(id store.EntityID) (string, bool)
 }
 
 type ArtworkCandidateFetcher interface {
@@ -1022,6 +1029,15 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	// the poster's version a second time.
 	if poster, ok := resp.ArtworkSlots[artwork.SlotPoster]; ok {
 		resp.Artwork = &SourceItemArtwork{Poster: poster}
+		color, ok := "", false
+		if item.Kind == "entity" {
+			color, ok = h.artwork.EntityDominantColor(store.EntityID(item.ID))
+		} else {
+			color, ok = h.artwork.DominantColor(item.ID)
+		}
+		if ok {
+			resp.Artwork.DominantColor = color
+		}
 	}
 	return resp
 }

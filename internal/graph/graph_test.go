@@ -4293,6 +4293,18 @@ func TestSourceItemsEntityMediaRequiresEntityID(t *testing.T) {
 type fakeArtworkLocator struct {
 	media    map[store.MediaID]map[string]bool
 	entities map[store.EntityID]map[string]bool
+	// colors is the dominant colour of a poster, keyed by Media or Entity ID.
+	colors map[string]string
+}
+
+func (f fakeArtworkLocator) DominantColor(id store.MediaID) (string, bool) {
+	color, ok := f.colors[string(id)]
+	return color, ok
+}
+
+func (f fakeArtworkLocator) EntityDominantColor(id store.EntityID) (string, bool) {
+	color, ok := f.colors[string(id)]
+	return color, ok
 }
 
 // fakeArtworkVersion is the deterministic ?v= token the fake locator emits.
@@ -4538,6 +4550,85 @@ func TestSourceItemsReportArtworkPresenceHonestly(t *testing.T) {
 		t.Fatalf("media-archive artwork = %#v, want absent (no poster stored)", archive.Artwork)
 	} else if archive.ArtworkSlots != nil {
 		t.Fatalf("media-archive artworkSlots = %#v, want absent", archive.ArtworkSlots)
+	}
+}
+
+func TestSourceItemsCarryPosterDominantColor(t *testing.T) {
+	handler := newTestHandlerWithStore(storetest.Open(t))
+	// Both items have a poster; only media-alpha's holds a decodable colour.
+	handler.SetArtwork(fakeArtworkLocator{
+		media: map[store.MediaID]map[string]bool{
+			"media-alpha":   {artwork.SlotPoster: true},
+			"media-archive": {artwork.SlotPoster: true},
+		},
+		colors: map[string]string{"media-alpha": "#1a2b3c"},
+	})
+
+	body := []byte(`{"query":"query { sourceItems { id artwork { poster dominantColor } } }","variables":{"kind":"recently-added"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/graphql", bytes.NewReader(body))
+	authorizeRevealed(req)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data map[string][]struct {
+			ID      string                     `json:"id"`
+			Artwork map[string]json.RawMessage `json:"artwork"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	artworkByID := map[string]map[string]json.RawMessage{}
+	for _, item := range resp.Data["sourceItems"] {
+		artworkByID[item.ID] = item.Artwork
+	}
+	if got := string(artworkByID["media-alpha"]["dominantColor"]); got != `"#1a2b3c"` {
+		t.Fatalf("media-alpha artwork.dominantColor = %s, want \"#1a2b3c\"", got)
+	}
+	archive := artworkByID["media-archive"]
+	if _, ok := archive["poster"]; !ok {
+		t.Fatalf("media-archive artwork = %v, want its poster", archive)
+	}
+	if color, ok := archive["dominantColor"]; ok {
+		t.Fatalf("media-archive artwork.dominantColor = %s, want the field omitted", color)
+	}
+}
+
+func TestSourceItemOmitsDominantColorWithoutPoster(t *testing.T) {
+	h := newTestHandlerWithStore(storetest.Open(t))
+	// A colour with no poster cannot come from the artwork store; the wire
+	// shape still never carries one without a poster.
+	h.SetArtwork(fakeArtworkLocator{colors: map[string]string{"media-alpha": "#1a2b3c"}})
+
+	item := h.sourceItem(store.SourceItem{ID: "media-alpha", Kind: "media"}, false)
+
+	if item.Artwork != nil {
+		t.Fatalf("artwork = %+v, want absent without a poster", item.Artwork)
+	}
+	data, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "dominantColor") {
+		t.Fatalf("item = %s, want no dominantColor", data)
+	}
+}
+
+func TestEntityItemCarriesPosterDominantColor(t *testing.T) {
+	h := newTestHandlerWithStore(storetest.Open(t))
+	h.SetArtwork(fakeArtworkLocator{
+		entities: map[store.EntityID]map[string]bool{"entity-maker": {artwork.SlotPoster: true}},
+		// A Media item with the same ID has no say over the Entity's colour.
+		colors: map[string]string{"entity-maker": "#0a0b0c"},
+	})
+
+	item := h.sourceItem(store.SourceItem{ID: "entity-maker", Kind: "entity"}, false)
+
+	if item.Artwork == nil || item.Artwork.DominantColor != "#0a0b0c" {
+		t.Fatalf("artwork = %+v, want dominantColor #0a0b0c", item.Artwork)
 	}
 }
 

@@ -140,8 +140,8 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // and NOTHING else: the android-ui kit's selection of `libraryID` under
 // sourceItems is a nonexistent nested field (the contract this schema exists to
 // surface). `mediaClass` was added deliberately by CORE-1492 for class-aware
-// card placeholders. Any further field must be added the same way, alongside
-// the golden.
+// card placeholders, and `artwork.dominantColor` by CORE-0315 for a poster's
+// tint. Any further field must be added the same way, alongside the golden.
 func TestNestedSchemaSourceItemShape(t *testing.T) {
 	si := topLevel(t, "sourceitems")
 	if si.Kind != "object" {
@@ -156,8 +156,8 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 		case "libraryID":
 			t.Errorf("sourceItems unexpectedly exposes %q — client-drift would be masked", c.Name)
 		case "artwork":
-			if c.Kind != "object" || !slices.Equal(childNames(c.Children), []string{"poster"}) {
-				t.Errorf("sourceItems.artwork = %v (%s), want object{poster}", childNames(c.Children), c.Kind)
+			if c.Kind != "object" || !slices.Equal(childNames(c.Children), []string{"dominantColor", "poster"}) {
+				t.Errorf("sourceItems.artwork = %v (%s), want object{dominantColor, poster}", childNames(c.Children), c.Kind)
 			}
 		case "artworkSlots":
 			if c.Kind != "map" || c.Elem == nil || c.Elem.Kind != "scalar" {
@@ -192,8 +192,11 @@ func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 			t.Errorf("sourceItems.artwork nullable = false, want true for pointer result field")
 		}
 		if field.Name == "artwork" {
-			if got := field.Children[0].Optional; got {
-				t.Errorf("sourceItems.artwork.poster optional = %v, want false", got)
+			wantArtwork := map[string]bool{"dominantColor": true, "poster": false}
+			for _, child := range field.Children {
+				if child.Optional != wantArtwork[child.Name] {
+					t.Errorf("sourceItems.artwork.%s optional = %v, want %v", child.Name, child.Optional, wantArtwork[child.Name])
+				}
 			}
 		}
 	}

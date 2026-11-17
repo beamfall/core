@@ -1,6 +1,6 @@
-- [ ] `internal/artwork`: derive the colour, store it beside the poster bound to the poster version, compute on import and in the sweep
-- [ ] `internal/graph`: `SourceItemArtwork.dominantColor`, set where `poster` is set
-- [ ] Tests: extraction on fixed images, replaced poster, undecodable poster, field omitted without a poster
+- [x] `internal/artwork`: derive the colour, store it beside the poster bound to the poster version, compute on import and in the sweep
+- [x] `internal/graph`: `SourceItemArtwork.dominantColor`, set where `poster` is set
+- [x] Tests: extraction on fixed images, replaced poster, undecodable poster, field omitted without a poster
 - [ ] Wire contract 2.16.0 and goldens regenerated with the added field
 - [ ] `make gate`
 - [ ] `openspec archive core-0315-artwork-dominant-color` after landing

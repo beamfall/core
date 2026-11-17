@@ -124,6 +124,11 @@ func (f fixedArtworkLocator) EntityArtworkVersion(id store.EntityID, slot string
 	return "", false
 }
 
+// The seeded slots hold no image bytes, so no poster has a colour.
+func (fixedArtworkLocator) DominantColor(store.MediaID) (string, bool) { return "", false }
+
+func (fixedArtworkLocator) EntityDominantColor(store.EntityID) (string, bool) { return "", false }
+
 // normalizeGraphResponse parses a GraphQL response and pins volatile values
 // (session expiry) while keeping every key present.
 func normalizeGraphResponse(t *testing.T, raw []byte) map[string]any {
