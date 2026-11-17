@@ -581,7 +581,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float starSeed = hash21(cell + 7.0);
     float twinkle = 0.55 + 0.45 * sin(t * (2.0 + starSeed * 5.0) + starSeed * 40.0);
     float star = exp(-sd * sd * 26000.0) * step(0.93, starSeed) * twinkle;
-    col += vec3(0.75, 0.85, 1.0) * star * (0.30 + 0.7 * u.treble) * (1.0 - ground);
+    col += vec3(0.75, 0.85, 1.0) * star * (0.50 + 0.3 * u.treble) * (1.0 - ground);
 
     vec3 glow = vec3(0.0);
 
@@ -603,9 +603,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
                    + sin(q.x * 1.5 + t * 0.50 + fi * 2.3) * 0.55
                    + sin(q.x * 3.1 - t * 0.33 + fi * 1.1) * 0.28;
         sway += (fbm(vec2(q.x * 0.85 + fi * 7.0, t * 0.11 + fi * 3.3)) - 0.5) * 2.4;
-        float yc = baseY + sway * swayAmt * (1.0 + u.bass * 1.3 + u.bassImpact * 0.7);
+        float yc = baseY + sway * swayAmt * (1.0 + u.bass * 0.35 + u.bassImpact * 0.15);
         // beat wave traveling along the curtain
-        yc += 0.045 * u.bassImpact * sin(q.x * 3.4 - u.beatPhase * 6.2831853 + fi * 1.7);
+        yc += 0.012 * u.bassImpact * sin(q.x * 3.4 - u.beatPhase * 6.2831853 + fi * 1.7);
 
         float d = q.y - yc;              // >0 below the rim, <0 in the rays
         float above = max(-d, 0.0);
@@ -617,15 +617,15 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         // curtain presence: hard dark gaps where the curtain fades out
         float pres = smoothstep(0.28, 0.62,
-                     fbm(vec2(q.x * 0.42 + fi * 13.7, t * 0.05 + fi)) + energy * 0.22);
+                     fbm(vec2(q.x * 0.42 + fi * 13.7, t * 0.05 + fi)) + energy * 0.08);
         body *= pres; rim *= pres;
 
         // vertical ray striations, brightened by band energy
         float rays = fbmRidged(vec2(q.x * (4.5 + fi * 0.9) + fi * 11.0 + sway * 0.8,
                                     t * 0.18 + fi * 5.0));
-        rays = 0.16 + 0.90 * smoothstep(0.30, 0.95, rays + energy * 0.30);
+        rays = 0.16 + 0.90 * smoothstep(0.30, 0.95, rays + energy * 0.12);
 
-        float bright = (0.30 + 1.3 * energy + 0.40 * u.beat) * depth;
+        float bright = (0.55 + 0.6 * energy + 0.15 * u.beat) * depth;
 
         // hue drifts with height: hot rim -> cooler high rays
         vec3 cLow = palVisual(fr * 0.45 + 0.06 + 0.10 * u.spectralCentroid + 0.015 * t, u);
@@ -635,18 +635,18 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         col += c * body * rays * bright * 0.36 * mirrorDim;
         glow += peakWhite(c, 0.10 + 0.12 * u.treble) * rim * rays
-              * (0.20 + 0.9 * energy + 0.6 * u.bassImpact) * depth * mirrorDim * 0.35;
+              * (0.40 + 0.4 * energy + 0.2 * u.bassImpact) * depth * mirrorDim * 0.35;
 
         // treble sparks racing along the rim
         float sparkle = step(0.80, hash21(vec2(floor(q.x * 26.0 + fi * 9.0),
                                                floor(u.beatCount))));
-        glow += palVisual(fr + 0.5, u) * rim * sparkle * u.flux * u.treble * 0.8 * mirrorDim;
+        glow += palVisual(fr + 0.5, u) * rim * sparkle * u.flux * u.treble * 0.3 * mirrorDim;
     }
 
     // horizon line + waterline haze
     float hLine = exp(-abs(p.y - horizonY) * 60.0);
     col += palVisual(0.72 + 0.10 * u.spectralCentroid, u) * hLine
-         * (0.05 + 0.18 * u.bassImpact + 0.10 * u.amplitude);
+         * (0.05 + 0.06 * u.bassImpact + 0.10 * u.amplitude);
     // darken the water body slightly toward the bottom
     col *= 1.0 - ground * smoothstep(horizonY, 1.35, p.y) * 0.45;
 
