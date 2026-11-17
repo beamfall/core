@@ -103,7 +103,7 @@ function renderPlayer(
         ]}
       >
         <Routes>
-          <Route path="/watch/:mediaId" element={<PlayerPage />} />
+          <Route path="/watch/*" element={<PlayerPage />} />
         </Routes>
       </MemoryRouter>
     </I18nProvider>
@@ -558,7 +558,7 @@ describe("PlayerPage Back", () => {
           <Routes>
             <Route path="/" element={<p>home route</p>} />
             <Route path="/entity/:entityId" element={<p>entity route</p>} />
-            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+            <Route path="/watch/*" element={<PlayerPage />} />
           </Routes>
         </MemoryRouter>
       </I18nProvider>,
@@ -628,7 +628,7 @@ describe("PlayerPage pre-play", () => {
       <I18nProvider>
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
-            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+            <Route path="/watch/*" element={<PlayerPage />} />
           </Routes>
         </MemoryRouter>
       </I18nProvider>,
@@ -904,7 +904,7 @@ describe("PlayerPage karaoke key and tempo controls", () => {
         <MemoryRouter initialEntries={["/watch/media-alpha"]}>
           <Navigator />
           <Routes>
-            <Route path="/watch/:mediaId" element={<PlayerPage />} />
+            <Route path="/watch/*" element={<PlayerPage />} />
           </Routes>
         </MemoryRouter>
       </I18nProvider>
@@ -999,8 +999,8 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
             <Routes>
               <Route path="/" element={<p>home route</p>} />
               <Route path="/search" element={<p>search route</p>} />
-              <Route path="/media/:mediaId" element={<p>media route</p>} />
-              <Route path="/watch/:mediaId" element={<PlayerPage />} />
+              <Route path="/media/*" element={<p>media route</p>} />
+              <Route path="/watch/*" element={<PlayerPage />} />
             </Routes>
           </PlayerHost>
         </MemoryRouter>

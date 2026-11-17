@@ -59,6 +59,16 @@ async function expectPlaying(page: Page, after = 0): Promise<void> {
     .toBeGreaterThan(after);
 }
 
+/**
+ * The watch address of a track: the bare-ID link the page opens, or the
+ * readable address it is rewritten to (CORE-2329), which ends in the same
+ * digest.
+ */
+function watchAddress(id: string): RegExp {
+  const token = id.replace(/^media-sha256-/, "");
+  return new RegExp(`/web/watch/(?:[^?#]*-)?${token}$`);
+}
+
 /** Plays Track One from its album page's track list (CORE-1635), which starts playback directly. */
 async function playAlbumFromTrackOne(page: Page): Promise<void> {
   await page.goto(`/web/entity/${library.albumEntityID}`);
@@ -66,7 +76,7 @@ async function playAlbumFromTrackOne(page: Page): Promise<void> {
     .getByRole("button", { name: /Track One/ })
     .first()
     .click();
-  await expect(page).toHaveURL(new RegExp(`/web/watch/${library.tracks[0].id}$`));
+  await expect(page).toHaveURL(watchAddress(library.tracks[0].id));
 }
 
 test("plays an album and advances to its next track (CORE-1640)", async ({ page }) => {
@@ -84,7 +94,7 @@ test("plays an album and advances to its next track (CORE-1640)", async ({ page 
     .toEqual({ title: first.title, artist: TEST_ALBUM.artist, album: TEST_ALBUM.album });
 
   // The track ends after TEST_ALBUM.seconds; the queue moves on without a click.
-  await expect(page).toHaveURL(new RegExp(`/web/watch/${second.id}$`), { timeout: 15_000 });
+  await expect(page).toHaveURL(watchAddress(second.id), { timeout: 15_000 });
   await expect(page.locator(AUDIO_TITLE)).toHaveText(second.title);
   await expectPlaying(page);
   await expect

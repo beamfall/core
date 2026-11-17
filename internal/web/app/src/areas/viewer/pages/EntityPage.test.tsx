@@ -60,7 +60,7 @@ const related: SourceItem = {
 };
 
 function PlayerProbe() {
-  const { mediaId } = useParams();
+  const mediaId = useParams()["*"];
   const location = useLocation();
   return (
     <output aria-label="player">
@@ -75,7 +75,7 @@ function renderEntity(state?: unknown) {
       <MemoryRouter initialEntries={[{ pathname: "/entity/e1", state }]}>
         <Routes>
           <Route path="/entity/:entityId" element={<EntityPage />} />
-          <Route path="/watch/:mediaId" element={<PlayerProbe />} />
+          <Route path="/watch/*" element={<PlayerProbe />} />
         </Routes>
       </MemoryRouter>
     </I18nProvider>,

@@ -316,6 +316,81 @@ describe("usePlayer", () => {
     });
   });
 
+  it("reports the probed duration, not a live transcode's growing video.duration (CORE-2314)", async () => {
+    vi.mocked(fetchPlaybackInfo).mockResolvedValue({
+      decision: "direct-play",
+      streams: [{ kind: "direct-play", url: "/api/media/direct/token" }],
+      timeline: { durationSeconds: 7260 },
+    });
+    // The event clock is monotonic across the file; keep it where its tests expect.
+    vi.spyOn(Date, "now").mockReturnValue(1783432800123);
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    const video = screen.getByTestId("player") as HTMLVideoElement;
+    // Only 268 s encoded so far: the stream's own duration is short.
+    Object.defineProperty(video, "duration", { configurable: true, value: 268 });
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 180 });
+    fireEvent.pause(video);
+
+    await waitFor(() => expect(graphql).toHaveBeenCalled());
+    expect(vi.mocked(graphql).mock.calls.at(-1)?.[1]).toMatchObject({
+      positionSeconds: 180,
+      durationSeconds: 7260,
+    });
+  });
+
+  it("ends the playback session on unmount and on pagehide (CORE-2305)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+    const endCalls = () =>
+      fetchSpy.mock.calls
+        .filter(
+          ([url, init]) => url === "/api/graphql" && String(init?.body).includes("endPlayback"),
+        )
+        .map(([, init]) => init);
+    const { unmount } = render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+    window.dispatchEvent(new Event("pagehide"));
+    expect(endCalls()).toHaveLength(1);
+    expect(endCalls()[0]).toMatchObject({ method: "POST", keepalive: true });
+    expect(JSON.parse(String(endCalls()[0]?.body))).toEqual({
+      query: expect.stringContaining("endPlayback(mediaId: $mediaId)"),
+      variables: { mediaId: "media-alpha" },
+    });
+
+    // pagehide already ended it, so unmounting does not send a second end.
+    unmount();
+    expect(endCalls()).toHaveLength(1);
+  });
+
+  it("ends the session again after a bfcache restore reloads the player", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+    const ends = () =>
+      fetchSpy.mock.calls.filter(([, init]) => String(init?.body).includes("endPlayback")).length;
+    const { unmount } = render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    const loads = vi.mocked(fetchPlaybackInfo).mock.calls.length;
+    window.dispatchEvent(new Event("pagehide"));
+    const restored = new Event("pageshow") as PageTransitionEvent;
+    Object.defineProperty(restored, "persisted", { value: true });
+    window.dispatchEvent(restored);
+    await waitFor(() => expect(vi.mocked(fetchPlaybackInfo).mock.calls.length).toBe(loads + 1));
+    unmount();
+    expect(ends()).toBe(2);
+  });
+
+  it("ends the previous Media's session when the player moves to another Media", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+    const { rerender } = render(<Harness mediaID="media-alpha" />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+    rerender(<Harness mediaID="media-beta" />);
+    const ended = fetchSpy.mock.calls
+      .filter(([, init]) => String(init?.body).includes("endPlayback"))
+      .map(([, init]) => JSON.parse(String(init?.body)).variables);
+    expect(ended).toEqual([{ mediaId: "media-alpha" }]);
+  });
+
   it("keeps playback progress eventTimeMS monotonic when the wall clock moves backward", async () => {
     render(<Harness />);
     await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));

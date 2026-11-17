@@ -37,7 +37,8 @@ export function AccountMenu() {
   // The Profile's chosen avatar (CORE-1196), so the header shows who is watching.
   const avatarProfile = currentProfile ?? { id: "", name };
   // Same rule as the header link: an adult Profile can unlock the Console on
-  // any Device Role. Manage stays a Manager-Device surface.
+  // any Device Role. Manage stays a Manager-Device surface. The two are named
+  // for what each one runs, so neither reads as a copy of the other (CORE-2322).
   const canOpenConsole = session?.profile === "adult";
 
   // Navigating away closes the menu.
@@ -130,7 +131,7 @@ export function AccountMenu() {
             {canOpenConsole && (
               <Link to="/console" className="bf-account-item">
                 <LayoutDashboard aria-hidden />
-                {t("consoleHeading")}
+                {t("accountMenuConsole")}
               </Link>
             )}
             {isManager && (

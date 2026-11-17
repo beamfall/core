@@ -5,6 +5,8 @@ export const viewerAccountStrings = {
     searchNoResultsLead: "Check the spelling or try fewer words.",
     searchResultCount:
       "{count, plural, one {# result for “{query}”} other {# results for “{query}”}}",
+    searchResultCountCapped:
+      "The first {count} results for “{query}”. Add words to narrow the search.",
     searchOpenFull: "Open full search",
     searchSeeAll: "See all results for “{query}”",
     searchSearching: "Searching…",
@@ -52,6 +54,8 @@ export const viewerAccountStrings = {
     searchNoResultsLead: "Vérifiez l’orthographe ou essayez moins de mots.",
     searchResultCount:
       "{count, plural, one {# résultat pour « {query} »} other {# résultats pour « {query} »}}",
+    searchResultCountCapped:
+      "Les {count} premiers résultats pour « {query} ». Ajoutez des mots pour affiner la recherche.",
     searchOpenFull: "Ouvrir la recherche complète",
     searchSeeAll: "Voir tous les résultats pour « {query} »",
     searchSearching: "Recherche…",
@@ -100,6 +104,8 @@ export const viewerAccountStrings = {
     searchNoResultsLead: "Prüfe die Schreibweise oder verwende weniger Wörter.",
     searchResultCount:
       "{count, plural, one {# Ergebnis für „{query}“} other {# Ergebnisse für „{query}“}}",
+    searchResultCountCapped:
+      "Die ersten {count} Ergebnisse für „{query}“. Weitere Wörter grenzen die Suche ein.",
     searchOpenFull: "Vollständige Suche öffnen",
     searchSeeAll: "Alle Ergebnisse für „{query}“ anzeigen",
     searchSearching: "Suche läuft…",
@@ -148,6 +154,8 @@ export const viewerAccountStrings = {
     searchNoResultsLead: "Revisa la ortografía o prueba con menos palabras.",
     searchResultCount:
       "{count, plural, one {# resultado para «{query}»} other {# resultados para «{query}»}}",
+    searchResultCountCapped:
+      "Los primeros {count} resultados para «{query}». Añade palabras para acotar la búsqueda.",
     searchOpenFull: "Abrir la búsqueda completa",
     searchSeeAll: "Ver todos los resultados para «{query}»",
     searchSearching: "Buscando…",
@@ -196,6 +204,8 @@ export const viewerAccountStrings = {
     searchNoResultsLead: "Verifique a ortografia ou tente menos palavras.",
     searchResultCount:
       "{count, plural, one {# resultado para “{query}”} other {# resultados para “{query}”}}",
+    searchResultCountCapped:
+      "Os primeiros {count} resultados para “{query}”. Adicione palavras para refinar a pesquisa.",
     searchOpenFull: "Abrir a pesquisa completa",
     searchSeeAll: "Ver todos os resultados para “{query}”",
     searchSearching: "A pesquisar…",

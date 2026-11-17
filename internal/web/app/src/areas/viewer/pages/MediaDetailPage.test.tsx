@@ -30,7 +30,10 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchMediaForEntity: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
 }));
-vi.mock("@/lib/session", () => ({ useViewerIdentity: () => mocks.identity }));
+vi.mock("@/lib/session", () => ({
+  useViewerIdentity: () => mocks.identity,
+  useSession: () => ({ manifest: null, revealed: false }),
+}));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
@@ -77,9 +80,9 @@ function renderAt(entries: Array<string | { pathname: string; state?: unknown }>
         <Routes>
           <Route path="/" element={<Probe />} />
           <Route path="/n/:id" element={<Probe />} />
-          <Route path="/watch/:mediaId" element={<Probe />} />
+          <Route path="/watch/*" element={<Probe />} />
           <Route path="/entity/:id" element={<Probe />} />
-          <Route path="/media/:mediaId" element={<MediaDetailPage />} />
+          <Route path="/media/*" element={<MediaDetailPage />} />
         </Routes>
       </MemoryRouter>
     </I18nProvider>,
@@ -283,7 +286,9 @@ describe("MediaDetailPage", () => {
     renderAt([{ pathname: "/media/m1", state: mediaLinkState(card, identity, shelf.id) }]);
     await act(async () => {});
 
-    const rail = screen.getByRole("list", { name: "More from Recent" });
+    // Titled neutrally, not after the source row (CORE-2320).
+    expect(screen.queryByText(/More from Recent/)).not.toBeInTheDocument();
+    const rail = screen.getByRole("list", { name: "Keep browsing" });
     expect(rail).toHaveTextContent("Second");
     expect(rail).not.toHaveTextContent("Card title");
 
@@ -295,6 +300,32 @@ describe("MediaDetailPage", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Second" })).toBeInTheDocument();
     expect(screen.queryByText("Server summary")).toBeNull();
   });
+  it("takes the runtime from the probed media duration over a short reported one (CORE-2314)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, durationSeconds: 7260 });
+    vi.mocked(fetchMediaDetailFields).mockResolvedValue([]);
+    const timed = { ...card, engagement: { durationSeconds: 268 } } as SourceItem;
+    renderAt([{ pathname: "/media/m1", state: mediaLinkState(timed, identity) }]);
+    await act(async () => {});
+
+    const facts = screen.getByRole("list", { name: "About this item" });
+    expect(facts).toHaveTextContent("2 h 1 min");
+  });
+  it("names an audio item's artists under its title, linked to their pages (CORE-2327)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      mediaClass: "audio",
+      credits: [
+        { entityID: "p1", title: "Ada", kind: "person", archetype: "person", relation: "by" },
+        { entityID: "p2", title: "Bo", kind: "person", archetype: "person", relation: "by" },
+      ],
+    });
+    renderAt(["/media/m1"]);
+
+    const artist = await screen.findByRole("link", { name: "Ada" });
+    expect(artist).toHaveAttribute("href", "/entity/p1");
+    expect(screen.getByRole("link", { name: "Bo" })).toBeInTheDocument();
+  });
+
   it("shows only viewer-facing fields and puts the rating in the facts row (CORE-1785)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,

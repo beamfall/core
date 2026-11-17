@@ -119,6 +119,23 @@ export function formatClockTime(seconds: number): string {
   return `${minutes}:${two(remainingSeconds)}`;
 }
 
+/**
+ * playbackDurationSeconds is the length the transport shows and seeks within.
+ * The server's probed duration wins when it is known: a live transcode's
+ * `video.duration` only covers what has been encoded so far, so trusting it
+ * makes the scrubber shrink and the remaining time collapse. The stream's
+ * own duration is the fallback (and wins if it is somehow longer, so a seek
+ * target is never clamped short of real media).
+ */
+export function playbackDurationSeconds(
+  serverSeconds: number | undefined,
+  streamSeconds: number,
+): number {
+  const server = finiteNumber(serverSeconds ?? 0);
+  const stream = finiteNumber(streamSeconds);
+  return Math.max(server > 0 ? server : 0, stream > 0 ? stream : 0);
+}
+
 export function formatRemainingTime(currentSeconds: number, durationSeconds: number): string {
   const remaining = Math.max(0, finiteNumber(durationSeconds) - finiteNumber(currentSeconds));
   return `-${formatClockTime(remaining)}`;

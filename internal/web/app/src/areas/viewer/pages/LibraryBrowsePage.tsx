@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, ChevronLeft, LayoutGrid, List, Play, Shuffle, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +13,12 @@ import {
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
 import { LibraryLetterRail, letterRailOwner } from "../components/LibraryLetterRail";
 import { MediaItemCard } from "../components/MediaItemCard";
-import { RevealControls } from "../components/RevealControls";
 import {
   useVirtualGrid,
   VIRTUAL_GRID_MIN_ITEMS,
@@ -26,13 +26,16 @@ import {
   virtualGridScrollTop,
 } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
+import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import {
   browseStateParams,
   fetchLibraryItems,
+  isAudioOnly,
   LIBRARY_BROWSE_PAGE,
   LIBRARY_MIN_RATINGS,
   LIBRARY_SORTS,
   LIBRARY_WATCH_STATES,
+  LIBRARY_WATCHING_SORTS,
   type LibraryBrowseState,
   type LibraryItemsFacets,
   type LibraryItemsLetter,
@@ -85,6 +88,7 @@ const LETTER_RAIL_MIN_ITEMS = 60;
 export function LibraryBrowsePage() {
   const t = useT();
   const { nodeId } = useParams();
+  const location = useLocation();
   const { manifest, loading } = useSession();
 
   if (loading && !manifest) {
@@ -94,11 +98,18 @@ export function LibraryBrowsePage() {
       </AppShell>
     );
   }
-  const node = (manifest?.navigation || []).find(
-    (entry) => entry.view === "layout" && entry.id === nodeId,
+  const node = findNodeBySlug(
+    (manifest?.navigation || []).filter((entry) => entry.view === "layout"),
+    nodeId,
   );
   if (!node?.libraryID) {
-    return <Navigate to={node ? `/n/${encodeURIComponent(node.id)}` : "/"} replace />;
+    return <Navigate to={node ? nodePath(node.id) : "/"} replace />;
+  }
+  // An old link names the node by its raw ID (CORE-2322).
+  if (nodeId !== nodeSlug(node.id)) {
+    return (
+      <Navigate to={{ pathname: nodePath(node.id, "/all"), search: location.search }} replace />
+    );
   }
   return (
     <LibraryBrowse
@@ -143,6 +154,9 @@ function LibraryBrowse({
   // once its card renders.
   const pendingJumpRef = useRef<{ offset: number; focus: boolean } | null>(null);
   const [loadedTick, setLoadedTick] = useState(0);
+  // Decided by the first page loaded and kept for this library, so the browse
+  // bar does not change shape as filters reload pages (CORE-2327).
+  const [audioOnly, setAudioOnly] = useState<boolean | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
   const loadPage = useCallback(
@@ -160,6 +174,9 @@ function LibraryBrowse({
           if (generation !== generationRef.current) return;
           pendingRef.current.delete(pageIndex);
           pagesRef.current.set(pageIndex, page.items);
+          setAudioOnly(
+            (decided) => decided ?? (page.items.length > 0 ? isAudioOnly(page.items) : null),
+          );
           setTotal(page.total);
           if (pageIndex === 0) {
             setFacets(page.facets);
@@ -385,7 +402,13 @@ function LibraryBrowse({
     return groups;
   };
   const decades = withSelected(facets.decades, state.decade || undefined);
-  const qualities = withSelected(facets.qualities, state.quality);
+  const qualities =
+    audioOnly && !state.quality ? [] : withSelected(facets.qualities, state.quality);
+  // A selected value stays offered so a shared URL still reads back.
+  const sorts = LIBRARY_SORTS.filter(
+    (sort) => !audioOnly || sort === state.sort || !LIBRARY_WATCHING_SORTS.includes(sort),
+  );
+  const showWatch = !audioOnly || !!state.watch;
 
   const activeFilters: { label: string; clear: Partial<LibraryBrowseState> }[] = [];
   if (state.watch) {
@@ -428,6 +451,8 @@ function LibraryBrowse({
     return queue;
   };
 
+  // Titles repeated across the loaded pages show their year (CORE-2320).
+  const repeated = repeatedTitles([...pagesRef.current.values()].flat());
   const cells = [];
   for (let index = start; index < end; index += 1) {
     const pageIndex = Math.floor(index / LIBRARY_BROWSE_PAGE);
@@ -442,6 +467,7 @@ function LibraryBrowse({
           posInSet={index + 1}
           setSize={itemCount}
           playOnActivate={viewMode === "list"}
+          showYear={showsYear(item, repeated)}
         />
       ) : (
         <PendingCard key={`pending-${index}`} />
@@ -450,21 +476,14 @@ function LibraryBrowse({
   }
 
   return (
-    <AppShell
-      actions={
-        <>
-          <ViewerActions />
-          <RevealControls />
-        </>
-      }
-    >
+    <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
         <div className="flex flex-col items-start gap-1">
           <Button
             variant="ghost"
             size="sm"
             className="-ml-2"
-            onClick={() => navigate(`/n/${encodeURIComponent(nodeID)}`)}
+            onClick={() => navigate(nodePath(nodeID))}
           >
             <ChevronLeft aria-hidden />
             {t("back")}
@@ -501,7 +520,7 @@ function LibraryBrowse({
             label={t("libraryBrowseSortLabel")}
             value={state.sort}
             onChange={(value) => update({ sort: value as LibrarySort })}
-            options={LIBRARY_SORTS.map((sort) => ({ value: sort, label: t(SORT_LABELS[sort]) }))}
+            options={sorts.map((sort) => ({ value: sort, label: t(SORT_LABELS[sort]) }))}
           />
           <Button
             variant="outline"
@@ -516,21 +535,23 @@ function LibraryBrowse({
             {state.direction === "asc" ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />}
             {t(state.direction === "asc" ? "libraryBrowseAscending" : "libraryBrowseDescending")}
           </Button>
-          <BrowseSelect
-            id="library-browse-watch"
-            label={t("libraryBrowseWatchLabel")}
-            value={state.watch || ALL}
-            onChange={(value) =>
-              update({ watch: value === ALL ? "" : (value as LibraryBrowseState["watch"]) })
-            }
-            options={[
-              { value: ALL, label: t("libraryBrowseAny") },
-              ...LIBRARY_WATCH_STATES.map((watch) => ({
-                value: watch,
-                label: t(WATCH_LABELS[watch]),
-              })),
-            ]}
-          />
+          {showWatch && (
+            <BrowseSelect
+              id="library-browse-watch"
+              label={t("libraryBrowseWatchLabel")}
+              value={state.watch || ALL}
+              onChange={(value) =>
+                update({ watch: value === ALL ? "" : (value as LibraryBrowseState["watch"]) })
+              }
+              options={[
+                { value: ALL, label: t("libraryBrowseAny") },
+                ...LIBRARY_WATCH_STATES.map((watch) => ({
+                  value: watch,
+                  label: t(WATCH_LABELS[watch]),
+                })),
+              ]}
+            />
+          )}
           <BrowseSelect
             id="library-browse-rating"
             label={t("libraryBrowseRatingLabel")}

@@ -193,8 +193,12 @@ export function audioTrackLabel(track: PlaybackAudioTrack, text: TrackLabelText)
 
 /** "German · Forced · SRT · External"; a burned-in stream says so. */
 export function captionTrackLabel(track: PlaybackCaptionTrack, text: TrackLabelText): string {
+  const language = languageName(track.language, text.locale) || text.unknownLanguage;
+  const title = track.title?.trim() ?? "";
   return joinLabel([
-    languageName(track.language, text.locale) || text.unknownLanguage,
+    language,
+    // The stream's own title ("Signs & Songs") tells same-language tracks apart.
+    title.toLocaleLowerCase() === language.toLocaleLowerCase() ? "" : title,
     track.forced ? text.forced : "",
     track.sdh ? text.sdh : "",
     track.commentary ? text.commentary : "",
@@ -203,6 +207,27 @@ export function captionTrackLabel(track: PlaybackCaptionTrack, text: TrackLabelT
     captionKind(track) === "sidecar" ? text.external : "",
     isBurnInCaption(track) ? text.burnedIn : "",
   ]);
+}
+
+/**
+ * distinctLabels numbers labels that would otherwise read the same, so two
+ * "English · SRT" tracks with no role or title to tell them apart become
+ * "English · SRT · Track 1" and "… · Track 2" (CORE-2315). Unique labels are
+ * left as they are.
+ */
+export function distinctLabels(
+  labels: readonly string[],
+  numbered: (n: number) => string,
+): string[] {
+  const total = new Map<string, number>();
+  for (const label of labels) total.set(label, (total.get(label) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return labels.map((label) => {
+    if ((total.get(label) ?? 0) < 2) return label;
+    const n = (seen.get(label) ?? 0) + 1;
+    seen.set(label, n);
+    return joinLabel([label, numbered(n)]);
+  });
 }
 
 /** The label a <track> element carries, for the browser's own caption menu. */
@@ -252,6 +277,13 @@ export function attachCaptionElements(
   }
 }
 
+/**
+ * CAPTION_SHOWN_EVENT fires on the video each time showCaptionElement picks a
+ * track (detail: its id, or null), so a load watcher can time that track's
+ * fetch without polling.
+ */
+export const CAPTION_SHOWN_EVENT = "bf-caption-shown";
+
 /** Shows the caption track with this id and hides the rest; null hides them all. */
 export function showCaptionElement(video: HTMLVideoElement, id: string | null): void {
   for (const element of captionElements(video)) {
@@ -261,6 +293,37 @@ export function showCaptionElement(video: HTMLVideoElement, id: string | null): 
     if (!element.track) continue;
     element.track.mode = shown ? "showing" : "disabled";
   }
+  video.dispatchEvent(new CustomEvent<string | null>(CAPTION_SHOWN_EVENT, { detail: id }));
+}
+
+/** The <track> element for a caption id, if one is attached. */
+export function captionElement(video: HTMLVideoElement, id: string): HTMLTrackElement | null {
+  return (
+    captionElements(video).find(
+      (element) => element.getAttribute(CAPTION_TRACK_ATTRIBUTE) === id,
+    ) ?? null
+  );
+}
+
+/**
+ * reloadCaptionElement fetches a caption track again after a failed load. A
+ * <track> never refetches once its load has failed, so it is replaced by a
+ * fresh element with the same source, then shown.
+ */
+export function reloadCaptionElement(video: HTMLVideoElement, id: string): void {
+  const failed = captionElement(video, id);
+  if (!failed) return;
+  const fresh = document.createElement("track");
+  fresh.kind = failed.kind;
+  fresh.label = failed.label;
+  if (failed.srclang) fresh.srclang = failed.srclang;
+  for (const name of [CAPTION_SOURCE_ATTRIBUTE, CAPTION_TRACK_ATTRIBUTE]) {
+    const value = failed.getAttribute(name);
+    if (value !== null) fresh.setAttribute(name, value);
+  }
+  failed.replaceWith(fresh);
+  if (fresh.track) fresh.track.mode = "disabled";
+  showCaptionElement(video, id);
 }
 
 /** The id of the caption track showing now, or null. */

@@ -128,7 +128,7 @@ export async function relock(signalOrCommitted?: AbortSignal | (() => void)): Pr
 // --- Catalog: Section feeds (sourceItems) ---------------------------------
 
 const SOURCE_ITEMS_QUERY =
-  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset) { id kind title summary artwork { poster } artworkSlots mediaClass engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query SourceItems($kind: String, $entityKind: String, $libraryID: String, $entityID: String, $fieldFilters: FieldFilters, $entityFilter: EntityFilter, $limit: Int, $offset: Int) { sourceItems(kind: $kind, entityKind: $entityKind, libraryID: $libraryID, entityID: $entityID, fieldFilters: $fieldFilters, entityFilter: $entityFilter, limit: $limit, offset: $offset) { id kind title summary artwork { poster } artworkSlots mediaClass year engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Variables for one Section feed query (the Source context + paging cursor). */
 export interface SourceItemsVars {
@@ -174,7 +174,7 @@ export async function fetchEntity(id: string, signal?: AbortSignal): Promise<Ent
 }
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } metadataAttribution { providerName text url } } }";
+  "query Media($id: String!) { media(id: $id) { id title mediaClass libraryID artworkSlots credits { entityID title kind kindDisplayName archetype relation } metadataAttribution { providerName text url } } }";
 
 /** Media — the player's now-playing read: title, artwork, linked credits and metadata credit. */
 export async function fetchMedia(
@@ -198,7 +198,7 @@ export async function fetchMetadataCredits(signal?: AbortSignal): Promise<Metada
 }
 
 const MEDIA_FOR_ENTITY_QUERY =
-  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary artwork { poster } artworkSlots mediaClass engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary artwork { poster } artworkSlots mediaClass year engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** MediaForEntity — the hand-rolled related-Media fallback list for a detail view. */
 export async function fetchMediaForEntity(
@@ -216,7 +216,7 @@ export async function fetchMediaForEntity(
 // --- Search ---------------------------------------------------------------
 
 const SEARCH_QUERY =
-  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots mediaClass engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query Search($query: String!) { search(query: $query) { id kind title summary artwork { poster } artworkSlots mediaClass year engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** Search — keyword catalog search (reveal-filtered server-side). */
 export async function search(term: string): Promise<SourceItem[]> {

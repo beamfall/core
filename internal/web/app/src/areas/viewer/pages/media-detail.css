@@ -297,3 +297,25 @@
     justify-content: center;
   }
 }
+
+/* An audio item's artists under its title (CORE-2327). */
+[data-register="viewer"] .bf-detail-people {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+[data-register="viewer"] .bf-detail-people a {
+  color: inherit;
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-detail-people a:hover {
+  text-decoration: underline;
+}
+
+[data-register="viewer"] .bf-detail-people a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

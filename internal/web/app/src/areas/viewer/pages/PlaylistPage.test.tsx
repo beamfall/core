@@ -64,7 +64,7 @@ function renderPage() {
       <MemoryRouter initialEntries={["/playlists/pl-1"]}>
         <Routes>
           <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
-          <Route path="/watch/:mediaId" element={<WatchProbe />} />
+          <Route path="/watch/*" element={<WatchProbe />} />
         </Routes>
       </MemoryRouter>
     </I18nProvider>,

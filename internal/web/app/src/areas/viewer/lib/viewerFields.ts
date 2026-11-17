@@ -19,19 +19,81 @@ const FACT_FIELDS = new Set([RATING_FIELD]);
 /** At most this many category credits (the plugin's "category" archetype) become chips. */
 const MAX_CATEGORY_FACTS = 3;
 
+/** What the page already shows, so a field that only repeats it is dropped. */
+export interface ShownFacts {
+  /** The heading: a field equal to it (an "original" title) adds nothing. */
+  title?: string;
+  /** The year chip: a number equal to it, or a date that is only that year, repeats it. */
+  year?: number;
+  /** The runtime chip: a bare number of minutes equal to it repeats it without a unit. */
+  runtimeSeconds?: number;
+}
+
+// A content address or provenance record ("sha256:9f2c…;cel;plan=…") is
+// bookkeeping a hydration stage writes, never a fact a viewer reads (CORE-2319).
+const INTERNAL_IDENTIFIER = /(?:^|[\s;:=])(?:sha\d+|blake\d*|md5):[0-9a-f]{16,}|;cel;/i;
+
+/** isInternalIdentifier reports a value that is an internal content address. */
+export function isInternalIdentifier(value: string): boolean {
+  return INTERNAL_IDENTIFIER.test(value);
+}
+
+const YEAR_ONLY_DATE = /^(\d{4})-01-01(?:[T ]00:00(?::00(?:\.0+)?)?(?:Z|[+-]00:?00)?)?$/;
+
+/**
+ * A stored date that is only a year: January 1 of the year the year chip
+ * already shows. Sources that know just the year store it that way, so
+ * printing "January 1, 2013" invents a day nobody recorded.
+ */
+function isYearOnlyDate(value: string, year: number | undefined): boolean {
+  const match = YEAR_ONLY_DATE.exec(value.trim());
+  return !!match && !!year && Number(match[1]) === year;
+}
+
+function normalized(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+/** A field whose value the heading or a facts chip already shows. */
+function repeatsShownFact(field: EntityFieldInfo, shown: ShownFacts): boolean {
+  const value = field.value.trim();
+  if (shown.title && field.type === "text" && normalized(value) === normalized(shown.title)) {
+    return true;
+  }
+  if (field.type === "date") return isYearOnlyDate(value, shown.year);
+  if (field.type !== "number") return false;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return false;
+  if (shown.year && number === shown.year) return true;
+  if (shown.runtimeSeconds && number === Math.round(shown.runtimeSeconds / 60)) return true;
+  // An ordinal the heading carries ("Season 1" with Number 1).
+  return (
+    !!shown.title &&
+    normalized(shown.title)
+      .split(/[^\p{L}\p{N}]+/u)
+      .includes(value)
+  );
+}
+
 /**
  * The fields a viewer reads: declared by the plugin (they carry its label),
- * not the class discriminant, not a flag marker, not empty and not already a
- * facts chip. Order is the server's.
+ * not the class discriminant, not a flag marker, not empty, not an internal
+ * identifier and not something the heading or a facts chip already shows.
+ * Order is the server's.
  */
-export function viewerFacingFields(fields: readonly EntityFieldInfo[]): EntityFieldInfo[] {
+export function viewerFacingFields(
+  fields: readonly EntityFieldInfo[],
+  shown: ShownFacts = {},
+): EntityFieldInfo[] {
   return fields.filter(
     (field) =>
       displayString(field.label).trim() !== "" &&
       field.name !== CLASS_FIELD &&
       field.type !== "flag" &&
       !FACT_FIELDS.has(field.name) &&
-      field.value.trim() !== "",
+      field.value.trim() !== "" &&
+      !isInternalIdentifier(field.value) &&
+      !repeatsShownFact(field, shown),
   );
 }
 

@@ -5,6 +5,7 @@ import {
   buildChapterList,
   buildRenditionMenuModel,
   chapterSeekTarget,
+  playbackDurationSeconds,
   renditionIndex,
   renditionKey,
   resolveTrickplaySheetURL,
@@ -208,5 +209,19 @@ describe("buildRenditionMenuModel", () => {
       stream: { kind: "hls", url: "/h", renditions: [{}, { height: 480 }] },
     });
     expect(model.options.map((o) => o.id)).toEqual(["auto", "480"]);
+  });
+});
+
+describe("playbackDurationSeconds (CORE-2314)", () => {
+  it("prefers the probed duration over a growing transcode duration", () => {
+    expect(playbackDurationSeconds(7200, 268)).toBe(7200);
+  });
+  it("falls back to the stream duration when the server does not know it", () => {
+    expect(playbackDurationSeconds(undefined, 3273)).toBe(3273);
+    expect(playbackDurationSeconds(0, 3273)).toBe(3273);
+  });
+  it("never returns NaN or a negative length", () => {
+    expect(playbackDurationSeconds(undefined, Number.NaN)).toBe(0);
+    expect(playbackDurationSeconds(-5, Number.POSITIVE_INFINITY)).toBe(0);
   });
 });

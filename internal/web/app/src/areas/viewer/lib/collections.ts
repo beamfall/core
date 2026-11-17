@@ -11,7 +11,7 @@ import type { LibrarySummary, SourceItem } from "@/lib/graphql/types";
 // The entries come through the Section feed path, so they carry the same
 // artwork, engagement and reveal filtering as every other card in the viewer.
 const COLLECTION_ITEMS_QUERY =
-  'query CollectionItems($value: String, $limit: Int, $offset: Int) { sourceItems(kind: "collection", value: $value, limit: $limit, offset: $offset) { id kind title summary artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }';
+  'query CollectionItems($value: String, $limit: Int, $offset: Int) { sourceItems(kind: "collection", value: $value, limit: $limit, offset: $offset) { id kind title summary year artwork { poster } artworkSlots engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }';
 
 /** The server's per-request cap on a Source feed page. */
 export const COLLECTION_PAGE = 200;

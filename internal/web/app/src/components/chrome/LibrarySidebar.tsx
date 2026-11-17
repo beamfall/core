@@ -5,6 +5,7 @@ import { displayString } from "@/lib/display";
 import type { LibrarySummary, NavigationNode } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { libraryIcon } from "@/lib/libraryIcons";
+import { nodePath } from "@/lib/nodePath";
 
 // The Viewer's left sidebar (CORE-1131): the manifest's navigation as a
 // vertical list, so any number of libraries fits where a header tab strip ran
@@ -63,7 +64,7 @@ export function LibrarySidebar({
     return (
       <li key={node.id}>
         <Link
-          to={`/n/${node.id}`}
+          to={nodePath(node.id)}
           aria-current={active ? "page" : undefined}
           className={"bf-side-link" + (active ? " is-active" : "")}
           title={collapsed && !drawer ? title : undefined}

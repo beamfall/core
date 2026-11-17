@@ -22,7 +22,8 @@ import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
-import { useContainerContext } from "../lib/containerContext";
+import { audioPeople, useContainerContext } from "../lib/containerContext";
+import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   fetchMedia,
   fetchMediaDetailFields,
@@ -33,6 +34,7 @@ import {
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
+import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
   detailFacts,
   fieldDisplayValue,
@@ -69,7 +71,8 @@ type Status = "loading" | "ready" | "missing" | "failed";
 // no oracle) ends on the leak-safe NotAvailable surface; any other failure
 // with nothing to show offers a retry.
 export function MediaDetailPage() {
-  const { mediaId = "" } = useParams();
+  // A readable address (CORE-2329) or a bare ID: the token names the item.
+  const mediaId = mediaIdFromAddress(useParams()["*"]);
   const location = useLocation();
   const navigate = useNavigate();
   const identity = useViewerIdentity();
@@ -133,7 +136,9 @@ export function MediaDetailPage() {
   // Between a route change and the effect, state still holds the previous item.
   const current = detail?.media.id === mediaId ? detail : null;
   const media = current?.media;
+  useCanonicalMediaAddress("media", media ?? null);
   const context = useContainerContext(media, mediaId);
+  const people = audioPeople(media);
 
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -202,12 +207,20 @@ export function MediaDetailPage() {
   const progress = resumeProgress(card);
   const summary = media?.summary || card?.summary || "";
   const allFields = current?.fields ?? [];
-  const fields = viewerFacingFields(allFields);
+  // The probed length first (CORE-2314); a card's engagement duration is what
+  // a player last reported and may be short of the real one.
   const facts = detailFacts(
     media,
     allFields,
-    card?.engagement?.durationSeconds ?? context.current?.engagement?.durationSeconds,
+    media?.durationSeconds ||
+      card?.engagement?.durationSeconds ||
+      context.current?.engagement?.durationSeconds,
   );
+  const fields = viewerFacingFields(allFields, {
+    title: media?.title || card?.title,
+    year: facts.year,
+    runtimeSeconds: facts.runtimeSeconds,
+  });
   const factLabels = [
     facts.year ? String(facts.year) : "",
     facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "",
@@ -240,6 +253,16 @@ export function MediaDetailPage() {
               <h1 id={TITLE_ID} className="bf-page-title">
                 {title}
               </h1>
+              {people.length > 0 && (
+                <p className="bf-detail-people">
+                  {people.map((person, index) => (
+                    <span key={person.id}>
+                      {index > 0 && ", "}
+                      <Link to={`/entity/${encodeURIComponent(person.id)}`}>{person.title}</Link>
+                    </span>
+                  ))}
+                </p>
+              )}
               {factLabels.length > 0 && (
                 <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
                   {factLabels.map((label) => (
@@ -348,9 +371,10 @@ export function MediaDetailPage() {
             section={{
               ...siblings.section,
               kind: "shelf",
-              title: t("mediaDetailMoreFrom", {
-                section: displayString(siblings.section.title, locale),
-              }),
+              // The rest of the row the viewer came from. Naming that row
+              // ("More from Next Up") reads as if the items came from it as a
+              // place (CORE-2320), so the shelf gets a neutral title.
+              title: t("mediaDetailKeepBrowsing"),
             }}
             items={siblings.items}
             navigationID={`media:${mediaId}`}

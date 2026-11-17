@@ -6,6 +6,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { ViewerActions } from "./ViewerActions";
 
 vi.mock("./HeaderSearch", () => ({ HeaderSearch: () => <input aria-label="Search" /> }));
+vi.mock("./RevealControls", () => ({ RevealControls: () => <button type="button">Lock</button> }));
 
 function renderActions(entry = "/") {
   return render(
@@ -31,5 +32,15 @@ describe("ViewerActions", () => {
     unmount();
     renderActions("/search");
     expect(screen.queryByLabelText("Search")).toBeNull();
+  });
+
+  // Restricted content can be locked from any viewer page, the search page
+  // included (CORE-2322).
+  it("offers the Reveal lock on every viewer page", () => {
+    for (const entry of ["/", "/media/m1", "/search", "/notifications"]) {
+      const { unmount } = renderActions(entry);
+      expect(screen.getByRole("button", { name: "Lock" })).toBeInTheDocument();
+      unmount();
+    }
   });
 });

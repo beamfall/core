@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavigationManifest } from "@/lib/graphql/types";
@@ -32,8 +32,20 @@ vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../components/LayoutView", () => ({
-  LayoutView: ({ navigationID, libraryID }: { navigationID: string; libraryID: string }) => (
-    <div data-testid="layout" data-navigation={navigationID} data-library={libraryID} />
+  LayoutView: ({
+    navigationID,
+    libraryID,
+    onEmptyChange,
+  }: {
+    navigationID: string;
+    libraryID: string;
+    onEmptyChange?: (empty: boolean) => void;
+  }) => (
+    <div data-testid="layout" data-navigation={navigationID} data-library={libraryID}>
+      <button type="button" onClick={() => onEmptyChange?.(true)}>
+        settle empty
+      </button>
+    </div>
   ),
 }));
 vi.mock("../components/RevealControls", () => ({ RevealControls: () => null }));
@@ -90,5 +102,49 @@ describe("BrowsePage node resolution", () => {
     renderAt("/n/library-lib-a", { manifest: null, loading: false });
 
     expect(screen.getByTestId("path")).toHaveTextContent("/n/library-lib-a");
+  });
+});
+
+// The server names a Library's node "library-" + the Library's ID, and real
+// Library IDs already start "library-" (CORE-2322).
+describe("BrowsePage readable node address", () => {
+  const doubled = {
+    ...manifest,
+    navigation: [
+      { id: "home", title: "Home", view: "layout", layoutID: "layout-home" },
+      {
+        id: "library-library-films",
+        title: "Films",
+        view: "layout",
+        layoutID: "layout-home",
+        libraryID: "library-films",
+      },
+    ],
+  } as unknown as NavigationManifest;
+
+  it("serves the node at its collapsed address and links Browse all there", () => {
+    renderAt("/n/library-films", { manifest: doubled, loading: false });
+
+    expect(screen.getByTestId("path")).toHaveTextContent("/n/library-films");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Films");
+    expect(screen.getByRole("link", { name: "Browse all" })).toHaveAttribute(
+      "href",
+      "/n/library-films/all",
+    );
+  });
+
+  it("drops Browse all once the Library's Layout settles empty", () => {
+    renderAt("/n/library-films", { manifest: doubled, loading: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "settle empty" }));
+
+    expect(screen.queryByRole("link", { name: "Browse all" })).toBeNull();
+  });
+
+  it("moves an old raw-ID link to the readable address", () => {
+    renderAt("/n/library-library-films", { manifest: doubled, loading: false });
+
+    expect(screen.getByTestId("path")).toHaveTextContent(/^\/n\/library-films$/);
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-library", "library-films");
   });
 });

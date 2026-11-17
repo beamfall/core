@@ -3,7 +3,7 @@ export const whosWatchingStrings = {
     // "Who's watching?" profile entry, avatars and signed-out guidance (CORE-1196).
     whosWatchingTitle: "Who's watching?",
     whosWatchingLead: "Choose your profile to pick up where you left off.",
-    whosWatchingCurrent: "Watching now",
+    whosWatchingCurrent: "Current profile",
     whosWatchingPinNeeded: "PIN",
     whosWatchingTileAria: "{name}",
     whosWatchingTileAriaCurrent: "{name}, watching now",
@@ -57,7 +57,7 @@ export const whosWatchingStrings = {
   fr: {
     whosWatchingTitle: "Qui regarde ?",
     whosWatchingLead: "Choisissez votre profil pour reprendre là où vous en étiez.",
-    whosWatchingCurrent: "En cours",
+    whosWatchingCurrent: "Profil actuel",
     whosWatchingPinNeeded: "PIN",
     whosWatchingTileAria: "{name}",
     whosWatchingTileAriaCurrent: "{name}, profil en cours",
@@ -112,7 +112,7 @@ export const whosWatchingStrings = {
   de: {
     whosWatchingTitle: "Wer schaut?",
     whosWatchingLead: "Wähle dein Profil und mach dort weiter, wo du aufgehört hast.",
-    whosWatchingCurrent: "Aktiv",
+    whosWatchingCurrent: "Aktuelles Profil",
     whosWatchingPinNeeded: "PIN",
     whosWatchingTileAria: "{name}",
     whosWatchingTileAriaCurrent: "{name}, aktives Profil",
@@ -166,7 +166,7 @@ export const whosWatchingStrings = {
   es: {
     whosWatchingTitle: "¿Quién está viendo?",
     whosWatchingLead: "Elige tu perfil para seguir donde lo dejaste.",
-    whosWatchingCurrent: "En uso",
+    whosWatchingCurrent: "Perfil actual",
     whosWatchingPinNeeded: "PIN",
     whosWatchingTileAria: "{name}",
     whosWatchingTileAriaCurrent: "{name}, perfil en uso",
@@ -220,7 +220,7 @@ export const whosWatchingStrings = {
   pt: {
     whosWatchingTitle: "Quem está assistindo?",
     whosWatchingLead: "Escolha seu perfil para continuar de onde parou.",
-    whosWatchingCurrent: "Em uso",
+    whosWatchingCurrent: "Perfil atual",
     whosWatchingPinNeeded: "PIN",
     whosWatchingTileAria: "{name}",
     whosWatchingTileAriaCurrent: "{name}, perfil em uso",

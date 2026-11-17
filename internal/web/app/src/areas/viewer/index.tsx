@@ -155,7 +155,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/n/:nodeId" element={<BrowsePage />} />
         <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
         <Route path="/entity/:entityId" element={<EntityPage />} />
-        <Route path="/media/:mediaId" element={<MediaDetailPage />} />
+        <Route path="/media/*" element={<MediaDetailPage />} />
         <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
         <Route path="/collections" element={<CollectionListPage />} />
         <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />
@@ -170,7 +170,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/profiles" element={<ProfilePickerPage />} />
         <Route path="/settings" element={<ProfileSettingsPage />} />
         <Route
-          path="/watch/:mediaId"
+          path="/watch/*"
           element={
             <Suspense fallback={<div className="min-h-screen bg-scrim" />}>
               <LazyPlayerPage />

@@ -26,6 +26,47 @@ describe("viewerFacingFields", () => {
   });
 });
 
+describe("viewerFacingFields drops what is internal or already shown (CORE-2319)", () => {
+  it("drops internal content addresses", () => {
+    const fields = [
+      field({
+        name: "source",
+        label: "Hydrated From",
+        value: "sha256:9f2c4a1b7e3d5f60a1b2;cel;plan=4",
+      }),
+      field({ name: "tagline", label: "Tagline", value: "A sha256 story" }),
+    ];
+    expect(viewerFacingFields(fields).map((f) => f.name)).toEqual(["tagline"]);
+  });
+
+  it("drops a field equal to the title, a bare-year date and a repeated year", () => {
+    const fields = [
+      field({ name: "original", label: "Original Title", value: "  barbie " }),
+      field({
+        name: "released",
+        label: "Release Date",
+        type: "date",
+        value: "2013-01-01T00:00:00Z",
+      }),
+      field({ name: "y", label: "Year", type: "number", value: "2013" }),
+      field({ name: "premiere", label: "Premiere", type: "date", value: "2013-05-09" }),
+      field({ name: "minutes", label: "Runtime", type: "number", value: "180" }),
+    ];
+    const shown = { title: "Barbie", year: 2013, runtimeSeconds: 10_800 };
+    expect(viewerFacingFields(fields, shown).map((f) => f.name)).toEqual(["premiere"]);
+    // Without the facts to compare against, nothing is guessed away.
+    expect(viewerFacingFields(fields).map((f) => f.name)).toHaveLength(5);
+  });
+
+  it("drops an ordinal the heading already carries", () => {
+    const fields = [
+      field({ name: "n", label: "Number", type: "number", value: "1" }),
+      field({ name: "count", label: "Count", type: "number", value: "10" }),
+    ];
+    expect(viewerFacingFields(fields, { title: "Season 1" }).map((f) => f.name)).toEqual(["count"]);
+  });
+});
+
 describe("detailFacts", () => {
   const media: GenericMediaInfo = {
     id: "m1",

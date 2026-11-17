@@ -14,6 +14,9 @@ export const trackMenuStrings = {
     subtitlesUnavailableNoForced: "No forced subtitles in your language",
     subtitlesUnavailableUnrenderable: "Some subtitles can't be shown in this browser",
     subtitlesUnavailable: "Some subtitles are unavailable",
+    trackDuplicateNumber: "Track {number}",
+    subtitlesLoadFailed: "Subtitles couldn't load.",
+    subtitlesPreparing: "Loading subtitles…",
   },
   fr: {
     trackLanguageUnknown: "Langue inconnue",
@@ -30,6 +33,9 @@ export const trackMenuStrings = {
     subtitlesUnavailableUnrenderable:
       "Certains sous-titres ne peuvent pas s'afficher dans ce navigateur",
     subtitlesUnavailable: "Certains sous-titres ne sont pas disponibles",
+    trackDuplicateNumber: "Piste {number}",
+    subtitlesLoadFailed: "Les sous-titres n'ont pas pu être chargés.",
+    subtitlesPreparing: "Chargement des sous-titres…",
   },
   de: {
     trackLanguageUnknown: "Unbekannte Sprache",
@@ -46,6 +52,9 @@ export const trackMenuStrings = {
     subtitlesUnavailableUnrenderable:
       "Einige Untertitel können in diesem Browser nicht angezeigt werden",
     subtitlesUnavailable: "Einige Untertitel sind nicht verfügbar",
+    trackDuplicateNumber: "Spur {number}",
+    subtitlesLoadFailed: "Untertitel konnten nicht geladen werden.",
+    subtitlesPreparing: "Untertitel werden geladen…",
   },
   es: {
     trackLanguageUnknown: "Idioma desconocido",
@@ -61,6 +70,9 @@ export const trackMenuStrings = {
     subtitlesUnavailableNoForced: "No hay subtítulos forzados en tu idioma",
     subtitlesUnavailableUnrenderable: "Algunos subtítulos no se pueden mostrar en este navegador",
     subtitlesUnavailable: "Algunos subtítulos no están disponibles",
+    trackDuplicateNumber: "Pista {number}",
+    subtitlesLoadFailed: "No se pudieron cargar los subtítulos.",
+    subtitlesPreparing: "Cargando subtítulos…",
   },
   pt: {
     trackLanguageUnknown: "Idioma desconhecido",
@@ -76,5 +88,8 @@ export const trackMenuStrings = {
     subtitlesUnavailableNoForced: "Não há legendas forçadas no seu idioma",
     subtitlesUnavailableUnrenderable: "Algumas legendas não podem ser exibidas neste navegador",
     subtitlesUnavailable: "Algumas legendas não estão disponíveis",
+    trackDuplicateNumber: "Faixa {number}",
+    subtitlesLoadFailed: "Não foi possível carregar as legendas.",
+    subtitlesPreparing: "Carregando legendas…",
   },
 } as const;

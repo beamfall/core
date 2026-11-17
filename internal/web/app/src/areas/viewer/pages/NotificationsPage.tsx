@@ -17,6 +17,13 @@ import {
 
 const NOTIFICATION_INBOX_LIMIT = 100;
 const NOTIFICATIONS_CHANGED_EVENT = "beamfall:notifications-changed";
+/**
+ * How often an open, visible inbox reads the server again. The server sends no
+ * event when a notification arrives (the inbox is the polled fallback,
+ * internal/push), so without this a new one shows only after a tab revisit
+ * (CORE-2322).
+ */
+export const NOTIFICATION_INBOX_POLL_MS = 30_000;
 
 type TFunction = ReturnType<typeof useT>;
 
@@ -54,9 +61,11 @@ export function NotificationsPage() {
       if (document.visibilityState === "hidden") return;
       void refreshNotifications();
     }
+    const poll = window.setInterval(refreshIfForeground, NOTIFICATION_INBOX_POLL_MS);
     window.addEventListener("focus", refreshIfForeground);
     document.addEventListener("visibilitychange", refreshIfForeground);
     return () => {
+      window.clearInterval(poll);
       window.removeEventListener("focus", refreshIfForeground);
       document.removeEventListener("visibilitychange", refreshIfForeground);
     };

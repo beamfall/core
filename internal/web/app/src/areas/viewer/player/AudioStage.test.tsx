@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaCredit } from "@/lib/graphql/types";
 import { AudioStage } from "./AudioStage";
+import { resetTrackChangeMotionForTest, setTrackChangeMotion } from "./trackChangeMotion";
 
 const credit = (title: string, archetype: string): MediaCredit => ({
   entityID: title,
@@ -9,6 +10,14 @@ const credit = (title: string, archetype: string): MediaCredit => ({
   kind: "k",
   archetype,
   relation: "r",
+});
+
+// Most tests pin whole-line words so their text reads as one node; the
+// per-letter styles have their own tests below.
+beforeEach(() => {
+  window.localStorage.clear();
+  resetTrackChangeMotionForTest();
+  setTrackChangeMotion({ words: "wipe", art: "zoom" });
 });
 
 describe("AudioStage (CORE-1143)", () => {
@@ -86,16 +95,25 @@ describe("AudioStage track change (CORE-2218)", () => {
     expect(art(container)).toEqual([["/b.jpg", "in"]]);
   });
 
-  it("fades the old artwork out when the next item has none", () => {
+  it("changes to the placeholder the same way when the next item has none (CORE-2332)", () => {
     vi.useFakeTimers();
     const { container, rerender } = render(
       <AudioStage title="A" trackKey="a" artworkURL="/a.jpg" credits={[]} />,
     );
     load(container.querySelector(".bf-audio-artwork img")!);
     rerender(<AudioStage title="B" trackKey="b" artworkURL="" credits={[]} />);
+    const placeholder = () =>
+      container.querySelector<HTMLElement>(".bf-audio-artwork .bf-audio-art-placeholder");
+    expect(art(container)).toEqual([["/a.jpg", "under"]]);
+    expect(placeholder()?.dataset.state).toBe("pending");
+    act(() => vi.advanceTimersByTime(40));
     expect(art(container)).toEqual([["/a.jpg", "out"]]);
+    expect(placeholder()?.dataset.state).toBe("in");
     act(() => vi.advanceTimersByTime(700));
     expect(art(container)).toEqual([]);
+    expect(placeholder()?.dataset.state).toBe("in");
+    // The backdrop has no placeholder: it just lets the old picture go.
+    expect(container.querySelector(".bf-audio-backdrop .bf-audio-art-placeholder")).toBeNull();
   });
 
   it("keeps the same picture in place when the next track shares it", () => {
@@ -166,5 +184,164 @@ describe("AudioStage track change (CORE-2218)", () => {
     );
     expect(container.querySelectorAll(".bf-audio-meta-layer")).toHaveLength(1);
     expect(screen.getByText("Ann")).toBeTruthy();
+  });
+});
+
+describe("AudioStage track-change styles (CORE-2331, CORE-2332)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(HTMLImageElement.prototype, "decode");
+  });
+
+  const meta = (c: HTMLElement) => c.querySelector<HTMLElement>(".bf-audio-meta")!;
+  const frame = (c: HTMLElement) => c.querySelector<HTMLElement>(".bf-audio-artwork")!;
+
+  it("plays the chosen word and artwork styles", () => {
+    setTrackChangeMotion({ words: "flap", art: "flip" });
+    const { container } = render(<AudioStage title="A" trackKey="a" artworkURL="" credits={[]} />);
+    expect(meta(container).dataset.words).toBe("flap");
+    expect(frame(container).dataset.art).toBe("flip");
+    act(() => setTrackChangeMotion({ words: "wipe", art: "slide" }));
+    expect(meta(container).dataset.words).toBe("wipe");
+    expect(frame(container).dataset.art).toBe("slide");
+  });
+
+  it("draws a rising title letter by letter and announces it once as words", () => {
+    setTrackChangeMotion({ words: "rise" });
+    const { container, rerender } = render(
+      <AudioStage title="Old" trackKey="a" artworkURL="" credits={[]} />,
+    );
+    rerender(<AudioStage title="Big Sky" trackKey="b" artworkURL="" credits={[]} />);
+    expect(meta(container).getAttribute("aria-live")).toBe("polite");
+    const [leaving, incoming] = container.querySelectorAll<HTMLElement>(".bf-audio-meta-layer");
+    // The leaving words are plain and hidden from assistive technology.
+    expect(leaving.getAttribute("aria-hidden")).toBe("true");
+    expect(leaving.querySelector(".bf-audio-char")).toBeNull();
+    // The incoming title: a visually hidden copy is read, the letters are not.
+    expect(incoming.querySelector(".sr-only")?.textContent).toBe("Big Sky");
+    const title = incoming.querySelector<HTMLElement>(".bf-audio-title")!;
+    expect(title.getAttribute("aria-hidden")).toBe("true");
+    expect(title.textContent).toBe("Big Sky");
+    const chars = [...title.querySelectorAll<HTMLElement>(".bf-audio-char")];
+    expect(chars.map((c) => c.textContent).join("")).toBe("BigSky");
+    expect(chars.map((c) => c.style.getPropertyValue("--bf-char"))).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
+    expect(title.querySelectorAll(".bf-audio-word")).toHaveLength(2);
+  });
+
+  it("orders the lines: title, who made it, what it belongs to, then the rest", () => {
+    const { container } = render(
+      <AudioStage
+        title="Song"
+        trackKey="a"
+        artworkURL=""
+        queuePosition="1 of 2"
+        credits={[credit("Ann", "person"), credit("LP", "container")]}
+      />,
+    );
+    const beats = [...container.querySelectorAll<HTMLElement>(".bf-audio-line")].map((l) => [
+      l.textContent,
+      l.style.getPropertyValue("--bf-line"),
+    ]);
+    expect(beats).toEqual([
+      ["1 of 2", "3"],
+      ["Song", "0"],
+      ["Ann", "1"],
+      ["LP", "2"],
+    ]);
+  });
+
+  it("keeps a long title whole, and wipes never split letters", () => {
+    setTrackChangeMotion({ words: "rise" });
+    const long = "word ".repeat(20).trim();
+    const { container, rerender } = render(
+      <AudioStage title={long} trackKey="a" artworkURL="" credits={[]} />,
+    );
+    expect(container.querySelector(".bf-audio-char")).toBeNull();
+    expect(container.querySelector(".bf-audio-meta .sr-only")).toBeNull();
+    act(() => setTrackChangeMotion({ words: "wipe" }));
+    rerender(<AudioStage title="Short" trackKey="b" artworkURL="" credits={[]} />);
+    expect(container.querySelector(".bf-audio-char")).toBeNull();
+  });
+
+  it("only crossfades when the viewer prefers reduced motion", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query.includes("prefers-reduced-motion"),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    setTrackChangeMotion({ words: "rise", art: "flip" });
+    const { container } = render(
+      <AudioStage title="Song" trackKey="a" artworkURL="/a.jpg" credits={[]} />,
+    );
+    expect(meta(container).dataset.words).toBe("fade");
+    expect(frame(container).dataset.art).toBe("fade");
+    expect(container.querySelector(".bf-audio-char")).toBeNull();
+  });
+
+  it("swaps the artwork only after the next picture has decoded", async () => {
+    vi.useFakeTimers();
+    let decoded: () => void = () => {};
+    const decode = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          decoded = resolve;
+        }),
+    );
+    Object.defineProperty(HTMLImageElement.prototype, "decode", {
+      configurable: true,
+      value: decode,
+    });
+    const { container } = render(
+      <AudioStage title="A" trackKey="a" artworkURL="/a.jpg" credits={[]} />,
+    );
+    const img = container.querySelector<HTMLImageElement>(".bf-audio-artwork img")!;
+    fireEvent.load(img);
+    act(() => vi.advanceTimersByTime(40));
+    expect(decode).toHaveBeenCalled();
+    expect(img.dataset.state).toBe("pending");
+    await act(async () => decoded());
+    act(() => vi.advanceTimersByTime(40));
+    expect(img.dataset.state).toBe("in");
+  });
+
+  it("cancels an unfinished change cleanly on rapid skips", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(
+      <AudioStage title="A" trackKey="a" artworkURL="/a.jpg" credits={[]} />,
+    );
+    fireEvent.load(container.querySelector(".bf-audio-artwork img")!);
+    act(() => vi.advanceTimersByTime(40));
+    for (const key of ["b", "c", "d", "e"]) {
+      rerender(<AudioStage title={key} trackKey={key} artworkURL={`/${key}.jpg`} credits={[]} />);
+      act(() => vi.advanceTimersByTime(60));
+      const layers = [...container.querySelectorAll<HTMLElement>(".bf-audio-meta-layer")];
+      expect(layers.filter((l) => l.dataset.state === "out").length).toBeLessThanOrEqual(1);
+      expect(layers.at(-1)?.textContent).toBe(key);
+      // At most the one picture on screen under the incoming one.
+      expect(container.querySelectorAll(".bf-audio-artwork img").length).toBeLessThanOrEqual(2);
+    }
+    const last = [...container.querySelectorAll(".bf-audio-artwork img")].at(-1)!;
+    expect(last.getAttribute("src")).toBe("/e.jpg");
+    fireEvent.load(last);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(container.querySelectorAll(".bf-audio-meta-layer")).toHaveLength(1);
+    expect(
+      [...container.querySelectorAll<HTMLImageElement>(".bf-audio-artwork img")].map((i) => [
+        i.getAttribute("src"),
+        i.dataset.state,
+      ]),
+    ).toEqual([["/e.jpg", "in"]]);
   });
 });

@@ -1,0 +1,7 @@
+- [x] Document titles from page headings; brand only when Revealed (CORE-2322)
+- [x] Readable watch and detail addresses with in-place canonical rewrite (CORE-2329)
+- [ ] Graph `MediaInfo.libraryID` (graph owner) so addresses carry the Library segment
+- [x] Word motion styles and setting on the audio card (CORE-2331)
+- [x] Artwork motion styles, decode before swap, placeholder transition (CORE-2332)
+- [x] Unit and component tests
+- [ ] `openspec validate --all --strict`, `make gate`, then `openspec archive towerqa-web-viewer`

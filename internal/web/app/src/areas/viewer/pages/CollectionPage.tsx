@@ -17,6 +17,7 @@ import { useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
+import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { fetchCollection, fetchCollectionItems, memberOrder, moveEntry } from "../lib/collections";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 
@@ -38,6 +39,7 @@ export function CollectionPage() {
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const queue = useMemo(() => playQueueOf(items), [items]);
+  const repeated = useMemo(() => repeatedTitles(items), [items]);
 
   const load = useCallback(async () => {
     setFailed(false);
@@ -254,6 +256,7 @@ export function CollectionPage() {
                   posInSet={index + 1}
                   setSize={items.length}
                   queue={queue}
+                  showYear={showsYear(item, repeated)}
                 />
               ))}
             </ul>

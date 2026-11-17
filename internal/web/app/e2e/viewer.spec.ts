@@ -232,7 +232,7 @@ test.describe("viewer who's watching", () => {
 
     await expect(page).toHaveURL(/\/web\/profiles$/);
     await expect(page.getByRole("heading", { level: 1, name: "Who's watching?" })).toBeVisible();
-    await page.getByRole("button").filter({ hasText: "Watching now" }).click();
+    await page.getByRole("button").filter({ hasText: "Current profile" }).click();
 
     await expect(page).toHaveURL(/\/web\/?$/);
     await expect(page.getByRole("link", { name: "Home", exact: true })).toBeVisible();

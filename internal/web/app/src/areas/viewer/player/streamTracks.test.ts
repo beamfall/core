@@ -4,11 +4,14 @@ import {
   attachCaptionElements,
   audioTrackLabel,
   CAPTION_TRACK_ATTRIBUTE,
+  captionElement,
   captionTrackLabel,
+  distinctLabels,
   isBurnInCaption,
   languageName,
   matchSelectedCaption,
   preferredLanguageIndex,
+  reloadCaptionElement,
   removeCaptionElements,
   sameLanguage,
   showCaptionElement,
@@ -176,5 +179,47 @@ describe("track preferences (CORE-1680)", () => {
     expect(matchSelectedCaption(both, { track: { kind: "muxed", language: "en" } })?.id).toBe(
       "muxed-main-8",
     );
+  });
+});
+
+describe("same-language subtitle labels (CORE-2315)", () => {
+  it("adds the stream title unless it only repeats the language", () => {
+    const base = { id: "c", format: "subrip", language: "en", url: "/s" } as PlaybackCaptionTrack;
+    expect(captionTrackLabel({ ...base, title: "Signs & Songs" }, text)).toBe(
+      "English · Signs & Songs · SRT · External",
+    );
+    expect(captionTrackLabel({ ...base, title: "english" }, text)).toBe("English · SRT · External");
+  });
+
+  it("numbers labels that still read the same and leaves unique ones", () => {
+    expect(
+      distinctLabels(
+        ["English · SRT", "French · SRT", "English · SRT", "English · Forced · SRT"],
+        (n) => `Track ${n}`,
+      ),
+    ).toEqual([
+      "English · SRT · Track 1",
+      "French · SRT",
+      "English · SRT · Track 2",
+      "English · Forced · SRT",
+    ]);
+  });
+});
+
+describe("reloadCaptionElement (CORE-2315)", () => {
+  it("replaces a failed track with a fresh one that loads the same source", () => {
+    const video = document.createElement("video");
+    attachCaptionElements(
+      video,
+      [{ id: "c1", format: "subrip", language: "en", url: "/api/media/subtitle/one" }],
+      "en",
+    );
+    showCaptionElement(video, "c1");
+    const failed = captionElement(video, "c1");
+    reloadCaptionElement(video, "c1");
+    const fresh = captionElement(video, "c1");
+    expect(fresh).not.toBe(failed);
+    expect(fresh?.getAttribute("src")).toBe("/api/media/subtitle/one");
+    expect(video.querySelectorAll("track")).toHaveLength(1);
   });
 });

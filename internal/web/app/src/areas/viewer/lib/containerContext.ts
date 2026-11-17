@@ -47,6 +47,24 @@ export function containerCredits(media: GenericMediaInfo | null | undefined): Co
   return links;
 }
 
+/**
+ * The people an audio item is credited to, de-duplicated in the server's
+ * order: the artist line under a track's title (CORE-2327). Empty for any
+ * other class, where person credits are a cast list, not a byline.
+ */
+export function audioPeople(media: GenericMediaInfo | null | undefined): ContainerLink[] {
+  if (media?.mediaClass !== "audio") return [];
+  const seen = new Set<string>();
+  const links: ContainerLink[] = [];
+  for (const credit of media.credits ?? []) {
+    if (credit.archetype !== "person" || !credit.entityID || !credit.title) continue;
+    if (seen.has(credit.entityID)) continue;
+    seen.add(credit.entityID);
+    links.push({ id: credit.entityID, title: credit.title });
+  }
+  return links;
+}
+
 /** The item after `id` in an ordered list, or null when `id` is last or absent. */
 export function nextAfter(items: readonly SourceItem[], id: string): SourceItem | null {
   const at = items.findIndex((item) => item.id === id);

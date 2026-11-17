@@ -50,6 +50,7 @@ import {
   formatAriaTime,
   formatClockTime,
   formatRemainingTime,
+  playbackDurationSeconds,
   resolveTrickplaySheetURL,
   resolveTrickplayTile,
 } from "../lib/transport";
@@ -63,6 +64,7 @@ import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
+import { TrackMotionSettings } from "./TrackMotionSettings";
 import { type MenuRow, TransportMenu } from "./TransportMenu";
 import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
@@ -338,13 +340,17 @@ export function PlayerTransport({
     reason: "",
   }));
 
+  // The probed length (song seconds) from playback-info; a live transcode's
+  // video.duration grows as it encodes, so this wins when known (CORE-2314).
+  const serverDuration = state.info?.timeline?.durationSeconds;
+
   // Mirror the live <video> time into React state so the chrome re-renders.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const sync = () => {
       setCurrent(Number.isFinite(video.currentTime) ? video.currentTime * songScale : 0);
-      setDuration(Number.isFinite(video.duration) ? video.duration * songScale : 0);
+      setDuration(playbackDurationSeconds(serverDuration, video.duration * songScale));
       setPaused(video.paused);
       setVolumeState(video.volume);
       setMuted(listenerMuted(video));
@@ -370,7 +376,7 @@ export function PlayerTransport({
       video.removeEventListener("ratechange", sync);
       video.removeEventListener("progress", sync);
     };
-  }, [videoRef, songScale]);
+  }, [videoRef, songScale, serverDuration]);
 
   useEffect(() => {
     const sync = () => {
@@ -407,10 +413,11 @@ export function PlayerTransport({
     (seconds: number) => {
       const video = videoRef.current;
       if (!video) return;
-      const dur = Number.isFinite(video.duration) ? video.duration : Infinity;
+      const dur =
+        playbackDurationSeconds(serverDuration, video.duration * songScale) / songScale || Infinity;
       video.currentTime = Math.max(0, Math.min(dur, video.currentTime + seconds / songScale));
     },
-    [videoRef, songScale],
+    [videoRef, songScale, serverDuration],
   );
 
   const setVolume = useCallback(
@@ -1106,6 +1113,7 @@ export function PlayerTransport({
                   onOpenChange={(open) => setOpen("quality", open)}
                   onSelect={tracks.selectQuality}
                 />
+                {state.info?.mediaClass === "audio" && <TrackMotionSettings />}
                 {onShowSkipIntervalChange && showSkipIntervalLabel && (
                   <label className="bf-settings-row">
                     <span aria-hidden="true" className="bf-settings-tile">

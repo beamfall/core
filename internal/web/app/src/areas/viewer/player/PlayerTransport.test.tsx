@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import type { Locale } from "@/strings";
 import { PlayerTransport } from "./PlayerTransport";
+import { getTrackChangeMotion, resetTrackChangeMotionForTest } from "./trackChangeMotion";
 import type { PlayerState } from "./usePlayer";
 import { lastViewerIntent } from "./viewerIntent";
 
@@ -200,6 +201,37 @@ describe("PlayerTransport", () => {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(onMenuOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("offers the track-change motion styles for audio items only (CORE-2331, CORE-2332)", async () => {
+    window.localStorage.clear();
+    resetTrackChangeMotionForTest();
+    const user = userEvent.setup();
+    const view = renderHarnessVideo();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.queryByRole("combobox", { name: "Track change words" })).toBeNull();
+    view.unmount();
+
+    renderHarnessVideo({
+      playerState: { ...state, info: { mediaClass: "audio" } as PlayerState["info"] },
+    });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const words = screen.getByRole("combobox", { name: "Track change words" });
+    const art = screen.getByRole("combobox", { name: "Track change artwork" });
+    expect(words).toHaveTextContent("Mix");
+    expect(art).toHaveTextContent("Mix");
+    await user.click(words);
+    await user.click(await screen.findByRole("option", { name: "Split-flap" }));
+    await user.click(art);
+    await user.click(await screen.findByRole("option", { name: "Dissolve" }));
+    expect(getTrackChangeMotion()).toEqual({ words: "flap", art: "dissolve" });
+    expect(JSON.parse(window.localStorage.getItem("beamfall.trackChangeMotion")!)).toEqual({
+      words: "flap",
+      art: "dissolve",
+    });
+    expect(words).toHaveTextContent("Split-flap");
+    window.localStorage.clear();
+    resetTrackChangeMotionForTest();
   });
 
   it("mirrors live volume and speed, exposes their values, and restores muted volume", async () => {
@@ -458,6 +490,30 @@ describe("PlayerTransport", () => {
     expect(screen.getByRole("slider", { name })).toHaveAttribute("aria-valuetext", spoken);
   });
 
+  it("spans the probed duration while a transcode is still encoding (CORE-2314)", () => {
+    const { video } = renderHarnessVideo({
+      currentTime: 100,
+      duration: 268,
+      playerState: {
+        ...state,
+        info: { timeline: { durationSeconds: 7200 } } as PlayerState["info"],
+      },
+    });
+    fireEvent.timeUpdate(video);
+    fireEvent.durationChange(video);
+
+    expect(screen.getByRole("slider", { name: "Playback position" })).toHaveAttribute(
+      "aria-valuetext",
+      expect.stringContaining("2 hours"),
+    );
+    expect(screen.getByText("-1:58:20")).toBeInTheDocument();
+
+    // A forward skip past the encoded part targets the real timeline.
+    video.currentTime = 260;
+    dispatchKey("ArrowRight");
+    expect(video.currentTime).toBeGreaterThan(260);
+  });
+
   it("previews a scrubber drag and seeks once on release (CORE-1360)", () => {
     const { video } = renderHarnessVideo({ currentTime: 10, duration: 100 });
     const seeks: number[] = [];
@@ -638,14 +694,16 @@ function renderHarnessVideo({
   volume = 1,
   playbackRate = 1,
   locale,
+  playerState,
 }: {
   currentTime?: number;
   duration?: number;
   volume?: number;
   playbackRate?: number;
   locale?: Locale;
+  playerState?: PlayerState;
 } = {}) {
-  const rendered = render(<Harness locale={locale} />);
+  const rendered = render(<Harness locale={locale} playerState={playerState} />);
   const video = screen.getByTestId("video") as HTMLVideoElement;
   const stage = screen.getByTestId("stage");
   let paused = true;

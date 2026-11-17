@@ -11,7 +11,7 @@ import { viewerCacheEntries } from "@/lib/viewerCache";
 // another identity's item.
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title summary year favorited artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
+  "query Media($id: String!) { media(id: $id) { id title summary year durationSeconds mediaClass libraryID favorited artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
 const MEDIA_FIELDS_QUERY =
   "query MediaFields($mediaID: String!) { mediaFields(mediaID: $mediaID) { name type value label } }";
 

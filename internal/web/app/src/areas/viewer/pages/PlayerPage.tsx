@@ -5,6 +5,7 @@ import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
+import { useDocumentTitle } from "@/lib/documentTitle";
 import {
   fetchClientPrefs,
   fetchMedia,
@@ -20,6 +21,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   adjustmentApplied,
   hasPicture,
@@ -42,6 +44,7 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
@@ -61,6 +64,7 @@ import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
+import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { decodableStream, useGaplessAudio } from "../player/useGaplessAudio";
 import { useMediaLoading } from "../player/useMediaLoading";
@@ -95,7 +99,8 @@ import { watchPartyDefersUpNext } from "../player/watchPartyStore";
 export function PlayerPage() {
   const t = useT();
   const location = useLocation();
-  const { mediaId } = useParams();
+  // A readable address (CORE-2329) or a bare ID: the token names the item.
+  const mediaId = mediaIdFromAddress(useParams()["*"]) || undefined;
   const host = usePlayerHost();
   const skip = new URLSearchParams(location.search).has("t");
   const carried =
@@ -199,6 +204,11 @@ function FeaturePlayer({
   const navState = readPlayerNavState(entry.state, identity);
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
+  // Docked, the browse page under the mini player names the tab (CORE-2322).
+  // A Revealed session may be playing a restricted title, which stays out of
+  // the browser history (tab titles are kept there).
+  useDocumentTitle(docked || revealed ? null : navTitle, t("brand"));
+  useCanonicalMediaAddress("watch", media, !docked);
   const startAtSeconds = parseTimestampParam(new URLSearchParams(entry.search).get("t"));
   // Media classes playback-info has reported (this item's and its declared
   // next item's), by Media id (CORE-1490).
@@ -328,6 +338,7 @@ function FeaturePlayer({
       ? adjustmentApplied(state.info, adjustment)
       : null;
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
+  const captionLoad = useCaptionLoad(videoRef);
   const isAudio = state.info?.mediaClass === "audio";
   // Before playback-info answers, a queue entry that reports its class already
   // routes a track to the audio stage instead of an empty video frame
@@ -776,6 +787,29 @@ function FeaturePlayer({
               >
                 <LoaderCircle aria-hidden className="size-10 animate-spin text-on-scrim/80" />
                 <span className="sr-only">{t("playerLoading")}</span>
+              </div>
+            )}
+            {captionLoad.status === "preparing" && (
+              <div
+                className="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-md bg-scrim/80 px-3 py-2 text-sm text-on-scrim"
+                role="status"
+              >
+                {t("subtitlesPreparing")}
+              </div>
+            )}
+            {captionLoad.status === "failed" && (
+              <div
+                className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-md bg-scrim/80 px-3 py-2 text-sm text-on-scrim"
+                role="alert"
+              >
+                <span>{t("subtitlesLoadFailed")}</span>
+                <button
+                  type="button"
+                  className="rounded-sm underline underline-offset-2"
+                  onClick={captionLoad.retry}
+                >
+                  {t("tryAgain")}
+                </button>
               </div>
             )}
             {state.waitingForNetwork ? (
