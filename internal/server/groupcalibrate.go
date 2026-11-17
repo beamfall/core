@@ -46,10 +46,18 @@ type groupCalibrateRequest struct {
 // receipt and computes offset + round-trip locally with conductor.Calibrate. The
 // echoed t1 lets a stateless device pair the exchange without holding the send
 // time across the round-trip.
+//
+// t2US and t3US are the same two instants in Unix microseconds (CORE-2244). A
+// whole-millisecond timestamp rounds away up to a millisecond at each end of
+// the exchange, which is a real share of a lead party's 40 ms target; a device
+// that reads them and times its own half with a sub-millisecond clock gets an
+// offset that is not quantized. The millisecond fields stay for older clients.
 type groupCalibrateResponse struct {
 	T1MS int64 `json:"t1MS"`
 	T2MS int64 `json:"t2MS"`
 	T3MS int64 `json:"t3MS"`
+	T2US int64 `json:"t2US"`
+	T3US int64 `json:"t3US"`
 }
 
 // groupCalibrate serves the LAN-only four-timestamp calibration handshake.
@@ -102,5 +110,7 @@ func (s *Server) groupCalibrate(w http.ResponseWriter, r *http.Request) {
 		T1MS: req.T1MS,
 		T2MS: t2.UnixMilli(),
 		T3MS: t3.UnixMilli(),
+		T2US: t2.UnixMicro(),
+		T3US: t3.UnixMicro(),
 	})
 }
