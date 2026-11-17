@@ -202,12 +202,20 @@ export function MediaDetailPage() {
   const progress = resumeProgress(card);
   const summary = media?.summary || card?.summary || "";
   const allFields = current?.fields ?? [];
-  const fields = viewerFacingFields(allFields);
+  // The probed length first (CORE-2314); a card's engagement duration is what
+  // a player last reported and may be short of the real one.
   const facts = detailFacts(
     media,
     allFields,
-    card?.engagement?.durationSeconds ?? context.current?.engagement?.durationSeconds,
+    media?.durationSeconds ||
+      card?.engagement?.durationSeconds ||
+      context.current?.engagement?.durationSeconds,
   );
+  const fields = viewerFacingFields(allFields, {
+    title: media?.title || card?.title,
+    year: facts.year,
+    runtimeSeconds: facts.runtimeSeconds,
+  });
   const factLabels = [
     facts.year ? String(facts.year) : "",
     facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "",

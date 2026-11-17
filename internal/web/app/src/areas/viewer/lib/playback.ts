@@ -1,4 +1,4 @@
-import { ApiError, postJSON } from "@/lib/api";
+import { ApiError, postJSON, postKeepalive } from "@/lib/api";
 import { probeCapabilityProfile } from "./capabilityProfile";
 import { leavePlayQueue, nextInPlayQueue, playQueueHandle, playQueueTitle } from "./playQueue";
 import { withQualityCeiling } from "./qualityChoice";
@@ -40,6 +40,12 @@ export interface PlaybackGapless {
 /** The canonical resume timeline (ADR-0010): seconds into the Media. */
 export interface PlaybackTimeline {
   positionSeconds?: number;
+  /**
+   * The Media's probed length in seconds (0 or absent when unknown). A
+   * transcoded stream's `video.duration` grows while the encode runs, so the
+   * scrubber and remaining time trust this value when it is known.
+   */
+  durationSeconds?: number;
 }
 
 /** Stream-Token-served Generated Assets attached to a playback (ADR-0033). */
@@ -123,6 +129,8 @@ export interface PlaybackCaptionTrack {
   sdh?: boolean;
   visualImpaired?: boolean;
   commentary?: boolean;
+  /** The stream's own title tag (e.g. "Signs & Songs"), when it carries one. */
+  title?: string;
 }
 
 /** The server's subtitle pick at playback start: a language, kind and role ref. */
@@ -204,6 +212,25 @@ export function isRevealTerminalStatus(status: number): boolean {
  * an id it does not know and chooses itself. `tracks` names the audio stream
  * and the burned-in subtitle stream the viewer picked (CORE-1709).
  */
+/**
+ * END_PLAYBACK_MUTATION tells the server the viewer closed this Media, so it
+ * stops the session's transcode and clears it from live activity at once
+ * instead of waiting for the idle expiry (CORE-2305).
+ */
+export const END_PLAYBACK_MUTATION =
+  "mutation EndPlayback($mediaId: ID!) { endPlayback(mediaId: $mediaId) }";
+
+/**
+ * endPlayback ends the caller's session for a Media. It is sent with
+ * keepalive, so the same call works from an unmount and from a closing tab's
+ * pagehide; best effort and never throws, since the server's idle expiry
+ * still ends a session this call could not reach.
+ */
+export function endPlayback(mediaID: string): void {
+  if (!mediaID) return;
+  postKeepalive("/api/graphql", { query: END_PLAYBACK_MUTATION, variables: { mediaId: mediaID } });
+}
+
 export async function fetchPlaybackInfo(
   mediaID: string,
   nextMediaID?: string,

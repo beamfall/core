@@ -90,7 +90,7 @@ export function EntityPage() {
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
   const kindHint = entity?.kind ?? navPreview?.kind;
   const kindLabel = displayString(entity?.kindDisplayName, displayLocale) || kindHint;
-  const fields = entity ? viewerFacingFields(entity.fields) : [];
+  const fields = entity ? viewerFacingFields(entity.fields, { title: entity.title }) : [];
   const layouts = manifest?.layouts || [];
   const detailLayout: Layout | null =
     (kindHint && layouts.find((l) => l.role === "detail" && l.entityKind === kindHint)) || null;

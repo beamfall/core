@@ -295,6 +295,16 @@ describe("MediaDetailPage", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Second" })).toBeInTheDocument();
     expect(screen.queryByText("Server summary")).toBeNull();
   });
+  it("takes the runtime from the probed media duration over a short reported one (CORE-2314)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({ ...media, durationSeconds: 7260 });
+    vi.mocked(fetchMediaDetailFields).mockResolvedValue([]);
+    const timed = { ...card, engagement: { durationSeconds: 268 } } as SourceItem;
+    renderAt([{ pathname: "/media/m1", state: mediaLinkState(timed, identity) }]);
+    await act(async () => {});
+
+    const facts = screen.getByRole("list", { name: "About this item" });
+    expect(facts).toHaveTextContent("2 h 1 min");
+  });
   it("shows only viewer-facing fields and puts the rating in the facts row (CORE-1785)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,

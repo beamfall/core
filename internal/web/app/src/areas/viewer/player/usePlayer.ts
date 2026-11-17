@@ -4,6 +4,7 @@ import { ApiError, getIdentityEpochSignal, graphql, resetIdentityEpoch } from "@
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker, ReportPlaybackVars } from "@/lib/graphql/types";
 import {
+  endPlayback,
   fetchPlaybackInfo,
   hlsStreamOf,
   isRevealTerminalStatus,
@@ -20,6 +21,7 @@ import {
 } from "../lib/playback";
 import {
   hlsLevelIndex,
+  playbackDurationSeconds,
   renditionIndex,
   resumePositionFromInfo,
   type TrickplayManifest,
@@ -545,10 +547,16 @@ export function usePlayer(
       const queue = progressQueueRef.current;
       if (!queue) return;
       const songScale = songScaleRef.current;
+      // The probed length, not a live transcode's growing video.duration:
+      // the server derives "time left" from this (CORE-2314).
+      const durationSeconds = playbackDurationSeconds(
+        stateRef.current.info?.timeline?.durationSeconds,
+        video.duration * songScale,
+      );
       enqueueProgress(queue, {
         mediaID,
         positionSeconds: Math.floor(position * songScale),
-        durationSeconds: Math.floor(video.duration * songScale),
+        durationSeconds: Math.floor(durationSeconds),
         finished,
         eventTimeMS,
       });
@@ -566,6 +574,32 @@ export function usePlayer(
     },
     [reportProgress],
   );
+
+  // End the server session when the player closes, moves to another Media or
+  // the page goes away (CORE-2305), so the transcode stops and live activity
+  // clears without waiting for the idle expiry. A page restored from the
+  // back/forward cache reloads, since its session was ended on the way out.
+  useEffect(() => {
+    if (!mediaID) return;
+    let ended = false;
+    const onPageHide = () => {
+      ended = true;
+      endPlayback(mediaID);
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted || !ended) return;
+      ended = false;
+      retryFromRef.current = { mediaID, position: lastPositionRef.current, paused: true };
+      setRetryKey((key) => key + 1);
+    };
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      if (!ended) endPlayback(mediaID);
+    };
+  }, [mediaID]);
 
   // Load + start playback once per mediaID.
   useEffect(() => {
