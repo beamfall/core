@@ -15,7 +15,9 @@ of device is asking, what it wants to be, and whether it is on the local network
 - Each entry of `GET /api/pairing-requests` adds `platform`, `requestedRole` and `lan`. `lan` is
   derived by the server from the connection, with the same rule `/api/enroll` uses for the server
   key pin; a client cannot supply it.
-- Approval's `deviceRole` defaults to the requested role instead of always `viewer`.
+- Approval's `deviceRole` stays `viewer` by default. The requested role is shown to the
+  administrator and is granted only when the approval names it, because an unauthenticated device
+  chooses what it asks for.
 - `docs/api/lan-pairing.md` documents the fields.
 
 No route, response field or wire-contract change beyond those fields; the management manifest and
@@ -33,14 +35,14 @@ wire goldens do not describe request bodies, so nothing is regenerated.
 - `requestedRole` other than `viewer` or `manager` (case-sensitive), `admin` included, is refused
   with the invalid-code answer and counts as a throttle failure.
 - A `manager` request is only a request. Nothing is enrolled without an administrator's approval,
-  and the administrator may grant `viewer` instead.
+  and an approval that does not name `manager` grants `viewer`.
 - With Viewer pairing codes disabled, a `manager` request is accepted (the switch governs Viewer
-  pairing only) and an approval that grants `viewer` is refused.
+  pairing only) and an approval that grants `viewer`, by name or by default, is refused.
 
 ## Acceptance evidence
 
 - `internal/pairing` tests: identity in the pending list, `lan` from the connection, role refusal,
-  manager approval default and downgrade, Viewer switch with a manager request, platform validation.
+  the viewer default and the explicit manager grant, Viewer switch with a manager request, platform validation.
 - `internal/server` test: the list fields over HTTP, a client-supplied `lan` ignored, `admin` role
   refused with `401`, a control character in `platform` refused with `400`.
 - Conformance `WireContract|Mgmt|Route`, untagged and App Store tagged, unchanged.

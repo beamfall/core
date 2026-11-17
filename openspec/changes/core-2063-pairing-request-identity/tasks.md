@@ -1,5 +1,5 @@
 - [x] `internal/pairing`: accept `platform` and `requestedRole`; add `platform`, `requestedRole`, `lan` to pending entries
-- [x] Approval role defaults to the requested role; Viewer switch applies to Viewer only
+- [x] Approval grants `viewer` unless it names `manager`; Viewer switch applies to Viewer only
 - [x] Tests in `internal/pairing` and `internal/server`
 - [x] `docs/api/lan-pairing.md` documents the fields
 - [ ] `make gate`

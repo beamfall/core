@@ -25,9 +25,9 @@ SHALL NOT be taken from the client.
 ### Requirement: A requested role is granted only by approval
 
 A requested role SHALL be `viewer` or `manager`. Any other value SHALL be refused with the
-invalid-code answer. A request SHALL NOT enroll the device until an administrator approves it, and
-the approval SHALL default to the requested role while allowing the administrator to grant another
-non-administrator role.
+invalid-code answer. A request SHALL NOT enroll the device until an administrator approves it. An
+approval SHALL grant `viewer` unless it names another non-administrator role: the requested role
+SHALL NOT be granted by an approval that names none.
 
 #### Scenario: Administrator role refused
 
@@ -38,10 +38,15 @@ non-administrator role.
 
 - **WHEN** a device requests `manager` and polls before approval
 - **THEN** the poll answers `pending` and nothing is enrolled
-- **AND** an approval without `deviceRole` enrolls the device as `manager`
+- **AND** an approval without `deviceRole` enrolls the device as `viewer`
+
+#### Scenario: Manager is granted only when named
+
+- **WHEN** a device requests `manager` and the administrator approves with `deviceRole: "manager"`
+- **THEN** the device is enrolled as `manager`
 
 #### Scenario: Viewer switch with a manager request
 
 - **WHEN** Viewer pairing codes are disabled and a device requests `manager`
 - **THEN** the request is accepted and waits for approval
-- **AND** an approval that grants `viewer` is refused with the invalid-code answer
+- **AND** an approval that grants `viewer`, by name or by default, is refused with the invalid-code answer

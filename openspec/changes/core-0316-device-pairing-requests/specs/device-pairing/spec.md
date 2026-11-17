@@ -9,7 +9,7 @@ administrator approves the code.
 #### Scenario: Request and wait
 
 - **WHEN** a device posts a valid device name to `/api/pairing-requests`
-- **THEN** the server answers `201` with `code`, `requestSecret`, `expiresAt` and `pollIntervalSeconds`
+- **THEN** the server answers `201` with `code`, `requestSecret`, `expiresAt`, `expiresInSeconds` and `pollIntervalSeconds`
 - **AND** polling with the secret answers `pending` and no device exists yet
 
 #### Scenario: Approval enrolls the polling device once
@@ -42,8 +42,11 @@ sessions SHALL get `403`.
 ### Requirement: Pairing requests are bounded and short-lived
 
 Pending requests SHALL expire after 10 minutes and SHALL be capped in total and per remote address.
-Request, poll and regenerate SHALL share the enrollment throttle keyed by remote address. The device
-name SHALL be bounded and SHALL NOT contain control or invisible formatting characters.
+Request, poll, regenerate and cancel SHALL share one pairing-request throttle keyed by remote
+address, separate from the throttle `/api/enroll` uses. Reaching a cap SHALL NOT count as a failed
+attempt. Request and poll answers SHALL carry the lifetime left as a duration on the server's
+clock. The device name SHALL be bounded and SHALL NOT contain control or invisible formatting
+characters.
 
 #### Scenario: Expired request never enrolls
 
@@ -60,10 +63,44 @@ name SHALL be bounded and SHALL NOT contain control or invisible formatting char
 - **WHEN** one address keeps polling with unknown secrets
 - **THEN** after the free attempts the server answers `429`
 
+#### Scenario: Stale polls do not lock out code enrollment
+
+- **WHEN** one address has been throttled for polling with unknown secrets
+- **THEN** the same address can still redeem a valid pairing code through `/api/enroll`
+
+#### Scenario: A full source is not a failed attempt
+
+- **WHEN** an address that already holds the per-address maximum of pending requests asks again
+- **THEN** the server answers `429` and records no failed attempt
+
+### Requirement: A device can withdraw its pairing request
+
+The server SHALL let a device withdraw a pending request with its request secret. The answer SHALL
+be the same whether or not the secret named a live request. A request whose approval is being
+collected SHALL NOT be withdrawn.
+
+#### Scenario: Cancel removes the request
+
+- **WHEN** a device posts its request secret to `/api/pairing-requests/cancel`
+- **THEN** the server answers `204`, the request leaves the pending list and its code can no longer be approved
+- **AND** a later poll with that secret is refused
+
+#### Scenario: Cancel is not an oracle
+
+- **WHEN** anyone posts an unknown secret to `/api/pairing-requests/cancel`
+- **THEN** the server answers `204` and records no failed attempt
+
 ### Requirement: Existing pairing switches apply to pairing requests
 
 The remote-enrollment setting and the Viewer pairing-code switch SHALL apply at request, approval
-and collection, with the existing invalid-code answer.
+and collection, with the existing invalid-code answer. Regenerate SHALL apply the remote-enrollment
+setting as the request does, and a regenerated request SHALL count as on the local network only
+when both the original request and the regenerate were.
+
+#### Scenario: Regenerate from off the local network
+
+- **WHEN** remote enrollment is off and a regenerate arrives from outside the local network
+- **THEN** the server refuses with the invalid-code answer and the old code and secret keep working
 
 #### Scenario: Viewer pairing codes disabled
 
