@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteMyEngagement,
@@ -11,7 +12,18 @@ import {
   fetchMySessions,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
-import { MyDataPage } from "./MyDataPage";
+import { groupStreamTokens, MyDataPage } from "./MyDataPage";
+
+vi.mock("@/lib/session", () => ({
+  useSession: () => ({
+    manifest: {
+      libraries: [
+        { id: "library-films", title: "Films", pluginID: null, previewClips: false },
+        { id: "library-music", title: "Music", pluginID: null, previewClips: false },
+      ],
+    },
+  }),
+}));
 
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -68,11 +80,7 @@ describe("MyDataPage delete", () => {
       .mockRejectedValueOnce(new Error("reveal pin required"))
       .mockResolvedValueOnce({ scope: "all" });
 
-    render(
-      <I18nProvider>
-        <MyDataPage />
-      </I18nProvider>,
-    );
+    renderPage();
 
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Delete all my engagement" }));
@@ -81,5 +89,87 @@ describe("MyDataPage delete", () => {
     expect(prompt).toHaveBeenCalledWith("Enter your Reveal PIN to confirm deletion.");
     expect(deleteMyEngagement).toHaveBeenNthCalledWith(2, "all", "1234");
     expect(await screen.findByText("Your engagement data was deleted.")).toBeInTheDocument();
+  });
+});
+
+function renderPage() {
+  render(
+    <MemoryRouter>
+      <I18nProvider>
+        <MyDataPage />
+      </I18nProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("MyDataPage internal identifiers (CORE-2319)", () => {
+  it("names libraries by title and never prints library or media ids", async () => {
+    vi.mocked(fetchMyDataSummary).mockResolvedValue({
+      plays: 5,
+      watched: 1,
+      favorites: 0,
+      queueEntries: 0,
+      libraryCount: 3,
+      libraryBreakdown: [
+        { libraryID: "library-films", plays: 3 },
+        { libraryID: "library-music", plays: 1 },
+        { libraryID: "library-gone", plays: 1 },
+      ],
+    });
+    vi.mocked(fetchMyEngagementLog).mockResolvedValue({
+      total: 1,
+      events: [
+        {
+          kind: "play",
+          mediaID: "media-123",
+          libraryID: "library-films",
+          occurredAt: "2026-11-01T10:00:00Z",
+        },
+      ],
+    });
+    renderPage();
+
+    expect(await screen.findByText("Removed library")).toBeInTheDocument();
+    expect((await screen.findAllByText("Films")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Music")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Played", hidden: true })).toHaveAttribute(
+      "href",
+      "/media/media-123",
+    );
+    expect(document.body.textContent).not.toMatch(/library-films|library-music|media-123/);
+  });
+
+  it("collapses outstanding stream tokens into one counted row per kind", async () => {
+    vi.mocked(fetchMySessions).mockResolvedValue({
+      sessions: [],
+      streamTokens: [
+        { targetKind: "media-assets", expiresAt: "2026-11-01T10:00:00Z" },
+        { targetKind: "media-assets", expiresAt: "2026-11-01T12:00:00Z" },
+        { targetKind: "media-hls", expiresAt: "2026-11-01T11:00:00Z" },
+        { targetKind: "media-direct", expiresAt: "2026-11-01T09:00:00Z" },
+        { targetKind: "media-subtitle", expiresAt: "2026-11-01T09:00:00Z" },
+      ],
+    });
+    renderPage();
+
+    expect(await screen.findByText("Previews and thumbnails")).toBeInTheDocument();
+    expect(screen.getByText("Playback")).toBeInTheDocument();
+    expect(screen.getByText("Subtitles")).toBeInTheDocument();
+    expect(screen.getAllByText("2 tokens")).toHaveLength(2);
+    expect(screen.getByText("1 token")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/media-assets|media-hls/);
+  });
+
+  it("keeps the latest expiry per kind and folds unknown kinds into Other", () => {
+    expect(
+      groupStreamTokens([
+        { targetKind: "media-assets", expiresAt: "2026-11-01T10:00:00Z" },
+        { targetKind: "future-kind", expiresAt: "2026-11-01T09:00:00Z" },
+        { targetKind: "media-assets", expiresAt: "2026-11-01T12:00:00Z" },
+      ]),
+    ).toEqual([
+      { label: "myDataTokenKindPreviews", count: 2, expiresAt: "2026-11-01T12:00:00Z" },
+      { label: "myDataTokenKindOther", count: 1, expiresAt: "2026-11-01T09:00:00Z" },
+    ]);
   });
 });

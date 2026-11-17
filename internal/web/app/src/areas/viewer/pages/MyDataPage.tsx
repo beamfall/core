@@ -10,7 +10,8 @@ import {
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router";
 import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ import type {
   MyStreamTokenInfo,
 } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { useSession } from "@/lib/session";
 import { ViewerActions } from "../components/ViewerActions";
 
 // The event-log page size (matches the server default; the server clamps).
@@ -56,6 +58,17 @@ const ALL_LIBRARIES = "__all__";
 // gated and never surfaced in the operator Console.
 export function MyDataPage() {
   const t = useT();
+  const { manifest } = useSession();
+  // Library ids are internal; the page names each Library by its title
+  // (CORE-2319). A Library removed since the activity reads as "Removed library".
+  const libraryNames = useMemo(
+    () => new Map((manifest?.libraries ?? []).map((library) => [library.id, library.title])),
+    [manifest],
+  );
+  const libraryName = useCallback(
+    (id: string) => libraryNames.get(id) || t("myDataUnknownLibrary"),
+    [libraryNames, t],
+  );
   const [info, setInfo] = useState<MySessionsInfo | null>(null);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
@@ -198,12 +211,13 @@ export function MyDataPage() {
       <div className="mydata mx-auto flex max-w-3xl flex-col gap-4">
         <IconHeading icon={ShieldCheck} title={t("myDataTitle")} lead={t("myDataLead")} />
 
-        <SummarySection summary={summary} error={summaryError} />
+        <SummarySection summary={summary} error={summaryError} libraryName={libraryName} />
 
         <LogSection
           page={logPage}
           error={logError}
           libraries={summary?.libraryBreakdown.map((b) => b.libraryID) ?? []}
+          libraryName={libraryName}
           draftLibrary={draftLibrary}
           draftFrom={draftFrom}
           draftTo={draftTo}
@@ -245,8 +259,8 @@ export function MyDataPage() {
               <p className="mydata-muted">{t("myDataTokensEmpty")}</p>
             ) : (
               <ul className="mydata-list">
-                {tokens.map((token, i) => (
-                  <TokenRow key={i} token={token} />
+                {groupStreamTokens(tokens).map((group) => (
+                  <TokenGroupRow key={group.label} group={group} />
                 ))}
               </ul>
             )}
@@ -298,9 +312,11 @@ function Notice({ tone, children }: { tone: "ok" | "error"; children: ReactNode 
 function SummarySection({
   summary,
   error,
+  libraryName,
 }: {
   summary: MyDataSummary | null;
   error: string | null;
+  libraryName: (id: string) => string;
 }) {
   const t = useT();
   const stats: { label: string; value: number }[] = summary
@@ -342,7 +358,7 @@ function SummarySection({
                   <li key={b.libraryID} className="mydata-bar-row">
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span className="min-w-0 break-words text-[var(--text-primary)]">
-                        {b.libraryID}
+                        {libraryName(b.libraryID)}
                       </span>
                       <span className="tabular-nums text-[var(--text-secondary)]">{b.plays}</span>
                     </div>
@@ -366,6 +382,7 @@ function LogSection({
   page,
   error,
   libraries,
+  libraryName,
   draftLibrary,
   draftFrom,
   draftTo,
@@ -382,6 +399,7 @@ function LogSection({
   page: { events: MyEngagementEvent[]; total: number } | null;
   error: string | null;
   libraries: string[];
+  libraryName: (id: string) => string;
   draftLibrary: string;
   draftFrom: string;
   draftTo: string;
@@ -415,7 +433,7 @@ function LogSection({
               <SelectItem value={ALL_LIBRARIES}>{t("myDataLogFilterAllLibraries")}</SelectItem>
               {libraries.map((id) => (
                 <SelectItem key={id} value={id}>
-                  {id}
+                  {libraryName(id)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -459,7 +477,7 @@ function LogSection({
       ) : (
         <ul className="mydata-list">
           {events.map((ev, i) => (
-            <EventRow key={`${ev.kind}-${ev.mediaID}-${i}`} event={ev} />
+            <EventRow key={`${ev.kind}-${ev.mediaID}-${i}`} event={ev} libraryName={libraryName} />
           ))}
         </ul>
       )}
@@ -487,7 +505,13 @@ function LogSection({
   );
 }
 
-function EventRow({ event }: { event: MyEngagementEvent }) {
+function EventRow({
+  event,
+  libraryName,
+}: {
+  event: MyEngagementEvent;
+  libraryName: (id: string) => string;
+}) {
   const t = useT();
   const kindLabel =
     event.kind === "play"
@@ -498,10 +522,17 @@ function EventRow({ event }: { event: MyEngagementEvent }) {
   return (
     <li className="mydata-row">
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="break-words text-sm text-[var(--text-primary)]">
-          {kindLabel} · {event.mediaID}
+        {/* The event names no title, and its Media id is internal: the row links
+            to the item instead of printing the id (CORE-2319). */}
+        <Link
+          to={`/media/${encodeURIComponent(event.mediaID)}`}
+          className="break-words text-sm text-[var(--text-primary)] hover:underline"
+        >
+          {kindLabel}
+        </Link>
+        <span className="break-words text-xs text-[var(--text-muted)]">
+          {libraryName(event.libraryID)}
         </span>
-        <span className="break-words text-xs text-[var(--text-muted)]">{event.libraryID}</span>
       </div>
       <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
         {formatDateTime(event.occurredAt)}
@@ -531,13 +562,58 @@ function SessionRow({ session }: { session: MySessionInfo }) {
   );
 }
 
-function TokenRow({ token }: { token: MyStreamTokenInfo }) {
+type TokenKindLabel =
+  | "myDataTokenKindPlayback"
+  | "myDataTokenKindPreviews"
+  | "myDataTokenKindSubtitles"
+  | "myDataTokenKindOther";
+
+// The stream-token targets the server issues (internal/streamtoken), folded
+// into what a viewer would call them.
+const TOKEN_KIND_LABELS: Record<string, TokenKindLabel> = {
+  "media-direct": "myDataTokenKindPlayback",
+  "media-hls": "myDataTokenKindPlayback",
+  "media-assets": "myDataTokenKindPreviews",
+  "media-subtitle": "myDataTokenKindSubtitles",
+  "media-sidecar": "myDataTokenKindSubtitles",
+};
+
+export interface StreamTokenGroup {
+  label: TokenKindLabel;
+  count: number;
+  /** The latest expiry in the group, when any token carries one. */
+  expiresAt?: string;
+}
+
+/**
+ * groupStreamTokens folds the outstanding tokens into one row per kind with a
+ * count and the last expiry, instead of one raw "media-assets" row per token
+ * (CORE-2319). Groups keep the order their kind first appears in.
+ */
+export function groupStreamTokens(tokens: MyStreamTokenInfo[]): StreamTokenGroup[] {
+  const groups = new Map<TokenKindLabel, StreamTokenGroup>();
+  for (const token of tokens) {
+    const label = TOKEN_KIND_LABELS[token.targetKind ?? ""] ?? "myDataTokenKindOther";
+    const group = groups.get(label) ?? { label, count: 0 };
+    group.count++;
+    if (token.expiresAt && (!group.expiresAt || token.expiresAt > group.expiresAt)) {
+      group.expiresAt = token.expiresAt;
+    }
+    groups.set(label, group);
+  }
+  return [...groups.values()];
+}
+
+function TokenGroupRow({ group }: { group: StreamTokenGroup }) {
   const t = useT();
-  const expires = formatDateTime(token.expiresAt);
+  const expires = formatDateTime(group.expiresAt);
   return (
     <li className="mydata-row">
       <span className="min-w-0 flex-1 break-words text-sm text-[var(--text-primary)]">
-        {token.targetKind || ""}
+        {t(group.label)}
+      </span>
+      <span className="shrink-0 text-xs tabular-nums text-[var(--text-secondary)]">
+        {t("myDataTokenCount", { count: group.count })}
       </span>
       {expires && (
         <span className="shrink-0 text-xs text-[var(--text-muted)]">
