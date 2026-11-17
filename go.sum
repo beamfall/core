@@ -4,8 +4,8 @@ github.com/beamfall/plugin-enrichment v0.1.0 h1:3OTQGqQFauFhjTJefpPCX7C4UNZheCLi
 github.com/beamfall/plugin-enrichment v0.1.0/go.mod h1:ZqxoNHMHG0mzZHyP7q3oVjqI/ct6QkMaYnDzq++YlIc=
 github.com/beamfall/plugin-familyarchive v0.1.12 h1:E4vHUlC8Y56KRWpQ9hw1Iu4Kzzrn3Ap8Fa0z1zKQJGY=
 github.com/beamfall/plugin-familyarchive v0.1.12/go.mod h1:AtUrswcC8Xjjimt+feHd/ZwhmPqsVqYfUE2wmUv+DJM=
-github.com/beamfall/plugin-filmtv v0.1.14 h1:Ts+CVxVg6XPVe701EwYIJG5oH5AUyx1TqP+LQt2g09E=
-github.com/beamfall/plugin-filmtv v0.1.14/go.mod h1:td2VNp17j82xpEQ/VNxP1gWewlk+GftQy+WBaAy/UNQ=
+github.com/beamfall/plugin-filmtv v0.1.15-0.20261117230932-f03d0870903c h1:aKaJAruKGjbWs61te9OeJKXF8Yx3VxnQdJryWoX1J6Q=
+github.com/beamfall/plugin-filmtv v0.1.15-0.20261117230932-f03d0870903c/go.mod h1:tDLZqg0fMl32OLHGOrqUBOqan+1hcdDJdR7arcv9Nkg=
 github.com/beamfall/plugin-karaoke v0.1.6 h1:cCdhTIXdSLPr0oNDzZTZeTzy/nxmlKokCZIzIh3yujQ=
 github.com/beamfall/plugin-karaoke v0.1.6/go.mod h1:xoNfu7++GQGije5ayq0tDMoq+pR5XiGbLy/Nv0jsdlc=
 github.com/beamfall/plugin-music v0.1.12 h1:AIrRnKq+dXvUqgrrInEaKIpUU8LN12PtuumJSegVByA=
@@ -14,8 +14,8 @@ github.com/beamfall/plugin-photos v0.1.10 h1:wF4wO0/WPWa4NMO8iMLRSAa8WPYMmGTvt6q
 github.com/beamfall/plugin-photos v0.1.10/go.mod h1:GAFZMvj7Cu1fG6q9G8YBUQLFMhZzPeT8sJUdKtsBeAA=
 github.com/beamfall/plugin-podcasts v0.1.10 h1:F+CjobYPwYv+APA9xMuBxZ/JyCL63NEVjtHoNcGqdj0=
 github.com/beamfall/plugin-podcasts v0.1.10/go.mod h1:lfjXTsCCTG8ItJtQpkhV3wl23HyYTgODY6bptvWcIvo=
-github.com/beamfall/plugin-sdk v0.4.2 h1:aLCjj8h1xmn7mxgRBajxW4q5cQboj7R4dXqz8neT4Kk=
-github.com/beamfall/plugin-sdk v0.4.2/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
+github.com/beamfall/plugin-sdk v0.4.3-0.20261117230718-b26fe30044b9 h1:Cc49vMHP6UmNcLQpC3QK5+HN7S9dfCLMb5cmuodWCdM=
+github.com/beamfall/plugin-sdk v0.4.3-0.20261117230718-b26fe30044b9/go.mod h1:CFm3zZHYmW1KlV82+yNAJnnMLopqh1P9S0B61OalQXQ=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/brutella/dnssd v1.2.14 h1:qLpTnRTm5peo2jA30hqMIbCuWn8x3sFg3e9o9ODOobw=
