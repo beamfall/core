@@ -706,6 +706,9 @@ func (h *Handler) partyTransition(ctx context.Context, partyID string, hostSessi
 	if err := h.broadcastPartyTransition(ctx, partyID, caller, members, transition); err != nil {
 		return conductor.Transition{}, err
 	}
+	if transition.Lead && !transition.Paused {
+		h.watchLeadLocked(partyID, conductor.LeadSilence)
+	}
 	return transition, nil
 }
 

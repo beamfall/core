@@ -275,6 +275,8 @@ func (r *Registry) HostTransition(id string, host store.SessionID, item store.Me
 	g.position = position
 	g.anchor = now
 	g.paused = paused
+	g.held = false
+	g.heard = now
 	members := make([]Member, 0, len(g.members))
 	for _, mem := range g.members {
 		members = append(members, *mem)

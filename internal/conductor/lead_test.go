@@ -272,3 +272,87 @@ func TestLeadPartyEndsWhenTheLeadsStreamExpires(t *testing.T) {
 		t.Fatalf("Party after the lead expired err = %v, want ErrNoGroup", err)
 	}
 }
+
+// TestSilentLeadIsHeldAndResumesOnItsNextReport covers CORE-2266: a playing
+// lead party whose lead stops reporting is held where the lead was last heard,
+// and the lead's next report resumes it on that report.
+func TestSilentLeadIsHeldAndResumesOnItsNextReport(t *testing.T) {
+	r, g, now := leadParty(t, "screen-1")
+	*now = now.Add(time.Second)
+	if _, _, _, err := r.LeadReport(g.ID, "lead", time.Second, *now, 0); err != nil {
+		t.Fatalf("LeadReport: %v", err)
+	}
+
+	// Two seconds after the last report the party is not yet due.
+	*now = now.Add(2 * time.Second)
+	if _, _, held, wait, err := r.HoldSilentLead(g.ID); err != nil || held || wait != time.Second {
+		t.Fatalf("HoldSilentLead at 2 s = held %v wait %v err %v, want a 1 s wait", held, wait, err)
+	}
+
+	// At three seconds it is held at the position of the last report.
+	*now = now.Add(time.Second)
+	tr, members, held, _, err := r.HoldSilentLead(g.ID)
+	if err != nil || !held {
+		t.Fatalf("HoldSilentLead at 3 s = held %v err %v, want held", held, err)
+	}
+	if !tr.Paused || !tr.Lead || tr.Position != time.Second || len(members) != 2 {
+		t.Fatalf("hold = %+v to %d members, want paused at 1 s to 2 members", tr, len(members))
+	}
+	// A held party needs no further check and does not advance.
+	*now = now.Add(10 * time.Second)
+	if _, _, held, wait, err := r.HoldSilentLead(g.ID); err != nil || held || wait != 0 {
+		t.Fatalf("HoldSilentLead while held = held %v wait %v err %v, want nothing", held, wait, err)
+	}
+	if a, _ := r.PartyAnchor(g.ID); a.Position != time.Second || !a.Paused {
+		t.Fatalf("held anchor = %+v, want paused at 1 s", a)
+	}
+
+	// The lead's next report resumes the timeline on that report.
+	tr, _, restate, err := r.LeadReport(g.ID, "lead", 12*time.Second, *now, 0)
+	if err != nil || !restate || tr.Paused || tr.Position != 12*time.Second {
+		t.Fatalf("report after hold = %+v restate %v err %v, want playing at 12 s", tr, restate, err)
+	}
+	*now = now.Add(time.Second)
+	if a, _ := r.PartyAnchor(g.ID); a.Position != 13*time.Second || a.Paused {
+		t.Fatalf("anchor after resume = %+v, want playing at 13 s", a)
+	}
+}
+
+// TestLeadPausedPartyIsNotHeldOrMovedByAReport covers the other half of
+// CORE-2266: a pause the lead made is not a hold, so silence sends nothing and
+// a later report does not move the timeline. A follower cannot hold a party.
+func TestLeadPausedPartyIsNotHeldOrMovedByAReport(t *testing.T) {
+	r, g, now := leadParty(t, "screen-1")
+	if _, _, err := r.HostTransition(g.ID, "lead", "media-alpha", 5*time.Second, true); err != nil {
+		t.Fatalf("HostTransition: %v", err)
+	}
+	*now = now.Add(10 * time.Second)
+	if _, _, held, wait, err := r.HoldSilentLead(g.ID); err != nil || held || wait != 0 {
+		t.Fatalf("HoldSilentLead on a paused party = held %v wait %v err %v, want nothing", held, wait, err)
+	}
+	if _, _, restate, err := r.LeadReport(g.ID, "lead", 30*time.Second, *now, 0); err != nil || restate {
+		t.Fatalf("report on a lead-paused party = restate %v err %v, want dropped", restate, err)
+	}
+	if a, _ := r.PartyAnchor(g.ID); a.Position != 5*time.Second || !a.Paused {
+		t.Fatalf("anchor = %+v, want paused at 5 s", a)
+	}
+
+	// The lead's own transport ends a hold too.
+	if _, _, err := r.HostTransition(g.ID, "lead", "media-alpha", 5*time.Second, false); err != nil {
+		t.Fatalf("HostTransition: %v", err)
+	}
+	*now = now.Add(LeadSilence)
+	if _, _, held, _, _ := r.HoldSilentLead(g.ID); !held {
+		t.Fatal("silent lead not held")
+	}
+	if tr, _, err := r.HostTransition(g.ID, "lead", "media-alpha", 7*time.Second, false); err != nil || tr.Paused {
+		t.Fatalf("transport after hold = %+v err %v, want playing", tr, err)
+	}
+	if _, _, _, _, err := r.HoldSilentLead("no-such-party"); !errors.Is(err, ErrNoGroup) {
+		t.Fatalf("HoldSilentLead(unknown) = %v, want ErrNoGroup", err)
+	}
+	plain := r.FormParty("profile-lead", "lead", "media-alpha", false)
+	if _, _, _, _, err := r.HoldSilentLead(plain.ID); !errors.Is(err, ErrNotLead) {
+		t.Fatalf("HoldSilentLead(plain party) = %v, want ErrNotLead", err)
+	}
+}

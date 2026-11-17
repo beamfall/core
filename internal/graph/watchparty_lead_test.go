@@ -204,3 +204,52 @@ func TestLeadPartyRefusesAmbientMovesAndEmptyReports(t *testing.T) {
 		t.Fatalf("a refused call moved the lead timeline: %#v", rows)
 	}
 }
+
+// feature:watch-party
+func TestLeadPartyIsHeldForEveryProfileWhenTheLeadFallsSilent(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	h.SetConductor(conductor.NewRegistryWithClock(func() time.Time { return now }))
+	partyID := formLeadParty(t, h)
+	now = now.Add(time.Second)
+	leadReport(t, h, partyID, 1000, now.UnixMilli(), 0)
+
+	// The lead is still within its allowance: nothing is sent.
+	cursor := lastSeq(t, st)
+	now = now.Add(2 * time.Second)
+	h.leadSilenceCheck(t.Context(), partyID)
+	if rows := partyTransitionRows(t, st, partyID, cursor); len(rows) != 0 {
+		t.Fatalf("check at 2 s wrote %d transitions, want none", len(rows))
+	}
+
+	// Three seconds of silence: every member Profile is paused where the lead
+	// was last heard.
+	now = now.Add(time.Second)
+	h.leadSilenceCheck(t.Context(), partyID)
+	rows := partyTransitionRows(t, st, partyID, cursor)
+	if len(rows) != 2 {
+		t.Fatalf("hold wrote %d transitions, want one per member Profile", len(rows))
+	}
+	for _, p := range rows {
+		if !p.Paused || !p.Lead || p.PositionMS != 1000 {
+			t.Errorf("hold row for %s = %+v, want paused lead transition at 1000", p.ProfileID, p)
+		}
+	}
+
+	// The lead's next report resumes every Profile on that report.
+	cursor = lastSeq(t, st)
+	now = now.Add(4 * time.Second)
+	if res := leadReport(t, h, partyID, 1500, now.UnixMilli(), 0); res.Action != "anchor" {
+		t.Fatalf("report after hold = %#v, want action anchor", res)
+	}
+	rows = partyTransitionRows(t, st, partyID, cursor)
+	if len(rows) != 2 {
+		t.Fatalf("resume wrote %d transitions, want one per member Profile", len(rows))
+	}
+	for _, p := range rows {
+		if p.Paused || p.PositionMS != 1500 {
+			t.Errorf("resume row for %s = %+v, want playing at 1500", p.ProfileID, p)
+		}
+	}
+}

@@ -276,6 +276,11 @@ type Group struct {
 	rate int
 	// stated is when a lead party's timeline was last broadcast.
 	stated time.Time
+	// heard is when a lead party's lead last reported or moved the timeline.
+	heard time.Time
+	// held marks a lead party the Conductor paused because its lead fell
+	// silent (CORE-2266). The lead's next report or transport resumes it.
+	held bool
 }
 
 // Members returns a snapshot copy of the group's members (ADR-0035 §8: the

@@ -32,6 +32,11 @@ const LeadReanchorThreshold = 40 * time.Millisecond
 // that just opened, is on the timeline within this long.
 const LeadHeartbeat = 5 * time.Second
 
+// LeadSilence is how long a playing lead party's lead may go without a report
+// or a transport before the timeline is held. The lead reports about once a
+// second, so this is three missed reports.
+const LeadSilence = 3 * time.Second
+
 // leadReportMaxAge bounds how far in the past a lead report's sample instant
 // may lie. An older sample says nothing about where the lead is now and is
 // dropped.
@@ -78,8 +83,9 @@ func (r *Registry) FormLeadParty(host store.ProfileID, hostSession store.Session
 // the shared timeline, when the speed changed, or when LeadHeartbeat has passed
 // since the timeline was last stated, the timeline is re-anchored on the report
 // and restate is true: the surface then broadcasts the returned Transition. A
-// paused timeline is not moved by a report; the lead pauses and resumes through
-// HostTransition. A report is dropped when its sample is older than
+// timeline the lead paused is not moved by a report; the lead pauses and resumes
+// through HostTransition. A timeline held by HoldSilentLead resumes on the
+// report. A report is dropped when its sample is older than
 // leadReportMaxAge, was taken before the timeline was last anchored, or follows
 // the last statement within leadRestateFloor. Only the lead of a lead party may
 // report.
@@ -103,6 +109,16 @@ func (r *Registry) LeadReport(id string, lead store.SessionID, position time.Dur
 	if g.host != lead {
 		return Transition{}, nil, false, ErrNotHost
 	}
+	if !stale {
+		g.heard = now
+	}
+	// A held party resumes on the lead's first current report.
+	if g.held && !stale && !at.Before(g.anchor) {
+		g.position, g.anchor, g.rate = position, at, rate
+		g.paused, g.held = false, false
+		g.stated = now
+		return g.transitionLocked(now), g.membersLocked(), true, nil
+	}
 	// A stale sample, one taken before the timeline was last anchored (the
 	// lead has since moved it, so the sample describes the old timeline), and
 	// one that arrives too soon after the last statement are all dropped.
@@ -123,11 +139,46 @@ func (r *Registry) LeadReport(id string, lead store.SessionID, position time.Dur
 		g.rate = rate
 	}
 	g.stated = now
-	members = make([]Member, 0, len(g.members))
+	return g.transitionLocked(now), g.membersLocked(), true, nil
+}
+
+// membersLocked is a snapshot copy of the members. The caller holds g.mu.
+func (g *Group) membersLocked() []Member {
+	members := make([]Member, 0, len(g.members))
 	for _, m := range g.members {
 		members = append(members, *m)
 	}
-	return g.transitionLocked(now), members, true, nil
+	return members
+}
+
+// HoldSilentLead holds a playing lead party whose lead has not been heard for
+// LeadSilence (CORE-2266): the timeline stops where it was when the lead was
+// last heard, and held is true so the surface broadcasts the returned paused
+// Transition. Followers then wait on the frame the lead was last known to be
+// at instead of running ahead of its audio. Otherwise held is false and wait
+// is how long until the party is next due a check; wait is zero for a party
+// that is paused, which needs no check until the lead moves it again.
+func (r *Registry) HoldSilentLead(id string) (t Transition, members []Member, held bool, wait time.Duration, err error) {
+	g, err := r.partyLookup(id)
+	if err != nil {
+		return Transition{}, nil, false, 0, err
+	}
+	now := r.now()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.lead {
+		return Transition{}, nil, false, 0, ErrNotLead
+	}
+	if g.paused {
+		return Transition{}, nil, false, 0, nil
+	}
+	if silent := now.Sub(g.heard); silent < LeadSilence {
+		return Transition{}, nil, false, LeadSilence - silent, nil
+	}
+	g.position = g.positionAtLocked(g.heard)
+	g.paused, g.held = true, true
+	g.stated = now
+	return g.transitionLocked(now), g.membersLocked(), true, 0, nil
 }
 
 // rateLocked is the timeline's speed in thousandths; the zero value is normal
