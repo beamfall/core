@@ -902,6 +902,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	scheduleService := schedulepkg.NewService(wakingScheduleStore{Store: st, wake: jobWake})
 	scheduleService.SetLogger(logger)
 	registerBuiltInSchedules(ctx, st, scheduleService, precomputeCacheRoot, cfg.PlaybackCacheBudgetBytes, composers != nil)
+	precomputeSchedules := newLibraryPrecomputeSchedules(st, precomputeCacheRoot, cfg.PlaybackCacheBudgetBytes)
+	if err := precomputeSchedules.registerAll(ctx, scheduleService); err != nil {
+		logger.Warn("library precompute schedules unavailable", "error", err)
+	}
 	if err := scheduleService.Reconcile(ctx, time.Now().UTC()); err != nil {
 		_ = st.Close()
 		return nil, err
@@ -1003,6 +1007,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// job closure reads the handler at call time.
 	precomputeHandler.Encrypted = encryptedPrecomputeGenerator{content: appLibEncryptDBCipher{manager: libEncryptManager}, runner: ffmpegRunner}
 	precomputeHandler.Sealed = sealedPredicate
+	precomputeSchedules.setSealed(sealedPredicate)
 	artworkService.SetSealed(sealedPredicate)
 	artworkService.SetEncrypted(encryptedPredicate)
 	// Encrypted-Library crash-recovery derivative reconcile (ADR-0045 §reconcile,
@@ -1205,7 +1210,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		ArtworkCandidateFetcher:      scrapeEngine,
 		ArtworkCandidateImporter:     artworkService,
 		ScanObserver:                 scanObserverAdapter{service: watcherService},
-		LibraryMutationObserver:      libraryMutationObserver{store: st, watcher: watcherService, schedule: scheduleService, artwork: artworkService, wake: jobWake, logger: logger},
+		LibraryMutationObserver:      libraryMutationObserver{store: st, watcher: watcherService, schedule: scheduleService, precompute: precomputeSchedules, artwork: artworkService, wake: jobWake, logger: logger},
 		ScheduleUpdater:              scheduleService,
 		JobRunner:                    jobRegistry,
 		PlaybackCache:                graphPlaybackCache,
@@ -4131,17 +4136,19 @@ func envEnabled(name string) bool {
 }
 
 type libraryMutationObserver struct {
-	store    *store.Store
-	watcher  *watcher.Service
-	schedule *schedulepkg.Service
-	artwork  *artwork.Service
-	wake     *jobWake
-	logger   *slog.Logger
+	store      *store.Store
+	watcher    *watcher.Service
+	schedule   *schedulepkg.Service
+	precompute *libraryPrecomputeSchedules
+	artwork    *artwork.Service
+	wake       *jobWake
+	logger     *slog.Logger
 }
 
 func (o libraryMutationObserver) LibraryCreated(ctx context.Context, libraryID store.LibraryID, roots []string) {
 	if o.schedule != nil {
 		o.schedule.Register(scanScheduleSpec(o.store, libraryID))
+		o.precompute.register(o.schedule, libraryID)
 		if err := o.schedule.Reload(ctx); err != nil {
 			o.logger.Warn("schedule reload after library create failed", "library", string(libraryID), "error", err)
 		}
@@ -4170,6 +4177,7 @@ func (o libraryMutationObserver) LibraryDeleted(ctx context.Context, libraryID s
 	}
 	if o.schedule != nil {
 		o.schedule.Unregister(schedulepkg.ScanScheduleID(libraryID))
+		o.precompute.unregister(o.schedule, libraryID)
 		if err := o.schedule.Reconcile(ctx, time.Now().UTC()); err != nil {
 			o.logger.Warn("schedule reconcile after library delete failed", "library", string(libraryID), "error", err)
 		}
@@ -4182,6 +4190,7 @@ func (o libraryMutationObserver) LibraryDeleted(ctx context.Context, libraryID s
 func (o libraryMutationObserver) LibraryRestored(ctx context.Context, libraryID store.LibraryID) {
 	if o.schedule != nil {
 		o.schedule.Register(scanScheduleSpec(o.store, libraryID))
+		o.precompute.register(o.schedule, libraryID)
 		if err := o.schedule.Reconcile(ctx, time.Now().UTC()); err != nil {
 			o.logger.Warn("schedule reconcile after library restore failed", "library", string(libraryID), "error", err)
 		}
