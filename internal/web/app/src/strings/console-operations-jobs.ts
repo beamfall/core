@@ -22,7 +22,7 @@ export const consoleOperationsJobsStrings = {
     jobKindDescDatabaseBackup: "Writes a backup of the server databases.",
     jobKindDescArtworkSweep: "Fills in missing posters and artwork across your libraries.",
     jobKindDescAssetSweep:
-      "Generates missing Generated Assets such as thumbnails and previews, when the governor allows.",
+      "Creates missing thumbnails, previews and other images when the server has spare capacity.",
     jobKindDescDecodeVerify: "Samples media files and checks that they still decode cleanly.",
     jobKindDescSkipDetectSweep:
       "Finds skippable segments such as intros and credits in newly scanned media.",
@@ -43,7 +43,7 @@ export const consoleOperationsJobsStrings = {
     jobTargetBackfill: "Metadata refresh",
     jobTargetAllLibraries: "All libraries",
     jobQueueScanHelp:
-      "Scan now queues a scan of every library folder. A folder that already has a scan waiting is not queued twice.",
+      "Rescan all libraries queues a scan of every library folder. A folder that already has a scan waiting is not queued twice.",
     jobWhenQueued: "Queued {when}",
     jobWhenStarted: "Started {when}",
     jobWhenFinished: "Finished {when}",
@@ -85,7 +85,7 @@ export const consoleOperationsJobsStrings = {
     jobKindDescArtworkSweep:
       "Complète les affiches et illustrations manquantes dans vos bibliothèques.",
     jobKindDescAssetSweep:
-      "Génère les actifs générés manquants, comme les miniatures et les aperçus, lorsque le gouverneur l’autorise.",
+      "Crée les miniatures, aperçus et autres images manquants quand le serveur a de la capacité libre.",
     jobKindDescDecodeVerify:
       "Échantillonne des fichiers multimédias et vérifie qu’ils se décodent toujours correctement.",
     jobKindDescSkipDetectSweep:
@@ -107,7 +107,7 @@ export const consoleOperationsJobsStrings = {
     jobTargetBackfill: "Actualisation des métadonnées",
     jobTargetAllLibraries: "Toutes les bibliothèques",
     jobQueueScanHelp:
-      "« Analyser maintenant » met en file une analyse de chaque dossier de bibliothèque. Un dossier qui a déjà une analyse en attente n’est pas mis en file deux fois.",
+      "« Réanalyser toutes les bibliothèques » met en file une analyse de chaque dossier de bibliothèque. Un dossier qui a déjà une analyse en attente n’est pas mis en file deux fois.",
     jobWhenQueued: "En file {when}",
     jobWhenStarted: "Démarré {when}",
     jobWhenFinished: "Terminé {when}",
@@ -147,7 +147,7 @@ export const consoleOperationsJobsStrings = {
     jobKindDescDatabaseBackup: "Schreibt eine Sicherung der Server-Datenbanken.",
     jobKindDescArtworkSweep: "Ergänzt fehlende Poster und Artworks in deinen Bibliotheken.",
     jobKindDescAssetSweep:
-      "Erzeugt fehlende generierte Assets wie Vorschaubilder und Vorschauen, wenn der Governor es zulässt.",
+      "Erstellt fehlende Vorschaubilder, Vorschauen und andere Bilder, wenn der Server freie Kapazität hat.",
     jobKindDescDecodeVerify:
       "Prüft stichprobenartig Mediendateien darauf, ob sie sich noch fehlerfrei decodieren lassen.",
     jobKindDescSkipDetectSweep:
@@ -169,7 +169,7 @@ export const consoleOperationsJobsStrings = {
     jobTargetBackfill: "Metadaten-Aktualisierung",
     jobTargetAllLibraries: "Alle Bibliotheken",
     jobQueueScanHelp:
-      "„Jetzt scannen“ reiht einen Scan für jeden Bibliotheksordner ein. Ein Ordner, für den bereits ein Scan wartet, wird nicht doppelt eingereiht.",
+      "„Alle Bibliotheken erneut scannen“ reiht einen Scan für jeden Bibliotheksordner ein. Ein Ordner, für den bereits ein Scan wartet, wird nicht doppelt eingereiht.",
     jobWhenQueued: "Eingereiht {when}",
     jobWhenStarted: "Gestartet {when}",
     jobWhenFinished: "Beendet {when}",
@@ -210,7 +210,7 @@ export const consoleOperationsJobsStrings = {
     jobKindDescDatabaseBackup: "Escribe una copia de seguridad de las bases de datos del servidor.",
     jobKindDescArtworkSweep: "Completa los pósteres e ilustraciones que faltan en tus bibliotecas.",
     jobKindDescAssetSweep:
-      "Genera los recursos generados que faltan, como miniaturas y vistas previas, cuando el gobernador lo permite.",
+      "Crea las miniaturas, vistas previas y otras imágenes que faltan cuando el servidor tiene capacidad libre.",
     jobKindDescDecodeVerify:
       "Toma muestras de archivos multimedia y comprueba que aún se decodifican correctamente.",
     jobKindDescSkipDetectSweep:
@@ -233,7 +233,7 @@ export const consoleOperationsJobsStrings = {
     jobTargetBackfill: "Actualización de metadatos",
     jobTargetAllLibraries: "Todas las bibliotecas",
     jobQueueScanHelp:
-      "«Analizar ahora» pone en cola un análisis de cada carpeta de biblioteca. Una carpeta que ya tiene un análisis en espera no se pone en cola dos veces.",
+      "«Volver a analizar todas las bibliotecas» pone en cola un análisis de cada carpeta de biblioteca. Una carpeta que ya tiene un análisis en espera no se pone en cola dos veces.",
     jobWhenQueued: "En cola {when}",
     jobWhenStarted: "Iniciado {when}",
     jobWhenFinished: "Terminado {when}",
@@ -272,7 +272,7 @@ export const consoleOperationsJobsStrings = {
     jobKindDescDatabaseBackup: "Grava um backup dos bancos de dados do servidor.",
     jobKindDescArtworkSweep: "Preenche pôsteres e artes que faltam nas suas bibliotecas.",
     jobKindDescAssetSweep:
-      "Gera os ativos gerados que faltam, como miniaturas e prévias, quando o governador permite.",
+      "Cria as miniaturas, prévias e outras imagens que faltam quando o servidor tem capacidade livre.",
     jobKindDescDecodeVerify:
       "Analisa amostras de arquivos de mídia e confere se ainda são decodificados sem erros.",
     jobKindDescSkipDetectSweep:
@@ -294,7 +294,7 @@ export const consoleOperationsJobsStrings = {
     jobTargetBackfill: "Atualização de metadados",
     jobTargetAllLibraries: "Todas as bibliotecas",
     jobQueueScanHelp:
-      "“Verificar agora” coloca na fila uma verificação de cada pasta de biblioteca. Uma pasta que já tem uma verificação aguardando não entra na fila duas vezes.",
+      "“Verificar todas as bibliotecas novamente” coloca na fila uma verificação de cada pasta de biblioteca. Uma pasta que já tem uma verificação aguardando não entra na fila duas vezes.",
     jobWhenQueued: "Na fila {when}",
     jobWhenStarted: "Iniciado {when}",
     jobWhenFinished: "Concluído {when}",

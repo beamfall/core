@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   jobEventDetail,
+  jobEventLabel,
   jobKindDescription,
   jobKindLabel,
+  jobProgressCount,
   jobProgressDetail,
   jobProgressMessageLabel,
+  jobProgressRead,
   jobStatusLabel,
   jobTargetDetail,
 } from "./jobDisplay";
@@ -22,7 +25,7 @@ const labels = {
   jobKindMigration: "Migration",
   jobStatusQueued: "Queued",
   jobStatusRunning: "Running",
-  jobStatusYielded: "Yielded",
+  jobStatusYielded: "Paused",
   jobStatusCompleted: "Completed",
   jobStatusFailed: "Failed",
   jobStatusCanceled: "Canceled",
@@ -38,6 +41,10 @@ const labels = {
   jobProgressMessageVerifyingDecodeIntegrity: "Verifying decode integrity",
   jobProgressMessageDetectingSkipSegments: "Detecting skip segments",
   jobProgressMessageMigrationMatched: "{matched} of {total} items matched",
+  jobEventProgress: "Progress",
+  jobEventScanSummary: "Scan summary",
+  jobEventScanRootUnavailable: "Folder unavailable",
+  jobProgressOfTotal: "{current} of {total}",
 };
 
 describe("job display labels", () => {
@@ -71,7 +78,7 @@ describe("job display labels", () => {
       ["queued", "running", "yielded", "completed", "failed", "canceled"].map((status) =>
         jobStatusLabel(status, labels),
       ),
-    ).toEqual(["Queued", "Running", "Yielded", "Completed", "Failed", "Canceled"]);
+    ).toEqual(["Queued", "Running", "Paused", "Completed", "Failed", "Canceled"]);
   });
 
   it("keeps unknown closed-vocabulary values deterministic without slug punctuation", () => {
@@ -163,5 +170,38 @@ describe("job purpose and target", () => {
 
   it("humanizes dotted kinds it has no label for", () => {
     expect(jobKindLabel("plugin.thing-run", labels)).toBe("Plugin thing run");
+  });
+
+  it("counts work with no known total instead of reading N/0 (CORE-2352)", () => {
+    expect(jobProgressCount({ current: 2055, total: 0, unit: "items" }, labels)).toBe("2055 items");
+    expect(
+      jobProgressCount({ current: 3, total: 5, unit: "files", message: "Scanning" }, labels),
+    ).toBe("3/5 files - Scanning");
+    expect(jobProgressCount({ current: 0, total: 0, unit: "items" }, labels)).toBe("");
+  });
+
+  it("reads job progress as words with grouped counts (CORE-2352)", () => {
+    expect(
+      jobProgressRead(
+        { current: 117, total: 502, unit: "files", message: "Scanning" },
+        labels,
+        "en",
+      ),
+    ).toBe("117 of 502 files · Scanning");
+    expect(jobProgressRead({ current: 2055, total: 0, unit: "files" }, labels, "en")).toBe(
+      "2,055 files",
+    );
+    expect(jobProgressRead({ current: 1500, total: 2000, unit: "" }, labels, "de")).toBe(
+      "1.500 of 2.000",
+    );
+    expect(jobProgressRead({ current: 0, total: 0, unit: "files" }, labels, "en")).toBe("");
+  });
+
+  it("labels job log entry types (CORE-2352)", () => {
+    expect(jobEventLabel("progress", labels)).toBe("Progress");
+    expect(jobEventLabel("running", labels)).toBe("Running");
+    expect(jobEventLabel("scan-summary", labels)).toBe("Scan summary");
+    expect(jobEventLabel("scan-root-unavailable", labels)).toBe("Folder unavailable");
+    expect(jobEventLabel("custom_event", labels)).toBe("Custom event");
   });
 });

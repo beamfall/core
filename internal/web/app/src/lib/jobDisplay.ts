@@ -181,6 +181,54 @@ export function jobProgressDetail(job: Partial<JobInfo>, labels?: LabelSource): 
 }
 
 /**
+ * A job's progress read that also counts work with no known total: "42 files -
+ * Scanning", never "42/0". With a total it is the plain progress detail.
+ */
+export function jobProgressCount(progress: JobInfo["progress"], labels?: LabelSource): string {
+  const detail = jobProgressDetail({ progress }, labels);
+  if (progress.total > 0 || progress.current <= 0) return detail;
+  const unit = labels ? jobProgressUnitLabel(progress.unit, labels) : progress.unit;
+  const counted = unit ? `${progress.current} ${unit}` : String(progress.current);
+  return detail ? `${counted} - ${detail}` : counted;
+}
+
+/**
+ * A job's progress as the job queue shows it (CORE-2352): "117 of 502 files ·
+ * Scanning", or "2,055 items · Generating assets" for work with no known total,
+ * with counts in the display locale's digits.
+ */
+export function jobProgressRead(
+  progress: JobInfo["progress"],
+  labels: LabelSource,
+  locale?: string,
+): string {
+  const number = new Intl.NumberFormat(locale);
+  let count = "";
+  if (progress.total > 0) {
+    count = lookup(labels, "jobProgressOfTotal")
+      .replace("{current}", number.format(progress.current))
+      .replace("{total}", number.format(progress.total));
+  } else if (progress.current > 0) {
+    count = number.format(progress.current);
+  }
+  if (count && progress.unit) count += ` ${jobProgressUnitLabel(progress.unit, labels)}`;
+  const message = progress.message ? jobProgressMessageLabel(progress.message, labels) : "";
+  return [count, message].filter(Boolean).join(" · ");
+}
+
+const JOB_EVENT_LABELS: Record<string, StringKey> = {
+  progress: "jobEventProgress",
+  "scan-summary": "jobEventScanSummary",
+  "scan-root-unavailable": "jobEventScanRootUnavailable",
+};
+
+/** A job history entry's type as a label: its status name, or what it records. */
+export function jobEventLabel(type: string, labels: LabelSource): string {
+  const key = JOB_EVENT_LABELS[type];
+  return key ? lookup(labels, key) : jobStatusLabel(type, labels);
+}
+
+/**
  * What one job history entry says, for the job log. A progress entry reads as
  * the job's own progress line ("120/340 files - Scanning"); an entry whose
  * payload only repeats its status says nothing more than its type, so it is
@@ -209,11 +257,7 @@ export function jobEventDetail(
       unit: text(payload.unit),
       message: text(payload.message),
     };
-    const detail = jobProgressDetail({ progress }, labels);
-    if (progress.total > 0 || progress.current === 0) return detail;
-    const unit = labels ? jobProgressUnitLabel(progress.unit, labels) : progress.unit;
-    const counted = unit ? `${progress.current} ${unit}` : String(progress.current);
-    return detail ? `${counted} - ${detail}` : counted;
+    return jobProgressCount(progress, labels);
   }
   if (payload.status === event.type && keys.every((key) => key === "status" || key === "reason")) {
     return typeof payload.reason === "string" ? payload.reason : "";

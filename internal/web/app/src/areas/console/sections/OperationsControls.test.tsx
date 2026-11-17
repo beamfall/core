@@ -339,7 +339,7 @@ describe("OperationsControls", () => {
 
     await user.click(screen.getByRole("button", { name: "Logs" }));
 
-    expect(await screen.findByText("started")).toBeVisible();
+    expect(await screen.findByText("Started")).toBeVisible();
     expect(screen.getByText("worker=w2")).toBeVisible();
     expect(screen.getByText("7/10 files - Scanning")).toBeVisible();
     expect(fetchJobEvents).toHaveBeenCalledWith("job-1", expect.any(AbortSignal));
@@ -383,8 +383,8 @@ describe("OperationsControls", () => {
     // live-log path must refresh jobEvents and render only the redacted stream.
     driveEventStream({ type: "job.failed", target: restrictedName });
 
-    expect(await screen.findByText("failed")).toBeVisible();
-    expect(screen.getByText("restricted")).toBeVisible();
+    expect(await screen.findByText("Failed")).toBeVisible();
+    expect(screen.getByText("Restricted")).toBeVisible();
     expect(screen.getByText("(redacted)")).toBeVisible();
     expect(screen.getByText(/\[REDACTED\]/)).toBeVisible();
     for (const leak of [restrictedName, token, host, streamID]) {
@@ -431,6 +431,226 @@ describe("OperationsControls", () => {
     expect(folded).toHaveLength(1);
     expect(folded[0]).toHaveTextContent("3 runs");
     expect(folded[0]).toHaveTextContent("Finished 10 minutes ago");
+  });
+
+  it("names the progress bar for job progress and draws it only for live work with a total (CORE-2352)", async () => {
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job(),
+      job({
+        id: "sweep",
+        kind: "asset-sweep",
+        progress: { current: 2055, total: 0, unit: "items", message: "Generating assets" },
+      }),
+      job({
+        id: "done",
+        kind: "artwork-sweep",
+        status: "completed",
+        finishedAt: new Date().toISOString(),
+      }),
+      job({
+        id: "bad",
+        kind: "decode-verify",
+        status: "failed",
+        finishedAt: new Date().toISOString(),
+      }),
+    ]);
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(4));
+
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(1);
+    expect(bars[0]).toHaveAccessibleName("Job progress");
+    expect(bars[0]).toHaveAttribute("aria-valuenow", "62");
+    expect(screen.queryByRole("progressbar", { name: "Quality" })).toBeNull();
+    expect(screen.getByText("2,055 items · Generating assets")).toBeVisible();
+    expect(container.textContent).not.toMatch(/\/0\b/);
+  });
+
+  it("shows readable, localized job log entries and folds progress runs (CORE-2352)", async () => {
+    const progress = (id: string, current: number, second: number) => ({
+      id,
+      jobID: "job-1",
+      occurredAt: `2026-06-20T00:00:${String(second).padStart(2, "0")}Z`,
+      type: "progress",
+      payload: `{"type":"progress","current":${current},"total":10,"unit":"files","message":"Scanning"}`,
+    });
+    vi.mocked(fetchJobEvents).mockResolvedValue([
+      {
+        id: "q",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:00Z",
+        type: "queued",
+        payload: '{"status":"queued"}',
+      },
+      {
+        id: "r",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:01Z",
+        type: "running",
+        payload: '{"status":"running"}',
+      },
+      progress("p1", 1, 2),
+      progress("p2", 2, 3),
+      progress("p3", 3, 4),
+      {
+        id: "y",
+        jobID: "job-1",
+        occurredAt: "2026-06-20T00:00:05Z",
+        type: "yielded",
+        payload: '{"status":"yielded","reason":"shutdown"}',
+      },
+      progress("p4", 4, 6),
+    ]);
+    const user = userEvent.setup();
+    const { container } = renderPanel();
+    await screen.findByText("Scan");
+    await user.click(screen.getByRole("button", { name: "Logs" }));
+
+    const log = await waitFor(() => {
+      const found = container.querySelector(".console-job-events");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    // Transitions stay; the run of three progress entries shows only its latest.
+    expect(within(log).getByText("Queued")).toBeVisible();
+    expect(within(log).getByText("Paused")).toBeVisible();
+    expect(within(log).getByText("shutdown")).toBeVisible();
+    expect(within(log).getAllByText("Progress")).toHaveLength(2);
+    expect(within(log).getByText("3/10 files - Scanning")).toBeVisible();
+    expect(within(log).queryByText("1/10 files - Scanning")).toBeNull();
+    expect(log.querySelector(".grid-cols-\\[10rem_8rem_1fr\\]")).toBeNull();
+    // Times are formatted, never the raw wire timestamp.
+    expect(log.textContent).not.toContain("2026-06-20T00:00");
+    const times = log.querySelectorAll("time");
+    expect(times[0]).toHaveAttribute("dateTime", "2026-06-20T00:00:00Z");
+    expect(times[0]).toHaveAttribute("title", "2026-06-20 00:00:00 UTC");
+
+    await user.click(within(log).getByRole("button", { name: "Show 2 hidden entries" }));
+    expect(within(log).getByText("1/10 files - Scanning")).toBeVisible();
+    expect(within(log).getAllByText("Progress")).toHaveLength(4);
+    await user.click(within(log).getByRole("button", { name: "Hide repeated entries" }));
+    expect(within(log).queryByText("1/10 files - Scanning")).toBeNull();
+  });
+
+  it("gives events compaction its own help text (CORE-2352)", async () => {
+    renderPanel();
+    await screen.findByLabelText("Events retention days");
+
+    expect(
+      screen.getAllByText(
+        "How many days to keep routine server events. Watch history and activity are never deleted here.",
+      ),
+    ).toHaveLength(1);
+    expect(
+      screen.getByText("Prunes disposable events.db rows older than the retention cutoff."),
+    ).toBeVisible();
+  });
+
+  it("moves a failure a newer run of the same folder superseded into history (CORE-2352)", async () => {
+    const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    const target = { libraryID: "lib-1", libraryTitle: "Misc", root: "/mnt/user/pn" };
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job({ id: "old", status: "failed", error: "walk failed", target, finishedAt: at(20) }),
+      job({ id: "new", status: "running", target, startedAt: at(5), updatedAt: at(1) }),
+    ]);
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(2));
+
+    const front = container.querySelectorAll(
+      ".console-job-list:not(.console-job-history *) > .console-job-row",
+    );
+    expect(front).toHaveLength(1);
+    expect(front[0]).toHaveTextContent("Running");
+    expect(container.querySelector(".console-job-history .console-job-row")).toHaveTextContent(
+      "Failed",
+    );
+  });
+
+  it("calls a yielded job paused and never counts its wall-clock time as running (CORE-2352)", async () => {
+    const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job({ status: "yielded", startedAt: at(3 * 24 * 60), updatedAt: at(1) }),
+    ]);
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(1));
+
+    const row = container.querySelector(".console-job-row") as HTMLElement;
+    expect(within(row).getByText("Paused")).toBeVisible();
+    expect(row.querySelector(".console-job-when")).toHaveTextContent(
+      "Started 3 days ago · paused, resumes automatically",
+    );
+    expect(row.textContent).not.toContain("running for");
+    expect(row.textContent).not.toContain("Yielded");
+  });
+
+  it("lays every job row out as head, progress, when, then folder (CORE-2352)", async () => {
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job({
+        progress: { current: 117, total: 502, unit: "files", message: "Scanning" },
+        startedAt: new Date(Date.now() - 60_000).toISOString(),
+        target: { libraryID: "lib-1", libraryTitle: "Misc", root: "/mnt/user/pn" },
+      }),
+    ]);
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(1));
+
+    const row = container.querySelector(".console-job-row") as HTMLElement;
+    expect(Array.from(row.children, (child) => child.className.split(" ")[0])).toEqual([
+      "console-job-head",
+      "console-job-progress",
+      "console-job-when",
+      "console-job-target",
+      "console-job-about",
+    ]);
+    const head = row.querySelector(".console-job-head") as HTMLElement;
+    expect(head).toHaveTextContent("Running");
+    expect(within(head).getByRole("button", { name: "Logs" })).toBeVisible();
+    const read = row.querySelector(".console-job-num") as HTMLElement;
+    expect(read).toHaveTextContent("117 of 502 files · Scanning");
+    expect(read).not.toHaveClass("console-mono");
+  });
+
+  it("folds repeated pause and resume cycles in the job log (CORE-2352)", async () => {
+    const entry = (id: string, type: string, second: number) => ({
+      id,
+      jobID: "job-1",
+      occurredAt: `2026-06-20T00:00:${String(second).padStart(2, "0")}Z`,
+      type,
+      payload: `{"status":"${type}"}`,
+    });
+    vi.mocked(fetchJobEvents).mockResolvedValue([
+      entry("r0", "running", 0),
+      entry("y1", "yielded", 1),
+      entry("r1", "running", 2),
+      entry("y2", "yielded", 3),
+      entry("r2", "running", 4),
+      entry("y3", "yielded", 5),
+      entry("r3", "running", 6),
+    ]);
+    const user = userEvent.setup();
+    const { container } = renderPanel();
+    await screen.findByText("Scan");
+    await user.click(screen.getByRole("button", { name: "Logs" }));
+
+    const log = await waitFor(() => {
+      const found = container.querySelector(".console-job-events");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(within(log).getByText("Paused and resumed 3 times")).toBeVisible();
+    expect(within(log).queryAllByText("Paused")).toHaveLength(0);
+    await user.click(within(log).getByRole("button", { name: "Show 5 hidden entries" }));
+    expect(within(log).getAllByText("Paused")).toHaveLength(3);
+    expect(within(log).queryByText("Paused and resumed 3 times")).toBeNull();
+  });
+
+  it("names the button the scan help talks about and draws one Background work heading (CORE-2352)", async () => {
+    renderPanel();
+    await screen.findByLabelText("Events retention days");
+
+    expect(screen.getByText(/^Rescan all libraries queues a scan/)).toBeVisible();
+    expect(screen.getAllByText("Background work")).toHaveLength(1);
+    expect(screen.getByRole("group", { name: "Background work" })).toBeVisible();
   });
 
   it("says nothing needs attention when only finished work is left", async () => {

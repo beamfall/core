@@ -759,9 +759,6 @@ a.console-step:hover {
   flex: 0 0 auto;
   margin-left: auto;
 }
-.console-job-row-ops {
-  flex-wrap: wrap;
-}
 .console-job-log {
   flex: 1 0 100%;
   margin-top: 8px;
@@ -809,32 +806,97 @@ a.console-step:hover {
   color: var(--text-secondary);
   margin-bottom: 8px;
 }
-/* On a phone the bar takes its own full-width line under the name and status,
- * so it stays legible instead of shrinking to a sliver. */
+/* Operations job rows (CORE-2352): every row stacks the same lines — name,
+ * status and actions; progress; when; the folder; the error; what the job
+ * does — so a row reads the same whatever its state, and a phone keeps the
+ * same few lines instead of wrapping each piece onto its own. */
+.console-job-row-ops {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 4px;
+}
+.console-job-row-ops > * {
+  flex: 0 0 auto;
+  margin: 0;
+}
+.console-job-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+.console-job-row-ops .console-job-name {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+}
+/* Progress reads in the UI font with tabular figures, so counts that tick
+ * over do not jitter; a bar comes first when the total is known. */
+.console-job-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.console-job-row-ops .console-job-num {
+  flex: 0 1 auto;
+  max-width: 60%;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.console-job-progress .console-job-num:only-child {
+  max-width: 100%;
+}
+.console-job-row-ops .console-job-target {
+  display: flex;
+  flex-wrap: wrap;
+}
+.console-job-row-ops .console-job-about {
+  display: block;
+}
+.console-job-row-ops > .console-job-log {
+  margin-top: 4px;
+}
+/* The inline job log (CORE-2352): one grid for every entry so the time and
+ * label columns line up, sized to their content rather than fixed widths. On a
+ * phone the detail drops to its own line under the time and label. */
+.console-job-events {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.375;
+}
+.console-job-event {
+  display: contents;
+}
+.console-job-event-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console-job-events-toggle {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
 @media (max-width: 639px) {
-  .console-job-row-ops .console-job-name {
-    flex: 1 1 auto;
-    width: auto;
-    min-width: 0;
+  .console-job-events {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 2px;
   }
-  .console-job-row-ops .console-jbar {
-    order: 1;
-    flex: 1 0 100%;
-    height: 6px;
+  .console-job-event-detail {
+    grid-column: 1 / -1;
+    margin-bottom: 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
-  .console-job-row-ops .console-job-num {
-    order: 2;
-    max-width: 100%;
-    text-align: left;
-  }
-  .console-job-row-ops .console-job-actions {
-    order: 2;
-  }
-  .console-job-row-ops .console-job-when,
-  .console-job-row-ops .console-job-error,
-  .console-job-row-ops .console-job-about,
-  .console-job-row-ops .console-job-log {
-    order: 3;
+  .console-job-event-detail:empty {
+    display: none;
   }
 }
 .console-job-help {

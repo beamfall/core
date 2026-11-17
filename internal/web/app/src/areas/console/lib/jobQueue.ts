@@ -52,17 +52,18 @@ function newestFirst(a: JobGroup, b: JobGroup): number {
 // Recurring jobs (polls, sweeps, evictions) leave one row per run; the queue
 // keeps live work and unresolved failures in front and folds the rest into one
 // row per kind. A failure that a later run of the same kind and folder
-// finished cleanly is history, not attention.
+// superseded (one that finished cleanly, or one queued, running or yielded
+// since, CORE-2352) is history, not attention.
 export function arrangeJobQueue(jobs: JobInfo[]): JobQueueView {
   const live = jobs
     .filter((job) => isLiveJob(job.status))
     .sort((a, b) => (LIVE_ORDER[a.status] ?? 3) - (LIVE_ORDER[b.status] ?? 3));
 
-  const lastClean = new Map<string, number>();
+  const superseded = new Map<string, number>();
   for (const job of jobs) {
-    if (job.status !== "completed") continue;
+    if (job.status !== "completed" && !isLiveJob(job.status)) continue;
     const key = targetKey(job);
-    lastClean.set(key, Math.max(lastClean.get(key) ?? 0, jobTime(job)));
+    superseded.set(key, Math.max(superseded.get(key) ?? 0, jobTime(job)));
   }
 
   const failures = new Map<string, JobGroup>();
@@ -70,7 +71,7 @@ export function arrangeJobQueue(jobs: JobInfo[]): JobQueueView {
   for (const job of jobs) {
     if (isLiveJob(job.status)) continue;
     const key = targetKey(job);
-    const unresolved = job.status === "failed" && jobTime(job) >= (lastClean.get(key) ?? 0);
+    const unresolved = job.status === "failed" && jobTime(job) >= (superseded.get(key) ?? 0);
     const groups = unresolved ? failures : kinds;
     const groupKey = unresolved ? key : job.kind;
     const group = groups.get(groupKey);
@@ -100,6 +101,79 @@ export function jobRunSeconds(job: JobInfo, now: number): number | null {
   const finished = isLiveJob(job.status) ? now : Date.parse(job.finishedAt ?? "");
   if (Number.isNaN(finished)) return null;
   return Math.max(0, Math.round((finished - started) / 1000));
+}
+
+/** One shown job log line, standing in for `folded` earlier progress entries. */
+export interface JobLogLine<T> {
+  event: T;
+  /** How many entries this line stands for besides the ones shown. */
+  folded: number;
+  /** When over zero, the line summarises this many pause and resume cycles. */
+  pauses: number;
+}
+
+const PAUSE_CYCLE_TYPES = new Set(["yielded", "running", "progress"]);
+
+// A scan writes a progress entry per file, and a job the governor keeps
+// pausing writes a yielded and a running entry each time, so its log is
+// hundreds of them and the transitions that matter drown (CORE-2352). Each run
+// of consecutive progress entries collapses into its latest one, and a run of
+// two or more pause cycles collapses into one summary line followed by its
+// latest progress and its last transition.
+export function collapseJobLog<T extends { type: string }>(events: T[]): JobLogLine<T>[] {
+  const lines: JobLogLine<T>[] = [];
+  let i = 0;
+  while (i < events.length) {
+    const event = events[i];
+    if (event.type === "yielded") {
+      let end = i;
+      let pauses = 0;
+      while (end < events.length && PAUSE_CYCLE_TYPES.has(events[end].type)) {
+        if (events[end].type === "yielded") pauses++;
+        end++;
+      }
+      if (pauses >= 2) {
+        const run = events.slice(i, end);
+        const lastProgress = run.findLast((e) => e.type === "progress");
+        const lastTransition = run.findLast((e) => e.type !== "progress");
+        const kept = run.filter((e, n) => n > 0 && (e === lastProgress || e === lastTransition));
+        lines.push({ event, folded: run.length - kept.length, pauses });
+        for (const k of kept) lines.push({ event: k, folded: 0, pauses: 0 });
+        i = end;
+        continue;
+      }
+    }
+    const last = lines[lines.length - 1];
+    if (event.type === "progress" && last?.pauses === 0 && last.event.type === "progress") {
+      lines[lines.length - 1] = { event, folded: last.folded + 1, pauses: 0 };
+    } else {
+      lines.push({ event, folded: 0, pauses: 0 });
+    }
+    i++;
+  }
+  return lines;
+}
+
+/**
+ * When a job log entry happened, short and in the viewer's locale and zone: the
+ * time alone today, else the date and time. "" when it is not a date.
+ */
+export function formatJobEventTime(
+  occurredAt: string,
+  now: Date,
+  locale: string,
+  timeZone?: string,
+): string {
+  const at = new Date(occurredAt);
+  if (Number.isNaN(at.getTime())) return "";
+  const day = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone });
+  const today = day.format(at) === day.format(now);
+  return new Intl.DateTimeFormat(
+    locale,
+    today
+      ? { timeStyle: "medium", timeZone }
+      : { dateStyle: "short", timeStyle: "short", timeZone },
+  ).format(at);
 }
 
 const jobLogSecretPatterns = [
