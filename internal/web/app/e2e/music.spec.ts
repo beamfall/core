@@ -8,6 +8,10 @@ import {
 import { collectFatalErrors, harnessState } from "./lib/spec";
 import { expect, test } from "./lib/test";
 
+// The audio stage cross-fades its title: the outgoing layer stays mounted (data-state="out")
+// for a moment after a track change, so match only the layer that is coming in.
+const AUDIO_TITLE = '.bf-audio-meta-layer[data-state="in"] .bf-audio-title';
+
 // MUSIC (CORE-1640): real audio playback in the browser. A Music-plugin Library of
 // generated, tagged tracks is scanned into the self-booted server, then the viewer
 // plays them with no network mocks: the media element runs, the audio stage and
@@ -71,7 +75,7 @@ test("plays an album and advances to its next track (CORE-1640)", async ({ page 
   const [first, second] = library.tracks;
   await playAlbumFromTrackOne(page);
 
-  await expect(page.locator(".bf-audio-title")).toHaveText(first.title);
+  await expect(page.locator(AUDIO_TITLE)).toHaveText(first.title);
   await expectPlaying(page);
   const started = (await mediaState(page))?.currentTime ?? 0;
   await expectPlaying(page, started);
@@ -81,7 +85,7 @@ test("plays an album and advances to its next track (CORE-1640)", async ({ page 
 
   // The track ends after TEST_ALBUM.seconds; the queue moves on without a click.
   await expect(page).toHaveURL(new RegExp(`/web/watch/${second.id}$`), { timeout: 15_000 });
-  await expect(page.locator(".bf-audio-title")).toHaveText(second.title);
+  await expect(page.locator(AUDIO_TITLE)).toHaveText(second.title);
   await expectPlaying(page);
   await expect
     .poll(() => sessionMetadata(page))
@@ -92,7 +96,7 @@ test("plays an album and advances to its next track (CORE-1640)", async ({ page 
 test("elapsed clock advances (CORE-1491)", async ({ page }) => {
   test.setTimeout(60_000);
   await playAlbumFromTrackOne(page);
-  await expect(page.locator(".bf-audio-title")).toHaveText(library.tracks[0].title);
+  await expect(page.locator(AUDIO_TITLE)).toHaveText(library.tracks[0].title);
   await expectPlaying(page);
   await expect(page.locator(".bf-time.is-start")).not.toHaveText("0:00", { timeout: 10_000 });
 });
@@ -118,7 +122,7 @@ test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ 
   const title = titles.find((candidate) => label.includes(candidate));
   await card.click();
   await page.locator(".bf-detail-play").click();
-  await expect(page.locator(".bf-audio-title")).toHaveText(title ?? "");
+  await expect(page.locator(AUDIO_TITLE)).toHaveText(title ?? "");
   await expectPlaying(page);
   await expect(page.locator(".bf-audio-position")).toHaveText(new RegExp(` of ${titles.length}$`), {
     timeout: 5_000,
