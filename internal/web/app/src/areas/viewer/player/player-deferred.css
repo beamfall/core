@@ -776,9 +776,15 @@
 /* --- Idle auto-hide: the transport + top bar fade out while playing. The Up
    Next card is deliberately NOT in this set: it must stay opaque and clickable
    while its countdown runs, or an idle viewer can neither see nor dismiss it. --- */
-.bf-player-stage.is-chrome-hidden .bf-transport,
-.bf-player-stage.is-chrome-hidden .bf-transport * {
-  pointer-events: none;
+/* Touch keeps "first tap reveals": a hidden control is not tappable. A mouse
+   or pen clicking where a control sits (the pointer parked over Settings while
+   the chrome faded) must reach that control on the first click, so hidden
+   controls stay hit-testable for fine pointers (CORE-2322). */
+@media not all and (pointer: fine) {
+  .bf-player-stage.is-chrome-hidden .bf-transport,
+  .bf-player-stage.is-chrome-hidden .bf-transport * {
+    pointer-events: none;
+  }
 }
 
 .bf-player-stage.is-chrome-hidden .bf-transport {

@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, ChevronLeft, LayoutGrid, List, Play, Shuffle, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +13,12 @@ import {
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
 import { LibraryLetterRail, letterRailOwner } from "../components/LibraryLetterRail";
 import { MediaItemCard } from "../components/MediaItemCard";
-import { RevealControls } from "../components/RevealControls";
 import {
   useVirtualGrid,
   VIRTUAL_GRID_MIN_ITEMS,
@@ -88,6 +88,7 @@ const LETTER_RAIL_MIN_ITEMS = 60;
 export function LibraryBrowsePage() {
   const t = useT();
   const { nodeId } = useParams();
+  const location = useLocation();
   const { manifest, loading } = useSession();
 
   if (loading && !manifest) {
@@ -97,11 +98,18 @@ export function LibraryBrowsePage() {
       </AppShell>
     );
   }
-  const node = (manifest?.navigation || []).find(
-    (entry) => entry.view === "layout" && entry.id === nodeId,
+  const node = findNodeBySlug(
+    (manifest?.navigation || []).filter((entry) => entry.view === "layout"),
+    nodeId,
   );
   if (!node?.libraryID) {
-    return <Navigate to={node ? `/n/${encodeURIComponent(node.id)}` : "/"} replace />;
+    return <Navigate to={node ? nodePath(node.id) : "/"} replace />;
+  }
+  // An old link names the node by its raw ID (CORE-2322).
+  if (nodeId !== nodeSlug(node.id)) {
+    return (
+      <Navigate to={{ pathname: nodePath(node.id, "/all"), search: location.search }} replace />
+    );
   }
   return (
     <LibraryBrowse
@@ -468,21 +476,14 @@ function LibraryBrowse({
   }
 
   return (
-    <AppShell
-      actions={
-        <>
-          <ViewerActions />
-          <RevealControls />
-        </>
-      }
-    >
+    <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
         <div className="flex flex-col items-start gap-1">
           <Button
             variant="ghost"
             size="sm"
             className="-ml-2"
-            onClick={() => navigate(`/n/${encodeURIComponent(nodeID)}`)}
+            onClick={() => navigate(nodePath(nodeID))}
           >
             <ChevronLeft aria-hidden />
             {t("back")}

@@ -5,7 +5,9 @@ import { ServerActivity } from "@/components/beamfall/ServerActivity";
 import { Dialog as DialogPrimitive } from "@/components/ui/astryx-primitives";
 import { Badge } from "@/components/ui/badge";
 import { getBeamfallHost } from "@/lib/beamfallHost";
+import { useHeadingDocumentTitle } from "@/lib/documentTitle";
 import { useT } from "@/lib/i18n";
+import { findNodeBySlug } from "@/lib/nodePath";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
@@ -89,6 +91,8 @@ export function AppShell({
   // Profile kind is the eligibility the client can see, so the link follows it
   // and an owner on a viewer-role Device still gets a way in.
   const canOpenConsole = session?.profile === "adult";
+  // The tab names the page the shell is showing (CORE-2322).
+  useHeadingDocumentTitle(MAIN_CONTENT_ID, t("brand"));
 
   // The phone drawer is a modal dialog: the dialog primitive moves focus in,
   // traps it, closes on Escape or a press outside, and hands focus back to the
@@ -115,7 +119,10 @@ export function AppShell({
   // Home ("/") is the aggregate first layout node; "/n/:id" binds the named one.
   const activeNodeId = (() => {
     const match = location.pathname.match(/^\/n\/([^/]+)/);
-    if (match) return decodeURIComponent(match[1]);
+    if (match) {
+      const segment = decodeURIComponent(match[1]);
+      return findNodeBySlug(manifest?.navigation || [], segment)?.id ?? segment;
+    }
     if (location.pathname === "/") {
       const first = (manifest?.navigation || []).find((n) => n.view === "layout");
       return first?.id ?? "";

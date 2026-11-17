@@ -485,7 +485,7 @@ describe("MediaItemCard accessible name", () => {
       engagement: { totalCount: 8, remainingCount: 3 },
     });
     expect(screen.getByRole("button", { name: "Alpha, 3 unplayed" })).toBeInTheDocument();
-    expect(container.querySelector(".bf-card-badge")).toHaveTextContent("3");
+    expect(container.querySelector(".bf-card-badge")).toHaveTextContent(/^3 unplayed$/);
   });
 
   it("never leaves a card button without an accessible name", () => {

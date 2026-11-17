@@ -85,11 +85,14 @@ describe("AppShell host chrome suppression", () => {
     sessionState.signedIn = true;
     renderShell();
     expect(screen.getByRole("link", { name: "Console" })).toHaveAttribute("href", "/console");
-    expect(screen.queryByRole("link", { name: "Manage" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage libraries" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Account menu for Owner" }));
 
-    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/manage");
+    expect(screen.getByRole("link", { name: "Manage libraries" })).toHaveAttribute(
+      "href",
+      "/manage",
+    );
     expect(screen.getByRole("link", { name: "My Data" })).toHaveAttribute("href", "/mydata");
     expect(screen.getByRole("link", { name: "Profile settings" })).toHaveAttribute(
       "href",
@@ -100,7 +103,7 @@ describe("AppShell host chrome suppression", () => {
     );
 
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("link", { name: "Manage" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage libraries" })).toBeNull();
     expect(screen.getByRole("button", { name: "Account menu for Owner" })).toHaveFocus();
   });
 
@@ -114,8 +117,11 @@ describe("AppShell host chrome suppression", () => {
 
     await user.click(screen.getByRole("button", { name: "Account menu for Owner" }));
 
-    expect(screen.getAllByRole("link", { name: "Console" })).toHaveLength(2);
-    expect(screen.queryByRole("link", { name: "Manage" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Server console" })).toHaveAttribute(
+      "href",
+      "/console",
+    );
+    expect(screen.queryByRole("link", { name: "Manage libraries" })).toBeNull();
     expect(screen.queryByText("MANAGER")).toBeNull();
   });
 
@@ -130,7 +136,10 @@ describe("AppShell host chrome suppression", () => {
     await user.click(screen.getByRole("button", { name: "Account menu for Owner" }));
 
     expect(screen.queryByRole("link", { name: "Console" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Manage" })).toHaveAttribute("href", "/manage");
+    expect(screen.getByRole("link", { name: "Manage libraries" })).toHaveAttribute(
+      "href",
+      "/manage",
+    );
   });
 
   it("shows running jobs in the header activity link for managers", async () => {

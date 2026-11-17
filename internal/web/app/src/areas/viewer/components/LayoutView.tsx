@@ -25,6 +25,7 @@ export function LayoutView({
   entityID = "",
   buildSeeAll,
   navigationID,
+  onEmptyChange,
 }: {
   layout: Layout | null;
   libraryID: string;
@@ -34,6 +35,8 @@ export function LayoutView({
   buildSeeAll?: (section: Section) => SeeAllTarget | undefined;
   /** Stable navigation identity for initial focus and Reveal/relock restore. */
   navigationID?: string;
+  /** Told whether the Layout settled with nothing to show (not a load failure). */
+  onEmptyChange?: (empty: boolean) => void;
 }) {
   const t = useT();
   const { manifest, isManager, refresh } = useSession();
@@ -83,6 +86,11 @@ export function LayoutView({
   // a load failure, not an empty library (no owner "first scan" CTA).
   const aggregateFailed =
     aggregateEmpty && hydratable.some((section) => hydrationStates[section.id] === "failed");
+
+  const settledEmpty = aggregateEmpty && !aggregateFailed;
+  useEffect(() => {
+    onEmptyChange?.(settledEmpty);
+  }, [onEmptyChange, settledEmpty]);
 
   const updateHydrationState = useCallback(
     (sectionID: string, state: SectionHydrationState) => {

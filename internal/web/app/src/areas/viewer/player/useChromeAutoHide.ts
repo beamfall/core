@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 // The transport chrome auto-hide, ported from showChrome / hideChrome (app.js):
 // the controls fade out after a short idle while playback runs, and reveal on
-// any pointer move, key press, or focus entering the stage. Chrome never hides
+// any pointer move or press, key press, or focus entering the stage. Chrome never hides
 // while a menu/dialog is open (so an open audio menu can't vanish under the
 // pointer) and never while the video is paused (a paused player keeps its
 // controls). The hook is keyboard- and AT-safe: a focusin reveals chrome, so a
@@ -70,12 +70,17 @@ export function useChromeAutoHide({
       clearTimer();
     };
     stage.addEventListener("pointermove", onActivity);
+    // A click with no move before it (the pointer parked where a control sat
+    // when the chrome faded, or a tap) must also bring the chrome back
+    // (CORE-2322); capture runs it before the control's own handler.
+    stage.addEventListener("pointerdown", onActivity, true);
     stage.addEventListener("focusin", onActivity);
     window.addEventListener("keydown", onActivity);
     video.addEventListener("play", onActivity);
     video.addEventListener("pause", onPause);
     return () => {
       stage.removeEventListener("pointermove", onActivity);
+      stage.removeEventListener("pointerdown", onActivity, true);
       stage.removeEventListener("focusin", onActivity);
       window.removeEventListener("keydown", onActivity);
       video.removeEventListener("play", onActivity);

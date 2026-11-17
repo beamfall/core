@@ -1,4 +1,4 @@
-import { Play } from "lucide-react";
+import { ArrowLeft, Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -243,6 +243,13 @@ export function EntityPage() {
     navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
   }
 
+  // The same way back the media detail page offers (CORE-2322).
+  function goBack() {
+    // "default" is the entry the app was loaded on: nothing in-app to return to.
+    if (location.key !== "default") navigate(-1);
+    else navigate("/");
+  }
+
   function buildSeeAll(section: Section): SeeAllTarget {
     return seeAllTargetFor({
       section,
@@ -254,6 +261,10 @@ export function EntityPage() {
 
   return (
     <AppShell actions={<ViewerActions />}>
+      <button type="button" className="bf-detail-back" onClick={goBack}>
+        <ArrowLeft aria-hidden />
+        {t("back")}
+      </button>
       {loading && !entity && !previewTitle && (
         <div aria-hidden className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">

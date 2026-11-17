@@ -260,6 +260,7 @@ export function MediaItemCard({
           <CardStateOverlay
             finished={state.finished}
             remainingCount={state.remainingCount}
+            remainingLabel={state.label}
             progressPercent={state.progressPercent}
           />
           {/* The pill names what activating the card does, so it shows only when that plays. */}
@@ -293,10 +294,13 @@ export function MediaItemCard({
 function CardStateOverlay({
   finished,
   remainingCount,
+  remainingLabel,
   progressPercent,
 }: {
   finished: boolean;
   remainingCount?: number;
+  /** The count in words ("3 unplayed"): a bare number says nothing (CORE-2322). */
+  remainingLabel?: string;
   progressPercent?: number;
 }) {
   return (
@@ -308,7 +312,7 @@ function CardStateOverlay({
       )}
       {remainingCount !== undefined && (
         <span aria-hidden="true" className="bf-card-badge">
-          {remainingCount}
+          {remainingLabel || remainingCount}
         </span>
       )}
       {progressPercent !== undefined && (

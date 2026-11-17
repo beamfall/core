@@ -2651,8 +2651,12 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar {
   transition: opacity 320ms var(--ease-standard);
 }
 
-main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
-  pointer-events: none;
+/* Same rule as the hidden transport: only touch loses the hidden bar's
+   controls; a mouse click on one acts on the first click (CORE-2322). */
+@media not all and (pointer: fine) {
+  main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar > * {
+    pointer-events: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

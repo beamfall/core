@@ -12,7 +12,7 @@ import {
   joinWatchParty,
   type WatchPartyState,
 } from "../player/watchPartyStore";
-import { NotificationsPage } from "./NotificationsPage";
+import { NOTIFICATION_INBOX_POLL_MS, NotificationsPage } from "./NotificationsPage";
 
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -134,6 +134,24 @@ describe("NotificationsPage", () => {
     await waitFor(() => {
       expect(fetchNotifications).toHaveBeenCalledTimes(2);
     });
+  });
+
+  // The server sends no event for a new notification, so an open inbox reads
+  // it again on a timer while it is visible (CORE-2322).
+  it("shows a notification that arrives while the inbox is open", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      renderNotificationsPage();
+      await screen.findByText("More time requested");
+      vi.mocked(fetchNotifications).mockResolvedValue([inviteNotification, unreadNotification]);
+
+      vi.advanceTimersByTime(NOTIFICATION_INBOX_POLL_MS);
+
+      expect(await screen.findByText("Join the party")).toBeVisible();
+      expect(screen.getByText("2 unread")).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("offers Join only on a Watch Party invite", async () => {

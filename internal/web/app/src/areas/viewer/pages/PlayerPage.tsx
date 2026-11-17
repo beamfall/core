@@ -5,6 +5,7 @@ import { MAIN_CONTENT_ID, SkipLink } from "@/components/chrome/SkipLink";
 import { Button } from "@/components/ui/button";
 import { getIdentityEpochSignal } from "@/lib/api";
 import { displayString } from "@/lib/display";
+import { useDocumentTitle } from "@/lib/documentTitle";
 import {
   fetchClientPrefs,
   fetchMedia,
@@ -200,6 +201,8 @@ function FeaturePlayer({
   const navState = readPlayerNavState(entry.state, identity);
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
+  // Docked, the browse page under the mini player names the tab (CORE-2322).
+  useDocumentTitle(docked ? null : navTitle, t("brand"));
   const startAtSeconds = parseTimestampParam(new URLSearchParams(entry.search).get("t"));
   // Media classes playback-info has reported (this item's and its declared
   // next item's), by Media id (CORE-1490).
