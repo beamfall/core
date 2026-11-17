@@ -2,13 +2,16 @@ import { Activity, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useAnyRescanActive } from "@/components/beamfall/LibraryRescan";
-import { fetchJobs } from "@/lib/graphql";
+import { fetchAdminSession, fetchJobs } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 
 // Header activity link for managers (CORE-1131): one click from any page to
 // the job queue, with a live count while jobs run. The jobs read needs an Admin
 // Session, so while the Console is locked the count is unknown (null), never a
-// claimed zero; unlocking it brings the count back on the next poll.
+// claimed zero; unlocking it brings the count back on the next poll. Without a
+// known-active Admin Session the poll asks only for the session's standing (a
+// plain session read) and skips the jobs read the server would refuse
+// (CORE-2318); a known session is trusted until its expiry or a refused read.
 //
 // The jobs read returns the whole job history (the wire has no status filter,
 // limit or running count), and this header sits on every page, so the read is
@@ -30,6 +33,19 @@ export function ServerActivity() {
     let cancelled = false;
     let timer: number | undefined;
     let reading = false;
+    // Epoch ms until which the Admin Session is known active; 0 when unknown.
+    let adminUntil = 0;
+    async function adminActive(): Promise<boolean> {
+      if (Date.now() < adminUntil) return true;
+      const session = await fetchAdminSession();
+      const expires = session.expiresAt ? Date.parse(session.expiresAt) : Number.NaN;
+      adminUntil = session.active
+        ? Number.isNaN(expires)
+          ? Date.now() + IDLE_POLL_MS
+          : expires
+        : 0;
+      return session.active;
+    }
     async function refresh() {
       window.clearTimeout(timer);
       // A hidden tab reads nothing and schedules nothing; becoming visible
@@ -38,12 +54,15 @@ export function ServerActivity() {
       reading = true;
       let count: number | null = null;
       try {
-        // A refusal here is expected while the Console is locked; it must not
-        // open the Manage area's in-place unlock over the page (CORE-1197).
-        const jobs = await fetchJobs(undefined, { adminUnlock: false });
-        count = jobs.filter((job) => job.status === "running").length;
+        if (await adminActive()) {
+          // A refusal stays possible (the session ended early); it must not
+          // open the Manage area's in-place unlock over the page (CORE-1197).
+          const jobs = await fetchJobs(undefined, { adminUnlock: false });
+          count = jobs.filter((job) => job.status === "running").length;
+        }
       } catch {
-        // unknown: the read was refused or failed
+        // unknown: the read was refused or failed; ask for the session again
+        adminUntil = 0;
       }
       reading = false;
       if (cancelled) return;

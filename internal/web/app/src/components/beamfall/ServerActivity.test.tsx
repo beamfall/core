@@ -2,12 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchJobs } from "@/lib/graphql";
+import { fetchAdminSession, fetchJobs } from "@/lib/graphql";
 import type { JobInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { ServerActivity } from "./ServerActivity";
 
-vi.mock("@/lib/graphql", () => ({ fetchJobs: vi.fn() }));
+vi.mock("@/lib/graphql", () => ({ fetchAdminSession: vi.fn(), fetchJobs: vi.fn() }));
 
 const rescan = vi.hoisted(() => ({ active: false }));
 vi.mock("@/components/beamfall/LibraryRescan", () => ({
@@ -60,6 +60,9 @@ beforeEach(() => {
     get: () => visibility,
   });
   vi.mocked(fetchJobs).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchAdminSession)
+    .mockReset()
+    .mockResolvedValue({ active: true, expiresAt: "2999-01-01T00:00:00Z" });
 });
 
 afterEach(() => {
@@ -136,6 +139,37 @@ describe("ServerActivity", () => {
     expect(fetchJobs).toHaveBeenCalledTimes(2);
 
     await advance(5000);
+    expect(fetchJobs).toHaveBeenCalledTimes(3);
+  });
+
+  // CORE-2318: without an Admin Session the header must not ask for jobs the
+  // server refuses; it reads only the session's standing at the slow cadence.
+  it("reads no jobs while the Admin Session is inactive", async () => {
+    vi.mocked(fetchAdminSession).mockResolvedValue({ active: false });
+    renderActivity();
+    await advance(0);
+    expect(fetchAdminSession).toHaveBeenCalledTimes(1);
+    expect(fetchJobs).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
+
+    await advance(30000);
+    expect(fetchAdminSession).toHaveBeenCalledTimes(2);
+    expect(fetchJobs).not.toHaveBeenCalled();
+  });
+
+  it("trusts a known Admin Session until a jobs read is refused", async () => {
+    renderActivity();
+    await advance(0);
+    await advance(30000);
+    expect(fetchAdminSession).toHaveBeenCalledTimes(1);
+    expect(fetchJobs).toHaveBeenCalledTimes(2);
+
+    vi.mocked(fetchJobs).mockRejectedValueOnce(new Error("admin session required"));
+    vi.mocked(fetchAdminSession).mockResolvedValue({ active: false });
+    await advance(30000);
+    expect(fetchJobs).toHaveBeenCalledTimes(3);
+    await advance(30000);
+    expect(fetchAdminSession).toHaveBeenCalledTimes(2);
     expect(fetchJobs).toHaveBeenCalledTimes(3);
   });
 });
