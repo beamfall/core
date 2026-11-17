@@ -144,6 +144,63 @@ func TestReconcileSchedules(t *testing.T) {
 	}
 }
 
+// TestReconcileSeedsDefaultDisabledScheduleDisabled pins CORE-2326: a
+// DefaultDisabled Schedule is seeded disabled, no Reconcile (repeat, orphan,
+// re-register) ever enables it, and it fires only after the operator does.
+func TestReconcileSeedsDefaultDisabledScheduleDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	last := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	st := newMemoryStore()
+	spec := Spec{ID: "playback-precompute:library-local", JobKind: "playback.precompute", DefaultTrigger: Every(1, Hours), DefaultDisabled: true, BuildJobs: oneJob("playback.precompute")}
+	service := NewService(st)
+	service.Register(spec)
+	if err := service.Reconcile(ctx, last); err != nil {
+		t.Fatal(err)
+	}
+	if row := st.mustSchedule("playback-precompute:library-local"); row.Enabled || row.Orphaned {
+		t.Fatalf("seeded schedule = %#v, want disabled", row)
+	}
+	if err := service.Tick(ctx, last.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.enqueued) != 0 {
+		t.Fatalf("disabled schedule enqueued %d jobs", len(st.enqueued))
+	}
+
+	if err := service.Reconcile(ctx, last.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	service = NewService(st)
+	if err := service.Reconcile(ctx, last.Add(4*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	service.Register(spec)
+	if err := service.Reconcile(ctx, last.Add(5*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if row := st.mustSchedule("playback-precompute:library-local"); row.Enabled || row.Orphaned {
+		t.Fatalf("schedule after Reconcile/orphan/re-register = %#v, want disabled", row)
+	}
+
+	enabled := true
+	if _, err := st.UpdateSchedule(ctx, "playback-precompute:library-local", nil, &enabled); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Reconcile(ctx, last.Add(6*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if !st.mustSchedule("playback-precompute:library-local").Enabled {
+		t.Fatal("Reconcile reverted the operator's enable")
+	}
+	if err := service.Tick(ctx, last.Add(7*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.enqueued) != 1 {
+		t.Fatalf("enabled schedule enqueued %d jobs, want 1", len(st.enqueued))
+	}
+}
+
 func TestTickEnqueuesDueSchedulesOnce(t *testing.T) {
 	t.Parallel()
 	// feature:scheduler
