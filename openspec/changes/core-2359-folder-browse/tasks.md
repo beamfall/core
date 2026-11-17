@@ -1,0 +1,10 @@
+- [x] `internal/store`: `LibraryFolder` read on the Library browse's visibility; shared visibility helpers
+- [x] `internal/graph`: session-tier `libraryFolder` read, arguments, result type and registry rows
+- [x] Tests: store walk, nesting, trash, paging, out-of-root refusal; graph errors and session scope
+- [x] Conformance goldens regenerated (`make regen-wire-goldens`)
+- [x] Web: Folders view chip, folder list, breadcrumbs, Load more, error and empty states
+- [x] Web strings in en, fr, de, es and pt; `strings.test.ts` baselines re-recorded
+- [x] Vitest: roots, nested walk, breadcrumbs, keyboard, empty, retry, Grid and Folders switch
+- [ ] Publish the next wire contract version (landing owner)
+- [ ] `make gate`
+- [ ] `openspec archive core-2359-folder-browse` after landing

@@ -58,6 +58,7 @@ var resultTypes = map[string]any{
 	"trashedmarkers":         MarkerInfo{},
 	"sourceitems":            SourceItem{},
 	"libraryitems":           LibraryItemsResponse{},
+	"libraryfolder":          LibraryFolderResponse{},
 	"ambientqueue":           SourceItem{},
 	"currentsession":         SessionInfo{},
 	"profiles":               ProfileSummary{},

@@ -1296,6 +1296,99 @@
 }
 
 /* ============================================================ *
+ *  Library folder view (Viewer, CORE-2359) — breadcrumbs from the
+ *  Library root to the open folder, then one row per subfolder.
+ *  Rows stack in one column so a long folder name wraps at 375px.
+ * ============================================================ */
+
+[data-register="viewer"] .bf-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+[data-register="viewer"] .bf-crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-crumbs li + li::before {
+  content: "/";
+  color: var(--text-muted);
+}
+
+[data-register="viewer"] .bf-crumb {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  border-radius: var(--radius-field);
+}
+
+[data-register="viewer"] a.bf-crumb:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+[data-register="viewer"] .bf-crumb[aria-current="page"] {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+[data-register="viewer"] .bf-folder-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-folder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-field);
+  background: var(--control-bg);
+  color: var(--text-primary);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-folder:hover {
+  background: var(--control-bg-hover);
+}
+
+[data-register="viewer"] .bf-folder:focus-visible,
+[data-register="viewer"] a.bf-crumb:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-register="viewer"] .bf-folder-count {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* ============================================================ *
  *  Letter rail (Viewer, CORE-1685) — a sticky column of title
  *  initials beside a title-sorted Library grid (approved board:
  *  console-list-controls, A–Z jump rail). Letters with no titles

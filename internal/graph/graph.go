@@ -5332,6 +5332,7 @@ var queryFields = map[string]bool{
 	"metadatacredits":        true,
 	"sourceitems":            true,
 	"libraryitems":           true,
+	"libraryfolder":          true,
 	"ambientqueue":           true,
 	"currentsession":         true,
 	"profiles":               true,

@@ -163,6 +163,7 @@ var originalScopedFields = []string{
 	"jobs",
 	"libraries",
 	"libraryduplicategroups",
+	"libraryfolder", // CORE-2359: Library folder view read
 	"libraryhealth",
 	"libraryhealthitems",
 	"libraryindexstatus",

@@ -95,6 +95,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"Job":                                     {},
 	"Libraries":                               {},
 	"LibraryBrowse":                           {},
+	"LibraryFolder":                           {},
 	"LibraryHealthBulkItems":                  {},
 	"LibraryHealthCounts":                     {},
 	"LibraryHealthItems":                      {},
