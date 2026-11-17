@@ -152,6 +152,17 @@ func TestIsLocalArtworkSidecar(t *testing.T) {
 		"extrafanart/any.jpg":    true,
 		"posters/holiday.jpg":    false,
 		"season-specials-poster": false,
+		// Container artwork beyond the poster (CORE-2313).
+		"season01-banner.jpg":          true,
+		"Season03-Banner.JPG":          true,
+		"season02-fanart.png":          true,
+		"season01-landscape.jpg":       true,
+		"season10-thumb.webp":          true,
+		"season-specials-banner.jpg":   true,
+		"season-all-poster.jpg":        true,
+		"season-all-banner.jpg":        true,
+		"season1-banner.jpg":           false,
+		"season01-banner-extended.jpg": false,
 	}
 	for name, want := range cases {
 		if got := isLocalArtworkSidecar(filepath.Join(dir, filepath.FromSlash(name))); got != want {

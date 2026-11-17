@@ -1,0 +1,2 @@
+- [x] Add the container banner, fanart, landscape, thumb and `season-all` names to the vocabulary
+- [x] Recognition table test; the vocabulary fixture scan covers every new row
