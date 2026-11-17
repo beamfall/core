@@ -3092,8 +3092,8 @@ func (a *scanIdentifier) CredentialLabel(ref string) string {
 }
 
 // PluginMediaClasses reports the Media classes the active bundle declares, so
-// the scan keeps sidecar-named images as items in a Library whose Plugin holds
-// images as content (CORE-0043). An inactive or unknown Plugin declares none.
+// the scan picks the Library's image rule (CORE-0043, CORE-2361). An inactive
+// or unknown Plugin declares none, which keeps the default rule.
 func (a *scanIdentifier) PluginMediaClasses(pluginID string) []store.MediaClass {
 	bundle, ok := activeBundle(a.registry, pluginID)
 	if !ok {

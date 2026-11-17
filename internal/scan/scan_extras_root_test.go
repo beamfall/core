@@ -95,7 +95,7 @@ func TestEstimateCountsLibraryUnderExtrasFolder(t *testing.T) {
 	writeScanFile(t, root, "Synthetic Feature.mkv", []byte("video bytes"))
 	writeScanFile(t, root, "Trailers/Clip.mkv", []byte("an extra"))
 
-	est, err := EstimateRoots(context.Background(), []string{root}, false)
+	est, err := EstimateRoots(context.Background(), []string{root}, ImagesBesideMedia)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}

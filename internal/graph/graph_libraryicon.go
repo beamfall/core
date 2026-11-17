@@ -2,11 +2,11 @@ package graph
 
 import (
 	"context"
-	"slices"
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/plugin"
+	"github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -24,15 +24,23 @@ func (h *Handler) libraryMediaClasses(library store.Library) []string {
 	return bundle.MediaClasses
 }
 
-// pluginHoldsImages reports whether a registered plugin declares the image
-// Media class, so the scan preview and estimate count sidecar-named images the
-// scan imports as items (CORE-0043, CORE-2180).
-func (h *Handler) pluginHoldsImages(pluginID string) bool {
+// pluginImageRule returns the scan image rule for a registered plugin's
+// declared Media classes, so the scan preview and estimate count images
+// exactly as the scan imports them (CORE-0043, CORE-2180, CORE-2361). No
+// plugin, or an unregistered one, keeps the default rule.
+func (h *Handler) pluginImageRule(pluginID string) scan.ImageRule {
 	if pluginID == "" || h.plugins == nil {
-		return false
+		return scan.ImagesBesideMedia
 	}
 	bundle, ok := h.plugins.Bundle(plugin.ID(pluginID))
-	return ok && slices.Contains(bundle.MediaClasses, string(store.MediaClassImage))
+	if !ok {
+		return scan.ImagesBesideMedia
+	}
+	classes := make([]store.MediaClass, 0, len(bundle.MediaClasses))
+	for _, class := range bundle.MediaClasses {
+		classes = append(classes, store.MediaClass(class))
+	}
+	return scan.ImageRuleFor(classes)
 }
 
 // setLibraryIcon stores the owner's icon choice for a Library (CORE-1200).

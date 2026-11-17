@@ -466,7 +466,7 @@ func (h *Handler) scanEstimate(ctx context.Context, scope auth.Scope, req reques
 	default:
 		return ScanEstimateInfo{}, clientError("root or libraryID is required")
 	}
-	est, err := scan.EstimateRoots(ctx, roots, h.pluginHoldsImages(pluginID))
+	est, err := scan.EstimateRoots(ctx, roots, h.pluginImageRule(pluginID))
 	if err != nil {
 		return ScanEstimateInfo{}, err
 	}

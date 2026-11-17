@@ -50,35 +50,96 @@ func (s *Store) TrashMedia(ctx context.Context, id MediaID, filter LibraryFilter
 }
 
 func (s *Store) trashMediaAt(ctx context.Context, id MediaID, filter LibraryFilter, now time.Time) error {
+	_, err := s.trashMediaReporting(ctx, id, filter, now)
+	return err
+}
+
+// trashMediaReporting is trashMediaAt reporting whether this call moved the
+// Media to the trash, false when it was already there.
+func (s *Store) trashMediaReporting(ctx context.Context, id MediaID, filter LibraryFilter, now time.Time) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return err
+		return false, err
 	}
 	media, err := s.visibleMediaSQL(ctx, id, filter)
 	if err != nil {
-		return err
+		return false, err
 	}
 	now = now.UTC()
 	result, err := s.catalogW.ExecContext(ctx,
 		`UPDATE media SET trashed_at_ms = ? WHERE id = ? AND trashed_at_ms IS NULL`,
 		timeToMillis(now), id)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// Only a real soft-delete emits an event: re-trashing an already-trashed
 	// item (or one another writer just trashed) affects no row.
-	if affected, raErr := result.RowsAffected(); raErr == nil && affected > 0 {
-		// Emit AFTER the catalog write committed (cross-DB ordering: see
-		// appendMediaEventLocked). The event carries the Media's LibraryID so the
-		// delivery side reveal-filters by Library restriction (the now-trashed row
-		// would resolve to not-found on a live read). See MediaEventDeleted.
-		payload := mediaDeletedPayload(media.LibraryID)
-		if eventErr := s.appendMediaEventLocked(ctx, MediaEventDeleted, id, payload, now); eventErr != nil {
-			slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "media", id, "error", eventErr)
+	affected, raErr := result.RowsAffected()
+	if raErr != nil || affected == 0 {
+		return false, nil
+	}
+	// Emit AFTER the catalog write committed (cross-DB ordering: see
+	// appendMediaEventLocked). The event carries the Media's LibraryID so the
+	// delivery side reveal-filters by Library restriction (the now-trashed row
+	// would resolve to not-found on a live read). See MediaEventDeleted.
+	payload := mediaDeletedPayload(media.LibraryID)
+	if eventErr := s.appendMediaEventLocked(ctx, MediaEventDeleted, id, payload, now); eventErr != nil {
+		slog.Warn("media outbox event append failed", "kind", MediaEventDeleted, "media", id, "error", eventErr)
+	}
+	return true, nil
+}
+
+// TrashMediaRetiredByScan moves to the trash the Media of one Library that a
+// scan's current rule no longer catalogues (CORE-2361). Each goes through the
+// same soft-delete as TrashMedia, so the row and its source file survive the
+// TrashRetention window and the Media can be restored, and each Media this
+// call trashes gets a media.trash activity entry with no actor, because no
+// human is behind it. Only ids that are live Media of class in libraryID are
+// trashed; any other id is left alone. Like the other autonomous sweeps it
+// refuses while trash is disabled (hard invariant 6): skipped is true with
+// ErrTrashDisabledConfirmationRequired and nothing changes.
+func (s *Store) TrashMediaRetiredByScan(ctx context.Context, libraryID LibraryID, class MediaClass, ids []MediaID) (trashed int, skipped bool, err error) {
+	if libraryID == "" {
+		return 0, false, errors.New("library ID is required")
+	}
+	if len(ids) == 0 {
+		return 0, false, nil
+	}
+	if s.trashDisabled {
+		s.trashDisabledSweepSkips.Add(1)
+		return 0, true, ErrTrashDisabledConfirmationRequired
+	}
+	filter := LibraryFilter{AllowedIDs: []LibraryID{libraryID}, Revealed: true}
+	media, err := s.MediaByIDs(ctx, ids, filter)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, id := range ids {
+		item, ok := media[id]
+		if !ok || item.LibraryID != libraryID || item.Class != class {
+			continue
+		}
+		now := time.Now().UTC()
+		moved, err := s.trashMediaReporting(ctx, id, filter, now)
+		if err != nil {
+			return trashed, false, err
+		}
+		if !moved {
+			continue
+		}
+		trashed++
+		if err := s.AppendActivity(ctx, ActivityEntry{
+			OccurredAt: now,
+			Action:     ActivityMediaTrash,
+			TargetType: "media",
+			TargetID:   string(id),
+			LibraryID:  libraryID,
+		}); err != nil {
+			return trashed, false, err
 		}
 	}
-	return nil
+	return trashed, false, nil
 }
 
 // RestoreMedia returns a trashed Media item to its Library. The restore is
