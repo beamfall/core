@@ -3,15 +3,15 @@ module github.com/beamfall/core
 go 1.27.4
 
 require (
-	github.com/beamfall/plugin-audiobook v0.1.10
+	github.com/beamfall/plugin-audiobook v0.1.11
 	github.com/beamfall/plugin-enrichment v0.1.0
-	github.com/beamfall/plugin-familyarchive v0.1.12
-	github.com/beamfall/plugin-filmtv v0.1.15-0.20261117230932-f03d0870903c
-	github.com/beamfall/plugin-karaoke v0.1.6
-	github.com/beamfall/plugin-music v0.1.12
-	github.com/beamfall/plugin-photos v0.1.10
-	github.com/beamfall/plugin-podcasts v0.1.10
-	github.com/beamfall/plugin-sdk v0.4.3-0.20261117230718-b26fe30044b9
+	github.com/beamfall/plugin-familyarchive v0.1.13
+	github.com/beamfall/plugin-filmtv v0.1.15
+	github.com/beamfall/plugin-karaoke v0.1.7
+	github.com/beamfall/plugin-music v0.1.13
+	github.com/beamfall/plugin-photos v0.1.11
+	github.com/beamfall/plugin-podcasts v0.1.11
+	github.com/beamfall/plugin-sdk v0.4.3
 	github.com/brutella/dnssd v1.2.14
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/yamux v0.1.2
