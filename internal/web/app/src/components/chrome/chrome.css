@@ -819,6 +819,12 @@
   background: color-mix(in oklab, var(--library-accent, var(--accent)) 8%, var(--bg-surface));
 }
 
+/* Listening artwork is square: audio cards and thumbnails frame it 1:1
+ * wherever they render (cardArt.ts, CORE-2362). */
+[data-register="viewer"] .bf-poster.bf-poster-square {
+  aspect-ratio: 1 / 1;
+}
+
 [data-register="viewer"] .bf-poster-glyph {
   position: absolute;
   inset: 0;

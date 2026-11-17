@@ -143,11 +143,14 @@ export interface SourceItem {
   engagement?: SourceItemEngagement;
   /**
    * A media item's playback class ("audio", "video"), for a class-aware
-   * placeholder when it has no artwork (CORE-1492). Absent for entities.
+   * placeholder when it has no artwork (CORE-1492) and the card's art frame. An
+   * entity carries the class its linked Media all share, else none (CORE-2362).
    */
   mediaClass?: string;
   /** A media item's stored year (CORE-2269); absent for entities and undated Media. */
   year?: number;
+  /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
+  byline?: string[];
 }
 
 /**

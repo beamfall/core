@@ -28,4 +28,12 @@ describe("card titles (CORE-2320)", () => {
     expect(cardSubline(item("a", "Dune", 2021, "2021"), true)).toBe("2021");
     expect(cardSubline(item("a", "Dune", 2021, "Part one"), false)).toBe("Part one");
   });
+
+  it("names an audio card's byline after the year and before the summary (CORE-2362)", () => {
+    const track = { ...item("t", "Bohemian Rhapsody", 1975, "Side one"), byline: ["Queen"] };
+    expect(cardSubline(track, false)).toBe("Queen · Side one");
+    expect(cardSubline(track, true)).toBe("1975 · Queen · Side one");
+    expect(cardSubline({ ...track, summary: "Queen" }, false)).toBe("Queen");
+    expect(cardSubline({ ...track, byline: ["A", "B"], summary: "" }, false)).toBe("A, B");
+  });
 });

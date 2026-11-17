@@ -369,6 +369,36 @@ describe("MediaItemCard placeholder glyph (CORE-1492)", () => {
   });
 });
 
+describe("MediaItemCard art frame (CORE-2362)", () => {
+  it("frames an audio item's art square and names its byline", () => {
+    const { container } = renderCard({ mediaClass: "audio", byline: ["Queen"], summary: "" });
+    expect(container.querySelector(".bf-poster.bf-poster-square")).not.toBeNull();
+    expect(container.querySelector(".bf-card-sub")).toHaveTextContent("Queen");
+  });
+
+  it("frames an Entity whose Media are all audio square", () => {
+    const { container } = renderCard({ kind: "entity", mediaClass: "audio" });
+    expect(container.querySelector(".bf-poster.bf-poster-square")).not.toBeNull();
+  });
+
+  it("keeps the 2:3 frame for video and for an unknown class", () => {
+    for (const mediaClass of ["video", undefined]) {
+      const { container, unmount } = renderCard({ mediaClass });
+      expect(container.querySelector(".bf-poster")).not.toBeNull();
+      expect(container.querySelector(".bf-poster-square")).toBeNull();
+      unmount();
+    }
+  });
+
+  it("styles the square frame 1:1 over the 2:3 poster rule", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/components/chrome/chrome.css"), "utf8");
+    const poster = css.search(/\.bf-poster \{[^}]*aspect-ratio: 2 \/ 3;/);
+    const square = css.search(/\.bf-poster\.bf-poster-square \{\s*aspect-ratio: 1 \/ 1;/);
+    expect(poster).toBeGreaterThan(-1);
+    expect(square).toBeGreaterThan(poster);
+  });
+});
+
 function renderCard(overrides: Partial<SourceItem> = {}) {
   return render(
     <I18nProvider initialLocale="en">

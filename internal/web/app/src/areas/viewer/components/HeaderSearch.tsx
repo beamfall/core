@@ -6,6 +6,7 @@ import type { SearchResultItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useI18n } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { artworkBucketURL, artworkSlotURL } from "../lib/artwork";
+import { artFrameClass, cardByline } from "../lib/cardArt";
 import { entityLinkState } from "../lib/entityPreview";
 import {
   groupSearchRows,
@@ -262,7 +263,7 @@ function ResultRow({
   const { item } = open;
   const [imageFailed, setImageFailed] = useState(false);
   const art = artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
-  const detail = [searchRowDetail(item), typeLabel].filter(Boolean).join(" · ");
+  const detail = [cardByline(item), searchRowDetail(item), typeLabel].filter(Boolean).join(" · ");
   return (
     <Autocomplete.Row className="flex items-stretch gap-1 px-1">
       <Autocomplete.Item
@@ -271,7 +272,7 @@ function ResultRow({
         onClick={() => onActivate(open)}
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-[var(--radius-control)] px-2 py-1.5 outline-none data-highlighted:bg-[var(--bg-raised)] data-highlighted:ring-1 data-highlighted:ring-[var(--focus-ring)] data-highlighted:ring-inset"
       >
-        <span className="bf-poster block w-10! shrink-0 rounded">
+        <span className={`${artFrameClass(item)} block w-10! shrink-0 rounded`}>
           {art && !imageFailed && (
             <img
               alt=""
