@@ -98,12 +98,19 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	}
 	state.extrasRoot = extrasRoot
 	if state.result.totalFiles == 0 {
-		err := filepath.Walk(req.Root, func(path string, info fs.FileInfo, err error) error {
-			if err == nil {
-				if skipErr := skipExcludedScanDirectory(info.Name(), info.IsDir()); skipErr != nil {
-					return skipErr
-				}
+		// Only media-named regular files are stat'ed: on a slow share a stat
+		// of every sidecar and folder costs as much as the listing itself.
+		err := filepath.WalkDir(req.Root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
 			}
+			if skipErr := skipExcludedScanDirectory(entry.Name(), entry.IsDir()); skipErr != nil {
+				return skipErr
+			}
+			if !entry.Type().IsRegular() || !mediaExtensions[strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")] {
+				return nil
+			}
+			info, err := entry.Info()
 			if err == nil && state.isSupportedMediaFile(path, info) && now().Sub(info.ModTime()) >= stabilityWindow {
 				state.result.totalFiles++
 			}
@@ -202,7 +209,11 @@ func (s *scanWalkState) markMissingIfPlausible(scanStarted time.Time) error {
 	if err != nil {
 		return err
 	}
-	if reason := missingPassSkipReason(present, stale, s.walkMediaFiles); reason != "" {
+	walked := s.walkMediaFiles
+	if s.prunedBeforeCheckpoint {
+		walked++
+	}
+	if reason := missingPassSkipReason(present, stale, walked); reason != "" {
 		slog.Warn("scan: not marking files missing", "library", string(s.req.LibraryID), "root", s.req.Root, "reason", reason, "present", present, "unseen", stale)
 		return nil
 	}

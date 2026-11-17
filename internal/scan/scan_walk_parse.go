@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/store"
@@ -49,25 +50,21 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 	// (CORE-1710).
 	var imageRefusal ParsedMedia
 	imageRefusalPath, refusalPath, otherAccepted := "", "", false
+	var candidates []string
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
 			return nil, err
 		}
 		candidate := filepath.Join(dir, entry.Name())
-		if !s.isSupportedMediaFile(candidate, info) {
-			continue
+		if s.isSupportedMediaFile(candidate, info) {
+			candidates = append(candidates, candidate)
 		}
+	}
+	probes := s.probeSiblings(candidates)
+	for i, candidate := range candidates {
 		isImage := imageClassForPath(candidate)
-		parseProbe := ParseProbe{}
-		if s.prober != nil && !isImage {
-			probeCtx, cancel := context.WithTimeout(s.ctx, probeTimeout)
-			probe, probeErr := s.prober.Probe(probeCtx, candidate)
-			cancel()
-			if probeErr == nil {
-				parseProbe = ParseProbe{HasVideo: probe.HasVideo, HasAudio: probe.AudioCodec != "", DurationSeconds: probe.DurationSeconds, Tags: probe.Tags}
-			}
-		}
+		parseProbe := probes[i]
 		decision.probes[candidate] = parseProbe
 		legacy, legacyOK := s.parser.Parse(candidate, parseProbe)
 		parsed, accepted := contextual.ParseWithContext(candidate, parseProbe, s.directoryContext(candidate))
@@ -98,6 +95,40 @@ func (s *scanWalkState) preflightDirectory(path string) (*contextualDirectoryPre
 	}
 	s.directoryPreflights[dir] = decision
 	return decision, nil
+}
+
+// probeSiblings probes a folder's media files for the contextual preflight,
+// in parallel within the scan's worker budget: a season folder holds dozens of
+// files, and probing them one after another stalled the ordered walk for the
+// sum of their probe times on a slow share (CORE-2353). Images are never
+// probed, and a failed probe yields the empty ParseProbe, as before. The
+// result is in candidates' order, so the decision does not depend on timing.
+func (s *scanWalkState) probeSiblings(candidates []string) []ParseProbe {
+	probes := make([]ParseProbe, len(candidates))
+	if s.prober == nil {
+		return probes
+	}
+	var wg sync.WaitGroup
+	for i, candidate := range candidates {
+		if imageClassForPath(candidate) {
+			continue
+		}
+		if err := s.acquireBudget(s.ctx); err != nil {
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer s.releaseBudget()
+			probeCtx, cancel := context.WithTimeout(s.ctx, probeTimeout)
+			defer cancel()
+			if probe, err := s.prober.Probe(probeCtx, candidate); err == nil {
+				probes[i] = ParseProbe{HasVideo: probe.HasVideo, HasAudio: probe.AudioCodec != "", DurationSeconds: probe.DurationSeconds, Tags: probe.Tags}
+			}
+		}()
+	}
+	wg.Wait()
+	return probes
 }
 
 // skipsStillImage reports whether path is a still image the plugin did not

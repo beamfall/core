@@ -80,6 +80,11 @@ type scanWalkState struct {
 	// including ones a resumed checkpoint skips as already done. Zero means
 	// the root walked empty, so the post-walk missing pass must not run.
 	walkMediaFiles int
+	// prunedBeforeCheckpoint is set when a resumed walk skipped a folder
+	// that sorts wholly at or before its checkpoint (subtreeBeforeCheckpoint).
+	// Earlier runs of this scan walked it, so it counts as walked media for
+	// the empty-root guard.
+	prunedBeforeCheckpoint bool
 	// startedAt is the wall-clock time this walk began, compared with lock
 	// marker file times, so it uses the real clock rather than now.
 	startedAt time.Time
@@ -154,6 +159,10 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 		return nil, err
 	}
 	if entry.IsDir() {
+		if s.checkpoint.LastPath != "" && subtreeBeforeCheckpoint(s.req.Root, filepath.Clean(path), s.checkpoint.LastPath) {
+			s.prunedBeforeCheckpoint = true
+			return nil, fs.SkipDir
+		}
 		return nil, nil
 	}
 	path = filepath.Clean(path)
@@ -201,7 +210,7 @@ func (s *scanWalkState) skipOrPropagate(path string, err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
+	if errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
 		return err
 	}
 	slog.Warn("scan: skipping unreadable or invalid file", "path", path, "error", err.Error())
@@ -228,4 +237,28 @@ func compareWalkOrder(root, a, b string) int {
 		}
 	}
 	return len(partsA) - len(partsB)
+}
+
+// subtreeBeforeCheckpoint reports whether every path inside dir sorts at or
+// before last in walk order (compareWalkOrder), so a walk resuming after last
+// can skip dir without listing it. That holds when dir and last first differ
+// at a component inside dir's own path and dir's component sorts lower. A dir
+// on last's ancestor chain, last itself, or a path outside root is walked.
+func subtreeBeforeCheckpoint(root, dir, last string) bool {
+	relDir, errDir := filepath.Rel(root, dir)
+	relLast, errLast := filepath.Rel(root, last)
+	if errDir != nil || errLast != nil || relDir == "." || !filepath.IsLocal(relDir) || !filepath.IsLocal(relLast) {
+		return false
+	}
+	partsDir := strings.Split(relDir, string(filepath.Separator))
+	partsLast := strings.Split(relLast, string(filepath.Separator))
+	for i, part := range partsDir {
+		if i >= len(partsLast) {
+			return false
+		}
+		if c := strings.Compare(part, partsLast[i]); c != 0 {
+			return c < 0
+		}
+	}
+	return false
 }
