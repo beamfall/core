@@ -101,3 +101,21 @@ export function jobRunSeconds(job: JobInfo, now: number): number | null {
   if (Number.isNaN(finished)) return null;
   return Math.max(0, Math.round((finished - started) / 1000));
 }
+
+const jobLogSecretPatterns = [
+  /bfk_[A-Za-z0-9_-]+/gi,
+  /Bearer\s+\S+/gi,
+  /Basic\s+\S+/gi,
+  /[?&]token=[^&\s"']+/gi,
+  /\/api\/media\/[^\s"']+/gi,
+  /\/api\/pack\/[^\s"']+/gi,
+  /https?:\/\/[^\s"']+/gi,
+];
+
+/** Job error and log text with tokens, credentials and URLs blanked out. */
+export function redactJobLogPayload(payload: string): string {
+  return jobLogSecretPatterns.reduce(
+    (next, pattern) => next.replace(pattern, "[REDACTED]"),
+    payload,
+  );
+}

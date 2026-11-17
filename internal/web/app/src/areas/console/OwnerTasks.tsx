@@ -21,6 +21,7 @@ import {
 } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { groupProviderKeys, keyNeededForLibraries, libraryPluginIDs } from "@/lib/providerKeys";
+import { unmatchedTotal } from "./lib/overviewAttention";
 import { Section } from "./Section";
 import { useAsync } from "./useAsync";
 
@@ -85,9 +86,7 @@ export function OwnerTasks() {
     : null;
   // The unmatched queue read is capped, so the count comes from Library health
   // when that answers (CORE-2310); the queue length is the fallback.
-  const unmatchedCount = health.data
-    ? health.data.reduce((sum, library) => sum + (library.counts?.unmatched ?? 0), 0)
-    : (unmatched.data?.length ?? null);
+  const unmatchedCount = unmatchedTotal(health.data) ?? unmatched.data?.length ?? null;
 
   return (
     <Section heading="ownerTasksHeading" lead="ownerTasksLead">

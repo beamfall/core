@@ -5,11 +5,18 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
-import { browseServerFolders, fetchLibraries, fetchSetupState } from "@/lib/graphql";
+import {
+  browseServerFolders,
+  fetchBackupKeyStatus,
+  fetchLibraries,
+  fetchLibraryHealth,
+  fetchSetupState,
+} from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { CONSOLE_IA_PLACEMENTS, ConsoleArea } from ".";
+import { fetchConsoleJobs } from "./lib/jobQueue";
 
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -23,7 +30,13 @@ vi.mock("@/lib/graphql", () => ({
   fetchUnmatchedQueue: vi.fn().mockResolvedValue([]),
   fetchConsoleConfig: vi.fn().mockResolvedValue({ plugins: [] }),
   fetchWatcherStatus: vi.fn().mockResolvedValue([]),
+  fetchLibraryHealth: vi.fn().mockResolvedValue([]),
+  fetchBackupKeyStatus: vi.fn().mockResolvedValue({ pending: false }),
   browseServerFolders: vi.fn().mockResolvedValue({ name: "x", path: "/x", kind: "folder" }),
+}));
+vi.mock("./lib/jobQueue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./lib/jobQueue")>()),
+  fetchConsoleJobs: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("./AdminGate", () => ({
   AdminGate: ({ children }: { children: ReactNode | ((lock: () => void) => ReactNode) }) => (
@@ -214,7 +227,7 @@ describe("Console IA conformance", () => {
     const nav = screen.getByRole("navigation", { name: "Console" });
     expect(
       Array.from(nav.querySelectorAll(".console-nav-group-label")).map((n) => n.textContent),
-    ).toEqual(["Overview", "Monitor", "Library", "Access", "Maintain"]);
+    ).toEqual(["Monitor", "Library", "Access", "Maintain"]);
     expect(within(nav).getByText("Operations")).toBeVisible();
     expect(within(nav).getByRole("link", { name: "Backups" })).toBeVisible();
     expect(within(nav).queryByRole("link", { name: "Server Config" })).toBeNull();
@@ -333,10 +346,65 @@ describe("Console IA conformance", () => {
     renderConsole("/console");
 
     const row = await screen.findByRole("link", { name: /Films: \/gone/ });
-    expect(row).toHaveAttribute("href", "/console/libraries");
+    // The link opens that Library's folders (CORE-2309).
+    expect(row).toHaveAttribute("href", "/console/libraries#folders-lib-1");
     expect(row).toHaveTextContent("Folder not found");
     expect(screen.queryByText("Nothing needs attention.")).toBeNull();
     vi.mocked(fetchLibraries).mockResolvedValue([]);
+  });
+
+  it("lists failed jobs, Library health and an unsaved backup key under Needs attention (CORE-2310, CORE-2309)", async () => {
+    vi.mocked(fetchSetupState).mockResolvedValueOnce({
+      adminPasswordSet: true,
+      hasLibrary: true,
+      hasOwnerProfile: true,
+      pluginsActivated: true,
+      complete: true,
+    });
+    vi.mocked(fetchConsoleJobs).mockResolvedValueOnce([
+      {
+        id: "scan-1",
+        kind: "scan",
+        status: "failed",
+        error: "open /mnt/films: no such file (Bearer abc123)",
+        finishedAt: "2026-11-17T10:00:00Z",
+        progress: { current: 0, total: 0, unit: "files" },
+        target: { libraryID: "lib-9", libraryTitle: "Films", root: "/mnt/films" },
+      } as never,
+      {
+        id: "poll-1",
+        kind: "watcher-poll",
+        status: "completed",
+        progress: { current: 0, total: 0, unit: "" },
+      } as never,
+    ]);
+    vi.mocked(fetchLibraryHealth).mockResolvedValue([
+      { libraryID: "a", counts: { unmatched: 3, broken: 0 } },
+      { libraryID: "b", counts: { unmatched: 2, "missing-artwork": 1 } },
+    ] as never);
+    vi.mocked(fetchBackupKeyStatus).mockResolvedValueOnce({ pending: true } as never);
+
+    renderConsole("/console");
+
+    const failed = await screen.findByRole("link", { name: /Scan failed/ });
+    expect(failed).toHaveAttribute("href", "/console/libraries#folders-lib-9");
+    expect(failed).toHaveTextContent("Films · /mnt/films");
+    expect(failed).toHaveTextContent("no such file");
+    expect(failed).not.toHaveTextContent("abc123");
+    expect(await screen.findByRole("link", { name: /Unmatched: 5 items/ })).toHaveAttribute(
+      "href",
+      "/manage/unmatched",
+    );
+    expect(screen.getByRole("link", { name: /Missing artwork: 1 item/i })).toHaveAttribute(
+      "href",
+      "/console/health",
+    );
+    expect(
+      await screen.findByRole("link", { name: /backup key is not saved yet/ }),
+    ).toHaveAttribute("href", "/console/backups");
+    expect(screen.getByText("1 failed")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing needs attention.")).toBeNull();
+    vi.mocked(fetchLibraryHealth).mockResolvedValue([]);
   });
 
   it("puts the first-value checklist above Server resources while a step is open", async () => {

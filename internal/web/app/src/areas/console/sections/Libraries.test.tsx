@@ -176,6 +176,34 @@ describe("Console Libraries scan", () => {
     expect(browseServerFolders).toHaveBeenCalledWith("/Volumes/library", 0);
   });
 
+  it("opens the Library's folders when a Needs attention link targets them (CORE-2309)", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    render(
+      <MemoryRouter initialEntries={["/console/libraries#folders-library-1"]}>
+        <I18nProvider>
+          <Libraries />
+        </I18nProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole("button", { name: "Rescan library" });
+    const folders = document.getElementById("folders-library-1");
+    expect(folders?.closest("details")).toHaveAttribute("open");
+    expect(scrollIntoView).toHaveBeenCalled();
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  it("keeps a healthy Library's card folded without a folders link", async () => {
+    renderLibraries();
+
+    await screen.findByRole("button", { name: "Rescan library" });
+    await waitFor(() => expect(browseServerFolders).toHaveBeenCalled());
+    expect(document.getElementById("folders-library-1")?.closest("details")).not.toHaveAttribute(
+      "open",
+    );
+  });
+
   it("shows no folder warning when the server can read the folder", async () => {
     renderLibraries();
 

@@ -38,7 +38,12 @@ import {
 } from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
-import { arrangeJobQueue, fetchConsoleJobs, jobRunSeconds } from "../lib/jobQueue";
+import {
+  arrangeJobQueue,
+  fetchConsoleJobs,
+  jobRunSeconds,
+  redactJobLogPayload,
+} from "../lib/jobQueue";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 import { useEventRefresh } from "./Dashboard";
@@ -46,23 +51,6 @@ import { useEventRefresh } from "./Dashboard";
 function statusTone(status: string): StatusTone {
   const state = jobStatusState(status);
   return state === "red" || state === "green" || state === "amber" ? state : "neutral";
-}
-
-const jobLogSecretPatterns = [
-  /bfk_[A-Za-z0-9_-]+/gi,
-  /Bearer\s+\S+/gi,
-  /Basic\s+\S+/gi,
-  /[?&]token=[^&\s"']+/gi,
-  /\/api\/media\/[^\s"']+/gi,
-  /\/api\/pack\/[^\s"']+/gi,
-  /https?:\/\/[^\s"']+/gi,
-];
-
-function redactJobLogPayload(payload: string): string {
-  return jobLogSecretPatterns.reduce(
-    (next, pattern) => next.replace(pattern, "[REDACTED]"),
-    payload,
-  );
 }
 
 // A job is live (cancelable) while queued, running, or yielded; it is terminal
