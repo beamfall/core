@@ -1,4 +1,5 @@
-// Watch Party copy in the player and the invite notification (CORE-1677).
+// Watch Party copy in the player and the invite notification (CORE-1677),
+// with the lead and follower screen copy (CORE-2245).
 export const watchPartyStrings = {
   en: {
     watchPartyButton: "Watch Party",
@@ -35,6 +36,20 @@ export const watchPartyStrings = {
     watchPartyControl: "Who controls playback",
     watchPartyRelaxed: "Everyone",
     watchPartyHostOnly: "Only me",
+    watchPartyLead: "Lead for other screens",
+    watchPartyLeadHint: "This screen plays the sound. Other screens follow it, muted and in step.",
+    watchPartyLeading: "This screen leads",
+    watchPartyFollowerCount:
+      "{count, plural, =0 {No screens following} one {# screen following} other {# screens following}}",
+    watchPartyFollowing: "Following {name}",
+    watchPartyFollowingLead: "Following the lead screen",
+    watchPartyFollowMuted: "Sound plays from the lead screen. This screen is muted.",
+    watchPartyTrimLabel: "Display delay",
+    watchPartyTrimHint: "Raise it if this screen's picture lags the sound.",
+    watchPartyTrimLess: "Decrease display delay",
+    watchPartyTrimMore: "Increase display delay",
+    watchPartyFollowOffer: "Another screen on this profile is leading.",
+    watchPartyFollow: "Follow it",
     notificationKindWatchPartyRequest: "Watch Party request",
   },
   fr: {
@@ -72,6 +87,21 @@ export const watchPartyStrings = {
     watchPartyControl: "Qui contrôle la lecture",
     watchPartyRelaxed: "Tout le monde",
     watchPartyHostOnly: "Moi seulement",
+    watchPartyLead: "Écran principal pour les autres écrans",
+    watchPartyLeadHint:
+      "Cet écran diffuse le son. Les autres écrans le suivent, en sourdine et en rythme.",
+    watchPartyLeading: "Cet écran est l'écran principal",
+    watchPartyFollowerCount:
+      "{count, plural, =0 {Aucun écran ne suit} one {# écran suit} other {# écrans suivent}}",
+    watchPartyFollowing: "Suit {name}",
+    watchPartyFollowingLead: "Suit l'écran principal",
+    watchPartyFollowMuted: "Le son vient de l'écran principal. Cet écran est en sourdine.",
+    watchPartyTrimLabel: "Retard d'affichage",
+    watchPartyTrimHint: "Augmentez-le si l'image de cet écran est en retard sur le son.",
+    watchPartyTrimLess: "Réduire le retard d'affichage",
+    watchPartyTrimMore: "Augmenter le retard d'affichage",
+    watchPartyFollowOffer: "Un autre écran de ce profil est l'écran principal.",
+    watchPartyFollow: "Le suivre",
     notificationKindWatchPartyRequest: "Demande Watch Party",
   },
   de: {
@@ -109,6 +139,21 @@ export const watchPartyStrings = {
     watchPartyControl: "Wer die Wiedergabe steuert",
     watchPartyRelaxed: "Alle",
     watchPartyHostOnly: "Nur ich",
+    watchPartyLead: "Hauptbildschirm für andere Bildschirme",
+    watchPartyLeadHint:
+      "Dieser Bildschirm gibt den Ton wieder. Andere Bildschirme folgen ihm stumm und im Takt.",
+    watchPartyLeading: "Dieser Bildschirm führt",
+    watchPartyFollowerCount:
+      "{count, plural, =0 {Kein Bildschirm folgt} one {# Bildschirm folgt} other {# Bildschirme folgen}}",
+    watchPartyFollowing: "Folgt {name}",
+    watchPartyFollowingLead: "Folgt dem Hauptbildschirm",
+    watchPartyFollowMuted: "Der Ton kommt vom Hauptbildschirm. Dieser Bildschirm ist stumm.",
+    watchPartyTrimLabel: "Anzeigeverzögerung",
+    watchPartyTrimHint: "Erhöhe sie, wenn das Bild dieses Bildschirms dem Ton hinterherhinkt.",
+    watchPartyTrimLess: "Anzeigeverzögerung verringern",
+    watchPartyTrimMore: "Anzeigeverzögerung erhöhen",
+    watchPartyFollowOffer: "Ein anderer Bildschirm dieses Profils führt.",
+    watchPartyFollow: "Folgen",
     notificationKindWatchPartyRequest: "Watch-Party-Anfrage",
   },
   es: {
@@ -146,6 +191,22 @@ export const watchPartyStrings = {
     watchPartyControl: "Quién controla la reproducción",
     watchPartyRelaxed: "Todos",
     watchPartyHostOnly: "Solo yo",
+    watchPartyLead: "Pantalla principal para otras pantallas",
+    watchPartyLeadHint:
+      "Esta pantalla reproduce el sonido. Las demás pantallas la siguen, en silencio y al compás.",
+    watchPartyLeading: "Esta pantalla es la principal",
+    watchPartyFollowerCount:
+      "{count, plural, =0 {Ninguna pantalla la sigue} one {# pantalla la sigue} other {# pantallas la siguen}}",
+    watchPartyFollowing: "Siguiendo a {name}",
+    watchPartyFollowingLead: "Siguiendo la pantalla principal",
+    watchPartyFollowMuted:
+      "El sonido sale de la pantalla principal. Esta pantalla está en silencio.",
+    watchPartyTrimLabel: "Retraso de pantalla",
+    watchPartyTrimHint: "Auméntalo si la imagen de esta pantalla va por detrás del sonido.",
+    watchPartyTrimLess: "Reducir el retraso de pantalla",
+    watchPartyTrimMore: "Aumentar el retraso de pantalla",
+    watchPartyFollowOffer: "Otra pantalla de este perfil es la principal.",
+    watchPartyFollow: "Seguirla",
     notificationKindWatchPartyRequest: "Solicitud de Watch Party",
   },
   pt: {
@@ -183,6 +244,21 @@ export const watchPartyStrings = {
     watchPartyControl: "Quem controla a reprodução",
     watchPartyRelaxed: "Todos",
     watchPartyHostOnly: "Só eu",
+    watchPartyLead: "Tela principal para outras telas",
+    watchPartyLeadHint:
+      "Esta tela reproduz o som. As outras telas a seguem, sem som e em sincronia.",
+    watchPartyLeading: "Esta tela é a principal",
+    watchPartyFollowerCount:
+      "{count, plural, =0 {Nenhuma tela seguindo} one {# tela seguindo} other {# telas seguindo}}",
+    watchPartyFollowing: "Seguindo {name}",
+    watchPartyFollowingLead: "Seguindo a tela principal",
+    watchPartyFollowMuted: "O som sai da tela principal. Esta tela está sem som.",
+    watchPartyTrimLabel: "Atraso da tela",
+    watchPartyTrimHint: "Aumente se a imagem desta tela estiver atrasada em relação ao som.",
+    watchPartyTrimLess: "Reduzir o atraso da tela",
+    watchPartyTrimMore: "Aumentar o atraso da tela",
+    watchPartyFollowOffer: "Outra tela deste perfil é a principal.",
+    watchPartyFollow: "Seguir",
     notificationKindWatchPartyRequest: "Pedido de Watch Party",
   },
 } as const;

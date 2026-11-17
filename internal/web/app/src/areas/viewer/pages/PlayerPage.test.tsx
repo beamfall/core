@@ -31,6 +31,8 @@ vi.mock("@/lib/graphql", () => ({
   fetchMedia: vi.fn().mockResolvedValue(null),
   fetchPlaybackAdjustmentRanges: vi.fn().mockResolvedValue(null),
   fetchPrePlayQueue: vi.fn().mockResolvedValue([]),
+  // Off the home network: the player does not listen for a lead party.
+  calibrateWatchPartyClock: vi.fn().mockRejectedValue(new Error("not on the home network")),
 }));
 vi.mock("../player/PrePlayStage", () => ({
   PrePlayStage: vi.fn(({ items, onDone }: { items: { title: string }[]; onDone: () => void }) => (

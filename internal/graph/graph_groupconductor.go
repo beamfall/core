@@ -260,7 +260,14 @@ func (h *Handler) reportDrift(ctx context.Context, scope auth.Scope, req request
 		return ReportDriftResult{}, clientError("groupID is required")
 	}
 	drift := time.Duration(int64Var(req, "driftMS")) * time.Millisecond
-	if _, err := h.conductor.Party(groupID); err == nil {
+	if g, err := h.conductor.Party(groupID); err == nil {
+		if g.Lead() {
+			if host, _ := g.Host(); host == scope.SessionID {
+				return h.reportLeadPosition(ctx, scope, groupID, req)
+			}
+			// A follower corrects itself against the lead's timeline.
+			return ReportDriftResult{}, clientError("only the lead reports to this party")
+		}
 		return h.reportPartyDrift(ctx, scope, groupID, drift)
 	}
 	// The member snapshot ReportDrift returns is unused here: a re-sync broadcasts
@@ -353,4 +360,37 @@ func conductorClientError(err error) error {
 	default:
 		return err
 	}
+}
+
+// reportLeadPosition is reportDrift for the lead of a lead party (CORE-2243).
+// The lead is never corrected: it reports the position it is audibly at
+// (positionMS), the server-clock instant of that sample (atMS) and its speed
+// (ratePermille, zero for normal). When the report departs from the shared
+// timeline, or the timeline is due a re-statement, every member Profile gets
+// the timeline again ("anchor"); otherwise nothing is sent ("none").
+func (h *Handler) reportLeadPosition(ctx context.Context, scope auth.Scope, partyID string, req request) (ReportDriftResult, error) {
+	h.partyMu.Lock()
+	defer h.partyMu.Unlock()
+	if _, ok := req.Variables["positionMS"]; !ok {
+		return ReportDriftResult{}, clientError("positionMS is required from the lead")
+	}
+	atMS := int64Var(req, "atMS")
+	if atMS <= 0 {
+		return ReportDriftResult{}, clientError("atMS is required from the lead")
+	}
+	// Bounded before the multiply so a hostile value cannot overflow.
+	positionMS := min(max(int64Var(req, "positionMS"), 0), int64(1000*time.Hour/time.Millisecond))
+	position := time.Duration(positionMS) * time.Millisecond
+	at := time.UnixMilli(atMS)
+	transition, members, restate, err := h.conductor.LeadReport(partyID, scope.SessionID, position, at, intVar(req, "ratePermille"))
+	if err != nil {
+		return ReportDriftResult{}, partyClientError(err)
+	}
+	if !restate {
+		return ReportDriftResult{GroupID: partyID, Action: "none"}, nil
+	}
+	if err := h.broadcastPartyTransition(ctx, partyID, scope.ProfileID, members, transition); err != nil {
+		return ReportDriftResult{}, err
+	}
+	return ReportDriftResult{GroupID: partyID, Action: "anchor"}, nil
 }

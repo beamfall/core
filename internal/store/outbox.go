@@ -799,6 +799,11 @@ type GroupSyncPayload struct {
 	Handoff     bool      `json:"handoff,omitempty"`
 	Request     string    `json:"request,omitempty"`
 	From        string    `json:"from,omitempty"`
+	// Lead marks a lead party's timeline (CORE-2243): the host session owns the
+	// audio and every other member follows it muted. RatePermille is that
+	// timeline's speed in thousandths of normal; zero means normal.
+	Lead         bool `json:"lead,omitempty"`
+	RatePermille int  `json:"ratePermille,omitempty"`
 }
 
 // GroupSyncSignalValid reports whether signal is a member of the closed

@@ -234,7 +234,10 @@ func (r *Registry) Accept(id string, profile store.ProfileID, m Member) error {
 		r.mu.Unlock()
 		return ErrNoInvite
 	}
-	delete(g.invites, profile)
+	// A lead party's invite stays, so a follower that reloads joins again.
+	if !g.lead {
+		delete(g.invites, profile)
+	}
 	member := m
 	member.ProfileID = profile // ADR-0111: record profile so graph can surface display name
 	if _, rejoin := g.members[m.SessionID]; !rejoin {
@@ -275,6 +278,13 @@ func (r *Registry) HostTransition(id string, host store.SessionID, item store.Me
 	members := make([]Member, 0, len(g.members))
 	for _, mem := range g.members {
 		members = append(members, *mem)
+	}
+	if g.lead {
+		// The lead is already at position: followers join it at once.
+		g.stated = now
+		t := g.transitionLocked(now)
+		g.mu.Unlock()
+		return t, members, nil
 	}
 	g.mu.Unlock()
 	return Transition{
@@ -322,6 +332,11 @@ func (r *Registry) RequestTransport(id string, session store.SessionID) (Transpo
 		// request — calling the request path as the host is a surface misuse.
 		return TransportRequest{}, ErrNotHost
 	}
+	if g.lead {
+		// Only the lead moves a lead party: a follower's transport is refused
+		// outright, never queued for approval.
+		return TransportRequest{}, ErrNotHost
+	}
 	return TransportRequest{Authoritative: g.relaxed, Host: g.host}, nil
 }
 
@@ -341,6 +356,11 @@ type PartyLeave struct {
 	// NewHost is the session the host role passed to when the host left while
 	// other members remained; empty when the host role did not move.
 	NewHost store.SessionID
+	// Ended holds the followers a lead party had when its lead left. The party
+	// is gone (Dissolved is true) and each of them is told it ended.
+	Ended []Member
+	// EndedBy is the lead whose departure ended the party, set with Ended.
+	EndedBy Member
 }
 
 // LeaveParty removes session from the Watch Party identified by id (ADR-0111
@@ -363,12 +383,23 @@ func (r *Registry) LeaveParty(id string, session store.SessionID) (PartyLeave, e
 		g.mu.Unlock()
 		return PartyLeave{}, ErrNotMember
 	}
+	left := *g.members[session]
 	delete(g.members, session)
 	g.order = slices.DeleteFunc(g.order, func(s store.SessionID) bool { return s == session })
 	g.dropRequestFrom(session)
 	var leave PartyLeave
 	if len(g.members) == 0 {
 		leave.Dissolved = true
+	} else if session == g.host && g.lead {
+		// A lead party ends with its lead: a follower never takes the audio.
+		leave.Dissolved = true
+		leave.EndedBy = left
+		for _, m := range g.members {
+			leave.Ended = append(leave.Ended, *m)
+		}
+		g.members = map[store.SessionID]*Member{}
+		g.order = nil
+		g.requests = nil
 	} else if session == g.host {
 		for _, next := range g.order {
 			if m, ok := g.members[next]; ok {
@@ -430,6 +461,9 @@ func (r *Registry) PartyAnchor(id string) (Transition, error) {
 	now := r.now()
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.lead {
+		return g.transitionLocked(now), nil
+	}
 	current := g.position
 	if !g.paused {
 		current += now.Sub(g.anchor)

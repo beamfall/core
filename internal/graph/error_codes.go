@@ -190,6 +190,8 @@ var clientErrorCodes = map[string]ErrorCode{
 	"not a member of this group":                                ErrorCodeForbidden,
 	"not a member of this party":                                ErrorCodeForbidden,
 	"not the party host":                                        ErrorCodeForbidden,
+	"this party has no lead":                                    ErrorCodeInvalid,
+	"only the lead reports to this party":                       ErrorCodeForbidden,
 	// CORE-0531: create and accept are home-network only, and a party moves
 	// only to Media every member can see.
 	"Watch Party is available on your home network only":               ErrorCodeForbidden,

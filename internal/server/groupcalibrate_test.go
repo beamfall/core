@@ -42,6 +42,10 @@ func TestGroupCalibrateLANOnly(t *testing.T) {
 	if resp.T1MS != 1000 {
 		t.Errorf("echoed t1 = %d, want 1000", resp.T1MS)
 	}
+	// CORE-2244: the same instants at microsecond resolution.
+	if resp.T2US/1000 != resp.T2MS || resp.T3US/1000 != resp.T3MS || resp.T2US > resp.T3US {
+		t.Errorf("microsecond timestamps t2US=%d t3US=%d disagree with t2MS=%d t3MS=%d", resp.T2US, resp.T3US, resp.T2MS, resp.T3MS)
+	}
 	if resp.T2MS > resp.T3MS {
 		t.Errorf("t2 (%d) > t3 (%d): receive must not be after transmit", resp.T2MS, resp.T3MS)
 	}

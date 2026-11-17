@@ -30,7 +30,7 @@ export function readWatchPartyIntent(state: unknown): boolean {
 let probe: Promise<boolean> | null = null;
 
 function probeHomeNetwork(): Promise<boolean> {
-  probe ??= calibrateWatchPartyClock().then(
+  probe ??= calibrateWatchPartyClock({ exchanges: 1 }).then(
     () => true,
     () => false,
   );

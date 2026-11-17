@@ -58,6 +58,8 @@ const idleParty: WatchPartyState = {
   status: "idle",
   partyID: "",
   isHost: false,
+  lead: false,
+  leadOffer: null,
   timeline: null,
   members: [],
   invited: [],

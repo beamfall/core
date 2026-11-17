@@ -1,26 +1,44 @@
-import { Users } from "lucide-react";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { Minus, Plus, RotateCcw, Users } from "lucide-react";
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/lib/i18n";
 import { formatClockTime } from "../lib/transport";
+import {
+  DISPLAY_TRIM_STEP_MS,
+  MAX_DISPLAY_TRIM_MS,
+  setDisplayTrimMS,
+  useDisplayTrimMS,
+} from "./displayTrim";
 import type { WatchPartyPlayback } from "./useWatchParty";
 import {
   clearWatchPartyNotice,
   decidePartyRequest,
   endParty,
+  followLeadParty,
   inviteToParty,
   useWatchPartyState,
   type WatchPartyRequest,
   type WatchPartyState,
 } from "./watchPartyStore";
-import { driftLevel } from "./watchPartySync";
+import { driftLevel, followerDriftLevel } from "./watchPartySync";
 
 // The player bar's Watch Party control (CORE-1677): start a party from the
 // title playing, invite a household Profile by name, see who is in it, leave.
 // A host can also end it for everyone (CORE-1763), chooses at start whether
 // everyone or only the host controls playback, and decides members' requests
-// in a host-only party (CORE-1765).
+// in a host-only party (CORE-1765). A lead party (CORE-2245) is the third
+// choice at start: this screen plays the sound and the others follow it. Its
+// lead sees how many screens follow; a follower sees whom it follows and sets
+// this screen's display delay.
+
+/** Who controls a party started here: everyone, the host, or this screen as the lead. */
+type PartyControl = "relaxed" | "host" | "lead";
+
+/** How many screens follow the lead: every member but the lead itself. */
+function followerCount(party: WatchPartyState): number {
+  return Math.max(0, party.members.length - 1);
+}
 
 /** How long a hand-off or end notice stays on the stage. */
 const NOTICE_MS = 6000;
@@ -35,7 +53,7 @@ export function WatchPartyPanel({
   party: WatchPartyState;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onStart: (relaxed: boolean) => Promise<boolean>;
+  onStart: (relaxed: boolean, lead?: boolean) => Promise<boolean>;
   onLeave: () => Promise<void>;
 }) {
   const t = useT();
@@ -43,9 +61,16 @@ export function WatchPartyPanel({
   const inputID = useId();
   const [name, setName] = useState("");
   const [inviting, setInviting] = useState(false);
-  const [relaxed, setRelaxed] = useState(true);
+  const [control, setControl] = useState<PartyControl>("relaxed");
   const active = party.status === "active";
   const busy = party.status === "starting" || party.status === "joining";
+  const leading = active && party.lead && party.isHost;
+  const following = active && party.lead && !party.isHost;
+
+  function start() {
+    if (control === "lead") void onStart(false, true);
+    else void onStart(control === "relaxed");
+  }
 
   async function invite(event: FormEvent) {
     event.preventDefault();
@@ -86,28 +111,69 @@ export function WatchPartyPanel({
               <p className="m-0 text-on-scrim/75">{t("watchPartyIntro")}</p>
               <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
                 <legend className="mb-1 p-0 text-on-scrim/75">{t("watchPartyControl")}</legend>
-                {[
-                  { value: true, label: t("watchPartyRelaxed") },
-                  { value: false, label: t("watchPartyHostOnly") },
-                ].map((option) => (
-                  <label key={String(option.value)} className="flex items-center gap-2">
+                {(
+                  [
+                    { value: "relaxed", label: t("watchPartyRelaxed") },
+                    { value: "host", label: t("watchPartyHostOnly") },
+                    { value: "lead", label: t("watchPartyLead") },
+                  ] as const
+                ).map((option) => (
+                  <label key={option.value} className="flex items-center gap-2">
                     <input
                       type="radio"
                       name={`${panelID}-control`}
-                      checked={relaxed === option.value}
+                      checked={control === option.value}
                       disabled={busy}
-                      onChange={() => setRelaxed(option.value)}
+                      onChange={() => setControl(option.value)}
                     />
                     {option.label}
                   </label>
                 ))}
+                {control === "lead" && (
+                  <p className="m-0 mt-1 text-on-scrim/60">{t("watchPartyLeadHint")}</p>
+                )}
               </fieldset>
-              <Button size="sm" disabled={busy} onClick={() => void onStart(relaxed)}>
+              <Button size="sm" disabled={busy} onClick={start}>
                 {busy ? t("watchPartyStarting") : t("watchPartyStart")}
               </Button>
+              {party.leadOffer && !busy && (
+                <div className="flex flex-col gap-2 border-t border-on-scrim/15 pt-3">
+                  <p className="m-0 text-on-scrim/75">{t("watchPartyFollowOffer")}</p>
+                  <Button variant="outline" size="sm" onClick={() => void followLeadParty()}>
+                    {t("watchPartyFollow")}
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : following ? (
+            <>
+              <div>
+                <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-on-scrim/60">
+                  {leadNameOf(party)
+                    ? t("watchPartyFollowing", { name: leadNameOf(party) })
+                    : t("watchPartyFollowingLead")}
+                </h2>
+                <p className="m-0 text-on-scrim/75">{t("watchPartyFollowMuted")}</p>
+              </div>
+              <DisplayTrimControl />
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => void onLeave()}>
+                  {t("watchPartyLeave")}
+                </Button>
+              </div>
             </>
           ) : (
             <>
+              {leading && (
+                <div data-party-lead>
+                  <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-on-scrim/60">
+                    {t("watchPartyLeading")}
+                  </h2>
+                  <p className="m-0 text-on-scrim/75">
+                    {t("watchPartyFollowerCount", { count: followerCount(party) })}
+                  </p>
+                </div>
+              )}
               <div>
                 <h2 className="m-0 mb-1 text-xs font-medium uppercase tracking-wide text-on-scrim/60">
                   {t("watchPartyMembers")}
@@ -163,6 +229,72 @@ export function WatchPartyPanel({
         </section>
       )}
     </div>
+  );
+}
+
+// The wire names a party's members, not which of them leads. When every
+// member carries one name (screens of one Profile), that is the lead's name.
+function leadNameOf(party: WatchPartyState): string {
+  const names = new Set(party.members);
+  return names.size === 1 ? (party.members[0] ?? "") : "";
+}
+
+/** "+20 ms", "0 ms", "−10 ms": this screen's display delay trim. */
+export function formatDisplayTrim(trimMS: number): string {
+  return trimMS === 0 ? "0 ms" : formatDrift(trimMS);
+}
+
+/**
+ * This screen's display delay, stepped 10 ms at a time with a reset. A control
+ * at its limit stays focusable (aria-disabled), so stepping to the end of the
+ * range never drops keyboard focus.
+ */
+function DisplayTrimControl() {
+  const t = useT();
+  const hintID = useId();
+  const trim = useDisplayTrimMS();
+  const step = (label: string, disabled: boolean, to: number, icon: ReactNode) => (
+    <Button
+      type="button"
+      variant="outline"
+      size="icon-sm"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      className="aria-disabled:cursor-default aria-disabled:opacity-50"
+      onClick={disabled ? undefined : () => setDisplayTrimMS(to)}
+    >
+      {icon}
+    </Button>
+  );
+  return (
+    <fieldset className="m-0 flex flex-col gap-1 border-0 p-0" aria-describedby={hintID}>
+      <legend className="mb-1 p-0 text-on-scrim/75">{t("watchPartyTrimLabel")}</legend>
+      <div className="flex items-center gap-1.5">
+        {step(
+          t("watchPartyTrimLess"),
+          trim <= -MAX_DISPLAY_TRIM_MS,
+          trim - DISPLAY_TRIM_STEP_MS,
+          <Minus aria-hidden />,
+        )}
+        <output
+          className="min-w-[4.5rem] text-center text-sm font-medium tabular-nums"
+          aria-live="polite"
+          data-display-trim={trim}
+        >
+          {formatDisplayTrim(trim)}
+        </output>
+        {step(
+          t("watchPartyTrimMore"),
+          trim >= MAX_DISPLAY_TRIM_MS,
+          trim + DISPLAY_TRIM_STEP_MS,
+          <Plus aria-hidden />,
+        )}
+        {step(t("reset"), trim === 0, 0, <RotateCcw aria-hidden />)}
+      </div>
+      <p id={hintID} className="m-0 text-xs text-on-scrim/60">
+        {t("watchPartyTrimHint")}
+      </p>
+    </fieldset>
   );
 }
 
@@ -262,10 +394,13 @@ export function WatchPartySyncIndicator({
   if (playback === "off") return null;
   let label: string;
   let level = "in-sync";
-  if (playback === "waiting") label = t("watchPartyWaiting");
+  if (party.lead && party.isHost) {
+    // The lead is the timeline: it shows how many screens follow it.
+    label = t("watchPartyFollowerCount", { count: followerCount(party) });
+  } else if (playback === "waiting") label = t("watchPartyWaiting");
   else if (playback === "paused") label = t("watchPartyPausedForAll");
   else {
-    level = driftLevel(driftMS ?? 0);
+    level = party.lead ? followerDriftLevel(driftMS ?? 0) : driftLevel(driftMS ?? 0);
     const drift = formatDrift(driftMS ?? 0);
     label =
       level === "in-sync"

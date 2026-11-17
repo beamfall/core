@@ -3,10 +3,17 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
-import { formatDrift, WatchPartyPanel, WatchPartySyncIndicator } from "./WatchPartyPanel";
+import { MAX_DISPLAY_TRIM_MS, setDisplayTrimMS } from "./displayTrim";
+import {
+  formatDisplayTrim,
+  formatDrift,
+  WatchPartyPanel,
+  WatchPartySyncIndicator,
+} from "./WatchPartyPanel";
 import {
   decidePartyRequest,
   endParty,
+  followLeadParty,
   inviteToParty,
   type WatchPartyState,
 } from "./watchPartyStore";
@@ -19,6 +26,7 @@ vi.mock("./watchPartyStore", () => ({
   endParty: vi.fn(async () => {}),
   decidePartyRequest: vi.fn(async () => true),
   clearWatchPartyNotice: vi.fn(),
+  followLeadParty: vi.fn(async () => "m1"),
   useWatchPartyState: () => storeParty,
 }));
 
@@ -26,6 +34,8 @@ const idle: WatchPartyState = {
   status: "idle",
   partyID: "",
   isHost: false,
+  lead: false,
+  leadOffer: null,
   timeline: null,
   members: [],
   invited: [],
@@ -41,6 +51,8 @@ beforeEach(() => {
   storeParty = idle;
   vi.mocked(endParty).mockClear();
   vi.mocked(decidePartyRequest).mockClear();
+  vi.mocked(followLeadParty).mockClear();
+  setDisplayTrimMS(0);
 });
 
 function renderPanel(party: WatchPartyState, onStart = vi.fn(async () => true)) {
@@ -135,6 +147,121 @@ describe("WatchPartyPanel", () => {
     expect(endParty).toHaveBeenCalled();
   });
 
+  describe("lead and follower screens (CORE-2245)", () => {
+    const leadParty: WatchPartyState = {
+      ...idle,
+      status: "active",
+      partyID: "p1",
+      lead: true,
+      members: ["Den", "Den", "Den"],
+    };
+
+    it("starts a lead party, saying what leading means", async () => {
+      const { onStart } = renderPanel(idle);
+      expect(screen.queryByText(/This screen plays the sound/)).toBeNull();
+      await userEvent.click(screen.getByRole("radio", { name: "Lead for other screens" }));
+      expect(
+        screen.getByText(
+          "This screen plays the sound. Other screens follow it, muted and in step.",
+        ),
+      ).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: "Start a Watch Party" }));
+      expect(onStart).toHaveBeenCalledWith(false, true);
+    });
+
+    it("offers nothing when no other screen on this profile leads", () => {
+      renderPanel(idle);
+      expect(screen.queryByRole("button", { name: "Follow it" })).toBeNull();
+    });
+
+    it("follows the offered lead screen, also one it left before", async () => {
+      renderPanel({ ...idle, leadOffer: { partyID: "p9", item: "m2", declined: true } });
+      expect(screen.getByText("Another screen on this profile is leading.")).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: "Follow it" }));
+      expect(followLeadParty).toHaveBeenCalledTimes(1);
+    });
+
+    it("tells the lead that it leads and how many screens follow", () => {
+      renderPanel({ ...leadParty, isHost: true });
+      expect(screen.getByText("This screen leads")).toBeVisible();
+      expect(screen.getByText("2 screens following")).toBeVisible();
+      // The lead still invites and ends the party.
+      expect(screen.getByLabelText("Invite a profile")).toBeVisible();
+      expect(screen.getByRole("button", { name: "End for everyone" })).toBeVisible();
+      expect(screen.queryByRole("group", { name: "Display delay" })).toBeNull();
+    });
+
+    it.each([
+      [["Den"], "No screens following"],
+      [["Den", "Den"], "1 screen following"],
+    ])("counts %j as %s", (members, label) => {
+      renderPanel({ ...leadParty, isHost: true, members });
+      expect(screen.getByText(label)).toBeVisible();
+    });
+
+    it("tells a follower whom it follows, that it is muted, and lets it leave", async () => {
+      const { onLeave } = renderPanel(leadParty);
+      expect(screen.getByRole("heading", { name: "Following Den" })).toBeVisible();
+      expect(
+        screen.getByText("Sound plays from the lead screen. This screen is muted."),
+      ).toBeVisible();
+      // A follower neither invites nor ends the party, and is not told it leads.
+      expect(screen.queryByLabelText("Invite a profile")).toBeNull();
+      expect(screen.queryByRole("button", { name: "End for everyone" })).toBeNull();
+      expect(screen.queryByText("This screen leads")).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Leave party" }));
+      expect(onLeave).toHaveBeenCalled();
+    });
+
+    it("names no lead when the members carry different names", () => {
+      renderPanel({ ...leadParty, members: ["Den", "Guest"] });
+      expect(screen.getByRole("heading", { name: "Following the lead screen" })).toBeVisible();
+    });
+
+    it("steps a follower's display delay 10 ms at a time and resets it", async () => {
+      renderPanel(leadParty);
+      const trim = screen.getByRole("group", { name: "Display delay" });
+      expect(trim).toHaveAccessibleDescription("Raise it if this screen's picture lags the sound.");
+      const readout = screen.getByRole("status");
+      const more = screen.getByRole("button", { name: "Increase display delay" });
+      const less = screen.getByRole("button", { name: "Decrease display delay" });
+      const reset = screen.getByRole("button", { name: "Reset" });
+      expect(readout).toHaveTextContent("0 ms");
+      expect(reset).toHaveAttribute("aria-disabled", "true");
+
+      await userEvent.click(more);
+      await userEvent.click(more);
+      expect(readout).toHaveTextContent("+20 ms");
+      expect(readout).toHaveAttribute("data-display-trim", "20");
+      expect(reset).not.toHaveAttribute("aria-disabled");
+
+      await userEvent.click(reset);
+      expect(readout).toHaveTextContent("0 ms");
+      await userEvent.click(less);
+      expect(readout).toHaveTextContent("−10 ms");
+      expect(window.localStorage.getItem("beamfall.followerDisplayTrimMS")).toBe("-10");
+    });
+
+    it("stops at the end of the range without dropping the control", async () => {
+      setDisplayTrimMS(MAX_DISPLAY_TRIM_MS);
+      renderPanel(leadParty);
+      const more = screen.getByRole("button", { name: "Increase display delay" });
+      expect(more).toHaveAttribute("aria-disabled", "true");
+      expect(more).toBeEnabled();
+      await userEvent.click(more);
+      expect(screen.getByRole("status")).toHaveAttribute("data-display-trim", "500");
+      expect(screen.getByRole("button", { name: "Decrease display delay" })).not.toHaveAttribute(
+        "aria-disabled",
+      );
+    });
+
+    it("formats the display delay", () => {
+      expect(formatDisplayTrim(0)).toBe("0 ms");
+      expect(formatDisplayTrim(20)).toBe("+20 ms");
+      expect(formatDisplayTrim(-10)).toBe("−10 ms");
+    });
+  });
+
   it("explains the home-network limit", () => {
     renderPanel({ ...idle, error: "home-network" });
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -171,6 +298,33 @@ describe("WatchPartySyncIndicator", () => {
     renderIndicator({ driftMS: 1500 });
     expect(screen.getByRole("status")).toHaveTextContent("Catching up +1.5 s");
     expect(screen.getByRole("status")).toHaveAttribute("data-drift-level", "resyncing");
+  });
+
+  it("holds a follower screen to the tighter lead thresholds (CORE-2245)", () => {
+    storeParty = { ...idle, status: "active", partyID: "p1", lead: true, members: ["Den", "Den"] };
+    // 60 ms is in sync for an ordinary party, not for a screen under the lead's sound.
+    const { unmount } = renderIndicator({ driftMS: 60 });
+    expect(screen.getByRole("status")).toHaveTextContent("Adjusting +60 ms");
+    unmount();
+    const locked = renderIndicator({ driftMS: -40 });
+    expect(screen.getByRole("status")).toHaveTextContent("In sync");
+    locked.unmount();
+    renderIndicator({ driftMS: 300 });
+    expect(screen.getByRole("status")).toHaveAttribute("data-drift-level", "resyncing");
+  });
+
+  it("shows the lead how many screens follow instead of a drift (CORE-2245)", () => {
+    storeParty = {
+      ...idle,
+      status: "active",
+      partyID: "p1",
+      lead: true,
+      isHost: true,
+      members: ["Den", "Den", "Den"],
+    };
+    renderIndicator({ driftMS: null, playback: "paused" });
+    expect(screen.getByRole("status")).toHaveTextContent("2 screens following");
+    expect(screen.getByRole("status")).toHaveAttribute("data-drift-level", "in-sync");
   });
 
   it("asks for a tap when the browser blocks playback", async () => {
