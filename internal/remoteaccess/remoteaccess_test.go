@@ -981,8 +981,10 @@ func newDialableRelay(t *testing.T, endpoint, secretDir string) *RelayClient {
 		t.Fatal(err)
 	}
 	c.dial = func(ctx context.Context, ep string) (net.Conn, error) {
-		d := &tls.Dialer{Config: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}
-		return d.DialContext(ctx, "tcp", ep)
+		return dialBoundedTLS(ctx, ep, &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // G402: loopback stub relay with a self-signed certificate.
+			MinVersion:         tls.VersionTLS13,
+		})
 	}
 	return c
 }

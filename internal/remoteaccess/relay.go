@@ -532,8 +532,23 @@ func dialTLS13WithConfig(ctx context.Context, endpoint string, roots *x509.CertP
 	if err != nil {
 		return nil, err
 	}
-	d := &tls.Dialer{Config: tlsConfig}
-	return d.DialContext(ctx, "tcp", endpoint)
+	return dialBoundedTLS(ctx, endpoint, tlsConfig)
+}
+
+// dialBoundedTLS dials the TCP carrier, bounds its unsent send backlog on the
+// raw socket (the bound has to sit below TLS, where the bytes are queued), and
+// completes the TLS handshake over it.
+func dialBoundedTLS(ctx context.Context, endpoint string, tlsConfig *tls.Config) (net.Conn, error) {
+	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", endpoint)
+	if err != nil {
+		return nil, err
+	}
+	conn := tls.Client(boundCarrierUnsentBacklog(raw), tlsConfig)
+	if err := conn.HandshakeContext(ctx); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
 func dialQUIC(ctx context.Context, endpoint string) (*quic.Conn, error) {
