@@ -381,10 +381,12 @@ func (h *Handler) semanticItems(ctx context.Context, profileID store.ProfileID, 
 			continue
 		}
 		source := store.SourceItem{
-			ID:      media.ID,
-			Kind:    "media",
-			Title:   media.Title,
-			Summary: media.Summary,
+			ID:         media.ID,
+			Kind:       "media",
+			Title:      media.Title,
+			Summary:    media.Summary,
+			MediaClass: media.Class,
+			Year:       media.Year,
 		}
 		// Library-level restricted flag for the per-poster tag.
 		// Only consulted on a Revealed filter — an unrevealed filter never

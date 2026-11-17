@@ -11,7 +11,10 @@ func TestAnnotateMediaClassSetsMediaClassesAndSkipsEntities(t *testing.T) {
 	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media SET media_class = 'audio' WHERE id = 'media-demo-bunny'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media SET media_class = 'video' WHERE id = 'media-demo-sintel'`); err != nil {
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media SET media_class = 'video', year = 2010 WHERE id = 'media-demo-sintel'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media SET year = NULL WHERE id = 'media-demo-bunny'`); err != nil {
 		t.Fatal(err)
 	}
 	items := []SourceItem{
@@ -24,9 +27,14 @@ func TestAnnotateMediaClassSetsMediaClassesAndSkipsEntities(t *testing.T) {
 		t.Fatalf("AnnotateMediaClass: %v", err)
 	}
 	want := []MediaClass{MediaClassVideo, MediaClassAudio, "", ""}
+	// Only the item with a stored year carries one (CORE-2269).
+	wantYear := []int{2010, 0, 0, 0}
 	for i, item := range items {
 		if item.MediaClass != want[i] {
 			t.Errorf("%s MediaClass = %q, want %q", item.ID, item.MediaClass, want[i])
+		}
+		if item.Year != wantYear[i] {
+			t.Errorf("%s Year = %d, want %d", item.ID, item.Year, wantYear[i])
 		}
 	}
 	if err := st.AnnotateMediaClass(ctx, nil); err != nil {

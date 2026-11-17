@@ -136,6 +136,9 @@ type SourceItem struct {
 	// a client can choose a class-appropriate placeholder for an artwork-less
 	// card (CORE-1492). Absent for entities and unknown classes.
 	MediaClass string `json:"mediaClass,omitempty"`
+	// Year is a media-kind item's stored year, so a card can state it without
+	// a detail read (CORE-2269). Absent for entities and for Media with no year.
+	Year int `json:"year,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -1008,6 +1011,7 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		Muted:      item.Muted,
 		Engagement: sourceItemEngagement(item.Engagement),
 		MediaClass: string(item.MediaClass),
+		Year:       item.Year,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
