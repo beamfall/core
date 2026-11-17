@@ -200,6 +200,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, details []store.Searc
 		items[i].Byline = card.Byline
 		items[i].Subtitle = plugin.LocaleString(card.Subtitle)
 		items[i].Sequence, items[i].Index = card.Sequence, card.Index
+		items[i].DurationSeconds = card.DurationSeconds
 	}
 	return nil
 }

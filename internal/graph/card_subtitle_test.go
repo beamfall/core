@@ -64,7 +64,7 @@ func TestMediaCardsCarryThePluginSubtitleAndOrdinals(t *testing.T) {
 	for name, values := range fields {
 		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
 			LibraryID: library.ID, Path: "/volumes/" + name + ".mkv", Title: "Same Title",
-			Container: "mkv", Codec: "h264", ContentFingerprint: "fp-" + name,
+			Container: "mkv", Codec: "h264", ContentFingerprint: "fp-" + name, DurationSecondsHint: 1800,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -77,7 +77,7 @@ func TestMediaCardsCarryThePluginSubtitleAndOrdinals(t *testing.T) {
 
 	var page LibraryItemsResponse
 	execGraph(t, handler, authorizeViewer,
-		`query($libraryID: String!) { libraryItems(libraryID: $libraryID, limit: 50) { items { id subtitle sequence index } } }`,
+		`query($libraryID: String!) { libraryItems(libraryID: $libraryID, limit: 50) { items { id subtitle sequence index durationSeconds } } }`,
 		map[string]any{"libraryID": string(library.ID)}, "libraryItems", &page)
 	cards := map[string]SourceItem{}
 	for _, item := range page.Items {
@@ -87,7 +87,7 @@ func TestMediaCardsCarryThePluginSubtitleAndOrdinals(t *testing.T) {
 	if full.Subtitle.Resolve("en") != "Vol 5 · No 3 · Reunion" || full.Subtitle.Resolve("fr") != "Tome 5 · No 3 · Reunion" {
 		t.Fatalf("full subtitle = %v", full.Subtitle)
 	}
-	if full.Sequence != 5 || full.Index != 3 {
+	if full.Sequence != 5 || full.Index != 3 || full.DurationSeconds != 1800 {
 		t.Fatalf("full ordinals = %v, %v", full.Sequence, full.Index)
 	}
 	untitled := cards[string(media["untitled"])]

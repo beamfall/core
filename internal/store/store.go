@@ -849,6 +849,10 @@ type SourceItem struct {
 	// Year is a media-kind item's stored year, set by AnnotateMediaClass in
 	// the same read; 0 for entities and for Media with no year (CORE-2269).
 	Year int
+	// DurationSeconds is a media-kind item's stored runtime, set by
+	// AnnotateMediaClass in the same read so a list row can state it
+	// (CORE-2386); 0 for entities and for Media with no known runtime.
+	DurationSeconds int
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.

@@ -2524,6 +2524,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -7667,6 +7672,11 @@
                       }
                     },
                     {
+                      "name": "durationSeconds",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "engagement",
                       "kind": "object",
                       "optional": true,
@@ -7797,6 +7807,11 @@
                     "elem": {
                       "kind": "scalar"
                     }
+                  },
+                  {
+                    "name": "durationSeconds",
+                    "kind": "scalar",
+                    "optional": true
                   },
                   {
                     "name": "engagement",
@@ -7958,6 +7973,11 @@
                     }
                   },
                   {
+                    "name": "durationSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "engagement",
                     "kind": "object",
                     "optional": true,
@@ -8088,6 +8108,11 @@
                   "elem": {
                     "kind": "scalar"
                   }
+                },
+                {
+                  "name": "durationSeconds",
+                  "kind": "scalar",
+                  "optional": true
                 },
                 {
                   "name": "engagement",
@@ -10328,6 +10353,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -10494,6 +10524,11 @@
             {
               "name": "childCount",
               "kind": "scalar"
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "engagement",
@@ -10818,6 +10853,11 @@
                 }
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -10948,6 +10988,11 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "engagement",
@@ -11344,6 +11389,11 @@
                 }
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -11474,6 +11524,11 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "engagement",
@@ -12819,6 +12874,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "engagement",
@@ -17054,6 +17114,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -17187,6 +17252,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "engagement",
@@ -17324,6 +17394,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -17457,6 +17532,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "engagement",
@@ -20188,6 +20268,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -20328,6 +20413,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "engagement",
@@ -20518,6 +20608,11 @@
                 }
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -20690,6 +20785,11 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "engagement",
@@ -28459,6 +28559,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -29054,6 +29159,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "engagement",
