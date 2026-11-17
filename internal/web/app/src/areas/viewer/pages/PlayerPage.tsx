@@ -61,6 +61,7 @@ import { SkippedOverlay } from "../player/SkippedOverlay";
 import { StillWatchingPrompt } from "../player/StillWatchingPrompt";
 import { UpNextCard } from "../player/UpNextCard";
 import { useAutoSkip } from "../player/useAutoSkip";
+import { useCaptionLoad } from "../player/useCaptionLoad";
 import { useChromeAutoHide } from "../player/useChromeAutoHide";
 import { decodableStream, useGaplessAudio } from "../player/useGaplessAudio";
 import { useMediaLoading } from "../player/useMediaLoading";
@@ -328,6 +329,7 @@ function FeaturePlayer({
       ? adjustmentApplied(state.info, adjustment)
       : null;
   const showSpinner = useMediaLoading(videoRef, state.phase === "loading" || playing);
+  const captionLoad = useCaptionLoad(videoRef);
   const isAudio = state.info?.mediaClass === "audio";
   // Before playback-info answers, a queue entry that reports its class already
   // routes a track to the audio stage instead of an empty video frame
@@ -776,6 +778,21 @@ function FeaturePlayer({
               >
                 <LoaderCircle aria-hidden className="size-10 animate-spin text-on-scrim/80" />
                 <span className="sr-only">{t("playerLoading")}</span>
+              </div>
+            )}
+            {captionLoad.status === "failed" && (
+              <div
+                className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-md bg-scrim/80 px-3 py-2 text-sm text-on-scrim"
+                role="alert"
+              >
+                <span>{t("subtitlesLoadFailed")}</span>
+                <button
+                  type="button"
+                  className="rounded-sm underline underline-offset-2"
+                  onClick={captionLoad.retry}
+                >
+                  {t("tryAgain")}
+                </button>
               </div>
             )}
             {state.waitingForNetwork ? (

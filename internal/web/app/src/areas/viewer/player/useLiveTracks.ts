@@ -11,7 +11,12 @@ import {
   type TrackMenuOption,
 } from "../lib/transport";
 import { audioTrackList, audioTracksArray } from "./media-tracks";
-import { audioTrackLabel, captionTrackLabel, type TrackLabelText } from "./streamTracks";
+import {
+  audioTrackLabel,
+  captionTrackLabel,
+  distinctLabels,
+  type TrackLabelText,
+} from "./streamTracks";
 import {
   type StreamTrackControl,
   type SwitchResult,
@@ -195,10 +200,14 @@ export function useLiveTracks({
   let subtitleOptions: MenuOption[];
   if (fileSubtitles && trackControl) {
     const active = trackControl.activeCaptionID();
+    const captionLabels = distinctLabels(
+      fileCaptions.map((track) => captionTrackLabel(track, labelText)),
+      (number) => t("trackDuplicateNumber", { number }),
+    );
     subtitleOptions = [
       option("off", labels.subtitlesOff, active === null),
       ...fileCaptions.map((track, index) =>
-        option(String(index), captionTrackLabel(track, labelText), track.id === active),
+        option(String(index), captionLabels[index] ?? "", track.id === active),
       ),
     ];
     if (unavailableReason) {
