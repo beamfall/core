@@ -143,7 +143,7 @@ func (r *Registry) RunOne(ctx context.Context, classes []store.JobClass, now tim
 	if errors.Is(err, ErrYielded) || interrupted {
 		runAfter := result.RunAfter
 		if runAfter.IsZero() {
-			runAfter = finishedAt
+			runAfter = now
 		}
 		r.logger.InfoContext(ctx, "job yielded", "id", job.ID, "kind", job.Kind)
 		return job, r.store.YieldJob(bookCtx, job.ID, job.LeaseOwner, result.Checkpoint, runAfter, finishedAt)

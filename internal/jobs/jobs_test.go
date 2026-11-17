@@ -445,10 +445,11 @@ func TestRegistryRunOneStampsOutcomeAfterHandlerDuration(t *testing.T) {
 				t.Fatalf("UpdatedAt = %v, want %v (claim + handler duration)", job.UpdatedAt, wantAt)
 			}
 			if tc.wantStatus == store.JobStatusYielded {
-				// With no RunAfter of its own, a yielded job is runnable from the
-				// moment it yielded, not from its earlier claim.
-				if !job.RunAfter.Equal(wantAt) {
-					t.Fatalf("RunAfter = %v, want %v", job.RunAfter, wantAt)
+				// With no RunAfter of its own, a yielded job stays runnable from
+				// its claim time: the caller's timeline decides when it is due
+				// again, so a slow handler never pushes its own resume later.
+				if !job.RunAfter.Equal(claimedAt) {
+					t.Fatalf("RunAfter = %v, want %v (claim time)", job.RunAfter, claimedAt)
 				}
 			} else if !job.FinishedAt.Equal(wantAt) {
 				t.Fatalf("FinishedAt = %v, want %v", job.FinishedAt, wantAt)
