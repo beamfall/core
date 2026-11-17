@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -191,7 +192,7 @@ func TestDeviceRequestRegenerateKillsTheOldCodeAndSecret(t *testing.T) {
 	ctx := context.Background()
 	old := h.request("192.168.1.20:5000")
 	h.now = h.now.Add(9 * time.Minute)
-	fresh, err := h.service.RegenerateDevicePairing(ctx, DevicePollRequest{RequestSecret: old.RequestSecret, RemoteAddr: "192.168.1.20:5000"})
+	fresh, err := h.service.RegenerateDevicePairing(ctx, DevicePollRequest{RequestSecret: old.RequestSecret, RemoteAddr: "192.168.1.20:5000", IsLAN: true})
 	if err != nil || fresh.Code == old.Code || fresh.RequestSecret == old.RequestSecret || fresh.ExpiresAt == old.ExpiresAt {
 		t.Fatalf("regenerate = %+v, %v", fresh, err)
 	}
@@ -201,7 +202,7 @@ func TestDeviceRequestRegenerateKillsTheOldCodeAndSecret(t *testing.T) {
 	if _, err := h.poll(old.RequestSecret, "192.168.1.20:5000"); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("polling a regenerated-away secret = %v, want ErrInvalidCode", err)
 	}
-	if _, err := h.service.RegenerateDevicePairing(ctx, DevicePollRequest{RequestSecret: old.RequestSecret}); !errors.Is(err, ErrInvalidCode) {
+	if _, err := h.service.RegenerateDevicePairing(ctx, DevicePollRequest{RequestSecret: old.RequestSecret, IsLAN: true}); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("regenerating from a dead secret = %v, want ErrInvalidCode", err)
 	}
 	// The fresh code outlives the original ten minutes.
@@ -445,11 +446,27 @@ func TestDeviceRequestRoleOnlyThroughApproval(t *testing.T) {
 	if polled, err := h.poll(manager.RequestSecret, other); err != nil || polled.Enrollment != nil {
 		t.Fatalf("unapproved manager request = %+v, %v", polled, err)
 	}
+	// An approval that names no role grants Viewer, whatever the device asked
+	// for: the requested role is untrusted input from an unauthenticated host.
 	decision, err := h.approve(h.admin(), manager.Code)
-	if err != nil || decision.DeviceRole != "manager" {
-		t.Fatalf("approve defaults to the requested role: %+v, %v", decision, err)
+	if err != nil || decision.DeviceRole != "viewer" {
+		t.Fatalf("approve without a role = %+v, %v; want viewer", decision, err)
 	}
 	polled, err := h.poll(manager.RequestSecret, other)
+	if err != nil || polled.Enrollment == nil || polled.Enrollment.DeviceRole != "viewer" {
+		t.Fatalf("collect default approval = %+v, %v; want a viewer device", polled, err)
+	}
+
+	// Manager is granted only when the admin names it.
+	explicit, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "Office Mac", RequestedRole: "manager", RemoteAddr: other, IsLAN: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err = h.service.ApproveDeviceRequest(ctx, h.admin(), DeviceRequestDecision{Code: explicit.Code, DeviceRole: "manager"})
+	if err != nil || decision.DeviceRole != "manager" {
+		t.Fatalf("approve naming manager = %+v, %v", decision, err)
+	}
+	polled, err = h.poll(explicit.RequestSecret, other)
 	if err != nil || polled.Enrollment == nil || polled.Enrollment.DeviceRole != "manager" {
 		t.Fatalf("collect manager approval = %+v, %v", polled, err)
 	}
@@ -476,6 +493,10 @@ func TestDeviceRequestRoleOnlyThroughApproval(t *testing.T) {
 	if _, err := h.service.ApproveDeviceRequest(ctx, h.admin(), DeviceRequestDecision{Code: pending.Code, DeviceRole: "viewer"}); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("downgrade to Viewer with the switch on = %v, want ErrInvalidCode", err)
 	}
+	// The default approval is a Viewer grant, so the switch refuses it too.
+	if _, err := h.approve(h.admin(), pending.Code); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("default approval with the switch on = %v, want ErrInvalidCode", err)
+	}
 }
 
 func TestDeviceRequestRejectsUntrustedPlatform(t *testing.T) {
@@ -487,5 +508,287 @@ func TestDeviceRequestRejectsUntrustedPlatform(t *testing.T) {
 	}
 	if _, err := h.service.RequestDevicePairing(context.Background(), DeviceRequest{DeviceName: "TV", RemoteAddr: "192.168.1.20:5000", IsLAN: true}); err != nil {
 		t.Fatalf("request without a platform = %v", err)
+	}
+}
+
+// A source that hits the pending caps is told to back off, but the cap is not
+// a failed guess: it must not throttle the source's own live polls.
+func TestDeviceRequestCapDoesNotSpendThrottleAttempts(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	const source = "192.168.1.20:5000"
+	live := h.request(source)
+	for range maxDeviceRequestsPerSource - 1 {
+		h.request(source)
+	}
+	for i := range enrollBackoff.FreeAttempts + 2 {
+		if _, err := h.service.RequestDevicePairing(context.Background(), DeviceRequest{DeviceName: "TV", RemoteAddr: source, IsLAN: true}); !errors.Is(err, ErrThrottled) {
+			t.Fatalf("request %d over the cap = %v, want ErrThrottled", i, err)
+		}
+	}
+	if polled, err := h.poll(live.RequestSecret, source); err != nil || polled.Status != DeviceRequestPending {
+		t.Fatalf("live poll after hitting the cap = %+v, %v; want pending", polled, err)
+	}
+}
+
+// Pairing requests have their own throttle lane: a device polling a secret
+// the server forgot (a restart, an expiry) must not lock its address out of
+// code enrollment.
+func TestDeviceRequestFailuresDoNotThrottleCodeEnrollment(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	ctx := context.Background()
+	const source = "192.168.1.20:5000"
+	for i := range enrollBackoff.FreeAttempts + 2 {
+		_, err := h.poll("stale-secret", source)
+		if !errors.Is(err, ErrInvalidCode) && !errors.Is(err, ErrThrottled) {
+			t.Fatalf("stale poll %d = %v", i, err)
+		}
+	}
+	if _, err := h.poll("stale-secret", source); !errors.Is(err, ErrThrottled) {
+		t.Fatalf("stale polls past the free attempts = %v, want ErrThrottled on the pairing-request lane", err)
+	}
+	if _, err := h.service.Enroll(ctx, EnrollRequest{Code: "N0SVCHCD", DeviceName: "TV", RemoteAddr: source, IsLAN: true}); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("code enrollment after stale pairing polls = %v, want ErrInvalidCode (not throttled)", err)
+	}
+	// And the other way round: bad codes on /api/enroll do not stop a device
+	// asking to join.
+	const other = "192.168.1.30:5000"
+	for range enrollBackoff.FreeAttempts + 1 {
+		_, _ = h.service.Enroll(ctx, EnrollRequest{Code: "N0SVCHCD", DeviceName: "TV", RemoteAddr: other, IsLAN: true})
+	}
+	if _, err := h.service.Enroll(ctx, EnrollRequest{Code: "N0SVCHCD", DeviceName: "TV", RemoteAddr: other, IsLAN: true}); !errors.Is(err, ErrThrottled) {
+		t.Fatalf("enroll after bad codes = %v, want ErrThrottled", err)
+	}
+	if _, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "TV", RemoteAddr: other, IsLAN: true}); err != nil {
+		t.Fatalf("pairing request from a source throttled on code enrollment = %v", err)
+	}
+}
+
+// A store failure while enrolling an approved request is not a failed guess:
+// every poll would otherwise spend an attempt and throttle the device out of
+// the approval it is waiting to collect.
+func TestDeviceRequestTransientEnrollFailureKeepsTheApprovalAndTheThrottle(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	const source = "192.168.1.20:5000"
+	req := h.request(source)
+	if _, err := h.approve(h.admin(), req.Code); err != nil {
+		t.Fatal(err)
+	}
+	before := h.deviceCount()
+	generateID := h.service.generateID
+	// A blank device id makes the store refuse the insert.
+	h.service.generateID = func(prefix string) (string, error) {
+		if prefix == "device" {
+			return "", nil
+		}
+		return generateID(prefix)
+	}
+	for i := range enrollBackoff.FreeAttempts + 2 {
+		_, err := h.poll(req.RequestSecret, source)
+		if err == nil || errors.Is(err, ErrInvalidCode) || errors.Is(err, ErrThrottled) {
+			t.Fatalf("poll %d during a store failure = %v, want the store error", i, err)
+		}
+	}
+	if h.deviceCount() != before {
+		t.Fatal("a failed enrollment left a device")
+	}
+	h.service.generateID = generateID
+	polled, err := h.poll(req.RequestSecret, source)
+	if err != nil || polled.Status != DeviceRequestApproved || polled.Enrollment == nil {
+		t.Fatalf("poll after the store recovered = %+v, %v; want the enrollment", polled, err)
+	}
+}
+
+func TestDeviceRequestRegenerateObeysTheRemoteEnrollmentGate(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	ctx := context.Background()
+	admin := h.admin()
+	req := h.request("192.168.1.20:5000")
+	if _, err := h.service.RegenerateDevicePairing(ctx, DevicePollRequest{RequestSecret: req.RequestSecret, RemoteAddr: "203.0.113.5:5000"}); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("off-LAN regenerate with remote enrollment off = %v, want ErrInvalidCode", err)
+	}
+	if polled, err := h.poll(req.RequestSecret, "192.168.1.20:5000"); err != nil || polled.Status != DeviceRequestPending {
+		t.Fatalf("refused regenerate changed the request: %+v, %v", polled, err)
+	}
+
+	enabled := true
+	if _, err := h.st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{RemoteEnrollmentEnabled: &enabled}, h.now); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := h.service.RegenerateDevicePairing(ctx, DevicePollRequest{RequestSecret: req.RequestSecret, RemoteAddr: "203.0.113.5:5000"})
+	if err != nil {
+		t.Fatalf("off-LAN regenerate with remote enrollment on = %v", err)
+	}
+	// The secret has now travelled off the LAN: the admin is told, and the
+	// collection gets no server key pin.
+	list, err := h.service.ListDeviceRequests(ctx, admin)
+	if err != nil || len(list.Requests) != 1 || list.Requests[0].LAN {
+		t.Fatalf("list after an off-LAN regenerate = %+v, %v; want lan false", list, err)
+	}
+	if _, err := h.approve(admin, fresh.Code); err != nil {
+		t.Fatal(err)
+	}
+	polled, err := h.poll(fresh.RequestSecret, "192.168.1.20:5000")
+	if err != nil || polled.Enrollment == nil || polled.Enrollment.ServerKeyPin != "" {
+		t.Fatalf("collect after an off-LAN regenerate = %+v, %v; want no pin", polled, err)
+	}
+}
+
+// removeLocked drops only the entry it was given: a slot another request now
+// holds is left alone.
+func TestDeviceRequestRemoveKeepsAnotherEntrysSlot(t *testing.T) {
+	var table deviceRequests
+	table.init()
+	stale := &deviceRequestEntry{code: "CODE0001", secretHash: hashRequestSecret("one")}
+	current := &deviceRequestEntry{code: "CODE0001", secretHash: hashRequestSecret("one")}
+	table.byCode[current.code] = current
+	table.bySecret[current.secretHash] = current
+	table.removeLocked(stale)
+	if table.byCode["CODE0001"] != current || table.bySecret[current.secretHash] != current {
+		t.Fatal("removing a stale entry dropped the request that now holds its code")
+	}
+	table.removeLocked(current)
+	if len(table.byCode) != 0 || len(table.bySecret) != 0 {
+		t.Fatal("removing the live entry left it in the table")
+	}
+}
+
+// Two polls racing for one approval: the first enrolls, the second reads as
+// pending while that enrollment is in flight, and exactly one device exists.
+func TestDeviceRequestConcurrentPollsEnrollOnce(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	const source = "192.168.1.20:5000"
+	req := h.request(source)
+	if _, err := h.approve(h.admin(), req.Code); err != nil {
+		t.Fatal(err)
+	}
+	before := h.deviceCount()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	generateID := h.service.generateID
+	var once sync.Once
+	h.service.generateID = func(prefix string) (string, error) {
+		once.Do(func() {
+			close(entered)
+			<-release
+		})
+		return generateID(prefix)
+	}
+	type result struct {
+		resp DevicePollResponse
+		err  error
+	}
+	first := make(chan result, 1)
+	go func() {
+		resp, err := h.poll(req.RequestSecret, source)
+		first <- result{resp, err}
+	}()
+	<-entered
+	second, err := h.poll(req.RequestSecret, source)
+	if err != nil || second.Status != DeviceRequestPending || second.Enrollment != nil {
+		t.Fatalf("poll during a collection = %+v, %v; want pending without enrollment", second, err)
+	}
+	close(release)
+	got := <-first
+	if got.err != nil || got.resp.Status != DeviceRequestApproved || got.resp.Enrollment == nil {
+		t.Fatalf("collecting poll = %+v, %v", got.resp, got.err)
+	}
+	if h.deviceCount() != before+1 {
+		t.Fatalf("devices = %d, want %d", h.deviceCount(), before+1)
+	}
+	if _, err := h.poll(req.RequestSecret, source); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("poll after the collection = %v, want ErrInvalidCode", err)
+	}
+}
+
+func TestDeviceRequestCancel(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	const source = "192.168.1.20:5000"
+	ctx := context.Background()
+	cancel := func(secret string) error {
+		return h.service.CancelDevicePairing(ctx, DevicePollRequest{RequestSecret: secret, RemoteAddr: source, IsLAN: true})
+	}
+	req := h.request(source)
+	if err := cancel(""); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("cancel without a secret = %v, want ErrInvalidRequest", err)
+	}
+	// The display code is not the secret, and an unknown secret is not a failed guess.
+	for i := range enrollBackoff.FreeAttempts + 2 {
+		if err := cancel(req.Code); err != nil {
+			t.Fatalf("cancel %d with the display code = %v", i, err)
+		}
+	}
+	if polled, err := h.poll(req.RequestSecret, source); err != nil || polled.Status != DeviceRequestPending {
+		t.Fatalf("poll after cancels that named no request = %+v, %v; want pending", polled, err)
+	}
+	if err := cancel(req.RequestSecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.approve(h.admin(), req.Code); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("approve a cancelled code = %v, want ErrInvalidCode", err)
+	}
+	if _, err := h.poll(req.RequestSecret, source); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("poll a cancelled request = %v, want ErrInvalidCode", err)
+	}
+
+	// Cancelling an approved request withdraws the approval before it enrolls.
+	approved := h.request(source)
+	if _, err := h.approve(h.admin(), approved.Code); err != nil {
+		t.Fatal(err)
+	}
+	before := h.deviceCount()
+	if err := cancel(approved.RequestSecret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.poll(approved.RequestSecret, source); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("poll a cancelled approval = %v, want ErrInvalidCode", err)
+	}
+	if got := h.deviceCount(); got != before {
+		t.Fatalf("devices = %d after a cancelled approval, want %d", got, before)
+	}
+}
+
+func TestDeviceRequestBrowserBindingAndServerRelativeExpiry(t *testing.T) {
+	h := newDeviceRequestHarness(t)
+	const source = "192.168.1.20:5000"
+	ctx := context.Background()
+	native := h.request(source)
+	if native.ExpiresInSeconds != int(deviceRequestTTL/time.Second) {
+		t.Fatalf("expiresInSeconds = %d, want %d", native.ExpiresInSeconds, int(deviceRequestTTL/time.Second))
+	}
+	if h.service.DeviceRequestBrowserBound(native.RequestSecret) {
+		t.Fatal("native request reads as browser-bound")
+	}
+	web, err := h.service.RequestDevicePairing(ctx, DeviceRequest{DeviceName: "Chrome", Platform: "web", RemoteAddr: source, IsLAN: true, Browser: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.service.DeviceRequestBrowserBound(web.RequestSecret) || h.service.DeviceRequestBrowserBound(web.Code) || h.service.DeviceRequestBrowserBound("") {
+		t.Fatal("browser binding is not keyed by the request secret")
+	}
+	fresh, err := h.service.RegenerateDevicePairing(ctx, DevicePollRequest{RequestSecret: web.RequestSecret, RemoteAddr: source, IsLAN: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.service.DeviceRequestBrowserBound(web.RequestSecret) || !h.service.DeviceRequestBrowserBound(fresh.RequestSecret) {
+		t.Fatal("regenerate did not carry the browser binding to the fresh secret")
+	}
+	pending, err := h.poll(fresh.RequestSecret, source)
+	if err != nil || !pending.Browser || pending.ExpiresInSeconds != fresh.ExpiresInSeconds {
+		t.Fatalf("pending browser poll = %+v, %v", pending, err)
+	}
+	if _, err := h.approve(h.admin(), fresh.Code); err != nil {
+		t.Fatal(err)
+	}
+	collected, err := h.poll(fresh.RequestSecret, source)
+	if err != nil || collected.Enrollment == nil || !collected.Browser {
+		t.Fatalf("collected browser poll = %+v, %v", collected, err)
+	}
+	if collected, err := func() (DevicePollResponse, error) {
+		if _, err := h.approve(h.admin(), native.Code); err != nil {
+			return DevicePollResponse{}, err
+		}
+		return h.poll(native.RequestSecret, source)
+	}(); err != nil || collected.Enrollment == nil || collected.Browser {
+		t.Fatalf("collected native poll = %+v, %v", collected, err)
 	}
 }

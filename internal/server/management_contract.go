@@ -124,6 +124,7 @@ var managementRouteContracts = []ManagementRouteContract{
 	{Method: http.MethodPost, Pattern: "/api/pairing-requests", Note: "Request device pairing: returns a short code for an administrator to approve"},
 	{Method: http.MethodPost, Pattern: "/api/pairing-requests/poll", Note: "Poll a device pairing request with its request secret; delivers the enrollment once approved"},
 	{Method: http.MethodPost, Pattern: "/api/pairing-requests/regenerate", Note: "Replace a pending device pairing request's code and request secret"},
+	{Method: http.MethodPost, Pattern: "/api/pairing-requests/cancel", Note: "Withdraw a device pairing request with its request secret"},
 	{Method: http.MethodGet, Pattern: "/api/pairing-requests", Note: "List pending device pairing requests (admin)"},
 	{Method: http.MethodPost, Pattern: "/api/pairing-requests/approve", Note: "Approve a pending device pairing request (admin)"},
 	{Method: http.MethodPost, Pattern: "/api/pairing-requests/deny", Note: "Deny a pending device pairing request (admin)"},

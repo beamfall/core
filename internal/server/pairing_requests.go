@@ -17,6 +17,14 @@ import (
 // an administrator approves or denies the code from the pending list. The
 // device routes are pre-subject like /api/enroll; the list, approve and deny
 // routes need an administrator session.
+//
+// A request the web app makes (CORE-2070) carries the CSRF header every web
+// request sends, and is a browser request from then on: the service keeps that
+// with the request, so a later call cannot shed it by leaving the header off.
+// A browser request is bound like /api/web/enroll. Every device call for it is
+// refused over public plain HTTP before the request is touched, and on
+// approval the credential goes into the HttpOnly cookies, never into
+// page-readable JSON.
 
 // pollDevicePairingRequest is the poll body: the request secret plus the
 // optional client contract that /api/enroll also accepts.
@@ -31,6 +39,10 @@ func (s *Server) requestDevicePairing(w http.ResponseWriter, r *http.Request) {
 	var req pairing.DeviceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeDecodeError(w, r, err)
+		return
+	}
+	req.Browser = sentByWebApp(r)
+	if req.Browser && rejectPublicPlainHTTPWebCredentials(w, r) {
 		return
 	}
 	req.RemoteAddr = r.RemoteAddr
@@ -51,6 +63,9 @@ func (s *Server) regenerateDevicePairing(w http.ResponseWriter, r *http.Request)
 		writeDecodeError(w, r, err)
 		return
 	}
+	if s.browserDevicePairing(r, req.RequestSecret) && rejectPublicPlainHTTPWebCredentials(w, r) {
+		return
+	}
 	req.RemoteAddr = r.RemoteAddr
 	req.IsLAN = requestIsLAN(r)
 	resp, err := s.pairing.RegenerateDevicePairing(r.Context(), req)
@@ -61,6 +76,36 @@ func (s *Server) regenerateDevicePairing(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
+// cancelDevicePairing withdraws a request its device no longer wants. It
+// answers 204 whether or not the secret named a live request, so it is not an
+// oracle for one.
+func (s *Server) cancelDevicePairing(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
+	var req pairing.DevicePollRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeDecodeError(w, r, err)
+		return
+	}
+	req.RemoteAddr = r.RemoteAddr
+	req.IsLAN = requestIsLAN(r)
+	if err := s.pairing.CancelDevicePairing(r.Context(), req); err != nil {
+		writeDevicePairingError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// sentByWebApp reports whether the call carries the CSRF header every web
+// request sends.
+func sentByWebApp(r *http.Request) bool { return r.Header.Get(auth.CSRFHeader) != "" }
+
+// browserDevicePairing reports whether a device call is a browser's: the
+// request was made by the web app, or this call itself carries the header.
+func (s *Server) browserDevicePairing(r *http.Request, requestSecret string) bool {
+	return sentByWebApp(r) || s.pairing.DeviceRequestBrowserBound(requestSecret)
+}
+
 func (s *Server) pollDevicePairing(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	r.Body = http.MaxBytesReader(w, r.Body, maxControlBody)
@@ -69,11 +114,8 @@ func (s *Server) pollDevicePairing(w http.ResponseWriter, r *http.Request) {
 		writeDecodeError(w, r, err)
 		return
 	}
-	// A browser poll (CORE-2070) carries the CSRF header every web request
-	// sends. It is bound like /api/web/enroll: refused over public plain HTTP
-	// before the request is touched, and on approval the credential goes into
-	// the HttpOnly cookies, never into page-readable JSON.
-	browser := r.Header.Get(auth.CSRFHeader) != ""
+	// Refused before the request is touched, so the approval is not spent.
+	browser := s.browserDevicePairing(r, body.RequestSecret)
 	if browser && rejectPublicPlainHTTPWebCredentials(w, r) {
 		return
 	}
@@ -92,7 +134,9 @@ func (s *Server) pollDevicePairing(w http.ResponseWriter, r *http.Request) {
 			slog.WarnContext(r.Context(), "enrollment build mapping failed", "device", resp.Enrollment.DeviceID, "surface", body.ClientContract.Surface, "build", body.ClientContract.BuildID, "err", err)
 		}
 	}
-	if browser && resp.Enrollment != nil {
+	// resp.Browser is the binding the service read under the same lock that
+	// collected the approval.
+	if (browser || resp.Browser) && resp.Enrollment != nil {
 		enrolled := *resp.Enrollment
 		setWebSignInCookies(w, r, enrolled.SessionID, enrolled.SessionExpiresAt, enrolled.DeviceID, enrolled.DeviceSecret)
 		// Same fields, credential values blanked: the cookies carry them.

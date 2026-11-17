@@ -51,6 +51,7 @@ var compatExemptRoutes = map[string]string{
 	"POST /api/pairing-requests":            "pre-subject enrollment",
 	"POST /api/pairing-requests/poll":       "pre-subject enrollment",
 	"POST /api/pairing-requests/regenerate": "pre-subject enrollment",
+	"POST /api/pairing-requests/cancel":     "pre-subject enrollment",
 }
 
 func compatRouteExempt(method, pattern string) bool {

@@ -320,6 +320,7 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	s.handle(http.MethodPost, "/api/pairing-requests", reveal.ContentJSON, s.requestDevicePairing)
 	s.handle(http.MethodPost, "/api/pairing-requests/poll", reveal.ContentJSON, s.pollDevicePairing)
 	s.handle(http.MethodPost, "/api/pairing-requests/regenerate", reveal.ContentJSON, s.regenerateDevicePairing)
+	s.handle(http.MethodPost, "/api/pairing-requests/cancel", reveal.ContentJSON, s.cancelDevicePairing)
 	s.handle(http.MethodGet, "/api/pairing-requests", reveal.ContentJSON, s.listDevicePairingRequests)
 	s.handle(http.MethodPost, "/api/pairing-requests/approve", reveal.ContentJSON, s.approveDevicePairingRequest)
 	s.handle(http.MethodPost, "/api/pairing-requests/deny", reveal.ContentJSON, s.denyDevicePairingRequest)

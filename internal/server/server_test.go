@@ -91,6 +91,7 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodPost, Pattern: "/api/pairing-requests", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/pairing-requests/poll", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/pairing-requests/regenerate", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/pairing-requests/cancel", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodGet, Pattern: "/api/pairing-requests", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/pairing-requests/approve", RevealClass: reveal.ContentJSON},
 		{Method: http.MethodPost, Pattern: "/api/pairing-requests/deny", RevealClass: reveal.ContentJSON},

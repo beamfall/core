@@ -147,6 +147,7 @@ var exactRouteClasses = map[string]AccessClass{
 	"POST /api/pairing-requests":            AccessPrivateUI,
 	"POST /api/pairing-requests/poll":       AccessPrivateUI,
 	"POST /api/pairing-requests/regenerate": AccessPrivateUI,
+	"POST /api/pairing-requests/cancel":     AccessPrivateUI,
 	"GET /api/pairing-requests":             AccessPrivateUI,
 	"POST /api/pairing-requests/approve":    AccessPrivateUI,
 	"POST /api/pairing-requests/deny":       AccessPrivateUI,

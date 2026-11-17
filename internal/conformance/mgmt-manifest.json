@@ -738,6 +738,11 @@
       "note": "Replace a pending device pairing request's code and request secret"
     },
     {
+      "method": "POST",
+      "pattern": "/api/pairing-requests/cancel",
+      "note": "Withdraw a device pairing request with its request secret"
+    },
+    {
       "method": "GET",
       "pattern": "/api/pairing-requests",
       "note": "List pending device pairing requests (admin)"

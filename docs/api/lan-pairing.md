@@ -42,7 +42,7 @@ device                                 server                          administr
   POST …/poll {requestSecret}    ──▶  "approved" + enrollment (once)
 ```
 
-The six routes are client-neutral; TV, phone, desktop and web clients all use them. Bodies are
+The seven routes are client-neutral; TV, phone, desktop and web clients all use them. Bodies are
 JSON. Secrets travel only in request bodies, never in a URL.
 
 ### Device routes (no credential)
@@ -54,7 +54,8 @@ JSON. Secrets travel only in request bodies, never in a URL.
 ```
 
 ```json
-{ "code": "K7M2QX4D", "requestSecret": "…", "expiresAt": "2026-11-15T12:10:00Z", "pollIntervalSeconds": 3 }
+{ "code": "K7M2QX4D", "requestSecret": "…", "expiresAt": "2026-11-15T12:10:00Z", "expiresInSeconds": 600,
+  "pollIntervalSeconds": 3 }
 ```
 
 - `deviceName` is required: at most 64 characters after trimming, with no control or invisible
@@ -62,14 +63,19 @@ JSON. Secrets travel only in request bodies, never in a URL.
 - `platform` is optional, a free label the administrator sees (for example `tvos`, `android`,
   `macos`, `web`): at most 32 characters after trimming, with the same character rules as
   `deviceName`. Otherwise `400`.
-- `requestedRole` is optional: `viewer` (default) or `manager`. It is only a request; the
-  administrator grants the role at approval. Any other value, `admin` included, is `401`.
+- `requestedRole` is optional: `viewer` (default) or `manager`. It is only a request, shown to the
+  administrator: an approval grants `viewer` unless the administrator names `manager`. Any other
+  value, `admin` included, is `401`.
 - `distributionClass` is optional: `direct` (default) or `appStore`.
 - `code` is 8 characters from `A–Z2–7`. Show it on screen so the administrator can match it.
   It is not a credential: it cannot poll, and it never redeems through `/api/enroll`.
 - `requestSecret` is the device's private handle on the request. Keep it in memory only; never
   display or log it.
-- The request lives for 10 minutes. Poll every `pollIntervalSeconds`.
+- The request lives for 10 minutes. Poll every `pollIntervalSeconds`. Time the code by
+  `expiresInSeconds`, counted from when the answer arrived; do not compare `expiresAt` with the
+  device's own clock, which may be wrong.
+- A request made with the web app's CSRF header (`X-Beamfall-Csrf`) is a browser request for its
+  whole life: see the browser rules under poll.
 
 **`POST /api/pairing-requests/poll`** → `200`
 
@@ -80,7 +86,7 @@ JSON. Secrets travel only in request bodies, never in a URL.
 `clientContract` is optional and is the same object `/api/enroll` accepts. Responses:
 
 ```json
-{ "status": "pending", "expiresAt": "2026-11-15T12:10:00Z" }
+{ "status": "pending", "expiresAt": "2026-11-15T12:10:00Z", "expiresInSeconds": 412 }
 { "status": "denied" }
 { "status": "approved", "enrollment": { "deviceID": "…", "deviceSecret": "…", "sessionID": "…",
   "sessionExpiresAt": "…", "profileID": "…", "deviceRole": "viewer", "serverKeyPin": "sha256-…" } }
@@ -90,12 +96,15 @@ JSON. Secrets travel only in request bodies, never in a URL.
 the device both requested and collected on the LAN. `approved` and `denied` are delivered once:
 the request is gone after that poll, and a later poll with the same secret is `401`.
 
-A browser poll is one that carries the web app's CSRF header (`X-Beamfall-Csrf`). It is bound the
-way `POST /api/web/enroll` binds a browser: over plain HTTP from outside the local network it is
-refused with `403` before the request is touched, and an `approved` answer sets the session, device
-and device-secret cookies (HttpOnly, SameSite=Strict) and returns `deviceSecret` and `sessionID` as
-empty strings, so the credential never reaches page script. Native clients do not send the header
-and keep the credential in the body.
+A browser request is one made with the web app's CSRF header (`X-Beamfall-Csrf`). The server
+records that when the request is created and carries it through regenerate, so a later call cannot
+shed it by leaving the header off; a call that carries the header is treated as a browser call too.
+A browser request is bound the way `POST /api/web/enroll` binds a browser: request, regenerate and
+poll are refused with `403` over plain HTTP from outside the local network before the request is
+touched, and an `approved` answer sets the session, device and device-secret cookies (HttpOnly,
+SameSite=Strict) and returns `deviceSecret` and `sessionID` as empty strings, so the credential
+never reaches page script. Native clients never send the header and keep the credential in the
+body.
 
 **`POST /api/pairing-requests/regenerate`** → `201`
 
@@ -105,7 +114,21 @@ and keep the credential in the body.
 
 Returns a new `code`, `requestSecret` and `expiresAt` (same shape as the request response) for a
 pending request. The old code and secret stop working at once. Use it when the code is about to
-expire before the administrator gets to it.
+expire before the administrator gets to it. Wait for a poll that is on the wire to answer before
+regenerating: it may be collecting an approval. Regenerate applies the same remote-enrollment rule
+as the request, and the new request counts as on the LAN only if both the original request and the
+regenerate were.
+
+**`POST /api/pairing-requests/cancel`** → `204`
+
+```json
+{ "requestSecret": "…" }
+```
+
+Withdraws a request the device no longer wants, so it leaves the administrator's list at once
+instead of waiting out its 10 minutes. Call it when the user cancels, pairs another way or leaves
+the pairing screen. It answers `204` whether or not the secret named a live request, and it does
+nothing to a request whose approval is being collected by a poll.
 
 ### Administrator routes (session with an active Admin Session)
 
@@ -134,8 +157,10 @@ and `platform` are untrusted device input: display them as plain text.
 ```
 
 `profileID` defaults to the administrator's own profile and must name an enabled profile.
-`deviceRole` (`viewer` or `manager`) defaults to the device's `requestedRole`. The code
-is matched case-insensitively.
+`deviceRole` is `viewer` or `manager` and defaults to `viewer`, whatever the device requested:
+`manager` is granted only by an approval that names it. A client that approves should make
+granting `manager` a separate, explicit choice and should not put focus on an approving control
+when a request appears. The code is matched case-insensitively.
 
 **`POST /api/pairing-requests/deny`** → `200`
 
@@ -164,15 +189,17 @@ it for a lost session.
 
 ### Limits and policy
 
-- Device requests and polls share the enrollment throttle, keyed by remote address: five free
-  failures, then back-off. Live polls of a real request do not count.
-- At most 64 pending requests in total and 3 per remote address; more is `429`. Pending requests
-  are held in memory and are lost on restart.
-- Off the LAN, requests and collection are refused unless remote enrollment is on in Console
-  settings.
+- Device requests, polls, regenerates and cancels have their own throttle, keyed by remote address
+  and separate from the one `/api/enroll` uses: five free failures, then back-off. Live polls of a
+  real request do not count, and a poll with an unknown secret (a device still polling after a
+  server restart, say) never locks its address out of code enrollment.
+- At most 64 pending requests in total and 3 per remote address; more is `429`, and does not count
+  as a failed attempt. Pending requests are held in memory and are lost on restart.
+- Off the LAN, requests, regenerates and collection are refused unless remote enrollment is on in
+  Console settings.
 - With Viewer pairing codes disabled, a Viewer request, a Viewer approval and the collection of a
   Viewer approval are refused with the invalid-code answer. A `manager` request is still accepted
   and still waits for approval.
 - No request can obtain the administrator role. A `manager` role is granted only by an
-  administrator's approval.
+  administrator's approval that names it.
 - Approvals, denials and enrollments appear in the activity log.
