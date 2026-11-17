@@ -3918,6 +3918,10 @@
       "kind": "object",
       "children": [
         {
+          "name": "adminSessionMinutes",
+          "kind": "scalar"
+        },
+        {
           "name": "backgroundWorkers",
           "kind": "scalar"
         },
@@ -5785,6 +5789,10 @@
         },
         {
           "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "sessionLifetimeDays",
           "kind": "scalar"
         },
         {
@@ -20405,6 +20413,10 @@
       "kind": "object",
       "children": [
         {
+          "name": "adminSessionMinutes",
+          "kind": "scalar"
+        },
+        {
           "name": "backgroundWorkers",
           "kind": "scalar"
         },
@@ -22272,6 +22284,10 @@
         },
         {
           "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "sessionLifetimeDays",
           "kind": "scalar"
         },
         {
@@ -22893,6 +22909,10 @@
       "kind": "object",
       "children": [
         {
+          "name": "adminSessionMinutes",
+          "kind": "scalar"
+        },
+        {
           "name": "backgroundWorkers",
           "kind": "scalar"
         },
@@ -24760,6 +24780,10 @@
         },
         {
           "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "sessionLifetimeDays",
           "kind": "scalar"
         },
         {
@@ -24781,6 +24805,10 @@
       "kind": "object",
       "children": [
         {
+          "name": "adminSessionMinutes",
+          "kind": "scalar"
+        },
+        {
           "name": "backgroundWorkers",
           "kind": "scalar"
         },
@@ -26648,6 +26676,10 @@
         },
         {
           "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "sessionLifetimeDays",
           "kind": "scalar"
         },
         {
@@ -29189,6 +29221,10 @@
       "kind": "object",
       "children": [
         {
+          "name": "adminSessionMinutes",
+          "kind": "scalar"
+        },
+        {
           "name": "backgroundWorkers",
           "kind": "scalar"
         },
@@ -31056,6 +31092,10 @@
         },
         {
           "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        },
+        {
+          "name": "sessionLifetimeDays",
           "kind": "scalar"
         },
         {

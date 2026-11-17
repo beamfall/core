@@ -20,7 +20,7 @@ created by enrollment or renewal SHALL expire that many days after it is created
 
 - **WHEN** the owner sets `sessionLifetimeDays` to 0 and a device then enrolls
 - **THEN** its session is still accepted years later, and its reported expiry is
-  `9999-12-31T23:59:59Z`
+  `2200-01-01T00:00:00Z`
 
 ### Requirement: The owner sets the Admin Session lifetime
 

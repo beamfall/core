@@ -102,7 +102,7 @@ export async function checkRemoteAccessReachability(
 // --- Console config: workers + plugin activation (ADR-0013) ---------------
 
 const CONSOLE_CONFIG_FIELDS =
-  "backgroundWorkers updateCheckEnabled updateCheckChannel remoteEnrollmentEnabled remoteMaxBitrate viewerPairingCodesDisabled eventsRetentionDays plugins { id displayName active controlPolicy config { name type label required default value configured options { value label } } permissions { kind label description highRisk } status { id label state detail } actions { id label icon risk requiredPermissions inputFields { name type label required default value configured options { value label } } confirmation } scrapers { pluginID scraperID displayName kind endpoint authRef authStyle credentialRequired credentialConfigured credentialStatus credentialError credentialHelp { label helpURL helpLabel } } }";
+  "backgroundWorkers updateCheckEnabled updateCheckChannel remoteEnrollmentEnabled remoteMaxBitrate viewerPairingCodesDisabled eventsRetentionDays sessionLifetimeDays adminSessionMinutes plugins { id displayName active controlPolicy config { name type label required default value configured options { value label } } permissions { kind label description highRisk } status { id label state detail } actions { id label icon risk requiredPermissions inputFields { name type label required default value configured options { value label } } confirmation } scrapers { pluginID scraperID displayName kind endpoint authRef authStyle credentialRequired credentialConfigured credentialStatus credentialError credentialHelp { label helpURL helpLabel } } }";
 
 const CONSOLE_CONFIG_QUERY = `query ConsoleConfig { consoleConfig { ${CONSOLE_CONFIG_FIELDS} } }`;
 
@@ -216,9 +216,13 @@ export interface ConsoleConfigPatch {
   remoteMaxBitrate?: number;
   viewerPairingCodesDisabled?: boolean;
   eventsRetentionDays?: number;
+  /** Sign-in session lifetime in days; 0 means sessions never expire (CORE-2303). */
+  sessionLifetimeDays?: number;
+  /** Admin Session length in minutes; 0 means it never expires (CORE-2303). */
+  adminSessionMinutes?: number;
 }
 
-const SET_CONSOLE_CONFIG_MUTATION = `mutation SetConsoleConfig($backgroundWorkers: Int, $updateCheckEnabled: Boolean, $updateCheckChannel: String, $remoteEnrollmentEnabled: Boolean, $remoteMaxBitrate: Int, $viewerPairingCodesDisabled: Boolean, $eventsRetentionDays: Int) { setConsoleConfig(backgroundWorkers: $backgroundWorkers, updateCheckEnabled: $updateCheckEnabled, updateCheckChannel: $updateCheckChannel, remoteEnrollmentEnabled: $remoteEnrollmentEnabled, remoteMaxBitrate: $remoteMaxBitrate, viewerPairingCodesDisabled: $viewerPairingCodesDisabled, eventsRetentionDays: $eventsRetentionDays) { ${CONSOLE_CONFIG_FIELDS} } }`;
+const SET_CONSOLE_CONFIG_MUTATION = `mutation SetConsoleConfig($backgroundWorkers: Int, $updateCheckEnabled: Boolean, $updateCheckChannel: String, $remoteEnrollmentEnabled: Boolean, $remoteMaxBitrate: Int, $viewerPairingCodesDisabled: Boolean, $eventsRetentionDays: Int, $sessionLifetimeDays: Int, $adminSessionMinutes: Int) { setConsoleConfig(backgroundWorkers: $backgroundWorkers, updateCheckEnabled: $updateCheckEnabled, updateCheckChannel: $updateCheckChannel, remoteEnrollmentEnabled: $remoteEnrollmentEnabled, remoteMaxBitrate: $remoteMaxBitrate, viewerPairingCodesDisabled: $viewerPairingCodesDisabled, eventsRetentionDays: $eventsRetentionDays, sessionLifetimeDays: $sessionLifetimeDays, adminSessionMinutes: $adminSessionMinutes) { ${CONSOLE_CONFIG_FIELDS} } }`;
 
 /** SetConsoleConfig — partially update Console runtime config. */
 export async function setConsoleConfig(

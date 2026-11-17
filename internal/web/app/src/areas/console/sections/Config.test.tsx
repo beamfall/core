@@ -250,6 +250,78 @@ describe("transcoding config", () => {
   });
 });
 
+describe("Session lengths", () => {
+  it("shows the defaults when the server sends 30 days and 15 minutes", async () => {
+    vi.mocked(fetchConsoleConfig).mockResolvedValue({
+      ...savedConsole,
+      sessionLifetimeDays: 30,
+      adminSessionMinutes: 15,
+    });
+    renderConfig();
+
+    const signIn = screen.getByRole("combobox", { name: "Sign-in session length" });
+    await waitFor(() => expect(signIn).toBeEnabled());
+    expect(signIn).toHaveDisplayValue("30 days");
+    expect(screen.getByRole("combobox", { name: "Console unlock length" })).toHaveDisplayValue(
+      "15 minutes",
+    );
+    expect(screen.getByText(/keeps that access until you lock the Console/)).toBeInTheDocument();
+  });
+
+  it("saves a changed length and shows it", async () => {
+    vi.mocked(setConsoleConfig).mockResolvedValue({
+      ...savedConsole,
+      sessionLifetimeDays: 30,
+      adminSessionMinutes: 480,
+    });
+    const user = userEvent.setup();
+    renderConfig();
+
+    const unlock = screen.getByRole("combobox", { name: "Console unlock length" });
+    await waitFor(() => expect(unlock).toBeEnabled());
+    await user.selectOptions(unlock, "8 hours");
+
+    expect(setConsoleConfig).toHaveBeenCalledWith({ adminSessionMinutes: 480 });
+    await waitFor(() => expect(unlock).toHaveDisplayValue("8 hours"));
+  });
+
+  it("saves Never expire as 0 and keeps a saved off-list value as a choice", async () => {
+    vi.mocked(fetchConsoleConfig).mockResolvedValue({
+      ...savedConsole,
+      sessionLifetimeDays: 45,
+      adminSessionMinutes: 15,
+    });
+    vi.mocked(setConsoleConfig).mockResolvedValue({
+      ...savedConsole,
+      sessionLifetimeDays: 0,
+      adminSessionMinutes: 15,
+    });
+    const user = userEvent.setup();
+    renderConfig();
+
+    const signIn = screen.getByRole("combobox", { name: "Sign-in session length" });
+    await waitFor(() => expect(signIn).toHaveDisplayValue("45 days"));
+    await user.selectOptions(signIn, "Never expire");
+
+    expect(setConsoleConfig).toHaveBeenCalledWith({ sessionLifetimeDays: 0 });
+    await waitFor(() => expect(signIn).toHaveDisplayValue("Never expire"));
+  });
+
+  it("says so when the change could not be saved", async () => {
+    vi.mocked(setConsoleConfig).mockRejectedValue(new Error("nope"));
+    const user = userEvent.setup();
+    renderConfig();
+
+    const signIn = screen.getByRole("combobox", { name: "Sign-in session length" });
+    await waitFor(() => expect(signIn).toBeEnabled());
+    await user.selectOptions(signIn, "90 days");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not save the session length.",
+    );
+  });
+});
+
 describe("Viewer pairing-code switch", () => {
   it("is a Normal control that saves on toggle without touching an unsaved transcode edit", async () => {
     vi.mocked(setConsoleConfig).mockResolvedValue({

@@ -28,6 +28,8 @@ const (
 	configBackgroundWorkers = "console.background_workers"
 	// events.db retention compaction: operator-owned runtime window.
 	configEventsRetentionDays = "events.retention_days"
+	configSessionLifetimeDays = "auth.session_lifetime_days"
+	configAdminSessionMinutes = "auth.admin_session_minutes"
 	// hardware transcode policy.
 	configTranscodeHardwareEnabled = "transcode.hardware_enabled"
 	configTranscodeCodec           = "transcode.codec"
@@ -138,6 +140,52 @@ type ConsoleConfig struct {
 	// RemoteMaxBitrate caps playback for requests that do not come from the
 	// LAN, in bits per second. Default 0: no server-wide remote cap.
 	RemoteMaxBitrate int
+	// SessionLifetimeDays is how long a sign-in session lasts from enrollment
+	// or renewal. Default DefaultSessionLifetimeDays; 0 means it never expires.
+	SessionLifetimeDays int
+	// AdminSessionMinutes is how long an Admin Session lasts from the unlock.
+	// Default DefaultAdminSessionMinutes; 0 means it never expires.
+	AdminSessionMinutes int
+}
+
+// Session lifetime defaults and bounds (CORE-2303). The owner may set either
+// lifetime to 0, which switches expiry off.
+const (
+	DefaultSessionLifetimeDays = 30
+	DefaultAdminSessionMinutes = 15
+	maxSessionLifetimeDays     = 3650
+	minAdminSessionMinutes     = 5
+	maxAdminSessionMinutes     = 30 * 24 * 60
+)
+
+// SessionNeverExpires is the expiry stamped on a session or Admin Session
+// window that never expires. A real, far-future instant keeps every expiry
+// comparison and every wire field unchanged. It stays inside the range the
+// store's millisecond timestamps convert without overflow (through 2262).
+var SessionNeverExpires = time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// SessionExpiry is the expiry of a sign-in session created or renewed at now.
+func (c ConsoleConfig) SessionExpiry(now time.Time) time.Time {
+	if c.SessionLifetimeDays == 0 {
+		return SessionNeverExpires
+	}
+	return now.Add(time.Duration(c.SessionLifetimeDays) * 24 * time.Hour).UTC()
+}
+
+// AdminSessionExpiry is the end of an Admin Session window opened at now.
+func (c ConsoleConfig) AdminSessionExpiry(now time.Time) time.Time {
+	if c.AdminSessionMinutes == 0 {
+		return SessionNeverExpires
+	}
+	return now.Add(time.Duration(c.AdminSessionMinutes) * time.Minute).UTC()
+}
+
+func validSessionLifetimeDays(n int) bool {
+	return n == 0 || (n >= 1 && n <= maxSessionLifetimeDays)
+}
+
+func validAdminSessionMinutes(n int) bool {
+	return n == 0 || (n >= minAdminSessionMinutes && n <= maxAdminSessionMinutes)
 }
 
 // defaultBackgroundWorkers is the low-power default for the resource governor
@@ -163,6 +211,8 @@ type ConsoleConfigPatch struct {
 	EventsRetentionDays        *int
 	ObservabilityEnabled       *bool
 	RemoteMaxBitrate           *int
+	SessionLifetimeDays        *int
+	AdminSessionMinutes        *int
 }
 
 // TranscodeConfig is the typed hardware-transcode policy. The
@@ -234,6 +284,8 @@ func (s *Store) ConsoleConfigWithDefaults(ctx context.Context, defaults ConsoleC
 		UpdateCheckChannel:      defaultUpdateCheckChannel,
 		RemoteEnrollmentEnabled: false,
 		EventsRetentionDays:     defaults.EventsRetentionDays,
+		SessionLifetimeDays:     DefaultSessionLifetimeDays,
+		AdminSessionMinutes:     DefaultAdminSessionMinutes,
 	}
 	if cfg.BackgroundWorkers < 1 {
 		cfg.BackgroundWorkers = defaultBackgroundWorkers
@@ -249,6 +301,16 @@ func (s *Store) ConsoleConfigWithDefaults(ctx context.Context, defaults ConsoleC
 	if raw, ok := values[configEventsRetentionDays]; ok {
 		if n, convErr := strconv.Atoi(raw); convErr == nil && n > 0 {
 			cfg.EventsRetentionDays = n
+		}
+	}
+	if raw, ok := values[configSessionLifetimeDays]; ok {
+		if n, convErr := strconv.Atoi(raw); convErr == nil && validSessionLifetimeDays(n) {
+			cfg.SessionLifetimeDays = n
+		}
+	}
+	if raw, ok := values[configAdminSessionMinutes]; ok {
+		if n, convErr := strconv.Atoi(raw); convErr == nil && validAdminSessionMinutes(n) {
+			cfg.AdminSessionMinutes = n
 		}
 	}
 	if raw, ok := values[configUpdateCheckEnabled]; ok {
@@ -296,6 +358,18 @@ func (s *Store) SetConsoleConfig(ctx context.Context, patch ConsoleConfigPatch, 
 		}
 		writes[configRemoteMaxBitrate] = strconv.Itoa(*patch.RemoteMaxBitrate)
 	}
+	if patch.SessionLifetimeDays != nil {
+		if !validSessionLifetimeDays(*patch.SessionLifetimeDays) {
+			return ConsoleConfig{}, ValidationError("sessionLifetimeDays must be 0 (never) or between 1 and 3650")
+		}
+		writes[configSessionLifetimeDays] = strconv.Itoa(*patch.SessionLifetimeDays)
+	}
+	if patch.AdminSessionMinutes != nil {
+		if !validAdminSessionMinutes(*patch.AdminSessionMinutes) {
+			return ConsoleConfig{}, ValidationError("adminSessionMinutes must be 0 (never) or between 5 and 43200")
+		}
+		writes[configAdminSessionMinutes] = strconv.Itoa(*patch.AdminSessionMinutes)
+	}
 	if patch.UpdateCheckEnabled != nil {
 		writes[configUpdateCheckEnabled] = boolToConfig(*patch.UpdateCheckEnabled)
 	}
@@ -314,10 +388,60 @@ func (s *Store) SetConsoleConfig(ctx context.Context, patch ConsoleConfigPatch, 
 		}
 		writes[configUpdateCheckChannel] = *patch.UpdateCheckChannel
 	}
+	var before ConsoleConfig
+	if patch.SessionLifetimeDays != nil || patch.AdminSessionMinutes != nil {
+		var err error
+		if before, err = s.ConsoleConfig(ctx); err != nil {
+			return ConsoleConfig{}, err
+		}
+	}
 	if err := s.setServerConfigValues(ctx, writes, now); err != nil {
 		return ConsoleConfig{}, err
 	}
-	return s.ConsoleConfig(ctx)
+	cfg, err := s.ConsoleConfig(ctx)
+	if err != nil {
+		return ConsoleConfig{}, err
+	}
+	if patch.SessionLifetimeDays != nil && cfg.SessionLifetimeDays != before.SessionLifetimeDays {
+		if err := s.rebaseSessionExpiry(ctx, now, cfg.SessionExpiry(now)); err != nil {
+			return ConsoleConfig{}, err
+		}
+	}
+	if patch.AdminSessionMinutes != nil && cfg.AdminSessionMinutes != before.AdminSessionMinutes {
+		if err := s.rebaseAdminWindows(ctx, now, cfg.AdminSessionExpiry(now)); err != nil {
+			return ConsoleConfig{}, err
+		}
+	}
+	return cfg, nil
+}
+
+// rebaseSessionExpiry restarts every unexpired sign-in session with a changed
+// lifetime: each now expires at until. Expired sessions stay expired and
+// integration sessions keep their own expiry.
+func (s *Store) rebaseSessionExpiry(ctx context.Context, now, until time.Time) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx,
+		`UPDATE auth_session SET expires_at_ms = ? WHERE kind = ? AND expires_at_ms > ?`,
+		timeToMillis(until), SessionKindEnrolled, timeToMillis(now))
+	return err
+}
+
+// rebaseAdminWindows restarts every open Admin Session window with a changed
+// lifetime: each now ends at until. A closed window stays closed.
+func (s *Store) rebaseAdminWindows(ctx context.Context, now, until time.Time) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx,
+		`UPDATE auth_session SET admin_until_ms = ? WHERE admin_until_ms > ?`,
+		timeToMillis(until), timeToMillis(now))
+	return err
 }
 
 // TranscodeConfig reads the hardware-transcode policy, applying defaults for

@@ -366,3 +366,46 @@ func TestCreateOwnerCodeMintsManagerCodeForOwner(t *testing.T) {
 		t.Fatalf("Enroll with host code = %+v, %v", enrolled, err)
 	}
 }
+
+// CORE-2303: a renewed sign-in session lasts as long as the owner's setting
+// says, and never expires when the owner switched expiry off.
+func TestRenewSessionFollowsTheOwnerSessionLifetime(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	enrollBrowser(t, st, "device-browser", "session-lapsed", now.Add(-time.Hour))
+
+	for _, tc := range []struct {
+		days int
+		want time.Time
+	}{
+		{days: 90, want: now.Add(90 * 24 * time.Hour)},
+		{days: 0, want: store.SessionNeverExpires},
+	} {
+		days := tc.days
+		if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{SessionLifetimeDays: &days}, now); err != nil {
+			t.Fatal(err)
+		}
+		service := deterministicService(st, now)
+		id := fmt.Sprintf("session-renewed-%d", tc.days)
+		service.generateID = func(string) (string, error) { return id, nil }
+		resp, err := service.RenewSession(ctx, RenewRequest{
+			DeviceID: "device-browser", DeviceSecret: "browser-secret", RemoteAddr: "192.168.1.5:5000",
+		})
+		if err != nil {
+			t.Fatalf("RenewSession at %d days: %v", tc.days, err)
+		}
+		if want := tc.want.Format(time.RFC3339); resp.SessionExpiresAt != want {
+			t.Fatalf("SessionExpiresAt at %d days = %q, want %q", tc.days, resp.SessionExpiresAt, want)
+		}
+		// A renewal that finds the device's session still live returns that
+		// one, already re-based by the setting change.
+		session, err := st.Session(ctx, store.SessionID(resp.SessionID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !session.ExpiresAt.Equal(tc.want) {
+			t.Fatalf("stored expiry at %d days = %v, want %v", tc.days, session.ExpiresAt, tc.want)
+		}
+	}
+}

@@ -41,9 +41,6 @@ const (
 // pairing lane's exponential-backoff curve so admin re-auth is not a separate,
 // weaker brute-force surface.
 const (
-	// adminSessionTTL is the Admin Session window. ADR-0007 §2 pins this at 15
-	// minutes (confirmed 2026-06-16; the ADR previously said only "short-lived").
-	adminSessionTTL = 15 * time.Minute
 	// adminAttemptAction names the admin re-auth throttle lane.
 	adminAttemptAction = "admin.login"
 	// adminAttemptWindow forgets failures older than this.
@@ -765,7 +762,10 @@ func (s *Service) BeginAdminSession(ctx context.Context, scope Scope, password s
 	if err := s.verifyAdminReauth(ctx, scope, password, attemptKey, now); err != nil {
 		return time.Time{}, err
 	}
-	until := now.Add(adminSessionTTL).UTC()
+	until, err := s.adminSessionExpiry(ctx, now)
+	if err != nil {
+		return time.Time{}, err
+	}
 	if s.beforeAdminGrant != nil {
 		s.beforeAdminGrant()
 	}
@@ -863,7 +863,9 @@ func (s *Service) createFirstAdminPassword(ctx context.Context, scope Scope, pas
 			return deny()
 		}
 	}
-	until = now.Add(adminSessionTTL).UTC()
+	if until, err = s.adminSessionExpiry(ctx, now); err != nil {
+		return time.Time{}, true, err
+	}
 	// The hash runs inside the process-wide KDF bound and the attempt is
 	// reserved before it, exactly as CheckAdminPassword does for an unlock, so
 	// parallel requests cannot all pass the throttle before any is counted.
@@ -906,6 +908,17 @@ func (s *Service) createFirstAdminPassword(ctx context.Context, scope Scope, pas
 	s.recordAdminAttempt(ctx, attemptKey, now, true)
 	s.auditAdmin(ctx, scope, now, store.ActivityAdminPasswordSet)
 	return until, true, nil
+}
+
+// adminSessionExpiry is the end of an Admin Session window opened at now. The
+// lifetime is the owner's setting (CORE-2303): 15 minutes by default (the
+// ADR-0007 §2 value), and store.SessionNeverExpires when expiry is off.
+func (s *Service) adminSessionExpiry(ctx context.Context, now time.Time) (time.Time, error) {
+	cfg, err := s.store.ConsoleConfig(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return cfg.AdminSessionExpiry(now), nil
 }
 
 // EndAdminSession clears the caller's Admin Session window immediately

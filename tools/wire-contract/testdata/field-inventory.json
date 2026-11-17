@@ -578,12 +578,14 @@
       "effect": "read",
       "tier": "admin",
       "children": [
+        "adminSessionMinutes",
         "backgroundWorkers",
         "eventsRetentionDays",
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
         "remoteMaxBitrate",
+        "sessionLifetimeDays",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3104,12 +3106,14 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "adminSessionMinutes",
         "backgroundWorkers",
         "eventsRetentionDays",
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
         "remoteMaxBitrate",
+        "sessionLifetimeDays",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3291,12 +3295,14 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "adminSessionMinutes",
         "backgroundWorkers",
         "eventsRetentionDays",
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
         "remoteMaxBitrate",
+        "sessionLifetimeDays",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3307,12 +3313,14 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "adminSessionMinutes",
         "backgroundWorkers",
         "eventsRetentionDays",
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
         "remoteMaxBitrate",
+        "sessionLifetimeDays",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"
@@ -3903,12 +3911,14 @@
       "effect": "write",
       "tier": "admin",
       "children": [
+        "adminSessionMinutes",
         "backgroundWorkers",
         "eventsRetentionDays",
         "observabilityEnabled",
         "plugins",
         "remoteEnrollmentEnabled",
         "remoteMaxBitrate",
+        "sessionLifetimeDays",
         "updateCheckChannel",
         "updateCheckEnabled",
         "viewerPairingCodesDisabled"

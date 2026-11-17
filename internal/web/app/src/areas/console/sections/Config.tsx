@@ -385,6 +385,98 @@ function ViewerAccessConfig() {
   );
 }
 
+const SELECT_CLASS =
+  "h-10 rounded-[var(--radius-control)] border border-input bg-transparent px-3 text-sm";
+
+// 0 is the server's "never expires" value for both lifetimes.
+const SESSION_DAY_CHOICES = [7, 30, 90, 365, 0];
+const ADMIN_MINUTE_CHOICES = [15, 60, 480, 1440, 10080, 0];
+
+// The saved value always appears as a choice, so a lifetime set through the
+// API to something off the list is shown instead of being silently replaced.
+function withSaved(choices: number[], saved: number): number[] {
+  if (choices.includes(saved)) return choices;
+  const timed = [...choices.filter((choice) => choice !== 0), saved].sort((a, b) => a - b);
+  return [...timed, 0];
+}
+
+// Session lifetimes (CORE-2303): how long a device stays signed in and how
+// long the Console stays unlocked. Saved on change; both offer Never expire.
+function SessionsConfig() {
+  const t = useT();
+  const { data, failed, setData } = useAsync(fetchConsoleConfig);
+  const [saveFailed, setSaveFailed] = useState(false);
+
+  async function save(patch: { sessionLifetimeDays?: number; adminSessionMinutes?: number }) {
+    setSaveFailed(false);
+    try {
+      setData(await setConsoleConfig(patch));
+    } catch {
+      setSaveFailed(true);
+    }
+  }
+
+  function minutesLabel(minutes: number): string {
+    if (minutes % 1440 === 0) return t("sessionLengthDays", { count: minutes / 1440 });
+    if (minutes % 60 === 0) return t("sessionLengthHours", { count: minutes / 60 });
+    return t("sessionLengthMinutes", { count: minutes });
+  }
+
+  if (failed) return <ErrorState message="consoleConfigUnavailable" />;
+
+  const days = data?.sessionLifetimeDays ?? 30;
+  const minutes = data?.adminSessionMinutes ?? 15;
+
+  return (
+    <Fieldset title="sessionsHeading">
+      <ControlRow
+        label="sessionLifetimeLabel"
+        help="sessionLifetimeHelp"
+        control={
+          <select
+            aria-label={t("sessionLifetimeLabel")}
+            className={SELECT_CLASS}
+            value={days}
+            disabled={!data}
+            onChange={(event) => void save({ sessionLifetimeDays: Number(event.target.value) })}
+          >
+            {withSaved(SESSION_DAY_CHOICES, days).map((choice) => (
+              <option key={choice} value={choice}>
+                {choice === 0 ? t("sessionNeverExpire") : t("sessionLengthDays", { count: choice })}
+              </option>
+            ))}
+          </select>
+        }
+      />
+      <ControlRow
+        label="adminSessionLengthLabel"
+        help="adminSessionLengthHelp"
+        control={
+          <select
+            aria-label={t("adminSessionLengthLabel")}
+            className={SELECT_CLASS}
+            value={minutes}
+            disabled={!data}
+            onChange={(event) => void save({ adminSessionMinutes: Number(event.target.value) })}
+          >
+            {withSaved(ADMIN_MINUTE_CHOICES, minutes).map((choice) => (
+              <option key={choice} value={choice}>
+                {choice === 0 ? t("sessionNeverExpire") : minutesLabel(choice)}
+              </option>
+            ))}
+          </select>
+        }
+      />
+      <p className="text-sm text-muted-foreground">{t("sessionNeverExpireWarning")}</p>
+      {saveFailed ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t("couldNotSaveSessionLength")}
+        </p>
+      ) : null}
+    </Fieldset>
+  );
+}
+
 type Clip = Pick<PrePlayItem, "mediaID" | "title">;
 
 // The Owner's pre-play clips (CORE-1701): local intro clips that play, in this
@@ -541,6 +633,7 @@ export function Config() {
     <Section heading="consoleConfigHeading" lead="consoleConfigLead">
       <div className="space-y-6">
         <ViewerAccessConfig />
+        <SessionsConfig />
         <TranscodeConfig />
         <PrePlayClipsConfig />
       </div>

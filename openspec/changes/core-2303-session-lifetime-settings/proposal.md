@@ -25,7 +25,7 @@ the option to switch expiry off. Both lifetimes are constants today:
 - Ending a session is unchanged: lock, sign-out, device revocation, profile switch, ownership
   transfer and an admin password change still end it, whatever the lifetime.
 
-A session that never expires is reported with the expiry `9999-12-31T23:59:59Z`, so the
+A session that never expires is reported with the expiry `2200-01-01T00:00:00Z`, so the
 `sessionExpiresAt` and `adminSession.expiresAt` fields keep their type and clients need no change.
 
 ## Impact

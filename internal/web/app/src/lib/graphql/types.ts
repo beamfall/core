@@ -1343,6 +1343,13 @@ export interface ConsoleConfigInfo {
   viewerPairingCodesDisabled?: boolean;
   /** events.db compaction retention window. */
   eventsRetentionDays: number;
+  /**
+   * Owner-set lifetimes of a sign-in session (days) and of an Admin Session
+   * (minutes); 0 means it never expires (CORE-2303). The server always sends
+   * them; optional so older fixtures compile.
+   */
+  sessionLifetimeDays?: number;
+  adminSessionMinutes?: number;
   plugins: PluginActivationInfo[];
 }
 

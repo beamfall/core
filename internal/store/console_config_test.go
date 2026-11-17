@@ -540,3 +540,135 @@ func TestPortMappingEnabledRoundTrip(t *testing.T) {
 		t.Fatalf("after disable PortMappingEnabled = %v, %v; want false", on, err)
 	}
 }
+
+// TestSessionLifetimeDefaultsChangeAndNever proves the two owner-set session
+// lifetimes default to 30 days and 15 minutes, persist a changed value, accept
+// 0 as never-expire, and refuse values outside their bounds (CORE-2303).
+func TestSessionLifetimeDefaultsChangeAndNever(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	now := time.Unix(1_000_000, 0).UTC()
+
+	cfg, err := st.ConsoleConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SessionLifetimeDays != 30 || cfg.AdminSessionMinutes != 15 {
+		t.Fatalf("defaults = %d days / %d minutes, want 30 / 15", cfg.SessionLifetimeDays, cfg.AdminSessionMinutes)
+	}
+	if got, want := cfg.SessionExpiry(now), now.Add(30*24*time.Hour); !got.Equal(want) {
+		t.Fatalf("default SessionExpiry = %v, want %v", got, want)
+	}
+	if got, want := cfg.AdminSessionExpiry(now), now.Add(15*time.Minute); !got.Equal(want) {
+		t.Fatalf("default AdminSessionExpiry = %v, want %v", got, want)
+	}
+
+	days, minutes := 90, 240
+	cfg, err = st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{SessionLifetimeDays: &days, AdminSessionMinutes: &minutes}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := cfg.SessionExpiry(now), now.Add(90*24*time.Hour); !got.Equal(want) {
+		t.Fatalf("changed SessionExpiry = %v, want %v", got, want)
+	}
+	if got, want := cfg.AdminSessionExpiry(now), now.Add(4*time.Hour); !got.Equal(want) {
+		t.Fatalf("changed AdminSessionExpiry = %v, want %v", got, want)
+	}
+
+	never := 0
+	if _, err = st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{SessionLifetimeDays: &never, AdminSessionMinutes: &never}, now); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = st.ConsoleConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SessionLifetimeDays != 0 || cfg.AdminSessionMinutes != 0 {
+		t.Fatalf("reread = %d days / %d minutes, want 0 / 0", cfg.SessionLifetimeDays, cfg.AdminSessionMinutes)
+	}
+	if !cfg.SessionExpiry(now).Equal(store.SessionNeverExpires) || !cfg.AdminSessionExpiry(now).Equal(store.SessionNeverExpires) {
+		t.Fatalf("never-expire expiries = %v / %v, want the sentinel", cfg.SessionExpiry(now), cfg.AdminSessionExpiry(now))
+	}
+
+	for _, bad := range []store.ConsoleConfigPatch{
+		{SessionLifetimeDays: intPtr(-1)},
+		{SessionLifetimeDays: intPtr(3651)},
+		{AdminSessionMinutes: intPtr(4)},
+		{AdminSessionMinutes: intPtr(43201)},
+	} {
+		var invalid store.ValidationError
+		if _, err := st.SetConsoleConfig(ctx, bad, now); !errors.As(err, &invalid) {
+			t.Fatalf("SetConsoleConfig(%+v) error = %v, want a validation error", bad, err)
+		}
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
+// TestSessionLifetimeChangeRebasesLiveSessions proves a lifetime change
+// applies to sessions that are still live, measured from the change, and never
+// revives one that already lapsed or opens an Admin Session that was closed.
+func TestSessionLifetimeChangeRebasesLiveSessions(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := t.Context()
+	now := time.Unix(1_000_000, 0).UTC()
+	enroll := func(device, session string, expires time.Time) {
+		t.Helper()
+		if err := st.EnrollDevice(ctx,
+			store.Device{ID: store.DeviceID(device), Name: device, Role: store.DeviceRoleManager, SecretHash: store.HashDeviceSecret(device + "-secret")},
+			store.Session{ID: store.SessionID(session), DeviceID: store.DeviceID(device), ProfileID: "profile-default", ExpiresAt: expires},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	enroll("device-live", "session-live", now.Add(24*time.Hour))
+	enroll("device-admin", "session-admin", now.Add(24*time.Hour))
+	enroll("device-lapsed", "session-lapsed", now.Add(-time.Hour))
+	if err := st.SetSessionAdminUntil(ctx, "session-admin", now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	session := func(id string) store.Session {
+		t.Helper()
+		got, err := st.Session(ctx, store.SessionID(id))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	never := 0
+	if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{SessionLifetimeDays: &never, AdminSessionMinutes: &never}, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := session("session-live"); !got.ExpiresAt.Equal(store.SessionNeverExpires) || !got.AdminUntil.IsZero() {
+		t.Fatalf("live session = expires %v admin %v, want never-expire and no Admin Session", got.ExpiresAt, got.AdminUntil)
+	}
+	if got := session("session-admin"); !got.AdminUntil.Equal(store.SessionNeverExpires) {
+		t.Fatalf("open Admin Session ends %v, want never", got.AdminUntil)
+	}
+	if got := session("session-lapsed"); !got.ExpiresAt.Equal(now.Add(-time.Hour)) {
+		t.Fatalf("lapsed session expires %v, want it left lapsed", got.ExpiresAt)
+	}
+
+	// Turning expiry back on brings never-expiring sessions back under a timer.
+	days, minutes := 7, 30
+	if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{SessionLifetimeDays: &days, AdminSessionMinutes: &minutes}, now); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := session("session-live").ExpiresAt, now.Add(7*24*time.Hour); !got.Equal(want) {
+		t.Fatalf("live session expires %v, want %v", got, want)
+	}
+	if got, want := session("session-admin").AdminUntil, now.Add(30*time.Minute); !got.Equal(want) {
+		t.Fatalf("Admin Session ends %v, want %v", got, want)
+	}
+
+	// Writing the same value again, or an unrelated setting, moves nothing.
+	later := now.Add(time.Hour)
+	workers := 2
+	if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{SessionLifetimeDays: &days, BackgroundWorkers: &workers}, later); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := session("session-live").ExpiresAt, now.Add(7*24*time.Hour); !got.Equal(want) {
+		t.Fatalf("unchanged lifetime moved the session to %v, want %v", got, want)
+	}
+}

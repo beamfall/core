@@ -103,7 +103,11 @@ func (s *Service) RenewSession(ctx context.Context, req RenewRequest) (RenewResp
 	if err != nil {
 		return RenewResponse{}, err
 	}
-	session, err := s.store.RenewDeviceSession(ctx, device.ID, store.SessionID(sessionID), now.Add(30*24*time.Hour).UTC())
+	expiresAt, err := s.sessionExpiry(ctx, now)
+	if err != nil {
+		return RenewResponse{}, err
+	}
+	session, err := s.store.RenewDeviceSession(ctx, device.ID, store.SessionID(sessionID), expiresAt)
 	switch {
 	case errors.Is(err, store.ErrNoDeviceSession):
 		return fail(auth.RefusalSessionInvalid)
@@ -198,7 +202,11 @@ func (s *Service) AdminSignIn(ctx context.Context, req AdminSignInRequest) (Enro
 	// a switch to Strict during the password check still refuses. Strict mode
 	// (CORE-1110), no owner and a disabled owner are refused and counted
 	// exactly like a wrong password.
-	session, err := s.store.EnrollAdminSignInDevice(ctx, device, store.SessionID(sessionID), now.Add(30*24*time.Hour).UTC())
+	expiresAt, err := s.sessionExpiry(ctx, now)
+	if err != nil {
+		return EnrollResponse{}, err
+	}
+	session, err := s.store.EnrollAdminSignInDevice(ctx, device, store.SessionID(sessionID), expiresAt)
 	switch {
 	case errors.Is(err, store.ErrAdminSignInOff), errors.Is(err, store.ErrNoOwnerProfile), errors.Is(err, store.ErrProfileDisabled):
 		return deny()
@@ -243,4 +251,14 @@ func (s *Service) adminSignInThrottled(ctx context.Context, remoteKey string, no
 		}
 	}
 	return false, nil
+}
+
+// sessionExpiry is the expiry of a sign-in session created or renewed at now,
+// from the owner's session-lifetime setting (CORE-2303).
+func (s *Service) sessionExpiry(ctx context.Context, now time.Time) (time.Time, error) {
+	cfg, err := s.store.ConsoleConfig(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return cfg.SessionExpiry(now), nil
 }

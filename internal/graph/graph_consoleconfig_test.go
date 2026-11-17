@@ -1053,3 +1053,52 @@ func TestSetConsoleConfigViewerPairingCodesSwitch(t *testing.T) {
 		t.Fatal("store ViewerPairingCodesDisabled = false after graph write, want true")
 	}
 }
+
+// TestSetConsoleConfigSessionLifetimes proves the session lifetimes read and
+// write through the audited Console config path, need an Admin Session, and
+// refuse an out-of-range value (CORE-2303).
+func TestSetConsoleConfigSessionLifetimes(t *testing.T) {
+	// feature:console-config
+	st := storetest.Open(t)
+	handler := newConsoleHandler(t, st)
+	const mutation = `{"query":"mutation S($sessionLifetimeDays: Int, $adminSessionMinutes: Int){ setConsoleConfig(sessionLifetimeDays:$sessionLifetimeDays, adminSessionMinutes:$adminSessionMinutes){ sessionLifetimeDays adminSessionMinutes } }","variables":%s}`
+
+	if _, errs := post(t, handler, fmt.Sprintf(mutation, `{"sessionLifetimeDays":0}`), authorizeManager); len(errs) == 0 || !strings.Contains(errs[0].Message, "admin session required") {
+		t.Fatalf("setConsoleConfig without an Admin Session errors = %#v, want the admin-session gate", errs)
+	}
+	openManagerAdminSession(t, st)
+
+	data, errs := post(t, handler, `{"query":"query { consoleConfig { sessionLifetimeDays adminSessionMinutes } }"}`, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("consoleConfig errors = %#v", errs)
+	}
+	var cfg ConsoleConfigInfo
+	mustUnmarshal(t, data["consoleConfig"], &cfg)
+	if cfg.SessionLifetimeDays != 30 || cfg.AdminSessionMinutes != 15 {
+		t.Fatalf("defaults = %d days / %d minutes, want 30 / 15", cfg.SessionLifetimeDays, cfg.AdminSessionMinutes)
+	}
+
+	data, errs = post(t, handler, fmt.Sprintf(mutation, `{"sessionLifetimeDays":0,"adminSessionMinutes":480}`), authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("setConsoleConfig errors = %#v", errs)
+	}
+	mustUnmarshal(t, data["setConsoleConfig"], &cfg)
+	if cfg.SessionLifetimeDays != 0 || cfg.AdminSessionMinutes != 480 {
+		t.Fatalf("after write = %d days / %d minutes, want 0 / 480", cfg.SessionLifetimeDays, cfg.AdminSessionMinutes)
+	}
+	entries, err := st.ActivityEntries(context.Background(), store.ActivityQuery{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	audited := false
+	for _, entry := range entries {
+		audited = audited || entry.Action == store.ActivityConfigUpdate
+	}
+	if !audited {
+		t.Fatal("the lifetime change left no config-update audit entry")
+	}
+
+	if _, errs := post(t, handler, fmt.Sprintf(mutation, `{"adminSessionMinutes":2}`), authorizeManager); len(errs) == 0 {
+		t.Fatal("an Admin Session of 2 minutes was accepted")
+	}
+}

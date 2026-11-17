@@ -830,6 +830,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "value", Kind: "string", Optional: true},
 	},
 	"setconsoleconfig": {
+		{Name: "adminSessionMinutes", Kind: "number", Optional: true},
 		{Name: "backgroundWorkers", Kind: "number", Optional: true},
 		{Name: "eventsRetentionDays", Kind: "number", Optional: true},
 		{Name: "libraryIcon", Kind: "string", Optional: true},
@@ -837,6 +838,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "observabilityEnabled", Kind: "boolean", Optional: true},
 		{Name: "remoteEnrollmentEnabled", Kind: "boolean", Optional: true},
 		{Name: "remoteMaxBitrate", Kind: "number", Optional: true},
+		{Name: "sessionLifetimeDays", Kind: "number", Optional: true},
 		{Name: "updateCheckChannel", Kind: "string", Optional: true},
 		{Name: "updateCheckEnabled", Kind: "boolean", Optional: true},
 		{Name: "viewerPairingCodesDisabled", Kind: "boolean", Optional: true},

@@ -344,7 +344,10 @@ func (s *Service) Bootstrap(ctx context.Context, req SetupRequest) (SetupRespons
 		return SetupResponse{}, err
 	}
 
-	sessionExpiresAt := now.Add(30 * 24 * time.Hour).UTC()
+	sessionExpiresAt, err := s.sessionExpiry(ctx, now)
+	if err != nil {
+		return SetupResponse{}, err
+	}
 	device := store.Device{
 		ID:                store.DeviceID(deviceID),
 		Name:              name,
@@ -625,7 +628,10 @@ func (s *Service) Enroll(ctx context.Context, req EnrollRequest) (EnrollResponse
 	if err != nil {
 		return EnrollResponse{}, err
 	}
-	sessionExpiresAt := now.Add(30 * 24 * time.Hour).UTC()
+	sessionExpiresAt, err := s.sessionExpiry(ctx, now)
+	if err != nil {
+		return EnrollResponse{}, err
+	}
 	device := store.Device{
 		ID:                store.DeviceID(deviceID),
 		Name:              name,
@@ -709,7 +715,10 @@ func (s *Service) enrollDemo(ctx context.Context, req EnrollRequest, profileID s
 	if err != nil {
 		return EnrollResponse{}, err
 	}
-	sessionExpiresAt := now.Add(30 * 24 * time.Hour).UTC()
+	sessionExpiresAt, err := s.sessionExpiry(ctx, now)
+	if err != nil {
+		return EnrollResponse{}, err
+	}
 	device := store.Device{
 		ID:                store.DeviceID(deviceID),
 		Name:              strings.TrimSpace(req.DeviceName),
@@ -836,7 +845,10 @@ func (s *Service) Promote(ctx context.Context, scope auth.Scope, req PromoteRequ
 	if err != nil {
 		return PromoteResponse{}, err
 	}
-	sessionExpiresAt := now.Add(30 * 24 * time.Hour).UTC()
+	sessionExpiresAt, err := s.sessionExpiry(ctx, now)
+	if err != nil {
+		return PromoteResponse{}, err
+	}
 	_, err = s.store.RedeemPairingCodeForDevice(ctx, code, now, scope.DeviceID, store.DeviceRoleManager, scope.SessionID, store.Session{
 		ID:        store.SessionID(sessionID),
 		DeviceID:  scope.DeviceID,

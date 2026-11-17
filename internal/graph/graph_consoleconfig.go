@@ -46,6 +46,10 @@ type ConsoleConfigInfo struct {
 	ViewerPairingCodesDisabled bool `json:"viewerPairingCodesDisabled"`
 	// EventsRetentionDays is the operator-owned events.db compaction window.
 	EventsRetentionDays int `json:"eventsRetentionDays"`
+	// SessionLifetimeDays and AdminSessionMinutes are the owner-set lifetimes of
+	// a sign-in session and of an Admin Session; 0 means it never expires.
+	SessionLifetimeDays int `json:"sessionLifetimeDays"`
+	AdminSessionMinutes int `json:"adminSessionMinutes"`
 	// ObservabilityEnabled is ADR-0146's default-off OTel metrics toggle.
 	ObservabilityEnabled bool `json:"observabilityEnabled"`
 	// RemoteMaxBitrate is the server-wide playback bitrate cap, in bits per
@@ -190,6 +194,8 @@ func (h *Handler) consoleConfig(ctx context.Context, _ auth.Scope, _ request) (C
 		RemoteEnrollmentEnabled:    cfg.RemoteEnrollmentEnabled,
 		ViewerPairingCodesDisabled: cfg.ViewerPairingCodesDisabled,
 		EventsRetentionDays:        cfg.EventsRetentionDays,
+		SessionLifetimeDays:        cfg.SessionLifetimeDays,
+		AdminSessionMinutes:        cfg.AdminSessionMinutes,
 		ObservabilityEnabled:       cfg.ObservabilityEnabled,
 		RemoteMaxBitrate:           cfg.RemoteMaxBitrate,
 		Plugins:                    []PluginActivationInfo{},
@@ -278,6 +284,16 @@ func (h *Handler) setConsoleConfig(ctx context.Context, scope auth.Scope, req re
 	if number, ok := v.Number("eventsRetentionDays"); ok {
 		days := int(number)
 		patch.EventsRetentionDays = &days
+		has = true
+	}
+	if number, ok := v.Number("sessionLifetimeDays"); ok {
+		days := int(number)
+		patch.SessionLifetimeDays = &days
+		has = true
+	}
+	if number, ok := v.Number("adminSessionMinutes"); ok {
+		minutes := int(number)
+		patch.AdminSessionMinutes = &minutes
 		has = true
 	}
 	if enabled, ok := v.Bool("observabilityEnabled"); ok {

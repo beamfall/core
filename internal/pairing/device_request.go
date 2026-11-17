@@ -523,7 +523,10 @@ func (s *Service) enrollApprovedRequest(ctx context.Context, entry deviceRequest
 	if err != nil {
 		return EnrollResponse{}, err
 	}
-	sessionExpiresAt := now.Add(30 * 24 * time.Hour).UTC()
+	sessionExpiresAt, err := s.sessionExpiry(ctx, now)
+	if err != nil {
+		return EnrollResponse{}, err
+	}
 	device := store.Device{
 		ID:                store.DeviceID(deviceID),
 		Name:              entry.name,

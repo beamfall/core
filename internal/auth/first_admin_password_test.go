@@ -44,7 +44,7 @@ func TestOpenAdminSessionCreatesFirstPasswordAndOpensWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenAdminSession(createFirst) = %v", err)
 	}
-	if want := now.Add(adminSessionTTL).UTC(); !until.Equal(want) {
+	if want := now.Add(store.DefaultAdminSessionMinutes * time.Minute).UTC(); !until.Equal(want) {
 		t.Fatalf("window ends %v, want %v", until, want)
 	}
 	if err := st.VerifyAdminPassword(ctx, "first-password"); err != nil {
@@ -143,5 +143,50 @@ func TestOpenAdminSessionCreateFirstIsThrottled(t *testing.T) {
 	}
 	if !errors.Is(last, ErrAdminLocked) {
 		t.Fatalf("after the free budget err = %v, want ErrAdminLocked", last)
+	}
+}
+
+// CORE-2303: the Admin Session length is the owner's setting, 0 means it never
+// expires, and locking the Console still ends a never-expiring one.
+func TestAdminSessionLengthFollowsTheOwnerSetting(t *testing.T) {
+	ctx := context.Background()
+	st := storetest.Open(t)
+	now := time.Unix(1_000_000, 0).UTC()
+	service := NewServiceWithClock(st, func() time.Time { return now })
+	scope := signInSecurityScope(t, service, "session-manager", "device-mac", "dev-manager-secret")
+
+	minutes := 120
+	if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{AdminSessionMinutes: &minutes}, now); err != nil {
+		t.Fatal(err)
+	}
+	until, err := service.OpenAdminSession(ctx, scope, "first-password", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := now.Add(2 * time.Hour); !until.Equal(want) {
+		t.Fatalf("window ends %v, want %v", until, want)
+	}
+
+	never := 0
+	if _, err := st.SetConsoleConfig(ctx, store.ConsoleConfigPatch{AdminSessionMinutes: &never}, now); err != nil {
+		t.Fatal(err)
+	}
+	until, err = service.BeginAdminSession(ctx, scope, "first-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !until.Equal(store.SessionNeverExpires) {
+		t.Fatalf("window ends %v, want never", until)
+	}
+	now = now.Add(365 * 24 * time.Hour)
+	open := signInSecurityScope(t, service, "session-manager", "device-mac", "dev-manager-secret")
+	if !open.Admin {
+		t.Fatal("a never-expiring Admin Session closed on its own")
+	}
+	if err := service.EndAdminSession(ctx, open); err != nil {
+		t.Fatal(err)
+	}
+	if locked := signInSecurityScope(t, service, "session-manager", "device-mac", "dev-manager-secret"); locked.Admin {
+		t.Fatal("locking the Console left a never-expiring Admin Session open")
 	}
 }
