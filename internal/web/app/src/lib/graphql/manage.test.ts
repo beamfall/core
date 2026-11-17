@@ -17,6 +17,7 @@ import {
   dismissUnmatched,
   fetchBackupHistory,
   fetchBackupKeyStatus,
+  fetchLibraries,
   fetchMetadataExport,
   fetchStagedRestore,
   fetchTrashedLibraries,
@@ -36,6 +37,7 @@ import {
   revealBackupKey,
   runBackup,
   setLibraryIcon,
+  setLibraryShowOnHome,
   stageRestore,
   unassignTag,
   updateCollection,
@@ -282,6 +284,20 @@ describe("manage mutation request recording", () => {
     // server reads an absent libraryIcon as "not an icon write".
     await setLibraryIcon("library-1", "");
     expect(recorded[1].variables).toEqual({ libraryID: "library-1", libraryIcon: "" });
+  });
+
+  it("setLibraryShowOnHome sends SetLibraryShowOnHome(libraryID, enabled) (CORE-2360)", async () => {
+    await setLibraryShowOnHome("library-1", false);
+    expect(recorded[0].query).toContain("mutation SetLibraryShowOnHome(");
+    expect(recorded[0].query).toContain(
+      "setLibraryShowOnHome(libraryID: $libraryID, enabled: $enabled) { id showOnHome }",
+    );
+    expect(recorded[0].variables).toEqual({ libraryID: "library-1", enabled: false });
+  });
+
+  it("fetchLibraries reads each Library's showOnHome (CORE-2360)", async () => {
+    await fetchLibraries();
+    expect(recorded[0].query).toMatch(/libraries \{[^}]*\bshowOnHome\b/);
   });
 
   it("createTag sends CreateTag(name, parentTagID)", async () => {

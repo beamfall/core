@@ -36,6 +36,7 @@ vi.mock("@/lib/graphql", () => ({
   restoreManagedPath: vi.fn(),
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
+  setLibraryShowOnHome: vi.fn(),
   setLibraryRoots: vi.fn(),
 }));
 vi.mock("./pages/ArtworkPage", () => ({ ArtworkPage: () => null }));

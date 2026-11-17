@@ -65,6 +65,7 @@ const (
 	ActivityScanPreviewCommit   = "scan.preview_commit"
 	ActivityPathPickerRootAdded = "path_picker.root_added"
 	ActivityLibraryPreviewClips = "library.preview_clips"
+	ActivityLibraryShowOnHome   = "library.show_on_home"
 	ActivityLibraryRestriction  = "library.restriction"
 	ActivityLibraryIcon         = "library.icon"
 	// ActivityLibraryRestore audits bringing a soft-deleted Library back;

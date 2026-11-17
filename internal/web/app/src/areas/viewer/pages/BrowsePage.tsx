@@ -63,6 +63,7 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
       libraryID,
       entityID: "",
       returnTo: home || !node ? "/" : nodePath(node.id),
+      home,
     });
   }
 
@@ -88,6 +89,7 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
       <LayoutView
         layout={layout}
         libraryID={libraryID}
+        home={home}
         buildSeeAll={buildSeeAll}
         navigationID={node?.id || "home"}
         onEmptyChange={(empty) => {

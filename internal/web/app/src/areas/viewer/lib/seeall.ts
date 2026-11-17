@@ -13,6 +13,8 @@ export interface SeeAllContext {
   entityID: string;
   /** The route See-All's Back returns to (browse, or an entity detail). */
   returnTo: string;
+  /** Opened from Home: keeps Libraries hidden from Home out of the full list (CORE-2360). */
+  home?: boolean;
 }
 
 /** The /seeall/:sourceId target (href + navigation state) for one Section. */

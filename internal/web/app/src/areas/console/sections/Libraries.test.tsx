@@ -20,6 +20,7 @@ import {
   fetchSkipDetectionEnabled,
   scanLibrary,
   setLibraryRoots,
+  setLibraryShowOnHome,
   setScraperCredential,
 } from "@/lib/graphql";
 import type {
@@ -57,6 +58,7 @@ vi.mock("@/lib/graphql", () => ({
     .mockResolvedValue([{ libraryID: "library-1", title: "Library", state: "watching" }]),
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
+  setLibraryShowOnHome: vi.fn(),
   setLibraryRoots: vi.fn(),
   setScraperCredential: vi.fn(),
   setSkipDetectionEnabled: vi.fn(),
@@ -541,6 +543,43 @@ describe("Console Libraries scan", () => {
     await waitFor(() =>
       expect(screen.queryByRole("article", { name: "Library" })).not.toBeInTheDocument(),
     );
+  });
+
+  it("keeps a Library off Home with its Show on Home switch and reloads the list (CORE-2360)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(setLibraryShowOnHome).mockResolvedValue({ id: "library-1", showOnHome: false });
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    // A Library the server sends without the field is shown on Home (the default).
+    const toggle = within(card).getByRole("switch", { name: /Show on Home/ });
+    expect(toggle).toBeChecked();
+    expect(within(card).getByText(/stays in the menu and in search/)).toBeInTheDocument();
+    const loads = vi.mocked(fetchLibraries).mock.calls.length;
+
+    toggle.focus();
+    await user.keyboard(" ");
+
+    await waitFor(() => expect(setLibraryShowOnHome).toHaveBeenCalledWith("library-1", false));
+    await waitFor(() => expect(vi.mocked(fetchLibraries).mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it("shows a Library already hidden from Home with its switch off (CORE-2360)", async () => {
+    vi.mocked(fetchLibraries).mockResolvedValue([
+      {
+        id: "library-1",
+        title: "Library",
+        pluginID: null,
+        roots: ["/Volumes/library"],
+        previewClips: true,
+        showOnHome: false,
+        restricted: false,
+      },
+    ]);
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    expect(within(card).getByRole("switch", { name: /Show on Home/ })).not.toBeChecked();
   });
 });
 

@@ -575,6 +575,8 @@ export interface LibraryInfo {
   title: string;
   pluginID: string | null;
   previewClips: boolean;
+  /** False when a manager keeps this Library off Home (CORE-2360); absent or true = shown. */
+  showOnHome?: boolean;
   restricted: boolean;
   roots?: string[];
   /** The icon clients draw: the owner's choice, else the default. */
@@ -611,6 +613,12 @@ export interface LibraryPurgeResult {
 export interface LibraryPreviewClipsResult {
   id: string;
   previewClips: boolean;
+}
+
+/** The setLibraryShowOnHome result (CORE-2360). */
+export interface LibraryShowOnHomeResult {
+  id: string;
+  showOnHome: boolean;
 }
 
 /**

@@ -29,9 +29,11 @@ export function sectionCacheKey(
   libraryID: string,
   entityID: string,
   extraFilters: FieldFilters | null | undefined,
+  home = false,
 ): string {
   return (
-    SECTION_CACHE_PREFIX + JSON.stringify([section, libraryID, entityID, extraFilters || null])
+    SECTION_CACHE_PREFIX +
+    JSON.stringify([section, libraryID, entityID, extraFilters || null, home])
   );
 }
 
@@ -59,6 +61,7 @@ export function HydratedSection({
   section,
   libraryID,
   entityID,
+  home = false,
   extraFilters,
   seeAll,
   onConnectionLost,
@@ -68,6 +71,8 @@ export function HydratedSection({
   section: Section;
   libraryID: string;
   entityID: string;
+  /** Hydrating Home: Libraries hidden from Home stay out (CORE-2360). */
+  home?: boolean;
   /** A filter-bar selection routed to this (target) section; null when none. */
   extraFilters?: FieldFilters | null;
   seeAll?: SeeAllTarget;
@@ -79,7 +84,7 @@ export function HydratedSection({
   // Watched, watchlist and rating changes (here or on another client) revalidate
   // the section behind the items already shown.
   const engagementEpoch = useEngagementEpoch();
-  const cacheKey = sectionCacheKey(section, libraryID, entityID, extraFilters);
+  const cacheKey = sectionCacheKey(section, libraryID, entityID, extraFilters, home);
   const [items, setItems] = useState<SourceItem[] | null>(
     () => readViewerCache<SourceItem[]>(identity, cacheKey) ?? null,
   );
@@ -106,7 +111,7 @@ export function HydratedSection({
       abandon();
       fail();
     }, SECTION_LOAD_TIMEOUT_MS);
-    fetchSectionItems(section, { libraryID, entityID, extraFilters }, controller.signal)
+    fetchSectionItems(section, { libraryID, entityID, extraFilters, home }, controller.signal)
       .then((next) => {
         if (!alive) return;
         window.clearTimeout(timeout);
@@ -127,7 +132,7 @@ export function HydratedSection({
         fail();
       });
     return abandon;
-    // cacheKey serializes libraryID, entityID and extraFilters (a fresh object
+    // cacheKey serializes libraryID, entityID, home and extraFilters (a fresh object
     // per selection) into a stable dependency. The Section object itself stays a
     // dependency: a reloaded Layout must re-report hydration state (LayoutView
     // tracks it per Layout object) and revalidates, served from the cache.

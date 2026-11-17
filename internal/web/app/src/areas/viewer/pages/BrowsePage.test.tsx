@@ -35,13 +35,23 @@ vi.mock("../components/LayoutView", () => ({
   LayoutView: ({
     navigationID,
     libraryID,
+    home,
+    buildSeeAll,
     onEmptyChange,
   }: {
     navigationID: string;
     libraryID: string;
+    home?: boolean;
+    buildSeeAll?: (section: { id: string }) => { state: { home?: boolean } } | undefined;
     onEmptyChange?: (empty: boolean) => void;
   }) => (
-    <div data-testid="layout" data-navigation={navigationID} data-library={libraryID}>
+    <div
+      data-testid="layout"
+      data-navigation={navigationID}
+      data-library={libraryID}
+      data-home={String(!!home)}
+      data-seeall-home={String(!!buildSeeAll?.({ id: "shelf" })?.state.home)}
+    >
       <button type="button" onClick={() => onEmptyChange?.(true)}>
         settle empty
       </button>
@@ -82,6 +92,20 @@ describe("BrowsePage node resolution", () => {
     expect(screen.getByTestId("path")).toHaveTextContent("/n/library-lib-a");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Space Archive");
     expect(screen.getByTestId("layout")).toHaveAttribute("data-library", "lib-a");
+  });
+
+  // Home hydrates aggregate Sections without the Libraries a manager hid from
+  // it; a Library's own page shows that Library whatever its Home setting
+  // (CORE-2360).
+  it("asks for Home rows on Home only, and carries the flag into See All", () => {
+    renderAt("/");
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-home", "true");
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-home", "true");
+    cleanup();
+
+    renderAt("/n/library-lib-a");
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-home", "false");
+    expect(screen.getByTestId("layout")).toHaveAttribute("data-seeall-home", "false");
   });
 
   it("sends the layout-less ambient node to Home instead of drawing Home at its address", () => {

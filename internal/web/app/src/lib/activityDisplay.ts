@@ -171,6 +171,12 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
     "activityNounLibrary",
     "library",
   ),
+  "library.show_on_home": label(
+    "library",
+    "activityEventLibraryShowOnHome",
+    "activityNounLibrary",
+    "library",
+  ),
   "media.trash": label("library", "activityEventMediaTrash", "activityNounItem", "media"),
   "media.restore": label("library", "activityEventMediaRestore", "activityNounItem", "media"),
   "trash.purge": label("library", "activityEventTrashPurge"),

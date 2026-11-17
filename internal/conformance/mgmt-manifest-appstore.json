@@ -398,6 +398,10 @@
       "effect": "write"
     },
     {
+      "field": "setlibraryshowonhome",
+      "effect": "write"
+    },
+    {
       "field": "setpluginactive",
       "effect": "write"
     },

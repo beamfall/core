@@ -1,6 +1,8 @@
 export const managedFileOptionsStrings = {
   en: {
     previewClipsHelp: "Short silent previews while browsing.",
+    showOnHomeHelp:
+      "Include this library's rows on Home. It stays in the menu and in search either way.",
     skipDetectionHelp: "Find intros and credits so viewers can skip them.",
     libraryEmptyLead: "Add your first library to start building your collection.",
     serverActivity: "Activity",
@@ -15,6 +17,7 @@ export const managedFileOptionsStrings = {
     confirmDeleteManagedPath: "Delete this managed folder or file?",
     managedFileOperationFailed: "Managed file operation failed.",
     previewClips: "Preview clips",
+    showOnHome: "Show on Home",
     skipDetection: "Skip detection",
     editArtwork: "Edit artwork",
     artworkCandidates: "Artwork candidates",
@@ -59,6 +62,8 @@ export const managedFileOptionsStrings = {
   },
   fr: {
     previewClipsHelp: "Courts aperçus muets pendant la navigation.",
+    showOnHomeHelp:
+      "Inclure les rangées de cette bibliothèque sur l’accueil. Elle reste dans le menu et la recherche dans tous les cas.",
     skipDetectionHelp:
       "Détecte les génériques de début et de fin pour que les spectateurs puissent les passer.",
     libraryEmptyLead:
@@ -75,6 +80,7 @@ export const managedFileOptionsStrings = {
     confirmDeleteManagedPath: "Supprimer ce dossier ou fichier géré ?",
     managedFileOperationFailed: "L’opération sur le fichier géré a échoué.",
     previewClips: "Clips d’aperçu",
+    showOnHome: "Afficher sur l’accueil",
     skipDetection: "Détection du saut",
     editArtwork: "Modifier l’illustration",
     artworkCandidates: "Candidates d’illustration",
@@ -120,6 +126,8 @@ export const managedFileOptionsStrings = {
   },
   de: {
     previewClipsHelp: "Kurze stumme Vorschauen beim Durchsuchen.",
+    showOnHomeHelp:
+      "Zeigt die Reihen dieser Bibliothek auf der Startseite. Im Menü und in der Suche bleibt sie in jedem Fall.",
     skipDetectionHelp: "Erkennt Intros und Abspänne, damit Zuschauer sie überspringen können.",
     libraryEmptyLead: "Füge deine erste Bibliothek hinzu, um deine Sammlung aufzubauen.",
     serverActivity: "Aktivität",
@@ -134,6 +142,7 @@ export const managedFileOptionsStrings = {
     confirmDeleteManagedPath: "Diesen verwalteten Ordner oder diese verwaltete Datei löschen?",
     managedFileOperationFailed: "Der Vorgang an der verwalteten Datei ist fehlgeschlagen.",
     previewClips: "Vorschauclips",
+    showOnHome: "Auf der Startseite zeigen",
     skipDetection: "Überspringen-Erkennung",
     editArtwork: "Artwork bearbeiten",
     artworkCandidates: "Artwork-Kandidaten",
@@ -178,6 +187,8 @@ export const managedFileOptionsStrings = {
   },
   es: {
     previewClipsHelp: "Vistas previas breves y sin sonido mientras exploras.",
+    showOnHomeHelp:
+      "Incluye las filas de esta biblioteca en Inicio. Sigue en el menú y en la búsqueda en cualquier caso.",
     skipDetectionHelp: "Detecta intros y créditos para que los espectadores puedan saltarlos.",
     libraryEmptyLead: "Añade tu primera biblioteca para empezar a crear tu colección.",
     serverActivity: "Actividad",
@@ -192,6 +203,7 @@ export const managedFileOptionsStrings = {
     confirmDeleteManagedPath: "¿Eliminar esta carpeta o archivo administrado?",
     managedFileOperationFailed: "Falló la operación con el archivo administrado.",
     previewClips: "Clips de vista previa",
+    showOnHome: "Mostrar en Inicio",
     skipDetection: "Detección de omisión",
     editArtwork: "Editar arte",
     artworkCandidates: "Candidatos de arte",
@@ -236,6 +248,8 @@ export const managedFileOptionsStrings = {
   },
   pt: {
     previewClipsHelp: "Prévias curtas e silenciosas ao navegar.",
+    showOnHomeHelp:
+      "Inclui as linhas desta biblioteca no Início. Ela continua no menu e na busca em qualquer caso.",
     skipDetectionHelp: "Detecta aberturas e créditos para que os espectadores possam pulá-los.",
     libraryEmptyLead: "Adicione sua primeira biblioteca para começar a montar sua coleção.",
     serverActivity: "Atividade",
@@ -251,6 +265,7 @@ export const managedFileOptionsStrings = {
     confirmDeleteManagedPath: "Excluir esta pasta ou arquivo gerenciado?",
     managedFileOperationFailed: "Falha na operação com o arquivo gerenciado.",
     previewClips: "Clipes de prévia",
+    showOnHome: "Mostrar no Início",
     skipDetection: "Detecção de pulo",
     editArtwork: "Editar arte",
     artworkCandidates: "Candidatos de arte",

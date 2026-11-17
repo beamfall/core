@@ -34,6 +34,8 @@ export interface SectionFetchContext {
   extraFilters?: FieldFilters | null;
   /** Overrides the per-kind default limit (See All pages SEEALL_PAGE). */
   paging?: { limit: number; offset: number } | null;
+  /** Hydrating Home: Libraries hidden from Home stay out of aggregate Sources (CORE-2360). */
+  home?: boolean;
 }
 
 /**
@@ -70,6 +72,7 @@ export async function fetchSectionItems(
       entityFilter: source.entityFilter || null,
       limit,
       offset: ctx.paging ? ctx.paging.offset : 0,
+      ...(ctx.home ? { home: true } : {}),
     },
     signal,
   );

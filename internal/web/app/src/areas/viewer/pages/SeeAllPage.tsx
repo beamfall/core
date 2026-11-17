@@ -60,6 +60,7 @@ export function SeeAllPage() {
       const page = await fetchSectionItems(ctx.section, {
         libraryID: ctx.libraryID,
         entityID: ctx.entityID,
+        home: ctx.home,
         paging: { limit: SEEALL_PAGE, offset: offsetRef.current },
       });
       if (generationRef.current !== generation) return;
@@ -89,6 +90,7 @@ export function SeeAllPage() {
         const page = await fetchSectionItems(ctx.section, {
           libraryID: ctx.libraryID,
           entityID: ctx.entityID,
+          home: ctx.home,
           paging: { limit: SEEALL_PAGE, offset: next.length },
         });
         if (generationRef.current !== generation) return;

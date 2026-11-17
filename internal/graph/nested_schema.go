@@ -271,6 +271,7 @@ var resultTypes = map[string]any{
 	"setlibraryroots":                    LibraryInfo{},
 	"addpathpickerroot":                  PathPickerRootInfo{},
 	"setlibrarypreviewclips":             LibraryInfo{},
+	"setlibraryshowonhome":               LibraryInfo{},
 	"setlibrarybacking":                  LibraryInfo{},
 	"setlibraryrestricted":               LibraryInfo{},
 	"setqualitypolicy":                   QualityPolicyInfo{},

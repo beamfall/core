@@ -125,6 +125,41 @@ describe("HydratedSection state-family conformance", () => {
   });
 });
 
+describe("HydratedSection Home scope (CORE-2360)", () => {
+  it("asks for Home rows when rendering Home and keeps them in their own cache slot", async () => {
+    vi.mocked(fetchSectionItems).mockResolvedValue([item]);
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <HydratedSection section={section} libraryID="" entityID="" home />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await screen.findByRole("list", { name: "Recent" });
+    expect(fetchSectionItems).toHaveBeenCalledWith(
+      section,
+      expect.objectContaining({ libraryID: "", home: true }),
+      expect.any(AbortSignal),
+    );
+    expect(sectionCacheKey(section, "", "", null, true)).not.toBe(
+      sectionCacheKey(section, "", "", null),
+    );
+  });
+
+  it("does not ask for Home rows elsewhere", async () => {
+    vi.mocked(fetchSectionItems).mockResolvedValue([item]);
+    renderSection();
+
+    await screen.findByRole("list", { name: "Recent" });
+    expect(fetchSectionItems).toHaveBeenCalledWith(
+      section,
+      expect.objectContaining({ libraryID: "lib1", home: false }),
+      expect.any(AbortSignal),
+    );
+  });
+});
+
 describe("HydratedSection identity-scoped cache", () => {
   const identity = JSON.stringify(["viewer", "p1", "adult", false]);
   const key = sectionCacheKey(section, "lib1", "", undefined);

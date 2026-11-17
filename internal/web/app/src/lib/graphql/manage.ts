@@ -37,6 +37,7 @@ import type {
   LibraryPreviewClipsResult,
   LibraryPurgeResult,
   LibraryRootsResult,
+  LibraryShowOnHomeResult,
   ManagedPathInfo,
   ManagedTrashInfo,
   MarkerInfo,
@@ -83,7 +84,7 @@ import type {
 // --- Libraries ------------------------------------------------------------
 
 const LIBRARIES_QUERY =
-  "query Libraries { libraries { id title pluginID previewClips restricted roots icon iconChoice defaultIcon } }";
+  "query Libraries { libraries { id title pluginID previewClips showOnHome restricted roots icon iconChoice defaultIcon } }";
 
 /** Libraries — the manageable Library list with roots + preview-clip toggle. */
 export async function fetchLibraries(signal?: AbortSignal): Promise<LibraryInfo[]> {
@@ -103,6 +104,23 @@ export async function setLibraryPreviewClips(
     setLibraryPreviewClips: LibraryPreviewClipsResult;
   }>(SET_LIBRARY_PREVIEW_CLIPS_MUTATION, { libraryID, enabled });
   return data.setLibraryPreviewClips;
+}
+
+const SET_LIBRARY_SHOW_ON_HOME_MUTATION =
+  "mutation SetLibraryShowOnHome($libraryID: String!, $enabled: Boolean!) { setLibraryShowOnHome(libraryID: $libraryID, enabled: $enabled) { id showOnHome } }";
+
+/**
+ * SetLibraryShowOnHome — keep a Library on or off Home (CORE-2360). A hidden
+ * Library stays in navigation and search; only Home's rows leave it out.
+ */
+export async function setLibraryShowOnHome(
+  libraryID: string,
+  enabled: boolean,
+): Promise<LibraryShowOnHomeResult> {
+  const data = await graphql<{
+    setLibraryShowOnHome: LibraryShowOnHomeResult;
+  }>(SET_LIBRARY_SHOW_ON_HOME_MUTATION, { libraryID, enabled });
+  return data.setLibraryShowOnHome;
 }
 
 // The icon write rides the console-config mutation: the published management

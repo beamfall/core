@@ -23,6 +23,7 @@ export function LayoutView({
   layout,
   libraryID,
   entityID = "",
+  home = false,
   buildSeeAll,
   navigationID,
   onEmptyChange,
@@ -31,6 +32,8 @@ export function LayoutView({
   libraryID: string;
   /** The context entity for a detail Layout; "" on browse. */
   entityID?: string;
+  /** Rendering Home: aggregate Sections leave out Libraries hidden from Home (CORE-2360). */
+  home?: boolean;
   /** Maps a (shelf) Section to its See-All target; omit to hide See-All. */
   buildSeeAll?: (section: Section) => SeeAllTarget | undefined;
   /** Stable navigation identity for initial focus and Reveal/relock restore. */
@@ -243,6 +246,7 @@ export function LayoutView({
               section={section}
               libraryID={libraryID}
               entityID={entityID}
+              home={home}
               extraFilters={extraFiltersForIndex(index)}
               seeAll={section.kind === "hero" ? undefined : buildSeeAll?.(section)}
               onConnectionLost={() => setConnectionLost(true)}

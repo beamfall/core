@@ -60,7 +60,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"adminsession": {},
 	"agentcatalog": {},
-	"ambientqueue": fieldArguments["ambientqueue"],
+	"ambientqueue": sourceItemsRegistryArguments(),
 	"apikeys":      {},
 	"apitokens":    {},
 	"approvepluginpermission": {
@@ -884,6 +884,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "enabled", Kind: "boolean"},
 		{Name: "libraryID", Kind: "string"},
 	},
+	"setlibraryshowonhome": {
+		{Name: "enabled", Kind: "boolean"},
+		{Name: "libraryID", Kind: "string"},
+	},
 	"setlibraryrestricted": {
 		{Name: "libraryID", Kind: "string"},
 		{Name: "restricted", Kind: "boolean"},
@@ -1008,7 +1012,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"smartcollections": {
 		{Name: "libraryID", Kind: "string"},
 	},
-	"sourceitems":     fieldArguments["sourceitems"],
+	"sourceitems":     sourceItemsRegistryArguments(),
 	"stagedrestore":   {},
 	"revealbackupkey": {},
 	"backupkeystatus": {},
@@ -1218,4 +1222,14 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"webhookdeliveries": {},
 	"webhooks":          {},
 	"webhooksettings":   {},
+}
+
+// sourceItemsRegistryArguments is the sourceItems resolver's argument list:
+// the wire nested-schema arguments plus home (CORE-2360), which the wire
+// nested schema leaves out because its arguments carry no boolean kind.
+// ambientQueue runs the same resolver, so it lists the same arguments.
+func sourceItemsRegistryArguments() []NestedArgument {
+	return slices.Concat(fieldArguments["sourceitems"], []NestedArgument{
+		{Name: "home", Kind: "boolean", Optional: true},
+	})
 }

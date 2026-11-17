@@ -213,6 +213,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"SetLibraryBacking":                       {},
 	"SetLibraryIcon":                          {},
 	"SetLibraryPreviewClips":                  {},
+	"SetLibraryShowOnHome":                    {},
 	"SetLibraryRoots":                         {},
 	"SetPrePlayClips":                         {},
 	"SetMatchPinned":                          {},
