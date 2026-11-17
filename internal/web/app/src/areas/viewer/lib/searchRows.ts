@@ -98,10 +98,20 @@ export function searchPagePath(term: string): string {
   return `/search?q=${encodeURIComponent(term)}`;
 }
 
+/**
+ * The most rows a keyword search returns. The server has no paging yet, so a
+ * full page says it shows the first matches rather than claiming that is all
+ * of them (CORE-2321).
+ */
+export const SEARCH_RESULT_CAP = 50;
+
 export function searchCountLabel(
   t: (key: StringKey, values?: Record<string, string | number>) => string,
   count: number,
   query: string,
 ): string {
-  return t("searchResultCount", { count, query });
+  return t(count >= SEARCH_RESULT_CAP ? "searchResultCountCapped" : "searchResultCount", {
+    count,
+    query,
+  });
 }
