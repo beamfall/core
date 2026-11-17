@@ -1,0 +1,6 @@
+- [ ] `internal/ffmpeg`: `ScaleImage` encodes RGBA PNG when the destination ends in `.png`
+- [ ] `internal/artwork`: overlay slots stored and derived as `.png`; old `.jpg` overlays read until re-imported
+- [ ] `internal/mediahttp`: artwork content type follows the served file
+- [ ] Tests: alpha at every bucket for each overlay slot, PNG content type, unchanged JPEG slots, old `.jpg` overlay served
+- [ ] `make gate`
+- [ ] `openspec archive core-0314-overlay-artwork-png` after landing
