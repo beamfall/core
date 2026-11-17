@@ -2680,6 +2680,47 @@ func (s *Store) MediaIDsForLibrary(ctx context.Context, libraryID LibraryID) ([]
 	return ids, rows.Err()
 }
 
+// LibraryMediaIDsAfter lists up to limit live (not trashed) Media ids in one
+// Library with an id greater than after, in id order, from the Library's own
+// catalog plane. It is the keyset form of MediaIDsForLibrary for a durable job
+// that checkpoints by Media id; like that walk it carries no reveal filtering.
+func (s *Store) LibraryMediaIDsAfter(ctx context.Context, libraryID LibraryID, after MediaID, limit int) ([]MediaID, error) {
+	if libraryID == "" {
+		return nil, errors.New("library ID is required")
+	}
+	if limit <= 0 {
+		return nil, errors.New("limit must be positive")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT id FROM media
+		WHERE library_id = ? AND trashed_at_ms IS NULL AND (? = '' OR id > ?)
+		ORDER BY id
+		LIMIT ?
+	`, libraryID, string(after), string(after), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]MediaID, 0, limit)
+	for rows.Next() {
+		var id MediaID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // SetPrimaryMediaFile records the current file path backing a Media item.
 func (s *Store) SetPrimaryMediaFile(ctx context.Context, id MediaID, path string) error {
 	if id == "" {

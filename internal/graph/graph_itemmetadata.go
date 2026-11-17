@@ -2,10 +2,12 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strings"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/identify"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -110,14 +112,10 @@ func (h *Handler) refreshMediaMetadata(ctx context.Context, scope auth.Scope, re
 	if _, err := h.store.Media(ctx, mediaID, scope.LibraryFilter()); err != nil {
 		return MediaMetadataInfo{}, clientError("unknown media")
 	}
-	record, ok, err := h.store.MediaMetadataProvenance(ctx, mediaID)
-	if err != nil {
-		return MediaMetadataInfo{}, err
-	}
-	if !ok || record.CandidateID == "" {
-		return MediaMetadataInfo{}, clientError("no identification to refresh; use Fix Match first")
-	}
-	if err := h.identify.Apply(ctx, mediaID, record.PluginID, record.ScraperID, record.CandidateID); err != nil {
+	if err := h.identify.Refresh(ctx, mediaID); err != nil {
+		if errors.Is(err, identify.ErrNothingToRefresh) {
+			return MediaMetadataInfo{}, clientError("no identification to refresh; use Fix Match first")
+		}
 		return MediaMetadataInfo{}, err
 	}
 	h.logMediaActivity(ctx, scope, store.ActivityMediaMetadataRefresh, mediaID)

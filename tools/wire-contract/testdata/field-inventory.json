@@ -2314,6 +2314,25 @@
       ]
     },
     {
+      "field": "refreshlibrarymetadata",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "target",
+        "updatedAt"
+      ]
+    },
+    {
       "field": "refreshmediametadata",
       "effect": "write",
       "tier": "session",

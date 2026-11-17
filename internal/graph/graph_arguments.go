@@ -799,6 +799,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "pluginID", Kind: "string"},
 		{Name: "root", Kind: "string"},
 	},
+	"refreshlibrarymetadata": {
+		{Name: "libraryID", Kind: "string"},
+	},
 	"scanlibrary": {
 		{Name: "backfill", Kind: "boolean", Optional: true},
 		{Name: "libraryID", Kind: "string"},

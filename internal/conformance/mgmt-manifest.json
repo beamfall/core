@@ -286,6 +286,10 @@
       "effect": "read"
     },
     {
+      "field": "refreshlibrarymetadata",
+      "effect": "write"
+    },
+    {
       "field": "registerimportsource",
       "effect": "write"
     },

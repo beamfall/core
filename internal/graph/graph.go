@@ -2838,6 +2838,36 @@ func (h *Handler) scanLibrary(ctx context.Context, scope auth.Scope, req request
 	return h.enqueueScanRoots(ctx, scope, libraryID, roots, backfill)
 }
 
+// refreshLibraryMetadata queues the durable Library-wide metadata refresh for a
+// Library the caller can see (CORE-1136). The job dedupes by Library while one
+// is queued, running or yielded, so a repeat request returns the active job;
+// the jobs query is the progress surface and jobCancel stops it.
+func (h *Handler) refreshLibraryMetadata(ctx context.Context, scope auth.Scope, req request) (JobInfo, error) {
+	if h.identify == nil {
+		return JobInfo{}, clientError("identification unavailable")
+	}
+	libraryID := store.LibraryID(trimmedVariable(req, "libraryID"))
+	if libraryID == "" {
+		return JobInfo{}, clientError("libraryID is required")
+	}
+	known, err := h.visibleLibrary(ctx, scope, libraryID)
+	if err != nil {
+		return JobInfo{}, err
+	}
+	if !known {
+		return JobInfo{}, clientError("unknown library")
+	}
+	job, err := identify.NewRefreshJob(libraryID, time.Now().UTC())
+	if err != nil {
+		return JobInfo{}, err
+	}
+	created, err := h.store.EnqueueJob(ctx, job)
+	if err != nil {
+		return JobInfo{}, err
+	}
+	return h.jobInfo(ctx, scope, created), nil
+}
+
 // resolveScanRoots checks the Library is visible and returns the roots a scan
 // of it walks: the given root when it is one of the Library's folders, or
 // every persisted root when root is empty.
@@ -5672,6 +5702,7 @@ var mutationFields = map[string]bool{
 	"revealbackupkey":                    true, // CORE-2032: reveal the backup key to save
 	"acknowledgebackupkey":               true, // CORE-2032: confirm the backup key is saved
 	"scanlibrary":                        true,
+	"refreshlibrarymetadata":             true, // CORE-1136: queue a Library-wide metadata refresh
 	"scanpreview":                        true, // CORE-1054: plan a rescan and mint a single-use token
 	"commitscanpreview":                  true, // CORE-1054: spend the token and enqueue the rescan
 	"addsubscription":                    true,
@@ -5829,6 +5860,7 @@ var adminFields = map[string]bool{
 	"restorelibrary":         true,
 	"purgelibrary":           true,
 	"scanlibrary":            true,
+	"refreshlibrarymetadata": true, // CORE-1136: Library-wide metadata refresh job
 	"scanpreview":            true, // CORE-1054: rescan preview and its token-gated commit
 	"commitscanpreview":      true,
 	// Webhooks (CORE-1697): endpoint URLs and secrets are owner configuration.

@@ -865,6 +865,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// then hand the configured service to the scan adapter created above.
 	identifyService.SetAutoStores(st, st)
 	autoIdentifier.service = identifyService
+	// Library-wide metadata refresh (CORE-1136): network-bound provider
+	// lookups, paced per item, so it stays outside the resource governor.
+	jobRegistry.Register(identify.RefreshJobKind, identify.RefreshJobHandler(st, identifyService, identify.RefreshJobPace))
 	// Construct the confined proxy archive before native root observation starts.
 	// A malformed/replaced archive root therefore cannot leak watcher resources.
 	proxyTee, err := proxytee.New(
