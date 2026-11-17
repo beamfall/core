@@ -1,13 +1,13 @@
-- [ ] plugin-sdk: `Bundle.MediaSubtitle`, validation and `RenderMediaSubtitle` on `towerqa/media-subtitle`
-- [ ] plugin-filmtv: declare the subtitle segments on `towerqa/media-subtitle`
-- [ ] `go.mod`: pin both branch commits (lander replaces with tagged releases)
-- [ ] `internal/store`: bulk read of named Media field values; Library id on cards
-- [ ] `internal/store`: `libraryFolder` orders direct Media by ordinal, then file name
-- [ ] `internal/graph`: `SourceItem.subtitle`, `sequence` and `index` on every card read
-- [ ] Store and graph tests; wire goldens regenerated with `make regen-wire-goldens`
+- [x] plugin-sdk: `Bundle.MediaSubtitle`, validation and `RenderMediaSubtitle` on `towerqa/media-subtitle`
+- [x] plugin-filmtv: declare the subtitle segments on `towerqa/media-subtitle`
+- [x] `go.mod`: pin both branch commits (lander replaces with tagged releases)
+- [x] `internal/store`: bulk read of named Media field values; Library id on cards
+- [x] `internal/store`: `libraryFolder` orders direct Media by ordinal, then file name
+- [x] `internal/graph`: `SourceItem.subtitle`, `sequence`, `index` and `durationSeconds` on every card read
+- [x] Store and graph tests; wire goldens regenerated with `make regen-wire-goldens`
 - [ ] Web: poster, thumbnail and list displays, remembered per Library, on the all-titles view and an open folder
 - [ ] Web: card subtitle; strings in every shipped locale; vitest coverage
-- [ ] Wire contract published as a new version (lander)
+- [x] Wire contract 2.22.0 published in core (lander renumbers if another publish lands first; registry pin and client re-vendors are the lander's)
 - [ ] plugin-sdk and plugin-filmtv tagged and repinned (lander)
 - [ ] `make gate`
 - [ ] `openspec archive core-2386-display-options` after landing
