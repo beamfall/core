@@ -75,10 +75,6 @@ async function ask() {
 
 describe("Ask to join", () => {
   it("requests as a web viewer, displays the code and binds the browser on approval", async () => {
-    vi.mocked(pollJoinRequest)
-      .mockResolvedValueOnce({ status: "pending" })
-      .mockResolvedValue({ status: "approved", rebind: "bound" });
-
     await ask();
 
     expect(requestToJoin).toHaveBeenCalledWith("Web Browser", expect.any(AbortSignal));
@@ -86,6 +82,8 @@ describe("Ask to join", () => {
     expect(
       screen.getByText("On the server, open the Console and approve this code."),
     ).toBeVisible();
+    // The poll answers pending until the code has been seen, then approves.
+    vi.mocked(pollJoinRequest).mockResolvedValue({ status: "approved", rebind: "bound" });
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
     expect(pollJoinRequest).toHaveBeenCalledWith(HANDLE, expect.any(AbortSignal));
     expect(screen.getByRole("status")).toHaveTextContent("Connected.");
