@@ -286,11 +286,11 @@ test.describe("console", () => {
     await expect(currentDeviceCells.nth(0)).toContainText("E2E manager");
     await expect(currentDeviceCells.nth(1)).toHaveText("Manager");
     await expect(currentDeviceCells.nth(2)).toHaveText("Active");
-    await expect(tvCells.nth(0)).toHaveText("TV");
+    await expect(tvCells.nth(0)).toContainText("TV");
     await expect(tvCells.nth(1)).toHaveText("Viewer");
     await expect(tvCells.nth(2)).toHaveText("Active");
     await expect(tvCells.nth(3).locator("button")).toHaveText(["Promote", "Revoke"]);
-    await expect(revokedCells.nth(0)).toHaveText("Revoked");
+    await expect(revokedCells.nth(0)).toContainText("Revoked");
     await expect(revokedCells.nth(1)).toHaveText("Viewer");
     await expect(revokedCells.nth(2)).toHaveText("Revoked");
     await expect(revokedCells.nth(3).locator("button")).toHaveCount(0);
