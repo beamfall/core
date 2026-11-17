@@ -114,6 +114,15 @@ func (g *Group) Paused() bool {
 	return g.paused
 }
 
+// HostPaused reports whether the host paused the timeline. A lead party the
+// Conductor is holding because its lead fell silent is paused but not
+// host-paused: its lead is still playing.
+func (g *Group) HostPaused() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.paused && !g.held
+}
+
 // Invitees returns a snapshot of the Profiles with a pending invite.
 func (g *Group) Invitees() []store.ProfileID {
 	g.mu.Lock()

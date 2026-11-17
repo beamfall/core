@@ -306,6 +306,11 @@ func TestSilentLeadIsHeldAndResumesOnItsNextReport(t *testing.T) {
 	if a, _ := r.PartyAnchor(g.ID); a.Position != time.Second || !a.Paused {
 		t.Fatalf("held anchor = %+v, want paused at 1 s", a)
 	}
+	// A hold is not the host's pause, so a position-only move by the lead
+	// (an auto-skip) does not turn it into one.
+	if !g.Paused() || g.HostPaused() {
+		t.Fatalf("held party: Paused %v HostPaused %v, want paused but not host-paused", g.Paused(), g.HostPaused())
+	}
 
 	// The lead's next report resumes the timeline on that report.
 	tr, _, restate, err := r.LeadReport(g.ID, "lead", 12*time.Second, *now, 0)

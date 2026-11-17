@@ -615,8 +615,9 @@ func (h *Handler) watchPartyAutoSkip(ctx context.Context, scope auth.Scope, req 
 	// host's own auto-skip, or a relaxed non-host's applied for the host. Mirrors
 	// watchPartyTransport (broadcast + activity log on the timeline mutation).
 	apply := func(hostSession store.SessionID) (WatchPartyAutoSkipResult, error) {
-		// An auto-skip moves the position only; a paused party stays paused.
-		transition, err := h.partyTransition(ctx, partyID, hostSession, scope.ProfileID, item, position, g.Paused())
+		// An auto-skip moves the position only; a party its host paused stays
+		// paused. A held lead party resumes: its lead is playing through the skip.
+		transition, err := h.partyTransition(ctx, partyID, hostSession, scope.ProfileID, item, position, g.HostPaused())
 		if err != nil {
 			return WatchPartyAutoSkipResult{}, err
 		}
@@ -703,11 +704,13 @@ func (h *Handler) partyTransition(ctx context.Context, partyID string, hostSessi
 	if err != nil {
 		return conductor.Transition{}, partyClientError(err)
 	}
-	if err := h.broadcastPartyTransition(ctx, partyID, caller, members, transition); err != nil {
-		return conductor.Transition{}, err
-	}
+	// The timeline has moved whether or not the fan-out succeeds, so a playing
+	// lead party is watched either way.
 	if transition.Lead && !transition.Paused {
 		h.watchLeadLocked(partyID, conductor.LeadSilence)
+	}
+	if err := h.broadcastPartyTransition(ctx, partyID, caller, members, transition); err != nil {
+		return conductor.Transition{}, err
 	}
 	return transition, nil
 }

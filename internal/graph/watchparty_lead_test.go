@@ -253,3 +253,33 @@ func TestLeadPartyIsHeldForEveryProfileWhenTheLeadFallsSilent(t *testing.T) {
 		}
 	}
 }
+
+// A held lead party whose lead skips a segment before its next report plays
+// again from the skip: the hold is not the lead's own pause (CORE-2266).
+//
+// feature:watch-party
+func TestAutoSkipByTheLeadResumesAHeldLeadParty(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	st := storetest.Open(t)
+	h := newTestHandlerWithStore(st)
+	h.SetConductor(conductor.NewRegistryWithClock(func() time.Time { return now }))
+	partyID := formLeadParty(t, h)
+	now = now.Add(time.Second)
+	leadReport(t, h, partyID, 1000, now.UnixMilli(), 0)
+	now = now.Add(3 * time.Second)
+	h.leadSilenceCheck(t.Context(), partyID)
+
+	cursor := lastSeq(t, st)
+	if _, errs := post(t, h, autoSkipBody(partyID, "media-alpha", 90000), authorizeViewer); len(errs) != 0 {
+		t.Fatalf("watchPartyAutoSkip errors = %#v", errs)
+	}
+	rows := partyTransitionRows(t, st, partyID, cursor)
+	if len(rows) != 2 {
+		t.Fatalf("auto-skip wrote %d transitions, want one per member Profile", len(rows))
+	}
+	for _, p := range rows {
+		if p.Paused || p.PositionMS != 90000 {
+			t.Errorf("auto-skip row for %s = %+v, want playing at 90000", p.ProfileID, p)
+		}
+	}
+}
