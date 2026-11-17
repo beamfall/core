@@ -4,13 +4,19 @@ export const profileDeviceRequestStrings = {
   en: {
     pairingApprove: "Approve",
     pairingDeny: "Deny",
+    pairingApproveViewer: "Approve as viewer",
+    pairingApproveManager: "Approve as manager",
+    pairingManagerWarning:
+      "This device asked for the manager role. Approve it as a manager only if you trust it to manage this server.",
+    pairingPromptAnnounce: "{name} is asking to join this server. Code on the device: {code}.",
     pairingPromptTitle: "A device wants to join",
     pairingPromptCode: "Code on the device",
     pairingPromptHint: "Approve only if this code matches the one the device is showing.",
     pairingWantsRole: "Wants to join as {role}",
     pairingNetworkLan: "On this network",
     pairingNetworkRemote: "Not on this network",
-    pairingMoreWaiting: "{count} more waiting. Open Devices",
+    pairingMoreWaiting:
+      "{count, plural, one {# more waiting. Open Devices} other {# more waiting. Open Devices}}",
     pairingFailed: "That didn't go through. Try again.",
     pairingPendingHeading: "Waiting to join",
     pairingPendingLead:
@@ -20,20 +26,26 @@ export const profileDeviceRequestStrings = {
     pairingColCode: "Code",
     pairingColNetwork: "Network",
     pairingColAge: "Asked",
-    pairingFromLink: "From your link",
     pairingAgeSeconds: "{seconds}s ago",
     pairingAgeMinutes: "{minutes} min ago",
   },
   fr: {
     pairingApprove: "Approuver",
     pairingDeny: "Refuser",
+    pairingApproveViewer: "Approuver comme visionneuse",
+    pairingApproveManager: "Approuver comme gestionnaire",
+    pairingManagerWarning:
+      "Cet appareil a demandé le rôle de gestionnaire. Ne l’approuvez comme gestionnaire que si vous lui faites confiance pour gérer ce serveur.",
+    pairingPromptAnnounce:
+      "{name} demande à rejoindre ce serveur. Code affiché sur l’appareil : {code}.",
     pairingPromptTitle: "Un appareil souhaite rejoindre le serveur",
     pairingPromptCode: "Code affiché sur l’appareil",
     pairingPromptHint: "N’approuvez que si ce code correspond à celui affiché par l’appareil.",
     pairingWantsRole: "Souhaite rejoindre en tant que {role}",
     pairingNetworkLan: "Sur ce réseau",
     pairingNetworkRemote: "Hors de ce réseau",
-    pairingMoreWaiting: "{count} autres en attente. Ouvrir Appareils",
+    pairingMoreWaiting:
+      "{count, plural, one {# autre en attente. Ouvrir Appareils} other {# autres en attente. Ouvrir Appareils}}",
     pairingFailed: "L’action n’a pas abouti. Réessayez.",
     pairingPendingHeading: "En attente pour rejoindre",
     pairingPendingLead:
@@ -43,13 +55,17 @@ export const profileDeviceRequestStrings = {
     pairingColCode: "Code",
     pairingColNetwork: "Réseau",
     pairingColAge: "Demandé",
-    pairingFromLink: "Depuis votre lien",
     pairingAgeSeconds: "il y a {seconds} s",
     pairingAgeMinutes: "il y a {minutes} min",
   },
   de: {
     pairingApprove: "Genehmigen",
     pairingDeny: "Ablehnen",
+    pairingApproveViewer: "Als Viewer genehmigen",
+    pairingApproveManager: "Als Manager genehmigen",
+    pairingManagerWarning:
+      "Dieses Gerät hat die Manager-Rolle angefragt. Genehmige es nur als Manager, wenn du ihm die Verwaltung dieses Servers anvertraust.",
+    pairingPromptAnnounce: "{name} möchte diesem Server beitreten. Code auf dem Gerät: {code}.",
     pairingPromptTitle: "Ein Gerät möchte beitreten",
     pairingPromptCode: "Code auf dem Gerät",
     pairingPromptHint:
@@ -57,7 +73,8 @@ export const profileDeviceRequestStrings = {
     pairingWantsRole: "Möchte als {role} beitreten",
     pairingNetworkLan: "In diesem Netzwerk",
     pairingNetworkRemote: "Nicht in diesem Netzwerk",
-    pairingMoreWaiting: "{count} weitere warten. Geräte öffnen",
+    pairingMoreWaiting:
+      "{count, plural, one {# weiteres Gerät wartet. Geräte öffnen} other {# weitere Geräte warten. Geräte öffnen}}",
     pairingFailed: "Das hat nicht geklappt. Versuch es noch einmal.",
     pairingPendingHeading: "Warten auf Beitritt",
     pairingPendingLead:
@@ -67,20 +84,25 @@ export const profileDeviceRequestStrings = {
     pairingColCode: "Code",
     pairingColNetwork: "Netzwerk",
     pairingColAge: "Angefragt",
-    pairingFromLink: "Über deinen Link",
     pairingAgeSeconds: "vor {seconds} s",
     pairingAgeMinutes: "vor {minutes} Min.",
   },
   es: {
     pairingApprove: "Aprobar",
     pairingDeny: "Rechazar",
+    pairingApproveViewer: "Aprobar como visor",
+    pairingApproveManager: "Aprobar como administrador",
+    pairingManagerWarning:
+      "Este dispositivo ha pedido el rol de administrador. Apruébalo como administrador solo si confías en él para gestionar este servidor.",
+    pairingPromptAnnounce: "{name} pide unirse a este servidor. Código en el dispositivo: {code}.",
     pairingPromptTitle: "Un dispositivo quiere unirse",
     pairingPromptCode: "Código en el dispositivo",
     pairingPromptHint: "Aprueba solo si este código coincide con el que muestra el dispositivo.",
     pairingWantsRole: "Quiere unirse como {role}",
     pairingNetworkLan: "En esta red",
     pairingNetworkRemote: "Fuera de esta red",
-    pairingMoreWaiting: "{count} más en espera. Abrir Dispositivos",
+    pairingMoreWaiting:
+      "{count, plural, one {# más en espera. Abrir Dispositivos} other {# más en espera. Abrir Dispositivos}}",
     pairingFailed: "No se pudo completar. Inténtalo de nuevo.",
     pairingPendingHeading: "Esperando para unirse",
     pairingPendingLead:
@@ -90,20 +112,26 @@ export const profileDeviceRequestStrings = {
     pairingColCode: "Código",
     pairingColNetwork: "Red",
     pairingColAge: "Solicitado",
-    pairingFromLink: "Desde tu enlace",
     pairingAgeSeconds: "hace {seconds} s",
     pairingAgeMinutes: "hace {minutes} min",
   },
   pt: {
     pairingApprove: "Aprovar",
     pairingDeny: "Recusar",
+    pairingApproveViewer: "Aprovar como visualizador",
+    pairingApproveManager: "Aprovar como gerente",
+    pairingManagerWarning:
+      "Este dispositivo pediu a função de gerente. Aprove como gerente só se você confia nele para gerenciar este servidor.",
+    pairingPromptAnnounce:
+      "{name} está pedindo para entrar neste servidor. Código no dispositivo: {code}.",
     pairingPromptTitle: "Um dispositivo quer entrar",
     pairingPromptCode: "Código no dispositivo",
     pairingPromptHint: "Aprove só se este código for igual ao que o dispositivo está mostrando.",
     pairingWantsRole: "Quer entrar como {role}",
     pairingNetworkLan: "Nesta rede",
     pairingNetworkRemote: "Fora desta rede",
-    pairingMoreWaiting: "Mais {count} aguardando. Abrir Dispositivos",
+    pairingMoreWaiting:
+      "{count, plural, one {Mais # aguardando. Abrir Dispositivos} other {Mais # aguardando. Abrir Dispositivos}}",
     pairingFailed: "Não deu certo. Tente de novo.",
     pairingPendingHeading: "Aguardando para entrar",
     pairingPendingLead:
@@ -113,7 +141,6 @@ export const profileDeviceRequestStrings = {
     pairingColCode: "Código",
     pairingColNetwork: "Rede",
     pairingColAge: "Pedido",
-    pairingFromLink: "Pelo seu link",
     pairingAgeSeconds: "há {seconds} s",
     pairingAgeMinutes: "há {minutes} min",
   },

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, fetchSetupStatus } from "@/lib/api";
 import {
+  cancelJoinRequest,
   enroll,
   type JoinRequest,
   pollJoinRequest,
@@ -19,6 +20,7 @@ vi.mock("@/lib/graphql", () => ({
   requestToJoin: vi.fn(),
   pollJoinRequest: vi.fn(),
   regenerateJoinRequest: vi.fn(),
+  cancelJoinRequest: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -35,6 +37,7 @@ function ticket(overrides: Partial<JoinRequest> = {}): JoinRequest {
     code: "K7M2QX4D",
     requestSecret: HANDLE,
     expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    expiresInSeconds: 600,
     // A few milliseconds keeps the poll loop on real timers.
     pollIntervalSeconds: 0.005,
     ...overrides,
@@ -46,6 +49,7 @@ beforeEach(() => {
   vi.mocked(requestToJoin).mockReset().mockResolvedValue(ticket());
   vi.mocked(pollJoinRequest).mockReset().mockResolvedValue({ status: "pending" });
   vi.mocked(regenerateJoinRequest).mockReset();
+  vi.mocked(cancelJoinRequest).mockReset();
   vi.mocked(fetchSetupStatus)
     .mockReset()
     .mockResolvedValue({ required: false, tokenRequired: true, securityMode: "strict" });
@@ -77,8 +81,9 @@ describe("Ask to join", () => {
   it("requests as a web viewer, displays the code and binds the browser on approval", async () => {
     await ask();
 
-    expect(requestToJoin).toHaveBeenCalledWith("Web Browser", expect.any(AbortSignal));
+    expect(requestToJoin).toHaveBeenCalledWith("Web Browser");
     expect(await screen.findByText("K7M2QX4D")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Your code" })).toHaveTextContent("K7M2QX4D");
     expect(
       screen.getByText("On the server, open the Console and approve this code."),
     ).toBeVisible();
@@ -87,6 +92,8 @@ describe("Ask to join", () => {
     await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
     expect(pollJoinRequest).toHaveBeenCalledWith(HANDLE, expect.any(AbortSignal));
     expect(screen.getByRole("status")).toHaveTextContent("Connected.");
+    // An approved request is spent, not withdrawn.
+    expect(cancelJoinRequest).not.toHaveBeenCalled();
     // The secret is a credential: never rendered, never stored.
     expect(document.body).not.toHaveTextContent(HANDLE);
     expect(JSON.stringify({ ...window.localStorage })).not.toContain(HANDLE);
@@ -103,15 +110,28 @@ describe("Ask to join", () => {
     expect(screen.getByRole("button", { name: "Ask to join" })).toBeEnabled();
   });
 
-  it("says the code expired once expiresAt has passed, without polling", async () => {
-    vi.mocked(requestToJoin).mockResolvedValue(
-      ticket({ expiresAt: new Date(Date.now() - 1000).toISOString() }),
-    );
+  it("says the code expired once the server's lifetime has run out, without polling", async () => {
+    vi.mocked(requestToJoin).mockResolvedValue(ticket({ expiresInSeconds: 0 }));
 
     await ask();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("This code expired.");
     expect(pollJoinRequest).not.toHaveBeenCalled();
+  });
+
+  it("times the code by the server's lifetime, not by this device's clock", async () => {
+    // A device whose clock runs an hour fast reads expiresAt as long past.
+    vi.mocked(requestToJoin).mockResolvedValue(
+      ticket({ expiresAt: new Date(Date.now() - 3_600_000).toISOString() }),
+    );
+
+    await ask();
+
+    await waitFor(() =>
+      expect(vi.mocked(pollJoinRequest).mock.calls.length).toBeGreaterThanOrEqual(3),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("K7M2QX4D")).toBeInTheDocument();
   });
 
   it("says the code expired when the poll answers 401", async () => {
@@ -132,7 +152,7 @@ describe("Ask to join", () => {
 
   it("swaps in a new code and polls with the new secret", async () => {
     let resolvePoll: (value: { status: "pending" }) => void = () => {};
-    vi.mocked(pollJoinRequest).mockImplementation(
+    vi.mocked(pollJoinRequest).mockImplementationOnce(
       () => new Promise((resolve) => (resolvePoll = resolve)),
     );
     vi.mocked(regenerateJoinRequest).mockResolvedValue(
@@ -144,14 +164,61 @@ describe("Ask to join", () => {
     await waitFor(() => expect(pollJoinRequest).toHaveBeenCalledTimes(1));
     await userEvent.click(screen.getByRole("button", { name: "New code" }));
 
-    expect(regenerateJoinRequest).toHaveBeenCalledWith(HANDLE, expect.any(AbortSignal));
-    expect(await screen.findByText("ZZ22YY33")).toBeInTheDocument();
-    // The poll that was in flight for the old code was aborted and its answer is ignored.
-    expect(vi.mocked(pollJoinRequest).mock.calls[0][1]?.aborted).toBe(true);
+    // The poll on the wire may be collecting an approval: it is left to answer
+    // before the old code is replaced.
+    expect(screen.getByRole("button", { name: "New code" })).toBeDisabled();
+    expect(vi.mocked(pollJoinRequest).mock.calls[0][1]?.aborted).toBe(false);
+    expect(regenerateJoinRequest).not.toHaveBeenCalled();
     resolvePoll({ status: "pending" });
+
+    expect(await screen.findByText("ZZ22YY33")).toBeInTheDocument();
+    expect(regenerateJoinRequest).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(regenerateJoinRequest).mock.calls[0][0]).toBe(HANDLE);
     await waitFor(() =>
       expect(pollJoinRequest).toHaveBeenLastCalledWith(NEXT_HANDLE, expect.any(AbortSignal)),
     );
+    // The old secret is never polled again, and nothing was withdrawn.
+    expect(
+      vi.mocked(pollJoinRequest).mock.calls.filter(([secret]) => secret === HANDLE),
+    ).toHaveLength(1);
+    expect(cancelJoinRequest).not.toHaveBeenCalled();
+  });
+
+  it("keeps an approval the poll was collecting when New code is pressed", async () => {
+    let resolvePoll: (value: { status: "approved"; rebind: "bound" }) => void = () => {};
+    vi.mocked(pollJoinRequest).mockImplementationOnce(
+      () => new Promise((resolve) => (resolvePoll = resolve)),
+    );
+
+    await ask();
+    await screen.findByText("K7M2QX4D");
+    await waitFor(() => expect(pollJoinRequest).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: "New code" }));
+    resolvePoll({ status: "approved", rebind: "bound" });
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+    expect(regenerateJoinRequest).not.toHaveBeenCalled();
+    expect(cancelJoinRequest).not.toHaveBeenCalled();
+  });
+
+  it("withdraws a fresh code that arrives after Cancel", async () => {
+    let resolveRegenerate: (value: JoinRequest) => void = () => {};
+    vi.mocked(regenerateJoinRequest).mockImplementation(
+      () => new Promise((resolve) => (resolveRegenerate = resolve)),
+    );
+    // A long interval: no poll is on the wire when New code is pressed.
+    vi.mocked(requestToJoin).mockResolvedValue(ticket({ pollIntervalSeconds: 30 }));
+
+    await ask();
+    await screen.findByText("K7M2QX4D");
+    await userEvent.click(screen.getByRole("button", { name: "New code" }));
+    await waitFor(() => expect(regenerateJoinRequest).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    resolveRegenerate(ticket({ code: "ZZ22YY33", requestSecret: NEXT_HANDLE }));
+
+    await waitFor(() => expect(cancelJoinRequest).toHaveBeenCalledWith(NEXT_HANDLE));
+    expect(screen.queryByText("ZZ22YY33")).toBeNull();
+    expect(pollJoinRequest).not.toHaveBeenCalled();
   });
 
   it("hides the button on a server without device pairing and keeps the code form", async () => {
@@ -176,6 +243,22 @@ describe("Ask to join", () => {
 
     expect(pollJoinRequest).toHaveBeenCalledTimes(calls);
     expect(vi.mocked(pollJoinRequest).mock.calls.at(-1)?.[1]?.aborted).toBe(true);
+    // Leaving the page gives the request up rather than leaving it to expire.
+    expect(cancelJoinRequest).toHaveBeenCalledTimes(1);
+    expect(cancelJoinRequest).toHaveBeenCalledWith(HANDLE);
+  });
+
+  it("withdraws the request when the page is reloaded or closed", async () => {
+    await ask();
+    await screen.findByText("K7M2QX4D");
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(cancelJoinRequest).toHaveBeenCalledTimes(1);
+    expect(cancelJoinRequest).toHaveBeenCalledWith(HANDLE);
+    const calls = vi.mocked(pollJoinRequest).mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pollJoinRequest).toHaveBeenCalledTimes(calls);
   });
 
   it("cancels a pending ask when a typed code is submitted", async () => {
@@ -187,6 +270,9 @@ describe("Ask to join", () => {
     await userEvent.click(screen.getByRole("button", { name: "Connect" }));
 
     expect(screen.queryByText("K7M2QX4D")).toBeNull();
+    // The request is withdrawn on the server, not left pending for an admin to approve.
+    expect(cancelJoinRequest).toHaveBeenCalledTimes(1);
+    expect(cancelJoinRequest).toHaveBeenCalledWith(HANDLE);
     const calls = vi.mocked(pollJoinRequest).mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(pollJoinRequest).toHaveBeenCalledTimes(calls);
@@ -200,6 +286,8 @@ describe("Ask to join", () => {
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(screen.getByRole("button", { name: "Ask to join" })).toBeEnabled();
+    expect(cancelJoinRequest).toHaveBeenCalledTimes(1);
+    expect(cancelJoinRequest).toHaveBeenCalledWith(HANDLE);
     const calls = vi.mocked(pollJoinRequest).mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(pollJoinRequest).toHaveBeenCalledTimes(calls);

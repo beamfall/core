@@ -200,23 +200,26 @@ function ageLabel(t: ReturnType<typeof useT>, requestedAt: string): string {
 
 // Devices that asked to join (CORE-0317). The same list feeds the any-screen
 // prompt (CORE-2064). A `code` in the page's query string (the QR a device
-// shows) marks that request and puts it first. Names and platforms come from
-// the devices themselves: text only.
+// shows) only shades that row so it can be found. Anyone can send an admin a
+// link carrying their own code, so the link earns the request no order, no
+// focus and no wording: the code on the device is what the admin checks.
+// Approve grants Viewer; manager is a separate button, offered only to a
+// device that asked for it. Names and platforms come from the devices
+// themselves: text only.
 function PendingRequests() {
   const t = useT();
   const roleLabel = useRoleLabel();
   const { requests, decide } = usePairingRequests();
   const [failed, setFailed] = useState<string | null>(null);
   const linked = new URLSearchParams(window.location.search).get("code");
-  const rows = [...requests].sort((a, b) => Number(b.code === linked) - Number(a.code === linked));
 
-  async function onDecide(decision: "approve" | "deny", code: string) {
-    setFailed((await decide(decision, code)) ? null : code);
+  async function onDecide(decision: "approve" | "deny", code: string, grant?: "manager") {
+    setFailed((await decide(decision, code, grant)) ? null : code);
   }
 
   return (
     <Section heading="pairingPendingHeading" lead="pairingPendingLead">
-      {rows.length === 0 ? (
+      {requests.length === 0 ? (
         <EmptyState message="pairingPendingEmpty" />
       ) : (
         <DataTable
@@ -230,12 +233,13 @@ function PendingRequests() {
             { key: "action", numeric: true },
           ]}
         >
-          {rows.map((r) => (
-            <TableRow key={r.code}>
-              <TableCell className="font-medium">
-                {r.deviceName}
-                {r.code === linked && <StatusChip tone="green">{t("pairingFromLink")}</StatusChip>}
-              </TableCell>
+          {requests.map((r) => (
+            <TableRow
+              key={r.code}
+              data-linked={r.code === linked ? "true" : undefined}
+              className={r.code === linked ? "bg-foreground/[0.04]" : undefined}
+            >
+              <TableCell className="font-medium">{r.deviceName}</TableCell>
               <TableCell>{r.platform}</TableCell>
               <TableCell>{roleLabel(r.requestedRole)}</TableCell>
               <TableCell>
@@ -250,13 +254,18 @@ function PendingRequests() {
                       {t("pairingFailed")}
                     </span>
                   )}
-                  <Button
-                    size="sm"
-                    autoFocus={r.code === linked}
-                    onClick={() => void onDecide("approve", r.code)}
-                  >
-                    {t("pairingApprove")}
+                  <Button size="sm" onClick={() => void onDecide("approve", r.code)}>
+                    {t(r.requestedRole === "manager" ? "pairingApproveViewer" : "pairingApprove")}
                   </Button>
+                  {r.requestedRole === "manager" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void onDecide("approve", r.code, "manager")}
+                    >
+                      {t("pairingApproveManager")}
+                    </Button>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => void onDecide("deny", r.code)}>
                     {t("pairingDeny")}
                   </Button>

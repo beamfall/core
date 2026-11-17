@@ -83,16 +83,48 @@ describe("Devices pending list (CORE-0317)", () => {
     expect(decidePairingRequest).toHaveBeenCalledWith("deny", "WXYZ-9876");
   });
 
-  it("puts the request named by the ?code link first and marks it", async () => {
+  // Anyone can send an admin a link carrying their own code, so the link
+  // earns the request no order, no focus and no wording.
+  it("gives the request named by a ?code link no trust: no focus, no reorder, no label", async () => {
     window.history.pushState({}, "", "/console/access?code=WXYZ-9876");
     try {
       vi.mocked(fetchPairingRequests).mockResolvedValue([tv, tablet]);
       renderPrompt();
-      await screen.findByText(/from your link/i);
+      const linked = (await screen.findByText("Tablet")).closest("tr")!;
+      expect(screen.queryByText(/from your link/i)).toBeNull();
+      expect(within(linked).queryByRole("status")).toBeNull();
       const rows = screen.getAllByRole("row").slice(1);
-      expect(within(rows[0]).getByText("Tablet")).toBeInTheDocument();
+      expect(rows.indexOf(linked)).toBe(1);
+      for (const button of screen.getAllByRole("button")) expect(button).not.toHaveFocus();
+      expect(document.activeElement).toBe(document.body);
+      await userEvent.keyboard("{Enter}");
+      expect(decidePairingRequest).not.toHaveBeenCalled();
+      // A neutral mark only, so the admin can find the row.
+      expect(linked).toHaveAttribute("data-linked", "true");
+      expect(rows[0]).not.toHaveAttribute("data-linked");
     } finally {
       window.history.pushState({}, "", "/");
     }
+  });
+
+  it("approves as a viewer unless the admin picks manager for a device that asked for it", async () => {
+    const office: PairingRequest = {
+      ...tv,
+      code: "MNGR-0001",
+      deviceName: "Office Mac",
+      requestedRole: "manager",
+    };
+    vi.mocked(fetchPairingRequests).mockResolvedValue([tv, office]);
+    renderPrompt();
+    const viewerRow = (await screen.findByText(tv.deviceName)).closest("tr")!;
+    expect(within(viewerRow).queryByRole("button", { name: /manager/i })).toBeNull();
+    const row = screen.getByText("Office Mac").closest("tr")!;
+    expect(within(row).getByText("Manager")).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole("button", { name: "Approve as viewer" }));
+    expect(decidePairingRequest).toHaveBeenLastCalledWith("approve", "MNGR-0001");
+    await userEvent.click(within(row).getByRole("button", { name: "Approve as manager" }));
+    expect(decidePairingRequest).toHaveBeenLastCalledWith("approve", "MNGR-0001", {
+      deviceRole: "manager",
+    });
   });
 });

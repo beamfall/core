@@ -9,7 +9,7 @@
 // which throws ApiError (carrying .status) on a non-2xx response — callers
 // inspect that status the way the vanilla app inspects response.status.
 
-import { getJSON, graphql, postJSON, type SignInSecurityMode } from "@/lib/api";
+import { getJSON, graphql, postJSON, postKeepalive, type SignInSecurityMode } from "@/lib/api";
 import { rebindCompatibility } from "@/lib/compat";
 import type { AdminSessionInfo } from "./types";
 
@@ -211,6 +211,9 @@ export interface JoinRequest {
   code: string;
   requestSecret: string;
   expiresAt: string;
+  /** How long the code lasts from the moment the server answered. The browser
+   * times the code by this, not by comparing `expiresAt` with its own clock. */
+  expiresInSeconds: number;
   pollIntervalSeconds: number;
 }
 
@@ -235,6 +238,14 @@ export async function regenerateJoinRequest(
   signal?: AbortSignal,
 ): Promise<JoinRequest> {
   return postJSON<JoinRequest>("/api/pairing-requests/regenerate", { requestSecret }, signal);
+}
+
+/** Withdraw a pending request this browser no longer wants
+ * (POST /api/pairing-requests/cancel), so it does not wait out its lifetime in
+ * the administrator's list. Fire-and-forget and keepalive, so it survives the
+ * page going away; the server's expiry covers a request that never arrives. */
+export function cancelJoinRequest(requestSecret: string): void {
+  postKeepalive("/api/pairing-requests/cancel", { requestSecret });
 }
 
 export type JoinPoll =
@@ -263,7 +274,8 @@ export async function pollJoinRequest(
 }
 
 /** Approve (POST /api/pairing-requests/approve) or deny (.../deny) one pending
- * request. With no options the server uses the role the device asked for.
+ * request. An approval that names no `deviceRole` grants Viewer, whatever the
+ * device asked for; manager is granted only when named here.
  * Rejects with an ApiError; 404 = the request is gone or expired. */
 export async function decidePairingRequest(
   decision: "approve" | "deny",

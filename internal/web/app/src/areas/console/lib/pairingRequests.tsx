@@ -23,8 +23,10 @@ export const PAIRING_POLL_MS = 5000;
 
 export interface PairingRequestsState {
   requests: PairingRequest[];
-  /** Resolves true when the server took the decision, or the request was already gone. */
-  decide: (decision: "approve" | "deny", code: string) => Promise<boolean>;
+  /** Resolves true when the server took the decision, or the request was already gone.
+   * An approval grants Viewer unless `grant` names manager: the role the device
+   * asked for is never granted on its own. */
+  decide: (decision: "approve" | "deny", code: string, grant?: "manager") => Promise<boolean>;
 }
 
 const EMPTY: PairingRequestsState = { requests: [], decide: async () => false };
@@ -88,9 +90,13 @@ export function PairingRequestsProvider({ children }: { children: ReactNode }) {
   }, [load]);
 
   const decide = useCallback(
-    async (decision: "approve" | "deny", code: string) => {
+    async (decision: "approve" | "deny", code: string, grant?: "manager") => {
       try {
-        await decidePairingRequest(decision, code);
+        if (decision === "approve" && grant) {
+          await decidePairingRequest(decision, code, { deviceRole: grant });
+        } else {
+          await decidePairingRequest(decision, code);
+        }
       } catch (error) {
         if (!(error instanceof ApiError && error.status === 404)) return false;
         // 404: the request expired or was decided elsewhere, which is not a

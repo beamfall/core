@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { PrimaryAction } from "@/components/beamfall/surface";
 import { ApiError } from "@/lib/api";
 import {
+  cancelJoinRequest,
   type JoinRequest,
   pollJoinRequest,
   type RebindOutcome,
@@ -21,7 +22,15 @@ import { FormFeedback } from "./AuthShell";
 // thing that collects the credential: it lives in a ref for the life of one
 // attempt and is never stored, put in a URL, rendered or logged. Every
 // request, poll and regenerate belongs to one numbered attempt; anything that
-// answers for an older attempt is ignored, and unmounting aborts the attempt.
+// answers for an older attempt is ignored.
+//
+// A request the browser stops wanting is withdrawn on the server, so it does
+// not sit in the administrator's list until it expires: on Cancel, when a
+// typed code is submitted instead, and when the page unmounts, reloads or
+// closes. A code that arrives for an attempt already given up is withdrawn
+// too. The code is timed by the lifetime the server gave, measured from when
+// the answer arrived, never by comparing a server time with this device's
+// clock.
 
 export type AskFailure = "denied" | "expired" | "throttled" | "refused" | "insecure" | "offline";
 
@@ -48,6 +57,9 @@ export function useAskToJoin(): AskToJoin {
   const controller = useRef<AbortController | null>(null);
   const secret = useRef<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  // The poll on the wire, if any, and whether a new code is being fetched.
+  const polling = useRef<Promise<void> | null>(null);
+  const renewing = useRef(false);
 
   // Ends the current attempt: later answers for it are stale.
   const stop = useCallback(() => {
@@ -55,11 +67,20 @@ export function useAskToJoin(): AskToJoin {
     controller.current?.abort();
     controller.current = null;
     secret.current = null;
+    polling.current = null;
+    renewing.current = false;
     window.clearTimeout(timer.current);
     timer.current = undefined;
   }, []);
 
-  // A fresh attempt: its number and the signal that aborts it.
+  // Ends the attempt and gives its request up on the server.
+  const withdraw = useCallback(() => {
+    const held = secret.current;
+    stop();
+    if (held !== null) cancelJoinRequest(held);
+  }, [stop]);
+
+  // A fresh attempt: its number and the signal that aborts its polls.
   const next = useCallback(() => {
     stop();
     const signal = new AbortController();
@@ -78,17 +99,28 @@ export function useAskToJoin(): AskToJoin {
   const wait = useCallback(
     (ticket: JoinRequest, id: number, signal: AbortSignal) => {
       secret.current = ticket.requestSecret;
-      const expiresAt = Date.parse(ticket.expiresAt);
+      // A server that sends no lifetime leaves expiry to its own 401.
+      const lifetime = Number.isFinite(ticket.expiresInSeconds)
+        ? ticket.expiresInSeconds * 1000
+        : Number.POSITIVE_INFINITY;
+      const received = performance.now();
       const seconds =
         ticket.pollIntervalSeconds > 0 ? ticket.pollIntervalSeconds : DEFAULT_POLL_SECONDS;
       setState({ phase: "waiting", code: ticket.code, renewing: false });
 
       const schedule = () => {
-        timer.current = window.setTimeout(() => void tick(), seconds * 1000);
+        // A regenerate is taking over: it starts the polling for the new code.
+        if (renewing.current) return;
+        timer.current = window.setTimeout(() => {
+          const run = tick().finally(() => {
+            if (polling.current === run) polling.current = null;
+          });
+          polling.current = run;
+        }, seconds * 1000);
       };
       const tick = async () => {
         if (id !== attempt.current || secret.current === null) return;
-        if (!Number.isNaN(expiresAt) && Date.now() >= expiresAt) return fail("expired");
+        if (performance.now() - received >= lifetime) return fail("expired");
         try {
           const answer = await pollJoinRequest(secret.current, signal);
           if (id !== attempt.current) return;
@@ -118,9 +150,12 @@ export function useAskToJoin(): AskToJoin {
     (deviceName: string) => {
       const { id, signal } = next();
       setState({ phase: "requesting" });
-      requestToJoin(deviceName, signal).then(
+      // Not aborted with the attempt: an answer that arrives after the attempt
+      // was given up carries a live request, which is withdrawn.
+      requestToJoin(deviceName).then(
         (ticket) => {
           if (id === attempt.current) wait(ticket, id, signal);
+          else cancelJoinRequest(ticket.requestSecret);
         },
         (err: unknown) => {
           if (id !== attempt.current) return;
@@ -137,28 +172,53 @@ export function useAskToJoin(): AskToJoin {
   );
 
   const regenerate = useCallback(() => {
-    const old = secret.current;
-    if (old === null) return;
-    const { id, signal } = next();
+    if (secret.current === null || renewing.current) return;
+    const id = attempt.current;
+    renewing.current = true;
+    window.clearTimeout(timer.current);
+    timer.current = undefined;
     setState((current) => (current.phase === "waiting" ? { ...current, renewing: true } : current));
-    regenerateJoinRequest(old, signal).then(
-      (ticket) => {
-        if (id === attempt.current) wait(ticket, id, signal);
-      },
-      (err: unknown) => {
+    void (async () => {
+      // A poll on the wire may be collecting an approval. It is left to answer,
+      // and an answer that ends the attempt (approved, denied, expired) stands.
+      await polling.current;
+      const old = secret.current;
+      if (id !== attempt.current || old === null) return;
+      try {
+        const ticket = await regenerateJoinRequest(old);
+        if (id !== attempt.current) {
+          cancelJoinRequest(ticket.requestSecret);
+          return;
+        }
+        const fresh = next();
+        wait(ticket, fresh.id, fresh.signal);
+      } catch (err) {
         if (id !== attempt.current) return;
         const reason = refusal(err);
         fail(reason === "refused" ? "expired" : (reason ?? "offline"));
-      },
-    );
+      }
+    })();
   }, [fail, next, wait]);
 
   const cancel = useCallback(() => {
-    stop();
+    withdraw();
     setState((current) => (current.phase === "unsupported" ? current : { phase: "idle" }));
-  }, [stop]);
+  }, [withdraw]);
 
-  useEffect(() => stop, [stop]);
+  useEffect(() => {
+    // A reload or a closed tab: unmount effects do not run for those.
+    const onPageHide = () => {
+      withdraw();
+      setState((current) =>
+        current.phase === "waiting" || current.phase === "requesting" ? { phase: "idle" } : current,
+      );
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      withdraw();
+    };
+  }, [withdraw]);
 
   return { state, start, regenerate, cancel };
 }
@@ -217,14 +277,11 @@ export function AskToJoinPanel({
         <div className="space-y-4">
           {state.phase === "waiting" && (
             <>
-              <div className="text-center">
+              <div role="group" aria-labelledby={codeID} className="text-center">
                 <p id={codeID} className="m-0 mb-2 text-dense font-medium text-foreground/80">
                   {t("askToJoinCodeLabel")}
                 </p>
-                <p
-                  aria-labelledby={codeID}
-                  className="m-0 font-mono text-3xl font-semibold tracking-[0.3em]"
-                >
+                <p className="m-0 font-mono text-3xl font-semibold tracking-[0.3em]">
                   {state.code}
                 </p>
               </div>
