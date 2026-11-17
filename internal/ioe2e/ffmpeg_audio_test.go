@@ -212,6 +212,30 @@ func TestExtractSubtitleToWebVTTJourney(t *testing.T) {
 	}
 }
 
+// TestExtractSubtitlesToWebVTTJourney runs the one-pass batch extraction the
+// subtitle route uses for a file's text tracks (CORE-2315) against the same
+// synthesized clip, and asserts the requested stream lands as a WebVTT sidecar.
+//
+// io:ffmpeg-extract-subtitles-to-web-vtt
+func TestExtractSubtitlesToWebVTTJourney(t *testing.T) {
+	r := newRunner(t)
+	src := synthesizeSubtitledMKV(t)
+	dst := filepath.Join(t.TempDir(), "batch.vtt")
+
+	if err := r.ExtractSubtitlesToWebVTT(ctx(t), src, map[int]string{1: dst}); err != nil {
+		t.Fatalf("ExtractSubtitlesToWebVTT(%s): %v", src, err)
+	}
+	requireNonEmptyFile(t, dst)
+
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read sidecar: %v", err)
+	}
+	if body := string(data); !strings.HasPrefix(strings.TrimSpace(body), "WEBVTT") || !strings.Contains(body, "Hello sidecar") {
+		t.Fatalf("batch sidecar missing WEBVTT header or cue:\n%s", body)
+	}
+}
+
 // synthesizeSubtitledMKV builds a short MKV with one video stream and one muxed
 // SRT subtitle track (the incantation from internal/ffmpeg/subtitle_test.go).
 func synthesizeSubtitledMKV(t *testing.T) string {

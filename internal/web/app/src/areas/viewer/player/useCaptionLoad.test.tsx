@@ -180,4 +180,20 @@ describe("probeCaptionSource (CORE-2315)", () => {
     );
     await expect(probeCaptionSource("/s")).resolves.toBeNull();
   });
+
+  it("treats a 503 without Retry-After as the server's hard failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("subtitle unavailable", { status: 503 })),
+    );
+    await expect(probeCaptionSource("/s")).resolves.toBeNull();
+  });
+
+  it("reloads at once when the track became ready while the probe waited", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("WEBVTT\n", { status: 200 })),
+    );
+    await expect(probeCaptionSource("/s")).resolves.toBe(0);
+  });
 });

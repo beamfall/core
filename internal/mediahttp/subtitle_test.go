@@ -521,3 +521,31 @@ func TestPurgeSubtitlesForFingerprintRemovesDerivedResidue(t *testing.T) {
 		}
 	}
 }
+
+// TestSubtitleSlotsCapEncryptedExtractions proves the encrypted path's slot
+// counts against the shared extraction cap: once every slot is held, another
+// caller gets errSubtitlePending (a 503 with Retry-After) instead of starting
+// one more ffmpeg pass, and gets a slot once one is released.
+func TestSubtitleSlotsCapEncryptedExtractions(t *testing.T) {
+	var jobs subtitleJobs
+	releases := make([]func(), 0, subtitleExtractionSlots)
+	for range subtitleExtractionSlots {
+		release, err := jobs.acquireSlot(context.Background(), time.Second)
+		if err != nil {
+			t.Fatalf("acquire within cap: %v", err)
+		}
+		releases = append(releases, release)
+	}
+	if _, err := jobs.acquireSlot(context.Background(), 20*time.Millisecond); !errors.Is(err, errSubtitlePending) {
+		t.Fatalf("acquire past cap = %v, want errSubtitlePending", err)
+	}
+	releases[0]()
+	release, err := jobs.acquireSlot(context.Background(), time.Second)
+	if err != nil {
+		t.Fatalf("acquire after release: %v", err)
+	}
+	release()
+	for _, r := range releases[1:] {
+		r()
+	}
+}

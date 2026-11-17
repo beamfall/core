@@ -56,8 +56,15 @@ export interface CaptionLoadOptions {
 export async function probeCaptionSource(url: string): Promise<number | null> {
   try {
     const response = await fetch(url, { credentials: "same-origin", cache: "no-store" });
-    if (response.status !== 503) return null;
-    const header = Number(response.headers.get("Retry-After"));
+    // Ready by the time the probe asked (the extraction finished while the
+    // <track> was waiting): reload at once rather than report a failure.
+    if (response.ok) return 0;
+    // Only a 503 carrying Retry-After means "still extracting"; a bare 503 is
+    // the server's hard "subtitle unavailable", and retrying it would rerun a
+    // full-file extraction each time.
+    const raw = response.status === 503 ? response.headers.get("Retry-After") : null;
+    if (raw === null) return null;
+    const header = Number(raw);
     const seconds = Number.isFinite(header) && header > 0 ? header : DEFAULT_RETRY_AFTER_SECONDS;
     return Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(1, seconds));
   } catch {

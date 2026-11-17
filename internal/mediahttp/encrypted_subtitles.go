@@ -135,6 +135,12 @@ func (h *Handler) encryptedSubtitle(ctx context.Context, libraryID store.Library
 	if vtt, ok := h.decryptCachedSubtitle(libraryID, member, objectID); ok {
 		return vtt, nil
 	}
+	// Encrypted extractions share the plaintext path's concurrency cap.
+	release, err := h.subtitleJobs.acquireSlot(ctx, h.subtitleWaitLimit())
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	if err := removeRootedMember(member); err != nil {
 		return nil, err
 	}

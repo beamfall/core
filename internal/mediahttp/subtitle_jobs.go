@@ -107,6 +107,27 @@ func (j *subtitleJobs) lockKey(ctx context.Context, key string, wait time.Durati
 	}
 }
 
+// acquireSlot takes one of the shared extraction slots for a caller that
+// extracts on its own request (the encrypted path), so it counts against the
+// same cap as background extractions. A caller that waits past wait gets
+// errSubtitlePending.
+func (j *subtitleJobs) acquireSlot(ctx context.Context, wait time.Duration) (func(), error) {
+	j.mu.Lock()
+	j.initLocked()
+	slots := j.slots
+	j.mu.Unlock()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, errSubtitlePending
+	}
+}
+
 func (h *Handler) subtitleWaitLimit() time.Duration {
 	if h.subtitleWait > 0 {
 		return h.subtitleWait
