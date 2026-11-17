@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronLeft, LayoutGrid, List, Play, Shuffle, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, Play, Shuffle, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -17,6 +17,7 @@ import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
+import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
 import { LibraryLetterRail, letterRailOwner } from "../components/LibraryLetterRail";
 import { MediaItemCard } from "../components/MediaItemCard";
 import {
@@ -40,10 +41,8 @@ import {
   type LibraryItemsFacets,
   type LibraryItemsLetter,
   type LibrarySort,
-  type LibraryViewMode,
+  libraryViewClass,
   parseBrowseState,
-  readLibraryViewMode,
-  writeLibraryViewMode,
 } from "../lib/libraryBrowse";
 import { LIBRARY_VIEW_PARAM } from "../lib/libraryViews";
 import { startPlayQueue } from "../lib/playQueue";
@@ -153,7 +152,7 @@ function LibraryBrowse({
   const stateKey = browseStateParams(state).toString();
   const heading = displayString(title, displayLocale);
 
-  const [viewMode, setViewMode] = useState<LibraryViewMode>(() => readLibraryViewMode(libraryID));
+  const [viewMode, chooseViewMode] = useLibraryViewMode(libraryID);
 
   const [total, setTotal] = useState<number | null>(null);
   const [facets, setFacets] = useState<LibraryItemsFacets>(EMPTY_FACETS);
@@ -360,11 +359,6 @@ function LibraryBrowse({
     setSearchParams(params, { replace: true });
   }
 
-  function chooseViewMode(mode: LibraryViewMode) {
-    setViewMode(mode);
-    writeLibraryViewMode(libraryID, mode);
-  }
-
   // Leaving the page, or changing library, drops a Play all still loading:
   // a slow start must not pull the viewer into the player from elsewhere.
   const leavingRef = useRef(new AbortController());
@@ -486,6 +480,7 @@ function LibraryBrowse({
           setSize={itemCount}
           playOnActivate={viewMode === "list"}
           showYear={showsYear(item, repeated)}
+          display={viewMode}
         />
       ) : (
         <PendingCard key={`pending-${index}`} />
@@ -630,30 +625,7 @@ function LibraryBrowse({
               ]}
             />
           )}
-          <div
-            role="group"
-            aria-label={t("libraryBrowseViewLabel")}
-            className="ml-auto flex items-center gap-2"
-          >
-            <button
-              type="button"
-              className="bf-chip"
-              aria-pressed={viewMode === "grid"}
-              onClick={() => chooseViewMode("grid")}
-            >
-              <LayoutGrid aria-hidden className="size-4" />
-              {t("libraryBrowseViewGrid")}
-            </button>
-            <button
-              type="button"
-              className="bf-chip"
-              aria-pressed={viewMode === "list"}
-              onClick={() => chooseViewMode("list")}
-            >
-              <List aria-hidden className="size-4" />
-              {t("libraryBrowseViewList")}
-            </button>
-          </div>
+          <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} className="ml-auto" />
         </div>
 
         {activeFilters.length > 0 && (
@@ -707,7 +679,7 @@ function LibraryBrowse({
             ref={listRef}
             aria-label={heading}
             aria-busy={total === null}
-            className={`min-w-0 flex-1 ${viewMode === "list" ? "bf-stack" : "bf-grid"}`}
+            className={`min-w-0 flex-1 ${libraryViewClass(viewMode)}`}
           >
             {gridWindow && gridWindow.topPad > 0 && <Spacer height={gridWindow.topPad} />}
             {cells}

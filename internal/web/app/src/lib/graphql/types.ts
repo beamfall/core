@@ -151,6 +151,16 @@ export interface SourceItem {
   year?: number;
   /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
   byline?: string[];
+  /**
+   * What tells a Media item apart from its siblings, rendered by the Library
+   * plugin per locale (CORE-1226); absent when the plugin declares none.
+   */
+  subtitle?: DisplayString;
+  /** A Media item's stored structural ordinals, for numbering and order (CORE-2386). */
+  sequence?: number;
+  index?: number;
+  /** A Media item's stored runtime, for a list row (CORE-2386). */
+  durationSeconds?: number;
 }
 
 /**
