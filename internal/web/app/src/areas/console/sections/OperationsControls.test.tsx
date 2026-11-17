@@ -8,7 +8,6 @@ import {
   cancelJob,
   fetchConsoleConfig,
   fetchJobEvents,
-  fetchJobs,
   fetchLibraries,
   fetchOperationsGovernor,
   retryJob,
@@ -18,6 +17,7 @@ import {
 } from "@/lib/graphql";
 import type { JobEventInfo, JobInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { fetchConsoleJobs } from "../lib/jobQueue";
 import { OperationsControls } from "./OperationsControls";
 
 // jsdom has no ResizeObserver; the Radix Switch (via react-use-size) needs one.
@@ -39,6 +39,11 @@ vi.mock("@/lib/graphql", () => ({
   runEventsCompaction: vi.fn(),
   fetchLibraries: vi.fn(),
   scanLibrary: vi.fn(),
+}));
+
+vi.mock("../lib/jobQueue", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/jobQueue")>()),
+  fetchConsoleJobs: vi.fn(),
 }));
 
 let eventObservers: ((event: MessageEvent) => void)[] = [];
@@ -89,7 +94,7 @@ beforeEach(() => {
   vi.mocked(fetchOperationsGovernor).mockReset().mockResolvedValue(governorAvailable);
   vi.mocked(fetchConsoleConfig).mockReset().mockResolvedValue(config);
   vi.mocked(setConsoleConfig).mockReset().mockResolvedValue(config);
-  vi.mocked(fetchJobs).mockReset().mockResolvedValue([job()]);
+  vi.mocked(fetchConsoleJobs).mockReset().mockResolvedValue([job()]);
   vi.mocked(fetchJobEvents).mockReset().mockResolvedValue([]);
   vi.mocked(fetchLibraries)
     .mockReset()
@@ -214,7 +219,7 @@ describe("OperationsControls", () => {
   });
 
   it("renders jobs as flat job-rows with a progress bar, not a data table", async () => {
-    vi.mocked(fetchJobs).mockResolvedValue([job(), job({ id: "job-2", status: "queued" })]);
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([job(), job({ id: "job-2", status: "queued" })]);
     const { container } = renderPanel();
     await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(2));
 
@@ -225,7 +230,7 @@ describe("OperationsControls", () => {
   });
 
   it("says what each job does and which library folder it works on", async () => {
-    vi.mocked(fetchJobs).mockResolvedValue([
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
       job({ target: { libraryID: "lib-1", libraryTitle: "Films", root: "/media/films" } }),
       job({
         id: "job-2",
@@ -301,7 +306,7 @@ describe("OperationsControls", () => {
   });
 
   it("retries a terminal job through jobRetry", async () => {
-    vi.mocked(fetchJobs).mockResolvedValue([job({ status: "failed" })]);
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([job({ status: "failed" })]);
     const user = userEvent.setup();
     renderPanel();
     await screen.findByText("Scan");
@@ -388,28 +393,79 @@ describe("OperationsControls", () => {
     expect(fetchJobEvents).toHaveBeenCalledTimes(2);
   });
 
+  it("puts live work and unresolved failures first and folds finished runs per kind (CORE-2308)", async () => {
+    const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job({ id: "poll-1", kind: "update-check", status: "completed", finishedAt: at(30) }),
+      job({ id: "poll-2", kind: "update-check", status: "completed", finishedAt: at(20) }),
+      job({ id: "poll-3", kind: "update-check", status: "completed", finishedAt: at(10) }),
+      job({ id: "queued-1", status: "queued", createdAt: at(1) }),
+      job({
+        id: "failed-1",
+        kind: "artwork-sweep",
+        status: "failed",
+        error: "provider timed out",
+        finishedAt: at(5),
+      }),
+      job({ id: "run-1", status: "running", startedAt: at(3) }),
+    ]);
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(4));
+
+    const front = Array.from(
+      container.querySelectorAll(
+        ".console-job-list:not(.console-job-history *) > .console-job-row",
+      ),
+    );
+    expect(front).toHaveLength(3);
+    expect(front[0]).toHaveTextContent("Running");
+    expect(front[0]).toHaveTextContent("Started 3 minutes ago · running for 3 min 0 s");
+    expect(front[1]).toHaveTextContent("Queued 1 minute ago");
+    expect(front[2]).toHaveTextContent("Failed");
+    expect(front[2].querySelector(".console-job-error")).toHaveTextContent("provider timed out");
+
+    const history = container.querySelector("details.console-job-history") as HTMLDetailsElement;
+    expect(history.open).toBe(false);
+    expect(history.querySelector("summary")).toHaveTextContent("Finished work (1 kind of job)");
+    const folded = history.querySelectorAll(".console-job-row");
+    expect(folded).toHaveLength(1);
+    expect(folded[0]).toHaveTextContent("3 runs");
+    expect(folded[0]).toHaveTextContent("Finished 10 minutes ago");
+  });
+
+  it("says nothing needs attention when only finished work is left", async () => {
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job({ status: "completed", finishedAt: new Date().toISOString() }),
+    ]);
+    renderPanel();
+
+    expect(
+      await screen.findByText("Nothing is running or waiting, and nothing has failed."),
+    ).toBeVisible();
+  });
+
   it("gathers a burst of events into one refresh and keeps the rows on screen", async () => {
     renderPanel();
     await screen.findByText("Scan");
     await openGovernor();
     await screen.findByText("Generation allowed");
-    const jobReads = vi.mocked(fetchJobs).mock.calls.length;
+    const jobReads = vi.mocked(fetchConsoleJobs).mock.calls.length;
     const governorReads = vi.mocked(fetchOperationsGovernor).mock.calls.length;
     let finishJobs: (jobs: JobInfo[]) => void = () => {};
-    vi.mocked(fetchJobs).mockImplementation(
+    vi.mocked(fetchConsoleJobs).mockImplementation(
       () => new Promise<JobInfo[]>((resolve) => (finishJobs = resolve)),
     );
 
     // A library scan emits events many times a second.
     for (let i = 0; i < 25; i++) driveEventStream({ type: "job.progress" });
 
-    await waitFor(() => expect(fetchJobs).toHaveBeenCalledTimes(jobReads + 1));
+    await waitFor(() => expect(fetchConsoleJobs).toHaveBeenCalledTimes(jobReads + 1));
     // The read is still in flight: the last rows stay, with no skeleton flash.
     expect(screen.getByText("Scan")).toBeVisible();
     expect(screen.getByText("Generation allowed")).toBeVisible();
     await act(async () => finishJobs([job()]));
     await waitFor(() => expect(fetchOperationsGovernor).toHaveBeenCalledTimes(governorReads + 1));
-    expect(fetchJobs).toHaveBeenCalledTimes(jobReads + 1);
+    expect(fetchConsoleJobs).toHaveBeenCalledTimes(jobReads + 1);
   });
 });
 

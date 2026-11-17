@@ -44,6 +44,19 @@ export const consoleOperationsJobsStrings = {
     jobTargetAllLibraries: "All libraries",
     jobQueueScanHelp:
       "Scan now queues a scan of every library folder. A folder that already has a scan waiting is not queued twice.",
+    jobWhenQueued: "Queued {when}",
+    jobWhenStarted: "Started {when}",
+    jobWhenFinished: "Finished {when}",
+    jobRunningFor: "running for {duration}",
+    jobTook: "took {duration}",
+    jobDurationSeconds: "{seconds} s",
+    jobDurationMinutes: "{minutes} min {seconds} s",
+    jobDurationHours: "{hours} h {minutes} min",
+    jobRunCount: "{count, plural, one {# run} other {# runs}}",
+    jobFailureCount: "{count, plural, one {# failure} other {# failures}}",
+    jobHistorySummary:
+      "{count, plural, one {Finished work (# kind of job)} other {Finished work (# kinds of job)}}",
+    jobNothingActive: "Nothing is running or waiting, and nothing has failed.",
   },
   fr: {
     jobKindPlaybackPrecompute: "Précalcul de lecture",
@@ -95,6 +108,19 @@ export const consoleOperationsJobsStrings = {
     jobTargetAllLibraries: "Toutes les bibliothèques",
     jobQueueScanHelp:
       "« Analyser maintenant » met en file une analyse de chaque dossier de bibliothèque. Un dossier qui a déjà une analyse en attente n’est pas mis en file deux fois.",
+    jobWhenQueued: "En file {when}",
+    jobWhenStarted: "Démarré {when}",
+    jobWhenFinished: "Terminé {when}",
+    jobRunningFor: "en cours depuis {duration}",
+    jobTook: "durée {duration}",
+    jobDurationSeconds: "{seconds} s",
+    jobDurationMinutes: "{minutes} min {seconds} s",
+    jobDurationHours: "{hours} h {minutes} min",
+    jobRunCount: "{count, plural, one {# exécution} other {# exécutions}}",
+    jobFailureCount: "{count, plural, one {# échec} other {# échecs}}",
+    jobHistorySummary:
+      "{count, plural, one {Travail terminé (# type de tâche)} other {Travail terminé (# types de tâche)}}",
+    jobNothingActive: "Rien n’est en cours ni en attente, et rien n’a échoué.",
   },
   de: {
     jobKindPlaybackPrecompute: "Wiedergabe-Vorberechnung",
@@ -144,6 +170,19 @@ export const consoleOperationsJobsStrings = {
     jobTargetAllLibraries: "Alle Bibliotheken",
     jobQueueScanHelp:
       "„Jetzt scannen“ reiht einen Scan für jeden Bibliotheksordner ein. Ein Ordner, für den bereits ein Scan wartet, wird nicht doppelt eingereiht.",
+    jobWhenQueued: "Eingereiht {when}",
+    jobWhenStarted: "Gestartet {when}",
+    jobWhenFinished: "Beendet {when}",
+    jobRunningFor: "läuft seit {duration}",
+    jobTook: "Dauer {duration}",
+    jobDurationSeconds: "{seconds} s",
+    jobDurationMinutes: "{minutes} Min. {seconds} s",
+    jobDurationHours: "{hours} Std. {minutes} Min.",
+    jobRunCount: "{count, plural, one {# Lauf} other {# Läufe}}",
+    jobFailureCount: "{count, plural, one {# Fehlschlag} other {# Fehlschläge}}",
+    jobHistorySummary:
+      "{count, plural, one {Erledigte Arbeit (# Auftragsart)} other {Erledigte Arbeit (# Auftragsarten)}}",
+    jobNothingActive: "Nichts läuft oder wartet, und nichts ist fehlgeschlagen.",
   },
   es: {
     jobKindPlaybackPrecompute: "Precálculo de reproducción",
@@ -195,6 +234,19 @@ export const consoleOperationsJobsStrings = {
     jobTargetAllLibraries: "Todas las bibliotecas",
     jobQueueScanHelp:
       "«Analizar ahora» pone en cola un análisis de cada carpeta de biblioteca. Una carpeta que ya tiene un análisis en espera no se pone en cola dos veces.",
+    jobWhenQueued: "En cola {when}",
+    jobWhenStarted: "Iniciado {when}",
+    jobWhenFinished: "Terminado {when}",
+    jobRunningFor: "en curso desde hace {duration}",
+    jobTook: "duró {duration}",
+    jobDurationSeconds: "{seconds} s",
+    jobDurationMinutes: "{minutes} min {seconds} s",
+    jobDurationHours: "{hours} h {minutes} min",
+    jobRunCount: "{count, plural, one {# ejecución} other {# ejecuciones}}",
+    jobFailureCount: "{count, plural, one {# fallo} other {# fallos}}",
+    jobHistorySummary:
+      "{count, plural, one {Trabajo terminado (# tipo de tarea)} other {Trabajo terminado (# tipos de tarea)}}",
+    jobNothingActive: "Nada está en curso ni en espera, y nada ha fallado.",
   },
   pt: {
     jobKindPlaybackPrecompute: "Pré-cálculo de reprodução",
@@ -243,5 +295,18 @@ export const consoleOperationsJobsStrings = {
     jobTargetAllLibraries: "Todas as bibliotecas",
     jobQueueScanHelp:
       "“Verificar agora” coloca na fila uma verificação de cada pasta de biblioteca. Uma pasta que já tem uma verificação aguardando não entra na fila duas vezes.",
+    jobWhenQueued: "Na fila {when}",
+    jobWhenStarted: "Iniciado {when}",
+    jobWhenFinished: "Concluído {when}",
+    jobRunningFor: "em execução há {duration}",
+    jobTook: "levou {duration}",
+    jobDurationSeconds: "{seconds} s",
+    jobDurationMinutes: "{minutes} min {seconds} s",
+    jobDurationHours: "{hours} h {minutes} min",
+    jobRunCount: "{count, plural, one {# execução} other {# execuções}}",
+    jobFailureCount: "{count, plural, one {# falha} other {# falhas}}",
+    jobHistorySummary:
+      "{count, plural, one {Trabalho concluído (# tipo de tarefa)} other {Trabalho concluído (# tipos de tarefa)}}",
+    jobNothingActive: "Nada está em execução ou aguardando, e nada falhou.",
   },
 } as const;

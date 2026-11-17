@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RescanAllButton, useRescanState } from "@/components/beamfall/LibraryRescan";
 import {
   ControlRow,
@@ -13,12 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { formatRelativeTime } from "@/lib/activityDisplay";
 import { Advanced } from "@/lib/advancedSettings";
 import {
   cancelJob,
   fetchConsoleConfig,
   fetchJobEvents,
-  fetchJobs,
   fetchLibraries,
   fetchOperationsGovernor,
   retryJob,
@@ -26,7 +26,7 @@ import {
   setConsoleConfig,
 } from "@/lib/graphql";
 import type { JobEventInfo, JobInfo } from "@/lib/graphql/types";
-import { useT } from "@/lib/i18n";
+import { useDisplayLocale, useT } from "@/lib/i18n";
 import {
   jobEventDetail,
   jobKindDescription,
@@ -38,6 +38,7 @@ import {
 } from "@/lib/jobDisplay";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
+import { arrangeJobQueue, fetchConsoleJobs, jobRunSeconds } from "../lib/jobQueue";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 import { useEventRefresh } from "./Dashboard";
@@ -364,13 +365,140 @@ function RescanQueueFailure({ libraryID, title }: { libraryID: string; title: st
   );
 }
 
+function formatJobDuration(seconds: number, t: ReturnType<typeof useT>): string {
+  if (seconds < 60) return t("jobDurationSeconds", { seconds });
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return t("jobDurationMinutes", { minutes, seconds: seconds % 60 });
+  return t("jobDurationHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
+}
+
+// When a job was queued, started or finished, relative to now, and how long it
+// ran (CORE-2308). Empty when the server sent no times.
+function jobWhen(job: JobInfo, now: number, locale: string, t: ReturnType<typeof useT>): string {
+  const live = isLive(job.status);
+  const at = job.status === "queued" ? job.createdAt : live ? job.startedAt : job.finishedAt;
+  const parsed = Date.parse(at ?? "");
+  const parts: string[] = [];
+  if (!Number.isNaN(parsed)) {
+    const when = formatRelativeTime(new Date(parsed), new Date(now), locale);
+    const key =
+      job.status === "queued" ? "jobWhenQueued" : live ? "jobWhenStarted" : "jobWhenFinished";
+    parts.push(t(key, { when }));
+  }
+  const seconds = job.status === "queued" ? null : jobRunSeconds(job, now);
+  if (seconds !== null) {
+    const duration = formatJobDuration(seconds, t);
+    parts.push(t(live ? "jobRunningFor" : "jobTook", { duration }));
+  }
+  return parts.join(" · ");
+}
+
+function JobRow({
+  job,
+  count,
+  countLabel,
+  now,
+  logOpen,
+  logVersion,
+  onToggleLog,
+  onCancel,
+  onRetry,
+}: {
+  job: JobInfo;
+  count: number;
+  countLabel: "jobRunCount" | "jobFailureCount";
+  now: number;
+  logOpen: boolean;
+  logVersion: number;
+  onToggleLog: () => void;
+  onCancel: (id: string) => Promise<void>;
+  onRetry: (id: string) => Promise<void>;
+}) {
+  const t = useT();
+  const locale = useDisplayLocale();
+  const { current, total } = job.progress;
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  const tone = statusTone(job.status);
+  const live = isLive(job.status);
+  const description = jobKindDescription(job, t);
+  const target = jobTargetDetail(job);
+  const when = jobWhen(job, now, locale, t);
+  const progress = jobProgressDetail(job, t);
+  return (
+    <div className="console-job-row console-job-row-ops">
+      <span className="console-job-name">{jobKindLabel(job.kind, t)}</span>
+      <span
+        className="console-jbar"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={t("quality")}
+      >
+        <i
+          className={tone === "red" ? "danger" : tone === "amber" ? "warn" : undefined}
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      <span className="console-job-num console-mono" title={progress}>
+        {progress}
+      </span>
+      <StatusChip tone={tone}>{jobStatusLabel(job.status, t)}</StatusChip>
+      {count > 1 && <StatusChip tone="neutral">{t(countLabel, { count })}</StatusChip>}
+      <span className="console-job-actions">
+        <Button variant="ghost" size="sm" onClick={onToggleLog}>
+          {t(logOpen ? "jobLogsHide" : "jobLogsShow")}
+        </Button>
+        {live ? (
+          <ConfirmButton
+            size="sm"
+            label={t("jobCancelAction")}
+            confirm="jobCancelConfirm"
+            onConfirm={() => onCancel(job.id)}
+          />
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => void onRetry(job.id)}>
+            {t("jobRetryAction")}
+          </Button>
+        )}
+      </span>
+      {when && <div className="console-job-when">{when}</div>}
+      {job.status === "failed" && job.error && (
+        <p className="console-job-error">{redactJobLogPayload(job.error)}</p>
+      )}
+      {(description || target) && (
+        <div className="console-job-about">
+          {description && <span>{description}</span>}
+          {target && (
+            <span className="console-job-target">
+              <span className="console-mono">{target}</span>
+              {job.target?.backfill && (
+                <StatusChip tone="neutral">{t("jobTargetBackfill")}</StatusChip>
+              )}
+            </span>
+          )}
+        </div>
+      )}
+      {logOpen && (
+        <div className="console-job-log">
+          <JobLog key={job.id} jobID={job.id} version={logVersion} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The job queue (CORE-2308): work under way and unresolved failures first,
+// with their times and error text; finished runs fold into one row per kind
+// under a collapsed history.
 function JobQueue() {
   const t = useT();
-  const { data, loading, failed, refresh } = useAsync(fetchJobs);
+  const { data, loading, failed, refresh } = useAsync(fetchConsoleJobs);
   const libraries = useAsync(fetchLibraries);
-  const jobs: JobInfo[] = data ?? [];
   const [openLog, setOpenLog] = useState<string | null>(null);
   const [logRefresh, setLogRefresh] = useState(0);
+  const view = useMemo(() => arrangeJobQueue(data ?? []), [data]);
+  const now = Date.now();
 
   const refreshWithLog = useCallback(async () => {
     await refresh();
@@ -388,6 +516,28 @@ function JobQueue() {
     await refresh();
   }
 
+  function row(
+    job: JobInfo,
+    count = 1,
+    countLabel: "jobRunCount" | "jobFailureCount" = "jobRunCount",
+  ) {
+    return (
+      <JobRow
+        key={job.id}
+        job={job}
+        count={count}
+        countLabel={countLabel}
+        now={now}
+        logOpen={openLog === job.id}
+        logVersion={logRefresh}
+        onToggleLog={() => setOpenLog(openLog === job.id ? null : job.id)}
+        onCancel={onCancel}
+        onRetry={onRetry}
+      />
+    );
+  }
+
+  const front = view.live.length + view.failed.length;
   return (
     <Section
       heading="jobQueueHeading"
@@ -409,79 +559,27 @@ function JobQueue() {
         <Skeleton className="h-32 w-full" />
       ) : failed ? (
         <ErrorState message="jobQueueUnavailable" />
-      ) : jobs.length === 0 ? (
+      ) : (data ?? []).length === 0 ? (
         <EmptyState message="noJobs" />
       ) : (
-        <div className="console-card console-job-list">
-          {jobs.map((job) => {
-            const { current, total } = job.progress;
-            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-            const tone = statusTone(job.status);
-            const live = isLive(job.status);
-            const logOpen = openLog === job.id;
-            const description = jobKindDescription(job, t);
-            const target = jobTargetDetail(job);
-            return (
-              <div key={job.id} className="console-job-row console-job-row-ops">
-                <span className="console-job-name">{jobKindLabel(job.kind, t)}</span>
-                <span
-                  className="console-jbar"
-                  role="progressbar"
-                  aria-valuenow={pct}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={t("quality")}
-                >
-                  <i
-                    className={tone === "red" ? "danger" : tone === "amber" ? "warn" : undefined}
-                    style={{ width: `${pct}%` }}
-                  />
-                </span>
-                <span className="console-job-num console-mono">{jobProgressDetail(job, t)}</span>
-                <StatusChip tone={tone}>{jobStatusLabel(job.status, t)}</StatusChip>
-                <span className="console-job-actions">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setOpenLog(logOpen ? null : job.id)}
-                  >
-                    {t(logOpen ? "jobLogsHide" : "jobLogsShow")}
-                  </Button>
-                  {live ? (
-                    <ConfirmButton
-                      size="sm"
-                      label={t("jobCancelAction")}
-                      confirm="jobCancelConfirm"
-                      onConfirm={() => onCancel(job.id)}
-                    />
-                  ) : (
-                    <Button variant="outline" size="sm" onClick={() => void onRetry(job.id)}>
-                      {t("jobRetryAction")}
-                    </Button>
-                  )}
-                </span>
-                {(description || target) && (
-                  <div className="console-job-about">
-                    {description && <span>{description}</span>}
-                    {target && (
-                      <span className="console-job-target">
-                        <span className="console-mono">{target}</span>
-                        {job.target?.backfill && (
-                          <StatusChip tone="neutral">{t("jobTargetBackfill")}</StatusChip>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {logOpen && (
-                  <div className="console-job-log">
-                    <JobLog key={job.id} jobID={job.id} version={logRefresh} />
-                  </div>
-                )}
+        <>
+          {front === 0 ? (
+            <EmptyState message="jobNothingActive" />
+          ) : (
+            <div className="console-card console-job-list">
+              {view.live.map((job) => row(job))}
+              {view.failed.map((group) => row(group.job, group.count, "jobFailureCount"))}
+            </div>
+          )}
+          {view.history.length > 0 && (
+            <details className="console-job-history">
+              <summary>{t("jobHistorySummary", { count: view.history.length })}</summary>
+              <div className="console-card console-job-list">
+                {view.history.map((group) => row(group.job, group.count))}
               </div>
-            );
-          })}
-        </div>
+            </details>
+          )}
+        </>
       )}
     </Section>
   );
