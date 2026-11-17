@@ -14,7 +14,8 @@ import (
 // Media mix classes, or that links none, keeps an empty class, and entities
 // never carry a year. Media whose class is unknown keep an empty class and
 // Media with no year keep 0. Every open catalog plane is read, so an unsealed
-// Encrypted Library's Media are annotated too. Safe on any SourceItem slice.
+// Encrypted Library's Media are annotated too. The same read sets a media-kind
+// item's LibraryID. Safe on any SourceItem slice.
 func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) error {
 	var ids, entityIDs []MediaID
 	for i := range items {
@@ -33,8 +34,9 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 		return err
 	}
 	type cardFacts struct {
-		class MediaClass
-		year  int
+		class   MediaClass
+		year    int
+		library LibraryID
 	}
 	facts := make(map[MediaID]cardFacts, len(ids))
 	for _, reader := range s.openCatalogReadersLocked() {
@@ -45,7 +47,7 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 				args[i] = id
 			}
 			// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
-			rows, err := reader.QueryContext(ctx, `SELECT id, media_class, year FROM media WHERE id IN (`+sqlPlaceholders(len(chunk))+`)`, args...)
+			rows, err := reader.QueryContext(ctx, `SELECT id, media_class, year, library_id FROM media WHERE id IN (`+sqlPlaceholders(len(chunk))+`)`, args...)
 			if err != nil {
 				return err
 			}
@@ -53,11 +55,12 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 				var id MediaID
 				var class MediaClass
 				var year sql.NullInt64
-				if err := rows.Scan(&id, &class, &year); err != nil {
+				var library LibraryID
+				if err := rows.Scan(&id, &class, &year, &library); err != nil {
 					_ = rows.Close()
 					return err
 				}
-				facts[id] = cardFacts{class: class, year: int(year.Int64)}
+				facts[id] = cardFacts{class: class, year: int(year.Int64), library: library}
 			}
 			if err := rows.Close(); err != nil {
 				return err
@@ -78,6 +81,7 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 		}
 		items[i].MediaClass = facts[items[i].ID].class
 		items[i].Year = facts[items[i].ID].year
+		items[i].LibraryID = facts[items[i].ID].library
 	}
 	return nil
 }

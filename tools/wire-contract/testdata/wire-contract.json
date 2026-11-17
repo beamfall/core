@@ -2601,6 +2601,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -2623,6 +2628,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -7897,6 +7916,11 @@
                       "kind": "scalar"
                     },
                     {
+                      "name": "index",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "kind",
                       "kind": "scalar"
                     },
@@ -7919,6 +7943,20 @@
                       "name": "restricted",
                       "kind": "scalar",
                       "optional": true
+                    },
+                    {
+                      "name": "sequence",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "subtitle",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
                     },
                     {
                       "name": "summary",
@@ -8010,6 +8048,11 @@
                     "kind": "scalar"
                   },
                   {
+                    "name": "index",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "kind",
                     "kind": "scalar"
                   },
@@ -8032,6 +8075,20 @@
                     "name": "restricted",
                     "kind": "scalar",
                     "optional": true
+                  },
+                  {
+                    "name": "sequence",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "subtitle",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
                   },
                   {
                     "name": "summary",
@@ -8150,6 +8207,11 @@
                     "kind": "scalar"
                   },
                   {
+                    "name": "index",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "kind",
                     "kind": "scalar"
                   },
@@ -8172,6 +8234,20 @@
                     "name": "restricted",
                     "kind": "scalar",
                     "optional": true
+                  },
+                  {
+                    "name": "sequence",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "subtitle",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
                   },
                   {
                     "name": "summary",
@@ -8263,6 +8339,11 @@
                   "kind": "scalar"
                 },
                 {
+                  "name": "index",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "kind",
                   "kind": "scalar"
                 },
@@ -8285,6 +8366,20 @@
                   "name": "restricted",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "sequence",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "subtitle",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
                 },
                 {
                   "name": "summary",
@@ -10482,6 +10577,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -10536,6 +10636,20 @@
                 "name": "restricted",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
               },
               {
                 "name": "summary",
@@ -10631,6 +10745,11 @@
               "kind": "scalar"
             },
             {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "kind",
               "kind": "scalar"
             },
@@ -10685,6 +10804,20 @@
               "name": "restricted",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -10934,6 +11067,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -10956,6 +11094,20 @@
                 "name": "restricted",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
               },
               {
                 "name": "summary",
@@ -11047,6 +11199,11 @@
               "kind": "scalar"
             },
             {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "kind",
               "kind": "scalar"
             },
@@ -11069,6 +11226,20 @@
               "name": "restricted",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -11422,6 +11593,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -11444,6 +11620,20 @@
                 "name": "restricted",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
               },
               {
                 "name": "summary",
@@ -11535,6 +11725,11 @@
               "kind": "scalar"
             },
             {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "kind",
               "kind": "scalar"
             },
@@ -11557,6 +11752,20 @@
               "name": "restricted",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -12861,6 +13070,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -12883,6 +13097,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17304,6 +17532,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17326,6 +17559,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17420,6 +17667,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17442,6 +17694,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17536,6 +17802,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17558,6 +17829,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17652,6 +17937,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17674,6 +17964,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -20481,6 +20785,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -20503,6 +20812,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -20604,6 +20927,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -20626,6 +20954,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -20787,6 +21129,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -20832,6 +21179,20 @@
               {
                 "name": "score",
                 "kind": "scalar"
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
               },
               {
                 "name": "summary",
@@ -20942,6 +21303,11 @@
               "kind": "scalar"
             },
             {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "kind",
               "kind": "scalar"
             },
@@ -20987,6 +21353,20 @@
             {
               "name": "score",
               "kind": "scalar"
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -28958,6 +29338,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -28980,6 +29365,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -29536,6 +29935,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -29558,6 +29962,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",

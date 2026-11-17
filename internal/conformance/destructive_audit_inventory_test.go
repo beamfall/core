@@ -117,6 +117,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"MarkersForMedia":                         {},
 	"Media":                                   {},
 	"MediaByIDs":                              {},
+	"MediaCardFieldValues":                    {},
 	"MediaExternalIDs":                        {},
 	"MediaEntityLinks":                        {},
 	"MediaFavorited":                          {},

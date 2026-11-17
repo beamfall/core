@@ -145,6 +145,15 @@ type SourceItem struct {
 	// linked to it, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
 	Byline []string `json:"byline,omitempty"`
+	// Subtitle tells a Media item apart from its siblings: the Library
+	// plugin's MediaSubtitle template rendered for the item in each locale
+	// the template declares (CORE-1226). Core renders it without reading its
+	// words. Absent when the plugin declares none or the item has no value.
+	Subtitle plugin.LocaleString `json:"subtitle,omitempty"`
+	// Sequence and Index are a Media item's stored structural ordinals, so a
+	// client can number and order siblings (CORE-2386). Absent when unset.
+	Sequence float64 `json:"sequence,omitempty"`
+	Index    float64 `json:"index,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -1033,6 +1042,9 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 	if err := h.annotateBylines(ctx, items); err != nil {
 		return err
 	}
+	if err := h.annotateSubtitles(ctx, items); err != nil {
+		return err
+	}
 	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
 }
 
@@ -1103,6 +1115,9 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		MediaClass: string(item.MediaClass),
 		Year:       item.Year,
 		Byline:     item.Byline,
+		Subtitle:   plugin.LocaleString(item.Subtitle),
+		Sequence:   item.Sequence,
+		Index:      item.Index,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
