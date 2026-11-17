@@ -130,6 +130,18 @@ afterEach(() => {
 });
 
 describe("ProfilesAccess managed-Profile policy", () => {
+  // CORE-2322: the picker's label says "Profile" once; the trigger and the
+  // ceilings empty state ask for a choice instead of repeating it.
+  it("labels the profile picker once and asks for a choice", async () => {
+    render(
+      <I18nProvider>
+        <ProfilesAccess />
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("Choose a profile")).toBeInTheDocument();
+    expect(screen.getAllByText("Profile")).toHaveLength(1);
+  });
+
   it("saves access windows through setAccessSchedule", async () => {
     const user = await pickProfile("Kid");
     await user.click(await screen.findByRole("button", { name: "Add window" }));

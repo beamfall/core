@@ -44,6 +44,8 @@ export const consoleAccessStrings = {
     couldNotSaveSessionLength: "Could not save the session length.",
     adminLock: "Lock Console",
     adminUnlockRejected: "The admin password was not accepted.",
+    accessSchedulePickProfile: "Choose a profile",
+    enforcedFiltersPickProfile: "Choose a profile above to set its rating ceilings.",
   },
   fr: {
     consoleHeading: "Console",
@@ -91,6 +93,9 @@ export const consoleAccessStrings = {
     couldNotSaveSessionLength: "Impossible d’enregistrer la durée de session.",
     adminLock: "Verrouiller la console",
     adminUnlockRejected: "Le mot de passe administrateur a été refusé.",
+    accessSchedulePickProfile: "Choisir un profil",
+    enforcedFiltersPickProfile:
+      "Choisissez un profil ci-dessus pour définir ses plafonds de classification.",
   },
   de: {
     consoleHeading: "Konsole",
@@ -136,6 +141,9 @@ export const consoleAccessStrings = {
     couldNotSaveSessionLength: "Die Sitzungsdauer konnte nicht gespeichert werden.",
     adminLock: "Konsole sperren",
     adminUnlockRejected: "Das Admin-Passwort wurde nicht akzeptiert.",
+    accessSchedulePickProfile: "Profil auswählen",
+    enforcedFiltersPickProfile:
+      "Wähle oben ein Profil, um seine Altersfreigabe-Grenzen festzulegen.",
   },
   es: {
     consoleHeading: "Consola",
@@ -183,6 +191,8 @@ export const consoleAccessStrings = {
     couldNotSaveSessionLength: "No se pudo guardar la duración de la sesión.",
     adminLock: "Bloquear la consola",
     adminUnlockRejected: "No se aceptó la contraseña de administrador.",
+    accessSchedulePickProfile: "Elige un perfil",
+    enforcedFiltersPickProfile: "Elige un perfil arriba para fijar sus límites de clasificación.",
   },
   pt: {
     consoleHeading: "Console",
@@ -230,5 +240,8 @@ export const consoleAccessStrings = {
     couldNotSaveSessionLength: "Não foi possível salvar a duração da sessão.",
     adminLock: "Bloquear o console",
     adminUnlockRejected: "A senha de administrador não foi aceita.",
+    accessSchedulePickProfile: "Escolha um perfil",
+    enforcedFiltersPickProfile:
+      "Escolha um perfil acima para definir seus limites de classificação.",
   },
 } as const;

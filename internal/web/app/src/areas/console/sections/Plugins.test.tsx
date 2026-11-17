@@ -790,6 +790,18 @@ describe("Plugins in the Normal view (CORE-1117)", () => {
     expect(screen.getByText("Unsigned")).toBeVisible();
   });
 
+  // CORE-2322: plugins built into the server have no artifact to sign; their
+  // Unsigned standing is not a warning.
+  it("shows no Unsigned warning on a First-Party plugin built into the server", async () => {
+    mockConsoleConfig({
+      ...config,
+      plugins: [standingPlugin("filmtv", "Film & TV", "First-Party", "Unsigned")],
+    });
+    renderPanel();
+    await screen.findByText("Film & TV");
+    expect(screen.queryByText("Unsigned")).not.toBeInTheDocument();
+  });
+
   it("drops the Details toggle when Normal would open an empty panel", async () => {
     mockConsoleConfig({
       ...config,

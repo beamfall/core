@@ -129,9 +129,12 @@ function provenanceChip(provenance: string, t: ReturnType<typeof useT>): ReactNo
 }
 
 // A Trusted plugin's badge is Advanced detail; a warning (unsigned, tampered,
-// revoked) always shows (CORE-1117).
+// revoked) always shows (CORE-1117). A First-Party plugin can be Unsigned only
+// when it ships inside the server executable (plugin.derivePluginProvenance):
+// it has no artifact to sign, so Unsigned is not a warning there (CORE-2322).
 function trustBadge(
   trustState: string,
+  provenance: string,
   t: ReturnType<typeof useT>,
   showAdvanced: boolean,
 ): ReactNode {
@@ -139,6 +142,7 @@ function trustBadge(
     return showAdvanced ? <StatusChip tone="green">{t("pluginTrustTrusted")}</StatusChip> : null;
   }
   if (trustState === "Unsigned") {
+    if (provenance === "First-Party") return null;
     return <StatusChip tone="neutral">{t("pluginTrustUnsigned")}</StatusChip>;
   }
   if (trustState !== "Tampered" && trustState !== "Revoked") return null;
@@ -298,7 +302,7 @@ function PluginCard({
   const missingKey = keys.some(keyNeeded);
   const detailsID = `plugin-details-${plugin.id}`;
   const provenance = showAdvanced ? provenanceChip(plugin.provenance, t) : null;
-  const trust = trustBadge(plugin.trustState, t, showAdvanced);
+  const trust = trustBadge(plugin.trustState, plugin.provenance, t, showAdvanced);
   // Normal Details hold the control policy, config and status; with none of
   // those the toggle would open an empty panel, so it is left out.
   const hasDetails =

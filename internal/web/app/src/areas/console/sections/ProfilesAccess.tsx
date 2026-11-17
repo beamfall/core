@@ -88,7 +88,7 @@ export function ProfilesAccess() {
             <Label>{t("accessScheduleProfileLabel")}</Label>
             <Select value={profileID} onValueChange={setProfileID}>
               <SelectTrigger aria-label={t("accessScheduleProfileLabel")}>
-                <SelectValue placeholder={t("accessScheduleProfileLabel")} />
+                <SelectValue placeholder={t("accessSchedulePickProfile")} />
               </SelectTrigger>
               <SelectContent>
                 {profiles.map((p) => (
@@ -128,7 +128,7 @@ export function ProfilesAccess() {
         {plugins.length === 0 ? (
           <EmptyState message="enforcedFiltersEmpty" />
         ) : !selectedProfile ? (
-          <EmptyState message="enforcedFiltersProfileLabel" />
+          <EmptyState message="enforcedFiltersPickProfile" />
         ) : (
           <div className="space-y-3">
             {plugins.map((plugin) => (
