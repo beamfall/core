@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "producer": "oscillux",
   "leg": "glsl300",
-  "release": "v0.2.5",
-  "rev": "59cd60a17f6866898dcdf023b779d4174685dbbd",
+  "release": "v0.2.6",
+  "rev": "3f5f2c35bdf5163aac7bd7584197eeffe15ce345",
   "license": "AGPL-3.0-only",
   "generator": "tools/shader/bundle-legs.mjs glsl300 at the pinned rev",
   "files": [
     {
       "path": "catalog.json",
-      "sha256": "59c6eb522c33225e18319588981c5febed336244aad8f40a70c34a4bc62aa5aa",
+      "sha256": "64873d3d76e56508da14a8249ad184b6e38523cb4893b612a44b7837a08c6bb7",
       "bytes": 112107
     },
     {

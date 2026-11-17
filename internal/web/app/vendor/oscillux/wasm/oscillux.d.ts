@@ -345,13 +345,13 @@ export class CurveConfig {
      */
     phase: number;
     /**
-     * r" Envelope fall, curve units.
-     */
-    release: number;
-    /**
      * r" Envelope release start, curve units; 0 = never.
      */
     releaseAt: number;
+    /**
+     * r" Envelope fall, curve units.
+     */
+    release: number;
     /**
      * r" A `CurveShape`.
      */
@@ -1570,6 +1570,13 @@ export class TransitionConfig {
 export function abiVersion(): number;
 
 /**
+ * The `z` component of the vivid palette tour at `timeSeconds` for a visual whose palette
+ * starts at `offset`; the `palette` uniform is `[-1, 0, z, 0]` (`oscillux_palette_tour`).
+ * Throws on a non-finite argument. Does not allocate, so hosts may call it every frame.
+ */
+export function paletteTour(time_seconds: number, offset: number): number;
+
+/**
  * Short English description of a status code (0 ok, -1 null, -2 invalid argument, -3 panic).
  */
 export function statusString(status: number): string;
@@ -1578,6 +1585,12 @@ export function statusString(status: number): string;
  * Release version of the linked core, packed as `major << 16 | minor << 8 | patch`.
  */
 export function version(): number;
+
+/**
+ * The vivid present pass's `[saturation, vibrance]` (`oscillux_palette_vivid_present`).
+ * Allocates the returned array; read it once, not per frame.
+ */
+export function vividPresent(): Float64Array;
 
 /**
  * The wasm memory every `*Ptr()` offset refers to. Obtain views after constructing adapters
@@ -1829,28 +1842,30 @@ export interface InitOutput {
     readonly flashanalyzer_red_transition: (a: number) => number;
     readonly flashanalyzer_regionCount: (a: number) => number;
     readonly flashanalyzer_regionsPtr: (a: number) => number;
-    readonly oscillux_reaction_create: (a: number, b: number) => number;
     readonly flashanalyzer_reportPtr: (a: number) => number;
-    readonly oscillux_reaction_push: (a: number, b: number, c: number, d: number) => number;
+    readonly oscillux_reaction_create: (a: number, b: number) => number;
     readonly flashanalyzer_reset: (a: number) => number;
+    readonly oscillux_reaction_push: (a: number, b: number, c: number, d: number) => number;
     readonly flashanalyzer_setOverlay: (a: number, b: number, c: number) => number;
     readonly flashanalyzer_setRegionFromLinearRgb: (a: number, b: number, c: number, d: number, e: number) => number;
     readonly flashanalyzer_time_ms: (a: number) => number;
-    readonly oscillux_reaction_sample: (a: number, b: number, c: number) => number;
     readonly flashconfig_columns: (a: number) => number;
+    readonly oscillux_reaction_sample: (a: number, b: number, c: number) => number;
     readonly flashconfig_field_height: (a: number) => number;
     readonly flashconfig_field_width: (a: number) => number;
     readonly flashconfig_max_field_area: (a: number) => number;
     readonly flashconfig_max_flash_hz: (a: number) => number;
     readonly flashconfig_max_red_flashes: (a: number) => number;
-    readonly oscillux_transition_create: (a: number, b: number) => number;
     readonly flashconfig_new: () => number;
+    readonly oscillux_transition_create: (a: number, b: number) => number;
     readonly flashconfig_red_rule: (a: number) => number;
     readonly flashconfig_rows: (a: number) => number;
     readonly flashconfig_set_columns: (a: number, b: number) => void;
-    readonly oscillux_transition_update: (a: number, b: number, c: number) => number;
     readonly flashconfig_set_field_height: (a: number, b: number) => void;
+    readonly oscillux_transition_update: (a: number, b: number, c: number) => number;
     readonly flashconfig_set_field_width: (a: number, b: number) => void;
+    readonly flashconfig_set_max_field_area: (a: number, b: number) => void;
+    readonly flashconfig_set_max_flash_hz: (a: number, b: number) => void;
     readonly oscillux_beatgrid_beat_count: (a: number, b: number) => number;
     readonly oscillux_beatgrid_config_default: (a: number) => number;
     readonly oscillux_beatgrid_info: (a: number, b: number) => number;
@@ -1890,6 +1905,8 @@ export interface InitOutput {
     readonly oscillux_mapping_set_level_source: (a: number, b: number) => number;
     readonly oscillux_overlay_config_default: (a: number) => number;
     readonly oscillux_packer_pack: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
+    readonly oscillux_palette_tour: (a: number, b: number, c: number) => number;
+    readonly oscillux_palette_vivid_present: (a: number) => number;
     readonly oscillux_reaction_config_default: (a: number, b: number, c: number) => number;
     readonly oscillux_reaction_queued: (a: number, b: number) => number;
     readonly oscillux_reaction_reset: (a: number) => number;
@@ -1901,8 +1918,6 @@ export interface InitOutput {
     readonly oscillux_transition_reset: (a: number) => number;
     readonly oscillux_transition_status: (a: number, b: number, c: number) => number;
     readonly oscillux_version: () => number;
-    readonly flashconfig_set_max_field_area: (a: number, b: number) => void;
-    readonly flashconfig_set_max_flash_hz: (a: number, b: number) => void;
     readonly flashconfig_set_max_red_flashes: (a: number, b: number) => void;
     readonly flashconfig_set_red_rule: (a: number, b: number) => void;
     readonly flashconfig_set_rows: (a: number, b: number) => void;
@@ -1980,13 +1995,13 @@ export interface InitOutput {
     readonly mapper_process: (a: number, b: number, c: number, d: number) => number;
     readonly mapper_processExt: (a: number, b: number, c: number, d: number) => number;
     readonly mapper_processFrame: (a: number, b: number) => number;
-    readonly oscillux_limiter_destroy: (a: number) => void;
     readonly mapper_processFrameExt: (a: number, b: number) => number;
     readonly mapper_reset: (a: number) => number;
+    readonly oscillux_limiter_destroy: (a: number) => void;
     readonly mapper_setLevelSource: (a: number, b: number) => number;
-    readonly oscillux_abi_version: () => number;
     readonly mapper_spectrum: (a: number, b: number) => number;
     readonly mapper_value: (a: number, b: number) => [number, number];
+    readonly oscillux_abi_version: () => number;
     readonly mappingconfig_centroid_floor: (a: number) => number;
     readonly mappingconfig_db_floor: (a: number) => number;
     readonly mappingconfig_fromDsp: (a: number) => [number, number, number];
@@ -2034,6 +2049,7 @@ export interface InitOutput {
     readonly packer_new: (a: any, b: number, c: number) => [number, number, number];
     readonly packer_outputPtr: (a: number) => number;
     readonly packer_pack: (a: number, b: number, c: number) => number;
+    readonly paletteTour: (a: number, b: number) => [number, number, number];
     readonly reactionconfig_analysis_latency_ms: (a: number) => number;
     readonly reactionconfig_bass_impact_release_ms: (a: number) => number;
     readonly reactionconfig_capacity: (a: number) => number;
@@ -2108,6 +2124,7 @@ export interface InitOutput {
     readonly transitionconfig_set_min_confidence: (a: number, b: number) => void;
     readonly transitionconfig_set_pre_roll_seconds: (a: number, b: number) => void;
     readonly version: () => number;
+    readonly vividPresent: () => [number, number];
     readonly wasmMemory: () => any;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

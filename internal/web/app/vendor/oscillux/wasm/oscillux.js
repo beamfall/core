@@ -767,19 +767,19 @@ export class CurveConfig {
         return ret;
     }
     /**
-     * r" Envelope fall, curve units.
-     * @returns {number}
-     */
-    get release() {
-        const ret = wasm.curveconfig_release(this.__wbg_ptr);
-        return ret;
-    }
-    /**
      * r" Envelope release start, curve units; 0 = never.
      * @returns {number}
      */
     get releaseAt() {
         const ret = wasm.curveconfig_release_at(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * r" Envelope fall, curve units.
+     * @returns {number}
+     */
+    get release() {
+        const ret = wasm.curveconfig_release(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -845,14 +845,14 @@ export class CurveConfig {
     /**
      * @param {number} value
      */
-    set release(value) {
-        wasm.curveconfig_set_release(this.__wbg_ptr, value);
+    set releaseAt(value) {
+        wasm.curveconfig_set_release_at(this.__wbg_ptr, value);
     }
     /**
      * @param {number} value
      */
-    set releaseAt(value) {
-        wasm.curveconfig_set_release_at(this.__wbg_ptr, value);
+    set release(value) {
+        wasm.curveconfig_set_release(this.__wbg_ptr, value);
     }
     /**
      * @param {number} value
@@ -3905,6 +3905,22 @@ export function abiVersion() {
 }
 
 /**
+ * The `z` component of the vivid palette tour at `timeSeconds` for a visual whose palette
+ * starts at `offset`; the `palette` uniform is `[-1, 0, z, 0]` (`oscillux_palette_tour`).
+ * Throws on a non-finite argument. Does not allocate, so hosts may call it every frame.
+ * @param {number} time_seconds
+ * @param {number} offset
+ * @returns {number}
+ */
+export function paletteTour(time_seconds, offset) {
+    const ret = wasm.paletteTour(time_seconds, offset);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0];
+}
+
+/**
  * Short English description of a status code (0 ok, -1 null, -2 invalid argument, -3 panic).
  * @param {number} status
  * @returns {string}
@@ -3932,6 +3948,18 @@ export function version() {
 }
 
 /**
+ * The vivid present pass's `[saturation, vibrance]` (`oscillux_palette_vivid_present`).
+ * Allocates the returned array; read it once, not per frame.
+ * @returns {Float64Array}
+ */
+export function vividPresent() {
+    const ret = wasm.vividPresent();
+    var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+    return v1;
+}
+
+/**
  * The wasm memory every `*Ptr()` offset refers to. Obtain views after constructing adapters
  * and recreate them after any memory growth.
  * @returns {WebAssembly.Memory}
@@ -3954,31 +3982,31 @@ function __wbg_get_imports() {
         __wbg___wbindgen_throw_4c88d8bf264fd984: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbg_components_0e6c23507cb9d038: function(arg0) {
+        __wbg_components_67cc967b09be2265: function(arg0) {
             const ret = arg0.components;
             return ret;
         },
-        __wbg_get_eea629f0c597eca0: function(arg0, arg1) {
+        __wbg_get_e3a990445ed0c9d3: function(arg0, arg1) {
             const ret = arg0[arg1 >>> 0];
             return ret;
         },
-        __wbg_length_cc3965b4b8f42686: function(arg0) {
+        __wbg_length_6bc9c402edc4734c: function(arg0) {
             const ret = arg0.length;
             return ret;
         },
-        __wbg_offset_ac63f7778b1b112a: function(arg0) {
+        __wbg_offset_7ed16d9c2998148e: function(arg0) {
             const ret = arg0.offset;
             return ret;
         },
-        __wbg_source_22342a6b051eaa40: function(arg0) {
+        __wbg_source_ca8a722f5f4f3880: function(arg0) {
             const ret = arg0.source;
             return ret;
         },
-        __wbg_source_offset_53530a55544056f4: function(arg0) {
+        __wbg_source_offset_ca31df2ffa786cbf: function(arg0) {
             const ret = arg0.sourceOffset;
             return ret;
         },
-        __wbg_stride_3f6621faf601d7ed: function(arg0) {
+        __wbg_stride_9529a434e23ac1c4: function(arg0) {
             const ret = arg0.stride;
             return ret;
         },
@@ -4082,6 +4110,11 @@ function _assertClass(instance, klass) {
     }
 }
 
+function getArrayF64FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
+}
+
 function getArrayU32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
@@ -4093,6 +4126,14 @@ function getFloat32ArrayMemory0() {
         cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
     }
     return cachedFloat32ArrayMemory0;
+}
+
+let cachedFloat64ArrayMemory0 = null;
+function getFloat64ArrayMemory0() {
+    if (cachedFloat64ArrayMemory0 === null || cachedFloat64ArrayMemory0.byteLength === 0) {
+        cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
+    }
+    return cachedFloat64ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -4162,6 +4203,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
+    cachedFloat64ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();

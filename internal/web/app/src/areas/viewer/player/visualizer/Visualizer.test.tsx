@@ -105,7 +105,7 @@ describe("visuals", () => {
     for (const v of VISUALS) {
       expect(v.id).toMatch(/^[a-z0-9-]+$/);
       expect(v.params.every(Number.isFinite)).toBe(true);
-      expect(v.palette).toHaveLength(4);
+      expect(Number.isFinite(v.paletteOffset)).toBe(true);
     }
   });
 

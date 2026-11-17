@@ -11,7 +11,8 @@ export interface Visual {
   calm: boolean;
   /** Uniform values a default preset writes. */
   params: [number, number, number];
-  palette: [number, number, number, number];
+  /** Where the visual starts in Oscillux's vivid palette tour: its manifest palette index. */
+  paletteOffset: number;
   trailDecay: number;
 }
 
@@ -23,7 +24,7 @@ export const VISUALS: readonly Visual[] = manifest.visuals.map((v) => {
     name: v.name,
     calm: v.calm,
     params,
-    palette: [v.palette[0] < 0 ? -1 : v.palette[0], 0, v.palette[2], 0],
+    paletteOffset: v.palette[0],
     trailDecay: v.trailDecay,
   };
 });

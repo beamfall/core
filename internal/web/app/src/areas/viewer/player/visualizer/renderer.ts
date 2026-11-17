@@ -173,6 +173,8 @@ export class Renderer {
   private readonly presentUbo: WebGLBuffer;
   private readonly limiterUbo: WebGLBuffer;
   private readonly presentBlock = new Float32Array(PRESENT_FLOATS);
+  // Oscillux's vivid colour mode: present-pass saturation and vibrance (CORE-2369).
+  private readonly vivid: Float64Array;
   private readonly limiterBlock = new Float32Array(8);
   private readonly visualVertex: string;
   private present: WebGLProgram;
@@ -234,6 +236,7 @@ export class Renderer {
   ) {
     this.gl = gl;
     this.osc = osc;
+    this.vivid = osc.vividPresent();
     // Whatever was allocated before a failure is released here, as no caller holds the
     // instance to dispose it.
     try {
@@ -657,7 +660,8 @@ export class Renderer {
     gl.uniform1f(at("u.trailDecay"), reducedMotion ? 0 : t.trailDecay);
     gl.uniform4fv(at("u.accent"), ACCENT);
     gl.uniform4fv(at("u.motion"), MOTION);
-    gl.uniform4fv(at("u.palette"), t.palette);
+    // Oscillux's palette tour: the visual cross-fades through the vivid palettes (CORE-2369).
+    gl.uniform4f(at("u.palette"), -1, 0, this.osc.paletteTour(this.time, t.paletteOffset), 0);
     gl.uniform4fv(at("u.presentation0"), PRESENTATION);
     gl.uniform4f(
       at("u.presentation1"),
@@ -673,7 +677,7 @@ export class Renderer {
     gl.uniform1i(at("uPrev"), 1);
   }
 
-  // present0 (saturation 1, no switch, history on, no vibrance), the overlay block the wasm
+  // present0 (Oscillux's vivid saturation, no switch, history on, vivid vibrance), the overlay block the wasm
   // core packs for this frame, post0 (no bloom, aberration or grain; dither of one code) and
   // post1 (the frame seed).
   private packPresent(W: number, H: number, dt: number, reducedMotion: boolean): void {
@@ -685,7 +689,7 @@ export class Renderer {
     const status = this.regions.pack(o);
     if (status !== 0) throw new Error(`visualizer: overlay ${this.osc.statusString(status)}`);
     const block = this.presentBlock;
-    block.set([1, 1, 1, 0]);
+    block.set([this.vivid[0], 1, 1, this.vivid[1]]);
     block.set(
       new Float32Array(this.osc.wasmMemory().buffer, this.regions.uniformsPtr(), OVERLAY_BYTES / 4),
       OVERLAY_FLOAT,
