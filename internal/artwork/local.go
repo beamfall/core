@@ -52,11 +52,30 @@ type slotLock struct {
 
 func lockMarkerPath(slotPath string) string { return slotPath + ".lock" }
 
+// slotLockMarker returns the lock marker to read for slotPath: its own, or
+// when it has none, the one beside the JPEG an overlay slot was stored as
+// before overlay slots became PNG. New markers are always written beside
+// slotPath.
+func slotLockMarker(slotPath string) string {
+	marker := lockMarkerPath(slotPath)
+	legacy := legacyOverlayPath(slotPath)
+	if legacy == "" {
+		return marker
+	}
+	if _, err := os.Lstat(marker); err == nil {
+		return marker
+	}
+	if _, err := os.Lstat(lockMarkerPath(legacy)); err == nil {
+		return lockMarkerPath(legacy)
+	}
+	return marker
+}
+
 // readSlotLock reports the lock marker beside slotPath. An unreadable or
 // unparseable marker still locks the slot: it fails closed against scrapes,
 // and a rescan of a matching sidecar rewrites it.
 func readSlotLock(slotPath string) (slotLock, bool) {
-	marker := lockMarkerPath(slotPath)
+	marker := slotLockMarker(slotPath)
 	info, err := os.Lstat(marker)
 	if err != nil {
 		return slotLock{}, false
@@ -264,10 +283,11 @@ func (s *Service) releaseLocal(ctx context.Context, dst string, observedAt time.
 	}
 	// A lock written after the caller looked for sidecars belongs to a newer
 	// import the caller never saw.
-	if info, err := os.Stat(lockMarkerPath(dst)); err == nil && !info.ModTime().Before(observedAt) {
+	marker := slotLockMarker(dst)
+	if info, err := os.Stat(marker); err == nil && !info.ModTime().Before(observedAt) {
 		return nil
 	}
-	if err := os.Remove(lockMarkerPath(dst)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(marker); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil

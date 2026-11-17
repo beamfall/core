@@ -211,7 +211,48 @@ func (s *Service) PosterPath(id store.MediaID) string {
 // it exists yet). Callers must pass a known slot; unknown slot names are not
 // path-addressable.
 func (s *Service) ArtworkPath(id store.MediaID, slot string) string {
-	return filepath.Join(s.dir, filepath.Base(string(id)), slot+".jpg")
+	return filepath.Join(s.dir, filepath.Base(string(id)), slot+slotExt(slot))
+}
+
+// slotExt is a slot's file extension. Logo, clearart and disc are drawn over
+// other artwork, so they are stored as PNG to keep their alpha channel; every
+// other slot is a JPEG.
+func slotExt(slot string) string {
+	switch slot {
+	case SlotLogo, SlotClearart, SlotDisc:
+		return ".png"
+	}
+	return ".jpg"
+}
+
+// legacyOverlayPath returns where the overlay slot at path was stored before
+// overlay slots became PNG (<slot>.jpg), or "" when path is a JPEG slot.
+func legacyOverlayPath(path string) string {
+	if filepath.Ext(path) != ".png" {
+		return ""
+	}
+	return strings.TrimSuffix(path, ".png") + ".jpg"
+}
+
+// storedSlotPath returns the file that holds a slot: path, or the JPEG an
+// overlay slot was stored as before overlay slots became PNG. That JPEG is
+// served until the slot is next imported; nothing rewrites it in bulk.
+func storedSlotPath(path string) string {
+	if legacy := legacyOverlayPath(path); legacy != "" && !regularFileExists(path) && regularFileExists(legacy) {
+		return legacy
+	}
+	return path
+}
+
+// slotVersion is the version token of the file storedSlotPath names.
+func (s *Service) slotVersion(path string) (string, bool) {
+	if version, ok := s.versions.version(path); ok {
+		return version, true
+	}
+	if legacy := legacyOverlayPath(path); legacy != "" {
+		return s.versions.version(legacy)
+	}
+	return "", false
 }
 
 // EntityPosterPath returns where an Entity's poster lives (whether or not it
@@ -223,7 +264,7 @@ func (s *Service) EntityPosterPath(id store.EntityID) string {
 
 // EntityArtworkPath returns where an Entity's artwork slot lives.
 func (s *Service) EntityArtworkPath(id store.EntityID, slot string) string {
-	return filepath.Join(s.dir, "entity", filepath.Base(string(id)), slot+".jpg")
+	return filepath.Join(s.dir, "entity", filepath.Base(string(id)), slot+slotExt(slot))
 }
 
 // HasPoster reports whether a poster file exists for the Media item.
@@ -273,7 +314,7 @@ func (s *Service) ArtworkVersion(id store.MediaID, slot string) (string, bool) {
 	if !ValidSlot(slot) {
 		return "", false
 	}
-	return s.versions.version(s.ArtworkPath(id, slot))
+	return s.slotVersion(s.ArtworkPath(id, slot))
 }
 
 // EntityArtworkVersion is ArtworkVersion for an Entity artwork slot.
@@ -281,7 +322,7 @@ func (s *Service) EntityArtworkVersion(id store.EntityID, slot string) (string, 
 	if !ValidSlot(slot) {
 		return "", false
 	}
-	return s.versions.version(s.EntityArtworkPath(id, slot))
+	return s.slotVersion(s.EntityArtworkPath(id, slot))
 }
 
 // slotFallback names the slot served in place of a requested slot whose own
@@ -307,7 +348,7 @@ func (s *Service) ResolveSlot(id store.MediaID, slot string) (string, bool) {
 	if !ValidSlot(slot) {
 		return "", false
 	}
-	if regularFileExists(s.ArtworkPath(id, slot)) {
+	if regularFileExists(storedSlotPath(s.ArtworkPath(id, slot))) {
 		return slot, true
 	}
 	if fb, ok := slotFallback[slot]; ok && regularFileExists(s.ArtworkPath(id, fb)) {
@@ -321,7 +362,7 @@ func (s *Service) ResolveEntitySlot(id store.EntityID, slot string) (string, boo
 	if !ValidSlot(slot) {
 		return "", false
 	}
-	if regularFileExists(s.EntityArtworkPath(id, slot)) {
+	if regularFileExists(storedSlotPath(s.EntityArtworkPath(id, slot))) {
 		return slot, true
 	}
 	if fb, ok := slotFallback[slot]; ok && regularFileExists(s.EntityArtworkPath(id, fb)) {
@@ -467,7 +508,7 @@ func (s *Service) ArtworkDerivative(ctx context.Context, id store.MediaID, slot,
 	if !ValidSlot(slot) {
 		return "", fmt.Errorf("unknown artwork slot %q", slot)
 	}
-	return s.derivative(ctx, s.ArtworkPath(id, slot), string(id), slot, bucket)
+	return s.derivative(ctx, storedSlotPath(s.ArtworkPath(id, slot)), string(id), slot, bucket)
 }
 
 // EntityPosterDerivative is PosterDerivative for an Entity's poster: the same
@@ -481,7 +522,7 @@ func (s *Service) EntityArtworkDerivative(ctx context.Context, id store.EntityID
 	if !ValidSlot(slot) {
 		return "", fmt.Errorf("unknown artwork slot %q", slot)
 	}
-	return s.derivative(ctx, s.EntityArtworkPath(id, slot), string(id), slot, bucket)
+	return s.derivative(ctx, storedSlotPath(s.EntityArtworkPath(id, slot)), string(id), slot, bucket)
 }
 
 // derivative backs the Media and Entity artwork derivative paths; owner is
@@ -494,7 +535,8 @@ func (s *Service) derivative(ctx context.Context, original, owner, slot, bucket 
 	if !ok {
 		return "", fmt.Errorf("unknown artwork bucket %q", bucket)
 	}
-	dst := filepath.Join(filepath.Dir(original), slot+"."+bucket+".jpg")
+	// A bucket has its original's format, so an overlay's buckets keep alpha.
+	dst := filepath.Join(filepath.Dir(original), slot+"."+bucket+filepath.Ext(original))
 	origInfo, err := os.Stat(original)
 	if err != nil || !origInfo.Mode().IsRegular() {
 		return original, nil
@@ -631,7 +673,9 @@ func (s *Service) lockDerivative(ctx context.Context, path string) (func(), erro
 var errProtectedArtwork = errors.New("library became protected during artwork generation")
 
 func (s *Service) scaleImageAtomic(ctx context.Context, src string, width int, dst string, beforePublish func() error) error {
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".image-derive-*.jpg")
+	// The scaler picks the output format from the extension, so the temp file
+	// carries dst's.
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".image-derive-*"+filepath.Ext(dst))
 	if err != nil {
 		return err
 	}
@@ -1138,7 +1182,27 @@ func (s *Service) importArtwork(ctx context.Context, dst, owner, slot string, da
 		return err
 	}
 	for bucket := range bucketWidths {
-		_ = os.Remove(filepath.Join(filepath.Dir(dst), slot+"."+bucket+".jpg"))
+		_ = os.Remove(filepath.Join(filepath.Dir(dst), slot+"."+bucket+filepath.Ext(dst)))
+	}
+	if legacy := legacyOverlayPath(dst); legacy != "" {
+		s.removeLegacyOverlay(dst, legacy, slot)
 	}
 	return nil
+}
+
+// removeLegacyOverlay drops the JPEG an overlay slot was stored as before
+// overlay slots became PNG, with its buckets and markers, once the PNG at dst
+// is in place. A lock on the old file moves to the new one, so a manual pick
+// over locked local artwork stays locked.
+func (s *Service) removeLegacyOverlay(dst, legacy, slot string) {
+	if _, err := os.Lstat(lockMarkerPath(dst)); err != nil {
+		_ = os.Rename(lockMarkerPath(legacy), lockMarkerPath(dst))
+	}
+	for _, path := range []string{legacy, generatedMarkerPath(legacy), lockMarkerPath(legacy)} {
+		_ = os.Remove(path)
+	}
+	for bucket := range bucketWidths {
+		_ = os.Remove(filepath.Join(filepath.Dir(legacy), slot+"."+bucket+".jpg"))
+	}
+	s.versions.forget(legacy)
 }

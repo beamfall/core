@@ -786,7 +786,9 @@ func TestWidenedSlotsResolveDeriveAndFallBack(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ArtworkDerivative(%q): %v", slot, err)
 		}
-		if want := filepath.Join(filepath.Dir(svc.PosterPath("media-alpha")), slot+".w640.jpg"); path != want {
+		// Logo, clearart and disc are PNG; their buckets are too.
+		ext := filepath.Ext(svc.ArtworkPath("media-alpha", slot))
+		if want := filepath.Join(filepath.Dir(svc.PosterPath("media-alpha")), slot+".w640"+ext); path != want {
 			t.Fatalf("ArtworkDerivative(%q) = %q, want %q", slot, path, want)
 		}
 	}
