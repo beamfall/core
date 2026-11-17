@@ -865,6 +865,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// then hand the configured service to the scan adapter created above.
 	identifyService.SetAutoStores(st, st)
 	autoIdentifier.service = identifyService
+	if err := installLibraryHealthProfile(ctx, st, identifyService, hooks.HydrationMappers, artworkService); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
 	// Construct the confined proxy archive before native root observation starts.
 	// A malformed/replaced archive root therefore cannot leak watcher resources.
 	proxyTee, err := proxytee.New(

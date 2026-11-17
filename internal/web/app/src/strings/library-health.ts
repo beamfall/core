@@ -1,7 +1,7 @@
 export const libraryHealthStrings = {
   en: {
     libraryHealthHeading: "Library health",
-    libraryHealthLead: "Per-library quality across five dimensions.",
+    libraryHealthLead: "Per-library quality across the dimensions each library's plugin can check.",
     libraryHealthRefresh: "Refresh",
     libraryHealthEmpty: "No libraries to report.",
     libraryHealthUnavailable: "Library health is unavailable right now.",
@@ -11,6 +11,10 @@ export const libraryHealthStrings = {
     healthScrapeFailure: "Scrape failures",
     healthMissingArtwork: "Missing artwork",
     healthDuplicate: "Duplicates",
+    healthNoScraper: "No scraper",
+    healthNotApplicable: "Not applicable",
+    healthNoPluginIdentifies: "No plugin identifies this library",
+    healthRescanNeedsAutoIdentify: "Rescans need a plugin that identifies automatically",
     bulkRescanUnmatched: "Rescan unmatched",
     bulkTrashBroken: "Trash broken",
     bulkRescrapeScrapeFailures: "Rescrape failures",
@@ -31,7 +35,8 @@ export const libraryHealthStrings = {
   },
   fr: {
     libraryHealthHeading: "Santé des bibliothèques",
-    libraryHealthLead: "Qualité par bibliothèque selon cinq dimensions.",
+    libraryHealthLead:
+      "Qualité par bibliothèque selon les dimensions que son plugin peut vérifier.",
     libraryHealthRefresh: "Actualiser",
     libraryHealthEmpty: "Aucune bibliothèque à signaler.",
     libraryHealthUnavailable: "La santé des bibliothèques est indisponible pour le moment.",
@@ -41,6 +46,11 @@ export const libraryHealthStrings = {
     healthScrapeFailure: "Échecs de récupération",
     healthMissingArtwork: "Illustration manquante",
     healthDuplicate: "Doublons",
+    healthNoScraper: "Sans scraper",
+    healthNotApplicable: "Non applicable",
+    healthNoPluginIdentifies: "Aucun plugin n'identifie cette bibliothèque",
+    healthRescanNeedsAutoIdentify:
+      "Les nouvelles analyses exigent un plugin qui identifie automatiquement",
     bulkRescanUnmatched: "Réanalyser les non appariés",
     bulkTrashBroken: "Mettre à la corbeille les brisés",
     bulkRescrapeScrapeFailures: "Récupérer les échecs",
@@ -62,7 +72,7 @@ export const libraryHealthStrings = {
   },
   de: {
     libraryHealthHeading: "Bibliothekszustand",
-    libraryHealthLead: "Qualität je Bibliothek über fünf Dimensionen.",
+    libraryHealthLead: "Qualität je Bibliothek über die Dimensionen, die ihr Plugin prüfen kann.",
     libraryHealthRefresh: "Aktualisieren",
     libraryHealthEmpty: "Keine Bibliotheken zu melden.",
     libraryHealthUnavailable: "Der Bibliothekszustand ist derzeit nicht verfügbar.",
@@ -72,6 +82,11 @@ export const libraryHealthStrings = {
     healthScrapeFailure: "Abruf­fehler",
     healthMissingArtwork: "Fehlendes Bildmaterial",
     healthDuplicate: "Duplikate",
+    healthNoScraper: "Kein Scraper",
+    healthNotApplicable: "Nicht zutreffend",
+    healthNoPluginIdentifies: "Kein Plugin identifiziert diese Bibliothek",
+    healthRescanNeedsAutoIdentify:
+      "Erneute Scans brauchen ein Plugin, das automatisch identifiziert",
     bulkRescanUnmatched: "Nicht zugeordnete neu scannen",
     bulkTrashBroken: "Defekte in den Papierkorb",
     bulkRescrapeScrapeFailures: "Abruffehler erneut versuchen",
@@ -93,7 +108,7 @@ export const libraryHealthStrings = {
   },
   es: {
     libraryHealthHeading: "Estado de las bibliotecas",
-    libraryHealthLead: "Calidad por biblioteca en cinco dimensiones.",
+    libraryHealthLead: "Calidad por biblioteca en las dimensiones que su plugin puede comprobar.",
     libraryHealthRefresh: "Actualizar",
     libraryHealthEmpty: "No hay bibliotecas que informar.",
     libraryHealthUnavailable: "El estado de las bibliotecas no está disponible en este momento.",
@@ -103,6 +118,11 @@ export const libraryHealthStrings = {
     healthScrapeFailure: "Fallos de extracción",
     healthMissingArtwork: "Sin ilustración",
     healthDuplicate: "Duplicados",
+    healthNoScraper: "Sin scraper",
+    healthNotApplicable: "No aplica",
+    healthNoPluginIdentifies: "Ningún plugin identifica esta biblioteca",
+    healthRescanNeedsAutoIdentify:
+      "Los reescaneos necesitan un plugin que identifique automáticamente",
     bulkRescanUnmatched: "Reanalizar sin coincidencia",
     bulkTrashBroken: "Enviar dañados a la papelera",
     bulkRescrapeScrapeFailures: "Reintentar extracciones fallidas",
@@ -123,7 +143,8 @@ export const libraryHealthStrings = {
   },
   pt: {
     libraryHealthHeading: "Saúde das bibliotecas",
-    libraryHealthLead: "Qualidade por biblioteca em cinco dimensões.",
+    libraryHealthLead:
+      "Qualidade por biblioteca nas dimensões que o plugin dela consegue verificar.",
     libraryHealthRefresh: "Atualizar",
     libraryHealthEmpty: "Nenhuma biblioteca para relatar.",
     libraryHealthUnavailable: "A saúde das bibliotecas está indisponível no momento.",
@@ -133,6 +154,11 @@ export const libraryHealthStrings = {
     healthScrapeFailure: "Falhas de coleta",
     healthMissingArtwork: "Sem arte",
     healthDuplicate: "Duplicados",
+    healthNoScraper: "Sem scraper",
+    healthNotApplicable: "Não se aplica",
+    healthNoPluginIdentifies: "Nenhum plugin identifica esta biblioteca",
+    healthRescanNeedsAutoIdentify:
+      "Novas verificações exigem um plugin que identifique automaticamente",
     bulkRescanUnmatched: "Reescanear sem correspondência",
     bulkTrashBroken: "Enviar quebrados para a lixeira",
     bulkRescrapeScrapeFailures: "Repetir coletas com falha",

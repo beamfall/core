@@ -1054,11 +1054,14 @@ export interface CreatedScopedAPIKeyInfo {
 
 // --- Manage / Console: health, bulk ops, file ops -------------------------
 
-/** Per-Library health counts (graph.LibraryHealthInfo). */
+/**
+ * Per-Library health counts (graph.LibraryHealthInfo). A dimension that does
+ * not apply to the Library's plugin is absent from `counts`, never zero.
+ */
 export interface LibraryHealthInfo {
   libraryID: string;
   title: string;
-  counts: Record<string, number>;
+  counts: Partial<Record<string, number>>;
 }
 
 /** A bulk health operation result (graph.BulkOpResult). */

@@ -25,6 +25,16 @@ func seedHealthMedia(t *testing.T, st *Store, libraryID LibraryID, id, path, osh
 	return media.ID
 }
 
+// setHealthLibraryPlugin assigns a plugin ID to a seeded Library so the
+// identification and artwork dimensions apply to it.
+func setHealthLibraryPlugin(t *testing.T, st *Store, libraryID LibraryID, pluginID string) {
+	t.Helper()
+	if _, err := st.catalogW.ExecContext(context.Background(),
+		`UPDATE library SET plugin_id = ? WHERE id = ?`, pluginID, libraryID); err != nil {
+		t.Fatalf("set plugin on %s: %v", libraryID, err)
+	}
+}
+
 // TestLibraryHealthFiveDimensions is the server vertical slice for the Library
 // Health Dashboard: the five generic dimensions count and list the
 // right Media, the aggregate is the per-Library fold, and the bulk operations
@@ -37,6 +47,7 @@ func TestLibraryHealthFiveDimensions(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
 	all := LibraryFilter{AllowedIDs: []LibraryID{"library-local"}}
+	setHealthLibraryPlugin(t, st, "library-local", "probe-plugin")
 
 	// Baseline: the development seed already places one Media in library-local
 	// (media-alpha, unmatched + fileless). Assert against deltas so the test is
@@ -69,13 +80,20 @@ func TestLibraryHealthFiveDimensions(t *testing.T) {
 		t.Fatalf("MarkArtworkCandidateApplied: %v", err)
 	}
 
-	// Unmatched item (no identified title, no external id, no artwork) — also a
-	// scrape-failure and missing-artwork by construction.
+	// Unmatched item (no identified title, no external id, no artwork) whose
+	// automatic scrape queued it — a scrape failure and missing artwork.
 	unmatched := seedHealthMedia(t, st, "library-local", "unmatched", "/m/unmatched.mp4", "bbbb000000000002")
+	if err := st.QueueUnmatched(ctx, UnmatchedItem{MediaID: unmatched, PluginID: "probe-plugin", ScraperID: "probe-scraper"}); err != nil {
+		t.Fatalf("QueueUnmatched: %v", err)
+	}
 
 	// A duplicate pair: two distinct Media sharing one non-empty oshash.
 	dupA := seedHealthMedia(t, st, "library-local", "dupa", "/m/dupa.mp4", "cccc000000000003")
 	dupB := seedHealthMedia(t, st, "library-local", "dupb", "/m/dupb.mp4", "cccc000000000003")
+	// Queued for manual review only: unmatched, but no scrape was attempted.
+	if err := st.QueueUnmatched(ctx, UnmatchedItem{MediaID: dupA, PluginID: "probe-plugin", ScraperID: UnmatchedManualScraperID}); err != nil {
+		t.Fatalf("QueueUnmatched manual: %v", err)
+	}
 
 	// A broken item: mark its only file missing.
 	broken := seedHealthMedia(t, st, "library-local", "broken", "/m/broken.mp4", "dddd000000000004")
@@ -107,10 +125,14 @@ func TestLibraryHealthFiveDimensions(t *testing.T) {
 	if got := delta(HealthBroken); got != 1 {
 		t.Errorf("broken count delta = %d, want 1", got)
 	}
-	// scrape-failure delta: unmatched-and-no-external-id — same +4 as unmatched
-	// here (none have external IDs).
-	if got := delta(HealthScrapeFailure); got != 4 {
-		t.Errorf("scrape-failure count delta = %d, want 4", got)
+	// scrape-failure delta: only the item an attempted scrape queued. The
+	// manual-review row and the never-scraped items do not count. +1.
+	if got := delta(HealthScrapeFailure); got != 1 {
+		t.Errorf("scrape-failure count delta = %d, want 1", got)
+	}
+	// no-scraper does not apply to a Library whose plugin can search.
+	if _, ok := local.Counts[HealthNoScraper]; ok {
+		t.Errorf("no-scraper reported for a searchable plugin: %v", local.Counts)
 	}
 	// missing-artwork delta: everything new except matched (applied poster). +4.
 	if got := delta(HealthMissingArtwork); got != 4 {
@@ -344,6 +366,7 @@ func TestLibraryHealthRevealFiltered(t *testing.T) {
 	ctx := context.Background()
 
 	// Seed an unmatched item into the restricted Archive.
+	setHealthLibraryPlugin(t, st, "library-archive", "probe-plugin")
 	seedHealthMedia(t, st, "library-archive", "secret", "/m/secret.mp4", "")
 
 	unrevealed := LibraryFilter{AllowedIDs: []LibraryID{"library-local", "library-archive"}, Revealed: false}

@@ -1030,6 +1030,11 @@ type Store struct {
 	// purged encrypted Library's key material. Without it an encrypted Library
 	// cannot be purged. Guarded by mu; called only with mu released.
 	encKeyEraser EncryptedLibraryKeyEraser
+	// healthProfiler and healthArtworkProbe are the app-injected seams (nil by
+	// default) that make Library health follow each Library's plugin
+	// (CORE-2340, CORE-2383). Guarded by mu.
+	healthProfiler     LibraryHealthProfiler
+	healthArtworkProbe LibraryHealthArtworkProbe
 	// encDerivativePurgers are the app-injected seams that remove a purged
 	// encrypted Library's regenerable derivative ciphertext (CORE-2057).
 	// Guarded by mu; called only with mu released.
