@@ -33,12 +33,21 @@ type ContainerArtworkImporter interface {
 	ReleaseEntityLocalArtwork(ctx context.Context, id store.EntityID, slot string, observedAt time.Time) error
 }
 
-// ContainerEntityResolver is the optional seam that maps a Media to the ordered
-// container Entity it belongs to and that container's ordinal. Identification
-// creates those Entities, so an Identifier may implement it; until one does,
-// container sidecars are discovered but not imported.
+// ContainerEntity is one container Entity holding a Media. Ordinal is its
+// sort order inside the next container out, and Ordered says whether it has
+// one.
+type ContainerEntity struct {
+	ID      store.EntityID
+	Ordinal int
+	Ordered bool
+}
+
+// ContainerEntityResolver is the optional seam that maps a Media to the
+// container Entities holding it, innermost first. Identification creates those
+// Entities, so an Identifier may implement it; until one does, container
+// sidecars are discovered but not imported.
 type ContainerEntityResolver interface {
-	ContainerEntityForMedia(ctx context.Context, id store.MediaID) (store.EntityID, int, bool, error)
+	ContainerEntitiesForMedia(ctx context.Context, id store.MediaID) ([]ContainerEntity, error)
 }
 
 // PluginMediaClassResolver is the optional seam that reports the Media classes
@@ -383,6 +392,22 @@ func (d *sidecarDiscovery) containerArtworkIn(dir string, ordinal int) string {
 	return ""
 }
 
+// folderPosterIn returns the best folder poster in dir (poster, folder, then
+// cover, each by format preference), whatever the folder's media count: it
+// names the container the folder is.
+func (d *sidecarDiscovery) folderPosterIn(dir string) string {
+	index := d.artworkDir(dir)
+	for _, row := range localArtworkVocabulary {
+		if row.Scope != localArtworkFolder || row.Slot != "poster" {
+			continue
+		}
+		if found := index.find(dir, row.Name); found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
 // localArtSlot names one Media artwork slot for the walk's deferred releases.
 type localArtSlot struct {
 	media store.MediaID
@@ -451,41 +476,87 @@ func (s *scanWalkState) applyLocalArtwork(mediaPath string, mediaID store.MediaI
 	s.noteContainerArtwork(mediaPath, mediaID)
 }
 
-// noteContainerArtwork records the container sidecar for the Media's ordered
-// container Entity, when the resolver seam is wired. The Entity is written
-// once after the walk so Media of one container cannot flip-flop it.
+// noteContainerArtwork records the container sidecars for the Media's
+// container Entities, when the resolver seam is wired: the innermost ordered
+// container takes the numbered sidecar in the Media's folder or its parent,
+// and the outermost container, when it is another Entity, takes the folder
+// poster of the library root's top-level folder holding the Media. Nothing
+// outside the root is read. Each Entity is written once after the walk so
+// Media of one container cannot flip-flop it.
 func (s *scanWalkState) noteContainerArtwork(mediaPath string, mediaID store.MediaID) {
 	if s.containerResolver == nil || s.containerArtwork == nil {
 		return
 	}
-	entityID, ordinal, ok, err := s.containerResolver.ContainerEntityForMedia(s.ctx, mediaID)
+	containers, err := s.containerResolver.ContainerEntitiesForMedia(s.ctx, mediaID)
 	if err != nil {
 		slog.Warn("resolving container entity failed", "media", mediaID, "error", err.Error())
 		return
 	}
-	if !ok || entityID == "" {
+	numbered := store.EntityID("")
+	for _, container := range containers {
+		if container.Ordered && container.ID != "" {
+			numbered = container.ID
+			s.noteContainerChoice(container.ID, func() string {
+				return s.numberedContainerArtwork(mediaPath, container.Ordinal)
+			})
+			break
+		}
+	}
+	if len(containers) == 0 {
 		return
 	}
+	outer := containers[len(containers)-1]
+	if outer.ID == "" || outer.ID == numbered {
+		return
+	}
+	s.noteContainerChoice(outer.ID, func() string {
+		dir := s.topLevelFolder(mediaPath)
+		if dir == "" {
+			return ""
+		}
+		return s.sidecars.folderPosterIn(dir)
+	})
+}
+
+// noteContainerChoice records an Entity's container sidecar, asking find only
+// until one is found in this walk.
+func (s *scanWalkState) noteContainerChoice(entityID store.EntityID, find func() string) {
 	choice := s.containerArt[entityID]
 	if choice == nil {
 		choice = &containerArtChoice{}
 		s.containerArt[entityID] = choice
 	}
+	if choice.path == "" {
+		choice.path = find()
+	}
+}
+
+// numberedContainerArtwork returns the numbered container sidecar for ordinal
+// in the Media's folder, then its parent when that is inside the root.
+func (s *scanWalkState) numberedContainerArtwork(mediaPath string, ordinal int) string {
 	dir := filepath.Dir(mediaPath)
 	dirs := []string{dir}
 	parent := filepath.Dir(dir)
 	if parent != dir && s.insideRoot(parent) {
 		dirs = append(dirs, parent)
 	}
-	if choice.path != "" {
-		return
-	}
 	for _, candidate := range dirs {
 		if found := s.sidecars.containerArtworkIn(candidate, ordinal); found != "" {
-			choice.path = found
-			return
+			return found
 		}
 	}
+	return ""
+}
+
+// topLevelFolder returns the library root's direct child folder holding
+// mediaPath, or "" for a Media directly in the root or outside it.
+func (s *scanWalkState) topLevelFolder(mediaPath string) string {
+	rel, err := filepath.Rel(s.req.Root, filepath.Dir(mediaPath))
+	if err != nil || rel == "." || !s.insideRoot(filepath.Dir(mediaPath)) {
+		return ""
+	}
+	first, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
+	return filepath.Join(s.req.Root, filepath.FromSlash(first))
 }
 
 // applyDeferredArtwork writes the local lock releases and container sidecar

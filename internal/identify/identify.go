@@ -126,6 +126,15 @@ type MediaTitleSource interface {
 	ParsedMediaTitle(ctx context.Context, mediaID store.MediaID, pluginID string) (string, error)
 }
 
+// MediaOrdinalSource is optionally implemented by a MediaTitleSource. It
+// supplies the plugin parser's ordinal for a Media item: the sequence the
+// file sits in and its index within it, substituted for a scraper's
+// {sequence} and {index} placeholders. It returns "" and 0 when the parser
+// supplies none.
+type MediaOrdinalSource interface {
+	ParsedMediaOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string) (sequence string, index int, err error)
+}
+
 // Candidate is one identification candidate from a scraper search.
 type Candidate = sdk.Candidate
 
@@ -342,6 +351,7 @@ func (s *Service) Lookup(ctx context.Context, pluginID, scraperID, candidateID s
 		return Candidate{}, err
 	}
 	vars.PluginID = pluginID
+	s.applyOrdinal(ctx, mediaID, pluginID, &vars)
 	result, err := s.engine.Lookup(ctx, spec, candidateID, vars)
 	if err != nil {
 		return Candidate{}, err
@@ -368,6 +378,23 @@ func (s *Service) variables(ctx context.Context, mediaID store.MediaID) (scrape.
 	}, nil
 }
 
+// applyOrdinal sets vars' sequence and index from the plugin parser's
+// ordinal for mediaID when the wired title source supplies one. A failed read
+// leaves them unknown, which skips the per-item lookup and ordinal entity
+// maps rather than failing the identification.
+func (s *Service) applyOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string, vars *scrape.Variables) {
+	source, ok := s.titles.(MediaOrdinalSource)
+	if !ok || mediaID == "" {
+		return
+	}
+	sequence, index, err := source.ParsedMediaOrdinal(ctx, mediaID, pluginID)
+	if err != nil {
+		slog.Debug("identify: parser ordinal unavailable", "media", mediaID, "error", err.Error())
+		return
+	}
+	vars.Sequence, vars.Index = sequence, index
+}
+
 // Apply looks up the chosen candidate and writes its title/summary/year and
 // sort title onto the Media row. The engine already returns transformed
 // values; a year that does not parse to an int is omitted, like an unresolved
@@ -389,6 +416,7 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		return err
 	}
 	vars.PluginID = pluginID
+	s.applyOrdinal(ctx, mediaID, pluginID, &vars)
 	result, err := s.engine.Lookup(ctx, spec, candidateID, vars)
 	if err != nil {
 		return err
@@ -574,7 +602,12 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 	}
 	cardinality := relationCardinalities(bundle)
 	ordinalFields := relationOrdinalFields(spec)
+	var containers []scrape.EntityResult
 	for _, hydrated := range result.Entities {
+		if hydrated.Container {
+			containers = append(containers, hydrated)
+			continue
+		}
 		id := entityIDForName(library, hydrated.Kind, hydrated.Name)
 		if err := s.entities.UpsertEntity(ctx, store.Entity{
 			ID:        id,
@@ -599,7 +632,7 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		}
 		s.applyEntityPoster(ctx, id, hydrated.ArtworkURL)
 	}
-	return nil
+	return s.applyContainerEntities(ctx, mediaID, library, bundle, containers)
 }
 
 // entityFields parses one hydrated Entity's raw FieldMap values against its

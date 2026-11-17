@@ -22,8 +22,8 @@ core cannot address them.
 - A `Container` entity map hydrates the existing container Entity of its kind that holds the
   Media (the CORE-1488 container chain): fields merge into the Entity's existing fields and its
   title is kept; the poster applies like other hydrated Entity posters. It never creates an Entity.
-- Identification passes the parsed ordinal: auto-identify from the scan's parse, manual apply
-  from the plugin parser run on the Media's primary file. The parser title still wins over the
+- Identification passes the parsed ordinal: Apply and Lookup run the plugin parser on the
+  Media's primary file, and auto-identify applies through Apply. The parser title still wins over the
   scraper title.
 
 ## Non-goals
