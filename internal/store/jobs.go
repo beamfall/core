@@ -819,7 +819,13 @@ func (s *Store) claimNextJobSQL(ctx context.Context, workerID string, classes []
 		}
 		query += " AND j.class IN (" + strings.Join(parts, ", ") + ")"
 	}
-	query += " ORDER BY j.priority DESC, j.created_at_ms ASC LIMIT 1"
+	// Within a priority the job that has waited longest goes first. A queued job
+	// has waited since it was created; a yielded job since it last yielded, not
+	// since it was created. Ordering a yielded job by its creation time let two
+	// long jobs that yield and resume hold both background workers for days
+	// while newer short jobs (the database backup among them) never ran
+	// (CORE-2285).
+	query += " ORDER BY j.priority DESC, CASE WHEN j.status = 'yielded' THEN j.updated_at_ms ELSE j.created_at_ms END ASC, j.created_at_ms ASC, j.id ASC LIMIT 1"
 	job, err := scanJob(tx.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Job{}, ErrNoRunnableJob

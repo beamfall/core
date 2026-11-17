@@ -2643,6 +2643,7 @@ func eventsCompactionHandler(st *store.Store, logger *slog.Logger) jobs.Handler 
 			"expiredStreamTokens": res.ExpiredStreamTokens,
 			"oldAuthAttempts":     res.OldAuthAttempts,
 			"oldOutboxEvents":     res.OldOutboxEvents,
+			"oldFinishedJobs":     res.OldFinishedJobs,
 			"vacuumed":            res.Vacuumed,
 		})
 		if err != nil {
@@ -2656,6 +2657,7 @@ func eventsCompactionHandler(st *store.Store, logger *slog.Logger) jobs.Handler 
 			"expiredStreamTokens", res.ExpiredStreamTokens,
 			"oldAuthAttempts", res.OldAuthAttempts,
 			"oldOutboxEvents", res.OldOutboxEvents,
+			"oldFinishedJobs", res.OldFinishedJobs,
 			"vacuumed", res.Vacuumed)
 		return jobs.Result{}, nil
 	}

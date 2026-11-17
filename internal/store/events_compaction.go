@@ -10,12 +10,23 @@ import (
 // days).
 const DefaultEventsRetention = 180 * 24 * time.Hour
 
+// Finished job rows are kept for a short, fixed time so the job queue shows
+// what ran lately without growing for ever (CORE-2285). A failed job is kept
+// longer because its error is what an operator comes looking for. Neither
+// window follows the operator's events retention: these rows are a work log,
+// not a record.
+const (
+	FinishedJobRetention = 24 * time.Hour
+	FailedJobRetention   = 7 * 24 * time.Hour
+)
+
 // EventsCompactionResult reports what one retention compaction pruned, for the
 // job's status log.
 type EventsCompactionResult struct {
 	ExpiredStreamTokens int64
 	OldAuthAttempts     int64
 	OldOutboxEvents     int64
+	OldFinishedJobs     int64
 	// Vacuumed is true when the post-prune VACUUM reclaimed file space. A VACUUM
 	// needs a brief exclusive lock; if a concurrent reader makes it busy the prune
 	// still succeeded (freed pages are reused, so logical growth is bounded) and
@@ -37,6 +48,9 @@ type EventsCompactionResult struct {
 //   - event_outbox rows older than retention, preserving the newest row as the
 //     cursor floor so stale readers get ErrEventCursorTooOld instead of silent
 //     loss.
+//   - job rows that finished longer ago than FinishedJobRetention (completed,
+//     canceled) or FailedJobRetention (failed), with their checkpoint and
+//     events. A job a schedule occurrence has not finished recording is kept.
 //
 // It deliberately does NOT touch:
 //   - activity_entry — append-only by ADR-0012 §11, enforced by DB triggers; the
@@ -80,6 +94,21 @@ func (s *Store) CompactEvents(ctx context.Context, retention time.Duration, now 
 		return result, err
 	}
 	result.OldOutboxEvents, _ = oldOutbox.RowsAffected()
+
+	oldJobs, err := s.eventsW.ExecContext(ctx, `
+		DELETE FROM job
+		WHERE ((status IN ('completed', 'canceled') AND finished_at_ms < ?)
+		    OR (status = 'failed' AND finished_at_ms < ?))
+		  AND id NOT IN (
+		    SELECT m.job_id FROM schedule_occurrence_member m
+		    JOIN schedule_occurrence o ON o.schedule_id = m.schedule_id AND o.due_ms = m.due_ms
+		    WHERE m.job_id IS NOT NULL AND o.completed_at_ms IS NULL
+		  )`,
+		timeToMillis(now.Add(-FinishedJobRetention)), timeToMillis(now.Add(-FailedJobRetention)))
+	if err != nil {
+		return result, err
+	}
+	result.OldFinishedJobs, _ = oldJobs.RowsAffected()
 
 	// Best-effort space reclamation: the DELETEs already bound logical growth via
 	// page reuse, so a busy VACUUM (a concurrent reader holding a lock) is logged

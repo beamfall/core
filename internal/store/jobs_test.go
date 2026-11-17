@@ -598,3 +598,47 @@ func TestLeaseDeadlineIgnoresCallerSuppliedTime(t *testing.T) {
 		t.Fatalf("back-dated complete err = %v, want ErrJobLeaseLost", err)
 	}
 }
+
+// A job that yields goes to the back of its priority's line: a queued job that
+// has waited since before the yield runs first, and the yielded job gets its
+// next turn after it (CORE-2285).
+func TestYieldedJobWaitsBehindOlderQueuedWork(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, migratedDataDir(t), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Unix(100, 0).UTC()
+	if _, err := st.EnqueueJob(ctx, Job{ID: "job-long", Kind: "scan", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	long, err := st.ClaimNextJob(ctx, "worker", nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueJob(ctx, Job{ID: "job-short", Kind: "backup", CreatedAt: now.Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	yieldAt := now.Add(2 * time.Second)
+	if err := st.YieldJob(ctx, long.ID, long.LeaseOwner, nil, yieldAt, yieldAt); err != nil {
+		t.Fatal(err)
+	}
+	next, err := st.ClaimNextJob(ctx, "worker", nil, now.Add(3*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ID != "job-short" {
+		t.Fatalf("claimed %q after the yield, want job-short", next.ID)
+	}
+	if err := st.CompleteJob(ctx, next.ID, next.LeaseOwner, now.Add(4*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	again, err := st.ClaimNextJob(ctx, "worker", nil, now.Add(5*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != "job-long" {
+		t.Fatalf("claimed %q, want job-long to resume", again.ID)
+	}
+}

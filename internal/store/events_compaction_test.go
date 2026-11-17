@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
@@ -94,5 +95,71 @@ func TestCompactEvents(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("compaction pruned an append-only audit-log entry")
+	}
+}
+
+// Finished jobs leave the queue after their retention; failed ones stay longer,
+// and queued or running work is never touched (CORE-2285).
+func TestCompactEventsPrunesFinishedJobs(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	now := time.Unix(1_700_000_000, 0).UTC()
+
+	finish := func(id JobID, at time.Time, fail bool) {
+		t.Helper()
+		if _, err := st.EnqueueJob(ctx, Job{ID: id, Kind: JobKind("kind-" + string(id)), CreatedAt: at}); err != nil {
+			t.Fatalf("enqueue %s: %v", id, err)
+		}
+		claimed, err := st.ClaimNextJob(ctx, "worker", nil, at)
+		if err != nil {
+			t.Fatalf("claim %s: %v", id, err)
+		}
+		if claimed.ID != id {
+			t.Fatalf("claimed %q, want %q", claimed.ID, id)
+		}
+		if fail {
+			err = st.FailJob(ctx, id, claimed.LeaseOwner, "boom", at)
+		} else {
+			err = st.CompleteJob(ctx, id, claimed.LeaseOwner, at)
+		}
+		if err != nil {
+			t.Fatalf("finish %s: %v", id, err)
+		}
+	}
+	finish("job-done-old", now.Add(-FinishedJobRetention-time.Hour), false)
+	finish("job-done-recent", now.Add(-time.Hour), false)
+	finish("job-failed-recent", now.Add(-FinishedJobRetention-time.Hour), true)
+	finish("job-failed-old", now.Add(-FailedJobRetention-time.Hour), true)
+	if _, err := st.EnqueueJob(ctx, Job{ID: "job-canceled-old", Kind: "kind-canceled", CreatedAt: now.Add(-FailedJobRetention)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CancelJob(ctx, "job-canceled-old", now.Add(-FinishedJobRetention-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueJob(ctx, Job{ID: "job-queued-old", Kind: "kind-queued", CreatedAt: now.Add(-2 * FailedJobRetention)}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := st.CompactEvents(ctx, 0, now)
+	if err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if res.OldFinishedJobs != 3 {
+		t.Fatalf("pruned %d finished jobs, want 3", res.OldFinishedJobs)
+	}
+	jobs, err := st.ListJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	for _, job := range jobs {
+		kept = append(kept, string(job.ID))
+	}
+	want := []string{"job-queued-old", "job-failed-recent", "job-done-recent"}
+	if !slices.Equal(kept, want) {
+		t.Fatalf("kept jobs = %v, want %v", kept, want)
+	}
+	if events, err := st.ListJobEvents(ctx, "job-done-old"); err == nil && len(events) != 0 {
+		t.Fatalf("pruned job still has %d events", len(events))
 	}
 }
