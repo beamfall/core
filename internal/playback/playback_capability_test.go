@@ -732,6 +732,65 @@ func TestAudioOnlyLegacyProfileJudgedByDirectCodecs(t *testing.T) {
 	}
 }
 
+// TestAudioCodecFamilyFoldsLinearPCM pins CORE-0409: ffprobe's concrete
+// linear-PCM names fold to the wire token "pcm"; companded PCM and every
+// other codec keep the normalizedAudioCodec spelling.
+func TestAudioCodecFamilyFoldsLinearPCM(t *testing.T) {
+	for _, tc := range []struct{ codec, want string }{
+		{"pcm_s16le", "pcm"},
+		{"pcm_s24le", "pcm"},
+		{"pcm_s16be", "pcm"},
+		{"pcm_f32le", "pcm"},
+		{"pcm_bluray", "pcm"},
+		{"PCM", "pcm"},
+		{"pcm_alaw", "pcm-alaw"},
+		{"pcm_mulaw", "pcm-mulaw"},
+		{"flac", "flac"},
+		{"dts-ma", "dts-hd-ma"},
+	} {
+		if got := audioCodecFamily(tc.codec); got != tc.want {
+			t.Errorf("audioCodecFamily(%q) = %q, want %q", tc.codec, got, tc.want)
+		}
+	}
+}
+
+// TestPCMTrackDirectPlaysAgainstDeclaredPCM is CORE-0409's acceptance: a
+// pcm_s24le track direct-plays against a profile declaring "pcm" and
+// transcodes against one that does not, on the audio envelope and on the
+// legacy DirectCodecs profile alike.
+func TestPCMTrackDirectPlaysAgainstDeclaredPCM(t *testing.T) {
+	for _, codec := range []string{"pcm_s16le", "pcm_s24le", "pcm_s16be", "pcm_f32le"} {
+		media := store.Media{Class: store.MediaClassAudio, Container: "wav", Codec: codec}
+		streams := []store.MediaFileStream{{Type: "audio", Codec: codec, Channels: 2}}
+		enveloped := CapabilityProfile{
+			Containers:  []string{"wav", "aiff"},
+			VideoCodecs: []VideoCodecCap{{Codec: "h264"}},
+			AudioCodecs: []AudioCodecCap{{Codec: "pcm", MaxChannels: 8}},
+		}
+		legacy := CapabilityProfile{Containers: []string{"wav", "aiff"}, DirectCodecs: []string{"h264", "pcm"}}
+		for name, profile := range map[string]CapabilityProfile{"envelope": enveloped, "legacy": legacy} {
+			if !canDirectPlay(media, store.MediaFile{}, streams, profile, nil, quirkOverlay{}) {
+				t.Errorf("%s profile declaring pcm cannot direct-play a %s track", name, codec)
+			}
+			if !canDirectPlay(media, store.MediaFile{}, nil, profile, nil, quirkOverlay{}) {
+				t.Errorf("%s profile declaring pcm cannot direct-play a probe-less %s track", name, codec)
+			}
+		}
+		enveloped.AudioCodecs = []AudioCodecCap{{Codec: "flac", MaxChannels: 8}}
+		legacy.DirectCodecs = []string{"h264", "flac"}
+		for name, profile := range map[string]CapabilityProfile{"envelope": enveloped, "legacy": legacy} {
+			if canDirectPlay(media, store.MediaFile{}, streams, profile, nil, quirkOverlay{}) {
+				t.Errorf("%s profile without pcm direct-plays a %s track", name, codec)
+			}
+		}
+	}
+	mulaw := store.Media{Class: store.MediaClassAudio, Container: "wav", Codec: "pcm_mulaw"}
+	legacy := CapabilityProfile{Containers: []string{"wav"}, DirectCodecs: []string{"pcm"}}
+	if canDirectPlay(mulaw, store.MediaFile{}, []store.MediaFileStream{{Type: "audio", Codec: "pcm_mulaw", Channels: 1}}, legacy, nil, quirkOverlay{}) {
+		t.Error("mu-law track direct-plays against a linear-PCM declaration")
+	}
+}
+
 // browserProfile mirrors what the web client probes: mp4/webm containers, H.264 and AAC, no
 // mkv. Pinned here because the over-transcode it exposed (CORE-1145) lives in the server's
 // reading of exactly this shape.
