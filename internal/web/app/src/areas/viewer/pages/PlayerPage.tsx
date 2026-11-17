@@ -16,6 +16,7 @@ import {
 import type {
   ClientPref,
   GenericMediaInfo,
+  MediaCredit,
   PlaybackAdjustmentRanges,
   PrePlayItem,
 } from "@/lib/graphql/types";
@@ -196,7 +197,14 @@ function FeaturePlayer({
   // and asks for the invite panel open.
   const [partyOpen, setPartyOpen] = useState(() => readWatchPartyIntent(location.state));
   const [clientPrefs, setClientPrefs] = useState<ClientPref[]>([]);
-  const [media, setMedia] = useState<GenericMediaInfo | null>(null);
+  // The media(id) read, by the Media it answered for: null info when it found
+  // nothing or failed. Only the read for this Media counts, so a new item
+  // never shows the previous item's title, artwork or credits.
+  const [mediaRead, setMediaRead] = useState<{
+    id: string;
+    info: GenericMediaInfo | null;
+  } | null>(null);
+  const media = mediaRead && mediaRead.id === mediaId ? mediaRead.info : null;
 
   // The catalog card / hero (and Up Next) carry the Media title forward in nav
   // state, with the siblings it was shown with as the play queue. The media(id)
@@ -278,6 +286,7 @@ function FeaturePlayer({
   );
   const { previous: previousInQueue, next: nextInQueue } = queueNeighbours(queue, mediaId || "");
   const info = state.info;
+  const infoIsCurrent = !!state.info && state.mediaID === mediaId;
   const mediaIdRef = useRef(mediaId);
   mediaIdRef.current = mediaId;
   useEffect(() => {
@@ -344,8 +353,20 @@ function FeaturePlayer({
   // routes a track to the audio stage instead of an empty video frame
   // (CORE-1309). A song whose composed picture is served shows the picture
   // instead (CORE-1656).
-  const showAudioStage = state.info ? isAudio && !hasPicture(state.info) : entryClass === "audio";
-  const credits = media?.credits ?? [];
+  const itemShowsAudioStage = state.info
+    ? isAudio && !hasPicture(state.info)
+    : entryClass === "audio";
+  // An advance resets the engine for the next item (resume, markers, progress
+  // beacon), which clears its playback-info while the next one loads. The audio
+  // stage, and the transport over it, stay up across that load (CORE-2363):
+  // until this item's playback-info says otherwise, an advance from the audio
+  // stage is taken to land on it again.
+  const infoPending = !infoIsCurrent && (state.phase === "loading" || state.phase === "playing");
+  const [audioStageUp, setAudioStageUp] = useState(false);
+  if (!infoPending && audioStageUp !== itemShowsAudioStage) setAudioStageUp(itemShowsAudioStage);
+  const advancing = infoPending && audioStageUp;
+  const showAudioStage = itemShowsAudioStage || advancing;
+  const credits = media?.credits ?? NO_CREDITS;
   // The per-collection skip interval belongs to the item's container Entity
   // (the show, the album …), named by its title; an item with none has no row.
   const collection = credits.find((credit) => credit.archetype === "container");
@@ -367,16 +388,31 @@ function FeaturePlayer({
   const artworkURL = media
     ? media.artworkSlots?.poster || media.artworkSlots?.thumb || media.artworkSlots?.backdrop || ""
     : "";
-  // While the next item's media read is in flight the audio stage keeps the last artwork, so
-  // tracks that share a picture do not crossfade it through an empty frame (CORE-2218).
-  const [stageArtwork, setStageArtwork] = useState(artworkURL);
-  if (media && stageArtwork !== artworkURL) setStageArtwork(artworkURL);
-  const audioArtworkURL = media || !mediaId ? artworkURL : stageArtwork;
   const queueIndex = queue && mediaId ? queue.findIndex((item) => item.id === mediaId) : -1;
   const queuePosition =
     queue && queue.length > 1 && queueIndex >= 0
       ? t("queuePosition", { position: queueIndex + 1, total: queue.length })
       : "";
+  // The words and picture the audio stage and the mini player show. Until the
+  // next item's data arrives (its media read, or its playback starting) they
+  // keep the item on screen, then change together through the track-change
+  // motion, so an advance never passes through an empty card (CORE-2218,
+  // CORE-2363).
+  const liveStage: StageItem = {
+    key: mediaId || navTitle,
+    title: navTitle,
+    artworkURL,
+    credits,
+    queuePosition,
+  };
+  const stageReady =
+    !mediaId || (!!mediaRead && mediaRead.id === mediaId) || (playing && infoIsCurrent);
+  const [heldStage, setHeldStage] = useState<StageItem | null>(null);
+  if (stageReady) {
+    const keep = showAudioStage ? liveStage : null;
+    if (!sameStageItem(keep, heldStage)) setHeldStage(keep);
+  }
+  const stage = stageReady || !heldStage ? liveStage : heldStage;
 
   const { chromeHidden, reveal } = useChromeAutoHide({
     stageRef,
@@ -385,10 +421,11 @@ function FeaturePlayer({
   });
 
   // Advance to another Media's watch route, carrying its title and the queue
-  // forward. A fresh route remounts the engine cleanly (resume, markers,
-  // trickplay, progress beacon); `replace` keeps Back returning to the catalog
-  // rather than stepping through every track played. Docked in the mini
-  // player, the advance stays on the page the listener is browsing.
+  // forward. The new item resets the engine (resume, markers, trickplay,
+  // progress beacon) while this player stays mounted; `replace` keeps Back
+  // returning to the catalog rather than stepping through every track played.
+  // Docked in the mini player, the advance stays on the page the listener is
+  // browsing.
   const playItem = useCallback(
     (id: string, title: string) => {
       const state = { title, skipPrePlay: true, ...(queue ? { queue, queueIdentity } : {}) };
@@ -518,10 +555,7 @@ function FeaturePlayer({
   // Browser Media Session (ADR-0084 §43): mirror transport state to the OS and
   // route OS transport intents back through the engine-owned <video> and the
   // same next-item advance the Up Next card uses. A surface, not authority.
-  const people = credits
-    .filter((credit) => credit.archetype === "person")
-    .map((credit) => credit.title)
-    .join(", ");
+  const people = personLine(credits);
   useMediaSession({
     videoRef,
     active: playing,
@@ -555,11 +589,10 @@ function FeaturePlayer({
   // (CORE-1633); anything else stops with the route. Docked, a terminal block,
   // a failure the mini player cannot offer a way out of, or an advance into a
   // Media that is not audio ends playback instead.
-  const audioMedia = state.info ? isAudio : entryClass === "audio";
+  const audioMedia = state.info ? isAudio : entryClass === "audio" || advancing;
   useEffect(() => {
     onAudioChange?.(audioMedia);
   }, [audioMedia, onAudioChange]);
-  const infoIsCurrent = !!state.info && state.mediaID === mediaId;
   const dockedEnds =
     docked &&
     (state.phase === "terminal" ||
@@ -581,14 +614,12 @@ function FeaturePlayer({
   // The media(id) read: title for a deep link, artwork and credits for the
   // audio surface, and the container Entity for the skip-interval row.
   useEffect(() => {
-    setMedia(null);
     if (!mediaId) return;
     const controller = new AbortController();
-    void fetchMedia(mediaId, controller.signal)
-      .then((info) => {
-        if (!controller.signal.aborted) setMedia(info);
-      })
-      .catch(() => {});
+    const settle = (info: GenericMediaInfo | null) => {
+      if (!controller.signal.aborted) setMediaRead({ id: mediaId, info: info ?? null });
+    };
+    void fetchMedia(mediaId, controller.signal).then(settle, () => settle(null));
     return () => controller.abort();
   }, [mediaId]);
 
@@ -766,13 +797,13 @@ function FeaturePlayer({
             <video ref={videoRef} playsInline controls={false} poster={videoPoster || undefined} />
             {showAudioStage && (
               <AudioStage
-                title={navTitle}
-                artworkURL={audioArtworkURL}
-                credits={credits}
-                queuePosition={queuePosition}
+                title={stage.title}
+                artworkURL={stage.artworkURL}
+                credits={stage.credits}
+                queuePosition={stage.queuePosition}
                 videoRef={videoRef}
                 stream={state.stream}
-                trackKey={mediaId || navTitle}
+                trackKey={stage.key}
                 next={
                   issuedNext
                     ? { key: issuedNext.mediaID, stream: decodableStream(issuedNext) }
@@ -781,11 +812,19 @@ function FeaturePlayer({
               />
             )}
             {showSpinner && (
+              // Over the audio card a wait is a small cue, not a cover (CORE-2363).
               <div
-                className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                className={
+                  showAudioStage
+                    ? "pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full bg-scrim/70 p-2"
+                    : "pointer-events-none absolute inset-0 flex items-center justify-center"
+                }
                 role="status"
               >
-                <LoaderCircle aria-hidden className="size-10 animate-spin text-on-scrim/80" />
+                <LoaderCircle
+                  aria-hidden
+                  className={`${showAudioStage ? "size-5" : "size-10"} animate-spin text-on-scrim/80`}
+                />
                 <span className="sr-only">{t("playerLoading")}</span>
               </div>
             )}
@@ -835,7 +874,7 @@ function FeaturePlayer({
               needsTap={watchParty.needsTap}
               onResume={watchParty.resume}
             />
-            {playing && !docked && (
+            {(playing || advancing) && !docked && (
               <PlayerTransport
                 videoRef={videoRef}
                 hlsRef={hlsRef}
@@ -893,9 +932,9 @@ function FeaturePlayer({
       {docked && (
         <MiniPlayer
           videoRef={videoRef}
-          title={navTitle}
-          artist={people}
-          artworkURL={artworkURL}
+          title={stage.title}
+          artist={personLine(stage.credits)}
+          artworkURL={stage.artworkURL}
           mediaID={mediaId}
           songScale={songScale}
           onNext={playNext}
@@ -907,6 +946,35 @@ function FeaturePlayer({
       )}
     </>
   );
+}
+
+const NO_CREDITS: readonly MediaCredit[] = [];
+
+/** What the audio stage shows for one item. */
+interface StageItem {
+  key: string;
+  title: string;
+  artworkURL: string;
+  credits: readonly MediaCredit[];
+  queuePosition: string;
+}
+
+function sameStageItem(a: StageItem | null, b: StageItem | null): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.key === b.key &&
+    a.title === b.title &&
+    a.artworkURL === b.artworkURL &&
+    a.credits === b.credits &&
+    a.queuePosition === b.queuePosition
+  );
+}
+
+function personLine(credits: readonly MediaCredit[]): string {
+  return credits
+    .filter((credit) => credit.archetype === "person")
+    .map((credit) => credit.title)
+    .join(", ");
 }
 
 // A card queue keeps to the playing item's class (CORE-1490), so an issued
