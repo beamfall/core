@@ -123,7 +123,7 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       // The editor's Details section renders only once the seeded Media has loaded.
       await expect(page.getByRole("heading", { level: 3, name: "Details" })).toBeVisible();
       return;
-    case "/watch/:mediaId":
+    case "/watch/*":
       await page.goto("/web/watch/media-alpha");
       await expect(page.getByRole("button", { name: "Back" }).first()).toBeVisible();
       return;

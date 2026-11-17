@@ -76,7 +76,7 @@ import { useWatchParty } from "../player/useWatchParty";
 import { WatchPartyPanel, WatchPartySyncIndicator } from "../player/WatchPartyPanel";
 import { watchPartyDefersUpNext } from "../player/watchPartyStore";
 
-// The player (/watch/:mediaId), ported from the vanilla play() + player view
+// The player (/watch/*), ported from the vanilla play() + player view
 // (app.js / index.html). Negotiates playback-info, routes to direct play or
 // hls.js, mounts the custom transport, reports progress, and surfaces the
 // reveal-terminal / unavailable states with a Back-to-browse affordance. A
