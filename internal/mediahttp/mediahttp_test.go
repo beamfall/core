@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -373,6 +375,50 @@ func newMuxedSubtitleTestHandler(t *testing.T, converter *indexRecordingSubtitle
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
 	handler.SetSubtitles(converter, t.TempDir())
 	return handler, resp.CaptionTracks
+}
+
+// batchRecordingSubtitleConverter implements the one-pass batch extraction
+// and records each batch's stream indexes; its per-stream path counts calls.
+type batchRecordingSubtitleConverter struct {
+	batches [][]int
+	single  int
+}
+
+func (f *batchRecordingSubtitleConverter) ExtractSubtitleToWebVTT(_ context.Context, _ string, _ int, dst string) error {
+	f.single++
+	return os.WriteFile(dst, []byte("WEBVTT\n"), 0o600) // #nosec G703 -- test double; dst is the handler-chosen temp path under t.TempDir()
+}
+
+func (f *batchRecordingSubtitleConverter) ExtractSubtitlesToWebVTT(_ context.Context, _ string, outputs map[int]string) error {
+	f.batches = append(f.batches, slices.Sorted(maps.Keys(outputs)))
+	for _, dst := range outputs {
+		if err := os.WriteFile(dst, []byte("WEBVTT\n"), 0o600); err != nil { // #nosec G703 -- test double; dst is the handler-chosen temp path under t.TempDir()
+			return err
+		}
+	}
+	return nil
+}
+
+// CORE-2315: the first request for any text track of a file extracts every
+// text track of it in one pass (never the bitmap PGS track), so switching to
+// another track is a cache hit.
+func TestSubtitlesExtractsEveryTextTrackInOnePass(t *testing.T) {
+	handler, tracks := newMuxedSubtitleTestHandler(t, &indexRecordingSubtitleConverter{body: "WEBVTT\n"})
+	batch := &batchRecordingSubtitleConverter{}
+	handler.SetSubtitles(batch, t.TempDir())
+	for _, index := range []int{2, 3} {
+		rec := httptest.NewRecorder()
+		handler.Subtitles(rec, httptest.NewRequest(http.MethodGet, muxedTrackURL(t, tracks, index), nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("track %d status = %d, want 200: %s", index, rec.Code, rec.Body.String())
+		}
+	}
+	if got := fmt.Sprint(batch.batches); got != "[[2 3]]" {
+		t.Fatalf("batches = %s, want one pass over the text tracks [[2 3]]", got)
+	}
+	if batch.single != 0 {
+		t.Fatalf("per-stream extractions = %d, want 0", batch.single)
+	}
 }
 
 func muxedTrackURL(t *testing.T, tracks []playback.CaptionTrack, index int) string {

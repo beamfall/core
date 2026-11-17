@@ -74,7 +74,9 @@ type localArtworkName struct {
 // (CORE-0359). Within a slot, earlier rows win. logo, clearlogo and banner are
 // recognised but not imported: the slot files are JPEG, which would drop logo
 // transparency, so they wait for a follow-up. The "season00-poster" row stands
-// for any two or more digits, parsed as the container ordinal.
+// for any two or more digits, parsed as the container ordinal. The container
+// banner, fanart, landscape and "season-all" names are recognised so the walk
+// never catalogues them as items (CORE-2313), but only the posters fill a slot.
 var localArtworkVocabulary = []localArtworkName{
 	{localArtworkFile, "poster", "poster"},
 	{localArtworkFile, "fanart", "backdrop"},
@@ -96,6 +98,19 @@ var localArtworkVocabulary = []localArtworkName{
 	{localArtworkFolderDir, "extrafanart", "backdrop"},
 	{localArtworkContainer, "season00-poster", "poster"},
 	{localArtworkContainer, "season-specials-poster", "poster"},
+	{localArtworkContainer, "season00-banner", ""},
+	{localArtworkContainer, "season00-fanart", ""},
+	{localArtworkContainer, "season00-landscape", ""},
+	{localArtworkContainer, "season00-thumb", ""},
+	{localArtworkContainer, "season-specials-banner", ""},
+	{localArtworkContainer, "season-specials-fanart", ""},
+	{localArtworkContainer, "season-specials-landscape", ""},
+	{localArtworkContainer, "season-specials-thumb", ""},
+	{localArtworkContainer, "season-all-poster", ""},
+	{localArtworkContainer, "season-all-banner", ""},
+	{localArtworkContainer, "season-all-fanart", ""},
+	{localArtworkContainer, "season-all-landscape", ""},
+	{localArtworkContainer, "season-all-thumb", ""},
 }
 
 // localArtworkExts is the accepted sidecar image formats, in preference order.

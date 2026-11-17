@@ -1085,6 +1085,75 @@ func (r *Runner) ExtractSubtitleToWebVTT(ctx context.Context, src string, stream
 	return out.publish(dst)
 }
 
+// ExtractSubtitlesToWebVTT extracts several text subtitle streams of src in
+// ONE ffmpeg run, writing outputs[streamIndex] for each entry exactly as
+// ExtractSubtitleToWebVTT would (CORE-2315). Every stream costs a full read of
+// the source, so a file with many text tracks pays that read once instead of
+// once per track. The run is all-or-nothing: a failure publishes no output and
+// the caller can fall back to per-stream extraction to isolate a bad track.
+func (r *Runner) ExtractSubtitlesToWebVTT(ctx context.Context, src string, outputs map[int]string) (err error) {
+	if len(outputs) == 0 {
+		return nil
+	}
+	if err := checkPath(src); err != nil {
+		return err
+	}
+	indices := make([]int, 0, len(outputs))
+	for streamIndex, dst := range outputs {
+		if streamIndex < 0 {
+			return fmt.Errorf("ffmpeg: subtitle stream index must be >= 0, got %d", streamIndex)
+		}
+		if err := checkPath(dst); err != nil {
+			return err
+		}
+		indices = append(indices, streamIndex)
+	}
+	slices.Sort(indices)
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return fmt.Errorf("ffmpeg is not available: %w", err)
+	}
+	reserved := make([]*outputTemp, 0, len(indices))
+	defer func() {
+		for _, out := range reserved {
+			out.joinDiscardError(&err)
+		}
+	}()
+	args := []string{
+		"-v", "error",
+		"-protocol_whitelist", productionProtocolAllowlist,
+		"-i", src,
+	}
+	paths := make([]string, 0, len(indices))
+	for _, streamIndex := range indices {
+		out, err := reserveOutput(outputs[streamIndex])
+		if err != nil {
+			return err
+		}
+		reserved = append(reserved, out)
+		paths = append(paths, out.Path)
+		// One output per stream. checkPath has refused a leading "-" on every
+		// destination, and each temp keeps its destination's directory, so no
+		// output name can parse as an option.
+		args = append(args,
+			"-map", fmt.Sprintf("0:%d", streamIndex),
+			"-c:s", "webvtt",
+			"-f", "webvtt",
+			"-y", out.Path,
+		)
+	}
+	cmd := r.generationCommand(ctx, transformConfinement(src, paths...), ffmpegPath, args...)
+	if detail, err := r.runDetail(ctx, cmd); err != nil {
+		return fmt.Errorf("ffmpeg subtitle convert: %s", detail)
+	}
+	for i, streamIndex := range indices {
+		if err := reserved[i].publish(outputs[streamIndex]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // decodeVerifySampleSeconds is the length of the sample window the decode-verify
 // pass actually decodes at each probe point. Decoding the
 // whole file every week would be ruinous I/O on a large library; a bounded
@@ -2714,6 +2783,76 @@ func segmentMuxArgs(dir string, startSegment int, outputOffset, hlsTime string) 
 	return append(segmentMuxBase(startSegment, outputOffset, hlsTime), fileSegmentIO("", dir).outputArgs...)
 }
 
+// probeDurationSeconds is the container duration, or — when the container
+// declares none (a remuxed or live-captured MKV often leaves format.duration
+// empty, CORE-2314) — the longest stream duration, then the longest DURATION
+// tag ("HH:MM:SS.fraction", as mkvmerge writes it) on a stream or the format.
+// It returns 0 when nothing declares a usable duration.
+func probeDurationSeconds(doc *probeDocument) float64 {
+	if seconds, ok := parseBoundedNumber(doc.Format.Duration, "", 0, maxMediaSeconds); ok && seconds > 0 {
+		return seconds
+	}
+	longest := 0.0
+	for _, stream := range doc.Streams {
+		if seconds, ok := parseBoundedNumber(stream.Duration, "", 0, maxMediaSeconds); ok && seconds > longest {
+			longest = seconds
+		}
+	}
+	if longest > 0 {
+		return longest
+	}
+	for _, stream := range doc.Streams {
+		if seconds := durationTagSeconds(stream.Tags); seconds > longest {
+			longest = seconds
+		}
+	}
+	if longest > 0 {
+		return longest
+	}
+	return durationTagSeconds(doc.Format.Tags)
+}
+
+// durationTagSeconds reads the longest DURATION / DURATION-<lang> tag.
+func durationTagSeconds(tags map[string]string) float64 {
+	longest := 0.0
+	for key, value := range tags {
+		upper := strings.ToUpper(key)
+		if upper != "DURATION" && !strings.HasPrefix(upper, "DURATION-") {
+			continue
+		}
+		if seconds, ok := parseClockDuration(value); ok && seconds > longest {
+			longest = seconds
+		}
+	}
+	return longest
+}
+
+// parseClockDuration parses "HH:MM:SS[.fraction]" into seconds, bounded by
+// maxMediaSeconds.
+func parseClockDuration(raw string) (float64, bool) {
+	parts := strings.Split(strings.TrimSpace(raw), ":")
+	if len(parts) != 3 {
+		return 0, false
+	}
+	hours, err := strconv.Atoi(parts[0])
+	if err != nil || hours < 0 {
+		return 0, false
+	}
+	minutes, err := strconv.Atoi(parts[1])
+	if err != nil || minutes < 0 || minutes > 59 {
+		return 0, false
+	}
+	seconds, ok := parseBoundedNumber(parts[2], "", 0, 60)
+	if !ok || seconds >= 60 {
+		return 0, false
+	}
+	total := float64(hours)*3600 + float64(minutes)*60 + seconds
+	if total > maxMediaSeconds {
+		return 0, false
+	}
+	return total, true
+}
+
 type probeDocument struct {
 	Format struct {
 		FormatName string            `json:"format_name"`
@@ -2724,6 +2863,7 @@ type probeDocument struct {
 		Index            int               `json:"index"`
 		CodecType        string            `json:"codec_type"`
 		CodecName        string            `json:"codec_name"`
+		Duration         string            `json:"duration"`
 		Profile          string            `json:"profile"`
 		Level            int               `json:"level"`
 		Width            int               `json:"width"`
@@ -2847,11 +2987,8 @@ func parseProbe(data []byte, path string) (Probe, error) {
 			Title:        title,
 		})
 	}
-	if doc.Format.Duration != "" {
-		seconds, ok := parseBoundedNumber(doc.Format.Duration, "", 0, maxMediaSeconds)
-		if ok && seconds > 0 {
-			probe.DurationSeconds = int(math.Round(seconds))
-		}
+	if seconds := probeDurationSeconds(&doc); seconds > 0 {
+		probe.DurationSeconds = int(math.Round(seconds))
 	}
 	if probe.VideoCodec == "" && probe.AudioCodec == "" && probe.DurationSeconds == 0 {
 		return Probe{}, errors.New("ffprobe found no media streams or duration")

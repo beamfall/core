@@ -445,6 +445,8 @@ type Sessions struct {
 	transcoder Transcoder
 	dir        string
 	now        func() time.Time
+	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
+	durationProbes durationProbeCache
 	// bootNonce tags every session directory this instance mints (see
 	// newBootNonce): nextID resets to zero each process lifetime, so without it
 	// a fresh instance's first session would mint the exact directory name a

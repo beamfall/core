@@ -1474,7 +1474,7 @@ func TestWebShellSecurityHeaders(t *testing.T) {
 		"Content-Security-Policy": "default-src 'self'; " +
 			"script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com/cv/js/sender/ https://www.gstatic.com/cast/sdk/libs/sender/ " +
 			"https://www.gstatic.com/eureka/clank/; style-src 'self' 'unsafe-inline'; " +
-			"worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'self'",
+			"img-src 'self' data:; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'self'",
 	}
 	for _, path := range paths {
 		req := httptest.NewRequest(http.MethodGet, path, nil)

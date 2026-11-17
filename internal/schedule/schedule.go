@@ -28,7 +28,11 @@ type Spec struct {
 	ID             string
 	JobKind        store.JobKind
 	DefaultTrigger Trigger
-	BuildJobs      func(ctx context.Context, now time.Time) ([]store.Job, error)
+	// DefaultDisabled seeds the row disabled. Reconcile never changes an
+	// existing row's enabled flag, so such a Schedule runs only once the
+	// operator enables it (CORE-2326).
+	DefaultDisabled bool
+	BuildJobs       func(ctx context.Context, now time.Time) ([]store.Job, error)
 }
 
 type Store interface {
@@ -120,7 +124,7 @@ func (s *Service) Reconcile(ctx context.Context, now time.Time) error {
 			ID:                   id,
 			JobKind:              spec.JobKind,
 			Trigger:              spec.DefaultTrigger,
-			Enabled:              true,
+			Enabled:              !spec.DefaultDisabled,
 			LastCompletedEnqueue: now,
 		}
 		if err := s.store.CreateSchedule(ctx, row); err != nil {

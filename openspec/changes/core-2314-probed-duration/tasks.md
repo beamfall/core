@@ -1,0 +1,5 @@
+- [x] Duration fallbacks in `ffmpeg` probe parsing, with a table test
+- [x] On-demand, fingerprint-cached probe in `playback.Sessions.ProbedDurationSeconds`
+- [x] `decide` fills the timeline from the probe for a single-part Media stored without a runtime
+- [x] HLS route passes the probed runtime to the session so it writes a VOD playlist
+- [x] Tests: probed timeline, probe-once caching, stored runtime not probed, miss TTL

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -157,7 +158,7 @@ func TestSubtitleSidecarPathUnlocksAfterConversionError(t *testing.T) {
 
 // A conversion reads the whole source file. A request that goes away part way
 // through must not discard it, or every retry starts over and nothing is ever
-// cached; a request that went away while queued must not start one.
+// cached; a request that has already gone away must not start one.
 func TestSubtitleSidecarPathFinishesConversionAfterRequestCancel(t *testing.T) {
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
@@ -171,9 +172,14 @@ func TestSubtitleSidecarPathFinishesConversionAfterRequestCancel(t *testing.T) {
 	}()
 	<-started
 	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled waiter error = %v, want context.Canceled", err)
+	}
 	close(release)
-	if err := <-result; err != nil {
-		t.Fatalf("conversion after request cancel: %v", err)
+	// The detached extraction still lands; this request joins it or hits the
+	// cache it left behind.
+	if _, err := handler.subtitleSidecarPath(context.Background(), "sha256:test", "movie.mkv", 2); err != nil {
+		t.Fatalf("request after the cancelled one: %v", err)
 	}
 
 	gone, cancelGone := context.WithCancel(context.Background())
@@ -187,6 +193,114 @@ func TestSubtitleSidecarPathFinishesConversionAfterRequestCancel(t *testing.T) {
 	if got := conv.calls.Load(); got != 1 {
 		t.Fatalf("converter calls = %d, want 1", got)
 	}
+}
+
+// CORE-2315: an extraction for one file must not hold up subtitles of another
+// file, the way the old process-wide lock did.
+func TestSubtitleSidecarPathDoesNotSerializeAcrossFiles(t *testing.T) {
+	release := make(chan struct{})
+	conv := &srcGatedSubtitleConverter{blockSrc: "slow.mkv", started: make(chan struct{}, 1), release: release}
+	handler := &Handler{subtitles: conv, subtitleDir: t.TempDir()}
+	slow := make(chan error, 1)
+	go func() {
+		_, err := handler.subtitleSidecarPath(context.Background(), "sha256:slow", "slow.mkv", 2)
+		slow <- err
+	}()
+	<-conv.started
+	if _, err := handler.subtitleSidecarPath(context.Background(), "sha256:fast", "fast.mkv", 2); err != nil {
+		t.Fatalf("other file's subtitle while one extraction runs: %v", err)
+	}
+	close(release)
+	if err := <-slow; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// CORE-2315: a request waits a bounded time for a long extraction and then gets
+// a retryable pending error; the extraction keeps going and a retry is served
+// from its result without a second conversion.
+func TestSubtitleSidecarPathBoundsTheWait(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	conv := &blockingSubtitleConverter{started: started, release: release}
+	handler := &Handler{subtitles: conv, subtitleDir: t.TempDir(), subtitleWait: 20 * time.Millisecond}
+	if _, err := handler.subtitleSidecarPath(context.Background(), "sha256:test", "movie.mkv", 2); !errors.Is(err, errSubtitlePending) {
+		t.Fatalf("long extraction error = %v, want errSubtitlePending", err)
+	}
+	<-started
+	close(release)
+	handler.subtitleWait = 5 * time.Second
+	if _, err := handler.subtitleSidecarPath(context.Background(), "sha256:test", "movie.mkv", 2); err != nil {
+		t.Fatalf("retry after pending: %v", err)
+	}
+	if got := conv.calls.Load(); got != 1 {
+		t.Fatalf("converter calls = %d, want 1", got)
+	}
+}
+
+func TestSubtitlesAnswersPendingWithRetryAfter(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	defer close(release)
+	conv := &blockingSubtitleConverter{started: started, release: release}
+	handler, token := newSubtitleTestHandler(t, "session-default", "media-alpha", false, conv)
+	handler.subtitleWait = 20 * time.Millisecond
+	rec := httptest.NewRecorder()
+	handler.Subtitles(rec, httptest.NewRequest(http.MethodGet, "/api/media/subtitle/"+token+"/2.vtt", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Retry-After"); got != "5" {
+		t.Fatalf("Retry-After = %q, want 5", got)
+	}
+	if !strings.Contains(rec.Body.String(), "in progress") {
+		t.Fatalf("body = %q, want an in-progress message", rec.Body.String())
+	}
+}
+
+// CORE-2315: the encrypted path locks per (file, stream), so unrelated
+// subtitles do not queue, and a waiter on the same key is bounded.
+func TestSubtitleJobsLockKeyIsPerKeyAndBounded(t *testing.T) {
+	var jobs subtitleJobs
+	unlock, err := jobs.lockKey(context.Background(), "a", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := jobs.lockKey(context.Background(), "b", 20*time.Millisecond)
+	if err != nil {
+		t.Fatalf("unrelated key waited on a held key: %v", err)
+	}
+	other()
+	if _, err := jobs.lockKey(context.Background(), "a", 20*time.Millisecond); !errors.Is(err, errSubtitlePending) {
+		t.Fatalf("same key error = %v, want errSubtitlePending", err)
+	}
+	acquired := make(chan error, 1)
+	go func() {
+		release, err := jobs.lockKey(context.Background(), "a", 5*time.Second)
+		if err == nil {
+			release()
+		}
+		acquired <- err
+	}()
+	unlock()
+	if err := <-acquired; err != nil {
+		t.Fatalf("waiter after unlock: %v", err)
+	}
+}
+
+// srcGatedSubtitleConverter blocks only conversions of blockSrc.
+type srcGatedSubtitleConverter struct {
+	blockSrc string
+	started  chan struct{}
+	release  <-chan struct{}
+}
+
+func (f *srcGatedSubtitleConverter) ExtractSubtitleToWebVTT(_ context.Context, src string, _ int, dst string) error {
+	if src == f.blockSrc {
+		f.started <- struct{}{}
+		<-f.release
+	}
+	return os.WriteFile(dst, []byte("WEBVTT\n"), 0o600)
 }
 
 // contextSubtitleConverter fails like ffmpeg does when its context ends.

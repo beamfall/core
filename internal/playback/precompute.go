@@ -225,54 +225,81 @@ func PrecomputeMediaRenditionsAllowingEncrypted(ctx context.Context, st *store.S
 }
 
 func precomputeMediaRenditions(ctx context.Context, st *store.Store, mediaID store.MediaID, renditionTarget, cacheRoot string, now time.Time, sealed func(store.LibraryID) bool) ([]store.Job, error) {
+	_, requests, err := precomputeMediaRequests(ctx, st, mediaID, renditionTarget, cacheRoot, sealed)
+	if err != nil {
+		return nil, err
+	}
+	now = normalizePrecomputeTime(now)
+	out := make([]store.Job, 0, len(requests))
+	for _, req := range requests {
+		job, err := RequestPrecomputeRendition(ctx, st, req, now)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, job)
+	}
+	return out, nil
+}
+
+// precomputeIneligible is the refusal for a Media whose source cannot back a
+// precomputed rendition at all (an image, no source file, a source the full
+// transcode refuses). A Library-wide trigger skips such a Media instead of
+// abandoning the rest of the Library.
+type precomputeIneligible string
+
+func (e precomputeIneligible) Error() string { return string(e) }
+
+// precomputeMediaRequests builds one request per honest ladder rung the
+// Media's source can back. It returns no requests for an Encrypted Library the
+// caller cannot generate on (see precomputeMediaRenditions).
+func precomputeMediaRequests(ctx context.Context, st *store.Store, mediaID store.MediaID, renditionTarget, cacheRoot string, sealed func(store.LibraryID) bool) (store.Media, []PrecomputeRequest, error) {
 	if st == nil {
-		return nil, errors.New("store is required")
+		return store.Media{}, nil, errors.New("store is required")
 	}
 	if mediaID == "" {
-		return nil, errors.New("media ID is required")
+		return store.Media{}, nil, errors.New("media ID is required")
 	}
 	if strings.TrimSpace(cacheRoot) == "" {
-		return nil, errors.New("cache root is required")
+		return store.Media{}, nil, errors.New("cache root is required")
 	}
 	if strings.TrimSpace(renditionTarget) == "" {
 		renditionTarget = "h264"
 	}
 	media, err := st.Media(ctx, mediaID, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
-		return nil, err
+		return store.Media{}, nil, err
 	}
 	if media.Class == store.MediaClassImage {
-		return nil, errors.New("image media cannot be precomputed")
+		return media, nil, precomputeIneligible("image media cannot be precomputed")
 	}
 	// Encrypted Libraries fail closed unless the caller can generate on the
 	// encrypted plane (sealed != nil) and the Library is Unsealed: a public
 	// precomputed HLS rendition is a plaintext derivative in the shared cache.
 	encrypted, err := st.LibraryEncrypted(ctx, media.LibraryID)
 	if err != nil {
-		return nil, err
+		return media, nil, err
 	}
 	if encrypted && (sealed == nil || sealed(media.LibraryID)) {
-		return nil, nil
+		return media, nil, nil
 	}
 	files, err := st.MediaFilesForMedia(ctx, mediaID, store.LibraryFilter{AllLibraries: true, Revealed: true})
 	if err != nil {
-		return nil, err
+		return media, nil, err
 	}
 	if len(files) == 0 {
-		return nil, errors.New("media has no source files")
+		return media, nil, precomputeIneligible("media has no source files")
 	}
 	source := files[0]
 	streams, err := st.MediaFileStreams(ctx, source.ContentFingerprint)
 	if err != nil {
-		return nil, err
+		return media, nil, err
 	}
 	sourceVideo := VideoSignalFromStreams(streams)
 	if reason := sourceVideo.FullTranscodeRefusal(); reason != "" {
-		return nil, errors.New(reason)
+		return media, nil, precomputeIneligible(reason)
 	}
 	rungs := rungsFor(media.VideoWidth, media.VideoHeight)
-	now = normalizePrecomputeTime(now)
-	out := make([]store.Job, 0, len(rungs))
+	out := make([]PrecomputeRequest, 0, len(rungs))
 	for _, rung := range rungs {
 		renditionID := PrecomputeRenditionID(mediaID, source.ContentFingerprint, rung.ID)
 		req := PrecomputeRequest{
@@ -300,13 +327,9 @@ func precomputeMediaRenditions(ctx context.Context, st *store.Store, mediaID sto
 			// skip rather than invent one (ADR-0010 §8: honest to the source).
 			continue
 		}
-		job, err := RequestPrecomputeRendition(ctx, st, req, now)
-		if err != nil {
-			return out, err
-		}
-		out = append(out, job)
+		out = append(out, req)
 	}
-	return out, nil
+	return media, out, nil
 }
 
 // PrecomputeRenditionID derives the stable cache identity for one (Media,

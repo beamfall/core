@@ -1056,6 +1056,15 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		// Every rung below judges the negotiated Version by its own file facts.
 		media = versionFacts(media, file, streams, !alternate)
 	}
+	// A Media stored without a runtime (its container declared none) is
+	// probed on demand, so the timeline and a live session's playlist cover
+	// the whole file instead of ending where the encoder is (CORE-2314).
+	if media.DurationSeconds <= 0 && len(parts) <= 1 {
+		if seconds := s.probedDuration(ctx, media, file); seconds > 0 {
+			media.DurationSeconds = seconds
+			timeline.DurationSeconds = seconds
+		}
+	}
 	barred := unknownHeightBarred(media, profile, alternate || versioned || len(versions) > 0)
 	// One deferred stamp covers every decision return below, like
 	// audioLanguage: the picker lists the same Versions whatever the verdict,
@@ -2158,6 +2167,13 @@ func normalizationModeCovers(declaredModes []string, source string) bool {
 // text format the /api/media/subtitle route can extract to WebVTT (ADR-0010
 // §5). Bitmap codecs (PGS/VobSub/DVB) are deliberately absent: they keep the
 // burn-in / withhold routing and never carry a sidecar URL.
+// IsMuxedTextSubtitleCodec reports whether a muxed subtitle codec converts to a
+// WebVTT sidecar (text, not bitmap). The subtitle byte route uses it to pick
+// every text track of a file for one extraction pass (CORE-2315).
+func IsMuxedTextSubtitleCodec(codec string) bool {
+	return isMuxedTextSubtitleCodec(codec)
+}
+
 func isMuxedTextSubtitleCodec(codec string) bool {
 	switch strings.ToLower(codec) {
 	case "subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text":

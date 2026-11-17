@@ -511,10 +511,13 @@ func webAppHandlerFS(assets fs.FS, base *url.URL) http.HandlerFunc {
 		// to their gstatic paths. 'wasm-unsafe-eval' lets the audio visualizer
 		// compile the same-origin Oscillux WebAssembly core (CORE-1309); it
 		// permits WebAssembly compilation only, never JavaScript eval.
+		// img-src adds data: for the stylesheet's inline SVG icons (the select
+		// chevron, CORE-2323); an image source cannot run script.
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
 				"script-src 'self' 'wasm-unsafe-eval' "+castSenderScriptSources+"; "+
 				"style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data:; "+
 				"worker-src 'self' blob:; "+
 				"media-src 'self' blob:; "+
 				"object-src 'none'; "+
