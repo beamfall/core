@@ -194,35 +194,73 @@ func TestAutoIdentifyTiedTopDefersToManual(t *testing.T) {
 	}
 }
 
-func TestAutoIdentifyPopularityBreaksExactTopScoreTie(t *testing.T) {
+// An exact top-score tie between distinct items fails closed even when the
+// provider ranks one as more popular: two "The Office" series at the same score
+// are queued for review with the first top candidate, and nothing is applied.
+func TestAutoIdentifyExactTopScoreTieQueuesDespitePopularity(t *testing.T) {
 	t.Parallel()
 	engine := &fakeEngine{
 		searchResults: []scrape.Result{
-			{ID: "10", Fields: map[string]any{"title": "Blue Harvest", "popularity": 10}},
-			{ID: "11", Fields: map[string]any{"title": "Blue Harvest", "popularity": 100}},
+			{ID: "2316", Fields: map[string]any{"title": "The Office", "popularity": 100}},
+			{ID: "2996", Fields: map[string]any{"title": "The Office", "popularity": 10}},
 		},
-		lookupResult: scrape.Result{Fields: map[string]any{"title": "Blue Harvest"}},
+		lookupResult: scrape.Result{Fields: map[string]any{"title": "The Office"}},
 	}
 	queue := &fakeQueue{}
 	service := newAutoService(t, engine, 0.75, queue, fakePins{})
 
-	outcome, err := service.AutoIdentify(context.Background(), "media-popular", "demo", "sha256:popular",
-		identify.ParsedMedia{Title: "Blue Harvest", Class: "movie"})
+	outcome, err := service.AutoIdentify(context.Background(), "media-office", "demo", "sha256:office",
+		identify.ParsedMedia{Title: "The Office", Class: "movie"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Applied || outcome.Skipped || !outcome.Queued || outcome.Decision.AutoApply {
+		t.Fatalf("outcome = %#v, want Queued without auto-apply", outcome)
+	}
+	if engine.lookedUpID != "" {
+		t.Fatalf("tied candidates auto-applied %q, want nothing applied", engine.lookedUpID)
+	}
+	if len(queue.queued) != 1 {
+		t.Fatalf("len(queued) = %d, want 1", len(queue.queued))
+	}
+	item := queue.queued[0]
+	if item.CandidateID != "2316" || item.CandidateTitle != "The Office" || item.Confidence != 1 {
+		t.Fatalf("queued item = %#v, want the first top candidate 2316 at confidence 1", item)
+	}
+}
+
+// Duplicates of one provider ID are the same item, not an ambiguity.
+func TestAutoIdentifySameIDTopScoreDuplicatesApply(t *testing.T) {
+	t.Parallel()
+	engine := &fakeEngine{
+		searchResults: []scrape.Result{
+			{ID: "2316", Fields: map[string]any{"title": "The Office"}},
+			{ID: "2316", Fields: map[string]any{"title": "The Office"}},
+		},
+		lookupResult: scrape.Result{Fields: map[string]any{"title": "The Office"}},
+	}
+	queue := &fakeQueue{}
+	service := newAutoService(t, engine, 0.75, queue, fakePins{})
+
+	outcome, err := service.AutoIdentify(context.Background(), "media-office-dup", "demo", "sha256:office-dup",
+		identify.ParsedMedia{Title: "The Office", Class: "movie"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !outcome.Applied || outcome.Queued || outcome.Skipped {
 		t.Fatalf("outcome = %#v, want Applied", outcome)
 	}
-	if engine.lookedUpID != "11" {
-		t.Fatalf("popularity tiebreak applied %q, want the more popular 11", engine.lookedUpID)
+	if engine.lookedUpID != "2316" {
+		t.Fatalf("applied %q, want 2316", engine.lookedUpID)
 	}
 	if len(queue.queued) != 0 {
-		t.Fatalf("popularity-resolved item also queued: %#v", queue.queued)
+		t.Fatalf("same-ID duplicates queued: %#v", queue.queued)
 	}
 }
 
-func TestAutoIdentifyPopularityDoesNotBreakNearScoreAmbiguity(t *testing.T) {
+// Distinct scores: the highest-scoring candidate applies, whatever the provider's
+// popularity says.
+func TestAutoIdentifyHighestDistinctScoreApplies(t *testing.T) {
 	t.Parallel()
 	engine := &fakeEngine{
 		searchResults: []scrape.Result{

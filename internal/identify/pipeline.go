@@ -205,11 +205,12 @@ func (s *Service) QueueManual(ctx context.Context, mediaID store.MediaID, plugin
 // the highest-scoring one with its MatchDecision. hasBest is false when the
 // candidate list is empty.
 //
-// Fail-closed tie rule: a top score that would auto-apply but is
-// shared by two or more candidates is a genuine ambiguity unless the candidates
-// carry a popularity signal that breaks the tie. Popularity is consulted only at
-// this exact-score point, never as a score bonus, so it cannot lift a lower
-// confidence match over a stronger title/year/ordinal match.
+// Fail-closed tie rule: a top score shared by two or more distinct candidates
+// (different provider IDs) is a genuine ambiguity, so the decision never
+// auto-applies and the item is queued for review. Nothing outside the score
+// breaks the tie (popularity in particular is not consulted): the first
+// candidate at the top score is reported. Duplicates of one provider ID are the
+// same item and do not make a tie.
 func (s *Service) bestCandidate(pluginID string, candidates []Candidate, parsed ParsedMedia) (Candidate, MatchDecision, bool) {
 	var (
 		best      Candidate
@@ -222,16 +223,11 @@ func (s *Service) bestCandidate(pluginID string, candidates []Candidate, parsed 
 		switch {
 		case !hasBest || decision.Score > bestDec.Score:
 			best, bestDec, hasBest, tiedAtTop = candidate, decision, true, false
-		case decision.Score == bestDec.Score:
-			switch {
-			case candidate.Popularity > best.Popularity:
-				best, bestDec, tiedAtTop = candidate, decision, false
-			case candidate.Popularity == best.Popularity:
-				tiedAtTop = true
-			}
+		case decision.Score == bestDec.Score && candidate.ID != best.ID:
+			tiedAtTop = true
 		}
 	}
-	if tiedAtTop && bestDec.AutoApply {
+	if tiedAtTop {
 		bestDec.AutoApply = false // ambiguous top — defer to manual (fail-closed)
 	}
 	return best, bestDec, hasBest
