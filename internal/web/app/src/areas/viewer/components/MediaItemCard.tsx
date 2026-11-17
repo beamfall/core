@@ -8,6 +8,7 @@ import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { cardAccessibleName, cardState } from "../lib/cardState";
+import { cardSubline } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import { mediaLinkState } from "../lib/mediaDetail";
 import { fetchPreviewInfo } from "../lib/playback";
@@ -43,6 +44,7 @@ export function MediaItemCard({
   focusAnchor,
   queue,
   playOnActivate,
+  showYear = false,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -54,6 +56,8 @@ export function MediaItemCard({
   queue?: PlayQueueItem[];
   /** A list row plays at once; a poster opens the Media detail page (CORE-1144). */
   playOnActivate?: boolean;
+  /** The title repeats in this list, so the card shows its year (CORE-2320). */
+  showYear?: boolean;
 }) {
   const navigate = useNavigate();
   const identity = useViewerIdentity();
@@ -63,6 +67,7 @@ export function MediaItemCard({
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
   const state = cardState(item, t);
+  const subline = cardSubline(item, showYear);
   // The page the card's own activation opens (and the More menu's copied link).
   const path = `/${isMedia ? (playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
   const primaryLabel = isMedia
@@ -210,7 +215,10 @@ export function MediaItemCard({
     <li className="bf-card-shell list-none" aria-posinset={posInSet} aria-setsize={setSize}>
       <button
         type="button"
-        aria-label={cardAccessibleName(item, state)}
+        aria-label={cardAccessibleName(
+          showYear && item.year ? { ...item, title: `${item.title} (${item.year})` } : item,
+          state,
+        )}
         onClick={activate}
         onBlur={stopPreview}
         onPointerCancel={stopPreview}
@@ -264,7 +272,7 @@ export function MediaItemCard({
         </div>
         <div className="bf-card-copy">
           <span className="bf-card-title">{item.title}</span>
-          {item.summary && <span className="bf-card-sub">{item.summary}</span>}
+          {subline && <span className="bf-card-sub">{subline}</span>}
         </div>
       </button>
       <MediaItemCardMenu

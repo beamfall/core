@@ -26,6 +26,7 @@ import {
   virtualGridScrollTop,
 } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
+import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import {
   browseStateParams,
   fetchLibraryItems,
@@ -428,6 +429,8 @@ function LibraryBrowse({
     return queue;
   };
 
+  // Titles repeated across the loaded pages show their year (CORE-2320).
+  const repeated = repeatedTitles([...pagesRef.current.values()].flat());
   const cells = [];
   for (let index = start; index < end; index += 1) {
     const pageIndex = Math.floor(index / LIBRARY_BROWSE_PAGE);
@@ -442,6 +445,7 @@ function LibraryBrowse({
           posInSet={index + 1}
           setSize={itemCount}
           playOnActivate={viewMode === "list"}
+          showYear={showsYear(item, repeated)}
         />
       ) : (
         <PendingCard key={`pending-${index}`} />

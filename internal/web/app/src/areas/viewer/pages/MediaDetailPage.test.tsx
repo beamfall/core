@@ -283,7 +283,9 @@ describe("MediaDetailPage", () => {
     renderAt([{ pathname: "/media/m1", state: mediaLinkState(card, identity, shelf.id) }]);
     await act(async () => {});
 
-    const rail = screen.getByRole("list", { name: "More from Recent" });
+    // Titled neutrally, not after the source row (CORE-2320).
+    expect(screen.queryByText(/More from Recent/)).not.toBeInTheDocument();
+    const rail = screen.getByRole("list", { name: "Keep browsing" });
     expect(rail).toHaveTextContent("Second");
     expect(rail).not.toHaveTextContent("Card title");
 

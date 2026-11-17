@@ -6,7 +6,7 @@ export const mediaDetailStrings = {
     mediaDetailResumeLabel: "Resume {title}",
     mediaDetailProgress: "{percent}% complete",
     mediaDetailDetails: "Details",
-    mediaDetailMoreFrom: "More from {section}",
+    mediaDetailKeepBrowsing: "Keep browsing",
     mediaDetailLoadFailed: "This item couldn’t be loaded. Check your connection and try again.",
     // Media detail lockup (CORE-1785).
     mediaDetailStartOver: "Start over",
@@ -35,7 +35,7 @@ export const mediaDetailStrings = {
     mediaDetailResumeLabel: "Reprendre {title}",
     mediaDetailProgress: "{percent} % terminé",
     mediaDetailDetails: "Détails",
-    mediaDetailMoreFrom: "Plus dans {section}",
+    mediaDetailKeepBrowsing: "Continuer à parcourir",
     mediaDetailLoadFailed:
       "Impossible de charger cet élément. Vérifiez votre connexion et réessayez.",
     mediaDetailStartOver: "Recommencer",
@@ -62,7 +62,7 @@ export const mediaDetailStrings = {
     mediaDetailResumeLabel: "{title} fortsetzen",
     mediaDetailProgress: "{percent} % abgeschlossen",
     mediaDetailDetails: "Details",
-    mediaDetailMoreFrom: "Mehr aus {section}",
+    mediaDetailKeepBrowsing: "Weiter stöbern",
     mediaDetailLoadFailed:
       "Dieses Element konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
     mediaDetailStartOver: "Von vorn",
@@ -90,7 +90,7 @@ export const mediaDetailStrings = {
     mediaDetailResumeLabel: "Reanudar {title}",
     mediaDetailProgress: "{percent} % completado",
     mediaDetailDetails: "Detalles",
-    mediaDetailMoreFrom: "Más de {section}",
+    mediaDetailKeepBrowsing: "Seguir explorando",
     mediaDetailLoadFailed:
       "No se pudo cargar este elemento. Comprueba tu conexión e inténtalo de nuevo.",
     mediaDetailStartOver: "Empezar de nuevo",
@@ -117,7 +117,7 @@ export const mediaDetailStrings = {
     mediaDetailResumeLabel: "Retomar {title}",
     mediaDetailProgress: "{percent}% concluído",
     mediaDetailDetails: "Detalhes",
-    mediaDetailMoreFrom: "Mais de {section}",
+    mediaDetailKeepBrowsing: "Continuar explorando",
     mediaDetailLoadFailed:
       "Não foi possível carregar este item. Verifique sua conexão e tente novamente.",
     mediaDetailStartOver: "Começar de novo",

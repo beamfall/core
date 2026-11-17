@@ -356,9 +356,10 @@ export function MediaDetailPage() {
             section={{
               ...siblings.section,
               kind: "shelf",
-              title: t("mediaDetailMoreFrom", {
-                section: displayString(siblings.section.title, locale),
-              }),
+              // The rest of the row the viewer came from. Naming that row
+              // ("More from Next Up") reads as if the items came from it as a
+              // place (CORE-2320), so the shelf gets a neutral title.
+              title: t("mediaDetailKeepBrowsing"),
             }}
             items={siblings.items}
             navigationID={`media:${mediaId}`}

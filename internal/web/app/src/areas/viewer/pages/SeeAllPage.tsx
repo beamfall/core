@@ -12,6 +12,7 @@ import { useEngagementEpoch } from "../actions";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
+import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { fetchSectionItems, SEEALL_PAGE } from "../lib/sections";
 import type { SeeAllContext } from "../lib/seeall";
 import { playQueueOf } from "../lib/watchQueue";
@@ -49,6 +50,7 @@ export function SeeAllPage() {
   const end = gridWindow?.endIndex ?? items.length;
   const visibleItems = gridWindow ? items.slice(start, end) : items;
   const queue = useMemo(() => playQueueOf(items), [items]);
+  const repeated = useMemo(() => repeatedTitles(items), [items]);
 
   const loadPage = useCallback(async () => {
     if (!ctx) return;
@@ -202,6 +204,7 @@ export function SeeAllPage() {
                 posInSet={index + 1}
                 setSize={items.length}
                 queue={queue}
+                showYear={showsYear(item, repeated)}
               />
             );
           })}

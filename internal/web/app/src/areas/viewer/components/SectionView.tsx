@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { displayString } from "@/lib/display";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { SECTION_GRID_CAP } from "../lib/sections";
 import { playQueueOf } from "../lib/watchQueue";
 import { MediaItemCard } from "./MediaItemCard";
@@ -65,6 +66,7 @@ export function SectionView({
   const end = window ? window.endIndex : items.length;
   const visible = window ? items.slice(start, end) : items;
   const queue = useMemo(() => playQueueOf(items), [items]);
+  const repeated = useMemo(() => repeatedTitles(items), [items]);
 
   return (
     <section className="bf-section flex flex-col gap-3">
@@ -104,6 +106,7 @@ export function SectionView({
               setSize={items.length}
               queue={queue}
               playOnActivate={section.kind === "list"}
+              showYear={showsYear(item, repeated)}
               focusAnchor={
                 navigationID
                   ? { navigation: navigationID, section: section.id, item: item.id }

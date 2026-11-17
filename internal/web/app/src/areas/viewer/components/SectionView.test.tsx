@@ -53,3 +53,29 @@ describe("SectionView grid See All", () => {
     expect(screen.queryByRole("button", { name: "See all" })).toBeNull();
   });
 });
+
+// CORE-2320: two cards with the same title read as one; each shows its year.
+describe("SectionView repeated titles", () => {
+  it("shows the year on cards whose title repeats in the row", () => {
+    const row: SourceItem[] = [
+      { id: "a", kind: "media", title: "Dune", year: 1984, artwork: { poster: "" } },
+      { id: "b", kind: "media", title: "Dune", year: 2021, artwork: { poster: "" } },
+      { id: "c", kind: "media", title: "Arrival", year: 2016, artwork: { poster: "" } },
+    ];
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <SectionView
+            section={grid}
+            items={row}
+            seeAll={{ href: "/see-all", state: null as never }}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(screen.getByRole("button", { name: /^Dune \(1984\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Dune \(2021\)/ })).toBeInTheDocument();
+    expect(screen.getByText("2021")).toBeInTheDocument();
+    expect(screen.queryByText("2016")).toBeNull();
+  });
+});

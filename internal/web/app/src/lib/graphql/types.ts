@@ -146,6 +146,8 @@ export interface SourceItem {
    * placeholder when it has no artwork (CORE-1492). Absent for entities.
    */
   mediaClass?: string;
+  /** A media item's stored year (CORE-2269); absent for entities and undated Media. */
+  year?: number;
 }
 
 /**
