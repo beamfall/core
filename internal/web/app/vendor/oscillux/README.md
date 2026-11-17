@@ -8,9 +8,9 @@ licence terms to them. `pin.json` records the release assets and their SHA-256 s
 - `wasm/`: the `oscillux-wasm.tgz` package as released (`@oscillux/core`), with its licence,
   notices and third-party licences.
 - `glsl300/`: the subset of `oscillux-glsl300.zip` the viewer draws: `index.json` (the bundle's
-  own SHA-256 list for every file kept here), the shared vertex shader, nine visuals, the
+  own SHA-256 list for every file kept here), the shared vertex shader, every visual (all 61 `.web.frag` legs), the
   present pass, the switch pass, the seven frame flash limiter passes and `legal/`.
-- `visuals.json`: the manifest fields of those nine visuals, copied from
+- `visuals.json`: the manifest fields of every visual, in the manifest's `catalogOrder`, copied from
   `shaders/manifest.json` at the pinned rev (its SHA-256 is in the file).
 
 Never edit these bytes. A change belongs in Oscillux; take it here by vendoring a new release

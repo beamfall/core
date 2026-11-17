@@ -1,0 +1,8 @@
+- [x] Vendor all 61 Oscillux v0.2.5 `.web.frag` legs and regenerate `visuals.json` from the release manifest
+- [x] Visual choice store, Visualizer select in player settings, strings in every locale
+- [x] Rotation per track and on a downbeat, calm-only and untimed under reduced motion
+- [x] Governor records the raw frame interval
+- [x] Tests: catalog size and order, choice persistence, rotation pool, the select
+- [x] Browser check at desktop and 375 px
+- [ ] `make gate`
+- [ ] `openspec archive core-2368-web-visual-picker` after landing

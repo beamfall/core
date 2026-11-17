@@ -59,6 +59,9 @@ export const playbackStrings = {
     trackMotionFlip: "Flip",
     trackMotionSlide: "Slide",
     trackMotionDissolve: "Dissolve",
+    visualChoice: "Visualizer",
+    visualChoiceRotate: "Rotate",
+    visualChoiceAlbum: "One per album",
   },
   fr: {
     seeAll: "Tout voir",
@@ -120,6 +123,9 @@ export const playbackStrings = {
     trackMotionFlip: "Retournement",
     trackMotionSlide: "Glissement",
     trackMotionDissolve: "Fondu flou",
+    visualChoice: "Visualiseur",
+    visualChoiceRotate: "Rotation",
+    visualChoiceAlbum: "Un par album",
   },
   de: {
     seeAll: "Alle anzeigen",
@@ -181,6 +187,9 @@ export const playbackStrings = {
     trackMotionFlip: "Umdrehen",
     trackMotionSlide: "Schieben",
     trackMotionDissolve: "Auflösen",
+    visualChoice: "Visualisierung",
+    visualChoiceRotate: "Wechseln",
+    visualChoiceAlbum: "Eins pro Album",
   },
   es: {
     seeAll: "Ver todo",
@@ -242,6 +251,9 @@ export const playbackStrings = {
     trackMotionFlip: "Giro",
     trackMotionSlide: "Deslizar",
     trackMotionDissolve: "Disolver",
+    visualChoice: "Visualizador",
+    visualChoiceRotate: "Rotar",
+    visualChoiceAlbum: "Uno por álbum",
   },
   pt: {
     seeAll: "Ver tudo",
@@ -303,5 +315,8 @@ export const playbackStrings = {
     trackMotionFlip: "Virar",
     trackMotionSlide: "Deslizar",
     trackMotionDissolve: "Dissolver",
+    visualChoice: "Visualizador",
+    visualChoiceRotate: "Alternar",
+    visualChoiceAlbum: "Um por álbum",
   },
 } as const;

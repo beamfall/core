@@ -72,6 +72,7 @@ import type { PlayerState, SwitchResult } from "./usePlayer";
 import { usePlayerShortcuts } from "./usePlayerShortcuts";
 import { useSubtitleAppearance } from "./useSubtitleAppearance";
 import { useSubtitleStyling } from "./useSubtitleStyling";
+import { VisualSettings } from "./VisualSettings";
 import { markViewerIntent } from "./viewerIntent";
 
 // The player's control overlay (CORE-1141): a gradient scrim with the title,
@@ -1114,6 +1115,7 @@ export function PlayerTransport({
                   onSelect={tracks.selectQuality}
                 />
                 {state.info?.mediaClass === "audio" && <TrackMotionSettings />}
+                {state.info?.mediaClass === "audio" && <VisualSettings />}
                 {onShowSkipIntervalChange && showSkipIntervalLabel && (
                   <label className="bf-settings-row">
                     <span aria-hidden="true" className="bf-settings-tile">

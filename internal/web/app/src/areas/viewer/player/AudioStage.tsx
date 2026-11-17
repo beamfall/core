@@ -10,6 +10,7 @@ import {
 } from "./trackChangeMotion";
 import { useLayers } from "./useLayers";
 import { type NextTrack, Visualizer } from "./visualizer/Visualizer";
+import { useVisualChoice } from "./visualizer/visualChoice";
 
 // The audio surface (CORE-1143): an audio item has no picture, so the stage
 // shows its artwork, title and linked Entities instead of a black <video>.
@@ -60,6 +61,7 @@ export function AudioStage({
   // Tracks of one album name the same picture by different URLs: the visual keeps the first,
   // so it neither reloads the image nor switches visuals between them.
   const artKey = artworkKey(art);
+  const visualChoice = useVisualChoice();
   const [visualArt, setVisualArt] = useState({ key: artKey, url: art });
   if (visualArt.key !== artKey) setVisualArt({ key: artKey, url: art });
   const visualArtURL = visualArt.key === artKey ? visualArt.url : art;
@@ -78,6 +80,7 @@ export function AudioStage({
             stream={stream}
             trackKey={trackKey || title}
             visualKey={artKey || trackKey || title}
+            choice={visualChoice}
             artworkURL={visualArtURL}
             next={next}
           />

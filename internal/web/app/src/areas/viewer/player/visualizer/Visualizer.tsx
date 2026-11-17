@@ -1,14 +1,25 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PlaybackStream } from "../../lib/playback";
+import { usePrefersReducedMotion } from "../trackChangeMotion";
 import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
 import { Renderer } from "./renderer";
-import { VISUALS, visualFor } from "./visuals";
+import { canVisualize, type VisualChoice } from "./visualChoice";
+import {
+  nextInRotation,
+  ROTATE_GRACE_SECONDS,
+  ROTATE_SECONDS,
+  VISUALS,
+  type Visual,
+  visualById,
+  visualFor,
+} from "./visuals";
 
 // The longest step one frame advances the visual, so a tab coming back from the background
-// does not jump its clock.
+// does not jump its clock. The governor gets the raw interval instead, so it can tell a pause
+// (a stall, a throttled or occluded page) from a slow frame and ignore it.
 const MAX_DT = 0.1;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
@@ -20,12 +31,7 @@ const ARRIVE_SECONDS = 0.6;
 // readyState from which a paused element is paused by the listener, not loading a new source.
 const HAVE_FUTURE_DATA = 3;
 
-/** True where this browser can draw an Oscillux visual. */
-export function canVisualize(): boolean {
-  return (
-    typeof WebGL2RenderingContext !== "undefined" && typeof OfflineAudioContext !== "undefined"
-  );
-}
+export { canVisualize };
 
 /** The item the player moves to next, which the visualizer decodes ahead. */
 export interface NextTrack {
@@ -51,6 +57,7 @@ export function Visualizer({
   stream,
   trackKey,
   visualKey = trackKey,
+  choice = "album",
   artworkURL = "",
   next = null,
 }: {
@@ -58,8 +65,10 @@ export function Visualizer({
   stream: PlaybackStream | null;
   /** Stable per track: keys its analysis. */
   trackKey: string;
-  /** Picks the visual; tracks that share it keep the same visual. Defaults to the track. */
+  /** Picks the visual for "album"; tracks that share it keep the same visual. Defaults to the track. */
   visualKey?: string;
+  /** Which visual shows: a rotation, one per visualKey, or a pinned visual (CORE-2368). */
+  choice?: VisualChoice;
   /** The track's artwork: the visual's image input when it is served from this origin. */
   artworkURL?: string;
   next?: NextTrack | null;
@@ -78,7 +87,9 @@ export function Visualizer({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
   const analysisRef = useRef<{ analysis: TrackAnalysis; since: number } | null>(null);
-  const keyRef = useRef(visualKey);
+  // The visual shown, or about to be; and for a rotation, the drawn time when it next moves on.
+  const visualRef = useRef<Visual | null>(null);
+  const rotateRef = useRef({ rotating: choice === "rotate", played: 0, at: ROTATE_SECONDS });
   const trackRef = useRef(trackKey);
   trackRef.current = trackKey;
   const imageRef = useRef<ImageBitmap | null>(null);
@@ -101,11 +112,25 @@ export function Visualizer({
       console.warn("visualizer: off", err);
       setFailed(true);
     };
+    // A rotation moves on after ROTATE_SECONDS of drawn time, at the next downbeat, or a little
+    // later without one; under reduced motion it stays on the track's visual.
+    const rotate = (renderer: Renderer, dt: number, downbeat: boolean, reducedMotion: boolean) => {
+      const r = rotateRef.current;
+      if (!r.rotating || reducedMotion) return;
+      r.played += dt;
+      if (r.played < r.at || (!downbeat && r.played < r.at + ROTATE_GRACE_SECONDS)) return;
+      r.played = 0;
+      r.at = ROTATE_SECONDS;
+      const next = nextInRotation(visualRef.current?.id ?? null, reducedMotion);
+      visualRef.current = next;
+      renderer.use(next).catch(fail);
+    };
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
       const renderer = rendererRef.current;
       const video = videoRef.current;
-      const dt = last ? Math.min(MAX_DT, (now - last) / 1000) : 1 / 60;
+      const frameMs = last ? now - last : 1000 / 60;
+      const dt = Math.min(MAX_DT, frameMs / 1000);
       last = now;
       if (!renderer || !video || document.hidden) return;
       // Paused by the listener: hold still. Paused while a new source loads: keep moving.
@@ -127,7 +152,9 @@ export function Visualizer({
           dt,
           shown,
           !!reduced?.matches,
+          frameMs,
         );
+        rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {
         cancelAnimationFrame(frame);
         fail(err);
@@ -157,7 +184,9 @@ export function Visualizer({
         if (!alive) return renderer.dispose();
         rendererRef.current = renderer;
         renderer.setImage(imageRef.current);
-        return renderer.use(visualFor(keyRef.current)).then(() => {
+        const first = visualRef.current ?? visualFor(trackRef.current);
+        visualRef.current = first;
+        return renderer.use(first).then(() => {
           if (!alive) return;
           frame = requestAnimationFrame(tick);
           warmUp(renderer, 0);
@@ -180,14 +209,21 @@ export function Visualizer({
     };
   }, [enabled, videoRef]);
 
-  // The visual, applied now or once the renderer is ready.
+  // The visual for the choice, applied now or once the renderer is ready: a pinned visual, one
+  // per visualKey, or for a rotation a new one at each track and whenever the choice changes.
+  const reducedMotion = usePrefersReducedMotion();
   useEffect(() => {
-    keyRef.current = visualKey;
-    rendererRef.current?.use(visualFor(visualKey)).catch((err) => {
+    const rotating = choice === "rotate";
+    const visual = rotating
+      ? nextInRotation(visualRef.current?.id ?? null, reducedMotion)
+      : (visualById(choice) ?? visualFor(visualKey));
+    visualRef.current = visual;
+    rotateRef.current = { rotating, played: 0, at: ROTATE_SECONDS };
+    rendererRef.current?.use(visual).catch((err) => {
       console.warn("visualizer: off", err);
       setFailed(true);
     });
-  }, [visualKey]);
+  }, [choice, visualKey, trackKey, reducedMotion]);
 
   // The track's artwork as the visual's image input, applied now or once the renderer is ready.
   // The previous image stays until the next one has loaded, so a change never shows the neutral

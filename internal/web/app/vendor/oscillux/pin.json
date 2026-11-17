@@ -7,7 +7,7 @@
     "oscillux-glsl300.zip": {
       "sha256": "0f98e0d68687e40b09b5de885e1f207320cf9b3f5f455dbb2fea5e03fdc5318a",
       "vendoredAs": "glsl300/",
-      "subset": "index.json, legal/, post/present.frag, switch/switch.frag, limiter/*.frag, visuals/vertex.web.vert and the nine visuals in visuals.json, byte-identical to the zip"
+      "subset": "index.json, legal/, post/present.frag, switch/switch.frag, limiter/*.frag, visuals/vertex.web.vert and all 61 visuals/*.web.frag, byte-identical to the zip"
     },
     "oscillux-wasm.tgz": {
       "sha256": "3e903b6ef215c807eda8b6d2fcf50d04415dbd2235e39215ed1ad9b0e8831534",
