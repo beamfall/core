@@ -2510,6 +2510,11 @@
           "nullable": true,
           "children": [
             {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "poster",
               "kind": "scalar"
             }
@@ -7766,6 +7771,11 @@
                       "nullable": true,
                       "children": [
                         {
+                          "name": "dominantColor",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
                           "name": "poster",
                           "kind": "scalar"
                         }
@@ -7859,6 +7869,11 @@
                     "optional": true,
                     "nullable": true,
                     "children": [
+                      {
+                        "name": "dominantColor",
+                        "kind": "scalar",
+                        "optional": true
+                      },
                       {
                         "name": "poster",
                         "kind": "scalar"
@@ -7981,6 +7996,11 @@
                     "nullable": true,
                     "children": [
                       {
+                        "name": "dominantColor",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
                         "name": "poster",
                         "kind": "scalar"
                       }
@@ -8074,6 +8094,11 @@
                   "optional": true,
                   "nullable": true,
                   "children": [
+                    {
+                      "name": "dominantColor",
+                      "kind": "scalar",
+                      "optional": true
+                    },
                     {
                       "name": "poster",
                       "kind": "scalar"
@@ -10460,6 +10485,11 @@
                 "nullable": true,
                 "children": [
                   {
+                    "name": "dominantColor",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "poster",
                     "kind": "scalar"
                   }
@@ -10553,6 +10583,11 @@
               "optional": true,
               "nullable": true,
               "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
                 {
                   "name": "poster",
                   "kind": "scalar"
@@ -11855,6 +11890,11 @@
           "optional": true,
           "nullable": true,
           "children": [
+            {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
             {
               "name": "poster",
               "kind": "scalar"
@@ -16275,6 +16315,11 @@
           "nullable": true,
           "children": [
             {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "poster",
               "kind": "scalar"
             }
@@ -16371,6 +16416,11 @@
           "optional": true,
           "nullable": true,
           "children": [
+            {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
             {
               "name": "poster",
               "kind": "scalar"
@@ -16469,6 +16519,11 @@
           "nullable": true,
           "children": [
             {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "poster",
               "kind": "scalar"
             }
@@ -16565,6 +16620,11 @@
           "optional": true,
           "nullable": true,
           "children": [
+            {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
             {
               "name": "poster",
               "kind": "scalar"
@@ -19376,6 +19436,11 @@
           "nullable": true,
           "children": [
             {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "poster",
               "kind": "scalar"
             }
@@ -19479,6 +19544,11 @@
           "optional": true,
           "nullable": true,
           "children": [
+            {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
             {
               "name": "poster",
               "kind": "scalar"
@@ -19630,6 +19700,11 @@
                 "nullable": true,
                 "children": [
                   {
+                    "name": "dominantColor",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "poster",
                     "kind": "scalar"
                   }
@@ -19765,6 +19840,11 @@
               "optional": true,
               "nullable": true,
               "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
                 {
                   "name": "poster",
                   "kind": "scalar"
@@ -27664,6 +27744,11 @@
           "nullable": true,
           "children": [
             {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "poster",
               "kind": "scalar"
             }
@@ -28222,6 +28307,11 @@
           "optional": true,
           "nullable": true,
           "children": [
+            {
+              "name": "dominantColor",
+              "kind": "scalar",
+              "optional": true
+            },
             {
               "name": "poster",
               "kind": "scalar"
