@@ -173,7 +173,8 @@ describe("Library folder view (CORE-2359)", () => {
     expect(screen.getByTestId("where")).toHaveTextContent(
       "/n/archive/all?view=folders&folder=%2Fa",
     );
-    expect(screen.getByText("3 items")).toBeInTheDocument();
+    // The heading counts the folder's own three Media and the one in Trips.
+    expect(screen.getByText("4 items")).toHaveAttribute("role", "status");
     const cards = within(screen.getByRole("list", { name: "a" })).getAllByRole("listitem");
     expect(cards).toHaveLength(2);
     expect(cards[0]).toHaveAttribute("aria-setsize", "3");
@@ -197,6 +198,26 @@ describe("Library folder view (CORE-2359)", () => {
     await user.click(within(path).getByRole("link", { name: "a" }));
     expect(await screen.findByRole("list", { name: "a" })).toBeInTheDocument();
     expect(screen.getByTestId("where")).toHaveTextContent("folder=%2Fa");
+  });
+
+  it("counts a folder of folders by the Media below it, never 0 items", async () => {
+    // A single-root Library opens straight into its root, which holds only folders.
+    vi.mocked(fetchLibraryFolder).mockResolvedValue({
+      path: "/tv",
+      rootCount: 1,
+      crumbs: [{ path: "/tv", name: "tv" }],
+      folders: [
+        { path: "/tv/Shows", name: "Shows", mediaCount: 5 },
+        { path: "/tv/Specials", name: "Specials", mediaCount: 2 },
+      ],
+      total: 0,
+      items: [],
+    });
+    renderAt("/n/archive/all?view=folders");
+
+    expect(await screen.findByRole("link", { name: /^Shows/ })).toBeInTheDocument();
+    expect(screen.getByText("7 items")).toHaveAttribute("role", "status");
+    expect(screen.queryByText("0 items")).toBeNull();
   });
 
   it("opens a folder by keyboard", async () => {

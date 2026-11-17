@@ -86,6 +86,13 @@ export function LibraryFolders({
   const crumbs = page?.crumbs ?? [];
   const openName = crumbs.at(-1)?.name ?? t("libraryFoldersAll");
   const empty = page !== null && page.folders.length === 0 && page.total === 0;
+  // The open folder counts every Media at or below it, as its link in the
+  // parent folder does: its own Media plus each subfolder's. page.total alone
+  // counts only the Media directly in it, so a folder of folders (a
+  // single-root Library opens straight into one) would read "0 items".
+  const folderCount = page
+    ? page.total + page.folders.reduce((sum, folder) => sum + folder.mediaCount, 0)
+    : 0;
 
   return (
     <AppShell actions={<ViewerActions />}>
@@ -108,7 +115,7 @@ export function LibraryFolders({
                   ? ""
                   : t("loading")
                 : page.path
-                  ? t("libraryBrowseCount", { count: page.total })
+                  ? t("libraryBrowseCount", { count: folderCount })
                   : ""}
             </p>
           </div>
