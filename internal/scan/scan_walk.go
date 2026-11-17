@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -74,7 +73,7 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 		}
 		state.libraryPluginID = pluginID
 		if resolver, ok := identifier.(PluginMediaClassResolver); ok && pluginID != "" {
-			state.imagesAreContent = slices.Contains(resolver.PluginMediaClasses(pluginID), store.MediaClassImage)
+			state.imageRule = ImageRuleFor(resolver.PluginMediaClasses(pluginID))
 		}
 		state.localExtractors = localExtractors[pluginID]
 		if pluginID != "" {
@@ -158,6 +157,9 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	}
 	state.countUnmatchedVersions()
 	state.applyDeferredArtwork()
+	if err := state.retireExcludedImages(); err != nil {
+		return Result{}, err
+	}
 	if err := state.markMissingIfPlausible(scanStarted); err != nil {
 		return Result{}, err
 	}
@@ -254,7 +256,7 @@ func (s *scanWalkState) presentFilesUnderRoot(scanStarted time.Time) (present, s
 			return nil
 		}
 		unseen := file.LastSeenAt.IsZero() || file.LastSeenAt.UnixMilli() < cutoff
-		if unseen && s.isArtworkCompanion(file.Path) {
+		if unseen && s.imageRule.skips(file.Path) {
 			return nil
 		}
 		present++

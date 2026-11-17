@@ -15,7 +15,7 @@ func TestScanAndEstimateSkipHiddenSidecarDirectories(t *testing.T) {
 	writeScanFile(t, root, "@eaDir/thumbnail.jpg", []byte("NAS thumbnail"))
 	writeScanFile(t, root, ".hidden/nested.mp4", []byte("hidden video"))
 
-	estimate, err := EstimateRoots(context.Background(), []string{root}, false)
+	estimate, err := EstimateRoots(context.Background(), []string{root}, ImagesBesideMedia)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}

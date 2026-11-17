@@ -36,7 +36,7 @@ func TestEstimateSplitsInlineFromDeferrable(t *testing.T) {
 	writeScanFile(t, root, ".DS_Store", []byte("junk"))
 	writeScanFile(t, root, "Extras/trailer.mkv", []byte("an extra"))
 
-	est, err := EstimateRoots(context.Background(), []string{root}, false)
+	est, err := EstimateRoots(context.Background(), []string{root}, ImagesBesideMedia)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}
@@ -98,11 +98,11 @@ func TestEstimateScalesWithFileCount(t *testing.T) {
 		writeScanFile(t, large, name, []byte(name))
 	}
 
-	smallEst, err := EstimateRoots(context.Background(), []string{small}, false)
+	smallEst, err := EstimateRoots(context.Background(), []string{small}, ImagesBesideMedia)
 	if err != nil {
 		t.Fatalf("EstimateRoots(small): %v", err)
 	}
-	largeEst, err := EstimateRoots(context.Background(), []string{large}, false)
+	largeEst, err := EstimateRoots(context.Background(), []string{large}, ImagesBesideMedia)
 	if err != nil {
 		t.Fatalf("EstimateRoots(large): %v", err)
 	}
@@ -131,7 +131,7 @@ func TestEstimateMultipleRootsAggregate(t *testing.T) {
 	writeScanFile(t, rootB, "b.flac", []byte("b"))
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 
-	est, err := EstimateRoots(context.Background(), []string{rootA, rootB, missing}, false)
+	est, err := EstimateRoots(context.Background(), []string{rootA, rootB, missing}, ImagesBesideMedia)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestEstimateMultipleRootsAggregate(t *testing.T) {
 // — the wizard renders a stable shape, never a null.
 func TestEstimateEmptyRootYieldsStableShape(t *testing.T) {
 	// feature:first-scan-estimate
-	est, err := EstimateRoots(context.Background(), []string{t.TempDir()}, false)
+	est, err := EstimateRoots(context.Background(), []string{t.TempDir()}, ImagesBesideMedia)
 	if err != nil {
 		t.Fatalf("EstimateRoots: %v", err)
 	}
@@ -161,23 +161,26 @@ func TestEstimateEmptyRootYieldsStableShape(t *testing.T) {
 	}
 }
 
-// TestEstimateCountsSidecarNamedImagesByPluginClass is the CORE-2180
-// acceptance for the estimate: a "-thumb" image beside a video counts for a
-// plugin that declares the image class and is left out for a video-only one.
+// TestEstimateCountsSidecarNamedImagesByPluginClass is the CORE-2180 and
+// CORE-2361 acceptance for the estimate: a "-thumb" image beside a video
+// counts only for a plugin that declares the image class, and a stray image
+// counts for that plugin and for no plugin, never for a video-only one.
 func TestEstimateCountsSidecarNamedImagesByPluginClass(t *testing.T) {
 	root := t.TempDir()
 	writeScanFile(t, root, "IMG_1.mov", []byte("a short clip"))
 	writeScanFile(t, root, "IMG_1-thumb.jpg", []byte("a still frame"))
+	writeScanFile(t, root, "unknown.jpg", []byte("a stray still"))
 	for _, tc := range []struct {
-		name             string
-		imagesAreContent bool
-		want             int
+		name string
+		rule ImageRule
+		want int
 	}{
-		{"image class", true, 2},
-		{"video only", false, 1},
+		{"image class", ImagesAsContent, 3},
+		{"no plugin", ImagesBesideMedia, 2},
+		{"video only", ImagesAsArtwork, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			est, err := EstimateRoots(context.Background(), []string{root}, tc.imagesAreContent)
+			est, err := EstimateRoots(context.Background(), []string{root}, tc.rule)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -205,7 +208,7 @@ func TestEstimateImagesAreNotAudio(t *testing.T) {
 			for _, f := range tc.files {
 				writeScanFile(t, root, f, []byte("x"))
 			}
-			est, err := EstimateRoots(context.Background(), []string{root}, true)
+			est, err := EstimateRoots(context.Background(), []string{root}, ImagesAsContent)
 			if err != nil {
 				t.Fatal(err)
 			}

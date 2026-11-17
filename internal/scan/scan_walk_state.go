@@ -27,13 +27,13 @@ type scanWalkState struct {
 	metadataCapability MetadataHydrationCapability
 	imageDeriver       ImageDeriver
 	libraryPluginID    string
-	// imagesAreContent is set when the Library's Plugin declares the image
-	// Media class, so sidecar-named images stay items (CORE-0043).
-	imagesAreContent bool
-	backfillStale    map[store.MediaID]struct{}
-	req              Request
-	checkpoint       jobCheckpoint
-	scanStarted      time.Time
+	// imageRule is what the walk does with still images, from the classes
+	// the Library's Plugin declares (CORE-0043, CORE-2361).
+	imageRule     ImageRule
+	backfillStale map[store.MediaID]struct{}
+	req           Request
+	checkpoint    jobCheckpoint
+	scanStarted   time.Time
 	// completedFingerprints maps the bytes of each file this pass completed
 	// to its Media (keepCountedMediaBeforeMove, CORE-2197).
 	completedFingerprints map[string]store.MediaID
@@ -105,20 +105,7 @@ func (s *scanWalkState) releaseBudget() {
 
 func (s *scanWalkState) isSupportedMediaFile(path string, info fs.FileInfo) bool {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
-	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext] && !s.isArtworkCompanion(path)
-}
-
-// isArtworkCompanion reports whether path is local artwork beside media that
-// the walk must not catalogue as an item: a recognised sidecar (CORE-1708) in
-// a Library whose Plugin does not hold images as content (CORE-0043).
-func (s *scanWalkState) isArtworkCompanion(path string) bool {
-	return isArtworkCompanion(path, s.imagesAreContent)
-}
-
-// isArtworkCompanion is the walk's sidecar rule, shared with the preview and
-// the estimate so they count what the scan imports (CORE-2180).
-func isArtworkCompanion(path string, imagesAreContent bool) bool {
-	return !imagesAreContent && isLocalArtworkSidecar(path)
+	return info.Mode().IsRegular() && titleFromPath(path) != "" && mediaExtensions[ext] && !s.imageRule.skips(path)
 }
 
 func (s *scanWalkState) directoryContext(path string) ParseContext {
@@ -181,7 +168,7 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 	if !info.Mode().IsRegular() {
 		return nil, nil
 	}
-	if s.isArtworkCompanion(path) {
+	if s.imageRule.skips(path) {
 		return nil, nil
 	}
 	if now().Sub(info.ModTime()) < stabilityWindow {

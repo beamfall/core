@@ -50,6 +50,50 @@ type PluginMediaClassResolver interface {
 	PluginMediaClasses(pluginID string) []store.MediaClass
 }
 
+// ImageRule is what a Library's scan does with still images, decided by the
+// Media classes its Plugin declares (CORE-0043, CORE-2361). The scan, the
+// rescan preview and the first-scan estimate share it (CORE-2180).
+type ImageRule int
+
+const (
+	// ImagesBesideMedia catalogues every image except recognised sidecar
+	// artwork. It is the rule for a Library with no Plugin, or with a Plugin
+	// whose classes are unknown (unregistered, inactive or undeclared).
+	ImagesBesideMedia ImageRule = iota
+	// ImagesAsContent catalogues every image as an item: the Plugin declares
+	// the image class.
+	ImagesAsContent
+	// ImagesAsArtwork catalogues no image: the Plugin declares classes but not
+	// image, so an image there is a sidecar artwork candidate or is ignored.
+	ImagesAsArtwork
+)
+
+// ImageRuleFor returns the rule for a Plugin declaring classes. A Plugin that
+// declares none is unknown and keeps ImagesBesideMedia.
+func ImageRuleFor(classes []store.MediaClass) ImageRule {
+	switch {
+	case len(classes) == 0:
+		return ImagesBesideMedia
+	case slices.Contains(classes, store.MediaClassImage):
+		return ImagesAsContent
+	default:
+		return ImagesAsArtwork
+	}
+}
+
+// skips reports whether the scan leaves the file at path out of the catalogue
+// under r, whatever kind of media file it is.
+func (r ImageRule) skips(path string) bool {
+	switch r {
+	case ImagesAsContent:
+		return false
+	case ImagesAsArtwork:
+		return imageClassForPath(path)
+	default:
+		return isLocalArtworkSidecar(path)
+	}
+}
+
 // Local artwork scopes. A file-scope name is "<stem>-<name>" for the Media
 // whose file stem it carries; a folder-scope name applies when the folder holds
 // exactly one non-image media file; a folder-dir scope name is a subdirectory
