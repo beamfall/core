@@ -5,6 +5,7 @@
 - [x] `internal/scan`: time-budget yield; missing or unreadable root fails fast with `scan-root-unavailable`
 - [x] `internal/store`: play minimum and finished near the end
 - [x] `internal/app`: effective transcode cap log with its source
+- [x] `internal/identify`, `internal/scan`, `internal/app`: identify skip reasons; non-applied outcomes logged once per scan and named in the job message
 - [x] Tests for each behaviour; wire goldens regenerated
 - [ ] Publish the next wire contract version (adds `endPlayback`) at landing
 - [ ] `make bench` for events migration 0023

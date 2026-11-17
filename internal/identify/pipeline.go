@@ -51,9 +51,35 @@ type AutoOutcome struct {
 	// registered no scorer, the bundle declares no searchable scraper for the
 	// parsed class, or the match is pinned (an operator already fixed it).
 	Skipped bool
+	// SkipReason says why a Skipped item was not a candidate (one of the
+	// Skip* constants); "" unless Skipped.
+	SkipReason string
+	// ScraperID is the scraper searched for an Applied or Queued item; ""
+	// when no scraper was searched.
+	ScraperID string
 	// Decision carries the top candidate's score vs threshold when one was scored
 	// (Applied or Queued-with-candidate); the zero value otherwise.
 	Decision MatchDecision
+}
+
+// Why AutoIdentify skipped an item. A skip writes nothing, not even an
+// Unmatched row, so the caller reports it.
+const (
+	// SkipNoScorer: the plugin registered no MatchScorer (manual-only).
+	SkipNoScorer = "no-scorer"
+	// SkipNotWired: the Unmatched queue is not wired.
+	SkipNotWired = "not-wired"
+	// SkipPinned: an operator pinned the match.
+	SkipPinned = "pinned"
+	// SkipNoBundle: the plugin is not loaded.
+	SkipNoBundle = "no-bundle"
+	// SkipNoScraper: the plugin declares no searchable scraper for the
+	// parsed class, so the item can never be matched automatically.
+	SkipNoScraper = "no-scraper"
+)
+
+func skipped(reason string) AutoOutcome {
+	return AutoOutcome{Skipped: true, SkipReason: reason}
 }
 
 // AutoIdentify runs the scan-time parse → identify → apply pipeline
@@ -79,10 +105,10 @@ func (s *Service) AutoIdentify(ctx context.Context, mediaID store.MediaID, plugi
 		return AutoOutcome{}, errors.New("identify: media ID is required")
 	}
 	if _, ok := s.scorers[pluginID]; !ok {
-		return AutoOutcome{Skipped: true}, nil // no scorer → manual-only (ADR-0044 §2)
+		return skipped(SkipNoScorer), nil // no scorer → manual-only (ADR-0044 §2)
 	}
 	if s.queue == nil {
-		return AutoOutcome{Skipped: true}, nil // pipeline not wired
+		return skipped(SkipNotWired), nil // pipeline not wired
 	}
 	// A pinned match is operator/import-authoritative — a rescan leaves it alone
 	// rather than re-identify it. This is the test (c)
@@ -93,16 +119,16 @@ func (s *Service) AutoIdentify(ctx context.Context, mediaID store.MediaID, plugi
 			return AutoOutcome{}, err
 		}
 		if found && pinned {
-			return AutoOutcome{Skipped: true}, nil
+			return skipped(SkipPinned), nil
 		}
 	}
 	bundle, ok := s.bundles.Bundle(plugin.ID(pluginID))
 	if !ok {
-		return AutoOutcome{Skipped: true}, nil
+		return skipped(SkipNoBundle), nil
 	}
 	scraper, ok := s.searchableScraperForClass(pluginID, bundle, parsed.Class)
 	if !ok {
-		return AutoOutcome{Skipped: true}, nil
+		return skipped(SkipNoScraper), nil
 	}
 	candidates, err := s.search(ctx, pluginID, scraper.ID, parsed.Title, mediaID, parsed.Year)
 	if err != nil {
@@ -117,7 +143,7 @@ func (s *Service) AutoIdentify(ctx context.Context, mediaID store.MediaID, plugi
 		if _, err := s.queue.ClearUnmatched(ctx, mediaID); err != nil {
 			return AutoOutcome{}, err
 		}
-		return AutoOutcome{Applied: true, Decision: decision}, nil
+		return AutoOutcome{Applied: true, ScraperID: scraper.ID, Decision: decision}, nil
 	}
 	// Below threshold (or no candidate): park it, never guess.
 	item := store.UnmatchedItem{
@@ -134,7 +160,7 @@ func (s *Service) AutoIdentify(ctx context.Context, mediaID store.MediaID, plugi
 	if err := s.queue.QueueUnmatched(ctx, item); err != nil {
 		return AutoOutcome{}, err
 	}
-	return AutoOutcome{Queued: true, Decision: decision}, nil
+	return AutoOutcome{Queued: true, ScraperID: scraper.ID, Decision: decision}, nil
 }
 
 const manualScraperID = "manual"
@@ -150,7 +176,7 @@ func (s *Service) QueueManual(ctx context.Context, mediaID store.MediaID, plugin
 		return AutoOutcome{}, errors.New("identify: plugin ID is required")
 	}
 	if s.queue == nil {
-		return AutoOutcome{Skipped: true}, nil
+		return skipped(SkipNotWired), nil
 	}
 	if fingerprint != "" && s.pins != nil {
 		pinned, found, err := s.pins.MatchPinned(ctx, fingerprint)
@@ -158,11 +184,11 @@ func (s *Service) QueueManual(ctx context.Context, mediaID store.MediaID, plugin
 			return AutoOutcome{}, err
 		}
 		if found && pinned {
-			return AutoOutcome{Skipped: true}, nil
+			return skipped(SkipPinned), nil
 		}
 	}
 	if _, ok := s.bundles.Bundle(plugin.ID(pluginID)); !ok {
-		return AutoOutcome{Skipped: true}, nil
+		return skipped(SkipNoBundle), nil
 	}
 	if err := s.queue.QueueUnmatched(ctx, store.UnmatchedItem{
 		MediaID:        mediaID,
@@ -172,7 +198,7 @@ func (s *Service) QueueManual(ctx context.Context, mediaID store.MediaID, plugin
 	}); err != nil {
 		return AutoOutcome{}, err
 	}
-	return AutoOutcome{Queued: true}, nil
+	return AutoOutcome{Queued: true, ScraperID: manualScraperID}, nil
 }
 
 // bestCandidate scores every candidate with the plugin's MatchScorer and returns

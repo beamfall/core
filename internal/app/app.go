@@ -2997,27 +2997,33 @@ func (t parserMediaTitles) ParsedMediaTitle(ctx context.Context, mediaID store.M
 // §4). It is the composition-root bridge that lets scan trigger auto-identify
 // without importing internal/identify (arch §4 forbids the edge; identify also
 // cannot import scan). It maps scan.ParsedMedia onto identify's domain-agnostic
-// twin and drops the AutoOutcome — scan only needs the error. service is set
-// after identify.Service is fully wired; a nil service (before wiring, or in a
-// build with no identification) is a no-op.
+// twin and the AutoOutcome onto scan.IdentifyOutcome, which scan aggregates
+// and reports once per scan. service is set after identify.Service is fully
+// wired; a nil service (before wiring, or in a build with no identification)
+// is a no-op.
 type scanIdentifier struct {
 	service  *identify.Service
 	registry *plugin.Registry
 }
 
 func (a *scanIdentifier) AutoIdentify(ctx context.Context, mediaID store.MediaID, pluginID, fingerprint string, parsed scanpkg.ParsedMedia) error {
+	_, err := a.AutoIdentifyOutcome(ctx, mediaID, pluginID, fingerprint, parsed)
+	return err
+}
+
+func (a *scanIdentifier) AutoIdentifyOutcome(ctx context.Context, mediaID store.MediaID, pluginID, fingerprint string, parsed scanpkg.ParsedMedia) (scanpkg.IdentifyOutcome, error) {
 	if a.service == nil {
-		return nil
+		return scanpkg.IdentifyOutcome{}, nil
 	}
 	if bundle, ok := activeBundle(a.registry, pluginID); ok && bundle.IdentificationPolicy == plugin.IdentificationPolicyQueue {
-		_, err := a.service.QueueManual(ctx, mediaID, pluginID, fingerprint, identify.ParsedMedia{
+		outcome, err := a.service.QueueManual(ctx, mediaID, pluginID, fingerprint, identify.ParsedMedia{
 			Title: parsed.Title,
 			Class: parsed.Class,
 			Year:  parsed.Year,
 		})
-		return err
+		return scanIdentifyOutcome(outcome, true), err
 	}
-	_, err := a.service.AutoIdentify(ctx, mediaID, pluginID, fingerprint, identify.ParsedMedia{
+	outcome, err := a.service.AutoIdentify(ctx, mediaID, pluginID, fingerprint, identify.ParsedMedia{
 		Title:    parsed.Title,
 		Class:    parsed.Class,
 		Year:     parsed.Year,
@@ -3025,7 +3031,35 @@ func (a *scanIdentifier) AutoIdentify(ctx context.Context, mediaID store.MediaID
 		Index:    parsed.Index,
 		IndexEnd: parsed.IndexEnd,
 	})
-	return err
+	return scanIdentifyOutcome(outcome, false), err
+}
+
+// scanIdentifySkipReasons maps identify's skip reasons onto scan's.
+var scanIdentifySkipReasons = map[string]string{
+	identify.SkipNoScraper: scanpkg.IdentifySkippedNoScraper,
+	identify.SkipNoBundle:  scanpkg.IdentifySkippedNoBundle,
+	identify.SkipNoScorer:  scanpkg.IdentifySkippedNoScorer,
+	identify.SkipNotWired:  scanpkg.IdentifySkippedNotWired,
+	identify.SkipPinned:    scanpkg.IdentifySkippedPinned,
+}
+
+// scanIdentifyOutcome maps an identify.AutoOutcome onto scan's view: no
+// reason for an applied match, why otherwise. manual marks the queue-only
+// identification policy.
+func scanIdentifyOutcome(outcome identify.AutoOutcome, manual bool) scanpkg.IdentifyOutcome {
+	switch {
+	case outcome.Applied:
+		return scanpkg.IdentifyOutcome{ScraperID: outcome.ScraperID}
+	case outcome.Queued && manual:
+		return scanpkg.IdentifyOutcome{Reason: scanpkg.IdentifyQueuedManual, ScraperID: outcome.ScraperID}
+	case outcome.Queued && outcome.Decision.Scored:
+		return scanpkg.IdentifyOutcome{Reason: scanpkg.IdentifyQueuedBelowThreshold, ScraperID: outcome.ScraperID}
+	case outcome.Queued:
+		return scanpkg.IdentifyOutcome{Reason: scanpkg.IdentifyQueuedNoCandidates, ScraperID: outcome.ScraperID}
+	case outcome.Skipped:
+		return scanpkg.IdentifyOutcome{Reason: scanIdentifySkipReasons[outcome.SkipReason]}
+	}
+	return scanpkg.IdentifyOutcome{}
 }
 
 // CredentialLabel names a scoped scraper credential ref for scan status text

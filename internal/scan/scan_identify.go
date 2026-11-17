@@ -1,10 +1,15 @@
 package scan
 
 import (
+	"cmp"
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/beamfall/core/internal/store"
 )
@@ -48,7 +53,22 @@ func credentialLabel(identifier Identifier, ref string) string {
 // Library would hit it, so it is noted once per scan (CORE-1101) and the file
 // continues unidentified. Any other error is logged per file as before.
 func (s *scanWalkState) autoIdentify(path string, mediaID store.MediaID, fingerprint string, parsed ParsedMedia, failure string) {
-	err := s.identifier.AutoIdentify(s.ctx, mediaID, s.libraryPluginID, fingerprint, parsed)
+	var err error
+	if outcomes, ok := s.identifier.(OutcomeIdentifier); ok {
+		var outcome IdentifyOutcome
+		outcome, err = outcomes.AutoIdentifyOutcome(s.ctx, mediaID, s.libraryPluginID, fingerprint, parsed)
+		if err == nil && outcome.Reason != "" {
+			identifyTallyFrom(s.ctx).note(IdentifyGroup{
+				Plugin:  s.libraryPluginID,
+				Scraper: outcome.ScraperID,
+				Class:   parsed.Class,
+				Reason:  outcome.Reason,
+				Example: path,
+			})
+		}
+	} else {
+		err = s.identifier.AutoIdentify(s.ctx, mediaID, s.libraryPluginID, fingerprint, parsed)
+	}
 	if err == nil {
 		s.noteUnmatched(path, mediaID)
 		return
@@ -136,4 +156,127 @@ func missingCredentialsMessage(refs []string, identifier Identifier) string {
 	}
 	return "Scan complete; items not identified: provider credential not configured (" +
 		strings.Join(labels, ", ") + "); add it in the console under Plugins, then rescan"
+}
+
+// identifyTally aggregates the identification outcomes that applied no match,
+// one IdentifyGroup per plugin, scraper, class and reason, so a scan reports
+// them once instead of per file. A scan job yields with an empty Result, so
+// the tally lives with the job run (carried in the context the walk uses) and
+// its snapshot rides in the checkpoint across yields. A nil tally ignores
+// notes.
+type identifyTally struct {
+	mu     sync.Mutex
+	groups map[IdentifyGroup]*IdentifyGroup
+}
+
+func newIdentifyTally(seed []IdentifyGroup) *identifyTally {
+	t := &identifyTally{groups: map[IdentifyGroup]*IdentifyGroup{}}
+	for _, group := range seed {
+		t.add(group, group.Count)
+	}
+	return t
+}
+
+func (t *identifyTally) note(group IdentifyGroup) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.add(group, 1)
+}
+
+func (t *identifyTally) add(group IdentifyGroup, count int) {
+	key := IdentifyGroup{Plugin: group.Plugin, Scraper: group.Scraper, Class: group.Class, Reason: group.Reason}
+	if existing, ok := t.groups[key]; ok {
+		existing.Count += count
+		return
+	}
+	group.Count = count
+	t.groups[key] = &group
+}
+
+// snapshot lists the groups sorted by plugin, scraper, class and reason.
+func (t *identifyTally) snapshot() []IdentifyGroup {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	groups := make([]IdentifyGroup, 0, len(t.groups))
+	for _, group := range t.groups {
+		groups = append(groups, *group)
+	}
+	slices.SortFunc(groups, func(a, b IdentifyGroup) int {
+		return cmp.Or(cmp.Compare(a.Plugin, b.Plugin), cmp.Compare(a.Scraper, b.Scraper),
+			cmp.Compare(a.Class, b.Class), cmp.Compare(a.Reason, b.Reason))
+	})
+	if len(groups) == 0 {
+		return nil
+	}
+	return groups
+}
+
+type identifyTallyKey struct{}
+
+func withIdentifyTally(ctx context.Context, tally *identifyTally) context.Context {
+	return context.WithValue(ctx, identifyTallyKey{}, tally)
+}
+
+func identifyTallyFrom(ctx context.Context) *identifyTally {
+	tally, _ := ctx.Value(identifyTallyKey{}).(*identifyTally)
+	return tally
+}
+
+// identifyNeedsAttention reports whether reason means the items can never
+// match until the owner changes the setup: no scraper for the class, or the
+// plugin is not loaded. These are warnings; queued and pinned items are not.
+func identifyNeedsAttention(reason string) bool {
+	return reason == IdentifySkippedNoScraper || reason == IdentifySkippedNoBundle
+}
+
+// logIdentifyOutcomes logs each group once for the finished scan: a warning
+// for items that can never match as set up, information otherwise.
+func logIdentifyOutcomes(ctx context.Context, libraryID store.LibraryID, groups []IdentifyGroup) {
+	for _, group := range groups {
+		level := slog.LevelInfo
+		msg := "scan: items not identified"
+		if identifyNeedsAttention(group.Reason) {
+			level = slog.LevelWarn
+			msg = "scan: items cannot be identified; the plugin has no scraper for them"
+		}
+		slog.Log(ctx, level, msg,
+			"library", string(libraryID),
+			"plugin", group.Plugin,
+			"scraper", group.Scraper,
+			"class", group.Class,
+			"reason", group.Reason,
+			"count", group.Count,
+			"example", group.Example)
+	}
+}
+
+// unidentifiableMessage is appended to the completed scan job's message for
+// the items that can never match as set up, so the Console shows them instead
+// of a bare "complete" (the music Library with no Track scraper).
+func unidentifiableMessage(groups []IdentifyGroup) string {
+	var parts []string
+	for _, group := range groups {
+		if !identifyNeedsAttention(group.Reason) {
+			continue
+		}
+		class := group.Class
+		if class == "" {
+			class = "unclassified"
+		}
+		if group.Reason == IdentifySkippedNoBundle {
+			parts = append(parts, fmt.Sprintf("%d %s items not identified: plugin %s is not loaded", group.Count, class, group.Plugin))
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%d %s items not identified: plugin %s has no scraper for them", group.Count, class, group.Plugin))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, "; ")
 }

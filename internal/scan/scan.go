@@ -36,6 +36,46 @@ type Identifier interface {
 	AutoIdentify(ctx context.Context, mediaID store.MediaID, pluginID, fingerprint string, parsed ParsedMedia) error
 }
 
+// OutcomeIdentifier is an optional Identifier capability that also says what
+// the pass did with the item. scan aggregates the outcomes that applied no
+// match and reports them once per scan, so a Library whose items can never
+// match (for example a plugin with no scraper for the parsed class) is not
+// silent.
+type OutcomeIdentifier interface {
+	AutoIdentifyOutcome(ctx context.Context, mediaID store.MediaID, pluginID, fingerprint string, parsed ParsedMedia) (IdentifyOutcome, error)
+}
+
+// IdentifyOutcome is scan's view of one identification pass. Reason is ""
+// when a match was applied and one of the Identify* reasons otherwise;
+// ScraperID names the scraper searched, when one was.
+type IdentifyOutcome struct {
+	Reason    string
+	ScraperID string
+}
+
+// Why an identification pass applied no match.
+const (
+	IdentifyQueuedBelowThreshold = "queued-below-threshold"
+	IdentifyQueuedNoCandidates   = "queued-no-candidates"
+	IdentifyQueuedManual         = "queued-manual"
+	IdentifySkippedNoScraper     = "skipped-no-scraper"
+	IdentifySkippedNoBundle      = "skipped-no-bundle"
+	IdentifySkippedNoScorer      = "skipped-no-scorer"
+	IdentifySkippedNotWired      = "skipped-not-wired"
+	IdentifySkippedPinned        = "skipped-pinned"
+)
+
+// IdentifyGroup counts the items one scan left unidentified for the same
+// plugin, scraper, parsed class and reason, with one example path.
+type IdentifyGroup struct {
+	Plugin  string `json:"plugin"`
+	Scraper string `json:"scraper,omitempty"`
+	Class   string `json:"class,omitempty"`
+	Reason  string `json:"reason"`
+	Count   int    `json:"count"`
+	Example string `json:"example"`
+}
+
 // LocalExtractor is scan's consumer-side seam for local-file scraper kinds
 // (ADR-0043 EXIF today). The composition root adapts plugin ScraperSpecs and
 // scrape.Engine into this interface so scan stays free of a scrape import.
@@ -295,6 +335,9 @@ type jobCheckpoint struct {
 	// GroupMedia lists the Media of several files (Versions, parts) already
 	// counted in MediaImported, so a resumed scan does not count them again.
 	GroupMedia []string `json:"group_media,omitempty"`
+	// Unidentified carries the identification outcomes that applied no
+	// match across job yields, so the finished scan reports them once.
+	Unidentified []IdentifyGroup `json:"unidentified,omitempty"`
 }
 
 // Result summarizes a completed scan.
@@ -308,6 +351,9 @@ type Result struct {
 	// configured. Each is reported once per scan instead of failing every
 	// file (CORE-1101).
 	MissingCredentials []string
+	// Unidentified groups the items identification left without a match,
+	// sorted by plugin, scraper, class and reason.
+	Unidentified []IdentifyGroup
 	// FilesAdded and FilesChanged count the files this scan catalogued for the
 	// first time and the ones it re-read because their size or mtime moved.
 	// FilesMissing counts the files the post-walk pass marked missing, and

@@ -381,3 +381,46 @@ func TestQueueManualSkipsPinnedMatch(t *testing.T) {
 		t.Fatalf("pinned manual item queued: %#v", queue.queued)
 	}
 }
+
+// A skip says why, so scan can report items that can never match instead of
+// leaving them silent: a class the plugin has no scraper for (a music Library
+// whose scraper implies no Track class) and a plugin with no scorer. A queued
+// item names the scraper it searched.
+func TestAutoIdentifyOutcomeNamesSkipReasonAndScraper(t *testing.T) {
+	t.Parallel()
+	engine := &fakeEngine{
+		searchResults: []scrape.Result{
+			{ID: "10", Fields: map[string]any{"title": "Totally Different", "year": "1990"}},
+		},
+	}
+	service := newAutoService(t, engine, 0.75, &fakeQueue{}, fakePins{})
+
+	outcome, err := service.AutoIdentify(context.Background(), "media-track", "demo", "",
+		identify.ParsedMedia{Title: "Some Song", Class: "track"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.Skipped || outcome.SkipReason != identify.SkipNoScraper || outcome.ScraperID != "" {
+		t.Fatalf("outcome = %#v, want Skipped %q", outcome, identify.SkipNoScraper)
+	}
+
+	outcome, err = service.AutoIdentify(context.Background(), "media-beta", "demo", "",
+		identify.ParsedMedia{Title: "Blue Harvest", Class: "movie"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.Queued || outcome.SkipReason != "" || outcome.ScraperID != autoScraper().ID || !outcome.Decision.Scored {
+		t.Fatalf("outcome = %#v, want Queued by %q with a scored decision", outcome, autoScraper().ID)
+	}
+
+	unscored := identify.NewService(engine, demoBundles(autoScraper()), &fakeStore{})
+	unscored.SetAutoStores(&fakeQueue{}, fakePins{})
+	outcome, err = unscored.AutoIdentify(context.Background(), "media-x", "demo", "",
+		identify.ParsedMedia{Title: "Blue Harvest", Class: "movie"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.SkipReason != identify.SkipNoScorer {
+		t.Fatalf("skip reason = %q, want %q", outcome.SkipReason, identify.SkipNoScorer)
+	}
+}

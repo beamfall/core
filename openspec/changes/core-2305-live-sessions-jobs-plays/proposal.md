@@ -17,6 +17,8 @@ A tower QA pass found six server faults:
 - Play history counted a 0-second open as a play and trusted a client's watched flag alone, so
   plays were marked Finished seconds in.
 - The startup log printed the automatic transcode cap even when an env cap was in force.
+- Identification that applied no match was silent. Items skipped because the plugin has no
+  scraper for their class (a music Library's Tracks) wrote no log line and no queue row.
 
 ## What changes
 
@@ -39,6 +41,9 @@ A tower QA pass found six server faults:
   seconds of the end.
 - The startup log reports the effective transcode cap, its source (`env/flag`, `console` or
   `automatic`) and the automatic cap.
+- Identify reports why it skipped an item. A scan logs the items it left without a match once,
+  grouped by plugin, scraper, class and reason with a count and an example path: INFO when
+  queued, WARN when no scraper serves the class. The completed job's message names the latter.
 
 ## Non-goals
 

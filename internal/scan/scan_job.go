@@ -130,7 +130,14 @@ func ScanWithWorkerGovernor(ctx context.Context, st *store.Store, prober Prober,
 		return Result{}, errors.New("scan root is required")
 	}
 
-	return scanFromCheckpoint(ctx, st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, firstImageDeriver(imageDerivers), req, jobCheckpoint{}, time.Now().UTC(), nil)
+	tally := newIdentifyTally(nil)
+	result, err := scanFromCheckpoint(withIdentifyTally(ctx, tally), st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, firstImageDeriver(imageDerivers), req, jobCheckpoint{}, time.Now().UTC(), nil)
+	if err != nil {
+		return result, err
+	}
+	result.Unidentified = tally.snapshot()
+	logIdentifyOutcomes(ctx, req.LibraryID, result.Unidentified)
+	return result, nil
 }
 
 func firstImageDeriver(derivers []ImageDeriver) ImageDeriver {
@@ -162,7 +169,9 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 	var latest []byte
 	filesThisRun := 0
 	runStarted := time.Now()
-	result, err := scanFromCheckpoint(ctx, st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, imageDeriver, req, checkpoint, scanStarted, func(checkpoint jobCheckpoint, progress store.JobProgress) error {
+	tally := newIdentifyTally(checkpoint.Unidentified)
+	result, err := scanFromCheckpoint(withIdentifyTally(ctx, tally), st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, imageDeriver, req, checkpoint, scanStarted, func(checkpoint jobCheckpoint, progress store.JobProgress) error {
+		checkpoint.Unidentified = tally.snapshot()
 		data, err := marshalScanCheckpoint(checkpoint)
 		if err != nil {
 			return err
@@ -183,7 +192,9 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			if result.interrupted != nil {
-				latest, _ = marshalScanCheckpoint(*result.interrupted)
+				interrupted := *result.interrupted
+				interrupted.Unidentified = tally.snapshot()
+				latest, _ = marshalScanCheckpoint(interrupted)
 			} else if len(latest) == 0 {
 				latest, _ = marshalScanCheckpoint(checkpoint)
 			}
@@ -191,7 +202,9 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 		}
 		return jobs.Result{}, err
 	}
+	result.Unidentified = tally.snapshot()
 	complete := result.checkpoint("complete")
+	complete.Unidentified = result.Unidentified
 	data, err := marshalScanCheckpoint(complete)
 	if err != nil {
 		return jobs.Result{}, err
@@ -199,11 +212,12 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 	if err := appendScanSummary(ctx, st, job.ID, result); err != nil {
 		return jobs.Result{}, err
 	}
+	logIdentifyOutcomes(ctx, req.LibraryID, result.Unidentified)
 	return jobs.Result{}, st.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, store.JobProgress{
 		Current: int64(result.FilesSeen),
 		Total:   int64(result.totalFiles),
 		Unit:    "files",
-		Message: missingCredentialsMessage(result.MissingCredentials, identifier),
+		Message: missingCredentialsMessage(result.MissingCredentials, identifier) + unidentifiableMessage(result.Unidentified),
 	}, time.Now().UTC())
 }
 
