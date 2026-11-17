@@ -105,6 +105,13 @@ const (
 	// is killed. It exceeds both latency budgets so a slow but working start
 	// is never mistaken for a hang.
 	encoderStallTimeout = 15 * time.Second
+	// encoderMaxFailedRuns is how many encoder runs in a row may crash or
+	// stall without writing a segment before the session is marked failed.
+	// The sliding restart budget refills every encoderRestartWindow, so on
+	// its own it lets a source that always hangs the encoder (a 15 s stall,
+	// a restart, another stall) cycle forever while the player retries 503s
+	// (CORE-2379). Once failed, the session answers ErrTranscodeFailed.
+	encoderMaxFailedRuns = 4
 )
 
 // errEncoderExited is waitForArtifact's signal that the encoder producing the
@@ -119,6 +126,12 @@ var errEncoderFailing = errors.New("live transcode keeps failing")
 // without producing the awaited artifact and the source is not known to be
 // short — an encoder fault rather than a missing segment.
 var errEncoderEnded = errors.New("live transcode ended without producing the artifact")
+
+// ErrTranscodeFailed is returned once a session's encoder has crashed or
+// stalled encoderMaxFailedRuns times in a row without writing a segment.
+// Unlike errEncoderFailing it is terminal for the session: retrying the same
+// session cannot succeed, so callers answer a non-retryable status.
+var ErrTranscodeFailed = errors.New("live transcode failed")
 
 // encoderExit classifies how a live FFmpeg process ended.
 type encoderExit int
@@ -289,6 +302,11 @@ type hlsSession struct {
 	// crashRestarts holds the start times of recent crash restarts, bounding
 	// them to encoderRestartBudget per encoderRestartWindow.
 	crashRestarts []time.Time
+	// failedRuns counts encoder runs in a row that crashed or stalled
+	// without writing a segment; transcodeFailed latches once it reaches
+	// encoderMaxFailedRuns.
+	failedRuns      int
+	transcodeFailed bool
 	// sourceEnd is an upper bound on where the source's media ends, known
 	// once an encoder hit end of input early or produced a segment with no
 	// media (a truncated file whose probed duration overstates it). It only
@@ -1136,6 +1154,8 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 			if run, err = s.ensureRung(ctx, key, session, rung, segment, path); err != nil {
 				return err
 			}
+			slog.Warn("restarted live transcode at the requested segment",
+				"media", key.MediaID, "rung", rung.ID, "segment", segment, "attempt", restarts)
 		}
 	}
 }
@@ -1511,6 +1531,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	var replaced *ffmpeg.HLSProcess
 	var replacedLive *encderiv.LiveRun
 	if session.proc == nil {
+		if session.transcodeFailed {
+			return nil, ErrTranscodeFailed
+		}
 		// The last encoder crashed: this start is a crash restart, bounded by
 		// the session budget so a source that kills FFmpeg fails fast.
 		if session.lastCrashed && !session.takeRestartLocked(s.now()) {
@@ -1719,6 +1742,7 @@ func watchForStall(run *encoderRun, stall time.Duration) {
 // clean end-of-input exits log at debug; a crash logs at error with its exit
 // status and stderr tail.
 func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoderRun, rung Rung, base int) {
+	started := time.Now() // before the goroutine, so no segment of this run predates it
 	go func() {
 		defer close(run.exited)
 		waitErr := run.proc.Wait()
@@ -1739,6 +1763,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		// Filesystem reads stay off-lock, as with ensureRung's frontier scan.
 		rungDir := filepath.Join(session.dir, rung.ID)
 		frontier := scanFrontier(rungDir, base)
+		wroteSegment := segmentWrittenSince(rungDir, base, started)
 		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && session.durationSeconds > 0 {
 			last := frontier
@@ -1752,12 +1777,23 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 
 		s.mu.Lock()
 		run.outcome = outcome
+		failedNow := false
 		live := s.liveLocked(key, session)
 		if live && session.proc == run.proc {
 			session.proc = nil
 			session.currentRung = ""
 			session.lastCrashed = outcome == exitCrashed || outcome == exitStalled
 			s.releaseTranscodeLease(session)
+			switch {
+			case wroteSegment:
+				session.failedRuns = 0
+			case session.lastCrashed:
+				session.failedRuns++
+				if session.failedRuns >= encoderMaxFailedRuns && !session.transcodeFailed {
+					session.transcodeFailed = true
+					failedNow = true
+				}
+			}
 		}
 		lowered := live && sourceEnd >= 0 && session.noteSourceEndLocked(session.segmentStart(rung, sourceEnd))
 		s.mu.Unlock()
@@ -1786,6 +1822,10 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		}
 		if lowered {
 			logSourceEnd(key, session, rung, sourceEnd, stderr)
+		}
+		if failedNow {
+			slog.Error("live transcode keeps crashing or stalling without output; failing the session",
+				append(attrs, "failed_runs", encoderMaxFailedRuns)...)
 		}
 	}()
 }
