@@ -430,7 +430,14 @@ export class Renderer {
   }
 
   /** Draws one frame at width x height device pixels, dt seconds after the last. */
-  draw(width: number, height: number, dt: number, audio: AudioFrame, reducedMotion: boolean): void {
+  draw(
+    width: number,
+    height: number,
+    dt: number,
+    audio: AudioFrame,
+    reducedMotion: boolean,
+    frameMs = dt * 1000,
+  ): void {
     if (!this.visual) return;
     const gl = this.gl;
     this.reducedMotion = reducedMotion;
@@ -439,9 +446,11 @@ export class Renderer {
     this.time += dt;
     const p = this.switchProgress(reducedMotion);
     // The governor times frames outside a switch only, and its level changes between switches,
-    // as in the reference host.
+    // as in the reference host. It reads the raw frame interval, not the clamped step, so a
+    // stall or a throttled page is a pause it ignores rather than a slow frame that steps the
+    // render scale down.
     if (p === null) {
-      this.governor.record(dt * 1000);
+      this.governor.record(frameMs);
       this.setLevel(size, this.governor.level);
     }
     const v = this.visual;

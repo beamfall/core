@@ -6,76 +6,16 @@
     "release": "v0.2.5",
     "sha256": "8c01327c34768cbcd4f10c4a256385bf070b5b04f133e06b830754961f47f718",
     "license": "AGPL-3.0-only",
-    "note": "The listed fields of the vendored visuals, copied unchanged from the manifest at the pinned rev. Data only: the shader bytes are in glsl300/."
+    "note": "The listed fields of every visual, in the manifest catalogOrder, copied unchanged from the manifest at the pinned rev. Data only: the shader bytes are in glsl300/."
   },
   "visuals": [
     {
-      "id": "aurora",
-      "header": "// Aurora: Undulating volumetric light curtains.",
-      "palette": [
-        23,
-        0,
-        23,
-        0
-      ],
-      "trailDecay": 0.54,
-      "post": {
-        "bloomStrength": 0.32,
-        "bloomThreshold": 1.12,
-        "chroma": 0.0015,
-        "vignette": 0.6,
-        "grain": 0.016
-      },
-      "params": [
-        {
-          "uniform": "param0",
-          "default": 0.5
-        },
-        {
-          "uniform": "param1",
-          "default": 0.5
-        },
-        {
-          "uniform": "param2",
-          "default": 0.5
-        }
-      ]
-    },
-    {
-      "id": "nebula",
-      "header": "// Nebula: Volumetric fluid/smoke stirred by bands.",
-      "palette": [
-        8,
-        0,
-        8,
-        0
-      ],
-      "trailDecay": 0.87,
-      "post": {
-        "bloomStrength": 0.86,
-        "bloomThreshold": 0.78,
-        "chroma": 0.004,
-        "vignette": 0.48,
-        "grain": 0.038
-      },
-      "params": [
-        {
-          "uniform": "param0",
-          "default": 0.5
-        },
-        {
-          "uniform": "param1",
-          "default": 0.5
-        },
-        {
-          "uniform": "param2",
-          "default": 0.5
-        }
-      ]
-    },
-    {
-      "id": "plasma",
-      "header": "// Plasma: Domain-warped plasma: bass folds the field, treble frays it into glints.",
+      "id": "pulse",
+      "name": "Pulse",
+      "header": "// Pulse: Black-room solar core: breathing disk, prismatic corona rings, treble sparks.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
       "palette": [
         4,
         0,
@@ -83,63 +23,299 @@
         0
       ],
       "trailDecay": 0.82,
-      "post": {
-        "bloomStrength": 0.74,
-        "bloomThreshold": 0.86,
-        "chroma": 0.0025,
-        "vignette": 0.54,
-        "grain": 0.03
-      },
       "params": [
         {
+          "id": "glow",
           "uniform": "param0",
-          "default": 0.55
+          "label": "Glow",
+          "labelKey": "visual.pulse.glow",
+          "min": 0,
+          "max": 1,
+          "default": 0.7,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
         },
         {
+          "id": "impact",
           "uniform": "param1",
-          "default": 0.55
+          "label": "Impact",
+          "labelKey": "visual.pulse.impact",
+          "min": 0,
+          "max": 1,
+          "default": 0.65,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "reaction"
         },
         {
+          "id": "corona-count",
           "uniform": "param2",
-          "default": 0.55
+          "label": "Corona Count",
+          "labelKey": "visual.pulse.corona-count",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.5,
+          "curve": "linear",
+          "group": "color"
         }
-      ]
-    },
-    {
-      "id": "spectrum",
-      "header": "// Spectrum: Neon glass skyline: spectrum columns, spark shafts, circuit floor, molten waveform ribbon.",
-      "palette": [
-        23,
-        0,
-        23,
-        0
       ],
-      "trailDecay": 0.78,
       "post": {
         "bloomStrength": 0.6,
-        "bloomThreshold": 1.02,
-        "chroma": 0.0025,
-        "vignette": 0.52,
-        "grain": 0.022
-      },
+        "bloomThreshold": 0.95,
+        "chroma": 0.003,
+        "vignette": 0.45,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "starfield",
+      "name": "Starfield",
+      "header": "// Starfield: Warp-speed hyperspace; streaks lock to tempo.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        25,
+        0,
+        25,
+        0
+      ],
+      "trailDecay": 0.96,
       "params": [
         {
+          "id": "warp",
           "uniform": "param0",
-          "default": 0.6
+          "label": "Warp",
+          "labelKey": "visual.starfield.warp",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
         },
         {
+          "id": "density",
           "uniform": "param1",
-          "default": 0.5
+          "label": "Density",
+          "labelKey": "visual.starfield.density",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
         },
         {
+          "id": "streaks",
           "uniform": "param2",
-          "default": 0
+          "label": "Streaks",
+          "labelKey": "visual.starfield.streaks",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
         }
-      ]
+      ],
+      "post": {
+        "bloomStrength": 0.84,
+        "bloomThreshold": 0.82,
+        "chroma": 0.006,
+        "vignette": 0.54,
+        "grain": 0.035
+      }
+    },
+    {
+      "id": "crystal",
+      "name": "Crystal",
+      "header": "// Crystal: Faceted gem refracting; fractures on transients.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        13,
+        0,
+        13,
+        0
+      ],
+      "trailDecay": 0.72,
+      "params": [
+        {
+          "id": "facets",
+          "uniform": "param0",
+          "label": "Facets",
+          "labelKey": "visual.crystal.facets",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "refraction",
+          "uniform": "param1",
+          "label": "Refraction",
+          "labelKey": "visual.crystal.refraction",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "fracture",
+          "uniform": "param2",
+          "label": "Fracture",
+          "labelKey": "visual.crystal.fracture",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.7,
+        "bloomThreshold": 0.96,
+        "chroma": 0.007,
+        "vignette": 0.44,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "reactor",
+      "name": "Reactor",
+      "header": "// Reactor: Fusion core with orbiting spectrum arcs and sparks.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        1,
+        0,
+        1,
+        0
+      ],
+      "trailDecay": 0.88,
+      "params": [
+        {
+          "id": "core",
+          "uniform": "param0",
+          "label": "Core",
+          "labelKey": "visual.reactor.core",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "orbits",
+          "uniform": "param1",
+          "label": "Orbits",
+          "labelKey": "visual.reactor.orbits",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "sparks",
+          "uniform": "param2",
+          "label": "Sparks",
+          "labelKey": "visual.reactor.sparks",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.78,
+        "bloomThreshold": 0.84,
+        "chroma": 0.004,
+        "vignette": 0.54,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "chrome",
+      "name": "Chrome",
+      "header": "// Chrome: Raymarched liquid-metal blob, accent reflections.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        28,
+        0,
+        28,
+        0
+      ],
+      "trailDecay": 0.42,
+      "params": [
+        {
+          "id": "blobs",
+          "uniform": "param0",
+          "label": "Blobs",
+          "labelKey": "visual.chrome.blobs",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.25,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "reflection",
+          "uniform": "param1",
+          "label": "Reflection",
+          "labelKey": "visual.chrome.reflection",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "roughness",
+          "uniform": "param2",
+          "label": "Roughness",
+          "labelKey": "visual.chrome.roughness",
+          "min": 0,
+          "max": 1,
+          "default": 0.3,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.28,
+        "bloomThreshold": 1.25,
+        "chroma": 0.0035,
+        "vignette": 0.62,
+        "grain": 0.022
+      }
     },
     {
       "id": "tunnel",
+      "name": "Tunnel",
       "header": "// Tunnel: Opaque 3D flythrough; speed locks to BPM.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
       "palette": [
         2,
         0,
@@ -147,95 +323,285 @@
         0
       ],
       "trailDecay": 0.95,
+      "params": [
+        {
+          "id": "speed",
+          "uniform": "param0",
+          "label": "Speed",
+          "labelKey": "visual.tunnel.speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "twist",
+          "uniform": "param1",
+          "label": "Twist",
+          "labelKey": "visual.tunnel.twist",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "detail",
+          "uniform": "param2",
+          "label": "Detail",
+          "labelKey": "visual.tunnel.detail",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
       "post": {
         "bloomStrength": 0.9,
         "bloomThreshold": 0.78,
         "chroma": 0.007,
         "vignette": 0.56,
         "grain": 0.04
-      },
-      "params": [
-        {
-          "uniform": "param0",
-          "default": 0.5
-        },
-        {
-          "uniform": "param1",
-          "default": 0.4
-        },
-        {
-          "uniform": "param2",
-          "default": 0.5
-        }
-      ]
+      }
     },
     {
-      "id": "kaleidoscope",
-      "header": "// Kaleidoscope: Spectrum folded into a morphing mandala.",
+      "id": "terrain",
+      "name": "Terrain",
+      "header": "// Terrain: Pulse-array city skyline with a floor grid and a hot waveform river.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
       "palette": [
-        19,
+        29,
         0,
-        19,
+        29,
         0
       ],
-      "trailDecay": 0.93,
+      "trailDecay": 0.52,
+      "params": [
+        {
+          "id": "floor-speed",
+          "uniform": "param0",
+          "label": "Floor Speed",
+          "labelKey": "visual.terrain.floor-speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "skyline-height",
+          "uniform": "param1",
+          "label": "Skyline Height",
+          "labelKey": "visual.terrain.skyline-height",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "floor-detail",
+          "uniform": "param2",
+          "label": "Floor Detail",
+          "labelKey": "visual.terrain.floor-detail",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
       "post": {
-        "bloomStrength": 0.76,
-        "bloomThreshold": 0.86,
-        "chroma": 0.005,
-        "vignette": 0.46,
-        "grain": 0.028
-      },
-      "params": [
-        {
-          "uniform": "param0",
-          "default": 0.5
-        },
-        {
-          "uniform": "param1",
-          "default": 0.4
-        },
-        {
-          "uniform": "param2",
-          "default": 0.5
-        }
-      ]
+        "bloomStrength": 0.38,
+        "bloomThreshold": 1.1,
+        "chroma": 0.0025,
+        "vignette": 0.62,
+        "grain": 0.024
+      }
     },
     {
-      "id": "particles",
-      "header": "// Particles: GPU swarm bursting on the beat.",
+      "id": "plasma",
+      "name": "Plasma",
+      "header": "// Plasma: Domain-warped plasma: bass folds the field, treble frays it into glints.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
       "palette": [
-        1,
+        4,
         0,
-        1,
+        4,
         0
       ],
-      "trailDecay": 0.94,
+      "trailDecay": 0.82,
+      "params": [
+        {
+          "id": "scale",
+          "uniform": "param0",
+          "label": "Scale",
+          "labelKey": "visual.plasma.scale",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "turbulence",
+          "uniform": "param1",
+          "label": "Turbulence",
+          "labelKey": "visual.plasma.turbulence",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "filaments",
+          "uniform": "param2",
+          "label": "Filaments",
+          "labelKey": "visual.plasma.filaments",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
       "post": {
         "bloomStrength": 0.74,
         "bloomThreshold": 0.86,
-        "chroma": 0.004,
-        "vignette": 0.42,
+        "chroma": 0.0025,
+        "vignette": 0.54,
         "grain": 0.03
-      },
+      }
+    },
+    {
+      "id": "dunes",
+      "name": "Dunes",
+      "header": "// Dunes: Topographic neon wire landscape with beat crests.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        17,
+        0,
+        17,
+        0
+      ],
+      "trailDecay": 0.82,
       "params": [
         {
+          "id": "speed",
           "uniform": "param0",
-          "default": 0.5
+          "label": "Speed",
+          "labelKey": "visual.dunes.speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.48,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
         },
         {
+          "id": "height",
           "uniform": "param1",
-          "default": 0.6
+          "label": "Height",
+          "labelKey": "visual.dunes.height",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
         },
         {
+          "id": "density",
           "uniform": "param2",
-          "default": 0.4
+          "label": "Density",
+          "labelKey": "visual.dunes.density",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
         }
-      ]
+      ],
+      "post": {
+        "bloomStrength": 0.62,
+        "bloomThreshold": 0.94,
+        "chroma": 0.0025,
+        "vignette": 0.58,
+        "grain": 0.026
+      }
+    },
+    {
+      "id": "cymatics-prism",
+      "name": "Cymatics/Prism",
+      "header": "// Cymatics/Prism: A prismatic cymatics ring with audio-carved contours.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        31,
+        0,
+        31,
+        0
+      ],
+      "trailDecay": 0.86,
+      "params": null,
+      "post": {
+        "bloomStrength": 0.66,
+        "bloomThreshold": 0.9,
+        "chroma": 0.0035,
+        "vignette": 0.48,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "spectral-city",
+      "name": "Spectral City",
+      "header": "// Spectral City: A pulse-array skyline over a glossy black floor.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "trailDecay": 0.8,
+      "params": null,
+      "post": {
+        "bloomStrength": 0.7,
+        "bloomThreshold": 0.86,
+        "chroma": 0.003,
+        "vignette": 0.52,
+        "grain": 0.026
+      }
     },
     {
       "id": "waveform",
+      "name": "Waveform",
       "header": "// Waveform: Prismatic oscilloscope threads: stacked spectral wave wires with transient pins on black.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
       "palette": [
         5,
         0,
@@ -243,31 +609,119 @@
         0
       ],
       "trailDecay": 0.82,
+      "params": [
+        {
+          "id": "thickness",
+          "uniform": "param0",
+          "label": "Thickness",
+          "labelKey": "visual.waveform.thickness",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "trail-length",
+          "uniform": "param1",
+          "label": "Trail Length",
+          "labelKey": "visual.waveform.trail-length",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "trace-stack",
+          "uniform": "param2",
+          "label": "Trace Stack",
+          "labelKey": "visual.waveform.trace-stack",
+          "min": 0,
+          "max": 1,
+          "default": 0.2,
+          "step": 0.1,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
       "post": {
         "bloomStrength": 0.52,
         "bloomThreshold": 0.98,
         "chroma": 0.002,
         "vignette": 0.42,
         "grain": 0.018
-      },
+      }
+    },
+    {
+      "id": "bloom",
+      "name": "Bloom",
+      "header": "// Bloom: Aurora ink clouds with bass light-leak portals and electric treble veins over black.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        10,
+        0,
+        10,
+        0
+      ],
+      "trailDecay": 0.72,
       "params": [
         {
+          "id": "flow",
           "uniform": "param0",
-          "default": 0.4
+          "label": "Flow",
+          "labelKey": "visual.bloom.flow",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
         },
         {
+          "id": "color-spread",
           "uniform": "param1",
-          "default": 0.5
+          "label": "Color Spread",
+          "labelKey": "visual.bloom.color-spread",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
         },
         {
+          "id": "veins",
           "uniform": "param2",
-          "default": 0.2
+          "label": "Veins",
+          "labelKey": "visual.bloom.veins",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
         }
-      ]
+      ],
+      "post": {
+        "bloomStrength": 0.48,
+        "bloomThreshold": 1,
+        "chroma": 0.0012,
+        "vignette": 0.48,
+        "grain": 0.016
+      }
     },
     {
       "id": "drift",
+      "name": "Drift",
       "header": "// Drift: Liquid-glass caustic linework over dark glass; artwork becomes a low-frequency tint.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": true,
       "palette": [
         7,
         0,
@@ -275,27 +729,2871 @@
         0
       ],
       "trailDecay": 0.52,
+      "params": [
+        {
+          "id": "defocus-flow",
+          "uniform": "param0",
+          "label": "Defocus/Flow",
+          "labelKey": "visual.drift.defocus-flow",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "lens-pulse",
+          "uniform": "param1",
+          "label": "Lens Pulse",
+          "labelKey": "visual.drift.lens-pulse",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "reaction"
+        },
+        {
+          "id": "edge-spectra",
+          "uniform": "param2",
+          "label": "Edge Spectra",
+          "labelKey": "visual.drift.edge-spectra",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
       "post": {
         "bloomStrength": 0.34,
         "bloomThreshold": 0.98,
         "chroma": 0.0025,
         "vignette": 0.72,
         "grain": 0.014
-      },
+      }
+    },
+    {
+      "id": "vinyl",
+      "name": "Vinyl",
+      "header": "// Vinyl: Luminous record grooves with beat needle sparks.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        30,
+        0,
+        30,
+        0
+      ],
+      "trailDecay": 0.68,
       "params": [
         {
+          "id": "groove-count",
           "uniform": "param0",
-          "default": 0.4
+          "label": "Groove Count",
+          "labelKey": "visual.vinyl.groove-count",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
         },
         {
+          "id": "spin",
           "uniform": "param1",
-          "default": 0.5
+          "label": "Spin",
+          "labelKey": "visual.vinyl.spin",
+          "min": 0,
+          "max": 1,
+          "default": 0.35,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
         },
         {
+          "id": "needle",
           "uniform": "param2",
-          "default": 0.5
+          "label": "Needle",
+          "labelKey": "visual.vinyl.needle",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
         }
-      ]
+      ],
+      "post": {
+        "bloomStrength": 0.46,
+        "bloomThreshold": 1,
+        "chroma": 0.0015,
+        "vignette": 0.55,
+        "grain": 0.018
+      }
+    },
+    {
+      "id": "ribbons",
+      "name": "Ribbons",
+      "header": "// Ribbons: Layered silk-light ribbons with spectral edge highlights.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        8,
+        0,
+        8,
+        0
+      ],
+      "trailDecay": 0.76,
+      "params": [
+        {
+          "id": "flow",
+          "uniform": "param0",
+          "label": "Flow",
+          "labelKey": "visual.ribbons.flow",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "width",
+          "uniform": "param1",
+          "label": "Width",
+          "labelKey": "visual.ribbons.width",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "layers",
+          "uniform": "param2",
+          "label": "Layers",
+          "labelKey": "visual.ribbons.layers",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.142857,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.54,
+        "bloomThreshold": 0.98,
+        "chroma": 0.002,
+        "vignette": 0.48,
+        "grain": 0.016
+      }
+    },
+    {
+      "id": "ripple",
+      "name": "Ripple",
+      "header": "// Ripple: Beat-thrown cymatics ripples; newborn rings blaze gold, older rings cool to cyan-violet.",
+      "tier": "lite",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        21,
+        0,
+        21,
+        0
+      ],
+      "trailDecay": 0.92,
+      "params": [
+        {
+          "id": "ring-width",
+          "uniform": "param0",
+          "label": "Ring Width",
+          "labelKey": "visual.ripple.ring-width",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "expansion",
+          "uniform": "param1",
+          "label": "Expansion",
+          "labelKey": "visual.ripple.expansion",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "persistence",
+          "uniform": "param2",
+          "label": "Persistence",
+          "labelKey": "visual.ripple.persistence",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.7,
+        "bloomThreshold": 0.84,
+        "chroma": 0.003,
+        "vignette": 0.32,
+        "grain": 0.018
+      }
+    },
+    {
+      "id": "petals",
+      "name": "Petals",
+      "header": "// Petals: Spectral flower rosette with beat-blooming edges.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        24,
+        0,
+        24,
+        0
+      ],
+      "trailDecay": 0.78,
+      "params": [
+        {
+          "id": "petal-count",
+          "uniform": "param0",
+          "label": "Petal Count",
+          "labelKey": "visual.petals.petal-count",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "bloom",
+          "uniform": "param1",
+          "label": "Bloom",
+          "labelKey": "visual.petals.bloom",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "detail",
+          "uniform": "param2",
+          "label": "Detail",
+          "labelKey": "visual.petals.detail",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.56,
+        "bloomThreshold": 0.92,
+        "chroma": 0.002,
+        "vignette": 0.46,
+        "grain": 0.016
+      }
+    },
+    {
+      "id": "circuit",
+      "name": "Circuit",
+      "header": "// Circuit: Beat pulses through a neon circuit board.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        16,
+        0,
+        16,
+        0
+      ],
+      "trailDecay": 0.72,
+      "params": [
+        {
+          "id": "scale",
+          "uniform": "param0",
+          "label": "Scale",
+          "labelKey": "visual.circuit.scale",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "pulse-speed",
+          "uniform": "param1",
+          "label": "Pulse Speed",
+          "labelKey": "visual.circuit.pulse-speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "trace-brightness",
+          "uniform": "param2",
+          "label": "Trace Brightness",
+          "labelKey": "visual.circuit.trace-brightness",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.5,
+        "bloomThreshold": 0.96,
+        "chroma": 0.0018,
+        "vignette": 0.58,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "spectrum",
+      "name": "Spectrum",
+      "header": "// Spectrum: Neon glass skyline: spectrum columns, spark shafts, circuit floor, molten waveform ribbon.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        23,
+        0,
+        23,
+        0
+      ],
+      "trailDecay": 0.78,
+      "params": [
+        {
+          "id": "perspective",
+          "uniform": "param0",
+          "label": "Perspective",
+          "labelKey": "visual.spectrum.perspective",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "column-glass",
+          "uniform": "param1",
+          "label": "Column Glass",
+          "labelKey": "visual.spectrum.column-glass",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "reflection",
+          "uniform": "param2",
+          "label": "Reflection",
+          "labelKey": "visual.spectrum.reflection",
+          "min": 0,
+          "max": 1,
+          "default": 0,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.6,
+        "bloomThreshold": 1.02,
+        "chroma": 0.0025,
+        "vignette": 0.52,
+        "grain": 0.022
+      }
+    },
+    {
+      "id": "lattice",
+      "name": "Lattice",
+      "header": "// Lattice: Prismatic cymatics ring: rainbow contour wires in perspective with glossy floor reflection.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        9,
+        0,
+        9,
+        0
+      ],
+      "trailDecay": 0.84,
+      "params": [
+        {
+          "id": "contour-density",
+          "uniform": "param0",
+          "label": "Contour Density",
+          "labelKey": "visual.lattice.contour-density",
+          "min": 0,
+          "max": 1,
+          "default": 0.64,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "height",
+          "uniform": "param1",
+          "label": "Height",
+          "labelKey": "visual.lattice.height",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "reflection",
+          "uniform": "param2",
+          "label": "Reflection",
+          "labelKey": "visual.lattice.reflection",
+          "min": 0,
+          "max": 1,
+          "default": 0.46,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.62,
+        "bloomThreshold": 0.94,
+        "chroma": 0.0025,
+        "vignette": 0.5,
+        "grain": 0.022
+      }
+    },
+    {
+      "id": "murmuration",
+      "name": "Murmuration",
+      "header": "// Murmuration: Flock of light: three band-driven sub-flocks over a dark reflective floor; bass hits rupture the murmuration like a predator strike.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        11,
+        0,
+        11,
+        0
+      ],
+      "trailDecay": 0.88,
+      "params": [
+        {
+          "id": "flock-spread",
+          "uniform": "param0",
+          "label": "Flock Spread",
+          "labelKey": "visual.murmuration.flock-spread",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "rupture",
+          "uniform": "param1",
+          "label": "Rupture",
+          "labelKey": "visual.murmuration.rupture",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "wind",
+          "uniform": "param2",
+          "label": "Wind",
+          "labelKey": "visual.murmuration.wind",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.55,
+        "bloomThreshold": 1,
+        "chroma": 0.002,
+        "vignette": 0.2,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "ink",
+      "name": "Ink",
+      "header": "// Ink: Luminous ink in dark water: onsets drop dye charges colored by timbre, kicks send buoyant plumes mushrooming upward; the feedback buffer is the fluid.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        21,
+        0,
+        21,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "flow",
+          "uniform": "param0",
+          "label": "Flow",
+          "labelKey": "visual.ink.flow",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "ink-budget",
+          "uniform": "param1",
+          "label": "Ink Budget",
+          "labelKey": "visual.ink.ink-budget",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        },
+        {
+          "id": "buoyancy",
+          "uniform": "param2",
+          "label": "Buoyancy",
+          "labelKey": "visual.ink.buoyancy",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.5,
+        "bloomThreshold": 0.9,
+        "chroma": 0.0015,
+        "vignette": 0.3,
+        "grain": 0.04
+      }
+    },
+    {
+      "id": "vault",
+      "name": "Vault",
+      "header": "// Vault: The song as architecture: a slow glide through raymarched halls whose rooms follow the track's sections — ribs pulse on the beat, treble lights the clerestory.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        17,
+        0,
+        17,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "grandeur",
+          "uniform": "param0",
+          "label": "Grandeur",
+          "labelKey": "visual.vault.grandeur",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "ornament",
+          "uniform": "param1",
+          "label": "Ornament",
+          "labelKey": "visual.vault.ornament",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "walk-speed",
+          "uniform": "param2",
+          "label": "Walk Speed",
+          "labelKey": "visual.vault.walk-speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.45,
+        "bloomThreshold": 1.1,
+        "chroma": 0.001,
+        "vignette": 0.25,
+        "grain": 0.05
+      }
+    },
+    {
+      "id": "loom",
+      "name": "Loom",
+      "header": "// Loom: The song, woven: the shuttle lays live spectrum as glowing weft while already-woven history recedes to the horizon; bass ripples travel back through the cloth.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        3,
+        0,
+        3,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "weave-density",
+          "uniform": "param0",
+          "label": "Weave Density",
+          "labelKey": "visual.loom.weave-density",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "scroll",
+          "uniform": "param1",
+          "label": "Scroll",
+          "labelKey": "visual.loom.scroll",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "ripple",
+          "uniform": "param2",
+          "label": "Ripple",
+          "labelKey": "visual.loom.ripple",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.4,
+        "bloomThreshold": 1,
+        "chroma": 0.001,
+        "vignette": 0.3,
+        "grain": 0.05
+      }
+    },
+    {
+      "id": "lens",
+      "name": "Lens",
+      "header": "// Lens: Sound as mass: band-driven bodies lens a nebula (or the artwork) with chromatic dispersion; sustained energy inspirals them into a black hole with a photon ring.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        6,
+        0,
+        6,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "gravity",
+          "uniform": "param0",
+          "label": "Gravity",
+          "labelKey": "visual.lens.gravity",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "merge-eagerness",
+          "uniform": "param1",
+          "label": "Merge Eagerness",
+          "labelKey": "visual.lens.merge-eagerness",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "background-richness",
+          "uniform": "param2",
+          "label": "Background Richness",
+          "labelKey": "visual.lens.background-richness",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.6,
+        "bloomThreshold": 1.05,
+        "chroma": 0,
+        "vignette": 0.3,
+        "grain": 0.04
+      }
+    },
+    {
+      "id": "photo-prism",
+      "name": "Photo Prism",
+      "header": "// Photo Prism: Album/photo texture refracted into a circular waveform lens.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": true,
+      "palette": [
+        19,
+        0,
+        19,
+        0
+      ],
+      "trailDecay": 0.82,
+      "params": [
+        {
+          "id": "shard-spin",
+          "uniform": "param0",
+          "label": "Shard Spin",
+          "labelKey": "visual.photo-prism.shard-spin",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "refraction",
+          "uniform": "param1",
+          "label": "Refraction",
+          "labelKey": "visual.photo-prism.refraction",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "glow",
+          "uniform": "param2",
+          "label": "Glow",
+          "labelKey": "visual.photo-prism.glow",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.76,
+        "bloomThreshold": 0.86,
+        "chroma": 0.004,
+        "vignette": 0.48,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "memory-tunnel",
+      "name": "Memory Tunnel",
+      "header": "// Memory Tunnel: Photo tiles stretched into a beat-pulsing perspective corridor.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": true,
+      "palette": [
+        22,
+        0,
+        22,
+        0
+      ],
+      "trailDecay": 0.9,
+      "params": [
+        {
+          "id": "flight",
+          "uniform": "param0",
+          "label": "Flight",
+          "labelKey": "visual.memory-tunnel.flight",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "depth",
+          "uniform": "param1",
+          "label": "Depth",
+          "labelKey": "visual.memory-tunnel.depth",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "pulse",
+          "uniform": "param2",
+          "label": "Pulse",
+          "labelKey": "visual.memory-tunnel.pulse",
+          "min": 0,
+          "max": 1,
+          "default": 0.56,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "reaction"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.82,
+        "bloomThreshold": 0.8,
+        "chroma": 0.006,
+        "vignette": 0.55,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "photo-particles",
+      "name": "Photo Particles",
+      "header": "// Photo Particles: Image dissolves into chromatic spectrum particles.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": true,
+      "palette": [
+        25,
+        0,
+        25,
+        0
+      ],
+      "trailDecay": 0.78,
+      "params": [
+        {
+          "id": "particle-size",
+          "uniform": "param0",
+          "label": "Particle Size",
+          "labelKey": "visual.photo-particles.particle-size",
+          "min": 0,
+          "max": 1,
+          "default": 0.52,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "scatter",
+          "uniform": "param1",
+          "label": "Scatter",
+          "labelKey": "visual.photo-particles.scatter",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "color",
+          "uniform": "param2",
+          "label": "Color",
+          "labelKey": "visual.photo-particles.color",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.72,
+        "bloomThreshold": 0.88,
+        "chroma": 0.004,
+        "vignette": 0.46,
+        "grain": 0.026
+      }
+    },
+    {
+      "id": "photo-glass",
+      "name": "Photo Glass",
+      "header": "// Photo Glass: Photo-textured translucent towers on a reflective black floor.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": true,
+      "palette": [
+        13,
+        0,
+        13,
+        0
+      ],
+      "trailDecay": 0.62,
+      "params": [
+        {
+          "id": "towers",
+          "uniform": "param0",
+          "label": "Towers",
+          "labelKey": "visual.photo-glass.towers",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "height",
+          "uniform": "param1",
+          "label": "Height",
+          "labelKey": "visual.photo-glass.height",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "reflection",
+          "uniform": "param2",
+          "label": "Reflection",
+          "labelKey": "visual.photo-glass.reflection",
+          "min": 0,
+          "max": 1,
+          "default": 0.52,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.62,
+        "bloomThreshold": 0.92,
+        "chroma": 0.003,
+        "vignette": 0.54,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "photo-liquid",
+      "name": "Photo Liquid",
+      "header": "// Photo Liquid: Photo melts into fluid ink and neon veins.",
+      "tier": "flagship",
+      "calm": true,
+      "imageInput": true,
+      "palette": [
+        21,
+        0,
+        21,
+        0
+      ],
+      "trailDecay": 0.68,
+      "params": [
+        {
+          "id": "flow",
+          "uniform": "param0",
+          "label": "Flow",
+          "labelKey": "visual.photo-liquid.flow",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "veins",
+          "uniform": "param1",
+          "label": "Veins",
+          "labelKey": "visual.photo-liquid.veins",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "bloom",
+          "uniform": "param2",
+          "label": "Bloom",
+          "labelKey": "visual.photo-liquid.bloom",
+          "min": 0,
+          "max": 1,
+          "default": 0.52,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.58,
+        "bloomThreshold": 0.94,
+        "chroma": 0.003,
+        "vignette": 0.52,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "photo-topo",
+      "name": "Photo Topography",
+      "header": "// Photo Topography: Photo-derived heightfield as glowing contour terrain.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": true,
+      "palette": [
+        15,
+        0,
+        15,
+        0
+      ],
+      "trailDecay": 0.74,
+      "params": [
+        {
+          "id": "speed",
+          "uniform": "param0",
+          "label": "Speed",
+          "labelKey": "visual.photo-topo.speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "height",
+          "uniform": "param1",
+          "label": "Height",
+          "labelKey": "visual.photo-topo.height",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "contours",
+          "uniform": "param2",
+          "label": "Contours",
+          "labelKey": "visual.photo-topo.contours",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.64,
+        "bloomThreshold": 0.92,
+        "chroma": 0.003,
+        "vignette": 0.58,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "photo-lens",
+      "name": "Photo Lens",
+      "header": "// Photo Lens: Shattered mirrored photo shards inside a chromatic lens.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": true,
+      "palette": [
+        11,
+        0,
+        11,
+        0
+      ],
+      "trailDecay": 0.86,
+      "params": [
+        {
+          "id": "segments",
+          "uniform": "param0",
+          "label": "Segments",
+          "labelKey": "visual.photo-lens.segments",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "spin",
+          "uniform": "param1",
+          "label": "Spin",
+          "labelKey": "visual.photo-lens.spin",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "glints",
+          "uniform": "param2",
+          "label": "Glints",
+          "labelKey": "visual.photo-lens.glints",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.74,
+        "bloomThreshold": 0.86,
+        "chroma": 0.006,
+        "vignette": 0.48,
+        "grain": 0.026
+      }
+    },
+    {
+      "id": "photo-gallery",
+      "name": "Photo gallery",
+      "header": "// Photo gallery: Floating hologram photo cards drifting in depth.",
+      "tier": "flagship",
+      "calm": true,
+      "imageInput": true,
+      "palette": [
+        28,
+        0,
+        28,
+        0
+      ],
+      "trailDecay": 0.54,
+      "params": [
+        {
+          "id": "cards",
+          "uniform": "param0",
+          "label": "Cards",
+          "labelKey": "visual.photo-gallery.cards",
+          "min": 0,
+          "max": 1,
+          "default": 0.56,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "drift",
+          "uniform": "param1",
+          "label": "Drift",
+          "labelKey": "visual.photo-gallery.drift",
+          "min": 0,
+          "max": 1,
+          "default": 0.48,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "edges",
+          "uniform": "param2",
+          "label": "Edges",
+          "labelKey": "visual.photo-gallery.edges",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.58,
+        "bloomThreshold": 0.94,
+        "chroma": 0.0025,
+        "vignette": 0.52,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "photo-curtain",
+      "name": "Photo Curtain",
+      "header": "// Photo Curtain: Photo converted into vertical spectral light curtains.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": true,
+      "palette": [
+        14,
+        0,
+        14,
+        0
+      ],
+      "trailDecay": 0.78,
+      "params": [
+        {
+          "id": "columns",
+          "uniform": "param0",
+          "label": "Columns",
+          "labelKey": "visual.photo-curtain.columns",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "sway",
+          "uniform": "param1",
+          "label": "Sway",
+          "labelKey": "visual.photo-curtain.sway",
+          "min": 0,
+          "max": 1,
+          "default": 0.52,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "depth",
+          "uniform": "param2",
+          "label": "Depth",
+          "labelKey": "visual.photo-curtain.depth",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.68,
+        "bloomThreshold": 0.88,
+        "chroma": 0.004,
+        "vignette": 0.5,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "photo-veil",
+      "name": "Photo Veil",
+      "header": "// Photo Veil: Photo texture embedded in translucent aurora ribbons.",
+      "tier": "flagship",
+      "calm": true,
+      "imageInput": true,
+      "palette": [
+        10,
+        0,
+        10,
+        0
+      ],
+      "trailDecay": 0.68,
+      "params": [
+        {
+          "id": "ribbons",
+          "uniform": "param0",
+          "label": "Ribbons",
+          "labelKey": "visual.photo-veil.ribbons",
+          "min": 0,
+          "max": 1,
+          "default": 0.56,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "sway",
+          "uniform": "param1",
+          "label": "Sway",
+          "labelKey": "visual.photo-veil.sway",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "texture",
+          "uniform": "param2",
+          "label": "Texture",
+          "labelKey": "visual.photo-veil.texture",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.56,
+        "bloomThreshold": 0.96,
+        "chroma": 0.0025,
+        "vignette": 0.56,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "particles",
+      "name": "Particles",
+      "header": "// Particles: GPU swarm bursting on the beat.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        1,
+        0,
+        1,
+        0
+      ],
+      "trailDecay": 0.94,
+      "params": [
+        {
+          "id": "count",
+          "uniform": "param0",
+          "label": "Count",
+          "labelKey": "visual.particles.count",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "burst",
+          "uniform": "param1",
+          "label": "Burst",
+          "labelKey": "visual.particles.burst",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "reaction"
+        },
+        {
+          "id": "trails",
+          "uniform": "param2",
+          "label": "Trails",
+          "labelKey": "visual.particles.trails",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.74,
+        "bloomThreshold": 0.86,
+        "chroma": 0.004,
+        "vignette": 0.42,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "kaleidoscope",
+      "name": "Kaleidoscope",
+      "header": "// Kaleidoscope: Spectrum folded into a morphing mandala.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        19,
+        0,
+        19,
+        0
+      ],
+      "trailDecay": 0.93,
+      "params": [
+        {
+          "id": "segments",
+          "uniform": "param0",
+          "label": "Segments",
+          "labelKey": "visual.kaleidoscope.segments",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "spin",
+          "uniform": "param1",
+          "label": "Spin",
+          "labelKey": "visual.kaleidoscope.spin",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "zoom",
+          "uniform": "param2",
+          "label": "Zoom",
+          "labelKey": "visual.kaleidoscope.zoom",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.76,
+        "bloomThreshold": 0.86,
+        "chroma": 0.005,
+        "vignette": 0.46,
+        "grain": 0.028
+      }
+    },
+    {
+      "id": "helix",
+      "name": "Helix",
+      "header": "// Helix: Double-helix spectral ribbons with beat sparks.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        16,
+        0,
+        16,
+        0
+      ],
+      "trailDecay": 0.84,
+      "params": [
+        {
+          "id": "twist",
+          "uniform": "param0",
+          "label": "Twist",
+          "labelKey": "visual.helix.twist",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "depth",
+          "uniform": "param1",
+          "label": "Depth",
+          "labelKey": "visual.helix.depth",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "sparkle",
+          "uniform": "param2",
+          "label": "Sparkle",
+          "labelKey": "visual.helix.sparkle",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.68,
+        "bloomThreshold": 0.88,
+        "chroma": 0.003,
+        "vignette": 0.48,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "rain",
+      "name": "Rain",
+      "header": "// Rain: Neon spectrum rain over a glossy black floor.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        9,
+        0,
+        9,
+        0
+      ],
+      "trailDecay": 0.8,
+      "params": [
+        {
+          "id": "density",
+          "uniform": "param0",
+          "label": "Density",
+          "labelKey": "visual.rain.density",
+          "min": 0,
+          "max": 1,
+          "default": 0.62,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "speed",
+          "uniform": "param1",
+          "label": "Speed",
+          "labelKey": "visual.rain.speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "reflection",
+          "uniform": "param2",
+          "label": "Reflection",
+          "labelKey": "visual.rain.reflection",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.7,
+        "bloomThreshold": 0.86,
+        "chroma": 0.003,
+        "vignette": 0.52,
+        "grain": 0.026
+      }
+    },
+    {
+      "id": "constellation",
+      "name": "Constellation",
+      "header": "// Constellation: Audio-reactive node network with travelling links.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        7,
+        0,
+        7,
+        0
+      ],
+      "trailDecay": 0.8,
+      "params": [
+        {
+          "id": "nodes",
+          "uniform": "param0",
+          "label": "Nodes",
+          "labelKey": "visual.constellation.nodes",
+          "min": 0,
+          "max": 1,
+          "default": 0.65,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "links",
+          "uniform": "param1",
+          "label": "Links",
+          "labelKey": "visual.constellation.links",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        },
+        {
+          "id": "pulse",
+          "uniform": "param2",
+          "label": "Pulse",
+          "labelKey": "visual.constellation.pulse",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "reaction"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.58,
+        "bloomThreshold": 0.92,
+        "chroma": 0.002,
+        "vignette": 0.56,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "comets",
+      "name": "Comets",
+      "header": "// Comets: Orbital comet trails crossing a dark stage.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        1,
+        0,
+        1,
+        0
+      ],
+      "trailDecay": 0.88,
+      "params": [
+        {
+          "id": "count",
+          "uniform": "param0",
+          "label": "Count",
+          "labelKey": "visual.comets.count",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "spread",
+          "uniform": "param1",
+          "label": "Spread",
+          "labelKey": "visual.comets.spread",
+          "min": 0,
+          "max": 1,
+          "default": 0.58,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "tail",
+          "uniform": "param2",
+          "label": "Tail",
+          "labelKey": "visual.comets.tail",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.7,
+        "bloomThreshold": 0.88,
+        "chroma": 0.004,
+        "vignette": 0.52,
+        "grain": 0.026
+      }
+    },
+    {
+      "id": "glyph",
+      "name": "Glyph",
+      "header": "// Glyph: Rotating spectral sigil with broken rings and radial bars.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        2,
+        0,
+        2,
+        0
+      ],
+      "trailDecay": 0.84,
+      "params": [
+        {
+          "id": "rings",
+          "uniform": "param0",
+          "label": "Rings",
+          "labelKey": "visual.glyph.rings",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "rotate",
+          "uniform": "param1",
+          "label": "Rotate",
+          "labelKey": "visual.glyph.rotate",
+          "min": 0,
+          "max": 1,
+          "default": 0.42,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "density",
+          "uniform": "param2",
+          "label": "Density",
+          "labelKey": "visual.glyph.density",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.64,
+        "bloomThreshold": 0.9,
+        "chroma": 0.003,
+        "vignette": 0.5,
+        "grain": 0.024
+      }
+    },
+    {
+      "id": "nebula",
+      "name": "Nebula",
+      "header": "// Nebula: Volumetric fluid/smoke stirred by bands.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        8,
+        0,
+        8,
+        0
+      ],
+      "trailDecay": 0.87,
+      "params": [
+        {
+          "id": "density",
+          "uniform": "param0",
+          "label": "Density",
+          "labelKey": "visual.nebula.density",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "swirl",
+          "uniform": "param1",
+          "label": "Swirl",
+          "labelKey": "visual.nebula.swirl",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "brightness",
+          "uniform": "param2",
+          "label": "Brightness",
+          "labelKey": "visual.nebula.brightness",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.86,
+        "bloomThreshold": 0.78,
+        "chroma": 0.004,
+        "vignette": 0.48,
+        "grain": 0.038
+      }
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "header": "// Aurora: Undulating volumetric light curtains.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        23,
+        0,
+        23,
+        0
+      ],
+      "trailDecay": 0.54,
+      "params": [
+        {
+          "id": "curtains",
+          "uniform": "param0",
+          "label": "Curtains",
+          "labelKey": "visual.aurora.curtains",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.5,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "sway",
+          "uniform": "param1",
+          "label": "Sway",
+          "labelKey": "visual.aurora.sway",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "altitude",
+          "uniform": "param2",
+          "label": "Altitude",
+          "labelKey": "visual.aurora.altitude",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.32,
+        "bloomThreshold": 1.12,
+        "chroma": 0.0015,
+        "vignette": 0.6,
+        "grain": 0.016
+      }
+    },
+    {
+      "id": "phosphor-scope",
+      "name": "Phosphor Scope",
+      "header": "// Phosphor Scope: Vintage CRT oscilloscope in a dark room: bass-vs-mid Lissajous figures morph with timbre, the beam kicks on onsets, and phosphor persistence smears the trace into glowing memory.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        16,
+        0,
+        16,
+        0
+      ],
+      "trailDecay": 0.9,
+      "params": [
+        {
+          "id": "persistence",
+          "uniform": "param0",
+          "label": "Persistence",
+          "labelKey": "visual.phosphor-scope.persistence",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "figure-complexity",
+          "uniform": "param1",
+          "label": "Figure Complexity",
+          "labelKey": "visual.phosphor-scope.figure-complexity",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "beam-fuzz",
+          "uniform": "param2",
+          "label": "Beam Fuzz",
+          "labelKey": "visual.phosphor-scope.beam-fuzz",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.6,
+        "bloomThreshold": 0.95,
+        "chroma": 0.0025,
+        "vignette": 0.35,
+        "grain": 0.05
+      }
+    },
+    {
+      "id": "oscillo-ring",
+      "name": "Oscillo Ring",
+      "header": "// Oscillo Ring: The waveform bent into a closed ring: a live radial trace breathes on bass, echo rings detach and decay outward on every beat, and treble sparks orbit the rim.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        2,
+        0,
+        2,
+        0
+      ],
+      "trailDecay": 0.72,
+      "params": [
+        {
+          "id": "trace-amp",
+          "uniform": "param0",
+          "label": "Trace Amp",
+          "labelKey": "visual.oscillo-ring.trace-amp",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "echo-reach",
+          "uniform": "param1",
+          "label": "Echo Reach",
+          "labelKey": "visual.oscillo-ring.echo-reach",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "spark-density",
+          "uniform": "param2",
+          "label": "Spark Density",
+          "labelKey": "visual.oscillo-ring.spark-density",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.05,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.5,
+        "bloomThreshold": 1,
+        "chroma": 0.0015,
+        "vignette": 0.25,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "seismograph",
+      "name": "Seismograph",
+      "header": "// Seismograph: Four recording pens (bass, mid, treble, flux) draw scrolling traces on ruled paper; onsets jolt the needles, beats leave tick-marks, and heavy flux bleeds the ink.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        17,
+        0,
+        17,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "scroll-speed",
+          "uniform": "param0",
+          "label": "Scroll Speed",
+          "labelKey": "visual.seismograph.scroll-speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "pen-gain",
+          "uniform": "param1",
+          "label": "Pen Gain",
+          "labelKey": "visual.seismograph.pen-gain",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "reaction"
+        },
+        {
+          "id": "ink-bleed",
+          "uniform": "param2",
+          "label": "Ink Bleed",
+          "labelKey": "visual.seismograph.ink-bleed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.3,
+        "bloomThreshold": 1.1,
+        "chroma": 0.0005,
+        "vignette": 0.3,
+        "grain": 0.06
+      }
+    },
+    {
+      "id": "wave-cascade",
+      "name": "Wave Cascade",
+      "header": "// Wave Cascade: A live trace rides the top of the frame; each beat shears off a sheet of it that falls, fades, and stacks into a luminous waterfall while onsets fling spray off the crest.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        13,
+        0,
+        13,
+        0
+      ],
+      "trailDecay": 0.82,
+      "params": [
+        {
+          "id": "fall-speed",
+          "uniform": "param0",
+          "label": "Fall Speed",
+          "labelKey": "visual.wave-cascade.fall-speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "sheet-life",
+          "uniform": "param1",
+          "label": "Sheet Life",
+          "labelKey": "visual.wave-cascade.sheet-life",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "spray",
+          "uniform": "param2",
+          "label": "Spray",
+          "labelKey": "visual.wave-cascade.spray",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.55,
+        "bloomThreshold": 1,
+        "chroma": 0.0015,
+        "vignette": 0.28,
+        "grain": 0.04
+      }
+    },
+    {
+      "id": "strata-ridge",
+      "name": "Strata Ridge",
+      "header": "// Strata Ridge: Unknown Pleasures, elevated: a stack of waveform traces recedes upward in perspective, near ridges occluding the old; bass lifts the live peaks, onsets race a shimmer along the front ridge.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        24,
+        0,
+        24,
+        0
+      ],
+      "trailDecay": 0.5,
+      "params": [
+        {
+          "id": "ridge-count",
+          "uniform": "param0",
+          "label": "Ridge Count",
+          "labelKey": "visual.strata-ridge.ridge-count",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.083333,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "peak-drama",
+          "uniform": "param1",
+          "label": "Peak Drama",
+          "labelKey": "visual.strata-ridge.peak-drama",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "afterglow",
+          "uniform": "param2",
+          "label": "Afterglow",
+          "labelKey": "visual.strata-ridge.afterglow",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.45,
+        "bloomThreshold": 1.05,
+        "chroma": 0.001,
+        "vignette": 0.3,
+        "grain": 0.05
+      }
+    },
+    {
+      "id": "wave-tunnel",
+      "name": "Wave Tunnel",
+      "header": "// Wave Tunnel: Fly down a tunnel extruded from the trace history: every depth ring is a past waveform slice, beats lurch the camera forward, onsets flash the nearest ring, timbre tilts the flight path.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        25,
+        0,
+        25,
+        0
+      ],
+      "trailDecay": 0.82,
+      "params": [
+        {
+          "id": "velocity",
+          "uniform": "param0",
+          "label": "Velocity",
+          "labelKey": "visual.wave-tunnel.velocity",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "ring-density",
+          "uniform": "param1",
+          "label": "Ring Density",
+          "labelKey": "visual.wave-tunnel.ring-density",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "wall-turbulence",
+          "uniform": "param2",
+          "label": "Wall Turbulence",
+          "labelKey": "visual.wave-tunnel.wall-turbulence",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.6,
+        "bloomThreshold": 1,
+        "chroma": 0.0025,
+        "vignette": 0.25,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "interference",
+      "name": "Interference",
+      "header": "// Interference: Bass, mid and treble each radiate circular wavefronts shaped by their own trace; where crests align the water burns HDR-hot with moiré shimmer, and every beat re-anchors the emitters with a soft shockwave.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        21,
+        0,
+        21,
+        0
+      ],
+      "trailDecay": 0.4,
+      "params": [
+        {
+          "id": "ring-density",
+          "uniform": "param0",
+          "label": "Ring Density",
+          "labelKey": "visual.interference.ring-density",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "drift",
+          "uniform": "param1",
+          "label": "Drift",
+          "labelKey": "visual.interference.drift",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "heat",
+          "uniform": "param2",
+          "label": "Heat",
+          "labelKey": "visual.interference.heat",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.5,
+        "bloomThreshold": 1,
+        "chroma": 0.0015,
+        "vignette": 0.28,
+        "grain": 0.04
+      }
+    },
+    {
+      "id": "filament",
+      "name": "Filament",
+      "header": "// Filament: A single elastic string plucked by the music: band-weighted standing-wave harmonics decay between beats, node beads glow with their harmonic, and bass bows the whole span.",
+      "tier": "standard",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        13,
+        0,
+        13,
+        0
+      ],
+      "trailDecay": 0.62,
+      "params": [
+        {
+          "id": "tension",
+          "uniform": "param0",
+          "label": "Tension",
+          "labelKey": "visual.filament.tension",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "glow",
+          "uniform": "param1",
+          "label": "Glow",
+          "labelKey": "visual.filament.glow",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        },
+        {
+          "id": "bead-shine",
+          "uniform": "param2",
+          "label": "Bead Shine",
+          "labelKey": "visual.filament.bead-shine",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.5,
+        "bloomThreshold": 1,
+        "chroma": 0.0012,
+        "vignette": 0.25,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "mirror-bloom",
+      "name": "Mirror Bloom",
+      "header": "// Mirror Bloom: A living Rorschach: band traces folded around the mirror axis shape an ink-blot that breathes with amplitude, feathers its edges with treble, and throws symmetric splatter on flux.",
+      "tier": "standard",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        14,
+        0,
+        14,
+        0
+      ],
+      "trailDecay": 0,
+      "params": [
+        {
+          "id": "blot-mass",
+          "uniform": "param0",
+          "label": "Blot Mass",
+          "labelKey": "visual.mirror-bloom.blot-mass",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "feather",
+          "uniform": "param1",
+          "label": "Feather",
+          "labelKey": "visual.mirror-bloom.feather",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "splatter",
+          "uniform": "param2",
+          "label": "Splatter",
+          "labelKey": "visual.mirror-bloom.splatter",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.4,
+        "bloomThreshold": 1.05,
+        "chroma": 0.0015,
+        "vignette": 0.32,
+        "grain": 0.05
+      }
+    },
+    {
+      "id": "braid",
+      "name": "Braid",
+      "header": "// Braid: Three luminous threads — bass, mid, treble — braid around a shared axis in pseudo-3D: each thread rides its own band trace, beatPhase drives the twist, and crossings spit sparks on the beat.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        4,
+        0,
+        4,
+        0
+      ],
+      "trailDecay": 0.82,
+      "params": [
+        {
+          "id": "twist",
+          "uniform": "param0",
+          "label": "Twist",
+          "labelKey": "visual.braid.twist",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "core-heat",
+          "uniform": "param1",
+          "label": "Core Heat",
+          "labelKey": "visual.braid.core-heat",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        },
+        {
+          "id": "sparks",
+          "uniform": "param2",
+          "label": "Sparks",
+          "labelKey": "visual.braid.sparks",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.6,
+        "bloomThreshold": 1,
+        "chroma": 0.002,
+        "vignette": 0.22,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "liquid-optics",
+      "name": "Liquid Optics",
+      "header": "// Liquid Optics: Artwork through rippling glass: fbm water refraction, chromatic split, HDR caustic web, bass ripple bursts.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        3,
+        0,
+        3,
+        0
+      ],
+      "trailDecay": 0.3,
+      "params": [
+        {
+          "id": "refraction",
+          "uniform": "param0",
+          "label": "Refraction",
+          "labelKey": "visual.liquid-optics.refraction",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "caustics",
+          "uniform": "param1",
+          "label": "Caustics",
+          "labelKey": "visual.liquid-optics.caustics",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "flow",
+          "uniform": "param2",
+          "label": "Flow",
+          "labelKey": "visual.liquid-optics.flow",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.45,
+        "bloomThreshold": 1,
+        "chroma": 0.002,
+        "vignette": 0.4,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "volumetric-light",
+      "name": "Volumetric Light",
+      "header": "// Volumetric Light: Projector haze: band-driven beam fan with HDR spines, drifting dust motes, light leaks along the frame.",
+      "tier": "lite",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        12,
+        0,
+        12,
+        0
+      ],
+      "trailDecay": 0.55,
+      "params": [
+        {
+          "id": "haze",
+          "uniform": "param0",
+          "label": "Haze",
+          "labelKey": "visual.volumetric-light.haze",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "beam-count",
+          "uniform": "param1",
+          "label": "Beam Count",
+          "labelKey": "visual.volumetric-light.beam-count",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.25,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "dust",
+          "uniform": "param2",
+          "label": "Dust",
+          "labelKey": "visual.volumetric-light.dust",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.65,
+        "bloomThreshold": 0.9,
+        "chroma": 0.002,
+        "vignette": 0.4,
+        "grain": 0.03
+      }
+    },
+    {
+      "id": "event-horizon",
+      "name": "Event Horizon",
+      "header": "// Event Horizon: Gravitational vortex: sheared spiral accretion arms, doppler beaming, HDR photon ring, infalling embers, absolute black core.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        27,
+        0,
+        27,
+        0
+      ],
+      "trailDecay": 0.86,
+      "params": [
+        {
+          "id": "pull",
+          "uniform": "param0",
+          "label": "Pull",
+          "labelKey": "visual.event-horizon.pull",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "spin",
+          "uniform": "param1",
+          "label": "Spin",
+          "labelKey": "visual.event-horizon.spin",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "disk-detail",
+          "uniform": "param2",
+          "label": "Disk Detail",
+          "labelKey": "visual.event-horizon.disk-detail",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "detail"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.8,
+        "bloomThreshold": 0.95,
+        "chroma": 0.004,
+        "vignette": 0.45,
+        "grain": 0.025
+      }
+    },
+    {
+      "id": "prism-room",
+      "name": "Prism Room",
+      "header": "// Prism Room: Faceted caustic chamber: kaleidoscopic glass panes lit per band, caustic sweeps on the beat, HDR edge filaments and vertex glints.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        6,
+        0,
+        6,
+        0
+      ],
+      "trailDecay": 0.72,
+      "params": [
+        {
+          "id": "facets",
+          "uniform": "param0",
+          "label": "Facets",
+          "labelKey": "visual.prism-room.facets",
+          "min": 0,
+          "max": 1,
+          "default": 0.5,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "sweep",
+          "uniform": "param1",
+          "label": "Sweep",
+          "labelKey": "visual.prism-room.sweep",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "edge-glow",
+          "uniform": "param2",
+          "label": "Edge Glow",
+          "labelKey": "visual.prism-room.edge-glow",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.7,
+        "bloomThreshold": 1,
+        "chroma": 0.003,
+        "vignette": 0.42,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "lumen-field",
+      "name": "Lumen Field",
+      "header": "// Lumen Field: Field of spectral light pillars on a mirror floor: HDR tip orbs, rising energy pulses, rippled reflections.",
+      "tier": "standard",
+      "calm": true,
+      "imageInput": false,
+      "palette": [
+        5,
+        0,
+        5,
+        0
+      ],
+      "trailDecay": 0.6,
+      "params": [
+        {
+          "id": "pillars",
+          "uniform": "param0",
+          "label": "Pillars",
+          "labelKey": "visual.lumen-field.pillars",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.166667,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "bloom",
+          "uniform": "param1",
+          "label": "Bloom",
+          "labelKey": "visual.lumen-field.bloom",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "sway",
+          "uniform": "param2",
+          "label": "Sway",
+          "labelKey": "visual.lumen-field.sway",
+          "min": 0,
+          "max": 1,
+          "default": 0.45,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.6,
+        "bloomThreshold": 0.95,
+        "chroma": 0.002,
+        "vignette": 0.38,
+        "grain": 0.02
+      }
+    },
+    {
+      "id": "laser-tunnel",
+      "name": "Laser Tunnel",
+      "header": "// Laser Tunnel: Wireframe laser flythrough: polygonal frames and corner rails with HDR cores, rotating sweep beam, beat shock frames.",
+      "tier": "flagship",
+      "calm": false,
+      "imageInput": false,
+      "palette": [
+        23,
+        0,
+        23,
+        0
+      ],
+      "trailDecay": 0.84,
+      "params": [
+        {
+          "id": "speed",
+          "uniform": "param0",
+          "label": "Speed",
+          "labelKey": "visual.laser-tunnel.speed",
+          "min": 0,
+          "max": 1,
+          "default": 0.55,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "motion"
+        },
+        {
+          "id": "sides",
+          "uniform": "param1",
+          "label": "Sides",
+          "labelKey": "visual.laser-tunnel.sides",
+          "min": 0,
+          "max": 1,
+          "default": 0.4,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "shape"
+        },
+        {
+          "id": "rail-glow",
+          "uniform": "param2",
+          "label": "Rail Glow",
+          "labelKey": "visual.laser-tunnel.rail-glow",
+          "min": 0,
+          "max": 1,
+          "default": 0.6,
+          "step": 0.01,
+          "curve": "linear",
+          "group": "color"
+        }
+      ],
+      "post": {
+        "bloomStrength": 0.75,
+        "bloomThreshold": 0.9,
+        "chroma": 0.004,
+        "vignette": 0.45,
+        "grain": 0.025
+      }
     }
   ]
 }
