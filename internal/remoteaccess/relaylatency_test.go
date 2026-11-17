@@ -67,8 +67,7 @@ func waitForCarrierEnv(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	path := filepath.Join(dir, "carrier.env")
 	for deadline := time.Now().Add(time.Minute); ; {
-		// #nosec G304 -- the harness's own scratch directory.
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 G703 -- the harness's own scratch directory.
 		if err == nil {
 			env := map[string]string{}
 			for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
