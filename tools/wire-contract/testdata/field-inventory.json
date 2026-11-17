@@ -200,6 +200,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -1495,6 +1496,18 @@
       ]
     },
     {
+      "field": "libraryentities",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "allLabel",
+        "items",
+        "kind",
+        "kinds",
+        "total"
+      ]
+    },
+    {
       "field": "libraryhealth",
       "effect": "read",
       "tier": "admin",
@@ -1681,6 +1694,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -2198,6 +2212,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -2217,6 +2232,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -2236,6 +2252,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -2255,6 +2272,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -2975,6 +2993,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -2994,6 +3013,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -3588,6 +3608,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",
@@ -3687,6 +3708,7 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "byline",
         "engagement",
         "id",
         "kind",

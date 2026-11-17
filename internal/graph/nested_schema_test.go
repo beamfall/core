@@ -141,14 +141,15 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // sourceItems is a nonexistent nested field (the contract this schema exists to
 // surface). `mediaClass` was added deliberately by CORE-1492 for class-aware
 // card placeholders, `artwork.dominantColor` by CORE-0315 for a poster's
-// tint, and `year` by CORE-2269 so a card can state it. Any further field must
-// be added the same way, alongside the golden.
+// tint, `year` by CORE-2269 so a card can state it, and `byline` by CORE-2362
+// so an audio card can name its people. Any further field must be added the
+// same way, alongside the golden.
 func TestNestedSchemaSourceItemShape(t *testing.T) {
 	si := topLevel(t, "sourceitems")
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "engagement", "id", "kind", "locked", "mediaClass", "muted", "restricted", "summary", "title", "year"}
+	want := []string{"artwork", "artworkSlots", "byline", "engagement", "id", "kind", "locked", "mediaClass", "muted", "restricted", "summary", "title", "year"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}

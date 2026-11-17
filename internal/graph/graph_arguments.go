@@ -451,6 +451,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "limit", Kind: "int", Optional: true},
 	},
 	"libraryindexstatus": {},
+	"libraryentities":    fieldArguments["libraryentities"],
 	"libraryitems":       fieldArguments["libraryitems"],
 	"linkmediarelation": {
 		{Name: "fromMediaID", Kind: "string"},

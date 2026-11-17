@@ -119,8 +119,9 @@ func TestEntityQueryListsRelatedEntityGroups(t *testing.T) {
 		Kind:            "record",
 		KindDisplayName: plugin.L("Record"),
 		Archetype:       "container",
+		// First Record's only Media is video, so its card carries that class.
 		Items: []SourceItem{
-			{ID: "entity-record-a", Kind: "entity", Title: "First Record"},
+			{ID: "entity-record-a", Kind: "entity", Title: "First Record", MediaClass: "video"},
 			{ID: "entity-record-b", Kind: "entity", Title: "Second Record"},
 		},
 	}}

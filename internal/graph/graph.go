@@ -134,11 +134,17 @@ type SourceItem struct {
 	Engagement *SourceItemEngagement `json:"engagement,omitempty"`
 	// MediaClass is a media-kind item's playback class ("audio", "video"), so
 	// a client can choose a class-appropriate placeholder for an artwork-less
-	// card (CORE-1492). Absent for entities and unknown classes.
+	// card (CORE-1492). An entity item carries the class its linked Media
+	// share, so a container of audio frames its art like its tracks
+	// (CORE-2362). Absent for unknown or mixed classes.
 	MediaClass string `json:"mediaClass,omitempty"`
 	// Year is a media-kind item's stored year, so a card can state it without
 	// a detail read (CORE-2269). Absent for entities and for Media with no year.
 	Year int `json:"year,omitempty"`
+	// Byline names, for an audio Media item, the person-archetype Entities
+	// linked to it, in link order, so a card credits them under its title
+	// (CORE-2362). Absent for every other item.
+	Byline []string `json:"byline,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -1024,7 +1030,65 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
+	if err := h.annotateBylines(ctx, items); err != nil {
+		return err
+	}
 	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+}
+
+// cardBylineArchetype is the Entity archetype whose linked titles an audio
+// card names under its title. Core names the archetype, never a plugin kind.
+const cardBylineArchetype = "person"
+
+// maxCardByline caps how many names one card credits.
+const maxCardByline = 3
+
+// annotateBylines sets Byline on each audio Media item from the
+// person-archetype Entities linked to it, in link order (CORE-2362). It runs
+// after AnnotateMediaClass, which supplies the class. The linked Entities
+// share the visible Media's Library, so naming them reveals nothing the
+// caller cannot already reach.
+func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem) error {
+	var ids []store.MediaID
+	for _, item := range items {
+		if item.Kind != "entity" && item.MediaClass == store.MediaClassAudio {
+			ids = append(ids, item.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	links, err := h.store.MediaEntityLinks(ctx, ids)
+	if err != nil {
+		return err
+	}
+	archetypes := map[store.LibraryID]map[string]string{}
+	for i := range items {
+		item := &items[i]
+		if item.Kind == "entity" || item.MediaClass != store.MediaClassAudio {
+			continue
+		}
+		for _, link := range links[item.ID] {
+			kinds, ok := archetypes[link.LibraryID]
+			if !ok {
+				kinds = map[string]string{}
+				if bundle, found := h.libraryBundle(ctx, link.LibraryID); found {
+					for _, kind := range bundle.EntityKinds {
+						kinds[kind.Name] = kind.Archetype
+					}
+				}
+				archetypes[link.LibraryID] = kinds
+			}
+			if kinds[link.Kind] != cardBylineArchetype || slices.Contains(item.Byline, link.Title) {
+				continue
+			}
+			item.Byline = append(item.Byline, link.Title)
+			if len(item.Byline) == maxCardByline {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
@@ -1038,6 +1102,7 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		Engagement: sourceItemEngagement(item.Engagement),
 		MediaClass: string(item.MediaClass),
 		Year:       item.Year,
+		Byline:     item.Byline,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -5331,6 +5396,7 @@ var queryFields = map[string]bool{
 	"itemstate":              true,
 	"metadatacredits":        true,
 	"sourceitems":            true,
+	"libraryentities":        true,
 	"libraryitems":           true,
 	"ambientqueue":           true,
 	"currentsession":         true,

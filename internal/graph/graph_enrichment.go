@@ -128,8 +128,9 @@ func (h *Handler) searchResult(ctx context.Context, scope auth.Scope, req reques
 	return resp, nil
 }
 
-// describeSearchRows fills each row's display detail in place: Library, year
-// and class or kind. Rows in a Library the scope cannot see keep none of it.
+// describeSearchRows fills each row's display detail in place: Library, year,
+// class or kind, and byline. Rows in a Library the scope cannot see keep none
+// of it.
 func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFilter, items []SearchResultItem) error {
 	if h.store == nil || len(items) == 0 {
 		return nil
@@ -166,6 +167,34 @@ func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFi
 			displayNames[key] = name
 		}
 		items[i].EntityKindDisplayName = name
+	}
+	return h.describeSearchCards(ctx, details, rows, items)
+}
+
+// describeSearchCards gives each visible row the card fields every other card
+// surface carries: an entity row the class its Media share, an audio row its
+// byline (CORE-2362).
+func (h *Handler) describeSearchCards(ctx context.Context, details []store.SearchRowDetail, rows []store.SourceItem, items []SearchResultItem) error {
+	cards := make([]store.SourceItem, 0, len(rows))
+	at := make([]int, 0, len(rows))
+	for i, detail := range details {
+		if detail.LibraryID != "" {
+			cards = append(cards, rows[i])
+			at = append(at, i)
+		}
+	}
+	if err := h.store.AnnotateMediaClass(ctx, cards); err != nil {
+		return err
+	}
+	if err := h.annotateBylines(ctx, cards); err != nil {
+		return err
+	}
+	for j, card := range cards {
+		i := at[j]
+		if items[i].EntityKind != "" {
+			items[i].MediaClass = string(card.MediaClass)
+		}
+		items[i].Byline = card.Byline
 	}
 	return nil
 }

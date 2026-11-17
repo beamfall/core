@@ -590,6 +590,11 @@
     "tier": "admin"
   },
   {
+    "field": "libraryentities",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "libraryhealth",
     "effect": "read",
     "tier": "admin"
