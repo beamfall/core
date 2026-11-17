@@ -28,10 +28,39 @@ func (s *scanWalkState) consumeTask(task *workerTask) error {
 		}
 		return s.ctx.Err()
 	}
+	if err := s.refreshMovedRow(task); err != nil {
+		return err
+	}
 	if task.fastPath {
 		return s.consumeFastTask(task)
 	}
 	return s.consumeFullTask(task)
+}
+
+// refreshMovedRow looks task's file row up again when this walk has imported
+// the same bytes at another path since the worker's lookup. The catalog keeps
+// one file row per content fingerprint, so that import took the row the worker
+// may have read, and a worker that read it first would send the file down the
+// fast path, or count it as changed, where a sequential walk imports and
+// counts it as added. Which of the two a parallel scan reported depended on
+// worker timing (CORE-2210).
+func (s *scanWalkState) refreshMovedRow(task *workerTask) error {
+	if !task.stored.OK || !s.movedFingerprints[task.stored.ContentFingerprint] {
+		return nil
+	}
+	fastPath := task.fastPath
+	stored, err := s.st.MediaFileFingerprintByPath(s.ctx, task.path)
+	if err != nil {
+		return err
+	}
+	task.stored = stored
+	if !fastPath || stored.OK {
+		return nil
+	}
+	// The worker skipped the hashes and the probe for a row the file no
+	// longer has, so the file is filled again as the new file it now is.
+	s.fill(s.ctx, task)
+	return task.err
 }
 
 func (s *scanWalkState) consumeFastTask(task *workerTask) error {
@@ -271,6 +300,12 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	if err != nil {
 		s.dropTallies(path)
 		return skipManagedAdmissionInFlight(err, path)
+	}
+	if !task.stored.OK || task.stored.ContentFingerprint != fingerprint {
+		if s.movedFingerprints == nil {
+			s.movedFingerprints = map[string]bool{}
+		}
+		s.movedFingerprints[fingerprint] = true
 	}
 	s.committed = path
 	s.rememberVersionAnchor(versionKey, media.ID, fingerprint, parsed)

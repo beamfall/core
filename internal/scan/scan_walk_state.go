@@ -37,20 +37,24 @@ type scanWalkState struct {
 	// completedFingerprints maps the bytes of each file this pass completed
 	// to its Media (keepCountedMediaBeforeMove, CORE-2197).
 	completedFingerprints map[string]store.MediaID
-	progress              func(jobCheckpoint, store.JobProgress) error
-	workers               int
-	workBudget            chan struct{}
-	result                Result
-	pendingParts          []parsedPartImport
-	directoryContexts     map[string]ParseContext
-	directoryPreflights   map[string]*contextualDirectoryPreflight
-	versionAnchors        map[string]versionAnchor
-	versionDirsSeeded     map[string]bool
-	sidecars              *sidecarDiscovery
-	deriveCtx             context.Context
-	cancelDerivations     context.CancelFunc
-	derivativeWG          sync.WaitGroup
-	pendingCompletions    []*completedFile
+	// movedFingerprints holds the bytes this walk imported at a path whose
+	// own row did not hold them, which takes the row of any other file with
+	// the same bytes (refreshMovedRow, CORE-2210).
+	movedFingerprints   map[string]bool
+	progress            func(jobCheckpoint, store.JobProgress) error
+	workers             int
+	workBudget          chan struct{}
+	result              Result
+	pendingParts        []parsedPartImport
+	directoryContexts   map[string]ParseContext
+	directoryPreflights map[string]*contextualDirectoryPreflight
+	versionAnchors      map[string]versionAnchor
+	versionDirsSeeded   map[string]bool
+	sidecars            *sidecarDiscovery
+	deriveCtx           context.Context
+	cancelDerivations   context.CancelFunc
+	derivativeWG        sync.WaitGroup
+	pendingCompletions  []*completedFile
 	// tallies holds what this scan did to each file until the file completes
 	// and its counts reach the result (see noteFile).
 	tallies map[string]fileTally
