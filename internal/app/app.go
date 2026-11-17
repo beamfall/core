@@ -2012,7 +2012,11 @@ func (a *App) Run(ctx context.Context) error {
 	a.addr = listener.Addr().String()
 	a.addrMu.Unlock()
 	close(a.addrReady)
-	if a.cfg.Discovery.Enabled {
+	if a.cfg.Discovery.Enabled && loopbackOnly(listener.Addr()) {
+		// A LAN client cannot reach a loopback listener, so an advert would list a
+		// server that never answers (CORE-2290).
+		a.logger.Info("discovery not advertised: listening on loopback only", "addr", listener.Addr().String())
+	} else if a.cfg.Discovery.Enabled {
 		advertiser := discovery.New()
 		// scheme follows the same LAN rule as remoteAccessProvider.Endpoints:
 		// the port answers cleartext HTTP to LAN clients unless direct TLS is on.
@@ -2402,6 +2406,12 @@ func relayCarrierBackoffDelay(d time.Duration, randInt63n func(int64) int64) tim
 		return 0
 	}
 	return out
+}
+
+// loopbackOnly reports whether addr accepts connections from this host alone.
+func loopbackOnly(addr net.Addr) bool {
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	return ok && tcpAddr.IP.IsLoopback()
 }
 
 func listenPort(addr net.Addr) int {
