@@ -816,7 +816,7 @@ func writeTestPoster(t *testing.T, svc *artwork.Service, mediaID store.MediaID) 
 
 func writeTestArtwork(t *testing.T, svc *artwork.Service, mediaID store.MediaID, slot, body string) {
 	t.Helper()
-	path := filepath.Join(filepath.Dir(svc.PosterPath(mediaID)), slot+".jpg")
+	path := svc.ArtworkPath(mediaID, slot)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}

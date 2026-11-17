@@ -1440,7 +1440,12 @@ func artworkNotModified(w http.ResponseWriter, r *http.Request, currentVersion s
 // (persisted media/entity/candidate ids + slot/bucket — never the path) used
 // when the Library is Encrypted.
 func (h *Handler) serveArtworkFile(w http.ResponseWriter, r *http.Request, library store.Library, path, immutableObjectID string) {
-	h.serveLibraryFile(w, r, library, path, filepath.Base(path), "image/jpeg", "unknown artwork", encryptedClassGeneratedAsset, immutableObjectID)
+	// Overlay slots (logo, clearart, disc) are stored as PNG to keep alpha.
+	contentType := "image/jpeg"
+	if filepath.Ext(path) == ".png" {
+		contentType = "image/png"
+	}
+	h.serveLibraryFile(w, r, library, path, filepath.Base(path), contentType, "unknown artwork", encryptedClassGeneratedAsset, immutableObjectID)
 }
 
 // serveLibraryFile serves one server-derived library/asset member. The member is
