@@ -474,21 +474,19 @@ test.describe("console", () => {
         confirm: /Merged-away items move to Trash/,
         expectedText: "Survivor",
       });
-      await exerciseSelectedDimension({
-        buttonLabel: "Unmatched",
-        title: /Health Library - Unmatched/,
-        action: "Rescan unmatched",
-      });
-      await exerciseSelectedDimension({
-        buttonLabel: "Scrape failures",
-        title: /Health Library - Scrape failures/,
-        action: "Rescrape failures",
-      });
-      await exerciseSelectedDimension({
-        buttonLabel: "Missing artwork",
-        title: /Health Library - Missing artwork/,
-        action: "Fetch missing artwork",
-      });
+      // The seeded Library is bound to no plugin, so the identify-backed
+      // dimensions do not apply and the unidentified file counts as having no
+      // scraper (CORE-2383). Their drilldowns are covered by the Health unit
+      // tests against a plugin-bound Library.
+      await gotoConsole(page, "health");
+      const healthRow = page.getByRole("row", { name: /Health Library/ });
+      await expect(healthRow).toContainText("No plugin identifies this library");
+      await expect(healthRow.getByText("Not applicable")).toHaveCount(3);
+      for (const label of ["Unmatched", "Scrape failures", "Missing artwork"]) {
+        await expect(
+          healthRow.getByRole("button", { name: new RegExp(`^${label}: \\d+$`) }),
+        ).toHaveCount(0);
+      }
       await exerciseSelectedDimension({
         buttonLabel: "Broken",
         title: /Health Library - Broken/,
