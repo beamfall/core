@@ -2,9 +2,11 @@ package playback
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -29,9 +31,26 @@ type KeyframeStore interface {
 	PutPlaybackKeyframes(ctx context.Context, index store.PlaybackKeyframes) error
 }
 
-// keyframeProbeTimeout bounds one keyframe probe. The probe only demuxes, but
-// it reads the whole file once.
+// keyframeProbeTimeout is the least time one keyframe probe is given. The
+// probe only demuxes, but it reads the whole file once, so a large file gets
+// longer: see keyframeProbeTimeoutFor.
 const keyframeProbeTimeout = 5 * time.Minute
+
+// keyframeProbeMinBytesPerSecond is the slowest read a probe is allowed to
+// finish at. A 17 GB remux on a parity array read at about 36 MB/s, so a fixed
+// five minutes timed out on every play and the index was never kept.
+const keyframeProbeMinBytesPerSecond = 8 << 20
+
+// keyframeProbeTimeoutFor bounds the probe of a file of size bytes.
+func keyframeProbeTimeoutFor(size int64) time.Duration {
+	return max(keyframeProbeTimeout, time.Duration(size/keyframeProbeMinBytesPerSecond)*time.Second)
+}
+
+// keyframeFirstPlayWait bounds how long a first audio-copy play waits for the
+// keyframe probe. A player gives up on its first playlist long before a large
+// file's probe ends; past this wait the session starts on the uniform copy
+// grid and the probe finishes in the background for the next play.
+const keyframeFirstPlayWait = 5 * time.Second
 
 // keyframeCacheEntries bounds the in-memory timelines kept per Sessions.
 const keyframeCacheEntries = 64
@@ -187,6 +206,8 @@ type keyframeCache struct {
 	stopCtx    context.Context
 	stopProbes context.CancelFunc
 	probes     sync.WaitGroup
+	// firstPlayWait overrides keyframeFirstPlayWait when positive (tests).
+	firstPlayWait time.Duration
 }
 
 type keyframeLoad struct {
@@ -204,8 +225,11 @@ func (s *Sessions) SetKeyframeStore(keyframes KeyframeStore) {
 }
 
 // copyVideoTimeline returns src's keyframe timeline for an audio-copy session,
-// or nil when the transcoder cannot segment at keyframes. The session that
-// already exists for key reuses its own timeline; otherwise the file's current
+// or nil when the session uses the uniform copy grid: the transcoder cannot
+// segment at keyframes, or the probe is still running when the first-play
+// wait ends. The session that already exists for key keeps the layout it was
+// created with, nil included, so a timeline that arrives later never reshapes
+// (and tears down) a session that is playing. Otherwise the file's current
 // generation is looked up in memory, then in the store, and probed only when
 // neither has it.
 func (s *Sessions) copyVideoTimeline(ctx context.Context, key SessionKey, src string) (*keyframeTimeline, error) {
@@ -214,7 +238,7 @@ func (s *Sessions) copyVideoTimeline(ctx context.Context, key SessionKey, src st
 		return nil, nil
 	}
 	s.mu.Lock()
-	if existing, ok := s.sessions[key]; ok && existing.src == src && existing.timeline != nil {
+	if existing, ok := s.sessions[key]; ok && existing.src == src && slices.ContainsFunc(existing.rungs, func(r Rung) bool { return r.CopyVideo }) {
 		timeline := existing.timeline
 		s.mu.Unlock()
 		return timeline, nil
@@ -225,45 +249,68 @@ func (s *Sessions) copyVideoTimeline(ctx context.Context, key SessionKey, src st
 		return nil, err
 	}
 	gen := keyframeGeneration{path: src, size: info.Size(), modTimeNs: info.ModTime().UnixNano()}
-	return s.keyframes.load(ctx, gen, prober)
+	timeline, err := s.keyframes.load(ctx, gen, prober)
+	if errors.Is(err, errKeyframesPending) {
+		// A slow probe must not keep the title from playing: the uniform
+		// grid plays, only its seeks land on the keyframe before.
+		slog.Warn("keyframe probe still running; audio-copy session uses the uniform segment grid", "media", key.MediaID)
+		return nil, nil
+	}
+	return timeline, err
 }
 
+// errKeyframesPending reports a probe still running when the first-play wait
+// ran out. It keeps running and its result is kept for the next play.
+var errKeyframesPending = errors.New("keyframe probe still running")
+
+// load returns gen's timeline, starting a probe when none is cached or
+// running. It waits at most the first-play wait for a running probe.
 func (c *keyframeCache) load(ctx context.Context, gen keyframeGeneration, prober keyframeTranscoder) (*keyframeTimeline, error) {
 	c.mu.Lock()
 	if timeline, ok := c.done[gen]; ok {
 		c.mu.Unlock()
 		return timeline, nil
 	}
-	if load, ok := c.inflight[gen]; ok {
-		c.mu.Unlock()
-		select {
-		case <-load.finished:
-			return load.timeline, load.err
-		case <-ctx.Done():
-			return nil, ctx.Err()
+	load, ok := c.inflight[gen]
+	if !ok {
+		if c.closed {
+			c.mu.Unlock()
+			return nil, ErrSessionEvicted
 		}
+		load = &keyframeLoad{finished: make(chan struct{})}
+		if c.inflight == nil {
+			c.inflight = map[keyframeGeneration]*keyframeLoad{}
+		}
+		c.inflight[gen] = load
+		if c.stopCtx == nil {
+			c.stopCtx, c.stopProbes = context.WithCancel(context.Background())
+		}
+		c.probes.Add(1)
+		go c.probe(context.WithoutCancel(ctx), gen, load, c.store, prober, c.stopCtx)
 	}
-	if c.closed {
-		c.mu.Unlock()
-		return nil, ErrSessionEvicted
+	wait := c.firstPlayWait
+	if wait <= 0 {
+		wait = keyframeFirstPlayWait
 	}
-	load := &keyframeLoad{finished: make(chan struct{})}
-	if c.inflight == nil {
-		c.inflight = map[keyframeGeneration]*keyframeLoad{}
-	}
-	c.inflight[gen] = load
-	keyframes := c.store
-	if c.stopCtx == nil {
-		c.stopCtx, c.stopProbes = context.WithCancel(context.Background())
-	}
-	stopCtx := c.stopCtx
-	c.probes.Add(1)
 	c.mu.Unlock()
-	defer c.probes.Done()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-load.finished:
+		return load.timeline, load.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, errKeyframesPending
+	}
+}
 
-	// The probe outlives the request that started it: other first plays may be
-	// waiting on it, and its result is kept. Only close cancels it early.
-	probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), keyframeProbeTimeout)
+// probe resolves gen into load. It outlives the request that started it:
+// other first plays may be waiting on it, and its result is kept. Only close
+// cancels it early.
+func (c *keyframeCache) probe(ctx context.Context, gen keyframeGeneration, load *keyframeLoad, keyframes KeyframeStore, prober keyframeTranscoder, stopCtx context.Context) {
+	defer c.probes.Done()
+	probeCtx, cancel := context.WithTimeout(ctx, keyframeProbeTimeoutFor(gen.size))
 	stopProbe := context.AfterFunc(stopCtx, cancel)
 	load.timeline, load.err = resolveKeyframes(probeCtx, gen, keyframes, prober)
 	stopProbe()
@@ -287,10 +334,11 @@ func (c *keyframeCache) load(ctx context.Context, gen keyframeGeneration, prober
 			delete(c.done, old)
 		}
 		c.done[gen] = load.timeline
+	} else {
+		slog.Warn("keyframe probe failed", "err", load.err)
 	}
 	c.mu.Unlock()
 	close(load.finished)
-	return load.timeline, load.err
 }
 
 // close refuses new probes, cancels the running ones and waits for them to

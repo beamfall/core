@@ -753,3 +753,69 @@ func videoPacketSpan(t *testing.T, initPath, segmentPath string) (first, last fl
 	}
 	return first, last
 }
+
+// TestSlowKeyframeProbeDoesNotHoldFirstPlay: a first audio-copy play whose
+// keyframe probe outlasts the first-play wait starts on the uniform grid
+// instead of waiting for the probe (a 17 GB remux on a parity array took eight
+// minutes, and every play failed). The session keeps that grid when the probe
+// ends, so it is not torn down mid-play, and the next play uses the probed
+// timeline.
+func TestSlowKeyframeProbeDoesNotHoldFirstPlay(t *testing.T) {
+	t.Parallel()
+	src := filepath.Join(t.TempDir(), "film.mkv")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	transcoder := &blockingProbeTranscoder{started: make(chan struct{}), release: make(chan struct{})}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.keyframes.firstPlayWait = 50 * time.Millisecond
+	defer sessions.Close()
+	session := func(key SessionKey) *hlsSession {
+		t.Helper()
+		if _, err := sessions.FilePath(context.Background(), key, src, 8, 64, 64, true, audioCopyRungID+"/index.m3u8"); err != nil {
+			t.Fatalf("%s: %v", key.SessionID, err)
+		}
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		return sessions.sessions[key]
+	}
+	first := SessionKey{SessionID: "first", MediaID: "media-alpha"}
+
+	playing := session(first)
+	if playing == nil || playing.timeline != nil {
+		t.Fatal("the first play waited for the keyframe probe instead of starting on the uniform grid")
+	}
+
+	close(transcoder.release)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		sessions.keyframes.mu.Lock()
+		probed := len(sessions.keyframes.done)
+		sessions.keyframes.mu.Unlock()
+		if probed == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the background keyframe probe never recorded its timeline")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if again := session(first); again != playing || again.timeline != nil {
+		t.Fatal("the probe finishing reshaped the session that was already playing")
+	}
+	if next := session(SessionKey{SessionID: "next", MediaID: "media-alpha"}); next == nil || next.timeline == nil {
+		t.Fatal("the next play did not use the probed keyframe timeline")
+	}
+}
+
+func TestKeyframeProbeTimeoutScalesWithFileSize(t *testing.T) {
+	t.Parallel()
+	if got := keyframeProbeTimeoutFor(1 << 30); got != keyframeProbeTimeout {
+		t.Errorf("1 GiB: %v, want the %v floor", got, keyframeProbeTimeout)
+	}
+	// The Tower remux that never finished in five minutes.
+	if got := keyframeProbeTimeoutFor(17_415_319_816); got < 30*time.Minute {
+		t.Errorf("17.4 GB: %v, want at least 30m", got)
+	}
+}
