@@ -30,7 +30,10 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchMediaForEntity: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
 }));
-vi.mock("@/lib/session", () => ({ useViewerIdentity: () => mocks.identity }));
+vi.mock("@/lib/session", () => ({
+  useViewerIdentity: () => mocks.identity,
+  useSession: () => ({ manifest: null, revealed: false }),
+}));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
@@ -77,9 +80,9 @@ function renderAt(entries: Array<string | { pathname: string; state?: unknown }>
         <Routes>
           <Route path="/" element={<Probe />} />
           <Route path="/n/:id" element={<Probe />} />
-          <Route path="/watch/:mediaId" element={<Probe />} />
+          <Route path="/watch/*" element={<Probe />} />
           <Route path="/entity/:id" element={<Probe />} />
-          <Route path="/media/:mediaId" element={<MediaDetailPage />} />
+          <Route path="/media/*" element={<MediaDetailPage />} />
         </Routes>
       </MemoryRouter>
     </I18nProvider>,

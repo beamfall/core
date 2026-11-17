@@ -21,10 +21,15 @@ export function useDocumentTitle(heading: string | null | undefined, brand: stri
  * Names the tab after the first h1 inside the element with this ID, following
  * it as the page loads and its heading changes. Every page draws its heading
  * as the first h1 of the shell's main region, so the shell can do this once.
+ * With named false the tab shows the brand alone: a Revealed session may be
+ * showing restricted titles, and tab titles are kept in the browser history.
  */
-export function useHeadingDocumentTitle(containerID: string, brand: string, enabled = true) {
+export function useHeadingDocumentTitle(containerID: string, brand: string, named = true) {
   useEffect(() => {
-    if (!enabled) return;
+    if (!named) {
+      document.title = brand;
+      return;
+    }
     const container = document.getElementById(containerID);
     if (!container) return;
     const apply = () => {
@@ -35,5 +40,5 @@ export function useHeadingDocumentTitle(containerID: string, brand: string, enab
     const observer = new MutationObserver(apply);
     observer.observe(container, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
-  }, [containerID, brand, enabled]);
+  }, [containerID, brand, named]);
 }

@@ -21,6 +21,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
+import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   adjustmentApplied,
   hasPicture,
@@ -43,6 +44,7 @@ import {
   SUBTITLE_APPEARANCE_KEYS,
   type SubtitleAppearanceField,
 } from "../lib/subtitleAppearance";
+import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import {
   type PlayQueueItem,
@@ -97,7 +99,8 @@ import { watchPartyDefersUpNext } from "../player/watchPartyStore";
 export function PlayerPage() {
   const t = useT();
   const location = useLocation();
-  const { mediaId } = useParams();
+  // A readable address (CORE-2329) or a bare ID: the token names the item.
+  const mediaId = mediaIdFromAddress(useParams()["*"]) || undefined;
   const host = usePlayerHost();
   const skip = new URLSearchParams(location.search).has("t");
   const carried =
@@ -202,7 +205,10 @@ function FeaturePlayer({
   const queueIdentity = navState.queueIdentity;
   const navTitle = navState.title || media?.title || "";
   // Docked, the browse page under the mini player names the tab (CORE-2322).
-  useDocumentTitle(docked ? null : navTitle, t("brand"));
+  // A Revealed session may be playing a restricted title, which stays out of
+  // the browser history (tab titles are kept there).
+  useDocumentTitle(docked || revealed ? null : navTitle, t("brand"));
+  useCanonicalMediaAddress("watch", media, !docked);
   const startAtSeconds = parseTimestampParam(new URLSearchParams(entry.search).get("t"));
   // Media classes playback-info has reported (this item's and its declared
   // next item's), by Media id (CORE-1490).

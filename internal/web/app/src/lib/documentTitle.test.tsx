@@ -36,6 +36,20 @@ describe("document title (CORE-2322)", () => {
     expect(document.title).toBe("Search · Beamfall");
   });
 
+  it("shows the brand alone when the page must stay unnamed (a Revealed session)", () => {
+    function Shell() {
+      useHeadingDocumentTitle("main", "Beamfall", false);
+      return (
+        <main id="main">
+          <h1>Restricted title</h1>
+        </main>
+      );
+    }
+    document.title = "Earlier · Beamfall";
+    render(<Shell />);
+    expect(document.title).toBe("Beamfall");
+  });
+
   it("sets an explicit title and leaves the tab alone for null", () => {
     function Page({ title }: { title: string | null }) {
       useDocumentTitle(title, "Beamfall");

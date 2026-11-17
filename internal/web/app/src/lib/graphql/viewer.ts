@@ -174,7 +174,7 @@ export async function fetchEntity(id: string, signal?: AbortSignal): Promise<Ent
 }
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title artworkSlots credits { entityID title kind kindDisplayName archetype relation } metadataAttribution { providerName text url } } }";
+  "query Media($id: String!) { media(id: $id) { id title mediaClass libraryID artworkSlots credits { entityID title kind kindDisplayName archetype relation } metadataAttribution { providerName text url } } }";
 
 /** Media — the player's now-playing read: title, artwork, linked credits and metadata credit. */
 export async function fetchMedia(

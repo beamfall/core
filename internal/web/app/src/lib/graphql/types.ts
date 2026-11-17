@@ -248,6 +248,11 @@ export interface GenericMediaInfo {
   durationSeconds?: number;
   /** The Media class ("audio", "video", …); omitted when unknown. */
   mediaClass?: string;
+  /**
+   * The owning Library, for the readable address (CORE-2329); only the
+   * media(id) read fills it, and a server that predates it omits it.
+   */
+  libraryID?: string;
   /** Present artwork slots → URL; only the media(id) read fills it. */
   artworkSlots?: Record<string, string>;
   /** Linked Entities in plugin declaration order; only the media(id) read fills it. */

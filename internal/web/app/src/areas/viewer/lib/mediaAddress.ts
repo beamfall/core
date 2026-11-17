@@ -1,0 +1,113 @@
+import type { GenericMediaInfo, LibrarySummary, MediaCredit } from "@/lib/graphql/types";
+
+// Readable media addresses (CORE-2329). A watch or detail URL reads
+//
+//   /watch/<library-slug>/<readable-slug>-<token>
+//
+// where the token alone names the item and everything before it is cosmetic.
+// The token is the hex digest of a content-addressed Media ID
+// ("media-sha256-" plus 17 hex digits, store.mediaIDForFingerprint), so the
+// client turns it back into the ID without a server lookup and two items never
+// share one. The readable words come from generic display fields only: the
+// Library's name, the item's own title, and who made it or what it belongs
+// to. Any other ID shape (an encrypted Library's random IDs among them, whose
+// titles must not reach the address bar) keeps the bare-ID address. A stale
+// or bare address resolves through its token and is replaced by the
+// canonical one once the item is known.
+
+const CONTENT_ID = /^media-sha256-([0-9a-f]{17})$/;
+const TOKEN = /(?:^|-)([0-9a-f]{17})$/;
+/** The readable words before the token are capped at this many characters. */
+export const MAX_SLUG_LENGTH = 60;
+
+export type MediaRoute = "watch" | "media";
+
+/**
+ * slugify folds text to lowercase ASCII words joined by "-": accents are
+ * dropped, punctuation and spacing collapse to one "-", and the result is cut
+ * at a word boundary within max characters. Text with no Latin letters or
+ * digits yields "".
+ */
+export function slugify(text: string, max = MAX_SLUG_LENGTH): string {
+  const words = text
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  let slug = "";
+  for (const word of words) {
+    const next = slug ? `${slug}-${word}` : word;
+    if (next.length > max) return slug || word.slice(0, max);
+    slug = next;
+  }
+  return slug;
+}
+
+/**
+ * mediaIdFromAddress reads the Media ID from the part of a watch or detail
+ * path after the route: the token of a readable address, or a bare ID.
+ */
+export function mediaIdFromAddress(rest: string | undefined): string {
+  const segments = (rest ?? "").split("/").filter(Boolean);
+  const last = segments.at(-1) ?? "";
+  let segment = last;
+  try {
+    segment = decodeURIComponent(last);
+  } catch {
+    // A malformed escape is read as typed.
+  }
+  if (CONTENT_ID.test(segment)) return segment;
+  const token = TOKEN.exec(segment);
+  return token ? `media-sha256-${token[1]}` : segment;
+}
+
+/** The words an item is addressed by: who made it or what it belongs to, then its title. */
+export function readableMediaWords(
+  media: Pick<GenericMediaInfo, "title" | "mediaClass" | "credits">,
+): string {
+  const credits: MediaCredit[] = media.credits ?? [];
+  // A listening item is named by who made it, anything else by what it
+  // belongs to; both are plugin-declared archetypes, not domain words.
+  const lead =
+    (media.mediaClass === "audio" ? credits.find((c) => c.archetype === "person") : undefined) ??
+    credits.find((c) => c.archetype === "container");
+  return [lead?.title, media.title].filter(Boolean).join(" ");
+}
+
+/** The Library's address word: its name, else its ID without the "library-" prefix. */
+export function librarySlug(libraryID: string | undefined, libraries: readonly LibrarySummary[]) {
+  if (!libraryID) return "";
+  const library = libraries.find((entry) => entry.id === libraryID);
+  return slugify(library?.title ?? "") || slugify(libraryID.replace(/^library-/, ""));
+}
+
+/**
+ * mediaPath is the canonical address of an item on a route. Without readable
+ * words (or for an ID that is not content-addressed) it is the bare-ID form.
+ */
+export function mediaPath(
+  route: MediaRoute,
+  id: string,
+  readable?: { library?: string; words?: string },
+): string {
+  const content = CONTENT_ID.exec(id);
+  if (!content) return `/${route}/${encodeURIComponent(id)}`;
+  const slug = slugify(readable?.words ?? "");
+  const tail = slug ? `${slug}-${content[1]}` : id;
+  const library = readable?.library ? `${readable.library}/` : "";
+  return `/${route}/${library}${tail}`;
+}
+
+/** The canonical address of a loaded item, or null while it cannot be named. */
+export function canonicalMediaPath(
+  route: MediaRoute,
+  media: Pick<GenericMediaInfo, "id" | "title" | "mediaClass" | "credits" | "libraryID">,
+  libraries: readonly LibrarySummary[],
+): string {
+  return mediaPath(route, media.id, {
+    library: librarySlug(media.libraryID, libraries),
+    words: readableMediaWords(media),
+  });
+}

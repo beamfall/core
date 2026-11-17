@@ -23,6 +23,7 @@ import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { audioPeople, useContainerContext } from "../lib/containerContext";
+import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   fetchMedia,
   fetchMediaDetailFields,
@@ -33,6 +34,7 @@ import {
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
+import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
   detailFacts,
   fieldDisplayValue,
@@ -69,7 +71,8 @@ type Status = "loading" | "ready" | "missing" | "failed";
 // no oracle) ends on the leak-safe NotAvailable surface; any other failure
 // with nothing to show offers a retry.
 export function MediaDetailPage() {
-  const { mediaId = "" } = useParams();
+  // A readable address (CORE-2329) or a bare ID: the token names the item.
+  const mediaId = mediaIdFromAddress(useParams()["*"]);
   const location = useLocation();
   const navigate = useNavigate();
   const identity = useViewerIdentity();
@@ -133,6 +136,7 @@ export function MediaDetailPage() {
   // Between a route change and the effect, state still holds the previous item.
   const current = detail?.media.id === mediaId ? detail : null;
   const media = current?.media;
+  useCanonicalMediaAddress("media", media ?? null);
   const context = useContainerContext(media, mediaId);
   const people = audioPeople(media);
 

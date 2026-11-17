@@ -92,7 +92,7 @@ export function AppShell({
   // and an owner on a viewer-role Device still gets a way in.
   const canOpenConsole = session?.profile === "adult";
   // The tab names the page the shell is showing (CORE-2322).
-  useHeadingDocumentTitle(MAIN_CONTENT_ID, t("brand"));
+  useHeadingDocumentTitle(MAIN_CONTENT_ID, t("brand"), !revealed);
 
   // The phone drawer is a modal dialog: the dialog primitive moves focus in,
   // traps it, closes on Escape or a press outside, and hands focus back to the
