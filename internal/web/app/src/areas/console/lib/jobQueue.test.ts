@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { JobInfo } from "@/lib/graphql/types";
-import { arrangeJobQueue, jobRunSeconds, unresolvedFailedJobs } from "./jobQueue";
+import {
+  arrangeJobQueue,
+  collapseJobLog,
+  formatJobEventTime,
+  jobRunSeconds,
+  unresolvedFailedJobs,
+} from "./jobQueue";
 
 function job(overrides: Partial<JobInfo>): JobInfo {
   return {
@@ -31,6 +37,48 @@ describe("arrangeJobQueue (CORE-2308)", () => {
     ]);
     expect(view.failed).toEqual([]);
     expect(view.history).toEqual([{ job: expect.objectContaining({ id: "ok" }), count: 2 }]);
+  });
+
+  it.each(["queued", "running", "yielded"])(
+    "treats a failure a newer %s job of the same folder superseded as history (CORE-2352)",
+    (status) => {
+      const jobs = [
+        job({ id: "f", status: "failed", target: folder, finishedAt: "2026-11-17T14:58:00Z" }),
+        job({
+          id: "next",
+          status,
+          target: folder,
+          createdAt: "2026-11-17T15:00:00Z",
+          updatedAt: "2026-11-17T15:05:00Z",
+        }),
+      ];
+      const view = arrangeJobQueue(jobs);
+      expect(view.failed).toEqual([]);
+      expect(view.live.map((j) => j.id)).toEqual(["next"]);
+      expect(view.history.map((g) => g.job.id)).toEqual(["f"]);
+      expect(unresolvedFailedJobs(jobs)).toEqual([]);
+    },
+  );
+
+  it("keeps a failure under Failed when only older or other-target jobs exist (CORE-2352)", () => {
+    const view = arrangeJobQueue([
+      job({ id: "f", status: "failed", target: folder, finishedAt: "2026-11-17T14:58:00Z" }),
+      job({ id: "older", status: "yielded", target: folder, updatedAt: "2026-11-17T14:00:00Z" }),
+      job({
+        id: "elsewhere",
+        status: "running",
+        target: { ...folder, root: "/media/more" },
+        updatedAt: "2026-11-17T15:05:00Z",
+      }),
+      job({
+        id: "other-kind",
+        kind: "artwork-sweep",
+        status: "completed",
+        target: folder,
+        finishedAt: "2026-11-17T15:05:00Z",
+      }),
+    ]);
+    expect(view.failed.map((g) => g.job.id)).toEqual(["f"]);
   });
 
   it("keeps the newest unresolved failure per folder and counts the repeats", () => {
@@ -75,5 +123,79 @@ describe("jobRunSeconds", () => {
     expect(jobRunSeconds(job({ startedAt, finishedAt: "2026-11-17T10:01:00Z" }), now)).toBe(60);
     expect(jobRunSeconds(job({ status: "running", startedAt }), now)).toBe(150);
     expect(jobRunSeconds(job({}), now)).toBeNull();
+  });
+});
+
+describe("collapseJobLog (CORE-2352)", () => {
+  it("keeps each run of consecutive progress entries as its latest one", () => {
+    const events = [
+      "queued",
+      "running",
+      "progress",
+      "progress",
+      "progress",
+      "yielded",
+      "progress",
+    ].map((type, i) => ({ id: String(i), type }));
+    expect(collapseJobLog(events).map((line) => [line.event.id, line.folded])).toEqual([
+      ["0", 0],
+      ["1", 0],
+      ["4", 2],
+      ["5", 0],
+      ["6", 0],
+    ]);
+    expect(collapseJobLog([])).toEqual([]);
+  });
+
+  it("folds two or more pause and resume cycles into one summary line", () => {
+    const types = [
+      "queued",
+      "running",
+      "progress",
+      "yielded",
+      "running",
+      "progress",
+      "progress",
+      "yielded",
+      "running",
+      "yielded",
+      "running",
+      "progress",
+      "completed",
+    ];
+    const lines = collapseJobLog(types.map((type, i) => ({ id: String(i), type })));
+    expect(lines.map((line) => [line.event.id, line.folded, line.pauses])).toEqual([
+      ["0", 0, 0],
+      ["1", 0, 0],
+      ["2", 0, 0],
+      // Three pauses from entry 3 to 11: the summary, then the latest
+      // progress and the last transition of the run.
+      ["3", 7, 3],
+      ["10", 0, 0],
+      ["11", 0, 0],
+      ["12", 0, 0],
+    ]);
+  });
+
+  it("keeps a single pause as it is", () => {
+    const types = ["running", "yielded", "running", "progress", "completed"];
+    const lines = collapseJobLog(types.map((type, i) => ({ id: String(i), type })));
+    expect(lines.map((line) => line.pauses)).toEqual([0, 0, 0, 0, 0]);
+    expect(lines).toHaveLength(5);
+  });
+});
+
+describe("formatJobEventTime (CORE-2352)", () => {
+  const now = new Date("2026-11-17T15:00:00Z");
+  it("shows the time alone today and the date and time otherwise", () => {
+    expect(formatJobEventTime("2026-11-17T14:58:07Z", now, "en-US", "UTC")).toBe("2:58:07 PM");
+    expect(formatJobEventTime("2026-11-16T14:58:07Z", now, "en-US", "UTC")).toBe(
+      "11/16/26, 2:58 PM",
+    );
+    expect(formatJobEventTime("2026-11-17T14:58:07Z", now, "de", "UTC")).toBe("14:58:07");
+  });
+
+  it("is empty for a value that is not a date", () => {
+    expect(formatJobEventTime("not a date", now, "en-US", "UTC")).toBe("");
   });
 });
