@@ -1413,7 +1413,7 @@ func seedMediaClass(class MediaClass) MediaClass {
 
 // libraryColumns is the Library projection scanLibrary reads; it takes
 // libraryIconConfigPrefix as its one bind parameter.
-const libraryColumns = `id, title, plugin_id, is_restricted, preview_clips_enabled, ai_indexing_enabled, family_scope, custodial, encrypted,
+const libraryColumns = `id, title, plugin_id, is_restricted, preview_clips_enabled, ai_indexing_enabled, family_scope, custodial, encrypted, show_on_home,
 			COALESCE((SELECT value FROM server_config WHERE key = ? || library.id), '')`
 
 // scanLibrary reads one libraryColumns row, followed by any extra columns the
@@ -1421,8 +1421,8 @@ const libraryColumns = `id, title, plugin_id, is_restricted, preview_clips_enabl
 func scanLibrary(rows *sql.Rows, extra ...any) (Library, error) {
 	var library Library
 	var plugin sql.NullString
-	var restricted, previewClips, aiIndexing, custodial, encrypted int
-	dest := append([]any{&library.ID, &library.Title, &plugin, &restricted, &previewClips, &aiIndexing, &library.FamilyScope, &custodial, &encrypted, &library.Icon}, extra...)
+	var restricted, previewClips, aiIndexing, custodial, encrypted, showOnHome int
+	dest := append([]any{&library.ID, &library.Title, &plugin, &restricted, &previewClips, &aiIndexing, &library.FamilyScope, &custodial, &encrypted, &showOnHome, &library.Icon}, extra...)
 	if err := rows.Scan(dest...); err != nil {
 		return Library{}, err
 	}
@@ -1434,6 +1434,7 @@ func scanLibrary(rows *sql.Rows, extra ...any) (Library, error) {
 	library.AIIndexing = aiIndexing != 0
 	library.Custodial = custodial != 0
 	library.Encrypted = encrypted != 0
+	library.ShowOnHome = showOnHome != 0
 	return library, nil
 }
 

@@ -300,6 +300,7 @@ var originalScopedFields = []string{
 	"setpreplayclips",         // CORE-1701: the Owner's pre-play clip list (write)
 	"setlibrarybacking",
 	"setlibrarypreviewclips",
+	"setlibraryshowonhome",
 	"setlibraryrestricted",
 	"setlibraryroots",
 	"setmediafieldlock",
@@ -1010,6 +1011,7 @@ func TestAdminAPITokenDiscoversLibraries(t *testing.T) {
 		"setLibraryRoots":        `{"query":"mutation { setLibraryRoots(libraryID:\"` + id + `\", roots:[\"/tmp\"]) { id } }"}`,
 		"setLibraryRestricted":   `{"query":"mutation { setLibraryRestricted(libraryID:\"` + id + `\", restricted:true) { id } }"}`,
 		"setLibraryPreviewClips": `{"query":"mutation { setLibraryPreviewClips(libraryID:\"` + id + `\", enabled:true) { id } }"}`,
+		"setLibraryShowOnHome":   `{"query":"mutation { setLibraryShowOnHome(libraryID:\"` + id + `\", enabled:false) { id } }"}`,
 		"deleteLibrary":          `{"query":"mutation { deleteLibrary(libraryID:\"` + id + `\") { id } }"}`,
 	} {
 		_, errs := post(t, handler, body, authorize)

@@ -75,6 +75,11 @@ type Library struct {
 	// When false, the Enrichment Plugin must not index this Library's Media, so
 	// semantic search is never available for it.
 	AIIndexing bool
+	// ShowOnHome is the per-Library Home surfacing policy; default ON. When
+	// false, aggregate Source queries marked as Home queries (SourceQuery.Home)
+	// skip this Library. Navigation, the Library's own Sections, search and
+	// every other aggregate feed are unaffected.
+	ShowOnHome bool
 	// FamilyScope is the plugin-declared Library family scope chosen at
 	// creation: opaque plugin data core stores verbatim and
 	// never interprets. Empty means no scope was chosen — the plugin's default
@@ -784,6 +789,10 @@ type SourceQuery struct {
 	// LibraryID restricts results to one Library (a library nav entry's
 	// Sections); empty means every visible Library.
 	LibraryID LibraryID
+	// Home marks an aggregate request (empty LibraryID) as one rendered on
+	// Home: Libraries whose ShowOnHome is off are left out. Ignored when
+	// LibraryID is set, so a hidden Library's own Sections are unaffected.
+	Home bool
 	// FieldFilters narrows the catalog feeds ("all-items",
 	// "recently-added") by equality/range on plugin-declared Media field
 	// values. The wire shape is the smallest backward-compatible one:
@@ -2076,6 +2085,31 @@ func (s *Store) SetLibraryPreviewClips(ctx context.Context, id LibraryID, enable
 	return nil
 }
 
+// SetLibraryShowOnHome sets whether the Library's Media appear on Home.
+func (s *Store) SetLibraryShowOnHome(ctx context.Context, id LibraryID, enabled bool) error {
+	if id == "" {
+		return errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	result, err := s.catalogW.ExecContext(ctx,
+		"UPDATE library SET show_on_home = ? WHERE id = ? AND trashed_at_ms IS NULL", boolToInt(enabled), id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ValidationError("library not found")
+	}
+	return nil
+}
+
 // SetLibraryAIIndexing flips the Library's AI-indexing opt-out. When
 // disabled, the Enrichment Plugin must skip this Library and semantic search is
 // never available for it. Operator-only; the graph layer gates the call.
@@ -3179,6 +3213,16 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 	if offset < 0 {
 		offset = 0
 	}
+	if query.Home && query.LibraryID == "" {
+		narrowed, err := s.homeLibraryFilterLocked(ctx, filter)
+		if err != nil {
+			return nil, err
+		}
+		if !narrowed.AllLibraries && len(narrowed.AllowedIDs) == 0 {
+			return []SourceItem{}, nil
+		}
+		filter = narrowed
+	}
 	items, err := s.sourceItemsForKind(ctx, filter, query, limit, offset)
 	if err != nil {
 		return nil, err
@@ -3204,6 +3248,52 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 		}
 	}
 	return items, nil
+}
+
+// homeLibraryFilterLocked narrows filter to the Libraries shown on Home. With
+// no hidden Library it returns filter unchanged; otherwise it replaces the
+// AllLibraries sentinel with the explicit list of shown Libraries, or drops the
+// hidden ones from AllowedIDs. It never widens filter.
+func (s *Store) homeLibraryFilterLocked(ctx context.Context, filter LibraryFilter) (LibraryFilter, error) {
+	rows, err := s.catalogR.QueryContext(ctx,
+		"SELECT id, show_on_home FROM library WHERE trashed_at_ms IS NULL ORDER BY rowid")
+	if err != nil {
+		return filter, err
+	}
+	defer rows.Close()
+	var shown []LibraryID
+	hidden := map[LibraryID]bool{}
+	for rows.Next() {
+		var id LibraryID
+		var showOnHome int
+		if err := rows.Scan(&id, &showOnHome); err != nil {
+			return filter, err
+		}
+		if showOnHome != 0 {
+			shown = append(shown, id)
+		} else {
+			hidden[id] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return filter, err
+	}
+	if len(hidden) == 0 {
+		return filter, nil
+	}
+	if filter.AllLibraries {
+		filter.AllLibraries = false
+		filter.AllowedIDs = shown
+		return filter, nil
+	}
+	allowed := make([]LibraryID, 0, len(filter.AllowedIDs))
+	for _, id := range filter.AllowedIDs {
+		if !hidden[id] {
+			allowed = append(allowed, id)
+		}
+	}
+	filter.AllowedIDs = allowed
+	return filter, nil
 }
 
 // sourceItemsForKind dispatches one bounded manifest Source kind to its SQL
@@ -3753,9 +3843,9 @@ func (s *Store) createLibraryWithRoots(ctx context.Context, title string, restri
 	if err := tx.Commit(); err != nil {
 		return Library{}, err
 	}
-	// PreviewClips echoes the schema default (ON, ADR-0033 §4); FamilyScope
+	// PreviewClips and ShowOnHome echo the schema defaults (ON); FamilyScope
 	// echoes the value just written.
-	library := Library{ID: id, Title: title, IsRestricted: restricted, PreviewClips: true, FamilyScope: familyScope}
+	library := Library{ID: id, Title: title, IsRestricted: restricted, PreviewClips: true, ShowOnHome: true, FamilyScope: familyScope}
 	if pluginID != "" {
 		library.PluginID = &pluginID
 	}

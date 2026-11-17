@@ -41,6 +41,7 @@ vi.mock("@/lib/graphql", () => ({
   restoreLibrary: vi.fn(),
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
+  setLibraryShowOnHome: vi.fn(),
   setLibraryRoots: vi.fn(),
   setScraperCredential: vi.fn(),
   setSkipDetectionEnabled: vi.fn(),

@@ -667,6 +667,7 @@
         "previewClips",
         "restricted",
         "roots",
+        "showOnHome",
         "title"
       ]
     },
@@ -1483,6 +1484,7 @@
         "previewClips",
         "restricted",
         "roots",
+        "showOnHome",
         "title"
       ]
     },
@@ -3209,6 +3211,7 @@
         "previewClips",
         "restricted",
         "roots",
+        "showOnHome",
         "title"
       ]
     },
@@ -3228,6 +3231,7 @@
         "previewClips",
         "restricted",
         "roots",
+        "showOnHome",
         "title"
       ]
     },
@@ -3247,6 +3251,7 @@
         "previewClips",
         "restricted",
         "roots",
+        "showOnHome",
         "title"
       ]
     },
@@ -3266,6 +3271,27 @@
         "previewClips",
         "restricted",
         "roots",
+        "showOnHome",
+        "title"
+      ]
+    },
+    {
+      "field": "setlibraryshowonhome",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "custodial",
+        "defaultIcon",
+        "encrypted",
+        "familyScope",
+        "icon",
+        "iconChoice",
+        "id",
+        "pluginID",
+        "previewClips",
+        "restricted",
+        "roots",
+        "showOnHome",
         "title"
       ]
     },

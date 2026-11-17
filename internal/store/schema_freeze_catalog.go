@@ -82,6 +82,10 @@ package store
 //     the Console fields a token runs (CORE-2095). It is read once per
 //     token-authenticated request by the existing token-hash lookup; no index
 //     and no entity-query table changes.
+//   - 0121 adds library.show_on_home, the per-Library Home surfacing policy
+//     (CORE-2360). It is read with the other Library columns and, for Home
+//     shelf requests only, by one scan of the small library table; no index
+//     and no entity-query table changes.
 //
 // `make bench` passed on 2026-08-11 for the 0108 bump; the worst measured
 // query was search/fts/revealed at 30.875084 ms against a 60 ms budget (P95
@@ -98,4 +102,4 @@ package store
 // query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
 // loaded shared host. 0113 adds no index or column on any benched table: the
 // provenance table is read only by the media(id) detail read.
-const schemaFreezeCatalogMigrations = 116
+const schemaFreezeCatalogMigrations = 117

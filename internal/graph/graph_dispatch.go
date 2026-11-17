@@ -623,6 +623,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"setlibraryaiindexing":               newFieldHandler("setLibraryAIIndexing", "setLibraryAIIndexing", fieldMutation, roleSession|roleAdmin, 77),
 	"setlibrarybacking":                  newFieldHandler("setLibraryBacking", "setLibraryBacking", fieldMutation, roleSession|roleAdmin, 48),
 	"setlibrarypreviewclips":             newFieldHandler("setLibraryPreviewClips", "setLibraryPreviewClips", fieldMutation, roleSession|roleAdmin, 47),
+	"setlibraryshowonhome":               newFieldHandler("setLibraryShowOnHome", "setLibraryShowOnHome", fieldMutation, roleSession|roleAdmin, 47),
 	"setlibraryrestricted":               newFieldHandler("setLibraryRestricted", "setLibraryRestricted", fieldMutation, roleSession|roleAdmin, 49),
 	"setlibraryroots":                    newFieldHandler("setLibraryRoots", "setLibraryRoots", fieldMutation, roleSession|roleAdmin, 46),
 	"setmediafieldlock":                  newFieldHandler("setMediaFieldLock", "setMediaFieldLock", fieldMutation, roleSession|roleManager, 108),
@@ -1575,6 +1576,12 @@ func dispatchFieldBlock047(dispatch *fieldDispatchContext) response {
 	if fields["setlibrarypreviewclips"] {
 		library, err := h.setLibraryPreviewClips(ctx, scope, req)
 		if resp := resolveField(dispatch, "setlibrarypreviewclips", library, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setlibraryshowonhome"] {
+		library, err := h.setLibraryShowOnHome(ctx, scope, req)
+		if resp := resolveField(dispatch, "setlibraryshowonhome", library, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

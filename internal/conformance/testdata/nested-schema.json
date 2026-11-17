@@ -4471,6 +4471,10 @@
         }
       },
       {
+        "name": "showOnHome",
+        "kind": "scalar"
+      },
+      {
         "name": "title",
         "kind": "scalar"
       }
@@ -8612,6 +8616,10 @@
         "elem": {
           "kind": "scalar"
         }
+      },
+      {
+        "name": "showOnHome",
+        "kind": "scalar"
       },
       {
         "name": "title",
@@ -21022,6 +21030,10 @@
         }
       },
       {
+        "name": "showOnHome",
+        "kind": "scalar"
+      },
+      {
         "name": "title",
         "kind": "scalar"
       }
@@ -21084,6 +21096,10 @@
         "elem": {
           "kind": "scalar"
         }
+      },
+      {
+        "name": "showOnHome",
+        "kind": "scalar"
       },
       {
         "name": "title",
@@ -21150,6 +21166,10 @@
         }
       },
       {
+        "name": "showOnHome",
+        "kind": "scalar"
+      },
+      {
         "name": "title",
         "kind": "scalar"
       }
@@ -21212,6 +21232,78 @@
         "elem": {
           "kind": "scalar"
         }
+      },
+      {
+        "name": "showOnHome",
+        "kind": "scalar"
+      },
+      {
+        "name": "title",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
+    "field": "setlibraryshowonhome",
+    "kind": "object",
+    "children": [
+      {
+        "name": "custodial",
+        "kind": "scalar"
+      },
+      {
+        "name": "defaultIcon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "encrypted",
+        "kind": "scalar"
+      },
+      {
+        "name": "familyScope",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "icon",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "iconChoice",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "pluginID",
+        "kind": "scalar",
+        "nullable": true
+      },
+      {
+        "name": "previewClips",
+        "kind": "scalar"
+      },
+      {
+        "name": "restricted",
+        "kind": "scalar"
+      },
+      {
+        "name": "roots",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "showOnHome",
+        "kind": "scalar"
       },
       {
         "name": "title",

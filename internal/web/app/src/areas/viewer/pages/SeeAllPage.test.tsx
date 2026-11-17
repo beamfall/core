@@ -119,4 +119,25 @@ describe("See All rendering contract", () => {
     await screen.findByRole("button", { name: "Item 0" });
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("keeps Libraries hidden from Home out of a See All opened from Home (CORE-2360)", async () => {
+    vi.mocked(fetchSectionItems).mockResolvedValueOnce(rows.slice(0, 3));
+    const fromHome: SeeAllContext = { ...context, libraryID: "", home: true };
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={[{ pathname: "/seeall/source", state: fromHome }]}>
+          <Routes>
+            <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    await screen.findByRole("button", { name: "Item 0" });
+    expect(vi.mocked(fetchSectionItems).mock.calls[0][1]).toMatchObject({
+      libraryID: "",
+      home: true,
+    });
+  });
 });

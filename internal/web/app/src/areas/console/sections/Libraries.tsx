@@ -57,6 +57,7 @@ import {
   restoreLibrary,
   setLibraryPreviewClips,
   setLibraryRoots,
+  setLibraryShowOnHome,
   setSkipDetectionEnabled,
 } from "@/lib/graphql";
 import type {
@@ -240,6 +241,11 @@ function LibraryCard({
     onChanged();
   }
 
+  async function toggleShowOnHome(enabled: boolean) {
+    await setLibraryShowOnHome(library.id, enabled);
+    onChanged();
+  }
+
   async function toggleSkipDetection(enabled: boolean) {
     await setSkipDetectionEnabled(library.id, enabled);
     onChanged();
@@ -412,6 +418,12 @@ function LibraryCard({
                   help={t("previewClipsHelp")}
                   checked={library.previewClips}
                   onChange={(c) => void togglePreview(c)}
+                />
+                <SettingRow
+                  label={t("showOnHome")}
+                  help={t("showOnHomeHelp")}
+                  checked={library.showOnHome !== false}
+                  onChange={(c) => void toggleShowOnHome(c)}
                 />
                 <SettingRow
                   label={t("skipDetection")}

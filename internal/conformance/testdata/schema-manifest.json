@@ -1255,6 +1255,11 @@
     "tier": "admin"
   },
   {
+    "field": "setlibraryshowonhome",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "setmediafieldlock",
     "effect": "write",
     "tier": "session"

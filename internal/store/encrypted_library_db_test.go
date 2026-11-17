@@ -223,6 +223,7 @@ func TestEncryptedLibraryPlaintextLibraryControlPlaneColumnsFrozen(t *testing.T)
 		"family_scope":          "profile access policy handle",
 		"custodial":             "storage custody policy bit",
 		"encrypted":             "encrypted backing policy bit",
+		"show_on_home":          "home surfacing policy bit",
 	}
 	rows, err := st.catalogR.QueryContext(ctx, `PRAGMA table_info(library)`)
 	if err != nil {

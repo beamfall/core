@@ -1671,14 +1671,17 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		}
 	}
 	items, err := h.sourceItemsWithEntityFilters(ctx, scope.LibraryFilter(), req, store.SourceQuery{
-		Kind:         kind,
-		Limit:        boundedIntVar(req, "limit", 50, 200),
-		Offset:       nonNegativeIntVar(req, "offset"),
-		ProfileID:    scope.ProfileID,
-		Query:        queryText,
-		EntityKind:   entityKind,
-		EntityID:     store.EntityID(entityID),
-		LibraryID:    store.LibraryID(libraryID),
+		Kind:       kind,
+		Limit:      boundedIntVar(req, "limit", 50, 200),
+		Offset:     nonNegativeIntVar(req, "offset"),
+		ProfileID:  scope.ProfileID,
+		Query:      queryText,
+		EntityKind: entityKind,
+		EntityID:   store.EntityID(entityID),
+		LibraryID:  store.LibraryID(libraryID),
+		// home marks an aggregate request as a Home shelf, which leaves out
+		// Libraries a manager hid from Home (CORE-2360).
+		Home:         boolVar(req, "home"),
 		FieldFilters: anyMapVar(req, "fieldFilters"),
 		EntityFilter: entityFilter,
 		// seed parameterizes the "random" Source kind; an opaque token, not
@@ -2370,12 +2373,15 @@ func profileSettingsFromVariables(req request) (store.ProfileSettings, bool, err
 
 // LibraryInfo is the wire shape for Library management mutations.
 type LibraryInfo struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	PluginID     *string  `json:"pluginID"`
-	PreviewClips bool     `json:"previewClips"`
-	Restricted   bool     `json:"restricted"`
-	Roots        []string `json:"roots,omitempty"`
+	ID           string  `json:"id"`
+	Title        string  `json:"title"`
+	PluginID     *string `json:"pluginID"`
+	PreviewClips bool    `json:"previewClips"`
+	// ShowOnHome reports whether Home shelves include this Library's Media
+	// (sourceItems with home: true); default true.
+	ShowOnHome bool     `json:"showOnHome"`
+	Restricted bool     `json:"restricted"`
+	Roots      []string `json:"roots,omitempty"`
 	// FamilyScope is the plugin-declared family scope the Library was created
 	// with; "" when unset. Omitted from the wire when empty.
 	FamilyScope string `json:"familyScope,omitempty"`
@@ -2506,6 +2512,7 @@ func (h *Handler) libraryInfo(ctx context.Context, library store.Library) (Libra
 		Title:        library.Title,
 		PluginID:     library.PluginID,
 		PreviewClips: library.PreviewClips,
+		ShowOnHome:   library.ShowOnHome,
 		Restricted:   library.IsRestricted,
 		Roots:        roots,
 		FamilyScope:  library.FamilyScope,
@@ -2609,6 +2616,46 @@ func (h *Handler) setLibraryPreviewClips(ctx context.Context, scope auth.Scope, 
 		return LibraryInfo{}, err
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityLibraryPreviewClips, "library", libraryID, store.LibraryID(libraryID)); err != nil {
+		return LibraryInfo{}, err
+	}
+	libraries, err := h.store.Libraries(ctx, scope.LibraryFilter())
+	if err != nil {
+		return LibraryInfo{}, err
+	}
+	for _, library := range libraries {
+		if library.ID == store.LibraryID(libraryID) {
+			return h.libraryInfo(ctx, library)
+		}
+	}
+	return LibraryInfo{}, clientError("unknown library")
+}
+
+// setLibraryShowOnHome sets whether Home shelves include the Library's Media.
+// The Library stays in navigation, search and its own Sections either way.
+func (h *Handler) setLibraryShowOnHome(ctx context.Context, scope auth.Scope, req request) (LibraryInfo, error) {
+	libraryID := trimmedVariable(req, "libraryID")
+	if libraryID == "" {
+		return LibraryInfo{}, clientError("libraryID is required")
+	}
+	v := newVars(req)
+	enabled, ok := v.Bool("enabled")
+	if err := v.Err(); err != nil {
+		return LibraryInfo{}, err
+	}
+	if !ok {
+		return LibraryInfo{}, clientError("enabled is required")
+	}
+	visible, err := h.visibleLibrary(ctx, scope, store.LibraryID(libraryID))
+	if err != nil {
+		return LibraryInfo{}, err
+	}
+	if !visible {
+		return LibraryInfo{}, clientError("unknown library")
+	}
+	if err := h.store.SetLibraryShowOnHome(ctx, store.LibraryID(libraryID), enabled); err != nil {
+		return LibraryInfo{}, err
+	}
+	if err := h.logActivity(ctx, scope, store.ActivityLibraryShowOnHome, "library", libraryID, store.LibraryID(libraryID)); err != nil {
 		return LibraryInfo{}, err
 	}
 	libraries, err := h.store.Libraries(ctx, scope.LibraryFilter())
@@ -5541,6 +5588,7 @@ var mutationFields = map[string]bool{
 	"setlibraryroots":                    true,
 	"addpathpickerroot":                  true,
 	"setlibrarypreviewclips":             true,
+	"setlibraryshowonhome":               true,
 	"setlibrarybacking":                  true,
 	"setlibraryrestricted":               true,
 	"setqualitypolicy":                   true,
@@ -5704,6 +5752,7 @@ var adminFields = map[string]bool{
 	"libraries":              true,
 	"setlibraryroots":        true,
 	"setlibrarypreviewclips": true,
+	"setlibraryshowonhome":   true,
 	"setlibrarybacking":      true,
 	"setlibraryrestricted":   true,
 	"qualitypolicy":          true,
