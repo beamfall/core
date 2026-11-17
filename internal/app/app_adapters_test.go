@@ -42,6 +42,27 @@ func TestListenPortReadsTCPAndHostPortAddrs(t *testing.T) {
 	}
 }
 
+func TestLoopbackOnlyIsTrueOnlyForLoopbackTCPListeners(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		addr net.Addr
+		want bool
+	}{
+		{name: "ipv4 loopback", addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8800}, want: true},
+		{name: "ipv6 loopback", addr: &net.TCPAddr{IP: net.IPv6loopback, Port: 8800}, want: true},
+		{name: "all ipv4 interfaces", addr: &net.TCPAddr{IP: net.IPv4zero, Port: 8800}, want: false},
+		{name: "all interfaces, no ip", addr: &net.TCPAddr{Port: 8800}, want: false},
+		{name: "lan address", addr: &net.TCPAddr{IP: net.IPv4(192, 168, 4, 3), Port: 8800}, want: false},
+		{name: "non-tcp", addr: &net.UnixAddr{Name: "/run/beamfall.sock", Net: "unix"}, want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := loopbackOnly(tt.addr); got != tt.want {
+				t.Fatalf("loopbackOnly(%v) = %v, want %v", tt.addr, got, tt.want)
+			}
+		})
+	}
+}
+
 type stubLocalExtractor struct {
 	result scanpkg.LocalMetadata
 	err    error
