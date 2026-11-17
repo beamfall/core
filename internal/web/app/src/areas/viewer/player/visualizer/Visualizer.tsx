@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { PlaybackStream } from "../../lib/playback";
-import { decodable } from "../useGaplessAudio";
+import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
@@ -79,6 +79,8 @@ export function Visualizer({
   const rendererRef = useRef<Renderer | null>(null);
   const analysisRef = useRef<{ analysis: TrackAnalysis; since: number } | null>(null);
   const keyRef = useRef(visualKey);
+  const trackRef = useRef(trackKey);
+  trackRef.current = trackKey;
   const imageRef = useRef<ImageBitmap | null>(null);
   const decodes = useRef(new Map<string, Decode>());
   const enabled = !!url && !failed && canVisualize();
@@ -112,7 +114,9 @@ export function Visualizer({
       const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1);
       try {
         const current = analysisRef.current;
-        const target = current?.analysis.sample(video.currentTime * 1000) ?? silent;
+        // The time heard, not the element's: a decoded track sounds while the element shadows it.
+        const heard = heardTime(video, trackRef.current);
+        const target = current?.analysis.sample(heard * 1000) ?? silent;
         let tau = 0;
         if (target === silent) tau = SETTLE_TAU;
         else if (current && now - current.since < ARRIVE_SECONDS * 1000) tau = ARRIVE_TAU;

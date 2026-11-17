@@ -280,6 +280,21 @@ function clearPending(bridge: Bridge) {
   bridge.pending = null;
 }
 
+/**
+ * The position of `mediaID` at the speakers now, in seconds of its decoded track: the decoded
+ * track's own clock while it sounds, as the muted element only shadows it to within
+ * SYNC_TOLERANCE_SECONDS, and the element's position otherwise.
+ */
+export function heardTime(video: HTMLMediaElement, mediaID: string): number {
+  const bridge = bridges.get(video);
+  const segment = bridge && segmentFor(bridge, mediaID);
+  if (!bridge || !segment) return video.currentTime;
+  const latency = bridge.context.outputLatency;
+  const out = bridge.context.currentTime - (Number.isFinite(latency) ? latency : 0);
+  const played = Math.min(Math.max(out - segment.start, 0), segment.duration);
+  return segment.offset + played;
+}
+
 /** Stops the decoded audio and gives the element its sound back. */
 export function handBack(video: HTMLMediaElement) {
   const bridge = bridges.get(video);

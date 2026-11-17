@@ -5,6 +5,7 @@ import { listenerMuted, setListenerMuted } from "./listenerMute";
 import {
   declaredPadding,
   decodableStream,
+  heardTime,
   MAX_DECODED_SECONDS,
   START_WAIT_SECONDS,
   trimWindow,
@@ -580,6 +581,30 @@ describe("useGaplessAudio", () => {
     expect(element.currentTime).toBeCloseTo(1.8, 9);
     expect(element.muted).toBe(true);
     expect(sources[0].stop).not.toHaveBeenCalled();
+  });
+
+  it("reports the decoded track's position as the time heard, not the shadowing element's", async () => {
+    const element = playing();
+    const hook = render(element);
+    expect(heardTime(element, "m1")).toBe(element.currentTime);
+    await vi.waitFor(() => expect(sources).toHaveLength(1));
+    const context = contexts[0];
+    // The join at 5.8: m2 sounds from there while the element still loads it.
+    act(() => {
+      element.dispatchEvent(new Event("ended"));
+      element.currentTime = 0;
+      element.dispatchEvent(new Event("loadstart"));
+    });
+    hook.rerender({ mediaID: "m2", next: nextItem("m3") });
+    context.currentTime = 6;
+    expect(element.currentTime).toBe(0);
+    expect(heardTime(element, "m2")).toBeCloseTo(0.2, 9);
+    // What the context has rendered reaches the speakers its output latency later.
+    Object.assign(context, { outputLatency: 0.05 });
+    expect(heardTime(element, "m2")).toBeCloseTo(0.15, 9);
+    // Before the join the next track is at its start.
+    context.currentTime = 5.5;
+    expect(heardTime(element, "m2")).toBe(0);
   });
 
   it("chains the track after a decoded one on the audio clock", async () => {
