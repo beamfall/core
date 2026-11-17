@@ -64,6 +64,7 @@ import { InfoOverlay } from "./InfoOverlay";
 import { listenerMuted, setListenerMuted } from "./listenerMute";
 import { ShortcutHelpOverlay } from "./ShortcutHelpOverlay";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
+import { TrackMotionSettings } from "./TrackMotionSettings";
 import { type MenuRow, TransportMenu } from "./TransportMenu";
 import { useAudioDelay } from "./useAudioDelay";
 import { useLiveTracks } from "./useLiveTracks";
@@ -1112,6 +1113,7 @@ export function PlayerTransport({
                   onOpenChange={(open) => setOpen("quality", open)}
                   onSelect={tracks.selectQuality}
                 />
+                {state.info?.mediaClass === "audio" && <TrackMotionSettings />}
                 {onShowSkipIntervalChange && showSkipIntervalLabel && (
                   <label className="bf-settings-row">
                     <span aria-hidden="true" className="bf-settings-tile">

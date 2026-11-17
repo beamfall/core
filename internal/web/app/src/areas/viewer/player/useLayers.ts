@@ -18,7 +18,7 @@ interface State<T> {
   next: number;
 }
 
-/** Leaving layers kept at most; a burst of skips keeps only the newest ones. */
+/** Leaving layers kept at most by default; a burst of skips keeps only the newest ones. */
 const MAX_LEAVING = 2;
 
 export function useLayers<T>(
@@ -27,6 +27,8 @@ export function useLayers<T>(
   leaveMs: number,
   /** Whether the incoming layer (by id) is ready to cover the leaving ones. */
   isReady: (id: number) => boolean = () => true,
+  /** How many leaving layers to keep; 1 cancels an unfinished change outright (CORE-2331). */
+  maxLeaving = MAX_LEAVING,
 ): Layer<T>[] {
   const [state, setState] = useState<State<T>>(() => ({
     key,
@@ -36,7 +38,7 @@ export function useLayers<T>(
 
   let current = state;
   if (key !== state.key) {
-    const leaving = state.layers.map((l) => ({ ...l, leaving: true })).slice(-MAX_LEAVING);
+    const leaving = state.layers.map((l) => ({ ...l, leaving: true })).slice(-maxLeaving);
     current = {
       key,
       layers: key ? [...leaving, { id: state.next, value, leaving: false }] : leaving,

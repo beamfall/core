@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import type { Locale } from "@/strings";
 import { PlayerTransport } from "./PlayerTransport";
+import { getTrackChangeMotion, resetTrackChangeMotionForTest } from "./trackChangeMotion";
 import type { PlayerState } from "./usePlayer";
 import { lastViewerIntent } from "./viewerIntent";
 
@@ -200,6 +201,37 @@ describe("PlayerTransport", () => {
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(onMenuOpenChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("offers the track-change motion styles for audio items only (CORE-2331, CORE-2332)", async () => {
+    window.localStorage.clear();
+    resetTrackChangeMotionForTest();
+    const user = userEvent.setup();
+    const view = renderHarnessVideo();
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.queryByRole("combobox", { name: "Track change words" })).toBeNull();
+    view.unmount();
+
+    renderHarnessVideo({
+      playerState: { ...state, info: { mediaClass: "audio" } as PlayerState["info"] },
+    });
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const words = screen.getByRole("combobox", { name: "Track change words" });
+    const art = screen.getByRole("combobox", { name: "Track change artwork" });
+    expect(words).toHaveTextContent("Mix");
+    expect(art).toHaveTextContent("Mix");
+    await user.click(words);
+    await user.click(await screen.findByRole("option", { name: "Split-flap" }));
+    await user.click(art);
+    await user.click(await screen.findByRole("option", { name: "Dissolve" }));
+    expect(getTrackChangeMotion()).toEqual({ words: "flap", art: "dissolve" });
+    expect(JSON.parse(window.localStorage.getItem("beamfall.trackChangeMotion")!)).toEqual({
+      words: "flap",
+      art: "dissolve",
+    });
+    expect(words).toHaveTextContent("Split-flap");
+    window.localStorage.clear();
+    resetTrackChangeMotionForTest();
   });
 
   it("mirrors live volume and speed, exposes their values, and restores muted volume", async () => {

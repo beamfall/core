@@ -905,10 +905,12 @@
   box-shadow: 0 24px 64px color-mix(in oklab, var(--shadow-color) 55%, transparent);
 }
 
-/* Track-change motion (CORE-2218). Artwork layers stack in one frame: the
-   incoming image stays hidden until it has loaded, then settles in (fade, a
-   slight zoom down and a defocus pull) over the outgoing one, which sinks back
-   and dims underneath; useLayers drops it when the motion is done. */
+/* Track-change motion (CORE-2218, styles CORE-2331/CORE-2332). Artwork layers
+   stack in one frame: the incoming picture stays hidden until it has loaded
+   and decoded, then settles in over the outgoing one, which stays underneath
+   until then; useLayers drops it when the motion is done. The frame's
+   data-art names the style for this change. Only transform, opacity and
+   filter move, so the compositor can hold the frame rate. */
 .bf-audio-art-layer {
   position: absolute;
   inset: 0;
@@ -922,16 +924,70 @@
     filter 700ms var(--ease-emphasis);
 }
 
+/* zoom (also the default): a crossfade with a slight zoom down. */
 .bf-audio-art-layer[data-state="pending"] {
   opacity: 0;
-  transform: scale(1.06);
-  filter: blur(14px) saturate(1.3);
+  transform: scale(1.08);
 }
 
 .bf-audio-art-layer[data-state="out"] {
   opacity: 0;
-  transform: scale(0.96);
+  transform: scale(0.94);
   filter: brightness(0.6);
+}
+
+/* dissolve: the incoming picture pulls into focus as the old one blurs away. */
+.bf-audio-artwork[data-art="dissolve"] .bf-audio-art-layer[data-state="pending"] {
+  transform: none;
+  filter: blur(18px) saturate(1.3);
+}
+
+.bf-audio-artwork[data-art="dissolve"] .bf-audio-art-layer[data-state="out"] {
+  transform: none;
+  filter: blur(18px);
+}
+
+/* flip: the old picture turns edge-on, then the new one turns in from the
+   other side, like a card. */
+.bf-audio-artwork[data-art="flip"] .bf-audio-art-layer {
+  backface-visibility: hidden;
+}
+
+.bf-audio-artwork[data-art="flip"] .bf-audio-art-layer[data-state="pending"] {
+  opacity: 0;
+  transform: perspective(900px) rotateY(-90deg);
+}
+
+.bf-audio-artwork[data-art="flip"] .bf-audio-art-layer[data-state="in"] {
+  transition:
+    transform 350ms var(--ease-emphasis) 350ms,
+    opacity 0ms linear 350ms;
+}
+
+.bf-audio-artwork[data-art="flip"] .bf-audio-art-layer[data-state="out"] {
+  opacity: 1;
+  transform: perspective(900px) rotateY(90deg);
+  filter: brightness(0.7);
+  transition:
+    transform 350ms var(--ease-standard),
+    filter 350ms var(--ease-standard);
+}
+
+/* slide: the new picture slides over the old one, which sinks back. */
+.bf-audio-artwork[data-art="slide"] .bf-audio-art-layer[data-state="pending"] {
+  opacity: 1;
+  transform: translateX(100%);
+}
+
+.bf-audio-artwork[data-art="slide"] .bf-audio-art-layer[data-state="out"] {
+  transform: translateX(-24%) scale(0.9);
+}
+
+/* fade: the reduced-motion crossfade, opacity only. */
+.bf-audio-artwork[data-art="fade"] .bf-audio-art-layer {
+  transform: none;
+  filter: none;
+  transition: opacity 400ms var(--ease-standard);
 }
 
 /* The backdrop's layers only crossfade: the frame above already blurs them. */
@@ -939,6 +995,23 @@
   transform: none;
   filter: none;
   transition: opacity 900ms var(--ease-standard);
+}
+
+/* An item without artwork shows a quiet glyph, reached by the same motion. */
+.bf-audio-art-placeholder {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(
+    145deg,
+    color-mix(in oklab, var(--on-scrim) 14%, var(--scrim)),
+    var(--scrim)
+  );
+  color: color-mix(in oklab, var(--on-scrim) 40%, transparent);
+}
+
+.bf-audio-art-glyph {
+  width: 34%;
+  height: 34%;
 }
 
 .bf-audio-meta {
@@ -955,11 +1028,13 @@
   gap: 6px;
 }
 
-/* The incoming words rise into focus line by line; the outgoing ones lift
-   away, laid over the incoming block so the card does not grow. */
-.bf-audio-meta-layer[data-state="in"] > * {
+/* The words arrive in sequence once the outgoing ones have mostly left: the
+   title, then who made it, then what it belongs to and the queue position
+   (each line's --bf-line beat). The outgoing layer lies over the incoming one,
+   so the card never grows. Outgoing motion ends within META_LEAVE_MS. */
+.bf-audio-meta-layer[data-state="in"] .bf-audio-line {
   animation: bf-audio-line-in 560ms var(--ease-emphasis) both;
-  animation-delay: calc(140ms + var(--bf-line, 0) * 60ms);
+  animation-delay: calc(220ms + var(--bf-line, 0) * 110ms);
 }
 
 .bf-audio-meta-layer[data-state="out"] {
@@ -971,11 +1046,162 @@
   pointer-events: none;
 }
 
+/* rise: a title drawn letter by letter rises into focus a letter at a time;
+   words stay unbroken so it wraps like the plain text. */
+.bf-audio-word {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.bf-audio-char {
+  display: inline-block;
+}
+
+.bf-audio-meta-layer[data-state="in"] .bf-audio-line:has(.bf-audio-letters) {
+  animation: none;
+}
+
+.bf-audio-meta-layer[data-state="in"] .bf-audio-char {
+  animation: bf-audio-char-rise 520ms var(--ease-emphasis) both;
+  animation-delay: calc(220ms + min(var(--bf-char, 0) * 16ms, 320ms));
+}
+
+/* flap: letters and lines roll down into place like a split-flap board. */
+.bf-audio-meta[data-words="flap"] .bf-audio-meta-layer[data-state="in"] .bf-audio-line {
+  transform-origin: 50% 0;
+  animation-name: bf-audio-line-flap;
+}
+
+.bf-audio-meta[data-words="flap"] .bf-audio-meta-layer[data-state="in"] .bf-audio-char {
+  animation-name: bf-audio-char-flap;
+  animation-duration: 440ms;
+  animation-delay: calc(220ms + min(var(--bf-char, 0) * 22ms, 360ms));
+}
+
+.bf-audio-meta[data-words="flap"] .bf-audio-meta-layer[data-state="out"] {
+  transform-origin: 50% 100%;
+  animation-name: bf-audio-meta-flap-out;
+}
+
+/* wipe: each line is revealed behind a sweeping mask. The line slides in
+   while its words slide back the same distance, so the words hold still and
+   only the mask edge moves. */
+.bf-audio-meta[data-words="wipe"] .bf-audio-line {
+  overflow: hidden;
+}
+
+.bf-audio-meta[data-words="wipe"] .bf-audio-meta-layer[data-state="in"] .bf-audio-line {
+  animation-name: bf-audio-wipe-mask;
+}
+
+.bf-audio-meta[data-words="wipe"] .bf-audio-meta-layer[data-state="in"] .bf-audio-line > * {
+  animation: bf-audio-wipe-words 560ms var(--ease-emphasis) both;
+  animation-delay: inherit;
+}
+
+.bf-audio-meta[data-words="wipe"] .bf-audio-meta-layer[data-state="out"] {
+  animation-name: bf-audio-hold;
+}
+
+.bf-audio-meta[data-words="wipe"] .bf-audio-meta-layer[data-state="out"] .bf-audio-line {
+  animation: bf-audio-wipe-mask-out 280ms var(--ease-standard) both;
+}
+
+.bf-audio-meta[data-words="wipe"] .bf-audio-meta-layer[data-state="out"] .bf-audio-line > * {
+  animation: bf-audio-wipe-words-out 280ms var(--ease-standard) both;
+}
+
+/* fade: the reduced-motion crossfade, opacity only. */
+.bf-audio-meta[data-words="fade"] .bf-audio-meta-layer[data-state="in"] .bf-audio-line {
+  animation: bf-audio-fade-in 400ms var(--ease-standard) both;
+  animation-delay: 160ms;
+}
+
+.bf-audio-meta[data-words="fade"] .bf-audio-meta-layer[data-state="out"] {
+  animation: bf-audio-fade-out 280ms var(--ease-standard) both;
+}
+
 @keyframes bf-audio-line-in {
   from {
     opacity: 0;
     transform: translateY(14px);
     filter: blur(8px);
+  }
+}
+
+@keyframes bf-audio-char-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.45em);
+    filter: blur(6px);
+  }
+}
+
+@keyframes bf-audio-line-flap {
+  from {
+    opacity: 0;
+    transform: perspective(600px) rotateX(-80deg);
+  }
+}
+
+@keyframes bf-audio-char-flap {
+  from {
+    opacity: 0;
+    transform: perspective(300px) rotateX(-90deg);
+  }
+
+  60% {
+    opacity: 1;
+    transform: perspective(300px) rotateX(14deg);
+  }
+}
+
+@keyframes bf-audio-meta-flap-out {
+  to {
+    opacity: 0;
+    transform: perspective(600px) rotateX(70deg);
+  }
+}
+
+@keyframes bf-audio-wipe-mask {
+  from {
+    transform: translateX(-101%);
+  }
+}
+
+@keyframes bf-audio-wipe-words {
+  from {
+    transform: translateX(101%);
+  }
+}
+
+@keyframes bf-audio-wipe-mask-out {
+  to {
+    transform: translateX(101%);
+  }
+}
+
+@keyframes bf-audio-wipe-words-out {
+  to {
+    transform: translateX(-101%);
+  }
+}
+
+@keyframes bf-audio-hold {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes bf-audio-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes bf-audio-fade-out {
+  to {
+    opacity: 0;
   }
 }
 
@@ -1105,20 +1331,17 @@
   }
 }
 
-/* Reduced motion swaps items instantly: no zoom, fade or rise, and the
-   outgoing layer is hidden at once. */
+/* Reduced motion keeps only a crossfade (CORE-2331/CORE-2332). The stage
+   already picks the "fade" styles from the same query; this backstop strips
+   any movement a style would add. */
 @media (prefers-reduced-motion: reduce) {
-  .bf-audio-art-layer,
-  .bf-audio-backdrop .bf-audio-art-layer {
-    transition: none;
+  .bf-audio-art-layer {
+    transform: none !important;
+    filter: none !important;
   }
 
-  .bf-audio-art-layer[data-state="out"],
-  .bf-audio-meta-layer[data-state="out"] {
-    display: none;
-  }
-
-  .bf-audio-meta-layer[data-state="in"] > * {
-    animation: none;
+  .bf-audio-meta-layer :is(.bf-audio-line, .bf-audio-line > *, .bf-audio-char) {
+    transform: none !important;
+    filter: none !important;
   }
 }

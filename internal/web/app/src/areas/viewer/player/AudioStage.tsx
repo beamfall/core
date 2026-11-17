@@ -1,6 +1,13 @@
-import { type CSSProperties, type RefObject, useState } from "react";
+import { Music } from "lucide-react";
+import { type CSSProperties, type ReactNode, type RefObject, useEffect, useState } from "react";
 import type { MediaCredit } from "@/lib/graphql/types";
 import type { PlaybackStream } from "../lib/playback";
+import {
+  type ChangeMotion,
+  motionForChange,
+  usePrefersReducedMotion,
+  useTrackChangeMotion,
+} from "./trackChangeMotion";
 import { useLayers } from "./useLayers";
 import { type NextTrack, Visualizer } from "./visualizer/Visualizer";
 
@@ -44,8 +51,11 @@ export function AudioStage({
     " · ",
   );
 
+  const changeKey = trackKey || title;
+  const motion = motionForChange(changeKey, useTrackChangeMotion(), usePrefersReducedMotion());
   const meta = { position: queuePosition ?? "", title, people, collections, others };
-  const metaLayers = useLayers(trackKey || title, meta, META_LEAVE_MS);
+  // A further change cancels an unfinished one: only the latest outgoing words stay.
+  const metaLayers = useLayers(changeKey, meta, META_LEAVE_MS, undefined, 1);
   const art = showArtwork ? artworkURL : "";
   // Tracks of one album name the same picture by different URLs: the visual keeps the first,
   // so it neither reloads the image nor switches visuals between them.
@@ -74,10 +84,12 @@ export function AudioStage({
         )}
       </div>
       <div className="bf-audio-card">
-        <div className="bf-audio-artwork">
-          <ArtworkLayers url={art} leaveMs={ART_LEAVE_MS} onError={setFailedURL} />
+        <div className="bf-audio-artwork" data-art={motion.art}>
+          <ArtworkLayers url={art} leaveMs={ART_LEAVE_MS} onError={setFailedURL} placeholder />
         </div>
-        <div className="bf-audio-meta">
+        {/* One polite region: each incoming item is announced once, as whole
+            words; leaving words and per-letter pieces are hidden from it. */}
+        <div className="bf-audio-meta" data-words={motion.words} aria-live="polite">
           {metaLayers.map(({ id, value: m, leaving }) => (
             <div
               key={id}
@@ -86,27 +98,31 @@ export function AudioStage({
               aria-hidden={leaving || undefined}
             >
               {m.position && (
-                <p className="bf-audio-position" style={line(0)}>
+                <Line beat={3} className="bf-audio-position">
                   {m.position}
-                </p>
+                </Line>
               )}
-              <p className="bf-audio-title" style={line(1)}>
-                {m.title}
-              </p>
+              <Line
+                beat={0}
+                className="bf-audio-title"
+                spoken={!leaving && splitsLetters(m.title, motion) ? m.title : undefined}
+              >
+                {leaving ? m.title : <Letters text={m.title} motion={motion} />}
+              </Line>
               {m.people && (
-                <p className="bf-audio-people" style={line(2)}>
+                <Line beat={1} className="bf-audio-people">
                   {m.people}
-                </p>
+                </Line>
               )}
               {m.collections && (
-                <p className="bf-audio-collections" style={line(3)}>
+                <Line beat={2} className="bf-audio-collections">
                   {m.collections}
-                </p>
+                </Line>
               )}
               {m.others && (
-                <p className="bf-audio-others" style={line(4)}>
+                <Line beat={3} className="bf-audio-others">
                   {m.others}
-                </p>
+                </Line>
               )}
             </div>
           ))}
@@ -122,42 +138,126 @@ const ART_LEAVE_MS = 700;
 const BACKDROP_LEAVE_MS = 900;
 const META_LEAVE_MS = 320;
 
-// Each line rises in a beat after the one above it.
-function line(index: number): CSSProperties {
-  return { "--bf-line": index } as CSSProperties;
+// One line of words. Its wrapper is the mask a wipe sweeps and the frame a
+// flap rolls in; the beat orders the arrival: title, then who made it, then
+// what it belongs to and the queue position (CORE-2331).
+// A line drawn letter by letter is read from `spoken`, a visually hidden copy,
+// and its letters are hidden from assistive technology.
+function Line({
+  beat,
+  className,
+  spoken,
+  children,
+}: {
+  beat: number;
+  className: string;
+  spoken?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="bf-audio-line" style={{ "--bf-line": beat } as CSSProperties}>
+      {spoken && <span className="sr-only">{spoken}</span>}
+      <p className={className} aria-hidden={spoken ? true : undefined}>
+        {children}
+      </p>
+    </div>
+  );
 }
 
-// The artwork crossfade: the incoming image waits, hidden, until it has
-// loaded, then settles in over the outgoing one, which stays underneath until
-// then so the frame never flashes empty. No artwork fades the old one out.
+/** Titles longer than this rise as one line; per-letter motion would cost frames. */
+const MAX_LETTERS = 80;
+
+/** Whether the title is drawn letter by letter for this change. */
+function splitsLetters(text: string, motion: ChangeMotion): boolean {
+  return (
+    (motion.words === "rise" || motion.words === "flap") && graphemes(text).length <= MAX_LETTERS
+  );
+}
+
+// The title split into letters for the per-letter styles; words stay unbroken
+// so the title wraps where the plain text would.
+function Letters({ text, motion }: { text: string; motion: ChangeMotion }) {
+  if (!splitsLetters(text, motion)) return text;
+  let index = 0;
+  return (
+    <span className="bf-audio-letters">
+      {text.split(/(\s+)/).map((word, w) => {
+        if (!word) return null;
+        if (/^\s+$/.test(word)) return word;
+        return (
+          <span key={w} className="bf-audio-word">
+            {graphemes(word).map((letter, l) => (
+              <span
+                key={l}
+                className="bf-audio-char"
+                style={{ "--bf-char": index++ } as CSSProperties}
+              >
+                {letter}
+              </span>
+            ))}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function graphemes(text: string): string[] {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map(
+      (s) => s.segment,
+    );
+  }
+  return Array.from(text);
+}
+
+// The artwork transition: the incoming image waits, hidden, until it has
+// loaded and decoded, then settles in over the outgoing one, which stays
+// underneath until then so the frame never flashes empty. With `placeholder`
+// an item without artwork transitions to the audio placeholder the same way
+// (CORE-2332); without it, no artwork fades the old one out.
 function ArtworkLayers({
   url,
   leaveMs,
   onError,
+  placeholder = false,
 }: {
   url: string;
   leaveMs: number;
   onError?: (url: string) => void;
+  placeholder?: boolean;
 }) {
   // Tracks of one album carry their own artwork URLs for the same picture; the
   // ?v= token is a content hash, so the same picture keeps its layer (and its
   // first URL, so nothing reloads) instead of crossfading to itself.
-  const key = artworkKey(url);
+  const key = artworkKey(url) || (placeholder ? PLACEHOLDER_KEY : "");
   const [first, setFirst] = useState({ key, url });
   if (first.key !== key) setFirst({ key, url });
   const src = first.key === key ? first.url : url;
   const [shown, setShown] = useState<ReadonlySet<number>>(() => new Set());
-  const layers = useLayers(key, src, leaveMs, (id) => shown.has(id));
+  // A further change cancels an unfinished one: only the latest outgoing picture stays.
+  const layers = useLayers(key, src, leaveMs, (id) => shown.has(id), 1);
   // A cached image can load before the hidden starting state is painted;
   // revealing it a frame later keeps the settle-in animation.
   const reveal = (id: number) =>
     requestAnimationFrame(() => requestAnimationFrame(() => setShown((s) => new Set(s).add(id))));
+  // The swap waits for the decoded picture, so it never paints half-decoded.
+  const loaded = (id: number, img: HTMLImageElement) => {
+    if (typeof img.decode !== "function") return reveal(id);
+    img.decode().then(
+      () => reveal(id),
+      () => reveal(id),
+    );
+  };
   const ready = layers.every((l) => l.leaving || shown.has(l.id));
   return layers.map(({ id, value, leaving }) => {
     // A layer that never loaded has nothing to show on its way out.
     if (leaving && !shown.has(id)) return null;
     let state = shown.has(id) ? "in" : "pending";
     if (leaving) state = ready ? "out" : "under";
+    if (!value) {
+      return <PlaceholderLayer key={id} state={state} onMount={() => reveal(id)} />;
+    }
     return (
       <img
         key={id}
@@ -165,11 +265,26 @@ function ArtworkLayers({
         src={value}
         alt=""
         data-state={state}
-        onLoad={() => reveal(id)}
+        onLoad={(event) => loaded(id, event.currentTarget)}
         onError={() => !leaving && onError?.(value)}
       />
     );
   });
+}
+
+const PLACEHOLDER_KEY = "placeholder";
+
+// The quiet frame an item without artwork shows: nothing to load, so it is
+// ready as soon as it is drawn.
+function PlaceholderLayer({ state, onMount }: { state: string; onMount: () => void }) {
+  useEffect(() => {
+    onMount();
+  }, []);
+  return (
+    <div className="bf-audio-art-layer bf-audio-art-placeholder" data-state={state}>
+      <Music aria-hidden="true" strokeWidth={1.5} className="bf-audio-art-glyph" />
+    </div>
+  );
 }
 
 // The picture an artwork URL names: its slot and content token when it has one
