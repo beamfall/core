@@ -5871,6 +5871,10 @@
     ]
   },
   {
+    "field": "endplayback",
+    "kind": "object"
+  },
+  {
     "field": "engagementcounter",
     "kind": "object",
     "children": [

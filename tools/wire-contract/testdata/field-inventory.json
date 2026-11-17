@@ -1067,6 +1067,11 @@
       ]
     },
     {
+      "field": "endplayback",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "engagementcounter",
       "effect": "read",
       "tier": "session",

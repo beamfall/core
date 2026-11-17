@@ -15,10 +15,24 @@ func progressAt(t *testing.T, st *Store, profile ProfileID, media MediaID, at ti
 	progressReported(t, st, profile, media, at, time.Time{}, watched)
 }
 
+// progressAtPosition is progressAt for a report that carries a playback
+// position, as an unwatched report from a resumed play does.
+func progressAtPosition(t *testing.T, st *Store, profile ProfileID, media MediaID, at time.Time, position int, watched bool) {
+	t.Helper()
+	progressEvent(t, st, profile, media, at, time.Time{}, position, 3600, watched)
+}
+
 // progressReported appends a progress event that arrived at the server at one
 // instant and carries the client's own event time; a zero observed time is a
 // client that sent none.
 func progressReported(t *testing.T, st *Store, profile ProfileID, media MediaID, at, observed time.Time, watched bool) {
+	t.Helper()
+	progressEvent(t, st, profile, media, at, observed, 0, 3600, watched)
+}
+
+// progressEvent appends one progress event with every field the play
+// derivation reads.
+func progressEvent(t *testing.T, st *Store, profile ProfileID, media MediaID, at, observed time.Time, position, duration int, watched bool) {
 	t.Helper()
 	var eventTime *int64
 	if !observed.IsZero() {
@@ -27,7 +41,7 @@ func progressReported(t *testing.T, st *Store, profile ProfileID, media MediaID,
 	}
 	payload, err := json.Marshal(playbackProjectionEvent{
 		Operation: playbackProjectionOperationProgress, ProfileID: string(profile), MediaID: string(media),
-		DurationSeconds: 3600, Watched: watched, UpdatedAtMS: timeToMillis(at), EventTimeMS: eventTime,
+		PositionSeconds: position, DurationSeconds: duration, Watched: watched, UpdatedAtMS: timeToMillis(at), EventTimeMS: eventTime,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,17 +63,19 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 	revealed := LibraryFilter{AllLibraries: true, Revealed: true}
 	day := time.Date(2026, 11, 10, 20, 0, 0, 0, time.UTC)
 
-	// profile-default watches media-alpha for ten minutes, then again two
-	// hours later to the end: two plays, the second finished.
+	// profile-default watches media-alpha for ten minutes, then two hours
+	// later resumes 40 minutes in and plays to the end: two plays, the second
+	// finished.
 	progressAt(t, st, "profile-default", "media-alpha", day, false)
 	progressAt(t, st, "profile-default", "media-alpha", day.Add(10*time.Minute), false)
-	progressAt(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour), false)
+	progressAtPosition(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour), 2400, false)
 	progressAt(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour+20*time.Minute), true)
 	// profile-managed plays it once the next day, and plays the restricted
 	// media-archive.
 	progressAt(t, st, "profile-managed", "media-alpha", day.Add(24*time.Hour), false)
 	progressAt(t, st, "profile-managed", "media-alpha", day.Add(24*time.Hour+5*time.Minute), false)
 	progressAt(t, st, "profile-managed", "media-archive", day.Add(25*time.Hour), false)
+	progressAt(t, st, "profile-managed", "media-archive", day.Add(25*time.Hour+5*time.Minute), false)
 
 	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
 	if err != nil {
@@ -116,8 +132,8 @@ func TestPlayHistoryDerivesPlaysAndFilters(t *testing.T) {
 	}
 	if len(stats.Profiles) != 2 || stats.Profiles[0].ProfileID != "profile-default" ||
 		stats.Profiles[0].Plays != 2 || stats.Profiles[0].WatchedSeconds != 1800 ||
-		stats.Profiles[1].Plays != 2 || stats.Profiles[1].WatchedSeconds != 300 {
-		t.Errorf("profile ranking = %#v, want default (2 plays, 1800s) ahead of managed (2 plays, 300s)", stats.Profiles)
+		stats.Profiles[1].Plays != 2 || stats.Profiles[1].WatchedSeconds != 600 {
+		t.Errorf("profile ranking = %#v, want default (2 plays, 1800s) ahead of managed (2 plays, 600s)", stats.Profiles)
 	}
 	if len(stats.Items) != 1 || stats.Items[0].MediaID != "media-alpha" || stats.Items[0].Plays != 3 || stats.Items[0].Title == "" {
 		t.Errorf("item ranking = %#v, want only the visible media-alpha with 3 plays", stats.Items)
@@ -136,13 +152,14 @@ func TestPlayHistoryDatesDelayedReportsByWhenTheyWerePlayed(t *testing.T) {
 	played := time.Date(2026, 11, 10, 20, 0, 0, 0, time.UTC)
 	flushed := played.Add(26 * time.Hour)
 
-	// The first report arrives live. The device then goes offline and sends
-	// the rest of the same play the next day.
-	progressReported(t, st, "profile-default", "media-alpha", played, played, false)
-	progressReported(t, st, "profile-default", "media-alpha", flushed, played.Add(10*time.Minute), false)
+	// The first report arrives live, 40 minutes into the item. The device then
+	// goes offline and sends the rest of the same play the next day.
+	progressEvent(t, st, "profile-default", "media-alpha", played, played, 2400, 3600, false)
+	progressEvent(t, st, "profile-default", "media-alpha", flushed, played.Add(10*time.Minute), 3000, 3600, false)
 	progressReported(t, st, "profile-default", "media-alpha", flushed.Add(time.Second), played.Add(20*time.Minute), true)
 	// A client whose clock runs a day ahead is dated by arrival instead.
 	progressReported(t, st, "profile-managed", "media-alpha", played.Add(time.Hour), played.Add(25*time.Hour), false)
+	progressReported(t, st, "profile-managed", "media-alpha", played.Add(time.Hour+5*time.Minute), played.Add(25*time.Hour+5*time.Minute), false)
 
 	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
 	if err != nil {
@@ -230,7 +247,7 @@ func TestPlayHistoryWindowKeepsPlaysWhole(t *testing.T) {
 	progressAt(t, st, "profile-default", "media-alpha", since.Add(20*time.Minute), false)
 	progressAt(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour), false)
 	progressAt(t, st, "profile-managed", "media-alpha", since.Add(2*time.Hour+5*time.Minute), false)
-	progressAt(t, st, "profile-default", "media-alpha", until.Add(-10*time.Minute), false)
+	progressAtPosition(t, st, "profile-default", "media-alpha", until.Add(-10*time.Minute), 2100, false)
 	progressAt(t, st, "profile-default", "media-alpha", until.Add(15*time.Minute), true)
 
 	got, err := st.PlayHistory(ctx, all, PlayHistoryQuery{Since: since, Until: until})
@@ -278,25 +295,29 @@ func TestPlayHistoryLibraryFilterIsNotCrowdedOut(t *testing.T) {
 	// One old play in the quiet archive Library, then more plays in the busy
 	// local Library than the 10,000-play scan the read once capped itself at.
 	progressAt(t, st, "profile-default", "media-archive", start, false)
+	progressAt(t, st, "profile-default", "media-archive", start.Add(5*time.Minute), false)
 	tx, err := st.eventsW.Begin()
 	if err != nil {
 		t.Fatal(err)
 	}
 	busy := 20*PlayHistoryMaxLimit + 7
 	for i := range busy {
-		at := start.Add(time.Duration(i+1) * time.Hour)
-		payload, err := json.Marshal(playbackProjectionEvent{
-			Operation: playbackProjectionOperationProgress, ProfileID: "profile-default", MediaID: "media-alpha",
-			DurationSeconds: 3600, UpdatedAtMS: timeToMillis(at),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := tx.Exec(`
-			INSERT INTO engagement_event(id, profile_id, media_id, kind, payload, occurred_at_ms, created_at_ms)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			fmt.Sprintf("busy-%d", i), "profile-default", "media-alpha", playbackProjectionEventKind, string(payload), timeToMillis(at), timeToMillis(at)); err != nil {
-			t.Fatal(err)
+		// Each busy play is two reports five minutes apart.
+		for report := range 2 {
+			at := start.Add(time.Duration(i+1)*time.Hour + time.Duration(report)*5*time.Minute)
+			payload, err := json.Marshal(playbackProjectionEvent{
+				Operation: playbackProjectionOperationProgress, ProfileID: "profile-default", MediaID: "media-alpha",
+				DurationSeconds: 3600, UpdatedAtMS: timeToMillis(at),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.Exec(`
+				INSERT INTO engagement_event(id, profile_id, media_id, kind, payload, occurred_at_ms, created_at_ms)
+				VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				fmt.Sprintf("busy-%d-%d", i, report), "profile-default", "media-alpha", playbackProjectionEventKind, string(payload), timeToMillis(at), timeToMillis(at)); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -316,5 +337,57 @@ func TestPlayHistoryLibraryFilterIsNotCrowdedOut(t *testing.T) {
 	}
 	if len(local) != 3 || !local[0].StartedAt.Equal(start.Add(time.Duration(busy)*time.Hour)) {
 		t.Fatalf("local history = %#v, want the newest 3 local plays", local)
+	}
+}
+
+// feature:play-history
+func TestPlayHistoryCountsOnlyRealPlaysAndFinishesNearTheEnd(t *testing.T) {
+	// CORE-2316: opening an item for a moment is not a play, and a watched
+	// flag reported far from the end is not a finish.
+	st := openSeeded(t)
+	ctx := context.Background()
+	all := LibraryFilter{AllLibraries: true}
+	day := time.Date(2026, 11, 12, 20, 0, 0, 0, time.UTC)
+
+	// A single report marked watched: zero seconds, not a play.
+	progressEvent(t, st, "profile-default", "media-alpha", day, time.Time{}, 0, 240, true)
+	// One second between open and a watched report: not a play.
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(time.Hour), time.Time{}, 0, 240, false)
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(time.Hour+time.Second), time.Time{}, 0, 240, true)
+	// Ten minutes of an hour-long item, then reported watched: a play, but
+	// not finished.
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour), time.Time{}, 60, 3600, false)
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(2*time.Hour+10*time.Minute), time.Time{}, 0, 3600, true)
+	// A 60-second item played for 20 seconds to its end: a play (a quarter
+	// of a short item is enough) and finished.
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(3*time.Hour), time.Time{}, 40, 60, false)
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(3*time.Hour+20*time.Second), time.Time{}, 0, 60, true)
+	// An item of unknown length played for a minute and reported watched:
+	// the watched flag stands.
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(4*time.Hour), time.Time{}, 0, 0, false)
+	progressEvent(t, st, "profile-default", "media-alpha", day.Add(4*time.Hour+time.Minute), time.Time{}, 0, 0, true)
+
+	plays, err := st.PlayHistory(ctx, all, PlayHistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plays) != 3 {
+		t.Fatalf("plays = %#v, want the three that lasted", plays)
+	}
+	if !plays[0].StartedAt.Equal(day.Add(4*time.Hour)) || !plays[0].Finished {
+		t.Errorf("unknown-length play = %#v, want finished", plays[0])
+	}
+	if !plays[1].StartedAt.Equal(day.Add(3*time.Hour)) || plays[1].WatchedSeconds != 20 || !plays[1].Finished {
+		t.Errorf("short item play = %#v, want 20s finished", plays[1])
+	}
+	if !plays[2].StartedAt.Equal(day.Add(2*time.Hour)) || plays[2].WatchedSeconds != 600 || plays[2].Finished {
+		t.Errorf("early-watched play = %#v, want 600s not finished", plays[2])
+	}
+	stats, err := st.PlayStats(ctx, all, day.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Items) != 1 || stats.Items[0].Plays != 3 || stats.Items[0].WatchedSeconds != 680 {
+		t.Errorf("item ranking = %#v, want 3 plays and 680s", stats.Items)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
+	"os"
 	"time"
 
 	"github.com/beamfall/core/internal/jobs"
@@ -143,12 +145,23 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 	if err != nil {
 		return jobs.Result{}, err
 	}
+	// A Library folder that is gone or unreadable fails the job before any
+	// work, every time it is claimed: the walk would only skip it file by file
+	// and the job would keep coming back. The job records why, so the Console
+	// can name the folder that needs attention (CORE-2309).
+	if rootErr := checkScanRootReadable(req.Root); rootErr != nil {
+		if eventErr := appendScanRootUnavailable(ctx, st, job.ID, req, rootErr); eventErr != nil {
+			return jobs.Result{}, errors.Join(rootErr, eventErr)
+		}
+		return jobs.Result{}, rootErr
+	}
 	scanStarted := job.StartedAt
 	if scanStarted.IsZero() {
 		scanStarted = time.Now().UTC()
 	}
 	var latest []byte
 	filesThisRun := 0
+	runStarted := time.Now()
 	result, err := scanFromCheckpoint(ctx, st, prober, grabber, parsers, interactiveSidecarExts, identifier, localExtractors, metadataHydrators, gov, imageDeriver, req, checkpoint, scanStarted, func(checkpoint jobCheckpoint, progress store.JobProgress) error {
 		data, err := marshalScanCheckpoint(checkpoint)
 		if err != nil {
@@ -159,7 +172,7 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 			return err
 		}
 		filesThisRun++
-		if filesThisRun >= scanJobFileBatchSize {
+		if filesThisRun >= scanJobFileBatchSize || time.Since(runStarted) >= scanJobRunBudget {
 			return jobs.ErrYielded
 		}
 		return nil
@@ -192,6 +205,34 @@ func runScanJob(ctx context.Context, st *store.Store, prober Prober, grabber Fra
 		Unit:    "files",
 		Message: missingCredentialsMessage(result.MissingCredentials, identifier),
 	}, time.Now().UTC())
+}
+
+// ScanRootUnavailableEvent is the job event type a scan job records when its
+// Library folder cannot be scanned (CORE-2309). Its payload is a
+// ScanRootUnavailable.
+const ScanRootUnavailableEvent = "scan-root-unavailable"
+
+// ScanRootUnavailable names the Library folder a scan could not use and why:
+// Reason is "missing" when the folder does not exist or is not a folder, and
+// "unreadable" when it exists but cannot be listed.
+type ScanRootUnavailable struct {
+	LibraryID string `json:"libraryID"`
+	Root      string `json:"root"`
+	Reason    string `json:"reason"`
+}
+
+func appendScanRootUnavailable(ctx context.Context, st *store.Store, id store.JobID, req Request, rootErr error) error {
+	reason := "unreadable"
+	if errors.Is(rootErr, fs.ErrNotExist) {
+		reason = "missing"
+	} else if info, err := os.Stat(req.Root); err == nil && !info.IsDir() {
+		reason = "missing"
+	}
+	payload, err := json.Marshal(ScanRootUnavailable{LibraryID: string(req.LibraryID), Root: req.Root, Reason: reason})
+	if err != nil {
+		return err
+	}
+	return st.AppendJobEvent(ctx, id, ScanRootUnavailableEvent, payload, time.Now().UTC())
 }
 
 // ScanSummaryEvent is the job event type a completed scan job records with

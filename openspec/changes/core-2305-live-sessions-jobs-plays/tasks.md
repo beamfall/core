@@ -1,0 +1,12 @@
+- [x] `internal/store`: ledger `last_active_ms` (events 0023), `TouchStreamTokenActivity`, `EndPlayback`
+- [x] `internal/graph`: `endPlayback`, the `liveSessions` activity window and `transcoding` from `playMethod`
+- [x] `internal/store`: job transitions use the later of `updated_at` and now; progress events coalesce; `ListJobEventsPage`
+- [x] `internal/graph`: `jobEvents(limit, beforeID)`
+- [x] `internal/scan`: time-budget yield; missing or unreadable root fails fast with `scan-root-unavailable`
+- [x] `internal/store`: play minimum and finished near the end
+- [x] `internal/app`: effective transcode cap log with its source
+- [x] Tests for each behaviour; wire goldens regenerated
+- [ ] Publish the next wire contract version (adds `endPlayback`) at landing
+- [ ] `make bench` for events migration 0023
+- [ ] `make gate`
+- [ ] `openspec archive core-2305-live-sessions-jobs-plays` after landing

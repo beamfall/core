@@ -178,6 +178,7 @@ var resultTypes = map[string]any{
 	"watchpartyautoskip":         WatchPartyAutoSkipResult{},
 	"leavewatchparty":            LeaveWatchPartyResult{},
 	"marknotificationread":       NotificationReadResult{},
+	"endplayback":                endPlaybackResult{},
 	"registerdevicepushtoken":    PushRegistrationResult{},
 	"requestextension":           ExtensionRequestInfo{},
 	"respondextension":           ExtensionRequestInfo{},
@@ -521,6 +522,9 @@ type restoreLibraryResult struct{}
 
 // deleteWebhookResult models the boolean-leaf webhook removal (CORE-1697).
 type deleteWebhookResult struct{}
+
+// endPlaybackResult models the boolean-leaf playback end (CORE-2305).
+type endPlaybackResult struct{}
 
 // cancelStagedRestoreResult models the boolean-leaf staged-restore removal
 // (CORE-1720).

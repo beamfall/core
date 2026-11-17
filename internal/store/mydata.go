@@ -1133,14 +1133,15 @@ func (s *Store) RecordStreamToken(ctx context.Context, sessionID SessionID, prof
 		return err
 	}
 	_, err := s.eventsW.ExecContext(ctx, `
-		INSERT INTO stream_token_ledger(session_id, profile_id, device_id, target, media_id, restricted, expires_at_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO stream_token_ledger(session_id, profile_id, device_id, target, media_id, restricted, expires_at_ms, last_active_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id, target, media_id) DO UPDATE SET
 		  profile_id = excluded.profile_id,
 		  device_id = excluded.device_id,
 		  restricted = excluded.restricted,
-		  expires_at_ms = excluded.expires_at_ms
-	`, sessionID, profileID, deviceID, target, mediaID, boolToInt(restricted), timeToMillis(expiresAt))
+		  expires_at_ms = excluded.expires_at_ms,
+		  last_active_ms = excluded.last_active_ms
+	`, sessionID, profileID, deviceID, target, mediaID, boolToInt(restricted), timeToMillis(expiresAt), timeToMillis(time.Now()))
 	return err
 }
 

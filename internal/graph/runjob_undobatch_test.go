@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -185,6 +186,59 @@ func TestJobCancelRetryAndEventsOverGraphQL(t *testing.T) {
 	}
 	if historyResp.Data.JobEvents[1].Type != "canceled" || historyResp.Data.JobEvents[1].Payload == "" {
 		t.Fatalf("last event = %#v, want canceled with payload", historyResp.Data.JobEvents[1])
+	}
+}
+
+// TestJobEventsPagesNewestFirst covers CORE-2307: jobEvents returns a bounded
+// page of the newest events in time order, and beforeID reads further back.
+func TestJobEventsPagesNewestFirst(t *testing.T) {
+	// feature:operations
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	openManagerAdminSession(t, st)
+	now := time.Unix(100, 0).UTC()
+	if _, err := st.EnqueueJob(t.Context(), store.Job{ID: "job-paged", Kind: "scan", Class: store.JobClassBackground, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	for round := range 3 {
+		at := now.Add(time.Duration(round) * time.Minute)
+		job, err := st.ClaimNextJob(t.Context(), "worker", nil, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.YieldJob(t.Context(), job.ID, job.LeaseOwner, nil, at, at.Add(time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := st.ListJobEvents(t.Context(), "job-paged")
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(variables string) ([]JobEventInfo, []graphError) {
+		body := graphPost(t, handler, authorizeManager,
+			`{"query":"query($id:String!,$limit:Int,$beforeID:String){ jobEvents(id:$id, limit:$limit, beforeID:$beforeID){ id type } }","variables":`+variables+`}`)
+		var resp struct {
+			Data struct {
+				JobEvents []JobEventInfo `json:"jobEvents"`
+			} `json:"data"`
+			Errors []graphError `json:"errors"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("decode jobEvents: %v (%s)", err, body)
+		}
+		return resp.Data.JobEvents, resp.Errors
+	}
+	newest, errs := read(`{"id":"job-paged","limit":2}`)
+	wantNewest := []string{strconv.FormatInt(all[len(all)-2].ID, 10), strconv.FormatInt(all[len(all)-1].ID, 10)}
+	if len(errs) != 0 || len(newest) != 2 || newest[0].ID != wantNewest[0] || newest[1].ID != wantNewest[1] {
+		t.Fatalf("newest page = %#v errors=%#v, want ids %v", newest, errs, wantNewest)
+	}
+	older, errs := read(`{"id":"job-paged","limit":2,"beforeID":"` + newest[0].ID + `"}`)
+	if len(errs) != 0 || len(older) != 2 || older[1].ID != strconv.FormatInt(all[len(all)-3].ID, 10) {
+		t.Fatalf("older page = %#v errors=%#v", older, errs)
+	}
+	if _, errs := read(`{"id":"job-paged","beforeID":"not-an-id"}`); len(errs) == 0 || errs[0].Message != "beforeID must be a job event ID" {
+		t.Fatalf("bad beforeID errors = %#v", errs)
 	}
 }
 

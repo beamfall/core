@@ -50,6 +50,10 @@ package store
 //   - events 0022 (CORE-1194) added the per-Profile watchlist_item and
 //     item_rating tables; both are keyed by Profile and read only by their own
 //     Sources, off the entity-query hot path.
+//   - events 0023 (CORE-2305) added stream_token_ledger.last_active_ms so the
+//     live-sessions read can drop playbacks with no recent activity; it is
+//     written on grant issue and progress reports and read only by the
+//     active-session reads, off the entity-query hot path.
 //   - encrypted-library 0001-0005 (ENC-1/ENC-4/ENC-ENTITY-RELATION-UPSERT-1,
 //     ADR-0045) mirror the typed Media-field, provenance, and entity-relation
 //     upsert surface into the encrypted library.
@@ -76,6 +80,6 @@ package store
 // their exact narrow exceptions:
 //   - mute/retention/podcast predicates
 const (
-	schemaFreezeEventsMigrations           = 22
+	schemaFreezeEventsMigrations           = 23
 	schemaFreezeEncryptedLibraryMigrations = 8
 )

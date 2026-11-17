@@ -1777,6 +1777,10 @@ func (h *Handler) job(ctx context.Context, scope auth.Scope, req request) (JobIn
 	return h.jobInfo(ctx, scope, job), nil
 }
 
+// defaultJobEventPage is how many of a job's newest events jobEvents returns
+// when the reader names no limit.
+const defaultJobEventPage = 200
+
 func (h *Handler) jobEvents(ctx context.Context, scope auth.Scope, req request) ([]JobEventInfo, error) {
 	if h.store == nil {
 		return []JobEventInfo{}, nil
@@ -1792,7 +1796,18 @@ func (h *Handler) jobEvents(ctx context.Context, scope auth.Scope, req request) 
 	if err != nil {
 		return nil, err
 	}
-	events, err := h.store.ListJobEvents(ctx, store.JobID(id))
+	// The newest page of the history, in time order: a long job's history is
+	// bounded per response, and beforeID pages back from the oldest event a
+	// reader already has (CORE-2307).
+	page := store.JobEventPage{Limit: boundedIntVar(req, "limit", defaultJobEventPage, store.MaxJobEventPage)}
+	if before := trimmedVariable(req, "beforeID"); before != "" {
+		beforeID, err := strconv.ParseInt(before, 10, 64)
+		if err != nil || beforeID <= 0 {
+			return nil, clientError("beforeID must be a job event ID")
+		}
+		page.BeforeID = beforeID
+	}
+	events, err := h.store.ListJobEventsPage(ctx, store.JobID(id), page)
 	if err != nil {
 		return nil, err
 	}
@@ -3855,6 +3870,7 @@ func (h *Handler) reportPlayback(ctx context.Context, scope auth.Scope, req requ
 	if durationSeconds <= 0 {
 		durationSeconds = media.DurationSeconds
 	}
+	h.notePlaybackActivity(ctx, scope, media.ID)
 	if ambient {
 		// Engagement-silent: no write. Echo back the Profile's
 		// EXISTING stored state for the Media unchanged — an ambient play never
@@ -3899,7 +3915,16 @@ func (h *Handler) RecordPlaybackProgress(ctx context.Context, scope auth.Scope, 
 	if report.DurationSeconds <= 0 {
 		report.DurationSeconds = media.DurationSeconds
 	}
+	h.notePlaybackActivity(ctx, scope, media.ID)
 	return h.recordPlaybackProgress(ctx, scope, media, report, finished)
+}
+
+// notePlaybackActivity keeps the calling session's playback of a Media on the
+// live-sessions dashboard (CORE-2305). Every progress report counts, ambient
+// ones included, since an ambient play still holds a stream. Best-effort: the
+// dashboard is advisory, so a failed touch must not fail the report.
+func (h *Handler) notePlaybackActivity(ctx context.Context, scope auth.Scope, mediaID store.MediaID) {
+	_ = h.store.TouchStreamTokenActivity(ctx, scope.SessionID, mediaID, time.Now().UTC())
 }
 
 // recordPlaybackProgress writes one non-ambient position report for an already
@@ -5424,6 +5449,7 @@ var mutationFields = map[string]bool{
 	"relock":                       true,
 	"setrevealpin":                 true,
 	"reportplayback":               true,
+	"endplayback":                  true, // CORE-2305: a closing player ends its live session
 	"marknotificationread":         true,
 	"registerdevicepushtoken":      true,
 	"requestextension":             true,

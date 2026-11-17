@@ -43,17 +43,28 @@ type ActiveSession struct {
 	PositionSeconds int
 	DurationSeconds int
 	ExpiresAt       time.Time
+	// LastActiveAt is the latest grant issue or progress report for this
+	// session and Media (CORE-2305). It is zero for grants recorded before
+	// activity was tracked.
+	LastActiveAt time.Time
 }
+
+// LiveSessionActivityWindow is how long a playback with no new grant and no
+// progress report stays on the live-sessions dashboard (CORE-2305). Players
+// report progress well inside it, so a closed or crashed player drops off
+// within this window even when it never said it stopped.
+const LiveSessionActivityWindow = 2 * time.Minute
 
 // activeLedgerRow is one unexpired media Stream Token from the ledger, before
 // catalog resolution.
 type activeLedgerRow struct {
-	sessionID SessionID
-	profileID ProfileID
-	deviceID  DeviceID
-	mediaID   MediaID
-	hls       bool
-	expiresAt time.Time
+	sessionID  SessionID
+	profileID  ProfileID
+	deviceID   DeviceID
+	mediaID    MediaID
+	hls        bool
+	expiresAt  time.Time
+	lastActive time.Time
 }
 
 // ActiveSessions returns every currently-active playback session for the
@@ -142,6 +153,9 @@ func (s *Store) ActiveSessions(ctx context.Context, now time.Time, filter Librar
 		if r.expiresAt.After(entry.ExpiresAt) {
 			entry.ExpiresAt = r.expiresAt
 		}
+		if r.lastActive.After(entry.LastActiveAt) {
+			entry.LastActiveAt = r.lastActive
+		}
 	}
 
 	// Resume position is the Profile's per-Media playback projection. It is the
@@ -188,7 +202,7 @@ func (s *Store) activeLedgerRows(ctx context.Context, now time.Time) ([]activeLe
 	nowMS := timeToMillis(now)
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE expires_at_ms <= ?`, nowMS)
 	rows, err := s.eventsR.QueryContext(ctx, `
-		SELECT session_id, profile_id, device_id, target, media_id, expires_at_ms
+		SELECT session_id, profile_id, device_id, target, media_id, expires_at_ms, last_active_ms
 		FROM stream_token_ledger
 		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls')
 		ORDER BY session_id, media_id, target
@@ -201,12 +215,15 @@ func (s *Store) activeLedgerRows(ctx context.Context, now time.Time) ([]activeLe
 	for rows.Next() {
 		var r activeLedgerRow
 		var target string
-		var expires int64
-		if err := rows.Scan(&r.sessionID, &r.profileID, &r.deviceID, &target, &r.mediaID, &expires); err != nil {
+		var expires, lastActive int64
+		if err := rows.Scan(&r.sessionID, &r.profileID, &r.deviceID, &target, &r.mediaID, &expires, &lastActive); err != nil {
 			return nil, err
 		}
 		r.hls = target == "media-hls"
 		r.expiresAt = millisToTime(expires)
+		if lastActive > 0 {
+			r.lastActive = millisToTime(lastActive)
+		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -321,4 +338,47 @@ func (s *Store) TerminateSession(ctx context.Context, id SessionID) error {
 	// gone), and the lazy sweep removes the rows at expiry regardless.
 	_, _ = s.eventsW.ExecContext(ctx, `DELETE FROM stream_token_ledger WHERE session_id = ?`, id)
 	return nil
+}
+
+// TouchStreamTokenActivity records playback activity for one session and Media
+// (CORE-2305): a progress report keeps the session's media grants on the
+// live-sessions dashboard. A session with no grant for the Media updates
+// nothing, which is not an error. The clock only moves forward.
+func (s *Store) TouchStreamTokenActivity(ctx context.Context, sessionID SessionID, mediaID MediaID, now time.Time) error {
+	if sessionID == "" || mediaID == "" {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.eventsW.ExecContext(ctx, `
+		UPDATE stream_token_ledger SET last_active_ms = MAX(last_active_ms, ?)
+		WHERE session_id = ? AND media_id = ? AND target IN ('media-direct', 'media-hls')
+	`, timeToMillis(now), sessionID, mediaID)
+	return err
+}
+
+// EndPlayback ends one session's playback of one Media (CORE-2305): it clears
+// that session's media-byte grants for the Media from the ledger, so the
+// live-sessions dashboard and every other active-session read drop it at once
+// instead of waiting for the grant to expire. Ending a playback that is not
+// active is a no-op, so a player may call it on every close. The signed grants
+// themselves are stateless (ADR-0010 §3); a player that has stopped does not
+// use them again, and a new playback issues and records fresh ones.
+func (s *Store) EndPlayback(ctx context.Context, sessionID SessionID, mediaID MediaID) error {
+	if sessionID == "" || mediaID == "" {
+		return ValidationError("session and media are required to end playback")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.eventsW.ExecContext(ctx, `
+		DELETE FROM stream_token_ledger
+		WHERE session_id = ? AND media_id = ? AND target IN ('media-direct', 'media-hls')
+	`, sessionID, mediaID)
+	return err
 }

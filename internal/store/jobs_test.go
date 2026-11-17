@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -640,5 +641,136 @@ func TestYieldedJobWaitsBehindOlderQueuedWork(t *testing.T) {
 	}
 	if again.ID != "job-long" {
 		t.Fatalf("claimed %q, want job-long to resume", again.ID)
+	}
+}
+
+// TestYieldAfterLongRunQueuesBehindWorkQueuedDuringIt covers CORE-2306: the
+// runner books a yield with the time it claimed the job, so a long batch used
+// to re-sort at its claim time and win every claim against work queued while it
+// ran. The yield must take the job's latest activity instead.
+func TestYieldAfterLongRunQueuesBehindWorkQueuedDuringIt(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, migratedDataDir(t), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	claimedAt := time.Unix(100, 0).UTC()
+	if _, err := st.EnqueueJob(ctx, Job{ID: "job-scan", Kind: "scan", CreatedAt: claimedAt}); err != nil {
+		t.Fatal(err)
+	}
+	scan, err := st.ClaimNextJob(ctx, "worker", nil, claimedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EnqueueJob(ctx, Job{ID: "job-poll", Kind: "poll", CreatedAt: claimedAt.Add(30 * time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	lastProgress := claimedAt.Add(2 * time.Minute)
+	if err := st.UpdateJobCheckpoint(ctx, scan.ID, scan.LeaseOwner, []byte(`{"cursor":"x"}`), JobProgress{Current: 100}, lastProgress); err != nil {
+		t.Fatal(err)
+	}
+	// The runner passes its claim-time clock, as jobs.Registry.RunOne does.
+	if err := st.YieldJob(ctx, scan.ID, scan.LeaseOwner, []byte(`{"cursor":"x"}`), claimedAt, claimedAt); err != nil {
+		t.Fatal(err)
+	}
+	yielded, err := st.Job(ctx, scan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if yielded.UpdatedAt.Before(lastProgress) {
+		t.Fatalf("yielded UpdatedAt = %s, want no earlier than the last progress %s", yielded.UpdatedAt, lastProgress)
+	}
+	events, err := st.ListJobEvents(ctx, scan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.Type != "yielded" || last.OccurredAt.Before(lastProgress) {
+		t.Fatalf("last event = %s at %s, want yielded no earlier than %s", last.Type, last.OccurredAt, lastProgress)
+	}
+	next, err := st.ClaimNextJob(ctx, "worker", nil, lastProgress.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ID != "job-poll" {
+		t.Fatalf("claimed %q after the long batch yielded, want job-poll", next.ID)
+	}
+}
+
+// TestJobProgressEventsCoalesceAndPage covers CORE-2307: a job keeps only its
+// latest progress event (the outbox still carries every update), and the event
+// log reads in bounded pages, newest page first, each page in time order.
+func TestJobProgressEventsCoalesceAndPage(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, migratedDataDir(t), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Unix(100, 0).UTC()
+	if _, err := st.EnqueueJob(ctx, Job{ID: "job-many", Kind: "scan", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	for round := range 4 {
+		at := now.Add(time.Duration(round) * time.Minute)
+		job, err := st.ClaimNextJob(ctx, "worker", nil, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for file := range 5 {
+			progress := JobProgress{Current: int64(round*5 + file + 1), Total: 20, Unit: "files"}
+			if err := st.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, nil, progress, at.Add(time.Duration(file+1)*time.Second)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := st.YieldJob(ctx, job.ID, job.LeaseOwner, nil, at, at.Add(10*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := st.ListJobEvents(ctx, "job-many")
+	if err != nil {
+		t.Fatal(err)
+	}
+	progressEvents := 0
+	for _, event := range all {
+		if event.Type == "progress" {
+			progressEvents++
+			if !strings.Contains(string(event.Payload), `"current":20`) {
+				t.Fatalf("kept progress event = %s, want the latest (20 of 20)", event.Payload)
+			}
+		}
+	}
+	if progressEvents != 1 {
+		t.Fatalf("progress events = %d, want 1 after coalescing", progressEvents)
+	}
+	var outboxProgress int
+	if err := st.eventsR.QueryRowContext(ctx, "SELECT COUNT(*) FROM event_outbox WHERE aggregate_id = ? AND kind = 'job.progress'", "job-many").Scan(&outboxProgress); err != nil {
+		t.Fatal(err)
+	}
+	if outboxProgress != 20 {
+		t.Fatalf("outbox progress rows = %d, want every update (20)", outboxProgress)
+	}
+
+	newest, err := st.ListJobEventsPage(ctx, "job-many", JobEventPage{Limit: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(newest) != 3 || newest[2].ID != all[len(all)-1].ID || newest[0].ID != all[len(all)-3].ID {
+		t.Fatalf("newest page = %#v, want the last three events in time order", newest)
+	}
+	older, err := st.ListJobEventsPage(ctx, "job-many", JobEventPage{Limit: 3, BeforeID: newest[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(older) != 3 || older[2].ID != all[len(all)-4].ID {
+		t.Fatalf("older page = %#v, want the three events before the newest page", older)
+	}
+	unbounded, err := st.ListJobEventsPage(ctx, "job-many", JobEventPage{Limit: MaxJobEventPage + 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unbounded) != len(all) {
+		t.Fatalf("over-limit page = %d events, want the whole short log (%d)", len(unbounded), len(all))
 	}
 }

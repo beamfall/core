@@ -8,8 +8,9 @@ import (
 
 // Play history for the Console dashboard. A play is derived, not stored: it is
 // one run of playback-progress events for a Profile and Media with no gap
-// longer than playGap between consecutive events. Nothing new is persisted —
-// the events are the ones the engagement log already keeps.
+// longer than playGap between consecutive events, lasting at least
+// playMinSpan. Nothing new is persisted — the events are the ones the
+// engagement log already keeps.
 
 const (
 	// playGap is the silence that ends one play and starts the next.
@@ -18,6 +19,14 @@ const (
 	PlayHistoryMaxLimit = 500
 	// playStatsRanks is how many profiles and items a ranking returns.
 	playStatsRanks = 10
+	// playMinSpan is the shortest run that counts as a play (CORE-2316): a
+	// report or two from opening and closing an item is not a play. Items
+	// shorter than four times this need a quarter of their length instead.
+	playMinSpan = 30 * time.Second
+	// playFinishedFraction and playFinishedTail are how near the end a play
+	// must reach to be Finished: this fraction of the item, or within the tail.
+	playFinishedFraction = 0.8
+	playFinishedTail     = 30
 )
 
 // PlayHistoryQuery narrows the play history. Zero fields do not filter.
@@ -74,6 +83,32 @@ type derivedPlay struct {
 	endMS     int64
 	duration  int
 	finished  bool
+	// firstPos and lastPos are the lowest and highest position the run's
+	// unwatched reports carried. A watched report stores position zero, so
+	// only unwatched ones say how far playback got.
+	firstPos int
+	lastPos  int
+}
+
+// counts reports whether the run lasted long enough to be a play.
+func (p derivedPlay) counts() bool {
+	minSpan := playMinSpan
+	if p.duration > 0 {
+		minSpan = min(minSpan, time.Duration(p.duration)*time.Second/4)
+	}
+	return time.Duration(p.endMS-p.startMS)*time.Millisecond >= minSpan
+}
+
+// reachedEnd reports whether the run got near the end of the item: its
+// highest reported position, or where it started plus how long it ran, is
+// within playFinishedFraction or playFinishedTail of the end. An item of
+// unknown length cannot be judged, so the watched flag stands alone.
+func (p derivedPlay) reachedEnd() bool {
+	if p.duration <= 0 {
+		return true
+	}
+	reached := max(p.lastPos, p.firstPos+int((p.endMS-p.startMS)/1000))
+	return float64(reached) >= playFinishedFraction*float64(p.duration) || p.duration-reached <= playFinishedTail
 }
 
 // watchedSeconds is the wall-clock span of the play, never longer than the
@@ -110,7 +145,8 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 		WITH raw AS (
 			SELECT profile_id, media_id, ` + playedAtMS + ` AS at_ms,
 			       COALESCE(json_extract(payload, '$.durationSeconds'), 0) AS duration,
-			       COALESCE(json_extract(payload, '$.watched'), 0) AS watched
+			       COALESCE(json_extract(payload, '$.watched'), 0) AS watched,
+			       COALESCE(json_extract(payload, '$.positionSeconds'), 0) AS position
 			FROM engagement_event
 			WHERE kind = ? AND media_id IS NOT NULL
 			  AND json_extract(payload, '$.operation') = ?`
@@ -134,7 +170,9 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 			            OVER (PARTITION BY profile_id, media_id ORDER BY at_ms) AS run_no
 			FROM ev
 		)
-		SELECT profile_id, media_id, MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched)
+		SELECT profile_id, media_id, MIN(at_ms), MAX(at_ms), MAX(duration), MAX(watched),
+		       COALESCE(MIN(CASE WHEN watched = 0 THEN position END), 0),
+		       COALESCE(MAX(CASE WHEN watched = 0 THEN position END), 0)
 		FROM run
 		GROUP BY profile_id, media_id, run_no
 		HAVING 1 = 1`
@@ -157,10 +195,15 @@ func (s *Store) derivedPlaysLocked(ctx context.Context, profileID ProfileID, sin
 	for rows.Next() {
 		var p derivedPlay
 		var finished int
-		if err := rows.Scan(&p.profileID, &p.mediaID, &p.startMS, &p.endMS, &p.duration, &finished); err != nil {
+		if err := rows.Scan(&p.profileID, &p.mediaID, &p.startMS, &p.endMS, &p.duration, &finished, &p.firstPos, &p.lastPos); err != nil {
 			return err
 		}
-		p.finished = finished != 0
+		if !p.counts() {
+			continue
+		}
+		// The watched flag alone is not enough (CORE-2316): a client can
+		// report an item finished moments after opening it.
+		p.finished = finished != 0 && p.reachedEnd()
 		if !visit(p) {
 			break
 		}

@@ -189,3 +189,19 @@ func BackdateTrashedMedia(t testing.TB, dataDir string, id store.MediaID, when t
 		t.Fatalf("backdate trashed media: %v", err)
 	}
 }
+
+// BackdateStreamTokenActivity moves every stream-token ledger row of one
+// session back to when, as if its player had gone quiet then (CORE-2305). It
+// lives under internal/store so storage-driver access stays inside the store
+// boundary.
+func BackdateStreamTokenActivity(t testing.TB, dataDir string, session store.SessionID, when time.Time) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "events.db"))
+	if err != nil {
+		t.Fatalf("open events fixture: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE stream_token_ledger SET last_active_ms = ? WHERE session_id = ?`, when.UnixMilli(), session); err != nil {
+		t.Fatalf("backdate stream token activity: %v", err)
+	}
+}

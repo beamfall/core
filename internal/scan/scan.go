@@ -106,7 +106,15 @@ type MetadataHydrator interface {
 
 const JobKind store.JobKind = "scan"
 
+// A scan job yields after scanJobFileBatchSize checkpointed files or after
+// scanJobRunBudget of work, whichever comes first, so other background jobs
+// (a scheduled backup, another Library's scan) get a worker within about
+// that long. The time bound matters when files are slow to import: at the
+// tens of seconds a file that online identification can cost, a 100-file
+// batch held a worker for most of an hour (CORE-2306).
 const scanJobFileBatchSize = 100
+
+var scanJobRunBudget = 2 * time.Minute
 
 var errImageDerivation = errors.New("required image derivatives incomplete")
 

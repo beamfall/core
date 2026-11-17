@@ -567,6 +567,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"reordercollectionmedia":             newFieldHandler("reorderCollectionMedia", "reorderCollectionMedia", fieldMutation, roleSession|roleManager, 57),
 	"reportdrift":                        newFieldHandler("reportDrift", "reportDrift", fieldMutation, roleSession, 135),
 	"reportplayback":                     newFieldHandler("reportPlayback", "reportPlayback", fieldMutation, roleSession, 26),
+	"endplayback":                        newFieldHandler("endPlayback", "endPlayback", fieldMutation, roleSession, 26),
 	"requestaccess":                      newFieldHandler("requestAccess", "requestAccess", fieldMutation, roleSession, 97),
 	"requestextension":                   newFieldHandler("requestExtension", "requestExtension", fieldMutation, roleSession, 93),
 	"requestwatchpartytransport":         newFieldHandler("requestWatchPartyTransport", "requestWatchPartyTransport", fieldMutation, roleSession, 140),
@@ -1159,6 +1160,12 @@ func dispatchFieldBlock026(dispatch *fieldDispatchContext) response {
 	if fields["reportplayback"] {
 		result, err := h.reportPlayback(ctx, scope, req)
 		if resp := resolveField(dispatch, "reportplayback", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["endplayback"] {
+		err := h.endPlayback(ctx, scope, req)
+		if resp := resolveField(dispatch, "endplayback", true, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

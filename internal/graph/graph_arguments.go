@@ -420,7 +420,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "id", Kind: "string"},
 	},
 	"jobevents": {
+		{Name: "beforeID", Kind: "string", Optional: true},
 		{Name: "id", Kind: "string"},
+		{Name: "limit", Kind: "int", Optional: true},
 	},
 	"jobretry": {
 		{Name: "id", Kind: "string"},
@@ -656,6 +658,9 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "groupID", Kind: "string"},
 		{Name: "positionMS", Kind: "number", Optional: true},
 		{Name: "ratePermille", Kind: "int", Optional: true},
+	},
+	"endplayback": {
+		{Name: "mediaId", Kind: "string"},
 	},
 	"reportplayback": {
 		{Name: "ambient", Kind: "boolean", Optional: true},

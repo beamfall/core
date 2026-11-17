@@ -433,6 +433,11 @@
       "tier": "session"
     },
     {
+      "field": "endplayback",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "engagementcounter",
       "effect": "read",
       "tier": "session"
@@ -7499,6 +7504,10 @@
           "optional": true
         }
       ]
+    },
+    {
+      "field": "endplayback",
+      "kind": "object"
     },
     {
       "field": "engagementcounter",

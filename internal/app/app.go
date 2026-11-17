@@ -505,7 +505,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		// selected backend's limit for hardware (CORE-2093). An env/flag or
 		// stored cap still wins below.
 		cfg.TranscodeCap = ffmpeg.DefaultTranscodeCap(selected)
-		logger.Info("transcode cap: automatic default derived", "cap", cfg.TranscodeCap, "accelerator", string(selected))
 		if cfg.HardwareAcceleration.SoftwareOnly() {
 			logger.Info("hardware acceleration probe: none verified, using software transcode")
 		} else {
@@ -514,6 +513,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	autoTranscodeCap := cfg.TranscodeCap
 	cfg.TranscodeCap = graph.ResolveTranscodeCap(transcodePolicy, envTranscodeCap, autoTranscodeCap)
+	// Log the cap that is in force and where it came from, not just the
+	// automatic one, which an env or Console cap may override (CORE-2317).
+	logger.Info("transcode cap: effective", "cap", cfg.TranscodeCap, "source", transcodeCapSource(transcodePolicy, envTranscodeCap), "automatic", autoTranscodeCap)
 	defaultTranscodeScratchDir := filepath.Join(cfg.DataDir, "transcode")
 	if !cfg.TranscodeScratchDirExplicit && transcodePolicy.TempDir != "" {
 		// The Console-stored temp directory applies at startup. It was proven
@@ -4213,4 +4215,18 @@ func moderationContactFromEnv() moderation.ContactInfo {
 		c.Note = "Contact this Beamfall server's operator to report content or a moderation concern."
 	}
 	return c
+}
+
+// transcodeCapSource names where the effective transcode cap comes from, in
+// the precedence graph.ResolveTranscodeCap applies: the BEAMFALL_TRANSCODE_CAP
+// env var or flag, then the Console-stored cap, then the automatic default.
+func transcodeCapSource(stored store.TranscodeConfig, envCap int) string {
+	switch {
+	case envCap > 0:
+		return "env/flag (BEAMFALL_TRANSCODE_CAP)"
+	case stored.MaxConcurrent > 0:
+		return "console"
+	default:
+		return "automatic"
+	}
 }

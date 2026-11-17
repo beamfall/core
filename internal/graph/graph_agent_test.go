@@ -55,7 +55,10 @@ func TestAgentCatalogListsEveryFieldWithTiers(t *testing.T) {
 		if logs := byName["serverLogs"]; !logs.ArgumentsKnown || !slices.Contains(logs.Arguments, "requestId: string optional") || !slices.Contains(logs.ResultFields, "lines") {
 			t.Fatalf("serverLogs entry = %+v", logs)
 		}
-		for _, name := range []string{"job", "jobCancel", "jobEvents", "jobRetry"} {
+		if events := byName["jobEvents"]; !events.ArgumentsKnown || !slices.Equal(events.Arguments, []string{"beforeID: string optional", "id: string", "limit: int optional"}) {
+			t.Fatalf("jobEvents entry = %+v, want id plus the optional page arguments", events)
+		}
+		for _, name := range []string{"job", "jobCancel", "jobRetry"} {
 			if entry := byName[name]; !entry.ArgumentsKnown || !slices.Equal(entry.Arguments, []string{"id: string"}) {
 				t.Fatalf("%s entry = %+v, want the required id argument", name, entry)
 			}

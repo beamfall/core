@@ -196,3 +196,77 @@ func TestLiveSessionsRevealFiltersMedia(t *testing.T) {
 		t.Errorf("hidden media leaked title/library: %q/%q", s.Title, s.LibraryID)
 	}
 }
+
+func liveSessionIDs(t *testing.T, handler *Handler) []string {
+	t.Helper()
+	data, errs := post(t, handler, `{"query":"query { liveSessions { sessionID mediaID transcoding playMethod } }"}`, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("liveSessions errors = %#v", errs)
+	}
+	var got []LiveSessionInfo
+	if err := json.Unmarshal(data["liveSessions"], &got); err != nil {
+		t.Fatalf("decode liveSessions: %v", err)
+	}
+	ids := make([]string, 0, len(got))
+	for _, s := range got {
+		if s.Transcoding != (s.PlayMethod == "transcode") {
+			t.Errorf("session %s transcoding=%v disagrees with playMethod %q", s.SessionID, s.Transcoding, s.PlayMethod)
+		}
+		ids = append(ids, s.SessionID)
+	}
+	return ids
+}
+
+// TestLiveSessionsDropIdlePlaybacksAndEndPlayback covers CORE-2305: a playback
+// with no grant or progress report inside the activity window leaves the
+// dashboard, a progress report brings it back, and endPlayback removes the
+// caller's playback at once and is idempotent.
+//
+// feature:live-sessions
+func TestLiveSessionsDropIdlePlaybacksAndEndPlayback(t *testing.T) {
+	dataDir := t.TempDir()
+	st := storetest.OpenAt(t, dataDir)
+	handler := newTestHandlerWithStore(st)
+	openManagerAdminSession(t, st)
+
+	recordActive(t, st, "session-default", "profile-default", "device-tv", "media-hls", "media-alpha", false)
+	recordActive(t, st, "session-managed", "profile-managed", "device-tv", "media-direct", "media-alpha", false)
+	if got := liveSessionIDs(t, handler); strings.Join(got, ",") != "session-default,session-managed" {
+		t.Fatalf("fresh grants listed %v, want both sessions", got)
+	}
+
+	// A player that went quiet longer ago than the window is a phantom.
+	idleSince := time.Now().Add(-store.LiveSessionActivityWindow - time.Minute)
+	storetest.BackdateStreamTokenActivity(t, dataDir, "session-default", idleSince)
+	if got := liveSessionIDs(t, handler); strings.Join(got, ",") != "session-managed" {
+		t.Fatalf("after idling session-default listed %v, want only session-managed", got)
+	}
+
+	// A progress report from the idle session's own player marks it live again.
+	_, errs := post(t, handler, `{"query":"mutation { reportPlayback(mediaID: \"media-alpha\", positionSeconds: 30, durationSeconds: 120) { mediaID } }"}`, authorizeViewer)
+	if len(errs) != 0 {
+		t.Fatalf("reportPlayback errors = %#v", errs)
+	}
+	if got := liveSessionIDs(t, handler); strings.Join(got, ",") != "session-default,session-managed" {
+		t.Fatalf("after a progress report listed %v, want both sessions", got)
+	}
+
+	// endPlayback ends only the caller's own playback, and repeating it is fine.
+	for attempt := range 2 {
+		data, errs := post(t, handler, `{"query":"mutation { endPlayback(mediaId: \"media-alpha\") }"}`, authorizeViewer)
+		if len(errs) != 0 {
+			t.Fatalf("endPlayback attempt %d errors = %#v", attempt, errs)
+		}
+		if string(data["endPlayback"]) != "true" {
+			t.Fatalf("endPlayback attempt %d = %s, want true", attempt, data["endPlayback"])
+		}
+		if got := liveSessionIDs(t, handler); strings.Join(got, ",") != "session-managed" {
+			t.Fatalf("after endPlayback attempt %d listed %v, want only session-managed", attempt, got)
+		}
+	}
+
+	_, errs = post(t, handler, `{"query":"mutation { endPlayback(mediaId: \"\") }"}`, authorizeViewer)
+	if len(errs) == 0 || errs[0].Message != "mediaId is required" {
+		t.Fatalf("endPlayback without media errors = %#v, want mediaId is required", errs)
+	}
+}

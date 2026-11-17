@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -246,6 +247,33 @@ func (s *Store) ListJobEvents(ctx context.Context, id JobID) ([]JobEvent, error)
 		return nil, err
 	}
 	return s.listJobEventsSQL(ctx, id)
+}
+
+// JobEventPage selects a window of one job's event history: at most Limit
+// events (MaxJobEventPage when zero or larger), all with an ID below BeforeID
+// when it is set. The page holds the newest events in that window.
+type JobEventPage struct {
+	Limit    int
+	BeforeID int64
+}
+
+// MaxJobEventPage bounds one page of job events (CORE-2307).
+const MaxJobEventPage = 1000
+
+// ListJobEventsPage reads one page of a job's event history in time order.
+func (s *Store) ListJobEventsPage(ctx context.Context, id JobID, page JobEventPage) ([]JobEvent, error) {
+	if id == "" {
+		return nil, errors.New("job ID is required")
+	}
+	if page.Limit <= 0 || page.Limit > MaxJobEventPage {
+		page.Limit = MaxJobEventPage
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	return s.listJobEventsPageSQL(ctx, id, page)
 }
 
 // AppendJobEvent records a durable operator-visible event for a running job.
@@ -788,6 +816,36 @@ func (s *Store) listJobEventsSQL(ctx context.Context, id JobID) ([]JobEvent, err
 	if err != nil {
 		return nil, err
 	}
+	return scanJobEventRows(rows)
+}
+
+func (s *Store) listJobEventsPageSQL(ctx context.Context, id JobID, page JobEventPage) ([]JobEvent, error) {
+	query := `
+		SELECT id, job_id, occurred_at_ms, type, payload_json
+		FROM job_event
+		WHERE job_id = ?`
+	args := []any{id}
+	if page.BeforeID > 0 {
+		query += " AND id < ?"
+		args = append(args, page.BeforeID)
+	}
+	// The newest page is read newest first and returned oldest first, so a
+	// reader sees the most recent history in time order.
+	query += " ORDER BY id DESC LIMIT ?"
+	args = append(args, page.Limit)
+	rows, err := s.eventsR.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	events, err := scanJobEventRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	slices.Reverse(events)
+	return events, nil
+}
+
+func scanJobEventRows(rows *sql.Rows) ([]JobEvent, error) {
 	defer rows.Close()
 	var events []JobEvent
 	for rows.Next() {
@@ -923,6 +981,13 @@ func (s *Store) updateJobCheckpointSQL(ctx context.Context, id JobID, leaseOwner
 	if err := upsertJobCheckpointSQL(ctx, tx, id, checkpoint, version, now); err != nil {
 		return err
 	}
+	// Only the latest progress row is kept: a scan checkpoints once per file,
+	// so appending one row per checkpoint grew a large library's history to
+	// thousands of rows that told a reader nothing the last one does not
+	// (CORE-2307). The outbox still carries every update for live subscribers.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_event WHERE job_id = ? AND type = 'progress'`, id); err != nil {
+		return err
+	}
 	if err := appendJobEventSQL(ctx, tx, id, now, "progress", jobProgressEventPayload(progress)); err != nil {
 		return err
 	}
@@ -935,6 +1000,9 @@ func (s *Store) yieldJobSQL(ctx context.Context, id JobID, leaseOwner string, ch
 		return err
 	}
 	defer tx.Rollback()
+	if now, err = jobTransitionTimeSQL(ctx, tx, id, now); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE job
 		SET status = ?, available_at_ms = ?, lease_owner = NULL, lease_expires_at_ms = NULL, updated_at_ms = ?
@@ -966,6 +1034,9 @@ func (s *Store) finishJobSQL(ctx context.Context, id JobID, leaseOwner string, s
 		return err
 	}
 	defer tx.Rollback()
+	if now, err = jobTransitionTimeSQL(ctx, tx, id, now); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE job
 		SET status = ?, lease_owner = NULL, lease_expires_at_ms = NULL, last_error = ?, updated_at_ms = ?, finished_at_ms = ?
@@ -1129,6 +1200,30 @@ func jobProgressEventPayload(progress JobProgress) string {
 		return `{"type":"progress"}`
 	}
 	return string(payload)
+}
+
+// jobTransitionTimeSQL is the time a yield or finish is recorded at: the
+// caller's now, or the job's last update when that is later. A worker passes
+// the time it CLAIMED the job, so a handler that ran for forty minutes and
+// checkpointed along the way would otherwise stamp its yield back at the
+// claim. The yielded job then sorted ahead of every job queued while it ran
+// (the claim order puts a yielded job at its updated_at), so long scans won
+// every claim and scheduled jobs waited for hours, and the event log showed
+// running and yielded in the same second (CORE-2306). A job's clock never
+// runs backwards.
+func jobTransitionTimeSQL(ctx context.Context, tx *sql.Tx, id JobID, now time.Time) (time.Time, error) {
+	var updated int64
+	err := tx.QueryRowContext(ctx, `SELECT updated_at_ms FROM job WHERE id = ?`, id).Scan(&updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return now, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	if last := millisToTime(updated); last.After(now) {
+		return last, nil
+	}
+	return now, nil
 }
 
 func appendJobEventSQL(ctx context.Context, tx *sql.Tx, id JobID, now time.Time, typ string, payload string) error {

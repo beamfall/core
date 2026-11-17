@@ -249,6 +249,7 @@ var originalScopedFields = []string{
 	"channels",                // CHAN-1 (ADR-0158): Library Channels read
 	"registerdevicepushtoken", // PUSH-1 (ADR-0039 §2.5): device push-token registration
 	"reportplayback",
+	"endplayback",        // CORE-2305: a closing player ends its live session
 	"restoremanagedpath", // WEB-5C (ADR-0061): manager-scoped managed file/folder restore
 	"restorecollection",
 	"restoremedia",

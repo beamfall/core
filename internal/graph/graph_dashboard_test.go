@@ -35,7 +35,7 @@ func TestLiveSessionsReportPlayMethodReasonAndBitrate(t *testing.T) {
 	openManagerAdminSession(t, st)
 
 	data, errs := post(t, handler,
-		`{"query":"query { liveSessions { sessionID playMethod playReason bitrate } }"}`, authorizeManager)
+		`{"query":"query { liveSessions { sessionID transcoding playMethod playReason bitrate } }"}`, authorizeManager)
 	if len(errs) != 0 {
 		t.Fatalf("liveSessions errors = %#v", errs)
 	}
@@ -49,6 +49,11 @@ func TestLiveSessionsReportPlayMethodReasonAndBitrate(t *testing.T) {
 	}
 	if s := bySession["session-default"]; s.PlayMethod != "remux" || s.PlayReason != "container" || s.Bitrate != 8_000_000 {
 		t.Errorf("observed session = %#v, want remux / container / 8 Mbps", s)
+	}
+	// CORE-2305: transcoding follows the play method, so an HLS grant that the
+	// playback service delivered as a remux does not read as a transcode.
+	if s := bySession["session-default"]; s.Transcoding {
+		t.Errorf("remux session transcoding = true, want false to match playMethod")
 	}
 	// No held decision: the method falls back to the Stream Token ledger.
 	if s := bySession["session-managed"]; s.PlayMethod != "direct" || s.PlayReason != "" || s.Bitrate != 0 {
@@ -97,11 +102,17 @@ func TestHostMetricsIsAdminGatedAndListsSamplesOldestFirst(t *testing.T) {
 func TestPlayHistoryAndStatsOverGraph(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
+	// Each profile plays for a minute: a report dated a minute ago, then one
+	// now. A single report is not a play (CORE-2316).
+	startedMS := time.Now().Add(-time.Minute).UnixMilli()
 	for _, profile := range []store.ProfileID{"profile-default", "profile-managed"} {
-		if err := st.UpsertPlaybackProgress(t.Context(),
-			store.PlaybackProgress{ProfileID: profile, MediaID: "media-alpha", PositionSeconds: 30, DurationSeconds: 120},
-			false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
-			t.Fatalf("UpsertPlaybackProgress: %v", err)
+		for _, report := range []store.PlaybackProgress{
+			{ProfileID: profile, MediaID: "media-alpha", PositionSeconds: 30, DurationSeconds: 120, EventTimeMS: startedMS},
+			{ProfileID: profile, MediaID: "media-alpha", PositionSeconds: 90, DurationSeconds: 120, EventTimeMS: time.Now().UnixMilli()},
+		} {
+			if err := st.UpsertPlaybackProgress(t.Context(), report, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+				t.Fatalf("UpsertPlaybackProgress: %v", err)
+			}
 		}
 	}
 	history := `{"query":"query H($profileID: String, $libraryID: String, $since: String, $until: String, $limit: Int){ playHistory(profileID:$profileID, libraryID:$libraryID, since:$since, until:$until, limit:$limit){ profileID profileName mediaID title libraryID libraryTitle startedAt watchedSeconds finished } }","variables":%s}`

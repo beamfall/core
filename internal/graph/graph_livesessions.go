@@ -86,15 +86,26 @@ func (h *Handler) playDelivery(s store.ActiveSession) (method, reason string, bi
 // Console. Reveal-filtered by the operator's OWN scope, exactly
 // like the other Console reads — a restricted-Library session the operator
 // hasn't revealed appears with its media fields suppressed.
+//
+// A grant alone does not prove a playback is still running: grants live for
+// hours and a closed or crashed player never revokes them. So a playback with
+// no new grant and no progress report within store.LiveSessionActivityWindow is
+// left out (CORE-2305), and Transcoding follows the reported play method so the
+// two fields never disagree.
 func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSessionInfo, error) {
-	sessions, err := h.store.ActiveSessions(ctx, time.Now().UTC(), scope.LibraryFilter())
+	now := time.Now().UTC()
+	sessions, err := h.store.ActiveSessions(ctx, now, scope.LibraryFilter())
 	if err != nil {
 		return nil, err
 	}
-	out := make([]LiveSessionInfo, len(sessions))
-	for i, s := range sessions {
+	activeSince := now.Add(-store.LiveSessionActivityWindow)
+	out := make([]LiveSessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		if s.LastActiveAt.Before(activeSince) {
+			continue
+		}
 		method, reason, bitrate := h.playDelivery(s)
-		out[i] = LiveSessionInfo{
+		out = append(out, LiveSessionInfo{
 			SessionID:       string(s.SessionID),
 			DeviceID:        string(s.DeviceID),
 			DeviceName:      s.DeviceName,
@@ -104,16 +115,32 @@ func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSes
 			MediaID:         string(s.MediaID),
 			Title:           s.Title,
 			LibraryID:       string(s.LibraryID),
-			Transcoding:     s.Transcoding,
+			Transcoding:     method == "transcode",
 			PlayMethod:      method,
 			PlayReason:      reason,
 			Bitrate:         bitrate,
 			PositionSeconds: s.PositionSeconds,
 			DurationSeconds: s.DurationSeconds,
 			ExpiresAt:       s.ExpiresAt.UTC().Format(time.RFC3339),
-		}
+		})
 	}
 	return out, nil
+}
+
+// endPlayback ends the calling session's playback of one Media (CORE-2305). A
+// player calls it when it closes, so the live-sessions dashboard drops the
+// playback at once instead of waiting for the activity window. It touches only
+// the caller's own session, so any session-scoped caller may use it, and it is
+// idempotent: ending a playback that is not active still reports true.
+func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request) error {
+	mediaID := trimmedVariable(req, "mediaId")
+	if mediaID == "" {
+		return clientError("mediaId is required")
+	}
+	if scope.SessionID == "" {
+		return nil
+	}
+	return h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID))
 }
 
 // TerminateSessionResult echoes the terminated session id (ADR-0007 §4 "kill
