@@ -67,6 +67,9 @@ export const QUALITY_LADDER: readonly { scale: number; reduce: number }[] = [
   { scale: 0.83, reduce: 0.25 },
   { scale: 1, reduce: 0 },
 ];
+// KHR_parallel_shader_compile's query, and how often a compiling visual is polled.
+const COMPLETION_STATUS_KHR = 0x91b1;
+const COMPILE_POLL_MS = 32;
 const TOP_LEVEL = QUALITY_LADDER.length - 1;
 
 /** The visual's render size and detail reduction for a W x H canvas at a governor level. */
@@ -180,6 +183,11 @@ export class Renderer {
   private readonly linked: WebGLProgram[] = [];
   private disposed = false;
   private readonly programs = new Map<string, WebGLProgram>();
+  // Visuals compiling now, so a second request for one waits on the same program.
+  private readonly compiling = new Map<string, Promise<WebGLProgram | null>>();
+  // KHR_parallel_shader_compile: a visual compiles off the page's thread and is polled for
+  // completion, instead of the page waiting on its status (CORE-2368).
+  private parallel = false;
   private visual: Layer | null = null;
   private outgoing: Layer | null = null;
   // The visual asked for while a switch runs, started when it ends.
@@ -256,6 +264,7 @@ export class Renderer {
       } finally {
         quality.free();
       }
+      this.parallel = !!gl.getExtension("KHR_parallel_shader_compile");
       this.feedbackFormat = gl.getExtension("EXT_color_buffer_float")
         ? { internal: gl.RGBA16F, type: gl.HALF_FLOAT }
         : { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE };
@@ -362,7 +371,7 @@ export class Renderer {
     // copy of that feedback and shares the image until setImage hands it its own.
     const s = size as Size;
     const { internal, type } = this.feedbackFormat;
-    const feedback = this.feedbackPair(s.renderWidth, s.renderHeight, internal, type);
+    const feedback = this.feedbackPair(s.renderWidth, s.renderHeight, internal, type, false);
     this.copy(
       s.feedback[0],
       s.renderWidth,
@@ -417,14 +426,32 @@ export class Renderer {
     return this.outgoing ? 0 : null;
   }
 
-  /** Compiles a visual ahead of its first use, so switching to it later does not stall a frame. */
-  async prepare(visual: Visual): Promise<WebGLProgram | null> {
+  /**
+   * Compiles a visual ahead of its first use, so switching to it later does not stall a frame.
+   * With KHR_parallel_shader_compile the page keeps drawing while the driver compiles.
+   */
+  prepare(visual: Visual): Promise<WebGLProgram | null> {
     const ready = this.programs.get(visual.id);
-    if (ready) return ready;
+    if (ready) return Promise.resolve(ready);
+    let compiling = this.compiling.get(visual.id);
+    if (!compiling) {
+      compiling = this.compileVisual(visual).finally(() => this.compiling.delete(visual.id));
+      this.compiling.set(visual.id, compiling);
+    }
+    return compiling;
+  }
+
+  private async compileVisual(visual: Visual): Promise<WebGLProgram | null> {
     const source = await shaderSource(`visuals/${visual.id}.web.frag`);
     // Disposed while the source loaded: allocate nothing more.
     if (this.disposed) return null;
-    const program = this.programs.get(visual.id) ?? this.link(this.visualVertex, source);
+    const program = this.compile(this.visualVertex, source);
+    while (this.parallel && !this.disposed && !this.gl.isContextLost()) {
+      if (this.gl.getProgramParameter(program, COMPLETION_STATUS_KHR)) break;
+      await new Promise((resolve) => setTimeout(resolve, COMPILE_POLL_MS));
+    }
+    if (this.disposed) return null;
+    this.check(program);
     this.programs.set(visual.id, program);
     return program;
   }
@@ -530,7 +557,7 @@ export class Renderer {
     if (!size.blend) {
       const { internal, type } = this.feedbackFormat;
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
-      size.blend = { tex, fbo: this.framebuffer([tex]) };
+      size.blend = { tex, fbo: this.framebuffer([tex], false) };
     }
     const energy = Math.min(1, Math.max(0, audio.values.level));
     this.switchBlock.set([
@@ -792,7 +819,7 @@ export class Renderer {
     const render = renderQuality(size.width, size.height, this.level);
     if (render.width === size.renderWidth && render.height === size.renderHeight) return;
     const { internal, type } = this.feedbackFormat;
-    const feedback = this.feedbackPair(render.width, render.height, internal, type);
+    const feedback = this.feedbackPair(render.width, render.height, internal, type, false);
     this.copy(
       size.feedback[0],
       size.renderWidth,
@@ -832,11 +859,17 @@ export class Renderer {
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
   }
 
-  private feedbackPair(W: number, H: number, internal: number, type: number): Target[] {
+  private feedbackPair(
+    W: number,
+    H: number,
+    internal: number,
+    type: number,
+    verify = true,
+  ): Target[] {
     const gl = this.gl;
     return [0, 1].map(() => {
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
-      const fbo = this.framebuffer([tex]);
+      const fbo = this.framebuffer([tex], verify);
       gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
       return { tex, fbo };
     });
@@ -884,7 +917,10 @@ export class Renderer {
     return t;
   }
 
-  private framebuffer(attachments: WebGLTexture[]): WebGLFramebuffer {
+  // checkFramebufferStatus waits on the GPU process, including any shader still compiling in
+  // parallel (over 500 ms seen on a switch), so the targets a switch adds skip it: they reuse
+  // the feedback format resize already checked.
+  private framebuffer(attachments: WebGLTexture[], verify = true): WebGLFramebuffer {
     const gl = this.gl;
     const f = must(gl.createFramebuffer());
     gl.bindFramebuffer(gl.FRAMEBUFFER, f);
@@ -892,7 +928,7 @@ export class Renderer {
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0),
     );
     gl.drawBuffers(attachments.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    if (verify && gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
       throw new Error("visualizer: incomplete framebuffer");
     }
     return f;
@@ -905,6 +941,14 @@ export class Renderer {
   }
 
   private link(vertex: string, fragment: string): WebGLProgram {
+    const p = this.compile(vertex, fragment);
+    this.check(p);
+    return p;
+  }
+
+  // Starts compiling and linking a program; check() reads the result, which waits for the
+  // driver unless it has finished.
+  private compile(vertex: string, fragment: string): WebGLProgram {
     const gl = this.gl;
     const p = must(gl.createProgram());
     // Owned from creation, so a failure below leaves them to dispose.
@@ -917,17 +961,22 @@ export class Renderer {
       this.shaders.push(s);
       gl.shaderSource(s, source);
       gl.compileShader(s);
-      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS) && !gl.isContextLost()) {
-        throw new Error(`visualizer: shader: ${gl.getShaderInfoLog(s)}`);
-      }
       gl.attachShader(p, s);
     }
     gl.bindAttribLocation(p, 0, "aPos");
     gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost()) {
-      throw new Error(`visualizer: program: ${gl.getProgramInfoLog(p)}`);
-    }
     return p;
+  }
+
+  private check(p: WebGLProgram): void {
+    const gl = this.gl;
+    if (gl.getProgramParameter(p, gl.LINK_STATUS) || gl.isContextLost()) return;
+    for (const s of gl.getAttachedShaders(p) ?? []) {
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        throw new Error(`visualizer: shader: ${gl.getShaderInfoLog(s)}`);
+      }
+    }
+    throw new Error(`visualizer: program: ${gl.getProgramInfoLog(p)}`);
   }
 }
 
