@@ -111,3 +111,21 @@ of its tracks, and SHALL name its related person-archetype Entities under the ti
 
 - **WHEN** a viewer activates Shuffle on an audio container page
 - **THEN** playback starts with a queue holding every track of the container
+
+### Requirement: Listening layout over a Media-only detail Layout
+
+An Entity page for a container- or person-archetype Entity whose Media all report class audio
+SHALL list them in the listening layout (a container's numbered track list, a person's top tracks
+followed by all its tracks) when its plugin detail Layout's Sections only list the Entity's own
+Media. A detail Layout with any other Section, or an Entity with non-audio Media, SHALL keep the
+detail Layout.
+
+#### Scenario: Album with a track-list detail Layout
+
+- **WHEN** an audio container's detail Layout holds a single entity-media list Section
+- **THEN** the page shows the numbered track list with artist and duration instead of that Section
+
+#### Scenario: Video container keeps its Layout
+
+- **WHEN** a container whose Media are video has a detail Layout that only lists its Media
+- **THEN** the page renders that detail Layout

@@ -5,7 +5,7 @@
 - [ ] `internal/graph`: `SourceItem.byline` for audio Media from person-archetype Entities
 - [ ] Store and graph tests; wire goldens regenerated with `make regen-wire-goldens`
 - [ ] Web: Library view switcher, Entity kind grid, square art for audio cards, track byline
-- [ ] Web: Shuffle and people line on an audio container's page
+- [ ] Web: Shuffle and people line on an audio container's page; listening layout over a Media-only detail Layout; all tracks on a person page
 - [ ] Web strings in every shipped locale; vitest coverage for the new views and card rules
 - [ ] Wire contract published as a new version (lander)
 - [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
