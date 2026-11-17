@@ -11,7 +11,10 @@
 #   * npm is missing or `npm audit` errors / produces no JSON (no silent skip);
 #   * a high/critical advisory is present that is NOT covered by a waiver (NEW);
 #   * a covered advisory has a fix available (`fixAvailable`) — apply the fix,
-#     a waiver is not allowed to hide a fixable advisory;
+#     a waiver is not allowed to hide a fixable advisory. A fix npm marks
+#     `isSemVerMajor` (only `npm audit fix --force` applies it, often by
+#     downgrading a direct dependency) is not an applicable fix: the advisory
+#     needs triage, so it stays NEW until a bounded waiver covers it (CORE-2350);
 #   * a waiver has passed its `expires` date (EXPIRED);
 #   * a waiver's advisory no longer appears in the audit (STALE — remove it).
 #
@@ -77,7 +80,10 @@ current = {}
 for vuln in audit.get("vulnerabilities", {}).values():
     if vuln.get("severity") not in ("high", "critical"):
         continue
-    fix = bool(vuln.get("fixAvailable"))
+    available = vuln.get("fixAvailable")
+    # A semver-major "fix" is a breaking (often downgrading) change, not a fix
+    # to apply blindly: treat it as no fix, so it needs a bounded waiver.
+    fix = bool(available) and not (isinstance(available, dict) and available.get("isSemVerMajor"))
     for via in vuln.get("via", []):
         if isinstance(via, dict) and via.get("source") is not None:
             src = int(via["source"])

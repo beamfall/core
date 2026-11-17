@@ -4,7 +4,7 @@
 # Drives audit-npm.sh through its test seams with synthetic audit JSON and
 # baseline waiver files, asserting it PASSES on a clean tree / valid waiver and
 # FAILS CLOSED on: missing npm, no/error audit output, a NEW unwaived advisory,
-# a fixable advisory, an EXPIRED waiver, and a STALE waiver.
+# a fixable advisory, a semver-major-only fix left unwaived, an EXPIRED waiver, and a STALE waiver.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -22,6 +22,8 @@ error_json="$WORK/error.json";   printf '%s' '{"error":{"code":"EAUDITNOLOCK","s
 nofix_json="$WORK/nofix.json";   printf '%s' '{"vulnerabilities":{"pkgx":{"severity":"high","fixAvailable":false,"via":[{"source":900001,"name":"pkgx"}]}}}' > "$nofix_json"
 # Same advisory but a fix IS available.
 fix_json="$WORK/fix.json";       printf '%s' '{"vulnerabilities":{"pkgx":{"severity":"high","fixAvailable":{"name":"pkgx","version":"2.0.0"},"via":[{"source":900001,"name":"pkgx"}]}}}' > "$fix_json"
+# A fix npm can apply only as a semver-major change (npm audit fix --force).
+major_json="$WORK/major.json";   printf '%s' '{"vulnerabilities":{"pkgx":{"severity":"high","fixAvailable":{"name":"pkgy","version":"1.0.0","isSemVerMajor":true},"via":[{"source":900001,"name":"pkgx"}]}}}' > "$major_json"
 
 # baselines ------------------------------------------------------------------
 empty_base="$WORK/base-empty";   printf '%s' '{"waivers":[]}' > "$empty_base"
@@ -55,6 +57,8 @@ run fail "empty audit output fails"       "no output"          AUDIT_NPM_JSON="$
 run fail "npm audit error fails"          "reported an error"  AUDIT_NPM_JSON="$error_json" AUDIT_NPM_BASELINE="$empty_base"
 run fail "new unwaived advisory fails"    "NEW"                AUDIT_NPM_JSON="$nofix_json" AUDIT_NPM_BASELINE="$empty_base"
 run fail "fixable advisory fails"         "fix available"      AUDIT_NPM_JSON="$fix_json"   AUDIT_NPM_BASELINE="$valid_base"
+run fail "semver-major fix needs a waiver" "NEW"              AUDIT_NPM_JSON="$major_json" AUDIT_NPM_BASELINE="$empty_base"
+run pass "semver-major fix can be waived" "0 unresolved"       AUDIT_NPM_JSON="$major_json" AUDIT_NPM_BASELINE="$valid_base"
 run fail "expired waiver fails"           "EXPIRED"            AUDIT_NPM_JSON="$nofix_json" AUDIT_NPM_BASELINE="$expired_base"
 run fail "stale waiver fails"             "STALE"              AUDIT_NPM_JSON="$clean_json" AUDIT_NPM_BASELINE="$stale_base"
 
