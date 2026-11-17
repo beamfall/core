@@ -175,3 +175,70 @@ func TestRenditionStreamIndexZeroBurnIn(t *testing.T) {
 		t.Fatalf("WithBurnSubtitle(0) -> (%d,%v), want (0,true)", idx, ok)
 	}
 }
+
+// TestExtractSubtitlesToWebVTTExtractsEveryTrackInOnePass proves the batch
+// extraction (CORE-2315) writes one WebVTT per requested text stream from a
+// single ffmpeg run over a file that carries two muxed subtitle tracks.
+func TestExtractSubtitlesToWebVTTExtractsEveryTrackInOnePass(t *testing.T) {
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not available")
+	}
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.srt")
+	second := filepath.Join(dir, "second.srt")
+	if err := os.WriteFile(first, []byte("1\n00:00:00,000 --> 00:00:01,000\nFirst track cue\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("1\n00:00:00,000 --> 00:00:01,000\nSecond track cue\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "two.mkv")
+	cmd := exec.Command(ffmpegPath, "-v", "error", // #nosec G204 -- resolved test binary, temp paths and fixed args
+		"-f", "lavfi", "-i", "testsrc=duration=2:size=160x120:rate=10",
+		"-i", first, "-i", second,
+		"-pix_fmt", "yuv420p", "-c:s", "srt",
+		"-map", "0:v", "-map", "1:s", "-map", "2:s",
+		"-y", src)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("synthesize MKV with two muxed SRT tracks: %v\n%s", err, out)
+	}
+	outDir := t.TempDir()
+	outputs := map[int]string{
+		1: filepath.Join(outDir, "1.vtt"),
+		2: filepath.Join(outDir, "2.vtt"),
+	}
+	if err := New().ExtractSubtitlesToWebVTT(context.Background(), src, outputs); err != nil {
+		t.Fatalf("ExtractSubtitlesToWebVTT: %v", err)
+	}
+	for index, want := range map[int]string{1: "First track cue", 2: "Second track cue"} {
+		data, err := os.ReadFile(outputs[index])
+		if err != nil {
+			t.Fatalf("read stream %d: %v", index, err)
+		}
+		body := string(data)
+		if !strings.HasPrefix(body, "WEBVTT") || !strings.Contains(body, want) {
+			t.Fatalf("stream %d WebVTT = %q, want header and %q", index, body, want)
+		}
+	}
+	entries, err := os.ReadDir(outDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("output dir has %d entries, want only the two published files", len(entries))
+	}
+}
+
+func TestExtractSubtitlesToWebVTTRejectsUnsafeArguments(t *testing.T) {
+	dir := t.TempDir()
+	if err := New().ExtractSubtitlesToWebVTT(context.Background(), "in.mkv", map[int]string{-1: filepath.Join(dir, "a.vtt")}); err == nil {
+		t.Fatal("negative stream index accepted")
+	}
+	if err := New().ExtractSubtitlesToWebVTT(context.Background(), "in.mkv", map[int]string{1: "-evil.vtt"}); err == nil {
+		t.Fatal("option-shaped destination accepted")
+	}
+	if err := New().ExtractSubtitlesToWebVTT(context.Background(), "in.mkv", nil); err != nil {
+		t.Fatalf("empty batch: %v", err)
+	}
+}

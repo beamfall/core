@@ -79,6 +79,10 @@ func (h *Handler) serveEncryptedSubtitle(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	vtt, err := h.encryptedSubtitle(r.Context(), libraryID, file, streamIndex, revoked)
+	if errors.Is(err, errSubtitlePending) {
+		writeSubtitlePending(w)
+		return
+	}
 	if err != nil {
 		if revoked(r.Context()) != nil {
 			http.Error(w, "media unavailable", http.StatusNotFound)
@@ -121,8 +125,13 @@ func (h *Handler) encryptedSubtitle(ctx context.Context, libraryID store.Library
 	if vtt, ok := h.decryptCachedSubtitle(libraryID, member, objectID); ok {
 		return vtt, nil
 	}
-	h.subtitleMu.Lock()
-	defer h.subtitleMu.Unlock()
+	// One extraction per (file, stream); other subtitles never queue behind
+	// it, and a request that waits too long gets errSubtitlePending.
+	unlock, err := h.subtitleJobs.lockKey(ctx, objectID, h.subtitleWaitLimit())
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	if vtt, ok := h.decryptCachedSubtitle(libraryID, member, objectID); ok {
 		return vtt, nil
 	}

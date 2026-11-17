@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -38,7 +37,8 @@ type Handler struct {
 	providerSubtitles     *ProviderSubtitleFetcher
 	subtitles             SubtitleConverter
 	subtitleDir           string
-	subtitleMu            sync.Mutex
+	subtitleJobs          subtitleJobs
+	subtitleWait          time.Duration
 	encryptedSubtitles    EncryptedSubtitleExtractor
 	encryptedObjects      EncryptedObjectWriter
 	hotSegments           *hotSegmentCache
@@ -454,6 +454,10 @@ func (h *Handler) Subtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cached, err := h.subtitleSidecarPath(r.Context(), file.ContentFingerprint, file.Path, streamIndex)
+	if errors.Is(err, errSubtitlePending) {
+		writeSubtitlePending(w)
+		return
+	}
 	if err != nil {
 		slog.Error("subtitle convert failed", "error", err.Error())
 		http.Error(w, "subtitle unavailable", http.StatusServiceUnavailable)
@@ -506,6 +510,12 @@ func (h *Handler) subtitleSourceStillVisible(ctx context.Context, scope auth.Sco
 // cache file only ever exists in its sanitised form: nothing under subtitleDir
 // is servable until it has passed the ingest boundary, including for the
 // lock-free cache-hit above.
+//
+// Requests for one file share a single extraction that converts every text
+// track of that file in one pass; requests for other files never wait on it
+// (CORE-2315). A request waits a bounded time and then gets errSubtitlePending
+// while the extraction finishes detached from it.
+//
 // subtitleConvertTimeout bounds one muxed-subtitle conversion once it is
 // detached from the request that started it.
 const subtitleConvertTimeout = 15 * time.Minute
@@ -524,31 +534,7 @@ func (h *Handler) subtitleSidecarPath(ctx context.Context, fingerprint, srcPath 
 	if rootedRegularFileExists(member) {
 		return member, nil
 	}
-	h.subtitleMu.Lock()
-	defer h.subtitleMu.Unlock()
-	if rootedRegularFileExists(member) {
-		return member, nil
-	}
-	// A request that gave up while it queued behind another conversion must not
-	// start one of its own.
-	if err := ctx.Err(); err != nil {
-		return rootedPath{}, err
-	}
-	dst := member.String()
-	staged := dst + ".staged"
-	defer os.Remove(staged)
-	// The conversion reads the whole source file, so it outlives an impatient
-	// request: once started it runs to completion and the next request is a
-	// cache hit, instead of every retry starting over from nothing.
-	convertCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), subtitleConvertTimeout)
-	defer cancel()
-	if err := h.subtitles.ExtractSubtitleToWebVTT(convertCtx, srcPath, streamIndex, staged); err != nil {
-		return rootedPath{}, err
-	}
-	if err := hardenExtractedWebVTT(h.subtitleDir, staged, member); err != nil {
-		return rootedPath{}, err
-	}
-	return member, nil
+	return h.awaitSubtitleMember(ctx, fingerprint, srcPath, streamIndex, member)
 }
 
 // endedSubtitleStatus maps a failed subtitle grant verification to its status:

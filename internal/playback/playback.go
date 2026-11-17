@@ -2158,6 +2158,13 @@ func normalizationModeCovers(declaredModes []string, source string) bool {
 // text format the /api/media/subtitle route can extract to WebVTT (ADR-0010
 // §5). Bitmap codecs (PGS/VobSub/DVB) are deliberately absent: they keep the
 // burn-in / withhold routing and never carry a sidecar URL.
+// IsMuxedTextSubtitleCodec reports whether a muxed subtitle codec converts to a
+// WebVTT sidecar (text, not bitmap). The subtitle byte route uses it to pick
+// every text track of a file for one extraction pass (CORE-2315).
+func IsMuxedTextSubtitleCodec(codec string) bool {
+	return isMuxedTextSubtitleCodec(codec)
+}
+
 func isMuxedTextSubtitleCodec(codec string) bool {
 	switch strings.ToLower(codec) {
 	case "subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text":
