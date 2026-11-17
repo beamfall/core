@@ -182,7 +182,8 @@ export function useWatchParty({
       if (seekPending.current) {
         // The first reading after a seek says how long the seek took.
         seekPending.current = false;
-        seekLead.current = nextSeekLeadMS(seekLead.current, drift);
+        // Drift is in media time; the lead is in wall time.
+        seekLead.current = nextSeekLeadMS(seekLead.current, drift / base);
       }
       if (video.paused && !video.ended) play(video);
       if (correction.kind === "seek") {
@@ -288,17 +289,37 @@ export function useWatchParty({
     };
   }, [active, role, timeline, sync, videoRef]);
 
-  // A follower screen is muted for as long as it follows; the listener's own
-  // mute comes back when it stops.
+  // A follower screen is muted for as long as it follows, and from the moment
+  // it starts joining a lead party: the sound belongs to the lead. The
+  // listener's own mute comes back when it stops. A follower whose party ended
+  // under it is paused first, so a screen never starts playing sound unasked.
+  const silent = role === "follower" || (party.status === "joining" && party.lead);
   useEffect(() => {
-    if (role !== "follower") return;
+    const video = videoRef.current;
+    if (!silent || !attached || !video) return;
+    const mute = () => {
+      if (followMute.current?.video !== video) {
+        followMute.current = { video, muted: listenerMuted(video) };
+      }
+      if (!listenerMuted(video)) setListenerMuted(video, true);
+    };
+    mute();
+    video.addEventListener("volumechange", mute);
     return () => {
+      video.removeEventListener("volumechange", mute);
       const held = followMute.current;
       followMute.current = null;
       seekPending.current = false;
-      if (held) setListenerMuted(held.video, held.muted);
+      if (!held) return;
+      const after = getWatchParty();
+      const stillSilent = after.status === "joining" || (after.status === "active" && after.lead);
+      const ownLeave = after.status === "idle" && !after.notice && !after.error;
+      if (lastRole.current === "follower" && !stillSilent && !ownLeave && !held.video.paused) {
+        held.video.pause();
+      }
+      setListenerMuted(held.video, held.muted);
     };
-  }, [role]);
+  }, [silent, attached, videoRef]);
 
   // The lead reports where its player is, about once a second while it plays
   // and whenever its speed changes. A presented frame gives the position and
@@ -318,18 +339,34 @@ export function useWatchParty({
     };
     if (frames) handle = video.requestVideoFrameCallback(onFrame);
     const report = () => {
-      if (video.paused || video.seeking || video.readyState < 1) return;
+      // A stalled player has no position to report: its clock is not running.
+      if (video.paused || video.seeking || video.readyState < 3) return;
       if (getWatchParty().timeline?.item !== mediaIdRef.current) return;
       const now = localClockMS();
       const fresh = sample && Math.abs(now - sample.atMS) <= FRAME_SAMPLE_MAX_AGE_MS;
       const at = fresh && sample ? sample : { positionMS: video.currentTime * 1000, atMS: now };
       reportLeadPosition(at.positionMS, at.atMS, video.playbackRate);
     };
+    // A stall holds the party where the lead stopped, and its end resumes it.
+    const onStall = () => {
+      const tl = getWatchParty().timeline;
+      if (!tl || tl.paused || tl.item !== mediaIdRef.current || video.paused) return;
+      void sendPartyTransport(tl.item, video.currentTime * 1000, true);
+    };
+    const onPlaying = () => {
+      const tl = getWatchParty().timeline;
+      if (!tl || !tl.paused || tl.item !== mediaIdRef.current || video.paused) return;
+      void sendPartyTransport(tl.item, video.currentTime * 1000, false);
+    };
     const beat = setInterval(report, LEAD_REPORT_INTERVAL_MS);
     video.addEventListener("ratechange", report);
+    video.addEventListener("waiting", onStall);
+    video.addEventListener("playing", onPlaying);
     return () => {
       clearInterval(beat);
       video.removeEventListener("ratechange", report);
+      video.removeEventListener("waiting", onStall);
+      video.removeEventListener("playing", onPlaying);
       if (frames) video.cancelVideoFrameCallback(handle);
     };
   }, [role, attached, videoRef]);
@@ -372,17 +409,20 @@ export function useWatchParty({
     const video = videoRef.current;
     if (!active || !attached || !video) return;
     const onLocal = (event: Event) => {
-      const input = lastViewerIntent();
-      if (
-        input < mountedAt.current ||
-        performance.now() - input > INTENT_WINDOW_MS ||
-        input < lastCorrection.current
-      ) {
-        return;
-      }
       const s = getWatchParty();
       const tl = s.timeline;
       if (s.status !== "active" || !tl || tl.item !== mediaIdRef.current) return;
+      // The lead's player is the timeline however it was moved (a remote
+      // control, a relock): nothing corrects it, so every event is its own.
+      const input = lastViewerIntent();
+      if (
+        !(s.lead && s.isHost) &&
+        (input < mountedAt.current ||
+          performance.now() - input > INTENT_WINDOW_MS ||
+          input < lastCorrection.current)
+      ) {
+        return;
+      }
       // A follower screen has no transport: the next beat puts it back.
       if (s.lead && !s.isHost) return;
       const now = partyNowMS();

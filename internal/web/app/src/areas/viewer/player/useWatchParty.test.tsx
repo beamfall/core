@@ -459,6 +459,79 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       view.unmount();
     });
 
+    it("pauses a follower whose party ended under it before the sound comes back", () => {
+      party = following(running());
+      const video = new FakeVideo();
+      video.currentTime = 10;
+      const view = mount(video);
+      expect(video).toMatchObject({ muted: true, paused: false });
+
+      party = idle({ notice: "ended" });
+      view.rerender();
+      expect(video).toMatchObject({ muted: false, paused: true });
+      view.unmount();
+    });
+
+    it("keeps a follower that chose to leave playing", () => {
+      party = following(running());
+      const video = new FakeVideo();
+      video.currentTime = 10;
+      const view = mount(video);
+
+      party = idle();
+      view.rerender();
+      expect(video).toMatchObject({ muted: false, paused: false });
+      view.unmount();
+    });
+
+    it("mutes a screen while it is still joining a lead party, and at once when unmuted", () => {
+      party = { ...idle(), status: "joining", partyID: "party-1", lead: true };
+      const video = new FakeVideo();
+      video.paused = false;
+      const view = mount(video);
+      expect(video.muted).toBe(true);
+
+      video.muted = false;
+      video.dispatchEvent(new Event("volumechange"));
+      expect(video.muted).toBe(true);
+      view.unmount();
+    });
+
+    it("holds the party when the lead stalls and resumes it when the lead plays again", () => {
+      party = leading(running());
+      const video = new FakeVideo();
+      video.paused = false;
+      video.currentTime = 20;
+      const view = mount(video);
+
+      video.readyState = 2;
+      video.dispatchEvent(new Event("waiting"));
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, true);
+      vi.mocked(reportLeadPosition).mockClear();
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(reportLeadPosition).not.toHaveBeenCalled();
+
+      party = leading(running({ paused: true }));
+      view.rerender();
+      video.readyState = 4;
+      video.dispatchEvent(new Event("playing"));
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, false);
+      view.unmount();
+    });
+
+    it("sends a lead pause that had no input behind it", () => {
+      party = leading(running());
+      const video = new FakeVideo();
+      video.paused = false;
+      video.currentTime = 20;
+      const view = mount(video);
+      video.pause();
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 20_000, true);
+      view.unmount();
+    });
+
     it("leaves a player the listener had muted muted", () => {
       party = following(running());
       const video = playing(10);
