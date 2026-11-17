@@ -825,7 +825,7 @@ func (s *Store) claimNextJobSQL(ctx context.Context, workerID string, classes []
 	// long jobs that yield and resume hold both background workers for days
 	// while newer short jobs (the database backup among them) never ran
 	// (CORE-2285).
-	query += " ORDER BY j.priority DESC, CASE WHEN j.status = 'yielded' THEN j.updated_at_ms ELSE j.created_at_ms END ASC, j.created_at_ms ASC, j.id ASC LIMIT 1"
+	query += " ORDER BY j.priority DESC, CASE WHEN j.status = 'yielded' THEN j.updated_at_ms ELSE j.created_at_ms END ASC, j.created_at_ms ASC, j.rowid ASC LIMIT 1"
 	job, err := scanJob(tx.QueryRowContext(ctx, query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Job{}, ErrNoRunnableJob
