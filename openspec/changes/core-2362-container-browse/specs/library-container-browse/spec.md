@@ -76,16 +76,21 @@ to it, in link order. Other cards SHALL omit `byline`.
 
 ### Requirement: Web Library page switches between kind views and the Media view
 
-The web Library page SHALL offer one view per browse kind, labelled by the kind's `label`, and the
-Media view, labelled by `allLabel` or a core fallback. It SHALL open on the first browse kind, keep
-the chosen view in the URL, and show the Media view alone when there are no browse kinds. A kind
-view SHALL render a paged grid of Entity cards whose line names the parents, else the Media count.
-The switcher SHALL be keyboard operable and fit a 375px viewport.
+The web Library page SHALL offer one view per browse kind, labelled by the kind's `label`, the
+Media view, labelled by `allLabel` or a core fallback, and the Folders view. It SHALL open on the
+first browse kind, else the Media view, and keep the chosen view in the URL. A kind view SHALL
+render a paged grid of Entity cards whose line names the parents, else the Media count. The
+switcher SHALL be keyboard operable and fit a 375px viewport.
 
 #### Scenario: Music Library
 
 - **WHEN** a viewer opens a Library whose browse kinds are A then B
-- **THEN** the page opens on A's grid with switches for A, B and the Media view
+- **THEN** the page opens on A's grid with switches for A, B, the Media view and the Folders view
+
+#### Scenario: Library with no browse kinds
+
+- **WHEN** a viewer opens a Library with no browse kinds, or whose kinds cannot be read
+- **THEN** the page opens on the Media view with switches for the Media and Folders views
 
 #### Scenario: Shared link
 
