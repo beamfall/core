@@ -16,6 +16,7 @@ export const trackMenuStrings = {
     subtitlesUnavailable: "Some subtitles are unavailable",
     trackDuplicateNumber: "Track {number}",
     subtitlesLoadFailed: "Subtitles couldn't load.",
+    subtitlesPreparing: "Loading subtitles…",
   },
   fr: {
     trackLanguageUnknown: "Langue inconnue",
@@ -34,6 +35,7 @@ export const trackMenuStrings = {
     subtitlesUnavailable: "Certains sous-titres ne sont pas disponibles",
     trackDuplicateNumber: "Piste {number}",
     subtitlesLoadFailed: "Les sous-titres n'ont pas pu être chargés.",
+    subtitlesPreparing: "Chargement des sous-titres…",
   },
   de: {
     trackLanguageUnknown: "Unbekannte Sprache",
@@ -52,6 +54,7 @@ export const trackMenuStrings = {
     subtitlesUnavailable: "Einige Untertitel sind nicht verfügbar",
     trackDuplicateNumber: "Spur {number}",
     subtitlesLoadFailed: "Untertitel konnten nicht geladen werden.",
+    subtitlesPreparing: "Untertitel werden geladen…",
   },
   es: {
     trackLanguageUnknown: "Idioma desconocido",
@@ -69,6 +72,7 @@ export const trackMenuStrings = {
     subtitlesUnavailable: "Algunos subtítulos no están disponibles",
     trackDuplicateNumber: "Pista {number}",
     subtitlesLoadFailed: "No se pudieron cargar los subtítulos.",
+    subtitlesPreparing: "Cargando subtítulos…",
   },
   pt: {
     trackLanguageUnknown: "Idioma desconhecido",
@@ -86,5 +90,6 @@ export const trackMenuStrings = {
     subtitlesUnavailable: "Algumas legendas não estão disponíveis",
     trackDuplicateNumber: "Faixa {number}",
     subtitlesLoadFailed: "Não foi possível carregar as legendas.",
+    subtitlesPreparing: "Carregando legendas…",
   },
 } as const;

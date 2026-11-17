@@ -780,6 +780,14 @@ function FeaturePlayer({
                 <span className="sr-only">{t("playerLoading")}</span>
               </div>
             )}
+            {captionLoad.status === "preparing" && (
+              <div
+                className="absolute bottom-24 left-1/2 z-10 -translate-x-1/2 rounded-md bg-scrim/80 px-3 py-2 text-sm text-on-scrim"
+                role="status"
+              >
+                {t("subtitlesPreparing")}
+              </div>
+            )}
             {captionLoad.status === "failed" && (
               <div
                 className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-md bg-scrim/80 px-3 py-2 text-sm text-on-scrim"
