@@ -1,4 +1,5 @@
 import type { SourceItem } from "@/lib/graphql/types";
+import { cardByline } from "./cardArt";
 
 function titleKey(title: string): string {
   return title.trim().toLocaleLowerCase();
@@ -26,10 +27,12 @@ export function showsYear(item: SourceItem, repeated: ReadonlySet<string>): bool
   return !!item.year && item.year > 0 && repeated.has(titleKey(item.title));
 }
 
-/** The line under a card's title: its year first when the title repeats in the list. */
+/**
+ * The line under a card's title: its year first when the title repeats in the
+ * list, then who made it (an audio card's byline, CORE-2362), then its
+ * summary, never repeating a part.
+ */
 export function cardSubline(item: SourceItem, showYear: boolean): string {
-  const summary = item.summary ?? "";
-  if (!showYear || !item.year) return summary;
-  const year = String(item.year);
-  return summary && summary !== year ? `${year} · ${summary}` : year;
+  const parts = [showYear && item.year ? String(item.year) : "", cardByline(item), item.summary];
+  return [...new Set(parts.filter(Boolean))].join(" · ");
 }

@@ -20,6 +20,14 @@ vi.mock("../lib/libraryBrowse", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryBrowse")>();
   return { ...actual, fetchLibraryItems: vi.fn() };
 });
+// The Library has no browse kinds, so it opens on the Media view (CORE-2362).
+vi.mock("../lib/libraryViews", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/libraryViews")>();
+  return {
+    ...actual,
+    fetchLibraryEntities: vi.fn(async () => ({ kinds: [], kind: "", total: 0, items: [] })),
+  };
+});
 vi.mock("../lib/libraryFolders", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/libraryFolders")>();
   return { ...actual, fetchLibraryFolder: vi.fn() };
@@ -151,7 +159,10 @@ describe("Library folder view (CORE-2359)", () => {
     ).toEqual(["a4 items", "b1 item"]);
     const path = screen.getByRole("navigation", { name: "Folder path" });
     expect(within(path).getByText("All folders")).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: "Folders" })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: "Folders" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(fetchLibraryFolder).toHaveBeenLastCalledWith(
       { libraryID: "lib", path: "", limit: 200, offset: 0 },
       expect.any(AbortSignal),
@@ -222,7 +233,7 @@ describe("Library folder view (CORE-2359)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("switches between the grid and the folder view", async () => {
+  it("switches between the Media and Folders views with the view switcher", async () => {
     vi.mocked(fetchLibraryFolder).mockImplementation(async (request) => folderFor(request));
     vi.mocked(fetchLibraryItems).mockImplementation(async () => ({
       total: 1,
@@ -234,12 +245,12 @@ describe("Library folder view (CORE-2359)", () => {
     renderAt("/n/archive/all");
 
     expect(await screen.findByText("1 item")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Folders" }));
+    await user.click(await screen.findByRole("button", { name: "Folders" }));
     expect(await screen.findByRole("list", { name: "Folders" })).toBeInTheDocument();
     expect(screen.getByTestId("where")).toHaveTextContent("/n/archive/all?view=folders");
 
-    await user.click(screen.getByRole("button", { name: "Grid" }));
+    await user.click(screen.getByRole("button", { name: "All items" }));
     expect(await screen.findByText("1 item")).toBeInTheDocument();
-    expect(screen.getByTestId("where").textContent).toBe("/n/archive/all");
+    expect(screen.getByTestId("where").textContent).toBe("/n/archive/all?view=media");
   });
 });

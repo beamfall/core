@@ -580,6 +580,11 @@
     "tier": "admin"
   },
   {
+    "field": "libraryentities",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "libraryfolder",
     "effect": "read",
     "tier": "session"

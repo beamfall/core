@@ -7,6 +7,8 @@
 export interface EntityPreview {
   title: string;
   kind?: string;
+  /** The shared class of the Entity's Media, as its card reported it. */
+  mediaClass?: string;
 }
 
 interface EntityLinkState {
@@ -15,17 +17,24 @@ interface EntityLinkState {
     identity?: unknown;
     title?: unknown;
     kind?: unknown;
+    mediaClass?: unknown;
   };
 }
 
 /** Builds the navigation state for a link to /entity/:id (see EntityPage). */
 export function entityLinkState(
-  item: { id: string; title: string; kind?: string },
+  item: { id: string; title: string; kind?: string; mediaClass?: string },
   identity: string | null,
 ): EntityLinkState | undefined {
   if (!identity) return undefined;
   return {
-    entityPreview: { entityID: item.id, identity, title: item.title, kind: item.kind },
+    entityPreview: {
+      entityID: item.id,
+      identity,
+      title: item.title,
+      kind: item.kind,
+      mediaClass: item.mediaClass,
+    },
   };
 }
 
@@ -42,5 +51,7 @@ export function readEntityPreview(
   return {
     title: preview.title,
     kind: typeof preview.kind === "string" && preview.kind ? preview.kind : undefined,
+    mediaClass:
+      typeof preview.mediaClass === "string" && preview.mediaClass ? preview.mediaClass : undefined,
   };
 }

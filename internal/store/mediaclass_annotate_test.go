@@ -5,7 +5,10 @@ import (
 	"testing"
 )
 
-func TestAnnotateMediaClassSetsMediaClassesAndSkipsEntities(t *testing.T) {
+// TestAnnotateMediaClassSetsMediaClasses pins each Media item's class and
+// year; the demo sequence Entity takes the class its video Media share and
+// never a year (CORE-2362).
+func TestAnnotateMediaClassSetsMediaClasses(t *testing.T) {
 	st := openDemoSeeded(t)
 	ctx := context.Background()
 	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media SET media_class = 'audio' WHERE id = 'media-demo-bunny'`); err != nil {
@@ -26,7 +29,7 @@ func TestAnnotateMediaClassSetsMediaClassesAndSkipsEntities(t *testing.T) {
 	if err := st.AnnotateMediaClass(ctx, items); err != nil {
 		t.Fatalf("AnnotateMediaClass: %v", err)
 	}
-	want := []MediaClass{MediaClassVideo, MediaClassAudio, "", ""}
+	want := []MediaClass{MediaClassVideo, MediaClassAudio, "", MediaClassVideo}
 	// Only the item with a stored year carries one (CORE-2269).
 	wantYear := []int{2010, 0, 0, 0}
 	for i, item := range items {

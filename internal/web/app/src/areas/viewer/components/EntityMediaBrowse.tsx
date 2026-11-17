@@ -22,8 +22,9 @@ import type { ListingRows } from "./useListingRows";
 // The Media an Entity page lists when its Kind has no detail Layout. The
 // layout follows the generic rules in lib/trackList (CORE-1635): an audio
 // "container" lists numbered tracks, grouped under a heading per stored
-// sequence when it has several (discs), an audio "person" lists top tracks and
-// the containers it appears on; anything else lists its children grouped by
+// sequence when it has several (discs), an audio "person" lists top tracks,
+// then all its tracks when there are more (CORE-2362), and the containers it
+// appears on; anything else lists its children grouped by
 // kind (ContainerChildren, CORE-1786). The page reads the per-Media rows
 // (useListingRows) and passes them in, so its Play action and this list use
 // one track order (containerTrackRows).
@@ -118,6 +119,9 @@ function PersonListening({
   const top = topTracks(items, profileTop);
   // Numbered by rank; the person's own credit is never repeated on its rows.
   const topRows = trackRows(top, rows, new Set([entity.id]));
+  // Every track in server order, when the top list leaves some out.
+  const all = items.filter((item) => item.kind === "media");
+  const allRows = all.length > top.length ? trackRows(all, rows, new Set([entity.id])) : null;
   const elsewhere = appearsOn(entity.relatedEntities, items, rows);
   return (
     <>
@@ -127,6 +131,14 @@ function PersonListening({
         </h2>
         <TrackList rows={topRows} queue={audioQueue(top)} label={t("personTopTracks")} />
       </section>
+      {allRows && (
+        <section className="bf-section flex flex-col gap-3">
+          <h2 className="bf-section-title">
+            <span>{t("personAllTracks")}</span>
+          </h2>
+          <TrackList rows={allRows} queue={audioQueue(all)} label={t("personAllTracks")} />
+        </section>
+      )}
       {elsewhere.length > 0 && (
         <section className="bf-section flex flex-col gap-3">
           <h2 className="bf-section-title">

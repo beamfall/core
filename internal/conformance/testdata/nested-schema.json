@@ -905,6 +905,15 @@
         }
       },
       {
+        "name": "byline",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "engagement",
         "kind": "object",
         "optional": true,
@@ -6192,6 +6201,15 @@
                     }
                   },
                   {
+                    "name": "byline",
+                    "kind": "list",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
                     "name": "engagement",
                     "kind": "object",
                     "optional": true,
@@ -6289,6 +6307,15 @@
                 {
                   "name": "artworkSlots",
                   "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "byline",
+                  "kind": "list",
                   "optional": true,
                   "nullable": true,
                   "elem": {
@@ -6427,6 +6454,15 @@
                   }
                 },
                 {
+                  "name": "byline",
+                  "kind": "list",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
                   "name": "engagement",
                   "kind": "object",
                   "optional": true,
@@ -6524,6 +6560,15 @@
               {
                 "name": "artworkSlots",
                 "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "byline",
+                "kind": "list",
                 "optional": true,
                 "nullable": true,
                 "elem": {
@@ -8670,6 +8715,428 @@
     ]
   },
   {
+    "field": "libraryentities",
+    "kind": "object",
+    "arguments": [
+      {
+        "name": "kind",
+        "kind": "string",
+        "optional": true
+      },
+      {
+        "name": "libraryID",
+        "kind": "string"
+      },
+      {
+        "name": "limit",
+        "kind": "int",
+        "optional": true
+      },
+      {
+        "name": "offset",
+        "kind": "int",
+        "optional": true
+      }
+    ],
+    "children": [
+      {
+        "name": "allLabel",
+        "kind": "map",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "items",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "byline",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "childCount",
+              "kind": "scalar"
+            },
+            {
+              "name": "engagement",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "completed",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "durationSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "positionSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "remainingCount",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "totalCount",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "locked",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaClass",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "mediaCount",
+              "kind": "scalar"
+            },
+            {
+              "name": "muted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "parents",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "restricted",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "summary",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            },
+            {
+              "name": "year",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "artwork",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "dominantColor",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "poster",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
+            "name": "artworkSlots",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "byline",
+            "kind": "list",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "childCount",
+            "kind": "scalar"
+          },
+          {
+            "name": "engagement",
+            "kind": "object",
+            "optional": true,
+            "nullable": true,
+            "children": [
+              {
+                "name": "completed",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "positionSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "remainingCount",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "totalCount",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "locked",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "mediaClass",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "mediaCount",
+            "kind": "scalar"
+          },
+          {
+            "name": "muted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "parents",
+            "kind": "list",
+            "nullable": true,
+            "elem": {
+              "kind": "object",
+              "children": [
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            "children": [
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "title",
+                "kind": "scalar"
+              }
+            ]
+          },
+          {
+            "name": "restricted",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "summary",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "title",
+            "kind": "scalar"
+          },
+          {
+            "name": "year",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "kinds",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "archetype",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "kind",
+              "kind": "scalar"
+            },
+            {
+              "name": "kindDisplayName",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "label",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "total",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "archetype",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "kindDisplayName",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "label",
+            "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "total",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "total",
+        "kind": "scalar"
+      }
+    ]
+  },
+  {
     "field": "libraryfolder",
     "kind": "object",
     "children": [
@@ -8764,6 +9231,15 @@
             {
               "name": "artworkSlots",
               "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "byline",
+              "kind": "list",
               "optional": true,
               "nullable": true,
               "elem": {
@@ -8868,6 +9344,15 @@
           {
             "name": "artworkSlots",
             "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "byline",
+            "kind": "list",
             "optional": true,
             "nullable": true,
             "elem": {
@@ -9241,6 +9726,15 @@
               }
             },
             {
+              "name": "byline",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "engagement",
               "kind": "object",
               "optional": true,
@@ -9338,6 +9832,15 @@
           {
             "name": "artworkSlots",
             "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "byline",
+            "kind": "list",
             "optional": true,
             "nullable": true,
             "elem": {
@@ -10655,6 +11158,15 @@
       {
         "name": "artworkSlots",
         "kind": "map",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "byline",
+        "kind": "list",
         "optional": true,
         "nullable": true,
         "elem": {
@@ -15096,6 +15608,15 @@
         }
       },
       {
+        "name": "byline",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "engagement",
         "kind": "object",
         "optional": true,
@@ -15196,6 +15717,15 @@
       {
         "name": "artworkSlots",
         "kind": "map",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "byline",
+        "kind": "list",
         "optional": true,
         "nullable": true,
         "elem": {
@@ -15310,6 +15840,15 @@
         }
       },
       {
+        "name": "byline",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "engagement",
         "kind": "object",
         "optional": true,
@@ -15410,6 +15949,15 @@
       {
         "name": "artworkSlots",
         "kind": "map",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "byline",
+        "kind": "list",
         "optional": true,
         "nullable": true,
         "elem": {
@@ -18237,6 +18785,15 @@
         }
       },
       {
+        "name": "byline",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "engagement",
         "kind": "object",
         "optional": true,
@@ -18344,6 +18901,15 @@
       {
         "name": "artworkSlots",
         "kind": "map",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "byline",
+        "kind": "list",
         "optional": true,
         "nullable": true,
         "elem": {
@@ -18511,6 +19077,15 @@
               }
             },
             {
+              "name": "byline",
+              "kind": "list",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "engagement",
               "kind": "object",
               "optional": true,
@@ -18650,6 +19225,15 @@
           {
             "name": "artworkSlots",
             "kind": "map",
+            "optional": true,
+            "nullable": true,
+            "elem": {
+              "kind": "scalar"
+            }
+          },
+          {
+            "name": "byline",
+            "kind": "list",
             "optional": true,
             "nullable": true,
             "elem": {
@@ -26678,6 +27262,15 @@
         }
       },
       {
+        "name": "byline",
+        "kind": "list",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
         "name": "engagement",
         "kind": "object",
         "optional": true,
@@ -27240,6 +27833,15 @@
       {
         "name": "artworkSlots",
         "kind": "map",
+        "optional": true,
+        "nullable": true,
+        "elem": {
+          "kind": "scalar"
+        }
+      },
+      {
+        "name": "byline",
+        "kind": "list",
         "optional": true,
         "nullable": true,
         "elem": {

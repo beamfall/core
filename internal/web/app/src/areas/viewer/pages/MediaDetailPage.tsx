@@ -22,6 +22,7 @@ import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
+import { artFrameClass } from "../lib/cardArt";
 import { audioPeople, useContainerContext } from "../lib/containerContext";
 import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
@@ -448,7 +449,7 @@ function DetailOverview({ text }: { text: string }) {
 function DetailPoster({ url, mediaClass }: { url: string; mediaClass?: string }) {
   const [failed, setFailed] = useState(false);
   return (
-    <div className="bf-poster bf-detail-poster">
+    <div className={`${artFrameClass({ mediaClass })} bf-detail-poster`}>
       {url && !failed ? (
         <img
           alt=""

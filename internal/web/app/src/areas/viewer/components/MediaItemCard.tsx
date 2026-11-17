@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
+import { artFrameClass } from "../lib/cardArt";
 import { cardAccessibleName, cardState } from "../lib/cardState";
 import { cardSubline } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
@@ -29,8 +30,9 @@ const CARD_SIZES = "300px";
 // One catalog card, ported from the vanilla renderItem (app.js). Generic by
 // invariant #1: the wire entity is Media and `kind` is a plugin display
 // discriminant — a "media" item plays, anything else opens entity detail. The
-// poster sits in a fixed 2:3 frame whose tinted fallback (with a muted glyph) shows
-// when artwork is absent or fails to load, so layout never shifts. Titles and
+// poster sits in a fixed frame (2:3, or square for audio: cardArt.ts) whose tinted
+// fallback (with a muted glyph) shows when artwork is absent or fails to load, so
+// layout never shifts. Titles and
 // summaries render as React text only (invariant #5 / ADR-0012 §5).
 //
 // The card button is the only control that carries the item's name: its
@@ -231,7 +233,7 @@ export function MediaItemCard({
         data-focus-id={focusAnchor?.item}
         className="bf-card"
       >
-        <div className="bf-poster">
+        <div className={artFrameClass(item)}>
           {poster && !imageFailed ? (
             <img
               alt=""

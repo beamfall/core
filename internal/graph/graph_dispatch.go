@@ -654,6 +654,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"sourceitems":                        newFieldHandler("sourceItems", "sourceItems", fieldRead, roleSession, 17),
 	"libraryitems":                       newFieldHandler("libraryItems", "libraryItems", fieldRead, roleSession, 17),
 	"libraryfolder":                      newFieldHandler("libraryFolder", "libraryFolder", fieldRead, roleSession, 17),
+	"libraryentities":                    newFieldHandler("libraryEntities", "libraryEntities", fieldRead, roleSession, 17),
 	"stationdelete":                      newFieldHandler("stationDelete", "stationDelete", fieldMutation, roleSession, 33),
 	"stationgenerate":                    newFieldHandler("stationGenerate", "stationGenerate", fieldRead, roleSession, 56),
 	"stations":                           newFieldHandler("stations", "stations", fieldRead, roleSession, 56),
@@ -1025,6 +1026,12 @@ func dispatchFieldBlock017(dispatch *fieldDispatchContext) response {
 	if fields["libraryfolder"] {
 		result, err := h.libraryFolder(ctx, scope, req)
 		if resp := resolveField(dispatch, "libraryfolder", result, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["libraryentities"] {
+		result, err := h.libraryEntities(ctx, scope, req)
+		if resp := resolveField(dispatch, "libraryentities", result, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

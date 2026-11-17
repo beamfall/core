@@ -1,6 +1,6 @@
-import { ArrowLeft, Play } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
+import { ArrowLeft, Play, Shuffle } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,9 +27,10 @@ import type { SeeAllTarget } from "../components/SectionView";
 import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
-import { readEntityPreview } from "../lib/entityPreview";
+import { entityLinkState, readEntityPreview } from "../lib/entityPreview";
+import { entityPeople, listensOverLayout, shuffled } from "../lib/listeningLayout";
 import { seeAllTargetFor } from "../lib/seeall";
-import { audioQueue, containerTrackRows } from "../lib/trackList";
+import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
 import { fieldDisplayValue, viewerFacingFields } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
@@ -98,6 +99,11 @@ export function EntityPage() {
   // when no Kind could ever match one — that request does not wait on fetchEntity.
   const needsFallback =
     !notFound && !detailLayout && (!!kindHint || !layouts.some((l) => l.role === "detail"));
+  // An audio container or person lists its Media the listening way over a
+  // detail Layout that only lists them (CORE-2362); null while that is unknown.
+  const listens = notFound
+    ? false
+    : listensOverLayout(detailLayout, entity, fallback, navPreview?.mediaClass);
   // The primary action reads the Entity's own Media whether or not a detail
   // Layout renders them (CORE-1786: one accent action on every container).
   const needsDirectMedia = !notFound;
@@ -105,7 +111,7 @@ export function EntityPage() {
   // The listed Media's rows, read once for the track list and this page's
   // Play action, so both start and queue an audio container's tracks in the
   // order the list shows (grouped and numbered by stored position, CORE-1635).
-  const listedItems = needsFallback ? fallback : null;
+  const listedItems = needsFallback || listens ? fallback : null;
   const listing = useListingRows(entity, listedItems ?? NO_ITEMS);
   const trackOrder = useMemo(
     () =>
@@ -141,6 +147,15 @@ export function EntityPage() {
     () => directNext ?? (childItems ? nextUpChild(childItems) : null),
     [directNext, childItems],
   );
+  // The listed Media once known to be all audio: what Shuffle plays, and for a
+  // container the sign to name its people under the title.
+  const listeningTracks = useMemo(() => {
+    if (trackOrder) return trackOrder;
+    if (entity?.archetype !== "person" || !listedItems || !listing.rows) return null;
+    if (!isAudioListing(listedItems, listing.rows)) return null;
+    return listedItems.filter((item) => item.kind === "media");
+  }, [trackOrder, entity, listedItems, listing.rows]);
+  const people = trackOrder ? entityPeople(entity) : [];
 
   // The Entity read carries related-Entity engagement, so it reloads with it.
   const engagementEpoch = useEngagementEpoch();
@@ -243,6 +258,15 @@ export function EntityPage() {
     navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
   }
 
+  // Plays every listed track in a fresh random order (CORE-2362).
+  function shuffleAll() {
+    if (!listeningTracks || listeningTracks.length === 0) return;
+    const order = shuffled(listeningTracks);
+    navigate(`/watch/${encodeURIComponent(order[0].id)}`, {
+      state: playState(identity, audioQueue(order), order[0]),
+    });
+  }
+
   // The same way back the media detail page offers (CORE-2322).
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -285,6 +309,21 @@ export function EntityPage() {
             <div className="bf-detail-lockup bf-entity-lockup">
               <div className="bf-detail-copy">
                 <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
+                {people.length > 0 && (
+                  <p className="bf-entity-people">
+                    {people.map((person, index) => (
+                      <Fragment key={person.id}>
+                        {index > 0 && ", "}
+                        <Link
+                          to={`/entity/${encodeURIComponent(person.id)}`}
+                          state={entityLinkState(person, identity)}
+                        >
+                          {person.title}
+                        </Link>
+                      </Fragment>
+                    ))}
+                  </p>
+                )}
                 {kindLabel && (
                   <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
                     <li className="bf-detail-fact bf-entity-kind">{kindLabel}</li>
@@ -310,6 +349,18 @@ export function EntityPage() {
                       <Play aria-hidden />
                       {nextUp.resume ? t("mediaDetailResume") : t("play")}
                     </button>
+                    {listeningTracks && listeningTracks.length > 1 && (
+                      <button
+                        type="button"
+                        className={`${buttonVariants({ variant: "ghost", size: "lg" })} bf-detail-secondary`}
+                        onClick={shuffleAll}
+                        onPointerEnter={preloadPlayer}
+                        onFocus={preloadPlayer}
+                      >
+                        <Shuffle aria-hidden />
+                        {t("libraryBrowseShuffle")}
+                      </button>
+                    )}
                     <p className="bf-entity-next">
                       {t("entityDetailNextUp", { title: nextUp.item.title })}
                     </p>
@@ -330,25 +381,28 @@ export function EntityPage() {
             </div>
           </header>
 
-          {entity?.relatedEntities?.map((group) => (
-            <section key={group.kind} className="bf-section flex flex-col gap-3">
-              <h2 className="bf-section-title">
-                <span>{displayString(group.kindDisplayName, displayLocale) || group.kind}</span>
-              </h2>
-              <ul className="bf-grid">
-                {group.items.map((item, index) => (
-                  <MediaItemCard
-                    key={`${item.id}-${index}`}
-                    item={item}
-                    posInSet={index + 1}
-                    setSize={group.items.length}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))}
+          {entity?.relatedEntities?.map((group) =>
+            // An audio container names its people under the title instead.
+            people.length > 0 && group.archetype === "person" ? null : (
+              <section key={group.kind} className="bf-section flex flex-col gap-3">
+                <h2 className="bf-section-title">
+                  <span>{displayString(group.kindDisplayName, displayLocale) || group.kind}</span>
+                </h2>
+                <ul className="bf-grid">
+                  {group.items.map((item, index) => (
+                    <MediaItemCard
+                      key={`${item.id}-${index}`}
+                      item={item}
+                      posInSet={index + 1}
+                      setSize={group.items.length}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ),
+          )}
 
-          {detailLayout ? (
+          {detailLayout && listens === false ? (
             <LayoutView
               layout={detailLayout}
               libraryID=""
@@ -357,7 +411,7 @@ export function EntityPage() {
               navigationID={`entity:${entityId || ""}`}
             />
           ) : (
-            needsFallback &&
+            (needsFallback || listens) &&
             fallback && (
               <EntityMediaBrowse
                 entity={entity}

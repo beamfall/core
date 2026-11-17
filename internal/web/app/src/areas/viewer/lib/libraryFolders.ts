@@ -9,9 +9,10 @@ import type { SourceItem } from "@/lib/graphql/types";
 export const LIBRARY_FOLDER_PAGE = 200;
 
 // The folder view travels in the URL as `view=folders`, the open folder as
-// `folder=<path>`; no folder means the Library's roots.
+// `folder=<path>`; no folder means the Library's roots. It is one entry of the
+// Library's view switcher (libraryViews, CORE-2362).
 const VIEW_PARAM = "view";
-const FOLDER_VIEW = "folders";
+export const FOLDER_VIEW = "folders";
 const FOLDER_PARAM = "folder";
 
 export function isFolderView(params: URLSearchParams): boolean {

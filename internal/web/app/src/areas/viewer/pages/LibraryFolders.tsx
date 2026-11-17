@@ -1,5 +1,5 @@
-import { ChevronLeft, ChevronRight, Folder, FolderTree, LayoutGrid, List } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Folder } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,6 @@ import { nodePath } from "@/lib/nodePath";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
-import { type LibraryViewMode, writeLibraryViewMode } from "../lib/libraryBrowse";
 import {
   fetchLibraryFolder,
   folderPath,
@@ -21,15 +20,19 @@ import { playQueueOf } from "../lib/watchQueue";
 // Library folder view (/n/:nodeId/all?view=folders, CORE-2359): the Library's
 // roots, then the subfolders and Media of the open folder, one level at a time.
 // Each folder is a link, so Back walks up the way the viewer came down and a
-// folder can be shared like any other view.
+// folder can be shared like any other view. It is one of the Library's views
+// (LibraryViews, CORE-2362), so the view switcher sits under its heading.
 export function LibraryFolders({
   libraryID,
   nodeID,
   heading,
+  switcher,
 }: {
   libraryID: string;
   nodeID: string;
   heading: string;
+  /** The Library's view switcher, shown under the heading. */
+  switcher?: ReactNode;
 }) {
   const t = useT();
   const navigate = useNavigate();
@@ -77,11 +80,6 @@ export function LibraryFolders({
     }
   }
 
-  function chooseViewMode(mode: LibraryViewMode) {
-    writeLibraryViewMode(libraryID, mode);
-    navigate({ search: "" });
-  }
-
   const items = useMemo(() => page?.items ?? [], [page]);
   const queue = useMemo(() => playQueueOf(items), [items]);
   const repeated = useMemo(() => repeatedTitles(items), [items]);
@@ -113,36 +111,9 @@ export function LibraryFolders({
                   ? t("libraryBrowseCount", { count: page.total })
                   : ""}
             </p>
-            <div
-              role="group"
-              aria-label={t("libraryBrowseViewLabel")}
-              className="flex items-center gap-2 sm:ml-auto"
-            >
-              <button
-                type="button"
-                className="bf-chip"
-                aria-pressed={false}
-                onClick={() => chooseViewMode("grid")}
-              >
-                <LayoutGrid aria-hidden className="size-4" />
-                {t("libraryBrowseViewGrid")}
-              </button>
-              <button
-                type="button"
-                className="bf-chip"
-                aria-pressed={false}
-                onClick={() => chooseViewMode("list")}
-              >
-                <List aria-hidden className="size-4" />
-                {t("libraryBrowseViewList")}
-              </button>
-              <button type="button" className="bf-chip" aria-pressed>
-                <FolderTree aria-hidden className="size-4" />
-                {t("libraryBrowseViewFolders")}
-              </button>
-            </div>
           </div>
         </div>
+        {switcher}
 
         <nav aria-label={t("libraryFoldersPathLabel")}>
           <ol className="bf-crumbs">
