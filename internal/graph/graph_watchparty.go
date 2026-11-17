@@ -160,8 +160,14 @@ func (h *Handler) createWatchParty(ctx context.Context, scope auth.Scope, req re
 	if _, err := h.store.Media(ctx, content, scope.LibraryFilter()); err != nil {
 		return WatchPartyInfo{}, clientError("cannot host a party for content you cannot see")
 	}
-	relaxed := boolVar(req, "relaxed")
-	g := h.conductor.FormParty(scope.ProfileID, scope.SessionID, content, relaxed)
+	// A lead party (CORE-2243) is host-only whatever `relaxed` says: its host
+	// session owns the audio and the other members follow it.
+	var g *conductor.Group
+	if boolVar(req, "lead") {
+		g = h.conductor.FormLeadParty(scope.ProfileID, scope.SessionID, content)
+	} else {
+		g = h.conductor.FormParty(scope.ProfileID, scope.SessionID, content, boolVar(req, "relaxed"))
+	}
 	// The host joins its own party with its calibration, exactly like the Ambient
 	// Group forming device joins via Join. Calibration rides the same vars as
 	// joinGroup (from the LAN calibration handshake).
@@ -744,18 +750,29 @@ func (h *Handler) broadcastPartyTransition(ctx context.Context, partyID string, 
 	now := time.Now().UTC()
 	for _, profile := range partyProfiles(members, host, caller) {
 		if err := h.store.AppendGroupSyncEvent(ctx, store.GroupSyncPayload{
-			GroupID:     partyID,
-			ProfileID:   profile,
-			Signal:      store.GroupSignalTransition,
-			Item:        t.Item,
-			PositionMS:  t.Position.Milliseconds(),
-			PresentAtMS: t.PresentAt.UnixMilli(),
-			Paused:      t.Paused,
+			GroupID:      partyID,
+			ProfileID:    profile,
+			Signal:       store.GroupSignalTransition,
+			Item:         t.Item,
+			PositionMS:   t.Position.Milliseconds(),
+			PresentAtMS:  t.PresentAt.UnixMilli(),
+			Paused:       t.Paused,
+			Lead:         t.Lead,
+			RatePermille: leadRate(t),
 		}, now); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// leadRate is the speed a lead party's transition carries on the wire. Normal
+// speed is left out, as it is for every other party.
+func leadRate(t conductor.Transition) int {
+	if !t.Lead || t.RatePermille == 1000 {
+		return 0
+	}
+	return t.RatePermille
 }
 
 // acceptPartyMember joins member to the party and broadcasts the new roster.
@@ -951,6 +968,10 @@ func (h *Handler) leavePartySession(ctx context.Context, partyID string, session
 	if err != nil {
 		return err
 	}
+	// A lead party ends with its lead: its followers are told it ended.
+	if len(leave.Ended) > 0 {
+		return h.broadcastPartyEndedLocked(ctx, partyID, leave.EndedBy, leave.Ended)
+	}
 	// A party that dissolved has no one to tell.
 	if leave.Dissolved {
 		return nil
@@ -1003,6 +1024,10 @@ func (h *Handler) partyStreamsDropped(ctx context.Context, grace time.Duration) 
 	h.partyMu.Lock()
 	defer h.partyMu.Unlock()
 	for _, expired := range h.conductor.ExpireDisconnected(grace) {
+		if len(expired.Leave.Ended) > 0 {
+			_ = h.broadcastPartyEndedLocked(ctx, expired.PartyID, expired.Leave.EndedBy, expired.Leave.Ended)
+			continue
+		}
 		if expired.Leave.Dissolved {
 			continue
 		}
@@ -1025,6 +1050,8 @@ func partyClientError(err error) error {
 		return clientError("unknown request")
 	case errors.Is(err, conductor.ErrNotHost):
 		return clientError("not the party host")
+	case errors.Is(err, conductor.ErrNotLead):
+		return clientError("this party has no lead")
 	case errors.Is(err, conductor.ErrNotMember):
 		return clientError("not a member of this party")
 	default:

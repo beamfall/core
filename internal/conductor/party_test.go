@@ -72,7 +72,7 @@ func TestLeaveParty(t *testing.T) {
 
 	// Guest leaves: cross-Profile (different profile than host). Unlike Leave,
 	// this does NOT require the caller to own the group's Profile.
-	if leave, err := r.LeaveParty(g.ID, "guest-session"); err != nil || leave != (PartyLeave{}) {
+	if leave, err := r.LeaveParty(g.ID, "guest-session"); err != nil || leave.Dissolved || leave.NewHost != "" || len(leave.Ended) != 0 {
 		t.Fatalf("LeaveParty(guest) = %+v, %v; want no hand-off", leave, err)
 	}
 	if n := len(g.Members()); n != 1 {

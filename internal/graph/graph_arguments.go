@@ -280,6 +280,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	"createwatchparty": {
 		{Name: "clockOffsetMS", Kind: "number", Optional: true},
 		{Name: "content", Kind: "string"},
+		{Name: "lead", Kind: "boolean", Optional: true},
 		{Name: "relaxed", Kind: "boolean", Optional: true},
 		{Name: "renderLatencyMS", Kind: "number", Optional: true},
 	},
@@ -650,8 +651,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "mediaIDs", Kind: "list"},
 	},
 	"reportdrift": {
+		{Name: "atMS", Kind: "number", Optional: true},
 		{Name: "driftMS", Kind: "number", Optional: true},
 		{Name: "groupID", Kind: "string"},
+		{Name: "positionMS", Kind: "number", Optional: true},
+		{Name: "ratePermille", Kind: "int", Optional: true},
 	},
 	"reportplayback": {
 		{Name: "ambient", Kind: "boolean", Optional: true},

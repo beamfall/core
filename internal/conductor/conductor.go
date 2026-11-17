@@ -268,6 +268,14 @@ type Group struct {
 	// in a host-only party, keyed by request id, at most one per member session
 	// (CORE-1765). Dropped when the host role moves. Nil until the first request.
 	requests map[string]PartyRequest
+	// lead marks a lead party (CORE-2243): the host session owns the audio and
+	// every other member follows it. See lead.go.
+	lead bool
+	// rate is the timeline's speed in thousandths of normal; zero means normal.
+	// Only a lead party's timeline runs at another speed.
+	rate int
+	// stated is when a lead party's timeline was last broadcast.
+	stated time.Time
 }
 
 // Members returns a snapshot copy of the group's members (ADR-0035 §8: the
@@ -293,4 +301,10 @@ type Transition struct {
 	// Paused reports a Watch Party timeline that holds at Position instead of
 	// playing from PresentAt. Always false for an Ambient Group.
 	Paused bool
+	// RatePermille is the timeline's speed in thousandths of normal. Zero means
+	// normal speed; only a lead party sets it.
+	RatePermille int
+	// Lead marks a lead party's transition: the receiver follows the lead and
+	// plays no audio unless it is the lead.
+	Lead bool
 }
