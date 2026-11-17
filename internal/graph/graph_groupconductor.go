@@ -265,6 +265,8 @@ func (h *Handler) reportDrift(ctx context.Context, scope auth.Scope, req request
 			if host, _ := g.Host(); host == scope.SessionID {
 				return h.reportLeadPosition(ctx, scope, groupID, req)
 			}
+			// A follower corrects itself against the lead's timeline.
+			return ReportDriftResult{}, clientError("only the lead reports to this party")
 		}
 		return h.reportPartyDrift(ctx, scope, groupID, drift)
 	}
@@ -369,8 +371,17 @@ func conductorClientError(err error) error {
 func (h *Handler) reportLeadPosition(ctx context.Context, scope auth.Scope, partyID string, req request) (ReportDriftResult, error) {
 	h.partyMu.Lock()
 	defer h.partyMu.Unlock()
-	position := time.Duration(int64Var(req, "positionMS")) * time.Millisecond
-	at := time.UnixMilli(int64Var(req, "atMS"))
+	if _, ok := req.Variables["positionMS"]; !ok {
+		return ReportDriftResult{}, clientError("positionMS is required from the lead")
+	}
+	atMS := int64Var(req, "atMS")
+	if atMS <= 0 {
+		return ReportDriftResult{}, clientError("atMS is required from the lead")
+	}
+	// Bounded before the multiply so a hostile value cannot overflow.
+	positionMS := min(max(int64Var(req, "positionMS"), 0), int64(1000*time.Hour/time.Millisecond))
+	position := time.Duration(positionMS) * time.Millisecond
+	at := time.UnixMilli(atMS)
 	transition, members, restate, err := h.conductor.LeadReport(partyID, scope.SessionID, position, at, intVar(req, "ratePermille"))
 	if err != nil {
 		return ReportDriftResult{}, partyClientError(err)

@@ -151,6 +151,13 @@ func (r *Registry) lookup(id string, profile store.ProfileID) (*Group, error) {
 	if g.ProfileID != profile {
 		return nil, ErrWrongProfile
 	}
+	// A Watch Party is moved only through its own host-checked paths. Its
+	// host's Profile may hold several sessions (a lead party's follower
+	// screens), and none of them may move, join or leave it as an Ambient Group.
+	// posture is fixed at formation, so it is read without g.mu.
+	if g.posture == PostureWatchParty {
+		return nil, ErrNoGroup
+	}
 	return g, nil
 }
 
@@ -177,6 +184,11 @@ func (r *Registry) Join(id string, profile store.ProfileID, m Member) error {
 	if g.ProfileID != profile {
 		r.mu.Unlock()
 		return ErrWrongProfile
+	}
+	if g.posture == PostureWatchParty {
+		// Joining a party goes through Accept and its Reveal check.
+		r.mu.Unlock()
+		return ErrNoGroup
 	}
 	g.mu.Lock()
 	member := m

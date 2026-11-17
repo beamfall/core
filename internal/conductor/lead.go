@@ -33,8 +33,16 @@ const LeadReanchorThreshold = 40 * time.Millisecond
 const LeadHeartbeat = 5 * time.Second
 
 // leadReportMaxAge bounds how far in the past a lead report's sample instant
-// may lie. An older sample is treated as taken leadReportMaxAge ago.
+// may lie. An older sample says nothing about where the lead is now and is
+// dropped.
 const leadReportMaxAge = 5 * time.Second
+
+// leadRestateFloor is the shortest time between two statements of a lead
+// party's timeline caused by reports, so a lead cannot flood its followers.
+const leadRestateFloor = 250 * time.Millisecond
+
+// leadMaxPosition bounds a reported position.
+const leadMaxPosition = 1000 * time.Hour
 
 // Timeline rate bounds, in thousandths of normal speed.
 const (
@@ -71,7 +79,10 @@ func (r *Registry) FormLeadParty(host store.ProfileID, hostSession store.Session
 // since the timeline was last stated, the timeline is re-anchored on the report
 // and restate is true: the surface then broadcasts the returned Transition. A
 // paused timeline is not moved by a report; the lead pauses and resumes through
-// HostTransition. Only the lead of a lead party may report.
+// HostTransition. A report is dropped when its sample is older than
+// leadReportMaxAge, was taken before the timeline was last anchored, or follows
+// the last statement within leadRestateFloor. Only the lead of a lead party may
+// report.
 func (r *Registry) LeadReport(id string, lead store.SessionID, position time.Duration, at time.Time, ratePermille int) (t Transition, members []Member, restate bool, err error) {
 	g, err := r.partyLookup(id)
 	if err != nil {
@@ -81,9 +92,8 @@ func (r *Registry) LeadReport(id string, lead store.SessionID, position time.Dur
 	if at.After(now) {
 		at = now
 	}
-	if oldest := now.Add(-leadReportMaxAge); at.Before(oldest) {
-		at = oldest
-	}
+	stale := at.Before(now.Add(-leadReportMaxAge))
+	position = min(max(position, 0), leadMaxPosition)
 	rate := clampRate(ratePermille)
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -93,7 +103,10 @@ func (r *Registry) LeadReport(id string, lead store.SessionID, position time.Dur
 	if g.host != lead {
 		return Transition{}, nil, false, ErrNotHost
 	}
-	if g.paused {
+	// A stale sample, one taken before the timeline was last anchored (the
+	// lead has since moved it, so the sample describes the old timeline), and
+	// one that arrives too soon after the last statement are all dropped.
+	if g.paused || stale || at.Before(g.anchor) || now.Sub(g.stated) < leadRestateFloor {
 		return g.transitionLocked(now), nil, false, nil
 	}
 	deviation := position - g.positionAtLocked(at)

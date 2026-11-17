@@ -2,6 +2,7 @@ package graph
 
 import (
 	"encoding/json"
+	"github.com/beamfall/core/internal/conductor"
 	"net/http"
 	"slices"
 	"strings"
@@ -71,12 +72,15 @@ func leadReport(t *testing.T, h *Handler, partyID string, positionMS, atMS, rate
 func TestLeadPartyStallReachesEveryFollowerProfile(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0).UTC()
 	st := storetest.Open(t)
-	h := newConductorHandler(st, now)
+	h := newTestHandlerWithStore(st)
+	h.SetConductor(conductor.NewRegistryWithClock(func() time.Time { return now }))
 	partyID := formLeadParty(t, h)
+	// A second into playback, clear of the floor between statements.
+	now = now.Add(time.Second)
 
 	// On time: nothing is sent.
 	cursor := lastSeq(t, st)
-	if res := leadReport(t, h, partyID, 20, now.UnixMilli(), 0); res.Action != "none" {
+	if res := leadReport(t, h, partyID, 1020, now.UnixMilli(), 0); res.Action != "none" {
 		t.Fatalf("on-time report = %#v, want action none", res)
 	}
 	if rows := partyTransitionRows(t, st, partyID, cursor); len(rows) != 0 {
@@ -85,15 +89,15 @@ func TestLeadPartyStallReachesEveryFollowerProfile(t *testing.T) {
 
 	// The lead is 2 s away from the timeline at a changed speed: one transition
 	// per member Profile, stated now with no pre-buffer, marked lead.
-	if res := leadReport(t, h, partyID, 2000, now.UnixMilli(), 1250); res.Action != "anchor" || res.GroupID != partyID {
+	if res := leadReport(t, h, partyID, 3000, now.UnixMilli(), 1250); res.Action != "anchor" || res.GroupID != partyID {
 		t.Fatalf("stall report = %#v, want action anchor", res)
 	}
 	rows := partyTransitionRows(t, st, partyID, cursor)
 	var profiles []string
 	for _, p := range rows {
 		profiles = append(profiles, string(p.ProfileID))
-		if p.PositionMS != 2000 || p.PresentAtMS != now.UnixMilli() || !p.Lead || p.RatePermille != 1250 || p.Paused {
-			t.Errorf("row for %s = %+v, want 2000 presented now, lead, rate 1250", p.ProfileID, p)
+		if p.PositionMS != 3000 || p.PresentAtMS != now.UnixMilli() || !p.Lead || p.RatePermille != 1250 || p.Paused {
+			t.Errorf("row for %s = %+v, want 3000 presented now, lead, rate 1250", p.ProfileID, p)
 		}
 	}
 	slices.Sort(profiles)
@@ -114,9 +118,8 @@ func TestLeadPartyOnlyTheLeadMovesIt(t *testing.T) {
 	if _, errs := post(t, h, requestTransportBody(partyID, "media-alpha", 9000), authorizeManaged); len(errs) == 0 || !strings.Contains(errs[0].Message, "not the party host") {
 		t.Fatalf("follower transport errors = %#v, want a host-only refusal", errs)
 	}
-	// A follower's report is an ordinary drift report: it never moves the timeline.
-	if _, errs := post(t, h, leadReportBody(partyID, 9000, now.UnixMilli(), 0), authorizeManaged); len(errs) != 0 {
-		t.Fatalf("follower report errors = %#v", errs)
+	if _, errs := post(t, h, leadReportBody(partyID, 9000, now.UnixMilli(), 0), authorizeManaged); len(errs) == 0 || !strings.Contains(errs[0].Message, "only the lead reports") {
+		t.Fatalf("follower report errors = %#v, want a refusal", errs)
 	}
 	if rows := partyTransitionRows(t, st, partyID, cursor); len(rows) != 0 {
 		t.Fatalf("a follower moved the lead timeline: %#v", rows)
@@ -176,5 +179,28 @@ func TestLeadPartyRosterTellsAJoiningScreenItFollows(t *testing.T) {
 		if !p.Lead {
 			t.Errorf("roster for %s = %+v, want it marked lead", p.ProfileID, p)
 		}
+	}
+}
+
+// feature:watch-party
+func TestLeadPartyRefusesAmbientMovesAndEmptyReports(t *testing.T) {
+	st := storetest.Open(t)
+	h := newConductorHandler(st, time.Unix(1_700_000_000, 0).UTC())
+	partyID := formLeadParty(t, h)
+	cursor := lastSeq(t, st)
+
+	// A session in the lead's own Profile cannot move the party as an Ambient Group.
+	if _, errs := post(t, h, transitionBody(partyID, "media-alpha", 60000), authorizeViewer); len(errs) == 0 || !strings.Contains(errs[0].Message, "unknown group") {
+		t.Fatalf("transitionGroup on a party errors = %#v, want unknown group", errs)
+	}
+	// A lead report with no position or sample instant is refused, not read as zero.
+	if _, errs := post(t, h, reportDriftBody(partyID, 0), authorizeViewer); len(errs) == 0 || !strings.Contains(errs[0].Message, "positionMS is required") {
+		t.Fatalf("empty lead report errors = %#v, want a refusal", errs)
+	}
+	if _, errs := post(t, h, leadReportBody(partyID, 9000, 0, 0), authorizeViewer); len(errs) == 0 || !strings.Contains(errs[0].Message, "atMS is required") {
+		t.Fatalf("lead report without atMS errors = %#v, want a refusal", errs)
+	}
+	if rows := partyTransitionRows(t, st, partyID, cursor); len(rows) != 0 {
+		t.Fatalf("a refused call moved the lead timeline: %#v", rows)
 	}
 }

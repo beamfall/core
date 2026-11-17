@@ -175,3 +175,100 @@ func TestLeadPartyFollowerRejoinsAndPartyEndsWithLead(t *testing.T) {
 		t.Fatalf("party after the lead left err = %v, want ErrNoGroup", err)
 	}
 }
+
+// TestLeadReportDropsSamplesThatSayNothingAboutNow covers the reports a lead
+// party ignores: a sample older than leadReportMaxAge, a sample taken before
+// the lead last moved the timeline, and a report inside leadRestateFloor.
+func TestLeadReportDropsSamplesThatSayNothingAboutNow(t *testing.T) {
+	r, g, now := leadParty(t, "screen-a")
+	*now = now.Add(20 * time.Second)
+
+	// On time, but the report arrived 8 s late: the timeline does not move.
+	if _, _, restate, err := r.LeadReport(g.ID, "lead", 12*time.Second, now.Add(-8*time.Second), 0); err != nil || restate {
+		t.Fatalf("stale report restate = %v err %v, want it dropped", restate, err)
+	}
+	if a, _ := r.PartyAnchor(g.ID); a.Position != 20*time.Second {
+		t.Fatalf("timeline after a stale report = %v, want 20s", a.Position)
+	}
+
+	// The lead seeks to 60 s; a report sampled 200 ms before the seek arrives after it.
+	sampled := now.Add(-200 * time.Millisecond)
+	if _, _, err := r.HostTransition(g.ID, "lead", "media-alpha", time.Minute, false); err != nil {
+		t.Fatalf("seek: %v", err)
+	}
+	*now = now.Add(time.Second)
+	if _, _, restate, err := r.LeadReport(g.ID, "lead", 19800*time.Millisecond, sampled, 0); err != nil || restate {
+		t.Fatalf("pre-seek report restate = %v err %v, want it dropped", restate, err)
+	}
+	if a, _ := r.PartyAnchor(g.ID); a.Position != 61*time.Second {
+		t.Fatalf("timeline after a pre-seek report = %v, want 61s", a.Position)
+	}
+
+	// Two reports that each move the timeline, 100 ms apart: only the first is stated.
+	if _, _, restate, _ := r.LeadReport(g.ID, "lead", 50*time.Second, *now, 0); !restate {
+		t.Fatal("a 11 s deviation did not restate")
+	}
+	*now = now.Add(100 * time.Millisecond)
+	if _, _, restate, _ := r.LeadReport(g.ID, "lead", 40*time.Second, *now, 0); restate {
+		t.Fatal("a second restatement inside the floor was sent")
+	}
+	*now = now.Add(leadRestateFloor)
+	if _, _, restate, _ := r.LeadReport(g.ID, "lead", 40*time.Second, *now, 0); !restate {
+		t.Fatal("a report after the floor did not restate")
+	}
+
+	// A negative position is read as zero.
+	*now = now.Add(time.Second)
+	if tr, _, _, _ := r.LeadReport(g.ID, "lead", -time.Hour, *now, 0); tr.Position != 0 {
+		t.Fatalf("negative report position = %v, want 0", tr.Position)
+	}
+}
+
+// TestWatchPartyIsClosedToAmbientGroupOperations covers the same-Profile
+// follower: a second session in the lead's Profile cannot join, leave or move
+// the party through the Ambient Group paths, which check the Profile only.
+func TestWatchPartyIsClosedToAmbientGroupOperations(t *testing.T) {
+	r, g, _ := leadParty(t, "screen-a")
+	if err := r.Accept(g.ID, "profile-lead", Member{SessionID: "second-screen"}); err != nil {
+		t.Fatalf("Accept(second screen): %v", err)
+	}
+	if _, _, err := r.Transition(g.ID, "profile-lead", "second-screen", "media-beta", time.Minute); !errors.Is(err, ErrNoGroup) {
+		t.Fatalf("Transition err = %v, want ErrNoGroup", err)
+	}
+	if err := r.Join(g.ID, "profile-lead", Member{SessionID: "uninvited"}); !errors.Is(err, ErrNoGroup) {
+		t.Fatalf("Join err = %v, want ErrNoGroup", err)
+	}
+	if err := r.Leave(g.ID, "profile-lead", "lead"); !errors.Is(err, ErrNoGroup) {
+		t.Fatalf("Leave err = %v, want ErrNoGroup", err)
+	}
+	if _, err := r.Group(g.ID, "profile-lead"); !errors.Is(err, ErrNoGroup) {
+		t.Fatalf("Group err = %v, want ErrNoGroup", err)
+	}
+	if _, _, err := r.ReportDrift(g.ID, "profile-lead", "second-screen", time.Second); !errors.Is(err, ErrNoGroup) {
+		t.Fatalf("ReportDrift err = %v, want ErrNoGroup", err)
+	}
+	a, _ := r.PartyAnchor(g.ID)
+	if a.Item != "media-alpha" || len(g.Members()) != 3 {
+		t.Fatalf("party changed: item %s, %d members", a.Item, len(g.Members()))
+	}
+}
+
+// TestLeadPartyEndsWhenTheLeadsStreamExpires covers the backstop: a lead whose
+// event stream stays closed past the grace window ends the party, and no
+// follower becomes host.
+func TestLeadPartyEndsWhenTheLeadsStreamExpires(t *testing.T) {
+	r, g, now := leadParty(t, "screen-a", "screen-b")
+	const grace = 20 * time.Second
+	for _, s := range []store.SessionID{"lead", "screen-a", "screen-b"} {
+		r.StreamOpened(s)
+	}
+	r.StreamClosed("lead")
+	*now = now.Add(2 * grace)
+	got := r.ExpireDisconnected(grace)
+	if len(got) != 1 || got[0].Session != "lead" || !got[0].Leave.Dissolved || got[0].Leave.NewHost != "" {
+		t.Fatalf("lead expiry = %+v, want the party dissolved with no new host", got)
+	}
+	if _, err := r.Party(g.ID); !errors.Is(err, ErrNoGroup) {
+		t.Fatalf("Party after the lead expired err = %v, want ErrNoGroup", err)
+	}
+}

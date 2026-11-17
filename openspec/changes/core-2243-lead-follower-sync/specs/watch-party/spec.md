@@ -24,10 +24,27 @@ report SHALL be accepted, and a paused timeline SHALL NOT be moved by a report.
 - **WHEN** a follower sends a lead report
 - **THEN** it is refused and the timeline is unchanged
 
+### Requirement: A lead report that says nothing about now is dropped
+
+A lead report SHALL be dropped when its sample is more than 5 seconds old, when its sample
+precedes the instant the timeline was last anchored, or when the timeline was stated less than
+250 ms earlier. A lead report without a position or a sample instant SHALL be refused.
+
+#### Scenario: A report sampled before a seek arrives after it
+
+- **WHEN** the lead seeks to 60 seconds and a report sampled before the seek arrives afterwards
+- **THEN** the report is dropped and the timeline stays at the seek
+
+#### Scenario: An on-time report arrives 8 seconds late
+
+- **WHEN** a report that was on time when sampled arrives 8 seconds later
+- **THEN** the timeline is not moved
+
 ### Requirement: A lead party's timeline carries the lead's speed
 
 A lead party's `transition` events SHALL carry `ratePermille`, the lead's speed in thousandths of
-normal speed, and the shared timeline SHALL advance at that speed. A lead party's transition SHALL
+normal speed, whenever that speed is not normal, and the shared timeline SHALL advance at that
+speed. A lead party's transition SHALL
 state the position as of the instant it is sent, with no pre-buffer window.
 
 #### Scenario: The lead changes speed
@@ -40,12 +57,19 @@ state the position as of the instant it is sent, with no pre-buffer window.
 
 A lead party SHALL never be relaxed. A follower's transport SHALL be refused without creating a
 request. When the lead leaves or its stream expires, the party SHALL end for every member with an
-`ended` event, and the host role SHALL NOT pass to a follower.
+`ended` event, and the host role SHALL NOT pass to a follower. A Watch Party SHALL NOT be joined,
+left or moved through the Ambient Group operations, whichever Profile the session is in.
 
 #### Scenario: A follower seeks
 
 - **WHEN** a follower sends transport to a lead party
 - **THEN** it is refused, no request reaches the lead and the timeline is unchanged
+
+#### Scenario: A follower in the lead's Profile uses the Ambient Group transition
+
+- **WHEN** a follower session in the lead's own Profile sends an Ambient Group transition naming
+  the party
+- **THEN** it is refused as an unknown group and the timeline is unchanged
 
 #### Scenario: The lead leaves
 
