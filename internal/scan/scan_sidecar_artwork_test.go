@@ -222,15 +222,15 @@ func (c *containerIdentifier) AutoIdentify(context.Context, store.MediaID, strin
 	return nil
 }
 
-func (c *containerIdentifier) ContainerEntityForMedia(ctx context.Context, id store.MediaID) (store.EntityID, int, bool, error) {
+func (c *containerIdentifier) ContainerEntitiesForMedia(ctx context.Context, id store.MediaID) ([]ContainerEntity, error) {
 	file, err := c.st.PrimaryMediaFile(ctx, id, store.LibraryFilter{Revealed: true, AllLibraries: true})
 	if err != nil {
-		return "", 0, false, err
+		return nil, err
 	}
 	if filepath.Base(filepath.Dir(file.Path)) != c.folder {
-		return "", 0, false, nil
+		return nil, nil
 	}
-	return c.entityID, c.ordinal, true, nil
+	return []ContainerEntity{{ID: c.entityID, Ordinal: c.ordinal, Ordered: true}}, nil
 }
 
 func TestLocalArtworkContainerPosterLandsOnContainerEntity(t *testing.T) {

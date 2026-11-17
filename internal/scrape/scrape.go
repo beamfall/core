@@ -77,6 +77,11 @@ type EntityResult struct {
 	// ParentRelation is the relation name the consumer links this Entity to its
 	// parent under, copied from the EntityMap. Empty when there is no parent.
 	ParentRelation string
+	// Container marks a container map's result: it hydrates the existing
+	// container Entity of Kind that holds the looked-up Media, so it carries
+	// no Name, Relation or parent and the consumer never creates an Entity
+	// from it.
+	Container bool
 }
 
 // CredentialSource resolves an AuthRef to its secret. The engine never reads
@@ -297,6 +302,45 @@ type Variables struct {
 	Year int
 	// PluginID scopes {config.<name>} substitutions to the active bundle.
 	PluginID string
+	// Sequence and Index are the item's parsed ordinal ({sequence}, {index}):
+	// the plugin parser's sequence text and index. An empty Sequence or a
+	// non-positive Index is unknown.
+	Sequence string
+	Index    int
+}
+
+// sequenceValue is the {sequence} substitution: the parsed sequence, a
+// numeric one without leading zeros so it matches a source's numbers ("01"
+// selects season_number 1). Empty when unknown.
+func (v Variables) sequenceValue() string {
+	sequence := strings.TrimSpace(v.Sequence)
+	if sequence == "" || strings.Trim(sequence, "0123456789") != "" {
+		return sequence
+	}
+	if trimmed := strings.TrimLeft(sequence, "0"); trimmed != "" {
+		return trimmed
+	}
+	return "0"
+}
+
+// indexValue is the {index} substitution; empty when unknown.
+func (v Variables) indexValue() string {
+	if v.Index <= 0 {
+		return ""
+	}
+	return strconv.Itoa(v.Index)
+}
+
+// namesUnknownOrdinal reports whether text names {sequence} or {index} while
+// that value is unknown, so a caller can skip it rather than resolve it blank.
+func (v Variables) namesUnknownOrdinal(text string) bool {
+	return (strings.Contains(text, "{sequence}") && v.sequenceValue() == "") ||
+		(strings.Contains(text, "{index}") && v.indexValue() == "")
+}
+
+// substituteOrdinals replaces {sequence} and {index} in an entity map path.
+func (v Variables) substituteOrdinals(path string) string {
+	return strings.NewReplacer("{sequence}", v.sequenceValue(), "{index}", v.indexValue()).Replace(path)
 }
 
 // substitutions lists the placeholder→value pairs the fingerprint variables
@@ -314,7 +358,7 @@ func (v Variables) substitutions(page int) [][2]string {
 	if v.Year > 0 {
 		year = strconv.Itoa(v.Year)
 	}
-	return [][2]string{{"{oshash}", v.OSHash}, {"{phash}", v.PHash}, {"{duration}", duration}, {"{page}", pageValue}, {"{year}", year}}
+	return [][2]string{{"{oshash}", v.OSHash}, {"{phash}", v.PHash}, {"{duration}", duration}, {"{page}", pageValue}, {"{year}", year}, {"{sequence}", v.sequenceValue()}, {"{index}", v.indexValue()}}
 }
 
 // dropUnknownYear removes query parameters whose whole value is {year} when
@@ -442,7 +486,40 @@ func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, te
 	if err != nil {
 		return Result{}, err
 	}
+	if template == spec.LookupTemplate {
+		if err := e.overlayItemLookup(ctx, spec, id, v, config, &result); err != nil {
+			return Result{}, err
+		}
+	}
 	return result, nil
+}
+
+// overlayItemLookup fetches the scraper's per-item document for the record id
+// and the item's ordinal and lets its ItemFieldMap and ItemArtworkMap values
+// override the record's. A template naming an ordinal the item does not have
+// skips the fetch, and a failed fetch keeps the record's mapping: the item
+// document refines an identification, it never fails one. Only a cancelled
+// context is returned.
+func (e *Engine) overlayItemLookup(ctx context.Context, spec plugin.ScraperSpec, id string, v Variables, config map[string]string, result *Result) error {
+	if spec.ItemLookupTemplate == "" || spec.Kind != "http-json" || v.namesUnknownOrdinal(spec.ItemLookupTemplate) {
+		return nil
+	}
+	root, err := e.fetchJSONDocument(ctx, spec, spec.ItemLookupTemplate, "{id}", id, v, config, 0)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		slog.Debug("scrape: item lookup failed, keeping the record mapping", "scraper", spec.ID, "error", err.Error())
+		return nil
+	}
+	item := mapJSON(spec, e.referenceMaps(ctx, spec, config, spec.ItemFieldMap), e.referenceMaps(ctx, spec, config, spec.ItemArtworkMap), root, config)
+	for field, value := range item.Fields {
+		result.Fields[field] = value
+	}
+	for slot, value := range item.Artwork {
+		result.Artwork[slot] = value
+	}
+	return nil
 }
 
 // Search executes spec's SearchTemplate with {query} (and the fingerprint
@@ -748,8 +825,17 @@ func logSkippedField(spec plugin.ScraperSpec, field, fieldType, value string) {
 func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec, root any, vars Variables, config map[string]string) ([]EntityResult, error) {
 	var entities []EntityResult
 	for _, entityMap := range spec.EntityMaps {
-		node, ok := resolveJSONNode(root, substituteConfig(entityMap.Path, config, identity))
+		if vars.namesUnknownOrdinal(entityMap.Path) {
+			continue
+		}
+		node, ok := resolveJSONNode(root, vars.substituteOrdinals(substituteConfig(entityMap.Path, config, identity)))
 		if !ok {
+			continue
+		}
+		if entityMap.Container {
+			if entity, ok := containerEntityResult(spec, entityMap, node, config); ok {
+				entities = append(entities, entity)
+			}
 			continue
 		}
 		elements, isList := node.([]any)
@@ -816,6 +902,35 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		}
 	}
 	return entities, nil
+}
+
+// containerEntityResult maps a container map's node (the first element when it
+// resolved a list) to its artwork and raw fields. A node that yields neither is
+// no result.
+func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, node any, config map[string]string) (EntityResult, bool) {
+	if elements, isList := node.([]any); isList {
+		if len(elements) == 0 {
+			return EntityResult{}, false
+		}
+		node = elements[0]
+	}
+	entity := EntityResult{Kind: entityMap.Kind, Container: true}
+	if entityMap.ArtworkPath != "" {
+		if value, ok := resolveJSONPath(node, substituteConfig(entityMap.ArtworkPath, config, identity)); ok && value != "" {
+			entity.ArtworkURL = renderArtworkURL(spec.ArtworkBaseURL, entityMap.ArtworkURLTemplate, value)
+		}
+	}
+	for field, path := range entityMap.FieldMap {
+		value, ok := resolveJSONPath(node, substituteConfig(path, config, identity))
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if entity.Fields == nil {
+			entity.Fields = map[string]string{}
+		}
+		entity.Fields[field] = value
+	}
+	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0
 }
 
 // composeArtworkURL prefixes ArtworkBaseURL onto site-relative artwork paths

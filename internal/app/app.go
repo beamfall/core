@@ -2998,6 +2998,24 @@ func (t parserMediaTitles) ParsedMediaTitle(ctx context.Context, mediaID store.M
 	return titler.MediaTitle(file.Path, scanpkg.ParseProbe{}), nil
 }
 
+// ParsedMediaOrdinal is the plugin parser's sequence and index for the Media
+// item's primary file, read the same unfiltered way as ParsedMediaTitle.
+func (t parserMediaTitles) ParsedMediaOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string) (string, int, error) {
+	parser, ok := t.parsers[pluginID]
+	if !ok || parser == nil {
+		return "", 0, nil
+	}
+	file, err := t.store.PrimaryMediaFile(ctx, mediaID, metadataLibraryFilter)
+	if err != nil {
+		return "", 0, err
+	}
+	parsed, ok := parser.Parse(file.Path, scanpkg.ParseProbe{})
+	if !ok {
+		return "", 0, nil
+	}
+	return parsed.Sequence, parsed.Index, nil
+}
+
 // scanIdentifier adapts identify.Service to scan.Identifier (PIPE-1, ADR-0003
 // §4). It is the composition-root bridge that lets scan trigger auto-identify
 // without importing internal/identify (arch §4 forbids the edge; identify also
@@ -3089,6 +3107,24 @@ func (a *scanIdentifier) CredentialLabel(ref string) string {
 		}
 	}
 	return ""
+}
+
+// ContainerEntitiesForMedia maps identification's container chain for a Media
+// onto scan's twin, innermost first, so the walk imports container sidecars
+// (CORE-1488).
+func (a *scanIdentifier) ContainerEntitiesForMedia(ctx context.Context, mediaID store.MediaID) ([]scanpkg.ContainerEntity, error) {
+	if a.service == nil {
+		return nil, nil
+	}
+	chain, err := a.service.ContainerEntitiesForMedia(ctx, mediaID)
+	if err != nil || len(chain) == 0 {
+		return nil, err
+	}
+	out := make([]scanpkg.ContainerEntity, len(chain))
+	for i, container := range chain {
+		out[i] = scanpkg.ContainerEntity{ID: container.ID, Ordinal: container.Ordinal, Ordered: container.Ordered}
+	}
+	return out, nil
 }
 
 // PluginMediaClasses reports the Media classes the active bundle declares, so
