@@ -160,3 +160,21 @@ func TestLeadPartyEndsWhenTheLeadLeavesAndFollowersRejoin(t *testing.T) {
 		t.Fatal("a follower joined a party whose lead had left")
 	}
 }
+
+// feature:watch-party
+func TestLeadPartyRosterTellsAJoiningScreenItFollows(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	st := storetest.Open(t)
+	h := newConductorHandler(st, now)
+	partyID := formLeadParty(t, h)
+
+	rows := partySyncRows(t, st, partyID, 0, store.GroupSignalRoster)
+	if len(rows) == 0 {
+		t.Fatal("no roster rows for the lead party")
+	}
+	for _, p := range rows {
+		if !p.Lead {
+			t.Errorf("roster for %s = %+v, want it marked lead", p.ProfileID, p)
+		}
+	}
+}

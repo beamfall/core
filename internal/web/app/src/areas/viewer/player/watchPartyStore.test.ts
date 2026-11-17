@@ -10,25 +10,33 @@ import {
   leaveWatchParty,
   leaveWatchPartyKeepalive,
   reportWatchPartyDrift,
+  reportWatchPartyLeadPosition,
   requestWatchPartyTransport,
   watchPartyTransport,
 } from "@/lib/graphql";
 import {
+  CLOCK_REFRESH_INTERVAL_MS,
   DRIFT_REPORT_INTERVAL_MS,
   decidePartyRequest,
   endParty,
+  followLeadParty,
   getWatchParty,
   inviteToParty,
   joinWatchParty,
   leaveParty,
   leavePartyOnPageHide,
   MAX_PARTY_REQUESTS,
+  partyNowMS,
+  reportLeadPosition,
   reportPartyDrift,
   resetWatchPartyForTest,
+  resumeFollowedParty,
   sendPartyTransport,
   startWatchParty,
+  watchForLeadParty,
   watchPartyDefersUpNext,
 } from "./watchPartyStore";
+import { localClockMS } from "./watchPartySync";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api")>();
@@ -45,6 +53,7 @@ vi.mock("@/lib/graphql", () => ({
   leaveWatchParty: vi.fn(),
   leaveWatchPartyKeepalive: vi.fn(),
   reportWatchPartyDrift: vi.fn(),
+  reportWatchPartyLeadPosition: vi.fn(),
   requestWatchPartyTransport: vi.fn(),
   watchPartyTransport: vi.fn(),
 }));
@@ -63,10 +72,16 @@ beforeEach(() => {
   vi.mocked(calibrateWatchPartyClock).mockResolvedValue({ offsetMS: 25, roundTripMS: 4 });
   vi.mocked(leaveWatchParty).mockResolvedValue();
   vi.mocked(reportWatchPartyDrift).mockResolvedValue({ groupID: "", action: "none", rate: 0 });
+  vi.mocked(reportWatchPartyLeadPosition).mockResolvedValue({
+    groupID: "",
+    action: "anchor",
+    rate: 0,
+  });
 });
 
 afterEach(() => {
   resetWatchPartyForTest();
+  window.sessionStorage.clear();
 });
 
 describe("startWatchParty", () => {
@@ -680,5 +695,379 @@ describe("drift reporting and Up Next deferral (CORE-1766)", () => {
     await member();
     expect(watchPartyDefersUpNext(getWatchParty())).toBe(true);
     expect(watchPartyDefersUpNext({ ...getWatchParty(), isHost: true })).toBe(false);
+  });
+});
+
+describe("lead party (CORE-2245)", () => {
+  const FOLLOWING_KEY = "beamfall.watchParty.following";
+  const leadFrame = (extra: Record<string, unknown> = {}) => ({
+    groupID: "p1",
+    signal: "transition",
+    item: "m1",
+    positionMS: 5000,
+    presentAtMS: 10_000,
+    paused: false,
+    lead: true,
+    ...extra,
+  });
+
+  // The roster an accept triggers: it re-states the party the lead is running.
+  const rosterFrame = () => ({
+    groupID: "p1",
+    signal: "roster",
+    item: "m1",
+    positionMS: 5000,
+    presentAtMS: 10_000,
+    paused: false,
+    members: ["Ada", "Ada"],
+  });
+
+  async function lead() {
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: false,
+      members: [{ displayName: "Ada", present: true }],
+    });
+    expect(await startWatchParty("m1", 0, true, true)).toBe(true);
+  }
+
+  async function follow(options?: { lead?: boolean; quiet?: boolean }) {
+    vi.mocked(acceptWatchParty).mockResolvedValue({
+      partyID: "p1",
+      item: "m1",
+      positionMS: 0,
+      presentAtMS: 0,
+    });
+    const joined = joinWatchParty("p1", options);
+    await vi.waitFor(() => expect(acceptWatchParty).toHaveBeenCalled());
+    deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true, members: ["Ada", "Ada"] });
+    expect(await joined).toBe("m1");
+  }
+
+  it("starts host-only with this session as the lead", async () => {
+    await lead();
+
+    expect(createWatchParty).toHaveBeenCalledWith({
+      content: "m1",
+      relaxed: false,
+      clockOffsetMS: 25,
+      renderLatencyMS: 0,
+      lead: true,
+    });
+    expect(getWatchParty()).toMatchObject({
+      status: "active",
+      isHost: true,
+      lead: true,
+      timeline: { item: "m1", paused: true, lead: true },
+    });
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBeNull();
+  });
+
+  it("learns it follows a lead from the first lead timeline, and keeps its rate", async () => {
+    await follow();
+    expect(getWatchParty().lead).toBe(false);
+
+    deliver(leadFrame({ ratePermille: 1250 }));
+
+    expect(getWatchParty()).toMatchObject({
+      lead: true,
+      isHost: false,
+      timeline: {
+        item: "m1",
+        positionMS: 5000,
+        presentAtMS: 10_000,
+        lead: true,
+        ratePermille: 1250,
+      },
+    });
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBe("p1");
+  });
+
+  it("keeps the lead's running timeline when a roster re-states the party", async () => {
+    await follow({ lead: true });
+    deliver(leadFrame({ ratePermille: 1250 }));
+    const running = getWatchParty().timeline;
+
+    deliver({
+      groupID: "p1",
+      signal: "roster",
+      item: "m1",
+      positionMS: 99_000,
+      presentAtMS: 99_000,
+      paused: false,
+      members: ["Ada", "Ada", "Ada"],
+    });
+
+    expect(getWatchParty().timeline).toBe(running);
+    expect(getWatchParty().members).toEqual(["Ada", "Ada", "Ada"]);
+
+    // A roster that pauses the party is a new timeline, at the speed it states.
+    deliver({
+      groupID: "p1",
+      signal: "roster",
+      item: "m1",
+      positionMS: 7000,
+      presentAtMS: 12_000,
+      paused: true,
+      lead: true,
+      ratePermille: 1250,
+      members: ["Ada", "Ada", "Ada"],
+    });
+    expect(getWatchParty().timeline).toEqual({
+      item: "m1",
+      positionMS: 7000,
+      presentAtMS: 12_000,
+      paused: true,
+      lead: true,
+      ratePermille: 1250,
+    });
+  });
+
+  it("sends no transport and no drift report from a follower", async () => {
+    await follow({ lead: true });
+
+    await sendPartyTransport("m1", 1000, false);
+    expect(reportPartyDrift(80, 1_000_000)).toBe(false);
+
+    expect(requestWatchPartyTransport).not.toHaveBeenCalled();
+    expect(watchPartyTransport).not.toHaveBeenCalled();
+    expect(reportWatchPartyDrift).not.toHaveBeenCalled();
+    expect(getWatchParty().error).toBe("");
+  });
+
+  it("keeps the lead's transport authoritative and marked as the lead timeline", async () => {
+    await lead();
+    vi.mocked(watchPartyTransport).mockResolvedValue({
+      item: "m1",
+      positionMS: 3000,
+      presentAtMS: 20_000,
+    });
+
+    await sendPartyTransport("m1", 3000, false);
+
+    expect(getWatchParty().timeline).toEqual({
+      item: "m1",
+      positionMS: 3000,
+      presentAtMS: 20_000,
+      paused: false,
+      lead: true,
+    });
+  });
+
+  it("reports the lead's position on the server clock, and only from the lead", async () => {
+    expect(reportLeadPosition(1000, 50_000, 1)).toBe(false);
+    await lead();
+
+    expect(reportLeadPosition(1234.5, 50_000, 1.25)).toBe(true);
+    expect(reportLeadPosition(Number.NaN, 50_000, 1)).toBe(false);
+
+    expect(reportWatchPartyLeadPosition).toHaveBeenCalledTimes(1);
+    expect(reportWatchPartyLeadPosition).toHaveBeenCalledWith("p1", {
+      positionMS: 1234.5,
+      atMS: 50_025,
+      ratePermille: 1250,
+    });
+    expect(reportPartyDrift(0, 1_000_000)).toBe(false);
+  });
+
+  it("does not report a position from a follower", async () => {
+    await follow({ lead: true });
+
+    expect(reportLeadPosition(1000, 50_000, 1)).toBe(false);
+    expect(reportWatchPartyLeadPosition).not.toHaveBeenCalled();
+  });
+
+  it("reads the server clock through the party's offset", async () => {
+    await lead();
+
+    const before = localClockMS();
+    const now = partyNowMS();
+    expect(now - before).toBeGreaterThanOrEqual(25);
+    expect(now - localClockMS()).toBeLessThanOrEqual(25);
+  });
+
+  it("remembers the party it follows across a page exit and rejoins it", async () => {
+    await follow({ lead: true });
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBe("p1");
+
+    leavePartyOnPageHide();
+    expect(getWatchParty().status).toBe("idle");
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBe("p1");
+
+    vi.mocked(acceptWatchParty).mockClear();
+    const resumed = resumeFollowedParty();
+    await vi.waitFor(() => expect(acceptWatchParty).toHaveBeenCalled());
+    expect(getWatchParty()).toMatchObject({ status: "joining", partyID: "p1", lead: true });
+    deliver(leadFrame());
+    deliver(rosterFrame());
+    expect(await resumed).toBe("m1");
+    expect(getWatchParty()).toMatchObject({ status: "active", lead: true, isHost: false });
+  });
+
+  it("forgets the party when the rejoin is refused, without showing an error", async () => {
+    window.sessionStorage.setItem(FOLLOWING_KEY, "p1");
+    vi.mocked(acceptWatchParty).mockRejectedValue(new Error("unknown invite"));
+
+    expect(await resumeFollowedParty()).toBeNull();
+
+    expect(getWatchParty()).toMatchObject({ status: "idle", error: "", errorDetail: "" });
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBeNull();
+    expect(await resumeFollowedParty()).toBeNull();
+    expect(acceptWatchParty).toHaveBeenCalledTimes(1);
+  });
+
+  it("forgets the party when the lead ends it or this screen leaves it", async () => {
+    await follow({ lead: true });
+    deliver({ groupID: "p1", signal: "ended", hostName: "Ada" });
+    expect(getWatchParty()).toMatchObject({ status: "idle", notice: "ended", noticeName: "Ada" });
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBeNull();
+
+    vi.mocked(acceptWatchParty).mockClear();
+    await follow({ lead: true });
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBe("p1");
+    await leaveParty();
+    expect(window.sessionStorage.getItem(FOLLOWING_KEY)).toBeNull();
+  });
+
+  it("does nothing on resume without a remembered party", async () => {
+    expect(await resumeFollowedParty()).toBeNull();
+    expect(acceptWatchParty).not.toHaveBeenCalled();
+    expect(subscribeEvents).not.toHaveBeenCalled();
+  });
+
+  describe("offers", () => {
+    it("offers a lead party seen while a player listens, and drops it when it ends", () => {
+      const stop = watchForLeadParty();
+      expect(subscribeEvents).toHaveBeenCalledTimes(1);
+
+      deliver({ groupID: "p1", signal: "roster", item: "m1", members: ["Ada"] });
+      deliver({ ...leadFrame(), lead: undefined });
+      expect(getWatchParty().leadOffer).toBeNull();
+
+      deliver(leadFrame());
+      expect(getWatchParty().leadOffer).toEqual({ partyID: "p1", item: "m1", declined: false });
+      const offer = getWatchParty().leadOffer;
+      deliver(leadFrame({ positionMS: 6000 }));
+      expect(getWatchParty().leadOffer).toBe(offer);
+
+      deliver({ groupID: "p1", signal: "ended" });
+      expect(getWatchParty().leadOffer).toBeNull();
+
+      stop();
+      stop();
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it("offers nothing when no player listens", async () => {
+      await lead();
+      deliver(leadFrame({ groupID: "p2" }));
+      expect(getWatchParty().leadOffer).toBeNull();
+    });
+
+    it("never offers another party, or its own, to a session that leads", async () => {
+      const stop = watchForLeadParty();
+      await lead();
+      deliver(leadFrame({ groupID: "p2" }));
+      expect(getWatchParty().leadOffer).toBeNull();
+
+      await endParty();
+      deliver(leadFrame());
+      expect(getWatchParty().leadOffer).toBeNull();
+      // The player still listens, so the stream outlives the party.
+      expect(unsubscribe).not.toHaveBeenCalled();
+
+      stop();
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it("follows the offered party as a follower from the first frame", async () => {
+      watchForLeadParty();
+      deliver(leadFrame());
+      vi.mocked(acceptWatchParty).mockResolvedValue({
+        partyID: "p1",
+        item: "m1",
+        positionMS: 0,
+        presentAtMS: 0,
+      });
+
+      const joined = followLeadParty();
+      expect(getWatchParty()).toMatchObject({ status: "joining", lead: true, leadOffer: null });
+      await vi.waitFor(() => expect(acceptWatchParty).toHaveBeenCalled());
+      deliver(leadFrame());
+      deliver(rosterFrame());
+
+      expect(await joined).toBe("m1");
+      expect(getWatchParty()).toMatchObject({
+        status: "active",
+        lead: true,
+        isHost: false,
+        timeline: { lead: true, paused: false },
+      });
+      expect(subscribeEvents).toHaveBeenCalledTimes(1);
+    });
+
+    it("marks a party this screen left or could not join, so it is only offered", async () => {
+      watchForLeadParty();
+      await follow({ lead: true });
+      await leaveParty();
+      deliver(leadFrame());
+      expect(getWatchParty().leadOffer).toEqual({ partyID: "p1", item: "m1", declined: true });
+
+      vi.mocked(acceptWatchParty).mockRejectedValue(new Error("unknown invite"));
+      deliver(leadFrame({ groupID: "p2" }));
+      expect(getWatchParty().leadOffer).toEqual({ partyID: "p2", item: "m1", declined: false });
+      expect(await followLeadParty("p2", true)).toBeNull();
+      expect(getWatchParty()).toMatchObject({ status: "idle", error: "" });
+      deliver(leadFrame({ groupID: "p2" }));
+      expect(getWatchParty().leadOffer).toEqual({ partyID: "p2", item: "m1", declined: true });
+    });
+
+    it("resolves to null when there is nothing to follow", async () => {
+      expect(await followLeadParty()).toBeNull();
+      expect(acceptWatchParty).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("clock (CORE-2244)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("re-estimates on an interval and keeps the better estimate", async () => {
+      await lead();
+      expect(calibrateWatchPartyClock).toHaveBeenCalledTimes(1);
+
+      // A slower exchange that agrees within its bound does not move the offset.
+      vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 31, roundTripMS: 40 });
+      await vi.advanceTimersByTimeAsync(CLOCK_REFRESH_INTERVAL_MS);
+      expect(calibrateWatchPartyClock).toHaveBeenCalledTimes(2);
+      expect(getWatchParty().offsetMS).toBe(25);
+
+      // A quicker exchange replaces it.
+      vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 26.5, roundTripMS: 1 });
+      await vi.advanceTimersByTimeAsync(CLOCK_REFRESH_INTERVAL_MS);
+      expect(getWatchParty().offsetMS).toBe(26.5);
+
+      // A failed re-estimate keeps what it has.
+      vi.mocked(calibrateWatchPartyClock).mockRejectedValueOnce(new Error("offline"));
+      await vi.advanceTimersByTimeAsync(CLOCK_REFRESH_INTERVAL_MS);
+      expect(getWatchParty()).toMatchObject({ offsetMS: 26.5, error: "" });
+
+      // A clock that stepped is believed even from a slow exchange.
+      vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 900, roundTripMS: 60 });
+      await vi.advanceTimersByTimeAsync(CLOCK_REFRESH_INTERVAL_MS);
+      expect(getWatchParty().offsetMS).toBe(900);
+    });
+
+    it("stops re-estimating when the party is left", async () => {
+      await lead();
+      await leaveParty();
+      await vi.advanceTimersByTimeAsync(CLOCK_REFRESH_INTERVAL_MS * 3);
+      expect(calibrateWatchPartyClock).toHaveBeenCalledTimes(1);
+    });
   });
 });

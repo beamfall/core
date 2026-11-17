@@ -864,6 +864,10 @@ func (h *Handler) broadcastPartyRosterHandoffLocked(ctx context.Context, partyID
 			PresentAtMS: anchor.PresentAt.UnixMilli(),
 			Paused:      anchor.Paused,
 			Members:     names,
+			// A session that just joined a lead party learns from its first
+			// roster that it follows, so it never plays its own audio.
+			Lead:         anchor.Lead,
+			RatePermille: leadRate(anchor),
 		}
 		if newHost != "" {
 			payload.Handoff = true

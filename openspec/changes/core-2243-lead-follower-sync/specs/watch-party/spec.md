@@ -56,12 +56,18 @@ request. When the lead leaves or its stream expires, the party SHALL end for eve
 
 An invite to a lead party SHALL remain valid after it is accepted, and the lead's own Profile
 SHALL be able to join further sessions without an invite. While the lead reports, the server SHALL
-re-state the timeline to every member Profile at least every 5 seconds.
+re-state the timeline to every member Profile at least every 5 seconds. A lead party's roster
+SHALL carry `lead` and the timeline's speed, so a joining session knows it follows before it plays.
 
 #### Scenario: A follower screen reloads
 
 - **WHEN** a follower's page reloads while the lead party is running
 - **THEN** it joins again without a new invite and is on the timeline within 5 seconds
+
+#### Scenario: A screen joins a lead party
+
+- **WHEN** a session accepts an invite to a lead party
+- **THEN** the roster written by that accept is marked `lead`
 
 ### Requirement: Follower screens show the picture locked to the lead's audio
 
