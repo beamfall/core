@@ -2,14 +2,14 @@
   "schemaVersion": 1,
   "producer": "oscillux",
   "leg": "glsl300",
-  "release": "v0.2.3",
-  "rev": "d4de78d63a20bdd6aec5a6d58fe2b39762127290",
+  "release": "v0.2.5",
+  "rev": "59cd60a17f6866898dcdf023b779d4174685dbbd",
   "license": "AGPL-3.0-only",
   "generator": "tools/shader/bundle-legs.mjs glsl300 at the pinned rev",
   "files": [
     {
       "path": "catalog.json",
-      "sha256": "e5ce5fb6b0c10172ed6329f5fa2a504f0498c902ff5191f8fa401589054fb12d",
+      "sha256": "59c6eb522c33225e18319588981c5febed336244aad8f40a70c34a4bc62aa5aa",
       "bytes": 112107
     },
     {
@@ -24,8 +24,8 @@
     },
     {
       "path": "limiter/output.frag",
-      "sha256": "c9e48d4398b855923f82c476f31c05b8ab087fe5609544fdbf90f980a1506507",
-      "bytes": 4238
+      "sha256": "1f65bc7c37b1c40785efe73c07f7ab5879514c3ce8bd1822b127a58dcea58e9b",
+      "bytes": 4737
     },
     {
       "path": "limiter/reduce.frag",
@@ -39,8 +39,8 @@
     },
     {
       "path": "limiter/state.frag",
-      "sha256": "4ec1d56e916bb6116bd196f5ef93eeab014cc402f8526bfd8aa1791b2e55f0e1",
-      "bytes": 4193
+      "sha256": "ce45953930af7dde6d0a29b709d8f97ec540d0a842a4cbe78d858704c953973d",
+      "bytes": 5064
     },
     {
       "path": "limiter/windows.frag",
@@ -74,8 +74,8 @@
     },
     {
       "path": "visuals/aurora.web.frag",
-      "sha256": "577e3f75aba1eb188ffa5a4ca1588ae6758f218c6958b0d7a37e3c91cbf8b1c1",
-      "bytes": 29296
+      "sha256": "e6a19d220f9ceb98700d3bef87a694b4f4cfa2f45d3c376b96ad4301bccdb665",
+      "bytes": 29298
     },
     {
       "path": "visuals/bloom.web.frag",
