@@ -1,7 +1,8 @@
 # scraper-container-hydration Specification
 
 ## Purpose
-TBD - created by archiving change core-2335-container-hydration. Update Purpose after archive.
+How a plugin's scraper lookups fill the container Entities (an outer container and its ordered
+children) that a Media belongs to, using the ordinal parsed from the Media's path.
 
 ## Requirements
 
