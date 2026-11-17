@@ -19,7 +19,7 @@ import {
   setConsoleConfig,
   setDeviceRole,
 } from "@/lib/graphql";
-import type { RemoteEndpointInfo } from "@/lib/graphql/types";
+import type { DeviceInfo, RemoteEndpointInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { ConfirmButton } from "../ConfirmButton";
 import { usePairingRequests, useRoleLabel } from "../lib/pairingRequests";
@@ -275,6 +275,76 @@ function PendingRequests() {
   );
 }
 
+// One device table. The ID tail tells apart devices that share a name such as
+// "Chrome on macOS" (CORE-2324); the server does not yet report when a device
+// was enrolled or last seen.
+function DeviceTable({
+  devices,
+  onRevoke,
+  onSetRole,
+}: {
+  devices: DeviceInfo[];
+  onRevoke: (deviceID: string) => Promise<void>;
+  onSetRole: (deviceID: string, role: "viewer" | "manager") => Promise<void>;
+}) {
+  const t = useT();
+  return (
+    <DataTable
+      columns={[
+        { key: "name", label: t("deviceColName") },
+        { key: "role", label: t("deviceColRole") },
+        { key: "state", label: t("deviceColState") },
+        { key: "action", numeric: true },
+      ]}
+    >
+      {devices.map((d) => (
+        <TableRow key={d.deviceID}>
+          <TableCell className="font-medium">
+            {d.name}
+            {d.current && <StatusChip tone="green">{t("deviceThisDevice")}</StatusChip>}
+            <span className="block font-mono text-[12px] font-normal text-muted-foreground">
+              {t("deviceIDDetail", { id: d.deviceID.slice(-6) })}
+            </span>
+          </TableCell>
+          <TableCell>
+            {t(d.role === "manager" ? "deviceRoleManager" : "deviceRoleViewer")}
+          </TableCell>
+          <TableCell>
+            {d.revoked ? (
+              <StatusChip tone="red">{t("deviceRevoked")}</StatusChip>
+            ) : d.signedIn === false ? (
+              <StatusChip>{t("deviceSignedOut")}</StatusChip>
+            ) : (
+              <StatusChip tone="green">{t("deviceActive")}</StatusChip>
+            )}
+          </TableCell>
+          <TableCell className="text-right">
+            {!d.current && !d.revoked && (
+              <div className="flex justify-end gap-2">
+                <ConfirmButton
+                  label={t(d.role === "manager" ? "deviceDemote" : "devicePromote")}
+                  confirm={d.role === "manager" ? "deviceDemoteConfirm" : "devicePromoteConfirm"}
+                  size="sm"
+                  variant="outline"
+                  onConfirm={() =>
+                    onSetRole(d.deviceID, d.role === "manager" ? "viewer" : "manager")
+                  }
+                />
+                <ConfirmButton
+                  label={t("deviceRevoke")}
+                  confirm="deviceRevokeConfirm"
+                  size="sm"
+                  onConfirm={() => onRevoke(d.deviceID)}
+                />
+              </div>
+            )}
+          </TableCell>
+        </TableRow>
+      ))}
+    </DataTable>
+  );
+}
+
 export function Devices() {
   const t = useT();
   const devices = useAsync(fetchDevices);
@@ -313,6 +383,10 @@ export function Devices() {
 
   const list = devices.data ?? [];
   const revocableCount = list.filter((d) => !d.current && !d.revoked).length;
+  // Revoked devices stay listed for the record but folded away, so the live
+  // list is the devices that can still sign in (CORE-2324).
+  const active = list.filter((d) => !d.revoked);
+  const revoked = list.filter((d) => d.revoked);
 
   return (
     <div className="space-y-6">
@@ -337,58 +411,19 @@ export function Devices() {
         ) : list.length === 0 ? (
           <EmptyState message="devicesEmpty" />
         ) : (
-          <DataTable
-            columns={[
-              { key: "name", label: t("deviceColName") },
-              { key: "role", label: t("deviceColRole") },
-              { key: "state", label: t("deviceColState") },
-              { key: "action", numeric: true },
-            ]}
-          >
-            {list.map((d) => (
-              <TableRow key={d.deviceID}>
-                <TableCell className="font-medium">
-                  {d.name}
-                  {d.current && <StatusChip tone="green">{t("deviceThisDevice")}</StatusChip>}
-                </TableCell>
-                <TableCell>
-                  {t(d.role === "manager" ? "deviceRoleManager" : "deviceRoleViewer")}
-                </TableCell>
-                <TableCell>
-                  {d.revoked ? (
-                    <StatusChip tone="red">{t("deviceRevoked")}</StatusChip>
-                  ) : d.signedIn === false ? (
-                    <StatusChip>{t("deviceSignedOut")}</StatusChip>
-                  ) : (
-                    <StatusChip tone="green">{t("deviceActive")}</StatusChip>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  {!d.current && !d.revoked && (
-                    <div className="flex justify-end gap-2">
-                      <ConfirmButton
-                        label={t(d.role === "manager" ? "deviceDemote" : "devicePromote")}
-                        confirm={
-                          d.role === "manager" ? "deviceDemoteConfirm" : "devicePromoteConfirm"
-                        }
-                        size="sm"
-                        variant="outline"
-                        onConfirm={() =>
-                          onSetRole(d.deviceID, d.role === "manager" ? "viewer" : "manager")
-                        }
-                      />
-                      <ConfirmButton
-                        label={t("deviceRevoke")}
-                        confirm="deviceRevokeConfirm"
-                        size="sm"
-                        onConfirm={() => onRevoke(d.deviceID)}
-                      />
-                    </div>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </DataTable>
+          <>
+            <DeviceTable devices={active} onRevoke={onRevoke} onSetRole={onSetRole} />
+            {revoked.length > 0 && (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-dense text-muted-foreground">
+                  {t("deviceRevokedGroup", { count: revoked.length })}
+                </summary>
+                <div className="mt-2">
+                  <DeviceTable devices={revoked} onRevoke={onRevoke} onSetRole={onSetRole} />
+                </div>
+              </details>
+            )}
+          </>
         )}
       </Section>
 
