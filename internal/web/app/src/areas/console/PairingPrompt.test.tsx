@@ -119,6 +119,14 @@ describe("PairingPrompt (CORE-2064)", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
+  it("says so when the server refuses the decision and keeps the request (404)", async () => {
+    vi.mocked(decidePairingRequest).mockRejectedValue(new ApiError("refused", 404));
+    renderPrompt();
+    const prompt = await screen.findByRole("alertdialog");
+    await userEvent.click(within(prompt).getByRole("button", { name: "Approve" }));
+    expect(await within(prompt).findByText(/didn't go through/i)).toBeInTheDocument();
+  });
+
   it("shows nothing for a non-admin session or a server without the endpoint", async () => {
     vi.mocked(fetchPairingRequests).mockRejectedValue(new ApiError("forbidden", 403));
     renderPrompt();

@@ -92,8 +92,18 @@ export function PairingRequestsProvider({ children }: { children: ReactNode }) {
       try {
         await decidePairingRequest(decision, code);
       } catch (error) {
-        // 404: the request already expired or was decided elsewhere. Not a failure.
         if (!(error instanceof ApiError && error.status === 404)) return false;
+        // 404: the request expired or was decided elsewhere, which is not a
+        // failure. It is one if the server still lists the request: it
+        // refused the decision (Viewer pairing switched off, say).
+        try {
+          const next = await fetchPairingRequests();
+          setRequests(next);
+          setNow(Date.now());
+          return !next.some((r) => r.code === code);
+        } catch {
+          return false;
+        }
       }
       setRequests((current) => current.filter((r) => r.code !== code));
       void load();

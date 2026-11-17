@@ -34,6 +34,9 @@ const (
 	DeviceRequestPending  = "pending"
 	DeviceRequestApproved = "approved"
 	DeviceRequestDenied   = "denied"
+	// deviceRequestCollecting marks an approved request whose enrollment is
+	// in flight. It never leaves the server: such a poll reads as pending.
+	deviceRequestCollecting = "collecting"
 
 	deviceRequestTarget            = "pairing_request"
 	viewerCodeDeviceRequestRefused = "viewer_pairing_codes_disabled:device_request"
@@ -52,7 +55,7 @@ type DeviceRequest struct {
 	IsLAN             bool   `json:"-"`
 }
 
-// DeviceRequestResponse gives the device the code to show and the secret to
+// DeviceRequestResponse gives the device the code to display and the secret to
 // poll with. The code is only a display handle for the admin; the secret is
 // what collects the enrollment, so it never leaves the device.
 type DeviceRequestResponse struct {
@@ -245,6 +248,10 @@ func (s *Service) RegenerateDevicePairing(ctx context.Context, req DevicePollReq
 		return DeviceRequestResponse{}, err
 	}
 	secret := strings.TrimSpace(req.RequestSecret)
+	freshSecret, err := s.generateSecret()
+	if err != nil {
+		return DeviceRequestResponse{}, err
+	}
 	t := &s.deviceRequests
 	t.mu.Lock()
 	t.init()
@@ -255,12 +262,50 @@ func (s *Service) RegenerateDevicePairing(ctx context.Context, req DevicePollReq
 		s.refuseDeviceRequest(ctx, source, now)
 		return DeviceRequestResponse{}, ErrInvalidCode
 	}
+	defer t.mu.Unlock()
+	// The swap happens under one lock hold, so the request keeps its table
+	// slot: a concurrent new request cannot take it and strand the device
+	// with a dead code.
+	code, err := s.mintDeviceRequestCodeLocked()
+	if err != nil {
+		return DeviceRequestResponse{}, err
+	}
 	t.removeLocked(old)
-	t.mu.Unlock()
-
 	fresh := *old
+	fresh.code = code
+	fresh.secretHash = hashRequestSecret(freshSecret)
 	fresh.requestedAt = now.UTC()
-	return s.insertDeviceRequest(&fresh, now)
+	fresh.expiresAt = now.Add(deviceRequestTTL).UTC()
+	t.byCode[code] = &fresh
+	t.bySecret[fresh.secretHash] = &fresh
+	return deviceRequestResponse(&fresh, freshSecret), nil
+}
+
+// mintDeviceRequestCodeLocked returns a code no live request holds.
+func (s *Service) mintDeviceRequestCodeLocked() (string, error) {
+	for range 4 {
+		code, err := s.generateCode()
+		if err != nil {
+			return "", err
+		}
+		code = normalizeCode(code)
+		if code == "" {
+			return "", ErrInvalidRequest
+		}
+		if _, taken := s.deviceRequests.byCode[code]; !taken {
+			return code, nil
+		}
+	}
+	return "", errors.New("could not mint unique pairing request code")
+}
+
+func deviceRequestResponse(entry *deviceRequestEntry, secret string) DeviceRequestResponse {
+	return DeviceRequestResponse{
+		Code:                entry.code,
+		RequestSecret:       secret,
+		ExpiresAt:           entry.expiresAt.Format(time.RFC3339),
+		PollIntervalSeconds: int(DeviceRequestPollInterval / time.Second),
+	}
 }
 
 // insertDeviceRequest gives entry a fresh code, secret and expiry and stores
@@ -290,29 +335,14 @@ func (s *Service) insertDeviceRequest(entry *deviceRequestEntry, now time.Time) 
 	if perSource >= maxDeviceRequestsPerSource {
 		return DeviceRequestResponse{}, ErrThrottled
 	}
-	for range 4 {
-		code, err := s.generateCode()
-		if err != nil {
-			return DeviceRequestResponse{}, err
-		}
-		code = normalizeCode(code)
-		if code == "" {
-			return DeviceRequestResponse{}, ErrInvalidRequest
-		}
-		if _, taken := t.byCode[code]; taken {
-			continue
-		}
-		entry.code = code
-		t.byCode[code] = entry
-		t.bySecret[entry.secretHash] = entry
-		return DeviceRequestResponse{
-			Code:                code,
-			RequestSecret:       secret,
-			ExpiresAt:           entry.expiresAt.Format(time.RFC3339),
-			PollIntervalSeconds: int(DeviceRequestPollInterval / time.Second),
-		}, nil
+	code, err := s.mintDeviceRequestCodeLocked()
+	if err != nil {
+		return DeviceRequestResponse{}, err
 	}
-	return DeviceRequestResponse{}, errors.New("could not mint unique pairing request code")
+	entry.code = code
+	t.byCode[code] = entry
+	t.bySecret[entry.secretHash] = entry
+	return deviceRequestResponse(entry, secret), nil
 }
 
 // PollDevicePairing reports a request's state. The poll that finds it
@@ -340,15 +370,33 @@ func (s *Service) PollDevicePairing(ctx context.Context, req DevicePollRequest) 
 		t.mu.Unlock()
 		return DevicePollResponse{Status: DeviceRequestPending, ExpiresAt: expiresAt}, nil
 	}
-	// Approved or denied: either way this poll is the last one.
-	t.removeLocked(entry)
+	if entry.status == DeviceRequestDenied {
+		t.removeLocked(entry)
+		t.mu.Unlock()
+		return DevicePollResponse{Status: DeviceRequestDenied}, nil
+	}
+	if entry.status == deviceRequestCollecting {
+		// Another poll is enrolling this request right now.
+		expiresAt := entry.expiresAt.Format(time.RFC3339)
+		t.mu.Unlock()
+		return DevicePollResponse{Status: DeviceRequestPending, ExpiresAt: expiresAt}, nil
+	}
+	// Approved: hold the entry while enrolling so the enrollment is made
+	// once, and consume it only when the outcome is final.
+	entry.status = deviceRequestCollecting
 	collected := *entry
 	t.mu.Unlock()
 
-	if collected.status == DeviceRequestDenied {
-		return DevicePollResponse{Status: DeviceRequestDenied}, nil
-	}
 	enrollment, err := s.enrollApprovedRequest(ctx, collected, req, source, now)
+	t.mu.Lock()
+	if err == nil || errors.Is(err, ErrInvalidCode) {
+		t.removeLocked(entry)
+	} else {
+		// A store or context failure enrolled nothing: the approval stands
+		// and the device's next poll tries again.
+		entry.status = DeviceRequestApproved
+	}
+	t.mu.Unlock()
 	if err != nil {
 		return DevicePollResponse{}, err
 	}

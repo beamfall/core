@@ -1017,6 +1017,7 @@ a.console-step:hover {
   z-index: 50;
   width: min(360px, calc(100vw - 32px));
   padding: 14px 16px;
+  background: var(--bg-raised);
   box-shadow: 0 8px 28px oklch(0% 0 0 / 35%);
 }
 
