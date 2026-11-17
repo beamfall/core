@@ -52,6 +52,9 @@ type Registry struct {
 	// tests narrow them to keep a renewal round observable.
 	renewInterval time.Duration
 	leaseTTL      time.Duration
+	// clock measures how long a handler ran, so the writes after it carry the
+	// time the work actually ended rather than the claim time. Tests replace it.
+	clock func() time.Time
 }
 
 func NewRegistry(st Store, workerID string) *Registry {
@@ -62,6 +65,7 @@ func NewRegistry(st Store, workerID string) *Registry {
 		logger:        slog.Default(),
 		renewInterval: store.JobLeaseRenewInterval,
 		leaseTTL:      store.JobLeaseTTL,
+		clock:         time.Now,
 	}
 }
 
@@ -97,7 +101,12 @@ func (r *Registry) RecoverExpiredLeases(ctx context.Context, now time.Time) (int
 	return count, err
 }
 
+// RunOne claims one runnable job at now, runs its handler and records the
+// outcome. The outcome (yield, failure or completion) is stamped with now
+// advanced by the time elapsed since the claim, so a handler that ran for hours
+// does not leave a finished or yielded event dated at its claim (CORE-2341).
 func (r *Registry) RunOne(ctx context.Context, classes []store.JobClass, now time.Time) (store.Job, error) {
+	claimedAt := r.clock()
 	job, err := r.store.ClaimNextJob(ctx, r.workerID, classes, now)
 	if err != nil {
 		return store.Job{}, err
@@ -109,7 +118,7 @@ func (r *Registry) RunOne(ctx context.Context, classes []store.JobClass, now tim
 	handler := r.handlers[job.Kind]
 	if handler == nil {
 		r.logger.WarnContext(ctx, "job failed", "id", job.ID, "kind", job.Kind, "reason", "no handler")
-		failErr := r.store.FailJob(bookCtx, job.ID, job.LeaseOwner, ErrNoHandler.Error(), now)
+		failErr := r.store.FailJob(bookCtx, job.ID, job.LeaseOwner, ErrNoHandler.Error(), r.since(now, claimedAt))
 		return job, errors.Join(ErrNoHandler, failErr)
 	}
 	// The lease is renewed for as long as the handler runs, and the handler runs
@@ -124,6 +133,7 @@ func (r *Registry) RunOne(ctx context.Context, classes []store.JobClass, now tim
 		r.logger.WarnContext(ctx, "job abandoned after lease loss", "id", job.ID, "kind", job.Kind)
 		return job, ErrLeaseLost
 	}
+	finishedAt := r.since(now, claimedAt)
 	// A durable job interrupted by its own context being cancelled — shutdown or
 	// governor preemption arriving mid-handler — yields and resumes from its
 	// checkpoint rather than being recorded as failed. The guard is
@@ -133,19 +143,31 @@ func (r *Registry) RunOne(ctx context.Context, classes []store.JobClass, now tim
 	if errors.Is(err, ErrYielded) || interrupted {
 		runAfter := result.RunAfter
 		if runAfter.IsZero() {
-			runAfter = now
+			runAfter = finishedAt
 		}
 		r.logger.InfoContext(ctx, "job yielded", "id", job.ID, "kind", job.Kind)
-		return job, r.store.YieldJob(bookCtx, job.ID, job.LeaseOwner, result.Checkpoint, runAfter, now)
+		return job, r.store.YieldJob(bookCtx, job.ID, job.LeaseOwner, result.Checkpoint, runAfter, finishedAt)
 	}
 	if err != nil {
 		redactedErr := redactLogError(err)
 		r.logger.WarnContext(ctx, "job failed", "id", job.ID, "kind", job.Kind)
 		r.logger.DebugContext(ctx, "job failure detail", "id", job.ID, "error", redactedErr)
-		return job, r.store.FailJob(bookCtx, job.ID, job.LeaseOwner, redactedErr, now)
+		return job, r.store.FailJob(bookCtx, job.ID, job.LeaseOwner, redactedErr, finishedAt)
 	}
 	r.logger.InfoContext(ctx, "job completed", "id", job.ID, "kind", job.Kind)
-	return job, r.store.CompleteJob(bookCtx, job.ID, job.LeaseOwner, now)
+	return job, r.store.CompleteJob(bookCtx, job.ID, job.LeaseOwner, finishedAt)
+}
+
+// since returns now advanced by the time the registry clock has moved since
+// start. Callers pass the wall clock as now, so in production this is the time
+// the handler finished; a caller driving a fixed now (tests, tooling) keeps its
+// own timeline. A clock that steps backwards never moves the result before now.
+func (r *Registry) since(now, start time.Time) time.Time {
+	elapsed := r.clock().Sub(start)
+	if elapsed <= 0 {
+		return now
+	}
+	return now.Add(elapsed)
 }
 
 // runHandler converts a handler panic into a failed-job error instead of

@@ -390,3 +390,97 @@ func TestRecoverExpiredLeasesRequeuesExpiredLease(t *testing.T) {
 		t.Fatalf("reclaimed job = %#v", again)
 	}
 }
+
+// fakeClock is a registry clock a handler can advance, standing in for the
+// wall time a long handler spends.
+type fakeClock struct{ now time.Time }
+
+func (c *fakeClock) Now() time.Time { return c.now }
+
+// TestRegistryRunOneStampsOutcomeAfterHandlerDuration pins CORE-2341: a handler
+// that runs for hours must not leave its yield, failure or completion dated at
+// the claim, or the job's event log lists the outcome before the progress the
+// handler recorded while it ran.
+func TestRegistryRunOneStampsOutcomeAfterHandlerDuration(t *testing.T) {
+	const handlerDuration = 2 * time.Hour
+	cases := []struct {
+		name       string
+		result     Result
+		err        error
+		wantStatus store.JobStatus
+	}{
+		{name: "completed", wantStatus: store.JobStatusCompleted},
+		{name: "failed", err: errors.New("boom"), wantStatus: store.JobStatusFailed},
+		{name: "yielded", result: Result{Checkpoint: []byte(`{"cursor":"d"}`)}, err: ErrYielded, wantStatus: store.JobStatusYielded},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			st := storetest.Open(t)
+			claimedAt := time.Unix(100, 0).UTC()
+			id := store.JobID("job-" + tc.name)
+			if _, err := st.EnqueueJob(ctx, store.Job{ID: id, Kind: "scan", CreatedAt: claimedAt}); err != nil {
+				t.Fatal(err)
+			}
+			clock := &fakeClock{now: time.Unix(5_000, 0)}
+			registry := NewRegistry(st, "worker")
+			registry.clock = clock.Now
+			registry.Register("scan", func(context.Context, store.Job) (Result, error) {
+				clock.now = clock.now.Add(handlerDuration)
+				return tc.result, tc.err
+			})
+
+			if _, err := registry.RunOne(ctx, nil, claimedAt); err != nil {
+				t.Fatal(err)
+			}
+			wantAt := claimedAt.Add(handlerDuration)
+			job, err := st.Job(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if job.Status != tc.wantStatus {
+				t.Fatalf("Status = %q, want %q", job.Status, tc.wantStatus)
+			}
+			if !job.UpdatedAt.Equal(wantAt) {
+				t.Fatalf("UpdatedAt = %v, want %v (claim + handler duration)", job.UpdatedAt, wantAt)
+			}
+			if tc.wantStatus == store.JobStatusYielded {
+				// With no RunAfter of its own, a yielded job is runnable from the
+				// moment it yielded, not from its earlier claim.
+				if !job.RunAfter.Equal(wantAt) {
+					t.Fatalf("RunAfter = %v, want %v", job.RunAfter, wantAt)
+				}
+			} else if !job.FinishedAt.Equal(wantAt) {
+				t.Fatalf("FinishedAt = %v, want %v", job.FinishedAt, wantAt)
+			}
+			events, err := st.ListJobEvents(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) < 2 {
+				t.Fatalf("events = %#v, want running then %s", events, tc.wantStatus)
+			}
+			running, last := events[len(events)-2], events[len(events)-1]
+			if running.Type != "running" || !running.OccurredAt.Equal(claimedAt) {
+				t.Fatalf("claim event = %s at %v, want running at %v", running.Type, running.OccurredAt, claimedAt)
+			}
+			if last.Type != string(tc.wantStatus) || !last.OccurredAt.Equal(wantAt) {
+				t.Fatalf("last event = %s at %v, want %s at %v", last.Type, last.OccurredAt, tc.wantStatus, wantAt)
+			}
+		})
+	}
+}
+
+// TestRegistrySinceNeverPrecedesNow keeps a clock that steps backwards from
+// dating an outcome before its claim.
+func TestRegistrySinceNeverPrecedesNow(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(5_000, 0)}
+	registry := NewRegistry(nil, "worker")
+	registry.clock = clock.Now
+	start := clock.Now()
+	clock.now = clock.now.Add(-time.Minute)
+	now := time.Unix(100, 0).UTC()
+	if got := registry.since(now, start); !got.Equal(now) {
+		t.Fatalf("since = %v, want %v", got, now)
+	}
+}
