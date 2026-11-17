@@ -198,9 +198,9 @@ func (h *Handler) consoleConfig(ctx context.Context, _ auth.Scope, _ request) (C
 	if err != nil {
 		return ConsoleConfigInfo{}, err
 	}
-	if h.plugins != nil {
-		for _, id := range h.visiblePluginIDs() {
-			bundle, ok := h.plugins.Bundle(id)
+	if plugins := h.consolePlugins(); plugins != nil {
+		for _, id := range h.unsuppressedPluginIDs(plugins) {
+			bundle, ok := plugins.Bundle(id)
 			if !ok {
 				continue
 			}
@@ -208,7 +208,7 @@ func (h *Handler) consoleConfig(ctx context.Context, _ auth.Scope, _ request) (C
 			if state, has := overrides[string(id)]; has {
 				active = state
 			}
-			standing, ok := h.plugins.Standing(id)
+			standing, ok := plugins.Standing(id)
 			if !ok {
 				return ConsoleConfigInfo{}, fmt.Errorf("plugin %q has no loader standing", id)
 			}
@@ -610,7 +610,7 @@ func (h *Handler) disableScraperCredential(ctx context.Context, scope auth.Scope
 
 // setPluginActive activates or deactivates one available plugin and returns the
 // refreshed console config (manager-gated in execute). The pluginID must name a
-// plugin the registry actually loaded — an unknown id is a client error, so the
+// plugin this server ships, loaded or deactivated — an unknown id is a client error, so the
 // override table can never carry a phantom plugin.
 func (h *Handler) setPluginActive(ctx context.Context, scope auth.Scope, req request) (ConsoleConfigInfo, error) {
 	pluginID := trimmedVariable(req, "pluginID")
@@ -625,10 +625,11 @@ func (h *Handler) setPluginActive(ctx context.Context, scope auth.Scope, req req
 	if !ok {
 		return ConsoleConfigInfo{}, clientError("active is required")
 	}
-	if h.plugins == nil {
+	plugins := h.consolePlugins()
+	if plugins == nil {
 		return ConsoleConfigInfo{}, clientError("unknown plugin")
 	}
-	if _, found := h.plugins.Bundle(plugin.ID(pluginID)); !found {
+	if _, found := plugins.Bundle(plugin.ID(pluginID)); !found {
 		return ConsoleConfigInfo{}, clientError("unknown plugin")
 	}
 	if h.pluginSuppressed(plugin.ID(pluginID)) {
@@ -649,7 +650,7 @@ func (h *Handler) setPluginActive(ctx context.Context, scope auth.Scope, req req
 // data. It is the explicit, operator-confirmed purge — distinct from
 // deactivation, which leaves data inert and reversible — so it
 // requires `confirm: true` (invariant #6: destructive ops are confirmed). The
-// plugin must be present in the loaded registry so its declared Entity Kinds are
+// plugin must be one this server ships so its declared Entity Kinds are
 // resolvable; it may already be deactivated. Admin-Session-gated in execute.
 func (h *Handler) uninstallPluginData(ctx context.Context, scope auth.Scope, req request) (UninstallPluginDataResult, error) {
 	pluginID := trimmedVariable(req, "pluginID")
@@ -659,10 +660,11 @@ func (h *Handler) uninstallPluginData(ctx context.Context, scope auth.Scope, req
 	if !boolVar(req, "confirm") {
 		return UninstallPluginDataResult{}, clientError("uninstall is destructive and must be confirmed (confirm: true)")
 	}
-	if h.plugins == nil {
+	plugins := h.consolePlugins()
+	if plugins == nil {
 		return UninstallPluginDataResult{}, clientError("unknown plugin")
 	}
-	bundle, found := h.plugins.Bundle(plugin.ID(pluginID))
+	bundle, found := plugins.Bundle(plugin.ID(pluginID))
 	if !found {
 		return UninstallPluginDataResult{}, clientError("unknown plugin")
 	}
@@ -712,10 +714,11 @@ func (h *Handler) setPluginConfig(ctx context.Context, scope auth.Scope, req req
 	if pluginID == "" {
 		return ConsoleConfigInfo{}, clientError("pluginID is required")
 	}
-	if h.plugins == nil {
+	plugins := h.consolePlugins()
+	if plugins == nil {
 		return ConsoleConfigInfo{}, clientError("unknown plugin")
 	}
-	bundle, found := h.plugins.Bundle(plugin.ID(pluginID))
+	bundle, found := plugins.Bundle(plugin.ID(pluginID))
 	if !found {
 		return ConsoleConfigInfo{}, clientError("unknown plugin")
 	}

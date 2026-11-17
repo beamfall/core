@@ -191,6 +191,84 @@ func TestConsoleConfigSuppressesPluginSurfaces(t *testing.T) {
 	}
 }
 
+// TestConsoleManagesDeactivatedPlugin proves a plugin the live registry dropped
+// at boot (deactivated by a Console override) is still listed inactive, can be
+// activated again, and that an id the server does not ship stays refused
+// (CORE-2235).
+func TestConsoleManagesDeactivatedPlugin(t *testing.T) {
+	// feature:console-config
+	st := storetest.Open(t)
+	shipped := newConsoleHandler(t, st).plugins
+	plain, ok := shipped.Bundle("plain")
+	if !ok {
+		t.Fatal("plain bundle missing from the test registry")
+	}
+	live, err := newTestPluginRegistry([]plugin.Bundle{plain})
+	if err != nil {
+		t.Fatalf("live registry: %v", err)
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, nil),
+		auth.NewService(st),
+		st,
+		live,
+		Options{ShippedPlugins: shipped},
+	)
+	if err := st.SetPluginActivation(context.Background(), "demo", false, time.Now().UTC()); err != nil {
+		t.Fatalf("SetPluginActivation: %v", err)
+	}
+	openManagerAdminSession(t, st)
+
+	activeByID := func(cfg ConsoleConfigInfo) map[string]bool {
+		out := map[string]bool{}
+		for _, p := range cfg.Plugins {
+			out[p.ID] = p.Active
+		}
+		return out
+	}
+
+	data, errs := post(t, handler,
+		`{"query":"query { consoleConfig { plugins { id active } } }"}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("consoleConfig errors = %#v", errs)
+	}
+	var cfg ConsoleConfigInfo
+	mustUnmarshal(t, data["consoleConfig"], &cfg)
+	if got := activeByID(cfg); len(got) != 2 || !got["plain"] || got["demo"] {
+		t.Fatalf("plugins = %#v, want plain active and demo listed inactive", got)
+	}
+
+	data, errs = post(t, handler,
+		`{"query":"mutation A($pluginID: String!, $active: Boolean!){ setPluginActive(pluginID:$pluginID, active:$active){ plugins { id active } } }","variables":{"pluginID":"demo","active":true}}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("setPluginActive(deactivated) errors = %#v", errs)
+	}
+	mustUnmarshal(t, data["setPluginActive"], &cfg)
+	if got := activeByID(cfg); !got["demo"] {
+		t.Fatalf("plugins = %#v, want demo active after reactivation", got)
+	}
+	if _, loaded := handler.plugins.Bundle("demo"); loaded {
+		t.Fatal("reactivation loaded the plugin into the live registry without a restart")
+	}
+
+	_, errs = post(t, handler,
+		`{"query":"mutation A($pluginID: String!, $active: Boolean!){ setPluginActive(pluginID:$pluginID, active:$active){ plugins { id } } }","variables":{"pluginID":"ghost","active":true}}`,
+		authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "unknown plugin") {
+		t.Fatalf("setPluginActive(unshipped) errors = %#v, want unknown-plugin refusal", errs)
+	}
+
+	handler.SetSuppressedPlugins([]plugin.ID{"demo"})
+	_, errs = post(t, handler,
+		`{"query":"mutation A($pluginID: String!, $active: Boolean!){ setPluginActive(pluginID:$pluginID, active:$active){ plugins { id } } }","variables":{"pluginID":"demo","active":true}}`,
+		authorizeManager)
+	if len(errs) == 0 || !strings.Contains(errs[0].Message, "unknown plugin") {
+		t.Fatalf("setPluginActive(suppressed, deactivated) errors = %#v, want unknown-plugin refusal", errs)
+	}
+}
+
 // TestPluginConfigSurfacePersistsAndAudits proves WEB-5I's Console plugin
 // substrate exposes typed config, permissions, status, action descriptors, and
 // audited config writes without leaking any secret material.

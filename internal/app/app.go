@@ -77,9 +77,12 @@ var scanHandlerWithWorkerGovernor = scanpkg.HandlerWithWorkerGovernor
 
 // App contains the wired Beamfall process.
 type App struct {
-	cfg             config.Config
-	store           *store.Store
-	plugins         *plugin.Registry
+	cfg     config.Config
+	store   *store.Store
+	plugins *plugin.Registry
+	// shippedPlugins is every plugin this server ships, including bundles a
+	// Console override keeps out of plugins.
+	shippedPlugins  *plugin.Registry
 	server          *server.Server
 	compat          http.Handler
 	jobs            *jobs.Registry
@@ -358,6 +361,14 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// override row is active by default (first boot has an empty table, so all
 	// declared bundles load), matching store.PluginActivation's contract.
 	overrides, err := st.PluginActivations(ctx)
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	// The Console manages every shipped plugin, so it keeps a registry built
+	// before the overrides apply: a deactivated plugin stays listed there and
+	// can be activated again.
+	shippedPlugins, err := plugin.NewInventoryRegistry(bundles, executablePluginIDs(executableBundles), inventoryStandings)
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -1184,6 +1195,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	graphOptions := graph.Options{
 		AuditRecorder:                observability.NewAuditLogger(logger),
 		ObservabilityController:      observabilityController,
+		ShippedPlugins:               shippedPlugins,
 		HardwareAcceleration:         cfg.HardwareAcceleration,
 		Identify:                     identifyService,
 		Artwork:                      artworkService,
@@ -1466,6 +1478,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		cfg:                    cfg,
 		store:                  st,
 		plugins:                plugins,
+		shippedPlugins:         shippedPlugins,
 		server:                 srv,
 		compat:                 compatHandler,
 		jobs:                   jobRegistry,

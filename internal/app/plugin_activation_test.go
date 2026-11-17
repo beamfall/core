@@ -70,6 +70,10 @@ func TestPluginDeactivationEnforcedAtBoot(t *testing.T) {
 	if bundleHasKind(beamfall.plugins, testSecondaryPluginID, "waypoint") {
 		t.Fatal("deactivated bundle Entity Kind loaded")
 	}
+	// The Console still sees it, so an admin can activate it again (CORE-2235).
+	if _, ok := beamfall.shippedPlugins.Bundle(testSecondaryPluginID); !ok {
+		t.Fatal("deactivated bundle missing from the Console's shipped-plugin registry")
+	}
 	// A bundle with no override stays active and contributes its Kinds.
 	if _, ok := beamfall.plugins.Bundle(testPathPluginID); !ok {
 		t.Fatal("active bundle missing from the live registry")

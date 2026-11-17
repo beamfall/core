@@ -33,8 +33,8 @@ so the only way back is the offline `apply-config` command.
 - A graph test starts a handler whose live registry lacks a deactivated plugin and proves
   `consoleConfig` lists it inactive, `setPluginActive(active: true)` succeeds and an unshipped id
   is still refused.
-- An app test proves a server opened with a deactivated plugin lists it in `consoleConfig` and
-  leaves it out of the live registry.
+- An app test proves a server opened with a deactivated plugin keeps it in the registry the
+  Console reads and leaves it out of the live registry.
 - `make gate` green on the landing head.
 
 ## Rollback

@@ -331,9 +331,13 @@ type GovernorStatusProvider interface {
 // fields preserve the same "capability unavailable" behavior as the zero-value
 // Handler wiring used by tests.
 type Options struct {
-	AuditRecorder                observability.AuditRecorder
-	ObservabilityController      ObservabilityController
-	SuppressedPlugins            []plugin.ID
+	AuditRecorder           observability.AuditRecorder
+	ObservabilityController ObservabilityController
+	SuppressedPlugins       []plugin.ID
+	// ShippedPlugins is every plugin this server ships, including bundles a
+	// Console override keeps out of the live registry. The Console reads it so
+	// a deactivated plugin stays listed and can be activated again.
+	ShippedPlugins               *plugin.Registry
 	HardwareAcceleration         config.HardwareAccelReport
 	Identify                     *identify.Service
 	Artwork                      ArtworkLocator
@@ -475,6 +479,9 @@ type Handler struct {
 	// suppressedPlugins hides plugin-contributed operator surfaces while leaving
 	// the registry loaded for local/self-hosted runtime use.
 	suppressedPlugins map[plugin.ID]bool
+	// shippedPlugins is the Console's view of every shipped plugin; nil means
+	// the live registry is the whole set.
+	shippedPlugins *plugin.Registry
 	// transcodeTerminator aborts a Session's in-flight transcodes when its
 	// device key is revoked (ADR-0012 §7 — revocation kills live transports, not
 	// just future requests). Satisfied by *playback.Sessions. Nil (the default)
@@ -725,6 +732,9 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 		h.audit = o.AuditRecorder
 	}
 	h.observability = o.ObservabilityController
+	if o.ShippedPlugins != nil {
+		h.shippedPlugins = o.ShippedPlugins
+	}
 	if len(o.SuppressedPlugins) > 0 {
 		h.suppressedPlugins = make(map[plugin.ID]bool, len(o.SuppressedPlugins))
 		for _, id := range o.SuppressedPlugins {
@@ -804,12 +814,25 @@ func (h *Handler) pluginSuppressed(id plugin.ID) bool {
 	return h.suppressedPlugins != nil && h.suppressedPlugins[id]
 }
 
+// consolePlugins is the registry the Console manages: every plugin this server
+// ships, loaded or not. The live registry (h.plugins) holds only active ones.
+func (h *Handler) consolePlugins() *plugin.Registry {
+	if h.shippedPlugins != nil {
+		return h.shippedPlugins
+	}
+	return h.plugins
+}
+
 func (h *Handler) visiblePluginIDs() []plugin.ID {
-	if h.plugins == nil {
+	return h.unsuppressedPluginIDs(h.plugins)
+}
+
+func (h *Handler) unsuppressedPluginIDs(registry *plugin.Registry) []plugin.ID {
+	if registry == nil {
 		return nil
 	}
 	ids := []plugin.ID{}
-	for _, id := range h.plugins.IDs() {
+	for _, id := range registry.IDs() {
 		if h.pluginSuppressed(id) {
 			continue
 		}
