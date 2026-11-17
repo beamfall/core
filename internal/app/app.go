@@ -4039,6 +4039,11 @@ var (
 	_ mediahttp.EncryptedObjectWriter   = appLibEncryptDBCipher{}
 )
 
+// The ffmpeg runner wired by SetSubtitles must keep the batch extraction the
+// subtitle route probes for at run time; without it every text track of a file
+// is extracted in its own pass (CORE-2315).
+var _ mediahttp.BatchSubtitleConverter = (*ffmpeg.Runner)(nil)
+
 type appOperationDBCipher struct{ cipher libencrypt.OperationCipher }
 
 func (c appOperationDBCipher) UnsealDBFile(_ context.Context, libraryID store.LibraryID, ciphertextPath, workingPath string) error {
