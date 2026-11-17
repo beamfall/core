@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
-import { ancestorItems, containerCredits, nearestContainer, nextAfter } from "./containerContext";
+import {
+  ancestorItems,
+  audioPeople,
+  containerCredits,
+  nearestContainer,
+  nextAfter,
+} from "./containerContext";
 
 const item = (id: string, over: Partial<SourceItem> = {}): SourceItem => ({
   id,
@@ -70,5 +76,42 @@ describe("ancestorItems", () => {
       ancestorItems(related, { id: "self", kind: "inner" }, 6).map((entry) => entry.id),
     ).toEqual(["outer"]);
     expect(ancestorItems(undefined, { id: "self", kind: "inner" }, 6)).toEqual([]);
+  });
+});
+
+// CORE-2327: a track's detail names its artists; a video's person credits are a
+// cast list and stay off the byline.
+describe("audioPeople", () => {
+  const credits: GenericMediaInfo["credits"] = [
+    { entityID: "p1", title: "Ada", kind: "k", archetype: "person", relation: "r" },
+    { entityID: "c", title: "Album", kind: "k2", archetype: "container", relation: "r" },
+    { entityID: "p2", title: "Bo", kind: "k", archetype: "person", relation: "r" },
+    { entityID: "p1", title: "Ada", kind: "k", archetype: "person", relation: "r2" },
+  ];
+
+  it("lists an audio item's people once each, in server order", () => {
+    const media: GenericMediaInfo = {
+      id: "m",
+      title: "M",
+      favorited: false,
+      mediaClass: "audio",
+      credits,
+    };
+    expect(audioPeople(media)).toEqual([
+      { id: "p1", title: "Ada" },
+      { id: "p2", title: "Bo" },
+    ]);
+  });
+
+  it("lists nobody for other classes or a missing item", () => {
+    const media: GenericMediaInfo = {
+      id: "m",
+      title: "M",
+      favorited: false,
+      mediaClass: "video",
+      credits,
+    };
+    expect(audioPeople(media)).toEqual([]);
+    expect(audioPeople(undefined)).toEqual([]);
   });
 });

@@ -307,6 +307,22 @@ describe("MediaDetailPage", () => {
     const facts = screen.getByRole("list", { name: "About this item" });
     expect(facts).toHaveTextContent("2 h 1 min");
   });
+  it("names an audio item's artists under its title, linked to their pages (CORE-2327)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      mediaClass: "audio",
+      credits: [
+        { entityID: "p1", title: "Ada", kind: "person", archetype: "person", relation: "by" },
+        { entityID: "p2", title: "Bo", kind: "person", archetype: "person", relation: "by" },
+      ],
+    });
+    renderAt(["/media/m1"]);
+
+    const artist = await screen.findByRole("link", { name: "Ada" });
+    expect(artist).toHaveAttribute("href", "/entity/p1");
+    expect(screen.getByRole("link", { name: "Bo" })).toBeInTheDocument();
+  });
+
   it("shows only viewer-facing fields and puts the rating in the facts row (CORE-1785)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,

@@ -17,6 +17,8 @@ export const LIBRARY_SORTS = [
   "rating",
 ] as const;
 export type LibrarySort = (typeof LIBRARY_SORTS)[number];
+/** Sorts that only mean something for items a viewer watches (CORE-2327). */
+export const LIBRARY_WATCHING_SORTS: readonly LibrarySort[] = ["last-watched"];
 export const LIBRARY_WATCH_STATES = ["unwatched", "in-progress", "watched"] as const;
 export type LibraryWatch = (typeof LIBRARY_WATCH_STATES)[number];
 export const LIBRARY_QUALITIES = ["uhd", "hd1080", "hd720", "sd"] as const;
@@ -54,6 +56,16 @@ export const DEFAULT_BROWSE_STATE: LibraryBrowseState = {
   quality: "",
   minRating: 0,
 };
+
+/**
+ * Whether a library's loaded items are all audio, so the browse bar drops the
+ * controls that only fit watching: the watch-state and quality filters and the
+ * last-watched sort (CORE-2327). A page with no Media decides nothing.
+ */
+export function isAudioOnly(items: readonly SourceItem[]): boolean {
+  const media = items.filter((item) => item.kind === "media");
+  return media.length > 0 && media.every((item) => item.mediaClass === "audio");
+}
 
 function oneOf<T extends string>(values: readonly T[], value: string | null): T | "" {
   return (values as readonly string[]).includes(value ?? "") ? (value as T) : "";

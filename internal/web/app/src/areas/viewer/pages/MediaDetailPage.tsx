@@ -22,7 +22,7 @@ import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
-import { useContainerContext } from "../lib/containerContext";
+import { audioPeople, useContainerContext } from "../lib/containerContext";
 import {
   fetchMedia,
   fetchMediaDetailFields,
@@ -134,6 +134,7 @@ export function MediaDetailPage() {
   const current = detail?.media.id === mediaId ? detail : null;
   const media = current?.media;
   const context = useContainerContext(media, mediaId);
+  const people = audioPeople(media);
 
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -248,6 +249,16 @@ export function MediaDetailPage() {
               <h1 id={TITLE_ID} className="bf-page-title">
                 {title}
               </h1>
+              {people.length > 0 && (
+                <p className="bf-detail-people">
+                  {people.map((person, index) => (
+                    <span key={person.id}>
+                      {index > 0 && ", "}
+                      <Link to={`/entity/${encodeURIComponent(person.id)}`}>{person.title}</Link>
+                    </span>
+                  ))}
+                </p>
+              )}
               {factLabels.length > 0 && (
                 <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
                   {factLabels.map((label) => (

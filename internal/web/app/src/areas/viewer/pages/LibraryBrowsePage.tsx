@@ -30,10 +30,12 @@ import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import {
   browseStateParams,
   fetchLibraryItems,
+  isAudioOnly,
   LIBRARY_BROWSE_PAGE,
   LIBRARY_MIN_RATINGS,
   LIBRARY_SORTS,
   LIBRARY_WATCH_STATES,
+  LIBRARY_WATCHING_SORTS,
   type LibraryBrowseState,
   type LibraryItemsFacets,
   type LibraryItemsLetter,
@@ -144,6 +146,9 @@ function LibraryBrowse({
   // once its card renders.
   const pendingJumpRef = useRef<{ offset: number; focus: boolean } | null>(null);
   const [loadedTick, setLoadedTick] = useState(0);
+  // Decided by the first page loaded and kept for this library, so the browse
+  // bar does not change shape as filters reload pages (CORE-2327).
+  const [audioOnly, setAudioOnly] = useState<boolean | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
   const loadPage = useCallback(
@@ -161,6 +166,9 @@ function LibraryBrowse({
           if (generation !== generationRef.current) return;
           pendingRef.current.delete(pageIndex);
           pagesRef.current.set(pageIndex, page.items);
+          setAudioOnly(
+            (decided) => decided ?? (page.items.length > 0 ? isAudioOnly(page.items) : null),
+          );
           setTotal(page.total);
           if (pageIndex === 0) {
             setFacets(page.facets);
@@ -386,7 +394,13 @@ function LibraryBrowse({
     return groups;
   };
   const decades = withSelected(facets.decades, state.decade || undefined);
-  const qualities = withSelected(facets.qualities, state.quality);
+  const qualities =
+    audioOnly && !state.quality ? [] : withSelected(facets.qualities, state.quality);
+  // A selected value stays offered so a shared URL still reads back.
+  const sorts = LIBRARY_SORTS.filter(
+    (sort) => !audioOnly || sort === state.sort || !LIBRARY_WATCHING_SORTS.includes(sort),
+  );
+  const showWatch = !audioOnly || !!state.watch;
 
   const activeFilters: { label: string; clear: Partial<LibraryBrowseState> }[] = [];
   if (state.watch) {
@@ -505,7 +519,7 @@ function LibraryBrowse({
             label={t("libraryBrowseSortLabel")}
             value={state.sort}
             onChange={(value) => update({ sort: value as LibrarySort })}
-            options={LIBRARY_SORTS.map((sort) => ({ value: sort, label: t(SORT_LABELS[sort]) }))}
+            options={sorts.map((sort) => ({ value: sort, label: t(SORT_LABELS[sort]) }))}
           />
           <Button
             variant="outline"
@@ -520,21 +534,23 @@ function LibraryBrowse({
             {state.direction === "asc" ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />}
             {t(state.direction === "asc" ? "libraryBrowseAscending" : "libraryBrowseDescending")}
           </Button>
-          <BrowseSelect
-            id="library-browse-watch"
-            label={t("libraryBrowseWatchLabel")}
-            value={state.watch || ALL}
-            onChange={(value) =>
-              update({ watch: value === ALL ? "" : (value as LibraryBrowseState["watch"]) })
-            }
-            options={[
-              { value: ALL, label: t("libraryBrowseAny") },
-              ...LIBRARY_WATCH_STATES.map((watch) => ({
-                value: watch,
-                label: t(WATCH_LABELS[watch]),
-              })),
-            ]}
-          />
+          {showWatch && (
+            <BrowseSelect
+              id="library-browse-watch"
+              label={t("libraryBrowseWatchLabel")}
+              value={state.watch || ALL}
+              onChange={(value) =>
+                update({ watch: value === ALL ? "" : (value as LibraryBrowseState["watch"]) })
+              }
+              options={[
+                { value: ALL, label: t("libraryBrowseAny") },
+                ...LIBRARY_WATCH_STATES.map((watch) => ({
+                  value: watch,
+                  label: t(WATCH_LABELS[watch]),
+                })),
+              ]}
+            />
+          )}
           <BrowseSelect
             id="library-browse-rating"
             label={t("libraryBrowseRatingLabel")}

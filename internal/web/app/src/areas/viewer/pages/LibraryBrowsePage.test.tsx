@@ -138,6 +138,59 @@ describe("Library browse", () => {
     expect(screen.queryByRole("button", { name: /Remove filter/ })).toBeNull();
   });
 
+  it("drops the watching controls from an all-audio library (CORE-2327)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
+      const page = pageFor(request);
+      return {
+        ...page,
+        items: page.items.map((item) => ({ ...item, mediaClass: "audio" })),
+      };
+    });
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByLabelText("Watched")).toBeNull());
+    expect(screen.queryByLabelText("Resolution")).toBeNull();
+    await userEvent.setup().click(screen.getByLabelText("Sort by"));
+    expect(await screen.findByRole("option", { name: "Title" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Last watched" })).toBeNull();
+  });
+
+  it("keeps the watching controls for a video library", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
+      const page = pageFor(request);
+      return {
+        ...page,
+        items: page.items.map((item) => ({ ...item, mediaClass: "video" })),
+      };
+    });
+
+    render(
+      <I18nProvider>
+        <MemoryRouter initialEntries={["/n/films/all"]}>
+          <Routes>
+            <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+          </Routes>
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    expect(screen.getByLabelText("Watched")).toBeInTheDocument();
+    expect(screen.getByLabelText("Resolution")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByLabelText("Sort by"));
+    expect(await screen.findByRole("option", { name: "Last watched" })).toBeInTheDocument();
+  });
+
   it("offers the plugin's groupings by their own names and keeps the choice in the URL", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const user = userEvent.setup();
