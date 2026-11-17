@@ -16,7 +16,7 @@ import {
   scanLibrary,
   setConsoleConfig,
 } from "@/lib/graphql";
-import type { JobEventInfo } from "@/lib/graphql/types";
+import type { JobEventInfo, JobInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { OperationsControls } from "./OperationsControls";
 
@@ -386,6 +386,30 @@ describe("OperationsControls", () => {
       expect(screen.queryByText(new RegExp(leak))).toBeNull();
     }
     expect(fetchJobEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it("gathers a burst of events into one refresh and keeps the rows on screen", async () => {
+    renderPanel();
+    await screen.findByText("Scan");
+    await openGovernor();
+    await screen.findByText("Generation allowed");
+    const jobReads = vi.mocked(fetchJobs).mock.calls.length;
+    const governorReads = vi.mocked(fetchOperationsGovernor).mock.calls.length;
+    let finishJobs: (jobs: JobInfo[]) => void = () => {};
+    vi.mocked(fetchJobs).mockImplementation(
+      () => new Promise<JobInfo[]>((resolve) => (finishJobs = resolve)),
+    );
+
+    // A library scan emits events many times a second.
+    for (let i = 0; i < 25; i++) driveEventStream({ type: "job.progress" });
+
+    await waitFor(() => expect(fetchJobs).toHaveBeenCalledTimes(jobReads + 1));
+    // The read is still in flight: the last rows stay, with no skeleton flash.
+    expect(screen.getByText("Scan")).toBeVisible();
+    expect(screen.getByText("Generation allowed")).toBeVisible();
+    await act(async () => finishJobs([job()]));
+    await waitFor(() => expect(fetchOperationsGovernor).toHaveBeenCalledTimes(governorReads + 1));
+    expect(fetchJobs).toHaveBeenCalledTimes(jobReads + 1);
   });
 });
 

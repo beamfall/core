@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { RescanAllButton, useRescanState } from "@/components/beamfall/LibraryRescan";
 import {
   ControlRow,
@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Advanced } from "@/lib/advancedSettings";
-import { subscribeEvents } from "@/lib/api";
 import {
   cancelJob,
   fetchConsoleConfig,
@@ -41,6 +40,7 @@ import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { useEventRefresh } from "./Dashboard";
 
 function statusTone(status: string): StatusTone {
   const state = jobStatusState(status);
@@ -95,7 +95,9 @@ function GovernorStatus() {
   const t = useT();
   const { data, loading, failed, refresh } = useAsync(fetchOperationsGovernor);
 
-  useEffect(() => subscribeEvents(() => void refresh()), [refresh]);
+  // A scan emits events many times a second: gather them, and keep the last
+  // snapshot on screen while the next one loads.
+  useEventRefresh(refresh);
 
   return (
     <Section
@@ -108,7 +110,7 @@ function GovernorStatus() {
         </Button>
       }
     >
-      {loading ? (
+      {loading && !data ? (
         <Skeleton className="h-40 w-full" />
       ) : failed ? (
         <ErrorState message="governorUnavailable" />
@@ -305,12 +307,23 @@ function GovernorSettings() {
 // The inline durable history/logs timeline for one job (jobEvents). Opened
 // under a selected job row. Payload is omitted by the server for restricted
 // targets — rendered as a redacted placeholder, never hidden.
-function JobLog({ jobID }: { jobID: string }) {
+function JobLog({ jobID, version }: { jobID: string; version: number }) {
   const t = useT();
-  const { data, loading, failed } = useAsync((signal) => fetchJobEvents(jobID, signal), [jobID]);
+  const { data, loading, failed, refresh } = useAsync(
+    (signal) => fetchJobEvents(jobID, signal),
+    [jobID],
+  );
   const events: JobEventInfo[] = data ?? [];
 
-  if (loading) return <Skeleton className="h-16 w-full" />;
+  // A newer version reloads the open log in place, keeping its rows on screen.
+  const loaded = useRef(version);
+  useEffect(() => {
+    if (loaded.current === version) return;
+    loaded.current = version;
+    void refresh();
+  }, [version, refresh]);
+
+  if (loading && !data) return <Skeleton className="h-16 w-full" />;
   if (failed) return <ErrorState message="jobLogsUnavailable" />;
   if (events.length === 0) return <EmptyState message="jobLogsEmpty" />;
 
@@ -359,14 +372,11 @@ function JobQueue() {
   const [openLog, setOpenLog] = useState<string | null>(null);
   const [logRefresh, setLogRefresh] = useState(0);
 
-  useEffect(
-    () =>
-      subscribeEvents(() => {
-        void refresh();
-        setLogRefresh((n) => n + 1);
-      }),
-    [refresh],
-  );
+  const refreshWithLog = useCallback(async () => {
+    await refresh();
+    setLogRefresh((n) => n + 1);
+  }, [refresh]);
+  useEventRefresh(refreshWithLog);
 
   async function onCancel(id: string) {
     await cancelJob(id);
@@ -395,7 +405,7 @@ function JobQueue() {
       {(libraries.data ?? []).map((library) => (
         <RescanQueueFailure key={library.id} libraryID={library.id} title={library.title} />
       ))}
-      {loading ? (
+      {loading && !data ? (
         <Skeleton className="h-32 w-full" />
       ) : failed ? (
         <ErrorState message="jobQueueUnavailable" />
@@ -465,7 +475,7 @@ function JobQueue() {
                 )}
                 {logOpen && (
                   <div className="console-job-log">
-                    <JobLog key={`${job.id}:${logRefresh}`} jobID={job.id} />
+                    <JobLog key={job.id} jobID={job.id} version={logRefresh} />
                   </div>
                 )}
               </div>
