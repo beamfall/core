@@ -52,7 +52,8 @@ func newConsoleHandler(t *testing.T, st *store.Store) *Handler {
 			Scrapers: []plugin.ScraperSpec{
 				{ID: "alpha", DisplayName: plugin.L("Alpha"), Kind: "http-json", Endpoint: "https://metadata.example.test", AuthRef: "shared-api-key", AuthStyle: "query:key", SearchTemplate: "/search?q={query}", CandidatesPath: "items", CandidateIDPath: "id"},
 				{ID: "beta", DisplayName: plugin.L("Beta"), Kind: "http-json", Endpoint: "https://metadata.example.test", AuthRef: "shared-api-key", AuthStyle: "query:key", SearchTemplate: "/tv?q={query}", CandidatesPath: "items", CandidateIDPath: "id"},
-				{ID: "public", DisplayName: plugin.L("Public"), Kind: "http-json", Endpoint: "https://open.example.test", SearchTemplate: "/find?q={query}", CandidatesPath: "items", CandidateIDPath: "id"},
+				// Lookup-only, so it cannot stand in for the shared key when identifying (CORE-2311).
+				{ID: "public", DisplayName: plugin.L("Public"), Kind: "http-json", Endpoint: "https://open.example.test", LookupTemplate: "/item/{id}"},
 			},
 		},
 		{ID: "plain", Version: "0.1.0", DisplayName: plugin.L("Plain"), MediaLabel: plugin.L("Thing"), Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse"}}},
@@ -374,6 +375,61 @@ func TestPluginConfigSurfacePersistsAndAudits(t *testing.T) {
 // declared endpoints, manages the shared AuthRef secure-store entry, invalidates
 // runtime login-token state on rotate/disable, audits changes, and never echoes
 // secret bytes.
+func TestScraperCredentialRequiredOnlyWhenNothingElseIdentifiesTheClass(t *testing.T) {
+	// CORE-2311: TheTVDB is optional because TV matches through the default
+	// TMDB key; a key whose class another usable scraper covers is not "needed".
+	handler := newConsoleHandler(t, storetest.Open(t))
+	tvRef := plugin.ScopedCredentialRef("media", "tv-key")
+	pinRef := plugin.ScopedCredentialRef("media", "pin")
+	bookRef := plugin.ScopedCredentialRef("media", "book-key")
+	secrets := &memoryScraperCredentials{values: map[string]string{tvRef: "default-key"}}
+	handler.SetScraperCredentialStore(secrets)
+	searchable := func(id, authRef, class string) plugin.ScraperSpec {
+		spec := plugin.ScraperSpec{ID: id, Kind: "http-json", Endpoint: "https://" + id + ".example.test", AuthRef: authRef, SearchTemplate: "/s?q={query}", CandidateIDPath: "id"}
+		if class != "" {
+			spec.ImpliedMediaFields = map[string]string{"media.class": class}
+		}
+		return spec
+	}
+	optional := searchable("optional", plugin.ScopedCredentialRef("media", "token"), "show")
+	optional.OptionalAuth = true
+	lookupOnly := searchable("lookup", "", "film")
+	lookupOnly.SearchTemplate = ""
+	bundle := plugin.Bundle{ID: "media", Scrapers: []plugin.ScraperSpec{
+		searchable("tv", tvRef, "show"),
+		searchable("pin-tv", pinRef, "show"),
+		optional,
+		searchable("film", pinRef, "film"),
+		lookupOnly,
+		searchable("books", bookRef, ""),
+		searchable("open-books", "", ""),
+	}}
+
+	want := map[string]bool{
+		"tv":       true,  // nothing else of its class is usable once the PIN is unset
+		"pin-tv":   false, // the configured TV key covers the class
+		"optional": false, // OptionalAuth
+		"film":     true,  // a lookup-only scraper cannot identify
+		"books":    false, // a keyless scraper of the same (unnamed) class
+	}
+	for _, info := range handler.pluginScraperInfo(string(bundle.ID), bundle) {
+		required, ok := want[info.ScraperID]
+		if !ok {
+			continue
+		}
+		if info.CredentialRequired != required {
+			t.Errorf("%s credentialRequired = %v, want %v", info.ScraperID, info.CredentialRequired, required)
+		}
+	}
+
+	delete(secrets.values, tvRef)
+	for _, info := range handler.pluginScraperInfo(string(bundle.ID), bundle) {
+		if info.ScraperID == "pin-tv" && !info.CredentialRequired {
+			t.Errorf("pin-tv credentialRequired = false with no usable TV key, want true")
+		}
+	}
+}
+
 func TestScraperCredentialsAreAuthRefScoped(t *testing.T) {
 	// feature:web-5h-scraper-credentials
 	st := storetest.Open(t)

@@ -716,7 +716,7 @@ describe("Console Libraries provider keys (CORE-1534)", () => {
       {
         id: "library-1",
         title: "Library",
-        pluginID: null,
+        pluginID: "catalog",
         roots: ["/Volumes/library"],
         previewClips: true,
         restricted: false,
@@ -735,6 +735,17 @@ describe("Console Libraries provider keys (CORE-1534)", () => {
       </MemoryRouter>,
     );
   }
+
+  it("asks for no key when no Library uses the plugin (CORE-2311)", async () => {
+    const [library] = await fetchLibraries();
+    vi.mocked(fetchLibraries).mockResolvedValue([{ ...library, pluginID: null }]);
+    vi.mocked(fetchConsoleConfig).mockResolvedValue(keyConfig("missing"));
+    renderPage();
+
+    await screen.findByText("Library");
+    await waitFor(() => expect(fetchConsoleConfig).toHaveBeenCalled());
+    expect(screen.queryByRole("region", { name: "Metadata provider keys needed" })).toBeNull();
+  });
 
   it("shows a missing key, sets it without echoing it back, then clears it", async () => {
     const user = userEvent.setup();

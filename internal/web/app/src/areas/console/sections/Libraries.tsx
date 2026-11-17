@@ -596,7 +596,7 @@ export function Libraries() {
         </>
       }
     >
-      <MissingProviderKeys />
+      <MissingProviderKeys libraries={libs.data} />
 
       {(adding || empty) && (
         <AddLibrary

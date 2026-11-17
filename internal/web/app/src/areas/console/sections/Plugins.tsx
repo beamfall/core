@@ -23,6 +23,7 @@ import { graphql } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import {
   fetchConsoleConfig,
+  fetchLibraries,
   type PluginActionDescriptor,
   type PluginActivationInfo,
   type PluginConfigFieldInfo,
@@ -33,7 +34,7 @@ import {
   uninstallPluginData,
 } from "@/lib/graphql";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { groupProviderKeys, keyNeeded } from "@/lib/providerKeys";
+import { groupProviderKeys, keyNeededForLibraries, libraryPluginIDs } from "@/lib/providerKeys";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
@@ -170,6 +171,9 @@ export function Plugins() {
   const { data, loading, failed, refresh, replace } = useAsync((signal) =>
     fetchConsoleConfigWithStanding(signal, previousPlugins.current),
   );
+  // "Key needed" is for plugins some Library uses (CORE-2311).
+  const libraries = useAsync(fetchLibraries);
+  const libraryPlugins = useMemo(() => libraryPluginIDs(libraries.data), [libraries.data]);
   const [actionFailed, setActionFailed] = useState(false);
   const plugins = data?.plugins ?? [];
   useEffect(() => {
@@ -250,6 +254,7 @@ export function Plugins() {
                 key={p.id}
                 plugin={p}
                 displayLocale={displayLocale}
+                libraryPlugins={libraryPlugins}
                 onToggle={(active) => toggle(p.id, active)}
                 onCredential={credentialAction}
                 onSaveConfig={saveConfig}
@@ -275,6 +280,7 @@ const CARD =
 function PluginCard({
   plugin,
   displayLocale,
+  libraryPlugins,
   onToggle,
   onCredential,
   onSaveConfig,
@@ -283,6 +289,7 @@ function PluginCard({
 }: {
   plugin: PluginWithStanding;
   displayLocale: string;
+  libraryPlugins: Set<string> | null;
   onToggle: (active: boolean) => Promise<void>;
   onCredential: (action: () => Promise<unknown>) => Promise<boolean>;
   onSaveConfig: (
@@ -299,7 +306,7 @@ function PluginCard({
   const name = displayString(plugin.displayName, displayLocale);
   const builtIn = BUILT_IN_PLUGIN_IDS.has(plugin.id);
   const keys = useMemo(() => groupProviderKeys(plugin.scrapers ?? []), [plugin.scrapers]);
-  const missingKey = keys.some(keyNeeded);
+  const missingKey = keys.some((key) => keyNeededForLibraries(key, libraryPlugins));
   const detailsID = `plugin-details-${plugin.id}`;
   const provenance = showAdvanced ? provenanceChip(plugin.provenance, t) : null;
   const trust = trustBadge(plugin.trustState, plugin.provenance, t, showAdvanced);
