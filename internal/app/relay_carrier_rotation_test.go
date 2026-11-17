@@ -92,6 +92,7 @@ func (f *fakeRelayCarrier) Carry(ctx context.Context, rs remoteaccess.RelaySessi
 
 func (f *fakeRelayCarrier) Endpoint() string   { return "relay.example.com:7443" }
 func (f *fakeRelayCarrier) PublicHost() string { return "remote.example.com" }
+func (f *fakeRelayCarrier) Transport() string  { return "tcp" }
 
 func (f *fakeRelayCarrier) session(id int) *fakeRelaySession {
 	f.mu.Lock()

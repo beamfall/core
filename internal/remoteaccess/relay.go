@@ -76,6 +76,15 @@ type RelayClient struct {
 	state     RelayState
 	lastError string
 	lastDial  time.Time
+	// transport is the carrier the newest registration is on (tcp or quic).
+	transport string
+	// quicHeldUntil is when the automatic transport may try QUIC again after
+	// it got no answer there.
+	quicHeldUntil time.Time
+	// quicProbeBudget bounds the automatic transport's QUIC attempt and
+	// quicHoldOff is how long a failed one keeps later attempts on TLS/TCP.
+	quicProbeBudget time.Duration
+	quicHoldOff     time.Duration
 	// generation counts successful registrations. Only the newest
 	// generation's Carry exit may change the relay state; a superseded
 	// (rotated-out) session draining away is not a carrier loss.
@@ -119,6 +128,9 @@ func NewRelayClient(ra config.RemoteAccessConfig, secretDir string) (*RelayClien
 		now:       time.Now,
 		nonce:     rand.Reader,
 		state:     RelayDisconnected,
+
+		quicProbeBudget: relayQUICProbeBudget,
+		quicHoldOff:     relayQUICHoldOff,
 	}, nil
 }
 
@@ -126,6 +138,20 @@ func NewRelayClient(ra config.RemoteAccessConfig, secretDir string) (*RelayClien
 const relayTokenFile = "relay-token"
 
 const defaultMaxRelayStreams = 128
+
+// The automatic transport (CORE-2283) gives QUIC this long to dial, complete
+// its handshake and register before connecting over TLS/TCP instead, and then
+// leaves QUIC alone for the hold-off so a network that drops UDP costs one
+// short wait, not one per reconnect.
+const (
+	relayQUICProbeBudget = 3 * time.Second
+	relayQUICHoldOff     = 10 * time.Minute
+)
+
+// errRelayRejected marks a carrier the relay answered and refused. The
+// automatic transport does not retry such a carrier over TLS/TCP: the relay is
+// reachable and gave its answer.
+var errRelayRejected = errors.New("relay rejected carrier")
 
 // ErrRelayInvalidHello marks a terminal carrier-protocol rejection. Retrying
 // the same hello cannot recover until the server or relay configuration changes.
@@ -145,6 +171,14 @@ func (c *RelayClient) Endpoint() string { return c.cfg.Endpoint }
 
 // PublicHost returns the SNI host the relay routes by (no secret).
 func (c *RelayClient) PublicHost() string { return c.cfg.PublicHost }
+
+// Transport reports the carrier the newest registration is on: tcp or quic,
+// or empty before the first one.
+func (c *RelayClient) Transport() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.transport
+}
 
 // Status returns the current connection state and last error for the Console.
 // The error string is sanitized at set time to never contain the token.
@@ -216,31 +250,12 @@ func (c *RelayClient) Connect(ctx context.Context) (relaySession, error) {
 	c.lastDial = time.Now().UTC()
 	c.mu.Unlock()
 
-	var session relaySession
-	if c.cfg.Transport == config.RelayTransportQUIC {
-		var conn *quic.Conn
-		conn, err = c.dialQUIC(ctx, c.cfg.Endpoint)
-		if err != nil {
-			report(RelayError, sanitizeDialError(err, secret, token))
-			return nil, fmt.Errorf("dialing relay: %w", err)
-		}
-		session, err = c.registerQUIC(ctx, conn, hostnames, token, secret)
-		if err != nil {
-			_ = conn.CloseWithError(0, "")
-		}
-	} else {
-		var conn net.Conn
-		conn, err = c.dial(ctx, c.cfg.Endpoint)
-		if err != nil {
-			report(RelayError, sanitizeDialError(err, secret, token))
-			return nil, fmt.Errorf("dialing relay: %w", err)
-		}
-		session, err = c.registerTCP(conn, hostnames, token, secret)
-		if err != nil {
-			_ = conn.Close()
-		}
-	}
+	session, transport, dialing, err := c.establish(ctx, hostnames, token, secret)
 	if err != nil {
+		if dialing {
+			report(RelayError, sanitizeDialError(err, secret, token))
+			return nil, fmt.Errorf("dialing relay: %w", err)
+		}
 		report(RelayError, err.Error())
 		return nil, fmt.Errorf("relay registration: %w", err)
 	}
@@ -249,8 +264,105 @@ func (c *RelayClient) Connect(ctx context.Context) (relaySession, error) {
 	generation := c.generation
 	c.state = RelayConnected
 	c.lastError = ""
+	c.transport = transport
 	c.mu.Unlock()
 	return &relayGenerationSession{relaySession: session, generation: generation}, nil
+}
+
+// establish registers a carrier on the configured transport and reports which
+// one it is on. dialing marks an error from the dial, as opposed to the
+// registration.
+//
+// The automatic transport tries QUIC first, within quicProbeBudget and at most
+// half of what the caller's deadline leaves. When that fails without an answer
+// from the relay it connects over TLS/TCP in the same call, with a newly minted
+// token: the relay may have seen the first one, and refuses a replayed nonce.
+// QUIC is held off only once TLS/TCP has connected, which is what shows the
+// QUIC path failed and not the relay.
+func (c *RelayClient) establish(ctx context.Context, hostnames []string, token, secret []byte) (session relaySession, transport string, dialing bool, err error) {
+	fellBack := false
+	switch {
+	case c.cfg.Transport == config.RelayTransportQUIC:
+		session, dialing, err = c.connectQUIC(ctx, hostnames, token, secret)
+		return session, config.RelayTransportQUIC, dialing, err
+	case c.cfg.Transport == config.RelayTransportAuto && !c.quicHeldOff():
+		budget := c.quicProbeBudget
+		if deadline, ok := ctx.Deadline(); ok {
+			if half := time.Until(deadline) / 2; half < budget {
+				budget = half
+			}
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, budget)
+		session, dialing, err = c.connectQUIC(probeCtx, hostnames, token, secret)
+		// quic-go detaches the connection from the dial context, so ending the
+		// probe context does not end an established carrier.
+		cancel()
+		if err == nil {
+			return session, config.RelayTransportQUIC, false, nil
+		}
+		if ctx.Err() != nil || relayAnswered(err) {
+			return nil, config.RelayTransportQUIC, dialing, err
+		}
+		fellBack = true
+		if token, err = mintRelayTokenV2(secret, hostnames, c.now(), c.nonce); err != nil {
+			return nil, config.RelayTransportTCP, false, err
+		}
+	}
+	session, dialing, err = c.connectTCP(ctx, hostnames, token, secret)
+	if err == nil && fellBack {
+		c.holdOffQUIC()
+	}
+	return session, config.RelayTransportTCP, dialing, err
+}
+
+func (c *RelayClient) connectQUIC(ctx context.Context, hostnames []string, token, secret []byte) (relaySession, bool, error) {
+	conn, err := c.dialQUIC(ctx, c.cfg.Endpoint)
+	if err != nil {
+		return nil, true, err
+	}
+	session, err := c.registerQUIC(ctx, conn, hostnames, token, secret)
+	if err != nil {
+		_ = conn.CloseWithError(0, "")
+		return nil, false, err
+	}
+	return session, false, nil
+}
+
+func (c *RelayClient) connectTCP(ctx context.Context, hostnames []string, token, secret []byte) (relaySession, bool, error) {
+	conn, err := c.dial(ctx, c.cfg.Endpoint)
+	if err != nil {
+		return nil, true, err
+	}
+	session, err := c.registerTCP(conn, hostnames, token, secret)
+	if err != nil {
+		_ = conn.Close()
+		return nil, false, err
+	}
+	return session, false, nil
+}
+
+// relayAnswered reports whether err is the relay's own answer to the carrier:
+// a refusal frame, or over QUIC the relay closing the connection. The relay
+// closes right after it writes a refusal and the close can overtake the frame,
+// so both mean the same, and TLS/TCP would be refused too.
+func relayAnswered(err error) bool {
+	if errors.Is(err, errRelayRejected) || errors.Is(err, ErrRelayInvalidHello) {
+		return true
+	}
+	var closed *quic.ApplicationError
+	return errors.As(err, &closed) && closed.Remote
+}
+
+func (c *RelayClient) quicHeldOff() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return time.Now().Before(c.quicHeldUntil)
+}
+
+func (c *RelayClient) holdOffQUIC() {
+	c.mu.Lock()
+	c.quicHeldUntil = time.Now().Add(c.quicHoldOff)
+	c.mu.Unlock()
 }
 
 // register authenticates the carrier, registers the public host, and starts the
@@ -280,7 +392,11 @@ func (c *RelayClient) registerQUIC(ctx context.Context, conn *quic.Conn, hostnam
 	if err != nil {
 		return nil, fmt.Errorf("open quic carrier handshake stream: %w", err)
 	}
-	_ = stream.SetDeadline(time.Now().Add(10 * time.Second))
+	deadline := time.Now().Add(10 * time.Second)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = stream.SetDeadline(deadline)
 	if err := relayHandshake(stream, hostnames, token, secret); err != nil {
 		return nil, err
 	}
@@ -307,12 +423,12 @@ func relayHandshake(rw io.ReadWriter, hostnames []string, token, secret []byte) 
 			if strings.TrimSpace(frame.Error) == "invalid hello" {
 				return ErrRelayInvalidHello
 			}
-			return fmt.Errorf("relay rejected carrier: %s", redactToken(frame.Error, secret, token))
+			return fmt.Errorf("%w: %s", errRelayRejected, redactToken(frame.Error, secret, token))
 		}
-		return errors.New("relay rejected carrier")
+		return errRelayRejected
 	}
 	if frame.Ack == nil {
-		return errors.New("relay rejected carrier: invalid ack")
+		return fmt.Errorf("%w: invalid ack", errRelayRejected)
 	}
 	return nil
 }

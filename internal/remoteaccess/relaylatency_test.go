@@ -22,20 +22,25 @@ import (
 //
 // The harness writes relay-token (the shared secret), relay-ca.pem and, last,
 // carrier.env with RELAY_ENDPOINT, BACKEND_ADDR and PUBLIC_HOST. The client
-// dials with its production path. CARRIER_UNBOUNDED=1 dials without the unsent
-// backlog bound, for the "before" figure.
+// dials with its production path and default transport; CARRIER_TRANSPORT (auto,
+// tcp or quic) picks another. CARRIER_UNBOUNDED=1 dials TLS/TCP without the
+// unsent backlog bound, for the "before" figure.
 func TestCarryForRelayLatencyHarness(t *testing.T) {
 	dir := os.Getenv("CARRIER_DIR")
 	if dir == "" {
 		t.Skip("CARRIER_DIR is not set; this only runs under the relay latency harness")
 	}
 	env := waitForCarrierEnv(t, dir)
+	transport := os.Getenv("CARRIER_TRANSPORT")
+	if transport == "" {
+		transport = config.RelayTransportAuto
+	}
 
 	client, err := NewRelayClient(config.RemoteAccessConfig{Relay: config.RelayConfig{
 		Endpoint:   env["RELAY_ENDPOINT"],
 		PublicHost: env["PUBLIC_HOST"],
 		CAFile:     filepath.Join(dir, "relay-ca.pem"),
-		Transport:  config.RelayTransportTCP,
+		Transport:  transport,
 	}}, dir)
 	if err != nil || client == nil {
 		t.Fatalf("NewRelayClient: client=%v err=%v", client, err)
@@ -59,6 +64,7 @@ func TestCarryForRelayLatencyHarness(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
+	t.Logf("carrier transport: %s", client.Transport())
 	// Carry returns when the harness finishes and its relay closes the carrier.
 	t.Logf("carrier ended: %v", client.Carry(context.Background(), session))
 }

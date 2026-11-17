@@ -23,7 +23,9 @@ carrier, TLS/TCP the fallback; a second carrier for control streams is not taken
 - With `auto`, `RelayClient.Connect` tries QUIC at the relay endpoint (same host and port, UDP)
   for at most 3 seconds, covering the dial and the registration. If that fails without the relay
   answering, it connects over TLS/TCP with a newly minted token (the relay refuses a replayed
-  nonce) and skips QUIC for 10 minutes. A refusal the relay sends over QUIC is returned as it is.
+  nonce) and, once that has connected, skips QUIC for 10 minutes. The QUIC attempt takes at most
+  half of the time the call has left. An answer from the relay over QUIC, a refusal frame or the
+  relay closing the connection, is returned as it is.
 - The carrier loop's "relay carrier connected" log line names the transport in use.
 - The latency harness driver (`TestCarryForRelayLatencyHarness`) takes the transport from
   `CARRIER_TRANSPORT`, defaulting to the default configuration.

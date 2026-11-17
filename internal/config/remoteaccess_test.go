@@ -86,8 +86,15 @@ func TestRemoteAccessRelayCAFile(t *testing.T) {
 }
 
 func TestRemoteAccessRelayTransport(t *testing.T) {
-	t.Run("defaults to tcp", func(t *testing.T) {
+	t.Run("defaults to auto", func(t *testing.T) {
 		cfg := loadForTest(t, nil)
+		if got := cfg.RemoteAccess.Relay.Transport; got != RelayTransportAuto {
+			t.Fatalf("relay transport = %q, want %q", got, RelayTransportAuto)
+		}
+	})
+
+	t.Run("tcp from environment", func(t *testing.T) {
+		cfg := loadForTest(t, map[string]string{"BEAMFALL_RELAY_TRANSPORT": RelayTransportTCP})
 		if got := cfg.RemoteAccess.Relay.Transport; got != RelayTransportTCP {
 			t.Fatalf("relay transport = %q, want %q", got, RelayTransportTCP)
 		}

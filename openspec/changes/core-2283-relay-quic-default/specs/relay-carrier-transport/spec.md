@@ -4,8 +4,8 @@
 
 With the default relay transport (`auto`) the relay client SHALL first try the QUIC carrier at the
 relay endpoint and, when that attempt fails without an answer from the relay within 3 seconds,
-SHALL connect over TLS/TCP in the same call with a newly minted token. After a fallback it SHALL
-NOT try QUIC again for 10 minutes. A configured `tcp` or `quic` transport SHALL use only that
+SHALL connect over TLS/TCP in the same call with a newly minted token. After a fallback that connected it
+SHALL NOT try QUIC again for 10 minutes. A configured `tcp` or `quic` transport SHALL use only that
 transport.
 
 #### Scenario: Relay reachable over UDP
@@ -25,8 +25,13 @@ transport.
 
 #### Scenario: Relay refuses the carrier over QUIC
 
-- **WHEN** the relay answers the QUIC registration with a refusal
-- **THEN** the connect fails with that refusal and TLS/TCP is not tried
+- **WHEN** the relay answers the QUIC registration with a refusal frame or by closing the connection
+- **THEN** the connect fails with that answer, TLS/TCP is not tried and QUIC is not held off
+
+#### Scenario: Neither transport connects
+
+- **WHEN** the QUIC attempt gets no answer and the TLS/TCP attempt fails too
+- **THEN** the next connect tries QUIC first
 
 #### Scenario: Explicit transport
 

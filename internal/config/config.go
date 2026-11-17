@@ -333,7 +333,11 @@ type RelayConfig struct {
 // multiplexer refuses a smaller maximum.
 const MinRelayYamuxStreamWindowBytes = 256 * 1024
 
+// Relay carrier transports. Auto, the default, tries QUIC at the relay
+// endpoint and connects over TLS/TCP when QUIC gets no answer (CORE-2283);
+// the explicit values use that carrier only.
 const (
+	RelayTransportAuto = "auto"
 	RelayTransportTCP  = "tcp"
 	RelayTransportQUIC = "quic"
 )
@@ -635,7 +639,7 @@ func LoadWithOutput(args []string, lookupEnv func(string) (string, bool), output
 	fs.StringVar(&cfg.RemoteAccess.Relay.Endpoint, "relay-endpoint", cfg.RemoteAccess.Relay.Endpoint, "self-hosted relay carrier address to dial out to (empty disables the relay path)")
 	fs.StringVar(&cfg.RemoteAccess.Relay.PublicHost, "relay-public-host", cfg.RemoteAccess.Relay.PublicHost, "SNI host the relay routes inbound connections by (empty = public-domain)")
 	fs.StringVar(&cfg.RemoteAccess.Relay.CAFile, "relay-ca", cfg.RemoteAccess.Relay.CAFile, "relay carrier CA PEM file (empty = system roots)")
-	fs.StringVar(&cfg.RemoteAccess.Relay.Transport, "relay-transport", cfg.RemoteAccess.Relay.Transport, "relay carrier transport: tcp or quic (default tcp)")
+	fs.StringVar(&cfg.RemoteAccess.Relay.Transport, "relay-transport", cfg.RemoteAccess.Relay.Transport, "relay carrier transport: auto (QUIC, falling back to TLS/TCP when UDP does not reach the relay), tcp or quic (default auto)")
 	fs.IntVar(&cfg.RemoteAccess.Relay.YamuxStreamWindowBytes, "relay-yamux-stream-window-bytes", cfg.RemoteAccess.Relay.YamuxStreamWindowBytes, "tcp relay carrier per-stream window in bytes; 0 uses the 4 MiB default; match the relay's --yamux-stream-window-bytes")
 	attached := cfg.Role == serverrole.Attached
 	fs.BoolVar(&attached, "attached", attached, "run as an attached Origin Node (ADR-0123): performs byte-local work but never authors catalog rows, issues Stream Tokens, or authors engagement (default: main server)")
@@ -773,10 +777,10 @@ func validate(cfg Config) (Config, error) {
 	cfg.RemoteAccess.Relay.Transport = strings.TrimSpace(cfg.RemoteAccess.Relay.Transport)
 	switch cfg.RemoteAccess.Relay.Transport {
 	case "":
-		cfg.RemoteAccess.Relay.Transport = RelayTransportTCP
-	case RelayTransportTCP, RelayTransportQUIC:
+		cfg.RemoteAccess.Relay.Transport = RelayTransportAuto
+	case RelayTransportAuto, RelayTransportTCP, RelayTransportQUIC:
 	default:
-		return Config{}, fmt.Errorf("unknown relay transport %q (want %q or %q)", cfg.RemoteAccess.Relay.Transport, RelayTransportTCP, RelayTransportQUIC)
+		return Config{}, fmt.Errorf("unknown relay transport %q (want %q, %q or %q)", cfg.RemoteAccess.Relay.Transport, RelayTransportAuto, RelayTransportTCP, RelayTransportQUIC)
 	}
 	if window := cfg.RemoteAccess.Relay.YamuxStreamWindowBytes; window < 0 || (window > 0 && window < MinRelayYamuxStreamWindowBytes) || int64(window) > math.MaxUint32 {
 		return Config{}, fmt.Errorf("relay yamux stream window %d bytes: want 0 (default) or %d to %d", window, MinRelayYamuxStreamWindowBytes, uint64(math.MaxUint32))

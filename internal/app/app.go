@@ -2278,6 +2278,7 @@ type relayCarrier interface {
 	Carry(context.Context, remoteaccess.RelaySession) error
 	Endpoint() string
 	PublicHost() string
+	Transport() string
 }
 
 // runRelayCarrierLoop is runRelayCarrier with an injectable carrier and timer
@@ -2297,7 +2298,7 @@ func runRelayCarrierLoop(ctx context.Context, carrier relayCarrier, logger *slog
 				return
 			}
 		} else {
-			logger.Info("relay carrier connected", "endpoint", carrier.Endpoint(), "publicHost", carrier.PublicHost())
+			logger.Info("relay carrier connected", "endpoint", carrier.Endpoint(), "publicHost", carrier.PublicHost(), "transport", carrier.Transport())
 			carryStart := time.Now()
 			carryRelayGenerations(ctx, carrier, logger, after, session, &carries)
 			// Reset the backoff only after a session that actually stayed up:
