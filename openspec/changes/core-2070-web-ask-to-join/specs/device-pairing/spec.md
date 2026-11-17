@@ -2,11 +2,11 @@
 
 ### Requirement: A browser poll binds the browser like web enrollment
 
-A pairing request made with the browser CSRF header SHALL be a browser request for its whole life,
-whether or not later calls carry the header. For a browser request the server SHALL apply the
+A pairing request made with the CSRF, `Origin` or `Sec-Fetch-Site` header SHALL be a browser
+request for its whole life. For a browser request the server SHALL apply the
 `/api/web/enroll` transport rule before the request is touched, and on approval SHALL set the
 credential cookies `/api/web/enroll` sets and SHALL NOT return the device secret or session ID in
-the body. A request made and polled without the header SHALL be unchanged.
+the body. Other requests SHALL be unchanged.
 
 #### Scenario: Approved browser poll sets cookies
 
@@ -22,6 +22,11 @@ the body. A request made and polled without the header SHALL be unchanged.
 #### Scenario: The header cannot be shed at poll
 
 - **WHEN** a request made with the CSRF header is approved and then polled without the header
+- **THEN** the poll sets the credential cookies and the body carries no device secret or session ID
+
+#### Scenario: The header cannot be shed at request
+
+- **WHEN** a request is made without the CSRF header but with an `Origin` or `Sec-Fetch-Site` header, and is approved and polled
 - **THEN** the poll sets the credential cookies and the body carries no device secret or session ID
 
 #### Scenario: Off-LAN plain HTTP browser request and regenerate refused

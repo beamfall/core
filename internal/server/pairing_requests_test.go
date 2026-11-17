@@ -326,6 +326,24 @@ func TestDevicePairingBrowserBindingIsFixedAtRequest(t *testing.T) {
 	wantBrowserEnrollment(t, srv, devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/poll", secretBody(native.RequestSecret), browserCall))
 }
 
+// Page script can leave the CSRF header off, but not the headers the browser
+// adds itself: either one makes the request a browser's.
+func TestDevicePairingBrowserHeadersBindWithoutCSRF(t *testing.T) {
+	for name, mark := range map[string]func(*http.Request){
+		"Origin":         func(r *http.Request) { r.Header.Set("Origin", "http://"+r.Host) },
+		"Sec-Fetch-Site": func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-origin") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := newTestServer(t)
+			rec := devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests", `{"deviceName":"Chrome on macOS"}`, mark)
+			wantDevicePairingStatus(t, rec, http.StatusCreated, "request")
+			req := decodeDevicePairing[pairing.DeviceRequestResponse](t, rec)
+			wantDevicePairingStatus(t, devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/approve", codeBody(req.Code), authorizeManager), http.StatusOK, "approve")
+			wantBrowserEnrollment(t, srv, devicePairingCall(t, srv, http.MethodPost, "/api/pairing-requests/poll", secretBody(req.RequestSecret), nil))
+		})
+	}
+}
+
 // Request, regenerate and poll share one rule for a browser: no credential
 // flow over plain HTTP from off the LAN.
 func TestDevicePairingBrowserCallsRefusePublicPlainHTTP(t *testing.T) {

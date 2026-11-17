@@ -74,8 +74,8 @@ JSON. Secrets travel only in request bodies, never in a URL.
 - The request lives for 10 minutes. Poll every `pollIntervalSeconds`. Time the code by
   `expiresInSeconds`, counted from when the answer arrived; do not compare `expiresAt` with the
   device's own clock, which may be wrong.
-- A request made with the web app's CSRF header (`X-Beamfall-Csrf`) is a browser request for its
-  whole life: see the browser rules under poll.
+- A request a browser made (it carries `X-Beamfall-Csrf`, `Origin` or `Sec-Fetch-Site`) is a
+  browser request for its whole life: see the browser rules under poll.
 
 **`POST /api/pairing-requests/poll`** → `200`
 
@@ -96,9 +96,11 @@ JSON. Secrets travel only in request bodies, never in a URL.
 the device both requested and collected on the LAN. `approved` and `denied` are delivered once:
 the request is gone after that poll, and a later poll with the same secret is `401`.
 
-A browser request is one made with the web app's CSRF header (`X-Beamfall-Csrf`). The server
+A browser request is one made with the web app's CSRF header (`X-Beamfall-Csrf`) or with an
+`Origin` or `Sec-Fetch-Site` header, which a browser adds itself. Native clients send none of the
+three. The server
 records that when the request is created and carries it through regenerate, so a later call cannot
-shed it by leaving the header off; a call that carries the header is treated as a browser call too.
+shed it by leaving the header off; a call that carries any of them is treated as a browser call too.
 A browser request is bound the way `POST /api/web/enroll` binds a browser: request, regenerate and
 poll are refused with `403` over plain HTTP from outside the local network before the request is
 touched, and an `approved` answer sets the session, device and device-secret cookies (HttpOnly,

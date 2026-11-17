@@ -96,9 +96,14 @@ func (s *Server) cancelDevicePairing(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// sentByWebApp reports whether the call carries the CSRF header every web
-// request sends.
-func sentByWebApp(r *http.Request) bool { return r.Header.Get(auth.CSRFHeader) != "" }
+// sentByWebApp reports whether a browser sent the call: it carries the CSRF
+// header every web request sends, or an Origin or Sec-Fetch-Site header, which
+// a browser adds itself and page script cannot remove. Without the last two,
+// page script could leave the CSRF header off and collect the credential as
+// JSON.
+func sentByWebApp(r *http.Request) bool {
+	return r.Header.Get(auth.CSRFHeader) != "" || r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") != ""
+}
 
 // browserDevicePairing reports whether a device call is a browser's: the
 // request was made by the web app, or this call itself carries the header.
