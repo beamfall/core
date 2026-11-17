@@ -3,7 +3,7 @@ import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioStage } from "../AudioStage";
 import { easeFrame, silentFrame } from "./analysis";
-import { canVisualize, Visualizer } from "./Visualizer";
+import { canVisualize, type Rotation, takeUpcoming, Visualizer } from "./Visualizer";
 import { VISUALS, visualFor } from "./visuals";
 
 // The Oscillux core never loads in jsdom: a pending load keeps the visualizer mounted and idle.
@@ -113,5 +113,28 @@ describe("visuals", () => {
     expect(visualFor("m1")).toBe(visualFor("m1"));
     const picked = new Set(Array.from({ length: 64 }, (_, i) => visualFor(`track-${i}`).id));
     expect(picked.size).toBeGreaterThan(1);
+  });
+});
+
+describe("rotation (CORE-2368)", () => {
+  const rotation = (upcoming: (typeof VISUALS)[number] | null): Rotation => ({
+    rotating: true,
+    played: 0,
+    at: 40,
+    upcoming,
+  });
+  const calm = VISUALS.find((v) => v.calm);
+  const lively = VISUALS.find((v) => !v.calm);
+
+  it("moves to the visual compiled ahead, once", () => {
+    const r = rotation(VISUALS[1]);
+    expect(takeUpcoming(r, VISUALS[0], false)).toBe(VISUALS[1]);
+    expect(r.upcoming).toBeNull();
+  });
+
+  it("picks afresh when the one compiled ahead no longer fits", () => {
+    expect(takeUpcoming(rotation(VISUALS[0]), VISUALS[0], false)).not.toBe(VISUALS[0]);
+    if (!calm || !lively) throw new Error("the release has calm and lively visuals");
+    expect(takeUpcoming(rotation(lively), calm, true).calm).toBe(true);
   });
 });

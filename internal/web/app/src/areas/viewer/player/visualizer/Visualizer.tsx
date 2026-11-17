@@ -11,7 +11,6 @@ import {
   nextInRotation,
   ROTATE_GRACE_SECONDS,
   ROTATE_SECONDS,
-  VISUALS,
   type Visual,
   visualById,
   visualFor,
@@ -42,6 +41,31 @@ export interface NextTrack {
 interface Decode {
   abort: AbortController;
   pcm: Promise<Float32Array | null>;
+}
+
+// A rotation: the drawn time on the current visual, when it moves on, and the visual it moves
+// to, picked and compiled ahead.
+export type Rotation = { rotating: boolean; played: number; at: number; upcoming: Visual | null };
+
+// The rotation's next visual: the one compiled ahead while it still fits, or a fresh pick.
+export function takeUpcoming(r: Rotation, current: Visual | null, reducedMotion: boolean): Visual {
+  const u = r.upcoming;
+  r.upcoming = null;
+  if (u && u.id !== current?.id && (!reducedMotion || u.calm)) return u;
+  return nextInRotation(current?.id ?? null, reducedMotion);
+}
+
+// Picks the rotation's next visual and compiles it while the page is idle, so the switch to it
+// does not stall a frame. Only that one compiles ahead: compiling all 61 stalled frames through
+// the first seconds of play and drove the governor down to a coarse render (CORE-2368).
+function queueUpcoming(renderer: Renderer, r: Rotation, current: Visual): void {
+  if (!r.rotating) return;
+  const reduced = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const next = nextInRotation(current.id, reduced);
+  r.upcoming = next;
+  const compile = () => void renderer.prepare(next).catch(() => {});
+  if (window.requestIdleCallback) window.requestIdleCallback(compile, { timeout: 2000 });
+  else window.setTimeout(compile, 200);
 }
 
 // The pinned Oscillux visualizer for an audio item (CORE-1309): one of the release's visuals,
@@ -89,7 +113,12 @@ export function Visualizer({
   const analysisRef = useRef<{ analysis: TrackAnalysis; since: number } | null>(null);
   // The visual shown, or about to be; and for a rotation, the drawn time when it next moves on.
   const visualRef = useRef<Visual | null>(null);
-  const rotateRef = useRef({ rotating: choice === "rotate", played: 0, at: ROTATE_SECONDS });
+  const rotateRef = useRef<Rotation>({
+    rotating: choice === "rotate",
+    played: 0,
+    at: ROTATE_SECONDS,
+    upcoming: null,
+  });
   const trackRef = useRef(trackKey);
   trackRef.current = trackKey;
   const imageRef = useRef<ImageBitmap | null>(null);
@@ -103,7 +132,6 @@ export function Visualizer({
     let alive = true;
     let frame = 0;
     let last = 0;
-    let warm = 0;
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -121,9 +149,12 @@ export function Visualizer({
       if (r.played < r.at || (!downbeat && r.played < r.at + ROTATE_GRACE_SECONDS)) return;
       r.played = 0;
       r.at = ROTATE_SECONDS;
-      const next = nextInRotation(visualRef.current?.id ?? null, reducedMotion);
+      const next = takeUpcoming(r, visualRef.current, reducedMotion);
       visualRef.current = next;
-      renderer.use(next).catch(fail);
+      renderer
+        .use(next)
+        .then(() => queueUpcoming(renderer, r, next))
+        .catch(fail);
     };
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
@@ -160,19 +191,6 @@ export function Visualizer({
         fail(err);
       }
     };
-    // Compiles the other visuals while the page is idle, one at a time, so the first switch to
-    // one does not stall a frame.
-    const idle = (fn: () => void) =>
-      window.requestIdleCallback ? window.requestIdleCallback(fn) : window.setTimeout(fn, 200);
-    const warmUp = (renderer: Renderer, i: number) => {
-      if (!alive || i >= VISUALS.length) return;
-      warm = idle(() => {
-        renderer
-          .prepare(VISUALS[i])
-          .then(() => warmUp(renderer, i + 1))
-          .catch(() => {});
-      });
-    };
     loadOscillux()
       .then((osc) => Renderer.create(canvas, osc))
       .then((renderer) => {
@@ -189,7 +207,7 @@ export function Visualizer({
         return renderer.use(first).then(() => {
           if (!alive) return;
           frame = requestAnimationFrame(tick);
-          warmUp(renderer, 0);
+          queueUpcoming(renderer, rotateRef.current, first);
         });
       })
       .catch(fail);
@@ -201,8 +219,6 @@ export function Visualizer({
     return () => {
       alive = false;
       cancelAnimationFrame(frame);
-      if (window.cancelIdleCallback) window.cancelIdleCallback(warm);
-      else window.clearTimeout(warm);
       canvas.removeEventListener("webglcontextlost", lost);
       rendererRef.current?.dispose();
       rendererRef.current = null;
@@ -214,15 +230,25 @@ export function Visualizer({
   const reducedMotion = usePrefersReducedMotion();
   useEffect(() => {
     const rotating = choice === "rotate";
+    const rotation: Rotation = {
+      rotating,
+      played: 0,
+      at: ROTATE_SECONDS,
+      upcoming: rotateRef.current.upcoming,
+    };
     const visual = rotating
-      ? nextInRotation(visualRef.current?.id ?? null, reducedMotion)
+      ? takeUpcoming(rotation, visualRef.current, reducedMotion)
       : (visualById(choice) ?? visualFor(visualKey));
     visualRef.current = visual;
-    rotateRef.current = { rotating, played: 0, at: ROTATE_SECONDS };
-    rendererRef.current?.use(visual).catch((err) => {
-      console.warn("visualizer: off", err);
-      setFailed(true);
-    });
+    rotateRef.current = rotation;
+    const renderer = rendererRef.current;
+    renderer
+      ?.use(visual)
+      .then(() => queueUpcoming(renderer, rotation, visual))
+      .catch((err) => {
+        console.warn("visualizer: off", err);
+        setFailed(true);
+      });
   }, [choice, visualKey, trackKey, reducedMotion]);
 
   // The track's artwork as the visual's image input, applied now or once the renderer is ready.
