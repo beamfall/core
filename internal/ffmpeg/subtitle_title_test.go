@@ -22,7 +22,8 @@ func TestParseProbeSubtitleTitleFlags(t *testing.T) {
 			{"index": 12, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "English (No SDH/CC)"}},
 			{"index": 13, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Forced, not SDH"}},
 			{"index": 14, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "English (non-SDH) [Forced]"}},
-			{"index": 15, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "No SDH or CC"}}
+			{"index": 15, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "No SDH or CC"}},
+			{"index": 16, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "English - non-SDH - Forced"}}
 		],
 		"format": {"format_name": "matroska,webm", "duration": "10"}
 	}`), "/media/episode.mkv")
@@ -50,6 +51,7 @@ func TestParseProbeSubtitleTitleFlags(t *testing.T) {
 		{title: "Forced, not SDH", forced: true},
 		{title: "English (non-SDH) [Forced]", forced: true},
 		{title: "No SDH or CC"},
+		{title: "English - non-SDH - Forced", forced: true},
 	}
 	for i, w := range want {
 		s := probe.Streams[i]

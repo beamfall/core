@@ -209,8 +209,10 @@ const TITLE_ROLE_WORDS: Record<"forced" | "sdh" | "commentary" | "visualImpaired
 };
 
 // "non-SDH", "Not Forced", "No SDH or CC": a negation and the role words (and
-// "and", "or", "nor") after it, up to a bracket, comma, semicolon or bar; they
-// deny a role rather than name it.
+// "and", "or", "nor") after it, up to a bracket, comma, semicolon, bar or
+// spaced dash (QUALIFIER_DASH); they deny a role rather than name it.
+// An en or em dash, or a hyphen with a space beside it: "non-SDH - Forced".
+const QUALIFIER_DASH = /\s-|-\s|[–—]/g;
 const NEGATED_ROLES =
   /\b(non|not|no)\b(?:[^a-z0-9()[\]{},;|]+(?:sdh|cc|hearing|impaired|forced|commentary|described|audio|description|and|or|nor)\b)+/gi;
 
@@ -231,7 +233,7 @@ function captionBaseLabel(
   const title = track.title?.trim() ?? "";
   const titleLower = title.toLocaleLowerCase();
   const languageLower = language.toLocaleLowerCase();
-  const affirmed = title.replace(NEGATED_ROLES, " ");
+  const affirmed = title.replace(QUALIFIER_DASH, ",").replace(NEGATED_ROLES, " ");
   const named = (role: keyof typeof TITLE_ROLE_WORDS) => TITLE_ROLE_WORDS[role].test(affirmed);
   let head: string[];
   if (!title || languageLower.includes(titleLower)) head = [language];

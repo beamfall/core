@@ -3158,7 +3158,8 @@ func parseProbeTimestamp(value string) (float64, bool) {
 // files mark "English (SDH)" or "Forced" only in the title (CORE-2523).
 // "non-SDH", "Not Forced" and "No SDH or CC" deny the roles they name: a
 // negation covers the role words (and "and", "or", "nor") after it, up to the
-// next bracket, comma, semicolon or bar, so "(non-SDH) [Forced]" is forced.
+// next bracket, comma, semicolon, bar or spaced dash, so "(non-SDH) [Forced]"
+// and "non-SDH - Forced" are forced.
 func applySubtitleTitleFlags(ps *ProbeStream) {
 	words := subtitleTitleWords(ps.Title)
 	negated := false
@@ -3185,7 +3186,8 @@ func applySubtitleTitleFlags(ps *ProbeStream) {
 }
 
 // subtitleTitleWords lowercases a title into its letter/digit words, with ","
-// standing for each qualifier boundary (a bracket, comma, semicolon or bar).
+// standing for each qualifier boundary (a bracket, comma, semicolon, bar, en or
+// em dash, or a hyphen with a space beside it; "non-SDH" stays one phrase).
 func subtitleTitleWords(title string) []string {
 	var words []string
 	var word strings.Builder
@@ -3195,11 +3197,14 @@ func subtitleTitleWords(title string) []string {
 			word.Reset()
 		}
 	}
-	for _, r := range strings.ToLower(title) {
+	runes := []rune(strings.ToLower(title))
+	for i, r := range runes {
+		spacedHyphen := r == '-' && ((i > 0 && unicode.IsSpace(runes[i-1])) ||
+			(i+1 < len(runes) && unicode.IsSpace(runes[i+1])))
 		switch {
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
 			word.WriteRune(r)
-		case strings.ContainsRune("()[]{},;|", r):
+		case spacedHyphen || strings.ContainsRune("()[]{},;|–—", r):
 			flush()
 			words = append(words, ",")
 		default:
