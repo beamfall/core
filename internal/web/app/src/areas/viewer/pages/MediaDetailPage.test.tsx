@@ -3,7 +3,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { calibrateWatchPartyClock, fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
+import {
+  calibrateWatchPartyClock,
+  fetchEntity,
+  fetchMediaForEntity,
+  fetchRelatedMedia,
+  fetchSourceItems,
+} from "@/lib/graphql";
 import type { GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
@@ -41,6 +47,8 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
   fetchEntity: vi.fn(),
   fetchMediaForEntity: vi.fn(),
+  fetchRelatedMedia: vi.fn(),
+  fetchSourceItems: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
   fetchItemState: vi.fn(async () => mocks.itemState),
   ...Object.fromEntries(
@@ -133,6 +141,8 @@ beforeEach(() => {
   vi.mocked(fetchMediaRelations).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaTracks).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchRelatedMedia).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchSourceItems).mockReset().mockResolvedValue([]);
   vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
   // Off the home network by default: Watch together is not offered (CORE-1764).
   resetHomeNetworkProbeForTest();
@@ -725,41 +735,37 @@ describe("MediaDetailPage", () => {
     expect(screen.queryByRole("heading", { name: "Extras" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Editions" })).not.toBeInTheDocument();
   });
+  const genre = (entityID: string, title: string) => ({
+    entityID,
+    title,
+    kind: "genre",
+    archetype: "category",
+    relation: "tagged",
+  });
+  const person = (entityID: string, title: string, role?: string) => ({
+    entityID,
+    title,
+    kind: "person",
+    archetype: "person",
+    relation: "credited-in",
+    ...(role ? { attributes: { role } } : {}),
+  });
+  const item = (id: string, title: string): SourceItem => ({ id, kind: "media", title });
+
   it("ends with More with the first billed person and Related titles, without the current item (CORE-2444)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,
-      credits: [
-        {
-          entityID: "g1",
-          title: "Drama",
-          kind: "genre",
-          archetype: "category",
-          relation: "tagged",
-        },
-        {
-          entityID: "g2",
-          title: "Heist",
-          kind: "genre",
-          archetype: "category",
-          relation: "tagged",
-        },
-        {
-          entityID: "p1",
-          title: "Ada Lead",
-          kind: "person",
-          archetype: "person",
-          relation: "credited-in",
-        },
-      ],
+      credits: [genre("g1", "Drama"), genre("g2", "Heist"), person("p1", "Ada Lead")],
     });
-    const item = (id: string, title: string): SourceItem => ({ id, kind: "media", title });
-    vi.mocked(fetchMediaForEntity).mockImplementation(async (entityID) => {
-      if (entityID === "p1") return [item("m1", "Server title"), item("a1", "Lead Again")];
-      if (entityID === "g1")
-        return [item("r1", "One Genre"), item("r2", "Both Genres"), item("m1", "Server title")];
-      if (entityID === "g2") return [item("r2", "Both Genres")];
-      return [];
-    });
+    vi.mocked(fetchSourceItems).mockResolvedValue([
+      item("m1", "Server title"),
+      item("a1", "Lead Again"),
+    ]);
+    // The server ranks Related; the page shows its order.
+    vi.mocked(fetchRelatedMedia).mockResolvedValue([
+      item("r2", "Both Genres"),
+      item("r1", "One Genre"),
+    ]);
     renderAt(["/media/m1"]);
 
     const moreWith = await screen.findByRole("list", { name: "More with Ada Lead" });
@@ -779,35 +785,57 @@ describe("MediaDetailPage", () => {
     await screen.findByRole("heading", { name: "Both Genres" });
   });
 
-  it("hides More with and Related when the lead has no other titles and there are no categories (CORE-2444)", async () => {
+  // Review findings P2-1 and P2-4: the rows read through the Mute-suppressed,
+  // bounded server reads, never the direct-navigation mediaForEntity list.
+  it("reads the closing rows through bounded, Mute-aware server reads (CORE-2444)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,
-      credits: [
-        {
-          entityID: "p1",
-          title: "Ada Lead",
-          kind: "person",
-          archetype: "person",
-          relation: "credited-in",
-        },
-        {
-          entityID: "p2",
-          title: "Second",
-          kind: "person",
-          archetype: "person",
-          relation: "credited-in",
-        },
-      ],
+      credits: [genre("g1", "Drama"), person("p1", "Ada Lead")],
     });
-    vi.mocked(fetchMediaForEntity).mockResolvedValue([
-      { id: "m1", kind: "media", title: "Server title" },
-    ]);
+    vi.mocked(fetchSourceItems).mockResolvedValue(
+      Array.from({ length: 30 }, (_, i) => item(`a${i}`, `Lead ${i}`)),
+    );
+    renderAt(["/media/m1"]);
+
+    const moreWith = await screen.findByRole("list", { name: "More with Ada Lead" });
+    expect(within(moreWith).getAllByRole("listitem")).toHaveLength(20);
+    expect(fetchSourceItems).toHaveBeenCalledTimes(1);
+    expect(fetchSourceItems).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "entity-media", entityID: "p1", limit: 21 }),
+      expect.anything(),
+    );
+    expect(fetchRelatedMedia).toHaveBeenCalledTimes(1);
+    expect(fetchRelatedMedia).toHaveBeenCalledWith("m1", 20, expect.anything());
+    expect(fetchMediaForEntity).not.toHaveBeenCalled();
+  });
+
+  // Review finding P3-6: the lead is the first person credit in server
+  // (billing) order, whatever its department.
+  it("names More with after the first billed person in server order (CORE-2444)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [person("pb", "Bea Director", "Directing"), person("pa", "Al Actor", "Acting")],
+    });
+    vi.mocked(fetchSourceItems).mockResolvedValue([item("a1", "Other")]);
+    renderAt(["/media/m1"]);
+
+    await screen.findByRole("list", { name: "More with Bea Director" });
+    expect(fetchSourceItems).toHaveBeenCalledWith(
+      expect.objectContaining({ entityID: "pb" }),
+      expect.anything(),
+    );
+  });
+
+  it("hides More with and Related when the reads return nothing else (CORE-2444)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [person("p1", "Ada Lead"), person("p2", "Second")],
+    });
+    vi.mocked(fetchSourceItems).mockResolvedValue([item("m1", "Server title")]);
     renderAt(["/media/m1"]);
 
     await screen.findByRole("heading", { name: "Server title" });
-    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalledWith("p1", expect.anything()));
-    // Without a category nothing can be Related, so only the lead is read.
-    expect(fetchMediaForEntity).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(fetchRelatedMedia).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("heading", { name: /More with/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
   });
@@ -815,28 +843,14 @@ describe("MediaDetailPage", () => {
   it("hides the closing rows when every read fails (CORE-2444)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,
-      credits: [
-        {
-          entityID: "g1",
-          title: "Drama",
-          kind: "genre",
-          archetype: "category",
-          relation: "tagged",
-        },
-        {
-          entityID: "p1",
-          title: "Ada Lead",
-          kind: "person",
-          archetype: "person",
-          relation: "credited-in",
-        },
-      ],
+      credits: [genre("g1", "Drama"), person("p1", "Ada Lead")],
     });
-    vi.mocked(fetchMediaForEntity).mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.mocked(fetchSourceItems).mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.mocked(fetchRelatedMedia).mockRejectedValue(new TypeError("Failed to fetch"));
     renderAt(["/media/m1"]);
 
     await screen.findByRole("heading", { name: "Server title" });
-    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchRelatedMedia).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("heading", { name: /More with/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
   });
