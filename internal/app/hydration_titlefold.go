@@ -15,14 +15,18 @@ import (
 // hydrationFoldStore is the store surface behind HydrationTitleFoldMapper:
 // the cached lookup of an Entity's title variants, the read that finds a
 // Media's previous holder, and the recoverable, audited merge that folds a
-// newer variant into the established one. *store.Store implements it; a store
-// that does not leaves fold merging off.
+// newer variant into the established one, with the record of merges whose
+// activity entry is still owed. *store.Store implements it; a store that does
+// not leaves fold merging off.
 type hydrationFoldStore interface {
 	MediaHolderLinks(ctx context.Context, libraryID store.LibraryID, mediaID store.MediaID) ([]store.EntityLink, error)
-	MergeEntities(ctx context.Context, winnerID, loserID store.EntityID, filter store.LibraryFilter, now time.Time) (store.BulkOpBatch, error)
+	MergeTitleFoldVariants(ctx context.Context, winnerID, loserID store.EntityID, filter store.LibraryFilter, now time.Time) (store.BulkOpBatch, error)
+	UnrecordedTitleFoldMerges(ctx context.Context) ([]store.TitleFoldMerge, error)
+	MarkTitleFoldMergeRecorded(ctx context.Context, batchID string) error
 	CopyEntityItemState(ctx context.Context, from, to store.EntityID) error
 	AppendActivity(ctx context.Context, entry store.ActivityEntry) error
 	LiveFoldEqualEntities(ctx context.Context, libraryID store.LibraryID, kind, title, scopeRelation string, scopeTarget store.EntityID) ([]store.Entity, error)
+	LiveFoldEqualEntitiesByID(ctx context.Context, libraryID store.LibraryID, kind, title string, ids []store.EntityID) ([]store.Entity, error)
 	EntityTitleFoldApplies(ctx context.Context, libraryID store.LibraryID) (bool, error)
 }
 
@@ -92,23 +96,23 @@ func (a *hydrationAdapter) priorFoldHolders(ctx context.Context, mediaID store.M
 	return holders, nil
 }
 
-// redirectToEstablishedFoldTitles rewrites each Entity of a fold kind in the
-// plan to the title of the established Entity it folds equal to: the oldest
-// live Entity of its kind (under the same scope Entity, for a scoped kind)
-// whose title folds equal and whose id is the one hydration derives from that
-// title. The plan then lands on that Entity, so a new spelling, such as the
-// folder's replacing the one file names gave, or a merged-away title still
-// spelled by a file, joins the item people already have, with its id and
-// everything keyed to it (artwork, locks, item state), instead of absorbing
-// it. Unscoped Entities are settled first, then the scopes that name them,
-// then the scoped Entities under the settled scopes. A title with no live
-// variant is kept: it is a new item.
-func (a *hydrationAdapter) redirectToEstablishedFoldTitles(ctx context.Context, libraryID store.LibraryID, relations []HydrationRelation) ([]HydrationRelation, error) {
+// redirectToEstablishedFoldTitles points each Entity of a fold kind in the
+// plan at the established Entity it folds equal to (establishedFoldEntity):
+// it takes that Entity's title, and its id goes into resolved, which
+// entityID consults first. The plan then lands on that Entity, so a new
+// spelling, such as the folder's replacing the one file names gave, or a
+// merged-away title still spelled by a file, joins the item people already
+// have, with its id and everything keyed to it (artwork, locks, item state),
+// instead of absorbing it. Unscoped Entities are settled first, then the
+// scopes that name them, then the scoped Entities under the settled scopes. A
+// title with no live variant is kept: it is a new item.
+func (a *hydrationAdapter) redirectToEstablishedFoldTitles(ctx context.Context, libraryID store.LibraryID, relations []HydrationRelation, resolved map[string]store.EntityID) ([]HydrationRelation, error) {
 	if a.foldStore == nil || len(a.foldKinds) == 0 {
 		return relations, nil
 	}
 	renamed := map[string]string{}
 	checked := map[string]bool{}
+	scopes := map[string][]store.EntityID{}
 	settle := func(scoped bool) error {
 		for _, mapped := range relations {
 			entities := []HydrationEntity{mapped.From}
@@ -121,13 +125,18 @@ func (a *hydrationAdapter) redirectToEstablishedFoldTitles(ctx context.Context, 
 					continue
 				}
 				checked[key] = true
-				title, ok, err := a.establishedFoldTitle(ctx, libraryID, entity)
+				established, ok, err := a.establishedFoldEntity(ctx, libraryID, entity, scopes)
 				if err != nil {
 					return fmt.Errorf("resolve title variants of %q: %w", entity.Title, err)
 				}
-				if ok && title != entity.Title {
-					renamed[key] = title
+				if !ok {
+					continue
 				}
+				if established.Title != entity.Title {
+					renamed[key] = established.Title
+				}
+				entity.Title = established.Title
+				resolved[foldRenameKey(entity)] = established.ID
 			}
 		}
 		return nil
@@ -142,25 +151,102 @@ func (a *hydrationAdapter) redirectToEstablishedFoldTitles(ctx context.Context, 
 	return a.renameFoldEntities(relations, renamed), nil
 }
 
-// establishedFoldTitle reads the established variant of a planned Entity (see
-// redirectToEstablishedFoldTitles). ok is false when none is live.
-func (a *hydrationAdapter) establishedFoldTitle(ctx context.Context, libraryID store.LibraryID, entity HydrationEntity) (string, bool, error) {
-	scopeRelation, scopeTarget := "", store.EntityID("")
-	if entity.Scope != "" {
-		scopeRelation = a.entityScopes[entity.Kind]
-		scopeTarget = identify.EntityIDForName(libraryID, a.scopeKind(entity.Kind), entity.Scope)
+// establishedFoldEntity reads the established variant of a planned Entity
+// (see redirectToEstablishedFoldTitles); ok is false when none is live.
+//
+// For an unscoped kind it is the oldest live Entity of the kind whose title
+// folds equal and whose id is the one hydration derives from that title, so
+// an Entity made some other way is never taken over.
+//
+// For a scoped kind it is the oldest live fold-equal member of the (already
+// settled) scope Entity or of a newer variant of that scope, which
+// mergeFoldSiblings merges into it, whose scope relation points only at the
+// scope it was found under. Its id is taken whatever it is: the scope relation
+// is what ties a member to the item, and a member that sat under a newer
+// spelling of the scope keeps the id derived from that spelling after the
+// scopes merge. Taking it keeps the plan off a twin the sibling merge could
+// never absorb, because the twin would be the newer one. A member that also
+// records another scope is shared (see scopedEntityID) and is not taken.
+func (a *hydrationAdapter) establishedFoldEntity(ctx context.Context, libraryID store.LibraryID, entity HydrationEntity, scopes map[string][]store.EntityID) (store.Entity, bool, error) {
+	if entity.Scope == "" {
+		variants, err := a.foldStore.LiveFoldEqualEntities(ctx, libraryID, entity.Kind, entity.Title, "", "")
+		if err != nil {
+			return store.Entity{}, false, err
+		}
+		for _, variant := range variants {
+			if variant.ID == identify.EntityIDForName(libraryID, entity.Kind, variant.Title) {
+				return variant, true, nil
+			}
+		}
+		return store.Entity{}, false, nil
 	}
-	variants, err := a.foldStore.LiveFoldEqualEntities(ctx, libraryID, entity.Kind, entity.Title, scopeRelation, scopeTarget)
+	relation := a.entityScopes[entity.Kind]
+	scopeIDs, err := a.foldScopeVariants(ctx, libraryID, a.scopeKind(entity.Kind), entity.Scope, scopes)
 	if err != nil {
-		return "", false, err
+		return store.Entity{}, false, err
 	}
-	for _, variant := range variants {
-		if variant.ID == identify.EntityIDForScopedName(libraryID, entity.Kind, entity.Scope, variant.Title) ||
-			(entity.Scope != "" && variant.ID == identify.EntityIDForName(libraryID, entity.Kind, variant.Title)) {
-			return variant.Title, true, nil
+	var candidates []store.Entity
+	foundUnder := map[store.EntityID]store.EntityID{}
+	for _, scope := range scopeIDs {
+		members, err := a.foldStore.LiveFoldEqualEntities(ctx, libraryID, entity.Kind, entity.Title, relation, scope)
+		if err != nil {
+			return store.Entity{}, false, err
+		}
+		for _, member := range members {
+			if _, ok := foundUnder[member.ID]; !ok {
+				foundUnder[member.ID] = scope
+				candidates = append(candidates, member)
+			}
 		}
 	}
-	return "", false, nil
+	if len(scopeIDs) > 1 && len(candidates) > 1 {
+		// Members of different scopes: put them in catalog order.
+		ids := make([]store.EntityID, len(candidates))
+		for i, member := range candidates {
+			ids[i] = member.ID
+		}
+		if candidates, err = a.foldStore.LiveFoldEqualEntitiesByID(ctx, libraryID, entity.Kind, entity.Title, ids); err != nil {
+			return store.Entity{}, false, err
+		}
+	}
+	for _, member := range candidates {
+		targets, _, err := a.store.EntityRelationTargets(ctx, libraryID, member.ID, relation)
+		if err != nil {
+			return store.Entity{}, false, err
+		}
+		if len(targets) == 1 && targets[0] == foundUnder[member.ID] {
+			return member, true, nil
+		}
+	}
+	return store.Entity{}, false, nil
+}
+
+// foldScopeVariants lists the scope Entity a settled scope title names, then
+// the live newer variants of it that mergeFoldSiblings merges into it, when
+// the scope kind folds. scopes memoizes it for one plan.
+func (a *hydrationAdapter) foldScopeVariants(ctx context.Context, libraryID store.LibraryID, kind, title string, scopes map[string][]store.EntityID) ([]store.EntityID, error) {
+	key := kind + "\x00" + title
+	if ids, ok := scopes[key]; ok {
+		return ids, nil
+	}
+	established := identify.EntityIDForName(libraryID, kind, title)
+	ids := []store.EntityID{established}
+	if a.foldKinds[kind] {
+		variants, err := a.foldStore.LiveFoldEqualEntities(ctx, libraryID, kind, title, "", "")
+		if err != nil {
+			return nil, err
+		}
+		after := false
+		for _, variant := range variants {
+			if variant.ID == established {
+				after = true
+			} else if after {
+				ids = append(ids, variant.ID)
+			}
+		}
+	}
+	scopes[key] = ids
+	return ids, nil
 }
 
 func (a *hydrationAdapter) scopeKind(kind string) string {
@@ -283,25 +369,17 @@ func (a *hydrationAdapter) mergeFoldedEntity(ctx context.Context, libraryID stor
 
 // newerFoldVariant reports whether other is a live Entity of the planned
 // Entity's fold kind, with a fold-equal title, added after it: one the
-// planned Entity may absorb without losing an older item's id.
+// planned Entity may absorb without losing an older item's id. It reads just
+// the two rows.
 func (a *hydrationAdapter) newerFoldVariant(ctx context.Context, libraryID store.LibraryID, planned foldPlanned, other store.EntityID) (bool, error) {
 	if !a.foldKinds[planned.entity.Kind] || planned.entity.Title == "" {
 		return false, nil
 	}
-	variants, err := a.foldStore.LiveFoldEqualEntities(ctx, libraryID, planned.entity.Kind, planned.entity.Title, "", "")
+	variants, err := a.foldStore.LiveFoldEqualEntitiesByID(ctx, libraryID, planned.entity.Kind, planned.entity.Title, []store.EntityID{planned.id, other})
 	if err != nil {
 		return false, err
 	}
-	seen := false
-	for _, variant := range variants {
-		switch variant.ID {
-		case planned.id:
-			seen = true
-		case other:
-			return seen, nil
-		}
-	}
-	return false, nil
+	return len(variants) == 2 && variants[0].ID == planned.id && variants[1].ID == other, nil
 }
 
 // mergeFoldSiblings merges into each Entity of a fold kind the plan wrote the
@@ -389,27 +467,62 @@ func sameHydrationEntity(left, right HydrationEntity) bool {
 // mergeEntity folds loser into winner through the recoverable entity merge,
 // after copying the loser's item state, and records the merge's batch in
 // activity history as a title-fold repair with no actor, so it can be found
-// and undone like a manual merge. The merge is committed before the record is
-// written; a failed record is logged with the batch id, not retried.
+// and undone like a manual merge. The activity log is another database, so
+// the merge commits first, together with a row saying its entry is owed; a
+// failed entry fails the hydration, and recordOwedTitleFoldMerges writes it
+// before the adapter's next merge.
 func (a *hydrationAdapter) mergeEntity(ctx context.Context, libraryID store.LibraryID, winner, loser store.EntityID) error {
 	if err := a.foldStore.CopyEntityItemState(ctx, loser, winner); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	batch, err := a.foldStore.MergeEntities(ctx, winner, loser, metadataLibraryFilter, now)
+	batch, err := a.foldStore.MergeTitleFoldVariants(ctx, winner, loser, metadataLibraryFilter, now)
 	if err != nil || batch.ID == "" {
 		return err
 	}
+	if err := a.recordTitleFoldMerge(ctx, store.TitleFoldMerge{BatchID: batch.ID, LibraryID: libraryID, MergedAt: now}); err != nil {
+		a.foldRecordsSettled = false
+		return fmt.Errorf("record title-fold merge %s: %w", batch.ID, err)
+	}
+	return nil
+}
+
+// recordTitleFoldMerge writes a title-fold merge's activity entry, then
+// clears the row saying it is owed. The entry's operation id is the batch's,
+// so writing it again after a failure in between adds nothing.
+func (a *hydrationAdapter) recordTitleFoldMerge(ctx context.Context, merge store.TitleFoldMerge) error {
 	if err := a.foldStore.AppendActivity(ctx, store.ActivityEntry{
-		OperationID: store.ActivityEntityTitleFoldMerge + ":" + batch.ID,
-		OccurredAt:  now,
+		OperationID: store.ActivityEntityTitleFoldMerge + ":" + merge.BatchID,
+		OccurredAt:  merge.MergedAt,
 		Action:      store.ActivityEntityTitleFoldMerge,
 		TargetType:  "batch",
-		TargetID:    batch.ID,
-		LibraryID:   libraryID,
+		TargetID:    merge.BatchID,
+		LibraryID:   merge.LibraryID,
 	}); err != nil {
-		slog.ErrorContext(ctx, "title fold merge not recorded in activity history", "batch", batch.ID, "winner", winner, "loser", loser, "error", err)
+		return err
 	}
+	return a.foldStore.MarkTitleFoldMergeRecorded(ctx, merge.BatchID)
+}
+
+// recordOwedTitleFoldMerges writes the activity entries still owed by
+// title-fold merges, oldest first: one whose entry failed, or a merge the
+// process committed and stopped before recording. It reads the store once per
+// adapter, and again after one of the adapter's own entries fails; an error
+// fails the hydration, which retries it.
+func (a *hydrationAdapter) recordOwedTitleFoldMerges(ctx context.Context) error {
+	if a.foldRecordsSettled {
+		return nil
+	}
+	owed, err := a.foldStore.UnrecordedTitleFoldMerges(ctx)
+	if err != nil {
+		return fmt.Errorf("read unrecorded title-fold merges: %w", err)
+	}
+	for _, merge := range owed {
+		if err := a.recordTitleFoldMerge(ctx, merge); err != nil {
+			return fmt.Errorf("record title-fold merge %s: %w", merge.BatchID, err)
+		}
+	}
+	a.foldRecordsSettled = true
 	return nil
 }
 

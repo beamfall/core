@@ -190,12 +190,34 @@ func TestTitleFoldRepairMergesSplitEntitiesOnRescan(t *testing.T) {
 	}
 }
 
-// recordingFoldStore fails the first failCopies item-state copies and records
-// every merge batch, so a test can retry a failed merge and undo a good one.
+// recordingFoldStore fails the first failCopies item-state copies and the
+// first failAppends activity entries, records every merge batch, and counts
+// the variant lookups that list a whole kind, by kind, so a test can retry a
+// failed merge or record, undo a good one, and see what a lookup cost.
 type recordingFoldStore struct {
 	hydrationFoldStore
-	failCopies int
-	batches    []store.BulkOpBatch
+	failCopies     int
+	failAppends    int
+	batches        []store.BulkOpBatch
+	kindWideLookup map[string]int
+}
+
+func (r *recordingFoldStore) AppendActivity(ctx context.Context, entry store.ActivityEntry) error {
+	if r.failAppends > 0 {
+		r.failAppends--
+		return errors.New("append failed")
+	}
+	return r.hydrationFoldStore.AppendActivity(ctx, entry)
+}
+
+func (r *recordingFoldStore) LiveFoldEqualEntities(ctx context.Context, libraryID store.LibraryID, kind, title, scopeRelation string, scopeTarget store.EntityID) ([]store.Entity, error) {
+	if scopeRelation == "" {
+		if r.kindWideLookup == nil {
+			r.kindWideLookup = map[string]int{}
+		}
+		r.kindWideLookup[kind]++
+	}
+	return r.hydrationFoldStore.LiveFoldEqualEntities(ctx, libraryID, kind, title, scopeRelation, scopeTarget)
 }
 
 func (r *recordingFoldStore) CopyEntityItemState(ctx context.Context, from, to store.EntityID) error {
@@ -206,8 +228,8 @@ func (r *recordingFoldStore) CopyEntityItemState(ctx context.Context, from, to s
 	return r.hydrationFoldStore.CopyEntityItemState(ctx, from, to)
 }
 
-func (r *recordingFoldStore) MergeEntities(ctx context.Context, winner, loser store.EntityID, filter store.LibraryFilter, now time.Time) (store.BulkOpBatch, error) {
-	batch, err := r.hydrationFoldStore.MergeEntities(ctx, winner, loser, filter, now)
+func (r *recordingFoldStore) MergeTitleFoldVariants(ctx context.Context, winner, loser store.EntityID, filter store.LibraryFilter, now time.Time) (store.BulkOpBatch, error) {
+	batch, err := r.hydrationFoldStore.MergeTitleFoldVariants(ctx, winner, loser, filter, now)
 	if err == nil {
 		r.batches = append(r.batches, batch)
 	}
@@ -291,6 +313,10 @@ func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) 
 	}
 	if len(recorder.batches) != 2 {
 		t.Fatalf("merge batches = %d, want the parent and the child", len(recorder.batches))
+	}
+	// Ordering a scoped child's variants reads their rows, never the kind.
+	if n := recorder.kindWideLookup["album"]; n != 0 {
+		t.Fatalf("kind-wide lookups of the scoped kind = %d, want none", n)
 	}
 	// History lists the merges newest first: the child's, then the parent's.
 	merges := titleFoldMerges(t, st)
@@ -396,6 +422,215 @@ func TestTitleFoldNewSpellingJoinsTheEstablishedVariant(t *testing.T) {
 	}
 	if merges := titleFoldMerges(t, st); len(merges) != 0 {
 		t.Fatalf("title-fold merge activity = %+v, want none", merges)
+	}
+}
+
+// TestTitleFoldKeepsAChildThatOnlyTheNewerParentHeld pins CORE-2459 for
+// children that differ between two spellings of one parent: "First Band"
+// holds "One", the newer "first.band" holds "Two". Rehydrated under the
+// settled spelling, in either order, the parents merge and both children
+// survive under the established parent with their own IDs: "Two", whose id
+// derives from the merged-away spelling, is reused rather than twinned.
+func TestTitleFoldKeepsAChildThatOnlyTheNewerParentHeld(t *testing.T) {
+	for _, order := range [][]int{{0, 1}, {1, 0}} {
+		ctx := context.Background()
+		st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lib, err := st.CreateLibrary(ctx, "Shelf", false, testHydrationPluginID, "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		all := store.LibraryFilter{AllLibraries: true, Revealed: true}
+		files := []struct {
+			name, album, artist string
+			media               store.MediaID
+		}{{name: "one", album: "One", artist: "First Band"}, {name: "two", album: "Two", artist: "first.band"}}
+		legacy := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+		for i := range files {
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: lib.ID, Path: "/shelf/" + files[i].name + ".flac", Title: files[i].name, Container: "flac", Codec: "flac",
+				Class: store.MediaClassAudio, ContentFingerprint: "fp-" + files[i].name,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			files[i].media = media.ID
+			if err := legacy.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+				MediaID: media.ID, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+				Metadata: map[string]string{"album": files[i].album, "album-artist": files[i].artist},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		entities := func(kind string) map[string]store.EntityID {
+			t.Helper()
+			out, err := st.EntitiesByKind(ctx, lib.ID, kind, all, store.EntityKindOptions{}, 0, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			byTitle := map[string]store.EntityID{}
+			for _, entity := range out {
+				if _, dup := byTitle[entity.Title]; dup {
+					t.Fatalf("order %v: two live %s Entities titled %q: %+v", order, kind, entity.Title, out)
+				}
+				byTitle[entity.Title] = entity.ID
+			}
+			return byTitle
+		}
+		parents, children := entities("artist"), entities("album")
+		if len(parents) != 2 || len(children) != 2 {
+			t.Fatalf("legacy parents %v, children %v; want two of each", parents, children)
+		}
+		adapter := newTestAdapterWithMapper(st, foldedAlbumMapper{})
+		hydrate := func(i int) {
+			t.Helper()
+			if err := adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+				MediaID: files[i].media, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+				Metadata: map[string]string{"album": files[i].album, "folder": "First Band"},
+			}); err != nil {
+				t.Fatalf("order %v: hydrate %s: %v", order, files[i].name, err)
+			}
+		}
+		for _, i := range order {
+			hydrate(i)
+		}
+		// A later scan, with nothing remembered, changes nothing.
+		adapter = newTestAdapterWithMapper(st, foldedAlbumMapper{})
+		for _, i := range order {
+			hydrate(i)
+		}
+		gotParents, gotChildren := entities("artist"), entities("album")
+		if len(gotParents) != 1 || gotParents["First Band"] != parents["First Band"] {
+			t.Fatalf("order %v: parents = %v, want the established %s", order, gotParents, parents["First Band"])
+		}
+		if len(gotChildren) != 2 || gotChildren["One"] != children["One"] || gotChildren["Two"] != children["Two"] {
+			t.Fatalf("order %v: children = %v, want %v kept", order, gotChildren, children)
+		}
+		for i, file := range files {
+			id := gotChildren[file.album]
+			if targets, _, err := st.EntityRelationTargets(ctx, lib.ID, id, "album-artist"); err != nil || len(targets) != 1 || targets[0] != parents["First Band"] {
+				t.Fatalf("order %v: %s scope = %v, %v; want the established parent", order, file.album, targets, err)
+			}
+			if members, err := st.MediaForEntity(ctx, id, all); err != nil || len(members) != 1 || members[0].ID != files[i].media {
+				t.Fatalf("order %v: %s members = %+v, %v; want its own Media", order, file.album, members, err)
+			}
+		}
+		if merges := titleFoldMerges(t, st); len(merges) != 1 {
+			t.Fatalf("order %v: title-fold merge activity = %+v, want the parent's alone", order, merges)
+		}
+		_ = st.Close()
+	}
+}
+
+// TestTitleFoldMergeOwesItsActivityEntryUntilWritten pins CORE-2459's merge
+// record: when the activity entry of a committed merge fails, the hydration
+// fails, the next one writes the entry before merging again, and a merge left
+// unrecorded by a process that stopped is recorded by the next adapter, so
+// every merge stays findable and undoable from history.
+func TestTitleFoldMergeOwesItsActivityEntryUntilWritten(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	lib, err := st.CreateLibrary(ctx, "Shelf", false, testHydrationPluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	legacy := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	var media store.MediaID
+	for _, file := range []struct{ name, artist string }{{"one", "First Band"}, {"two", "first.band"}} {
+		imported, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + file.name + ".flac", Title: file.name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + file.name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := legacy.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+			MediaID: imported.ID, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+			Metadata: map[string]string{"album": "Shared Collection", "album-artist": file.artist},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		media = imported.ID
+	}
+
+	adapter := newTestAdapterWithMapper(st, foldedAlbumMapper{})
+	recorder := &recordingFoldStore{hydrationFoldStore: adapter.foldStore, failAppends: 1}
+	adapter.foldStore = recorder
+	input := scanpkg.MetadataHydrationInput{
+		MediaID: media, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+		Metadata: map[string]string{"album": "Shared Collection", "folder": "First Band"},
+	}
+	if err := adapter.HydrateMetadata(ctx, input); err == nil {
+		t.Fatal("hydration with a failing activity entry succeeded")
+	}
+	if len(recorder.batches) != 1 {
+		t.Fatalf("merge batches = %+v, want the parent's", recorder.batches)
+	}
+	if owed, err := st.UnrecordedTitleFoldMerges(ctx); err != nil || len(owed) != 1 || owed[0].BatchID != recorder.batches[0].ID || owed[0].LibraryID != lib.ID {
+		t.Fatalf("owed = %+v, %v; want the parent's merge", owed, err)
+	}
+	if merges := titleFoldMerges(t, st); len(merges) != 0 {
+		t.Fatalf("activity after the failed entry = %+v, want none", merges)
+	}
+	if err := adapter.HydrateMetadata(ctx, input); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if owed, err := st.UnrecordedTitleFoldMerges(ctx); err != nil || len(owed) != 0 {
+		t.Fatalf("owed after retry = %+v, %v; want none", owed, err)
+	}
+	merges := titleFoldMerges(t, st)
+	if len(merges) != 2 || len(recorder.batches) != 2 {
+		t.Fatalf("activity = %+v, batches = %+v; want the parent and the child", merges, recorder.batches)
+	}
+	for i, entry := range merges {
+		if want := recorder.batches[len(recorder.batches)-1-i].ID; entry.TargetID != want {
+			t.Fatalf("merge activity %d = %+v, want batch %s", i, entry, want)
+		}
+	}
+
+	// A merge committed by a process that stopped before its entry: the next
+	// adapter records it, at the merge's time, before it hydrates anything.
+	// Activity lists newest entry first, so the late entry leads.
+	stranded := store.EntityID("stranded-variant")
+	if err := st.UpsertEntity(ctx, store.Entity{ID: stranded, LibraryID: lib.ID, Kind: "artist", Title: "FIRST BAND"}); err != nil {
+		t.Fatal(err)
+	}
+	var winner store.EntityID
+	parents, err := st.EntitiesByKind(ctx, lib.ID, "artist", all, store.EntityKindOptions{}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, parent := range parents {
+		if parent.ID != stranded {
+			winner = parent.ID
+		}
+	}
+	mergedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Millisecond)
+	batch, err := st.MergeTitleFoldVariants(ctx, winner, stranded, all, mergedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := newTestAdapterWithMapper(st, foldedAlbumMapper{}).HydrateMetadata(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	if owed, err := st.UnrecordedTitleFoldMerges(ctx); err != nil || len(owed) != 0 {
+		t.Fatalf("owed after the next adapter = %+v, %v; want none", owed, err)
+	}
+	merges = titleFoldMerges(t, st)
+	if len(merges) != 3 || merges[0].TargetID != batch.ID || !merges[0].OccurredAt.Equal(mergedAt) || merges[0].LibraryID != lib.ID {
+		t.Fatalf("activity = %+v, want the stranded merge %s recorded at %v", merges, batch.ID, mergedAt)
+	}
+	for _, entry := range merges {
+		if _, err := st.UndoBatch(ctx, entry.TargetID, all, time.Now().UTC()); err != nil {
+			t.Fatalf("undo %s: %v", entry.TargetID, err)
+		}
 	}
 }
 

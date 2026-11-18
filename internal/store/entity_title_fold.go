@@ -203,6 +203,81 @@ func (s *Store) CopyEntityItemState(ctx context.Context, from, to EntityID) erro
 	return tx.Commit()
 }
 
+// titleFoldUnrecordedPrefix prefixes the server_config row MergeTitleFoldVariants
+// writes in the merge's own transaction, naming a merge batch whose activity
+// entry is still owed (the value is the Library ID). The activity log lives in
+// another database, so the two cannot commit together; the row is how a merge
+// whose entry failed, or never got written because the process stopped, is
+// found again.
+const titleFoldUnrecordedPrefix = "entity-title-fold-unrecorded."
+
+// TitleFoldMerge is a title-fold merge batch whose activity entry is owed.
+type TitleFoldMerge struct {
+	BatchID   string
+	LibraryID LibraryID
+	MergedAt  time.Time
+}
+
+// MergeTitleFoldVariants is MergeEntities for hydration's title-fold repair.
+// In the same transaction it records the batch as owing its activity entry
+// (UnrecordedTitleFoldMerges), until MarkTitleFoldMergeRecorded clears it.
+func (s *Store) MergeTitleFoldVariants(ctx context.Context, winnerID, loserID EntityID, filter LibraryFilter, now time.Time) (BulkOpBatch, error) {
+	return s.mergeEntities(ctx, winnerID, loserID, filter, now, true)
+}
+
+// UnrecordedTitleFoldMerges lists the title-fold merges whose activity entry
+// is owed, oldest first. It reads a key range of server_config, normally
+// empty.
+func (s *Store) UnrecordedTitleFoldMerges(ctx context.Context) ([]TitleFoldMerge, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	end := titleFoldUnrecordedPrefix[:len(titleFoldUnrecordedPrefix)-1] + "/" // the byte after "."
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT key, value, updated_at_ms FROM server_config
+		WHERE key >= ? AND key < ?
+		ORDER BY updated_at_ms, key
+	`, titleFoldUnrecordedPrefix, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TitleFoldMerge
+	for rows.Next() {
+		var key, library string
+		var mergedAt int64
+		if err := rows.Scan(&key, &library, &mergedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, TitleFoldMerge{
+			BatchID:   strings.TrimPrefix(key, titleFoldUnrecordedPrefix),
+			LibraryID: LibraryID(library),
+			MergedAt:  millisToTime(mergedAt),
+		})
+	}
+	return out, rows.Err()
+}
+
+// MarkTitleFoldMergeRecorded clears the owed-entry row of a title-fold merge
+// once its activity entry is written.
+func (s *Store) MarkTitleFoldMergeRecorded(ctx context.Context, batchID string) error {
+	if batchID == "" {
+		return errors.New("batch ID is required")
+	}
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	_, err := s.catalogW.ExecContext(ctx, `DELETE FROM server_config WHERE key = ?`, titleFoldUnrecordedPrefix+batchID)
+	return err
+}
+
 // LiveFoldEqualEntities lists the live Entities of a kind in a Library whose
 // titles fold equal to title, oldest first (catalog insertion order, which an
 // Entity keeps through updates, trash and restore). With a scope relation,
@@ -241,19 +316,59 @@ func (s *Store) LiveFoldEqualEntities(ctx context.Context, libraryID LibraryID, 
 		`, libraryID, kind)
 	}
 	candidates, err := s.titleFolds.candidates(ctx, plane.reader, libraryID, kind, folded)
-	if err != nil || len(candidates) == 0 {
+	if err != nil {
 		return nil, err
 	}
+	return foldEqualRowsByID(ctx, plane.reader, folded, libraryID, kind, candidates)
+}
+
+// LiveFoldEqualEntitiesByID is LiveFoldEqualEntities limited to the given
+// IDs: those that are live Entities of the kind in the Library with a title
+// that folds equal to title, oldest first. It reads only those rows, so it
+// orders two known variants without listing the others.
+func (s *Store) LiveFoldEqualEntitiesByID(ctx context.Context, libraryID LibraryID, kind, title string, ids []EntityID) ([]Entity, error) {
+	if libraryID == "" || kind == "" {
+		return nil, errors.New("library ID and entity kind are required")
+	}
+	folded := FoldEntityTitle(title)
+	if folded == "" {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	return foldEqualRowsByID(ctx, plane.reader, folded, libraryID, kind, ids)
+}
+
+// foldEqualRowsByID reads the given IDs' rows by primary key (the unary plus
+// keeps the planner off the (library_id, kind) index) and keeps the live ones
+// of the kind in the Library whose titles fold to folded, oldest first.
+func foldEqualRowsByID(ctx context.Context, reader *sql.DB, folded string, libraryID LibraryID, kind string, ids []EntityID) ([]Entity, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
 	args := []any{libraryID, kind}
-	for _, id := range candidates {
+	for _, id := range ids {
 		args = append(args, id)
 	}
-	return foldEqualRows(ctx, plane.reader, folded, libraryID, kind, `
+	return foldEqualRows(ctx, reader, folded, libraryID, kind, titleFoldByIDSQL(len(ids)), args...)
+}
+
+// titleFoldByIDSQL selects the live rows of a Library's kind among n IDs,
+// oldest first, by primary key.
+func titleFoldByIDSQL(n int) string {
+	return `
 		SELECT rowid, id, title FROM entity
-		WHERE library_id = ? AND kind = ? AND trashed_at_ms IS NULL
-		  AND id IN (?`+strings.Repeat(", ?", len(candidates)-1)+`)
+		WHERE +library_id = ? AND +kind = ? AND trashed_at_ms IS NULL
+		  AND id IN (?` + strings.Repeat(", ?", n-1) + `)
 		ORDER BY rowid
-	`, args...)
+	`
 }
 
 // titleFoldScopedSQL lists a scope's live members of a kind, oldest first,

@@ -85,6 +85,9 @@ type hydrationAdapter struct {
 	// foldChecked holds the Entities mergeFoldSiblings already checked; it is
 	// guarded by scopeMu.
 	foldChecked map[store.EntityID]bool
+	// foldRecordsSettled is true once no title-fold merge is known to owe its
+	// activity entry (recordOwedTitleFoldMerges); guarded by scopeMu.
+	foldRecordsSettled bool
 	// scopeMu serialises a scoped plan's identity resolution with the relation
 	// writes that record its scope, so two scans hydrating one Library at once
 	// cannot both adopt the same title-only Entity for different scopes.
@@ -565,7 +568,10 @@ func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.Med
 	resolved := map[string]store.EntityID{}
 	var holders []foldHolder
 	if fold {
-		if relations, err = a.redirectToEstablishedFoldTitles(ctx, libraryID, relations); err != nil {
+		if err := a.recordOwedTitleFoldMerges(ctx); err != nil {
+			return err
+		}
+		if relations, err = a.redirectToEstablishedFoldTitles(ctx, libraryID, relations, resolved); err != nil {
 			return err
 		}
 		if holders, err = a.priorFoldHolders(ctx, mediaID, libraryID, relations); err != nil {
@@ -671,14 +677,16 @@ func (a *hydrationAdapter) upsertEntity(ctx context.Context, libraryID store.Lib
 // its scope relation points at nothing or only at this scope, so a rescan
 // neither orphans nor duplicates it; one that records another scope is left
 // alone and the scoped Entity is created beside it. resolved holds the ids
-// already resolved for the plan being written, which win over a fresh lookup.
+// already resolved for the plan being written (including the established
+// title variants redirectToEstablishedFoldTitles settled), which win over a
+// fresh lookup.
 func (a *hydrationAdapter) entityID(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID) (store.EntityID, error) {
-	if mapped.Scope == "" {
-		return identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title), nil
-	}
 	key := mapped.Kind + "\x00" + mapped.Scope + "\x00" + mapped.Title
 	if id, ok := resolved[key]; ok {
 		return id, nil
+	}
+	if mapped.Scope == "" {
+		return identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title), nil
 	}
 	id, err := a.scopedEntityID(ctx, libraryID, mapped)
 	if err == nil {

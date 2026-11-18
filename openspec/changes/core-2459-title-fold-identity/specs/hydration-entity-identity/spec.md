@@ -41,16 +41,30 @@ add a file naming any fold-equal variant to it.
 - **WHEN** a file spells an existing Entity's title differently but fold-equal
 - **THEN** the file joins the existing Entity, which keeps its ID and title, and nothing is merged
 
+#### Scenario: A child only the newer parent spelling held
+
+- **WHEN** two parent spellings each hold a different child and a scan merges the parents
+- **THEN** both children live under the established parent with their own IDs, and no child is
+  created twice
+
 ### Requirement: Automatic title-variant merges are recorded in activity history
 
 Hydration SHALL record each title-variant merge it makes in activity history as
-`entity.title_fold_merge`, with no actor, the Library, and the merge batch as its target.
+`entity.title_fold_merge`, with no actor, the Library, and the merge batch as its target. The merge
+SHALL leave a record in the catalog that the entry is owed, and hydration SHALL write owed entries
+before it merges again.
 
 #### Scenario: A scan merges a parent and its child
 
 - **WHEN** a scan merges a newer parent variant and its child into the established ones
 - **THEN** activity history lists two `entity.title_fold_merge` entries, the child's newest, each
   naming the batch that undoes it
+
+#### Scenario: The activity entry fails
+
+- **WHEN** a merge commits but its activity entry cannot be written
+- **THEN** that hydration fails, and the next hydration, in this process or after a restart, writes
+  the entry with the merge's time
 
 ### Requirement: The title-variant lookup does not reread the kind
 

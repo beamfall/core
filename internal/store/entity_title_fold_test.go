@@ -105,6 +105,57 @@ func TestLiveFoldEqualEntitiesKeepsItsIndexCurrent(t *testing.T) {
 	if got := lookup("!!!"); got != nil {
 		t.Fatalf("variants of an empty fold = %v, want none", got)
 	}
+	byID, err := st.LiveFoldEqualEntitiesByID(ctx, lib.ID, "artist", "first band", []EntityID{"fold-d", "fold-b", "fold-a", "fold-missing"})
+	if err != nil || len(byID) != 2 || byID[0].ID != "fold-a" || byID[1].ID != "fold-d" {
+		t.Fatalf("variants by ID = %+v, %v; want fold-a then fold-d", byID, err)
+	}
+}
+
+// TestMergeTitleFoldVariantsOwesItsActivityEntry pins CORE-2459's durable
+// merge record: a title-fold merge commits with a row naming its batch and
+// Library until the entry is marked recorded, and a manual merge leaves none.
+func TestMergeTitleFoldVariantsOwesItsActivityEntry(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	lib, err := st.CreateLibrary(ctx, "Shelf", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []EntityID{"fold-a", "fold-b", "fold-c"} {
+		if err := st.UpsertEntity(ctx, Entity{ID: id, LibraryID: lib.ID, Kind: "artist", Title: "First Band"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all := LibraryFilter{AllLibraries: true, Revealed: true}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	if _, err := st.MergeEntities(ctx, "fold-a", "fold-c", all, now); err != nil {
+		t.Fatal(err)
+	}
+	if owed, err := st.UnrecordedTitleFoldMerges(ctx); err != nil || len(owed) != 0 {
+		t.Fatalf("after a manual merge owed = %+v, %v; want none", owed, err)
+	}
+	batch, err := st.MergeTitleFoldVariants(ctx, "fold-a", "fold-b", all, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owed, err := st.UnrecordedTitleFoldMerges(ctx)
+	want := []TitleFoldMerge{{BatchID: batch.ID, LibraryID: lib.ID, MergedAt: now}}
+	if err != nil || len(owed) != 1 || owed[0].BatchID != want[0].BatchID || owed[0].LibraryID != lib.ID || !owed[0].MergedAt.Equal(now) {
+		t.Fatalf("owed = %+v, %v; want %+v", owed, err, want)
+	}
+	if err := st.MarkTitleFoldMergeRecorded(ctx, batch.ID); err != nil {
+		t.Fatal(err)
+	}
+	if owed, err := st.UnrecordedTitleFoldMerges(ctx); err != nil || len(owed) != 0 {
+		t.Fatalf("after marking owed = %+v, %v; want none", owed, err)
+	}
+	if _, err := st.UndoBatch(ctx, batch.ID, all, time.Now().UTC()); err != nil {
+		t.Fatalf("undo title-fold merge: %v", err)
+	}
 }
 
 // TestLiveFoldEqualEntitiesQueriesSeekTheirIndexes pins the cost of the
@@ -141,5 +192,8 @@ func TestLiveFoldEqualEntitiesQueriesSeekTheirIndexes(t *testing.T) {
 	}
 	if got := plan(titleFoldScopedSQL, "scope", "member-of", "lib", "artist"); !strings.Contains(got, "entity_relation_to_entity_idx") {
 		t.Fatalf("scoped plan = %q, want the relation target index", got)
+	}
+	if got := plan(titleFoldByIDSQL(2), "lib", "artist", "a", "b"); !strings.Contains(got, "(id=?)") || strings.Contains(got, "entity_library_kind_idx") {
+		t.Fatalf("by-ID plan = %q, want a primary key search", got)
 	}
 }

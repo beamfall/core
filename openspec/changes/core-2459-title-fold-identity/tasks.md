@@ -3,6 +3,7 @@
 - [x] One-time startup repair for fold-equal Entities
 - [x] Tests: mapper folder shape, rescan merge, retry, undo, new spelling, encrypted Library
 - [x] Established variant survives; merge activity entries; indexed variant lookup (review round 2)
+- [x] Reparented children keep their IDs; owed activity entries; by-ID newer-variant check (review round 3)
 - [x] Codex review of the exact head
 - [ ] Tower check of the TV Shows view
 - [ ] Gate receipt via `corvint-tasks gate run` (make gate)
