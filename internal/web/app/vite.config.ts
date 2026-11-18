@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { brandSplash } from "./brand-splash-plugin";
 import { beamfallShellSW } from "./sw-plugin";
 
 // The bundle is served by the Go server via go:embed. Post-cutover it is the
@@ -9,7 +10,12 @@ import { beamfallShellSW } from "./sw-plugin";
 // subtree; web.go falls back to the tracked placeholder in a standalone clone.
 export default defineConfig({
   base: "/web/",
-  plugins: [react(), tailwindcss(), beamfallShellSW({ base: "/web/" })],
+  plugins: [
+    react(),
+    tailwindcss(),
+    brandSplash({ appDir: fileURLToPath(new URL(".", import.meta.url)) }),
+    beamfallShellSW({ base: "/web/" }),
+  ],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

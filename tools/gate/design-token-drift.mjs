@@ -29,3 +29,21 @@ if (stale.length) {
   process.exit(1);
 }
 console.log(`design-token-drift: generated web tokens match the design-system release (${dsDir})`);
+
+// The splash's vendored Cut Beam intros (CORE-2556) must equal the design system's bytes. A
+// sibling older than the intros (CORE-2555) is skipped the same way, loudly.
+const intro = await import(
+  pathToFileURL(resolve("internal/web/app/scripts/vendor-brand-intro.mjs")).href
+);
+const introUnavailable = intro.introSourceUnavailable(dsDir);
+if (introUnavailable) {
+  console.log(`design-token-drift: brand intro SKIPPED (${introUnavailable})`);
+  process.exit(0);
+}
+const staleIntros = intro.introDrift(dsDir);
+if (staleIntros.length) {
+  for (const path of staleIntros) console.error(`DRIFT ${path}`);
+  console.error("run: node internal/web/app/scripts/vendor-brand-intro.mjs");
+  process.exit(1);
+}
+console.log("design-token-drift: vendored brand intros match the design system");
