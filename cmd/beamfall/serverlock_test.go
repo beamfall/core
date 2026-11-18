@@ -30,6 +30,10 @@ func TestRefuseServerLockRefusesHeldLock(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "server appears to be running") {
 		t.Fatalf("refuseServerLock = %v, want server running refusal", err)
 	}
+	// Every offline command shares this refusal, so it must not name one.
+	if strings.Contains(err.Error(), "API token") {
+		t.Fatalf("refuseServerLock = %q, names a single command", err)
+	}
 }
 
 func TestRefuseServerLockIgnoresLeftoverUnlockedFile(t *testing.T) {
