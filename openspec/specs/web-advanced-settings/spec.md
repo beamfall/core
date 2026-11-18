@@ -49,8 +49,8 @@ No destination needed for first run or recovery SHALL be classified Advanced.
 #### Scenario: Normal menu
 
 - **WHEN** the Console is shown in the Normal view
-- **THEN** the rail omits Activity, Identification, Layout & Navigation, API tokens and Retention
-  rules, and shows Libraries, Profiles & access, Remote access, Backups, Migration and Updates
+- **THEN** the rail omits Activity, Identification, API tokens and Retention rules, and shows
+  Libraries, Profiles & access, Parental controls, Remote access, Backups, Migration and Updates
 
 #### Scenario: Deep link to an Advanced page
 
