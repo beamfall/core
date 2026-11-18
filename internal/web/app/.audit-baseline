@@ -1,11 +1,4 @@
 {
   "//": "npm audit baseline (TECHDUR-WEB-2). Bounded waivers only \u2014 each entry is a temporary, EXPIRING acceptance of a high/critical advisory that has no fix yet. script/audit-npm.sh fails closed on: a NEW advisory not listed here; an entry past its `expires` date; an entry whose advisory has a fix available (`fixAvailable` \u2014 apply the fix, do not waive); and a stale entry whose advisory no longer appears (remove it). Keep this array empty whenever the tree is clean.",
-  "waivers": [
-    {
-      "id": 1247710,
-      "rationale": "CORE-2350, owner-approved 2026-11-17. GHSA-fc5q-39xc-vjpf picomatch ReDoS (<=4.0.7, no patched release). Dev/build tooling only (vite, vitest, tinyglobby); not in the embedded app. npm's only fix is a semver-major vitest downgrade to 3.1.4, which would not remove picomatch (vite 8 pulls it). Bump picomatch when a patched release ships.",
-      "added": "2026-11-17",
-      "expires": "2026-12-15"
-    }
-  ]
+  "waivers": []
 }
