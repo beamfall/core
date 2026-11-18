@@ -81,3 +81,22 @@ a server linked with it would refuse every native client, just as an unset one d
 
 To release: assemble the manifest from the client records, set it as `FIRST_PARTY_BUILDS_MANIFEST`,
 then push the version tag.
+
+## Local debug builds on a running server
+
+A debug client build is never in a release catalog: its artifact hash changes with every commit.
+An operator can admit one on a running server through the runtime **dev build file** named by
+`BEAMFALL_DEV_BUILDS_FILE` (the Unraid steps are in
+[`packaging/unraid/README.md`](../../packaging/unraid/README.md)). It is the same
+`beamfall.first-party-builds/v1` manifest, parsed with tighter rules:
+
+- every `buildID` ends in `-dev`, the suffix only debug identities carry;
+- `distributions` is exactly `["direct"]`;
+- `roles` are `viewer` and/or `manager`;
+- no `minimumSequence`: rollback floors stay release policy.
+
+The server re-reads the file when it changes, logs every load with the admitted build IDs, and
+adds the records to the installed catalog without replacing any record already there. Any change
+advances the decision generation. Every dev record goes through the unchanged provenance check,
+so an artifact hash mismatch is still refused. A missing or invalid file admits no dev builds.
+Release builds and the linked catalog are unaffected; leave the variable unset in production.

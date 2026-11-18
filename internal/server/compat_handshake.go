@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -66,6 +67,7 @@ func (s *Server) compatHandshake(w http.ResponseWriter, r *http.Request) {
 			bindNativeSurface = true
 		}
 	}
+	s.devBuilds.refresh()
 	record, result, accepted, err := s.acceptCompatHandshake(r.Context(), scope, contract, derivedSurface, credentialClass == compatCredentialWeb, bindNativeSurface)
 	if err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "compatibility policy changed; retry")
@@ -82,6 +84,7 @@ func (s *Server) compatHandshake(w http.ResponseWriter, r *http.Request) {
 		response.DecisionID = record.DecisionID
 	} else {
 		s.compat.markRefused(subject)
+		s.logRefusedHandshake(r.Context(), scope, contract, derivedSurface, credentialClass == compatCredentialWeb, result)
 	}
 	writeJSON(w, http.StatusOK, response)
 }
@@ -120,6 +123,37 @@ func (s *Server) acceptCompatHandshake(ctx context.Context, scope auth.Scope, co
 		}
 	}
 	return capabilities.Record{}, capabilities.Result{}, false, capabilities.ErrStaleGeneration
+}
+
+// logRefusedHandshake writes one line per refused handshake naming the build
+// and the server-local provenance finding (CORE-2396, CORE-2295). The finding
+// is audit detail: it never reaches the wire, where every provenance failure
+// stays the coarse unknown-build reason (ADR-0063).
+func (s *Server) logRefusedHandshake(ctx context.Context, scope auth.Scope, contract capabilities.ClientContract, derivedSurface capabilities.Surface, embeddedUI bool, result capabilities.Result) {
+	enrollment := compatEnrollment(scope)
+	enrollment.EmbeddedUI = embeddedUI
+	enrollment.Surface = derivedSurface
+	finding := "unavailable"
+	if policy, err := s.deviceBuildPolicy(ctx, scope, s.compat.snapshot()); err == nil {
+		finding = string(capabilities.VerifyBuildProvenance(contract, enrollment, policy.Builds))
+	}
+	// The presented digest is logged only when provenance failed, so the
+	// operator can compare it with a catalog record. A verified digest is the
+	// bearer claim of a cataloged build and stays out of the log.
+	presentedHash := ""
+	if finding != string(capabilities.ProvenanceVerified) {
+		presentedHash = contract.ArtifactHash
+	}
+	slog.WarnContext(ctx, "compatibility handshake refused",
+		"device", scope.DeviceID,
+		"role", string(enrollment.Role),
+		"distribution", string(enrollment.Distribution),
+		"surface", contract.Surface,
+		"build", contract.BuildID,
+		"artifactHash", presentedHash,
+		"decision", string(result.Decision),
+		"reason", string(result.ReasonCode),
+		"finding", finding)
 }
 
 func compatHasCredential(r *http.Request) bool {

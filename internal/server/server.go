@@ -108,6 +108,7 @@ type Server struct {
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
 	compat              *compatState
+	devBuilds           *devBuildsFile
 	compatRefusalDir    string
 	deviceSurfaces      deviceSurfaceStore
 	deviceBuilds        deviceBuildStore
@@ -277,6 +278,8 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 		opt(s)
 	}
 	s.compat = newCompatState(s.buildSHA, s.capabilities, firstPartyBuilds)
+	s.devBuilds = newDevBuildsFile(os.Getenv(devBuildsFileEnv), s.compat)
+	s.devBuilds.refresh()
 	s.bindCompatStreamTokens()
 	s.jobStats = makeLogoutIdempotent(s.jobStats)
 	if knownProxies != nil {
