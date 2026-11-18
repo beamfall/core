@@ -182,7 +182,7 @@ export function EntityPage() {
     return listedItems.filter((item) => item.kind === "media");
   }, [trackOrder, entity, listedItems, listing.rows]);
   const people = trackOrder ? entityPeople(entity) : [];
-  const unwatched = unwatchedCount(fallback, entity?.relatedEntities);
+  const unwatched = unwatchedCount(fallback);
   const factItems = [
     { key: "kind", text: kindLabel ?? "", className: "bf-entity-kind" },
     { key: "year", text: facts.year ? String(facts.year) : "" },

@@ -73,51 +73,17 @@ function playable(item: SourceItem): boolean {
   return item.kind === "media" && !item.locked;
 }
 
-function totalOf(group: RelatedEntityGroup): number {
-  return group.items.reduce((sum, item) => sum + (item.engagement?.totalCount ?? 0), 0);
-}
-
 /**
- * The container groups that hold this Entity's children. Related groups carry
- * relations in both directions with no direction on the wire, so a container
- * group is read as the Entity's own parent when it is a single container that
- * holds at least as much as every other container group together (the
- * containerContext heuristic: a parent holds everything its child holds). With
- * one container group, or when every group would read as a parent, all of
- * them are children.
+ * How many of the Entity's own playable Media are not finished yet (0 when
+ * none are left or none are known). Only direct Media are counted: related
+ * container groups carry relations in both directions with no direction on
+ * the wire, so a parent cannot be told from a child and their counts are never
+ * summed. A container of containers shows no count until the wire carries the
+ * Entity's own engagement.
  */
-export function descendantContainerGroups(
-  groups: readonly RelatedEntityGroup[] | null | undefined,
-): RelatedEntityGroup[] {
-  const containers = (groups ?? []).filter(
-    (group) => group.archetype === "container" && group.items.length > 0,
-  );
-  if (containers.length < 2) return containers;
-  const all = containers.reduce((sum, group) => sum + totalOf(group), 0);
-  const children = containers.filter((group) => {
-    if (group.items.length !== 1) return true;
-    const own = totalOf(group);
-    return own === 0 || own < all - own;
-  });
-  return children.length === 0 ? containers : children;
-}
-
-/**
- * How many children are left to finish: the Entity's own playable Media not
- * yet finished, else (no Media of its own) the remaining counts its child
- * containers report. 0 when nothing is left or nothing is known.
- */
-export function unwatchedCount(
-  items: readonly SourceItem[] | null | undefined,
-  groups: readonly RelatedEntityGroup[] | null | undefined,
-): number {
-  const own = (items ?? []).filter(playable);
-  if (own.length > 0) return own.filter((item) => item.engagement?.completed !== true).length;
-  let remaining = 0;
-  for (const group of descendantContainerGroups(groups)) {
-    for (const item of group.items) remaining += item.engagement?.remainingCount ?? 0;
-  }
-  return remaining;
+export function unwatchedCount(items: readonly SourceItem[] | null | undefined): number {
+  return (items ?? []).filter(playable).filter((item) => item.engagement?.completed !== true)
+    .length;
 }
 
 /** The hero's rows: child containers first, then people, then everything else. */

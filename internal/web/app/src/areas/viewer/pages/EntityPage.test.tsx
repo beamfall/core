@@ -716,7 +716,7 @@ describe("EntityPage hero (CORE-2441)", () => {
     ],
   };
 
-  it("draws the backdrop, facts, unwatched badge, overview and rows from data present", async () => {
+  it("draws the backdrop, facts, overview and rows from data present", async () => {
     vi.mocked(fetchEntity).mockResolvedValue(show);
     vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
     const { container } = renderEntity();
@@ -729,7 +729,8 @@ describe("EntityPage hero (CORE-2441)", () => {
       .getAllByRole("listitem")
       .map((li) => li.textContent);
     expect(facts).toEqual(["set", "2004", "PG", "Drama"]);
-    expect(screen.getByText("7 unwatched")).toBeInTheDocument();
+    // Related containers never feed the badge: their direction is unknown.
+    expect(screen.queryByText(/unwatched/)).toBeNull();
     expect(screen.getByText("An overview.")).toBeInTheDocument();
     // The overview and year are not repeated in the field list; the rest is.
     expect(screen.queryByText("Summary")).toBeNull();
@@ -771,5 +772,52 @@ describe("EntityPage hero (CORE-2441)", () => {
     expect(screen.getByText("Next up: Two")).toBeInTheDocument();
     expect(screen.getByText("Ordinal 2")).toBeInTheDocument();
     expect(screen.getByText("1 unwatched")).toBeInTheDocument();
+  });
+
+  // Codex round 2 repros: related groups carry both directions, so neither a
+  // lone parent nor equal parent and child groups may produce a count.
+  const container = (id: string, remaining: number, total: number) => ({
+    id,
+    kind: "entity",
+    title: id,
+    engagement: { remainingCount: remaining, totalCount: total },
+  });
+
+  it("shows no badge from a lone parent container, before or after its Media load", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...show,
+      relatedEntities: [{ kind: "whole", archetype: "container", items: [container("w", 9, 20)] }],
+    });
+    let resolveMedia: (items: SourceItem[]) => void = () => {};
+    vi.mocked(fetchMediaForEntity).mockReturnValue(
+      new Promise((resolve) => {
+        resolveMedia = resolve;
+      }),
+    );
+    renderEntity();
+    await act(async () => {});
+    expect(screen.queryByText(/unwatched/)).toBeNull();
+
+    await act(async () => {
+      resolveMedia([
+        { id: "m1", kind: "media", title: "One", engagement: { completed: true } },
+        { id: "m2", kind: "media", title: "Two" },
+      ]);
+    });
+    expect(screen.getByText("1 unwatched")).toBeInTheDocument();
+  });
+
+  it("shows no badge when parent and child container groups have equal counts", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...show,
+      relatedEntities: [
+        { kind: "whole", archetype: "container", items: [container("w", 3, 10)] },
+        { kind: "part", archetype: "container", items: [container("b", 3, 10)] },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    await act(async () => {});
+    expect(screen.queryByText(/unwatched/)).toBeNull();
   });
 });
