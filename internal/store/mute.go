@@ -263,6 +263,9 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 	if len(items) == 0 {
 		return items, nil
 	}
+	if hasRollUpMembers(items) {
+		return s.applyMuteFilterRolledUpLocked(ctx, relations, profileID, filter, items)
+	}
 	reach, err := s.mutedReachLocked(ctx, relations, profileID, items)
 	if err != nil {
 		return nil, err
@@ -598,4 +601,55 @@ func (s *Store) ClearMutes(ctx context.Context, profileID ProfileID) error {
 	}
 	_, err := s.eventsW.ExecContext(ctx, `DELETE FROM profile_mute WHERE profile_id = ?`, profileID)
 	return err
+}
+
+func hasRollUpMembers(items []SourceItem) bool {
+	for _, item := range items {
+		if len(item.rollUpMembers) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// applyMuteFilterRolledUpLocked filters a rail holding rolled-up container
+// items (ContainerRollUp): each container's member Media are judged as if the
+// rail were unrolled, and the container stays while any member survives, so
+// muting a genre or a show hides its rolled-up card exactly as it hides the
+// episodes. Items without members are judged directly.
+func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
+	flat := make([]SourceItem, 0, len(items))
+	for _, item := range items {
+		if len(item.rollUpMembers) == 0 {
+			flat = append(flat, SourceItem{ID: item.ID, Kind: item.Kind})
+			continue
+		}
+		for _, member := range item.rollUpMembers {
+			flat = append(flat, SourceItem{ID: member, Kind: "media"})
+		}
+	}
+	kept, err := s.applyMuteFilterLocked(ctx, relations, profileID, filter, flat)
+	if err != nil {
+		return nil, err
+	}
+	survivors := make(map[MediaID]bool, len(kept))
+	for _, item := range kept {
+		survivors[item.ID] = true
+	}
+	out := []SourceItem{}
+	for _, item := range items {
+		if len(item.rollUpMembers) == 0 {
+			if survivors[item.ID] {
+				out = append(out, item)
+			}
+			continue
+		}
+		for _, member := range item.rollUpMembers {
+			if survivors[member] {
+				out = append(out, item)
+				break
+			}
+		}
+	}
+	return out, nil
 }

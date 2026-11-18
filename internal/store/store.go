@@ -807,6 +807,10 @@ type SourceQuery struct {
 	// yields an empty feed, never an error (hidden and missing stay
 	// indistinguishable). Ignored on every other kind, like FieldFilters.
 	EntityFilter *EntityFilter
+	// RollUp lists an "all-items" Media that sits in a nested container
+	// hierarchy as its top container instead (the series, not the episode).
+	// Nil lists every Media as itself. Ignored on every other kind.
+	RollUp *ContainerRollUp
 	// Seed parameterizes the "random" Source kind: the same seed yields the
 	// same shuffle order across calls. Empty is a valid seed; ignored on every
 	// other kind.
@@ -817,6 +821,15 @@ type SourceQuery struct {
 	// value yields an empty feed (never an error), like a missing entity.
 	// Ignored on every other kind.
 	Value string
+}
+
+// ContainerRollUp names the plugin-declared relations an "all-items" feed
+// climbs to list a Media as its top container: MemberRelations link a
+// container Entity to a Media it holds, ParentRelations link that container
+// to the container above it. Core names no relation (invariant #1).
+type ContainerRollUp struct {
+	MemberRelations []string
+	ParentRelations []string
 }
 
 // EntityFilter names one entity by declared kind plus stored title (the same
@@ -837,11 +850,15 @@ type EntityFilter struct {
 // false. The graph layer additionally suppresses the field on the wire unless
 // the scope is Revealed — the absence is the privacy enforcement.
 type SourceItem struct {
-	ID         MediaID
-	Kind       string
-	Title      string
-	Summary    string
-	Restricted bool
+	ID MediaID
+	// rollUpMembers are the matched Media a rolled-up container item stands
+	// for (ContainerRollUp), so passive-rail mute filtering judges the
+	// container by its members exactly as the unrolled rail would.
+	rollUpMembers []MediaID
+	Kind          string
+	Title         string
+	Summary       string
+	Restricted    bool
 	// MediaClass is a media-kind item's playback class ("audio", "video"),
 	// set by AnnotateMediaClass; an entity item carries the class its linked
 	// Media share (CORE-2362). Empty for unknown or mixed classes.
@@ -3424,7 +3441,7 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 		if text := strings.TrimSpace(query.Query); text != "" {
 			return s.archiveSearchMediaLocked(ctx, filter, text, limit, offset)
 		}
-		return s.allItemsSQL(ctx, filter, query.FieldFilters, query.EntityFilter, limit, offset)
+		return s.allItemsSQL(ctx, filter, query.FieldFilters, query.EntityFilter, query.RollUp, limit, offset)
 	case "on-this-day":
 		return s.onThisDayItemsSQL(ctx, filter, limit, offset)
 	case "random":

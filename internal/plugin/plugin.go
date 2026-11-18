@@ -334,6 +334,70 @@ func (r *Registry) EntityParentRelations() []string {
 	return relations
 }
 
+// ContainerRollUpRelations returns the relations activated bundles declare
+// for a nested container hierarchy a catalog feed lists by its top container:
+// members are the relations a container Kind holds one Media by
+// (Cardinality "one", the season's episode), parents the relations that
+// container climbs to a container Kind the bundle's browse Layout lists
+// whole (the show). A container whose parent is not browsed, or which holds
+// Media many-to-many (an album), contributes nothing, so its Media stay
+// listed as themselves. Both are sorted and without repeats; core names no
+// Kind or relation (invariant #1).
+func (r *Registry) ContainerRollUpRelations() (members, parents []string) {
+	if r == nil {
+		return nil, nil
+	}
+	for _, id := range r.order {
+		bundle := r.bundles[id]
+		browsed := map[string]bool{}
+		for _, layout := range bundle.Layouts {
+			if layout.Role != "browse" {
+				continue
+			}
+			for _, section := range layout.Sections {
+				source := section.Source
+				if source.Kind == "entity-items" && source.EntityKind != "" && len(source.FieldFilters) == 0 && source.EntityFilter == nil {
+					browsed[source.EntityKind] = true
+				}
+			}
+		}
+		containers := map[string]bool{}
+		for _, kind := range bundle.EntityKinds {
+			containers[kind.Name] = kind.Archetype == "container"
+		}
+		for _, kind := range bundle.EntityKinds {
+			if !containers[kind.Name] {
+				continue
+			}
+			var held, climbs []string
+			for _, relation := range kind.Relations {
+				switch {
+				case relation.ToKind == MediaKindName && relation.Cardinality == "one":
+					held = append(held, relation.Name)
+				case relation.ToKind != kind.Name && containers[relation.ToKind] && browsed[relation.ToKind]:
+					climbs = append(climbs, relation.Name)
+				}
+			}
+			if len(held) == 0 || len(climbs) == 0 {
+				continue
+			}
+			for _, name := range held {
+				if !contains(members, name) {
+					members = append(members, name)
+				}
+			}
+			for _, name := range climbs {
+				if !contains(parents, name) {
+					parents = append(parents, name)
+				}
+			}
+		}
+	}
+	slices.Sort(members)
+	slices.Sort(parents)
+	return members, parents
+}
+
 func contains(values []string, value string) bool {
 	for _, v := range values {
 		if v == value {

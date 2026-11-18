@@ -2255,6 +2255,49 @@ func entityRelationFilterSQL(filter *EntityFilter, visible []LibraryID, liveOnly
 	return clause + `)`, args
 }
 
+// containerRollUpSQL wraps the "all-items" candidate query matched so each
+// Media held by a member container whose parent container is live and in a
+// visible Library is listed once as that parent Entity; every other Media is
+// listed as itself. Both kinds sort together by title. placeholders and
+// visible are the visible-Library binds matched already uses; the returned
+// args follow matched's, before LIMIT and OFFSET.
+func containerRollUpSQL(matched string, rollUp *ContainerRollUp, placeholders []string, visible []LibraryID) (string, []any) {
+	members := make([]string, len(rollUp.MemberRelations))
+	parents := make([]string, len(rollUp.ParentRelations))
+	args := make([]any, 0, len(members)+len(parents)+len(visible))
+	for i, relation := range rollUp.MemberRelations {
+		members[i] = "?"
+		args = append(args, relation)
+	}
+	for i, relation := range rollUp.ParentRelations {
+		parents[i] = "?"
+		args = append(args, relation)
+	}
+	for _, id := range visible {
+		args = append(args, id)
+	}
+	return `
+		WITH matched AS (` + matched + `),
+		tops AS (
+			SELECT mt.id AS media_id, t.id AS top_id, t.title AS top_title
+			FROM matched mt
+			JOIN entity_relation c ON c.to_media_id = mt.id
+			  AND c.relation IN (` + strings.Join(members, ", ") + `)
+			JOIN entity sn ON sn.id = c.from_entity_id AND sn.trashed_at_ms IS NULL
+			JOIN entity_relation p ON p.from_entity_id = c.from_entity_id
+			  AND p.relation IN (` + strings.Join(parents, ", ") + `)
+			JOIN entity t ON t.id = p.to_entity_id AND t.trashed_at_ms IS NULL
+			  AND t.library_id IN (` + strings.Join(placeholders, ", ") + `)
+		)
+		SELECT id, kind, title, duration_seconds, '' AS members FROM matched
+		WHERE id NOT IN (SELECT media_id FROM tops)
+		UNION ALL
+		SELECT top_id, 'entity', top_title, 0, group_concat(media_id, char(31)) FROM tops
+		GROUP BY top_id, top_title
+		ORDER BY 3 COLLATE NOCASE, 1
+		LIMIT ? OFFSET ?`, args
+}
+
 func (s *Store) sourceItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilters map[string]any, entityFilter *EntityFilter, limit, offset int) ([]SourceItem, error) {
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
@@ -3412,7 +3455,7 @@ func nullableMillis(value time.Time) any {
 	return timeToMillis(value)
 }
 
-func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilters map[string]any, entityFilter *EntityFilter, limit, offset int) ([]SourceItem, error) {
+func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilters map[string]any, entityFilter *EntityFilter, rollUp *ContainerRollUp, limit, offset int) ([]SourceItem, error) {
 	libraries, err := loadLibraries(ctx, s.catalogR)
 	if err != nil {
 		return nil, err
@@ -3441,15 +3484,23 @@ func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilt
 	args = append(args, entityArgs...)
 	certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	args = append(args, certArgs...)
-	args = append(args, limit, offset)
-	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds
+	matched := `
+		SELECT m.id, 'media' AS kind, m.title, m.duration_seconds
 		FROM media m
-		WHERE m.library_id IN (`+strings.Join(placeholders, ", ")+`)
-		  AND m.trashed_at_ms IS NULL`+mediaExcludeExtrasClause+filterClause+entityClause+certClause+`
+		WHERE m.library_id IN (` + strings.Join(placeholders, ", ") + `)
+		  AND m.trashed_at_ms IS NULL` + mediaExcludeExtrasClause + filterClause + entityClause + certClause
+	// #nosec G202 -- only generated placeholders and closed filter clauses are interpolated; every value is bound.
+	query := matched + `
 		ORDER BY m.title COLLATE NOCASE, m.id
-		LIMIT ? OFFSET ?
-	`, args...)
+		LIMIT ? OFFSET ?`
+	rolling := rollUp != nil && len(rollUp.MemberRelations) > 0 && len(rollUp.ParentRelations) > 0
+	if rolling {
+		var rollUpArgs []any
+		query, rollUpArgs = containerRollUpSQL(matched, rollUp, placeholders, visible)
+		args = append(args, rollUpArgs...)
+	}
+	args = append(args, limit, offset)
+	rows, err := s.catalogR.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -3457,17 +3508,25 @@ func (s *Store) allItemsSQL(ctx context.Context, filter LibraryFilter, fieldFilt
 	items := []SourceItem{}
 	for rows.Next() {
 		var id MediaID
-		var title string
+		var kind, title, members string
 		var durationSeconds int
-		if err := rows.Scan(&id, &title, &durationSeconds); err != nil {
+		dest := []any{&id, &kind, &title, &durationSeconds}
+		if rolling {
+			dest = append(dest, &members)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
-		items = append(items, SourceItem{
-			ID:      id,
-			Kind:    "media",
-			Title:   title,
-			Summary: mediaDurationSummary(durationSeconds),
-		})
+		item := SourceItem{ID: id, Kind: kind, Title: title}
+		if kind == "media" {
+			item.Summary = mediaDurationSummary(durationSeconds)
+		}
+		if members != "" {
+			for _, member := range strings.Split(members, "\x1f") {
+				item.rollUpMembers = append(item.rollUpMembers, MediaID(member))
+			}
+		}
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
