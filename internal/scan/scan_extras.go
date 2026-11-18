@@ -133,10 +133,10 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 
 // extraParentMediaID resolves the main Media an Extra belongs to. Every
 // convention the path matches is tried in turn, so an Extra matching both (a
-// "-deleted" file inside an Extras folder) still resolves through the folder
+// "-trailer" file inside an Extras folder) still resolves through the folder
 // when the suffix finds nothing:
 //   - a stem suffix names its parent by title in the same folder
-//     ("Title-deleted.mkv" beside "Title.mkv");
+//     ("Title-trailer.mkv" beside "Title.mkv");
 //   - an Extras folder belongs to the sole main Media of the folder holding
 //     it.
 //
