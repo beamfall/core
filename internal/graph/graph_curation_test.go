@@ -331,3 +331,57 @@ func TestMediaRelationsCarryCardFields(t *testing.T) {
 		t.Fatalf("artworkSlots = %#v", media.ArtworkSlots)
 	}
 }
+
+// TestMediaRelationsFlagLockedCeilingItems: under a locked certification
+// ceiling, a related item above the ceiling stays listed but carries locked,
+// so a client's play queue can step over it instead of stopping on a refusal.
+func TestMediaRelationsFlagLockedCeilingItems(t *testing.T) {
+	st := storetest.Open(t)
+	handler := certTestHandler(t, st)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Entries", false, "starlog", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]store.MediaID{}
+	for _, cert := range []string{"parent", "low", "high"} {
+		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: "/entries/" + cert + ".mp4", Title: "Entry " + cert,
+			Container: "mp4", Codec: "h264", ContentFingerprint: "fp-" + cert,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rating := cert
+		if cert == "parent" {
+			rating = "low"
+		}
+		if err := st.SetMediaFields(ctx, media.ID, []store.MediaField{
+			{Name: "certification", Type: store.EntityFieldText, Text: rating},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		ids[cert] = media.ID
+	}
+	for _, cert := range []string{"low", "high"} {
+		if err := st.LinkMediaRelation(ctx, ids[cert], store.MediaRelationExtraOf, ids["parent"]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.SetProfileCertificationCeiling(ctx, "profile-default", store.ProfileCertificationCeiling{
+		PluginID: "starlog", Ceiling: "mid", FilterVisibility: "locked",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := graphData[[]MediaRelationInfo](t, handler,
+		`query($mediaID:String!){ mediaRelations(mediaID:$mediaID, relation:"extra-of"){ relation locked media { id } } }`,
+		map[string]any{"mediaID": string(ids["parent"])}, "mediaRelations")
+	locked := map[string]bool{}
+	for _, row := range got {
+		locked[row.Media.ID] = row.Locked
+	}
+	if len(got) != 2 || locked[string(ids["low"])] || !locked[string(ids["high"])] {
+		t.Fatalf("mediaRelations = %#v, want low unlocked and high locked", got)
+	}
+}

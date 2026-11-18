@@ -330,6 +330,8 @@ export interface EntityRelationDetail {
 export interface MediaRelationDetail {
   relation: string;
   media: GenericMediaInfo;
+  /** Listed but blocked by a locked certification ceiling: not playable. */
+  locked?: boolean;
 }
 
 /** Result for generic relation writes. */

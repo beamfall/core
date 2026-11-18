@@ -5,11 +5,13 @@ import { clearViewerCache, writeViewerCache } from "@/lib/viewerCache";
 import { sectionCacheKey } from "../components/HydratedSection";
 import {
   fetchMedia,
+  fetchMediaRelations,
   findCachedSiblings,
   mediaLinkState,
   readMediaPreview,
   resumeProgress,
 } from "./mediaDetail";
+import { playQueueOf } from "./watchQueue";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -134,5 +136,26 @@ describe("fetchMedia", () => {
     const failure = new TypeError("Failed to fetch");
     vi.mocked(graphql).mockRejectedValueOnce(failure);
     await expect(fetchMedia("m1")).rejects.toBe(failure);
+  });
+});
+
+describe("fetchMediaRelations", () => {
+  it("carries the server's locked flag so the row's queue steps over a blocked item", async () => {
+    vi.mocked(graphql).mockResolvedValue({
+      mediaRelations: [
+        { media: { id: "allowed", title: "Allowed", mediaClass: "video" } },
+        { locked: true, media: { id: "blocked", title: "Blocked", mediaClass: "video" } },
+        { locked: false, media: { id: "later", title: "Later" } },
+      ],
+    });
+    const cards = await fetchMediaRelations("parent", "extra-of");
+    expect(vi.mocked(graphql).mock.calls[0][0]).toContain("locked media {");
+    expect(cards.map((card) => [card.id, card.locked === true])).toEqual([
+      ["allowed", false],
+      ["blocked", true],
+      ["later", false],
+    ]);
+    expect(cards[0]).not.toHaveProperty("locked");
+    expect(playQueueOf(cards).map((entry) => entry.id)).toEqual(["allowed", "later"]);
   });
 });

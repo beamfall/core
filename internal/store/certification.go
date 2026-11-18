@@ -344,3 +344,33 @@ func planeCertificationFilterSQL(pluginID string, constraints []CertificationCon
 	}
 	return clause.String(), args
 }
+
+// LockedMediaIDs reports which of ids a locked certification ceiling in filter
+// blocks: visible to a browse read but refused at playback. It applies the
+// same rule browse reads use to flag SourceItems, so a read that returns
+// Media rather than SourceItems (MediaRelationsOf) can say the same thing. A
+// playback-gate filter never returns blocked Media, so it reports none.
+func (s *Store) LockedMediaIDs(ctx context.Context, filter LibraryFilter, ids []MediaID) (map[MediaID]bool, error) {
+	out := map[MediaID]bool{}
+	if filter.PlaybackGate || len(ids) == 0 {
+		return out, nil
+	}
+	items := make([]SourceItem, len(ids))
+	for i, id := range ids {
+		items[i] = SourceItem{ID: id, Kind: "media"}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	if err := s.annotateLockedLocked(ctx, filter.Certification, items, filter.GrantedMediaIDs); err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if item.Locked {
+			out[item.ID] = true
+		}
+	}
+	return out, nil
+}

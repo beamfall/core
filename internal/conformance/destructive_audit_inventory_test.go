@@ -113,6 +113,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"ListJobs":                                {},
 	"ListNotifications":                       {},
 	"ListSchedules":                           {},
+	"LockedMediaIDs":                          {},
 	"MarkArtworkCandidateApplied":             {},
 	"MarkNotificationRead":                    {},
 	"MarkersForMedia":                         {},

@@ -37,6 +37,10 @@ type EntityRelationInfo struct {
 type MediaRelationInfo struct {
 	Relation string    `json:"relation"`
 	Media    MediaInfo `json:"media"`
+	// Locked marks a related item a locked certification ceiling blocks: it
+	// stays listed but is refused at playback, as SourceItem.Locked is on
+	// browse reads, so a client can skip it in a play queue.
+	Locked bool `json:"locked,omitempty"`
 }
 
 type RelationWriteResult struct {
@@ -164,6 +168,10 @@ func (h *Handler) mediaRelations(ctx context.Context, scope auth.Scope, req requ
 	if err != nil {
 		return nil, err
 	}
+	locked, err := h.store.LockedMediaIDs(ctx, scope.LibraryFilter(), ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]MediaRelationInfo, len(related))
 	for i, media := range related {
 		info := mediaInfoWithFavorite(media, favorites[media.ID])
@@ -171,7 +179,7 @@ func (h *Handler) mediaRelations(ctx context.Context, scope auth.Scope, req requ
 		info.ArtworkSlots = h.mediaArtworkSlots(media.ID)
 		info.DurationSeconds = media.DurationSeconds
 		info.MediaClass = string(media.Class)
-		out[i] = MediaRelationInfo{Relation: string(relation), Media: info}
+		out[i] = MediaRelationInfo{Relation: string(relation), Media: info, Locked: locked[media.ID]}
 	}
 	return out, nil
 }

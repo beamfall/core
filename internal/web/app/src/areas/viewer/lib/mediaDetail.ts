@@ -17,7 +17,7 @@ const MEDIA_FIELDS_QUERY =
   "query MediaFields($mediaID: String!) { mediaFields(mediaID: $mediaID) { name type value label } }";
 
 const MEDIA_RELATIONS_QUERY =
-  "query MediaRelations($mediaID: String!, $relation: String!) { mediaRelations(mediaID: $mediaID, relation: $relation) { media { id title year durationSeconds mediaClass artworkSlots } } }";
+  "query MediaRelations($mediaID: String!, $relation: String!) { mediaRelations(mediaID: $mediaID, relation: $relation) { locked media { id title year durationSeconds mediaClass artworkSlots } } }";
 
 const MEDIA_TRACKS_QUERY =
   "query MediaTracks($mediaID: String!) { mediaTracks(mediaID: $mediaID) { versions { id label videoCodec hdr audioTracks { streamIndex codec language channels default commentary visualImpaired } captionTracks { id format streamIndex language forced sdh visualImpaired commentary title } } } }";
@@ -72,21 +72,21 @@ interface RelatedMedia {
 /**
  * The Media related to this item by a stored relation, as cards (CORE-2439):
  * "extra-of" lists its Extras, "edition-of" its other Editions. The server
- * filters by this Profile's reveal level and orders by title.
+ * filters by this Profile's reveal level and orders by title. An item a locked
+ * certification ceiling blocks stays listed but carries `locked`, so the row's
+ * play queue steps over it.
  */
 export async function fetchMediaRelations(
   mediaID: string,
   relation: "extra-of" | "edition-of",
   signal?: AbortSignal,
 ): Promise<SourceItem[]> {
-  const data = await graphql<{ mediaRelations: { media: RelatedMedia }[] | null }>(
-    MEDIA_RELATIONS_QUERY,
-    { mediaID, relation },
-    signal,
-  );
+  const data = await graphql<{
+    mediaRelations: { media: RelatedMedia; locked?: boolean }[] | null;
+  }>(MEDIA_RELATIONS_QUERY, { mediaID, relation }, signal);
   return (data.mediaRelations ?? [])
     .filter((row) => row.media?.id && row.media.id !== mediaID)
-    .map(({ media }) => ({
+    .map(({ media, locked }) => ({
       kind: "media",
       id: media.id,
       title: media.title,
@@ -94,6 +94,7 @@ export async function fetchMediaRelations(
       durationSeconds: media.durationSeconds,
       mediaClass: media.mediaClass,
       artworkSlots: media.artworkSlots,
+      ...(locked ? { locked: true } : {}),
     }));
 }
 

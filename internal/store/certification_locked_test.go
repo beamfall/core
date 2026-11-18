@@ -244,3 +244,54 @@ func TestAnnotateLockedBatchesLargeReads(t *testing.T) {
 		t.Fatalf("locked = %v, want only %q", locked, ids["high"])
 	}
 }
+
+// TestLockedMediaIDsFlagsLockedModeRelations: a stored Media relation read
+// keeps above-ceiling Media visible under a locked ceiling, and LockedMediaIDs
+// flags exactly those, skipping granted items and playback-gate filters.
+func TestLockedMediaIDsFlagsLockedModeRelations(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	libraryID, ids := seedCertifiedLibrary(t, st, "filmtv", false, "low", "mid", "high", "")
+	for _, cert := range []string{"mid", "high", ""} {
+		if err := st.LinkMediaRelation(ctx, ids[cert], MediaRelationExtraOf, ids["low"]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := LibraryFilter{AllowedIDs: []LibraryID{libraryID}, Certification: []CertificationConstraint{lockedConstraint()}}
+
+	related, err := st.MediaRelationsOf(ctx, ids["low"], MediaRelationExtraOf, filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relatedIDs := make([]MediaID, len(related))
+	for i := range related {
+		relatedIDs[i] = related[i].ID
+	}
+	assertMediaIDSet(t, relatedIDs, ids["mid"], ids["high"], ids[""])
+
+	locked, err := st.LockedMediaIDs(ctx, filter, relatedIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(locked) != 2 || !locked[ids["high"]] || !locked[ids[""]] {
+		t.Fatalf("locked = %v, want %q and %q", locked, ids["high"], ids[""])
+	}
+
+	granted := filter
+	granted.GrantedMediaIDs = []MediaID{ids["high"]}
+	if locked, err = st.LockedMediaIDs(ctx, granted, relatedIDs); err != nil {
+		t.Fatal(err)
+	}
+	if len(locked) != 1 || !locked[ids[""]] {
+		t.Fatalf("granted locked = %v, want only %q", locked, ids[""])
+	}
+
+	gated := filter
+	gated.PlaybackGate = true
+	if locked, err = st.LockedMediaIDs(ctx, gated, relatedIDs); err != nil {
+		t.Fatal(err)
+	}
+	if len(locked) != 0 {
+		t.Fatalf("playback-gate locked = %v, want none", locked)
+	}
+}

@@ -208,3 +208,96 @@ func TestRescanClearsStaleExtraFlagFromAboveRootFolder(t *testing.T) {
 		t.Fatalf("rescan kept the stale Extra flag; main Media missing from browse: %#v", items)
 	}
 }
+
+// TestExtraParentCoversEveryExtraConvention: every path isExtraPath marks as
+// an Extra resolves its parent by the same convention, so no classified Extra
+// silently loses its extra-of relation. The newly recognised video suffixes,
+// the ordinal stem and the title-scoped Extras folders are covered here.
+func TestExtraParentCoversEveryExtraConvention(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "mnt", "media")
+	titleDir := filepath.Join(root, "Synthetic Title")
+	seasonDir := filepath.Join(root, "Synthetic Show", "Season 3")
+	soloSeasonDir := filepath.Join(root, "Solo Show", "Series 2")
+	byDir := map[string][]store.MediaID{
+		titleDir:      {"title"},
+		seasonDir:     {"ep1", "ep2"},
+		soloSeasonDir: {"solo"},
+	}
+	byDirTitle := map[extraParentTitleKey]store.MediaID{
+		{dir: titleDir, title: "synthetic title"}: "title",
+		{dir: seasonDir, title: "pilot"}:          "ep1",
+	}
+	cases := []struct {
+		name string
+		path string
+		want store.MediaID
+	}{
+		{"established suffix", filepath.Join(titleDir, "Synthetic Title-trailer.mkv"), "title"},
+		{"deleted suffix", filepath.Join(titleDir, "Synthetic Title-deleted.mkv"), "title"},
+		{"deletedscene suffix", filepath.Join(titleDir, "Synthetic Title-DeletedScene.mkv"), "title"},
+		{"scene suffix", filepath.Join(titleDir, "Synthetic Title-scene.mkv"), "title"},
+		{"clip suffix", filepath.Join(titleDir, "Synthetic Title-clip.mp4"), "title"},
+		{"other suffix", filepath.Join(titleDir, "Synthetic Title-other.mkv"), "title"},
+		{"extra suffix", filepath.Join(titleDir, "Synthetic Title-extra.mkv"), "title"},
+		{"episode suffix", filepath.Join(seasonDir, "Pilot-deleted.mkv"), "ep1"},
+		{"suffix with no matching title", filepath.Join(titleDir, "Elsewhere-deleted.mkv"), ""},
+		{"ordinal stem, sole Media", filepath.Join(soloSeasonDir, "2.x Out Takes.mkv"), "solo"},
+		{"ordinal stem, spaced x", filepath.Join(soloSeasonDir, "2 x Set Tour.mkv"), "solo"},
+		{"ordinal stem, several Media", filepath.Join(seasonDir, "3.x Out Takes.mkv"), ""},
+		{"Behind The Scenes folder", filepath.Join(titleDir, "Behind The Scenes", "Making Of.mkv"), "title"},
+		{"Deleted Scenes folder", filepath.Join(titleDir, "Deleted Scenes", "Cut.mkv"), "title"},
+		{"Scenes folder", filepath.Join(titleDir, "Scenes", "Opening.mkv"), "title"},
+		{"Clips folder", filepath.Join(titleDir, "Clips", "Clip.mkv"), "title"},
+		{"Samples folder", filepath.Join(titleDir, "Samples", "Sample.mkv"), "title"},
+		{"Other folder", filepath.Join(titleDir, "Other", "Clip.mkv"), "title"},
+		{"Extras folder beside several Media", filepath.Join(seasonDir, "Deleted Scenes", "Cut.mkv"), ""},
+	}
+	for _, tc := range cases {
+		if !isExtraPath(root, tc.path) {
+			t.Fatalf("%s: isExtraPath(%q) = false, want true", tc.name, tc.path)
+		}
+		if got := extraParentMediaID(root, tc.path, byDir, byDirTitle); got != tc.want {
+			t.Errorf("%s: extraParentMediaID(%q) = %q, want %q", tc.name, tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestScanLinksNewExtraConventionsToParent: an end-to-end scan links a
+// -deleted suffix file, an ordinal-stem file and a title-scoped Extras folder
+// file to the sole main Media of their folder.
+func TestScanLinksNewExtraConventionsToParent(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	writeScanFile(t, root, "Synthetic Feature/Synthetic Feature.mp4", []byte("feature content"))
+	writeScanFile(t, root, "Synthetic Feature/Synthetic Feature-deleted.mp4", []byte("deleted content"))
+	writeScanFile(t, root, "Synthetic Feature/1.x Out Takes.mp4", []byte("outtakes content"))
+	writeScanFile(t, root, "Synthetic Feature/Behind The Scenes/Making Of.mp4", []byte("making-of content"))
+	st := storetest.Open(t)
+	ctx := context.Background()
+	result, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	ids := map[string]store.MediaID{}
+	for _, f := range result.Files {
+		ids[filepath.Base(f.Path)] = f.MediaID
+	}
+	featureID := ids["Synthetic Feature.mp4"]
+	if featureID == "" {
+		t.Fatalf("main Media not imported: %#v", ids)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
+	extras, err := st.MediaRelationsOf(ctx, featureID, store.MediaRelationExtraOf, filter)
+	if err != nil {
+		t.Fatalf("MediaRelationsOf(extra-of): %v", err)
+	}
+	got := map[store.MediaID]bool{}
+	for _, extra := range extras {
+		got[extra.ID] = true
+	}
+	for _, name := range []string{"Synthetic Feature-deleted.mp4", "1.x Out Takes.mp4", "Making Of.mp4"} {
+		if ids[name] == "" || !got[ids[name]] {
+			t.Errorf("extra %q (id %q) not linked to main Media; extras = %#v", name, ids[name], extras)
+		}
+	}
+}

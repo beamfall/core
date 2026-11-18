@@ -14065,6 +14065,11 @@
       ],
       "children": [
         {
+          "name": "locked",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "media",
           "kind": "object",
           "children": [

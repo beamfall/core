@@ -1779,6 +1779,7 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "locked",
         "media",
         "relation"
       ]

@@ -75,23 +75,43 @@ func isVideoPath(path string) bool {
 // folder named "Trailers" or "Extras" still holds main Media (CORE-2189). It
 // does not stat the filesystem.
 func isExtraPath(root, path string) bool {
+	_, ok := matchExtraPath(root, path)
+	return ok
+}
+
+// extraMatch says which convention marked a file as an Extra, carrying what
+// parent resolution needs. Exactly one of suffix, ordinal or container is set.
+type extraMatch struct {
+	suffix    string // the matched filename-stem suffix
+	ordinal   bool   // the stem matched extraOrdinalStem
+	container string // the nearest Extras folder holding the file
+}
+
+// matchExtraPath is the single classifier behind isExtraPath and
+// extraParentMediaID, so every path classified an Extra is also considered
+// for an extra-of relation. Conventions are tried in a fixed order: stem
+// suffixes, then the video-only suffixes and ordinal stem, then folders.
+func matchExtraPath(root, path string) (extraMatch, bool) {
 	stem := strings.ToLower(titleFromPath(path))
 	for _, suffix := range extraNameSuffixes {
 		if strings.HasSuffix(stem, suffix) {
-			return true
+			return extraMatch{suffix: suffix}, true
 		}
 	}
 	if isVideoPath(path) {
 		for _, suffix := range videoExtraNameSuffixes {
 			if strings.HasSuffix(stem, suffix) {
-				return true
+				return extraMatch{suffix: suffix}, true
 			}
 		}
 		if extraOrdinalStem.MatchString(stem) {
-			return true
+			return extraMatch{ordinal: true}, true
 		}
 	}
-	return extraContainerDir(root, path) != ""
+	if dir := extraContainerDir(root, path); dir != "" {
+		return extraMatch{container: dir}, true
+	}
+	return extraMatch{}, false
 }
 
 // extraOrdinalStem matches a filename stem numbered by a group but not by an
@@ -156,23 +176,45 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 	return nil
 }
 
+// extraParentMediaID resolves the main Media an Extra belongs to, following
+// the convention matchExtraPath reported for it:
+//   - a stem suffix names its parent by title in the same folder
+//     ("Title-deleted.mkv" beside "Title.mkv");
+//   - an ordinal stem ("3.x Out Takes") belongs to its folder's group, so the
+//     parent is the folder's main Media when there is exactly one;
+//   - an Extras folder belongs to the folder holding it, again only when
+//     that folder has exactly one main Media.
+//
+// When no single parent can be determined (no title match, or a folder with
+// several main Media) it returns "" and the file stays an unlinked Extra:
+// guessing among several candidates would attach it to the wrong item, and
+// the classification must not depend on what else the folder holds, so a
+// rescan never flips a file between Extra and main Media.
 func extraParentMediaID(root, path string, byDir map[string][]store.MediaID, byDirTitle map[extraParentTitleKey]store.MediaID) store.MediaID {
-	dir := filepath.Clean(filepath.Dir(path))
-	stem := strings.ToLower(titleFromPath(path))
-	for _, suffix := range extraNameSuffixes {
-		if strings.HasSuffix(stem, suffix) {
-			parentTitle := strings.TrimSuffix(stem, suffix)
-			if parentTitle == "" {
-				return ""
-			}
-			return byDirTitle[extraParentTitleKey{dir: dir, title: parentTitle}]
-		}
+	match, ok := matchExtraPath(root, path)
+	if !ok {
+		return ""
 	}
-	if extrasDir := extraContainerDir(root, path); extrasDir != "" {
-		candidates := byDir[filepath.Clean(filepath.Dir(extrasDir))]
-		if len(candidates) == 1 {
-			return candidates[0]
+	dir := filepath.Clean(filepath.Dir(path))
+	switch {
+	case match.suffix != "":
+		parentTitle := strings.TrimSuffix(strings.ToLower(titleFromPath(path)), match.suffix)
+		if parentTitle == "" {
+			return ""
 		}
+		return byDirTitle[extraParentTitleKey{dir: dir, title: parentTitle}]
+	case match.ordinal:
+		return soleMediaID(byDir[dir])
+	default:
+		return soleMediaID(byDir[filepath.Clean(filepath.Dir(match.container))])
+	}
+}
+
+// soleMediaID returns the only ID in candidates, or "" when there is not
+// exactly one.
+func soleMediaID(candidates []store.MediaID) store.MediaID {
+	if len(candidates) == 1 {
+		return candidates[0]
 	}
 	return ""
 }
