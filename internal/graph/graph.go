@@ -145,6 +145,12 @@ type SourceItem struct {
 	// state it without a detail read (CORE-2386). Absent for entities and for
 	// Media with no known runtime.
 	DurationSeconds int `json:"durationSeconds,omitempty"`
+	// Certification and AudienceScore are a media-kind item's display rating
+	// (PG-13, TV-MA) and 0-10 audience score from the core-conventional
+	// plugin fields, so a card can state them without a detail read
+	// (CORE-2398). Each is absent when the item carries none.
+	Certification string   `json:"certification,omitempty"`
+	AudienceScore *float64 `json:"audienceScore,omitempty"`
 	// Byline names, for an audio Media item, the person-archetype Entities
 	// linked to it, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
@@ -1130,6 +1136,8 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		DurationSeconds: item.DurationSeconds,
 		Sequence:        item.Sequence,
 		Index:           item.Index,
+		Certification:   item.Certification,
+		AudienceScore:   item.AudienceScore,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -4367,6 +4375,11 @@ type MediaInfo struct {
 	// that supplied this item's metadata; filled only by the media(id) read
 	// and omitted when there is none to give (CORE-1126).
 	MetadataAttribution *MetadataAttributionInfo `json:"metadataAttribution,omitempty"`
+	// Certification and AudienceScore are the display rating and 0-10
+	// audience score, as on SourceItem (CORE-2398); filled only by the
+	// media(id) read and omitted when the item carries none.
+	Certification string   `json:"certification,omitempty"`
+	AudienceScore *float64 `json:"audienceScore,omitempty"`
 }
 
 // MediaCreditInfo is one Entity a Media item is linked to, with the declared
@@ -4417,6 +4430,9 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	info.LibraryID = string(media.LibraryID)
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
 	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)
+	if fields, err := h.store.MediaFields(ctx, media.ID, scope.LibraryFilter()); err == nil {
+		info.Certification, info.AudienceScore = store.MediaRatingFrom(fields)
+	}
 	return info, nil
 }
 
