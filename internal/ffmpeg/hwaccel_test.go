@@ -419,21 +419,21 @@ func TestRenditionUnverifiedHEVCTakesTheSoftwarePath(t *testing.T) {
 	runner := New()
 	runner.SetHardwareAccel(HWAccelVAAPI, false)
 	hevc := Rendition{Height: 720, VideoCodec: "hevc"}
-	if got := runner.renditionHWAccel(hevc); got != "" {
+	if got := runner.renditionHWAccel(hevc, EncodePolicy{}); got != "" {
 		t.Fatalf("renditionHWAccel(unverified hevc) = %q, want software", got)
 	}
-	sw := hevc.withHWAccel(runner.renditionHWAccel(hevc))
+	sw := hevc.withHWAccel(runner.renditionHWAccel(hevc, EncodePolicy{}))
 	if args := strings.Join(sw.args(), " "); strings.Contains(args, "hwupload") || strings.Contains(args, "vaapi") {
 		t.Fatalf("unverified HEVC args = %q, want no VAAPI upload", args)
 	}
 	if got := sw.videoArgs(); len(got) < 2 || got[1] != "libx264" {
 		t.Fatalf("videoArgs = %v, want the libx264 fallback", got)
 	}
-	if got := runner.renditionHWAccel(Rendition{Height: 720}); got != HWAccelVAAPI {
+	if got := runner.renditionHWAccel(Rendition{Height: 720}, EncodePolicy{}); got != HWAccelVAAPI {
 		t.Fatalf("renditionHWAccel(h264) = %q, want vaapi", got)
 	}
 	runner.SetHardwareAccel(HWAccelVAAPI, true)
-	if got := runner.renditionHWAccel(hevc); got != HWAccelVAAPI {
+	if got := runner.renditionHWAccel(hevc, EncodePolicy{}); got != HWAccelVAAPI {
 		t.Fatalf("renditionHWAccel(verified hevc) = %q, want vaapi", got)
 	}
 }

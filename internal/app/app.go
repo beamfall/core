@@ -477,6 +477,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// once here. A stored device hint is treated as a configured accelerator only
 	// when it exactly matches the closed vocabulary; arbitrary device paths stay
 	// compatible but are never echoed through the probe report.
+	// softwareTranscodeCap is the automatic cap with the hardware switch off;
+	// 0 (conformance mode) keeps the configured cap.
+	softwareTranscodeCap := 0
 	if !conformanceMode {
 		var configured ffmpeg.HWAccel
 		if accel, ok := ffmpeg.HWAccelFromString(transcodePolicy.Device); ok {
@@ -505,17 +508,21 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		// selected backend's limit for hardware (CORE-2093). An env/flag or
 		// stored cap still wins below.
 		cfg.TranscodeCap = ffmpeg.DefaultTranscodeCap(selected)
+		softwareTranscodeCap = ffmpeg.DefaultTranscodeCap("")
 		if cfg.HardwareAcceleration.SoftwareOnly() {
 			logger.Info("hardware acceleration probe: none verified, using software transcode")
 		} else {
 			logger.Info("hardware acceleration probe: verified working", "accelerators", cfg.HardwareAcceleration.Working, "hevc", cfg.HardwareAcceleration.HEVC(), "av1", cfg.HardwareAcceleration.AV1(), "lowPower", cfg.HardwareAcceleration.LowPower())
 		}
 	}
+	// The Console hardware switch, codec and quality decide the encoder of
+	// new sessions (CORE-2452); the graph re-applies them on every save.
+	ffmpegRunner.SetEncodePolicy(graph.TranscodeEncodePolicy(transcodePolicy))
 	autoTranscodeCap := cfg.TranscodeCap
-	cfg.TranscodeCap = graph.ResolveTranscodeCap(transcodePolicy, envTranscodeCap, autoTranscodeCap)
+	cfg.TranscodeCap = graph.ResolveTranscodeCap(transcodePolicy, envTranscodeCap, autoTranscodeCap, softwareTranscodeCap)
 	// Log the cap that is in force and where it came from, not just the
 	// automatic one, which an env or Console cap may override (CORE-2317).
-	logger.Info("transcode cap: effective", "cap", cfg.TranscodeCap, "source", transcodeCapSource(transcodePolicy, envTranscodeCap), "automatic", autoTranscodeCap)
+	logger.Info("transcode cap: effective", "cap", cfg.TranscodeCap, "source", transcodeCapSource(transcodePolicy, envTranscodeCap), "automatic", autoTranscodeCap, "hardware", transcodePolicy.HardwareEnabled)
 	defaultTranscodeScratchDir := filepath.Join(cfg.DataDir, "transcode")
 	if !cfg.TranscodeScratchDirExplicit && transcodePolicy.TempDir != "" {
 		// The Console-stored temp directory applies at startup. It was proven
@@ -1200,13 +1207,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// Console transcoder resource settings (CORE-1970): the cap applies live
 	// through hlsSessions; the temp directory needs a restart.
 	transcodeRuntime := graph.TranscodeRuntime{
-		CapSetter:      hlsSessions,
-		StartupCap:     cfg.TranscodeCap,
-		AutoCap:        autoTranscodeCap,
-		EnvCap:         envTranscodeCap,
-		ActiveTempDir:  cfg.TranscodeScratchDir,
-		DefaultTempDir: defaultTranscodeScratchDir,
-		EnvTempDir:     cfg.TranscodeScratchDirExplicit,
+		CapSetter:       hlsSessions,
+		EncodePolicy:    ffmpegRunner,
+		StartupCap:      cfg.TranscodeCap,
+		AutoCap:         autoTranscodeCap,
+		SoftwareAutoCap: softwareTranscodeCap,
+		EnvCap:          envTranscodeCap,
+		ActiveTempDir:   cfg.TranscodeScratchDir,
+		DefaultTempDir:  defaultTranscodeScratchDir,
+		EnvTempDir:      cfg.TranscodeScratchDirExplicit,
 	}
 	graphOptions := graph.Options{
 		AuditRecorder:                observability.NewAuditLogger(logger),

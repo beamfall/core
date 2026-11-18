@@ -228,12 +228,12 @@ func TestTranscodeConfigPatchAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg != (store.TranscodeConfig{ToneMapEnabled: true}) {
-		t.Fatalf("default transcode config = %#v, want all-zero with tone-map on", cfg)
+	if cfg != (store.TranscodeConfig{HardwareEnabled: true, ToneMapEnabled: true}) {
+		t.Fatalf("default transcode config = %#v, want hardware and tone-map on", cfg)
 	}
 
-	enabled := true
-	codec := "hevc"
+	enabled := false
+	codec := "h264"
 	quality := "high"
 	device := "/dev/dri/renderD128"
 	updated, err := st.SetTranscodeConfig(ctx, store.TranscodeConfigPatch{
@@ -245,7 +245,7 @@ func TestTranscodeConfigPatchAndClear(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := store.TranscodeConfig{HardwareEnabled: true, Codec: "hevc", Quality: "high", Device: "/dev/dri/renderD128", ToneMapEnabled: true}
+	want := store.TranscodeConfig{HardwareEnabled: false, Codec: "h264", Quality: "high", Device: "/dev/dri/renderD128", ToneMapEnabled: true}
 	if updated != want {
 		t.Fatalf("after write = %#v, want %#v", updated, want)
 	}
@@ -255,8 +255,8 @@ func TestTranscodeConfigPatchAndClear(t *testing.T) {
 	if _, err := st.SetTranscodeConfig(ctx, store.TranscodeConfigPatch{Codec: &badCodec}, now); err == nil {
 		t.Fatal("SetTranscodeConfig(codec=av1) = nil error, want ValidationError")
 	}
-	if reread, _ := st.TranscodeConfig(ctx); reread.Codec != "hevc" {
-		t.Fatalf("after rejected codec write Codec = %q, want hevc", reread.Codec)
+	if reread, _ := st.TranscodeConfig(ctx); reread.Codec != "h264" {
+		t.Fatalf("after rejected codec write Codec = %q, want h264", reread.Codec)
 	}
 
 	// Empty string clears the device override back to default.
@@ -269,8 +269,18 @@ func TestTranscodeConfigPatchAndClear(t *testing.T) {
 		t.Fatalf("after clear Device = %q, want empty", cleared.Device)
 	}
 	// The unrelated codec/quality survive the device clear.
-	if cleared.Codec != "hevc" || cleared.Quality != "high" || !cleared.HardwareEnabled {
-		t.Fatalf("after device clear = %#v, want codec/quality/enabled intact", cleared)
+	if cleared.Codec != "h264" || cleared.Quality != "high" || cleared.HardwareEnabled {
+		t.Fatalf("after device clear = %#v, want codec/quality/hardware-off intact", cleared)
+	}
+
+	// "hevc" is accepted for older clients and stored as Automatic (CORE-2452).
+	hevc := "hevc"
+	automatic, err := st.SetTranscodeConfig(ctx, store.TranscodeConfigPatch{Codec: &hevc}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if automatic.Codec != "" {
+		t.Fatalf("after codec=hevc Codec = %q, want Automatic (empty)", automatic.Codec)
 	}
 }
 

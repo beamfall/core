@@ -18,6 +18,13 @@ type recordingCapSetter struct{ caps []int }
 
 func (r *recordingCapSetter) SetTranscodeCap(limit int) { r.caps = append(r.caps, limit) }
 
+// recordingPolicySetter records the encode policies the resolver applies live.
+type recordingPolicySetter struct{ policies []ffmpeg.EncodePolicy }
+
+func (r *recordingPolicySetter) SetEncodePolicy(policy ffmpeg.EncodePolicy) {
+	r.policies = append(r.policies, policy)
+}
+
 const transcodeResourceSelection = `maxConcurrentTranscodes effectiveMaxConcurrentTranscodes maxConcurrentTranscodesEnvOverride maxConcurrentTranscodesRestartRequired tempDir effectiveTempDir tempDirEnvOverride tempDirRestartRequired toneMapEnabled`
 
 func newTranscodeRuntimeHandler(t *testing.T, st *store.Store, runtime TranscodeRuntime) *Handler {
@@ -180,16 +187,66 @@ func TestTranscodeResourceSettingsEnvOverride(t *testing.T) {
 }
 
 // TestResolveTranscodeCapPrecedence pins the startup cap precedence the app
-// shares with the resolver: env/flag, then stored, then probe-derived.
+// shares with the resolver: env/flag, then stored, then the automatic cap for
+// the encoder in use — the software cap when the hardware switch is off.
 func TestResolveTranscodeCapPrecedence(t *testing.T) {
-	if got := ResolveTranscodeCap(store.TranscodeConfig{MaxConcurrent: 3}, 5, 1); got != 5 {
+	hardware := store.TranscodeConfig{HardwareEnabled: true}
+	if got := ResolveTranscodeCap(store.TranscodeConfig{MaxConcurrent: 3}, 5, 1, 2); got != 5 {
 		t.Fatalf("env cap = %d, want 5", got)
 	}
-	if got := ResolveTranscodeCap(store.TranscodeConfig{MaxConcurrent: 3}, 0, 1); got != 3 {
+	if got := ResolveTranscodeCap(store.TranscodeConfig{MaxConcurrent: 3}, 0, 1, 2); got != 3 {
 		t.Fatalf("stored cap = %d, want 3", got)
 	}
-	if got := ResolveTranscodeCap(store.TranscodeConfig{}, 0, 4); got != 4 {
-		t.Fatalf("automatic cap = %d, want 4", got)
+	if got := ResolveTranscodeCap(hardware, 0, 4, 2); got != 4 {
+		t.Fatalf("automatic cap with hardware on = %d, want 4", got)
+	}
+	if got := ResolveTranscodeCap(store.TranscodeConfig{}, 0, 4, 2); got != 2 {
+		t.Fatalf("automatic cap with hardware off = %d, want the software cap 2", got)
+	}
+	if got := ResolveTranscodeCap(store.TranscodeConfig{}, 0, 4, 0); got != 4 {
+		t.Fatalf("automatic cap with no software cap = %d, want 4", got)
+	}
+}
+
+// TestTranscodeEncodePolicyAppliesLive pins CORE-2452: a Console save hands
+// the hardware switch, codec and quality to the encoder for new sessions, and
+// turning hardware off moves the automatic cap to the software cap.
+func TestTranscodeEncodePolicyAppliesLive(t *testing.T) {
+	st := storetest.Open(t)
+	caps := &recordingCapSetter{}
+	policies := &recordingPolicySetter{}
+	handler := newTranscodeRuntimeHandler(t, st, TranscodeRuntime{
+		CapSetter: caps, EncodePolicy: policies, StartupCap: 4, AutoCap: 4, SoftwareAutoCap: 2,
+	})
+
+	data, errs := post(t, handler,
+		`{"query":"mutation { setTranscodeConfig(hardwareEnabled:false, codec:\"h264\", quality:\"high\"){ hardwareEnabled codec quality effectiveMaxConcurrentTranscodes } }"}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("setTranscodeConfig errors = %#v", errs)
+	}
+	var info TranscodeConfigInfo
+	mustUnmarshal(t, data["setTranscodeConfig"], &info)
+	if info.HardwareEnabled || info.Codec != "h264" || info.Quality != "high" || info.EffectiveMaxConcurrentTranscodes != 2 {
+		t.Fatalf("after hardware off = %#v, want software, h264, high, software cap 2", info)
+	}
+	want := ffmpeg.EncodePolicy{SoftwareOnly: true, H264Only: true, Quality: "high"}
+	if len(policies.policies) != 1 || policies.policies[0] != want {
+		t.Fatalf("applied policies = %#v, want [%#v]", policies.policies, want)
+	}
+
+	data, errs = post(t, handler,
+		`{"query":"mutation { setTranscodeConfig(hardwareEnabled:true, codec:\"hevc\", quality:\"\"){ hardwareEnabled codec quality effectiveMaxConcurrentTranscodes } }"}`,
+		authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("second setTranscodeConfig errors = %#v", errs)
+	}
+	mustUnmarshal(t, data["setTranscodeConfig"], &info)
+	if !info.HardwareEnabled || info.Codec != "" || info.Quality != "" || info.EffectiveMaxConcurrentTranscodes != 4 {
+		t.Fatalf("after hardware on = %#v, want hardware, Automatic codec, default quality, cap 4", info)
+	}
+	if got := policies.policies[len(policies.policies)-1]; got != (ffmpeg.EncodePolicy{}) {
+		t.Fatalf("last applied policy = %#v, want the zero (hardware, automatic) policy", got)
 	}
 }
 

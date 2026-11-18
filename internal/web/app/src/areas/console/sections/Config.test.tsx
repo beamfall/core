@@ -38,7 +38,7 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
 const savedTranscode = {
-  hardwareEnabled: false,
+  hardwareEnabled: true,
   codec: "",
   quality: "",
   device: "",
@@ -111,14 +111,27 @@ describe("transcoding config", () => {
     await choose(
       user,
       await screen.findByRole("combobox", { name: "Codec" }),
-      "HEVC (smaller files)",
+      "H.264 only (most compatible)",
     );
     act(() => setAdvancedSettings(false));
 
     expect(screen.getByRole("combobox", { name: "Codec" })).toHaveTextContent(
-      "HEVC (smaller files)",
+      "H.264 only (most compatible)",
     );
     expect(screen.queryByRole("combobox", { name: "Quality" })).toBeNull();
+  });
+
+  it("offers only the server default and H.264 only as codecs (CORE-2452)", async () => {
+    setAdvancedSettings(true);
+    const user = userEvent.setup();
+    renderConfig();
+
+    await user.click(await screen.findByRole("combobox", { name: "Codec" }));
+    const listbox = await screen.findByRole("listbox");
+    const options = within(listbox)
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(options).toEqual(["Server default", "H.264 only (most compatible)"]);
   });
 
   it("saves the cap and tone-map switch and shows the cap in effect", async () => {
@@ -140,7 +153,7 @@ describe("transcoding config", () => {
 
     await waitFor(() => expect(screen.getByText("In effect: 2")).toBeInTheDocument());
     expect(setTranscodeConfig).toHaveBeenCalledWith({
-      hardwareEnabled: false,
+      hardwareEnabled: true,
       codec: "",
       quality: "",
       device: "",
@@ -334,7 +347,7 @@ describe("Viewer pairing-code switch", () => {
     await choose(
       user,
       await screen.findByRole("combobox", { name: "Codec" }),
-      "HEVC (smaller files)",
+      "H.264 only (most compatible)",
     );
     act(() => setAdvancedSettings(false));
 
@@ -346,7 +359,7 @@ describe("Viewer pairing-code switch", () => {
     expect(setConsoleConfig).toHaveBeenCalledWith({ viewerPairingCodesDisabled: true });
     expect(setTranscodeConfig).not.toHaveBeenCalled();
     expect(screen.getByRole("combobox", { name: "Codec" })).toHaveTextContent(
-      "HEVC (smaller files)",
+      "H.264 only (most compatible)",
     );
   });
 });

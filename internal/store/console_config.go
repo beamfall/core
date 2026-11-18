@@ -30,14 +30,17 @@ const (
 	configEventsRetentionDays = "events.retention_days"
 	configSessionLifetimeDays = "auth.session_lifetime_days"
 	configAdminSessionMinutes = "auth.admin_session_minutes"
-	// hardware transcode policy.
-	configTranscodeHardwareEnabled = "transcode.hardware_enabled"
-	configTranscodeCodec           = "transcode.codec"
-	configTranscodeQuality         = "transcode.quality"
-	configTranscodeDevice          = "transcode.device"
-	configTranscodeMaxConcurrent   = "transcode.max_concurrent"
-	configTranscodeTempDir         = "transcode.temp_dir"
-	configTranscodeToneMapEnabled  = "transcode.tone_map_enabled"
+	// hardware transcode policy. configTranscodeHardware replaces the
+	// retired "transcode.hardware_enabled" key, which defaulted off and was
+	// written false by every Console save while nothing read it (CORE-2452);
+	// a leftover row under the old key is ignored.
+	configTranscodeHardware       = "transcode.hardware"
+	configTranscodeCodec          = "transcode.codec"
+	configTranscodeQuality        = "transcode.quality"
+	configTranscodeDevice         = "transcode.device"
+	configTranscodeMaxConcurrent  = "transcode.max_concurrent"
+	configTranscodeTempDir        = "transcode.temp_dir"
+	configTranscodeToneMapEnabled = "transcode.tone_map_enabled"
 	// opt-in update awareness. Default OFF: the version check is
 	// inert until the operator opts in (in the setup wizard's final step). The
 	// channel selects which release manifest to read.
@@ -219,13 +222,13 @@ type ConsoleConfigPatch struct {
 // vocabulary is neutral and domain-agnostic.
 type TranscodeConfig struct {
 	// HardwareEnabled gates hardware-accelerated transcode sessions; when off,
-	// transcode runs in software only.
+	// new sessions encode in software only. Defaults on.
 	HardwareEnabled bool
-	// Codec is the output video codec policy ("h264", "hevc"). Empty means the
-	// server default.
+	// Codec is the output video codec policy: empty (Automatic, the server
+	// picks among the codecs its encoder verified) or "h264" (H.264 only).
 	Codec string
-	// Quality is the output quality policy ("low", "balanced", "high"). Empty
-	// means the server default.
+	// Quality is the encoder quality policy ("low", "balanced", "high"). Empty
+	// means the server default, which matches "balanced".
 	Quality string
 	// Device is the operator-selected acceleration device hint (e.g. a
 	// /dev/dri render node or an index). Empty means automatic selection.
@@ -260,7 +263,14 @@ type TranscodeConfigPatch struct {
 
 // transcodeCodecs and transcodeQualities are the closed value vocabularies the
 // server validates on write — a faith-based free-text dropdown is rejected.
+// "hevc" stays accepted for older clients but is stored as Automatic: the
+// server already uses HEVC only where the client and encoder both support it,
+// so there is no stronger "HEVC" policy to apply (CORE-2452).
 var transcodeCodecs = map[string]bool{"h264": true, "hevc": true}
+
+// transcodeCodecAutomatic is the codec value stored as Automatic.
+const transcodeCodecAutomatic = "hevc"
+
 var transcodeQualities = map[string]bool{"low": true, "balanced": true, "high": true}
 
 // ConsoleConfig reads the console resource-governance config, applying defaults
@@ -445,18 +455,21 @@ func (s *Store) rebaseAdminWindows(ctx context.Context, now, until time.Time) er
 }
 
 // TranscodeConfig reads the hardware-transcode policy, applying defaults for
-// any absent key. HardwareEnabled defaults off — opt-in after the Console
-// probes what works.
+// any absent key. HardwareEnabled defaults on: the startup probe already
+// limits hardware to encoders verified working, and the switch only forces
+// software when the operator turns it off.
 func (s *Store) TranscodeConfig(ctx context.Context) (TranscodeConfig, error) {
 	values, err := s.serverConfigValues(ctx)
 	if err != nil {
 		return TranscodeConfig{}, err
 	}
-	cfg := TranscodeConfig{ToneMapEnabled: true}
-	if raw, ok := values[configTranscodeHardwareEnabled]; ok {
+	cfg := TranscodeConfig{HardwareEnabled: true, ToneMapEnabled: true}
+	if raw, ok := values[configTranscodeHardware]; ok {
 		cfg.HardwareEnabled = raw == "1"
 	}
-	cfg.Codec = values[configTranscodeCodec]
+	if codec := values[configTranscodeCodec]; codec != transcodeCodecAutomatic {
+		cfg.Codec = codec
+	}
 	cfg.Quality = values[configTranscodeQuality]
 	cfg.Device = values[configTranscodeDevice]
 	if raw, ok := values[configTranscodeMaxConcurrent]; ok {
@@ -479,10 +492,10 @@ func (s *Store) SetTranscodeConfig(ctx context.Context, patch TranscodeConfigPat
 	writes := map[string]string{}
 	clears := []string{}
 	if patch.HardwareEnabled != nil {
-		writes[configTranscodeHardwareEnabled] = boolToConfig(*patch.HardwareEnabled)
+		writes[configTranscodeHardware] = boolToConfig(*patch.HardwareEnabled)
 	}
 	if patch.Codec != nil {
-		if *patch.Codec == "" {
+		if *patch.Codec == "" || *patch.Codec == transcodeCodecAutomatic {
 			clears = append(clears, configTranscodeCodec)
 		} else if !transcodeCodecs[*patch.Codec] {
 			return TranscodeConfig{}, ValidationError("codec must be one of h264, hevc")

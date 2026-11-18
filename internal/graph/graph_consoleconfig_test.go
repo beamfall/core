@@ -974,7 +974,7 @@ func TestTranscodeConfigAdminGateAndPatch(t *testing.T) {
 	}
 	openManagerAdminSession(t, st)
 
-	// Manager reads the default policy (HW off, empty policy).
+	// Manager reads the default policy (HW on, empty policy).
 	data, errs := post(t, handler,
 		`{"query":"query { transcodeConfig { hardwareEnabled codec quality device configuredPreference hardwareAcceleration { accelerator status } } }"}`,
 		authorizeManager)
@@ -983,21 +983,21 @@ func TestTranscodeConfigAdminGateAndPatch(t *testing.T) {
 	}
 	var cfg TranscodeConfigInfo
 	mustUnmarshal(t, data["transcodeConfig"], &cfg)
-	if cfg.HardwareEnabled || cfg.Codec != "" {
-		t.Fatalf("default transcodeConfig = %#v, want HW off + empty policy", cfg)
+	if !cfg.HardwareEnabled || cfg.Codec != "" {
+		t.Fatalf("default transcodeConfig = %#v, want HW on + empty policy", cfg)
 	}
 
 	// Update the policy.
 	data, errs = post(t, handler,
-		`{"query":"mutation T($hardwareEnabled: Boolean!, $codec: String!, $quality: String!, $device: String!){ setTranscodeConfig(hardwareEnabled:$hardwareEnabled, codec:$codec, quality:$quality, device:$device){ hardwareEnabled codec quality device } }","variables":{"hardwareEnabled":true,"codec":"hevc","quality":"high","device":"vt"}}`,
+		`{"query":"mutation T($hardwareEnabled: Boolean!, $codec: String!, $quality: String!, $device: String!){ setTranscodeConfig(hardwareEnabled:$hardwareEnabled, codec:$codec, quality:$quality, device:$device){ hardwareEnabled codec quality device } }","variables":{"hardwareEnabled":false,"codec":"h264","quality":"high","device":"vt"}}`,
 		authorizeManager)
 	if len(errs) != 0 {
 		t.Fatalf("setTranscodeConfig errors = %#v", errs)
 	}
 	var after TranscodeConfigInfo
 	mustUnmarshal(t, data["setTranscodeConfig"], &after)
-	if !after.HardwareEnabled || after.Codec != "hevc" || after.Quality != "high" || after.Device != "vt" {
-		t.Fatalf("setTranscodeConfig = %#v, want HW on hevc/high/vt", after)
+	if after.HardwareEnabled || after.Codec != "h264" || after.Quality != "high" || after.Device != "vt" {
+		t.Fatalf("setTranscodeConfig = %#v, want HW off h264/high/vt", after)
 	}
 
 	// The write persists across a fresh read.
@@ -1007,8 +1007,8 @@ func TestTranscodeConfigAdminGateAndPatch(t *testing.T) {
 	}
 	var reread TranscodeConfigInfo
 	mustUnmarshal(t, data["transcodeConfig"], &reread)
-	if !reread.HardwareEnabled || reread.Codec != "hevc" || reread.Quality != "high" || reread.Device != "vt" {
-		t.Fatalf("reread transcodeConfig = %#v, want HW on hevc/high/vt", reread)
+	if reread.HardwareEnabled || reread.Codec != "h264" || reread.Quality != "high" || reread.Device != "vt" {
+		t.Fatalf("reread transcodeConfig = %#v, want HW off h264/high/vt", reread)
 	}
 
 	// An out-of-vocabulary codec is rejected; prior policy survives.

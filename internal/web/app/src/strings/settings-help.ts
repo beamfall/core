@@ -33,15 +33,14 @@ export const settingsHelpStrings = {
       "How video is converted for devices that cannot play the original file, and how long people stay signed in.",
     transcodeAutomatic: "Automatic",
     transcodeHardwareEnabledTip:
-      "Asks the server to use the video engine in your graphics card or processor, which is faster and lighter on the CPU. This version saves the choice but does not apply it yet: the server uses a hardware encoder whenever it finds one at startup.",
+      "Uses the video engine in your graphics card or processor when the server found a working one at startup: faster and lighter on the CPU. Turn it off to convert in software only. Applies to conversions that start after you save.",
     transcodeMaxConcurrentTip:
       "How many videos the server converts at the same time. Automatic picks a limit from your hardware. Lower it if playback stutters when several people watch at once.",
     transcodeCodecTip:
-      "The video format to use when a file has to be converted. H.264 plays on almost every device; HEVC makes smaller files that some older devices cannot play. This version saves the choice but does not apply it yet: conversions still use the server default.",
-    transcodeCodecH264: "H.264 (most compatible)",
-    transcodeCodecHevc: "HEVC (smaller files)",
+      "Video format for converted files. Server default uses HEVC (smaller files) when the device and the hardware encoder support it, and H.264 otherwise. H.264 only plays on almost every device. Applies to new conversions.",
+    transcodeCodecH264: "H.264 only (most compatible)",
     transcodeQualityTip:
-      "Picture quality against bandwidth and CPU when converting. This version saves the choice but does not apply it yet: conversions still use the server default.",
+      "Picture quality against bandwidth and processing. Low saves bandwidth and CPU; High gives a better picture for more CPU or graphics-card work; Server default is Balanced. Applies to new conversions.",
     transcodeQualityLow: "Low (saves bandwidth)",
     transcodeQualityBalanced: "Balanced",
     transcodeQualityHigh: "High (best picture)",
@@ -84,15 +83,14 @@ export const settingsHelpStrings = {
       "Comment la vidéo est convertie pour les appareils qui ne lisent pas le fichier d’origine, et combien de temps les personnes restent connectées.",
     transcodeAutomatic: "Automatique",
     transcodeHardwareEnabledTip:
-      "Demande au serveur d’utiliser le moteur vidéo de votre carte graphique ou de votre processeur, plus rapide et moins lourd pour le processeur. Cette version enregistre le choix mais ne l’applique pas encore : le serveur utilise un encodeur matériel dès qu’il en trouve un au démarrage.",
+      "Utilise le moteur vidéo de votre carte graphique ou processeur si le serveur en a trouvé un qui fonctionne au démarrage : plus rapide et plus léger pour le processeur. Désactivez-le pour convertir en logiciel seulement. S’applique aux nouvelles conversions.",
     transcodeMaxConcurrentTip:
       "Nombre de vidéos que le serveur convertit en même temps. Automatique choisit une limite selon votre matériel. Baissez-la si la lecture saccade quand plusieurs personnes regardent.",
     transcodeCodecTip:
-      "Le format vidéo à utiliser quand un fichier doit être converti. H.264 se lit sur presque tous les appareils ; HEVC produit des fichiers plus petits que certains anciens appareils ne lisent pas. Cette version enregistre le choix mais ne l’applique pas encore : les conversions utilisent toujours la valeur du serveur.",
-    transcodeCodecH264: "H.264 (le plus compatible)",
-    transcodeCodecHevc: "HEVC (fichiers plus petits)",
+      "Format vidéo des fichiers convertis. Réglage par défaut du serveur utilise HEVC (fichiers plus petits) si l’appareil et l’encodeur matériel le gèrent, sinon H.264. H.264 uniquement se lit presque partout. S’applique aux nouvelles conversions.",
+    transcodeCodecH264: "H.264 uniquement (le plus compatible)",
     transcodeQualityTip:
-      "Qualité d’image contre bande passante et processeur lors de la conversion. Cette version enregistre le choix mais ne l’applique pas encore : les conversions utilisent toujours la valeur du serveur.",
+      "Qualité d’image contre bande passante et calcul. Basse économise bande passante et processeur ; Haute donne une meilleure image pour plus de calcul ; Réglage par défaut du serveur vaut Équilibrée. S’applique aux nouvelles conversions.",
     transcodeQualityLow: "Basse (économise la bande passante)",
     transcodeQualityBalanced: "Équilibrée",
     transcodeQualityHigh: "Haute (meilleure image)",
@@ -134,15 +132,14 @@ export const settingsHelpStrings = {
       "Wie Videos für Geräte umgewandelt werden, die die Originaldatei nicht abspielen können, und wie lange Personen angemeldet bleiben.",
     transcodeAutomatic: "Automatisch",
     transcodeHardwareEnabledTip:
-      "Bittet den Server, die Video-Engine Ihrer Grafikkarte oder Ihres Prozessors zu nutzen; das ist schneller und schont die CPU. Diese Version speichert die Wahl, wendet sie aber noch nicht an: Der Server nutzt einen Hardware-Encoder, sobald er beim Start einen findet.",
+      "Nutzt die Video-Engine Ihrer Grafikkarte oder Ihres Prozessors, wenn der Server beim Start eine funktionierende gefunden hat: schneller und schont die CPU. Ausgeschaltet wird nur per Software umgewandelt. Gilt für neue Umwandlungen.",
     transcodeMaxConcurrentTip:
       "Wie viele Videos der Server gleichzeitig umwandelt. Automatisch wählt ein Limit passend zu Ihrer Hardware. Senken Sie es, wenn die Wiedergabe ruckelt, sobald mehrere Personen schauen.",
     transcodeCodecTip:
-      "Das Videoformat, wenn eine Datei umgewandelt werden muss. H.264 läuft auf fast jedem Gerät; HEVC erzeugt kleinere Dateien, die manche ältere Geräte nicht abspielen. Diese Version speichert die Wahl, wendet sie aber noch nicht an: Umwandlungen nutzen weiter den Serverstandard.",
-    transcodeCodecH264: "H.264 (am kompatibelsten)",
-    transcodeCodecHevc: "HEVC (kleinere Dateien)",
+      "Videoformat umgewandelter Dateien. Servervorgabe nutzt HEVC (kleinere Dateien), wenn Gerät und Hardware-Encoder es unterstützen, sonst H.264. Nur H.264 läuft auf fast jedem Gerät. Gilt für neue Umwandlungen.",
+    transcodeCodecH264: "Nur H.264 (am kompatibelsten)",
     transcodeQualityTip:
-      "Bildqualität gegen Bandbreite und CPU beim Umwandeln. Diese Version speichert die Wahl, wendet sie aber noch nicht an: Umwandlungen nutzen weiter den Serverstandard.",
+      "Bildqualität gegen Bandbreite und Rechenaufwand. Niedrig spart Bandbreite und CPU; Hoch liefert ein besseres Bild bei mehr Rechenarbeit; Servervorgabe entspricht Ausgewogen. Gilt für neue Umwandlungen.",
     transcodeQualityLow: "Niedrig (spart Bandbreite)",
     transcodeQualityBalanced: "Ausgewogen",
     transcodeQualityHigh: "Hoch (bestes Bild)",
@@ -184,15 +181,14 @@ export const settingsHelpStrings = {
       "Cómo se convierte el vídeo para los dispositivos que no pueden reproducir el archivo original, y cuánto tiempo siguen conectadas las personas.",
     transcodeAutomatic: "Automático",
     transcodeHardwareEnabledTip:
-      "Pide al servidor que use el motor de vídeo de tu tarjeta gráfica o procesador, más rápido y con menos carga de CPU. Esta versión guarda la elección pero aún no la aplica: el servidor usa un codificador por hardware siempre que encuentra uno al iniciarse.",
+      "Usa el motor de vídeo de tu tarjeta gráfica o procesador si el servidor encontró uno que funciona al iniciarse: más rápido y con menos carga de CPU. Desactívalo para convertir solo por software. Se aplica a las nuevas conversiones.",
     transcodeMaxConcurrentTip:
       "Cuántos vídeos convierte el servidor a la vez. Automático elige un límite según tu hardware. Bájalo si la reproducción da tirones cuando varias personas ven algo a la vez.",
     transcodeCodecTip:
-      "El formato de vídeo que se usa cuando hay que convertir un archivo. H.264 funciona en casi todos los dispositivos; HEVC genera archivos más pequeños que algunos dispositivos antiguos no reproducen. Esta versión guarda la elección pero aún no la aplica: las conversiones siguen usando el valor del servidor.",
-    transcodeCodecH264: "H.264 (el más compatible)",
-    transcodeCodecHevc: "HEVC (archivos más pequeños)",
+      "Formato de vídeo de los archivos convertidos. Valor predeterminado del servidor usa HEVC (archivos más pequeños) si el dispositivo y el codificador por hardware lo admiten, y si no H.264. Solo H.264 funciona casi en todas partes. Se aplica a las nuevas conversiones.",
+    transcodeCodecH264: "Solo H.264 (el más compatible)",
     transcodeQualityTip:
-      "Calidad de imagen frente a ancho de banda y CPU al convertir. Esta versión guarda la elección pero aún no la aplica: las conversiones siguen usando el valor del servidor.",
+      "Calidad de imagen frente a ancho de banda y procesamiento. Baja ahorra ancho de banda y CPU; Alta da mejor imagen con más procesamiento; Valor predeterminado del servidor equivale a Equilibrada. Se aplica a las nuevas conversiones.",
     transcodeQualityLow: "Baja (ahorra ancho de banda)",
     transcodeQualityBalanced: "Equilibrada",
     transcodeQualityHigh: "Alta (mejor imagen)",
@@ -234,15 +230,14 @@ export const settingsHelpStrings = {
       "Como o vídeo é convertido para dispositivos que não reproduzem o arquivo original, e por quanto tempo as pessoas ficam conectadas.",
     transcodeAutomatic: "Automático",
     transcodeHardwareEnabledTip:
-      "Pede ao servidor que use o mecanismo de vídeo da sua placa de vídeo ou processador, mais rápido e mais leve para a CPU. Esta versão salva a escolha mas ainda não a aplica: o servidor usa um codificador de hardware sempre que encontra um ao iniciar.",
+      "Usa o mecanismo de vídeo da sua placa de vídeo ou processador se o servidor encontrou um que funciona ao iniciar: mais rápido e mais leve para a CPU. Desative para converter só por software. Vale para novas conversões.",
     transcodeMaxConcurrentTip:
       "Quantos vídeos o servidor converte ao mesmo tempo. Automático escolhe um limite pelo seu hardware. Diminua se a reprodução travar quando várias pessoas assistem ao mesmo tempo.",
     transcodeCodecTip:
-      "O formato de vídeo usado quando um arquivo precisa ser convertido. H.264 funciona em quase todos os dispositivos; HEVC gera arquivos menores que alguns dispositivos antigos não reproduzem. Esta versão salva a escolha mas ainda não a aplica: as conversões continuam usando o padrão do servidor.",
-    transcodeCodecH264: "H.264 (mais compatível)",
-    transcodeCodecHevc: "HEVC (arquivos menores)",
+      "Formato de vídeo dos arquivos convertidos. Padrão do servidor usa HEVC (arquivos menores) se o dispositivo e o codificador de hardware suportam, senão H.264. Só H.264 funciona em quase tudo. Vale para novas conversões.",
+    transcodeCodecH264: "Só H.264 (mais compatível)",
     transcodeQualityTip:
-      "Qualidade de imagem contra banda e CPU ao converter. Esta versão salva a escolha mas ainda não a aplica: as conversões continuam usando o padrão do servidor.",
+      "Qualidade de imagem contra banda e processamento. Baixa economiza banda e CPU; Alta dá imagem melhor com mais processamento; Padrão do servidor equivale a Equilibrada. Vale para novas conversões.",
     transcodeQualityLow: "Baixa (economiza banda)",
     transcodeQualityBalanced: "Equilibrada",
     transcodeQualityHigh: "Alta (melhor imagem)",

@@ -33,6 +33,24 @@ type TranscodeCapSetter interface {
 	SetTranscodeCap(limit int)
 }
 
+// EncodePolicySetter applies the Console encode policy (hardware switch, codec
+// and quality) to new transcode sessions (the ffmpeg Runner satisfies it).
+type EncodePolicySetter interface {
+	SetEncodePolicy(policy ffmpeg.EncodePolicy)
+}
+
+// TranscodeEncodePolicy maps the stored transcode policy onto the encoder
+// policy new sessions use (CORE-2452): the hardware switch off forces
+// software encoding, codec "h264" withholds HEVC and AV1 output, and quality
+// tunes the encoder.
+func TranscodeEncodePolicy(cfg store.TranscodeConfig) ffmpeg.EncodePolicy {
+	return ffmpeg.EncodePolicy{
+		SoftwareOnly: !cfg.HardwareEnabled,
+		H264Only:     cfg.Codec == "h264",
+		Quality:      cfg.Quality,
+	}
+}
+
 // TranscodeRuntime is the transcoder's startup state handed to the graph so the
 // transcode-config resolver can report effective values and env overrides and
 // apply live changes. The zero value reports no runtime: nothing is applied
@@ -40,10 +58,16 @@ type TranscodeCapSetter interface {
 type TranscodeRuntime struct {
 	// CapSetter applies a new cap live; nil means a cap change needs a restart.
 	CapSetter TranscodeCapSetter
+	// EncodePolicy applies the hardware, codec and quality settings to new
+	// sessions live; nil means they are applied only at startup.
+	EncodePolicy EncodePolicySetter
 	// StartupCap is the cap the transcoder started with.
 	StartupCap int
 	// AutoCap is the probe-derived cap used when no cap is stored.
 	AutoCap int
+	// SoftwareAutoCap is the automatic cap for software encoding, used when
+	// no cap is stored and the hardware switch is off; 0 falls back to AutoCap.
+	SoftwareAutoCap int
 	// EnvCap is the env/flag cap override in force; 0 means none.
 	EnvCap int
 	// ActiveTempDir is the scratch directory the running transcoder uses.
@@ -58,10 +82,11 @@ type TranscodeRuntime struct {
 type TranscodeConfigInfo struct {
 	// HardwareEnabled gates hardware-accelerated transcode sessions.
 	HardwareEnabled bool `json:"hardwareEnabled"`
-	// Codec is the output codec policy ("h264", "hevc"); empty = server default.
+	// Codec is the output codec policy: empty = Automatic, "h264" = H.264
+	// only. A written "hevc" is stored as Automatic.
 	Codec string `json:"codec"`
-	// Quality is the quality policy ("low", "balanced", "high"); empty =
-	// server default.
+	// Quality is the encoder quality policy ("low", "balanced", "high");
+	// empty = server default (balanced).
 	Quality string `json:"quality"`
 	// Device is the operator-selected acceleration device hint; empty =
 	// automatic selection.
@@ -138,13 +163,16 @@ func transcodeConfigInfo(cfg store.TranscodeConfig, report config.HardwareAccelR
 }
 
 // desiredTranscodeCap resolves the cap the configuration asks for: the env/flag
-// override, else the stored cap, else the probe-derived default.
+// override, else the stored cap, else the automatic default for the encoder in
+// use — the software cap when the hardware switch is off.
 func desiredTranscodeCap(cfg store.TranscodeConfig, runtime TranscodeRuntime) int {
 	switch {
 	case runtime.EnvCap > 0:
 		return runtime.EnvCap
 	case cfg.MaxConcurrent > 0:
 		return cfg.MaxConcurrent
+	case !cfg.HardwareEnabled && runtime.SoftwareAutoCap > 0:
+		return runtime.SoftwareAutoCap
 	default:
 		return runtime.AutoCap
 	}
@@ -166,8 +194,8 @@ func desiredTempDir(cfg store.TranscodeConfig, runtime TranscodeRuntime) string 
 
 // ResolveTranscodeCap is the startup counterpart of desiredTranscodeCap, so the
 // server boots with the same cap the Console reports as configured.
-func ResolveTranscodeCap(cfg store.TranscodeConfig, envCap, autoCap int) int {
-	return desiredTranscodeCap(cfg, TranscodeRuntime{EnvCap: envCap, AutoCap: autoCap})
+func ResolveTranscodeCap(cfg store.TranscodeConfig, envCap, autoCap, softwareAutoCap int) int {
+	return desiredTranscodeCap(cfg, TranscodeRuntime{EnvCap: envCap, AutoCap: autoCap, SoftwareAutoCap: softwareAutoCap})
 }
 
 func (h *Handler) transcodeConfigInfo(cfg store.TranscodeConfig) TranscodeConfigInfo {
@@ -284,11 +312,16 @@ func (h *Handler) saveAndApplyTranscodeConfig(ctx context.Context, patch store.T
 }
 
 // applyTranscodeRuntime pushes the live-applicable settings into the running
-// transcoder: the tone-map switch always, and the cap when a setter is wired
-// and no env/flag override pins it. The temp directory is never applied live.
+// transcoder: the tone-map switch always, the encode policy when a setter is
+// wired (new sessions only; running sessions keep their encoder), and the cap
+// when a setter is wired and no env/flag override pins it. The temp directory
+// is never applied live.
 func (h *Handler) applyTranscodeRuntime(cfg store.TranscodeConfig) {
 	ffmpeg.SetToneMapEnabled(cfg.ToneMapEnabled)
 	runtime := h.transcodeRuntime
+	if runtime.EncodePolicy != nil {
+		runtime.EncodePolicy.SetEncodePolicy(TranscodeEncodePolicy(cfg))
+	}
 	if runtime.CapSetter == nil || runtime.EnvCap > 0 {
 		return
 	}

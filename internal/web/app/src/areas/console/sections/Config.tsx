@@ -47,14 +47,13 @@ const CHOICE_FIELDS: {
   tip: StringKey;
   options: { value: string; label: StringKey }[];
 }[] = [
+  // Codec is Server default (HEVC when the device and encoder allow it) or H.264 only;
+  // a stored "hevc" reads back as the default (CORE-2452).
   {
     field: "codec",
     label: "transcodeCodec",
     tip: "transcodeCodecTip",
-    options: [
-      { value: "h264", label: "transcodeCodecH264" },
-      { value: "hevc", label: "transcodeCodecHevc" },
-    ],
+    options: [{ value: "h264", label: "transcodeCodecH264" }],
   },
   {
     field: "quality",
@@ -82,7 +81,7 @@ const CAP_PRESETS = [0, 1, 2, 3, 4, 6, 8];
 // directory is Advanced and needs a restart. Each shows the value in effect and
 // says when an environment variable overrides the saved one.
 const EMPTY_TRANSCODE_CONFIG: TranscodeConfigInfo = {
-  hardwareEnabled: false,
+  hardwareEnabled: true,
   codec: "",
   quality: "",
   device: "",

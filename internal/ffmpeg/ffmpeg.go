@@ -216,6 +216,10 @@ type Runner struct {
 	// exec'd directly; the server entrypoint sets it via SetHardeningShim so
 	// only the real server hardens — a test binary never re-execs itself.
 	shimPath string
+	// policy is the Console transcode policy (CORE-2452). Sessions read it as
+	// they start, so a change applies to the next session without a restart.
+	// nil is the default policy.
+	policy atomic.Pointer[EncodePolicy]
 }
 
 // New creates a Runner. The ffprobe binary is resolved on first use.
@@ -279,37 +283,81 @@ func (r *Runner) SetHardwareEncode(encode HardwareEncode) {
 	r.hwLowPower = encode.LowPower && hwAccelLowPowerCapable(encode.Accel)
 }
 
+// EncodePolicy is the operator's Console transcode policy (CORE-2452). The
+// zero value is the default: the verified hardware encoder, HEVC where it was
+// verified, and balanced quality.
+type EncodePolicy struct {
+	// SoftwareOnly turns the verified hardware encoder off: video encodes with
+	// libx264, with no device decode or hardware tone-map, and no HEVC or AV1
+	// output is offered, since the realtime path has no software encoder for
+	// them.
+	SoftwareOnly bool
+	// H264Only withholds HEVC and AV1 output even where the probe verified it.
+	H264Only bool
+	// Quality is QualityLow, QualityBalanced or QualityHigh; empty is balanced.
+	Quality string
+}
+
+// The Console quality values (CORE-2452).
+const (
+	QualityLow      = "low"
+	QualityBalanced = "balanced"
+	QualityHigh     = "high"
+)
+
+// SetEncodePolicy applies the Console transcode policy to sessions started
+// after the call. Sessions already running keep their encoder.
+//
+//io:ignore — config setter, not an I/O operation (cmd/ioe2e ledger).
+func (r *Runner) SetEncodePolicy(policy EncodePolicy) {
+	r.policy.Store(&policy)
+}
+
+func (r *Runner) encodePolicy() EncodePolicy {
+	if policy := r.policy.Load(); policy != nil {
+		return *policy
+	}
+	return EncodePolicy{}
+}
+
 // renditionHWAccel is the accelerator a rendition encodes on. An HEVC or AV1
 // rendition whose encoder the probe did not verify gets none, so its upload
 // filters, tone-map backend and encoder all take the software path together
-// instead of launching an unverified encoder (CORE-2088, CORE-2094).
-func (r *Runner) renditionHWAccel(rendition Rendition) HWAccel {
+// instead of launching an unverified encoder (CORE-2088, CORE-2094). The
+// Console's software-only policy gives every rendition none (CORE-2452).
+func (r *Runner) renditionHWAccel(rendition Rendition, policy EncodePolicy) HWAccel {
 	switch {
-	case rendition.VideoCodec == "hevc" && !r.hwHEVC,
+	case policy.SoftwareOnly,
+		rendition.VideoCodec == "hevc" && !r.hwHEVC,
 		rendition.VideoCodec == "av1" && !r.hwAV1:
 		return ""
 	}
 	return r.hwAccel
 }
 
-// hardwareRendition applies the runner's verified hardware encode to a
-// rendition: its accelerator and, when that accelerator encodes only in
-// low-power mode, the low-power flag.
+// hardwareRendition applies the runner's encode policy to a rendition: its
+// accelerator, the low-power flag when that accelerator encodes only in
+// low-power mode, and the Console quality.
 func (r *Runner) hardwareRendition(rendition Rendition) Rendition {
-	accel := r.renditionHWAccel(rendition)
+	policy := r.encodePolicy()
+	accel := r.renditionHWAccel(rendition, policy)
 	rendition = rendition.withHWAccel(accel)
 	rendition.hwLowPower = accel != "" && r.hwLowPower
+	rendition.quality = policy.Quality
 	return rendition
 }
 
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
 func (r *Runner) SupportsTranscodeCodec(codec string) bool {
-	switch codec {
-	case "", "h264":
+	policy := r.encodePolicy()
+	switch {
+	case codec == "" || codec == "h264":
 		return true
-	case "hevc":
+	case policy.SoftwareOnly || policy.H264Only:
+		return false
+	case codec == "hevc":
 		return r.hwHEVC && hwAccelVideoEncoder(r.hwAccel, "hevc") != ""
-	case "av1":
+	case codec == "av1":
 		return r.hwAV1 && hwAccelVideoEncoder(r.hwAccel, "av1") != ""
 	default:
 		return false
@@ -1385,6 +1433,8 @@ type Rendition struct {
 	hwAccel           HWAccel
 	// hwLowPower runs hwAccel's encoder in low-power mode (CORE-2094).
 	hwLowPower bool
+	// quality is the Console quality (CORE-2452); empty is balanced.
+	quality string
 	// toneMapAccel is the accelerator the HDR→SDR transform itself runs on.
 	// It is NOT hwAccel: the encoder may be hardware while the tone-map is
 	// software (that is the shipped behaviour), and ADR-0075 Amendment
@@ -1568,9 +1618,31 @@ func (r Rendition) videoArgs() []string {
 	return []string{
 		"-c:v", "libx264",
 		"-preset", "veryfast",
-		"-crf", "23",
+		"-crf", r.softwareCRF(),
 		"-pix_fmt", "yuv420p",
 	}
+}
+
+// softwareCRF is libx264's constant-rate factor for the Console quality.
+func (r Rendition) softwareCRF() string {
+	switch r.quality {
+	case QualityLow:
+		return "28"
+	case QualityHigh:
+		return "20"
+	default:
+		return "23"
+	}
+}
+
+// hardwareTargetKbps is a hardware encoder's bitrate target for the Console
+// quality: the rung, or three quarters of it at low quality. -maxrate stays
+// at the rung either way.
+func (r Rendition) hardwareTargetKbps() int {
+	if r.quality == QualityLow {
+		return max(r.VideoKbps*3/4, 1)
+	}
+	return r.VideoKbps
 }
 
 // lowPowerArgs selects the low-power encode on accelerators that have it.
@@ -1595,13 +1667,16 @@ func (r Rendition) rateControlArgs() []string {
 	var out []string
 	hw := hwAccelVideoEncoder(r.hwAccel, r.VideoCodec) != ""
 	if hw {
+		// High quality takes a slower preset where the encoder has one
+		// (CORE-2452); VA-API and VideoToolbox have none.
+		high := r.quality == QualityHigh
 		switch r.hwAccel {
 		case HWAccelNVENC:
-			out = append(out, "-preset", "p4", "-forced-idr", "1")
+			out = append(out, "-preset", pick(high, "p6", "p4"), "-forced-idr", "1")
 		case HWAccelQSV:
-			out = append(out, "-preset", "veryfast")
+			out = append(out, "-preset", pick(high, "medium", "veryfast"))
 		case HWAccelAMF:
-			out = append(out, "-quality", "speed", "-forced_idr", "1")
+			out = append(out, "-quality", pick(high, "balanced", "speed"), "-forced_idr", "1")
 		}
 	}
 	if r.VideoKbps <= 0 {
@@ -1609,6 +1684,7 @@ func (r Rendition) rateControlArgs() []string {
 	}
 	maxrate := r.VideoKbps
 	if hw {
+		target := r.hardwareTargetKbps()
 		switch r.hwAccel {
 		case HWAccelNVENC:
 			out = append(out, "-rc", "vbr")
@@ -1620,14 +1696,24 @@ func (r Rendition) rateControlArgs() []string {
 		case HWAccelQSV:
 			// h264/hevc_qsv pick CBR when -maxrate equals -b:v; one kb/s of
 			// headroom keeps them in capped VBR instead of padding to the rung.
-			maxrate++
+			if target == maxrate {
+				maxrate++
+			}
 		}
-		out = append(out, "-b:v", fmt.Sprintf("%dk", r.VideoKbps))
+		out = append(out, "-b:v", fmt.Sprintf("%dk", target))
 	}
 	return append(out,
 		"-maxrate", fmt.Sprintf("%dk", maxrate),
 		"-bufsize", fmt.Sprintf("%dk", 2*r.VideoKbps),
 	)
+}
+
+// pick returns a when cond holds, else b.
+func pick(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
 }
 
 // ToneMapUnavailable reports source HDR shapes this FFmpeg recipe refuses
