@@ -1,0 +1,8 @@
+- [ ] Graph: `mediaTracks(mediaID)` session-role read with versions, audio tracks and caption tracks
+- [ ] Wire goldens regenerated with `make regen-wire-goldens`; client-core-wire minor published
+- [ ] Web: Version, Audio and Subtitles pickers on the Media detail page
+- [ ] Web: audio and subtitle picks reach playback-info through the player's start tracks
+- [ ] Web strings in every shipped locale; Go and vitest coverage
+- [ ] Verified on tower at desktop and 375px widths (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2442-detail-track-pickers` after landing
