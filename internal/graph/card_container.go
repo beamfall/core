@@ -112,7 +112,7 @@ func (h *Handler) sourceItemContainer(item store.SourceItem) *SourceItemContaine
 	return container
 }
 
-// Keyword search asks for every hit the store scores and cuts to its result
+// Keyword search asks for every hit the store scores, uncut, and cuts to its result
 // limit only after container ordering, so a container with more matching
 // items than the cut keeps its first items rather than the alphabetically
 // first ones (CORE-2525).
