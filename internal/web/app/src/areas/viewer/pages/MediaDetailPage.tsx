@@ -362,7 +362,8 @@ export function MediaDetailPage() {
           </div>
         </section>
 
-        {/* Audio names its people under the title instead (audioPeople). */}
+        {/* Audio names its people under the title instead (audioPeople), so a
+            music artist, a person credit that may carry a photo, is named once. */}
         {media && media.mediaClass !== "audio" && <CastRow credits={media.credits} />}
 
         {fields.length > 0 && (

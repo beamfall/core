@@ -61,6 +61,22 @@ describe("CastRow", () => {
     expect(within(directing).getByRole("link")).toHaveTextContent("BossDirector");
   });
 
+  it("names the department even when every credit shares it", () => {
+    renderRow([
+      credit("p1", "Lead", { attributes: { department: "Acting", character: "Hero" } }),
+      credit("p2", "Second", { attributes: { department: "Acting", character: "Friend" } }),
+    ]);
+    expect(screen.getByRole("heading", { level: 3, name: "Acting" })).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Acting" })).getAllByRole("link")).toHaveLength(
+      2,
+    );
+  });
+
+  it("adds no department heading for credits without one", () => {
+    renderRow([credit("p1", "Lead")]);
+    expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
+  });
+
   it("renders nothing without person credits", () => {
     const { container } = renderRow([credit("box", "A Box", { archetype: "container" })]);
     expect(container).toBeEmptyDOMElement();

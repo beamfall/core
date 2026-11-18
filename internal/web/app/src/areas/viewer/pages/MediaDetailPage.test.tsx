@@ -326,6 +326,28 @@ describe("MediaDetailPage", () => {
     expect(screen.getByRole("link", { name: "Bo" })).toBeInTheDocument();
   });
 
+  it("names an audio item's people once, with no cast row even when they carry photos", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      mediaClass: "audio",
+      credits: [
+        {
+          entityID: "p1",
+          title: "Ada",
+          kind: "person",
+          archetype: "person",
+          relation: "by",
+          attributes: { role: "Vocals" },
+          artworkSlots: { poster: "/api/entity/artwork/p1/poster?v=1" },
+        },
+      ],
+    });
+    renderAt(["/media/m1"]);
+
+    expect(await screen.findAllByRole("link", { name: "Ada" })).toHaveLength(1);
+    expect(screen.queryByRole("heading", { level: 2, name: "People" })).toBeNull();
+  });
+
   it("shows only viewer-facing fields and puts the rating in the facts row (CORE-1785)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,

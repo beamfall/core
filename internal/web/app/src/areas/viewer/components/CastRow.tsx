@@ -19,9 +19,7 @@ export function CastRow({ credits }: { credits: readonly MediaCredit[] | null | 
       </h2>
       {groups.map((group) => (
         <div key={group.department} className="bf-cast-group">
-          {group.department && groups.length > 1 && (
-            <h3 className="bf-cast-group-title">{group.department}</h3>
-          )}
+          {group.department && <h3 className="bf-cast-group-title">{group.department}</h3>}
           <ul className="bf-shelf bf-cast" aria-label={group.department || t("mediaDetailPeople")}>
             {group.credits.map((credit) => (
               <CastCard key={credit.entityID} credit={credit} />
