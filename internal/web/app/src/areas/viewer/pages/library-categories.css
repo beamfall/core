@@ -36,6 +36,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Jump targets clear the 60px sticky header (chrome.css .bf-header). */
+[data-register="viewer"] .bf-categories [id^="bf-category-"] {
+  scroll-margin-top: 72px;
+}
+
 [data-register="viewer"] .bf-category-head {
   display: flex;
   align-items: baseline;

@@ -332,7 +332,10 @@ function CategoryOverview({
                   <Link
                     className="bf-category-see-all"
                     to={{ search: `?kind=${encodeURIComponent(plan.kind)}` }}
-                    aria-label={t("libraryCategoriesSeeAllLabel", { title })}
+                    aria-label={t("libraryCategoriesSeeAllLabel", {
+                      count: plan.values.length,
+                      title,
+                    })}
                   >
                     {t("libraryCategoriesSeeAll", { count: plan.values.length })}
                   </Link>

@@ -118,35 +118,35 @@ const SHIPPED = new Set(
 // merged with the CORE-2489 removal of the corresponding source footer copy.
 // merged with the CORE-2459 title-fold merge activity sentence.
 // merged with the CORE-2505 Categories pivot jump, count, See all, A-Z filter and letter copy.
-const BASE_SERIALIZED_LENGTH = 898_052;
+const BASE_SERIALIZED_LENGTH = 898_092;
 const BASE_REGISTRY_SHA256 = "80e93fd3cd5d16c379a8bc832fa44bd9a6773b041aab33d3678a26fbd601f05a";
 const BASE_KEY_ORDER_SHA256 = "20b85e75bdde8e5356d793e18cb4cd8dca6ab570b3aca2cc31d812a226d7d263";
-const BASE_PLACEHOLDER_SHA256 = "3a79cb36753c5d5b829ebc37a4ca70532fae3c6be61d66772afd93d53ebbbae8";
+const BASE_PLACEHOLDER_SHA256 = "e594cfb4306c6ab44289e229d705b4715419d49af929f29c2007a68db7974ae1";
 const BASE_CATALOGS = {
   en: {
     partialCount: 2_914,
-    partialSha256: "d93785be1e0c48dcc5b519e1d8114c13010cdd5eb2d8106f13ccbe8512470b88",
-    resolvedSha256: "cee57ec9c464af5286641bc108b080eb43d8f18613bbecc90f913bf69fdd135d",
+    partialSha256: "7da38715722119f3728530248fd87ccb3528d4457c6e746e3192f217c397ad02",
+    resolvedSha256: "edee07dc218bee0465c58c2a53546749d1b2c203cfed8da780e107393fc67ccc",
   },
   fr: {
     partialCount: 2_914,
-    partialSha256: "380bc501e8533393e0b1faec87e0db7981539034f3ed2f92a35e00ccf651258a",
-    resolvedSha256: "0d46d16e94903ba343f9aeb047c91165a5d974db13ff068b3951dc6fc7226343",
+    partialSha256: "9bc67903fc5b66233411541e7717e8a762e72108858e6fda05a11e01363e1069",
+    resolvedSha256: "28eca12a62ec6d6c450be47870e9d2ffea5b003fad32569b5b24b1762ceb430d",
   },
   de: {
     partialCount: 2_914,
-    partialSha256: "e17a771ccef6b7109fafc5efe822cfc1790a031125d6cba2145e4252233690d2",
-    resolvedSha256: "e613e5924310d359d34e42636177e17687262f8a6f9fdeb3d1ce1d11f6c63ec1",
+    partialSha256: "3605b02e55de025e5ab294b51f4de64835b666f4bda2492317164c2d162eb6ab",
+    resolvedSha256: "44b9a44e9440f042a80a8b5996c8b51277e3cbc0bfc7943147a1391fe94dc4d4",
   },
   es: {
     partialCount: 2_914,
-    partialSha256: "49a36bf8661249321be4d49df986ce2a6f7556c74f9752f3362a4720ff814199",
-    resolvedSha256: "ca820667c361392c709383271047f817bd74713c54413d55b9a7993d7fbafe02",
+    partialSha256: "600c6ae29c68261cc827f8d8a08a8b4d1b94dcd2822e531e2669a4a91530a827",
+    resolvedSha256: "bd25c62bef71780b8fee6044097861d7a1a9be10648e372159c3ad15c14abd2e",
   },
   pt: {
     partialCount: 2_914,
-    partialSha256: "84bc62b56d920f45239414e28da9c223d8629322c01719122ccb1e6525ca61d1",
-    resolvedSha256: "b316ec422adc534b60e32926ede8b190b1ddf8a64b17b1bb652bde39c28bee8f",
+    partialSha256: "190343fdaf65a649982564fa556642392f076acf3d2e0930fe0f306b41db1b2e",
+    resolvedSha256: "b0179680b837d8af4cf7cb29d5347b114764b9d6df5a45a279005025ce6c4a58",
   },
 } as const satisfies Record<
   Locale,
