@@ -104,6 +104,9 @@ func TestRoutesAreRecorded(t *testing.T) {
 		{Method: http.MethodGet, Pattern: "/api/media/artwork-candidate/", RevealClass: reveal.ContentBytes},
 		{Method: http.MethodGet, Pattern: "/api/media/artwork/", RevealClass: reveal.ContentBytes},
 		{Method: http.MethodPost, Pattern: "/api/media/artwork/upload", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodPost, Pattern: "/api/profiles/picture", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodDelete, Pattern: "/api/profiles/picture/{id}", RevealClass: reveal.ContentJSON},
+		{Method: http.MethodGet, Pattern: "/api/profiles/picture/{id}", RevealClass: reveal.ContentBytes},
 		{Method: http.MethodGet, Pattern: "/api/entity/artwork/", RevealClass: reveal.ContentBytes},
 		{Method: http.MethodGet, Pattern: "/api/media/hls/", RevealClass: reveal.ContentBytes},
 		{Method: http.MethodGet, Pattern: "/api/media/assets/", RevealClass: reveal.ContentBytes},
@@ -814,11 +817,13 @@ func TestCORSExemptsOnlyOrdinaryAPIContentByteGETRoutes(t *testing.T) {
 			continue
 		}
 		req := httptest.NewRequest(http.MethodGet, route.Pattern+"token", nil)
-		// Pack keys and the session-authenticated artwork routes carry no URL
-		// token, so they never get the token-byte wildcard origin.
+		// Pack keys and the session-authenticated artwork and Profile picture
+		// routes carry no URL token, so they never get the token-byte
+		// wildcard origin.
 		want := route.Pattern != "/api/pack/key/" &&
 			route.Pattern != "/api/media/artwork/" &&
-			route.Pattern != "/api/entity/artwork/"
+			route.Pattern != "/api/entity/artwork/" &&
+			route.Pattern != "/api/profiles/picture/{id}"
 		if got := tokenByteGETPath(req); got != want {
 			t.Fatalf("tokenByteGETPath(%q) = %v, want %v", req.URL.Path, got, want)
 		}

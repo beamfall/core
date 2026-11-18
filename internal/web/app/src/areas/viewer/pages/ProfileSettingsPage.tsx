@@ -1,7 +1,11 @@
 import { SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MetadataAttributionText } from "@/components/beamfall/MetadataAttributionText";
-import { AvatarChooser, PROFILE_AVATAR_PREF_KEY } from "@/components/beamfall/profile";
+import {
+  AvatarChooser,
+  PROFILE_AVATAR_PREF_KEY,
+  ProfilePhotoEditor,
+} from "@/components/beamfall/profile";
 import { CollapsibleCard, IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Label } from "@/components/ui/label";
@@ -193,7 +197,13 @@ export function ProfileSettingsPage() {
                   {t("avatarSaveFailed")}
                 </p>
               )}
-              <AvatarChooser profile={profile} onSave={saveAvatar} />
+              <ProfilePhotoEditor
+                profile={profile}
+                onChanged={() => refreshProfiles().catch(() => undefined)}
+              />
+              <div className="mt-6 border-t border-border pt-5">
+                <AvatarChooser profile={profile} onSave={saveAvatar} preview={false} />
+              </div>
             </CollapsibleCard>
           </section>
         )}

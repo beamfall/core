@@ -10,7 +10,8 @@ import {
 import { ProfileAvatar } from "./ProfileAvatar";
 
 /**
- * Picture and colour pickers for one Profile's avatar, with a live preview.
+ * Icon and colour pickers for one Profile's avatar, with a live preview
+ * unless the caller already shows the avatar (`preview={false}`).
  * Each pick is saved through `onSave`, one save at a time and always the
  * latest pick, so a slow earlier save can never land over a newer one. A
  * rejected save puts the last saved avatar back and the caller reports the
@@ -19,9 +20,11 @@ import { ProfileAvatar } from "./ProfileAvatar";
 export function AvatarChooser({
   profile,
   onSave,
+  preview = true,
 }: {
   profile: { id: string; name: string; avatar?: string };
   onSave: (token: string) => Promise<void>;
+  preview?: boolean;
 }) {
   const t = useT();
   const groupName = useId();
@@ -67,6 +70,10 @@ export function AvatarChooser({
     if (liveProfileID.current !== null) setChoice(saved.current);
   }
 
+  // The options show icons and colours, never the uploaded picture that
+  // replaces them on the Profile's own avatar.
+  const iconOnly = { ...profile, pictureURL: undefined };
+
   function pick(next: AvatarChoice) {
     setChoice(next);
     wanted.current = { choice: next, profileID: profile.id };
@@ -75,7 +82,9 @@ export function AvatarChooser({
 
   return (
     <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-      <ProfileAvatar profile={profile} choice={choice} size="lg" className="self-center" />
+      {preview && (
+        <ProfileAvatar profile={profile} choice={choice} size="lg" className="self-center" />
+      )}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
           <legend className="mb-2 p-0 text-sm font-medium">{t("avatarPictureGroup")}</legend>
@@ -95,7 +104,7 @@ export function AvatarChooser({
                     onChange={() => pick({ ...choice, picture: picture.id })}
                     aria-label={t(picture.label)}
                   />
-                  <ProfileAvatar profile={profile} choice={{ ...choice, picture: picture.id }} />
+                  <ProfileAvatar profile={iconOnly} choice={{ ...choice, picture: picture.id }} />
                 </label>
               ),
             )}
@@ -116,7 +125,7 @@ export function AvatarChooser({
                   aria-label={t(tone.label)}
                 />
                 <ProfileAvatar
-                  profile={{ ...profile, name: "" }}
+                  profile={{ ...iconOnly, name: "" }}
                   choice={{ picture: null, tone: index }}
                   size="sm"
                   className="bf-avatar-swatch"

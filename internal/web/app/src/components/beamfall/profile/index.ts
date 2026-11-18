@@ -9,3 +9,4 @@ export {
 } from "./avatar";
 export { markProfilePicked, profilePickedThisTab } from "./entry";
 export { ProfileAvatar } from "./ProfileAvatar";
+export { ProfilePhotoEditor } from "./ProfilePhotoEditor";

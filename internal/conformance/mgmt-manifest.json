@@ -302,6 +302,10 @@
       "effect": "read"
     },
     {
+      "field": "reorderprofiles",
+      "effect": "write"
+    },
+    {
       "field": "restorelibrary",
       "effect": "write"
     },
@@ -443,6 +447,10 @@
     },
     {
       "field": "setpreplayclips",
+      "effect": "write"
+    },
+    {
+      "field": "setprofileavatar",
       "effect": "write"
     },
     {

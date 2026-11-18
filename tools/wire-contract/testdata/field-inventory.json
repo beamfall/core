@@ -2196,6 +2196,7 @@
         "id",
         "kind",
         "name",
+        "pictureURL",
         "remoteMaxBitrate"
       ]
     },
@@ -2574,6 +2575,20 @@
         "sortOrder",
         "trashedAt",
         "updatedAt"
+      ]
+    },
+    {
+      "field": "reorderprofiles",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "avatar",
+        "certificationCeilings",
+        "id",
+        "kind",
+        "name",
+        "pictureURL",
+        "remoteMaxBitrate"
       ]
     },
     {
@@ -3564,6 +3579,20 @@
       "tier": "admin",
       "children": [
         "items"
+      ]
+    },
+    {
+      "field": "setprofileavatar",
+      "effect": "write",
+      "tier": "admin",
+      "children": [
+        "avatar",
+        "certificationCeilings",
+        "id",
+        "kind",
+        "name",
+        "pictureURL",
+        "remoteMaxBitrate"
       ]
     },
     {

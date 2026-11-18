@@ -545,6 +545,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"pluginworker":                       newFieldHandler("pluginWorker", "pluginWorker", fieldRead, roleSession|roleAdmin, 66),
 	"precomputeplaybackrenditions":       newFieldHandler("precomputePlaybackRenditions", "precomputePlaybackRenditions", fieldMutation, roleSession|roleAdmin, 75),
 	"profiles":                           newFieldHandler("profiles", "profiles", fieldRead, roleSession, 2),
+	"reorderprofiles":                    newFieldHandler("reorderProfiles", "reorderProfiles", fieldMutation, roleSession|roleAdmin, 38),
+	"setprofileavatar":                   newFieldHandler("setProfileAvatar", "setProfileAvatar", fieldMutation, roleSession|roleAdmin, 38),
 	"profilesessions":                    newFieldHandler("profileSessions", "profileSessions", fieldRead, roleSession, 129),
 	"provisionencryptedlibrary":          newFieldHandler("provisionEncryptedLibrary", "provisionEncryptedLibrary", fieldMutation, roleSession|roleAdmin, 107),
 	"purgetrash":                         newFieldHandler("purgeTrash", "purgeTrash", fieldMutation, roleSession|roleManager|roleAdmin, 35),
@@ -1459,11 +1461,24 @@ func dispatchFieldBlock037(dispatch *fieldDispatchContext) response {
 func dispatchFieldBlock038(dispatch *fieldDispatchContext) response {
 	h := dispatch.handler
 	ctx := dispatch.ctx
+	scope := dispatch.scope
 	req := dispatch.req
 	fields := dispatch.fields
 	if fields["updateprofile"] {
 		profile, err := h.updateProfile(ctx, req)
 		if resp := resolveField(dispatch, "updateprofile", profile, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["reorderprofiles"] {
+		profiles, err := h.reorderProfiles(ctx, scope, req)
+		if resp := resolveField(dispatch, "reorderprofiles", profiles, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["setprofileavatar"] {
+		profile, err := h.setProfileAvatar(ctx, scope, req)
+		if resp := resolveField(dispatch, "setprofileavatar", profile, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

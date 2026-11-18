@@ -810,7 +810,8 @@ export async function createAPIKey(
 // (CreateProfile / UpdateProfile cases) rather than app.js — same VERBATIM
 // discipline, against the server-tested shape.
 
-const PROFILES_ADMIN_QUERY = "query Profiles { profiles { id name kind libraryIDs } }";
+const PROFILES_ADMIN_QUERY =
+  "query Profiles { profiles { id name kind libraryIDs avatar pictureURL } }";
 
 /**
  * fetchProfilesAdmin — the household Profiles for the Console Profiles lane.
@@ -820,7 +821,7 @@ const PROFILES_ADMIN_QUERY = "query Profiles { profiles { id name kind libraryID
  */
 export async function fetchProfilesAdmin(signal?: AbortSignal): Promise<ProfileAdminInfo[]> {
   const data = await graphql<{
-    profiles: { id: string; name: string; kind: string; libraryIDs: string[] }[] | null;
+    profiles: Omit<ProfileAdminInfo, "disabled">[] | null;
   }>(PROFILES_ADMIN_QUERY, {}, signal);
   return (data.profiles ?? []).map((p) => ({ ...p, disabled: false }));
 }
@@ -881,6 +882,86 @@ export async function updateProfile(
     signal,
   );
   return data.updateProfile;
+}
+
+const REORDER_PROFILES_MUTATION =
+  "mutation ReorderProfiles($profileIDs: [String!]!) { reorderProfiles(profileIDs: $profileIDs) { id } }";
+
+/**
+ * ReorderProfiles — set the order every Profile picker shows (CORE-2477).
+ * Profiles left out keep their relative order after the listed ones.
+ * Admin-gated.
+ */
+export async function reorderProfiles(
+  profileIDs: string[],
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const data = await graphql<{ reorderProfiles: { id: string }[] }>(
+    REORDER_PROFILES_MUTATION,
+    { profileIDs },
+    signal,
+  );
+  return data.reorderProfiles.map((p) => p.id);
+}
+
+const SET_PROFILE_AVATAR_MUTATION =
+  "mutation SetProfileAvatar($profileID: String!, $avatar: String!) { setProfileAvatar(profileID: $profileID, avatar: $avatar) { id avatar } }";
+
+/**
+ * SetProfileAvatar — set any Profile's avatar token (icon and colour,
+ * CORE-1241); an empty token restores the generated avatar. Admin-gated.
+ */
+export async function setProfileAvatar(
+  profileID: string,
+  avatar: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const data = await graphql<{ setProfileAvatar: { id: string; avatar?: string } }>(
+    SET_PROFILE_AVATAR_MUTATION,
+    { profileID, avatar },
+    signal,
+  );
+  return data.setProfileAvatar.avatar ?? "";
+}
+
+async function profilePictureRequest(url: string, init: RequestInit): Promise<string> {
+  const response = await fetch(url, {
+    ...init,
+    credentials: "same-origin",
+    headers: { "X-Beamfall-Csrf": "1" },
+  });
+  const body = (await response.json().catch(() => null)) as {
+    pictureURL?: string;
+    error?: string;
+  } | null;
+  if (!response.ok) {
+    throw new Error(body?.error || `profile picture request failed (${response.status})`);
+  }
+  return body?.pictureURL ?? "";
+}
+
+/**
+ * uploadProfilePicture — upload a JPEG or PNG as a Profile's picture
+ * (CORE-1240). The server crops, resizes and re-encodes it, and returns the
+ * new versioned picture URL. A Profile may set its own; an Admin any.
+ */
+export function uploadProfilePicture(
+  profileID: string,
+  file: Blob,
+  signal?: AbortSignal,
+): Promise<string> {
+  const form = new FormData();
+  form.append("profileID", profileID);
+  form.append("file", file, "picture.png");
+  return profilePictureRequest("/api/profiles/picture", { method: "POST", body: form, signal });
+}
+
+/** removeProfilePicture — clear a Profile's picture (CORE-1240). */
+export async function removeProfilePicture(profileID: string, signal?: AbortSignal): Promise<void> {
+  await profilePictureRequest(`/api/profiles/picture/${encodeURIComponent(profileID)}`, {
+    method: "DELETE",
+    signal,
+  });
 }
 
 const SET_PROFILE_LIBRARIES_MUTATION =

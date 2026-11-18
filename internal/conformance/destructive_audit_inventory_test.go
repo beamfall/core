@@ -160,6 +160,8 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"ProfileAccessWindows":                    {},
 	"ProfileAvatars":                          {},
 	"Profiles":                                {},
+	"ProfilePictureVersions":                  {},
+	"ReorderProfiles":                         {},
 	"ProfilesGrantedLibrary":                  {},
 	"PromotePendingAITag":                     {},
 	"QualityPolicyForLibrary":                 {},

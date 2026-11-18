@@ -107,6 +107,7 @@ type Server struct {
 	knownProxies        *KnownProxies
 	artworkImport       ArtworkImporter
 	artworkApply        artworkApplyStore
+	profilePictures     profilePictureStore
 	compat              *compatState
 	compatRefusalDir    string
 	deviceSurfaces      deviceSurfaceStore
@@ -293,6 +294,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	if applyStore, ok := jobStats.(artworkApplyStore); ok {
 		s.artworkApply = applyStore
 	}
+	if pictures, ok := jobStats.(profilePictureStore); ok {
+		s.profilePictures = pictures
+	}
 	if deviceSurfaces, ok := jobStats.(deviceSurfaceStore); ok {
 		s.deviceSurfaces = deviceSurfaces
 	}
@@ -346,6 +350,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// like the other web-Console write routes; the multipart body is excluded
 	// from the JSON-Content-Type check below, mirroring "/v1/backups/media".
 	s.handle(http.MethodPost, artworkUploadPattern, reveal.ContentJSON, s.uploadArtwork)
+	s.handle(http.MethodPost, profilePictureUploadPattern, reveal.ContentJSON, s.uploadProfilePicture)
+	s.handle(http.MethodDelete, profilePicturePattern, reveal.ContentJSON, s.deleteProfilePicture)
+	s.handle(http.MethodGet, profilePicturePattern, reveal.ContentBytes, s.profilePicture)
 	s.handle(http.MethodGet, "/api/entity/artwork/", reveal.ContentBytes, s.media.EntityArtwork)
 	s.handle(http.MethodGet, "/api/media/hls/", reveal.ContentBytes, s.media.HLS)
 	s.handle(http.MethodGet, "/api/media/assets/", reveal.ContentBytes, s.media.Assets)
@@ -980,7 +987,8 @@ func (s *Server) handle(method, pattern string, class reveal.SurfaceClass, h htt
 		}
 		multipartRequest := pattern == "/v1/backups/media" ||
 			pattern == createMediaArtworkRoutePattern ||
-			pattern == artworkUploadPattern
+			pattern == artworkUploadPattern ||
+			pattern == profilePictureUploadPattern
 		if method == http.MethodPost && class == reveal.ContentJSON && !multipartRequest && !requireJSONContentType(w, r) {
 			return
 		}
