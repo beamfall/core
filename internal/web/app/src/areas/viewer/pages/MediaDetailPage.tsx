@@ -19,6 +19,7 @@ import { ItemActions } from "../actions";
 import { CastRow } from "../components/CastRow";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
+import { MediaRelationRows } from "../components/MediaRelationRows";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
 import { SectionView } from "../components/SectionView";
@@ -377,6 +378,8 @@ export function MediaDetailPage() {
         {/* Audio names its people under the title instead (audioPeople), so a
             music artist, a person credit that may carry a photo, is named once. */}
         {media && media.mediaClass !== "audio" && <CastRow credits={media.credits} />}
+
+        {media && <MediaRelationRows mediaID={mediaId} />}
 
         {fields.length > 0 && (
           <section className="bf-section flex flex-col gap-3" aria-labelledby="bf-media-fields">

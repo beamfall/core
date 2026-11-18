@@ -12,6 +12,7 @@ import { sectionCacheKey } from "../components/HydratedSection";
 import {
   fetchMedia,
   fetchMediaDetailFields,
+  fetchMediaRelations,
   mediaDetailCacheKey,
   mediaLinkState,
 } from "../lib/mediaDetail";
@@ -29,6 +30,7 @@ vi.mock("../lib/mediaDetail", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/mediaDetail")>()),
   fetchMedia: vi.fn(),
   fetchMediaDetailFields: vi.fn(),
+  fetchMediaRelations: vi.fn(),
 }));
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
@@ -123,6 +125,7 @@ beforeEach(() => {
   mocks.identity = identity;
   vi.mocked(fetchMedia).mockReset();
   vi.mocked(fetchMediaDetailFields).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchMediaRelations).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
   vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
   // Off the home network by default: Watch together is not offered (CORE-1764).
@@ -675,5 +678,43 @@ describe("MediaDetailPage", () => {
     const { container } = renderAt(["/media/m1"]);
     await waitFor(() => expect(screen.getByRole("button", { name: "Mark watched" })).toBeEnabled());
     await expectNoAxeViolations(container);
+  });
+  it("shows an Extras row whose cards play their item, and no empty Editions row (CORE-2439)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    vi.mocked(fetchMediaRelations).mockImplementation(async (_id, relation) =>
+      relation === "extra-of"
+        ? [
+            { id: "x1", kind: "media", title: "Behind the Lens", mediaClass: "video" },
+            { id: "x2", kind: "media", title: "Trailer", mediaClass: "video" },
+          ]
+        : [],
+    );
+    renderAt(["/media/m1"]);
+
+    const extras = await screen.findByRole("list", { name: "Extras" });
+    expect(vi.mocked(fetchMediaRelations).mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      ["m1", "extra-of"],
+      ["m1", "edition-of"],
+    ]);
+    expect(within(extras).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.queryByRole("heading", { name: "Editions" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(extras).getByRole("button", { name: /^Trailer/ }));
+    expect(screen.getByTestId("path")).toHaveTextContent("/watch/x2");
+    expect(screen.getByTestId("state")).toHaveTextContent('"title":"Trailer"');
+  });
+
+  it("shows neither row for an item without extras or editions, nor when the read fails (CORE-2439)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    vi.mocked(fetchMediaRelations).mockImplementation(async (_id, relation) => {
+      if (relation === "edition-of") throw new Error("offline");
+      return [];
+    });
+    renderAt(["/media/m1"]);
+
+    await screen.findByRole("heading", { name: "Server title" });
+    await waitFor(() => expect(fetchMediaRelations).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("heading", { name: "Extras" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Editions" })).not.toBeInTheDocument();
   });
 });

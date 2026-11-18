@@ -7,6 +7,9 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent}% complete",
     mediaDetailDetails: "Details",
     mediaDetailKeepBrowsing: "Keep browsing",
+    // Extras and Editions rows (CORE-2439).
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Editions",
     mediaDetailPeople: "People",
     mediaDetailLoadFailed: "This item couldn’t be loaded. Check your connection and try again.",
     // Media detail lockup (CORE-1785).
@@ -41,6 +44,8 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % terminé",
     mediaDetailDetails: "Détails",
     mediaDetailKeepBrowsing: "Continuer à parcourir",
+    mediaDetailExtras: "Bonus",
+    mediaDetailEditions: "Éditions",
     mediaDetailPeople: "Personnes",
     mediaDetailLoadFailed:
       "Impossible de charger cet élément. Vérifiez votre connexion et réessayez.",
@@ -71,6 +76,8 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % abgeschlossen",
     mediaDetailDetails: "Details",
     mediaDetailKeepBrowsing: "Weiter stöbern",
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Fassungen",
     mediaDetailPeople: "Personen",
     mediaDetailLoadFailed:
       "Dieses Element konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
@@ -103,6 +110,8 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % completado",
     mediaDetailDetails: "Detalles",
     mediaDetailKeepBrowsing: "Seguir explorando",
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Ediciones",
     mediaDetailPeople: "Personas",
     mediaDetailLoadFailed:
       "No se pudo cargar este elemento. Comprueba tu conexión e inténtalo de nuevo.",
@@ -133,6 +142,8 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent}% concluído",
     mediaDetailDetails: "Detalhes",
     mediaDetailKeepBrowsing: "Continuar explorando",
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Edições",
     mediaDetailPeople: "Pessoas",
     mediaDetailLoadFailed:
       "Não foi possível carregar este item. Verifique sua conexão e tente novamente.",

@@ -15,6 +15,9 @@ const MEDIA_QUERY =
 const MEDIA_FIELDS_QUERY =
   "query MediaFields($mediaID: String!) { mediaFields(mediaID: $mediaID) { name type value label } }";
 
+const MEDIA_RELATIONS_QUERY =
+  "query MediaRelations($mediaID: String!, $relation: String!) { mediaRelations(mediaID: $mediaID, relation: $relation) { media { id title year durationSeconds mediaClass artworkSlots } } }";
+
 /** The server answer for an id that is missing or hidden from this Profile (no oracle). */
 const UNKNOWN_MEDIA = "unknown media";
 
@@ -51,6 +54,43 @@ export async function fetchMediaDetailFields(
     signal,
   );
   return data.mediaFields ?? [];
+}
+
+interface RelatedMedia {
+  id: string;
+  title: string;
+  year?: number;
+  durationSeconds?: number;
+  mediaClass?: string;
+  artworkSlots?: Record<string, string>;
+}
+
+/**
+ * The Media related to this item by a stored relation, as cards (CORE-2439):
+ * "extra-of" lists its Extras, "edition-of" its other Editions. The server
+ * filters by this Profile's reveal level and orders by title.
+ */
+export async function fetchMediaRelations(
+  mediaID: string,
+  relation: "extra-of" | "edition-of",
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ mediaRelations: { media: RelatedMedia }[] | null }>(
+    MEDIA_RELATIONS_QUERY,
+    { mediaID, relation },
+    signal,
+  );
+  return (data.mediaRelations ?? [])
+    .filter((row) => row.media?.id && row.media.id !== mediaID)
+    .map(({ media }) => ({
+      kind: "media",
+      id: media.id,
+      title: media.title,
+      year: media.year,
+      durationSeconds: media.durationSeconds,
+      mediaClass: media.mediaClass,
+      artworkSlots: media.artworkSlots,
+    }));
 }
 
 function isUnknownMedia(err: unknown): boolean {
