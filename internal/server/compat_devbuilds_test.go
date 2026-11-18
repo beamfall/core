@@ -366,3 +366,63 @@ func TestReleaseBuildDigestStaysExactForAMappedDevice(t *testing.T) {
 	substituted.ArtifactHash = devViewerBuild("substituted").ArtifactHash
 	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, substituted, device.authorize))
 }
+
+// TestDevRebuildExceptionKeepsEveryOtherCheck covers the edges of the
+// CORE-2573 exception: a mapped dev device presenting a rebuilt digest is
+// still refused when any other build-provenance condition fails, and the
+// refusal leaves its mapping as it was.
+func TestDevRebuildExceptionKeepsEveryOtherCheck(t *testing.T) {
+	cases := map[string]func(h *devBuildsHarness, dev nativeBuild, rebuilt capabilities.ClientContract) capabilities.ClientContract{
+		// The record no longer grants the device's role. Dev records are
+		// direct-only (ParseDevBuildManifest), so role is the entitlement the
+		// operator file can withdraw.
+		"forbidden role": func(h *devBuildsHarness, dev nativeBuild, rebuilt capabilities.ClientContract) capabilities.ClientContract {
+			dev.Roles = []string{string(capabilities.EnrollmentRoleManager)}
+			h.writeBuilds(dev)
+			return rebuilt
+		},
+		// A release floor for the surface rises above the dev build's ordinal.
+		"raised rollback floor": func(h *devBuildsHarness, dev nativeBuild, rebuilt capabilities.ClientContract) capabilities.ClientContract {
+			policy, pluginGeneration := h.srv.compat.snapshotInstallInputs()
+			policy.Builds.MinimumSequence = map[capabilities.Surface]int{capabilities.Surface(dev.Surface): dev.Sequence + 1}
+			h.srv.SetCompatPolicy(policy, "raised-floor", pluginGeneration)
+			return rebuilt
+		},
+		// The contract claims a surface other than the device's pinned one.
+		"wrong pinned surface": func(_ *devBuildsHarness, _ nativeBuild, rebuilt capabilities.ClientContract) capabilities.ClientContract {
+			rebuilt.Surface = string(capabilities.SurfaceIOSViewer)
+			return rebuilt
+		},
+		// Another dev build id the operator listed, which this device never
+		// verified: the exception follows the mapping, not the file.
+		"another dev build id": func(h *devBuildsHarness, dev nativeBuild, rebuilt capabilities.ClientContract) capabilities.ClientContract {
+			other := dev
+			other.BuildID = "android-viewer-app-1.0-8-dev"
+			other.Sequence = 8
+			other.ArtifactHash = compatTestArtifactHash(other.BuildID + "@c0ffee")
+			h.writeBuilds(dev, other)
+			rebuilt.BuildID = other.BuildID
+			return rebuilt
+		},
+	}
+	for name, breakCheck := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newDevBuildsHarness(t, shippedViewerBuild(2))
+			dev := devViewerBuild("c0ffee")
+			contract := dev.contract()
+			h.writeBuilds(dev)
+			device := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &contract)
+			assertServable(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+			mapping := map[store.DeviceSurface]string{store.DeviceSurface(dev.Surface): dev.BuildID}
+			assertDeviceBuilds(t, h.srv, device.DeviceID, mapping)
+
+			rebuilt := contract
+			rebuilt.ArtifactHash = devViewerBuild("rebuild-1").ArtifactHash
+			assertServable(t, compatHandshakeRecord(t, h.srv, rebuilt, device.authorize))
+
+			presented := breakCheck(h, dev, rebuilt)
+			assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, presented, device.authorize))
+			assertDeviceBuilds(t, h.srv, device.DeviceID, mapping)
+		})
+	}
+}

@@ -105,3 +105,15 @@ malformed hash or any release record. The device's mapping outlives the record: 
 record refuses the device until the same build ID is listed again, with any hash. To shut a device
 out for good, unpair it. A missing or invalid file admits no dev builds.
 Release builds and the linked catalog are unaffected; leave the variable unset in production.
+
+Two security assumptions bound this:
+
+- **The trust boundary is the paired device credential plus the record the operator admitted.**
+  The artifact hash is a claim the client makes about itself (ADR-0063). Admitting a rebuilt
+  dev build does not prove that the binary is a debug build, built from the listed commit, or
+  untampered. It proves only that a device the operator paired, and that once verified the
+  listed hash, is presenting that build ID again. Role, rollback floor, pinned surface and the
+  exact build ID are still checked.
+- **`BEAMFALL_DEV_BUILDS_FILE` turns this on for any server, production included.** Setting it
+  is an operator opt-in, and nothing restricts it to development hosts. Set it only on a server
+  whose paired devices you trust to run your own debug builds, and unset it everywhere else.
