@@ -1,0 +1,4 @@
+- [ ] Read `community-rating-votes` beside the score in the store rating read
+- [ ] Set `audienceScoreLabel` and `audienceScoreVotes` on cards, search cards and `media(id)`
+- [ ] Graph tests for a plugin-bound Library, a plugin-less Library and a missing vote count
+- [ ] Publish the additive client-core-wire minor
