@@ -165,7 +165,7 @@ export function MediaDetailPage() {
   // Version, audio and subtitle picks made here before playback (CORE-2442), for one Media.
   const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
   // Read alongside the item, once, for the pickers and Details (CORE-2509).
-  const versions = useMediaTracks(mediaId);
+  const versions = useMediaTracks(mediaId, attempt);
   const profileID = useSession().session?.profileID;
 
   function goBack() {

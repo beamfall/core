@@ -306,6 +306,37 @@ describe("MediaDetailPage", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("reads the Versions again on Try again, and leaves an all-unknown audio track out of Details", async () => {
+    vi.mocked(fetchMedia).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    vi.mocked(fetchMediaTracks).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+    expect(fetchMediaTracks).toHaveBeenCalledTimes(1);
+
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    vi.mocked(fetchMediaTracks).mockResolvedValue([
+      {
+        id: "va",
+        label: "",
+        videoCodec: "h264",
+        audioTracks: [{ streamIndex: 1, codec: "", language: "", channels: 0 }],
+        captionTracks: [],
+      },
+    ]);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    });
+
+    expect(fetchMediaTracks).toHaveBeenCalledTimes(2);
+    const details = screen.getByRole("heading", { level: 2, name: "Details" }).closest("section");
+    const rows = Array.from(
+      (details as HTMLElement).querySelectorAll("dt"),
+      (dt) => dt.textContent,
+    );
+    expect(rows).toContain("Video");
+    expect(rows).not.toContain("Audio");
+  });
+
   it("keeps a cached detail when revalidation fails", async () => {
     writeViewerCache(identity, mediaDetailCacheKey("m1"), { media, fields: [] });
     vi.mocked(fetchMedia).mockRejectedValue(new TypeError("Failed to fetch"));

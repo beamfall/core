@@ -28,11 +28,12 @@ interface Listing {
 /**
  * The item's Versions and tracks (mediaTracks), read once per item and
  * viewer identity; [] until they arrive and when the read fails. The page
- * reads it alongside the item and shares it between the pickers and Details.
+ * reads it alongside the item and shares it between the pickers and Details;
+ * a new `attempt` (the page's Try again) reads it again.
  */
-export function useMediaTracks(mediaID: string): MediaTrackVersion[] {
+export function useMediaTracks(mediaID: string, attempt = 0): MediaTrackVersion[] {
   const identity = useViewerIdentity();
-  const key = `${identity ?? ""}:${mediaID}`;
+  const key = `${identity ?? ""}:${mediaID}:${attempt}`;
   const [listing, setListing] = useState<Listing | null>(null);
 
   useEffect(() => {
@@ -118,7 +119,10 @@ export function versionFileFacts(
     {
       key: "audio",
       label: t("audio"),
-      value: audio ? audioTrackLabel(audio, trackLabelText(t, locale)) : "",
+      // An unknown language is left out here, so an all-unknown track shows no row.
+      value: audio
+        ? audioTrackLabel(audio, { ...trackLabelText(t, locale), unknownLanguage: "" })
+        : "",
     },
   ].filter((fact) => fact.value !== "");
 }

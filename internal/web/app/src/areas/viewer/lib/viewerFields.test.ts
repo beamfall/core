@@ -201,6 +201,24 @@ describe("detailCreditRows (CORE-2508)", () => {
         relation: "r",
         attributes: { job: " Lead Maker " },
       },
+      // A different person sharing a name keeps their own link.
+      {
+        entityID: "d3",
+        title: "Maker",
+        kind: "p",
+        archetype: "person",
+        relation: "r",
+        attributes: { job: "Lead Maker" },
+      },
+      // The same person credited twice for one job shows once.
+      {
+        entityID: "d1",
+        title: "Maker",
+        kind: "p",
+        archetype: "person",
+        relation: "r",
+        attributes: { job: "Lead Maker" },
+      },
       {
         entityID: "",
         title: "Unlinked",
@@ -226,6 +244,7 @@ describe("detailCreditRows (CORE-2508)", () => {
         credits: [
           { entityID: "d1", title: "Maker" },
           { entityID: "d2", title: "Other" },
+          { entityID: "d3", title: "Maker" },
         ],
       },
       { key: "job:Aide", label: "Aide", credits: [{ entityID: "", title: "Unlinked" }] },

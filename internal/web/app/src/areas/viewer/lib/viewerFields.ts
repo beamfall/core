@@ -151,15 +151,20 @@ interface CreditGroup {
   seen: Set<string>;
 }
 
-function addCredit(groups: CreditGroup[], key: string, label: DisplayString, credit: MediaCredit) {
+function addCredit(
+  groups: CreditGroup[],
+  key: string,
+  label: DisplayString,
+  credit: MediaCredit,
+  identity: string,
+) {
   let group = groups.find((candidate) => candidate.key === key);
   if (!group) {
     group = { key, label, credits: [], seen: new Set() };
     groups.push(group);
   }
-  // Two credits reading the same would show one name twice.
-  if (group.seen.has(credit.title)) return;
-  group.seen.add(credit.title);
+  if (group.seen.has(identity)) return;
+  group.seen.add(identity);
   group.credits.push({ entityID: credit.entityID, title: credit.title });
 }
 
@@ -168,7 +173,8 @@ function categoryGroups(credits: readonly MediaCredit[] | null | undefined): Cre
   const groups: CreditGroup[] = [];
   for (const credit of credits ?? []) {
     if (credit.archetype !== "category" || !credit.title) continue;
-    addCredit(groups, credit.kind, credit.kindDisplayName || credit.kind, credit);
+    // Two categories reading the same would show one name twice.
+    addCredit(groups, credit.kind, credit.kindDisplayName || credit.kind, credit, credit.title);
   }
   return groups;
 }
@@ -183,7 +189,8 @@ export function detailCreditRows(credits: readonly MediaCredit[] | null | undefi
   for (const credit of credits ?? []) {
     const job = credit.attributes?.job?.trim();
     if (credit.archetype !== "person" || !credit.title || !job) continue;
-    addCredit(jobs, job, job, credit);
+    // Two people may share a name; one person credited twice for a job shows once.
+    addCredit(jobs, job, job, credit, credit.entityID || credit.title);
   }
   return [
     ...categoryGroups(credits).map((group) => ({ ...group, key: `kind:${group.key}` })),
