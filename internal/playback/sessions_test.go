@@ -2746,3 +2746,45 @@ func TestSegmentNamesPastFiveDigitsAreServable(t *testing.T) {
 		}
 	}
 }
+
+// TestTerminatePlaybackStopsOnlyThatMediasTranscode covers CORE-2345: ending
+// one playback stops the session's transcode of that Media and releases its
+// slot, while the same session's transcode of another Media and another
+// session's transcode of the same Media keep running. Ending it again stops
+// nothing.
+func TestTerminatePlaybackStopsOnlyThatMediasTranscode(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	defer sessions.Close()
+
+	ended := SessionKey{SessionID: "session-tv", MediaID: "media-alpha"}
+	otherMedia := SessionKey{SessionID: "session-tv", MediaID: "media-beta"}
+	otherSession := SessionKey{SessionID: "session-mac", MediaID: "media-alpha"}
+	for _, key := range []SessionKey{ended, otherMedia, otherSession} {
+		if _, err := filePath720(sessions, key, "720p/seg00000.m4s"); err != nil {
+			t.Fatalf("start %v: %v", key, err)
+		}
+	}
+	if got := g.ActiveTranscodes(); got != 3 {
+		t.Fatalf("ActiveTranscodes = %d, want 3", got)
+	}
+
+	if got := sessions.TerminatePlayback(ended.SessionID, ended.MediaID); got != 1 {
+		t.Fatalf("TerminatePlayback = %d, want 1", got)
+	}
+	if got := g.ActiveTranscodes(); got != 2 {
+		t.Fatalf("ActiveTranscodes after ending = %d, want 2", got)
+	}
+	live := map[SessionKey]bool{}
+	for _, key := range sessions.ActiveKeys() {
+		live[key] = true
+	}
+	if live[ended] || !live[otherMedia] || !live[otherSession] {
+		t.Fatalf("live keys = %v, want only %v and %v", sessions.ActiveKeys(), otherMedia, otherSession)
+	}
+	if got := sessions.TerminatePlayback(ended.SessionID, ended.MediaID); got != 0 {
+		t.Fatalf("second TerminatePlayback = %d, want 0", got)
+	}
+}

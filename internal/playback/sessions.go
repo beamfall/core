@@ -918,6 +918,26 @@ func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 	return len(teardowns)
 }
 
+// TerminatePlayback aborts the in-flight transcodes one auth Session holds for
+// one Media and returns how many it stopped (CORE-2345). A player that closes
+// calls endPlayback, and without this its FFmpeg process kept running until
+// idle reap. It stops every profile-capability variant of that (SessionID,
+// MediaID) pair through the same removeLocked/runTeardowns path as
+// TerminateSession, and leaves the Session's other Media alone. Ending a
+// playback with no live transcode (direct play) is a zero-stop no-op.
+func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
+	s.mu.Lock()
+	var teardowns []sessionTeardown
+	for key := range s.sessions {
+		if key.SessionID == sessionID && key.MediaID == mediaID {
+			teardowns = append(teardowns, *s.removeLocked(key))
+		}
+	}
+	s.mu.Unlock()
+	s.runTeardowns(teardowns)
+	return len(teardowns)
+}
+
 // NewSessions creates a transcode session manager rooted at dataDir/transcode.
 func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) *Sessions {
 	return NewSessionsInDir(transcoder, filepath.Join(dataDir, "transcode"), now)

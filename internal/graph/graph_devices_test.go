@@ -2,6 +2,7 @@ package graph
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -101,7 +102,9 @@ func TestDevicesQueryRequiresAdminSession(t *testing.T) {
 func TestRevokeAllDevicesRevokesOthersNotSelf(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
-	term := &fakeTerminator{perCall: 1}
+	term := &fakeTerminator{live: map[store.SessionID]int{
+		"session-default": 1, "session-lounge": 1, "session-manager": 1, "session-managed": 1, "session-revoked": 1,
+	}}
 	handler.SetTranscodeTerminator(term)
 	openManagerAdminSession(t, st)
 
@@ -150,13 +153,8 @@ func TestRevokeAllDevicesRevokesOthersNotSelf(t *testing.T) {
 		t.Errorf("transcodesAborted = %d, want 3", got.TranscodesAborted)
 	}
 	wantCalls := []store.SessionID{"session-lounge", "session-default", "session-managed"}
-	if len(term.calls) != len(wantCalls) {
-		t.Fatalf("terminator calls = %v, want %v", term.calls, wantCalls)
-	}
-	for i := range wantCalls {
-		if term.calls[i] != wantCalls[i] {
-			t.Fatalf("terminator calls = %v, want %v", term.calls, wantCalls)
-		}
+	if !slices.Equal(term.aborted, wantCalls) {
+		t.Fatalf("aborted sessions = %v, want %v", term.aborted, wantCalls)
 	}
 
 	// device-mac (self) must remain unrevoked; device-tv must be revoked.

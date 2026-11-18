@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -129,9 +130,11 @@ func (h *Handler) liveSessions(ctx context.Context, scope auth.Scope) ([]LiveSes
 
 // endPlayback ends the calling session's playback of one Media (CORE-2305). A
 // player calls it when it closes, so the live-sessions dashboard drops the
-// playback at once instead of waiting for the activity window. It touches only
-// the caller's own session, so any session-scoped caller may use it, and it is
-// idempotent: ending a playback that is not active still reports true.
+// playback at once instead of waiting for the activity window, and the
+// session's transcode of that Media stops at once instead of running until
+// idle reap (CORE-2345). It touches only the caller's own session, so any
+// session-scoped caller may use it, and it is idempotent: ending a playback
+// that is not active still reports true.
 func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request) error {
 	mediaID := trimmedVariable(req, "mediaId")
 	if mediaID == "" {
@@ -140,7 +143,13 @@ func (h *Handler) endPlayback(ctx context.Context, scope auth.Scope, req request
 	if scope.SessionID == "" {
 		return nil
 	}
-	return h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID))
+	if err := h.store.EndPlayback(ctx, scope.SessionID, store.MediaID(mediaID)); err != nil {
+		return err
+	}
+	if h.transcodeTerminator != nil {
+		h.transcodeTerminator.TerminatePlayback(scope.SessionID, store.MediaID(mediaID))
+	}
+	return nil
 }
 
 // TerminateSessionResult echoes the terminated session id (ADR-0007 §4 "kill
@@ -222,26 +231,52 @@ func (h *Handler) revokeDevice(ctx context.Context, scope auth.Scope, req reques
 		}
 		return RevokeDeviceResult{}, err
 	}
-	// Abort the revoked device's in-flight transcodes. Enumerate the currently-
-	// active playback sessions (the stream-token ledger; resolved through the
-	// operator's own filter, but the SessionID/DeviceID identity fields are never
-	// reveal-suppressed — only Media titles are), then terminate the transcodes of
-	// every session belonging to the revoked device. A revoked device with no
+	// Abort the revoked device's in-flight transcodes: terminate the transcodes
+	// of every session belonging to the revoked device. A revoked device with no
 	// live transcode (direct play, or no playback) aborts zero — the event-stream
 	// termination above is the whole propagation for that case.
-	var active []store.ActiveSession
-	if h.transcodeTerminator != nil {
-		var err error
-		active, err = h.store.ActiveSessions(ctx, time.Now().UTC(), scope.LibraryFilter())
-		if err != nil {
-			return RevokeDeviceResult{}, err
-		}
+	byDevice, err := h.transcodeSessionIDsByDevice(ctx, scope)
+	if err != nil {
+		return RevokeDeviceResult{}, err
 	}
-	aborted := h.abortDeviceTranscodes(activeSessionIDsByDevice(active)[store.DeviceID(id)])
+	aborted := h.abortDeviceTranscodes(byDevice[store.DeviceID(id)])
 	if err := h.logActivity(ctx, scope, store.ActivityDeviceRevoke, "device", id, ""); err != nil {
 		return RevokeDeviceResult{}, err
 	}
 	return RevokeDeviceResult{DeviceID: id, TranscodesAborted: aborted}, nil
+}
+
+// transcodeSessionIDsByDevice lists, per device, every session that may own a
+// transcode. It joins two sources because neither is complete alone. The
+// stream-token ledger (resolved through the operator's own filter, but the
+// SessionID/DeviceID identity fields are never reveal-suppressed — only Media
+// titles are) still names a session whose auth row a renewal has replaced. The
+// device's auth sessions name a session whose ledger rows endPlayback already
+// cleared, or whose grants expired while its transcode kept running
+// (CORE-2345); the ledger alone missed those, so revocation aborted zero. A
+// session with no live transcode costs the terminator a zero-stop no-op. Nil
+// when no terminator is wired, since there is nothing to abort.
+func (h *Handler) transcodeSessionIDsByDevice(ctx context.Context, scope auth.Scope) (map[store.DeviceID][]store.SessionID, error) {
+	if h.transcodeTerminator == nil {
+		return nil, nil
+	}
+	active, err := h.store.ActiveSessions(ctx, time.Now().UTC(), scope.LibraryFilter())
+	if err != nil {
+		return nil, err
+	}
+	byDevice := activeSessionIDsByDevice(active)
+	enrolled, err := h.store.SessionIDsByDevice(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for deviceID, sessionIDs := range enrolled {
+		for _, sessionID := range sessionIDs {
+			if !slices.Contains(byDevice[deviceID], sessionID) {
+				byDevice[deviceID] = append(byDevice[deviceID], sessionID)
+			}
+		}
+	}
+	return byDevice, nil
 }
 
 func activeSessionIDsByDevice(active []store.ActiveSession) map[store.DeviceID][]store.SessionID {
