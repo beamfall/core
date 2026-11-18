@@ -703,13 +703,20 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		certClause, certArgs = planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	}
 	args = append(args, certArgs...)
-	// #nosec G202 -- fragments are generated placeholders and closed certification SQL.
+	extrasClause := ""
+	if source != nil && source.ExcludeExtras {
+		// Extras: the Extra bit or the Extra side of an extra-of relation (CORE-2506).
+		extrasClause = mediaExcludeExtrasClause + ` AND NOT EXISTS (
+			SELECT 1 FROM media_relation x WHERE x.from_media_id = m.id AND x.relation = ?)`
+		args = append(args, MediaRelationExtraOf)
+	}
+	// #nosec G202 -- fragments are generated placeholders and closed certification and Extras SQL.
 	statement := `
-		SELECT m.id, m.title, m.duration_seconds, m.library_id
+		SELECT m.id, m.title, m.duration_seconds, m.library_id, COALESCE(m.year, 0)
 		FROM entity_relation r
 		JOIN media m ON m.id = r.to_media_id
 		WHERE r.from_entity_id = ? AND m.trashed_at_ms IS NULL
-			AND m.library_id IN (` + strings.Join(placeholders, ", ") + `)` + certClause + `
+			AND m.library_id IN (` + strings.Join(placeholders, ", ") + `)` + certClause + extrasClause + `
 		ORDER BY (r.sort_order IS NULL), r.sort_order, m.title, m.id
 		LIMIT ? OFFSET ?`
 	if source != nil && source.ExcludeEditionGroupOf != "" {
@@ -723,9 +730,9 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		// #nosec G202 -- fragments are generated placeholders and closed certification SQL.
 		statement = `
 		WITH RECURSIVE visible_media AS (
-			SELECT m.id, m.title, m.duration_seconds, m.library_id FROM media m
+			SELECT m.id, m.title, m.duration_seconds, m.library_id, COALESCE(m.year, 0) AS year FROM media m
 			WHERE m.trashed_at_ms IS NULL
-			AND m.library_id IN (` + strings.Join(placeholders, ", ") + `)` + certClause + `
+			AND m.library_id IN (` + strings.Join(placeholders, ", ") + `)` + certClause + extrasClause + `
 		), credited AS (
 			SELECT m.id, MIN(r.sort_order) AS sort_order
 			FROM visible_media m JOIN entity_relation r ON r.to_media_id = m.id
@@ -739,7 +746,7 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		), group_keys AS (
 			SELECT seed, MIN(id) AS group_id FROM edition_group GROUP BY seed
 		), candidates AS (
-			SELECT k.group_id, m.id, m.title, m.duration_seconds, m.library_id,
+			SELECT k.group_id, m.id, m.title, m.duration_seconds, m.library_id, m.year,
 			       MIN(c.sort_order) AS sort_order,
 			       EXISTS (SELECT 1 FROM media_relation r WHERE r.from_media_id = m.id
 			               AND r.relation = 'edition-of') AS is_edition
@@ -752,7 +759,7 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY group_id ORDER BY is_edition, id) AS position
 			FROM candidates
 		)
-		SELECT id, title, duration_seconds, library_id FROM ranked WHERE position = 1
+		SELECT id, title, duration_seconds, library_id, year FROM ranked WHERE position = 1
 		ORDER BY (sort_order IS NULL), sort_order, title, id LIMIT ? OFFSET ?`
 		// The folded query binds visibility before the credited Entity.
 		args = append(args[1:], entityID, source.ExcludeEditionGroupOf)
@@ -770,7 +777,8 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		var title string
 		var durationSeconds int
 		var libraryID LibraryID
-		if err := rows.Scan(&id, &title, &durationSeconds, &libraryID); err != nil {
+		var year int
+		if err := rows.Scan(&id, &title, &durationSeconds, &libraryID, &year); err != nil {
 			return nil, err
 		}
 		// Library-level restricted flag: annotated on items this
@@ -782,6 +790,7 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 			Title:      title,
 			Summary:    mediaDurationSummary(durationSeconds),
 			Restricted: restricted[libraryID],
+			Year:       year,
 		})
 	}
 	return items, rows.Err()

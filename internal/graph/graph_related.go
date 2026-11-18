@@ -3,17 +3,21 @@ package graph
 import (
 	"context"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
 )
 
 // Related Media (CORE-2444): the Media that share a Media item's category
-// credits, ranked by how many of its credits they share. Every credit is read
-// through the entity-media Source with the acting Profile, the path browse and
-// Home rails take, so Mute suppression, the Library and reveal filter and
-// locked marking apply exactly as they do there. Only archetypes are named
-// here, never a plugin kind.
+// credits, ranked by how many of its credits they share. Only Media sharing at
+// least relatedMinShared credits count, so one broad genre never fills the row
+// in title order; Extras are read out and one title appears once (CORE-2506).
+// Every credit is read through the entity-media Source with the acting
+// Profile, the path browse and Home rails take, so Mute suppression, the
+// Library and reveal filter and locked marking apply exactly as they do there.
+// Only archetypes are named here, never a plugin kind.
 const (
 	relatedCategoryCredits = 4
 	relatedPersonCredits   = 3
@@ -22,7 +26,17 @@ const (
 	relatedPerCredit    = 100
 	relatedDefaultLimit = 20
 	relatedMaxLimit     = 50
+	// relatedMinShared is the fewest ranking credits a Media must share with
+	// the item to be related; one shared genre alone is filler.
+	relatedMinShared = 2
 )
+
+// relatedTitleKey identifies one title for the Related row: Media with the
+// same title (case and surrounding space ignored) and year are separate files
+// of one work (copies, cuts, a stray trailer) and are listed once.
+func relatedTitleKey(title string, year int) string {
+	return strings.ToLower(strings.TrimSpace(title)) + "\x00" + strconv.Itoa(year)
+}
 
 // relatedSignals picks the credits the ranking reads, de-duplicated, in the
 // server's credit order: the first category-archetype credits and the first
@@ -49,9 +63,11 @@ func relatedSignals(credits []MediaCreditInfo) (categories, people []string) {
 }
 
 // rankRelated orders the Media read for each signal: those sharing at least
-// one category, most shared signals first, ties in first-read order, the item
-// itself left out, at most limit.
-func rankRelated(mediaID store.MediaID, byCategory, byPerson [][]store.SourceItem, limit int) []store.SourceItem {
+// one category and relatedMinShared signals, most shared signals first, ties
+// in first-read order, at most limit. The item itself, Media with its title
+// key and every Media after the first with one title key are left out.
+func rankRelated(self store.SourceItem, byCategory, byPerson [][]store.SourceItem, limit int) []store.SourceItem {
+	mediaID := self.ID
 	type entry struct {
 		item     store.SourceItem
 		score    int
@@ -90,10 +106,16 @@ func rankRelated(mediaID store.MediaID, byCategory, byPerson [][]store.SourceIte
 		return entries[i].order < entries[j].order
 	})
 	out := []store.SourceItem{}
+	titles := map[string]bool{relatedTitleKey(self.Title, self.Year): true}
 	for _, e := range entries {
-		if !e.category {
+		if !e.category || e.score < relatedMinShared {
 			continue
 		}
+		key := relatedTitleKey(e.item.Title, e.item.Year)
+		if titles[key] {
+			continue
+		}
+		titles[key] = true
 		out = append(out, e.item)
 		if len(out) == limit {
 			break
@@ -109,7 +131,8 @@ func (h *Handler) relatedMedia(ctx context.Context, scope auth.Scope, req reques
 		return nil, clientError("mediaID is required")
 	}
 	filter := scope.LibraryFilter()
-	if _, err := h.store.Media(ctx, mediaID, filter); err != nil {
+	media, err := h.store.Media(ctx, mediaID, filter)
+	if err != nil {
 		return nil, clientError("unknown media")
 	}
 	limit := boundedIntVar(req, "limit", relatedDefaultLimit, relatedMaxLimit)
@@ -126,6 +149,8 @@ func (h *Handler) relatedMedia(ctx context.Context, scope auth.Scope, req reques
 				EntityID:              store.EntityID(id),
 				Limit:                 relatedPerCredit,
 				ProfileID:             scope.ProfileID,
+				// Extras (a trailer, a featurette) are never related titles.
+				ExcludeExtras: true,
 			})
 			if err != nil {
 				return nil, err
@@ -142,7 +167,7 @@ func (h *Handler) relatedMedia(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return nil, err
 	}
-	items := rankRelated(mediaID, byCategory, byPerson, limit)
+	items := rankRelated(store.SourceItem{ID: media.ID, Title: media.Title, Year: media.Year}, byCategory, byPerson, limit)
 	// Survivors may still be broad-muted but favourited, which §2.7 badges.
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, filter, items); err != nil {
 		return nil, err

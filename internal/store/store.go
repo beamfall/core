@@ -791,6 +791,10 @@ type SourceQuery struct {
 	// entity-media Source. Empty preserves plain Entity contents. Ignored by
 	// other Source kinds.
 	ExcludeEditionGroupOf MediaID
+	// ExcludeExtras leaves Extras (the Extra bit or the Extra side of an
+	// extra-of relation) out of an "entity-media" query, for discovery reads
+	// such as relatedMedia (CORE-2506). Ignored by other kinds.
+	ExcludeExtras bool
 	// LibraryID restricts results to one Library (a library nav entry's
 	// Sections); empty means every visible Library.
 	LibraryID LibraryID
