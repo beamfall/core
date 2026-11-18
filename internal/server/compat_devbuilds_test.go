@@ -426,3 +426,119 @@ func TestDevRebuildExceptionKeepsEveryOtherCheck(t *testing.T) {
 		})
 	}
 }
+
+// captureLogs routes the default logger to a buffer for the rest of the test.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &logs
+}
+
+// devRebuildLines returns the dev-rebuild audit lines in logs.
+func devRebuildLines(logs *bytes.Buffer) []string {
+	var lines []string
+	for _, line := range strings.Split(logs.String(), "\n") {
+		if strings.Contains(line, "compatibility handshake admitted a rebuilt dev build") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+// TestDevRebuildAuditUsesTheAdmittingCatalog covers CORE-2579: the audit line
+// for a rebuilt dev build names the digest of the catalog that admitted the
+// handshake, even when the dev-build file changes between acceptance and the
+// audit write.
+func TestDevRebuildAuditUsesTheAdmittingCatalog(t *testing.T) {
+	cases := map[string]func(h *devBuildsHarness){
+		"record removed": func(h *devBuildsHarness) { h.remove() },
+		"hash replaced":  func(h *devBuildsHarness) { h.writeBuilds(devViewerBuild("replaced")) },
+	}
+	for name, reload := range cases {
+		t.Run(name, func(t *testing.T) {
+			logs := captureLogs(t)
+			h := newDevBuildsHarness(t, shippedViewerBuild(2))
+			dev := devViewerBuild("c0ffee")
+			contract := dev.contract()
+			h.writeBuilds(dev)
+			device := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &contract)
+			assertServable(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+
+			rebuilt := contract
+			rebuilt.ArtifactHash = devViewerBuild("rebuild-1").ArtifactHash
+			ctx := t.Context()
+			scope, err := h.srv.auth.ScopeFromRequest(ctx, compatHandshakeRequest(t, rebuilt, device.authorize))
+			if err != nil {
+				t.Fatal(err)
+			}
+			surface, err := h.srv.persistedCompatSurface(ctx, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, result, accepted, cataloged, err := h.srv.acceptCompatHandshake(ctx, scope, rebuilt, surface, false, false)
+			if err != nil || !accepted || !result.Servable() {
+				t.Fatalf("accept rebuilt = %+v, accepted %v, err %v; want servable", result, accepted, err)
+			}
+			if cataloged != dev.ArtifactHash {
+				t.Fatalf("admitting catalog digest = %q, want %q", cataloged, dev.ArtifactHash)
+			}
+
+			// The file changes after acceptance; the live catalog no longer
+			// names the digest that admitted the handshake.
+			reload(h)
+			h.srv.devBuilds.refresh()
+			if live, _ := h.srv.compat.snapshot().Builds.DevRebuildDigest(rebuilt); live == dev.ArtifactHash {
+				t.Fatal("reload left the admitting record in place; the case proves nothing")
+			}
+
+			logs.Reset()
+			h.srv.logDevRebuildHandshake(ctx, scope, rebuilt, cataloged)
+			lines := devRebuildLines(logs)
+			if len(lines) != 1 {
+				t.Fatalf("dev-rebuild audit lines = %d, want 1:\n%s", len(lines), logs.String())
+			}
+			for _, want := range []string{
+				"artifactHash=" + artifactHashPrefix(rebuilt.ArtifactHash),
+				"catalogedArtifactHash=" + artifactHashPrefix(dev.ArtifactHash),
+			} {
+				if !strings.Contains(lines[0], want) {
+					t.Fatalf("audit line %q lacks %q", lines[0], want)
+				}
+			}
+		})
+	}
+}
+
+// TestDevRebuildAuditOnlyForTheException checks that exact dev, release and
+// refused handshakes write no dev-rebuild audit line, and an admitted rebuild
+// writes exactly one.
+func TestDevRebuildAuditOnlyForTheException(t *testing.T) {
+	logs := captureLogs(t)
+	release := shippedViewerBuild(2)
+	h := newDevBuildsHarness(t, release)
+	dev := devViewerBuild("c0ffee")
+	contract := dev.contract()
+	h.writeBuilds(dev)
+	device := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &contract)
+	releaseContract := release.contract()
+	releaseDevice := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &releaseContract)
+	rebuilt := contract
+	rebuilt.ArtifactHash = devViewerBuild("rebuild-1").ArtifactHash
+	stranger := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &rebuilt)
+	logs.Reset()
+
+	assertServable(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+	assertServable(t, compatHandshakeRecord(t, h.srv, releaseContract, releaseDevice.authorize))
+	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, rebuilt, stranger.authorize))
+	if lines := devRebuildLines(logs); len(lines) != 0 {
+		t.Fatalf("exact, release and refused handshakes wrote dev-rebuild audit lines:\n%s", strings.Join(lines, "\n"))
+	}
+
+	assertServable(t, compatHandshakeRecord(t, h.srv, rebuilt, device.authorize))
+	if lines := devRebuildLines(logs); len(lines) != 1 {
+		t.Fatalf("admitted rebuild wrote %d dev-rebuild audit lines, want 1:\n%s", len(lines), logs.String())
+	}
+}
