@@ -53,12 +53,15 @@ func (s *scanWalkState) attachVersion(key string, imported store.ImportMediaFile
 	if anchor.fingerprint == imported.ContentFingerprint {
 		return "", false, nil
 	}
+	// Two files without a parsed label would contend for the default slot,
+	// so the store labels them from their file facts instead (CORE-2473).
 	_, err := s.st.ImportMediaFileVersion(s.ctx, store.MediaVersionImport{
 		MediaID:           anchor.mediaID,
 		File:              imported,
 		Label:             parsed.VersionLabel,
 		AnchorFingerprint: anchor.fingerprint,
 		AnchorLabel:       anchor.label,
+		DeriveLabels:      parsed.VersionLabel == "" && anchor.label == "",
 	})
 	if errors.Is(err, store.ErrVersionNotAttached) || errors.Is(err, store.ErrManagedAdmissionInFlight) {
 		return "", false, nil
