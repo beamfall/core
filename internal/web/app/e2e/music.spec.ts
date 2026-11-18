@@ -130,6 +130,9 @@ test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ 
     .getByRole("button", { name: "See all" })
     .click();
   await expect(page).toHaveURL(/\/seeall\//);
+  // The URL changes before the See all route replaces Home, so wait for Home's
+  // shelves to leave first; otherwise "Sample Media" can match a Home card too.
+  await expect(page.getByRole("list", { name: "Your Most-Played" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Sample Media/ })).toBeVisible();
   const card = page.getByRole("link", { name: trackCard }).first();
   const label = (await card.getAttribute("aria-label")) ?? (await card.innerText());
