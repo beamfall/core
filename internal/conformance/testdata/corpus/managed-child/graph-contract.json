@@ -5,6 +5,7 @@
       "id": "session-managed",
       "profile": "managed",
       "profileID": "profile-managed",
+      "revealPinSet": false,
       "revealed": false,
       "subtitleMode": "off"
     },

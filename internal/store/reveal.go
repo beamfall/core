@@ -87,6 +87,28 @@ func (s *Store) SetProfileRevealPIN(ctx context.Context, id ProfileID, pin strin
 	return err
 }
 
+// ProfileRevealPINSet reports whether a Profile can reveal: an adult Profile
+// with a stored reveal PIN verifier. It reads only the verifier's presence, so
+// it says nothing about restricted Libraries (ADR-0004) and lets a client hide a
+// PIN prompt that could never succeed (CORE-2462). Managed Profiles report false.
+func (s *Store) ProfileRevealPINSet(ctx context.Context, id ProfileID) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var kind ProfileKind
+	var hash sql.NullString
+	if err := s.catalogR.QueryRowContext(ctx,
+		`SELECT kind, reveal_pin_hash FROM profile WHERE id = ?`, id).Scan(&kind, &hash); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return kind == ProfileAdult && hash.Valid && hash.String != "", nil
+}
+
 // VerifyRevealPIN checks a reveal PIN for an adult Profile. A correct PIN whose
 // stored verifier is still the legacy bare-sha256 form is re-stored as a salted
 // argon2id verifier (upgrade-on-verify), so leaked-database brute-force

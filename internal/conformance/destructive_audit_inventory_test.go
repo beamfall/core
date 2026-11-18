@@ -159,6 +159,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"Profile":                                 {},
 	"ProfileAccessWindows":                    {},
 	"ProfileAvatars":                          {},
+	"ProfileRevealPINSet":                     {},
 	"Profiles":                                {},
 	"ProfilesGrantedLibrary":                  {},
 	"PromotePendingAITag":                     {},
