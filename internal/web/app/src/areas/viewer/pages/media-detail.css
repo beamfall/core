@@ -89,10 +89,17 @@
     linear-gradient(
       0deg,
       var(--bg-root) 0%,
-      color-mix(in oklab, var(--bg-root) 82%, transparent) 40%,
-      color-mix(in oklab, var(--bg-root) 24%, transparent) 100%
+      color-mix(in oklab, var(--bg-root) 86%, transparent) 35%,
+      color-mix(in oklab, var(--bg-root) 55%, transparent) 100%
     ),
-    linear-gradient(90deg, color-mix(in oklab, var(--bg-root) 72%, transparent) 0%, transparent 70%);
+    /* The copy column sits right of the poster, so the side scrim stays dark
+     * past it: a busy backdrop otherwise shows through the title and chips. */
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--bg-root) 92%, transparent) 0%,
+      color-mix(in oklab, var(--bg-root) 80%, transparent) 55%,
+      color-mix(in oklab, var(--bg-root) 35%, transparent) 100%
+    );
 }
 
 [data-register="viewer"] .bf-detail-lockup {
