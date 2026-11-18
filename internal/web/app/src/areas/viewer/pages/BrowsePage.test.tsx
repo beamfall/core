@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NavigationManifest } from "@/lib/graphql/types";
@@ -146,23 +146,32 @@ describe("BrowsePage readable node address", () => {
     ],
   } as unknown as NavigationManifest;
 
-  it("serves the node at its collapsed address and links Browse all there", () => {
+  it("serves the node at its collapsed address with the Library pivots (CORE-2437)", () => {
     renderAt("/n/library-films", { manifest: doubled, loading: false });
 
     expect(screen.getByTestId("path")).toHaveTextContent("/n/library-films");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Films");
-    expect(screen.getByRole("link", { name: "Browse all" })).toHaveAttribute(
-      "href",
+    const pivots = within(screen.getByRole("navigation", { name: "Library views" }));
+    const hrefs = pivots.getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(hrefs).toEqual([
+      "/n/library-films",
       "/n/library-films/all",
+      "/n/library-films/collections",
+      "/n/library-films/categories",
+    ]);
+    expect(pivots.getByRole("link", { name: "Recommended" })).toHaveAttribute(
+      "aria-current",
+      "page",
     );
+    expect(pivots.getByRole("link", { name: "Library" })).not.toHaveAttribute("aria-current");
   });
 
-  it("drops Browse all once the Library's Layout settles empty", () => {
+  it("drops the pivots once the Library's Layout settles empty (CORE-2322)", () => {
     renderAt("/n/library-films", { manifest: doubled, loading: false });
 
     fireEvent.click(screen.getByRole("button", { name: "settle empty" }));
 
-    expect(screen.queryByRole("link", { name: "Browse all" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Library views" })).toBeNull();
   });
 
   it("moves an old raw-ID link to the readable address", () => {

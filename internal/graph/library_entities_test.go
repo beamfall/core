@@ -273,3 +273,56 @@ func TestAudioCardsCarryTheirByline(t *testing.T) {
 		t.Fatalf("search box row = %+v (found %v), want a box row with the audio class and no byline", box, ok)
 	}
 }
+
+const libraryEntitiesBrowseTestQuery = `query($libraryID: String!, $kind: String, $sort: String, $direction: String, $watch: String, $groupFilters: Map) {
+	libraryEntities(libraryID: $libraryID, kind: $kind, sort: $sort, direction: $direction, watch: $watch, groupFilters: $groupFilters) {
+		kinds { kind total }
+		kind total
+		items { id title }
+		letters { letter offset count }
+	}
+}`
+
+// An Entity kind takes libraryItems's sort and filter arguments (CORE-2440):
+// a title sort answers the letter index, a filter narrows the total but not
+// the kind totals, and an unknown sort is a client error.
+func TestLibraryEntitiesSortsAndFiltersAKind(t *testing.T) {
+	handler, libraryID, _ := newShelfLibrary(t, false)
+	browse := func(vars map[string]any) LibraryEntitiesResponse {
+		t.Helper()
+		vars["libraryID"] = string(libraryID)
+		var resp LibraryEntitiesResponse
+		execGraph(t, handler, authorizeViewer, libraryEntitiesBrowseTestQuery, vars, "libraryEntities", &resp)
+		return resp
+	}
+
+	desc := browse(map[string]any{"kind": "box", "direction": "desc"})
+	if got := libraryEntityTitles(desc.Items); !slices.Equal(got, []string{"beta", "Alpha Quill"}) {
+		t.Fatalf("title desc = %v, want [beta Alpha Quill]", got)
+	}
+	if want := []LibraryItemsLetter{{Letter: "B", Offset: 0, Count: 1}, {Letter: "A", Offset: 1, Count: 1}}; !slices.Equal(desc.Letters, want) {
+		t.Fatalf("letters = %+v, want %+v", desc.Letters, want)
+	}
+
+	// Box beta reaches no Media, so a watch filter drops it; the kind total stays.
+	unwatched := browse(map[string]any{"kind": "box", "watch": "unwatched"})
+	if got := libraryEntityTitles(unwatched.Items); unwatched.Total != 1 || !slices.Equal(got, []string{"Alpha Quill"}) || unwatched.Kinds[1].Total != 2 {
+		t.Fatalf("unwatched boxes = %v (total %d, kinds %+v), want Alpha Quill of 1 with the kind total 2", got, unwatched.Total, unwatched.Kinds)
+	}
+
+	// Zed reaches the clip, the last Media added; a non-title sort has no letters.
+	added := browse(map[string]any{"kind": "maker", "sort": "added", "direction": "desc"})
+	if got := libraryEntityTitles(added.Items); !slices.Equal(got, []string{"Zed", "Em"}) || len(added.Letters) != 0 {
+		t.Fatalf("added desc = %v letters %+v, want [Zed Em] and no letters", got, added.Letters)
+	}
+
+	none := browse(map[string]any{"kind": "box", "groupFilters": map[string]any{"tag": "Absent"}})
+	if none.Total != 0 || len(none.Items) != 0 || len(none.Kinds) != 2 {
+		t.Fatalf("unmatched group filter = %+v, want no items and the kinds intact", none)
+	}
+
+	if resp := postGraphJSON(t, handler, authorizeViewer, libraryEntitiesBrowseTestQuery,
+		map[string]any{"libraryID": string(libraryID), "sort": "loudness"}); len(resp.Errors) == 0 {
+		t.Fatal("an unknown sort was accepted, want a client error")
+	}
+}

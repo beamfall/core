@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/plugin"
@@ -39,17 +40,21 @@ type LibraryEntityItem struct {
 // LibraryEntitiesResponse is one page of a Library's Entities of one kind
 // (CORE-2362). Kinds lists every kind the caller can browse the Library by;
 // AllLabel is the plugin's title for its unfiltered Media grid; Kind is the
-// kind listed and Total its count.
+// kind listed and Total its count after the browse filters (CORE-2440).
 type LibraryEntitiesResponse struct {
 	Kinds    []LibraryEntityKind `json:"kinds"`
 	AllLabel plugin.LocaleString `json:"allLabel,omitempty"`
 	Kind     string              `json:"kind"`
 	Total    int                 `json:"total"`
 	Items    []LibraryEntityItem `json:"items"`
+	// Letters lists, for a title sort, the offset where each title initial
+	// starts in the filtered set and its count, as libraryItems does; other
+	// sorts answer an empty list.
+	Letters []LibraryItemsLetter `json:"letters"`
 }
 
 func emptyLibraryEntities() LibraryEntitiesResponse {
-	return LibraryEntitiesResponse{Kinds: []LibraryEntityKind{}, Items: []LibraryEntityItem{}}
+	return LibraryEntitiesResponse{Kinds: []LibraryEntityKind{}, Items: []LibraryEntityItem{}, Letters: []LibraryItemsLetter{}}
 }
 
 // libraryBrowsePlan is what a Library's plugin declares for browsing it by
@@ -172,12 +177,14 @@ func (h *Handler) libraryBundle(ctx context.Context, libraryID store.LibraryID) 
 
 // libraryEntities answers one page of a Library's Entities of one browse kind
 // for the calling session. The kinds, their order and their labels come from
-// the Library plugin's declarations; core names no kind.
+// the Library plugin's declarations; core names no kind. The sort and filter
+// arguments are libraryItems's, validated the same way.
 func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req request) (LibraryEntitiesResponse, error) {
-	libraryID := store.LibraryID(trimmedVariable(req, "libraryID"))
-	if libraryID == "" {
-		return LibraryEntitiesResponse{}, clientError("libraryID is required")
+	browse, err := libraryItemsQuery(scope, req)
+	if err != nil {
+		return LibraryEntitiesResponse{}, err
 	}
+	libraryID := browse.LibraryID
 	limit, offset := intVar(req, "limit"), intVar(req, "offset")
 	if limit < 0 || offset < 0 {
 		return LibraryEntitiesResponse{}, clientError("limit and offset must not be negative")
@@ -234,6 +241,7 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 		Kind:        resp.Kind,
 		ChildKinds:  plan.childKinds(resp.Kind),
 		ParentKinds: plan.parentKinds(listed),
+		Browse:      browse,
 		Limit:       limit,
 		Offset:      offset,
 	})
@@ -241,6 +249,9 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 		return LibraryEntitiesResponse{}, err
 	}
 	resp.Total = result.Total
+	for _, letter := range result.Letters {
+		resp.Letters = append(resp.Letters, LibraryItemsLetter{Letter: letter.Letter, Offset: letter.Offset, Count: letter.Count})
+	}
 	cards := make([]store.SourceItem, len(result.Items))
 	for i, item := range result.Items {
 		cards[i] = item.Item
@@ -264,12 +275,10 @@ func (h *Handler) libraryEntities(ctx context.Context, scope auth.Scope, req req
 	return resp, nil
 }
 
-// libraryEntitiesArguments declares the libraryEntities read's arguments.
+// libraryEntitiesArguments declares the libraryEntities read's arguments:
+// libraryItems's browse arguments, with the same enums, plus the listed kind.
 func libraryEntitiesArguments() []NestedArgument {
-	return []NestedArgument{
-		{Name: "kind", Kind: "string", Optional: true},
-		{Name: "libraryID", Kind: "string"},
-		{Name: "limit", Kind: "int", Optional: true},
-		{Name: "offset", Kind: "int", Optional: true},
-	}
+	args := append(libraryItemsArguments(), NestedArgument{Name: "kind", Kind: "string", Optional: true})
+	slices.SortFunc(args, func(a, b NestedArgument) int { return strings.Compare(a.Name, b.Name) })
+	return args
 }

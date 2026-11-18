@@ -1,46 +1,36 @@
-import { ArrowDown, ArrowUp, ChevronLeft, Play, Shuffle, X } from "lucide-react";
+import { Play, Shuffle } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
-import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
-import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
-import { LibraryLetterRail, letterRailOwner } from "../components/LibraryLetterRail";
-import { MediaItemCard } from "../components/MediaItemCard";
 import {
-  useVirtualGrid,
-  VIRTUAL_GRID_MIN_ITEMS,
-  virtualGridIndexAt,
-  virtualGridScrollTop,
-} from "../components/useVirtualGrid";
+  CLEARED_BROWSE_FILTERS,
+  hasBrowseFilters,
+  LibraryBrowseToolbar,
+} from "../components/LibraryBrowseToolbar";
+import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
+import { LibraryLetterRail } from "../components/LibraryLetterRail";
+import { LibraryHeader } from "../components/LibraryPivots";
+import { MediaItemCard } from "../components/MediaItemCard";
+import { LETTER_RAIL_MIN_ITEMS, useLetterJump } from "../components/useLetterJump";
+import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import {
+  browseFollowsEngagement,
   browseStateParams,
   fetchLibraryItems,
   isAudioOnly,
   LIBRARY_BROWSE_PAGE,
-  LIBRARY_MIN_RATINGS,
-  LIBRARY_SORTS,
-  LIBRARY_WATCH_STATES,
-  LIBRARY_WATCHING_SORTS,
   type LibraryBrowseState,
   type LibraryItemsFacets,
   type LibraryItemsLetter,
-  type LibrarySort,
   libraryViewClass,
   parseBrowseState,
 } from "../lib/libraryBrowse";
@@ -49,39 +39,10 @@ import { startPlayQueue } from "../lib/playQueue";
 import { type PlayQueueItem, playQueueOf } from "../lib/watchQueue";
 import { LibraryViews } from "./LibraryViews";
 
-const ALL = "all";
-// Grouping values are free text from the library, so their option values are
-// prefixed to stay distinct from the "Any" option.
-const GROUP_VALUE = "value:";
 // A wide viewport shows more cards than the See All cap allows for.
 const BROWSE_MAX_RENDERED = 240;
 
-const SORT_LABELS: Record<LibrarySort, StringKey> = {
-  title: "libraryBrowseSortTitle",
-  year: "libraryBrowseSortYear",
-  added: "libraryBrowseSortAdded",
-  duration: "libraryBrowseSortDuration",
-  "last-watched": "libraryBrowseSortLastWatched",
-  rating: "libraryBrowseSortRating",
-};
-const WATCH_LABELS: Record<string, StringKey> = {
-  unwatched: "libraryBrowseWatchUnwatched",
-  "in-progress": "libraryBrowseWatchInProgress",
-  watched: "libraryBrowseWatchWatched",
-};
-const QUALITY_LABELS: Record<string, StringKey> = {
-  uhd: "libraryBrowseQualityUhd",
-  hd1080: "libraryBrowseQualityHd1080",
-  hd720: "libraryBrowseQualityHd720",
-  sd: "libraryBrowseQualitySd",
-};
-
 const EMPTY_FACETS: LibraryItemsFacets = { groupings: [], decades: [], qualities: [] };
-// The sticky header's height plus a little air, kept clear above a jumped-to row.
-const LETTER_JUMP_HEADER_CLEARANCE = 72;
-// The letter rail is for long lists; a short one fits on a screen or two.
-const LETTER_RAIL_MIN_ITEMS = 60;
-
 // Library browse (/n/:nodeId/all, CORE-1190): every item of one Library the
 // profile may see, counted, sorted and filtered by the server (libraryItems)
 // and windowed here. Sort and filters live in the URL so a view can be linked
@@ -164,9 +125,6 @@ function LibraryBrowse({
   const pagesRef = useRef(new Map<number, SourceItem[]>());
   const pendingRef = useRef(new Set<number>());
   const generationRef = useRef(0);
-  // The item a letter jump is heading for, settled (and focused, when asked)
-  // once its card renders.
-  const pendingJumpRef = useRef<{ offset: number; focus: boolean } | null>(null);
   const [loadedTick, setLoadedTick] = useState(0);
   // Decided by the first page loaded and kept for this library, so the browse
   // bar does not change shape as filters reload pages (CORE-2327).
@@ -218,7 +176,6 @@ function LibraryBrowse({
     setFailed(false);
     setTotal(null);
     setLetters([]);
-    pendingJumpRef.current = null;
     loadPage(0);
   }, [loadPage, retryTick]);
 
@@ -228,11 +185,7 @@ function LibraryBrowse({
   const engagementEpoch = useEngagementEpoch();
   const seenEpochRef = useRef(engagementEpoch);
   const [refreshTick, setRefreshTick] = useState(0);
-  const followsEngagement =
-    state.watch !== "" ||
-    state.minRating > 0 ||
-    state.sort === "rating" ||
-    state.sort === "last-watched";
+  const followsEngagement = browseFollowsEngagement(state);
   useEffect(() => {
     if (seenEpochRef.current === engagementEpoch) return;
     seenEpochRef.current = engagementEpoch;
@@ -267,11 +220,14 @@ function LibraryBrowse({
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);
+  // The list and table views draw one item per row.
+  const rowColumns = viewMode === "list" || viewMode === "table" ? 1 : undefined;
   const gridWindow = useVirtualGrid({
     gridRef: listRef,
     itemCount,
     enabled: itemCount > VIRTUAL_GRID_MIN_ITEMS,
-    columns: viewMode === "list" ? 1 : undefined,
+    columns: rowColumns,
+    layout: viewMode,
     maxItems: BROWSE_MAX_RENDERED,
   });
   const start = gridWindow?.startIndex ?? 0;
@@ -285,72 +241,19 @@ function LibraryBrowse({
     // refreshTick re-runs this after an engagement change emptied the cache.
   }, [start, end, loadPage, refreshTick]);
 
-  // A letter jump scrolls the grid to the row holding that offset; the window
-  // then loads its page, and the effect below settles the row under the header
-  // once its card lands, focusing the card when the jump asked for it.
-  const listColumns = viewMode === "list" ? 1 : undefined;
-  const [, setJumpTick] = useState(0);
-  function jumpTo(offset: number, focus: boolean) {
-    const grid = listRef.current;
-    if (!grid) return;
-    pendingJumpRef.current = { offset, focus };
-    const top = virtualGridScrollTop(grid, offset, listColumns);
-    window.scrollTo({ top: Math.max(0, top - LETTER_JUMP_HEADER_CLEARANCE) });
-    setJumpTick((tick) => tick + 1);
-  }
-  useEffect(() => {
-    const jump = pendingJumpRef.current;
-    if (jump === null) return;
-    const cell = listRef.current?.querySelector<HTMLElement>(
-      `[aria-posinset="${jump.offset + 1}"]`,
-    );
-    const card = cell?.querySelector<HTMLElement>(":scope > button");
-    if (!cell || !card) return;
-    pendingJumpRef.current = null;
-    const top = cell.getBoundingClientRect().top + window.scrollY - LETTER_JUMP_HEADER_CLEARANCE;
-    window.scrollTo({ top: Math.max(0, top) });
-    if (jump.focus) card.focus({ preventScroll: true });
-  });
-
-  // The rail highlights the letter of the row at the top of the grid.
   const showLetterRail =
     state.sort === "title" && letters.length > 0 && itemCount > LETTER_RAIL_MIN_ITEMS;
-  const [currentLetter, setCurrentLetter] = useState<string | null>(null);
-  useEffect(() => {
-    if (!showLetterRail) return;
-    let frame = 0;
-    const measure = () => {
-      frame = 0;
-      const grid = listRef.current;
-      if (!grid) return;
-      const index = virtualGridIndexAt(
-        grid,
-        window.scrollY + LETTER_JUMP_HEADER_CLEARANCE,
-        listColumns,
-      );
-      // The loaded item there names its own initial: "#" can hold titles at
-      // both ends of the order, so the first offsets are not ranges. Before
-      // its page lands, the last letter starting at or above it stands in.
-      const item = pagesRef.current.get(Math.floor(index / LIBRARY_BROWSE_PAGE))?.[
-        index % LIBRARY_BROWSE_PAGE
-      ];
-      const at =
-        (item && letterRailOwner(letters, item.title, index)) ??
-        letters.findLast((entry) => entry.offset <= index) ??
-        letters[0];
-      setCurrentLetter(at.letter);
-    };
-    const onScroll = () => {
-      if (!frame) frame = window.requestAnimationFrame(measure);
-    };
-    measure();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", onScroll);
-    };
-    // loadedTick: re-read once the page at the top of the grid arrives.
-  }, [showLetterRail, letters, listColumns, loadedTick]);
+  const { jumpTo, currentLetter } = useLetterJump({
+    listRef,
+    letters,
+    enabled: showLetterRail,
+    columns: rowColumns,
+    titleAt: (index) =>
+      pagesRef.current.get(Math.floor(index / LIBRARY_BROWSE_PAGE))?.[index % LIBRARY_BROWSE_PAGE]
+        ?.title,
+    loadedTick,
+    resultKey: `${stateKey}:${retryTick}`,
+  });
 
   function update(patch: Partial<LibraryBrowseState>) {
     const params = browseStateParams({ ...state, ...patch });
@@ -386,63 +289,7 @@ function LibraryBrowse({
     }
   }
 
-  const decadeLabel = (decade: number) => t("libraryBrowseDecade", { decade: String(decade) });
-  const qualityLabel = (quality: string) =>
-    QUALITY_LABELS[quality] ? t(QUALITY_LABELS[quality]) : quality;
-  const ratingLabel = (minRating: number) => {
-    if (minRating <= 1) return t("libraryBrowseRatingAny");
-    const key = minRating >= 10 ? "libraryBrowseRatingTop" : "libraryBrowseRatingAtLeast";
-    return t(key, { stars: String(minRating / 2) });
-  };
-  // The selected values stay offered even when the current result has none.
-  // A grouping selected in the URL is offered even before (or without) the
-  // server naming it, so the choice can always be seen and cleared.
-  const groupings = [
-    ...facets.groupings,
-    ...Object.keys(state.groups)
-      .filter((kind) => !facets.groupings.some((grouping) => grouping.kind === kind))
-      .map((kind) => ({ kind, title: undefined, values: [] })),
-  ].map((grouping) => ({
-    kind: grouping.kind,
-    label: displayString(grouping.title, displayLocale) || grouping.kind,
-    values: withSelected(grouping.values, state.groups[grouping.kind]),
-  }));
-  const withGroup = (kind: string, value: string) => {
-    const groups = { ...state.groups };
-    if (value) groups[kind] = value;
-    else delete groups[kind];
-    return groups;
-  };
-  const decades = withSelected(facets.decades, state.decade || undefined);
-  const qualities =
-    audioOnly && !state.quality ? [] : withSelected(facets.qualities, state.quality);
-  // A selected value stays offered so a shared URL still reads back.
-  const sorts = LIBRARY_SORTS.filter(
-    (sort) => !audioOnly || sort === state.sort || !LIBRARY_WATCHING_SORTS.includes(sort),
-  );
-  const showWatch = !audioOnly || !!state.watch;
-
-  const activeFilters: { label: string; clear: Partial<LibraryBrowseState> }[] = [];
-  if (state.watch) {
-    activeFilters.push({ label: t(WATCH_LABELS[state.watch]), clear: { watch: "" } });
-  }
-  for (const grouping of groupings) {
-    const selected = state.groups[grouping.kind];
-    if (selected) {
-      activeFilters.push({
-        label: `${grouping.label}: ${selected}`,
-        clear: { groups: withGroup(grouping.kind, "") },
-      });
-    }
-  }
-  if (state.decade) activeFilters.push({ label: decadeLabel(state.decade), clear: { decade: 0 } });
-  if (state.quality) {
-    activeFilters.push({ label: qualityLabel(state.quality), clear: { quality: "" } });
-  }
-  if (state.minRating) {
-    activeFilters.push({ label: ratingLabel(state.minRating), clear: { minRating: 0 } });
-  }
-  const clearAll = { watch: "", groups: {}, decade: 0, quality: "", minRating: 0 } as const;
+  const filtered = hasBrowseFilters(state);
 
   // A card hands the player the loaded items around it as its queue
   // (CORE-1143): the run of contiguous loaded pages, so Previous and Next
@@ -491,167 +338,46 @@ function LibraryBrowse({
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-start gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2"
-            onClick={() => navigate(nodePath(nodeID))}
-          >
-            <ChevronLeft aria-hidden />
-            {t("back")}
-          </Button>
-          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-3">
-            <h1 className="bf-page-title">{heading}</h1>
-            <p role="status" className="text-sm text-[var(--text-muted)]">
-              {total === null
-                ? failed
-                  ? ""
-                  : t("loading")
-                : t("libraryBrowseCount", { count: total })}
-            </p>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-              <Button disabled={!itemCount || starting} onClick={() => void play(false)}>
-                <Play aria-hidden fill="currentColor" />
-                {t("libraryBrowsePlayAll")}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!itemCount || starting}
-                onClick={() => void play(true)}
-              >
-                <Shuffle aria-hidden />
-                {t("libraryBrowseShuffle")}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <LibraryHeader
+          nodeID={nodeID}
+          heading={heading}
+          aside={
+            <>
+              <p role="status" className="text-sm text-[var(--text-muted)]">
+                {total === null
+                  ? failed
+                    ? ""
+                    : t("loading")
+                  : t("libraryBrowseCount", { count: total })}
+              </p>
+              <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+                <Button disabled={!itemCount || starting} onClick={() => void play(false)}>
+                  <Play aria-hidden fill="currentColor" />
+                  {t("libraryBrowsePlayAll")}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!itemCount || starting}
+                  onClick={() => void play(true)}
+                >
+                  <Shuffle aria-hidden />
+                  {t("libraryBrowseShuffle")}
+                </Button>
+              </div>
+            </>
+          }
+        />
         {switcher}
 
-        <div className="flex flex-wrap items-end gap-3">
-          <BrowseSelect
-            id="library-browse-sort"
-            label={t("libraryBrowseSortLabel")}
-            value={state.sort}
-            onChange={(value) => update({ sort: value as LibrarySort })}
-            options={sorts.map((sort) => ({ value: sort, label: t(SORT_LABELS[sort]) }))}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label={t("libraryBrowseDirectionLabel", {
-              direction: t(
-                state.direction === "asc" ? "libraryBrowseAscending" : "libraryBrowseDescending",
-              ),
-            })}
-            onClick={() => update({ direction: state.direction === "asc" ? "desc" : "asc" })}
-          >
-            {state.direction === "asc" ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />}
-            {t(state.direction === "asc" ? "libraryBrowseAscending" : "libraryBrowseDescending")}
-          </Button>
-          {showWatch && (
-            <BrowseSelect
-              id="library-browse-watch"
-              label={t("libraryBrowseWatchLabel")}
-              value={state.watch || ALL}
-              onChange={(value) =>
-                update({ watch: value === ALL ? "" : (value as LibraryBrowseState["watch"]) })
-              }
-              options={[
-                { value: ALL, label: t("libraryBrowseAny") },
-                ...LIBRARY_WATCH_STATES.map((watch) => ({
-                  value: watch,
-                  label: t(WATCH_LABELS[watch]),
-                })),
-              ]}
-            />
-          )}
-          <BrowseSelect
-            id="library-browse-rating"
-            label={t("libraryBrowseRatingLabel")}
-            value={state.minRating ? String(state.minRating) : ALL}
-            onChange={(value) => update({ minRating: value === ALL ? 0 : Number(value) })}
-            options={[
-              { value: ALL, label: t("libraryBrowseAny") },
-              ...LIBRARY_MIN_RATINGS.map((minRating) => ({
-                value: String(minRating),
-                label: ratingLabel(minRating),
-              })),
-            ]}
-          />
-          {groupings.map((grouping) => (
-            <BrowseSelect
-              key={grouping.kind}
-              id={`library-browse-group-${grouping.kind}`}
-              label={grouping.label}
-              value={state.groups[grouping.kind] ? GROUP_VALUE + state.groups[grouping.kind] : ALL}
-              onChange={(value) =>
-                update({
-                  groups: withGroup(
-                    grouping.kind,
-                    value === ALL ? "" : value.slice(GROUP_VALUE.length),
-                  ),
-                })
-              }
-              options={[
-                { value: ALL, label: t("libraryBrowseAny") },
-                ...grouping.values.map((value) => ({ value: GROUP_VALUE + value, label: value })),
-              ]}
-            />
-          ))}
-          {decades.length > 0 && (
-            <BrowseSelect
-              id="library-browse-decade"
-              label={t("libraryBrowseDecadeLabel")}
-              value={state.decade ? String(state.decade) : ALL}
-              onChange={(value) => update({ decade: value === ALL ? 0 : Number(value) })}
-              options={[
-                { value: ALL, label: t("libraryBrowseAny") },
-                ...decades.map((decade) => ({ value: String(decade), label: decadeLabel(decade) })),
-              ]}
-            />
-          )}
-          {qualities.length > 0 && (
-            <BrowseSelect
-              id="library-browse-quality"
-              label={t("libraryBrowseQualityLabel")}
-              value={state.quality || ALL}
-              onChange={(value) =>
-                update({ quality: value === ALL ? "" : (value as LibraryBrowseState["quality"]) })
-              }
-              options={[
-                { value: ALL, label: t("libraryBrowseAny") },
-                ...qualities.map((quality) => ({ value: quality, label: qualityLabel(quality) })),
-              ]}
-            />
-          )}
-          <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} className="ml-auto" />
-        </div>
-
-        {activeFilters.length > 0 && (
-          <ul aria-label={t("libraryBrowseActiveFilters")} className="bf-filter-chips list-none">
-            {activeFilters.map((filter) => (
-              <li key={filter.label}>
-                <button
-                  type="button"
-                  className="bf-chip"
-                  aria-label={t("libraryBrowseRemoveFilter", { filter: filter.label })}
-                  onClick={() => update(filter.clear)}
-                >
-                  {filter.label}
-                  <X aria-hidden className="size-3.5" />
-                </button>
-              </li>
-            ))}
-            {activeFilters.length > 1 && (
-              <li>
-                <button type="button" className="bf-chip" onClick={() => update(clearAll)}>
-                  {t("libraryBrowseClearFilters")}
-                </button>
-              </li>
-            )}
-          </ul>
-        )}
+        <LibraryBrowseToolbar
+          state={state}
+          facets={facets}
+          audioOnly={audioOnly}
+          onUpdate={update}
+          trailing={
+            <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} className="ml-auto" />
+          }
+        />
 
         {failed && (
           <div role="alert" className="bf-empty flex flex-col gap-3">
@@ -664,10 +390,10 @@ function LibraryBrowse({
         {total === 0 && !failed && (
           <div role="status" className="bf-empty flex flex-col gap-3">
             <p className="text-sm text-[var(--text-secondary)]">
-              {t(activeFilters.length ? "libraryBrowseNoMatches" : "libraryEmptyLead")}
+              {t(filtered ? "libraryBrowseNoMatches" : "libraryEmptyLead")}
             </p>
-            {activeFilters.length > 0 && (
-              <Button variant="outline" onClick={() => update(clearAll)}>
+            {filtered && (
+              <Button variant="outline" onClick={() => update(CLEARED_BROWSE_FILTERS)}>
                 {t("libraryBrowseClearFilters")}
               </Button>
             )}
@@ -691,40 +417,6 @@ function LibraryBrowse({
         </div>
       </div>
     </AppShell>
-  );
-}
-
-function BrowseSelect({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="bf-field-label">
-        {label}
-      </label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} size="sm" className="min-w-32">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   );
 }
 
@@ -752,11 +444,6 @@ function PendingCard() {
       </div>
     </li>
   );
-}
-
-function withSelected<T>(values: T[], selected: T | "" | undefined): T[] {
-  if (selected === "" || selected === undefined || values.includes(selected)) return values;
-  return [selected, ...values];
 }
 
 function newSeed(): string {

@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { libraryViewClass, readLibraryViewMode, writeLibraryViewMode } from "./libraryBrowse";
+import {
+  browseFollowsEngagement,
+  browseStateParams,
+  DEFAULT_BROWSE_STATE,
+  libraryItemsVariables,
+  libraryViewClass,
+  parseBrowseState,
+  readLibraryViewMode,
+  writeLibraryViewMode,
+} from "./libraryBrowse";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -37,5 +46,72 @@ describe("library view mode (CORE-2386)", () => {
     expect(libraryViewClass("poster")).toBe("bf-grid");
     expect(libraryViewClass("thumbnail")).toBe("bf-grid bf-grid-wide");
     expect(libraryViewClass("list")).toBe("bf-stack bf-rows");
+    expect(libraryViewClass("table")).toBe("bf-stack bf-rows bf-table-rows");
+  });
+
+  it("remembers the table view (CORE-2443)", () => {
+    writeLibraryViewMode("films", "table");
+    expect(readLibraryViewMode("films")).toBe("table");
+  });
+});
+
+describe("library browse sorts and year range (CORE-2443)", () => {
+  const read = (query: string) => parseBrowseState(new URLSearchParams(query));
+
+  it("restarts a plays-sorted read on an engagement change, like the other watching sorts", () => {
+    for (const query of [
+      "sort=plays",
+      "sort=last-watched",
+      "sort=rating",
+      "watch=unwatched",
+      "rated=8",
+    ]) {
+      expect(browseFollowsEngagement(read(query))).toBe(true);
+    }
+    for (const query of [
+      "",
+      "sort=year",
+      "sort=release-date",
+      "sort=audience-score",
+      "from=1990",
+    ]) {
+      expect(browseFollowsEngagement(read(query))).toBe(false);
+    }
+  });
+
+  it("reads the release-date, audience-score and plays sorts", () => {
+    for (const sort of ["release-date", "audience-score", "plays"] as const) {
+      expect(read(`sort=${sort}`).sort).toBe(sort);
+    }
+    expect(read("sort=critic").sort).toBe("title");
+  });
+
+  it("reads a year range in order and drops a year out of range", () => {
+    expect(read("from=1990&to=1999")).toMatchObject({ yearFrom: 1990, yearTo: 1999 });
+    expect(read("from=1999&to=1990")).toMatchObject({ yearFrom: 1990, yearTo: 1999 });
+    expect(read("from=1990")).toMatchObject({ yearFrom: 1990, yearTo: 0 });
+    expect(read("from=12&to=99999")).toMatchObject({ yearFrom: 0, yearTo: 0 });
+    expect(read("from=19x0&to=1700")).toMatchObject({ yearFrom: 0, yearTo: 0 });
+  });
+
+  it("lets a decade win over a range in the same URL", () => {
+    expect(read("decade=1980&from=1990&to=1999")).toMatchObject({
+      decade: 1980,
+      yearFrom: 0,
+      yearTo: 0,
+    });
+  });
+
+  it("writes the range to the URL and sends it as the year bounds", () => {
+    const state = { ...DEFAULT_BROWSE_STATE, yearFrom: 1990, yearTo: 2004 };
+    expect(browseStateParams(state).toString()).toBe("from=1990&to=2004");
+    expect(libraryItemsVariables({ libraryID: "l", state, limit: 10, offset: 0 })).toMatchObject({
+      yearFrom: 1990,
+      yearTo: 2004,
+    });
+    const openEnded = { ...DEFAULT_BROWSE_STATE, yearTo: 1979 };
+    const vars = libraryItemsVariables({ libraryID: "l", state: openEnded, limit: 10, offset: 0 });
+    expect(vars.yearTo).toBe(1979);
+    expect(vars).not.toHaveProperty("yearFrom");
   });
 });

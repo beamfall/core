@@ -1352,6 +1352,44 @@
   flex: 1;
 }
 
+/* Table (CORE-2443): dense rows without artwork, ruled instead of carded, the
+ * title and its year on one line so a long Library scans like a spreadsheet. */
+[data-register="viewer"] .bf-table-rows {
+  gap: 0;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-poster {
+  display: none;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card {
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: transparent;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card-copy {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card-title,
+[data-register="viewer"] .bf-table-rows .bf-card-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card-rating {
+  margin-inline-start: auto;
+  flex: none;
+}
+
 /* ============================================================ *
  *  Hero Section (Viewer) — one featured item in a wide frame,
  *  Display title over a text-safe scrim, one focusable primary action.
@@ -1489,6 +1527,92 @@
   border-color: color-mix(in oklab, var(--library-accent, var(--accent)) 70%, transparent);
   background: color-mix(in oklab, var(--library-accent, var(--accent)) 18%, var(--bg-surface));
   color: var(--text-primary);
+}
+
+/* ============================================================ *
+ *  Library pivots (Viewer, CORE-2437) — Recommended / Library /
+ *  Collections / Categories links under a Library's name. The open
+ *  pivot (aria-current="page") takes the Library accent underline.
+ *  The row scrolls sideways rather than wrapping at 375px.
+ * ============================================================ */
+
+[data-register="viewer"] .bf-pivots {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  scrollbar-width: none;
+}
+
+[data-register="viewer"] .bf-pivot {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-pivot:hover {
+  color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-pivot:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--radius-field);
+}
+
+[data-register="viewer"] .bf-pivot[aria-current="page"] {
+  border-bottom-color: var(--library-accent, var(--accent));
+  color: var(--text-primary);
+}
+
+/* Category and collection tiles on the Library pivots. */
+[data-register="viewer"] .bf-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 10%, var(--bg-surface));
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-tile:hover {
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 20%, var(--bg-surface));
+}
+
+[data-register="viewer"] .bf-tile:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-tile-meta {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
 }
 
 /* ============================================================ *

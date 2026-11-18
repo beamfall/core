@@ -1,0 +1,7 @@
+- [x] Web: pivot tab row on every Library page (`/n/:nodeId`, `/all`, `/collections`, `/categories`)
+- [x] Web: Collections pivot listing only the Library's Collections
+- [x] Web: Categories pivot with one tile per grouping value, opening the filtered Media view
+- [x] Web strings in every shipped locale; vitest coverage for the pivots
+- [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2437-library-pivots` after landing

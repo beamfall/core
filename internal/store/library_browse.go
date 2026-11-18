@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -25,7 +26,18 @@ const (
 	LibraryBrowseSortRandom      = "random"
 	// LibraryBrowseSortRating orders by the requesting Profile's own rating.
 	LibraryBrowseSortRating = "rating"
+	// LibraryBrowseSortReleaseDate orders by the core-conventional
+	// release-date field, else 1 January of the Media's year (CORE-2443).
+	LibraryBrowseSortReleaseDate = "release-date"
+	// LibraryBrowseSortAudienceScore orders by the 0-10 audience score.
+	LibraryBrowseSortAudienceScore = "audience-score"
+	// LibraryBrowseSortPlays orders by the requesting Profile's play count.
+	LibraryBrowseSortPlays = "plays"
 )
+
+// releaseDateField is the core-conventional Media date field a client renders
+// as the release date; the values are plugin data.
+const releaseDateField = "release-date"
 
 // Library browse watch-state predicates, evaluated against the requesting
 // Profile's playback progress.
@@ -99,6 +111,12 @@ type libraryBrowseCandidate struct {
 	inProgress  bool
 	lastWatched int64
 	rating      int
+	// release is the release date as a YYYYMMDD number (a year alone is its
+	// 1 January), audience the audience score in hundredths plus one, and
+	// plays the Profile's play count plus one; 0 means the key is unknown.
+	release  int64
+	audience int64
+	plays    int64
 	// sortTitle is the admin- or provider-set sort title, "" when none is set.
 	sortTitle string
 }
@@ -117,7 +135,8 @@ func ValidLibraryBrowseSort(sortKey string) bool {
 	switch sortKey {
 	case "", LibraryBrowseSortTitle, LibraryBrowseSortYear, LibraryBrowseSortAdded,
 		LibraryBrowseSortDuration, LibraryBrowseSortLastWatched, LibraryBrowseSortRandom,
-		LibraryBrowseSortRating:
+		LibraryBrowseSortRating, LibraryBrowseSortReleaseDate, LibraryBrowseSortAudienceScore,
+		LibraryBrowseSortPlays:
 		return true
 	}
 	return false
@@ -190,15 +209,8 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		}
 		candidates = slices.DeleteFunc(candidates, func(c libraryBrowseCandidate) bool { return !keep[c.item.ID] })
 	}
-	if query.ProfileID != "" && (query.Watch != "" || query.Sort == LibraryBrowseSortLastWatched) {
-		if err := s.libraryBrowseProgressLocked(ctx, query.ProfileID, candidates); err != nil {
-			return empty, err
-		}
-	}
-	if query.ProfileID != "" && (query.MinRating > 0 || query.Sort == LibraryBrowseSortRating) {
-		if err := s.libraryBrowseRatingsLocked(ctx, query.ProfileID, candidates); err != nil {
-			return empty, err
-		}
+	if err := s.libraryBrowseKeysLocked(ctx, reader, visible, query, candidates); err != nil {
+		return empty, err
 	}
 	candidates = slices.DeleteFunc(candidates, func(c libraryBrowseCandidate) bool {
 		return !libraryBrowseMatches(c, query)
@@ -306,7 +318,7 @@ func (s *Store) libraryBrowseUnmutedLocked(ctx context.Context, relations *sql.D
 func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID ProfileID, candidates []libraryBrowseCandidate) error {
 	rows, err := s.eventsR.QueryContext(ctx, `
 		SELECT media_id, watched, position_seconds, channel_context,
-		       last_played_at_ms, updated_at_ms
+		       last_played_at_ms, updated_at_ms, play_count
 		FROM playback_progress
 		WHERE profile_id = ?
 	`, profileID)
@@ -318,14 +330,15 @@ func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID Profi
 		watched     bool
 		inProgress  bool
 		lastWatched int64
+		plays       int64
 	}
 	byMedia := map[MediaID]progress{}
 	for rows.Next() {
 		var id MediaID
 		var watched, position, channelContext int
 		var played sql.NullInt64
-		var updated int64
-		if err := rows.Scan(&id, &watched, &position, &channelContext, &played, &updated); err != nil {
+		var updated, plays int64
+		if err := rows.Scan(&id, &watched, &position, &channelContext, &played, &updated, &plays); err != nil {
 			return err
 		}
 		// A real play time always counts. Without one the row's update time
@@ -341,17 +354,122 @@ func (s *Store) libraryBrowseProgressLocked(ctx context.Context, profileID Profi
 			watched:     watched != 0,
 			inProgress:  watched == 0 && position >= resumeFloorSeconds && channelContext == 0,
 			lastWatched: last,
+			plays:       max(plays, 0),
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	for i := range candidates {
-		if p, ok := byMedia[candidates[i].item.ID]; ok {
-			candidates[i].watched = p.watched
-			candidates[i].inProgress = p.inProgress
-			candidates[i].lastWatched = p.lastWatched
+		p := byMedia[candidates[i].item.ID]
+		candidates[i].watched = p.watched
+		candidates[i].inProgress = p.inProgress
+		candidates[i].lastWatched = p.lastWatched
+		// An unplayed item has a known count of 0.
+		candidates[i].plays = p.plays + 1
+	}
+	return nil
+}
+
+// libraryBrowseKeysLocked attaches the browse keys the query's filters and
+// sort read beyond the catalog row: the Profile's progress, play counts and
+// ratings, and the release date and audience score fields. visible names the
+// Libraries the candidates were read from. The caller holds s.mu.
+func (s *Store) libraryBrowseKeysLocked(ctx context.Context, reader *sql.DB, visible []LibraryID, query LibraryBrowseQuery, candidates []libraryBrowseCandidate) error {
+	if query.ProfileID != "" && (query.Watch != "" || query.Sort == LibraryBrowseSortLastWatched || query.Sort == LibraryBrowseSortPlays) {
+		if err := s.libraryBrowseProgressLocked(ctx, query.ProfileID, candidates); err != nil {
+			return err
 		}
+	}
+	if query.ProfileID != "" && (query.MinRating > 0 || query.Sort == LibraryBrowseSortRating) {
+		if err := s.libraryBrowseRatingsLocked(ctx, query.ProfileID, candidates); err != nil {
+			return err
+		}
+	}
+	switch query.Sort {
+	case LibraryBrowseSortReleaseDate:
+		return libraryBrowseReleaseDates(ctx, reader, visible, candidates)
+	case LibraryBrowseSortAudienceScore:
+		return libraryBrowseAudienceScores(ctx, reader, visible, candidates)
+	}
+	return nil
+}
+
+// libraryBrowseFieldRows reads one Media field's values, from the given side
+// table and value column, for the Media of the visible Libraries.
+func libraryBrowseFieldRows(ctx context.Context, reader *sql.DB, table, column, field string, visible []LibraryID, scan func(*sql.Rows) error) error {
+	args := make([]any, 0, len(visible)+1)
+	args = append(args, field)
+	for _, id := range visible {
+		args = append(args, id)
+	}
+	// #nosec G202 -- table and column are closed internal names; only generated placeholders are interpolated.
+	rows, err := reader.QueryContext(ctx, `
+		SELECT f.media_id, f.`+column+`
+		FROM `+table+` f JOIN media m ON m.id = f.media_id
+		WHERE f.field = ? AND m.library_id IN (`+sqlPlaceholders(len(visible))+`)
+	`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		if err := scan(rows); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+// libraryBrowseReleaseDates attaches each candidate's release date: its
+// release-date field, else 1 January of its year.
+func libraryBrowseReleaseDates(ctx context.Context, reader *sql.DB, visible []LibraryID, candidates []libraryBrowseCandidate) error {
+	byMedia := map[MediaID]int64{}
+	err := libraryBrowseFieldRows(ctx, reader, "media_field_date", "value_ms", releaseDateField, visible, func(rows *sql.Rows) error {
+		var id MediaID
+		var ms int64
+		if err := rows.Scan(&id, &ms); err != nil {
+			return err
+		}
+		if day := millisToTime(ms).UTC(); day.Year() > 0 {
+			byMedia[id] = int64(day.Year())*10000 + int64(day.Month())*100 + int64(day.Day())
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for i := range candidates {
+		c := &candidates[i]
+		if release, ok := byMedia[c.item.ID]; ok {
+			c.release = release
+		} else if c.year > 0 {
+			c.release = int64(c.year)*10000 + 101
+		}
+	}
+	return nil
+}
+
+// libraryBrowseAudienceScores attaches each candidate's 0-10 audience score;
+// a value off that scale is no score.
+func libraryBrowseAudienceScores(ctx context.Context, reader *sql.DB, visible []LibraryID, candidates []libraryBrowseCandidate) error {
+	byMedia := map[MediaID]int64{}
+	err := libraryBrowseFieldRows(ctx, reader, "media_field_real", "value", audienceScoreField, visible, func(rows *sql.Rows) error {
+		var id MediaID
+		var raw sql.NullFloat64
+		if err := rows.Scan(&id, &raw); err != nil {
+			return err
+		}
+		if score := audienceScore(raw); score != nil {
+			byMedia[id] = int64(math.Round(*score*100)) + 1
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for i := range candidates {
+		candidates[i].audience = byMedia[candidates[i].item.ID]
 	}
 	return nil
 }
@@ -535,6 +653,12 @@ func sortLibraryBrowse(candidates []libraryBrowseCandidate, query LibraryBrowseQ
 		key = func(c libraryBrowseCandidate) int64 { return c.lastWatched }
 	case LibraryBrowseSortRating:
 		key = func(c libraryBrowseCandidate) int64 { return int64(c.rating) }
+	case LibraryBrowseSortReleaseDate:
+		key = func(c libraryBrowseCandidate) int64 { return c.release }
+	case LibraryBrowseSortAudienceScore:
+		key = func(c libraryBrowseCandidate) int64 { return c.audience }
+	case LibraryBrowseSortPlays:
+		key = func(c libraryBrowseCandidate) int64 { return c.plays }
 	}
 	slices.SortFunc(candidates, func(a, b libraryBrowseCandidate) int {
 		if key == nil {

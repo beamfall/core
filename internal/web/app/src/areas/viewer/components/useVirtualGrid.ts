@@ -103,6 +103,7 @@ export function useVirtualGrid({
   itemCount,
   enabled,
   columns: fixedColumns,
+  layout,
   maxItems = VIRTUAL_GRID_MAX_ITEMS,
 }: {
   gridRef: React.RefObject<HTMLUListElement | null>;
@@ -110,6 +111,11 @@ export function useVirtualGrid({
   enabled: boolean;
   /** A fixed column count (1 for a stacked list) instead of the measured grid. */
   columns?: number;
+  /**
+   * Names the card layout when one column count draws more than one (a list
+   * and a table are both one column); a change measures the rows afresh.
+   */
+  layout?: string;
   /** The rendered-item cap; raise it where a wide viewport shows more cards. */
   maxItems?: number;
 }): VirtualGridWindow | null {
@@ -119,12 +125,13 @@ export function useVirtualGrid({
   // The layout the retained height was measured in: a switch between grid
   // and list starts the measurement over, or the spacers and jumps would
   // keep the other layout's row height.
-  const layoutRef = useRef(fixedColumns);
+  const layoutKey = `${layout ?? ""}:${fixedColumns ?? ""}`;
+  const layoutRef = useRef(layoutKey);
   const compute = useCallback((): VirtualGridWindow | null => {
     const grid = gridRef.current;
     if (!grid || !enabled || itemCount <= 0) return null;
-    if (layoutRef.current !== fixedColumns) {
-      layoutRef.current = fixedColumns;
+    if (layoutRef.current !== layoutKey) {
+      layoutRef.current = layoutKey;
       cardHeightRef.current = 0;
     }
 
@@ -159,7 +166,7 @@ export function useVirtualGrid({
       topPad: startRow * rowHeight,
       bottomPad: Math.max(0, totalRows - startRow - renderedRows) * rowHeight,
     };
-  }, [gridRef, itemCount, enabled, fixedColumns, maxItems]);
+  }, [gridRef, itemCount, enabled, fixedColumns, layoutKey, maxItems]);
 
   const [windowState, setWindowState] = useState<VirtualGridWindow | null>(() => compute());
 

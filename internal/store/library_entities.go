@@ -21,8 +21,12 @@ type LibraryEntitiesQuery struct {
 	Kind        string
 	ChildKinds  []string
 	ParentKinds []string
-	Limit       int
-	Offset      int
+	// Browse sorts and filters the listed kind the way LibraryBrowse sorts and
+	// filters Media (CORE-2440); its LibraryID, FacetEntityKinds, Limit and
+	// Offset are ignored. The zero value lists in title order, unfiltered.
+	Browse LibraryBrowseQuery
+	Limit  int
+	Offset int
 }
 
 // LibraryEntityRef names one Entity linked to a listed Entity.
@@ -43,20 +47,22 @@ type LibraryEntity struct {
 
 // LibraryEntitiesResult is one page of a Library's Entities of one kind.
 // Totals counts every requested kind's Entities in the Library; Total is the
-// listed kind's count.
+// listed kind's count after the browse filters. Letters is where each title
+// initial starts in the filtered set, for a title sort only.
 type LibraryEntitiesResult struct {
-	Totals map[string]int
-	Total  int
-	Items  []LibraryEntity
+	Totals  map[string]int
+	Total   int
+	Items   []LibraryEntity
+	Letters []LibraryBrowseLetter
 }
 
-// LibraryEntities returns one page of a Library's Entities of one kind, in
-// title order, with each kind's total. Visibility is the Library browse's: a
+// LibraryEntities returns one page of a Library's Entities of one kind, in the
+// browse order and filtered as query.Browse asks, with each kind's total. Visibility is the Library browse's: a
 // Library the filter hides, or a sealed Encrypted Library, lists nothing, and
 // trashed Entities are omitted. Media counts honour the certification
 // ceiling, so a count never includes Media the caller cannot see.
 func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query LibraryEntitiesQuery) (LibraryEntitiesResult, error) {
-	empty := LibraryEntitiesResult{Totals: map[string]int{}, Items: []LibraryEntity{}}
+	empty := LibraryEntitiesResult{Totals: map[string]int{}, Items: []LibraryEntity{}, Letters: []LibraryBrowseLetter{}}
 	if query.LibraryID == "" {
 		return empty, nil
 	}
@@ -124,37 +130,31 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 	if err != nil {
 		return empty, err
 	}
-	result := LibraryEntitiesResult{Totals: totals, Total: totals[query.Kind], Items: []LibraryEntity{}}
+	result := LibraryEntitiesResult{Totals: totals, Total: totals[query.Kind], Items: []LibraryEntity{}, Letters: []LibraryBrowseLetter{}}
 	if query.Kind == "" || result.Total == 0 {
 		return result, nil
 	}
-	rows, err := reader.QueryContext(ctx, `
-		SELECT id, title FROM entity
-		WHERE library_id = ? AND kind = ? AND trashed_at_ms IS NULL
-		ORDER BY title COLLATE NOCASE, id
-		LIMIT ? OFFSET ?
-	`, query.LibraryID, query.Kind, limit, offset)
+	candidates, err := libraryEntityCandidates(ctx, reader, query.LibraryID, query.Kind, restricted)
 	if err != nil {
 		return empty, err
 	}
-	index := map[EntityID]int{}
-	for rows.Next() {
-		var id EntityID
-		var title string
-		if err := rows.Scan(&id, &title); err != nil {
-			_ = rows.Close()
+	if libraryEntityBrowseReadsMedia(query.Browse) {
+		candidates, err = s.libraryEntityBrowseFilterLocked(ctx, reader, filter, query, candidates)
+		if err != nil {
 			return empty, err
 		}
-		index[id] = len(result.Items)
-		result.Items = append(result.Items, LibraryEntity{
-			Item: SourceItem{ID: MediaID(id), Kind: "entity", Title: title, Restricted: restricted},
-		})
 	}
-	if err := rows.Close(); err != nil {
-		return empty, err
+	sortLibraryBrowse(candidates, query.Browse)
+	if query.Browse.Sort == "" || query.Browse.Sort == LibraryBrowseSortTitle {
+		result.Letters = libraryBrowseLetters(candidates)
 	}
-	if err := rows.Err(); err != nil {
-		return empty, err
+	result.Total = len(candidates)
+	index := map[EntityID]int{}
+	if offset < len(candidates) {
+		for _, c := range candidates[offset:min(offset+limit, len(candidates))] {
+			index[EntityID(c.item.ID)] = len(result.Items)
+			result.Items = append(result.Items, LibraryEntity{Item: c.item})
+		}
 	}
 	if len(result.Items) == 0 {
 		return result, nil

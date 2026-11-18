@@ -19,6 +19,7 @@ import { EntityPage } from "./pages/EntityPage";
 import { FavoritesPage } from "./pages/FavoritesPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { LibraryBrowsePage } from "./pages/LibraryBrowsePage";
+import { LibraryPivotPage } from "./pages/LibraryPivotPages";
 import { MediaDetailPage } from "./pages/MediaDetailPage";
 import { MyDataPage } from "./pages/MyDataPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -154,6 +155,8 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/" element={<BrowsePage home />} />
         <Route path="/n/:nodeId" element={<BrowsePage />} />
         <Route path="/n/:nodeId/all" element={<LibraryBrowsePage />} />
+        <Route path="/n/:nodeId/collections" element={<LibraryPivotPage pivot="collections" />} />
+        <Route path="/n/:nodeId/categories" element={<LibraryPivotPage pivot="categories" />} />
         <Route path="/entity/:entityId" element={<EntityPage />} />
         <Route path="/media/*" element={<MediaDetailPage />} />
         <Route path="/seeall/:sourceId" element={<SeeAllPage />} />

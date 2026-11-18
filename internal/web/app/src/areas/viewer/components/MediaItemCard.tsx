@@ -66,8 +66,9 @@ export function MediaItemCard({
   showYear?: boolean;
   /**
    * How the Library draws its items (CORE-2386): a poster, a landscape
-   * thumbnail (the thumb slot, else the poster), or a compact list row with
-   * the item's ordinal and runtime.
+   * thumbnail (the thumb slot, else the poster), a compact list row with
+   * the item's ordinal and runtime, or a dense table row without artwork that
+   * also states the year (CORE-2443).
    */
   display?: LibraryViewMode;
 }) {
@@ -81,9 +82,10 @@ export function MediaItemCard({
   const isMedia = item.kind === "media";
   const state = cardState(item, t);
   const rating = isMedia ? cardRating(item, displayLocale, t) : undefined;
-  const subline = cardSubline(item, showYear, displayLocale);
+  const isTable = display === "table";
+  const subline = cardSubline(item, showYear || isTable, displayLocale);
   const subtitle = displayString(item.subtitle, displayLocale);
-  const isRow = display === "list";
+  const isRow = display === "list" || isTable;
   const wide = display === "thumbnail";
   // The page the card's own activation opens (and the More menu's copied link).
   const path = `/${isMedia ? (playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
@@ -256,46 +258,48 @@ export function MediaItemCard({
             {item.index}
           </span>
         )}
-        <div className={wide ? "bf-poster bf-poster-wide" : artFrameClass(item)}>
-          {poster && !imageFailed ? (
-            <img
-              alt=""
-              loading="lazy"
-              decoding="async"
-              src={artworkBucketURL(poster, "w320")}
-              srcSet={artworkSrcSet(poster, CARD_BUCKETS)}
-              sizes={CARD_SIZES}
-              onError={() => setImageFailed(true)}
+        {!isTable && (
+          <div className={wide ? "bf-poster bf-poster-wide" : artFrameClass(item)}>
+            {poster && !imageFailed ? (
+              <img
+                alt=""
+                loading="lazy"
+                decoding="async"
+                src={artworkBucketURL(poster, "w320")}
+                srcSet={artworkSrcSet(poster, CARD_BUCKETS)}
+                sizes={CARD_SIZES}
+                onError={() => setImageFailed(true)}
+              />
+            ) : (
+              <PosterGlyph mediaClass={item.mediaClass} />
+            )}
+            {previewClip && (
+              <video
+                ref={previewVideoRef}
+                aria-hidden="true"
+                className="bf-preview-clip"
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                src={previewClip}
+              />
+            )}
+            <CardStateOverlay
+              finished={state.finished}
+              remainingCount={state.remainingCount}
+              remainingLabel={state.label}
+              progressPercent={state.progressPercent}
             />
-          ) : (
-            <PosterGlyph mediaClass={item.mediaClass} />
-          )}
-          {previewClip && (
-            <video
-              ref={previewVideoRef}
-              aria-hidden="true"
-              className="bf-preview-clip"
-              loop
-              muted
-              playsInline
-              preload="metadata"
-              src={previewClip}
-            />
-          )}
-          <CardStateOverlay
-            finished={state.finished}
-            remainingCount={state.remainingCount}
-            remainingLabel={state.label}
-            progressPercent={state.progressPercent}
-          />
-          {/* The pill names what activating the card does, so it shows only when that plays. */}
-          {isMedia && playOnActivate && (
-            <span aria-hidden="true" className="bf-card-play">
-              <Play size={16} fill="currentColor" />
-              {primaryLabel}
-            </span>
-          )}
-        </div>
+            {/* The pill names what activating the card does, so it shows only when that plays. */}
+            {isMedia && playOnActivate && (
+              <span aria-hidden="true" className="bf-card-play">
+                <Play size={16} fill="currentColor" />
+                {primaryLabel}
+              </span>
+            )}
+          </div>
+        )}
         <div className="bf-card-copy">
           <span className="bf-card-title">{item.title}</span>
           {subline && <span className="bf-card-sub">{subline}</span>}

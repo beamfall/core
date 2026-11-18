@@ -1,6 +1,13 @@
 import { graphql } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { DisplayString, SourceItem } from "@/lib/graphql/types";
+import {
+  browseStateParams,
+  DEFAULT_BROWSE_STATE,
+  type LibraryBrowseState,
+  type LibraryItemsLetter,
+  libraryItemsVariables,
+} from "./libraryBrowse";
 import { FOLDER_VIEW } from "./libraryFolders";
 
 // Library views (CORE-2362). A Library page shows one view at a time: one per
@@ -45,31 +52,44 @@ export interface LibraryEntitiesPage {
   kind: string;
   total: number;
   items: LibraryEntityItem[];
+  /** The title initials across the listed kind's result, on a title sort only (CORE-2440). */
+  letters: LibraryItemsLetter[];
 }
 
 export interface LibraryEntitiesRequest {
   libraryID: string;
   kind?: string;
+  /**
+   * The Media view's sort and filters, applied to the listed kind by the Media
+   * each Entity reaches (CORE-2440); absent means title order, unfiltered.
+   */
+  state?: LibraryBrowseState;
   limit: number;
   offset: number;
 }
 
 const LIBRARY_ENTITIES_QUERY =
-  "query LibraryEntities($libraryID: String!, $kind: String, $limit: Int, $offset: Int) { libraryEntities(libraryID: $libraryID, kind: $kind, limit: $limit, offset: $offset) { kinds { kind label kindDisplayName archetype total } allLabel kind total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year engagement { positionSeconds durationSeconds completed totalCount remainingCount } childCount mediaCount parents { id title } } } }";
+  "query LibraryEntities($libraryID: String!, $kind: String, $sort: String, $direction: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryEntities(libraryID: $libraryID, kind: $kind, sort: $sort, direction: $direction, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { kinds { kind label kindDisplayName archetype total } allLabel kind total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year engagement { positionSeconds durationSeconds completed totalCount remainingCount } childCount mediaCount parents { id title } } letters { letter offset count } } }";
+
+/** The libraryEntities variables: the browse state's, as the Media view sends them, plus the kind. */
+export function libraryEntitiesVariables(request: LibraryEntitiesRequest): Record<string, unknown> {
+  const vars = libraryItemsVariables({
+    libraryID: request.libraryID,
+    state: request.state ?? DEFAULT_BROWSE_STATE,
+    limit: request.limit,
+    offset: request.offset,
+  });
+  if (request.kind) vars.kind = request.kind;
+  return vars;
+}
 
 export async function fetchLibraryEntities(
   request: LibraryEntitiesRequest,
   signal?: AbortSignal,
 ): Promise<LibraryEntitiesPage> {
-  const vars: Record<string, unknown> = {
-    libraryID: request.libraryID,
-    limit: request.limit,
-    offset: request.offset,
-  };
-  if (request.kind) vars.kind = request.kind;
   const data = await graphql<{ libraryEntities: LibraryEntitiesPage | null }>(
     LIBRARY_ENTITIES_QUERY,
-    vars,
+    libraryEntitiesVariables(request),
     signal,
   );
   const page = data.libraryEntities;
@@ -79,6 +99,7 @@ export async function fetchLibraryEntities(
     kind: page?.kind ?? "",
     total: page?.total ?? 0,
     items: (page?.items ?? []).map((item) => ({ ...item, parents: item.parents ?? [] })),
+    letters: page?.letters ?? [],
   };
 }
 
@@ -137,4 +158,14 @@ export function entityCardLine(
   const parents = item.parents.map((parent) => parent.title).filter(Boolean);
   if (parents.length > 0) return parents.join(", ");
   return item.mediaCount > 0 ? count(item.mediaCount) : "";
+}
+
+/**
+ * The Library pivot address for one grouping value (CORE-2437): the Media view
+ * of `/all`, filtered to that value, so a Category tile opens what it names.
+ */
+export function libraryCategorySearch(kind: string, value: string): string {
+  const params = browseStateParams({ ...DEFAULT_BROWSE_STATE, groups: { [kind]: value } });
+  params.set(LIBRARY_VIEW_PARAM, MEDIA_VIEW);
+  return `?${params.toString()}`;
 }
