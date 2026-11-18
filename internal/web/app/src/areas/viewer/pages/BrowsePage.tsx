@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { Link, Navigate, useParams } from "react-router";
+import { Navigate, useParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
-import { buttonVariants } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { NavigationNode, Section } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -9,6 +8,7 @@ import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import { SectionSkeleton } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
+import { LibraryHeader } from "../components/LibraryPivots";
 import type { SeeAllTarget } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { seeAllTargetFor } from "../lib/seeall";
@@ -27,7 +27,7 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   const { nodeId } = useParams();
   const { manifest, loading } = useSession();
   // The node whose Layout settled with nothing in it: an empty Library offers
-  // no "Browse all" into an empty grid (CORE-2322).
+  // no pivots into empty views (CORE-2322).
   const [emptyNode, setEmptyNode] = useState<string | null>(null);
 
   if (loading && !manifest) {
@@ -70,18 +70,15 @@ export function BrowsePage({ home = false }: { home?: boolean }) {
   return (
     <AppShell actions={<ViewerActions />}>
       {node && libraryID ? (
-        // A Library node leads with its name and the way into the full,
-        // sortable library (CORE-1190); the hubs below stay as they were.
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-6">
-          <h1 className="bf-page-title">{displayString(node.title, displayLocale)}</h1>
-          {emptyNode !== node.id && (
-            <Link
-              className={buttonVariants({ variant: "outline", size: "sm" })}
-              to={nodePath(node.id, "/all")}
-            >
-              {t("libraryBrowseAll")}
-            </Link>
-          )}
+        // A Library node leads with its name and the pivots between its views
+        // (CORE-2437): these hubs are the Recommended pivot. An empty Library
+        // offers no way into empty views (CORE-2322).
+        <div className="pb-6">
+          <LibraryHeader
+            nodeID={node.id}
+            heading={displayString(node.title, displayLocale)}
+            pivots={emptyNode !== node.id}
+          />
         </div>
       ) : (
         <h1 className="sr-only">{node ? displayString(node.title, displayLocale) : t("brand")}</h1>

@@ -1,5 +1,6 @@
 import { graphql } from "@/lib/api";
 import type { DisplayString, SourceItem } from "@/lib/graphql/types";
+import { LIBRARY_VIEW_PARAM, MEDIA_VIEW } from "./libraryViews";
 
 // Library browse (CORE-1190): the whole-library grid behind /n/:nodeId/all.
 // The server owns visibility, counting, sorting and filtering (graph
@@ -221,4 +222,14 @@ export function writeLibraryViewMode(libraryID: string, mode: LibraryViewMode): 
   } catch {
     // Remembering the mode is optional.
   }
+}
+
+/**
+ * The Library pivot address for one grouping value (CORE-2437): the Media view
+ * of `/all`, filtered to that value, so a Category tile opens what it names.
+ */
+export function libraryCategorySearch(kind: string, value: string): string {
+  const params = browseStateParams({ ...DEFAULT_BROWSE_STATE, groups: { [kind]: value } });
+  params.set(LIBRARY_VIEW_PARAM, MEDIA_VIEW);
+  return `?${params.toString()}`;
 }

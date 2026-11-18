@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronLeft, Play, Shuffle, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Play, Shuffle, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -19,6 +19,7 @@ import type { StringKey } from "@/strings";
 import { useEngagementEpoch } from "../actions";
 import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
 import { LibraryLetterRail, letterRailOwner } from "../components/LibraryLetterRail";
+import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
 import {
   useVirtualGrid,
@@ -491,41 +492,35 @@ function LibraryBrowse({
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-start gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2"
-            onClick={() => navigate(nodePath(nodeID))}
-          >
-            <ChevronLeft aria-hidden />
-            {t("back")}
-          </Button>
-          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-3">
-            <h1 className="bf-page-title">{heading}</h1>
-            <p role="status" className="text-sm text-[var(--text-muted)]">
-              {total === null
-                ? failed
-                  ? ""
-                  : t("loading")
-                : t("libraryBrowseCount", { count: total })}
-            </p>
-            <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-              <Button disabled={!itemCount || starting} onClick={() => void play(false)}>
-                <Play aria-hidden fill="currentColor" />
-                {t("libraryBrowsePlayAll")}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!itemCount || starting}
-                onClick={() => void play(true)}
-              >
-                <Shuffle aria-hidden />
-                {t("libraryBrowseShuffle")}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <LibraryHeader
+          nodeID={nodeID}
+          heading={heading}
+          aside={
+            <>
+              <p role="status" className="text-sm text-[var(--text-muted)]">
+                {total === null
+                  ? failed
+                    ? ""
+                    : t("loading")
+                  : t("libraryBrowseCount", { count: total })}
+              </p>
+              <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+                <Button disabled={!itemCount || starting} onClick={() => void play(false)}>
+                  <Play aria-hidden fill="currentColor" />
+                  {t("libraryBrowsePlayAll")}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!itemCount || starting}
+                  onClick={() => void play(true)}
+                >
+                  <Shuffle aria-hidden />
+                  {t("libraryBrowseShuffle")}
+                </Button>
+              </div>
+            </>
+          }
+        />
         {switcher}
 
         <div className="flex flex-wrap items-end gap-3">

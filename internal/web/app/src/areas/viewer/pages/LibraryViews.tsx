@@ -1,12 +1,11 @@
-import { ChevronLeft } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { DisplayString } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { nodePath } from "@/lib/nodePath";
+import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
@@ -169,28 +168,18 @@ function EntityPageFrame({
   switcher?: ReactNode;
   children: ReactNode;
 }) {
-  const t = useT();
-  const navigate = useNavigate();
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-start gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2"
-            onClick={() => navigate(nodePath(nodeID))}
-          >
-            <ChevronLeft aria-hidden />
-            {t("back")}
-          </Button>
-          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-3">
-            <h1 className="bf-page-title">{heading}</h1>
+        <LibraryHeader
+          nodeID={nodeID}
+          heading={heading}
+          aside={
             <p role="status" className="text-sm text-[var(--text-muted)]">
               {status}
             </p>
-          </div>
-        </div>
+          }
+        />
         {switcher}
         {children}
       </div>

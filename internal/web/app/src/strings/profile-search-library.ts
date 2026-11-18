@@ -3,7 +3,6 @@ export const profileSearchLibraryStrings = {
     notAvailableTitle: "Not available",
     notAvailableLead: "This isn’t available for the current profile.",
     // Library browse (CORE-1190).
-    libraryBrowseAll: "Browse all",
     libraryBrowseCount: "{count, plural, one {# item} other {# items}}",
     libraryBrowsePlayAll: "Play all",
     libraryBrowseShuffle: "Shuffle",
@@ -65,7 +64,6 @@ export const profileSearchLibraryStrings = {
   fr: {
     notAvailableTitle: "Non disponible",
     notAvailableLead: "Ceci n’est pas disponible pour le profil actuel.",
-    libraryBrowseAll: "Tout parcourir",
     libraryBrowseCount: "{count, plural, one {# élément} other {# éléments}}",
     libraryBrowsePlayAll: "Tout lire",
     libraryBrowseShuffle: "Aléatoire",
@@ -126,7 +124,6 @@ export const profileSearchLibraryStrings = {
   de: {
     notAvailableTitle: "Nicht verfügbar",
     notAvailableLead: "Das ist für das aktuelle Profil nicht verfügbar.",
-    libraryBrowseAll: "Alle durchsuchen",
     libraryBrowseCount: "{count, plural, one {# Eintrag} other {# Einträge}}",
     libraryBrowsePlayAll: "Alle abspielen",
     libraryBrowseShuffle: "Zufällig",
@@ -187,7 +184,6 @@ export const profileSearchLibraryStrings = {
   es: {
     notAvailableTitle: "No disponible",
     notAvailableLead: "Esto no está disponible para el perfil actual.",
-    libraryBrowseAll: "Explorar todo",
     libraryBrowseCount: "{count, plural, one {# elemento} other {# elementos}}",
     libraryBrowsePlayAll: "Reproducir todo",
     libraryBrowseShuffle: "Aleatorio",
@@ -248,7 +244,6 @@ export const profileSearchLibraryStrings = {
   pt: {
     notAvailableTitle: "Indisponível",
     notAvailableLead: "Isto não está disponível para o perfil atual.",
-    libraryBrowseAll: "Explorar tudo",
     libraryBrowseCount: "{count, plural, one {# item} other {# itens}}",
     libraryBrowsePlayAll: "Reproduzir tudo",
     libraryBrowseShuffle: "Aleatório",

@@ -1,11 +1,11 @@
-import { ChevronLeft, ChevronRight, Folder } from "lucide-react";
+import { ChevronRight, Folder } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
-import { nodePath } from "@/lib/nodePath";
 import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
+import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
@@ -37,7 +37,6 @@ export function LibraryFolders({
   switcher?: ReactNode;
 }) {
   const t = useT();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const path = folderPath(searchParams);
   const [page, setPage] = useState<LibraryFolderPage | null>(null);
@@ -100,18 +99,10 @@ export function LibraryFolders({
   return (
     <AppShell actions={<ViewerActions />}>
       <div className="flex flex-col gap-5">
-        <div className="flex flex-col items-start gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2"
-            onClick={() => navigate(nodePath(nodeID))}
-          >
-            <ChevronLeft aria-hidden />
-            {t("back")}
-          </Button>
-          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-3">
-            <h1 className="bf-page-title">{heading}</h1>
+        <LibraryHeader
+          nodeID={nodeID}
+          heading={heading}
+          aside={
             <p role="status" className="text-sm text-[var(--text-muted)]">
               {page === null
                 ? failed
@@ -121,8 +112,8 @@ export function LibraryFolders({
                   ? t("libraryBrowseCount", { count: folderCount })
                   : ""}
             </p>
-          </div>
-        </div>
+          }
+        />
         {switcher}
 
         <nav aria-label={t("libraryFoldersPathLabel")}>

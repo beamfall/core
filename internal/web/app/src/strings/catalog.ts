@@ -27,6 +27,7 @@ import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
 import { libraryMetadataRefreshStrings } from "./library-metadata-refresh";
 import { libraryOperationsStrings } from "./library-operations";
+import { libraryPivotStrings } from "./library-pivots";
 import { libraryTrashStrings } from "./library-trash";
 import { listeningStrings } from "./listening";
 import { managedFileStrings } from "./managed-files";
@@ -144,6 +145,7 @@ export const en = {
   ...remoteControlStrings.en,
   ...webhookStrings.en,
   ...viewerCollectionStrings.en,
+  ...libraryPivotStrings.en,
   ...castStrings.en,
   ...itemMetadataStrings.en,
   ...providerKeyStrings.en,
@@ -226,6 +228,7 @@ export const fr = {
   ...remoteControlStrings.fr,
   ...webhookStrings.fr,
   ...viewerCollectionStrings.fr,
+  ...libraryPivotStrings.fr,
   ...castStrings.fr,
   ...itemMetadataStrings.fr,
   ...providerKeyStrings.fr,
@@ -308,6 +311,7 @@ export const de = {
   ...remoteControlStrings.de,
   ...webhookStrings.de,
   ...viewerCollectionStrings.de,
+  ...libraryPivotStrings.de,
   ...castStrings.de,
   ...itemMetadataStrings.de,
   ...providerKeyStrings.de,
@@ -390,6 +394,7 @@ export const es = {
   ...remoteControlStrings.es,
   ...webhookStrings.es,
   ...viewerCollectionStrings.es,
+  ...libraryPivotStrings.es,
   ...castStrings.es,
   ...itemMetadataStrings.es,
   ...providerKeyStrings.es,
@@ -472,6 +477,7 @@ export const pt = {
   ...remoteControlStrings.pt,
   ...webhookStrings.pt,
   ...viewerCollectionStrings.pt,
+  ...libraryPivotStrings.pt,
   ...castStrings.pt,
   ...itemMetadataStrings.pt,
   ...providerKeyStrings.pt,
