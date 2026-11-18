@@ -16,8 +16,10 @@ const (
 	// probe: every rescan parse refreshes it.
 	parserOwnedStable = 1
 	// parserOwnedLegacy is a scan-tier class written before the marker
-	// existed: the next probed parse claims it when it emits a class and
-	// otherwise disowns it, never removing it.
+	// existed: the next authoritative parse replaces it, or removes it when
+	// the parse emits no class. The only other scan-tier writer of a class is
+	// image local metadata, which every scan re-applies; hydration does not
+	// write it, and identification and NFO imports write at the operator tier.
 	parserOwnedLegacy = 2
 	// parserOwnedProbe is the parser's output that changes with the media
 	// probe: only a probed parse refreshes it.
@@ -43,8 +45,7 @@ type ParserFieldRefresh struct {
 // another writer last won (identification, NFO, manual, hydration, local
 // metadata) and tombstoned values are left alone; a tombstoned value counts as
 // not emitted. A non-authoritative parse (no probe) leaves probe-dependent and
-// legacy fields as they are; an authoritative one disowns, rather than
-// removes, a legacy field it does not emit.
+// legacy fields as they are; an authoritative one settles both.
 func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refresh ParserFieldRefresh) error {
 	if id == "" {
 		return errors.New("media ID is required")
@@ -131,14 +132,6 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 	}
 	for name, marker := range owned {
 		if emitted[name] || !refreshable(marker) {
-			continue
-		}
-		if marker == parserOwnedLegacy {
-			if _, err := tx.ExecContext(ctx,
-				"UPDATE media_field_provenance SET parser_owned = ? WHERE media_id = ? AND field = ?",
-				parserOwnedNone, id, name); err != nil {
-				return err
-			}
 			continue
 		}
 		if err := deleteMediaFieldValueTx(ctx, tx, id, name); err != nil {
