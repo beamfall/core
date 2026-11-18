@@ -21,7 +21,7 @@ import (
 // TestMediaCreditsCarryAttributesArtworkAndBillingOrder covers the cast row
 // read (CORE-2406): each credit carries its relation attributes and the
 // credited Entity's artwork, and credits come in relation sort order (the
-// provider's billing order) rather than by title.
+// provider's credit order) rather than by title.
 func TestMediaCreditsCarryAttributesArtworkAndBillingOrder(t *testing.T) {
 	st := storetest.Open(t)
 	registry, err := newTestPluginRegistry([]plugin.Bundle{{

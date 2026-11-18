@@ -5,7 +5,7 @@ import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { castGroups, creditPart, nameInitial } from "../lib/people";
 
 // The cast row on a Media detail page (CORE-2406): the item's person-archetype
-// credits in billing order, each a headshot card (the person's poster, or the
+// credits in credit order, each a headshot card (the person's poster, or the
 // name's initial) with the part they play, linking to the person page.
 // Credits carrying a department are grouped under it; the rest share one row.
 export function CastRow({ credits }: { credits: readonly MediaCredit[] | null | undefined }) {

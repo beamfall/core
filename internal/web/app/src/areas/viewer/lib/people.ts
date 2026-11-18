@@ -17,7 +17,7 @@ const PART_ATTRIBUTES = ["character", "role", "job"] as const;
 
 /**
  * Groups a Media item's person-archetype credits by their `department`
- * attribute in first-seen order, keeping the server's credit (billing) order
+ * attribute in first-seen order, keeping the server's credit order
  * within each group. Each person appears once, in the first group that lists
  * them.
  */
