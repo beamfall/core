@@ -2,6 +2,6 @@
 - [x] Web: More menu with Add to playlist and Copy link
 - [x] Web: Media read requests credit attributes and artwork
 - [x] Web strings in every shipped locale; vitest and axe coverage
-- [ ] Verified on tower at desktop and 375px widths (lander)
+- [x] Verified on tower at desktop and 375px widths (lander; 716f3bd3 on the tower, 2026-11-18)
 - [x] `make gate` (gate run plexpar-gate-1118g PASSED at 153215ed)
-- [ ] `openspec archive core-2436-media-detail-actions` after landing
+- [x] `openspec archive core-2436-media-detail-actions` after landing

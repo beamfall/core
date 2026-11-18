@@ -1,6 +1,6 @@
 - [x] `internal/graph`: `mediaRelations` items carry artwork slots, duration and class; graph test
 - [x] Web: Extras and Editions rows on the detail page, hidden when empty, cards play their item
 - [x] Web strings in every shipped locale; vitest coverage with and without extras
-- [ ] Verified on tower at desktop and 375px widths (lander)
+- [ ] Verified on tower at desktop and 375px widths (lander) — open: the tower library has no extras or editions to show (rows correctly hidden when empty, checked 2026-11-18 on 716f3bd3)
 - [x] `make gate` (gate run plexpar-gate-1118g PASSED at 153215ed)
 - [ ] `openspec archive core-2439-media-detail-extras` after landing

@@ -6,6 +6,6 @@
       lead is the first person credit in server order
 - [x] Web strings in every shipped locale; vitest coverage for both rows, the empty case and a
       failed read
-- [ ] Verified on tower at desktop and 375px widths (lander)
+- [x] Verified on tower at desktop and 375px widths (lander; 716f3bd3 on the tower, 2026-11-18)
 - [x] `make gate` (gate run plexpar-gate-1118g PASSED at 153215ed)
-- [ ] `openspec archive core-2444-media-detail-related` after landing
+- [x] `openspec archive core-2444-media-detail-related` after landing
