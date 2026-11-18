@@ -52,8 +52,8 @@ func (s *Store) Ready(ctx context.Context) error {
 // holding a live media Stream Token. It reuses the same ledger the
 // live-sessions dashboard reads (the outstanding-Stream-Token model, ADR-0010 /
 // ADR-0036): a live playback is exactly an unexpired media-direct/media-hls
-// token, so a distinct-session count over those rows is the active-session
-// gauge. Expired rows are swept first, matching ActiveSessions, so the count is
+// token whose playback has not been ended (CORE-2461), so a distinct-session
+// count over those rows is the active-session gauge. Expired rows are swept first, matching ActiveSessions, so the count is
 // what is actually live.
 func (s *Store) ActiveSessionCount(ctx context.Context, now time.Time) (int, error) {
 	s.mu.RLock()
@@ -67,7 +67,7 @@ func (s *Store) ActiveSessionCount(ctx context.Context, now time.Time) (int, err
 	if err := s.eventsR.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT session_id)
 		FROM stream_token_ledger
-		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls')
+		WHERE expires_at_ms > ? AND target IN ('media-direct', 'media-hls') AND last_active_ms >= 0
 	`, nowMS).Scan(&count); err != nil {
 		return 0, err
 	}
