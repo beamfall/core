@@ -1,5 +1,6 @@
 import type { SourceItem } from "@/lib/graphql/types";
 import type { useT } from "@/lib/i18n";
+import { formatScore } from "./viewerFields";
 
 type Translate = ReturnType<typeof useT>;
 
@@ -48,8 +49,38 @@ export function cardState(item: SourceItem, t: Translate): CardState {
  * The card's accessible name: its title, then its state where known. The wire
  * carries no display type for a SourceItem, so none is announced.
  */
-export function cardAccessibleName(item: SourceItem, state: CardState): string {
-  return state.label ? `${item.title}, ${state.label}` : item.title;
+export function cardAccessibleName(
+  item: SourceItem,
+  state: CardState,
+  rating?: CardRating,
+): string {
+  return [item.title, rating?.label, state.label].filter(Boolean).join(", ");
+}
+
+/** What a card says about its content rating and audience score (CORE-2400). */
+export interface CardRating {
+  /** The rating text, empty when unrated. */
+  text: string;
+  /** The score with one decimal, empty when there is none. */
+  score: string;
+  /** Both in words, for the accessible name: "Rated PG-13, audience score 7.8". */
+  label: string;
+}
+
+/** cardRating returns undefined when the item has neither, so the card draws nothing. */
+export function cardRating(item: SourceItem, locale: string, t: Translate): CardRating | undefined {
+  const text = item.certification?.trim() ?? "";
+  const value = item.audienceScore;
+  const score =
+    typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10
+      ? formatScore(value, locale)
+      : "";
+  if (!text && !score) return undefined;
+  let label = t("cardAudienceScore", { score });
+  if (text) {
+    label = score ? t("cardRatedScore", { rating: text, score }) : t("cardRated", { rating: text });
+  }
+  return { text, score, label };
 }
 
 // Rounds up to whole minutes, matching the server's own "min left" subtitle.

@@ -40,6 +40,7 @@ import {
   type DetailScore,
   detailFacts,
   fieldDisplayValue,
+  formatScore,
   runtimeParts,
   viewerFacingFields,
 } from "../lib/viewerFields";
@@ -423,15 +424,6 @@ function scoreFact(
       }),
     },
   ];
-}
-
-function formatScore(value: number, locale: string): string {
-  const options = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
-  try {
-    return new Intl.NumberFormat(locale || "en", options).format(value);
-  } catch {
-    return new Intl.NumberFormat("en", options).format(value);
-  }
 }
 
 function formatRuntime(seconds: number, t: ReturnType<typeof useT>): string {
