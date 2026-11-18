@@ -786,6 +786,10 @@ type SourceQuery struct {
 	// EntityID scopes an "entity-media" query to one context Entity (the
 	// detail view's entity); required for that kind, empty for the rest.
 	EntityID EntityID
+	// ExcludeExtras leaves Extras (the Extra bit or the Extra side of an
+	// extra-of relation) out of an "entity-media" query, for discovery reads
+	// such as relatedMedia (CORE-2506). Ignored by other kinds.
+	ExcludeExtras bool
 	// LibraryID restricts results to one Library (a library nav entry's
 	// Sections); empty means every visible Library.
 	LibraryID LibraryID
@@ -3472,7 +3476,7 @@ func (s *Store) sourceItemsForKind(ctx context.Context, filter LibraryFilter, qu
 		if query.EntityID == "" {
 			return []SourceItem{}, nil
 		}
-		return s.mediaForEntitySQL(ctx, query.EntityID, filter, limit, offset)
+		return s.mediaForEntitySQL(ctx, query.EntityID, filter, query.ExcludeExtras, limit, offset)
 	}
 	return s.sourceItemsSQL(ctx, filter, query.FieldFilters, query.EntityFilter, limit, offset)
 }

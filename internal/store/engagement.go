@@ -882,7 +882,7 @@ func (s *Store) nextUpSQL(ctx context.Context, profileID ProfileID, filter Libra
 	items := []SourceItem{}
 	seen := map[MediaID]bool{}
 	for _, containerID := range containers {
-		children, err := s.mediaForEntitySQL(ctx, containerID, filter, -1, 0)
+		children, err := s.mediaForEntitySQL(ctx, containerID, filter, false, -1, 0)
 		if err != nil {
 			if errors.Is(err, errVisibleEntityNotFound) {
 				continue // container hidden under the filter never reaches the wire

@@ -623,7 +623,7 @@ func (s *Store) MediaForEntity(ctx context.Context, entityID EntityID, filter Li
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	items, err := s.mediaForEntitySQL(ctx, entityID, filter, -1, 0)
+	items, err := s.mediaForEntitySQL(ctx, entityID, filter, false, -1, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -643,8 +643,9 @@ func (s *Store) MediaForEntity(ctx context.Context, entityID EntityID, filter Li
 // unordered rows follow, title-ordered. limit -1 means every row (SQLite's
 // LIMIT -1). The context Entity must itself be visible under the filter; an
 // entity hidden behind the Reveal contract errors the same way a missing one
-// does.
-func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+// does. excludeExtras leaves out Extras: Media with the Extra bit and the
+// Extra side of an extra-of relation (CORE-2506).
+func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter LibraryFilter, excludeExtras bool, limit, offset int) ([]SourceItem, error) {
 	// Relations and Media live beside the Entity: the catalog, or an
 	// encrypted Library's own database (a sealed one errors here).
 	plane, err := s.catalogPlaneForEntityLocked(ctx, entityID)
@@ -691,14 +692,20 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		certClause, certArgs = planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	}
 	args = append(args, certArgs...)
+	extrasClause := ""
+	if excludeExtras {
+		extrasClause = mediaExcludeExtrasClause + ` AND NOT EXISTS (
+			SELECT 1 FROM media_relation x WHERE x.from_media_id = m.id AND x.relation = ?)`
+		args = append(args, MediaRelationExtraOf)
+	}
 	args = append(args, limit, offset)
-	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed certification SQL.
+	// #nosec G202 -- interpolated fragments are internally generated placeholders, closed certification SQL and the closed Extras clause.
 	rows, err := plane.reader.QueryContext(ctx, `
-		SELECT m.id, m.title, m.duration_seconds, m.library_id
+		SELECT m.id, m.title, m.duration_seconds, m.library_id, COALESCE(m.year, 0)
 		FROM entity_relation r
 		JOIN media m ON m.id = r.to_media_id
 		WHERE r.from_entity_id = ? AND m.trashed_at_ms IS NULL
-			AND m.library_id IN (`+strings.Join(placeholders, ", ")+`)`+certClause+`
+			AND m.library_id IN (`+strings.Join(placeholders, ", ")+`)`+certClause+extrasClause+`
 		ORDER BY (r.sort_order IS NULL), r.sort_order, m.title, m.id
 		LIMIT ? OFFSET ?
 	`, args...)
@@ -712,7 +719,8 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		var title string
 		var durationSeconds int
 		var libraryID LibraryID
-		if err := rows.Scan(&id, &title, &durationSeconds, &libraryID); err != nil {
+		var year int
+		if err := rows.Scan(&id, &title, &durationSeconds, &libraryID, &year); err != nil {
 			return nil, err
 		}
 		// Library-level restricted flag: annotated on items this
@@ -724,6 +732,7 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 			Title:      title,
 			Summary:    mediaDurationSummary(durationSeconds),
 			Restricted: restricted[libraryID],
+			Year:       year,
 		})
 	}
 	return items, rows.Err()
