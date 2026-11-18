@@ -17,6 +17,33 @@ export interface PlaybackRendition {
   id?: string | number;
   height?: number;
   bandwidth?: number;
+  /** The rung's resolution label ("1080p", "720p", …); absent when unknown (CORE-2485). */
+  resolution?: string;
+}
+
+/**
+ * The negotiated file's video before any transcode (CORE-2485). `resolution`
+ * is "8K" | "4K" | "1080p" | "720p" | "SD", absent with the frame size when
+ * that is unknown; `hdr` is the HDR format token, absent for SDR.
+ */
+export interface PlaybackSourceVideo {
+  resolution?: string;
+  width?: number;
+  height?: number;
+  hdr?: string;
+}
+
+/**
+ * The display name of a server HDR format token (CORE-2485): "HDR10",
+ * "HDR10+", "HLG" or "Dolby Vision" for any Dolby Vision profile; "" for SDR.
+ * An unknown token shows as given, upper-cased.
+ */
+export function hdrName(hdr: string | undefined): string {
+  const key = (hdr ?? "").toLowerCase();
+  if (!key) return "";
+  if (key.startsWith("dolby-vision")) return "Dolby Vision";
+  if (key === "hdr10plus") return "HDR10+";
+  return key.toUpperCase();
 }
 
 /** One playback route the server offers for the Media (ADR-0010 stream inventory). */
@@ -99,6 +126,7 @@ export interface PlaybackVersion {
   label: string;
   videoCodec?: string;
   hdr?: string;
+  resolution?: string;
   selected: boolean;
 }
 
@@ -144,7 +172,12 @@ export interface PlaybackSelectedSubtitle {
     language?: string;
     /** "muxed" | "sidecar". */
     kind: string;
-    roles?: { forced?: boolean; sdh?: boolean; visualImpaired?: boolean; commentary?: boolean };
+    roles?: {
+      forced?: boolean;
+      sdh?: boolean;
+      visualImpaired?: boolean;
+      commentary?: boolean;
+    };
   };
   reason?: string;
 }
@@ -177,6 +210,8 @@ export interface PlaybackInfo {
   adjustment?: PlaybackAdjustment;
   /** The Media's Versions, listed only when it has two or more. */
   versions?: PlaybackVersion[];
+  /** The negotiated file's video before any transcode; absent with no video (CORE-2485). */
+  sourceVideo?: PlaybackSourceVideo;
   /** Every audio stream of the file; absent when it has none. */
   audioTracks?: PlaybackAudioTrack[];
   /** Muxed and sidecar caption tracks; absent when there are none. */
@@ -233,7 +268,10 @@ export const END_PLAYBACK_MUTATION =
  */
 export function endPlayback(mediaID: string): void {
   if (!mediaID) return;
-  postKeepalive("/api/graphql", { query: END_PLAYBACK_MUTATION, variables: { mediaId: mediaID } });
+  postKeepalive("/api/graphql", {
+    query: END_PLAYBACK_MUTATION,
+    variables: { mediaId: mediaID },
+  });
 }
 
 export async function fetchPlaybackInfo(
@@ -312,9 +350,18 @@ export const UNAVAILABLE_REASONS: Record<
   "media-unavailable": { message: "mediaNotAvailable", action: "back" },
   "transcode-disallowed": { message: "transcodeDisallowed", action: "back" },
   "stream-limit-reached": { message: "streamLimitReached", action: "retry" },
-  "transcode-capacity-reached": { message: "transcodeCapacityReached", action: "retry" },
-  "dolby-vision-p5-transcode-unavailable": { message: "dolbyVisionUnavailable", action: "back" },
-  "hdr-tone-map-unverified": { message: "hdrToneMapUnavailable", action: "back" },
+  "transcode-capacity-reached": {
+    message: "transcodeCapacityReached",
+    action: "retry",
+  },
+  "dolby-vision-p5-transcode-unavailable": {
+    message: "dolbyVisionUnavailable",
+    action: "back",
+  },
+  "hdr-tone-map-unverified": {
+    message: "hdrToneMapUnavailable",
+    action: "back",
+  },
   "hdr-tone-map-disabled": { message: "hdrToneMapDisabled", action: "back" },
 };
 

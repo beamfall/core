@@ -27,6 +27,7 @@ func sidecarCaptionID(suffix string, position int) string {
 type TrackInventory interface {
 	MediaFileStreams(ctx context.Context, fingerprint string) ([]store.MediaFileStream, error)
 	MediaFileSidecarCaptions(ctx context.Context, fingerprint string) ([]store.MediaFileSidecarCaption, error)
+	MediaFactsFingerprint(ctx context.Context, id store.MediaID) (fingerprint string, versioned bool, err error)
 }
 
 // VersionTracks is one Version of a Media with the audio and caption tracks
@@ -36,10 +37,13 @@ type TrackInventory interface {
 // listing names the same track there. Audio tracks never carry Selected and
 // caption tracks never carry a URL: nothing is negotiated or tokenised.
 type VersionTracks struct {
-	ID            string         `json:"id"`
-	Label         string         `json:"label"`
-	VideoCodec    string         `json:"videoCodec,omitempty"`
-	HDR           string         `json:"hdr,omitempty"`
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	VideoCodec string `json:"videoCodec,omitempty"`
+	HDR        string `json:"hdr,omitempty"`
+	// Resolution is the Version's ResolutionLabel, set only for the Version
+	// whose frame size the store holds (as VersionInfo.Resolution).
+	Resolution    string         `json:"resolution,omitempty"`
 	AudioTracks   []AudioTrack   `json:"audioTracks"`
 	CaptionTracks []CaptionTrack `json:"captionTracks"`
 }
@@ -48,8 +52,14 @@ type VersionTracks struct {
 // Media's (VersionLabel, PartOrdinal)-ordered files as the store returns
 // them. It reads stored inventory only: no capability negotiation, no stream
 // token and no playback session. Every sidecar caption is listed whatever its
-// format; the player drops a pick its client cannot draw.
-func ListTracks(ctx context.Context, inv TrackInventory, mediaID store.MediaID, files []store.MediaFile) ([]VersionTracks, error) {
+// format; the player drops a pick its client cannot draw. media is the Media
+// row, whose frame size labels the Version it was probed from.
+func ListTracks(ctx context.Context, inv TrackInventory, media store.Media, files []store.MediaFile) ([]VersionTracks, error) {
+	mediaID := media.ID
+	factsFingerprint, _, err := inv.MediaFactsFingerprint(ctx, mediaID)
+	if err != nil {
+		return nil, err
+	}
 	versions := groupVersions(files)
 	out := make([]VersionTracks, 0, len(versions))
 	for _, version := range versions {
@@ -63,6 +73,9 @@ func ListTracks(ctx context.Context, inv TrackInventory, mediaID store.MediaID, 
 			Label:         primary.VersionLabel,
 			AudioTracks:   resolveAudioTrack(streams, nil, nil).tracks,
 			CaptionTracks: []CaptionTrack{},
+		}
+		if primary.ContentFingerprint == factsFingerprint {
+			listed.Resolution = ResolutionLabel(media.VideoWidth, media.VideoHeight)
 		}
 		// The first video stream, as versionInfos reads it for playbackInfo.
 		for _, stream := range streams {

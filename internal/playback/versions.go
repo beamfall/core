@@ -19,6 +19,10 @@ type VersionInfo struct {
 	Label      string `json:"label"`
 	VideoCodec string `json:"videoCodec,omitempty"`
 	HDR        string `json:"hdr,omitempty"`
+	// Resolution is the Version's ResolutionLabel ("4K", "1080p", ...). It is
+	// set only for the Version whose frame size the store holds (the Media
+	// row's), and empty for any other, whose frame size is unknown.
+	Resolution string `json:"resolution,omitempty"`
 	Selected   bool   `json:"selected"`
 }
 
@@ -32,14 +36,19 @@ func versionID(mediaID store.MediaID, label string) string {
 // versionInfos lists versions for the picker, or nil for a single Version so
 // that response stays unchanged. streams holds each Version's primary-Part
 // inventory, index-aligned with versions; chosen indexes the negotiated one.
-func versionInfos(mediaID store.MediaID, versions [][]store.MediaFile, streams [][]store.MediaFileStream, chosen int) []VersionInfo {
+// media is the Media row, whose frame size belongs to the file with
+// factsFingerprint.
+func versionInfos(media store.Media, versions [][]store.MediaFile, streams [][]store.MediaFileStream, chosen int, factsFingerprint string) []VersionInfo {
 	if len(versions) < 2 {
 		return nil
 	}
 	infos := make([]VersionInfo, len(versions))
 	for i, version := range versions {
 		label := version[0].VersionLabel
-		info := VersionInfo{ID: versionID(mediaID, label), Label: label, Selected: i == chosen}
+		info := VersionInfo{ID: versionID(media.ID, label), Label: label, Selected: i == chosen}
+		if version[0].ContentFingerprint == factsFingerprint {
+			info.Resolution = ResolutionLabel(media.VideoWidth, media.VideoHeight)
+		}
 		for _, stream := range streams[i] {
 			if stream.Type == "video" {
 				info.VideoCodec, info.HDR = stream.Codec, hdrFormat(stream)

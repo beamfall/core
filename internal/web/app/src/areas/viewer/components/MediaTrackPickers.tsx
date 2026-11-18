@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
 import { NativeSelect } from "@/components/ui/select";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import { fetchMediaTracks, type MediaTrackVersion } from "../lib/mediaDetail";
+import { hdrName } from "../lib/playback";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import type { StartTracks } from "../lib/watchQueue";
 import {
@@ -81,7 +83,11 @@ export function MediaTrackPickers({
   const showVersion = versions.length > 1;
   const showAudio = version.audioTracks.length > 1;
   const showCaptions = version.captionTracks.length > 0;
-  if (!showVersion && !showAudio && !showCaptions) return null;
+  // Resolution and HDR badges of the Version on screen (CORE-2485); none
+  // for an unknown frame size or SDR.
+  const badges = [version.resolution ?? "", hdrName(version.hdr)].filter(Boolean);
+  const showPickers = showVersion || showAudio || showCaptions;
+  if (!showPickers && badges.length === 0) return null;
 
   const pickTracks = (next: Omit<StartTracks, "mediaID" | "versionID">) => {
     if (!showVersion) {
@@ -113,7 +119,8 @@ export function MediaTrackPickers({
       [
         candidate.label || t("versionDefault"),
         candidate.videoCodec ? codecName(candidate.videoCodec) : "",
-        candidate.hdr ?? "",
+        candidate.resolution ?? "",
+        hdrName(candidate.hdr),
       ]
         .filter(Boolean)
         .join(" · "),
@@ -130,74 +137,87 @@ export function MediaTrackPickers({
   );
 
   return (
-    <div className="bf-detail-tracks">
-      {showVersion && (
-        <label className="bf-detail-track">
-          <span>{t("version")}</span>
-          <NativeSelect
-            className={SELECT_CLASS}
-            value={chosen ? chosen.id : AUTO}
-            onValueChange={(id) => {
-              if (id === (chosen ? chosen.id : AUTO)) return;
-              writeVersionChoice(profileID, mediaID, id);
-              // Stream numbers and caption ids belong to one file.
-              onPick({ mediaID, versionID: id });
-            }}
-          >
-            <option value={AUTO}>{t("auto")}</option>
-            {versions.map((candidate, index) => (
-              <option key={candidate.id} value={candidate.id}>
-                {versionLabels[index]}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
+    <>
+      {badges.length > 0 && (
+        <ul className="bf-detail-badges" aria-label={t("mediaDetailVideoFormat")}>
+          {badges.map((badge) => (
+            <li key={badge}>
+              <Badge variant="outline">{badge}</Badge>
+            </li>
+          ))}
+        </ul>
       )}
-      {showAudio && (
-        <label className="bf-detail-track">
-          <span>{t("audio")}</span>
-          <NativeSelect
-            className={SELECT_CLASS}
-            value={audioIndex === undefined ? AUTO : String(audioIndex)}
-            onValueChange={(value) =>
-              pickTracks({
-                audioIndex: value === AUTO ? undefined : Number(value),
-                captionID,
-              })
-            }
-          >
-            <option value={AUTO}>{t("auto")}</option>
-            {version.audioTracks.map((track, index) => (
-              <option key={track.streamIndex} value={String(track.streamIndex)}>
-                {audioLabels[index]}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
+      {showPickers && (
+        <div className="bf-detail-tracks">
+          {showVersion && (
+            <label className="bf-detail-track">
+              <span>{t("version")}</span>
+              <NativeSelect
+                className={SELECT_CLASS}
+                value={chosen ? chosen.id : AUTO}
+                onValueChange={(id) => {
+                  if (id === (chosen ? chosen.id : AUTO)) return;
+                  writeVersionChoice(profileID, mediaID, id);
+                  // Stream numbers and caption ids belong to one file.
+                  onPick({ mediaID, versionID: id });
+                }}
+              >
+                <option value={AUTO}>{t("auto")}</option>
+                {versions.map((candidate, index) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {versionLabels[index]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          )}
+          {showAudio && (
+            <label className="bf-detail-track">
+              <span>{t("audio")}</span>
+              <NativeSelect
+                className={SELECT_CLASS}
+                value={audioIndex === undefined ? AUTO : String(audioIndex)}
+                onValueChange={(value) =>
+                  pickTracks({
+                    audioIndex: value === AUTO ? undefined : Number(value),
+                    captionID,
+                  })
+                }
+              >
+                <option value={AUTO}>{t("auto")}</option>
+                {version.audioTracks.map((track, index) => (
+                  <option key={track.streamIndex} value={String(track.streamIndex)}>
+                    {audioLabels[index]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          )}
+          {showCaptions && (
+            <label className="bf-detail-track">
+              <span>{t("subtitles")}</span>
+              <NativeSelect
+                className={SELECT_CLASS}
+                value={captionID === undefined ? AUTO : (captionID ?? OFF)}
+                onValueChange={(value) =>
+                  pickTracks({
+                    audioIndex,
+                    captionID: value === AUTO ? undefined : value === OFF ? null : value,
+                  })
+                }
+              >
+                <option value={AUTO}>{t("auto")}</option>
+                <option value={OFF}>{t("subtitlesOff")}</option>
+                {version.captionTracks.map((track, index) => (
+                  <option key={track.id} value={track.id}>
+                    {captionLabels[index]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          )}
+        </div>
       )}
-      {showCaptions && (
-        <label className="bf-detail-track">
-          <span>{t("subtitles")}</span>
-          <NativeSelect
-            className={SELECT_CLASS}
-            value={captionID === undefined ? AUTO : (captionID ?? OFF)}
-            onValueChange={(value) =>
-              pickTracks({
-                audioIndex,
-                captionID: value === AUTO ? undefined : value === OFF ? null : value,
-              })
-            }
-          >
-            <option value={AUTO}>{t("auto")}</option>
-            <option value={OFF}>{t("subtitlesOff")}</option>
-            {version.captionTracks.map((track, index) => (
-              <option key={track.id} value={track.id}>
-                {captionLabels[index]}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
-      )}
-    </div>
+    </>
   );
 }

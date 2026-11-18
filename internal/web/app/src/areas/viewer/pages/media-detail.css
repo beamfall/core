@@ -416,6 +416,21 @@
   }
 }
 
+/* Resolution and HDR badges of the Version on screen (CORE-2485). */
+[data-register="viewer"] .bf-detail-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-detail-badges [data-slot="badge"] {
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
 /* Version, Audio and Subtitles pickers under the action row (CORE-2442). */
 [data-register="viewer"] .bf-detail-tracks {
   display: flex;

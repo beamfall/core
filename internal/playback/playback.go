@@ -288,6 +288,11 @@ type InfoResponse struct {
 	// negotiated one selected, so a client can offer a version picker. Omitted
 	// for a single-Version or unavailable item.
 	Versions []VersionInfo `json:"versions,omitempty"`
+	// SourceVideo describes the negotiated Version's video before any
+	// transcode (frame size, resolution label, HDR format), so a client can
+	// badge what the file holds next to the rendition it is playing. Omitted
+	// for an item with no video stream or no servable file.
+	SourceVideo *SourceVideo `json:"sourceVideo,omitempty"`
 	// Next is the ahead-of-time decision for the declared next queue item.
 	// Omitted whenever the next item cannot be served — an item the scope
 	// cannot see is indistinguishable from an unknown ID (Reveal contract).
@@ -548,6 +553,10 @@ type RenditionInfo struct {
 	ID        string `json:"id"`
 	Height    int    `json:"height,omitempty"`
 	Bandwidth int    `json:"bandwidth"`
+	// Resolution is the rung's ResolutionLabel ("1080p", "720p", ...), from
+	// its height and the source aspect; for a source-size rung, the source's.
+	// Empty when the size is unknown.
+	Resolution string `json:"resolution,omitempty"`
 }
 
 // Timeline describes the canonical playback timeline.
@@ -725,6 +734,8 @@ type decision struct {
 	parts []PartInfo
 	// versions is the Version list for a picker; nil for a single Version.
 	versions []VersionInfo
+	// sourceVideo describes the negotiated file's video; nil without one.
+	sourceVideo *SourceVideo
 	// captionTracks is the chosen Version's sidecar caption tracks (FEAT-4 /
 	// ADR-0005 §4), each with a Stream-Token'd WebVTT URL. Empty for unavailable
 	// items or files with no sidecars.
@@ -863,6 +874,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		Timeline:            main.timeline,
 		Parts:               main.parts,
 		Versions:            main.versions,
+		SourceVideo:         main.sourceVideo,
 		TrackPreferences:    trackPreferences(policy),
 		Assets:              main.assets,
 		CaptionTracks:       main.captionTracks,
@@ -1074,6 +1086,15 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}
 	}
 	barred := unknownHeightBarred(media, profile, alternate || versioned || len(versions) > 0)
+	// Resolution badges (CORE-2485) describe the negotiated file as judged
+	// above, so an alternate Version's unknown frame size stays unlabelled.
+	source := media
+	defer func() {
+		if err == nil {
+			dec.sourceVideo = sourceVideoFor(source, streams)
+			labelRenditions(dec.streams, source)
+		}
+	}()
 	// One deferred stamp covers every decision return below, like
 	// audioLanguage: the picker lists the same Versions whatever the verdict,
 	// so a viewer whose pick cannot play can still pick another.
@@ -1597,7 +1618,7 @@ func (s *Service) negotiateVersion(ctx context.Context, media store.Media, files
 			}
 		}
 	}
-	infos := versionInfos(media.ID, versions, streams, chosen)
+	infos := versionInfos(media, versions, streams, chosen, factsFingerprint)
 	version := versions[chosen]
 	// A single-Part Version is the pre-1:N shape (one file): emit no Parts array,
 	// so its playbackInfo stays byte-identical to before — clients ignore the
