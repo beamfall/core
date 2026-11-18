@@ -729,12 +729,14 @@ type UpdateChecker interface {
 	Check(ctx context.Context, enabled bool, channel, currentVersion string) (UpdateStatusInfo, error)
 }
 
-// TranscodeTerminator aborts every in-flight transcode owned by one auth
-// Session. Defined at the consumer (ADR-0016 §seams); the
-// playback Sessions manager satisfies it. Returns how many transcodes it
-// stopped so the revocation mutation can report propagation honestly.
+// TranscodeTerminator aborts in-flight transcodes: every one owned by one auth
+// Session (device revocation), or the ones one Session holds for one Media
+// (endPlayback, CORE-2345). Defined at the consumer (ADR-0016 §seams); the
+// playback Sessions manager satisfies it. Both return how many transcodes they
+// stopped so the mutations can report propagation honestly.
 type TranscodeTerminator interface {
 	TerminateSession(sessionID store.SessionID) int
+	TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int
 }
 
 // TranscodeCapacityProbe reports whether a normal-priority transcode for

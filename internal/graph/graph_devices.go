@@ -2,7 +2,6 @@ package graph
 
 import (
 	"context"
-	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -108,13 +107,9 @@ func (h *Handler) revokeAllDevices(ctx context.Context, scope auth.Scope) (Revok
 	if err != nil {
 		return RevokeAllDevicesResult{}, err
 	}
-	var activeByDevice map[store.DeviceID][]store.SessionID
-	if h.transcodeTerminator != nil {
-		active, err := h.store.ActiveSessions(ctx, time.Now().UTC(), scope.LibraryFilter())
-		if err != nil {
-			return RevokeAllDevicesResult{}, err
-		}
-		activeByDevice = activeSessionIDsByDevice(active)
+	activeByDevice, err := h.transcodeSessionIDsByDevice(ctx, scope)
+	if err != nil {
+		return RevokeAllDevicesResult{}, err
 	}
 	result := RevokeAllDevicesResult{}
 	for _, d := range list {
