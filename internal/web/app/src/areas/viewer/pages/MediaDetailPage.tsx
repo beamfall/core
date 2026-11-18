@@ -170,7 +170,9 @@ export function MediaDetailPage() {
     }
     if (
       trackPicks?.mediaID === mediaId &&
-      (trackPicks.audioIndex !== undefined || trackPicks.captionID !== undefined)
+      (trackPicks.versionID !== undefined ||
+        trackPicks.audioIndex !== undefined ||
+        trackPicks.captionID !== undefined)
     ) {
       state.tracks = trackPicks;
     }

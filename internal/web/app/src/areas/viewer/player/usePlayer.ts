@@ -475,6 +475,10 @@ export function usePlayer(
   if (trackChoiceRef.current.mediaID !== mediaID) {
     trackChoiceRef.current = startChoice(mediaID, startTracks);
   }
+  // Read by the load effect: every explicit start (a new ?t= for the same
+  // Media, as Start over while docked) begins from the picks it was handed.
+  const startTracksRef = useRef(startTracks);
+  startTracksRef.current = startTracks;
   const captionTracksRef = useRef<PlaybackCaptionTrack[]>([]);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -650,11 +654,18 @@ export function usePlayer(
     // reloads (recovery, a renewed token) included.
     let startMark = remotePlayStateMark();
     setState(emptyState());
-    const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
-    const retryPaused = retryFromRef.current?.mediaID === mediaID && !!retryFromRef.current.paused;
+    const reloading = retryFromRef.current?.mediaID === mediaID;
+    const retryFrom = reloading ? (retryFromRef.current?.position ?? 0) : 0;
+    const retryPaused = reloading && !!retryFromRef.current?.paused;
     retryFromRef.current = null;
     const restartFrom = restartRef.current?.mediaID === mediaID ? restartRef.current : null;
     restartRef.current = null;
+    // A reload (Try again, an in-player pick, a key or quality change) keeps
+    // the picks made since; an explicit start here takes the picks it was
+    // handed again. Another device's restart keeps them too.
+    if (!reloading && !restartFrom) {
+      trackChoiceRef.current = startChoice(mediaID, startTracksRef.current);
+    }
     const startAt = restartFrom ? restartFrom.at : startAtSeconds;
     lastPositionRef.current = retryFrom;
     presentedPositionRef.current = null;

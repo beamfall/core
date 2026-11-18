@@ -232,12 +232,21 @@ function FeaturePlayer({
         ?.id ?? "")
     : undefined;
   // The Version this profile picked for this Media (CORE-1676): a pick made in
-  // this player, else the one remembered from an earlier visit.
-  const [versionPick, setVersionPick] = useState<{ mediaID: string; id: string } | null>(null);
+  // this player since the last start, else the one the detail page sent with
+  // its track picks (CORE-2442; "" is Auto), else a pick made in this player
+  // earlier, else the one remembered from an earlier visit. The detail page's
+  // pick rides the nav state so blocked storage cannot split it from its tracks.
+  const [versionPick, setVersionPick] = useState<{
+    mediaID: string;
+    id: string;
+    entry: unknown;
+  } | null>(null);
+  const navVersion = navState.tracks?.mediaID === mediaId ? navState.tracks.versionID : undefined;
+  const ownPick = versionPick?.mediaID === mediaId ? versionPick : null;
   const selectedVersion =
-    versionPick && versionPick.mediaID === mediaId
-      ? versionPick.id
-      : readVersionChoice(profileID, mediaId || "");
+    ownPick && (navVersion === undefined || ownPick.entry === entry.state)
+      ? ownPick.id
+      : (navVersion ?? readVersionChoice(profileID, mediaId || ""));
 
   const { videoRef, hlsRef, state, retry, restart, switchToHls, adjustment, adjust } = usePlayer(
     mediaId || "",
@@ -270,10 +279,10 @@ function FeaturePlayer({
     (versionID: string) => {
       if (!mediaId || versionID === selectedVersion) return;
       writeVersionChoice(profileID, mediaId, versionID);
-      setVersionPick({ mediaID: mediaId, id: versionID });
+      setVersionPick({ mediaID: mediaId, id: versionID, entry: entry.state });
       retry();
     },
-    [mediaId, profileID, selectedVersion, retry],
+    [mediaId, profileID, selectedVersion, retry, entry.state],
   );
 
   // The queue stays within the playing item's class (CORE-1490): a track

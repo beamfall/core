@@ -28,6 +28,12 @@ export interface PlayQueueItem {
  */
 export interface StartTracks {
   mediaID: string;
+  /**
+   * The Version picked with them: the tracks name streams of that file, so it
+   * travels with them rather than only through browser storage. "" is Auto
+   * (the server's choice); undefined leaves the remembered Version.
+   */
+  versionID?: string;
   audioIndex?: number;
   captionID?: string | null;
 }
@@ -175,14 +181,19 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
 
 function readStartTracks(raw: unknown): StartTracks | undefined {
   if (!raw || typeof raw !== "object") return undefined;
-  const { mediaID, audioIndex, captionID } = raw as Record<string, unknown>;
+  const { mediaID, versionID, audioIndex, captionID } = raw as Record<string, unknown>;
   if (typeof mediaID !== "string" || !mediaID) return undefined;
   const tracks: StartTracks = { mediaID };
+  if (typeof versionID === "string") tracks.versionID = versionID;
   if (typeof audioIndex === "number" && Number.isInteger(audioIndex) && audioIndex >= 0) {
     tracks.audioIndex = audioIndex;
   }
   if (captionID === null || (typeof captionID === "string" && captionID)) {
     tracks.captionID = captionID;
   }
-  return tracks.audioIndex === undefined && tracks.captionID === undefined ? undefined : tracks;
+  return tracks.versionID === undefined &&
+    tracks.audioIndex === undefined &&
+    tracks.captionID === undefined
+    ? undefined
+    : tracks;
 }

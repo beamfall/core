@@ -1281,6 +1281,39 @@ describe("usePlayer", () => {
       });
     });
 
+    // Review finding P2-2: Start over while docked keeps the player for the
+    // same Media; the picks it carries still apply, and a reload keeps them.
+    it("applies new picks on a fresh start of the same Media, and a reload keeps the picks in force", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(textTracks);
+      const view = render(<Harness startTracks={{ mediaID: "media-alpha", audioIndex: 2 }} />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[0][4]).toEqual({
+        selectedAudioIndex: 2,
+        selectedSubtitleIndex: undefined,
+      });
+
+      view.rerender(
+        <Harness startAtSeconds={0} startTracks={{ mediaID: "media-alpha", audioIndex: 4 }} />,
+      );
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toEqual({
+        selectedAudioIndex: 4,
+        selectedSubtitleIndex: undefined,
+      });
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+      // A reload with other picks handed in is not a new start.
+      view.rerender(
+        <Harness startAtSeconds={0} startTracks={{ mediaID: "media-alpha", audioIndex: 7 }} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "retry" }));
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(3));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[2][4]).toEqual({
+        selectedAudioIndex: 4,
+        selectedSubtitleIndex: undefined,
+      });
+    });
+
     it("starts with subtitles off when Off was picked, and ignores picks for another Media", async () => {
       vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
       const view = render(<Harness startTracks={{ mediaID: "media-alpha", captionID: null }} />);

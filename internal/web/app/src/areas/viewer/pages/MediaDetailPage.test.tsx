@@ -891,7 +891,9 @@ describe("MediaDetailPage", () => {
         within(version)
           .getAllByRole("option")
           .map((o) => o.textContent),
-      ).toEqual(["Default · HEVC · HDR10", "720p · H264"]);
+      ).toEqual(["Auto", "Default · HEVC · HDR10", "720p · H264"]);
+      // Nothing picked or remembered: the server chooses.
+      expect(version).toHaveValue("");
       const audio = screen.getByRole("combobox", { name: "Audio" });
       expect(
         within(audio)
@@ -910,14 +912,16 @@ describe("MediaDetailPage", () => {
       fireEvent.change(screen.getByRole("combobox", { name: "Subtitles" }), {
         target: { value: "sidecar-main-0" },
       });
-      // A track pick names the Version on screen, so that Version is remembered.
+      // A track pick names the Version on screen, so that Version rides along
+      // with it and is remembered.
       expect(readVersionChoice("p1", "m1")).toBe("va");
+      expect(screen.getByRole("combobox", { name: "Version" })).toHaveValue("va");
 
       fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
       expect(screen.getByTestId("path")).toHaveTextContent("/watch/m1");
       expect(navState()).toEqual({
         title: "Server title",
-        tracks: { mediaID: "m1", audioIndex: 2, captionID: "sidecar-main-0" },
+        tracks: { mediaID: "m1", versionID: "va", audioIndex: 2, captionID: "sidecar-main-0" },
       });
     });
 
@@ -948,8 +952,55 @@ describe("MediaDetailPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
       expect(navState()).toEqual({
         title: "Server title",
-        tracks: { mediaID: "m1", captionID: null },
+        tracks: { mediaID: "m1", versionID: "va", captionID: null },
       });
+    });
+
+    // Review finding P2-3 and P3-5: the Version rides the nav state with its
+    // tracks, so blocked storage cannot split them, and Auto is a choice.
+    it("carries the Version into playback even when storage is blocked, and offers Auto", async () => {
+      mocks.session = { profileID: "p1" };
+      const blocked = () => {
+        throw new DOMException("blocked", "SecurityError");
+      };
+      const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(blocked);
+      const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(blocked);
+      try {
+        vi.mocked(fetchMedia).mockResolvedValue(media);
+        vi.mocked(fetchMediaTracks).mockResolvedValue([main, small]);
+        const view = renderAt(["/media/m1"]);
+
+        const version = await screen.findByRole("combobox", { name: "Version" });
+        expect(version).toHaveValue("");
+        // Picking the first Version from Auto is a real pick, not a no-op.
+        fireEvent.change(version, { target: { value: "va" } });
+        expect(screen.getByRole("combobox", { name: "Version" })).toHaveValue("va");
+        fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+        expect(navState()).toEqual({
+          title: "Server title",
+          tracks: { mediaID: "m1", versionID: "va" },
+        });
+
+        view.unmount();
+
+        // Back to Auto: "" tells the player to leave the Version to the server.
+        renderAt(["/media/m1"]);
+        fireEvent.change(await screen.findByRole("combobox", { name: "Version" }), {
+          target: { value: "vb" },
+        });
+        fireEvent.change(screen.getByRole("combobox", { name: "Version" }), {
+          target: { value: "" },
+        });
+        expect(screen.getByRole("combobox", { name: "Version" })).toHaveValue("");
+        fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+        expect(navState()).toEqual({
+          title: "Server title",
+          tracks: { mediaID: "m1", versionID: "" },
+        });
+      } finally {
+        getItem.mockRestore();
+        setItem.mockRestore();
+      }
     });
 
     it("shows no pickers without a choice to make, nor when the read fails", async () => {

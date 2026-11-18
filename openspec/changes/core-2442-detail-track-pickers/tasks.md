@@ -2,7 +2,7 @@
 - [x] Wire goldens regenerated with `make regen-wire-goldens`; client-core-wire minor published
 - [x] Web: Version, Audio and Subtitles pickers on the Media detail page
 - [x] Web: audio and subtitle picks reach playback-info through the player's start tracks
-- [ ] Web: the picked Version rides the navigation state; Auto Version choice; picks apply on every
+- [x] Web: the picked Version rides the navigation state; Auto Version choice; picks apply on every
       start from the page without overwriting later in-player picks
 - [x] Web strings in every shipped locale (existing player keys reused); Go and vitest coverage
 - [ ] Verified on tower at desktop and 375px widths (lander)

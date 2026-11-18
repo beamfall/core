@@ -747,6 +747,36 @@ describe("PlayerPage Version choice (CORE-1676)", () => {
     act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onSelectVersion?.("v-uhd"));
     expect(retry).toHaveBeenCalledOnce();
   });
+
+  // Review finding P2-3: the detail page's Version rides the nav state with
+  // its tracks, ahead of storage, so blocked storage cannot split them.
+  it("plays the Version the detail page sent with its tracks, ahead of the remembered one", async () => {
+    writeVersionChoice("profile-a", "media-alpha", "v-remembered");
+    const { retry } = renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "video" } as PlayerState["info"] }),
+      { tracks: { mediaID: "media-alpha", versionID: "v-sent", audioIndex: 2 } },
+    );
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[4]).toBe("v-sent");
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[5]).toEqual({
+      mediaID: "media-alpha",
+      versionID: "v-sent",
+      audioIndex: 2,
+    });
+
+    // A pick in the player still wins for this start.
+    act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onSelectVersion?.("v-uhd"));
+    expect(retry).toHaveBeenCalledOnce();
+    await waitFor(() => expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[4]).toBe("v-uhd"));
+  });
+
+  it("leaves the Version to the server when the detail page sent Auto", () => {
+    writeVersionChoice("profile-a", "media-alpha", "v-remembered");
+    renderPlayer(
+      playerState({ phase: "playing", info: { mediaClass: "video" } as PlayerState["info"] }),
+      { tracks: { mediaID: "media-alpha", versionID: "" } },
+    );
+    expect(vi.mocked(usePlayer).mock.calls.at(-1)?.[4]).toBe("");
+  });
 });
 
 // CORE-1701: the pre-play queue plays before the title unless the viewer

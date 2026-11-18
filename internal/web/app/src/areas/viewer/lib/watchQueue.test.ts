@@ -91,6 +91,19 @@ describe("start tracks in nav state (CORE-2442)", () => {
     );
   });
 
+  it("carries the Version picked with them, with Auto as an empty id (P2-3)", () => {
+    expect(readPlayerNavState({ tracks: { mediaID: "m1", versionID: "va" } }, "v").tracks).toEqual({
+      mediaID: "m1",
+      versionID: "va",
+    });
+    expect(
+      readPlayerNavState({ tracks: { mediaID: "m1", versionID: "", audioIndex: 2 } }, "v").tracks,
+    ).toEqual({ mediaID: "m1", versionID: "", audioIndex: 2 });
+    expect(
+      readPlayerNavState({ tracks: { mediaID: "m1", versionID: 7, audioIndex: 2 } }, "v").tracks,
+    ).toEqual({ mediaID: "m1", audioIndex: 2 });
+  });
+
   it("drops malformed picks and picks with nothing in them", () => {
     for (const tracks of [
       null,
@@ -100,6 +113,7 @@ describe("start tracks in nav state (CORE-2442)", () => {
       { mediaID: "m1" },
       { mediaID: "m1", audioIndex: -1, captionID: "" },
       { mediaID: "m1", audioIndex: 1.5, captionID: 4 },
+      { mediaID: "m1", versionID: null },
     ]) {
       expect(readPlayerNavState({ title: "T", tracks }, "v")).toEqual({
         title: "T",
