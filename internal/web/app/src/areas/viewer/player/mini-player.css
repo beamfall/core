@@ -32,6 +32,17 @@
   background: color-mix(in oklab, var(--on-scrim) 12%, transparent);
 }
 
+/* With a waveform (CORE-2404) the strip is a short peak band along the top
+   edge, inside the bar's free space above the 48px artwork. */
+.bf-mini-progress.has-waveform {
+  height: 10px;
+  background: transparent;
+}
+
+.bf-mini-progress.has-waveform .bf-waveform-layer.is-played {
+  filter: none;
+}
+
 .bf-mini-progress-fill {
   height: 100%;
   background: var(--accent);
