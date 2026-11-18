@@ -39,14 +39,14 @@ func TestDemoSeedCarriesRatings(t *testing.T) {
 }
 
 func TestMediaRatingFromPrecedenceAndRange(t *testing.T) {
-	cert, score := MediaRatingFrom([]MediaField{
+	cert, score, _ := MediaRatingFrom([]MediaField{
 		{Name: "certification", Type: EntityFieldText, Text: "R"},
 		{Name: "community-rating", Type: EntityFieldNumber, Number: 11},
 	})
 	if cert != "R" || score != nil {
 		t.Fatalf("MediaRatingFrom = %q, %v; want R and no score off the 0-10 scale", cert, score)
 	}
-	cert, score = MediaRatingFrom([]MediaField{
+	cert, score, _ = MediaRatingFrom([]MediaField{
 		{Name: "certification-display", Type: EntityFieldText, Text: "TV-MA"},
 		{Name: "certification", Type: EntityFieldText, Text: "R"},
 		{Name: "community-rating", Type: EntityFieldNumber, Number: 6.4},

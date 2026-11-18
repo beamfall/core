@@ -145,14 +145,16 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // so an audio card can name its people, `subtitle`, `sequence`, `index` and
 // `durationSeconds` by CORE-1226/CORE-2386 so sibling items in a folder can be
 // told apart, ordered and timed, and `certification` and `audienceScore` by
-// CORE-2398 so a card can state its rating. Any further field must be added
+// CORE-2398 so a card can state its rating, and `audienceScoreLabel` and
+// `audienceScoreVotes` by CORE-2415 so it can name the score's source. Any
+// further field must be added
 // the same way, alongside the golden.
 func TestNestedSchemaSourceItemShape(t *testing.T) {
 	si := topLevel(t, "sourceitems")
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "audienceScore", "byline", "certification", "durationSeconds", "engagement", "id", "index", "kind", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
+	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "durationSeconds", "engagement", "id", "index", "kind", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}
@@ -175,18 +177,20 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 	si := topLevel(t, "sourceitems")
 	want := map[string]bool{
-		"artwork":       true,
-		"artworkSlots":  true,
-		"audienceScore": true,
-		"certification": true,
-		"id":            false,
-		"kind":          false,
-		"locked":        true,
-		"muted":         true,
-		"restricted":    true,
-		"summary":       true,
-		"title":         false,
-		"year":          true,
+		"artwork":            true,
+		"artworkSlots":       true,
+		"audienceScore":      true,
+		"audienceScoreLabel": true,
+		"audienceScoreVotes": true,
+		"certification":      true,
+		"id":                 false,
+		"kind":               false,
+		"locked":             true,
+		"muted":              true,
+		"restricted":         true,
+		"summary":            true,
+		"title":              false,
+		"year":               true,
 	}
 	for _, field := range si.Children {
 		optional, ok := want[field.Name]

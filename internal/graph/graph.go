@@ -151,6 +151,12 @@ type SourceItem struct {
 	// (CORE-2398). Each is absent when the item carries none.
 	Certification string   `json:"certification,omitempty"`
 	AudienceScore *float64 `json:"audienceScore,omitempty"`
+	// AudienceScoreLabel names the score's source: the Library plugin's
+	// declared label for its score field, per locale. AudienceScoreVotes is
+	// the vote count behind it. Each is absent without a score, and the label
+	// for a Library whose plugin declares none (CORE-2415).
+	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
+	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
 	// Byline names, for an audio Media item, the person-archetype Entities
 	// linked to it, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
@@ -1062,6 +1068,7 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 	if err := h.annotateSubtitles(ctx, items); err != nil {
 		return err
 	}
+	h.annotateScoreLabels(ctx, items)
 	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
 }
 
@@ -1122,22 +1129,24 @@ func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem)
 
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
-		ID:              string(item.ID),
-		Kind:            item.Kind,
-		Title:           item.Title,
-		Summary:         item.Summary,
-		Locked:          item.Locked,
-		Muted:           item.Muted,
-		Engagement:      sourceItemEngagement(item.Engagement),
-		MediaClass:      string(item.MediaClass),
-		Year:            item.Year,
-		Byline:          item.Byline,
-		Subtitle:        plugin.LocaleString(item.Subtitle),
-		DurationSeconds: item.DurationSeconds,
-		Sequence:        item.Sequence,
-		Index:           item.Index,
-		Certification:   item.Certification,
-		AudienceScore:   item.AudienceScore,
+		ID:                 string(item.ID),
+		Kind:               item.Kind,
+		Title:              item.Title,
+		Summary:            item.Summary,
+		Locked:             item.Locked,
+		Muted:              item.Muted,
+		Engagement:         sourceItemEngagement(item.Engagement),
+		MediaClass:         string(item.MediaClass),
+		Year:               item.Year,
+		Byline:             item.Byline,
+		Subtitle:           plugin.LocaleString(item.Subtitle),
+		DurationSeconds:    item.DurationSeconds,
+		Sequence:           item.Sequence,
+		Index:              item.Index,
+		Certification:      item.Certification,
+		AudienceScore:      item.AudienceScore,
+		AudienceScoreLabel: plugin.LocaleString(item.AudienceScoreLabel),
+		AudienceScoreVotes: item.AudienceScoreVotes,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -4377,6 +4386,11 @@ type MediaInfo struct {
 	// media(id) read and omitted when the item carries none.
 	Certification string   `json:"certification,omitempty"`
 	AudienceScore *float64 `json:"audienceScore,omitempty"`
+	// AudienceScoreLabel and AudienceScoreVotes name the score's source and
+	// vote count, as on SourceItem (CORE-2415); filled only by the media(id)
+	// read.
+	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
+	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
 }
 
 // MediaCreditInfo is one Entity a Media item is linked to, with the declared
@@ -4433,7 +4447,10 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
 	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)
 	if fields, err := h.store.MediaFields(ctx, media.ID, scope.LibraryFilter()); err == nil {
-		info.Certification, info.AudienceScore = store.MediaRatingFrom(fields)
+		info.Certification, info.AudienceScore, info.AudienceScoreVotes = store.MediaRatingFrom(fields)
+		if info.AudienceScore != nil {
+			info.AudienceScoreLabel = h.mediaFieldSpecs(ctx, media.ID)[store.AudienceScoreField].Label
+		}
 	}
 	return info, nil
 }
