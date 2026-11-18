@@ -298,3 +298,63 @@ func TestRefusedHandshakeLogsOnlyAHashPrefixForAValidBuild(t *testing.T) {
 		t.Fatalf("no refusal line:\n%s", logs.String())
 	}
 }
+
+// TestRuntimeDevBuildRebuildKeepsItsDevice is the CORE-2573 acceptance: a
+// device that verified an operator-admitted dev build keeps passing the
+// handshake after a rebuild changes the artifact digest, with no file edit and
+// no restart. The refused-then-trusted flow runs on one server instance, and a
+// rebuilt digest still never admits a device without that mapping.
+func TestRuntimeDevBuildRebuildKeepsItsDevice(t *testing.T) {
+	h := newDevBuildsHarness(t, shippedViewerBuild(2))
+	dev := devViewerBuild("c0ffee")
+	contract := dev.contract()
+
+	// Refused: the operator has not admitted this build yet.
+	device := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &contract)
+	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+
+	// Trusted on the running server once the operator writes the record.
+	h.writeBuilds(dev)
+	assertServable(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+	assertDeviceBuilds(t, h.srv, device.DeviceID, map[store.DeviceSurface]string{store.DeviceSurface(dev.Surface): dev.BuildID})
+
+	// Two rebuilds later the file still names the first digest.
+	for _, commit := range []string{"rebuild-1", "rebuild-2"} {
+		rebuilt := contract
+		rebuilt.ArtifactHash = devViewerBuild(commit).ArtifactHash
+		assertServable(t, compatHandshakeRecord(t, h.srv, rebuilt, device.authorize))
+	}
+
+	rebuilt := contract
+	rebuilt.ArtifactHash = devViewerBuild("rebuild-3").ArtifactHash
+
+	// A device without the mapping cannot use the rebuilt digest, neither at
+	// enrollment nor at handshake.
+	stranger := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &rebuilt)
+	assertDeviceBuilds(t, h.srv, stranger.DeviceID, nil)
+	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, rebuilt, stranger.authorize))
+
+	// A malformed digest is never admitted, even for the mapped device.
+	malformed := contract
+	malformed.ArtifactHash = "not-a-digest"
+	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, malformed, device.authorize))
+
+	// Removing the record revokes the mapped device too, without a restart.
+	h.remove()
+	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, rebuilt, device.authorize))
+}
+
+// TestReleaseBuildDigestStaysExactForAMappedDevice covers the boundary of the
+// CORE-2573 exception: a linked release record never admits another digest,
+// even for a device that already verified that build.
+func TestReleaseBuildDigestStaysExactForAMappedDevice(t *testing.T) {
+	release := shippedViewerBuild(2)
+	h := newDevBuildsHarness(t, release)
+	contract := release.contract()
+	device := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &contract)
+	assertServable(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+
+	substituted := contract
+	substituted.ArtifactHash = devViewerBuild("substituted").ArtifactHash
+	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, substituted, device.authorize))
+}

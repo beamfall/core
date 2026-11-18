@@ -23,6 +23,9 @@ const DevBuildIDSuffix = "-dev"
 //   - roles are only viewer and/or manager, the paired-device classes;
 //   - no minimumSequence: rollback floors stay release policy.
 //
+// Every record it returns is marked Dev, so a device already mapped to that
+// build keeps working after a rebuild changes its digest (CORE-2573).
+//
 // An empty manifest (no builds) is valid and admits nothing.
 func ParseDevBuildManifest(data []byte) (BuildCatalog, error) {
 	catalog, err := ParseFirstPartyBuildManifest(data)
@@ -36,6 +39,9 @@ func ParseDevBuildManifest(data []byte) (BuildCatalog, error) {
 		if err := validateDevBuild(record); err != nil {
 			return BuildCatalog{}, fmt.Errorf("dev build catalog: builds[%d] %q: %w", i, record.BuildID, err)
 		}
+	}
+	for i := range catalog.Builds {
+		catalog.Builds[i].Dev = true
 	}
 	catalog.MinimumSequence = nil
 	return catalog, nil

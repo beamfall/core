@@ -97,6 +97,9 @@ An operator can admit one on a running server through the runtime **dev build fi
 
 The server re-reads the file when it changes, logs every load with the admitted build IDs, and
 adds the records to the installed catalog without replacing any record already there. Any change
-advances the decision generation. Every dev record goes through the unchanged provenance check,
-so an artifact hash mismatch is still refused. A missing or invalid file admits no dev builds.
+advances the decision generation. Every dev record goes through the provenance check with one
+exception (CORE-2573): once a device has verified a dev build with the listed artifact hash and
+holds the mapping to it, that device keeps working after the build is rebuilt with a new hash.
+Any other hash mismatch is still refused: a device without the mapping, a new build ID, a
+malformed hash or any release record. A missing or invalid file admits no dev builds.
 Release builds and the linked catalog are unaffected; leave the variable unset in production.
