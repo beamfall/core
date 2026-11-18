@@ -1,1 +1,17 @@
-{"version": "2026-07-21.0", "license": "CC0-1.0", "entries": []}
+{
+  "version": "2026-11-18.0",
+  "license": "CC0-1.0",
+  "entries": [
+    {
+      "id": "chromecast-default-receiver-floor",
+      "note": "Google's Default Media Receiver (app id CC1AD845) plays H.264 up to 1080p with stereo AAC and no HDR on every Cast device, per Google's published Cast supported-media table. A sender casting to it declares client chromecast-default-receiver; this entry resolves that receiver (ADR-0194 section 6) and pins the floor so no route exceeds it. Per-model receivers need their own selectors and custom receiver (CORE-2567).",
+      "selector": {"client": "chromecast-default-receiver"},
+      "override": {
+        "denyVideoCodecs": ["av1", "hevc", "mpeg2video", "vc1", "vp9", "vvc"],
+        "denyHDRFormats": ["hdr10", "hdr10plus", "hlg", "dolby-vision-p5", "dolby-vision-p7", "dolby-vision-p8", "dolby-vision"],
+        "maxHeight": 1080,
+        "maxAudioChannels": 2
+      }
+    }
+  ]
+}

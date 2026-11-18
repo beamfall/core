@@ -14,11 +14,15 @@ accident.
 binary and parsed at `NewService`, so an air-gapped server gets the full overlay with no fetch, no
 feed, and no default endpoint.
 
-The shipped baseline is **versioned and empty**, deliberately. ADR-0161 names failure *families*
+The shipped baseline carries only entries backed by evidence. ADR-0161 names failure *families*
 (Dolby Vision profile 7 on profile-8-only chipsets, high-bitrate stutter, bad tone-mapping, mangled
 passthrough) but no concrete client/tier/firmware facts, and ADR-0161 §2 is explicit that entries are
 the output of triage on a real diagnostic bundle. Every entry is restrictive, so an invented selector
 would degrade real devices that were working.
+
+The one entry today, `chromecast-default-receiver-floor`, resolves Google's Default Media Receiver
+(ADR-0194 §6) at its published floor: H.264, 1080 lines, stereo, no HDR (CORE-2563). Without a
+matching selector a receiver-bound Stream Token is refused at the byte routes.
 
 ## Adding an entry
 

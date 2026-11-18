@@ -134,3 +134,56 @@ func TestReceiverProfileGrantCarriesQuirkResolvedCapability(t *testing.T) {
 		})
 	}
 }
+
+// TestShippedBaselineResolvesDefaultMediaReceiver pins CORE-2563: with only
+// the release-embedded quirks database, a sender casting to the Default Media
+// Receiver gets a selector-resolved, receiver-bound grant, while any other
+// chromecast- client stays unresolved so the byte routes keep refusing it.
+func TestShippedBaselineResolvesDefaultMediaReceiver(t *testing.T) {
+	service, st, scope := capabilityTestService(t)
+	targets := map[string]streamtoken.Target{"hls": streamtoken.TargetMediaHLS, "direct": streamtoken.TargetMediaDirect}
+	for _, tc := range []struct {
+		client   string
+		resolved bool
+	}{
+		{client: "chromecast-default-receiver", resolved: true},
+		{client: "chromecast-unknown", resolved: false},
+	} {
+		t.Run(tc.client, func(t *testing.T) {
+			mediaID := importQuirkMedia(t, st, "fp-baseline-"+tc.client)
+			profile := CapabilityProfile{
+				Client:          tc.client,
+				Containers:      []string{"mp4"},
+				DirectCodecs:    []string{"h264"},
+				VideoCodecs:     []VideoCodecCap{{Codec: "h264", MaxHeight: 1080}},
+				AudioCodecs:     []AudioCodecCap{{Codec: "aac", MaxChannels: 2}},
+				SubtitleFormats: []string{"webvtt"},
+				DownstreamAudio: "stereo",
+			}
+			resp, err := service.Info(context.Background(), scope, InfoRequest{MediaID: string(mediaID), CapabilityProfile: profile})
+			if err != nil {
+				t.Fatalf("Info: %v", err)
+			}
+			if got := slices.Contains(resp.AppliedQuirks, "chromecast-default-receiver-floor"); got != tc.resolved {
+				t.Fatalf("AppliedQuirks = %v, want floor applied %v", resp.AppliedQuirks, tc.resolved)
+			}
+			if len(resp.Streams) == 0 {
+				t.Fatal("no stream offered")
+			}
+			target, ok := targets[resp.Streams[0].Kind]
+			if !ok {
+				t.Fatalf("unexpected stream kind %q", resp.Streams[0].Kind)
+			}
+			grant, err := service.tokens.UnverifiedGrant(resp.Streams[0].Token, target)
+			if err != nil {
+				t.Fatalf("UnverifiedGrant: %v", err)
+			}
+			if !grant.ReceiverBound {
+				t.Fatal("cast grant is not receiver-bound")
+			}
+			if grant.ReceiverProfileResolved != tc.resolved {
+				t.Fatalf("ReceiverProfileResolved = %v, want %v", grant.ReceiverProfileResolved, tc.resolved)
+			}
+		})
+	}
+}
