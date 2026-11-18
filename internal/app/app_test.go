@@ -1017,7 +1017,7 @@ func TestAppRegistersScanJobHandler(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 	defer beamfall.Close()
-	floor, err := beamfall.store.MaxMediaRowID(context.Background())
+	floor, err := beamfall.store.MaxMediaInsertSeq(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1064,7 +1064,7 @@ func TestAppRegistersScanJobHandler(t *testing.T) {
 			if err := json.Unmarshal(queuedJob.Payload, &payload); err != nil {
 				t.Fatal(err)
 			}
-			if payload.Version != 1 || payload.AfterRowID != floor {
+			if payload.Version != 2 || payload.AfterRowID != floor {
 				t.Fatalf("catch-up payload = %+v, want floor %d", payload, floor)
 			}
 		}

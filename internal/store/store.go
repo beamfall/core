@@ -2702,28 +2702,29 @@ func (s *Store) MediaIDsAfter(ctx context.Context, after MediaID, limit int) ([]
 	return ids, rows.Err()
 }
 
-// MaxMediaRowID returns the current insertion-order watermark, or zero for an
-// empty catalog. Like MediaIDsAfter, it reads the shared catalog plane.
-func (s *Store) MaxMediaRowID(ctx context.Context) (int64, error) {
+// MaxMediaInsertSeq returns the durable insertion watermark, or zero before the
+// first insertion. Deleting Media never lowers it. Like MediaIDsAfter, it reads
+// the shared catalog plane; encrypted libraries have independent sequences.
+func (s *Store) MaxMediaInsertSeq(ctx context.Context) (int64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
 		return 0, err
 	}
-	var rowID int64
-	err := s.catalogR.QueryRowContext(ctx, `SELECT COALESCE(MAX(rowid), 0) FROM media`).Scan(&rowID)
-	return rowID, err
+	var seq int64
+	err := s.catalogR.QueryRowContext(ctx, `SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'media_insert_seq'), 0)`).Scan(&seq)
+	return seq, err
 }
 
-// MediaRowRef identifies a Media row and its insertion-order checkpoint.
-type MediaRowRef struct {
-	ID    MediaID
-	RowID int64
+// MediaInsertRef identifies a Media row and its insertion-order checkpoint.
+type MediaInsertRef struct {
+	ID        MediaID
+	InsertSeq int64
 }
 
-// MediaIDsAfterRowID returns at most limit Media rows above the exclusive rowid
-// watermark, ordered by rowid, for post-scan Generated Assets catch-up.
-func (s *Store) MediaIDsAfterRowID(ctx context.Context, afterRowID int64, limit int) ([]MediaRowRef, error) {
+// MediaIDsAfterInsertSeq returns at most limit Media rows above the exclusive insertion
+// watermark, ordered by sequence, for post-scan Generated Assets catch-up.
+func (s *Store) MediaIDsAfterInsertSeq(ctx context.Context, afterInsertSeq int64, limit int) ([]MediaInsertRef, error) {
 	if limit <= 0 {
 		return nil, errors.New("limit must be positive")
 	}
@@ -2733,16 +2734,16 @@ func (s *Store) MediaIDsAfterRowID(ctx context.Context, afterRowID int64, limit 
 		return nil, err
 	}
 	rows, err := s.catalogR.QueryContext(ctx, `
-		SELECT id, rowid FROM media WHERE rowid > ? ORDER BY rowid LIMIT ?
-	`, afterRowID, limit)
+		SELECT media_id, seq FROM media_insert_seq WHERE seq > ? ORDER BY seq LIMIT ?
+	`, afterInsertSeq, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	refs := make([]MediaRowRef, 0, limit)
+	refs := make([]MediaInsertRef, 0, limit)
 	for rows.Next() {
-		var ref MediaRowRef
-		if err := rows.Scan(&ref.ID, &ref.RowID); err != nil {
+		var ref MediaInsertRef
+		if err := rows.Scan(&ref.ID, &ref.InsertSeq); err != nil {
 			return nil, err
 		}
 		refs = append(refs, ref)

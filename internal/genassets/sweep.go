@@ -111,28 +111,30 @@ func SweepHandler(service *Service) jobs.Handler {
 // watermark. It shares the sweep's background admission and generation policy.
 const CatchUpJobKind store.JobKind = "asset-catch-up"
 
+// Version 2 uses durable insertion sequences. Keep the legacy JSON keys so
+// queued jobs remain readable; version 1 rowid floors/cursors must restart at 0.
 type catchUpPayload struct {
-	Generation int64 `json:"generation,omitempty"`
-	Version    int   `json:"version"`
-	AfterRowID int64 `json:"after_rowid"`
+	Generation     int64 `json:"generation,omitempty"`
+	Version        int   `json:"version"`
+	AfterInsertSeq int64 `json:"after_rowid"`
 }
 
 type catchUpCheckpoint struct {
-	Generation int64  `json:"generation,omitempty"`
-	AfterRowID *int64 `json:"after_rowid,omitempty"`
-	Version    int    `json:"version"`
-	LastRowID  int64  `json:"last_rowid"`
-	Generated  int    `json:"generated"`
-	Failed     int    `json:"failed"`
+	Generation     int64  `json:"generation,omitempty"`
+	AfterInsertSeq *int64 `json:"after_rowid,omitempty"`
+	Version        int    `json:"version"`
+	LastInsertSeq  int64  `json:"last_rowid"`
+	Generated      int    `json:"generated"`
+	Failed         int    `json:"failed"`
 }
 
 // NewCatchUpJob builds a deduped, non-blocking catch-up for newly inserted Media.
 // Enqueue coalesces active catch-ups to the minimum floor, even during a claim.
-func NewCatchUpJob(createdAt time.Time, afterRowID int64) (store.Job, error) {
-	if afterRowID < 0 {
-		return store.Job{}, errors.New("catch-up rowid must be non-negative")
+func NewCatchUpJob(createdAt time.Time, afterInsertSeq int64) (store.Job, error) {
+	if afterInsertSeq < 0 {
+		return store.Job{}, errors.New("catch-up insertion sequence must be non-negative")
 	}
-	payload, err := json.Marshal(catchUpPayload{Version: 1, AfterRowID: afterRowID})
+	payload, err := json.Marshal(catchUpPayload{Version: 2, AfterInsertSeq: afterInsertSeq})
 	if err != nil {
 		return store.Job{}, err
 	}
@@ -153,26 +155,37 @@ func CatchUpHandler(service *Service) jobs.Handler {
 		if err := json.Unmarshal(job.Payload, &payload); err != nil {
 			return jobs.Result{}, err
 		}
-		if payload.Version != 1 || payload.AfterRowID < 0 {
+		if (payload.Version != 1 && payload.Version != 2) || payload.AfterInsertSeq < 0 {
 			return jobs.Result{}, errors.New("invalid asset catch-up payload")
 		}
-		checkpoint := catchUpCheckpoint{Version: 1, LastRowID: payload.AfterRowID}
+		if payload.Version == 1 {
+			// Backfill can assign a lower sequence than an old rowid. Revisit all
+			// Media; already-generated assets are cheap to check.
+			payload.AfterInsertSeq = 0
+		}
+		checkpoint := catchUpCheckpoint{Version: 2, LastInsertSeq: payload.AfterInsertSeq}
 		if len(job.Checkpoint) > 0 {
 			if err := json.Unmarshal(job.Checkpoint, &checkpoint); err != nil {
 				return jobs.Result{}, err
 			}
-			if checkpoint.AfterRowID == nil || *checkpoint.AfterRowID > payload.AfterRowID {
+			if checkpoint.Version != 1 && checkpoint.Version != 2 {
+				return jobs.Result{}, errors.New("invalid asset catch-up checkpoint")
+			}
+			if checkpoint.Version == 1 {
+				checkpoint = catchUpCheckpoint{Version: 2, LastInsertSeq: payload.AfterInsertSeq}
+			}
+			if checkpoint.AfterInsertSeq == nil || *checkpoint.AfterInsertSeq > payload.AfterInsertSeq {
 				// This claim must revisit the lower floor, regardless of progress
 				// saved by a worker that started before the coalescing enqueue.
-				checkpoint.LastRowID = payload.AfterRowID
+				checkpoint.LastInsertSeq = payload.AfterInsertSeq
 			}
-			if checkpoint.Version != 1 || checkpoint.LastRowID < payload.AfterRowID {
+			if checkpoint.LastInsertSeq < payload.AfterInsertSeq {
 				return jobs.Result{}, errors.New("invalid asset catch-up checkpoint")
 			}
 		}
-		checkpoint.AfterRowID = &payload.AfterRowID
+		checkpoint.AfterInsertSeq = &payload.AfterInsertSeq
 		checkpoint.Generation = payload.Generation
-		refs, err := service.store.MediaIDsAfterRowID(ctx, checkpoint.LastRowID, sweepJobBatchSize+1)
+		refs, err := service.store.MediaIDsAfterInsertSeq(ctx, checkpoint.LastInsertSeq, sweepJobBatchSize+1)
 		if err != nil {
 			return jobs.Result{}, err
 		}
@@ -190,7 +203,7 @@ func CatchUpHandler(service *Service) jobs.Handler {
 			} else {
 				checkpoint.Generated++
 			}
-			checkpoint.LastRowID = ref.RowID
+			checkpoint.LastInsertSeq = ref.InsertSeq
 			processed++
 			if processed >= sweepJobBatchSize {
 				break

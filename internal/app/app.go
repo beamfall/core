@@ -639,7 +639,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// CORE-2393: a live transcode preempts scans like generation.
 	scanHandler = scanYieldsToPlayback(resourceGovernor, logger, scanHandler)
 	jobRegistry.Register(scanpkg.JobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
-		floor, floorErr := st.MaxMediaRowID(ctx)
+		floor, floorErr := st.MaxMediaInsertSeq(ctx)
 		if floorErr != nil {
 			logger.Warn("asset catch-up watermark failed; skipping catch-up", "error", floorErr)
 		}
@@ -4040,11 +4040,11 @@ func enqueueAssetSweep(ctx context.Context, st *store.Store, logger *slog.Logger
 }
 
 // enqueueAssetCatchUp arms the Generated Assets catch-up for Media added
-// above floor, the rowid high-water mark taken before a scan invocation. No
-// new Media means nothing to arm; failure is logged, and the nightly sweep
-// covers what it missed.
+// above floor, the durable insertion high-water mark taken before a scan
+// invocation. No new Media means nothing to arm; failure is logged, and the
+// nightly sweep covers what it missed.
 func enqueueAssetCatchUp(ctx context.Context, st *store.Store, logger *slog.Logger, wake *jobWake, floor int64) {
-	latest, err := st.MaxMediaRowID(ctx)
+	latest, err := st.MaxMediaInsertSeq(ctx)
 	if err == nil && latest > floor {
 		var job store.Job
 		if job, err = genassets.NewCatchUpJob(time.Now().UTC(), floor); err == nil {

@@ -264,7 +264,7 @@ func TestCatchUpRegistrationYieldsToScan(t *testing.T) {
 	if persisted.Status != store.JobStatusYielded {
 		t.Fatalf("catch-up status = %s, want yielded", persisted.Status)
 	}
-	// The admission refusal must not generate or advance a rowid checkpoint.
+	// The admission refusal must not generate or advance an insertion checkpoint.
 	var checkpoint map[string]any
 	if err := json.Unmarshal(persisted.Checkpoint, &checkpoint); err != nil {
 		t.Fatal(err)
@@ -283,9 +283,9 @@ func TestAssetCatchUpArmsOnlyForMediaAboveFloorAndKeepsEarliestFloor(t *testing.
 		t.Fatal(err)
 	}
 	defer beamfall.Close()
-	latest, err := beamfall.store.MaxMediaRowID(ctx)
+	latest, err := beamfall.store.MaxMediaInsertSeq(ctx)
 	if err != nil || latest < 2 {
-		t.Fatalf("seeded media rowid = %d, %v", latest, err)
+		t.Fatalf("seeded media insertion sequence = %d, %v", latest, err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	catchUps := func() []store.Job {

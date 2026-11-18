@@ -759,12 +759,16 @@ func enqueueJobTx(ctx context.Context, tx *sql.Tx, job Job) (Job, error) {
 				// A running worker may still hold the old payload. Its checkpoint
 				// records the floor it covered; completion below checks that floor
 				// atomically before releasing this dedupe key.
+				// Version 2 keeps after_rowid as an insertion sequence. Legacy
+				// rowid floors cannot be compared to sequences: restart them at 0.
 				_, err = tx.ExecContext(ctx, `UPDATE job SET
 					payload_json = json_set(payload_json, '$.after_rowid',
-						min(json_extract(payload_json, '$.after_rowid'), json_extract(?, '$.after_rowid')),
+						min(CASE WHEN json_extract(payload_json, '$.version') = 1 THEN 0 ELSE json_extract(payload_json, '$.after_rowid') END,
+							CASE WHEN json_extract(?, '$.version') = 1 THEN 0 ELSE json_extract(?, '$.after_rowid') END),
+						'$.version', 2,
 						'$.generation', coalesce(json_extract(payload_json, '$.generation'), 0) + 1),
 					updated_at_ms = max(updated_at_ms, ?)
-					WHERE id = ?`, string(job.Payload), timeToMillis(job.UpdatedAt), existing.ID)
+					WHERE id = ?`, string(job.Payload), string(job.Payload), timeToMillis(job.UpdatedAt), existing.ID)
 				if err != nil {
 					return Job{}, err
 				}
@@ -1083,8 +1087,10 @@ func (s *Store) finishJobSQL(ctx context.Context, id JobID, leaseOwner string, s
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
 			SELECT 1 FROM job j LEFT JOIN job_checkpoint c ON c.job_id = j.id
 			WHERE j.id = ? AND j.kind = 'asset-catch-up'
-			AND (json_extract(c.checkpoint_json, '$.after_rowid') IS NULL
-				OR json_extract(c.checkpoint_json, '$.after_rowid') > json_extract(j.payload_json, '$.after_rowid')
+			AND (coalesce(json_extract(c.checkpoint_json, '$.version'), 0) != 2
+				OR json_extract(c.checkpoint_json, '$.after_rowid') IS NULL
+				OR json_extract(c.checkpoint_json, '$.after_rowid') >
+					CASE WHEN json_extract(j.payload_json, '$.version') = 1 THEN 0 ELSE json_extract(j.payload_json, '$.after_rowid') END
 				OR coalesce(json_extract(c.checkpoint_json, '$.generation'), 0) < coalesce(json_extract(j.payload_json, '$.generation'), 0))
 		)`, id).Scan(&pending); err != nil {
 			return err
