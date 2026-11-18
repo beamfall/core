@@ -8,7 +8,9 @@ import type { Locale } from "@/strings";
 import { PlayerTransport } from "./PlayerTransport";
 import { getTrackChangeMotion, resetTrackChangeMotionForTest } from "./trackChangeMotion";
 import type { PlayerState } from "./usePlayer";
+import { resetWaveformCache } from "./useWaveform";
 import { lastViewerIntent } from "./viewerIntent";
+import { foldPeaks } from "./WaveformBars";
 
 const state: PlayerState = {
   phase: "playing",
@@ -650,6 +652,104 @@ describe("PlayerTransport", () => {
   });
 });
 
+describe("PlayerTransport waveform seek bar (CORE-2401)", () => {
+  beforeEach(() => resetWaveformCache());
+
+  function audioState(
+    mediaID: string,
+    waveform?: string,
+    next?: { mediaID: string; waveform: string },
+  ) {
+    return {
+      ...state,
+      mediaID,
+      info: {
+        mediaClass: "audio",
+        assets: waveform ? { waveform } : {},
+        next: next ? { mediaID: next.mediaID, assets: { waveform: next.waveform } } : null,
+      },
+    } as unknown as PlayerState;
+  }
+
+  function mockWaveformFetch(byURL: Record<string, number[] | null>) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const points = byURL[String(input)];
+      if (!points) return new Response("missing", { status: 404 });
+      return new Response(JSON.stringify({ version: 1, points }), { status: 200 });
+    });
+  }
+
+  it("draws the track's peaks inside the accessible seek slider", async () => {
+    const fetchMock = mockWaveformFetch({ "/w/a": [0.1, 0.9, 0.4] });
+    render(<Harness mediaID="a" playerState={audioState("a", "/w/a")} />);
+
+    const slider = screen.getByRole("slider", { name: "Playback position" });
+    await waitFor(() =>
+      expect(screen.getByTestId("scrubber-waveform")).not.toHaveClass("is-placeholder"),
+    );
+    expect(slider.closest(".bf-scrub-wrap")).toHaveClass("has-waveform");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the plain bar when the waveform cannot load", async () => {
+    mockWaveformFetch({});
+    render(<Harness mediaID="a" playerState={audioState("a", "/w/a")} />);
+
+    // Placeholder while loading, then the plain bar.
+    expect(screen.getByTestId("scrubber-waveform")).toHaveClass("is-placeholder");
+    await waitFor(() => expect(screen.queryByTestId("scrubber-waveform")).not.toBeInTheDocument());
+    const slider = screen.getByRole("slider", { name: "Playback position" });
+    expect(slider.closest(".bf-scrub-wrap")).not.toHaveClass("has-waveform");
+  });
+
+  it("keeps the plain bar for media without a waveform", () => {
+    const fetchMock = mockWaveformFetch({});
+    render(<Harness mediaID="v" playerState={{ ...state, mediaID: "v" } as PlayerState} />);
+    expect(screen.queryByTestId("scrubber-waveform")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the prefetched next track's peaks at once after an advance", async () => {
+    mockWaveformFetch({ "/w/a": [0.2, 0.5], "/w/b": [0.7, 0.3] });
+    const view = render(
+      <Harness
+        mediaID="a"
+        playerState={audioState("a", "/w/a", { mediaID: "b", waveform: "/w/b" })}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("scrubber-waveform")).not.toHaveClass("is-placeholder"),
+    );
+
+    // The route moved to b while the player state still describes a.
+    view.rerender(
+      <Harness
+        mediaID="b"
+        playerState={audioState("a", "/w/a", { mediaID: "b", waveform: "/w/b" })}
+      />,
+    );
+    expect(screen.getByTestId("scrubber-waveform")).not.toHaveClass("is-placeholder");
+  });
+
+  it("keeps the waveform layout while the next track's info loads", async () => {
+    mockWaveformFetch({ "/w/a": [0.2, 0.5] });
+    const view = render(<Harness mediaID="a" playerState={audioState("a", "/w/a")} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("scrubber-waveform")).not.toHaveClass("is-placeholder"),
+    );
+
+    // usePlayer resets to emptyState(), which describes no Media yet.
+    view.rerender(<Harness mediaID="c" playerState={{ ...state, info: null, phase: "loading" }} />);
+    expect(screen.getByTestId("scrubber-waveform")).toHaveClass("is-placeholder");
+  });
+
+  it("folds peaks into bars keeping each bucket's maximum", () => {
+    expect(foldPeaks([0.1, 0.9, 0.2, 0.3], 2)).toEqual([0.9, 0.3]);
+    expect(foldPeaks([], 3)).toEqual([0.06, 0.06, 0.06]);
+    expect(foldPeaks([0.5], 2)).toEqual([0.5, 0.5]);
+  });
+});
+
 function Harness({
   onShare,
   onMenuOpenChange,
@@ -657,6 +757,7 @@ function Harness({
   locale = "en",
   onSelectVersion,
   playerState = state,
+  mediaID,
 }: {
   onShare?: (seconds: number) => void;
   onMenuOpenChange?: (open: boolean) => void;
@@ -664,6 +765,7 @@ function Harness({
   locale?: Locale;
   onSelectVersion?: (versionID: string) => void;
   playerState?: PlayerState;
+  mediaID?: string;
 }) {
   const videoRef = createRef<HTMLVideoElement>();
   const hlsRef = createRef<null>();
@@ -682,6 +784,7 @@ function Harness({
           onMenuOpenChange={onMenuOpenChange}
           skipInterval={skipInterval}
           onSelectVersion={onSelectVersion}
+          mediaID={mediaID}
         />
       </div>
     </I18nProvider>

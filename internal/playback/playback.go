@@ -624,6 +624,14 @@ type AssetsLocator interface {
 	SilenceMapAsset(fingerprint string) (string, bool)
 }
 
+// WaveformOnDemandLocator is an optional AssetsLocator extension for a locator
+// whose asset route generates a missing waveform when it is fetched. Audio
+// decisions then advertise the returned name before the envelope exists, so a
+// player can draw the waveform without waiting for the sweep (CORE-2401).
+type WaveformOnDemandLocator interface {
+	WaveformOnDemandAsset() string
+}
+
 // SetSelector wires the opaque selected-file selector minter (ADR-0098 area 2).
 // Optional; nil (the default) leaves Parts carrying an empty selector — used only
 // by degenerate/test paths, never by composition, which always wires it.
@@ -981,7 +989,7 @@ func (s *Service) PreviewInfo(ctx context.Context, scope auth.Scope, req Preview
 		ProfileID:  scope.ProfileID,
 		Restricted: restricted,
 		ExpiresAt:  expiresAt,
-	}, file.ContentFingerprint, expiresAt)
+	}, file.ContentFingerprint, false, expiresAt)
 	if err != nil {
 		return PreviewInfoResponse{}, err
 	}
@@ -1191,7 +1199,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	// Generated Asset advertisement: one assets-target token covers
 	// the trickplay manifest + sheets, the preview clip, and Marker
 	// thumbnails; the byte route re-verifies scope and reveal on every fetch.
-	assets, err := s.assetsInfo(ctx, grant, file.ContentFingerprint, expiresAt)
+	assets, err := s.assetsInfo(ctx, grant, file.ContentFingerprint, media.Class == store.MediaClassAudio, expiresAt)
 	if err != nil {
 		return decision{}, err
 	}
@@ -1931,8 +1939,10 @@ func (s *Service) degradedAudioCopyChoice(ctx context.Context, grant streamtoken
 
 // assetsInfo builds the Generated Asset advertisement for one decided item:
 // nil when no locator is wired (the response field stays omitted, so the wire
-// shape is unchanged for deployments without assets).
-func (s *Service) assetsInfo(ctx context.Context, grant streamtoken.Grant, fingerprint string, expiresAt time.Time) (*AssetsInfo, error) {
+// shape is unchanged for deployments without assets). audio marks an
+// audio-class item, whose waveform is advertised even before it exists when the
+// locator generates it on demand.
+func (s *Service) assetsInfo(ctx context.Context, grant streamtoken.Grant, fingerprint string, audio bool, expiresAt time.Time) (*AssetsInfo, error) {
 	if s.assets == nil || fingerprint == "" {
 		return nil, nil
 	}
@@ -1956,6 +1966,8 @@ func (s *Service) assetsInfo(ctx context.Context, grant streamtoken.Grant, finge
 	// only when the asset exists; a missing one omits its field.
 	if name, ok := s.assets.WaveformAsset(fingerprint); ok {
 		info.Waveform = base + name
+	} else if onDemand, ok := s.assets.(WaveformOnDemandLocator); ok && audio {
+		info.Waveform = base + onDemand.WaveformOnDemandAsset()
 	}
 	if name, ok := s.assets.BeatGridAsset(fingerprint); ok {
 		info.BeatGrid = base + name

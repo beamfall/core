@@ -72,8 +72,10 @@ import type { PlayerState, SwitchResult } from "./usePlayer";
 import { usePlayerShortcuts } from "./usePlayerShortcuts";
 import { useSubtitleAppearance } from "./useSubtitleAppearance";
 import { useSubtitleStyling } from "./useSubtitleStyling";
+import { useWaveform } from "./useWaveform";
 import { VisualSettings } from "./VisualSettings";
 import { markViewerIntent } from "./viewerIntent";
+import { WaveformBars } from "./WaveformBars";
 
 // The player's control overlay (CORE-1141): a gradient scrim with the title,
 // route summary, slim scrubber (buffered range, marker strip, hover tooltip or
@@ -691,6 +693,16 @@ export function PlayerTransport({
   const menuSide = narrow ? "top" : "left";
   const progressPercent = duration > 0 ? (position / duration) * 100 : 0;
   const bufferedPercent = duration > 0 ? Math.min(100, (buffered / duration) * 100) : 0;
+  // Music seek bar (CORE-2401): the track's waveform, or a flat placeholder of
+  // the same shape while it loads, so the bar does not jump between songs.
+  const waveform = useWaveform({
+    mediaID,
+    infoMediaID: state.mediaID,
+    url: state.info?.assets?.waveform,
+    nextMediaID: state.info?.next?.mediaID,
+    nextURL: state.info?.next?.assets?.waveform,
+  });
+  const showWaveform = !!waveform.points || waveform.pending;
 
   return (
     <div className="bf-transport">
@@ -734,7 +746,7 @@ export function PlayerTransport({
 
         <div className="bf-scrub-row">
           <span className="bf-time is-start">{formatClockTime(position)}</span>
-          <div className="bf-scrub-wrap">
+          <div className={`bf-scrub-wrap${showWaveform ? " has-waveform" : ""}`}>
             <Slider.Root
               min={0}
               max={Math.max(duration, 0.1)}
@@ -764,6 +776,9 @@ export function PlayerTransport({
                 }}
               >
                 <Slider.Track className="bf-slider-track">
+                  {showWaveform && (
+                    <WaveformBars points={waveform.points} progressPercent={progressPercent} />
+                  )}
                   <span
                     aria-hidden="true"
                     className="bf-slider-buffered"

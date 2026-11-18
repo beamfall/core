@@ -60,6 +60,11 @@ export interface PlaybackAssets {
   expiresAt?: string;
   /** Optional bar/phrase timing hints composed with beatgrid.json by clients. */
   syncLanes?: string;
+  /**
+   * Waveform envelope URL (`{version, points}`, points in [0,1]). Advertised for
+   * every audio decision; the server generates it on first fetch (CORE-2401).
+   */
+  waveform?: string;
 }
 
 /** The "Up Next" issuance the server pre-mints for the player (ADR-0010 next-item). */

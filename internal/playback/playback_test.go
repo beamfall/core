@@ -1490,3 +1490,38 @@ func TestInfoWithholdsBitmapSidecarsAClientCannotRender(t *testing.T) {
 		t.Fatalf("pgs-capable SubtitlesUnavailableReason = %q, want empty", nativeResp.SubtitlesUnavailableReason)
 	}
 }
+
+// onDemandWaveformLocator generates a missing waveform when the asset route is
+// fetched, so audio decisions advertise it before it exists (CORE-2401).
+type onDemandWaveformLocator struct{ fakeAssetsLocator }
+
+func (onDemandWaveformLocator) WaveformOnDemandAsset() string { return "waveform.json" }
+
+func TestInfoAdvertisesOnDemandWaveformForAudioOnly(t *testing.T) {
+	// feature:waveform
+	service, scope := newTestServiceWithMediaFile(t, "session-default", "media-alpha")
+	audioID := seedAudio(t, service, "sha256:waveform-on-demand")
+	service.SetAssets(onDemandWaveformLocator{})
+
+	audio, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID:           string(audioID),
+		CapabilityProfile: CapabilityProfile{Containers: []string{"mp3"}, DirectCodecs: []string{"mp3"}},
+	})
+	if err != nil {
+		t.Fatalf("Info(audio): %v", err)
+	}
+	if audio.Assets == nil || !strings.HasSuffix(audio.Assets.Waveform, "/waveform.json") {
+		t.Fatalf("audio Assets = %+v, want a waveform URL before the envelope exists", audio.Assets)
+	}
+
+	video, err := service.Info(context.Background(), scope, InfoRequest{
+		MediaID:           "media-alpha",
+		CapabilityProfile: CapabilityProfile{Containers: []string{"mp4"}, DirectCodecs: []string{"h264"}},
+	})
+	if err != nil {
+		t.Fatalf("Info(video): %v", err)
+	}
+	if video.Assets == nil || video.Assets.Waveform != "" {
+		t.Fatalf("video Waveform = %+v, want omitted", video.Assets)
+	}
+}
