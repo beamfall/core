@@ -76,9 +76,7 @@ describe("AppShell host chrome suppression", () => {
     renderShell();
     expect(screen.getByLabelText("Beamfall")).toBeInTheDocument();
     expect(screen.getByText("Surface content")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Beamfall Core corresponding source" }),
-    ).toHaveAttribute("href", "/source");
+    expect(screen.queryByRole("link", { name: /corresponding source/i })).toBeNull();
   });
 
   it("links the Console from the header and Manage from the account menu for managers", async () => {
@@ -166,7 +164,6 @@ describe("AppShell host chrome suppression", () => {
     renderShell();
     expect(screen.queryByLabelText("Beamfall")).toBeNull();
     expect(screen.getByText("Surface content")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /corresponding source/i })).toBeNull();
   });
 
   it("suppresses app chrome inside the iPad Manager host", () => {

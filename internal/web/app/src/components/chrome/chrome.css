@@ -2478,24 +2478,6 @@
   outline-offset: 2px;
 }
 
-.bf-source-footer {
-  padding: 12px 20px 20px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.bf-source-footer a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.bf-source-footer a:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-}
-
 /* Volume: an icon button whose slider slides out on hover or focus. */
 .bf-volume {
   display: flex;

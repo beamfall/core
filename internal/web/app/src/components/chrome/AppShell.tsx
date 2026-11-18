@@ -268,11 +268,6 @@ export function AppShell({
           <main id={MAIN_CONTENT_ID} tabIndex={-1} className="bf-main px-4 py-6">
             {children}
           </main>
-          <footer className="bf-source-footer">
-            <a href="/source" target="_blank" rel="noreferrer noopener">
-              {t("coreSourceOffer")}
-            </a>
-          </footer>
         </div>
       </div>
     </div>
