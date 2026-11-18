@@ -45,6 +45,42 @@ install the template as above, but set **Repository** to `beamfall-core:local-<s
 Updating means building a new tag and changing **Repository** again; keep the previous tag for
 rollback. The image is not signed or digest-pinned, so treat this as a test deployment.
 
+## Admitting a local debug client build
+
+A Core admits only the native client builds its release linked in (see
+[the first-party build catalog](../../docs/release/first-party-builds.md)), so a debug build from
+your own checkout is refused with "Update required" (`unknown-build`). To admit one without
+rebuilding the image, list its record in the server's **dev build file**:
+
+1. Set **Dev Builds File** (`BEAMFALL_DEV_BUILDS_FILE`) to `/data/dev-builds.json` and apply the
+   template once. Unset, the server admits no dev builds.
+2. Print the build's record from the checkout you built it from, then copy it to the server:
+
+   ```sh
+   # beamfall-android, after building the debug APK (app-tv or app-mobile):
+   python3 script/client_build_identity.py --app tv --dev --manifest dev-builds.json
+   scp dev-builds.json root@<unraid-ip>:/mnt/cache/appdata/beamfall/data/dev-builds.json
+   ```
+
+   The record lists the `viewer` role. To pair the build with a Manager code, add `"manager"` to
+   its `roles`. Apple clients take the build ID and artifact hash from the build's Info.plist
+   (`BeamfallClientBuildID`, `BeamfallClientArtifactHash`); write the record by hand in the same
+   `beamfall.first-party-builds/v1` form.
+3. No restart: the server re-reads the file within a few seconds of a change and logs
+   `dev build catalog loaded` with each admitted build ID, surface and hash prefix. Re-pair or
+   reopen the client.
+
+Only records whose `buildID` ends in `-dev`, whose `distributions` is exactly `["direct"]` and
+whose `roles` are `viewer` and/or `manager` load, and the file may not set `minimumSequence`. A
+file that breaks any rule, does not parse or is missing admits no dev builds at all, and the log
+says why. A dev record never replaces a build the release linked in, and the client must still
+present the exact artifact hash: a debug build from another commit is refused until its own
+record is listed. Delete the file, or empty its `builds`, to revoke every dev build.
+
+Each refused handshake logs `compatibility handshake refused` with the device, build ID,
+artifact hash and the server-side finding (for example `unknown-build` or
+`artifact-hash-mismatch`). Check it first when a client says "Update required".
+
 ## Paths and storage
 
 | Setting | Container | Recommended host path |

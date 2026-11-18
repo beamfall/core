@@ -21,8 +21,16 @@ const (
 )
 
 type compatState struct {
-	mu               sync.RWMutex
-	policy           capabilities.Policy
+	mu     sync.RWMutex
+	policy capabilities.Policy
+	// inputBuilds is the catalog the last install was given, before the
+	// runtime dev records and the embedded UI record were merged in. A
+	// refresh reinstalls from it, so removing a dev record removes it.
+	inputBuilds capabilities.BuildCatalog
+	// devBuilds is the operator's runtime dev-build catalog (CORE-2396). It
+	// is merged into every installed policy, so a policy installed through
+	// SetCompatPolicy keeps it.
+	devBuilds        capabilities.BuildCatalog
 	buildRevision    string
 	pluginGeneration int
 	registry         *capabilities.Registry
@@ -340,10 +348,25 @@ func cloneBoolMap(values map[string]bool) map[string]bool {
 
 func (state *compatState) install(policy capabilities.Policy, buildRevision string, pluginGeneration int) {
 	policy = cloneCompatPolicy(policy)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.installLocked(policy, buildRevision, pluginGeneration)
+}
+
+// installLocked installs an already cloned policy. Callers hold state.mu.
+func (state *compatState) installLocked(policy capabilities.Policy, buildRevision string, pluginGeneration int) {
+	inputBuilds := policy.Builds.Clone()
+	// Runtime dev records only add builds: one that reuses a build id the
+	// installed catalog already carries is skipped, so it can never replace a
+	// release record (CORE-2396).
+	merged, shadowed := policy.Builds.WithDevBuilds(state.devBuilds)
+	if len(shadowed) > 0 {
+		slog.Warn("dev build records skipped: build id already in the installed catalog", "builds", shadowed)
+	}
 	// The embedded Core Web UI is server-known by construction: policy
 	// installation can add builds to the catalog but never remove the one
 	// build this binary itself ships.
-	policy.Builds = policy.Builds.WithEmbeddedUIBuild()
+	policy.Builds = merged.WithEmbeddedUIBuild()
 	policy.Generation = CompatGeneration(CompatGenerationInputs{
 		BuildRevision:              strings.TrimSpace(buildRevision),
 		CoreRevisions:              policy.SupportedCoreRevisions,
@@ -357,8 +380,8 @@ func (state *compatState) install(policy capabilities.Policy, buildRevision stri
 		EmbeddedUIRevision:         policy.EmbeddedUIRevision,
 		PluginPolicyGeneration:     pluginGeneration,
 	})
-	state.mu.Lock()
 	state.policy = policy
+	state.inputBuilds = inputBuilds
 	state.buildRevision = strings.TrimSpace(buildRevision)
 	state.pluginGeneration = pluginGeneration
 	// Publication has no caller to return a failure to, so the registry holds the
@@ -370,7 +393,6 @@ func (state *compatState) install(policy capabilities.Policy, buildRevision stri
 	if err := state.registry.Invalidate(policy.Generation); err != nil {
 		slog.Error("compatibility invalidation persist failed; decisions fail closed until the journal accepts the new policy", "err", err)
 	}
-	state.mu.Unlock()
 }
 
 func (state *compatState) snapshot() capabilities.Policy {
@@ -382,7 +404,23 @@ func (state *compatState) snapshot() capabilities.Policy {
 func (state *compatState) snapshotInstallInputs() (capabilities.Policy, int) {
 	state.mu.RLock()
 	defer state.mu.RUnlock()
-	return cloneCompatPolicy(state.policy), state.pluginGeneration
+	policy := cloneCompatPolicy(state.policy)
+	policy.Builds = state.inputBuilds.Clone()
+	return policy, state.pluginGeneration
+}
+
+// setDevBuilds replaces the runtime dev-build catalog and reinstalls the
+// current policy with it, so the decision generation advances and decisions
+// taken under the old dev records are invalidated.
+func (state *compatState) setDevBuilds(dev capabilities.BuildCatalog) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.devBuilds = dev.Clone()
+	// Reinstall from the current inputs under the same lock, so a policy
+	// installed concurrently is never overwritten by a stale snapshot.
+	policy := cloneCompatPolicy(state.policy)
+	policy.Builds = state.inputBuilds.Clone()
+	state.installLocked(policy, state.buildRevision, state.pluginGeneration)
 }
 
 // SetCompatPolicy installs the live compatibility policy and invalidates every

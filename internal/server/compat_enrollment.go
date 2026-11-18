@@ -51,6 +51,7 @@ func (s *Server) bindEnrolledBuild(ctx context.Context, resp pairing.EnrollRespo
 		DeviceRole:        device.Role,
 		DistributionClass: device.DistributionClass,
 	}
+	s.devBuilds.refresh()
 	binding, finding := capabilities.EnrollmentBindingFor(contract, compatEnrollment(scope), s.compat.snapshot().Builds)
 	if finding != capabilities.ProvenanceVerified {
 		slog.InfoContext(ctx, "enrollment build not mapped", "device", device.ID, "surface", contract.Surface, "build", contract.BuildID, "finding", string(finding))

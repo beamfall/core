@@ -221,6 +221,7 @@ func (s *Server) requireCompatDecision(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capabilities.Result, string) {
+	s.devBuilds.refresh()
 	subject := compatSubject(scope)
 	if s.compat.isRefused(subject) {
 		return false, compatDecisionRequired(), ""
