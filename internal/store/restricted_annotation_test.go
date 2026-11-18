@@ -76,7 +76,10 @@ func TestAnnotateRestrictedLockedBatchesQueriesPerPage(t *testing.T) {
 
 	st := &Store{catalogR: db}
 	restricted := map[LibraryID]bool{"library-restricted": true}
-	for _, pageSize := range []int{1, 100} {
+	// 40_000 of each kind passes SQLite's bound-variable limit in one IN
+	// list, so it pins the chunked lookup a whole keyword candidate set
+	// takes (CORE-2525).
+	for _, pageSize := range []int{1, 100, 40_000} {
 		items := make([]SourceItem, 0, pageSize*2+2)
 		for i := 0; i < pageSize; i++ {
 			items = append(items,
@@ -93,11 +96,12 @@ func TestAnnotateRestrictedLockedBatchesQueriesPerPage(t *testing.T) {
 		if err := st.annotateRestrictedLocked(context.Background(), restricted, items); err != nil {
 			t.Fatal(err)
 		}
-		if got := restrictedQueryCount.Load(); got != 2 {
-			t.Fatalf("page size %d executed %d mapping queries, want 2", pageSize, got)
+		chunks := func(n int) int64 { return int64((n + engagementChunkSize - 1) / engagementChunkSize) }
+		if got, want := restrictedQueryCount.Load(), chunks(pageSize)+chunks(pageSize+2); got != want {
+			t.Fatalf("page size %d executed %d mapping queries, want %d", pageSize, got, want)
 		}
 		for i := 0; i < pageSize; i++ {
-			want := i%2 == 0
+			want := i%2 == 0 && i < 100
 			if items[i*2].Restricted != want || items[i*2+1].Restricted != want {
 				t.Fatalf("page size %d item %d restricted = (%t, %t), want (%t, %t)",
 					pageSize, i, items[i*2].Restricted, items[i*2+1].Restricted, want, want)
