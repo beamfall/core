@@ -44,8 +44,8 @@ no single host is ever required to produce both halves.
    A calibration whose software reference does not itself pass those constants
    is invalid and produces no row.
 3. Record the measurements into a row (see the schema in ADR-0075 D6), with:
-   - `ffmpeg_pin_identity` — the `ffmpeg.lock` artifact SHA-256 on Linux; the
-     resolved binary's SHA-256 on darwin (`ffmpeg.ResolveFFmpegIdentity`).
+   - `ffmpeg_pin_identity` — the SHA-256 of `ffmpeg.lock` on Linux (it pins
+     every input of the source-built ffmpeg); the resolved binary's SHA-256 on darwin (`ffmpeg.ResolveFFmpegIdentity`).
    - `certification_scope_digest` at the file level — print it with
      `tools/gate/vidparity-hdr-tonemap-gate.sh --print-digest`.
    - `passthrough_control` — always `failed-as-required` on a hardware row.

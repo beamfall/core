@@ -783,7 +783,7 @@ done
 
 # The image build is deliberately narrower than the broad script suite. Prove
 # every production input selects it and a nearby non-input does not.
-for covered in Dockerfile go.mod internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock; do
+for covered in Dockerfile go.mod internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock tools/ffmpeg/build.sh; do
   (
     cd "$REPO"
     . "$FUNCS"
@@ -822,7 +822,7 @@ for candidate in "" docs/note.md internal/store/embeddings.go internal/ffmpeg/to
     || fail "tone-map step must always run with a Docker daemon: ${candidate:-<no diff>}"
 done
 for candidate in internal/ffmpeg/tonemap.go internal/ffmpeg/ffmpeg.lock internal/ffmpeg/testdata/x.json \
-  go.mod go.sum tools/gate/ffmpeg-tonemap-conforming.sh; do
+  go.mod go.sum tools/gate/ffmpeg-tonemap-conforming.sh Dockerfile tools/ffmpeg/build.sh; do
   [ "$(tonemap_dispatch no "$candidate")" = $'RUN\t'"$tonemap_step" ] \
     || fail "tone-map input must still run (and fail closed) without Docker: $candidate"
 done

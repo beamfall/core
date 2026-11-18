@@ -17,6 +17,7 @@ USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 FROM_RE = re.compile(r"^\s*FROM(?:\s+--[^\s]+)*\s+([^\s#]+)", re.IGNORECASE)
+STAGE_RE = re.compile(r"\s+AS\s+([A-Za-z0-9_.-]+)\s*$", re.IGNORECASE)
 IMAGE_RE = re.compile(r"^\s*image:\s*([^\s#]+)")
 GO_RE = re.compile(r"^go\s+(\d+\.\d+\.\d+)\s*$", re.MULTILINE)
 GO_ARG_RE = re.compile(r"^ARG GO_VERSION=(\d+\.\d+\.\d+)\s*$", re.MULTILINE)
@@ -28,12 +29,13 @@ TOOLCHAIN_IMAGE_RE = re.compile(
 NODE_WORKFLOW_RE = re.compile(r"^\s*node-version:\s*['\"]?(\d+)['\"]?\s*(?:#.*)?$", re.MULTILINE)
 LOCK_KEYS = {
     "FFMPEG_PIN_SHA256",
-    "FFMPEG_LINUX_AMD64_URL",
-    "FFMPEG_LINUX_AMD64_SHA256",
-    "FFMPEG_LINUX_ARM64_URL",
-    "FFMPEG_LINUX_ARM64_SHA256",
     "FFMPEG_SOURCE_URL",
     "FFMPEG_SOURCE_SHA256",
+    "FFMPEG_NVCODEC_URL",
+    "FFMPEG_NVCODEC_SHA256",
+    "FFMPEG_AMF_URL",
+    "FFMPEG_AMF_SHA256",
+    "FFMPEG_DEBIAN_SNAPSHOT",
 }
 PIN_RE = re.compile(r"^(\d+\.\d+\.\d+)-Jellyfin\n$")
 LOCK_LINE_RE = re.compile(r"^([A-Z0-9_]+)=([^\s#]+)$")
@@ -42,18 +44,24 @@ LOCK_SOURCE_RE = re.compile(r"(?:^|\s)(?:\.|source)\s+\S*ffmpeg\.lock\b", re.MUL
 FAIL_CLOSED_IMAGE = "${BEAMFALL_IMAGE:?immutable-digest-reference-required}"
 UNRAID_PLACEHOLDER = "ghcr.io/beamfall/core@sha256:RELEASE_DIGEST_REQUIRED"
 UNRAID_REPOSITORY_RE = re.compile(r"<Repository>([^<]*)</Repository>")
-FFMPEG_URL_RE = re.compile(
-    r"^https://repo\.jellyfin\.org/files/ffmpeg/debian/\d+\.x/"
-    r"(\d+\.\d+\.\d+-\d+)/(amd64|arm64)/"
-    r"jellyfin-ffmpeg\d+_\1-bookworm_\2\.deb$"
-)
-# The GPL corresponding source for the locked debs (CORE-2497): the upstream
-# release tag's archive, which carries the FFmpeg tree, debian/patches and the
-# build scripts for every architecture.
+# The linux ffmpeg is built from source by tools/ffmpeg/build.sh (CORE-2497):
+# jellyfin-ffmpeg's release tag archive (FFmpeg tree and patch series), the
+# NVIDIA and AMD codec headers at release tags, and the Debian snapshot that
+# fixes the version of every library it links. The image ships the source of
+# all of it.
 FFMPEG_SOURCE_URL_RE = re.compile(
     r"^https://github\.com/jellyfin/jellyfin-ffmpeg/archive/refs/tags/"
-    r"v(\d+\.\d+\.\d+-\d+)\.tar\.gz$"
+    r"v(\d+\.\d+\.\d+)-\d+\.tar\.gz$"
 )
+FFMPEG_NVCODEC_URL_RE = re.compile(
+    r"^https://github\.com/FFmpeg/nv-codec-headers/archive/refs/tags/n\d+(?:\.\d+)+\.tar\.gz$"
+)
+FFMPEG_AMF_URL_RE = re.compile(
+    r"^https://github\.com/GPUOpen-LibrariesAndSDKs/AMF/releases/download/"
+    r"v(\d+(?:\.\d+)+)/AMF-headers-v\1\.tar\.gz$"
+)
+DEBIAN_SNAPSHOT_RE = re.compile(r"^\d{8}T\d{6}Z$")
+FFMPEG_BUILD_SCRIPTS = ("tools/ffmpeg/build.sh", "tools/ffmpeg/apt-snapshot.sh")
 
 
 def check_file(path: Path) -> list[str]:
@@ -93,9 +101,13 @@ def _check_container(path: Path, line_number: int, image: str, errors: list[str]
 def _check_containers(root: Path) -> list[str]:
     errors: list[str] = []
     dockerfile = root / "Dockerfile"
+    stages: set[str] = set()
     for line_number, line in enumerate(_read(dockerfile, errors).splitlines(), 1):
         if match := FROM_RE.match(line):
-            _check_container(dockerfile, line_number, match.group(1), errors)
+            if match.group(1) not in stages:
+                _check_container(dockerfile, line_number, match.group(1), errors)
+            if stage := STAGE_RE.search(line):
+                stages.add(stage.group(1))
 
     compose_paths = set(root.glob("docker-compose*.yml")) | set(root.glob("docker-compose*.yaml"))
     compose_paths |= set((root / "packaging/compose").glob("*.yml"))
@@ -188,64 +200,51 @@ def _check_ffmpeg_lock(root: Path) -> list[str]:
     elif pin_sha != hashlib.sha256(pin).hexdigest():
         errors.append(f"{lock_path}: FFMPEG_PIN_SHA256 does not match ffmpeg.pin")
 
-    deb_releases: set[str] = set()
-    for arch in ("amd64", "arm64"):
-        prefix = f"FFMPEG_LINUX_{arch.upper()}"
-        url = lock[f"{prefix}_URL"]
-        digest = lock[f"{prefix}_SHA256"]
+    urls = {
+        "FFMPEG_SOURCE_URL": FFMPEG_SOURCE_URL_RE,
+        "FFMPEG_NVCODEC_URL": FFMPEG_NVCODEC_URL_RE,
+        "FFMPEG_AMF_URL": FFMPEG_AMF_URL_RE,
+    }
+    for key, pattern in urls.items():
+        url = lock[key]
         parsed = urlsplit(url)
-        match = FFMPEG_URL_RE.fullmatch(url)
-        if parsed.query or parsed.fragment or "$" in url or not match:
-            errors.append(f"{lock_path}: {prefix}_URL is not an immutable versioned URL")
-        elif match.group(2) != arch:
-            errors.append(f"{lock_path}: {prefix}_URL does not match linux/{arch}")
-        elif match.group(1).rsplit("-", 1)[0] != pin_version:
-            errors.append(f"{lock_path}: {prefix}_URL ships FFmpeg {match.group(1)}, not ffmpeg.pin's {pin_version}")
-        if match:
-            deb_releases.add(match.group(1))
-        if not SHA256_RE.fullmatch(digest):
-            errors.append(f"{lock_path}: {prefix}_SHA256 must be a lowercase SHA-256")
-
-    # The image conveys GPL binaries, so it must carry their corresponding
-    # source: a deb bump that leaves the source archive behind fails here.
-    source_url = lock["FFMPEG_SOURCE_URL"]
-    source_match = FFMPEG_SOURCE_URL_RE.fullmatch(source_url)
-    if not source_match:
-        errors.append(f"{lock_path}: FFMPEG_SOURCE_URL is not a jellyfin-ffmpeg release tag archive")
-    elif deb_releases and deb_releases != {source_match.group(1)}:
+        if parsed.query or parsed.fragment or "$" in url or not pattern.fullmatch(url):
+            errors.append(f"{lock_path}: {key} is not an immutable release tag archive")
+        digest_key = key.removesuffix("_URL") + "_SHA256"
+        if not SHA256_RE.fullmatch(lock[digest_key]):
+            errors.append(f"{lock_path}: {digest_key} must be a lowercase SHA-256")
+    source_match = FFMPEG_SOURCE_URL_RE.fullmatch(lock["FFMPEG_SOURCE_URL"])
+    if source_match and source_match.group(1) != pin_version:
         errors.append(
-            f"{lock_path}: FFMPEG_SOURCE_URL is release {source_match.group(1)}, "
-            f"not the locked debs' {', '.join(sorted(deb_releases))}"
+            f"{lock_path}: FFMPEG_SOURCE_URL ships FFmpeg {source_match.group(1)}, not ffmpeg.pin's {pin_version}"
         )
-    if not SHA256_RE.fullmatch(lock["FFMPEG_SOURCE_SHA256"]):
-        errors.append(f"{lock_path}: FFMPEG_SOURCE_SHA256 must be a lowercase SHA-256")
+    if not DEBIAN_SNAPSHOT_RE.fullmatch(lock["FFMPEG_DEBIAN_SNAPSHOT"]):
+        errors.append(f"{lock_path}: FFMPEG_DEBIAN_SNAPSHOT must be a snapshot.debian.org timestamp")
 
     consumers = [root / "Dockerfile", root / ".github/workflows/release-gate.yml"]
+    consumers += [root / script for script in FFMPEG_BUILD_SCRIPTS]
     coordinate_literals = [value for key, value in lock.items() if key != "FFMPEG_PIN_SHA256"]
     coordinate_literals += [Path(urlsplit(lock[key]).path).name for key in lock if key.endswith("_URL")]
     for path in consumers:
         content = _read(path, errors)
-        if "internal/ffmpeg/ffmpeg.lock" not in content and "/tmp/ffmpeg.lock" not in content:
-            errors.append(f"{path}: does not consume internal/ffmpeg/ffmpeg.lock")
         if LOCK_SOURCE_RE.search(content):
             errors.append(f"{path}: must validate and parse ffmpeg.lock without shell-sourcing it")
-        if "repo.jellyfin.org/files/ffmpeg" in content or any(value in content for value in coordinate_literals):
+        if any(value in content for value in coordinate_literals):
             errors.append(f"{path}: duplicates FFmpeg artifact coordinates outside ffmpeg.lock")
         if path.name == "Dockerfile":
-            for arch in ("amd64", "arm64"):
-                block = re.search(rf"\b{arch}\)(.*?);;", content, re.DOTALL)
-                prefix = f"FFMPEG_LINUX_{arch.upper()}"
-                if not block or any(f"${prefix}_{field}" not in block.group(1) for field in ("URL", "SHA256")):
-                    errors.append(f"{path}: does not map TARGETARCH {arch} to its locked artifact")
-            if any(f"$FFMPEG_SOURCE_{field}" not in content for field in ("URL", "SHA256")):
-                errors.append(f"{path}: does not ship the locked FFmpeg corresponding source")
-        else:
+            # The image builds ffmpeg from the lock and ships the source bundle
+            # the build writes; a Dockerfile that installs a prebuilt instead
+            # loses both the pins and the corresponding source.
+            build = re.search(r"^RUN sh /in/build\.sh /in/ffmpeg\.lock /in/ffmpeg\.pin ", content, re.MULTILINE)
+            if "internal/ffmpeg/ffmpeg.lock" not in content or not build:
+                errors.append(f"{path}: does not build ffmpeg from internal/ffmpeg/ffmpeg.lock with tools/ffmpeg/build.sh")
+            if not re.search(r"^COPY --from=ffmpeg /out/SHA256SUMS /out/\*-source\.tar /usr/share/beamfall/source/ffmpeg/$", content, re.MULTILINE):
+                errors.append(f"{path}: does not ship the FFmpeg corresponding source bundle")
+        elif path.name == "release-gate.yml":
             policy = content.find("python3 script/check-release-workflow-pins.py")
-            use = content.find("$FFMPEG_LINUX_AMD64_URL")
+            use = content.find("--target ffmpeg-runtime")
             if policy < 0 or use < 0 or policy > use:
-                errors.append(f"{path}: must validate ffmpeg.lock before using the locked linux/amd64 artifact")
-            if any(f"$FFMPEG_LINUX_AMD64_{field}" not in content for field in ("URL", "SHA256")):
-                errors.append(f"{path}: does not use the locked linux/amd64 artifact")
+                errors.append(f"{path}: must validate ffmpeg.lock before building the locked ffmpeg")
     return errors
 
 

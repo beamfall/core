@@ -577,9 +577,9 @@ constraint 5 — mechanics in `TESTING.md` §6.
 version token** — the string `Runner.Version()` extracts from line 1 of `ffmpeg -version`
 output (e.g. `7.1.4-Jellyfin`) — one line, no comments. Comparison is **exact string
 equality** everywhere (regen tool, `TestPinnedVersionAndFixtureManifest`, the integration tier's version
-assert). The Dockerfile is the single place that maps the token to a package/download
-coordinate (jellyfin-ffmpeg-style release id), with a comment marking that translation as
-the only one. Runtime equality is currently enforced by the Docker build, fixture refresh,
+assert). `internal/ffmpeg/ffmpeg.lock` maps the token to the locked jellyfin-ffmpeg source release
+the image's ffmpeg stage builds (`tools/ffmpeg/build.sh`, which refuses a source whose
+`VERSION` does not match the pin). Runtime equality is currently enforced by the Docker build, fixture refresh,
 and tests; server startup does not yet compare a BYO FFmpeg runtime to the pin or provide
 mismatch-specific warning or degradation behavior.
 

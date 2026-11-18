@@ -1423,16 +1423,18 @@ scope_matches() {
       webe2e:Makefile|webe2e:go.mod|webe2e:go.sum|webe2e:go.work) return 0 ;;
       webe2e:script/web-ui-*|webe2e:script/test-process-supervisor.py) return 0 ;;
       webe2e:tools/gate/web-*|webe2e:tools/gate/web_*) return 0 ;;
-      image:Dockerfile|image:go.mod|image:internal/ffmpeg/ffmpeg.pin|image:internal/ffmpeg/ffmpeg.lock) return 0 ;;
+      image:Dockerfile|image:go.mod|image:internal/ffmpeg/ffmpeg.pin|image:internal/ffmpeg/ffmpeg.lock|image:tools/ffmpeg/*) return 0 ;;
       contract:contracts/*|contract:internal/conformance/*|contract:internal/graph/*|contract:tools/wire-contract/*) return 0 ;;
       contract:Makefile|contract:testing/release-gates/gate-commands.tsv|contract:script/crossrepo-conformance.sh|contract:script/crossrepo-conformance_test.sh|contract:script/crossrepo-conformance_pin_test.sh|contract:script/crossrepo-conformance_interrupt_test.py) return 0 ;;
       contract:tools/gate/gate.sh|contract:tools/gate/gate_scope_test.sh) return 0 ;;
       # CORE-0947: the tone-map conformance binary is built from internal/ffmpeg
-      # alone (gate_scope_test.sh proves its module closure), so only these
-      # inputs can change its verdict. Dispatch itself (run_docker_step) is
+      # alone (gate_scope_test.sh proves its module closure) and runs in the
+      # image's ffmpeg-runtime stage (Dockerfile, tools/ffmpeg; CORE-2497), so
+      # only these inputs can change its verdict. Dispatch itself (run_docker_step) is
       # covered by gate_scope_test.sh, so gate.sh edits stay gateable without
       # Docker.
       tonemap:internal/ffmpeg/*|tonemap:go.mod|tonemap:go.sum|tonemap:tools/gate/ffmpeg-tonemap-conforming.sh) return 0 ;;
+      tonemap:Dockerfile|tonemap:tools/ffmpeg/*) return 0 ;;
     esac
   done <<<"$paths"
   return 1
@@ -1474,8 +1476,8 @@ tonemap_docker_precondition() {
   cat >&2 <<'MSG'
 tone-map Docker precondition: no reachable Docker daemon, and this run needs the
 pinned FFmpeg tone-map conformance step (the change touches its inputs, the diff
-range is unprovable, or this is a release gate). The step runs the pinned
-bookworm FFmpeg in a container (internal/ffmpeg/ffmpeg.lock).
+range is unprovable, or this is a release gate). The step builds the image's
+ffmpeg-runtime stage from internal/ffmpeg/ffmpeg.lock and runs in it.
 Fix: start a Docker daemon and rerun. macOS with colima: `colima start`, then
 `docker context use colima` or export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock.
 Linux: start dockerd (or gate this change on a host that has one).

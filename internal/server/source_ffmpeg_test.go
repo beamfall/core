@@ -37,7 +37,7 @@ func getFFmpegSource(t *testing.T, dir string) *httptest.ResponseRecorder {
 }
 
 func TestFFmpegSourceServesBundledArchiveWithChecksum(t *testing.T) {
-	name := "jellyfin-ffmpeg-v7.1.4-3.tar.gz"
+	name := "beamfall-ffmpeg-7.1.4-3-linux-amd64-source.tar"
 	dir := writeFFmpegSource(t, testFFmpegSourceSum+"  "+name+"\n", map[string]string{name: "archive"})
 	rec := getFFmpegSource(t, dir)
 	if rec.Code != http.StatusOK {
@@ -49,7 +49,7 @@ func TestFFmpegSourceServesBundledArchiveWithChecksum(t *testing.T) {
 	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="`+name+`"` {
 		t.Fatalf("Content-Disposition = %q", got)
 	}
-	if got := rec.Header().Get("Content-Type"); got != "application/gzip" {
+	if got := rec.Header().Get("Content-Type"); got != "application/x-tar" {
 		t.Fatalf("Content-Type = %q", got)
 	}
 	if rec.Body.String() != "archive" {
@@ -58,13 +58,13 @@ func TestFFmpegSourceServesBundledArchiveWithChecksum(t *testing.T) {
 }
 
 func TestFFmpegSourceIsNotFoundWithoutAValidBundle(t *testing.T) {
-	name := "jellyfin-ffmpeg-v7.1.4-3.tar.gz"
+	name := "beamfall-ffmpeg-7.1.4-3-linux-amd64-source.tar"
 	cases := map[string]string{
 		"no directory":       filepath.Join(t.TempDir(), "absent"),
 		"no SHA256SUMS":      writeFFmpegSource(t, "", map[string]string{name: "archive"}),
 		"archive missing":    writeFFmpegSource(t, testFFmpegSourceSum+"  "+name+"\n", nil),
 		"malformed digest":   writeFFmpegSource(t, "XYZ  "+name+"\n", map[string]string{name: "archive"}),
-		"path escape":        writeFFmpegSource(t, testFFmpegSourceSum+"  ../jellyfin-ffmpeg-x.tar.gz\n", nil),
+		"path escape":        writeFFmpegSource(t, testFFmpegSourceSum+"  ../beamfall-ffmpeg-x.tar\n", nil),
 		"other archive name": writeFFmpegSource(t, testFFmpegSourceSum+"  ffmpeg.tar.gz\n", map[string]string{"ffmpeg.tar.gz": "archive"}),
 	}
 	for label, dir := range cases {

@@ -1,9 +1,12 @@
-# ffmpeg.pin is the sole semantic-version source. This lock contains only
-# authenticated, immutable per-architecture artifact coordinates bound to it.
+# ffmpeg.pin is the sole semantic-version source. This lock pins every input of
+# the linux ffmpeg the image builds from source with tools/ffmpeg/build.sh
+# (CORE-2497): the jellyfin-ffmpeg release tag, the NVIDIA and AMD codec
+# headers, and the Debian snapshot that fixes every linked library's version.
 FFMPEG_PIN_SHA256=17385f6c7befac309dd9b13d5cd5335ddeb1ab803498cce5b6ff024bdbe0e356
-FFMPEG_LINUX_AMD64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3/amd64/jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb
-FFMPEG_LINUX_AMD64_SHA256=0cf62bc2423822c9ec7a38dbc8f526d9a58671bd01843daa7817ece35619fc1c
-FFMPEG_LINUX_ARM64_URL=https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3/arm64/jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb
-FFMPEG_LINUX_ARM64_SHA256=9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb
 FFMPEG_SOURCE_URL=https://github.com/jellyfin/jellyfin-ffmpeg/archive/refs/tags/v7.1.4-3.tar.gz
 FFMPEG_SOURCE_SHA256=38fff90f73b3c4f9c3c7270711411a4ec3cbe63b205d4b4a5525bcc532d3d31f
+FFMPEG_NVCODEC_URL=https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/n12.0.16.1.tar.gz
+FFMPEG_NVCODEC_SHA256=37e31c7ed0c9bf2da74646a3ec426c38a6d29e60b1fb7bff3e03a99b9412e050
+FFMPEG_AMF_URL=https://github.com/GPUOpen-LibrariesAndSDKs/AMF/releases/download/v1.4.36/AMF-headers-v1.4.36.tar.gz
+FFMPEG_AMF_SHA256=ec07ee21b820a73f5bae224e92fd3c492f52732d4885f0637f48189afdd87564
+FFMPEG_DEBIAN_SNAPSHOT=20261115T000000Z
