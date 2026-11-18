@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/identify"
+	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/serverrole"
 	"github.com/beamfall/core/internal/store"
 )
@@ -471,9 +472,32 @@ func sameHydrationEntity(left, right HydrationEntity) bool {
 // the merge commits first, together with a row saying its entry is owed; a
 // failed entry fails the hydration, and recordOwedTitleFoldMerges writes it
 // before the adapter's next merge.
+// hydrationFoldArtwork gives the survivor of a title-fold merge the artwork
+// it has none of its own for (artwork.Service.AdoptEntityArtwork).
+type hydrationFoldArtwork interface {
+	AdoptEntityArtwork(ctx context.Context, survivor, merged store.EntityID) error
+}
+
+// setHydrationFoldArtwork hands every adapter that merges title variants the
+// artwork store its merges copy artwork through.
+func setHydrationFoldArtwork(hydrators map[string]scanpkg.MetadataHydrator, art hydrationFoldArtwork) {
+	for _, hydrator := range hydrators {
+		if adapter, ok := hydrator.(*hydrationAdapter); ok && adapter.foldStore != nil {
+			adapter.foldArtwork = art
+		}
+	}
+}
+
 func (a *hydrationAdapter) mergeEntity(ctx context.Context, libraryID store.LibraryID, winner, loser store.EntityID) error {
 	if err := a.foldStore.CopyEntityItemState(ctx, loser, winner); err != nil {
 		return err
+	}
+	// Artwork is copied before the merge commits: a copy that fails leaves
+	// the merge for the retry, which a committed merge would not.
+	if a.foldArtwork != nil {
+		if err := a.foldArtwork.AdoptEntityArtwork(ctx, winner, loser); err != nil {
+			return fmt.Errorf("copy artwork of %s to %s: %w", loser, winner, err)
+		}
 	}
 	now := time.Now().UTC()
 	batch, err := a.foldStore.MergeTitleFoldVariants(ctx, winner, loser, metadataLibraryFilter, now)

@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/artwork"
 	scanpkg "github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/store"
 )
@@ -635,6 +638,104 @@ func TestTitleFoldMergeOwesItsActivityEntryUntilWritten(t *testing.T) {
 }
 
 // titleFoldMerges lists the title-fold merge activity entries, newest first.
+// failingFoldArtwork fails the first failures artwork copies, then hands
+// them to the real artwork store.
+type failingFoldArtwork struct {
+	hydrationFoldArtwork
+	failures int
+}
+
+func (f *failingFoldArtwork) AdoptEntityArtwork(ctx context.Context, survivor, merged store.EntityID) error {
+	if f.failures > 0 {
+		f.failures--
+		return errors.New("artwork copy failed")
+	}
+	return f.hydrationFoldArtwork.AdoptEntityArtwork(ctx, survivor, merged)
+}
+
+// TestTitleFoldMergeKeepsArtworkOnTheSurvivor pins CORE-2459's artwork rule:
+// the poster of the merged-away parent spelling ends up on the established
+// parent, which had none, and stays on the trashed variant for an undo. A
+// copy that fails fails the hydration before anything merges, so the retry
+// merges and copies.
+func TestTitleFoldMergeKeepsArtworkOnTheSurvivor(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	lib, err := st.CreateLibrary(ctx, "Shelf", false, testHydrationPluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	legacy := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	var media store.MediaID
+	for _, file := range []struct{ name, artist string }{{"one", "First Band"}, {"two", "first.band"}} {
+		imported, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + file.name + ".flac", Title: file.name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + file.name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := legacy.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+			MediaID: imported.ID, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+			Metadata: map[string]string{"album": "Shared Collection", "album-artist": file.artist},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		media = imported.ID
+	}
+	parents, err := st.EntitiesByKind(ctx, lib.ID, "artist", all, store.EntityKindOptions{}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var established, newer store.EntityID
+	for _, parent := range parents {
+		if parent.Title == "First Band" {
+			established = parent.ID
+		} else {
+			newer = parent.ID
+		}
+	}
+	art := artwork.NewService(st, nil, t.TempDir())
+	poster := art.EntityPosterPath(newer)
+	if err := os.MkdirAll(filepath.Dir(poster), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(poster, []byte("poster of the newer spelling"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := newTestAdapterWithMapper(st, foldedAlbumMapper{})
+	recorder := &recordingFoldStore{hydrationFoldStore: adapter.foldStore}
+	adapter.foldStore = recorder
+	setHydrationFoldArtwork(map[string]scanpkg.MetadataHydrator{testHydrationPluginID: adapter}, &failingFoldArtwork{hydrationFoldArtwork: art, failures: 1})
+	input := scanpkg.MetadataHydrationInput{
+		MediaID: media, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+		Metadata: map[string]string{"album": "Shared Collection", "folder": "First Band"},
+	}
+	if err := adapter.HydrateMetadata(ctx, input); err == nil {
+		t.Fatal("hydration with a failing artwork copy succeeded")
+	}
+	if len(recorder.batches) != 0 || art.HasEntityPoster(established) {
+		t.Fatalf("failed copy merged %+v or copied a poster", recorder.batches)
+	}
+	if err := adapter.HydrateMetadata(ctx, input); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(recorder.batches) == 0 {
+		t.Fatal("retry merged nothing")
+	}
+	for _, id := range []store.EntityID{established, newer} {
+		if got, err := os.ReadFile(art.EntityPosterPath(id)); err != nil || string(got) != "poster of the newer spelling" {
+			t.Fatalf("poster of %s = %q, %v; want the newer spelling's", id, got, err)
+		}
+	}
+}
+
 func titleFoldMerges(t *testing.T, st *store.Store) []store.ActivityEntry {
 	t.Helper()
 	entries, err := st.ActivityEntries(context.Background(), store.ActivityQuery{

@@ -82,6 +82,9 @@ type hydrationAdapter struct {
 	// (HydrationTitleFoldMapper); foldStore is nil when the store cannot merge.
 	foldKinds map[string]bool
 	foldStore hydrationFoldStore
+	// foldArtwork copies a merged-away variant's artwork to the survivor; nil
+	// when no artwork store is wired.
+	foldArtwork hydrationFoldArtwork
 	// foldChecked holds the Entities mergeFoldSiblings already checked; it is
 	// guarded by scopeMu.
 	foldChecked map[store.EntityID]bool

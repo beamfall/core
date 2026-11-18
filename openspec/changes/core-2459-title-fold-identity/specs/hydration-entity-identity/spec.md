@@ -47,6 +47,18 @@ add a file naming any fold-equal variant to it.
 - **THEN** both children live under the established parent with their own IDs, and no child is
   created twice
 
+### Requirement: A title-variant merge keeps the merged variant's artwork
+
+Before a title-variant merge commits, hydration SHALL copy each artwork slot of the merged-away
+variant to the established one wherever the established variant has none of its own, including a
+poster it only inherited, and the merged-away variant SHALL keep its own files for an undo.
+
+#### Scenario: Only the newer spelling had a poster
+
+- **WHEN** a scan merges a newer variant with a poster into an established variant without one
+- **THEN** the established variant shows that poster, and undoing the merge restores the newer
+  variant with its poster
+
 ### Requirement: Automatic title-variant merges are recorded in activity history
 
 Hydration SHALL record each title-variant merge it makes in activity history as
