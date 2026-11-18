@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setIdentityEpochSignal } from "@/lib/api";
 import { fetchClientPrefs, setClientPref } from "@/lib/graphql/viewer";
 import {
   applySidebarPrefs,
@@ -17,6 +18,7 @@ vi.mock("@/lib/graphql/viewer", () => ({
 }));
 
 afterEach(() => {
+  setIdentityEpochSignal(undefined);
   resetSidebarPrefsCache();
   vi.mocked(fetchClientPrefs).mockReset();
   vi.mocked(setClientPref).mockReset();
@@ -185,6 +187,45 @@ describe("useSidebarPrefs", () => {
     await waitFor(() => expect(second.result.current[0]).toEqual({ order: ["c"], hidden: [] }));
     expect(second.result.current[2]).toBe(true);
     expect(fetchClientPrefs).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops a queued save once the identity changes instead of writing to the next Profile", async () => {
+    const epochA = new AbortController();
+    setIdentityEpochSignal(epochA.signal);
+    vi.mocked(fetchClientPrefs).mockResolvedValue([]);
+    vi.mocked(setClientPref).mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          epochA.signal.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+    const first = renderHook(() => useSidebarPrefs("pA"));
+    await waitFor(() => expect(first.result.current[2]).toBe(true));
+    let saveA: Promise<void> = Promise.resolve();
+    await act(async () => {
+      saveA = first.result.current[1]({ order: ["a"], hidden: [] });
+    });
+    // A's request is out; B will queue behind it.
+    expect(setClientPref).toHaveBeenCalledTimes(1);
+    first.unmount();
+    const second = renderHook(() => useSidebarPrefs("pA"));
+    let saveB: Promise<void> = Promise.resolve();
+    act(() => {
+      saveB = second.result.current[1]({ order: ["b"], hidden: [] });
+    });
+    second.unmount();
+    // Profile switch: the spine aborts epoch A and starts epoch B.
+    epochA.abort();
+    setIdentityEpochSignal(new AbortController().signal);
+    renderHook(() => useSidebarPrefs("pB"));
+    await act(async () => {
+      await expect(saveA).rejects.toThrow("aborted");
+      await expect(saveB).rejects.toThrow("Profile changed");
+    });
+    // Only A's original request went out; B never ran under Profile B.
+    expect(setClientPref).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing without a Profile", async () => {

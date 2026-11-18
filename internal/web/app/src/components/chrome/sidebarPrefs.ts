@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { getIdentityEpochSignal } from "@/lib/api";
 import { fetchClientPrefs, setClientPref } from "@/lib/graphql/viewer";
 
 // The Profile's own sidebar library choice (CORE-2435): which libraries stay
@@ -177,9 +178,16 @@ export function useSidebarPrefs(
       current.prefs = next;
       current.dirty = true;
       emit();
-      const write = current.writes.then(() =>
-        setClientPref(SIDEBAR_LIBRARIES_PREF_KEY, serializeSidebarPrefs(next)),
-      );
+      // A queued write must not run under a later identity: once a Profile
+      // switch, reveal or relock starts a new epoch, the session it would
+      // carry belongs to someone else.
+      const epoch = getIdentityEpochSignal();
+      const write = current.writes.then(() => {
+        if (getIdentityEpochSignal() !== epoch || epoch?.aborted || entry !== current) {
+          throw new DOMException("The Profile changed before the save ran", "AbortError");
+        }
+        return setClientPref(SIDEBAR_LIBRARIES_PREF_KEY, serializeSidebarPrefs(next));
+      });
       current.writes = write.catch(() => {});
       try {
         await write;
