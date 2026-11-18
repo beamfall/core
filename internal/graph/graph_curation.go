@@ -83,7 +83,11 @@ func (h *Handler) mediaTracks(ctx context.Context, scope auth.Scope, req request
 	if err != nil {
 		return MediaTracksInfo{}, clientError("unknown media")
 	}
-	versions, err := playback.ListTracks(ctx, h.store, mediaID, files)
+	media, err := h.store.Media(ctx, mediaID, scope.LibraryFilter())
+	if err != nil {
+		return MediaTracksInfo{}, clientError("unknown media")
+	}
+	versions, err := playback.ListTracks(ctx, h.store, media, files)
 	if err != nil {
 		return MediaTracksInfo{}, err
 	}

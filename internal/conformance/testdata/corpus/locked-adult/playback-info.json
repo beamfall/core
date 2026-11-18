@@ -23,12 +23,14 @@
         {
           "bandwidth": 4256000,
           "height": 720,
-          "id": "720p"
+          "id": "720p",
+          "resolution": "720p"
         },
         {
           "bandwidth": 1756000,
           "height": 480,
-          "id": "480p"
+          "id": "480p",
+          "resolution": "SD"
         }
       ],
       "token": "eyJ0YXJnZXQiOiJtZWRpYS1obHMiLCJtZWRpYUlEIjoibWVkaWEtYWxwaGEiLCJkZXZpY2VJRCI6ImRldmljZS10diIsInNlc3Npb25JRCI6InNlc3Npb24tZGVmYXVsdCIsInByb2ZpbGVJRCI6InByb2ZpbGUtZGVmYXVsdCIsInJlc3RyaWN0ZWQiOmZhbHNlLCJwcm9maWxlQ2FwYWJpbGl0eSI6ImE0NWEyYzg5NjdjODE2YTUiLCJleHBpcmVzQXQiOiIxOTcwLTAxLTAxVDAxOjAwOjAwWiJ9.xDGBxqCyholhKs8hmDIwvNtY6BZm3DH25lpD5hkwm8k",

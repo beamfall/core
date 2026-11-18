@@ -1,0 +1,7 @@
+- [x] Core: resolution label, `sourceVideo`, rendition and Version labels; Go coverage
+- [x] Wire goldens regenerated with `make regen-wire-goldens`; client-core-wire 2.27.0 published
+- [ ] Web: detail page resolution and HDR badges
+- [ ] Web: info overlay source and rendition rows, strings in every shipped locale; vitest coverage
+- [ ] `make gate` (landing owner)
+- [ ] Verified on tower (lander)
+- [ ] `openspec archive core-2485-resolution-badges` after landing

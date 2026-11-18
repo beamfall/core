@@ -25,6 +25,8 @@ func TestMediaTracksListsVersionsAndTracks(t *testing.T) {
 		Container:          "mkv",
 		Codec:              "hevc",
 		ContentFingerprint: "fp-tracks",
+		VideoWidthHint:     3840,
+		VideoHeightHint:    1600,
 		Streams: []store.MediaFileStream{
 			{Index: 0, Type: "video", Codec: "hevc", ColorTransfer: "smpte2084"},
 			{Index: 1, Type: "audio", Codec: "flac", Language: "eng", Channels: 2},
@@ -50,7 +52,7 @@ func TestMediaTracksListsVersionsAndTracks(t *testing.T) {
 	}
 
 	body := graphPost(t, handler, authorizeViewer,
-		`{"query":"query($mediaID:String!){ mediaTracks(mediaID:$mediaID){ versions { id label videoCodec hdr audioTracks { streamIndex codec language channels default } captionTracks { id format streamIndex language forced sdh } } } }","variables":{"mediaID":"`+string(media.ID)+`"}}`)
+		`{"query":"query($mediaID:String!){ mediaTracks(mediaID:$mediaID){ versions { id label videoCodec hdr resolution audioTracks { streamIndex codec language channels default } captionTracks { id format streamIndex language forced sdh } } } }","variables":{"mediaID":"`+string(media.ID)+`"}}`)
 	var resp struct {
 		Data struct {
 			MediaTracks MediaTracksInfo `json:"mediaTracks"`
@@ -68,6 +70,10 @@ func TestMediaTracksListsVersionsAndTracks(t *testing.T) {
 		t.Fatalf("versions = %#v", versions)
 	}
 	first, second := versions[0], versions[1]
+	// CORE-2485: only the probed Version's frame size is stored.
+	if first.Resolution != "4K" || second.Resolution != "" {
+		t.Fatalf("resolutions = %q, %q; want 4K and unknown", first.Resolution, second.Resolution)
+	}
 	if first.Label != "" || first.VideoCodec != "hevc" || first.HDR != "hdr10" || second.Label != "720p" || second.VideoCodec != "h264" {
 		t.Fatalf("version facts = %#v / %#v", first, second)
 	}
@@ -99,7 +105,7 @@ func TestMediaTracksListsVersionsAndTracks(t *testing.T) {
 		t.Fatalf("second tracks = %#v", second)
 	}
 	// The ids are the ones playbackInfo reports for the same Versions.
-	listed, err := playback.ListTracks(ctx, st, media.ID, mustMediaFiles(t, st, media.ID))
+	listed, err := playback.ListTracks(ctx, st, media, mustMediaFiles(t, st, media.ID))
 	if err != nil || len(listed) != 2 || listed[1].ID != second.ID {
 		t.Fatalf("ListTracks = %#v, %v", listed, err)
 	}

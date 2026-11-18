@@ -14509,6 +14509,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "resolution",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "videoCodec",
                 "kind": "scalar",
                 "optional": true
@@ -14716,6 +14721,11 @@
             {
               "name": "label",
               "kind": "scalar"
+            },
+            {
+              "name": "resolution",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "videoCodec",
@@ -38170,6 +38180,13 @@
                           "shape": {
                             "type": "integer"
                           }
+                        },
+                        {
+                          "name": "resolution",
+                          "shape": {
+                            "type": "string",
+                            "optional": true
+                          }
                         }
                       ]
                     },
@@ -38286,6 +38303,13 @@
                   }
                 },
                 {
+                  "name": "resolution",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
                   "name": "selected",
                   "shape": {
                     "type": "boolean"
@@ -38293,6 +38317,43 @@
                 }
               ]
             },
+            "optional": true
+          }
+        },
+        {
+          "name": "sourceVideo",
+          "shape": {
+            "type": "object",
+            "fields": [
+              {
+                "name": "resolution",
+                "shape": {
+                  "type": "string",
+                  "optional": true
+                }
+              },
+              {
+                "name": "width",
+                "shape": {
+                  "type": "integer",
+                  "optional": true
+                }
+              },
+              {
+                "name": "height",
+                "shape": {
+                  "type": "integer",
+                  "optional": true
+                }
+              },
+              {
+                "name": "hdr",
+                "shape": {
+                  "type": "string",
+                  "optional": true
+                }
+              }
+            ],
             "optional": true
           }
         },
@@ -38384,6 +38445,13 @@
                                 "name": "bandwidth",
                                 "shape": {
                                   "type": "integer"
+                                }
+                              },
+                              {
+                                "name": "resolution",
+                                "shape": {
+                                  "type": "string",
+                                  "optional": true
                                 }
                               }
                             ]

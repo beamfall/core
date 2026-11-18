@@ -30,17 +30,20 @@
           {
             "bandwidth": 8256000,
             "height": 1080,
-            "id": "1080p"
+            "id": "1080p",
+            "resolution": "1080p"
           },
           {
             "bandwidth": 4256000,
             "height": 720,
-            "id": "720p"
+            "id": "720p",
+            "resolution": "720p"
           },
           {
             "bandwidth": 1756000,
             "height": 480,
-            "id": "480p"
+            "id": "480p",
+            "resolution": "SD"
           }
         ],
         "token": "eyJ0YXJnZXQiOiJtZWRpYS1obHMiLCJtZWRpYUlEIjoibWVkaWEtYXJjaGl2ZSIsImRldmljZUlEIjoiZGV2aWNlLXR2Iiwic2Vzc2lvbklEIjoic2Vzc2lvbi1yZXZlYWxlZCIsInByb2ZpbGVJRCI6InByb2ZpbGUtZGVmYXVsdCIsInJlc3RyaWN0ZWQiOnRydWUsInByb2ZpbGVDYXBhYmlsaXR5IjoiYTQ1YTJjODk2N2M4MTZhNSIsImV4cGlyZXNBdCI6IjE5NzAtMDEtMDFUMDE6MDA6MDBaIn0.u57dpSGp0R8V_WadfzBw1RNTg-AoDvo5gBsv0RFlAQY",
@@ -68,12 +71,14 @@
         {
           "bandwidth": 4256000,
           "height": 720,
-          "id": "720p"
+          "id": "720p",
+          "resolution": "720p"
         },
         {
           "bandwidth": 1756000,
           "height": 480,
-          "id": "480p"
+          "id": "480p",
+          "resolution": "SD"
         }
       ],
       "token": "eyJ0YXJnZXQiOiJtZWRpYS1obHMiLCJtZWRpYUlEIjoibWVkaWEtYWxwaGEiLCJkZXZpY2VJRCI6ImRldmljZS10diIsInNlc3Npb25JRCI6InNlc3Npb24tcmV2ZWFsZWQiLCJwcm9maWxlSUQiOiJwcm9maWxlLWRlZmF1bHQiLCJyZXN0cmljdGVkIjpmYWxzZSwicHJvZmlsZUNhcGFiaWxpdHkiOiJhNDVhMmM4OTY3YzgxNmE1IiwiZXhwaXJlc0F0IjoiMTk3MC0wMS0wMVQwMTowMDowMFoifQ.CuZpqMpf1l34iJyxosKkbvzxabaYs87R7t5cXX0SApk",

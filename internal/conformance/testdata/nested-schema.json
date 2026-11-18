@@ -12844,6 +12844,11 @@
               "kind": "scalar"
             },
             {
+              "name": "resolution",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "videoCodec",
               "kind": "scalar",
               "optional": true
@@ -13051,6 +13056,11 @@
           {
             "name": "label",
             "kind": "scalar"
+          },
+          {
+            "name": "resolution",
+            "kind": "scalar",
+            "optional": true
           },
           {
             "name": "videoCodec",
