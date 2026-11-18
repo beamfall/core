@@ -7,7 +7,7 @@ import { isAuthRejection } from "@/lib/api";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
-import { readViewerCache } from "@/lib/viewerCache";
+import { clearViewerCache, deleteViewerCache, readViewerCache } from "@/lib/viewerCache";
 import { CastRow } from "../components/CastRow";
 import { NotAvailable } from "../components/NotAvailable";
 import { ViewerActions } from "../components/ViewerActions";
@@ -38,18 +38,22 @@ export function CastCrewPage() {
     if (!mediaId) return;
     let alive = true;
     const controller = new AbortController();
-    const cached = readViewerCache<MediaDetail>(identity, mediaDetailCacheKey(mediaId))?.media;
+    const cacheKey = mediaDetailCacheKey(mediaId);
+    const cached = readViewerCache<MediaDetail>(identity, cacheKey)?.media;
     setMedia(cached ?? null);
     setStatus(cached ? "ready" : "loading");
     fetchMedia(mediaId, controller.signal)
       .then((next) => {
         if (!alive) return;
+        // A gone item leaves the shared detail cache too, as the detail page does.
+        if (!next) deleteViewerCache(identity, cacheKey);
         setMedia(next);
         setStatus(next ? "ready" : "missing");
       })
       .catch((err: unknown) => {
         if (!alive) return;
         if (isAuthRejection(err)) {
+          clearViewerCache();
           setMedia(null);
           setStatus("missing");
         } else if (!cached) {

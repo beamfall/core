@@ -5,14 +5,16 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GenericMediaInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
-import { fetchMedia } from "../lib/mediaDetail";
+import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import { fetchMedia, mediaDetailCacheKey } from "../lib/mediaDetail";
 import { CastCrewPage, castCrewPath } from "./CastCrewPage";
 
 vi.mock("../lib/mediaDetail", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/mediaDetail")>()),
   fetchMedia: vi.fn(),
 }));
-vi.mock("@/lib/session", () => ({ useViewerIdentity: () => null }));
+const identity = JSON.stringify(["viewer", "p1", "adult", false]);
+vi.mock("@/lib/session", () => ({ useViewerIdentity: () => identity }));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));
@@ -53,6 +55,7 @@ function renderAt(path: string) {
 
 afterEach(() => {
   cleanup();
+  clearViewerCache();
   vi.clearAllMocks();
 });
 
@@ -73,11 +76,14 @@ describe("CastCrewPage (CORE-2503)", () => {
     expect(names("Production")).toEqual(["/entity/rh"]);
   });
 
-  it("shows not available when the item is gone", async () => {
+  it("shows not available when a cached item is gone, and evicts it", async () => {
+    writeViewerCache(identity, mediaDetailCacheKey("m1"), { media, fields: [] });
+    expect(readViewerCache(identity, mediaDetailCacheKey("m1"))).toBeDefined();
     vi.mocked(fetchMedia).mockResolvedValue(null);
     renderAt(castCrewPath("m1"));
 
     expect(await screen.findByRole("heading", { name: "Not available" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Cast & Crew" })).toBeNull();
+    expect(readViewerCache(identity, mediaDetailCacheKey("m1"))).toBeUndefined();
   });
 });

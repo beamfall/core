@@ -855,21 +855,19 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 				continue
 			}
 			source := element
-			if entityMap.LookupTemplate != "" {
+			// Past MaxLookups the element itself is the source, as if the
+			// map declared no LookupTemplate (it needs no lookup ID then):
+			// the cap bounds requests, never which elements hydrate.
+			if entityMap.LookupTemplate != "" && (entityMap.MaxLookups <= 0 || lookups < entityMap.MaxLookups) {
 				id, ok := resolveJSONPath(element, substituteConfig(entityMap.LookupIDPath, config, identity))
 				if !ok || strings.TrimSpace(id) == "" {
 					continue
 				}
-				// Past MaxLookups the element itself is the source, as if
-				// the map declared no LookupTemplate: the cap bounds
-				// requests, never which elements hydrate.
-				if entityMap.MaxLookups <= 0 || lookups < entityMap.MaxLookups {
-					lookups++
-					var err error
-					source, err = e.fetchJSONDocument(ctx, spec, entityMap.LookupTemplate, "{id}", id, vars, config, 0)
-					if err != nil {
-						return nil, err
-					}
+				lookups++
+				var err error
+				source, err = e.fetchJSONDocument(ctx, spec, entityMap.LookupTemplate, "{id}", id, vars, config, 0)
+				if err != nil {
+					return nil, err
 				}
 			}
 			var name string

@@ -1715,7 +1715,7 @@ func TestLookupResolvesEntityMapRelationAttributesFiltersAndOrdinals(t *testing.
 				"cast": [
 					{"id": 7, "name": "Second Lead", "character": "Mate", "order": 1},
 					{"id": 5, "name": "Lead", "character": "Captain", "order": 0},
-					{"id": 9, "name": "Extra", "character": " ", "order": 2}
+					{"name": "Extra", "character": " ", "order": 2}
 				],
 				"crew": [
 					{"name": "Boss", "job": "Director", "department": "Directing"},
