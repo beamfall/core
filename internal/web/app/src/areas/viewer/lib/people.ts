@@ -45,6 +45,18 @@ export function creditPart(credit: MediaCredit): string {
   return "";
 }
 
+/** The credit's headshot artwork path, or "" when it has none. */
+export function creditPhoto(credit: MediaCredit): string {
+  return credit.artworkSlots?.poster ?? credit.artworkSlots?.thumb ?? "";
+}
+
+/** Whether any person credit carries a headshot or a part, so a cast row has more than names. */
+export function castHasDetail(credits: readonly MediaCredit[] | null | undefined): boolean {
+  return castGroups(credits).some((group) =>
+    group.credits.some((credit) => creditPhoto(credit) !== "" || creditPart(credit) !== ""),
+  );
+}
+
 /** The first letter of a name, for a headshot frame with no photo. */
 export function nameInitial(name: string): string {
   const first = name.trim().codePointAt(0);

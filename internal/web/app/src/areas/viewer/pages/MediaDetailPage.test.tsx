@@ -367,29 +367,42 @@ describe("MediaDetailPage", () => {
     const artist = await screen.findByRole("link", { name: "Ada" });
     expect(artist).toHaveAttribute("href", "/entity/p1");
     expect(screen.getByRole("link", { name: "Bo" })).toBeInTheDocument();
-  });
-
-  it("names an audio item's people once, with no cast row even when they carry photos", async () => {
-    vi.mocked(fetchMedia).mockResolvedValue({
-      ...media,
-      mediaClass: "audio",
-      credits: [
-        {
-          entityID: "p1",
-          title: "Ada",
-          kind: "person",
-          archetype: "person",
-          relation: "by",
-          attributes: { role: "Vocals" },
-          artworkSlots: { poster: "/api/entity/artwork/p1/poster?v=1" },
-        },
-      ],
-    });
-    renderAt(["/media/m1"]);
-
-    expect(await screen.findAllByRole("link", { name: "Ada" })).toHaveLength(1);
+    // Names only: no cast row repeats them.
     expect(screen.queryByRole("heading", { level: 2, name: "People" })).toBeNull();
   });
+
+  // Codex finding (CORE-2406 follow-up): the people-credits spec has no audio
+  // exception, so an audio drama's cast with headshots and parts gets the row,
+  // and the names under the title give way to it rather than repeat it.
+  it.each([
+    ["a headshot", { artworkSlots: { poster: "/api/entity/artwork/p1/poster?v=1" } }],
+    ["a part", { attributes: { character: "The Narrator" } }],
+  ])(
+    "shows an audio item's cast row when a credit carries %s, naming each person once",
+    async (_, extra) => {
+      vi.mocked(fetchMedia).mockResolvedValue({
+        ...media,
+        mediaClass: "audio",
+        credits: [
+          {
+            entityID: "p1",
+            title: "Ada",
+            kind: "person",
+            archetype: "person",
+            relation: "by",
+            ...extra,
+          },
+          { entityID: "p2", title: "Bo", kind: "person", archetype: "person", relation: "by" },
+        ],
+      });
+      const { container } = renderAt(["/media/m1"]);
+
+      expect(await screen.findByRole("heading", { level: 2, name: "People" })).toBeInTheDocument();
+      expect(container.querySelectorAll('a[href="/entity/p1"]')).toHaveLength(1);
+      expect(container.querySelectorAll('a[href="/entity/p2"]')).toHaveLength(1);
+      expect(container.querySelector(".bf-detail-people")).toBeNull();
+    },
+  );
 
   it("shows only viewer-facing fields and puts the rating in the facts row (CORE-1785)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({

@@ -41,6 +41,7 @@ import {
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
+import { castHasDetail } from "../lib/people";
 import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
   type DetailScore,
@@ -147,8 +148,12 @@ export function MediaDetailPage() {
   const media = current?.media;
   useCanonicalMediaAddress("media", media ?? null);
   const context = useContainerContext(media, mediaId);
-  const people = audioPeople(media);
-  // Audio and subtitle picks made here before playback (CORE-2442), for one Media.
+  // Audio names its people under the title, unless a credit carries a headshot
+  // or a part (an audio drama's cast): then the cast row shows them instead, so
+  // no one is named twice.
+  const castRow = !!media && (media.mediaClass !== "audio" || castHasDetail(media.credits));
+  const people = castRow ? [] : audioPeople(media);
+  // Version, audio and subtitle picks made here before playback (CORE-2442), for one Media.
   const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
 
   function goBack() {
@@ -390,9 +395,7 @@ export function MediaDetailPage() {
           </div>
         </section>
 
-        {/* Audio names its people under the title instead (audioPeople), so a
-            music artist, a person credit that may carry a photo, is named once. */}
-        {media && media.mediaClass !== "audio" && <CastRow credits={media.credits} />}
+        {media && castRow && <CastRow credits={media.credits} />}
 
         {media && <MediaRelationRows mediaID={mediaId} />}
 
