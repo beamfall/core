@@ -13,9 +13,10 @@ import (
 // container of audio frames its art like its tracks (CORE-2362); one whose
 // Media mix classes, or that links none, keeps an empty class, and entities
 // never carry a year. Media whose class is unknown keep an empty class and
-// Media with no year keep 0. Certification and AudienceScore come from the
-// core-conventional rating fields (see MediaRatingFrom, CORE-2398); Media
-// without them keep the zero values. Every open catalog plane is read, so an
+// Media with no year keep 0. Certification, AudienceScore and
+// AudienceScoreVotes come from the core-conventional rating fields (see
+// MediaRatingFrom, CORE-2398, CORE-2415); Media without them keep the zero
+// values. Every open catalog plane is read, so an
 // unsealed Encrypted Library's Media are annotated too. The same read sets a
 // media-kind item's LibraryID and DurationSeconds. Safe on any SourceItem slice.
 func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) error {
@@ -42,6 +43,7 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 		duration      int
 		certification string
 		score         sql.NullFloat64
+		votes         sql.NullFloat64
 	}
 	facts := make(map[MediaID]cardFacts, len(ids))
 	for _, reader := range s.openCatalogReadersLocked() {
@@ -63,12 +65,12 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 				var library LibraryID
 				var duration sql.NullInt64
 				var certification string
-				var score sql.NullFloat64
-				if err := rows.Scan(&id, &class, &year, &library, &duration, &certification, &score); err != nil {
+				var score, votes sql.NullFloat64
+				if err := rows.Scan(&id, &class, &year, &library, &duration, &certification, &score, &votes); err != nil {
 					_ = rows.Close()
 					return err
 				}
-				facts[id] = cardFacts{class: class, year: int(year.Int64), library: library, duration: int(duration.Int64), certification: certification, score: score}
+				facts[id] = cardFacts{class: class, year: int(year.Int64), library: library, duration: int(duration.Int64), certification: certification, score: score, votes: votes}
 			}
 			if err := rows.Close(); err != nil {
 				return err
@@ -93,6 +95,7 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 		items[i].DurationSeconds = facts[items[i].ID].duration
 		items[i].Certification = facts[items[i].ID].certification
 		items[i].AudienceScore = audienceScore(facts[items[i].ID].score)
+		items[i].AudienceScoreVotes = audienceScoreVotes(items[i].AudienceScore, facts[items[i].ID].votes)
 	}
 	return nil
 }
