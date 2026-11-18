@@ -76,6 +76,7 @@ import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 import { AddLibrary } from "./AddLibrary";
 import { DeletedLibraries, MutationFailure } from "./DeletedLibraries";
+import { RefreshMetadataButton } from "./LibraryRefreshMetadata";
 import { CARD } from "./libraryStyles";
 
 function lastSegment(path: string): string {
@@ -470,7 +471,8 @@ function LibraryCard({
             </section>
           </Advanced>
         </div>
-        <footer className="flex justify-end border-t border-[var(--border-subtle)] px-4 py-3">
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border-subtle)] px-4 py-3">
+          <RefreshMetadataButton libraryID={library.id} />
           <DeleteLibraryButton library={library} onDeleted={onDeleted} />
         </footer>
       </CollapsibleCard>

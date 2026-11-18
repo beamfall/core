@@ -149,6 +149,22 @@ export async function scanLibrary(libraryID: string, root: string): Promise<Scan
   return data.scanLibrary;
 }
 
+const REFRESH_LIBRARY_METADATA_MUTATION =
+  "mutation RefreshLibraryMetadata($libraryID: String!) { refreshLibraryMetadata(libraryID: $libraryID) { id status } }";
+
+/**
+ * RefreshLibraryMetadata — queue one background job that looks up every
+ * identified item in the Library again (CORE-1136). Locked fields keep their
+ * values; a second request while one is active returns the active job.
+ */
+export async function refreshLibraryMetadata(libraryID: string): Promise<ScanLibraryResult> {
+  const data = await graphql<{ refreshLibraryMetadata: ScanLibraryResult }>(
+    REFRESH_LIBRARY_METADATA_MUTATION,
+    { libraryID },
+  );
+  return data.refreshLibraryMetadata;
+}
+
 const DELETE_LIBRARY_MUTATION =
   "mutation DeleteLibrary($libraryID: String!) { deleteLibrary(libraryID: $libraryID) }";
 

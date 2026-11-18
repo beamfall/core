@@ -7,6 +7,7 @@ export type JobStatusState = "neutral" | "green" | "amber" | "red";
 
 const JOB_KIND_LABELS: Record<string, StringKey> = {
   scan: "jobKindScan",
+  "library-metadata-refresh": "jobKindLibraryMetadataRefresh",
   "subscription-poll": "jobKindSubscriptionPoll",
   "qbittorrent-ingest-poll": "jobKindQBittorrentIngestPoll",
   migration: "jobKindMigration",
@@ -30,6 +31,7 @@ const JOB_KIND_LABELS: Record<string, StringKey> = {
 // One plain sentence per job kind: what the job does and why it exists.
 const JOB_KIND_DESCRIPTIONS: Record<string, StringKey> = {
   scan: "jobKindDescScan",
+  "library-metadata-refresh": "jobKindDescLibraryMetadataRefresh",
   "subscription-poll": "jobKindDescSubscriptionPoll",
   "qbittorrent-ingest-poll": "jobKindDescQBittorrentIngestPoll",
   migration: "jobKindDescMigration",
@@ -74,6 +76,7 @@ const JOB_PROGRESS_MESSAGE_LABELS: Record<string, StringKey> = {
   "Generating assets": "jobProgressMessageGeneratingAssets",
   "Verifying decode integrity": "jobProgressMessageVerifyingDecodeIntegrity",
   "Detecting skip-segments": "jobProgressMessageDetectingSkipSegments",
+  "Refreshing metadata": "jobProgressMessageRefreshingMetadata",
 };
 
 function lookup(labels: LabelSource, key: StringKey): string {

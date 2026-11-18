@@ -900,6 +900,11 @@
     "tier": "session"
   },
   {
+    "field": "refreshlibrarymetadata",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "refreshmediametadata",
     "effect": "write",
     "tier": "session"

@@ -158,19 +158,22 @@ func authorizeDispatchOrder(dispatch *fieldDispatchContext, order fieldDispatchO
 // adminTokenOps are the Console operations the operator CLI performs against a
 // running server (`beamfall scan`, `library list`, `backup`, `token list`,
 // `token revoke`). `libraries` is the read-only discovery step for `scan
-// --library-id` (CORE-1397); every Library mutation stays off this list. An
+// --library-id` (CORE-1397). `refreshLibraryMetadata` queues a provider
+// refresh job like a scan (CORE-1136), so it carries the same authority; every
+// other Library mutation stays off this list. An
 // admin API token is minted only with data-directory access while the server is
 // stopped, so holding one is already host-operator authority; it may run exactly
 // these fields without an Admin Session. Everything else in adminFields —
 // including createApiToken, so a token can never mint another credential —
 // still requires the interactive browser Admin Session (ADR-0007 §2).
 var adminTokenOps = map[string]bool{
-	"scanlibrary":    true,
-	"libraries":      true,
-	"runjob":         true,
-	"backup":         true,
-	"apitokens":      true,
-	"revokeapitoken": true,
+	"scanlibrary":            true,
+	"refreshlibrarymetadata": true,
+	"libraries":              true,
+	"runjob":                 true,
+	"backup":                 true,
+	"apitokens":              true,
+	"revokeapitoken":         true,
 }
 
 // diagnosticsTokenMutations are the admin mutations a diagnostics-tier token
@@ -598,6 +601,7 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"savedfilters":                       newFieldHandler("savedFilters", "savedFilters", fieldRead, roleSession, 55),
 	"scanestimate":                       newFieldHandler("scanEstimate", "scanEstimate", fieldRead, roleSession|roleAdmin, 82),
 	"scanlibrary":                        newFieldHandler("scanLibrary", "scanLibrary", fieldMutation, roleSession|roleAdmin, 52),
+	"refreshlibrarymetadata":             newFieldHandler("refreshLibraryMetadata", "refreshLibraryMetadata", fieldMutation, roleSession|roleAdmin, 52),
 	"scanpreview":                        newFieldHandler("scanPreview", "scanPreview", fieldMutation, roleSession|roleAdmin, 52),
 	"commitscanpreview":                  newFieldHandler("commitScanPreview", "commitScanPreview", fieldMutation, roleSession|roleAdmin, 52),
 	"schedules":                          newFieldHandler("schedules", "schedules", fieldRead, roleSession|roleAdmin, 64),
@@ -1679,6 +1683,12 @@ func dispatchFieldBlock052(dispatch *fieldDispatchContext) response {
 	if fields["scanlibrary"] {
 		job, err := h.scanLibrary(ctx, scope, req)
 		if resp := resolveField(dispatch, "scanlibrary", job, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["refreshlibrarymetadata"] {
+		job, err := h.refreshLibraryMetadata(ctx, scope, req)
+		if resp := resolveField(dispatch, "refreshlibrarymetadata", job, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

@@ -869,6 +869,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		_ = st.Close()
 		return nil, err
 	}
+	// Library-wide metadata refresh (CORE-1136): network-bound provider
+	// lookups, paced per item, so it stays outside the resource governor.
+	jobRegistry.Register(identify.RefreshJobKind, identify.RefreshJobHandler(st, identifyService, identify.RefreshJobPace))
 	// Construct the confined proxy archive before native root observation starts.
 	// A malformed/replaced archive root therefore cannot leak watcher resources.
 	proxyTee, err := proxytee.New(

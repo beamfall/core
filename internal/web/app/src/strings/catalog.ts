@@ -25,6 +25,7 @@ import { itemActionStrings } from "./item-actions";
 import { itemMetadataStrings } from "./item-metadata";
 import { karaokeStrings } from "./karaoke";
 import { libraryHealthStrings } from "./library-health";
+import { libraryMetadataRefreshStrings } from "./library-metadata-refresh";
 import { libraryOperationsStrings } from "./library-operations";
 import { libraryTrashStrings } from "./library-trash";
 import { listeningStrings } from "./listening";
@@ -97,6 +98,7 @@ export const en = {
   ...trackMenuStrings.en,
   ...managedFileStrings.en,
   ...managedFileLibrariesStrings.en,
+  ...libraryMetadataRefreshStrings.en,
   ...managedFileOptionsStrings.en,
   ...backupRetentionStrings.en,
   ...backupRetentionHistoryStrings.en,
@@ -178,6 +180,7 @@ export const fr = {
   ...trackMenuStrings.fr,
   ...managedFileStrings.fr,
   ...managedFileLibrariesStrings.fr,
+  ...libraryMetadataRefreshStrings.fr,
   ...managedFileOptionsStrings.fr,
   ...backupRetentionStrings.fr,
   ...backupRetentionHistoryStrings.fr,
@@ -259,6 +262,7 @@ export const de = {
   ...trackMenuStrings.de,
   ...managedFileStrings.de,
   ...managedFileLibrariesStrings.de,
+  ...libraryMetadataRefreshStrings.de,
   ...managedFileOptionsStrings.de,
   ...backupRetentionStrings.de,
   ...backupRetentionHistoryStrings.de,
@@ -340,6 +344,7 @@ export const es = {
   ...trackMenuStrings.es,
   ...managedFileStrings.es,
   ...managedFileLibrariesStrings.es,
+  ...libraryMetadataRefreshStrings.es,
   ...managedFileOptionsStrings.es,
   ...backupRetentionStrings.es,
   ...backupRetentionHistoryStrings.es,
@@ -421,6 +426,7 @@ export const pt = {
   ...trackMenuStrings.pt,
   ...managedFileStrings.pt,
   ...managedFileLibrariesStrings.pt,
+  ...libraryMetadataRefreshStrings.pt,
   ...managedFileOptionsStrings.pt,
   ...backupRetentionStrings.pt,
   ...backupRetentionHistoryStrings.pt,

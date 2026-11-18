@@ -251,7 +251,7 @@ arch test ever disagree, **the test wins** — the test is the law, this table i
 | `scan` | store, jobs, ffmpeg |
 | `migrate` | store, jobs |
 | `scrape` | plugin |
-| `identify` | store, artwork, scrape, plugin |
+| `identify` | store, artwork, scrape, plugin, jobs (CORE-1136: the Library-wide metadata refresh job handler) |
 | `ingest` | store, jobs, scan, scrape |
 | `playback` | store, auth, ffmpeg, governor, streamtoken, encderiv — CORE-1968: live HLS for an Encrypted Library starts its transcode through the encderiv loopback source, so plaintext never leaves the protected plane |
 | `mediahttp` | store, artwork, genassets, playback, streamtoken, auth |

@@ -306,8 +306,9 @@ var originalScopedFields = []string{
 	"setlibraryrestricted",
 	"setlibraryroots",
 	"setmediafieldlock",
-	"editmediametadata",    // CORE-1715: per-item manual metadata edit (locks edited fields)
-	"refreshmediametadata", // CORE-1715: per-item provider refresh honouring locks
+	"editmediametadata",      // CORE-1715: per-item manual metadata edit (locks edited fields)
+	"refreshmediametadata",   // CORE-1715: per-item provider refresh honouring locks
+	"refreshlibrarymetadata", // CORE-1136: Library-wide metadata refresh job
 	"setpluginactive",
 	"setprofilelibraries",
 	"uninstallplugindata",
@@ -826,7 +827,7 @@ func TestAdminAPITokenPassesOnlyCLIOps(t *testing.T) {
 	handler := newTestHandlerWithStore(st)
 	authorize := func(req *http.Request) { req.Header.Set("Authorization", "Bearer "+token) }
 
-	wantOps := []string{"apitokens", "backup", "libraries", "revokeapitoken", "runjob", "scanlibrary"}
+	wantOps := []string{"apitokens", "backup", "libraries", "refreshlibrarymetadata", "revokeapitoken", "runjob", "scanlibrary"}
 	if got := sortedKeys(adminTokenOps); !slices.Equal(got, wantOps) {
 		t.Fatalf("adminTokenOps = %v, want %v", got, wantOps)
 	}

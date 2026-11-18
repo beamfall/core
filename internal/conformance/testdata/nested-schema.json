@@ -16075,6 +16075,106 @@
     ]
   },
   {
+    "field": "refreshlibrarymetadata",
+    "kind": "object",
+    "children": [
+      {
+        "name": "attempts",
+        "kind": "scalar"
+      },
+      {
+        "name": "class",
+        "kind": "scalar"
+      },
+      {
+        "name": "createdAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "error",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "finishedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "progress",
+        "kind": "object",
+        "children": [
+          {
+            "name": "current",
+            "kind": "scalar"
+          },
+          {
+            "name": "message",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "total",
+            "kind": "scalar"
+          },
+          {
+            "name": "unit",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "startedAt",
+        "kind": "scalar",
+        "optional": true
+      },
+      {
+        "name": "status",
+        "kind": "scalar"
+      },
+      {
+        "name": "target",
+        "kind": "object",
+        "optional": true,
+        "nullable": true,
+        "children": [
+          {
+            "name": "backfill",
+            "kind": "scalar",
+            "optional": true
+          },
+          {
+            "name": "libraryID",
+            "kind": "scalar"
+          },
+          {
+            "name": "libraryTitle",
+            "kind": "scalar"
+          },
+          {
+            "name": "root",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
+      },
+      {
+        "name": "updatedAt",
+        "kind": "scalar",
+        "optional": true
+      }
+    ]
+  },
+  {
     "field": "refreshmediametadata",
     "kind": "object",
     "children": [
