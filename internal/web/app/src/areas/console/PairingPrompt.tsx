@@ -48,7 +48,7 @@ export function PairingPrompt() {
       </p>
       {current && (
         <section
-          className="console-pairing-prompt console-card"
+          className="console-pairing-prompt"
           aria-labelledby={titleID}
           aria-describedby={hintID}
         >
