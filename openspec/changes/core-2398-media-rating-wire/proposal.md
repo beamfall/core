@@ -22,7 +22,7 @@ client can show or verify ratings in demo mode.
   them from the item's fields.
 - The demo seed gives its films a `certification` and its series a `certification-display`, each
   with a `community-rating`.
-- The next client-core-wire minor carries the added fields.
+- client-core-wire 2.24.0 (additive) carries the added fields.
 
 ## Non-goals
 
