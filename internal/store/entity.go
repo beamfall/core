@@ -216,6 +216,45 @@ func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
 	return tx.Commit()
 }
 
+// EnsureEntity creates an Entity when no row carries its ID and otherwise
+// leaves the existing row, its title and its field values untouched. It is
+// the write a field-less hydration (a name-only credit) uses so that it never
+// erases the fields an earlier UpsertEntity stored.
+func (s *Store) EnsureEntity(ctx context.Context, entity Entity) error {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	exists, err := s.entityExists(ctx, entity)
+	if err != nil || exists {
+		return err
+	}
+	return s.UpsertEntity(ctx, entity)
+}
+
+func (s *Store) entityExists(ctx context.Context, entity Entity) (bool, error) {
+	if entity.ID == "" {
+		return false, errors.New("entity ID is required")
+	}
+	if entity.LibraryID == "" {
+		return false, errors.New("library ID is required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, entity.LibraryID)
+	if err != nil {
+		return false, err
+	}
+	var one int
+	err = plane.writer.QueryRowContext(ctx, `SELECT 1 FROM entity WHERE id = ?`, entity.ID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 var entityFieldTables = []string{
 	"entity_field_int", "entity_field_real", "entity_field_text", "entity_field_date",
 }

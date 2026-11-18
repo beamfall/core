@@ -57,9 +57,16 @@ type EntityResult struct {
 	Kind     string
 	Relation string
 	Name     string
-	// SortOrder is set to the source array index when the EntityMap Path
-	// resolves to an array. Nil means the map resolved a scalar node.
+	// SortOrder is the relation row's sort position: the map's OrdinalField
+	// value when it parses as an integer, else the source array index when the
+	// EntityMap Path resolves to an array, plus the map's OrdinalOffset. Nil
+	// means the map resolved a scalar node and declared no usable ordinal.
 	SortOrder *int
+	// RelationAttributes are the map's RelationAttributeMap resolutions:
+	// declared relation attribute → the Path element's scalar value (never a
+	// LookupTemplate document's). Nil when the map declares none or none
+	// resolved.
+	RelationAttributes map[string]string
 	// ArtworkURL is the absolute image URL the map's ArtworkPath resolved to
 	// (after ArtworkBaseURL composition, the ArtworkMap treatment). Empty when
 	// the map declares no ArtworkPath or the path did not resolve.
@@ -844,20 +851,25 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		}
 		lookups := 0
 		for i, element := range elements {
+			if !elementMatchesFilter(element, entityMap.ElementFilter, config) {
+				continue
+			}
 			source := element
 			if entityMap.LookupTemplate != "" {
 				id, ok := resolveJSONPath(element, substituteConfig(entityMap.LookupIDPath, config, identity))
 				if !ok || strings.TrimSpace(id) == "" {
 					continue
 				}
-				if entityMap.MaxLookups > 0 && lookups >= entityMap.MaxLookups {
-					break
-				}
-				lookups++
-				var err error
-				source, err = e.fetchJSONDocument(ctx, spec, entityMap.LookupTemplate, "{id}", id, vars, config, 0)
-				if err != nil {
-					return nil, err
+				// Past MaxLookups the element itself is the source, as if
+				// the map declared no LookupTemplate: the cap bounds
+				// requests, never which elements hydrate.
+				if entityMap.MaxLookups <= 0 || lookups < entityMap.MaxLookups {
+					lookups++
+					var err error
+					source, err = e.fetchJSONDocument(ctx, spec, entityMap.LookupTemplate, "{id}", id, vars, config, 0)
+					if err != nil {
+						return nil, err
+					}
 				}
 			}
 			var name string
@@ -870,9 +882,15 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 				continue
 			}
 			entity := EntityResult{Kind: entityMap.Kind, Relation: entityMap.Relation, Name: name}
-			if isList {
-				order := i
-				entity.SortOrder = &order
+			for attribute, path := range entityMap.RelationAttributeMap {
+				value, ok := resolveJSONPath(element, substituteConfig(path, config, identity))
+				if value = strings.TrimSpace(value); !ok || value == "" {
+					continue
+				}
+				if entity.RelationAttributes == nil {
+					entity.RelationAttributes = map[string]string{}
+				}
+				entity.RelationAttributes[attribute] = value
 			}
 			if entityMap.ArtworkPath != "" {
 				if value, ok := resolveJSONPath(source, substituteConfig(entityMap.ArtworkPath, config, identity)); ok && value != "" {
@@ -898,10 +916,48 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 					}
 				}
 			}
+			entity.SortOrder = entitySortOrder(entityMap, entity, i, isList)
 			entities = append(entities, entity)
 		}
 	}
 	return entities, nil
+}
+
+// elementMatchesFilter reports whether one EntityMap element passes the map's
+// ElementFilter: every filter path, resolved against the element, must equal
+// one of its accepted values. An empty filter keeps every element.
+func elementMatchesFilter(element any, filter map[string][]string, config map[string]string) bool {
+	for path, accepted := range filter {
+		value, ok := resolveJSONPath(element, substituteConfig(path, config, identity))
+		if !ok || !slices.Contains(accepted, strings.TrimSpace(value)) {
+			return false
+		}
+	}
+	return true
+}
+
+// entitySortOrder resolves a hydrated Entity's relation sort position. When
+// the map declares an OrdinalField whose FieldMap or RelationAttributeMap value
+// parses as an integer, that value is the position (a plugin-supplied
+// installment or billing number); otherwise an array element's index is. The
+// map's OrdinalOffset is added either way. A scalar node with no usable
+// ordinal stays unordered (nil) — the FieldMap "omit, never error" posture.
+func entitySortOrder(entityMap plugin.EntityMap, entity EntityResult, index int, isList bool) *int {
+	position, ok := index, isList
+	if entityMap.OrdinalField != "" {
+		raw, present := entity.Fields[entityMap.OrdinalField]
+		if !present {
+			raw, present = entity.RelationAttributes[entityMap.OrdinalField]
+		}
+		if ordinal, err := strconv.Atoi(strings.TrimSpace(raw)); present && err == nil {
+			position, ok = ordinal, true
+		}
+	}
+	if !ok {
+		return nil
+	}
+	position += entityMap.OrdinalOffset
+	return &position
 }
 
 // containerEntityResult maps a container map's node (the first element when it

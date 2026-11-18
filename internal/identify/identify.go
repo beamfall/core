@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -586,9 +588,11 @@ func mediaFieldFromValue(name, fieldType, raw string) (store.MediaField, bool) {
 // relation rows upsert on their (from, name, to) key. Each relation carries
 // the cardinality its RelationSpec declares so the store can enforce "one"
 // (re-identifying a Media moves it to the new container instead of linking
-// both). SortOrder comes from array-backed EntityMap results; scalar maps stay
-// unordered. Entity posters ride along best-effort (applyEntityPoster) and
-// never fail hydration.
+// both). SortOrder and the relation attributes come from the scrape engine's
+// EntityMap results; links of one Entity to the Media under one relation
+// merge into one row first (mergeEntityLinks). An Entity hydrated without
+// typed fields keeps the fields an earlier identification wrote. Entity
+// posters ride along best-effort (applyEntityPoster) and never fail hydration.
 func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) error {
 	if len(result.Entities) == 0 {
 		return nil
@@ -601,29 +605,33 @@ func (s *Service) applyEntities(ctx context.Context, mediaID store.MediaID, bund
 		return err
 	}
 	cardinality := relationCardinalities(bundle)
-	ordinalFields := relationOrdinalFields(spec)
-	var containers []scrape.EntityResult
+	var containers, linked []scrape.EntityResult
 	for _, hydrated := range result.Entities {
 		if hydrated.Container {
 			containers = append(containers, hydrated)
-			continue
+		} else {
+			linked = append(linked, hydrated)
 		}
+	}
+	for _, hydrated := range mergeEntityLinks(library, linked) {
 		id := entityIDForName(library, hydrated.Kind, hydrated.Name)
-		if err := s.entities.UpsertEntity(ctx, store.Entity{
+		entity := store.Entity{
 			ID:        id,
 			LibraryID: library,
 			Kind:      hydrated.Kind,
 			Title:     hydrated.Name,
 			Fields:    entityFields(bundle, hydrated),
-		}); err != nil {
+		}
+		if err := s.writeEntity(ctx, entity); err != nil {
 			return err
 		}
 		if err := s.entities.UpsertEntityRelation(ctx, store.EntityRelation{
 			FromEntityID: id,
 			Name:         hydrated.Relation,
 			ToMediaID:    mediaID,
+			Attributes:   hydrated.RelationAttributes,
 			Cardinality:  cardinality[hydrated.Kind+"\x00"+hydrated.Relation],
-			SortOrder:    relationSortOrder(hydrated, ordinalFields),
+			SortOrder:    hydrated.SortOrder,
 		}); err != nil {
 			return err
 		}
@@ -720,41 +728,78 @@ func relationCardinalities(bundle plugin.Bundle) map[string]string {
 	return cardinality
 }
 
-// relationOrdinalFields indexes the scraper's declared OrdinalField by
-// kind\x00relation (the EntityMap addressing, the relationCardinalities shape):
-// for an EntityMap that declares one, the FieldMap key whose resolved value is
-// the relation's ordinal. A pair with no OrdinalField is absent from the map.
-func relationOrdinalFields(spec plugin.ScraperSpec) map[string]string {
-	fields := map[string]string{}
-	for _, entityMap := range spec.EntityMaps {
-		if entityMap.OrdinalField != "" {
-			fields[entityMap.Kind+"\x00"+entityMap.Relation] = entityMap.OrdinalField
+// mergeEntityLinks folds the hydrated results that link one Entity to the
+// Media under one relation into a single result, in first-seen order: a
+// credit list can name one person twice (two jobs, or a cast and a crew map),
+// and the relation row is keyed by (from, name, to), so separate writes would
+// leave only the last link's attributes. The merge keeps the first non-empty
+// artwork and parent, unions typed fields (first value wins), joins distinct
+// values of one relation attribute with ", " in order, and keeps the smallest
+// sort position.
+func mergeEntityLinks(library store.LibraryID, hydrated []scrape.EntityResult) []scrape.EntityResult {
+	index := map[string]int{}
+	var merged []scrape.EntityResult
+	for _, result := range hydrated {
+		key := string(entityIDForName(library, result.Kind, result.Name)) + "\x00" + result.Relation
+		at, seen := index[key]
+		if !seen {
+			index[key] = len(merged)
+			result.Fields = maps.Clone(result.Fields)
+			result.RelationAttributes = maps.Clone(result.RelationAttributes)
+			merged = append(merged, result)
+			continue
+		}
+		into := &merged[at]
+		if into.ArtworkURL == "" {
+			into.ArtworkURL = result.ArtworkURL
+		}
+		if into.ParentName == "" {
+			into.ParentName, into.ParentRelation = result.ParentName, result.ParentRelation
+		}
+		for name, value := range result.Fields {
+			if _, present := into.Fields[name]; !present {
+				if into.Fields == nil {
+					into.Fields = map[string]string{}
+				}
+				into.Fields[name] = value
+			}
+		}
+		for _, name := range slices.Sorted(maps.Keys(result.RelationAttributes)) {
+			value := result.RelationAttributes[name]
+			existing, present := into.RelationAttributes[name]
+			switch {
+			case !present:
+				if into.RelationAttributes == nil {
+					into.RelationAttributes = map[string]string{}
+				}
+				into.RelationAttributes[name] = value
+			case !slices.Contains(strings.Split(existing, ", "), value):
+				into.RelationAttributes[name] = existing + ", " + value
+			}
+		}
+		if result.SortOrder != nil && (into.SortOrder == nil || *result.SortOrder < *into.SortOrder) {
+			into.SortOrder = result.SortOrder
 		}
 	}
-	return fields
+	return merged
 }
 
-// relationSortOrder resolves a hydrated Entity's relation sort position. When
-// its EntityMap declared an OrdinalField and the resolved value parses as an
-// integer, that value is the ordinal (a plugin-supplied position number) — the
-// source that makes OrderedChildren and next-up land in the intended order
-// rather than mere document position. A missing or non-numeric ordinal falls
-// back to the array-index SortOrder the scrape engine set, the FieldMap "omit,
-// never error" posture.
-func relationSortOrder(hydrated scrape.EntityResult, ordinalFields map[string]string) *int {
-	field, ok := ordinalFields[hydrated.Kind+"\x00"+hydrated.Relation]
-	if !ok {
-		return hydrated.SortOrder
+// EntityEnsurer is optionally implemented by an EntityStore: EnsureEntity
+// creates the Entity when it is absent and otherwise leaves it, its title and
+// its typed fields as they are.
+type EntityEnsurer interface {
+	EnsureEntity(ctx context.Context, entity store.Entity) error
+}
+
+// writeEntity upserts a hydrated Entity. One hydrated without typed fields (a
+// name-only credit, or an element past its map's lookup cap) must not erase
+// the fields an earlier identification wrote, since UpsertEntity replaces
+// them, so it only ensures the Entity exists when the store can do that.
+func (s *Service) writeEntity(ctx context.Context, entity store.Entity) error {
+	if ensurer, ok := s.entities.(EntityEnsurer); ok && len(entity.Fields) == 0 {
+		return ensurer.EnsureEntity(ctx, entity)
 	}
-	raw, present := hydrated.Fields[field]
-	if !present {
-		return hydrated.SortOrder
-	}
-	ordinal, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil {
-		return hydrated.SortOrder
-	}
-	return &ordinal
+	return s.entities.UpsertEntity(ctx, entity)
 }
 
 // applyEntityPoster downloads and stores one hydrated Entity's poster.

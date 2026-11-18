@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { MediaCredit, SourceItem } from "@/lib/graphql/types";
-import { castGroups, castHasDetail, creditPart, filmographyOrder, nameInitial } from "./people";
+import {
+  castGroups,
+  castHasDetail,
+  creditPart,
+  creditsWithJob,
+  filmographyOrder,
+  nameInitial,
+} from "./people";
 
 const person = (entityID: string, attributes?: Record<string, string>): MediaCredit => ({
   entityID,
@@ -31,6 +38,46 @@ describe("castGroups", () => {
       { department: "", credits: [person("a"), person("b")] },
     ]);
     expect(castGroups(undefined)).toEqual([]);
+  });
+
+  it("lists cast before crew departments, a merged credit under each of its departments", () => {
+    const groups = castGroups([
+      person("lead", { character: "John Nash" }),
+      person("ron", { character: "Cameo", job: "Director", department: "Directing" }),
+      person("akiva", { job: "Screenplay, Producer", department: "Writing, Production" }),
+    ]);
+    expect(
+      groups.map((g) => [g.department, g.credits.map((c) => [c.entityID, creditPart(c)])]),
+    ).toEqual([
+      [
+        "",
+        [
+          ["lead", "John Nash"],
+          ["ron", "Cameo"],
+        ],
+      ],
+      ["Directing", [["ron", "Director"]]],
+      ["Writing", [["akiva", "Screenplay, Producer"]]],
+      ["Production", [["akiva", "Screenplay, Producer"]]],
+    ]);
+  });
+});
+
+describe("creditsWithJob", () => {
+  it("returns people holding any of the jobs in credit order, once each", () => {
+    const credits = [
+      person("a", { job: "Producer" }),
+      person("b", { job: "Writer, Director" }),
+      person("c", { job: "Screenplay" }),
+      person("b", { job: "Screenplay" }),
+      { ...person("box", { job: "Writer" }), archetype: "container" },
+    ];
+    expect(creditsWithJob(credits, ["Writer", "Screenplay"]).map((c) => c.entityID)).toEqual([
+      "b",
+      "c",
+    ]);
+    expect(creditsWithJob(credits, ["Director"]).map((c) => c.entityID)).toEqual(["b"]);
+    expect(creditsWithJob(undefined, ["Director"])).toEqual([]);
   });
 });
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1693,5 +1694,98 @@ func TestFingerprintPlaceholdersSubstituteEmptyWhenUnknown(t *testing.T) {
 	}
 	if want := "/entry/e7?oshash=&phash=&duration="; gotURL != want {
 		t.Fatalf("request URL = %q, want %q", gotURL, want)
+	}
+}
+
+// A credit list maps element-relative relation attributes, skips elements an
+// ElementFilter rejects, hydrates elements past MaxLookups from the element
+// itself, and orders by the OrdinalField (a relation attribute here) plus the
+// map's OrdinalOffset. A scalar FieldMap ordinal still overrides the index,
+// and a non-numeric one falls back to it.
+func TestLookupResolvesEntityMapRelationAttributesFiltersAndOrdinals(t *testing.T) {
+	var pathsMu sync.Mutex
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pathsMu.Lock()
+		paths = append(paths, r.URL.Path)
+		pathsMu.Unlock()
+		switch r.URL.Path {
+		case "/lookup/voyage":
+			fmt.Fprint(w, `{
+				"cast": [
+					{"id": 7, "name": "Second Lead", "character": "Mate", "order": 1},
+					{"id": 5, "name": "Lead", "character": "Captain", "order": 0},
+					{"id": 9, "name": "Extra", "character": " ", "order": 2}
+				],
+				"crew": [
+					{"name": "Boss", "job": "Director", "department": "Directing"},
+					{"name": "Grip", "job": "Key Grip", "department": "Crew"},
+					{"name": "Pen", "job": "Screenplay", "department": "Writing"}
+				],
+				"seasons": [
+					{"name": "Later", "number": "2"},
+					{"name": "Odd", "number": "x"}
+				]
+			}`)
+		case "/person/7":
+			fmt.Fprint(w, `{"name": "Second Lead", "birthday": "1970-01-01"}`)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	engine := New(WithInsecureLoopback())
+	result, err := engine.Lookup(context.Background(), plugin.ScraperSpec{
+		ID:             "films",
+		Kind:           "http-json",
+		Endpoint:       server.URL,
+		LookupTemplate: "/lookup/{id}",
+		EntityMaps: []plugin.EntityMap{
+			{Kind: "person", Relation: "credited-in", Path: "cast", NamePath: "name",
+				LookupTemplate: "/person/{id}", LookupIDPath: "id", MaxLookups: 1,
+				FieldMap:             map[string]string{"birth-date": "birthday"},
+				RelationAttributeMap: map[string]string{"character": "character", "billing": "order"},
+				OrdinalField:         "billing"},
+			{Kind: "person", Relation: "credited-in", Path: "crew", NamePath: "name",
+				RelationAttributeMap: map[string]string{"job": "job", "department": "department"},
+				ElementFilter:        map[string][]string{"job": {"Director", "Screenplay"}},
+				OrdinalOffset:        1000},
+			{Kind: "season", Relation: "contains", Path: "seasons", NamePath: "name",
+				FieldMap: map[string]string{"position": "number"}, OrdinalField: "position"},
+		},
+	}, "voyage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type row struct {
+		name  string
+		order int
+		attrs map[string]string
+		birth string
+	}
+	var got []row
+	for _, entity := range result.Entities {
+		if entity.SortOrder == nil {
+			t.Fatalf("entity %q has no sort order", entity.Name)
+		}
+		got = append(got, row{entity.Name, *entity.SortOrder, entity.RelationAttributes, entity.Fields["birth-date"]})
+	}
+	want := []row{
+		{"Second Lead", 1, map[string]string{"character": "Mate", "billing": "1"}, "1970-01-01"},
+		{"Lead", 0, map[string]string{"character": "Captain", "billing": "0"}, ""},
+		{"Extra", 2, map[string]string{"billing": "2"}, ""},
+		{"Boss", 1000, map[string]string{"job": "Director", "department": "Directing"}, ""},
+		{"Pen", 1002, map[string]string{"job": "Screenplay", "department": "Writing"}, ""},
+		{"Later", 2, nil, ""},
+		{"Odd", 1, nil, ""},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("entities =\n%#v\nwant\n%#v", got, want)
+	}
+	pathsMu.Lock()
+	defer pathsMu.Unlock()
+	if len(paths) != 2 || paths[1] != "/person/7" {
+		t.Fatalf("requests = %v, want the primary lookup plus one capped person lookup", paths)
 	}
 }

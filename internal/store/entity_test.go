@@ -78,6 +78,38 @@ func TestUpsertEntityRoundTripsAllFieldTypes(t *testing.T) {
 	}
 }
 
+// EnsureEntity creates a missing Entity and leaves an existing one, its title
+// and its fields as they are.
+func TestEnsureEntityKeepsExistingFields(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	created := widgetEntity("entity-new", "library-local")
+	if err := st.EnsureEntity(ctx, created); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Entity(ctx, "entity-new", LibraryFilter{AllLibraries: true}); err != nil || got.Title != created.Title {
+		t.Fatalf("ensured entity = %#v, %v; want it created", got, err)
+	}
+
+	stored := widgetEntity("entity-one", "library-local")
+	stored.Fields = []EntityField{{Name: "summary", Type: EntityFieldText, Text: "kept"}}
+	if err := st.UpsertEntity(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+	bare := widgetEntity("entity-one", "library-local")
+	bare.Title = "Other Casing"
+	if err := st.EnsureEntity(ctx, bare); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Entity(ctx, "entity-one", LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != stored.Title || len(got.Fields) != 1 || got.Fields[0].Text != "kept" {
+		t.Fatalf("entity after ensure = %#v, want the stored title and field kept", got)
+	}
+}
+
 func TestUpsertEntityValidation(t *testing.T) {
 	st := openSeeded(t)
 	cases := []Entity{
