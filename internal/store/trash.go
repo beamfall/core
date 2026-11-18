@@ -184,7 +184,14 @@ func (s *Store) RestoreMedia(ctx context.Context, id MediaID, filter LibraryFilt
 	if !known {
 		return errors.New("media not found")
 	}
-	merged, err := mergedAsVersion(ctx, s.catalogR, id)
+	// The merge check and the restore share one write transaction, so a
+	// version merge cannot land between them.
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	merged, err := mergedAsVersion(ctx, tx, id)
 	if err != nil {
 		return err
 	}
@@ -192,9 +199,21 @@ func (s *Store) RestoreMedia(ctx context.Context, id MediaID, filter LibraryFilt
 		return ErrRestoreMergedVersion
 	}
 	now := time.Now().UTC()
-	if _, err = s.catalogW.ExecContext(ctx,
-		`UPDATE media SET trashed_at_ms = NULL WHERE id = ?`, id); err != nil {
+	result, err := tx.ExecContext(ctx,
+		`UPDATE media SET trashed_at_ms = NULL WHERE id = ? AND trashed_at_ms IS NOT NULL`, id)
+	if err != nil {
 		return err
+	}
+	restored, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if restored == 0 {
+		// A concurrent restore already returned it and announced it.
+		return nil
 	}
 	// The item is back in the catalog — emit media.created so a client that
 	// dropped it on the matching media.deleted re-adds it (created/updated both
