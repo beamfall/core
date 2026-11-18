@@ -110,12 +110,20 @@ export function matchSelectedCaption(
   return best;
 }
 
-/** The display name of a language tag, or "" when it has none. */
+/**
+ * The display name of a language tag, or "" when it has none. A region or
+ * script follows the language ("Spanish (Latin America)", "Chinese
+ * (Traditional)"), so regional tracks sort and group under their language.
+ */
 export function languageName(tag: string | undefined, locale: string): string {
   const canonical = canonicalLanguage(tag);
   if (!canonical || canonical === "und") return "";
   try {
-    const names = new Intl.DisplayNames([locale], { type: "language", fallback: "code" });
+    const names = new Intl.DisplayNames([locale], {
+      type: "language",
+      fallback: "code",
+      languageDisplay: "standard",
+    });
     return names.of(canonical) ?? tag ?? "";
   } catch {
     return tag ?? "";
@@ -195,22 +203,145 @@ export function audioTrackLabel(track: PlaybackAudioTrack, text: TrackLabelText)
   ]);
 }
 
-/** "German · Forced · SRT · External"; a burned-in stream says so. */
-export function captionTrackLabel(track: PlaybackCaptionTrack, text: TrackLabelText): string {
+// Words in a stream title that already name a role, so the label does not
+// repeat it ("English (SDH)" needs no "· SDH").
+const TITLE_ROLE_WORDS: Record<"forced" | "sdh" | "commentary" | "visualImpaired", RegExp> = {
+  forced: /\bforced\b/i,
+  sdh: /\b(sdh|cc|hearing impaired)\b/i,
+  commentary: /\bcommentary\b/i,
+  visualImpaired: /\b(described|audio description)\b/i,
+};
+
+// "non-SDH", "Not Forced", "No SDH or CC": a negation and the role words (and
+// "and", "or", "nor") after it, up to a bracket, comma, semicolon, bar or
+// spaced dash (QUALIFIER_DASH); they deny a role rather than name it.
+// An en or em dash, or a hyphen with a space beside it: "non-SDH - Forced".
+const QUALIFIER_DASH = /\s-|-\s|[–—]/g;
+const NEGATED_ROLES =
+  /\b(non|not|no)\b(?:[^a-z0-9()[\]{},;|]+(?:sdh|cc|hearing|impaired|forced|commentary|described|audio|description|and|or|nor)\b)+/gi;
+
+/**
+ * A caption track's label without the parts that only tell same-label tracks
+ * apart: "English · SDH", "Spanish (Latin America)", "English · Forced". The
+ * stream title replaces the language name when it names the language and adds
+ * more ("English (SDH)"), and follows it when it names something else
+ * ("English · Signs & Songs"); roles the title already names are not repeated.
+ * A burned-in stream says so, after any format and source.
+ */
+function captionBaseLabel(
+  track: PlaybackCaptionTrack,
+  text: TrackLabelText,
+  extra: string[] = [],
+): string {
   const language = languageName(track.language, text.locale) || text.unknownLanguage;
   const title = track.title?.trim() ?? "";
+  const titleLower = title.toLocaleLowerCase();
+  const languageLower = language.toLocaleLowerCase();
+  const affirmed = title.replace(QUALIFIER_DASH, ",").replace(NEGATED_ROLES, " ");
+  const named = (role: keyof typeof TITLE_ROLE_WORDS) => TITLE_ROLE_WORDS[role].test(affirmed);
+  let head: string[];
+  if (!title || languageLower.includes(titleLower)) head = [language];
+  else if (titleLower.includes(languageLower) || !languageName(track.language, text.locale)) {
+    head = [title];
+  } else head = [language, title];
   return joinLabel([
-    language,
-    // The stream's own title ("Signs & Songs") tells same-language tracks apart.
-    title.toLocaleLowerCase() === language.toLocaleLowerCase() ? "" : title,
-    track.forced ? text.forced : "",
-    track.sdh ? text.sdh : "",
-    track.commentary ? text.commentary : "",
-    track.visualImpaired ? text.described : "",
-    codecName(track.format || ""),
-    captionKind(track) === "sidecar" ? text.external : "",
+    ...head,
+    track.forced && !named("forced") ? text.forced : "",
+    track.sdh && !named("sdh") ? text.sdh : "",
+    track.commentary && !named("commentary") ? text.commentary : "",
+    track.visualImpaired && !named("visualImpaired") ? text.described : "",
+    ...extra,
     isBurnInCaption(track) ? text.burnedIn : "",
   ]);
+}
+
+/** "German · Forced · SRT · External": the base label with the track's format and source. */
+export function captionTrackLabel(track: PlaybackCaptionTrack, text: TrackLabelText): string {
+  return captionBaseLabel(track, text, [
+    codecName(track.format || ""),
+    captionKind(track) === "sidecar" ? text.external : "",
+  ]);
+}
+
+/**
+ * The menu labels of a file's caption tracks (CORE-2523): each track's base
+ * label, with its format and source added only where they tell tracks that
+ * share a base label apart, and a number only where those still read the same.
+ */
+export function captionTrackLabels(
+  tracks: readonly PlaybackCaptionTrack[],
+  text: TrackLabelText,
+  numbered: (n: number) => string,
+): string[] {
+  const base = tracks.map((track) => captionBaseLabel(track, text));
+  const full = tracks.map((track) => captionTrackLabel(track, text));
+  const variants = new Map<string, Set<string>>();
+  base.forEach((label, index) => {
+    const seen = variants.get(label) ?? new Set<string>();
+    seen.add(full[index]);
+    variants.set(label, seen);
+  });
+  return distinctLabels(
+    base.map((label, index) => ((variants.get(label)?.size ?? 0) > 1 ? full[index] : label)),
+    numbered,
+  );
+}
+
+// Within one language: forced first, then regular, then SDH, then the
+// commentary and described tracks.
+function captionRoleRank(track: PlaybackCaptionTrack): number {
+  if (track.forced) return 0;
+  if (track.commentary) return 3;
+  if (track.visualImpaired) return 4;
+  if (track.sdh) return 2;
+  return 1;
+}
+
+/**
+ * A file's caption tracks in menu order (CORE-2523): tracks in the preferred
+ * languages first, in preference order, then the rest by language name, then
+ * untagged tracks. A language's tracks stay together whatever region a
+ * preference names (a pt-BR preference still lists Portuguese (Portugal) with
+ * the Portuguese tracks); within it the preferred variants come first, then
+ * the plain language before regional variants, forced before regular before
+ * SDH; ties keep file order.
+ */
+export function orderCaptionTracks(
+  tracks: readonly PlaybackCaptionTrack[],
+  preferred: readonly string[],
+  locale: string,
+): PlaybackCaptionTrack[] {
+  const collator = new Intl.Collator([locale]);
+  const primaryOf = (tag: string | undefined) => canonicalLanguage(tag).split("-")[0];
+  const preferredPrimaries = preferred.map(primaryOf);
+  const keys = tracks.map((track, index) => {
+    const canonical = canonicalLanguage(track.language);
+    const tagged = canonical !== "" && canonical !== "und";
+    const primary = primaryOf(track.language);
+    const rank = tagged ? preferredPrimaries.indexOf(primary) : -1;
+    const variant = preferred.findIndex((want) => sameLanguage(track.language, want));
+    return {
+      track,
+      index,
+      tagged,
+      rank: rank < 0 ? preferred.length : rank,
+      variant: variant < 0 ? preferred.length : variant,
+      group: tagged ? languageName(primary, locale) : "",
+      name: tagged ? languageName(track.language, locale) : "",
+      role: captionRoleRank(track),
+    };
+  });
+  keys.sort(
+    (a, b) =>
+      Number(b.tagged) - Number(a.tagged) ||
+      a.rank - b.rank ||
+      collator.compare(a.group, b.group) ||
+      a.variant - b.variant ||
+      collator.compare(a.name, b.name) ||
+      a.role - b.role ||
+      a.index - b.index,
+  );
+  return keys.map((key) => key.track);
 }
 
 /**

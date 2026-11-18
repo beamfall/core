@@ -131,11 +131,13 @@ func (d *sidecarDiscovery) discover(mediaPath string) []store.MediaFileSidecarCa
 
 // parseSidecarHints parses the dot-separated hint segments of a sidecar stem
 // (the part after the media stem, e.g. "en.forced" or "en.sdh") into the
-// generic player track hints (invariant #1): an ISO-639 language tag, a forced
+// generic player track hints (invariant #1): a BCP-47-ish language tag, a forced
 // flag, and an SDH/hearing-impaired flag. "forced", "sdh", "hi", and "cc" are
-// the recognised flag segments (case-insensitive); the first non-flag segment
-// is taken as the language tag. Order-independent, so "en.forced" and
-// "forced.en" both parse, and an empty hint ("title.srt") yields no hints.
+// the recognised flag segments (case-insensitive); the first language-shaped
+// segment is taken as the language tag, so a track number ("en.2") or other
+// non-language segment is skipped (CORE-2523). Order-independent, so
+// "en.forced" and "forced.en" both parse, and an empty hint ("title.srt")
+// yields no hints.
 func parseSidecarHints(hint string) (language string, forced, sdh bool) {
 	if hint == "" {
 		return "", false, false
@@ -150,9 +152,40 @@ func parseSidecarHints(hint string) (language string, forced, sdh bool) {
 			sdh = true
 		default:
 			if language == "" {
-				language = seg
+				language = sidecarLanguageTag(seg)
 			}
 		}
 	}
 	return language, forced, sdh
+}
+
+// sidecarLanguageTag reads one hint segment as a language tag: a primary
+// subtag of letters, then letter-or-digit subtags joined by "-" or "_"
+// ("pt_br", "es-419", "zh-hant"). Region and script subtags take their
+// conventional case ("pt-BR", "zh-Hant"). It returns "" for a segment that is
+// not language-shaped (a track number, "1080p", "x264-group").
+func sidecarLanguageTag(seg string) string {
+	subtags := strings.Split(strings.ReplaceAll(seg, "_", "-"), "-")
+	for i, sub := range subtags {
+		if len(sub) == 0 || len(sub) > 8 {
+			return ""
+		}
+		for _, r := range sub {
+			isLetter := r >= 'a' && r <= 'z'
+			if !isLetter && (i == 0 || r < '0' || r > '9') {
+				return ""
+			}
+		}
+		switch {
+		case i == 0:
+			if len(sub) < 2 {
+				return ""
+			}
+		case len(sub) == 2 && sub[0] >= 'a':
+			subtags[i] = strings.ToUpper(sub)
+		case len(sub) == 4 && sub[0] >= 'a':
+			subtags[i] = strings.ToUpper(sub[:1]) + sub[1:]
+		}
+	}
+	return strings.Join(subtags, "-")
 }

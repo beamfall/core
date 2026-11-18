@@ -840,6 +840,14 @@ func TestParseSidecarHints(t *testing.T) {
 		{"forced.en", "en", true, false},
 		{"spa.hi", "spa", false, true},
 		{"en.cc", "en", false, true},
+		// CORE-2523: track numbers and non-language segments are skipped;
+		// "_" separates a region, and region/script subtags take their case.
+		{"2.pt_br.forced", "pt-BR", true, false},
+		{"en.2", "en", false, false},
+		{"1080p.es-419", "es-419", false, false},
+		{"zh-hant.sdh", "zh-Hant", false, true},
+		{"english", "english", false, false},
+		{"x264-group", "", false, false},
 	}
 	for _, tc := range cases {
 		lang, forced, sdh := parseSidecarHints(tc.hint)

@@ -1,5 +1,5 @@
 import type Hls from "hls.js";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { hlsStreamOf, type PlaybackInfo, type PlaybackStream } from "../lib/playback";
 import { type QualityChoice, readQualityChoice, writeQualityChoice } from "../lib/qualityChoice";
@@ -13,9 +13,10 @@ import {
 import { audioTrackList, audioTracksArray } from "./media-tracks";
 import {
   audioTrackLabel,
-  captionTrackLabel,
-  distinctLabels,
+  captionTrackLabels,
+  orderCaptionTracks,
   type TrackLabelText,
+  trackPreferencePolicy,
 } from "./streamTracks";
 import {
   type StreamTrackControl,
@@ -157,7 +158,15 @@ export function useLiveTracks({
   const subtitleModel = buildTrackMenuModel("subtitle", { hlsSubtitle, nativeSubtitle }, labels);
 
   const fileAudio = trackControl ? (info?.audioTracks ?? []) : [];
-  const fileCaptions = trackControl ? (info?.captionTracks ?? []) : [];
+  const captionTracks = info?.captionTracks;
+  const trackPreferences = info?.trackPreferences;
+  // Menu order (CORE-2523): the Profile's subtitle languages, else the display
+  // language, first; then by language, forced/regular/SDH within one.
+  const fileCaptions = useMemo(() => {
+    if (!trackControl || !captionTracks) return [];
+    const preferred = trackPreferencePolicy(trackPreferences)?.subtitleLanguages ?? [];
+    return orderCaptionTracks(captionTracks, preferred.length ? preferred : [locale], locale);
+  }, [trackControl, captionTracks, trackPreferences, locale]);
   const unavailableReason = trackControl ? (info?.subtitlesUnavailableReason ?? "") : "";
   const fileSubtitles = fileCaptions.length > 0 || unavailableReason !== "";
   const labelText: TrackLabelText = {
@@ -200,9 +209,8 @@ export function useLiveTracks({
   let subtitleOptions: MenuOption[];
   if (fileSubtitles && trackControl) {
     const active = trackControl.activeCaptionID();
-    const captionLabels = distinctLabels(
-      fileCaptions.map((track) => captionTrackLabel(track, labelText)),
-      (number) => t("trackDuplicateNumber", { number }),
+    const captionLabels = captionTrackLabels(fileCaptions, labelText, (number) =>
+      t("trackDuplicateNumber", { number }),
     );
     subtitleOptions = [
       option("off", labels.subtitlesOff, active === null),

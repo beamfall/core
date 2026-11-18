@@ -1,0 +1,8 @@
+- [x] Probe: SDH/CC, forced, commentary words in a subtitle stream `title` set the flags (negations ignored)
+- [x] Scan: sidecar tag parsing skips numeric segments and accepts `_` region separators
+- [x] No wire change (flags already on the wire); title exposure left to a later wire minor
+- [x] Web: language/region/flag labels, number only for identical tracks
+- [x] Web: preferred-language-first, grouped forced/regular/SDH order in picker and player menu
+- [x] Go and vitest coverage
+- [ ] Verified on tower after a rescan (lander)
+- [ ] `openspec archive core-2523-subtitle-picker` after landing

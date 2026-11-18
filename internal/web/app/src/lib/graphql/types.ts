@@ -206,6 +206,8 @@ export interface SessionInfo {
   /** Whether the bound Profile has a Restrictions PIN (CORE-2462). Absent from
    * a server that predates the field; callers then assume a PIN is set. */
   revealPinSet?: boolean;
+  /** The bound Profile's subtitle languages, most preferred first; omitted when none. */
+  subtitleLanguages?: string[];
 }
 
 /** A Profile row offered to the picker (graph.ProfileSummary). */

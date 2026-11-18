@@ -130,7 +130,7 @@ describe("Library views (CORE-2362)", () => {
     renderAt("/n/tunes/all");
 
     const grid = await screen.findByRole("list", { name: "Makers" });
-    expect(within(grid).getByText("Maker A")).toBeInTheDocument();
+    expect(await within(grid).findByText("Maker A")).toBeInTheDocument();
     expect(within(grid).getByText("3 items")).toBeInTheDocument();
     expect(within(grid).getByText("1 item")).toBeInTheDocument();
     expect(screen.getByText("2 items")).toHaveAttribute("role", "status");

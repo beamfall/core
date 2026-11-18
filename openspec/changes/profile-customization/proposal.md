@@ -26,7 +26,7 @@ upload a picture that every device shows in place of the initial.
   another Profile's needs an Admin Session. `ProfileSummary.pictureURL` carries the versioned URL,
   or is empty.
 - Each change writes an Activity entry (`profile.order`, `profile.avatar`, `profile.picture`).
-- Wire contract `client-core-wire` 2.27.0 adds the two mutations and `pictureURL`.
+- Wire contract `client-core-wire` 2.30.0 adds the two mutations and `pictureURL`.
 - **Web.** Console Profiles rows gain a drag grip, up and down buttons and Alt+Arrow keys, with
   an optimistic move, a screen-reader announcement and a rollback on failure. Each row's avatar
   opens a Customize dialog with the photo editor and the icon-and-colour chooser. The viewer's

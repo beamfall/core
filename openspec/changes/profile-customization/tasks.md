@@ -2,7 +2,7 @@
 - [x] Store: reorder, avatar, picture set/get/delete, with tests
 - [x] GraphQL: `reorderProfiles`, `setProfileAvatar`, `ProfileSummary.pictureURL`, with tests
 - [x] Picture routes: upload, serve, delete; normalization and EXIF orientation, with tests
-- [x] Wire contract 2.27.0 published; mgmt manifests and registry updated
+- [x] Wire contract 2.30.0 published; mgmt manifests and registry updated
 - [x] Web: Console reorder (drag, buttons, Alt+Arrow) and Customize dialog; photo editor; strings in five locales; vitest coverage
 - [ ] Apple clients show the picture and follow the order (CORE-2478)
 - [ ] Android phone shows the picture and follows the order (CORE-2479)

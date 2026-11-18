@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 )
 
 //go:embed ffmpeg.pin
@@ -124,8 +125,12 @@ type ProbeStream struct {
 	// Language is the BCP-47-ish ISO-639 language tag from the stream tags
 	// ("eng", "spa"); "" when untagged.
 	Language string
+	// Title is the stream's container title tag ("English (SDH)"); "" when
+	// untagged.
+	Title string
 	// Default, Forced, HearingImpaired, VisualImpaired, and Commentary mirror
-	// the ffprobe disposition flags.
+	// the ffprobe disposition flags. A subtitle stream also takes Forced,
+	// HearingImpaired and Commentary from words in its Title (CORE-2523).
 	Default         bool
 	Forced          bool
 	HearingImpaired bool
@@ -3068,6 +3073,7 @@ func parseProbe(data []byte, path string) (Probe, error) {
 			Profile:            cleanProfile(stream.Profile),
 			Level:              stream.Level,
 			Language:           stream.Tags["language"],
+			Title:              strings.TrimSpace(caseInsensitiveTag(stream.Tags, "title")),
 			Default:            stream.Disposition["default"] == 1,
 			Forced:             stream.Disposition["forced"] == 1,
 			HearingImpaired:    stream.Disposition["hearing_impaired"] == 1,
@@ -3085,6 +3091,9 @@ func parseProbe(data []byte, path string) (Probe, error) {
 			AverageFrameRate:   stream.AvgFrameRate,
 			ColorTransfer:      stream.ColorTransfer,
 			ColorPrimaries:     stream.ColorPrimaries,
+		}
+		if ps.Type == "subtitle" {
+			applySubtitleTitleFlags(&ps)
 		}
 		if ps.AttachedPicture && probe.embeddedArtworkStream < 0 {
 			probe.embeddedArtworkStream = stream.Index
@@ -3142,6 +3151,68 @@ func parseProbe(data []byte, path string) (Probe, error) {
 
 func parseProbeTimestamp(value string) (float64, bool) {
 	return parseBoundedNumber(value, "", 0, maxMediaSeconds)
+}
+
+// applySubtitleTitleFlags sets the forced, hearing-impaired and commentary
+// flags a subtitle stream's title names but its dispositions do not: many
+// files mark "English (SDH)" or "Forced" only in the title (CORE-2523).
+// "non-SDH", "Not Forced" and "No SDH or CC" deny the roles they name: a
+// negation covers the role words (and "and", "or", "nor") after it, up to the
+// next bracket, comma, semicolon, bar or spaced dash, so "(non-SDH) [Forced]"
+// and "non-SDH - Forced" are forced.
+func applySubtitleTitleFlags(ps *ProbeStream) {
+	words := subtitleTitleWords(ps.Title)
+	negated := false
+	for i, word := range words {
+		switch word {
+		case "non", "not", "no":
+			negated = true
+		case "sdh", "cc":
+			ps.HearingImpaired = ps.HearingImpaired || !negated
+		case "hearing":
+			if i+1 < len(words) && words[i+1] == "impaired" {
+				ps.HearingImpaired = ps.HearingImpaired || !negated
+			}
+		case "impaired", "and", "or", "nor":
+			// Inside a role phrase or list; a negation keeps running.
+		case "forced":
+			ps.Forced = ps.Forced || !negated
+		case "commentary":
+			ps.Commentary = ps.Commentary || !negated
+		default:
+			negated = false
+		}
+	}
+}
+
+// subtitleTitleWords lowercases a title into its letter/digit words, with ","
+// standing for each qualifier boundary (a bracket, comma, semicolon, bar, en or
+// em dash, or a hyphen with a space beside it; "non-SDH" stays one phrase).
+func subtitleTitleWords(title string) []string {
+	var words []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			words = append(words, word.String())
+			word.Reset()
+		}
+	}
+	runes := []rune(strings.ToLower(title))
+	for i, r := range runes {
+		spacedHyphen := r == '-' && ((i > 0 && unicode.IsSpace(runes[i-1])) ||
+			(i+1 < len(runes) && unicode.IsSpace(runes[i+1])))
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			word.WriteRune(r)
+		case spacedHyphen || strings.ContainsRune("()[]{},;|–—", r):
+			flush()
+			words = append(words, ",")
+		default:
+			flush()
+		}
+	}
+	flush()
+	return words
 }
 
 func caseInsensitiveTag(tags map[string]string, name string) string {
