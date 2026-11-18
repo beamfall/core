@@ -623,7 +623,18 @@ func (s *Store) MediaForEntity(ctx context.Context, entityID EntityID, filter Li
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	return s.mediaForEntitySQL(ctx, entityID, filter, -1, 0)
+	items, err := s.mediaForEntitySQL(ctx, entityID, filter, -1, 0)
+	if err != nil {
+		return nil, err
+	}
+	// Locked-mode ceilings keep above-ceiling Media in this list, as on every
+	// browse surface; flag them so a client never counts them as playable.
+	if !filter.PlaybackGate {
+		if err := s.annotateLockedLocked(ctx, filter.Certification, items, filter.GrantedMediaIDs); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 // mediaForEntitySQL backs MediaForEntity and the "entity-media" Source kind:

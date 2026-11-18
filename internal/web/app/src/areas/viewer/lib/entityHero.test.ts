@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { graphql } from "@/lib/api";
 import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
+import { fetchMediaForEntity } from "@/lib/graphql/viewer";
 import {
   entityFacts,
   entitySummary,
@@ -9,6 +11,11 @@ import {
   unwatchedCount,
   withItemCount,
 } from "./entityHero";
+
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return { ...actual, graphql: vi.fn() };
+});
 
 const entity: EntityInfo = {
   id: "e1",
@@ -71,6 +78,24 @@ describe("entityHero", () => {
     expect(unwatchedCount([media("a", true), media("b"), media("c", false, true)])).toBe(1);
     expect(unwatchedCount([])).toBe(0);
     expect(unwatchedCount(null)).toBe(0);
+  });
+
+  it("leaves locked-mode Media out through the real mediaForEntity read", async () => {
+    // The server flags Media above a locked-mode ceiling (store
+    // MediaForEntity); the read must ask for that flag so the badge skips it.
+    vi.mocked(graphql).mockResolvedValue({
+      mediaForEntity: [
+        { id: "m1", kind: "media", title: "Done", engagement: { completed: true } },
+        { id: "m2", kind: "media", title: "Above ceiling", locked: true },
+      ],
+    });
+
+    const items = await fetchMediaForEntity("e1");
+
+    expect(vi.mocked(graphql).mock.calls[0][0]).toMatch(
+      /mediaForEntity\([^)]*\) \{[^}]*\blocked\b/,
+    );
+    expect(unwatchedCount(items)).toBe(0);
   });
 
   it("adds an item count to a child card's subline", () => {
