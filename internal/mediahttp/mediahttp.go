@@ -1095,6 +1095,15 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "stream unavailable", http.StatusNotFound)
 			return
 		}
+		// The session's encoder kept crashing or stalling without output and
+		// the session has given up (CORE-2379). 503 would have the player
+		// retry for as long as it is open, behind an endless spinner; 500 says
+		// the stream failed, so the player can surface an error. The session
+		// logged the cause.
+		if errors.Is(err, playback.ErrTranscodeFailed) {
+			http.Error(w, "transcode failed", http.StatusInternalServerError)
+			return
+		}
 		logHLSServeFailure(r.Context(), err)
 		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
 		return

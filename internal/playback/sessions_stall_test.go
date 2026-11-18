@@ -110,3 +110,73 @@ func TestStalledEncoderWithoutWaitersIsLeftAlone(t *testing.T) {
 		t.Fatalf("starts = %d, want 1", got)
 	}
 }
+
+// TestEncoderThatNeverProgressesFailsTheSession proves CORE-2379: an encoder
+// that hangs on every start used to cycle forever (stall, kill, restart) as
+// the sliding restart budget refilled, answering retryable errors while the
+// player spun. After encoderMaxFailedRuns runs in a row with no segment the
+// session latches failed: later requests get ErrTranscodeFailed at once and
+// start no further encoder.
+func TestEncoderThatNeverProgressesFailsTheSession(t *testing.T) {
+	t.Parallel()
+	transcoder := &scriptedTranscoder{}
+	transcoder.start = func(int, string, int) []string { return hungEncoder() }
+	sessions := stallSessions(t, transcoder)
+	key := SessionKey{SessionID: "session-never", MediaID: "media-never"}
+
+	var err error
+	for request := 0; request < encoderMaxFailedRuns && !errors.Is(err, ErrTranscodeFailed); request++ {
+		_, err = filePath720(sessions, key, "720p/seg00000.m4s")
+		if err == nil {
+			t.Fatalf("request %d succeeded on an encoder that never writes", request)
+		}
+	}
+	if !errors.Is(err, ErrTranscodeFailed) {
+		t.Fatalf("err = %v, want ErrTranscodeFailed once %d runs failed", err, encoderMaxFailedRuns)
+	}
+	if got := transcoder.startCount(); got != encoderMaxFailedRuns {
+		t.Fatalf("starts = %d, want %d", got, encoderMaxFailedRuns)
+	}
+	begin := time.Now()
+	if _, err := filePath720(sessions, key, "720p/seg00003.m4s"); !errors.Is(err, ErrTranscodeFailed) {
+		t.Fatalf("request after failure: err = %v, want ErrTranscodeFailed", err)
+	}
+	if elapsed := time.Since(begin); elapsed >= sessions.stallTimeout {
+		t.Fatalf("failed session took %v to answer, want it immediate", elapsed)
+	}
+	if got := transcoder.startCount(); got != encoderMaxFailedRuns {
+		t.Fatalf("starts after failure = %d, want no new start (%d)", got, encoderMaxFailedRuns)
+	}
+}
+
+// TestStallAfterOutputDoesNotCountTowardFailure proves only runs that wrote
+// nothing count: an encoder that writes its first segment and then hangs is
+// restarted under each next request and never fails the session.
+func TestStallAfterOutputDoesNotCountTowardFailure(t *testing.T) {
+	t.Parallel()
+	staged := filepath.Join(t.TempDir(), "segment.m4s")
+	writeArtifact(t, filepath.Dir(staged), filepath.Base(staged), mediaSegment())
+	transcoder := &scriptedTranscoder{}
+	transcoder.start = func(_ int, dir string, startSegment int) []string {
+		// The segment lands after launch, as ffmpeg's would, then the
+		// encoder hangs with its output position frozen.
+		script := fmt.Sprintf(`printf 'out_time_us=1000000\nprogress=continue\n'; cp %q %q; exec sleep 60`,
+			staged, filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", startSegment)))
+		return []string{"sh", "-c", script, "sh", "-progress", "pipe:1"}
+	}
+	sessions := stallSessions(t, transcoder)
+	key := SessionKey{SessionID: "session-slow", MediaID: "media-slow"}
+
+	// Each request asks for the segment after the one the last run wrote, so
+	// it waits on a hung run that did produce output, which stalls and is
+	// restarted at the requested segment.
+	for segment := 0; segment <= encoderMaxFailedRuns; segment++ {
+		_, err := filePath720(sessions, key, fmt.Sprintf("720p/seg%05d.m4s", segment))
+		if errors.Is(err, ErrTranscodeFailed) {
+			t.Fatalf("segment %d: session failed although every run wrote a segment", segment)
+		}
+	}
+	if got := transcoder.startCount(); got < encoderMaxFailedRuns {
+		t.Fatalf("starts = %d, want at least %d stall restarts exercised", got, encoderMaxFailedRuns)
+	}
+}
