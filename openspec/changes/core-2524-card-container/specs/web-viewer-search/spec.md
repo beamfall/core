@@ -24,8 +24,9 @@ container that states how many items are new and opens the container.
 
 ### Requirement: Search lists items under their container
 
-The search page SHALL list a Media row whose container is also a result row under that container's
-row, collapsed behind a count the viewer can expand.
+The search page SHALL list a Media row whose container is also a result row, and whose own title
+does not contain the search term, under that container's row, collapsed behind a count the viewer
+can expand. A row whose own title contains the term SHALL stay in its type group.
 
 #### Scenario: Search grouping
 

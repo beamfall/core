@@ -170,6 +170,20 @@ type SourceItem struct {
 	// client can number and order siblings (CORE-2386). Absent when unset.
 	Sequence float64 `json:"sequence,omitempty"`
 	Index    float64 `json:"index,omitempty"`
+	// Container names the outermost container Entity holding a Media item,
+	// found through the Library plugin's declared container relations, so a
+	// card can name what the item belongs to and group siblings without a
+	// detail read (CORE-2524). Absent for entities and for Media no container
+	// holds.
+	Container *SourceItemContainer `json:"container,omitempty"`
+}
+
+// SourceItemContainer is the container Entity a Media item belongs to: its
+// id (an Entity id), title and stored poster, when it has one.
+type SourceItemContainer struct {
+	ID      string             `json:"id"`
+	Title   string             `json:"title"`
+	Artwork *SourceItemArtwork `json:"artwork,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -1058,13 +1072,16 @@ func (h *Handler) SetUpdateChecker(checker UpdateChecker, serverVersion string) 
 // to render the lock treatment, and locked items are always visible to the scope
 // that receives them (the byte gate is server-side, not UI-side).
 // annotateCards sets the per-item fields a card renders that the feed query
-// does not carry: each media item's class (for its placeholder) and the acting
-// Profile's engagement.
+// does not carry: each media item's class (for its placeholder), its
+// container, and the acting Profile's engagement.
 func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []store.SourceItem) error {
 	if err := h.store.AnnotateMediaClass(ctx, items); err != nil {
 		return err
 	}
 	if err := h.annotateBylines(ctx, items); err != nil {
+		return err
+	}
+	if err := h.annotateContainers(ctx, items); err != nil {
 		return err
 	}
 	if err := h.annotateSubtitles(ctx, items); err != nil {
@@ -1149,6 +1166,7 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		AudienceScore:      item.AudienceScore,
 		AudienceScoreLabel: plugin.LocaleString(item.AudienceScoreLabel),
 		AudienceScoreVotes: item.AudienceScoreVotes,
+		Container:          h.sourceItemContainer(item),
 	}
 	if revealed {
 		resp.Restricted = item.Restricted

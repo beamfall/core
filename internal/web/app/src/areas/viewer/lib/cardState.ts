@@ -67,12 +67,16 @@ export interface CardRating {
   label: string;
 }
 
-/** cardRating returns undefined when the item has neither, so the card draws nothing. */
+/**
+ * cardRating returns undefined when the item has neither, so the card draws
+ * nothing. A zero score is no score (CORE-2524): providers report 0 for a title
+ * nobody has rated yet.
+ */
 export function cardRating(item: SourceItem, locale: string, t: Translate): CardRating | undefined {
   const text = item.certification?.trim() ?? "";
   const value = item.audienceScore;
   const score =
-    typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10
+    typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 10
       ? formatScore(value, locale)
       : "";
   if (!text && !score) return undefined;
@@ -87,7 +91,10 @@ export function cardRating(item: SourceItem, locale: string, t: Translate): Card
 function timeLeftLabel(seconds: number, t: Translate): string {
   const minutes = Math.max(1, Math.ceil(seconds / 60));
   if (minutes >= 60) {
-    return t("cardHoursLeft", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
+    return t("cardHoursLeft", {
+      hours: Math.floor(minutes / 60),
+      minutes: minutes % 60,
+    });
   }
   return minutes === 1 ? t("cardMinuteLeft") : t("cardMinutesLeft", { count: minutes });
 }

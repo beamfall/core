@@ -2,7 +2,6 @@ import { Check, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
@@ -10,7 +9,7 @@ import { itemTargetFor } from "../actions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { cardAccessibleName, cardRating, cardState } from "../lib/cardState";
-import { cardSubline } from "../lib/cardTitles";
+import { cardHeading, cardSubline } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import type { LibraryViewMode } from "../lib/libraryBrowse";
 import { mediaLinkState } from "../lib/mediaDetail";
@@ -51,6 +50,7 @@ export function MediaItemCard({
   playOnActivate,
   showYear = false,
   display = "poster",
+  nameContainer = true,
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -71,6 +71,11 @@ export function MediaItemCard({
    * also states the year (CORE-2443).
    */
   display?: LibraryViewMode;
+  /**
+   * Head the card with the container holding the item (CORE-2524); false
+   * inside a container's own page, where it goes without saying.
+   */
+  nameContainer?: boolean;
 }) {
   const navigate = useNavigate();
   const identity = useViewerIdentity();
@@ -83,8 +88,8 @@ export function MediaItemCard({
   const state = cardState(item, t);
   const rating = isMedia ? cardRating(item, displayLocale, t) : undefined;
   const isTable = display === "table";
-  const subline = cardSubline(item, showYear || isTable, displayLocale);
-  const subtitle = displayString(item.subtitle, displayLocale);
+  const { heading, lead } = cardHeading(item, nameContainer, displayLocale);
+  const subline = cardSubline(item, showYear || isTable, displayLocale, lead);
   const isRow = display === "list" || isTable;
   const wide = display === "thumbnail";
   // The page the card's own activation opens (and the More menu's copied link).
@@ -173,7 +178,9 @@ export function MediaItemCard({
       play();
     } else if (isMedia) {
       const link = mediaLinkState(item, identity, focusAnchor?.section);
-      navigate(path, { state: link ? { ...link, ...queueState() } : undefined });
+      navigate(path, {
+        state: link ? { ...link, ...queueState() } : undefined,
+      });
     } else {
       navigate(path, { state: entityLinkState(item, identity) });
     }
@@ -237,7 +244,7 @@ export function MediaItemCard({
       <button
         type="button"
         aria-label={cardAccessibleName(
-          { ...item, title: cardLabelTitle(item, showYear, subtitle) },
+          { ...item, title: cardLabelTitle(item, heading, showYear, lead) },
           state,
           rating,
         )}
@@ -301,7 +308,7 @@ export function MediaItemCard({
           </div>
         )}
         <div className="bf-card-copy">
-          <span className="bf-card-title">{item.title}</span>
+          <span className="bf-card-title">{heading}</span>
           {subline && <span className="bf-card-sub">{subline}</span>}
           {rating && (
             <span aria-hidden="true" className="bf-card-rating">
@@ -317,7 +324,7 @@ export function MediaItemCard({
         ) : null}
       </button>
       <MediaItemCardMenu
-        title={item.title}
+        title={heading}
         primaryLabel={primaryLabel}
         isMedia={isMedia}
         isAudio={item.mediaClass === "audio"}
@@ -329,12 +336,18 @@ export function MediaItemCard({
   );
 }
 
-// The title a card's accessible name starts with: the year when the title
-// repeats in the list (CORE-2320), then the plugin's subtitle, so siblings that
-// share a title are told apart by ear as by eye (CORE-1226).
-function cardLabelTitle(item: SourceItem, showYear: boolean, subtitle: string): string {
-  const title = showYear && item.year ? `${item.title} (${item.year})` : item.title;
-  return subtitle ? `${title}, ${subtitle}` : title;
+// The title a card's accessible name starts with: its heading, with the year
+// when the title repeats in the list (CORE-2320), then the line that leads under
+// it, so siblings that share a heading are told apart by ear as by eye
+// (CORE-1226, CORE-2524).
+function cardLabelTitle(
+  item: SourceItem,
+  heading: string,
+  showYear: boolean,
+  lead: string,
+): string {
+  const title = showYear && item.year ? `${heading} (${item.year})` : heading;
+  return lead ? `${title}, ${lead}` : title;
 }
 
 // The state drawn on the artwork. Decorative for assistive technology: the

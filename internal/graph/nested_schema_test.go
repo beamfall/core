@@ -146,7 +146,8 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // `durationSeconds` by CORE-1226/CORE-2386 so sibling items in a folder can be
 // told apart, ordered and timed, and `certification` and `audienceScore` by
 // CORE-2398 so a card can state its rating, and `audienceScoreLabel` and
-// `audienceScoreVotes` by CORE-2415 so it can name the score's source. Any
+// `audienceScoreVotes` by CORE-2415 so it can name the score's source, and
+// `container` by CORE-2524 so it can name and group by what holds it. Any
 // further field must be added
 // the same way, alongside the golden.
 func TestNestedSchemaSourceItemShape(t *testing.T) {
@@ -154,7 +155,7 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "durationSeconds", "engagement", "id", "index", "kind", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
+	want := []string{"artwork", "artworkSlots", "audienceScore", "audienceScoreLabel", "audienceScoreVotes", "byline", "certification", "container", "durationSeconds", "engagement", "id", "index", "kind", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}
@@ -165,6 +166,10 @@ func TestNestedSchemaSourceItemShape(t *testing.T) {
 		case "artwork":
 			if c.Kind != "object" || !slices.Equal(childNames(c.Children), []string{"dominantColor", "poster"}) {
 				t.Errorf("sourceItems.artwork = %v (%s), want object{dominantColor, poster}", childNames(c.Children), c.Kind)
+			}
+		case "container":
+			if c.Kind != "object" || !slices.Equal(childNames(c.Children), []string{"artwork", "id", "title"}) {
+				t.Errorf("sourceItems.container = %v (%s), want object{artwork, id, title}", childNames(c.Children), c.Kind)
 			}
 		case "artworkSlots":
 			if c.Kind != "map" || c.Elem == nil || c.Elem.Kind != "scalar" {
@@ -183,6 +188,7 @@ func TestNestedSchemaSourceItemOptionalFields(t *testing.T) {
 		"audienceScoreLabel": true,
 		"audienceScoreVotes": true,
 		"certification":      true,
+		"container":          true,
 		"id":                 false,
 		"kind":               false,
 		"locked":             true,

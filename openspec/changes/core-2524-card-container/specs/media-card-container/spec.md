@@ -27,9 +27,10 @@ its kind declares to another container kind.
 
 ### Requirement: Outermost container kinds are title-searchable
 
-The server SHALL make every container-archetype Entity kind that declares no relation to another
-container kind searchable by title in keyword search, whether or not its plugin opts it into full
-text search.
+The server SHALL make every container-archetype Entity kind at the outer end of a container chain
+searchable by title in keyword search, whether or not its plugin opts it into full text search: a
+kind that holds Media or that another container kind points at, and that itself points at no other
+container kind. A container kind in no chain keeps its plugin's choice.
 
 #### Scenario: Searching a container title
 

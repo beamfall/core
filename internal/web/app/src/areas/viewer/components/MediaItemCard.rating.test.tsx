@@ -11,7 +11,12 @@ vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
 afterEach(cleanup);
 
 function renderCard(overrides: Partial<SourceItem> = {}) {
-  const item: SourceItem = { id: "m1", kind: "media", title: "Alpha", ...overrides };
+  const item: SourceItem = {
+    id: "m1",
+    kind: "media",
+    title: "Alpha",
+    ...overrides,
+  };
   return render(
     <I18nProvider initialLocale="en">
       <MemoryRouter>
@@ -23,10 +28,15 @@ function renderCard(overrides: Partial<SourceItem> = {}) {
 
 describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
   it("shows the rating and score and names both", () => {
-    const { container } = renderCard({ certification: "PG-13", audienceScore: 7.8 });
+    const { container } = renderCard({
+      certification: "PG-13",
+      audienceScore: 7.8,
+    });
     expect(container.querySelector(".bf-card-rating")).toHaveTextContent("PG-13★ 7.8");
     expect(
-      screen.getByRole("button", { name: "Alpha, Rated PG-13, audience score 7.8" }),
+      screen.getByRole("button", {
+        name: "Alpha, Rated PG-13, audience score 7.8",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -52,7 +62,12 @@ describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
   });
 
   it("renders nothing when both are absent, blank or off the scale", () => {
-    for (const overrides of [{}, { certification: "  " }, { audienceScore: 73 }]) {
+    for (const overrides of [
+      {},
+      { certification: "  " },
+      { audienceScore: 73 },
+      { audienceScore: 0 },
+    ]) {
       const { container } = renderCard(overrides);
       expect(container.querySelector(".bf-card-rating")).toBeNull();
       expect(screen.getByRole("button", { name: "Alpha" })).toBeInTheDocument();
@@ -63,5 +78,20 @@ describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
   it("leaves entity cards without a rating line", () => {
     const { container } = renderCard({ kind: "entity", certification: "PG" });
     expect(container.querySelector(".bf-card-rating")).toBeNull();
+  });
+});
+
+describe("MediaItemCard container heading (CORE-2524)", () => {
+  it("heads an item with its container and keeps one compact line under it", () => {
+    const { container } = renderCard({
+      title: "S01E02 · Earthfall",
+      subtitle: "S1 · E2 · Earthfall",
+      container: { id: "show", title: "The Expanse" },
+    });
+    expect(container.querySelector(".bf-card-title")).toHaveTextContent("The Expanse");
+    expect(container.querySelector(".bf-card-sub")).toHaveTextContent(/^S1 · E2 · Earthfall$/);
+    expect(
+      screen.getByRole("button", { name: "The Expanse, S1 · E2 · Earthfall" }),
+    ).toBeInTheDocument();
   });
 });

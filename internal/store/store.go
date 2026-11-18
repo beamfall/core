@@ -910,6 +910,11 @@ type SourceItem struct {
 	// set by the graph from MediaCardFieldValues; 0 means absent.
 	Sequence float64
 	Index    float64
+	// ContainerID and ContainerTitle name the outermost container Entity
+	// holding a media-kind item, set by the graph from the Library plugin's
+	// container relations (CORE-2524); empty when none holds it.
+	ContainerID    EntityID
+	ContainerTitle string
 }
 
 // PairingCode is a short-lived enrollment grant.

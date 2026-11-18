@@ -2625,6 +2625,39 @@
           "optional": true
         },
         {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "durationSeconds",
           "kind": "scalar",
           "optional": true
@@ -7868,6 +7901,39 @@
                       "optional": true
                     },
                     {
+                      "name": "container",
+                      "kind": "object",
+                      "optional": true,
+                      "nullable": true,
+                      "children": [
+                        {
+                          "name": "artwork",
+                          "kind": "object",
+                          "optional": true,
+                          "nullable": true,
+                          "children": [
+                            {
+                              "name": "dominantColor",
+                              "kind": "scalar",
+                              "optional": true
+                            },
+                            {
+                              "name": "poster",
+                              "kind": "scalar"
+                            }
+                          ]
+                        },
+                        {
+                          "name": "id",
+                          "kind": "scalar"
+                        },
+                        {
+                          "name": "title",
+                          "kind": "scalar"
+                        }
+                      ]
+                    },
+                    {
                       "name": "durationSeconds",
                       "kind": "scalar",
                       "optional": true
@@ -8028,6 +8094,39 @@
                     "name": "certification",
                     "kind": "scalar",
                     "optional": true
+                  },
+                  {
+                    "name": "container",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "artwork",
+                        "kind": "object",
+                        "optional": true,
+                        "nullable": true,
+                        "children": [
+                          {
+                            "name": "dominantColor",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "poster",
+                            "kind": "scalar"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "id",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "title",
+                        "kind": "scalar"
+                      }
+                    ]
                   },
                   {
                     "name": "durationSeconds",
@@ -8219,6 +8318,39 @@
                     "optional": true
                   },
                   {
+                    "name": "container",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "artwork",
+                        "kind": "object",
+                        "optional": true,
+                        "nullable": true,
+                        "children": [
+                          {
+                            "name": "dominantColor",
+                            "kind": "scalar",
+                            "optional": true
+                          },
+                          {
+                            "name": "poster",
+                            "kind": "scalar"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "id",
+                        "kind": "scalar"
+                      },
+                      {
+                        "name": "title",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
                     "name": "durationSeconds",
                     "kind": "scalar",
                     "optional": true
@@ -8379,6 +8511,39 @@
                   "name": "certification",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "container",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "artwork",
+                      "kind": "object",
+                      "optional": true,
+                      "nullable": true,
+                      "children": [
+                        {
+                          "name": "dominantColor",
+                          "kind": "scalar",
+                          "optional": true
+                        },
+                        {
+                          "name": "poster",
+                          "kind": "scalar"
+                        }
+                      ]
+                    },
+                    {
+                      "name": "id",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "title",
+                      "kind": "scalar"
+                    }
+                  ]
                 },
                 {
                   "name": "durationSeconds",
@@ -10907,6 +11072,39 @@
                 "kind": "scalar"
               },
               {
+                "name": "container",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "artwork",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "dominantColor",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "poster",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
                 "name": "durationSeconds",
                 "kind": "scalar",
                 "optional": true
@@ -11103,6 +11301,39 @@
             {
               "name": "childCount",
               "kind": "scalar"
+            },
+            {
+              "name": "container",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "artwork",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "dominantColor",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "poster",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
             },
             {
               "name": "durationSeconds",
@@ -11493,6 +11724,39 @@
                 "optional": true
               },
               {
+                "name": "container",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "artwork",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "dominantColor",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "poster",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
                 "name": "durationSeconds",
                 "kind": "scalar",
                 "optional": true
@@ -11653,6 +11917,39 @@
               "name": "certification",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "container",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "artwork",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "dominantColor",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "poster",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
             },
             {
               "name": "durationSeconds",
@@ -12082,6 +12379,39 @@
                 "optional": true
               },
               {
+                "name": "container",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "artwork",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "dominantColor",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "poster",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
                 "name": "durationSeconds",
                 "kind": "scalar",
                 "optional": true
@@ -12242,6 +12572,39 @@
               "name": "certification",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "container",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "artwork",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "dominantColor",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "poster",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
             },
             {
               "name": "durationSeconds",
@@ -13678,6 +14041,39 @@
           "name": "certification",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "durationSeconds",
@@ -18445,6 +18841,39 @@
           "optional": true
         },
         {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "durationSeconds",
           "kind": "scalar",
           "optional": true
@@ -18608,6 +19037,39 @@
           "name": "certification",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "durationSeconds",
@@ -18775,6 +19237,39 @@
           "optional": true
         },
         {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "durationSeconds",
           "kind": "scalar",
           "optional": true
@@ -18938,6 +19433,39 @@
           "name": "certification",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "durationSeconds",
@@ -19357,6 +19885,39 @@
           "name": "certification",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "durationSeconds",
@@ -21975,6 +22536,39 @@
           "optional": true
         },
         {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "durationSeconds",
           "kind": "scalar",
           "optional": true
@@ -22145,6 +22739,39 @@
           "name": "certification",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "durationSeconds",
@@ -22365,6 +22992,39 @@
                 "optional": true
               },
               {
+                "name": "container",
+                "kind": "object",
+                "optional": true,
+                "nullable": true,
+                "children": [
+                  {
+                    "name": "artwork",
+                    "kind": "object",
+                    "optional": true,
+                    "nullable": true,
+                    "children": [
+                      {
+                        "name": "dominantColor",
+                        "kind": "scalar",
+                        "optional": true
+                      },
+                      {
+                        "name": "poster",
+                        "kind": "scalar"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar"
+                  }
+                ]
+              },
+              {
                 "name": "durationSeconds",
                 "kind": "scalar",
                 "optional": true
@@ -22567,6 +23227,39 @@
               "name": "certification",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "container",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "artwork",
+                  "kind": "object",
+                  "optional": true,
+                  "nullable": true,
+                  "children": [
+                    {
+                      "name": "dominantColor",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "poster",
+                      "kind": "scalar"
+                    }
+                  ]
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar"
+                }
+              ]
             },
             {
               "name": "durationSeconds",
@@ -30427,6 +31120,39 @@
           "optional": true
         },
         {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "durationSeconds",
           "kind": "scalar",
           "optional": true
@@ -31052,6 +31778,39 @@
           "name": "certification",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "container",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "artwork",
+              "kind": "object",
+              "optional": true,
+              "nullable": true,
+              "children": [
+                {
+                  "name": "dominantColor",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "poster",
+                  "kind": "scalar"
+                }
+              ]
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "title",
+              "kind": "scalar"
+            }
+          ]
         },
         {
           "name": "durationSeconds",
