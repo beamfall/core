@@ -193,9 +193,9 @@ func (probeClassParser) Parse(_ string, probe ParseProbe) (ParsedMedia, bool) {
 	return ParsedMedia{Title: "Song", Class: "audio-track"}, true
 }
 
-// TestRescanKeepsProbeDependentFieldsWithoutProbe: the fast path parses
-// without a probe, so a class the probe decided stays as the probed parse
-// left it (CORE-2554).
+// TestRescanKeepsProbeDependentFieldsWithoutProbe: the fast path, or a scan
+// with no prober, parses without a probe, so a class the probe decided stays
+// as the probed parse left it (CORE-2554).
 func TestRescanKeepsProbeDependentFieldsWithoutProbe(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -207,8 +207,14 @@ func TestRescanKeepsProbeDependentFieldsWithoutProbe(t *testing.T) {
 	}
 	parsers := map[string]FilenameParser{filmtv.PluginID: probeClassParser{}}
 	var mediaID store.MediaID
-	for pass := 0; pass < 2; pass++ {
-		result, err := Scan(ctx, st, videoProber{}, nil, parsers, nil, nil, Request{LibraryID: library.ID, Root: root})
+	// Pass 0 probes; pass 1 takes the unprobed fast path; pass 2 scans with
+	// no prober at all, which must not count as authoritative either.
+	for pass := 0; pass < 3; pass++ {
+		var prober Prober = videoProber{}
+		if pass == 2 {
+			prober = nil
+		}
+		result, err := Scan(ctx, st, prober, nil, parsers, nil, nil, Request{LibraryID: library.ID, Root: root})
 		if err != nil || len(result.Files) != 1 {
 			t.Fatalf("Scan pass %d: files %d, error %v", pass, len(result.Files), err)
 		}

@@ -15,10 +15,9 @@ const (
 	// parserOwnedStable is the parser's output independent of the media
 	// probe: every rescan parse refreshes it.
 	parserOwnedStable = 1
-	// parserOwnedLegacy is a scan-tier structural field written before the
-	// marker existed, by the parser or by hydration: the next probed parse
-	// claims it when it emits the field and otherwise disowns it (never
-	// removes it, since hydration may have written it).
+	// parserOwnedLegacy is a scan-tier class written before the marker
+	// existed: the next probed parse claims it when it emits a class and
+	// otherwise disowns it, never removing it.
 	parserOwnedLegacy = 2
 	// parserOwnedProbe is the parser's output that changes with the media
 	// probe: only a probed parse refreshes it.

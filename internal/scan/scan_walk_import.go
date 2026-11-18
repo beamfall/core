@@ -90,9 +90,10 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	// The fast path skipped the probe, so the parse sees the directory
 	// preflight's probe or, for a file with legacy parser fields, the one-off
 	// probe fill took (CORE-2554). Only a parse that saw a real probe, or one
-	// no probe could change, settles probe-dependent fields.
+	// no probe could change, settles probe-dependent fields; a scan without a
+	// prober never does, so it cannot undo an earlier probed parse.
 	parseProbe := ParseProbe{}
-	authoritative := s.prober == nil || imported.Class == store.MediaClassImage
+	authoritative := imported.Class == store.MediaClassImage
 	if decision := s.directoryPreflights[filepath.Dir(path)]; decision != nil {
 		parseProbe = decision.probes[path]
 		authoritative = authoritative || !parseProbeEmpty(parseProbe)
@@ -270,7 +271,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
-		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, probeSucceeded || isImage || s.prober == nil)
+		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, probeSucceeded || isImage)
 	}
 	// The fast path took every file whose size and mtime are unchanged, so a
 	// file here is new to the catalog or changed on disk (CORE-2040).
