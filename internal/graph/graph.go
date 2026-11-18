@@ -1799,14 +1799,15 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		}
 	}
 	items, err := h.sourceItemsWithEntityFilters(ctx, scope.LibraryFilter(), req, store.SourceQuery{
-		Kind:       kind,
-		Limit:      boundedIntVar(req, "limit", 50, 200),
-		Offset:     nonNegativeIntVar(req, "offset"),
-		ProfileID:  scope.ProfileID,
-		Query:      queryText,
-		EntityKind: entityKind,
-		EntityID:   store.EntityID(entityID),
-		LibraryID:  store.LibraryID(libraryID),
+		Kind:                  kind,
+		Limit:                 boundedIntVar(req, "limit", 50, 200),
+		Offset:                nonNegativeIntVar(req, "offset"),
+		ProfileID:             scope.ProfileID,
+		Query:                 queryText,
+		EntityKind:            entityKind,
+		EntityID:              store.EntityID(entityID),
+		ExcludeEditionGroupOf: store.MediaID(trimmedVariable(req, "excludeEditionGroupOf")),
+		LibraryID:             store.LibraryID(libraryID),
 		// home marks an aggregate request as a Home shelf, which leaves out
 		// Libraries a manager hid from Home (CORE-2360).
 		Home:         boolVar(req, "home"),

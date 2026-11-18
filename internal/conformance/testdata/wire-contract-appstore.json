@@ -2460,6 +2460,11 @@
           "optional": true
         },
         {
+          "name": "excludeEditionGroupOf",
+          "kind": "string",
+          "optional": true
+        },
+        {
           "name": "fieldFilters",
           "kind": "map",
           "optional": true,
@@ -30274,6 +30279,11 @@
         },
         {
           "name": "entityKind",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "excludeEditionGroupOf",
           "kind": "string",
           "optional": true
         },

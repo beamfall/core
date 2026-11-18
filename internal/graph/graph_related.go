@@ -121,10 +121,11 @@ func (h *Handler) relatedMedia(ctx context.Context, scope auth.Scope, req reques
 		lists := make([][]store.SourceItem, 0, len(ids))
 		for _, id := range ids {
 			items, err := h.store.SourceItems(ctx, filter, store.SourceQuery{
-				Kind:      "entity-media",
-				EntityID:  store.EntityID(id),
-				Limit:     relatedPerCredit,
-				ProfileID: scope.ProfileID,
+				Kind:                  "entity-media",
+				ExcludeEditionGroupOf: mediaID,
+				EntityID:              store.EntityID(id),
+				Limit:                 relatedPerCredit,
+				ProfileID:             scope.ProfileID,
 			})
 			if err != nil {
 				return nil, err
