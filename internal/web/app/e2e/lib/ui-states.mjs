@@ -763,7 +763,6 @@ export const UI_STATE_GAPS = Object.freeze({
   "/credits/*#loading:page": NO_LOADING_FIXTURE,
   "/credits/*#error:failed": NO_ERROR_FIXTURE,
   "/credits/*#error:not-found": NO_ERROR_FIXTURE,
-  "/credits/*@mobile": VIEWER_HEADER_OVERFLOW,
   "/seeall/:sourceId#empty:no-context": NO_EMPTY_FIXTURE,
   "/seeall/:sourceId#loading:load-more": NO_LOADING_FIXTURE,
   "/seeall/:sourceId@mobile": VIEWER_HEADER_OVERFLOW,

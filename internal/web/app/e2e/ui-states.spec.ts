@@ -107,6 +107,11 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
         page.getByRole("heading", { level: 1, name: FIXTURE_ENTITY.title }),
       ).toBeVisible();
       return;
+    case "/credits/*":
+      await page.goto("/web/credits/media-alpha");
+      // The heading renders only once the seeded Media has loaded; NotAvailable has its own.
+      await expect(page.getByRole("heading", { level: 1, name: "Cast & Crew" })).toBeVisible();
+      return;
     case "/seeall/:sourceId":
       await page.goto("/web/");
       await page.getByRole("button", { name: "See all" }).first().click();
