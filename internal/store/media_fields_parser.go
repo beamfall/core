@@ -16,7 +16,9 @@ const (
 	// probe: every rescan parse refreshes it.
 	parserOwnedStable = 1
 	// parserOwnedLegacy is a scan-tier structural field written before the
-	// marker existed: the next probed parse settles it.
+	// marker existed, by the parser or by hydration: the next probed parse
+	// claims it when it emits the field and otherwise disowns it (never
+	// removes it, since hydration may have written it).
 	parserOwnedLegacy = 2
 	// parserOwnedProbe is the parser's output that changes with the media
 	// probe: only a probed parse refreshes it.
@@ -42,7 +44,8 @@ type ParserFieldRefresh struct {
 // another writer last won (identification, NFO, manual, hydration, local
 // metadata) and tombstoned values are left alone; a tombstoned value counts as
 // not emitted. A non-authoritative parse (no probe) leaves probe-dependent and
-// legacy fields as they are.
+// legacy fields as they are; an authoritative one disowns, rather than
+// removes, a legacy field it does not emit.
 func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refresh ParserFieldRefresh) error {
 	if id == "" {
 		return errors.New("media ID is required")
@@ -129,6 +132,14 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 	}
 	for name, marker := range owned {
 		if emitted[name] || !refreshable(marker) {
+			continue
+		}
+		if marker == parserOwnedLegacy {
+			if _, err := tx.ExecContext(ctx,
+				"UPDATE media_field_provenance SET parser_owned = ? WHERE media_id = ? AND field = ?",
+				parserOwnedNone, id, name); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := deleteMediaFieldValueTx(ctx, tx, id, name); err != nil {

@@ -6,8 +6,10 @@
 --       metadata, artwork flags): a rescan never touches it.
 --   1 = the parser's output, independent of the media probe: refreshed by
 --       every rescan parse.
---   2 = an older scan-tier structural field whose writer is unrecorded: the
---       next rescan re-reads it with a fresh probe and settles it.
+--   2 = an older scan-tier structural field whose writer is unrecorded (the
+--       parser or hydration): the next rescan re-reads it with a fresh probe,
+--       claims it when the parse emits it and otherwise disowns it, never
+--       removing it.
 --   3 = the parser's output that depends on the media probe: refreshed only
 --       by a parse that saw a real probe.
 ALTER TABLE media_field_provenance ADD COLUMN parser_owned INTEGER NOT NULL DEFAULT 0;
