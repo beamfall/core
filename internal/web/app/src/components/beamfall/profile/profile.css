@@ -27,6 +27,23 @@
   stroke-width: 2.1;
 }
 
+/* An uploaded picture fills the tile; the Profile's colour frames it so the
+ * colour still identifies the Profile at a glance (CORE-1240). */
+.bf-avatar[data-picture] {
+  overflow: hidden;
+  background: var(--avatar-tone);
+  box-shadow:
+    0 0 0 max(2px, calc(var(--avatar-size) * 0.035)) var(--avatar-tone),
+    inset 0 0 0 1px color-mix(in oklab, var(--text) 14%, transparent);
+}
+
+.bf-avatar-picture {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
 .bf-avatar[data-size="sm"] {
   --avatar-size: 28px;
 }
@@ -153,4 +170,85 @@
 /* A plain colour swatch: the tone with no glyph. */
 .bf-avatar-swatch {
   font-size: 0;
+}
+
+/* Photo framing stage (CORE-1240): a circle cut from a square, matching how
+   every surface crops the picture. */
+.bf-photo-stage {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  border-radius: 50%;
+  background: var(--bg-root);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-card);
+}
+
+.bf-photo-stage:active {
+  cursor: grabbing;
+}
+
+.bf-photo-stage:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.bf-photo-stage img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.bf-photo-zoom {
+  accent-color: var(--primary);
+}
+
+/* Console Profiles rows (CORE-2477): grip, move buttons and the avatar that
+   opens the customize dialog. */
+.bf-profile-grip {
+  display: inline-flex;
+  flex: none;
+  padding: 4px 2px;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.bf-profile-row.is-dragging {
+  opacity: 0.5;
+}
+
+.bf-profile-customize {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bf-profile-customize:hover .bf-avatar {
+  transform: scale(1.04);
+}
+
+.bf-profile-customize:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bf-profile-customize .bf-avatar {
+    transition: transform 0.15s ease;
+  }
 }

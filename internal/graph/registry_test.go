@@ -349,6 +349,8 @@ var originalScopedFields = []string{
 	"updatecollection",
 	"updatemarker",
 	"updateprofile",
+	"reorderprofiles",
+	"setprofileavatar",
 	"updatetag",
 	"updateschedule",
 	"updatesmartcollection",

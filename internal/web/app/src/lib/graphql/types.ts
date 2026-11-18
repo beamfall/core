@@ -215,6 +215,11 @@ export interface ProfileSummary {
   kind: string;
   /** The chosen avatar token; empty or absent means a generated avatar. */
   avatar?: string;
+  /**
+   * The versioned URL of the Profile's uploaded picture (CORE-1240); empty or
+   * absent when it has none. It replaces the avatar wherever one is shown.
+   */
+  pictureURL?: string;
 }
 
 /** The reveal/relock/switch result (graph.RevealState). */
@@ -1810,6 +1815,10 @@ export interface ProfileAdminInfo {
   kind: string;
   libraryIDs: string[];
   disabled: boolean;
+  /** The avatar token (see ProfileSummary.avatar). */
+  avatar?: string;
+  /** The uploaded picture's URL (see ProfileSummary.pictureURL). */
+  pictureURL?: string;
 }
 
 /** The setCertificationCeiling mutation result (a narrowed Profile). */

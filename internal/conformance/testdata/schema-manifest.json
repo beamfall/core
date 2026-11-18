@@ -970,6 +970,11 @@
     "tier": "session"
   },
   {
+    "field": "reorderprofiles",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
     "field": "reportdrift",
     "effect": "write",
     "tier": "session"
@@ -1316,6 +1321,11 @@
   },
   {
     "field": "setpreplayclips",
+    "effect": "write",
+    "tier": "admin"
+  },
+  {
+    "field": "setprofileavatar",
     "effect": "write",
     "tier": "admin"
   },

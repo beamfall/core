@@ -953,6 +953,11 @@
       "tier": "session"
     },
     {
+      "field": "reorderprofiles",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
       "field": "reportdrift",
       "effect": "write",
       "tier": "session"
@@ -1284,6 +1289,11 @@
     },
     {
       "field": "setpreplayclips",
+      "effect": "write",
+      "tier": "admin"
+    },
+    {
+      "field": "setprofileavatar",
       "effect": "write",
       "tier": "admin"
     },
@@ -18468,6 +18478,10 @@
           "kind": "scalar"
         },
         {
+          "name": "pictureURL",
+          "kind": "scalar"
+        },
+        {
           "name": "remoteMaxBitrate",
           "kind": "scalar"
         }
@@ -20238,6 +20252,72 @@
           "name": "updatedAt",
           "kind": "scalar",
           "optional": true
+        }
+      ]
+    },
+    {
+      "field": "reorderprofiles",
+      "kind": "object",
+      "children": [
+        {
+          "name": "avatar",
+          "kind": "scalar"
+        },
+        {
+          "name": "certificationCeilings",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "allowUnrated",
+                "kind": "scalar"
+              },
+              {
+                "name": "ceiling",
+                "kind": "scalar"
+              },
+              {
+                "name": "pluginID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "allowUnrated",
+              "kind": "scalar"
+            },
+            {
+              "name": "ceiling",
+              "kind": "scalar"
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "pictureURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
         }
       ]
     },
@@ -29848,6 +29928,72 @@
       ]
     },
     {
+      "field": "setprofileavatar",
+      "kind": "object",
+      "children": [
+        {
+          "name": "avatar",
+          "kind": "scalar"
+        },
+        {
+          "name": "certificationCeilings",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "allowUnrated",
+                "kind": "scalar"
+              },
+              {
+                "name": "ceiling",
+                "kind": "scalar"
+              },
+              {
+                "name": "pluginID",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "allowUnrated",
+              "kind": "scalar"
+            },
+            {
+              "name": "ceiling",
+              "kind": "scalar"
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "name",
+          "kind": "scalar"
+        },
+        {
+          "name": "pictureURL",
+          "kind": "scalar"
+        },
+        {
+          "name": "remoteMaxBitrate",
+          "kind": "scalar"
+        }
+      ]
+    },
+    {
       "field": "setprofilelibraries",
       "kind": "object",
       "children": [
@@ -36503,6 +36649,10 @@
         "effect": "read"
       },
       {
+        "field": "reorderprofiles",
+        "effect": "write"
+      },
+      {
         "field": "restorelibrary",
         "effect": "write"
       },
@@ -36632,6 +36782,10 @@
       },
       {
         "field": "setpreplayclips",
+        "effect": "write"
+      },
+      {
+        "field": "setprofileavatar",
         "effect": "write"
       },
       {

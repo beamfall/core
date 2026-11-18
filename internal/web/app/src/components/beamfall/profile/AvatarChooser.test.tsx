@@ -123,4 +123,19 @@ describe("AvatarChooser", () => {
 
     expect(tones()[start.tone]).toBeChecked();
   });
+
+  it("shows icons and colours in its options, not the Profile's picture", () => {
+    const { container } = render(
+      <I18nProvider>
+        <AvatarChooser
+          profile={{ ...profile, pictureURL: "/api/profiles/picture/p1?v=1" }}
+          onSave={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    const pictures = Array.from(container.querySelectorAll("img")).filter((img) =>
+      img.getAttribute("src")?.startsWith("/api/profiles/picture/"),
+    );
+    expect(pictures).toHaveLength(1);
+  });
 });
