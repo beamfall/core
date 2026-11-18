@@ -639,12 +639,22 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// CORE-2393: a live transcode preempts scans like generation.
 	scanHandler = scanYieldsToPlayback(resourceGovernor, logger, scanHandler)
 	jobRegistry.Register(scanpkg.JobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
+		floor, floorErr := st.MaxMediaRowID(ctx)
+		if floorErr != nil {
+			logger.Warn("asset catch-up watermark failed; skipping catch-up", "error", floorErr)
+		}
 		start := time.Now()
 		result, err := scanHandler(ctx, job)
 		recordScanMetrics(ctx, observabilityController, st, job, time.Since(start), err)
+		// Every scan invocation that added Media arms the catch-up, a yielded
+		// one included: scans yield every few files, and the deduped catch-up
+		// keeps the earliest floor while queued. It is a sweep, so it cannot
+		// start until the scan is done (CORE-2570, CORE-2571).
+		if floorErr == nil && (err == nil || errors.Is(err, jobs.ErrYielded)) {
+			enqueueAssetCatchUp(ctx, st, logger, jobWake, floor)
+		}
 		if err == nil {
 			enqueueArtworkSweep(ctx, st, logger, jobWake)
-			enqueueAssetSweep(ctx, st, logger, jobWake)
 			skipDetection.enqueue(ctx, string(job.ID))
 			// Populate the vector store for any newly scanned/identified Media
 			// (ADR-0041 §2.3 post-scan pipeline). No-op unless a semantic provider
@@ -685,6 +695,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	jobRegistry.Register(artwork.SweepJobKind, governedSweep(resourceGovernor, logger, sweepHandler))
 	assetSweepHandler := genassets.SweepHandler(assetService)
 	jobRegistry.Register(genassets.SweepJobKind, governedSweep(resourceGovernor, logger, assetSweepHandler))
+	jobRegistry.Register(genassets.CatchUpJobKind, governedSweep(resourceGovernor, logger, genassets.CatchUpHandler(assetService)))
 	// Decode-verify sampling: a low-priority background
 	// sweep that sample-decodes media bytes and flags corrupt/truncated files as
 	// broken in Library Health. Governed like the other generation sweeps so a
@@ -745,7 +756,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		return nil, err
 	}
 	enqueueArtworkSweep(ctx, st, logger, jobWake)
-	enqueueAssetSweep(ctx, st, logger, jobWake)
 	skipDetection.enqueueBoot(ctx)
 	authService := auth.NewServiceWithClock(st, readClock)
 	authService.SetIntegrationAttemptSecret(cfg.StreamTokenKey)
@@ -4017,7 +4027,7 @@ func entityFieldText(entity store.Entity, name string) string {
 }
 
 // enqueueAssetSweep schedules the Generated Assets sweep; failure
-// to enqueue is logged, never fatal — the next scan or restart re-arms it.
+// to enqueue is logged, never fatal — the nightly schedule re-arms it.
 // The job dedupes while one is queued, running, or yielded.
 func enqueueAssetSweep(ctx context.Context, st *store.Store, logger *slog.Logger, wake *jobWake) {
 	job, err := genassets.NewSweepJob(time.Now().UTC())
@@ -4029,9 +4039,28 @@ func enqueueAssetSweep(ctx context.Context, st *store.Store, logger *slog.Logger
 	}
 }
 
+// enqueueAssetCatchUp arms the Generated Assets catch-up for Media added
+// above floor, the rowid high-water mark taken before a scan invocation. No
+// new Media means nothing to arm; failure is logged, and the nightly sweep
+// covers what it missed.
+func enqueueAssetCatchUp(ctx context.Context, st *store.Store, logger *slog.Logger, wake *jobWake, floor int64) {
+	latest, err := st.MaxMediaRowID(ctx)
+	if err == nil && latest > floor {
+		var job store.Job
+		if job, err = genassets.NewCatchUpJob(time.Now().UTC(), floor); err == nil {
+			_, err = enqueueAndWake(ctx, st, wake, job)
+		}
+	}
+	if err != nil {
+		logger.Warn("asset catch-up enqueue failed", "error", err)
+	}
+}
+
 func registerBuiltInSchedules(ctx context.Context, st *store.Store, service *schedulepkg.Service, precomputeCacheRoot string, precomputeBudgetBytes int64, composesPictures bool) {
 	service.Register(singleJobSchedule(retentionSweepJobKind, schedulepkg.Daily(4, 0)))
 	service.Register(singleJobSchedule(databaseBackupJobKind, schedulepkg.Daily(3, 0)))
+	// CORE-2570: trickplay runs off-peak, one item at a time, never on the scan path.
+	service.Register(singleJobSchedule(genassets.SweepJobKind, schedulepkg.Daily(3, 0)))
 	// Events.db retention compaction: 03:30 daily, just after
 	// the backup, so a corrupt prune is captured by that morning's pre-compaction
 	// backup. DedupeKey-deduped like every seeded Schedule.
@@ -4090,6 +4119,13 @@ func singleJobSchedule(kind store.JobKind, trigger schedulepkg.Trigger) schedule
 		JobKind:        kind,
 		DefaultTrigger: trigger,
 		BuildJobs: func(_ context.Context, now time.Time) ([]store.Job, error) {
+			if kind == genassets.SweepJobKind {
+				job, err := genassets.NewSweepJob(now)
+				if err != nil {
+					return nil, err
+				}
+				return []store.Job{job}, nil
+			}
 			return []store.Job{{
 				Kind:      kind,
 				Class:     store.JobClassBackground,

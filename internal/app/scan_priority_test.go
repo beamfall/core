@@ -3,16 +3,21 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/governor"
 	"github.com/beamfall/core/internal/jobs"
 	scanpkg "github.com/beamfall/core/internal/scan"
+	schedulepkg "github.com/beamfall/core/internal/schedule"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -173,5 +178,146 @@ func TestQueuedScanPreemptsSweepHoldingOnlyWorker(t *testing.T) {
 	<-stopped
 	if count := strings.Count(logs.String(), "background sweeps preempted for a queued library scan"); count != 1 {
 		t.Fatalf("queued-scan preemption logged %d times, want 1: %s", count, logs.String())
+	}
+}
+
+func TestAssetSweepScheduleBuildsCanonicalJob(t *testing.T) {
+	now := time.Now().UTC()
+	want, err := genassets.NewSweepJob(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := singleJobSchedule(genassets.SweepJobKind, schedulepkg.Daily(3, 0))
+	got, err := spec.BuildJobs(context.Background(), now)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("scheduled jobs = %v, %v", got, err)
+	}
+	if !reflect.DeepEqual(got[0], want) {
+		t.Fatalf("scheduled job = %#v, want %#v", got[0], want)
+	}
+}
+
+func TestScanWithoutNewMediaDoesNotEnqueueCatchUp(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	beamfall, err := New(ctx, cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer beamfall.Close()
+	now := time.Now().UTC()
+	job, err := scanpkg.NewJob(scanpkg.JobRequest{LibraryID: "library-local", Root: t.TempDir(), CreatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := beamfall.store.EnqueueJob(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	ran, err := beamfall.jobs.RunOne(ctx, nil, now)
+	if err != nil || ran.Kind != scanpkg.JobKind {
+		t.Fatalf("scan = %s, %v", ran.Kind, err)
+	}
+	queued, err := beamfall.store.ListJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, job := range queued {
+		if job.Kind == genassets.SweepJobKind || job.Kind == genassets.CatchUpJobKind {
+			t.Fatalf("empty scan queued assets: %+v", job)
+		}
+	}
+}
+
+func TestCatchUpRegistrationYieldsToScan(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	beamfall, err := New(ctx, cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer beamfall.Close()
+	// Earlier than boot artwork jobs so this exact registered handler is claimed.
+	now := time.Unix(100, 0).UTC()
+	job, err := genassets.NewCatchUpJob(now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := beamfall.store.EnqueueJob(ctx, job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, ok := beamfall.governor.BeginScan(ctx)
+	if !ok {
+		t.Fatal("scan lease refused")
+	}
+	ran, runErr := beamfall.jobs.RunOne(ctx, nil, now)
+	lease.Release()
+	if ran.ID != created.ID || runErr != nil {
+		t.Fatalf("catch-up during scan = %s, %v", ran.ID, runErr)
+	}
+	persisted, err := beamfall.store.Job(ctx, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != store.JobStatusYielded {
+		t.Fatalf("catch-up status = %s, want yielded", persisted.Status)
+	}
+	// The admission refusal must not generate or advance a rowid checkpoint.
+	var checkpoint map[string]any
+	if err := json.Unmarshal(persisted.Checkpoint, &checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := checkpoint["last_rowid"]; ok {
+		t.Fatalf("refused catch-up ran: %s", persisted.Checkpoint)
+	}
+}
+
+func TestAssetCatchUpArmsOnlyForMediaAboveFloorAndKeepsEarliestFloor(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	beamfall, err := New(ctx, cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer beamfall.Close()
+	latest, err := beamfall.store.MaxMediaRowID(ctx)
+	if err != nil || latest < 2 {
+		t.Fatalf("seeded media rowid = %d, %v", latest, err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	catchUps := func() []store.Job {
+		t.Helper()
+		all, err := beamfall.store.ListJobs(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found []store.Job
+		for _, job := range all {
+			if job.Kind == genassets.CatchUpJobKind {
+				found = append(found, job)
+			}
+		}
+		return found
+	}
+	enqueueAssetCatchUp(ctx, beamfall.store, logger, beamfall.jobWake, latest)
+	if got := catchUps(); len(got) != 0 {
+		t.Fatalf("no new media armed a catch-up: %+v", got)
+	}
+	// Two scan invocations (the first yielded): the queued catch-up keeps the
+	// first invocation's floor, so media from both batches is covered.
+	enqueueAssetCatchUp(ctx, beamfall.store, logger, beamfall.jobWake, latest-2)
+	enqueueAssetCatchUp(ctx, beamfall.store, logger, beamfall.jobWake, latest-1)
+	got := catchUps()
+	if len(got) != 1 {
+		t.Fatalf("catch-up jobs = %d, want 1 deduped", len(got))
+	}
+	var payload struct {
+		AfterRowID int64 `json:"after_rowid"`
+	}
+	if err := json.Unmarshal(got[0].Payload, &payload); err != nil || payload.AfterRowID != latest-2 {
+		t.Fatalf("catch-up floor = %d, %v; want %d", payload.AfterRowID, err, latest-2)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/beamfall/core/internal/store"
@@ -593,6 +594,9 @@ func (s *Service) GenerateTrickplay(ctx context.Context, id store.MediaID) error
 	if err != nil || !ok {
 		return err
 	}
+	if media.DurationSeconds < defaultIntervalSeconds || discImageSource(file.Path, media.Container) {
+		return nil
+	}
 	s.trickplay.Lock()
 	defer s.trickplay.Unlock()
 	manifestPath := s.ManifestPath(file.ContentFingerprint)
@@ -645,6 +649,23 @@ func (s *Service) GenerateTrickplay(ctx context.Context, id store.MediaID) error
 		return err
 	}
 	return s.removeOrphanTrickplaySheets(file.ContentFingerprint, names)
+}
+
+// discImageSource excludes disc containers and files inside disc directory trees.
+func discImageSource(path, container string) bool {
+	if strings.EqualFold(container, "iso") {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".iso", ".img":
+		return true
+	}
+	for segment := range strings.SplitSeq(strings.ReplaceAll(path, `\`, "/"), "/") {
+		if strings.EqualFold(segment, "BDMV") || strings.EqualFold(segment, "VIDEO_TS") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) removeOrphanTrickplaySheets(fingerprint string, expected []string) error {

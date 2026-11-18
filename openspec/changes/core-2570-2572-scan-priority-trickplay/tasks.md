@@ -9,3 +9,14 @@
 - [x] Validate all OpenSpec changes and specifications with strict checking
 - [x] Pass golangci-lint with a comment-only G703 annotation for the test-owned shim path
 - [ ] Run ESLint successfully (the repository uses Biome and has no ESLint configuration)
+
+- [x] Preserve single-thread keyframe decode and hardware → software → every-frame file retries
+- [x] Move the full Generated Assets sweep to the daily 03:00 Schedule; retain manual run now
+- [x] Remove full sweep enqueues from scan completion and boot, preserving artwork/skip detection
+- [x] Add shared-catalog rowid watermark and bounded insertion-order pagination with store tests
+- [x] Add deduped post-scan catch-up with durable rowid checkpoints and shared per-item generation
+- [x] Yield catch-up to scans/transcodes and retry interrupted items without skipping assets
+- [x] Skip trickplay for short videos and disc sources, preserving existing/no-video skips
+- [x] Cover scan/boot enqueue behavior, canonical scheduled payload, 03:00 trigger and catch-up resume
+- [x] Pass scoped Go tests, go vet and golangci-lint; confirm changed Go files are gofmt-clean
+- [x] Revalidate all OpenSpec changes and specifications strictly after these additions
