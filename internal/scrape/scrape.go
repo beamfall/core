@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -89,6 +90,34 @@ type EntityResult struct {
 	// no Name, Relation or parent and the consumer never creates an Entity
 	// from it.
 	Container bool
+	// Artwork holds a container result's ArtworkMap resolutions: artwork slot
+	// → absolute image URL, composed like Media artwork. Nil when the map
+	// declares no ArtworkMap or none of its paths resolved.
+	Artwork map[string]string
+	// Title is a container result's TitlePath resolution: the display title
+	// that replaces the container Entity's title. Empty keeps the title.
+	Title string
+	// Links are a container result's ContainerRelations resolutions: the
+	// Entities sibling maps hydrated in the same lookup, each under the
+	// container relation it is linked by.
+	Links []EntityLink
+	// LinkRelations lists, sorted, the container relations the map declares:
+	// Links holds every link under them this lookup resolved, so a relation
+	// with no Links resolved to none.
+	LinkRelations []string
+	// containerRelations is the container map's ContainerRelations, which
+	// linkContainerResults resolves into Links once every map has resolved.
+	containerRelations map[string]string
+}
+
+// EntityLink is one container → Entity link a ContainerRelations entry
+// resolved: the container relation name and the hydrated sibling Entity's
+// kind, name and sort order.
+type EntityLink struct {
+	Relation  string
+	Kind      string
+	Name      string
+	SortOrder *int
 }
 
 // CredentialSource resolves an AuthRef to its secret. The engine never reads
@@ -493,6 +522,7 @@ func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, te
 	if err != nil {
 		return Result{}, err
 	}
+	linkContainerResults(result.Entities)
 	if template == spec.LookupTemplate {
 		if err := e.overlayItemLookup(ctx, spec, id, v, config, &result); err != nil {
 			return Result{}, err
@@ -968,10 +998,25 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 		}
 		node = elements[0]
 	}
-	entity := EntityResult{Kind: entityMap.Kind, Container: true}
+	entity := EntityResult{Kind: entityMap.Kind, Container: true, containerRelations: entityMap.ContainerRelations}
 	if entityMap.ArtworkPath != "" {
 		if value, ok := resolveJSONPath(node, substituteConfig(entityMap.ArtworkPath, config, identity)); ok && value != "" {
 			entity.ArtworkURL = renderArtworkURL(spec.ArtworkBaseURL, entityMap.ArtworkURLTemplate, value)
+		}
+	}
+	for slot, path := range entityMap.ArtworkMap {
+		value, ok := resolveJSONPath(node, substituteConfig(path, config, identity))
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if entity.Artwork == nil {
+			entity.Artwork = map[string]string{}
+		}
+		entity.Artwork[slot] = renderArtworkURL(spec.ArtworkBaseURL, spec.ArtworkURLTemplates[slot], value)
+	}
+	if entityMap.TitlePath != "" {
+		if value, ok := resolveJSONPath(node, substituteConfig(entityMap.TitlePath, config, identity)); ok {
+			entity.Title = strings.TrimSpace(value)
 		}
 	}
 	for field, path := range entityMap.FieldMap {
@@ -984,7 +1029,28 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 		}
 		entity.Fields[field] = value
 	}
-	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0
+	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0 || len(entity.Artwork) > 0 || entity.Title != "" || len(entityMap.ContainerRelations) > 0
+}
+
+// linkContainerResults fills each container result's Links from its map's
+// ContainerRelations: every non-container result in the same lookup whose
+// relation is the one a container relation names.
+func linkContainerResults(entities []EntityResult) {
+	for i := range entities {
+		container := &entities[i]
+		if len(container.containerRelations) > 0 {
+			container.LinkRelations = slices.Sorted(maps.Keys(container.containerRelations))
+		}
+		for _, relation := range container.LinkRelations {
+			sibling := container.containerRelations[relation]
+			for _, hydrated := range entities {
+				if hydrated.Container || hydrated.Relation != sibling {
+					continue
+				}
+				container.Links = append(container.Links, EntityLink{Relation: relation, Kind: hydrated.Kind, Name: hydrated.Name, SortOrder: hydrated.SortOrder})
+			}
+		}
+	}
 }
 
 // composeArtworkURL prefixes ArtworkBaseURL onto site-relative artwork paths

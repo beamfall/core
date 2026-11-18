@@ -531,6 +531,100 @@ func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, rela
 	return tx.Commit()
 }
 
+// ReplaceEntityRelations rewrites the Entity-target relations of one source
+// Entity under each of names: the source's previous Entity-target rows under
+// those names are deleted and the given rows inserted, in one transaction, so
+// a name with no rows is cleared. Other relation names, and Media-target rows,
+// are left as they are. Every row must come from fromID, target an Entity and
+// carry one of names.
+func (s *Store) ReplaceEntityRelations(ctx context.Context, fromID EntityID, names []string, relations []EntityRelation) error {
+	// Authority face: Entity-relation catalog rows are main-only.
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if fromID == "" {
+		return errors.New("relation source entity is required")
+	}
+	type row struct {
+		relation   EntityRelation
+		attributes any
+		sortOrder  any
+	}
+	named := map[string]bool{}
+	for _, name := range names {
+		if name == "" {
+			return errors.New("relation name is required")
+		}
+		named[name] = true
+	}
+	rows := make([]row, 0, len(relations))
+	for _, relation := range relations {
+		if relation.FromEntityID != fromID || relation.ToEntityID == "" || relation.ToMediaID != "" {
+			return errors.New("replaced relations must all come from the entity and target an entity")
+		}
+		if !named[relation.Name] {
+			return errors.New("replaced relation " + relation.Name + " is not one of the replaced names")
+		}
+		switch relation.Cardinality {
+		case "", "one", "many":
+		default:
+			return errors.New("unknown relation cardinality " + relation.Cardinality)
+		}
+		attributes, sortOrder, err := entityRelationRowValues(relation)
+		if err != nil {
+			return err
+		}
+		rows = append(rows, row{relation: relation, attributes: attributes, sortOrder: sortOrder})
+	}
+	if len(names) == 0 {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	fromPlane, err := s.catalogPlaneForEntityLocked(ctx, fromID)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		toPlane, err := s.catalogPlaneForEntityLocked(ctx, r.relation.ToEntityID)
+		if err != nil {
+			return err
+		}
+		if fromPlane.encrypted || toPlane.encrypted {
+			if !fromPlane.encrypted || !toPlane.encrypted || fromPlane.libraryID != toPlane.libraryID {
+				return errors.New("encrypted cross-library entity relations are not supported")
+			}
+		}
+	}
+	tx, err := fromPlane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, name := range names {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM entity_relation WHERE from_entity_id = ? AND relation = ? AND to_entity_id IS NOT NULL`, fromID, name,
+		); err != nil {
+			return err
+		}
+	}
+	for _, r := range rows {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO entity_relation(from_entity_id, relation, to_entity_id, attributes, sort_order)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(from_entity_id, relation, to_entity_id) WHERE to_entity_id IS NOT NULL
+			DO UPDATE SET attributes = excluded.attributes, sort_order = excluded.sort_order
+		`, fromID, r.relation.Name, r.relation.ToEntityID, r.attributes, r.sortOrder); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // entityRelationRowValues encodes a relation's attributes and sort order as
 // their nullable column values.
 func entityRelationRowValues(relation EntityRelation) (attributes, sortOrder any, err error) {

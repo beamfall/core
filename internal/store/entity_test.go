@@ -968,6 +968,78 @@ func TestReplaceMediaRelationsRewritesNamedKindsOnly(t *testing.T) {
 	}
 }
 
+// TestReplaceEntityRelationsRewritesNamedRelationsOnly: replacing a source
+// Entity's links under one relation name drops its previous Entity targets
+// under that name and keeps its other names and its Media-target rows; a row
+// from another source or under an unnamed relation is rejected before
+// anything is deleted, and a named relation with no rows is cleared.
+func TestReplaceEntityRelationsRewritesNamedRelationsOnly(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for _, id := range []EntityID{"entity-a", "entity-b", "entity-c", "entity-d"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, relation := range []EntityRelation{
+		{FromEntityID: "entity-a", Name: "linked", ToEntityID: "entity-b"},
+		{FromEntityID: "entity-a", Name: "linked", ToEntityID: "entity-c"},
+		{FromEntityID: "entity-a", Name: "other", ToEntityID: "entity-b"},
+		{FromEntityID: "entity-a", Name: "linked", ToMediaID: "media-alpha"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	order := 0
+	if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, []EntityRelation{
+		{FromEntityID: "entity-a", Name: "linked", ToEntityID: "entity-d", SortOrder: &order},
+	}); err != nil {
+		t.Fatalf("ReplaceEntityRelations: %v", err)
+	}
+	targets := func(name string) []EntityID {
+		t.Helper()
+		ids, _, err := st.EntityRelationTargets(ctx, "library-local", "entity-a", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ids
+	}
+	if got := targets("linked"); len(got) != 1 || got[0] != "entity-d" {
+		t.Fatalf("replaced relation targets = %v, want only entity-d", got)
+	}
+	if got := targets("other"); len(got) != 1 || got[0] != "entity-b" {
+		t.Fatalf("untouched relation targets = %v, want entity-b kept", got)
+	}
+	related, err := st.EntitiesForMedia(ctx, "media-alpha", "linked", LibraryFilter{AllLibraries: true})
+	if err != nil || len(related) != 1 || related[0].Entity.ID != "entity-a" {
+		t.Fatalf("media-target row = %v, %v; want entity-a kept", related, err)
+	}
+
+	for name, rows := range map[string][]EntityRelation{
+		"a row from another source":       {{FromEntityID: "entity-b", Name: "linked", ToEntityID: "entity-c"}},
+		"a row under an unnamed relation": {{FromEntityID: "entity-a", Name: "other", ToEntityID: "entity-c"}},
+	} {
+		if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, rows); err == nil {
+			t.Fatalf("ReplaceEntityRelations accepted %s", name)
+		}
+	}
+	if got := targets("linked"); len(got) != 1 || got[0] != "entity-d" {
+		t.Fatalf("rejected replace disturbed rows: %v", got)
+	}
+
+	// A named relation with no rows is cleared.
+	if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, nil); err != nil {
+		t.Fatalf("ReplaceEntityRelations clearing: %v", err)
+	}
+	if got := targets("linked"); len(got) != 0 {
+		t.Fatalf("cleared relation targets = %v, want none", got)
+	}
+	if got := targets("other"); len(got) != 1 {
+		t.Fatalf("clearing disturbed another relation: %v", got)
+	}
+}
+
 func TestMediaForEntityOrdersBySortOrderThenTitle(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

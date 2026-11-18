@@ -1171,6 +1171,35 @@ func (s *Service) ImportEntityPoster(ctx context.Context, id store.EntityID, dat
 	return nil
 }
 
+// ImportEntityArtwork stores fetched artwork bytes in one of the Entity's
+// artwork slots — the write path a container map's ArtworkMap images land
+// through. The poster slot is ImportEntityPoster; every other slot gets the
+// same gates: an unknown slot is an error, a slot locked by local artwork is
+// refused with a *SlotLockedError, and an Entity of a Sealed or Encrypted
+// Library (or one whose Library cannot be resolved while either gate is set)
+// gets nothing.
+func (s *Service) ImportEntityArtwork(ctx context.Context, id store.EntityID, slot string, data []byte) error {
+	if slot == SlotPoster {
+		return s.ImportEntityPoster(ctx, id, data)
+	}
+	if !ValidSlot(slot) {
+		return fmt.Errorf("unknown artwork slot %q", slot)
+	}
+	if s.entityProtected(ctx, id) {
+		return nil
+	}
+	dst := s.EntityArtworkPath(id, slot)
+	unlock, err := s.lockDerivative(ctx, filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if lock, locked := readSlotLock(dst); locked {
+		return &SlotLockedError{Slot: slot, Source: lock.Source}
+	}
+	return s.importArtwork(ctx, dst, string(id), slot, data)
+}
+
 // importArtwork backs the Media and Entity artwork import paths; owner is the
 // ID reported when normalization fails.
 func (s *Service) importArtwork(ctx context.Context, dst, owner, slot string, data []byte) error {
