@@ -88,7 +88,7 @@ export function AppShell({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const hasSidebar = register === "viewer" && !!manifest && manifest.navigation.length > 0;
   // The Profile's own pin and order choice over the server navigation (CORE-2435).
-  const [sidebarPrefs, saveSidebarPrefs] = useSidebarPrefs(
+  const [sidebarPrefs, saveSidebarPrefs, sidebarPrefsReady] = useSidebarPrefs(
     hasSidebar && session && !needsEnroll ? session.profileID : null,
   );
   const sidebarEditable = hasSidebar && !!session && !needsEnroll;
@@ -235,6 +235,7 @@ export function AppShell({
                       drawer
                       onNavigate={() => setDrawerOpen(false)}
                       prefs={sidebarPrefs}
+                      prefsReady={sidebarPrefsReady}
                       onSavePrefs={sidebarEditable ? saveSidebarPrefs : undefined}
                     />
                   }
@@ -251,6 +252,7 @@ export function AppShell({
               drawer={false}
               onNavigate={() => setDrawerOpen(false)}
               prefs={sidebarPrefs}
+              prefsReady={sidebarPrefsReady}
               onSavePrefs={sidebarEditable ? saveSidebarPrefs : undefined}
             />
           ))}

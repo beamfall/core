@@ -8,7 +8,14 @@ import {
   Pin,
   PinOff,
 } from "lucide-react";
-import { type ComponentProps, type CSSProperties, type KeyboardEvent, useState } from "react";
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "react-router";
 import { displayString } from "@/lib/display";
 import type { LibrarySummary, NavigationNode } from "@/lib/graphql/types";
@@ -45,6 +52,7 @@ export function LibrarySidebar({
   drawer,
   onNavigate,
   prefs = EMPTY_SIDEBAR_PREFS,
+  prefsReady = true,
   onSavePrefs,
   className,
   ...aside
@@ -59,6 +67,11 @@ export function LibrarySidebar({
   onNavigate: () => void;
   /** The Profile's own pin and order choice. */
   prefs?: SidebarLibraryPrefs;
+  /**
+   * False while the Profile's saved choice is still loading: an edit begun
+   * then would start from server order and overwrite the saved choice.
+   */
+  prefsReady?: boolean;
   /** Saves an edited choice; without it the sidebar offers no edit mode. */
   onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>;
 }) {
@@ -75,6 +88,20 @@ export function LibrarySidebar({
   const [editing, setEditing] = useState<EditDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  // A second Done in the same tick sees stale state; the ref does not.
+  const savingRef = useRef(false);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
+  // Leaving edit mode hands focus back to the Edit button it came from.
+  const restoreFocus = useRef(false);
+  useEffect(() => {
+    if (editing || !restoreFocus.current) return;
+    restoreFocus.current = false;
+    editButtonRef.current?.focus();
+  }, [editing]);
+  function leaveEditing() {
+    restoreFocus.current = true;
+    setEditing(null);
+  }
   const canEdit = !!onSavePrefs && libraryNodes.length > 0 && (!collapsed || drawer);
   const moreId = `${id}-more`;
   const homeId = rendered[0]?.id;
@@ -141,11 +168,14 @@ export function LibrarySidebar({
               <h2 className="bf-side-heading">{t("libraries")}</h2>
               {canEdit && !editing && (
                 <button
+                  ref={editButtonRef}
                   type="button"
                   className="bf-side-tool"
                   aria-label={t("sidebarEdit")}
+                  aria-disabled={!prefsReady}
                   title={t("sidebarEdit")}
                   onClick={() => {
+                    if (!prefsReady) return;
                     setSaveFailed(false);
                     setEditing(startDraft(pinned, unpinned, libraryIDOf));
                   }}
@@ -163,17 +193,21 @@ export function LibrarySidebar({
                 }}
                 saving={saving}
                 onChange={setEditing}
-                onCancel={() => setEditing(null)}
+                onCancel={() => {
+                  if (!savingRef.current) leaveEditing();
+                }}
                 onDone={async () => {
-                  if (!onSavePrefs) return;
+                  if (!onSavePrefs || savingRef.current) return;
+                  savingRef.current = true;
                   setSaving(true);
                   setSaveFailed(false);
                   try {
                     await onSavePrefs({ order: editing.order, hidden: [...editing.hidden] });
-                    setEditing(null);
+                    leaveEditing();
                   } catch {
                     setSaveFailed(true);
                   } finally {
+                    savingRef.current = false;
                     setSaving(false);
                   }
                 }}
@@ -267,8 +301,15 @@ function SidebarEditor({
   const [dragging, setDragging] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const count = draft.order.length;
+  const listRef = useRef<HTMLUListElement>(null);
+  // Entering edit mode moves focus to the first control, where the Edit
+  // button that started it no longer is.
+  useEffect(() => {
+    listRef.current?.querySelector("button")?.focus();
+  }, []);
 
   function move(from: number, to: number) {
+    if (saving) return;
     const order = moveEntry(draft.order, from, to);
     if (order === draft.order) return;
     onChange({ ...draft, order });
@@ -278,6 +319,7 @@ function SidebarEditor({
   }
 
   function togglePin(libraryID: string) {
+    if (saving) return;
     const hidden = new Set(draft.hidden);
     if (hidden.has(libraryID)) hidden.delete(libraryID);
     else hidden.add(libraryID);
@@ -297,7 +339,7 @@ function SidebarEditor({
 
   return (
     <div className="bf-side-editor">
-      <ul className="bf-side-list">
+      <ul ref={listRef} className="bf-side-list">
         {draft.order.map((libraryID, index) => {
           const title = titleOf(libraryID);
           const isPinned = !draft.hidden.has(libraryID);
@@ -309,8 +351,9 @@ function SidebarEditor({
                 (isPinned ? "" : " is-unpinned") +
                 (dragging === libraryID ? " is-dragging" : "")
               }
-              draggable
+              draggable={!saving}
               onDragStart={(event) => {
+                if (saving) return;
                 setDragging(libraryID);
                 event.dataTransfer?.setData("text/plain", libraryID);
                 if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
@@ -335,6 +378,7 @@ function SidebarEditor({
                 className="bf-side-tool"
                 aria-pressed={isPinned}
                 aria-label={t("sidebarPin", { name: title })}
+                aria-disabled={saving || undefined}
                 onClick={() => togglePin(libraryID)}
               >
                 {isPinned ? (
@@ -347,7 +391,7 @@ function SidebarEditor({
                 type="button"
                 className="bf-side-tool"
                 aria-label={t("sidebarMoveUp", { name: title })}
-                aria-disabled={index === 0}
+                aria-disabled={saving || index === 0}
                 onClick={() => move(index, index - 1)}
               >
                 <ChevronUp aria-hidden className="size-4" />
@@ -356,7 +400,7 @@ function SidebarEditor({
                 type="button"
                 className="bf-side-tool"
                 aria-label={t("sidebarMoveDown", { name: title })}
-                aria-disabled={index === count - 1}
+                aria-disabled={saving || index === count - 1}
                 onClick={() => move(index, index + 1)}
               >
                 <ChevronDown aria-hidden className="size-4" />
@@ -366,14 +410,19 @@ function SidebarEditor({
         })}
       </ul>
       <div className="bf-side-edit-actions">
-        <button type="button" className="bf-side-action" onClick={onCancel} disabled={saving}>
+        <button
+          type="button"
+          className="bf-side-action"
+          onClick={onCancel}
+          aria-disabled={saving || undefined}
+        >
           {t("sidebarCancel")}
         </button>
         <button
           type="button"
           className="bf-side-action is-primary"
           onClick={onDone}
-          disabled={saving}
+          aria-disabled={saving || undefined}
         >
           {t("sidebarDone")}
         </button>

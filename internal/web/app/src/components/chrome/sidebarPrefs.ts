@@ -74,7 +74,9 @@ export function applySidebarPrefs<T>(
 interface Entry {
   profileID: string;
   prefs: SidebarLibraryPrefs;
-  loaded: boolean;
+  // A failed read is retried on the next mount: an aborted first load (a
+  // reveal or relock cancels in-flight requests) must not pin server order.
+  state: "loading" | "loaded" | "failed";
   // Set once the Profile saves: a read still in flight must not overwrite it.
   dirty: boolean;
 }
@@ -93,9 +95,18 @@ function subscribe(listener: () => void) {
   };
 }
 
+function isReady(current: Entry) {
+  return current.dirty || current.state !== "loading";
+}
+
 function load(profileID: string) {
-  if (entry?.profileID === profileID) return;
-  const current: Entry = { profileID, prefs: EMPTY_SIDEBAR_PREFS, loaded: false, dirty: false };
+  if (entry?.profileID === profileID && (entry.dirty || entry.state !== "failed")) return;
+  const current: Entry = {
+    profileID,
+    prefs: EMPTY_SIDEBAR_PREFS,
+    state: "loading",
+    dirty: false,
+  };
   entry = current;
   emit();
   fetchClientPrefs()
@@ -104,11 +115,14 @@ function load(profileID: string) {
       current.prefs = parseSidebarPrefs(
         prefs.find((pref) => pref.key === SIDEBAR_LIBRARIES_PREF_KEY)?.value,
       );
-      current.loaded = true;
+      current.state = "loaded";
       emit();
     })
     .catch(() => {
-      // Keep the server order; the next Profile switch or reload tries again.
+      // Keep the server order for now; the next mount tries again.
+      if (entry !== current) return;
+      current.state = "failed";
+      emit();
     });
 }
 
@@ -118,12 +132,13 @@ export function resetSidebarPrefsCache() {
 }
 
 /**
- * The signed-in Profile's sidebar choice and a saver. With no Profile the
- * choice is empty and saving does nothing.
+ * The signed-in Profile's sidebar choice, a saver, and whether the saved
+ * choice has settled (loaded, failed or since saved). With no Profile the
+ * choice is empty, ready, and saving does nothing.
  */
 export function useSidebarPrefs(
   profileID: string | null,
-): [SidebarLibraryPrefs, (prefs: SidebarLibraryPrefs) => Promise<void>] {
+): [SidebarLibraryPrefs, (prefs: SidebarLibraryPrefs) => Promise<void>, boolean] {
   useEffect(() => {
     if (profileID) load(profileID);
   }, [profileID]);
@@ -132,11 +147,16 @@ export function useSidebarPrefs(
     () => (profileID && entry?.profileID === profileID ? entry.prefs : EMPTY_SIDEBAR_PREFS),
     () => EMPTY_SIDEBAR_PREFS,
   );
+  const ready = useSyncExternalStore(
+    subscribe,
+    () => !profileID || (entry?.profileID === profileID && isReady(entry)),
+    () => !profileID,
+  );
   const save = useCallback(
     async (next: SidebarLibraryPrefs) => {
       if (!profileID) return;
       if (entry?.profileID !== profileID) {
-        entry = { profileID, prefs: EMPTY_SIDEBAR_PREFS, loaded: false, dirty: false };
+        entry = { profileID, prefs: EMPTY_SIDEBAR_PREFS, state: "loading", dirty: false };
       }
       const current = entry;
       const previous = current.prefs;
@@ -155,5 +175,5 @@ export function useSidebarPrefs(
     },
     [profileID],
   );
-  return [prefs, save];
+  return [prefs, save, ready];
 }
