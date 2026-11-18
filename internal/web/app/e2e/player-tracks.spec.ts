@@ -167,17 +167,13 @@ test("HLS route offers every audio and subtitle stream of a multi-track file", a
   });
   await expect(unavailable).toHaveAttribute("aria-disabled", "true");
 
-  await subtitles
-    .getByRole("option", { name: "German · Forced", exact: true })
-    .click();
+  await subtitles.getByRole("option", { name: "German · Forced", exact: true }).click();
   await expect.poll(() => shownCaption(page)).toBe("sidecar-main-0");
 
   // A bitmap stream has no text rendition: choosing it renegotiates a burn-in.
   const beforeBurn = requests.length;
   const subtitlesAgain = await openMenu(page, "Subtitles");
-  await subtitlesAgain
-    .getByRole("option", { name: "French · Burned in", exact: true })
-    .click();
+  await subtitlesAgain.getByRole("option", { name: "French · Burned in", exact: true }).click();
   await expect
     .poll(() => requests.slice(beforeBurn).map((r) => r.selectedSubtitleIndex))
     .toContain(6);
