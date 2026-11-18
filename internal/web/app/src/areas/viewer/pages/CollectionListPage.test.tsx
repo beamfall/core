@@ -114,7 +114,14 @@ describe("CollectionListPage", () => {
     expect(screen.getByText("5 items")).toBeInTheDocument();
     // Only collections with members are read, in one call.
     expect(fetchCollectionPosters).toHaveBeenCalledTimes(1);
-    expect([...vi.mocked(fetchCollectionPosters).mock.calls[0][0]].sort()).toEqual(["c1", "c3"]);
+    expect(
+      [...vi.mocked(fetchCollectionPosters).mock.calls[0][0]].sort((a, b) =>
+        a.id.localeCompare(b.id),
+      ),
+    ).toEqual([
+      { id: "c1", memberCount: 5 },
+      { id: "c3", memberCount: 2 },
+    ]);
     for (const name of ["Empty set", "No art"]) {
       const card = screen.getByRole("link", { name });
       expect(card.querySelector("img")).toBeNull();

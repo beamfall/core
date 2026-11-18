@@ -139,57 +139,77 @@ export function moveEntry(
 /** How many member posters a collection card's collage shows (CORE-2438). */
 export const COLLAGE_POSTERS = 4;
 /**
- * Members read per Collection for the collage. The server applies the feed
- * limit before Mute filtering, so a window of exactly COLLAGE_POSTERS would
- * come back empty when the leading members are muted or posterless; reading a
- * wider window and keeping the first COLLAGE_POSTERS posters skips them.
+ * Members read per Collection per page of the collage read. The server applies
+ * the feed limit before Mute filtering, so a page can come back short or with
+ * no posters while later members still have them.
  */
 export const POSTER_WINDOW = 16;
 /** Collections per poster read; the server bounds top-level fields per operation at 64. */
 export const POSTER_BATCH = 32;
+/** Pages read per Collection at most, so a long muted run cannot read forever. */
+export const POSTER_PAGES = 8;
+
+/** A Collection the collage read covers: its id and how many members it has. */
+export interface CollagePosterSource {
+  id: string;
+  memberCount: number;
+}
 
 /**
  * The first visible members' poster URLs of each Collection, in curated order,
  * for the list page's collage (CORE-2438). Collections have no artwork of
  * their own, so the posters come through the same collection feed the
  * Collection page reads (visibility, Mute and reveal filtering included), one
- * aliased `sourceItems` field per Collection and one request per batch. A
- * Collection whose members have no poster maps to an empty list.
+ * aliased `sourceItems` field per Collection and one request per batch and
+ * page. Because muting drops members after the limit, a short or posterless
+ * page does not end the read: it pages on by offset until a Collection has
+ * COLLAGE_POSTERS posters, its memberCount is covered, or POSTER_PAGES pages
+ * have been read. A Collection whose visible members have no poster maps to
+ * an empty list.
  */
 export async function fetchCollectionPosters(
-  collectionIDs: readonly string[],
+  collections: readonly CollagePosterSource[],
   signal?: AbortSignal,
 ): Promise<Map<string, string[]>> {
   const posters = new Map<string, string[]>();
-  const batches: string[][] = [];
-  for (let at = 0; at < collectionIDs.length; at += POSTER_BATCH) {
-    batches.push(collectionIDs.slice(at, at + POSTER_BATCH));
+  for (const collection of collections) posters.set(collection.id, []);
+  const batches: CollagePosterSource[][] = [];
+  for (let at = 0; at < collections.length; at += POSTER_BATCH) {
+    batches.push(collections.slice(at, at + POSTER_BATCH));
   }
-  await Promise.all(
-    batches.map(async (ids) => {
-      const variables: Record<string, string> = {};
-      const declared: string[] = [];
-      const fields: string[] = [];
-      ids.forEach((id, index) => {
-        variables[`v${index}`] = id;
-        declared.push(`$v${index}: String`);
-        fields.push(
-          `c${index}: sourceItems(kind: "collection", value: $v${index}, limit: ${POSTER_WINDOW}) { id artwork { poster } artworkSlots }`,
-        );
-      });
-      const query = `query CollectionPosters(${declared.join(", ")}) { ${fields.join(" ")} }`;
-      const data = await graphql<Record<string, SourceItem[] | null>>(query, variables, signal);
-      ids.forEach((id, index) => {
-        const items = data[`c${index}`] ?? [];
-        posters.set(
-          id,
-          items
-            .map((item) => artworkSlotURL(item, "poster"))
-            .filter((url) => url !== "")
-            .slice(0, COLLAGE_POSTERS),
-        );
-      });
-    }),
-  );
+  await Promise.all(batches.map((batch) => readPosterBatch(batch, posters, signal)));
   return posters;
+}
+
+async function readPosterBatch(
+  batch: readonly CollagePosterSource[],
+  posters: Map<string, string[]>,
+  signal?: AbortSignal,
+): Promise<void> {
+  let pending = [...batch];
+  for (let page = 0; page < POSTER_PAGES && pending.length > 0; page++) {
+    const offset = page * POSTER_WINDOW;
+    const variables: Record<string, string> = {};
+    const declared: string[] = [];
+    const fields: string[] = [];
+    pending.forEach((collection, index) => {
+      variables[`v${index}`] = collection.id;
+      declared.push(`$v${index}: String`);
+      fields.push(
+        `c${index}: sourceItems(kind: "collection", value: $v${index}, limit: ${POSTER_WINDOW}, offset: ${offset}) { id artwork { poster } artworkSlots }`,
+      );
+    });
+    const query = `query CollectionPosters(${declared.join(", ")}) { ${fields.join(" ")} }`;
+    const data = await graphql<Record<string, SourceItem[] | null>>(query, variables, signal);
+    pending = pending.filter((collection, index) => {
+      const found = posters.get(collection.id) ?? [];
+      for (const item of data[`c${index}`] ?? []) {
+        if (found.length >= COLLAGE_POSTERS) break;
+        const url = artworkSlotURL(item, "poster");
+        if (url !== "") found.push(url);
+      }
+      posters.set(collection.id, found);
+      return found.length < COLLAGE_POSTERS && offset + POSTER_WINDOW < collection.memberCount;
+    });
+  }
 }

@@ -11,6 +11,7 @@ import {
   memberOrder,
   moveEntry,
   POSTER_BATCH,
+  POSTER_PAGES,
   POSTER_WINDOW,
   sortCollections,
 } from "./collections";
@@ -144,40 +145,67 @@ describe("fetchCollectionPosters", () => {
       }
       return data;
     });
-    const ids = Array.from({ length: POSTER_BATCH + 1 }, (_, i) => `c${i}`);
+    const sources = Array.from({ length: POSTER_BATCH + 1 }, (_, i) => ({
+      id: `c${i}`,
+      memberCount: 3,
+    }));
 
-    const posters = await fetchCollectionPosters(ids);
+    const posters = await fetchCollectionPosters(sources);
 
+    // Every Collection's members fit one page, so each batch is one request.
     expect(graphql).toHaveBeenCalledTimes(2);
     const [query, variables] = vi.mocked(graphql).mock.calls[0];
     expect(query).toContain(
-      `c0: sourceItems(kind: "collection", value: $v0, limit: ${POSTER_WINDOW})`,
+      `c0: sourceItems(kind: "collection", value: $v0, limit: ${POSTER_WINDOW}, offset: 0)`,
     );
     expect(Object.keys(variables as object)).toHaveLength(POSTER_BATCH);
     expect(posters.get("c0")).toEqual(["/p/1", "/p/2"]);
     expect(posters.get(`c${POSTER_BATCH}`)).toEqual([]);
-    expect(posters.size).toBe(ids.length);
+    expect(posters.size).toBe(sources.length);
   });
 
-  it("keeps the first visible posters past muted or posterless leading members", async () => {
-    // The server limits the feed before Mute filtering, so the window it
-    // answers can start with members that carry no poster (CORE-2438).
-    vi.mocked(graphql).mockResolvedValue({
-      c0: [
-        { id: "m1" },
-        { id: "m2" },
-        { id: "m3" },
-        { id: "m4" },
-        ...Array.from({ length: 6 }, (_, i) => ({
-          id: `v${i}`,
-          artworkSlots: { poster: `/p/v${i}` },
-        })),
-      ],
+  // A feed whose members are muted or posterless up to `visibleFrom`, then
+  // carry posters; the server pages before Mute, so muted pages come back empty.
+  function mutedFeed(visibleFrom: number) {
+    vi.mocked(graphql).mockImplementation(async (query) => {
+      const offset = Number(/offset: (\d+)/.exec(query)?.[1] ?? "0");
+      const page: unknown[] = [];
+      for (let at = offset; at < offset + POSTER_WINDOW; at++) {
+        if (at >= visibleFrom) page.push({ id: `m${at}`, artworkSlots: { poster: `/p/${at}` } });
+        else if (at % 2 === 0) page.push({ id: `m${at}` });
+      }
+      return { c0: page };
     });
+  }
 
-    const posters = await fetchCollectionPosters(["c0"]);
+  it("pages past a muted first window until it has the collage's posters", async () => {
+    mutedFeed(POSTER_WINDOW);
 
-    expect(posters.get("c0")).toEqual(["/p/v0", "/p/v1", "/p/v2", "/p/v3"]);
-    expect(POSTER_WINDOW).toBeGreaterThan(COLLAGE_POSTERS);
+    const posters = await fetchCollectionPosters([{ id: "c0", memberCount: 100 }]);
+
+    expect(posters.get("c0")).toEqual(["/p/16", "/p/17", "/p/18", "/p/19"]);
+    expect(graphql).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(graphql).mock.calls[1][0]).toContain(`offset: ${POSTER_WINDOW}`);
+  });
+
+  it("fills the collage across pages when leading members have no poster", async () => {
+    mutedFeed(POSTER_WINDOW - 2);
+
+    const posters = await fetchCollectionPosters([{ id: "c0", memberCount: 100 }]);
+
+    expect(posters.get("c0")).toEqual(["/p/14", "/p/15", "/p/16", "/p/17"]);
+    expect(graphql).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops at the member count and at the page cap", async () => {
+    mutedFeed(Number.MAX_SAFE_INTEGER);
+
+    expect((await fetchCollectionPosters([{ id: "c0", memberCount: 20 }])).get("c0")).toEqual([]);
+    expect(graphql).toHaveBeenCalledTimes(2);
+
+    vi.mocked(graphql).mockClear();
+    await fetchCollectionPosters([{ id: "c0", memberCount: 10_000 }]);
+    expect(graphql).toHaveBeenCalledTimes(POSTER_PAGES);
+    expect(COLLAGE_POSTERS).toBe(4);
   });
 });

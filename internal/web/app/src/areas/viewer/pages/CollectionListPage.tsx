@@ -53,12 +53,16 @@ export function CollectionListPage() {
     groups
       ?.flatMap((group) => group.collections)
       .filter((collection) => collection.memberCount > 0)
-      .map((collection) => collection.id)
+      .map((collection) => `${collection.id}\t${collection.memberCount}`)
       .join("\n") ?? "";
   useEffect(() => {
     if (!memberKey) return;
     const controller = new AbortController();
-    fetchCollectionPosters(memberKey.split("\n"), controller.signal)
+    const sources = memberKey.split("\n").map((line) => {
+      const [id, count] = line.split("\t");
+      return { id, memberCount: Number(count) };
+    });
+    fetchCollectionPosters(sources, controller.signal)
       .then((read) => {
         if (!controller.signal.aborted) setPosters(read);
       })
