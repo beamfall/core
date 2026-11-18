@@ -184,7 +184,17 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 			return MediaFile{}, err
 		}
 	case errors.Is(err, sql.ErrNoRows):
-		if req.DeriveLabels {
+		// New bytes without a parsed label at the path of one of the Media's
+		// files replace that file in place and keep its slot, which may hold
+		// a derived label (CORE-2473).
+		replacedLabel, replaced, err := replacedVersionLabelTx(ctx, tx, req.MediaID, imported.Path, imported.ContentFingerprint)
+		if err != nil {
+			return MediaFile{}, err
+		}
+		switch {
+		case replaced && req.Label == "":
+			file.VersionLabel = replacedLabel
+		case req.DeriveLabels:
 			label, err := placeDerivedVersionTx(ctx, tx, req, priorFirst)
 			if err != nil {
 				return MediaFile{}, err
@@ -276,9 +286,9 @@ func firstVersionFingerprintSQL(ctx context.Context, q interface {
 }
 
 // placeDerivedVersionTx picks the label of a new file that, like its anchor,
-// carries no parsed label (MediaVersionImport.DeriveLabels). New bytes at the
-// path of one of the Media's files replace that file in place and take its
-// slot. When the Media's live files are all labelled, the new file joins only
+// carries no parsed label (MediaVersionImport.DeriveLabels) and replaces no
+// file of the Media in place (replacedVersionLabelTx). When the Media's live
+// files are all labelled, the new file joins only
 // under a label of the kind they are all labelled by, so it differs from each
 // of them in that fact. Otherwise a lone anchor in the default slot moves to
 // its own label of the first kind that tells the two files apart. A label a
@@ -289,7 +299,6 @@ func placeDerivedVersionTx(ctx context.Context, tx *sql.Tx, req MediaVersionImpo
 	rows, err := tx.QueryContext(ctx, `
 		SELECT content_fingerprint, path, version_label, missing_at_ms IS NOT NULL FROM media_file
 		WHERE media_id = ? AND part_ordinal = 0 AND content_fingerprint <> ?
-		ORDER BY missing_at_ms IS NOT NULL, missing_at_ms DESC, version_label
 	`, req.MediaID, req.File.ContentFingerprint)
 	if err != nil {
 		return "", err
@@ -313,10 +322,6 @@ func placeDerivedVersionTx(ctx context.Context, tx *sql.Tx, req MediaVersionImpo
 	var live []version
 	var anchor *version
 	for i, v := range versions {
-		if v.path == req.File.Path {
-			// Live files sort first, then the most recently missing.
-			return v.label, nil
-		}
 		reserved[v.label] = true
 		if v.missing {
 			continue
@@ -375,6 +380,22 @@ func placeDerivedVersionTx(ctx context.Context, tx *sql.Tx, req MediaVersionImpo
 		return label, nil
 	}
 	return "", fmt.Errorf("%w: no derived label tells the files apart", ErrVersionSlotTaken)
+}
+
+// replacedVersionLabelTx returns the label of the Media's file at path that
+// other bytes held, live first, then the most recently missing, and whether
+// there is one.
+func replacedVersionLabelTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, path, fingerprint string) (string, bool, error) {
+	var label string
+	err := tx.QueryRowContext(ctx, `
+		SELECT version_label FROM media_file
+		WHERE media_id = ? AND path = ? AND part_ordinal = 0 AND content_fingerprint <> ?
+		ORDER BY missing_at_ms IS NOT NULL, missing_at_ms DESC LIMIT 1
+	`, mediaID, path, fingerprint).Scan(&label)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return label, err == nil, err
 }
 
 // derivedLabelOfKind reports whether label is a derived label of the given

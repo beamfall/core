@@ -258,3 +258,36 @@ func TestImportMediaFileVersionDerivedLabelWaitsForAMissingFile(t *testing.T) {
 		t.Fatalf("returning remux = %+v, %v; want 1080p", file, err)
 	}
 }
+
+// TestImportMediaFileVersionReplacedDerivedVersionKeepsItsLabel: new bytes
+// over a file with a derived label keep that label even when the scan's
+// anchor is an explicitly labelled Version and no labels are derived (Codex
+// review of CORE-2473).
+func TestImportMediaFileVersionReplacedDerivedVersionKeepsItsLabel(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	mkv := framedImport("library-local", filepath.Join(root, "Night.Harbor.2004.mkv"), 0, 0)
+	media, anchor, err := st.ImportMediaFile(ctx, mkv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mp4 := framedImport("library-local", filepath.Join(root, "Night.Harbor.2004.mp4"), 0, 0)
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{MediaID: media.ID, File: mp4, AnchorFingerprint: anchor.ContentFingerprint, DeriveLabels: true}); err != nil {
+		t.Fatal(err)
+	}
+	extended := framedImport("library-local", filepath.Join(root, "Night Harbor (2004) - Extended.mkv"), 0, 0)
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{MediaID: media.ID, File: extended, Label: "Extended"}); err != nil {
+		t.Fatal(err)
+	}
+	replaced := mkv
+	replaced.ContentFingerprint = HashMediaFilePath(mkv.Path + "#new bytes")
+	file, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{MediaID: media.ID, File: replaced, AnchorFingerprint: extended.ContentFingerprint})
+	if err != nil || file.VersionLabel != "MKV" {
+		t.Fatalf("replaced mkv = %+v, %v; want MKV", file, err)
+	}
+	want := map[string]string{"Night.Harbor.2004.mkv": "MKV", "Night.Harbor.2004.mp4": "MP4", "Night Harbor (2004) - Extended.mkv": "Extended"}
+	if got := versionLabels(t, st, media.ID); !equalLabels(got, want) {
+		t.Fatalf("labels = %v, want %v", got, want)
+	}
+}
