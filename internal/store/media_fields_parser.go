@@ -52,11 +52,15 @@ type ParserFieldRefresh struct {
 	// would see, so probe-dependent and legacy fields may be settled by it.
 	Authoritative bool
 	// LegacyScanOwned is true when no scan-tier writer other than the parser
-	// could have written the Media's fields (the Library hydrates no metadata
-	// and the file is not an image). An authoritative parse then reconciles
-	// the Media's older scan-tier values (parserOwnedLegacyScan) as parser
-	// output; without it, it keeps them and stops tracking them.
+	// could have written the Media's fields outside LegacyScanShared (the
+	// file is not an image, and the Library hydrates no metadata or its
+	// hydrator names the fields it writes). An authoritative parse then
+	// reconciles the Media's older scan-tier values (parserOwnedLegacyScan)
+	// as parser output; it keeps any other and stops tracking it.
 	LegacyScanOwned bool
+	// LegacyScanShared names fields another scan-tier writer (the Library's
+	// hydrator) may also write: older values of these are never reconciled.
+	LegacyScanShared map[string]bool
 }
 
 // RefreshParserMediaFields applies one rescan parse to the fields the parser
@@ -114,12 +118,13 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 		}
 		delete(owned, name)
 	}
-	// An older scan-tier value the parser may not have written is settled by
-	// an authoritative parse that cannot vouch for it: the value is kept and
-	// is no longer the parser's.
-	if refresh.Authoritative && !refresh.LegacyScanOwned {
+	// An older scan-tier value the parser may not have written (the scan
+	// cannot vouch for it, or another scan-tier writer shares the field) is
+	// settled by an authoritative parse: the value is kept and is no longer
+	// the parser's.
+	if refresh.Authoritative {
 		for name, marker := range owned {
-			if marker != parserOwnedLegacyScan {
+			if marker != parserOwnedLegacyScan || (refresh.LegacyScanOwned && !refresh.LegacyScanShared[name]) {
 				continue
 			}
 			if _, err := tx.ExecContext(ctx,

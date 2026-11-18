@@ -71,6 +71,9 @@ type hydrationAdapter struct {
 
 	rehydrator       HydrationRehydrator
 	fingerprintField string
+	// hydratedMediaFields bounds the plan's Media fields when the mapper
+	// names them (HydrationMediaFieldsMapper); nil allows any declared field.
+	hydratedMediaFields map[string]bool
 
 	declaredMediaFields   map[string]string
 	declaredEntityFields  map[string]map[string]string
@@ -131,6 +134,9 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 			adapter.rehydrator = rehydrator
 			adapter.fingerprintField = rehydrator.FingerprintField()
 		}
+		if bounded, ok := mapper.(HydrationMediaFieldsMapper); ok {
+			adapter.boundMediaFields(bounded.HydratedMediaFields())
+		}
 		out[pluginID] = adapter
 	}
 	if len(out) == 0 {
@@ -148,6 +154,25 @@ func metadataHydrationCapability(bundle plugin.Bundle, markerField string) scanp
 		MediaClasses: classes,
 		MarkerField:  markerField,
 	}
+}
+
+// boundMediaFields records the only Media fields the mapper's plans may carry
+// and declares them, with the fingerprint field the seam records, as every
+// scan-tier Media value this hydrator writes besides its marker flag.
+func (a *hydrationAdapter) boundMediaFields(names []string) {
+	a.hydratedMediaFields = make(map[string]bool, len(names))
+	written := make([]string, 0, len(names)+1)
+	for _, name := range names {
+		if name != "" && !a.hydratedMediaFields[name] {
+			a.hydratedMediaFields[name] = true
+			written = append(written, name)
+		}
+	}
+	if a.fingerprintField != "" && !a.hydratedMediaFields[a.fingerprintField] {
+		written = append(written, a.fingerprintField)
+	}
+	a.capability.MediaFieldsBounded = true
+	a.capability.MediaFields = written
 }
 
 func declaredEntityFieldTypes(bundle plugin.Bundle) map[string]map[string]string {
@@ -195,6 +220,7 @@ func declaredRelationSpecs(bundle plugin.Bundle) map[string]plugin.RelationSpec 
 func (a *hydrationAdapter) Capability() scanpkg.MetadataHydrationCapability {
 	capability := a.capability
 	capability.MediaClasses = append([]store.MediaClass(nil), capability.MediaClasses...)
+	capability.MediaFields = append([]string(nil), capability.MediaFields...)
 	return capability
 }
 
@@ -331,6 +357,9 @@ func (a *hydrationAdapter) validatePlan(plan HydrationPlan, marker string) (Hydr
 		declaredType, ok := a.mediaFieldType(field.Name)
 		if !ok {
 			return HydrationPlan{}, fmt.Errorf("hydration media field %q is not declared", field.Name)
+		}
+		if a.hydratedMediaFields != nil && !a.hydratedMediaFields[field.Name] {
+			return HydrationPlan{}, fmt.Errorf("hydration media field %q is not one the mapper names", field.Name)
 		}
 		if declaredType != string(field.Type) {
 			return HydrationPlan{}, fmt.Errorf("hydration media field %q has type %q, want declared type %q", field.Name, field.Type, declaredType)

@@ -260,6 +260,39 @@ func TestParserOwnedUpgradeSettlesLegacyScanValuesItCannotVouchFor(t *testing.T)
 	}
 }
 
+// TestParserOwnedUpgradeSettlesFieldsTheHydratorShares: a field the Library's
+// hydrator names is kept and settled even where the scan vouches for the
+// other older scan-tier values, which the same parse reconciles (CORE-2554).
+func TestParserOwnedUpgradeSettlesFieldsTheHydratorShares(t *testing.T) {
+	for name, upgrade := range map[string]func(*testing.T) legacyParserUpgradePlane{
+		"catalog":           upgradeCatalogWithLegacyParserFields,
+		"encrypted_library": upgradeEncryptedLibraryWithLegacyParserFields,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := upgrade(t)
+			if err := p.st.RefreshParserMediaFields(context.Background(), p.id, ParserFieldRefresh{
+				Fields:           []MediaField{{Name: "index", Type: EntityFieldNumber, Number: 1}},
+				Authoritative:    true,
+				LegacyScanOwned:  true,
+				LegacyScanShared: map[string]bool{"edition-note": true},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			fields := parserFieldsByName(t, p.st, p.id)
+			if got := fields["index"].Number; got != 1 {
+				t.Fatalf("index = %v, want corrected 1", got)
+			}
+			if got := fields["edition-note"].Text; got != "S1E1" {
+				t.Fatalf("shared edition-note = %q, want kept", got)
+			}
+			if got, ok := p.marker(t, "edition-note"); !ok || got != parserOwnedNone {
+				t.Fatalf("shared edition-note marker = %d (row %v), want settled %d", got, ok, parserOwnedNone)
+			}
+			assertNonParserValuesKept(t, p, fields)
+		})
+	}
+}
+
 func assertLegacyParserMarkers(t *testing.T, p legacyParserUpgradePlane) {
 	t.Helper()
 	for name, want := range map[string]int{

@@ -348,25 +348,42 @@ func TestRescanOwnershipFollowsThePreflightProbe(t *testing.T) {
 }
 
 // TestParserFieldRefreshVouchesForLegacyScanValuesOnlyWithoutOtherWriters:
-// older scan-tier values are the parser's own only where no hydration and no
-// image local metadata could have written them at that tier (CORE-2554).
+// older scan-tier values are the parser's own only where no image local
+// metadata and no hydration could have written them at that tier; a hydrator
+// naming its Media fields leaves only those out (CORE-2554).
 func TestParserFieldRefreshVouchesForLegacyScanValuesOnlyWithoutOtherWriters(t *testing.T) {
 	parser := &refreshParser{}
+	bounded := MetadataHydrationCapability{MediaFieldsBounded: true, MediaFields: []string{"hydrated-key"}}
 	for _, tc := range []struct {
-		name     string
-		path     string
-		hydrator MetadataHydrator
-		want     bool
+		name       string
+		path       string
+		capability *MetadataHydrationCapability
+		want       bool
+		shared     map[string]bool
 	}{
 		{name: "video", path: "/media/show.mkv", want: true},
 		{name: "image", path: "/media/photo.jpg", want: false},
-		{name: "hydrated", path: "/media/track.mkv", hydrator: &fakeMetadataHydrator{}, want: false},
+		{name: "unbounded hydrator", path: "/media/track.mkv", capability: &MetadataHydrationCapability{}, want: false},
+		{name: "bounded hydrator", path: "/media/show.mkv", capability: &bounded, want: true, shared: map[string]bool{"hydrated-key": true}},
+		{name: "bounded hydrator image", path: "/media/photo.jpg", capability: &bounded, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &scanWalkState{parser: parser, metadataHydrator: tc.hydrator}
+			s := &scanWalkState{parser: parser}
+			if tc.capability != nil {
+				s.metadataHydrator = &fakeMetadataHydrator{capability: *tc.capability}
+				s.metadataCapability = *tc.capability
+			}
 			refresh := s.parserFieldRefresh(tc.path, ParseProbe{}, ParsedMedia{}, false, nil, true)
 			if refresh.LegacyScanOwned != tc.want {
 				t.Fatalf("LegacyScanOwned = %v, want %v", refresh.LegacyScanOwned, tc.want)
+			}
+			if len(refresh.LegacyScanShared) != len(tc.shared) {
+				t.Fatalf("LegacyScanShared = %v, want %v", refresh.LegacyScanShared, tc.shared)
+			}
+			for name := range tc.shared {
+				if !refresh.LegacyScanShared[name] {
+					t.Fatalf("LegacyScanShared = %v, want %v", refresh.LegacyScanShared, tc.shared)
+				}
 			}
 		})
 	}

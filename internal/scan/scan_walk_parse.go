@@ -350,6 +350,30 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 	return nil
 }
 
+// vouchForLegacyScanValues says which older scan-tier values the parser alone
+// wrote. Hydration and image local metadata write at the scan tier too: an
+// image's are never vouched for, nor any under a hydrator that may write any
+// field; a hydrator naming its fields leaves only those out (CORE-2554).
+func (s *scanWalkState) vouchForLegacyScanValues(refresh *store.ParserFieldRefresh, path string) {
+	if imageClassForPath(path) {
+		return
+	}
+	if s.metadataHydrator == nil {
+		refresh.LegacyScanOwned = true
+		return
+	}
+	if !s.metadataCapability.MediaFieldsBounded {
+		return
+	}
+	refresh.LegacyScanOwned = true
+	for _, name := range s.metadataCapability.MediaFields {
+		if refresh.LegacyScanShared == nil {
+			refresh.LegacyScanShared = map[string]bool{}
+		}
+		refresh.LegacyScanShared[name] = true
+	}
+}
+
 // parserFieldRefresh is the parser's whole Media field output for one file:
 // its declared fields plus the structural ones. When the parse saw a probe,
 // the file is parsed again without it: each field that differs is marked
@@ -360,13 +384,8 @@ func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed
 	if parsedOK {
 		out = appendParsedStructuralMediaFields(out, parsed)
 	}
-	// Hydration and image local metadata write at the scan tier too, so
-	// older scan-tier values are the parser's own only where neither runs.
-	refresh := store.ParserFieldRefresh{
-		Fields:          out,
-		Authoritative:   authoritative,
-		LegacyScanOwned: s.metadataHydrator == nil && !imageClassForPath(path),
-	}
+	refresh := store.ParserFieldRefresh{Fields: out, Authoritative: authoritative}
+	s.vouchForLegacyScanValues(&refresh, path)
 	if parseProbeEmpty(probe) {
 		return refresh
 	}
