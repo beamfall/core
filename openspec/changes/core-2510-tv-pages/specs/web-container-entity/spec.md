@@ -64,3 +64,26 @@ the server's order. Grids and See All SHALL keep the server's order.
 
 - **WHEN** a shelf lists an unstarted, a finished and an in-progress container in title order
 - **THEN** it renders the in-progress, the unstarted, then the finished one
+
+### Requirement: A middle container switches between its siblings
+
+An Entity page for a container that names an ancestor SHALL list the ancestor's related Entities
+of its own kind, in the server's order, as a row of links under its title, marking the page's own
+Entity as current. The row SHALL be hidden when the ancestor holds no other Entity of that kind.
+Each entry SHALL be a link, so keyboard and remote focus reach it in order.
+
+#### Scenario: A sibling container opens from the switcher
+
+- **WHEN** a container's ancestor holds three containers of its kind
+- **THEN** the page lists all three under its title, its own marked current, and the others link to their pages
+
+### Requirement: A long text field reads as a clamped overview
+
+When an Entity has no builtin summary, its first viewer-facing field of type `text` SHALL render
+as the page's overview, clamped to three lines with a More/Less control once it is long, and SHALL
+NOT also be listed among the page's fields.
+
+#### Scenario: A container's long overview field is clamped
+
+- **WHEN** an Entity without a summary carries a 120-word text field
+- **THEN** the text shows above the fields clamped to three lines with a More control, and the fields list omits it

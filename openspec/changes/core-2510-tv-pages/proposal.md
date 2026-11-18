@@ -1,6 +1,6 @@
 # Container pages, card links and readable entity addresses in the web viewer
 
-Tickets: CORE-2510, CORE-2511, CORE-2512 (`queue:core:main`), web only.
+Tickets: CORE-2510, CORE-2511, CORE-2512, CORE-2522 (`queue:core:main`), web only.
 
 ## Why
 
@@ -19,6 +19,11 @@ containers read in plain title order.
     the still, the ordinal the siblings do not share plus the runtime, a two-line summary and the
     title once. The row opens the item's detail page; a separate button plays it with the
     container's queue.
+- A middle container lists its ancestor's containers of its own kind as a row of links under its
+  title, its own marked current (CORE-2522), so a viewer switches between siblings without going
+  back to the ancestor.
+- An Entity with no builtin summary reads its first `text` field as its overview, clamped to three
+  lines with More/Less, instead of printing it in full among its fields (CORE-2522).
 - The On Deck line names the next child once: its plugin subtitle, with the title appended only
   when the subtitle does not already contain it.
 - Every navigating card is an anchor with an href (CORE-2511): the shared `MediaItemCard` renders a
@@ -53,6 +58,6 @@ None.
 
 ### Modified Capabilities
 
-- `web-container-entity`: ancestor heading, Media rows, On Deck wording, similar containers and
-  ranked shelves.
+- `web-container-entity`: ancestor heading, sibling switcher, clamped text overview, Media rows,
+  On Deck wording, similar containers and ranked shelves.
 - `web-media-addresses`: card links and readable entity addresses.

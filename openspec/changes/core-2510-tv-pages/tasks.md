@@ -17,3 +17,9 @@
 - [ ] 3.1 Similar containers rail ranked by shared category and person Entities, hidden when empty
 - [ ] 3.2 Browse Layout catalog shelves ranked by engagement tier and year
 - [ ] 3.3 Vitest for selection and ordering
+
+## 4. Sibling switcher and overview clamp (CORE-2522)
+
+- [ ] 4.1 Sibling containers from the ancestor as a link row under the title, own marked current
+- [ ] 4.2 First `text` field reads as a clamped overview when there is no summary, and leaves the fields list
+- [ ] 4.3 Vitest for the switcher and the clamp
