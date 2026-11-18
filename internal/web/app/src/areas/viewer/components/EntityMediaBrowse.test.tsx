@@ -285,4 +285,27 @@ describe("EntityMediaBrowse person filmography (CORE-2406)", () => {
       expect.stringContaining("Undated Reel"),
     ]);
   });
+
+  it("keeps each card's own title for items a container holds (CORE-2524)", () => {
+    const actor: EntityInfo = {
+      id: "person-v",
+      kind: "person",
+      title: "Lead",
+      archetype: "person",
+      fields: [],
+    };
+    renderBrowse(actor, [
+      {
+        id: "m-ep",
+        kind: "media",
+        title: "Pilot",
+        year: 2020,
+        mediaClass: "video",
+        container: { id: "show-1", title: "Test Show" },
+      },
+    ]);
+    const grid = screen.getByRole("list", { name: "Appears in" });
+    expect(within(grid).getByRole("link", { name: /Pilot/ })).toBeInTheDocument();
+    expect(within(grid).queryByText("Test Show")).toBeNull();
+  });
 });

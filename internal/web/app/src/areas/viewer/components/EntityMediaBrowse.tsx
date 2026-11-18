@@ -81,6 +81,7 @@ function PersonFilmography({ items }: { items: SourceItem[] }) {
             posInSet={index + 1}
             setSize={ordered.length}
             showYear
+            nameContainer={false}
           />
         ))}
       </ul>
@@ -181,6 +182,7 @@ function PersonListening({
                 item={item}
                 posInSet={index + 1}
                 setSize={elsewhere.length}
+                nameContainer={false}
               />
             ))}
           </ul>

@@ -413,11 +413,9 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 		return SearchResultResponse{}, err
 	}
 	results = append(results, entities...)
-	if err := h.orderKeywordResults(ctx, text, results); err != nil {
+	results, err = h.orderKeywordResults(ctx, text, results, keywordResultLimit)
+	if err != nil {
 		return SearchResultResponse{}, err
-	}
-	if len(results) > keywordResultLimit {
-		results = results[:keywordResultLimit]
 	}
 	// Keyword search is a deliberately-surfaced surface: muted items appear on
 	// purpose and carry the Muted badge.

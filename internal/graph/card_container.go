@@ -127,10 +127,13 @@ const (
 // tie hits group by container: the container Entity first, then its items by
 // their stored ordinals, so siblings read in order and a client can collapse
 // them under the container. A group ranks as its best-matching row, so it
-// never splits across ranks.
-func (h *Handler) orderKeywordResults(ctx context.Context, text string, results []store.SourceItem) error {
+// never splits across ranks. It keeps at most limit hits: a group that does
+// not fit keeps its container and its best-matching items, still read in
+// ordinal order, so an exact title match is never cut for a sibling that only
+// matched through the container (CORE-2547).
+func (h *Handler) orderKeywordResults(ctx context.Context, text string, results []store.SourceItem, limit int) ([]store.SourceItem, error) {
 	if err := h.annotateContainers(ctx, results); err != nil {
-		return err
+		return nil, err
 	}
 	var ids []store.MediaID
 	for _, item := range results {
@@ -142,12 +145,13 @@ func (h *Handler) orderKeywordResults(ctx context.Context, text string, results 
 	if len(ids) > 0 {
 		values, err := h.store.MediaCardFieldValues(ctx, ids, cardOrdinalFields)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		ordinals = values
 	}
 	type hitKey struct {
 		rank       int
+		own        int
 		groupTitle string
 		groupID    string
 		member     bool
@@ -164,6 +168,7 @@ func (h *Handler) orderKeywordResults(ctx context.Context, text string, results 
 	keys := make([]hitKey, len(results))
 	for i, item := range results {
 		key := hitKey{rank: rank(item.Title), groupTitle: item.Title, groupID: string(item.ID)}
+		key.own = key.rank
 		if item.ContainerID != "" {
 			key.rank = min(key.rank, rank(item.ContainerTitle))
 			key.groupTitle, key.groupID, key.member = item.ContainerTitle, string(item.ContainerID), true
@@ -189,31 +194,42 @@ func (h *Handler) orderKeywordResults(ctx context.Context, text string, results 
 	for i := range indexes {
 		indexes[i] = i
 	}
-	sort.SliceStable(indexes, func(a, b int) bool {
-		left, right := keys[indexes[a]], keys[indexes[b]]
-		l, r := results[indexes[a]], results[indexes[b]]
-		switch {
-		case left.rank != right.rank:
-			return left.rank < right.rank
-		case left.groupTitle != right.groupTitle:
-			return left.groupTitle < right.groupTitle
-		case left.groupID != right.groupID:
-			return left.groupID < right.groupID
-		case left.member != right.member:
-			return !left.member
-		case left.sequence != right.sequence:
-			return left.sequence < right.sequence
-		case left.index != right.index:
-			return left.index < right.index
-		case l.Kind != r.Kind:
-			return l.Kind < r.Kind
-		}
-		return l.ID < r.ID
-	})
-	sorted := make([]store.SourceItem, len(results))
+	// byOwn orders a group's members by their own match before their ordinals;
+	// it picks which hits survive the cut, and the survivors are then read in
+	// ordinal order.
+	order := func(byOwn bool) {
+		sort.SliceStable(indexes, func(a, b int) bool {
+			left, right := keys[indexes[a]], keys[indexes[b]]
+			l, r := results[indexes[a]], results[indexes[b]]
+			switch {
+			case left.rank != right.rank:
+				return left.rank < right.rank
+			case left.groupTitle != right.groupTitle:
+				return left.groupTitle < right.groupTitle
+			case left.groupID != right.groupID:
+				return left.groupID < right.groupID
+			case left.member != right.member:
+				return !left.member
+			case byOwn && left.own != right.own:
+				return left.own < right.own
+			case left.sequence != right.sequence:
+				return left.sequence < right.sequence
+			case left.index != right.index:
+				return left.index < right.index
+			case l.Kind != r.Kind:
+				return l.Kind < r.Kind
+			}
+			return l.ID < r.ID
+		})
+	}
+	if len(indexes) > limit {
+		order(true)
+		indexes = indexes[:limit]
+	}
+	order(false)
+	sorted := make([]store.SourceItem, len(indexes))
 	for i, at := range indexes {
 		sorted[i] = results[at]
 	}
-	copy(results, sorted)
-	return nil
+	return sorted, nil
 }

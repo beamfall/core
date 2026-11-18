@@ -270,3 +270,55 @@ func TestKeywordSearchKeepsAContainerGroupWholeAtItsBestRank(t *testing.T) {
 		t.Fatalf("search order = %v, want %v", got, want)
 	}
 }
+
+// TestKeywordSearchKeepsAnExactTitleMatchPastTheCut pins CORE-2547: a group
+// ranks as its best row, but the 50-hit cut still keeps the row whose own
+// title matched, even when it sits past the cut in ordinal order.
+func TestKeywordSearchKeepsAnExactTitleMatchPastTheCut(t *testing.T) {
+	handler, libraryID, _ := newContainerLibrary(t)
+	ctx := context.Background()
+	if err := handler.store.UpsertEntity(ctx, store.Entity{ID: "entity-vol-a", LibraryID: libraryID, Kind: "volume", Title: "Harbours"}); err != nil {
+		t.Fatal(err)
+	}
+	var exact store.MediaID
+	for i := 1; i <= 60; i++ {
+		title := fmt.Sprintf("Leg %03d", i)
+		if i == 60 {
+			title = "Harbour"
+		}
+		item, _, err := handler.store.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: libraryID, Path: fmt.Sprintf("/volumes/leg-%03d.mkv", i), Title: title,
+			Container: "mkv", Codec: "h264", ContentFingerprint: fmt.Sprintf("fp-leg-%03d", i),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := handler.store.SetMediaFields(ctx, item.ID, []store.MediaField{
+			{Name: "sequence", Type: store.EntityFieldNumber, Number: 3},
+			{Name: "index", Type: store.EntityFieldNumber, Number: float64(i)},
+			{Name: "volume-name", Type: store.EntityFieldText, Text: "Harbour"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := handler.store.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "entity-part-a2", Name: "holds", ToMediaID: item.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if i == 60 {
+			exact = item.ID
+		}
+	}
+	var search SearchResultResponse
+	execGraph(t, handler, authorizeViewer,
+		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id } } }`,
+		map[string]any{"query": "Harbour"}, "searchResult", &search)
+	if len(search.Items) != 50 {
+		t.Fatalf("search returned %d hits, want the 50-hit cut", len(search.Items))
+	}
+	at := slices.IndexFunc(search.Items, func(item SearchResultItem) bool { return item.ID == string(exact) })
+	if at < 0 {
+		t.Fatalf("search dropped the exact title match %s", exact)
+	}
+	if container := slices.IndexFunc(search.Items, func(item SearchResultItem) bool { return item.ID == "entity-vol-a" }); container < 0 || container > at {
+		t.Fatalf("container entity-vol-a at %d, want it kept ahead of its item at %d", container, at)
+	}
+}

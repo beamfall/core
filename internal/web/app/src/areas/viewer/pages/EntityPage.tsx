@@ -733,6 +733,7 @@ function RelatedGroup({ title, items }: { title: string; items: readonly SourceI
             item={item}
             posInSet={index + 1}
             setSize={items.length}
+            nameContainer={false}
           />
         ))}
       </ul>
