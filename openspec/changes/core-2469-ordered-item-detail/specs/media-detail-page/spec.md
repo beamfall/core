@@ -35,13 +35,13 @@ in a wide frame when present, and the poster otherwise.
 
 ### Requirement: Air date and stream badges
 
-The facts row SHALL show the item's first date field as a date, a resolution badge derived from
-`videoWidth` and `videoHeight`, an HDR badge when the first Version reports HDR, and the default
-audio track's codec and channel layout, each only when known.
+The facts row SHALL show the item's first date field as a date, the first Version's server
+resolution label as a resolution badge, an HDR badge when the first Version reports HDR, and the
+default audio track's codec and channel layout, each only when known.
 
 #### Scenario: A UHD HDR item
 
-- **WHEN** the item is 3840 by 2160, its first Version reports HDR10 and its default audio track is
+- **WHEN** the item's first Version reports resolution `4K` and HDR10 and its default audio track is
   E-AC-3 with 6 channels
 - **THEN** the facts row shows "4K", "HDR10" and "Dolby Digital Plus 5.1"
 

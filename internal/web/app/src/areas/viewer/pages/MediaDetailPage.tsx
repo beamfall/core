@@ -275,7 +275,7 @@ export function MediaDetailPage() {
           : "",
     },
     { key: "runtime", text: facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "" },
-    ...streamFacts(media, versions, {
+    ...streamFacts(versions, {
       mono: t("trackChannelsMono"),
       stereo: t("trackChannelsStereo"),
       channels: (count) => t("trackChannelsCount", { count }),

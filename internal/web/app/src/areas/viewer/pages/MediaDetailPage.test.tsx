@@ -982,6 +982,7 @@ describe("MediaDetailPage", () => {
           label: "",
           videoCodec: "hevc",
           hdr: "hdr10",
+          resolution: "4K",
           audioTracks: [
             { streamIndex: 1, codec: "aac", language: "eng", channels: 2 },
             { streamIndex: 2, codec: "eac3", language: "eng", channels: 6, default: true },

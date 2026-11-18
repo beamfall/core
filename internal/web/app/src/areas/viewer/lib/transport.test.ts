@@ -250,6 +250,22 @@ describe("resolution labels (CORE-2485)", () => {
     expect(model.options.map((o) => o.label)).toContain("720p");
   });
 
+  it("keeps quality choices that share a resolution class distinguishable", () => {
+    // A 3840x2160 source with the HEVC ladder: the 1440p HEVC and 1080p H.264
+    // rungs are both the server's "1080p".
+    const hls = {
+      kind: "hls",
+      url: "/h",
+      renditions: [
+        { id: "hevc-1440", height: 1440, bandwidth: 12_000_000, resolution: "1080p" },
+        { id: "h264-1080", height: 1080, bandwidth: 6_000_000, resolution: "1080p" },
+        { id: "h264-720", height: 720, resolution: "720p" },
+      ],
+    };
+    const labels = buildRenditionMenuModel({ stream: hls }).options.map((o) => o.label);
+    expect(labels).toEqual(["Auto", "1080p · 12 Mbps", "1080p · 6.0 Mbps", "720p"]);
+  });
+
   it("shows the source video's resolution, HDR and frame size", () => {
     const info = {
       streams: [],

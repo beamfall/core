@@ -548,6 +548,21 @@ function renditionLabel(rendition: PlaybackRendition | undefined): string {
   return "Unknown";
 }
 
+// Resolution classes are coarse (CORE-2485): on a 2160p source the 1440p and
+// 1080p rungs are both "1080p". A label two menu rows share gains the rung's
+// bitrate, else its height, so every quality choice reads differently.
+function distinctRenditionLabel(
+  rendition: PlaybackRendition,
+  label: string,
+  labels: readonly string[],
+): string {
+  if (labels.indexOf(label) === labels.lastIndexOf(label)) return label;
+  if (rendition.bandwidth) return `${label} · ${formatBitrate(rendition.bandwidth)}`;
+  if (rendition.height && label !== `${rendition.height}p`)
+    return `${label} · ${rendition.height}p`;
+  return label;
+}
+
 function formatBitrate(bandwidth: number | undefined): string {
   const mbps = finiteNumber(bandwidth) / 1_000_000;
   if (mbps >= 10) {
@@ -637,16 +652,17 @@ export function buildRenditionMenuModel({
   labels?: RenditionMenuLabels;
 }): RenditionMenuModel {
   const renditions = stream && Array.isArray(stream.renditions) ? stream.renditions : [];
-  const rows = (list: PlaybackRendition[], pinned: string) =>
-    list
-      .filter((rendition) => renditionKey(rendition) !== "")
-      .map((rendition) => ({
-        id: renditionKey(rendition),
-        label: renditionLabel(rendition),
-        selected: renditionKey(rendition) === pinned,
-        disabled: false,
-        reason: "",
-      }));
+  const rows = (list: PlaybackRendition[], pinned: string) => {
+    const addressable = list.filter((rendition) => renditionKey(rendition) !== "");
+    const labels = addressable.map(renditionLabel);
+    return addressable.map((rendition, index) => ({
+      id: renditionKey(rendition),
+      label: distinctRenditionLabel(rendition, labels[index], labels),
+      selected: renditionKey(rendition) === pinned,
+      disabled: false,
+      reason: "",
+    }));
+  };
   const direct: RenditionMenuOption = {
     id: "direct",
     label: labels.directPlay || "Direct play",
