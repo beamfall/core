@@ -6,19 +6,14 @@ import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
-import {
-  type SearchablePage,
-  type SettingsArea,
-  type SettingsSearchResult,
-  searchSettings,
-} from "@/lib/settingsIndex";
+import { type SettingsArea, type SettingsSearchResult, searchSettings } from "@/lib/settingsIndex";
 
 // The top of the Console and Manage menus (CORE-2445): what this area is for,
 // a link to the other one, and a search over both areas' pages and settings.
 // A setting result opens its page with `revealSetting` in the route state, and
 // RevealSetting on that page scrolls to it.
 
-type RevealState = { revealSetting?: string; revealAdvanced?: boolean };
+type RevealState = { revealSetting?: string; revealAdvanced?: boolean; revealOpener?: string };
 
 const OTHER_AREA: Record<
   SettingsArea,
@@ -31,17 +26,17 @@ const OTHER_AREA: Record<
 function resultTarget(result: SettingsSearchResult): { to: string; state?: RevealState } {
   const to = result.path ? `/${result.area}/${result.path}` : `/${result.area}`;
   if (!result.setting) return { to };
-  return { to, state: { revealSetting: result.setting, revealAdvanced: result.advanced } };
+  return {
+    to,
+    state: {
+      revealSetting: result.setting,
+      revealAdvanced: result.advanced,
+      revealOpener: result.opener,
+    },
+  };
 }
 
-export function SettingsMenuIntro({
-  area,
-  pages,
-}: {
-  area: SettingsArea;
-  /** This area's menu pages, so a search can also find a page by name. */
-  pages: SearchablePage[];
-}) {
+export function SettingsMenuIntro({ area }: { area: SettingsArea }) {
   const t = useT();
   const navigate = useNavigate();
   const { isManager } = useSession();
@@ -49,10 +44,10 @@ export function SettingsMenuIntro({
   const listID = useId();
 
   const results = useMemo(() => {
-    const all = searchSettings(query, pages, t, { appStoreHost: isBeamfallAppStoreHost() });
+    const all = searchSettings(query, t, { appStoreHost: isBeamfallAppStoreHost() });
     // Manage needs manager rights; a Console admin without them is sent home.
     return isManager ? all : all.filter((r) => r.area !== "manage");
-  }, [query, pages, t, isManager]);
+  }, [query, t, isManager]);
 
   const other = OTHER_AREA[area];
   const searching = query.trim() !== "";
@@ -131,10 +126,18 @@ export function SettingsMenuIntro({
               })}
             </ul>
           ) : (
-            <p id={listID} className="settings-search-empty" role="status">
+            <p id={listID} className="settings-search-empty">
               {t("settingsSearchEmpty")}
             </p>
           ))}
+        {/* Always mounted, so a screen reader hears each change in the count
+            while focus stays in the search box. */}
+        <p className="sr-only" role="status">
+          {searching &&
+            (results.length > 0
+              ? t("settingsSearchCount", { count: results.length })
+              : t("settingsSearchEmpty"))}
+        </p>
       </div>
     </div>
   );
@@ -143,10 +146,14 @@ export function SettingsMenuIntro({
 // Brings the setting a search opened into view: turns Advanced settings on if
 // the setting needs it (or if it has not appeared after a second, in case the
 // index is out of date), opens any folded <details> around it, scrolls to it,
-// gives it a brief ring and focuses its control. Render it inside the page area,
-// below any admin lock, so it starts once the page can show.
+// gives it a brief ring and focuses its control. A setting that only appears
+// after an action (a form's Add button, a picked profile, an existing row) has
+// an opener: once the page has had a second to load, the opener is shown
+// instead. Render it inside the page area, below any admin lock, so it starts
+// once the page can show.
 const REVEAL_POLL_MS = 100;
 const REVEAL_ADVANCED_AFTER = 10;
+const REVEAL_OPENER_AFTER = 10;
 const REVEAL_GIVE_UP_AFTER = 50;
 
 export function RevealSetting() {
@@ -155,6 +162,7 @@ export function RevealSetting() {
   const state = location.state as RevealState | null;
   const id = state?.revealSetting;
   const advanced = state?.revealAdvanced === true;
+  const opener = state?.revealOpener;
   const { pathname, search, hash } = location;
 
   useEffect(() => {
@@ -166,15 +174,23 @@ export function RevealSetting() {
     // Clear the state so going back or reloading does not reveal it again.
     const done = () => navigate({ pathname, search, hash }, { replace: true, state: null });
 
+    const find = (anchor: string) =>
+      document.querySelector<HTMLElement>(`[data-setting="${CSS.escape(anchor)}"]`);
     const tick = () => {
-      const el = document.querySelector<HTMLElement>(`[data-setting="${CSS.escape(id)}"]`);
+      const el = find(id);
       if (el) {
         revealElement(el);
         done();
         return;
       }
       tries += 1;
-      if (tries === REVEAL_ADVANCED_AFTER && !advancedOn) {
+      const openerEl = opener && tries >= REVEAL_OPENER_AFTER ? find(opener) : null;
+      if (openerEl) {
+        revealElement(openerEl);
+        done();
+        return;
+      }
+      if (tries === REVEAL_ADVANCED_AFTER && !advancedOn && !opener) {
         setAdvancedSettings(true);
         advancedOn = true;
       }
@@ -183,7 +199,7 @@ export function RevealSetting() {
     };
     tick();
     return () => clearTimeout(timer);
-  }, [id, advanced, pathname, search, hash, navigate]);
+  }, [id, advanced, opener, pathname, search, hash, navigate]);
 
   return null;
 }
@@ -201,9 +217,10 @@ function revealElement(el: HTMLElement) {
   el.addEventListener("animationend", () => el.classList.remove("bf-setting-found"), {
     once: true,
   });
-  // Skip the (?) help button that sits beside a label: focus the setting itself.
-  const control = el.querySelector<HTMLElement>(
-    "input:not([type=hidden]), select, textarea, button:not([data-help-tip]), [role=combobox], [role=switch], [tabindex]:not([tabindex='-1']):not([data-help-tip])",
-  );
+  // Skip the (?) help button that sits beside a label: focus the setting itself,
+  // or the anchor when it is the control (an opener's Add button).
+  const focusable =
+    "input:not([type=hidden]), select, textarea, button:not([data-help-tip]), [role=combobox], [role=switch], [tabindex]:not([tabindex='-1']):not([data-help-tip])";
+  const control = el.matches(focusable) ? el : el.querySelector<HTMLElement>(focusable);
   control?.focus({ preventScroll: true });
 }

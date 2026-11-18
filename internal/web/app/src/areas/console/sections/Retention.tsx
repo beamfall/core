@@ -73,7 +73,12 @@ export function Retention() {
       heading="navLeavingSoonRules"
       lead="retentionPageLead"
       actions={
-        <Button size="sm" variant="outline" onClick={() => setCreating((v) => !v)}>
+        <Button
+          size="sm"
+          variant="outline"
+          data-setting="console.retention.add"
+          onClick={() => setCreating((v) => !v)}
+        >
           <Plus className="mr-1 h-4 w-4" />
           {t("retentionRuleAdd")}
         </Button>

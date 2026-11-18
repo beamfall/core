@@ -40,7 +40,6 @@ import { setAdminUnlockHandler } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
-import type { SearchablePage } from "@/lib/settingsIndex";
 import type { StringKey } from "@/strings";
 import { AdminGate, type AdminGateCopy } from "../console/AdminGate";
 import "./manage.css";
@@ -88,7 +87,8 @@ type NavItem = {
   advanced?: true;
   hidden?: true;
 } & ({ label: StringKey; text?: undefined } | { text: string; label?: undefined });
-const NAV_GROUPS: NavItem[][] = [
+// Exported so the test can check the settings search's MENU_PAGES against it.
+export const MANAGE_NAV_GROUPS: NavItem[][] = [
   [
     { to: "/manage/libraries", icon: LibraryBig, label: "libraries", lead: "manageLibrariesLead" },
     { to: "/manage/operations", icon: ListChecks, label: "jobs", lead: "manageJobsLead" },
@@ -183,20 +183,6 @@ const NAV_GROUPS: NavItem[][] = [
   ],
 ];
 
-// Every named Manage page, so the settings search can find a page by name.
-const SEARCH_PAGES: SearchablePage[] = NAV_GROUPS.flat().flatMap((item) =>
-  item.hidden || !item.label
-    ? []
-    : [
-        {
-          area: "manage" as const,
-          path: item.to.replace("/manage/", ""),
-          label: item.label,
-          lead: item.lead,
-        },
-      ],
-);
-
 // The nav item of the current route: the one whose path the location is on or
 // under, falling back to the area itself.
 const AREA_ROUTE: NavItem = {
@@ -206,7 +192,7 @@ const AREA_ROUTE: NavItem = {
   lead: "manageLead",
 };
 function currentRoute(pathname: string): NavItem {
-  const item = NAV_GROUPS.flat().find(
+  const item = MANAGE_NAV_GROUPS.flat().find(
     (entry) => pathname === entry.to || pathname.startsWith(`${entry.to}/`),
   );
   return item ?? AREA_ROUTE;
@@ -216,7 +202,7 @@ function currentRoute(pathname: string): NavItem {
 // link never lands on a page missing from its own nav, and drops any group left
 // empty. Advanced shows every group whole, less the hidden items.
 function visibleNavGroups(advanced: boolean, pathname: string): NavItem[][] {
-  return NAV_GROUPS.map((group) =>
+  return MANAGE_NAV_GROUPS.map((group) =>
     group.filter(
       (item) =>
         !item.hidden &&
@@ -341,7 +327,7 @@ export function ManageArea() {
           current={routeTitle}
           footer={<AdvancedSettingsSwitch className="manage-advanced-switch" />}
         >
-          <SettingsMenuIntro area="manage" pages={SEARCH_PAGES} />
+          <SettingsMenuIntro area="manage" />
           <div className="manage-nav">
             {visibleNavGroups(advanced, location.pathname).map((group, i) => (
               <div key={i} className="manage-nav-group">

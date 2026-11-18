@@ -1176,37 +1176,39 @@ export function MigrationWizard() {
 
   return (
     <Section heading="migrationWizardHeading" lead="migrationWizardLead">
-      {failed ? (
-        <ErrorState message="migrationWizardUnavailable" />
-      ) : importers.length === 0 ? (
-        <EmptyState message="migrationWizardEmpty" />
-      ) : (
-        <DataTable
-          columns={[
-            { key: "name", label: t("title") },
-            { key: "input", label: t("migrationWizardInput") },
-            { key: "conflict", label: t("accessHelpMigrateEffect") },
-            { key: "action", label: "" },
-          ]}
-        >
-          {importers.map((imp) => (
-            <TableRow key={`${imp.pluginID}:${imp.id}`}>
-              <TableCell className="font-medium">
-                {displayString(imp.displayName, displayLocale)}
-              </TableCell>
-              <TableCell>{importerInputLabel(imp, t)}</TableCell>
-              <TableCell>
-                {imp.conflict === "additive" ? t("migrationConflictAdditive") : imp.conflict}
-              </TableCell>
-              <TableCell className="text-right">
-                <Button size="sm" variant="outline" onClick={() => setActive(imp)}>
-                  {t("migrationWizardConfigure")}
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </DataTable>
-      )}
+      <div data-setting="console.migrate.importers">
+        {failed ? (
+          <ErrorState message="migrationWizardUnavailable" />
+        ) : importers.length === 0 ? (
+          <EmptyState message="migrationWizardEmpty" />
+        ) : (
+          <DataTable
+            columns={[
+              { key: "name", label: t("title") },
+              { key: "input", label: t("migrationWizardInput") },
+              { key: "conflict", label: t("accessHelpMigrateEffect") },
+              { key: "action", label: "" },
+            ]}
+          >
+            {importers.map((imp) => (
+              <TableRow key={`${imp.pluginID}:${imp.id}`}>
+                <TableCell className="font-medium">
+                  {displayString(imp.displayName, displayLocale)}
+                </TableCell>
+                <TableCell>{importerInputLabel(imp, t)}</TableCell>
+                <TableCell>
+                  {imp.conflict === "additive" ? t("migrationConflictAdditive") : imp.conflict}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="outline" onClick={() => setActive(imp)}>
+                    {t("migrationWizardConfigure")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
+        )}
+      </div>
     </Section>
   );
 }

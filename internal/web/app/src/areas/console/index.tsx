@@ -39,7 +39,7 @@ import { useT } from "@/lib/i18n";
 import { jobKindLabel, jobTargetDetail } from "@/lib/jobDisplay";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
-import { APP_STORE_FIREWALL_PATHS, type SearchablePage } from "@/lib/settingsIndex";
+import { APP_STORE_FIREWALL_PATHS } from "@/lib/settingsIndex";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { BackupExportPage } from "../manage/pages/BackupExportPage";
@@ -275,7 +275,8 @@ function Overview() {
   );
 }
 
-const GROUPS: NavGroup[] = [
+// Exported so the test can check the settings search's MENU_PAGES against it.
+export const CONSOLE_NAV_GROUPS: NavGroup[] = [
   {
     label: "consoleOverviewHeading",
     items: [
@@ -457,8 +458,8 @@ const ROUTE_ALIASES = [
 ];
 
 function groupsForHost(appStoreHost: boolean): NavGroup[] {
-  if (!appStoreHost) return GROUPS;
-  return GROUPS.map((group) => ({
+  if (!appStoreHost) return CONSOLE_NAV_GROUPS;
+  return CONSOLE_NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items
       .filter((item) => !APP_STORE_FIREWALL_PATHS.has(item.path))
@@ -554,11 +555,6 @@ export function ConsoleArea() {
   const location = useLocation();
   const groups = groupsForHost(isBeamfallAppStoreHost());
   const allItems = groups.flatMap((g) => g.items);
-  const searchPages: SearchablePage[] = allItems.map((item) => ({
-    area: "console",
-    path: item.path,
-    label: item.label,
-  }));
   const routeTitle = allItems.find((item) =>
     item.path === ""
       ? /^\/console\/?$/.test(location.pathname)
@@ -598,7 +594,7 @@ export function ConsoleArea() {
                   current={t(routeTitle ?? "consoleHeading")}
                   footer={<SessionBar onLock={lock} />}
                 >
-                  <SettingsMenuIntro area="console" pages={searchPages} />
+                  <SettingsMenuIntro area="console" />
                   <ConsoleNav groups={groups} />
                 </SectionMenu>
                 <div className="console-content">

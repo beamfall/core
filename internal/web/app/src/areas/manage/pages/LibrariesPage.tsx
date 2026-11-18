@@ -142,26 +142,28 @@ export function LibrariesPage() {
             {t("manageLibConsoleLink")}
           </Link>
         </p>
-        {!loading && libraries.length === 0 ? (
-          <EmptyLine message={t("libraryEmptyTitle")} />
-        ) : (
-          <div className="flex flex-col gap-4">
-            {loading ? (
-              <Skeleton aria-hidden="true" data-library-skeleton className="h-48 rounded-xl" />
-            ) : (
-              libraries.map((lib) => (
-                <LibraryRow
-                  key={lib.id}
-                  library={lib}
-                  onTogglePreview={onTogglePreview}
-                  onRootsSaved={onRootsSaved}
-                  onDeleted={() => void load()}
-                  onError={setError}
-                />
-              ))
-            )}
-          </div>
-        )}
+        <div data-setting="manage.libraries.list">
+          {!loading && libraries.length === 0 ? (
+            <EmptyLine message={t("libraryEmptyTitle")} />
+          ) : (
+            <div className="flex flex-col gap-4">
+              {loading ? (
+                <Skeleton aria-hidden="true" data-library-skeleton className="h-48 rounded-xl" />
+              ) : (
+                libraries.map((lib) => (
+                  <LibraryRow
+                    key={lib.id}
+                    library={lib}
+                    onTogglePreview={onTogglePreview}
+                    onRootsSaved={onRootsSaved}
+                    onDeleted={() => void load()}
+                    onError={setError}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </div>
         <ErrorLine message={error} />
       </ManageSection>
 

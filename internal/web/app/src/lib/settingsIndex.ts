@@ -3,8 +3,10 @@ import type { StringKey } from "@/strings";
 // The settings search index (CORE-2445). Each entry names a control on a
 // Console or Manage page by its `data-setting` anchor, so a search result can
 // open the page and scroll to the control. `advanced` marks a control that only
-// shows with Advanced settings on, so opening it turns Advanced on first.
-// settingsIndex.test.ts checks that every anchor here exists in the source.
+// shows with Advanced settings on, so opening it turns Advanced on first, and
+// `opener` names the control to show instead when the setting only appears
+// after an action. settingsIndex.test.ts checks that every anchor here exists
+// in the source.
 
 export type SettingsArea = "console" | "manage";
 
@@ -13,6 +15,10 @@ export type SettingEntry = {
   label: StringKey;
   help?: StringKey;
   advanced?: boolean;
+  /** The anchor of an always-shown control that opens or holds this setting,
+   * for a setting that only appears after an action on the page: the Add
+   * button of a form, a profile picker, or the list of rows that carry it. */
+  opener?: string;
 };
 
 export type SettingsPage = {
@@ -53,12 +59,23 @@ export const SETTINGS_INDEX: SettingsPage[] = [
     path: "libraries",
     page: "libraries",
     settings: [
-      { id: "console.libraries.previewClips", label: "previewClips", help: "previewClipsTip" },
-      { id: "console.libraries.showOnHome", label: "showOnHome", help: "showOnHomeHelp" },
+      {
+        id: "console.libraries.previewClips",
+        label: "previewClips",
+        help: "previewClipsTip",
+        opener: "console.libraries.list",
+      },
+      {
+        id: "console.libraries.showOnHome",
+        label: "showOnHome",
+        help: "showOnHomeHelp",
+        opener: "console.libraries.list",
+      },
       {
         id: "console.libraries.skipDetection",
         label: "skipDetectionLabel",
         help: "skipDetectionTip",
+        opener: "console.libraries.list",
       },
     ],
   },
@@ -104,34 +121,40 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         id: "console.schedules.libraryAccess",
         label: "libraryAccessHeading",
         help: "accessHelpLibraryAccessHint",
+        opener: "console.schedules.profile",
       },
       {
         id: "console.schedules.ratingLimit",
         label: "enforcedFiltersHeading",
         help: "accessHelpRatingLimitTip",
+        opener: "console.schedules.profile",
       },
       {
         id: "console.schedules.accessSchedule",
         label: "accessHelpScheduleLabel",
         help: "accessHelpScheduleTip",
+        opener: "console.schedules.profile",
       },
       {
         id: "console.schedules.streamCap",
         label: "accessHelpStreamCapLabel",
         help: "accessHelpStreamCapTip",
         advanced: true,
+        opener: "console.schedules.profile",
       },
       {
         id: "console.schedules.remoteBitrateLimit",
         label: "accessHelpRemoteCapLabel",
         help: "accessHelpProfileRemoteCapTip",
         advanced: true,
+        opener: "console.schedules.profile",
       },
       {
         id: "console.schedules.extraTimeAutoApprove",
         label: "accessHelpExtraTimeLabel",
         help: "accessHelpExtraTimeTip",
         advanced: true,
+        opener: "console.schedules.profile",
       },
     ],
   },
@@ -183,16 +206,18 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         label: "webhookPublicBaseURL",
         help: "accessHelpWebhookPublicUrlTip",
       },
-      { id: "console.webhooks.events", label: "webhookEvents" },
+      { id: "console.webhooks.events", label: "webhookEvents", opener: "console.webhooks.add" },
       {
         id: "console.webhooks.secret",
         label: "webhookSecret",
         help: "accessHelpWebhookSecretTip",
+        opener: "console.webhooks.add",
       },
       {
         id: "console.webhooks.allowPrivateNetwork",
         label: "webhookAllowPrivate",
         help: "accessHelpWebhookPrivateTip",
+        opener: "console.webhooks.add",
       },
     ],
   },
@@ -201,21 +226,28 @@ export const SETTINGS_INDEX: SettingsPage[] = [
     path: "retention",
     page: "navLeavingSoonRules",
     settings: [
-      { id: "console.retention.name", label: "retentionRuleNameLabel" },
+      {
+        id: "console.retention.name",
+        label: "retentionRuleNameLabel",
+        opener: "console.retention.add",
+      },
       {
         id: "console.retention.library",
         label: "retentionRuleLibraryLabel",
         help: "retentionRuleLibraryTip",
+        opener: "console.retention.add",
       },
       {
         id: "console.retention.source",
         label: "retentionRuleSourceLabel",
         help: "retentionRuleSourceTip",
+        opener: "console.retention.add",
       },
       {
         id: "console.retention.grace",
         label: "retentionRuleGraceLabel",
         help: "retentionRuleGraceTip",
+        opener: "console.retention.add",
       },
     ],
   },
@@ -250,11 +282,13 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         id: "console.migrate.sourcePath",
         label: "accessHelpMigrateSourceLabel",
         help: "accessHelpMigrateSourceTip",
+        opener: "console.migrate.importers",
       },
       {
         id: "console.migrate.mapping",
         label: "migrationWizardMapping",
         help: "accessHelpMigrateMappingDesc",
+        opener: "console.migrate.importers",
       },
     ],
   },
@@ -328,6 +362,7 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         id: "manage.libraries.previewClips",
         label: "previewClips",
         help: "manageLibPreviewClipsHelp",
+        opener: "manage.libraries.list",
       },
     ],
   },
@@ -340,8 +375,13 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         id: "manage.operations.repeat",
         label: "manageScheduleRepeat",
         help: "manageScheduleRepeatHelp",
+        opener: "manage.operations.schedules",
       },
-      { id: "manage.operations.time", label: "manageScheduleTime" },
+      {
+        id: "manage.operations.time",
+        label: "manageScheduleTime",
+        opener: "manage.operations.schedules",
+      },
     ],
   },
   {
@@ -387,11 +427,13 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         id: "manage.subscriptions.keepDownloads",
         label: "manageSubKeepDownloads",
         help: "manageSubKeepDownloadsHelp",
+        opener: "manage.subscriptions.list",
       },
       {
         id: "manage.subscriptions.downloadsToKeep",
         label: "manageSubDownloadsToKeep",
         help: "manageSubKeepDownloadsHelp",
+        opener: "manage.subscriptions.list",
       },
       {
         id: "manage.subscriptions.downloadFolder",
@@ -449,6 +491,60 @@ export type SearchablePage = {
   lead?: StringKey;
 };
 
+// Every page in the Console and Manage menus, so a search from either menu
+// finds a page in the other by name (CORE-2445). Each area's tests check this
+// list against its menu, so a page added to a menu fails until it is added
+// here. Console pages behind the App Store firewall are left out on that host.
+export const MENU_PAGES: SearchablePage[] = [
+  ...(
+    [
+      ["", "consoleOverviewHeading"],
+      ["operations", "consoleOperationsDestination"],
+      ["sessions", "liveSessionsHeading"],
+      ["history", "playHistoryHeading"],
+      ["health", "libraryHealthHeading"],
+      ["activity", "activityLogHeading"],
+      ["logs", "serverLogsHeading"],
+      ["libraries", "libraries"],
+      ["plugins", "consoleConfigPlugins"],
+      ["access", "consoleAccessGroup"],
+      ["schedules", "navParentalControls"],
+      ["remote", "remoteAccessHeading"],
+      ["api", "navApiKeys"],
+      ["webhooks", "webhooksHeading"],
+      ["backups", "backupHeading"],
+      ["retention", "navLeavingSoonRules"],
+      ["identification", "navOptionalFeatures"],
+      ["migrate", "jobKindMigration"],
+      ["updates", "navUpdateNotifications"],
+      ["config", "navPlaybackSignIn"],
+    ] as const
+  ).map(([path, label]) => ({ area: "console" as const, path, label })),
+  ...(
+    [
+      ["libraries", "libraries", "manageLibrariesLead"],
+      ["operations", "jobs", "manageJobsLead"],
+      ["convert", "convert", "convertLead"],
+      ["rename", "rename", "renameLead"],
+      ["trash", "navTrash", "manageTrashLead"],
+      ["subscriptions", "subscriptions", "manageSubscriptionsLead"],
+      ["unmatched", "unmatchedHeading", "unmatchedLead"],
+      ["collections", "collections", "manageCollectionsLead"],
+      ["bulk", "bulkOpsHeading", "bulkOpsLead"],
+      ["tags", "tagsHeading", "tagsLead"],
+      ["curation", "curationHeading", "curationLead"],
+      ["entities", "manageEntitiesTitle", "manageEntitiesLead"],
+      ["items", "itemMetadataHeading", "itemMetadataLead"],
+      ["artwork", "artworkCandidates", "manageArtworkLead"],
+      ["markers", "markersHeading", "markersLead"],
+      ["field-locks", "fieldLocksHeading", "fieldLocksLead"],
+      ["navigation", "navOverrideHeading", "navOverrideLead"],
+      ["restrictions", "navUnlockRestricted", "restrictionsLead"],
+      ["profile", "navSwitchProfile", "profilesLead"],
+    ] as const
+  ).map(([path, label, lead]) => ({ area: "manage" as const, path, label, lead })),
+];
+
 export type SettingsSearchResult = {
   key: string;
   area: SettingsArea;
@@ -458,6 +554,7 @@ export type SettingsSearchResult = {
   page?: string;
   setting?: string;
   advanced?: boolean;
+  opener?: string;
 };
 
 // Case and accent-insensitive, so "reglages" finds "réglages".
@@ -472,15 +569,21 @@ export function normalizeSearchText(text: string): string {
 // ranks above a help-only match, and a match at the start of the label first.
 export function searchSettings(
   query: string,
-  pages: SearchablePage[],
   t: (key: StringKey) => string,
-  { appStoreHost = false, limit = 8 }: { appStoreHost?: boolean; limit?: number } = {},
+  {
+    pages = MENU_PAGES,
+    appStoreHost = false,
+    limit = 8,
+  }: { pages?: SearchablePage[]; appStoreHost?: boolean; limit?: number } = {},
 ): SettingsSearchResult[] {
   const words = normalizeSearchText(query).split(/\s+/).filter(Boolean);
   if (words.length === 0) return [];
 
   const candidates: { result: SettingsSearchResult; label: string; help: string }[] = [];
+  const firewalled = (area: SettingsArea, path: string) =>
+    area === "console" && appStoreHost && APP_STORE_FIREWALL_PATHS.has(path);
   for (const page of pages) {
+    if (firewalled(page.area, page.path)) continue;
     candidates.push({
       result: {
         key: `${page.area}:${page.path}`,
@@ -493,8 +596,7 @@ export function searchSettings(
     });
   }
   for (const page of SETTINGS_INDEX) {
-    if (page.area === "console" && appStoreHost && APP_STORE_FIREWALL_PATHS.has(page.path))
-      continue;
+    if (firewalled(page.area, page.path)) continue;
     for (const setting of page.settings) {
       candidates.push({
         result: {
@@ -505,6 +607,7 @@ export function searchSettings(
           page: t(page.page),
           setting: setting.id,
           advanced: setting.advanced,
+          opener: setting.opener,
         },
         label: t(setting.label),
         help: setting.help ? t(setting.help) : "",

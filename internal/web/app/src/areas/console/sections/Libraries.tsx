@@ -692,30 +692,32 @@ export function Libraries() {
         </div>
       )}
 
-      {firstLoad ? (
-        <Skeleton className="h-40 w-full" />
-      ) : libs.failed ? (
-        <ErrorState message="consoleConfigUnavailable" />
-      ) : empty ? (
-        <EmptyState message="libraryEmptyLead" />
-      ) : (
-        <div className="grid gap-4">
-          {libraryList.map((library) => (
-            <LibraryCard
-              key={library.id}
-              library={library}
-              plugins={pluginList}
-              skipDetectionEnabled={skipDetectionByLibrary.get(library.id) ?? false}
-              watcher={watchers.data?.find((w) => w.libraryID === library.id)}
-              onChanged={() => {
-                void refreshLibraries();
-                void skipDetection.refresh();
-              }}
-              onDeleted={() => void onLibraryDeleted(library)}
-            />
-          ))}
-        </div>
-      )}
+      <div data-setting="console.libraries.list">
+        {firstLoad ? (
+          <Skeleton className="h-40 w-full" />
+        ) : libs.failed ? (
+          <ErrorState message="consoleConfigUnavailable" />
+        ) : empty ? (
+          <EmptyState message="libraryEmptyLead" />
+        ) : (
+          <div className="grid gap-4">
+            {libraryList.map((library) => (
+              <LibraryCard
+                key={library.id}
+                library={library}
+                plugins={pluginList}
+                skipDetectionEnabled={skipDetectionByLibrary.get(library.id) ?? false}
+                watcher={watchers.data?.find((w) => w.libraryID === library.id)}
+                onChanged={() => {
+                  void refreshLibraries();
+                  void skipDetection.refresh();
+                }}
+                onDeleted={() => void onLibraryDeleted(library)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Shown only once the list has loaded with something in it: a failed or
           empty load leaves the section as it was before libraries could be

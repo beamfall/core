@@ -186,37 +186,39 @@ export function SubscriptionsPage() {
           </div>
         }
       >
-        {subscriptions.length === 0 ? (
-          <EmptyLine message={t("noSubscriptions")} />
-        ) : (
-          <ManageTable>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("title")}</TableHead>
-                <TableHead>
-                  <span className="bf-label-with-tip">
-                    {t("manageSubKeepDownloads")}
-                    <HelpTip
-                      label={t("manageSubKeepDownloads")}
-                      text="manageSubKeepDownloadsHelp"
-                    />
-                  </span>
-                </TableHead>
-                <TableHead className="text-right">{t("remove")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {subscriptions.map((sub) => (
-                <SubscriptionRow
-                  key={sub.id}
-                  subscription={sub}
-                  onSaveRetention={onSaveRetention}
-                  onRemove={onRemove}
-                />
-              ))}
-            </TableBody>
-          </ManageTable>
-        )}
+        <div data-setting="manage.subscriptions.list">
+          {subscriptions.length === 0 ? (
+            <EmptyLine message={t("noSubscriptions")} />
+          ) : (
+            <ManageTable>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("title")}</TableHead>
+                  <TableHead>
+                    <span className="bf-label-with-tip">
+                      {t("manageSubKeepDownloads")}
+                      <HelpTip
+                        label={t("manageSubKeepDownloads")}
+                        text="manageSubKeepDownloadsHelp"
+                      />
+                    </span>
+                  </TableHead>
+                  <TableHead className="text-right">{t("remove")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {subscriptions.map((sub) => (
+                  <SubscriptionRow
+                    key={sub.id}
+                    subscription={sub}
+                    onSaveRetention={onSaveRetention}
+                    onRemove={onRemove}
+                  />
+                ))}
+              </TableBody>
+            </ManageTable>
+          )}
+        </div>
         <ErrorLine message={error} />
       </ManageSection>
 

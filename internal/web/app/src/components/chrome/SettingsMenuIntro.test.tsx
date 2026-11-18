@@ -1,11 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings, useAdvancedSettings } from "@/lib/advancedSettings";
 import { I18nProvider } from "@/lib/i18n";
-import type { SearchablePage } from "@/lib/settingsIndex";
 import { RevealSetting, SettingsMenuIntro } from "./SettingsMenuIntro";
 
 const session = vi.hoisted(() => ({ isManager: true }));
@@ -17,10 +17,6 @@ afterEach(() => {
   setAdvancedSettings(false);
 });
 
-const CONSOLE_PAGES: SearchablePage[] = [
-  { area: "console", path: "config", label: "navPlaybackSignIn" },
-];
-
 function Where() {
   const { pathname } = useLocation();
   return <div data-testid="path">{pathname}</div>;
@@ -29,7 +25,7 @@ function Where() {
 // A stand-in Playback & sign-in page: the codec control only shows with
 // Advanced settings on, like the real one.
 function ConfigPage() {
-  const advanced = useAdvancedSettings();
+  const [advanced] = useAdvancedSettings();
   return (
     <div>
       <RevealSetting />
@@ -51,14 +47,33 @@ function ConfigPage() {
   );
 }
 
+// A stand-in Webhooks page: the secret field only shows once Add opens the form.
+function WebhooksPage() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <RevealSetting />
+      <button type="button" data-setting="console.webhooks.add" onClick={() => setOpen(true)}>
+        add webhook
+      </button>
+      {open && (
+        <div data-setting="console.webhooks.secret">
+          <input aria-label="secret" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function renderIntro(area: "console" | "manage" = "console") {
   return render(
     <I18nProvider>
       <MemoryRouter initialEntries={[`/${area}`]}>
-        <SettingsMenuIntro area={area} pages={CONSOLE_PAGES} />
+        <SettingsMenuIntro area={area} />
         <Where />
         <Routes>
           <Route path="/console/config" element={<ConfigPage />} />
+          <Route path="/console/webhooks" element={<WebhooksPage />} />
           <Route path="*" element={null} />
         </Routes>
       </MemoryRouter>
@@ -105,6 +120,24 @@ describe("SettingsMenuIntro", () => {
     );
   });
 
+  it("shows the control that opens a setting that only appears after an action", async () => {
+    const user = userEvent.setup();
+    renderIntro();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search settings" }), "secret");
+    const results = screen.getByRole("list", { name: "Search settings" });
+    const webhook = within(results)
+      .getAllByRole("link")
+      .find((a) => a.getAttribute("href") === "/console/webhooks");
+    expect(webhook).toBeDefined();
+    await user.click(webhook as HTMLElement);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "add webhook" })).toHaveFocus(), {
+      timeout: 3000,
+    });
+    expect(screen.getByTestId("path")).toHaveTextContent("/console/webhooks");
+  });
+
   it("says so when nothing matches and clears on Escape", async () => {
     const user = userEvent.setup();
     renderIntro();
@@ -114,7 +147,34 @@ describe("SettingsMenuIntro", () => {
     expect(screen.getByRole("status")).toHaveTextContent("No matching settings");
     await user.keyboard("{Escape}");
     expect(box).toHaveValue("");
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("announces how many results match while focus stays in the box", async () => {
+    const user = userEvent.setup();
+    renderIntro();
+    const box = screen.getByRole("searchbox", { name: "Search settings" });
+
+    await user.type(box, "transcodes");
+    const count = within(screen.getByRole("list", { name: "Search settings" })).getAllByRole(
+      "link",
+    ).length;
+    expect(screen.getByRole("status")).toHaveTextContent(
+      count === 1 ? "1 result" : `${count} results`,
+    );
+    expect(box).toHaveFocus();
+  });
+
+  it("finds a Console page by name from the Manage menu", async () => {
+    const user = userEvent.setup();
+    renderIntro("manage");
+
+    await user.type(screen.getByRole("searchbox", { name: "Search settings" }), "backups");
+    const results = screen.getByRole("list", { name: "Search settings" });
+    const link = within(results)
+      .getAllByRole("link")
+      .find((a) => a.getAttribute("href") === "/console/backups");
+    expect(link).toHaveTextContent("Console");
   });
 
   it("leaves Manage results out for someone who cannot open Manage", async () => {

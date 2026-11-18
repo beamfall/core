@@ -48,6 +48,13 @@ describe("settings index anchors", () => {
     expect(template?.text).toMatch(new RegExp(`["']${name}["']|\\b${name}:`));
   });
 
+  const openers = [
+    ...new Set(SETTINGS_INDEX.flatMap((page) => page.settings.flatMap((s) => s.opener ?? []))),
+  ];
+  it.each(openers)("finds the opener %s in a page", (opener) => {
+    expect(literal.has(opener), `no data-setting anchor for opener ${opener}`).toBe(true);
+  });
+
   it("gives every setting a unique id", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -69,11 +76,11 @@ describe("searchSettings", () => {
   ];
 
   it("returns nothing for an empty query", () => {
-    expect(searchSettings("   ", pages, t)).toEqual([]);
+    expect(searchSettings("   ", t, { pages })).toEqual([]);
   });
 
   it("finds a setting by its label and opens its page at the control", () => {
-    const [first] = searchSettings("transcodes", pages, t);
+    const [first] = searchSettings("transcodes", t, { pages });
     expect(first).toMatchObject({
       area: "console",
       path: "config",
@@ -83,17 +90,17 @@ describe("searchSettings", () => {
   });
 
   it("finds a page by its name", () => {
-    const results = searchSettings("trash", pages, t);
+    const results = searchSettings("trash", t, { pages });
     expect(results.some((r) => r.key === "manage:trash" && !r.setting)).toBe(true);
   });
 
   it("needs every word and ignores case and accents", () => {
     expect(normalizeSearchText("Réglages AVANCÉS")).toBe("reglages avances");
-    expect(searchSettings("TRANSCODES zzzz", pages, t)).toEqual([]);
+    expect(searchSettings("TRANSCODES zzzz", t, { pages })).toEqual([]);
   });
 
   it("ranks a label that starts with the query above a help-only match", () => {
-    const results = searchSettings("pairing", pages, t, { limit: 50 });
+    const results = searchSettings("pairing", t, { pages, limit: 50 });
     const labels = results.map((r) => normalizeSearchText(r.label));
     const firstHelpOnly = labels.findIndex((l) => !l.includes("pairing"));
     const lastStarts = labels.findLastIndex((l) => l.startsWith("pairing"));
@@ -102,14 +109,31 @@ describe("searchSettings", () => {
   });
 
   it("leaves App Store-firewalled Console pages out on an App Store host", () => {
-    const all = searchSettings("conversion", [], t, { limit: 50 });
+    const all = searchSettings("conversion", t, { pages: [], limit: 50 });
     expect(all.some((r) => r.path === "identification")).toBe(true);
-    const store = searchSettings("conversion", [], t, { limit: 50, appStoreHost: true });
+    const store = searchSettings("conversion", t, { pages: [], limit: 50, appStoreHost: true });
     expect(store.some((r) => r.path === "identification")).toBe(false);
   });
 
+  it("finds a page in the other area by name from either menu", () => {
+    const backups = searchSettings("backups", t);
+    expect(backups.some((r) => r.key === "console:backups" && !r.setting)).toBe(true);
+    const updates = searchSettings("update notifications", t);
+    expect(updates.some((r) => r.key === "console:updates" && !r.setting)).toBe(true);
+    const tags = searchSettings("tags", t);
+    expect(tags.some((r) => r.key === "manage:tags" && !r.setting)).toBe(true);
+  });
+
+  it("leaves firewalled Console pages out on App Store hosts", () => {
+    const store = searchSettings("migration", t, { appStoreHost: true, limit: 50 });
+    expect(store.some((r) => r.key === "console:migrate")).toBe(false);
+    expect(
+      searchSettings("migration", t, { limit: 50 }).some((r) => r.key === "console:migrate"),
+    ).toBe(true);
+  });
+
   it("marks Advanced settings so opening one turns Advanced on", () => {
-    const [codec] = searchSettings("codec", [], t).filter(
+    const [codec] = searchSettings("codec", t, { pages: [] }).filter(
       (r) => r.setting === "console.playback.codec",
     );
     expect(codec?.advanced).toBe(true);

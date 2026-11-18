@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { createLibrary, fetchLibraries, fetchPlugins } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
-import { ManageArea } from ".";
+import { MENU_PAGES } from "@/lib/settingsIndex";
+import { MANAGE_NAV_GROUPS, ManageArea } from ".";
 
 const sessionState = vi.hoisted(() => ({
   current: {
@@ -304,5 +305,21 @@ describe("Manage navigation in the Normal view (CORE-1117)", () => {
       "page",
     );
     expect(screen.queryByRole("link", { name: "Markers" })).toBeNull();
+  });
+});
+
+describe("Manage settings search pages", () => {
+  it("lists every named Manage menu page, and no other, in MENU_PAGES", () => {
+    const nav = MANAGE_NAV_GROUPS.flat().flatMap((item) =>
+      item.hidden || !item.label
+        ? []
+        : [{ path: item.to.replace("/manage/", ""), label: item.label, lead: item.lead }],
+    );
+    const indexed = MENU_PAGES.filter((p) => p.area === "manage").map(({ path, label, lead }) => ({
+      path,
+      label,
+      lead,
+    }));
+    expect(indexed).toEqual(nav);
   });
 });

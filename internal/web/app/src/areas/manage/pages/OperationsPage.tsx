@@ -213,21 +213,23 @@ function SchedulesSection() {
         </Button>
       }
     >
-      {schedules.length === 0 ? (
-        <EmptyLine message={t("noSchedules")} />
-      ) : (
-        <div className="space-y-3">
-          {schedules.map((schedule) => (
-            <ScheduleRow
-              key={schedule.id}
-              schedule={schedule}
-              library={scheduleLibraryLabel(schedule.id, libraryTitles)}
-              onToggle={onToggle}
-              onSaveTrigger={onSaveTrigger}
-            />
-          ))}
-        </div>
-      )}
+      <div data-setting="manage.operations.schedules">
+        {schedules.length === 0 ? (
+          <EmptyLine message={t("noSchedules")} />
+        ) : (
+          <div className="space-y-3">
+            {schedules.map((schedule) => (
+              <ScheduleRow
+                key={schedule.id}
+                schedule={schedule}
+                library={scheduleLibraryLabel(schedule.id, libraryTitles)}
+                onToggle={onToggle}
+                onSaveTrigger={onSaveTrigger}
+              />
+            ))}
+          </div>
+        )}
+      </div>
       <ErrorLine message={error} />
     </ManageSection>
   );

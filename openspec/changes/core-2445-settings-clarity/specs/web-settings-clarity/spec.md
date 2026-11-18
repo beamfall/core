@@ -70,6 +70,16 @@ The Console rail and the Manage menu SHALL each offer a settings search that lis
 - **WHEN** a person types "trash" into the Manage settings search
 - **THEN** results from Manage › Trash and from the Console are both listed, each labelled with its area
 
+#### Scenario: Finding the other area's page
+
+- **WHEN** a manager types "backups" into the Manage settings search
+- **THEN** the Console › Backups page is listed, labelled Console
+
+#### Scenario: Announcing the count
+
+- **WHEN** a screen reader user types into the search and focus stays in the box
+- **THEN** the number of results is announced each time it changes, and "No matching settings" when there are none
+
 ### Requirement: Choosing a search result reveals the setting
 
 Choosing a settings search result SHALL open its page, reveal the setting (turning on the Advanced view when the setting is classified Advanced, and opening a collapsed section that holds it), scroll it into view and briefly highlight it.
@@ -83,3 +93,8 @@ Choosing a settings search result SHALL open its page, reveal the setting (turni
 
 - **WHEN** the Normal view is on and an operator chooses the "Events retention" result
 - **THEN** the Advanced view turns on and the Operations page shows the field highlighted
+
+#### Scenario: Setting that appears only after an action
+
+- **WHEN** an operator chooses the Webhooks "Secret" result, a field shown only once the Add or Edit webhook form is open
+- **THEN** `/console/webhooks` opens with the Add webhook button highlighted and focused, since the field itself is not on the page yet

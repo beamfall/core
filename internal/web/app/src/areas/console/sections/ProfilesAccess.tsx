@@ -93,7 +93,7 @@ export function ProfilesAccess() {
           {/* Supervisor-authored policy, distinct from the managed Profile's own
               Mute (ADR-0087 §29). */}
           <p className="text-dense text-muted-foreground">{t("accessHelpManagedFraming")}</p>
-          <div className="max-w-sm space-y-2">
+          <div className="max-w-sm space-y-2" data-setting="console.schedules.profile">
             <Label>{t("accessScheduleProfileLabel")}</Label>
             <Select value={profileID} onValueChange={setProfileID}>
               <SelectTrigger aria-label={t("accessScheduleProfileLabel")}>

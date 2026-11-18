@@ -227,7 +227,12 @@ export function Webhooks() {
         heading="webhooksHeading"
         lead="webhooksLead"
         actions={
-          <Button size="sm" variant="outline" onClick={() => edit(draft ? null : EMPTY_DRAFT)}>
+          <Button
+            size="sm"
+            variant="outline"
+            data-setting="console.webhooks.add"
+            onClick={() => edit(draft ? null : EMPTY_DRAFT)}
+          >
             <Plus className="mr-1 h-4 w-4" />
             {t("webhooksAdd")}
           </Button>

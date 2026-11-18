@@ -15,7 +15,8 @@ import {
 import { I18nProvider } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
-import { CONSOLE_IA_PLACEMENTS, ConsoleArea } from ".";
+import { MENU_PAGES } from "@/lib/settingsIndex";
+import { CONSOLE_IA_PLACEMENTS, CONSOLE_NAV_GROUPS, ConsoleArea } from ".";
 import { fetchConsoleJobs } from "./lib/jobQueue";
 
 vi.mock("@/components/chrome/AppShell", () => ({
@@ -453,5 +454,19 @@ describe("Console IA conformance", () => {
     for (const adr of childSurfaces) {
       expect(counts.get(adr), adr).toBe(adr === "0013" ? 2 : 1);
     }
+  });
+});
+
+describe("Console settings search pages", () => {
+  it("lists every Console menu page, and no other, in MENU_PAGES", () => {
+    const nav = CONSOLE_NAV_GROUPS.flatMap((g) => g.items).map(({ path, label }) => ({
+      path,
+      label,
+    }));
+    const indexed = MENU_PAGES.filter((p) => p.area === "console").map(({ path, label }) => ({
+      path,
+      label,
+    }));
+    expect(indexed).toEqual(nav);
   });
 });
