@@ -436,6 +436,26 @@ describe("Library browse", () => {
     expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/);
   });
 
+  it("shows the swapped range after a commit leaves this side's year unchanged (CORE-2443)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all?from=1990&to=1990");
+
+    await screen.findByRole("button", { name: "Item 0" });
+    await user.clear(screen.getByLabelText("From year"));
+    await user.type(screen.getByLabelText("From year"), "2000");
+    await user.tab();
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all\?from=1990&to=2000$/),
+    );
+    expect(screen.getByLabelText("From year")).toHaveValue(1990);
+    expect(screen.getByLabelText("To year")).toHaveValue(2000);
+
+    await user.click(screen.getByLabelText("From year"));
+    await user.tab();
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all\?from=1990&to=2000$/);
+  });
+
   it("draws the table view as dense rows without artwork, with year, runtime and score (CORE-2443)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
       const page = pageFor(request);

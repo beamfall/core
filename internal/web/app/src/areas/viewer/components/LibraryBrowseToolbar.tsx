@@ -378,7 +378,9 @@ function YearInput({
     const trimmed = text.trim();
     const year = browseYear(trimmed);
     if ((year || !trimmed) && year !== value) onCommit(year);
-    else setText(committed);
+    // The draft always ends as the committed value: a commit the range
+    // normalizes back onto this side's value (a swap) changes nothing above.
+    setText(committed);
   };
   return (
     <div className="flex flex-col gap-1">
