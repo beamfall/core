@@ -263,6 +263,9 @@ func (s *Store) applyMuteFilterLocked(ctx context.Context, relations *sql.DB, pr
 	if len(items) == 0 {
 		return items, nil
 	}
+	if hasRollUpMembers(items) {
+		return s.applyMuteFilterRolledUpLocked(ctx, relations, profileID, filter, items)
+	}
 	reach, err := s.mutedReachLocked(ctx, relations, profileID, items)
 	if err != nil {
 		return nil, err
@@ -335,7 +338,16 @@ func (s *Store) AnnotateMuted(ctx context.Context, profileID ProfileID, filter L
 // plane holding the items' relations: the shared catalog, or an open Encrypted
 // Library's own database.
 func (s *Store) annotateMutedLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, items []SourceItem) error {
-	reach, err := s.mutedReachLocked(ctx, relations, profileID, items)
+	candidates := items
+	if hasRollUpMembers(items) {
+		candidates = append([]SourceItem{}, items...)
+		for _, item := range items {
+			for _, member := range item.rollUpMembers {
+				candidates = append(candidates, SourceItem{ID: member, Kind: "media"})
+			}
+		}
+	}
+	reach, err := s.mutedReachLocked(ctx, relations, profileID, candidates)
 	if err != nil {
 		return err
 	}
@@ -346,6 +358,15 @@ func (s *Store) annotateMutedLocked(ctx context.Context, relations *sql.DB, prof
 			_, broad := reach.broadEntities[id]
 			if direct || broad {
 				items[i].Muted = true
+			}
+			// A rolled-up container badges when a mute reaches any of its
+			// member Media, as each episode would badge on an unrolled rail;
+			// a Favorite that keeps the card visible does not clear it.
+			for _, member := range items[i].rollUpMembers {
+				if reach.directlyMuted[member] || reach.broadlyMuted[member] {
+					items[i].Muted = true
+					break
+				}
 			}
 			continue
 		}
@@ -598,4 +619,55 @@ func (s *Store) ClearMutes(ctx context.Context, profileID ProfileID) error {
 	}
 	_, err := s.eventsW.ExecContext(ctx, `DELETE FROM profile_mute WHERE profile_id = ?`, profileID)
 	return err
+}
+
+func hasRollUpMembers(items []SourceItem) bool {
+	for _, item := range items {
+		if len(item.rollUpMembers) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// applyMuteFilterRolledUpLocked filters a rail holding rolled-up container
+// items (ContainerRollUp): each container's member Media are judged as if the
+// rail were unrolled, and the container stays while any member survives, so
+// muting a genre or a show hides its rolled-up card exactly as it hides the
+// episodes. Items without members are judged directly.
+func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
+	flat := make([]SourceItem, 0, len(items))
+	for _, item := range items {
+		if len(item.rollUpMembers) == 0 {
+			flat = append(flat, SourceItem{ID: item.ID, Kind: item.Kind})
+			continue
+		}
+		for _, member := range item.rollUpMembers {
+			flat = append(flat, SourceItem{ID: member, Kind: "media"})
+		}
+	}
+	kept, err := s.applyMuteFilterLocked(ctx, relations, profileID, filter, flat)
+	if err != nil {
+		return nil, err
+	}
+	survivors := make(map[MediaID]bool, len(kept))
+	for _, item := range kept {
+		survivors[item.ID] = true
+	}
+	out := []SourceItem{}
+	for _, item := range items {
+		if len(item.rollUpMembers) == 0 {
+			if survivors[item.ID] {
+				out = append(out, item)
+			}
+			continue
+		}
+		for _, member := range item.rollUpMembers {
+			if survivors[member] {
+				out = append(out, item)
+				break
+			}
+		}
+	}
+	return out, nil
 }

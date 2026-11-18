@@ -3,6 +3,7 @@ package scan
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/beamfall/core/internal/store"
@@ -23,6 +24,20 @@ var extraFolderNames = map[string]bool{
 	"shorts":      true,
 }
 
+// titleExtraFolderNames are the further extras folders Plex and Jellyfin
+// recognise. Their names are common words a library may use as a category
+// ("Other", "Scenes"), so, as in those servers, they count only inside a
+// title folder, never directly under the Library root, and only for video
+// files: a music or photo folder named "Other" holds main Media.
+var titleExtraFolderNames = map[string]bool{
+	"behind the scenes": true,
+	"deleted scenes":    true,
+	"scenes":            true,
+	"clips":             true,
+	"samples":           true,
+	"other":             true,
+}
+
 // extraNameSuffixes are the established filename-stem suffixes that mark a
 // single file as an Extra: e.g. "Title-trailer.mkv" or
 // "Title-sample.mp4". Matched case-insensitively against the stem (filename
@@ -34,6 +49,23 @@ var extraNameSuffixes = []string{
 	"-featurette",
 	"-short",
 	"-behindthescenes",
+}
+
+// videoExtraNameSuffixes are the further suffixes Plex and Jellyfin
+// recognise. Words like "-other" or "-scene" also end ordinary song and
+// photo names, so they mark only a video file as an Extra.
+var videoExtraNameSuffixes = []string{
+	"-deleted",
+	"-deletedscene",
+	"-scene",
+	"-clip",
+	"-other",
+	"-extra",
+}
+
+// isVideoPath reports whether path has a video file extension.
+func isVideoPath(path string) bool {
+	return videoExtensions[strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")]
 }
 
 // isExtraPath reports whether a scanned file is an Extra by the established
@@ -49,8 +81,27 @@ func isExtraPath(root, path string) bool {
 			return true
 		}
 	}
+	if isVideoPath(path) {
+		for _, suffix := range videoExtraNameSuffixes {
+			if strings.HasSuffix(stem, suffix) {
+				return true
+			}
+		}
+		if extraOrdinalStem.MatchString(stem) {
+			return true
+		}
+	}
 	return extraContainerDir(root, path) != ""
 }
+
+// extraOrdinalStem matches a filename stem numbered by a group but not by an
+// item within it, with an "x" in the item's place and a label after it ("3.x
+// Out Takes", "2x Set Tour"): the disc-rip convention for a season's or
+// volume's bonus material. The label must start with a letter, so an ordinal
+// pair ("3x07") never matches. It applies to video files only, and a dash
+// may not sit between the number and the "x", so a numbered music track
+// ("01 - X Ambassadors - Renegades.flac") is never an Extra.
+var extraOrdinalStem = regexp.MustCompile(`^\d{1,2}[ ._]*x[ ._-]+[a-z]`)
 
 type extraParentTitleKey struct {
 	dir   string
@@ -162,13 +213,15 @@ func extraContainerDir(root, path string) string {
 		return ""
 	}
 	root = filepath.Clean(root)
+	video := isVideoPath(path)
 	dir := filepath.Clean(filepath.Dir(path))
 	for dir != root {
 		rel, err := filepath.Rel(root, dir)
 		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 			return ""
 		}
-		if extraFolderNames[strings.ToLower(filepath.Base(dir))] {
+		name := strings.ToLower(filepath.Base(dir))
+		if extraFolderNames[name] || (video && titleExtraFolderNames[name] && strings.ContainsRune(rel, filepath.Separator)) {
 			return dir
 		}
 		dir = filepath.Dir(dir)

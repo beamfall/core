@@ -1718,6 +1718,21 @@ func readField[T any](ctx context.Context, data map[string]any, errs *[]graphErr
 	data[dataKey] = result
 }
 
+// genreRollUp lists a narrowed "all-items" shelf (a genre shelf) by series:
+// Media held in a nested container hierarchy a plugin declares come back as
+// their top container, so a TV genre shelf lists shows, not episodes. Every
+// other feed lists Media as themselves (nil).
+func (h *Handler) genreRollUp(kind string, entityFilter *store.EntityFilter) *store.ContainerRollUp {
+	if kind != "all-items" || entityFilter == nil {
+		return nil
+	}
+	members, parents := h.plugins.ContainerRollUpRelations()
+	if len(members) == 0 || len(parents) == 0 {
+		return nil
+	}
+	return &store.ContainerRollUp{MemberRelations: members, ParentRelations: parents}
+}
+
 func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request) ([]SourceItem, error) {
 	if h.store == nil {
 		return []SourceItem{}, nil
@@ -1790,6 +1805,7 @@ func (h *Handler) sourceItems(ctx context.Context, scope auth.Scope, req request
 		Home:         boolVar(req, "home"),
 		FieldFilters: anyMapVar(req, "fieldFilters"),
 		EntityFilter: entityFilter,
+		RollUp:       h.genreRollUp(kind, entityFilter),
 		// seed parameterizes the "random" Source kind; an opaque token, not
 		// trimmed (distinct seeds must stay distinct). Empty is a valid seed.
 		Seed: stringVar(req, "seed"),

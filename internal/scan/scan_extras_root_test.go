@@ -14,6 +14,7 @@ import (
 // itself and every folder above it are ignored.
 func TestIsExtraPathCountsOnlyFoldersBelowRoot(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "mnt", "Trailers", "Library")
+	tvRoot := filepath.Join(string(filepath.Separator), "mnt", "user", "tv")
 	cases := []struct {
 		name string
 		root string
@@ -28,6 +29,32 @@ func TestIsExtraPathCountsOnlyFoldersBelowRoot(t *testing.T) {
 		{"suffix convention", root, filepath.Join(root, "Synthetic Title-trailer.mkv"), true},
 		{"path outside root", root, filepath.Join(string(filepath.Separator), "other", "Extras", "Clip.mkv"), false},
 		{"no root", "", filepath.Join(string(filepath.Separator), "x", "Extras", "Clip.mkv"), false},
+		// CORE-2424: season-numbered bonus labels in a TV library are Extras;
+		// an episode code and a plain title are not.
+		{"season extra outtakes", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Out Takes.mkv"), true},
+		{"season extra deleted scene", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Deleted Scene.mkv"), true},
+		{"season extra set tour", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Set Tour.mkv"), true},
+		{"season by episode code", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "3x07 Calamity Jen.mkv"), false},
+		{"leading episode pair", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.01 From Hell.mkv"), false},
+		{"plain outtakes title", root, filepath.Join(root, "Outtakes", "Outtakes.mkv"), false},
+		{"exact library-tv outtakes name", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3 x Out Takes.mkv"), true},
+		// The Plex/Jellyfin extras folders and suffixes. The common-word folders
+		// count only inside a title folder, never as a top-level category.
+		{"Behind The Scenes in a show", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "Behind The Scenes", "Making Of.mkv"), true},
+		{"Deleted Scenes in a season", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "Season 3", "Deleted Scenes", "Cut.mkv"), true},
+		{"Other in a title folder", root, filepath.Join(root, "Synthetic Title", "Other", "Clip.mkv"), true},
+		{"Other as a top-level category", root, filepath.Join(root, "Other", "Synthetic Title.mkv"), false},
+		{"Scenes as a top-level category", root, filepath.Join(root, "Scenes", "Synthetic Title", "Synthetic Title.mkv"), false},
+		{"deleted suffix", root, filepath.Join(root, "Synthetic Title", "Synthetic Title-deleted.mkv"), true},
+		{"scene suffix", root, filepath.Join(root, "Synthetic Title", "Opening-scene.mkv"), true},
+		{"numbered music track", root, filepath.Join(root, "X Ambassadors", "VHS", "01 - X Ambassadors - Renegades.flac"), false},
+		{"numbered music track without dash", root, filepath.Join(root, "X Ambassadors", "VHS", "01 X Ambassadors.flac"), false},
+		{"music in an artist's Other folder", root, filepath.Join(root, "Artist", "Other", "01 Song.flac"), false},
+		{"photo in a Scenes folder", root, filepath.Join(root, "2026", "Scenes", "IMG_001.jpg"), false},
+		{"song ending in -other", root, filepath.Join(root, "Artist", "Album", "The Other.flac"), false},
+		{"song with a -scene suffix", root, filepath.Join(root, "Artist", "Album", "Opening-scene.flac"), false},
+		{"trailer suffix stays for any type", root, filepath.Join(root, "Synthetic Title", "Synthetic Title-trailer.mp3"), true},
+		{"dashed number before an x title", tvRoot, filepath.Join(tvRoot, "Synthetic Show", "01 - X Marks the Spot.mkv"), false},
 	}
 	for _, tc := range cases {
 		if got := isExtraPath(tc.root, tc.path); got != tc.want {
