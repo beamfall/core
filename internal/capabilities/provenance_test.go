@@ -308,6 +308,9 @@ func TestCatalogDigestTracksEveryInput(t *testing.T) {
 		"changed rollback floor": func(catalog *BuildCatalog) {
 			catalog.MinimumSequence[SurfaceIOSViewer] = testBuildSequence + 5
 		},
+		"marked dev record": func(catalog *BuildCatalog) {
+			catalog.Builds[0].Dev = true
+		},
 		"changed entitlement": func(catalog *BuildCatalog) {
 			catalog.Builds[0].Roles = []EnrollmentRole{EnrollmentRoleAdminToken}
 		},

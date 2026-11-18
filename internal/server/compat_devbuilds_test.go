@@ -333,6 +333,8 @@ func TestRuntimeDevBuildRebuildKeepsItsDevice(t *testing.T) {
 	stranger := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &rebuilt)
 	assertDeviceBuilds(t, h.srv, stranger.DeviceID, nil)
 	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, rebuilt, stranger.authorize))
+	// The handshake rebind (CORE-1393) ran on that handshake and recorded nothing.
+	assertDeviceBuilds(t, h.srv, stranger.DeviceID, nil)
 
 	// A malformed digest is never admitted, even for the mapped device.
 	malformed := contract
