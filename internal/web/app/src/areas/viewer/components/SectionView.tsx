@@ -5,6 +5,7 @@ import { displayString } from "@/lib/display";
 import type { Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
+import { isRankedShelf, rankShelfItems } from "../lib/containerPage";
 import { SECTION_GRID_CAP } from "../lib/sections";
 import { playQueueOf } from "../lib/watchQueue";
 import { MediaItemCard } from "./MediaItemCard";
@@ -28,7 +29,7 @@ export interface SeeAllTarget {
 // virtualization dependency is added — the hook measures the live grid geometry.
 export function SectionView({
   section,
-  items,
+  items: served,
   seeAll,
   navigationID,
   playOnActivate,
@@ -45,6 +46,10 @@ export function SectionView({
   const displayLocale = useDisplayLocale();
   const navigate = useNavigate();
   const gridRef = useRef<HTMLUListElement | null>(null);
+  // A catalog shelf reads in progress first, never in plain title order
+  // (CORE-2512); grids and See All keep the server's order.
+  const ranked = isRankedShelf(section);
+  const items = useMemo(() => (ranked ? rankShelfItems(served) : served), [ranked, served]);
 
   // Layout per kind (the design-system Section renderers): shelf is a horizontal
   // scroll rail; grid is a responsive poster grid; list/info are dense vertical

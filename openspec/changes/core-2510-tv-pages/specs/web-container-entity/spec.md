@@ -79,9 +79,10 @@ Each entry SHALL be a link, so keyboard and remote focus reach it in order.
 
 ### Requirement: A long text field reads as a clamped overview
 
-When an Entity has no builtin summary, its first viewer-facing field of type `text` SHALL render
-as the page's overview, clamped to three lines with a More/Less control once it is long, and SHALL
-NOT also be listed among the page's fields.
+When an Entity has no builtin summary, its first viewer-facing field of type `text` that runs to
+at least 120 characters SHALL render as the page's overview, clamped to three lines with a
+More/Less control once it is long, and SHALL NOT also be listed among the page's fields. A shorter
+text field stays among the fields.
 
 #### Scenario: A container's long overview field is clamped
 

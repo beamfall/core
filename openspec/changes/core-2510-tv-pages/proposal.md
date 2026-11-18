@@ -22,7 +22,7 @@ containers read in plain title order.
 - A middle container lists its ancestor's containers of its own kind as a row of links under its
   title, its own marked current (CORE-2522), so a viewer switches between siblings without going
   back to the ancestor.
-- An Entity with no builtin summary reads its first `text` field as its overview, clamped to three
+- An Entity with no builtin summary reads its first long `text` field (120 characters or more) as its overview, clamped to three
   lines with More/Less, instead of printing it in full among its fields (CORE-2522).
 - The On Deck line names the next child once: its plugin subtitle, with the title appended only
   when the subtitle does not already contain it.

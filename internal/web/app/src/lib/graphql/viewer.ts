@@ -200,7 +200,7 @@ export async function fetchMetadataCredits(signal?: AbortSignal): Promise<Metada
 }
 
 const MEDIA_FOR_ENTITY_QUERY =
-  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** MediaForEntity — the hand-rolled related-Media fallback list for a detail view. */
 export async function fetchMediaForEntity(

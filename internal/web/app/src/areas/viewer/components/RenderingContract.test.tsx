@@ -80,7 +80,7 @@ describe("React Viewer rendering contract", () => {
     vi.mocked(fetchSectionItems).mockResolvedValue([item("recovered")]);
     await act(async () => screen.getByRole("button", { name: /try again/i }).click());
 
-    expect(await screen.findAllByRole("button", { name: "recovered" })).toHaveLength(2);
+    expect(await screen.findAllByRole("link", { name: "recovered" })).toHaveLength(2);
     expect(screen.queryByText(/could not reach the server/i)).toBeNull();
     expect(screen.queryByText(/connection lost/i)).toBeNull();
   });
@@ -92,9 +92,7 @@ describe("React Viewer rendering contract", () => {
 
     renderLayout({ id: "layout", sections: [section("empty"), section("visible")] });
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "first-visible" })).toHaveFocus(),
-    );
+    await waitFor(() => expect(screen.getByRole("link", { name: "first-visible" })).toHaveFocus());
   });
 
   it("restores a stable focus anchor after reload and falls back when it disappears", async () => {
@@ -102,7 +100,7 @@ describe("React Viewer rendering contract", () => {
     vi.mocked(fetchSectionItems).mockImplementation(async () => nextItems);
     const view = renderLayout({ id: "layout", sections: [section("cards")] });
 
-    const remembered = await screen.findByRole("button", { name: "remembered" });
+    const remembered = await screen.findByRole("link", { name: "remembered" });
     remembered.focus();
     prepareRenderFocusRestore();
     view.rerender(
@@ -116,11 +114,11 @@ describe("React Viewer rendering contract", () => {
         </MemoryRouter>
       </I18nProvider>,
     );
-    await waitFor(() => expect(screen.getByRole("button", { name: "remembered" })).toHaveFocus(), {
+    await waitFor(() => expect(screen.getByRole("link", { name: "remembered" })).toHaveFocus(), {
       timeout: 5000,
     });
 
-    screen.getByRole("button", { name: "remembered" }).focus();
+    screen.getByRole("link", { name: "remembered" }).focus();
     prepareRenderFocusRestore();
     nextItems = [item("first")];
     view.rerender(
@@ -134,7 +132,7 @@ describe("React Viewer rendering contract", () => {
         </MemoryRouter>
       </I18nProvider>,
     );
-    await waitFor(() => expect(screen.getByRole("button", { name: "first" })).toHaveFocus(), {
+    await waitFor(() => expect(screen.getByRole("link", { name: "first" })).toHaveFocus(), {
       timeout: 5000,
     });
   });

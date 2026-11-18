@@ -347,7 +347,7 @@ describe("MediaDetailPage", () => {
 
     vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Second" }));
+      fireEvent.click(screen.getByRole("link", { name: "Second" }));
     });
     // The previous item's server detail never paints under the new id.
     expect(screen.getByRole("heading", { level: 1, name: "Second" })).toBeInTheDocument();
@@ -750,7 +750,7 @@ describe("MediaDetailPage", () => {
     expect(within(extras).getAllByRole("listitem")).toHaveLength(2);
     expect(screen.queryByRole("heading", { name: "Editions" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(extras).getByRole("button", { name: /^Trailer/ }));
+    fireEvent.click(within(extras).getByRole("link", { name: /^Trailer/ }));
     expect(screen.getByTestId("path")).toHaveTextContent("/watch/x2");
     expect(screen.getByTestId("state")).toHaveTextContent('"title":"Trailer"');
   });
@@ -803,7 +803,7 @@ describe("MediaDetailPage", () => {
 
     const moreWith = await screen.findByRole("list", { name: "More with Ada Lead" });
     expect(within(moreWith).getAllByRole("listitem")).toHaveLength(1);
-    expect(within(moreWith).getByRole("button", { name: /^Lead Again/ })).toBeInTheDocument();
+    expect(within(moreWith).getByRole("link", { name: /^Lead Again/ })).toBeInTheDocument();
 
     const related = screen.getByRole("list", { name: "Related" });
     const titles = within(related)
@@ -813,7 +813,7 @@ describe("MediaDetailPage", () => {
     expect(titles[0]).toContain("Both Genres");
     expect(titles[1]).toContain("One Genre");
 
-    fireEvent.click(within(related).getByRole("button", { name: /^Both Genres/ }));
+    fireEvent.click(within(related).getByRole("link", { name: /^Both Genres/ }));
     expect(screen.queryByTestId("path")).toBeNull();
     await screen.findByRole("heading", { name: "Both Genres" });
   });

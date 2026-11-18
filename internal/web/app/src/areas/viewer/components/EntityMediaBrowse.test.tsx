@@ -206,7 +206,7 @@ describe("EntityMediaBrowse", () => {
       ),
     );
     expect(screen.getByRole("heading", { name: "Appears on" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Test Mix/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Test Mix/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Test Album/ })).not.toBeInTheDocument();
     // Every track already shows in the top list, so there is no second list.
     expect(screen.queryByRole("list", { name: "All tracks" })).not.toBeInTheDocument();

@@ -908,6 +908,7 @@
   background: none;
   color: var(--text-primary);
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 

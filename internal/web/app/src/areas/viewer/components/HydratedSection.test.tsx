@@ -70,7 +70,7 @@ describe("HydratedSection state-family conformance", () => {
     expect(container.querySelectorAll(".bf-shimmer")).toHaveLength(8);
 
     expect(await screen.findByRole("list", { name: "Recent" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Visible item/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
   });
 
   it("times out loading into the error path instead of spinning forever", () => {
@@ -174,11 +174,11 @@ describe("HydratedSection identity-scoped cache", () => {
     const { container } = renderSection();
 
     expect(container.querySelectorAll(".bf-shimmer")).toHaveLength(0);
-    expect(screen.getByRole("button", { name: /^Visible item/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
     expect(fetchSectionItems).toHaveBeenCalledTimes(1);
 
     await act(async () => resolve([fresh]));
-    expect(screen.getByRole("button", { name: /^Fresh item/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^Fresh item/ })).toBeVisible();
     expect(screen.queryByRole("button", { name: /^Visible item/ })).toBeNull();
     expect(readViewerCache(identity, key)).toEqual([fresh]);
   });
@@ -218,7 +218,7 @@ describe("HydratedSection identity-scoped cache", () => {
     renderSection(onConnectionLost);
 
     await waitFor(() => expect(onConnectionLost).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: /^Visible item/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^Visible item/ })).toBeVisible();
     expect(readViewerCache(identity, key)).toEqual([item]);
   });
 

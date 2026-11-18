@@ -182,7 +182,7 @@
 }
 
 /* Hero (CORE-2441): the poster carries the unwatched count; the next-up line
- * leads with an "On deck" eyebrow and ends with the child's subtitle. */
+ * leads with an "On deck" eyebrow and names the child once (CORE-2510). */
 [data-register="viewer"] .bf-entity-poster {
   position: relative;
   align-self: end;
@@ -210,11 +210,6 @@
   text-transform: uppercase;
 }
 
-[data-register="viewer"] .bf-entity-next-sub::before {
-  content: "\00b7";
-  margin-right: 8px;
-}
-
 [data-register="viewer"] .bf-entity-children-count {
   margin-bottom: -12px;
 }
@@ -226,5 +221,183 @@
   [data-register="viewer"] .bf-entity-poster {
     width: 120px;
     align-self: start;
+  }
+}
+
+/* A middle container (CORE-2510, CORE-2522): its ancestor above the title and
+ * its siblings in that ancestor as a row of links under it. */
+[data-register="viewer"] .bf-entity-parent {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+[data-register="viewer"] .bf-entity-parent a,
+[data-register="viewer"] .bf-entity-siblings a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+[data-register="viewer"] .bf-entity-parent a:hover,
+[data-register="viewer"] .bf-entity-siblings a:hover {
+  color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-entity-parent a:focus-visible,
+[data-register="viewer"] .bf-entity-siblings a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-entity-siblings ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-entity-siblings a {
+  display: inline-block;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+[data-register="viewer"] .bf-entity-siblings a[aria-current="page"] {
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* A container's video Media as detail rows (CORE-2510): still, text, and a
+ * play button beside the row link. */
+[data-register="viewer"] .bf-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+[data-register="viewer"] .bf-row-link {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-row-link:hover {
+  background: var(--control-bg-hover);
+}
+
+[data-register="viewer"] .bf-row-link:focus-visible,
+[data-register="viewer"] .bf-row-play:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-row-thumb {
+  position: relative;
+  flex: 0 0 240px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+}
+
+[data-register="viewer"] .bf-row-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+[data-register="viewer"] .bf-row-progress {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+}
+
+[data-register="viewer"] .bf-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-row-title {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+[data-register="viewer"] .bf-row-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-register="viewer"] .bf-row-play {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-row-play:hover {
+  background: var(--control-bg-hover);
+}
+
+[data-register="viewer"] .bf-row-play svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-register="viewer"] .bf-row-link,
+  [data-register="viewer"] .bf-row-play {
+    transition: none;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-register="viewer"] .bf-row-link {
+    gap: 12px;
+  }
+  [data-register="viewer"] .bf-row-thumb {
+    flex-basis: 120px;
   }
 }

@@ -1,7 +1,7 @@
 import { Check, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -38,10 +38,12 @@ const CARD_SIZES = "300px";
 // layout never shifts. Titles and
 // summaries render as React text only (invariant #5 / ADR-0012 §5).
 //
-// The card button is the only control that carries the item's name: its
+// The card link is the only control that carries the item's name: its
 // accessible name is the title plus the acting Profile's state, and the same
 // state is drawn on the artwork (progress bar, finished mark, remaining count).
-// The More menu is a sibling control, never nested inside the button.
+// It is an anchor with an href (CORE-2511), so a modifier or middle click opens
+// the page in a new tab. The More menu is a sibling control, never nested
+// inside the link.
 export function MediaItemCard({
   item,
   posInSet,
@@ -161,22 +163,28 @@ export function MediaItemCard({
     return { queue: queueWindow(queue, item.id), queueIdentity: identity };
   }
 
-  function play() {
-    // Carry the title forward so the player's info overlay can name the Media
-    // (the playback-info wire does not report it).
-    const state: PlayerNavState = { title: item.title, ...queueState() };
-    navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
+  // Carry the title forward so the player's info overlay can name the Media
+  // (the playback-info wire does not report it).
+  function playState(): PlayerNavState {
+    return { title: item.title, ...queueState() };
   }
 
-  function activate() {
-    if (isMedia && playOnActivate) {
-      play();
-    } else if (isMedia) {
+  function play() {
+    navigate(`/watch/${encodeURIComponent(item.id)}`, { state: playState() });
+  }
+
+  // The navigation state the card's link carries to the page it opens.
+  function linkState(): unknown {
+    if (isMedia && playOnActivate) return playState();
+    if (isMedia) {
       const link = mediaLinkState(item, identity, focusAnchor?.section);
-      navigate(path, { state: link ? { ...link, ...queueState() } : undefined });
-    } else {
-      navigate(path, { state: entityLinkState(item, identity) });
+      return link ? { ...link, ...queueState() } : undefined;
     }
+    return entityLinkState(item, identity);
+  }
+
+  function open() {
+    navigate(path, { state: linkState() });
   }
 
   function beginPreviewDwell() {
@@ -198,7 +206,7 @@ export function MediaItemCard({
     }, PREVIEW_DWELL_MS);
   }
 
-  function handlePointerEnter(event: PointerEvent<HTMLButtonElement>) {
+  function handlePointerEnter(event: PointerEvent<HTMLAnchorElement>) {
     if (isMedia) preloadPlayer();
     clearPreviewTimer();
     if (previewClip || !canStartPreview(event)) {
@@ -222,7 +230,7 @@ export function MediaItemCard({
     beginPreviewDwell();
   }
 
-  function canStartPreview(event?: PointerEvent<HTMLButtonElement>) {
+  function canStartPreview(event?: PointerEvent<HTMLAnchorElement>) {
     if (!isMedia) {
       return false;
     }
@@ -234,14 +242,14 @@ export function MediaItemCard({
 
   return (
     <li className="bf-card-shell list-none" aria-posinset={posInSet} aria-setsize={setSize}>
-      <button
-        type="button"
+      <Link
+        to={path}
+        state={linkState()}
         aria-label={cardAccessibleName(
           { ...item, title: cardLabelTitle(item, showYear, subtitle) },
           state,
           rating,
         )}
-        onClick={activate}
         onBlur={stopPreview}
         onPointerCancel={stopPreview}
         onPointerEnter={handlePointerEnter}
@@ -315,7 +323,7 @@ export function MediaItemCard({
             {formatDuration(item.durationSeconds)}
           </span>
         ) : null}
-      </button>
+      </Link>
       <MediaItemCardMenu
         title={item.title}
         primaryLabel={primaryLabel}
@@ -323,7 +331,7 @@ export function MediaItemCard({
         isAudio={item.mediaClass === "audio"}
         href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
         target={itemTargetFor(item)}
-        onPrimary={isMedia ? play : activate}
+        onPrimary={isMedia ? play : open}
       />
     </li>
   );
@@ -338,7 +346,7 @@ function cardLabelTitle(item: SourceItem, showYear: boolean, subtitle: string): 
 }
 
 // The state drawn on the artwork. Decorative for assistive technology: the
-// card button's accessible name already says the same thing in words.
+// card link's accessible name already says the same thing in words.
 function CardStateOverlay({
   finished,
   remainingCount,
