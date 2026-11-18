@@ -1,0 +1,7 @@
+- [x] plugin-filmtv: declare `community-rating` and `community-rating-votes`; map TMDB score, votes and US certification on `feat/media-ratings`
+- [x] plugin-filmtv: tests for the lookup templates, declarations and mappings
+- [x] Web: rating badge and score chip in the facts row; fields leave the generic list
+- [x] Web: strings in every shipped locale; vitest coverage
+- [ ] plugin-filmtv tagged and repinned in core `go.mod` (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2399-media-ratings` after landing

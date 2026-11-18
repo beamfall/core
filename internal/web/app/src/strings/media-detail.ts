@@ -17,6 +17,10 @@ export const mediaDetailStrings = {
     mediaDetailFacts: "About this item",
     mediaDetailRuntimeHours: "{hours} h {minutes} min",
     mediaDetailRuntimeMinutes: "{minutes} min",
+    // Facts row community score (CORE-2399); {label} names the source.
+    mediaDetailScore: "Community score",
+    mediaDetailScoreLabel:
+      "{label} {score} out of 10, {votes, plural, one {# vote} other {# votes}}",
     mediaDetailOverviewMore: "More",
     mediaDetailOverviewLess: "Less",
     // Watch together from the detail page (CORE-1764).
@@ -46,6 +50,8 @@ export const mediaDetailStrings = {
     mediaDetailFacts: "À propos",
     mediaDetailRuntimeHours: "{hours} h {minutes} min",
     mediaDetailRuntimeMinutes: "{minutes} min",
+    mediaDetailScore: "Note du public",
+    mediaDetailScoreLabel: "{label} {score} sur 10, {votes, plural, one {# vote} other {# votes}}",
     mediaDetailOverviewMore: "Plus",
     mediaDetailOverviewLess: "Moins",
     mediaDetailWatchTogether: "Regarder ensemble",
@@ -73,6 +79,9 @@ export const mediaDetailStrings = {
     mediaDetailFacts: "Über diesen Titel",
     mediaDetailRuntimeHours: "{hours} Std. {minutes} Min.",
     mediaDetailRuntimeMinutes: "{minutes} Min.",
+    mediaDetailScore: "Publikumswertung",
+    mediaDetailScoreLabel:
+      "{label} {score} von 10, {votes, plural, one {# Stimme} other {# Stimmen}}",
     mediaDetailOverviewMore: "Mehr",
     mediaDetailOverviewLess: "Weniger",
     mediaDetailWatchTogether: "Gemeinsam ansehen",
@@ -101,6 +110,8 @@ export const mediaDetailStrings = {
     mediaDetailFacts: "Acerca de",
     mediaDetailRuntimeHours: "{hours} h {minutes} min",
     mediaDetailRuntimeMinutes: "{minutes} min",
+    mediaDetailScore: "Valoración del público",
+    mediaDetailScoreLabel: "{label} {score} de 10, {votes, plural, one {# voto} other {# votos}}",
     mediaDetailOverviewMore: "Más",
     mediaDetailOverviewLess: "Menos",
     mediaDetailWatchTogether: "Ver juntos",
@@ -128,6 +139,8 @@ export const mediaDetailStrings = {
     mediaDetailFacts: "Sobre",
     mediaDetailRuntimeHours: "{hours} h {minutes} min",
     mediaDetailRuntimeMinutes: "{minutes} min",
+    mediaDetailScore: "Avaliação do público",
+    mediaDetailScoreLabel: "{label} {score} de 10, {votes, plural, one {# voto} other {# votos}}",
     mediaDetailOverviewMore: "Mais",
     mediaDetailOverviewLess: "Menos",
     mediaDetailWatchTogether: "Assistir juntos",

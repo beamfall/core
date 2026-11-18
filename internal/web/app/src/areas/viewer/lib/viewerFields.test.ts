@@ -18,6 +18,14 @@ describe("viewerFacingFields", () => {
       field({ name: "class", label: { en: "Class" } }),
       field({ name: "hydrated", type: "flag", label: { en: "Grouped Locally" } }),
       field({ name: "certification", label: { en: "Certification" } }),
+      field({ name: "certification-display", label: { en: "Rating" } }),
+      field({ name: "community-rating", type: "number", value: "7", label: { en: "TMDB rating" } }),
+      field({
+        name: "community-rating-votes",
+        type: "number",
+        value: "9",
+        label: { en: "TMDB votes" },
+      }),
       field({ name: "blank", value: "  ", label: { en: "Blank" } }),
       field({ name: "empty-label", label: "" }),
       field({ name: "network", label: "Network" }),
@@ -90,6 +98,37 @@ describe("detailFacts", () => {
       rating: "R",
       categories: ["One", "Two", "Three"],
     });
+  });
+
+  it("prefers the display rating and reads the community score (CORE-2399)", () => {
+    const facts = detailFacts(null, [
+      field({ name: "certification", value: "R" }),
+      field({ name: "certification-display", value: "TV-MA" }),
+      field({
+        name: "community-rating",
+        type: "number",
+        value: "7.25",
+        label: { en: "TMDB rating" },
+      }),
+      field({ name: "community-rating-votes", type: "number", value: "1200" }),
+    ]);
+    expect(facts.rating).toBe("TV-MA");
+    expect(facts.score).toEqual({ value: 7.25, votes: 1200, label: { en: "TMDB rating" } });
+  });
+
+  it("drops a score nobody voted for or outside 0-10", () => {
+    for (const [score, votes] of [
+      ["0", "0"],
+      ["7.1", "0"],
+      ["7.1", ""],
+      ["11", "40"],
+      ["n/a", "40"],
+    ]) {
+      const fields = [field({ name: "community-rating", type: "number", value: score })];
+      if (votes)
+        fields.push(field({ name: "community-rating-votes", type: "number", value: votes }));
+      expect(detailFacts(null, fields).score, `${score}/${votes}`).toBeUndefined();
+    }
   });
 
   it("omits what is unknown", () => {
