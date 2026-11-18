@@ -1,0 +1,62 @@
+/* Cold-load splash (CORE-2556). brand-splash-plugin.ts inlines this into index.html with both
+ * Cut Beam intros, so it applies from the first paint, before the bundle runs. Both intros
+ * animate from the same moment and the aspect ratio only toggles visibility (not display, which
+ * would stop an animation), so a rotation or resize mid-intro switches layout at the same time.
+ * Each intro stays paused until the ready sentinel after both has been parsed (see
+ * brand-splash-plugin.ts), so a slowly streamed response cannot start one clock before the other;
+ * without :has() support they run unsynchronised, as before. Reduced motion needs nothing here: each intro's own stylesheet then shows the static lockup.
+ * src/lib/brandSplash.ts fades the splash out once the intro and the first screen are ready. */
+.bf-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  background: var(--bg-root);
+  pointer-events: none;
+  transition: opacity 240ms ease-out;
+}
+
+@supports selector(:has(*)) {
+  .bf-splash:not(:has(> .bf-splash__ready)) {
+    --bf-splash-play: paused;
+  }
+}
+
+.bf-splash[data-state="done"] {
+  opacity: 0;
+}
+
+:root[data-theme="light"] .bf-splash {
+  --bf-wordmark-color: var(--text-primary);
+}
+
+.bf-splash__layout {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
+.bf-splash__layout[data-layout="horizontal"] {
+  width: min(68vw, 480px);
+}
+
+.bf-splash__layout[data-layout="stacked"] {
+  width: min(64vw, 300px);
+  visibility: visible;
+}
+
+@media (min-aspect-ratio: 1 / 1) {
+  .bf-splash__layout[data-layout="horizontal"] {
+    visibility: visible;
+  }
+
+  .bf-splash__layout[data-layout="stacked"] {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-splash {
+    transition: none;
+  }
+}

@@ -65,7 +65,7 @@ export default defineConfig({
     // fresh, unenrolled browser.
     {
       name: "unauth",
-      testMatch: /(smoke|auth)\.spec\.ts/,
+      testMatch: /(smoke|auth|brand-splash)\.spec\.ts/,
       use: { ...devices["Desktop Chrome"] },
     },
     // VIEWER session: an enrolled browser bound to the adult Default profile.

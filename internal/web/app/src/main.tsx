@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router";
 import "@fontsource-variable/instrument-sans/wght.css";
 import "./styles/global.css";
 import { ShellErrorBoundary } from "@/components/chrome/ErrorBoundary";
+import { handOffSplash } from "@/lib/brandSplash";
 import { I18nProvider } from "@/lib/i18n";
 import { registerServiceWorker } from "@/lib/pwa";
 import { RegisterProvider } from "@/lib/register";
@@ -51,11 +52,19 @@ const renderOnce = () => {
   rendered = true;
   render();
 };
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 const pathname = window.location.pathname.slice(basename.length) || "/";
-void Promise.race([
+const firstScreen = Promise.race([
   preloadInitialRoute(pathname),
   new Promise((resolve) => setTimeout(resolve, INITIAL_ROUTE_WAIT_MS)),
-]).then(renderOnce);
+])
+  .then(renderOnce)
+  // Two frames: React commits, then the first screen paints under the splash.
+  .then(nextFrame)
+  .then(nextFrame);
+
+// The cold-load logo intro (CORE-2556) hands off to the first screen once both are done.
+void handOffSplash(firstScreen);
 
 // Install the shell-only service worker (ADR-0007 §1). No-op in dev.
 registerServiceWorker();
