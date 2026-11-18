@@ -8,7 +8,9 @@ as a Version under the parser's version label. The other file MAY be one this sc
 earlier scan cataloged. When neither file carries a parsed version label, the scan SHALL label both
 from the first of these that tells them apart and leaves both slots free: the resolution class of the
 probed frame, then the container; the file that held the default Version moves to its label.
-Files that differ only by name SHALL stay separate Media, since they may be different items. A file whose label is stored SHALL keep it on later scans. It
+Files that differ only by name SHALL stay separate Media, since they may be different items. A
+further unlabelled copy SHALL join only under a free label of the kind the Media's Versions are
+all labelled by, and new bytes written over a Version's file SHALL keep that Version's slot. A file whose label is stored SHALL keep it on later scans. It
 SHALL import the file as its own Media when no such slot is free or when the file's content already
 belongs to another Media.
 

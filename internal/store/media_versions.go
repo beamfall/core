@@ -185,7 +185,7 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 		}
 	case errors.Is(err, sql.ErrNoRows):
 		if req.DeriveLabels {
-			label, err := placeDerivedVersionTx(ctx, tx, req, priorFirst, now)
+			label, err := placeDerivedVersionTx(ctx, tx, req, priorFirst)
 			if err != nil {
 				return MediaFile{}, err
 			}
@@ -229,7 +229,16 @@ func importMediaFileVersionSQL(ctx context.Context, plane catalogPlane, req Medi
 // title's known one.
 func refreshFirstVersionFactsTx(ctx context.Context, tx *sql.Tx, mediaID MediaID, imported ImportMediaFile, priorFirst string) error {
 	first, err := firstVersionFingerprintSQL(ctx, tx, mediaID)
-	if err != nil || first != imported.ContentFingerprint {
+	if err != nil {
+		return err
+	}
+	if first != imported.ContentFingerprint {
+		// A relabelled anchor can leave another existing file first. The
+		// store holds no frame size for that file, so the row stops
+		// claiming the previous first file's (CORE-2473).
+		if first != priorFirst {
+			_, err = tx.ExecContext(ctx, "UPDATE media SET video_width = 0, video_height = 0 WHERE id = ?", mediaID)
+		}
 		return err
 	}
 	width, height := max(imported.VideoWidthHint, 0), max(imported.VideoHeightHint, 0)
@@ -267,36 +276,61 @@ func firstVersionFingerprintSQL(ctx context.Context, q interface {
 }
 
 // placeDerivedVersionTx picks the label of a new file that, like its anchor,
-// carries no parsed label (MediaVersionImport.DeriveLabels). An anchor in the
-// default slot moves to its own label of the first kind that tells the two
-// files apart with both slots free; an anchor already labelled stays, and the
-// new file takes the first of its labels that is free. It returns
-// ErrVersionSlotTaken when no label fits, so the caller imports the file as
-// its own Media as before.
-func placeDerivedVersionTx(ctx context.Context, tx *sql.Tx, req MediaVersionImport, priorFirst string, now time.Time) (string, error) {
-	// A file replaced in place with new bytes frees the slot its old bytes
-	// held before the slots are judged, as in insertMediaFileVersionTx.
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE media_file SET missing_at_ms = ?
-		WHERE path = ? AND content_fingerprint <> ? AND missing_at_ms IS NULL
-	`, timeToMillis(now), req.File.Path, req.File.ContentFingerprint); err != nil {
-		return "", err
-	}
-	var anchorPath, anchorLabel string
-	err := tx.QueryRowContext(ctx, `
-		SELECT path, version_label FROM media_file
-		WHERE content_fingerprint = ? AND media_id = ? AND part_ordinal = 0 AND missing_at_ms IS NULL
-	`, req.AnchorFingerprint, req.MediaID).Scan(&anchorPath, &anchorLabel)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", fmt.Errorf("%w: anchor file is gone", ErrVersionNotAttached)
-	}
+// carries no parsed label (MediaVersionImport.DeriveLabels). New bytes at the
+// path of one of the Media's live files replace that file in place and take
+// its slot. Otherwise an anchor in the default slot moves to its own label of
+// the first kind that tells the two files apart with both slots free. When
+// the Media's other files are already labelled, the new file joins only under
+// a free label of the kind they are all labelled by, so it differs from each
+// of them in that fact. It returns ErrVersionSlotTaken when no label fits, so
+// the caller imports the file as its own Media as before.
+func placeDerivedVersionTx(ctx context.Context, tx *sql.Tx, req MediaVersionImport, priorFirst string) (string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT content_fingerprint, path, version_label FROM media_file
+		WHERE media_id = ? AND part_ordinal = 0 AND missing_at_ms IS NULL AND content_fingerprint <> ?
+		ORDER BY version_label
+	`, req.MediaID, req.File.ContentFingerprint)
 	if err != nil {
 		return "", err
 	}
+	type version struct{ fingerprint, path, label string }
+	var versions []version
+	var anchor *version
+	for rows.Next() {
+		var v version
+		if err := rows.Scan(&v.fingerprint, &v.path, &v.label); err != nil {
+			return "", errors.Join(err, rows.Close())
+		}
+		versions = append(versions, v)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return "", err
+	}
+	for i := range versions {
+		if versions[i].path == req.File.Path {
+			return versions[i].label, nil
+		}
+		if versions[i].fingerprint == req.AnchorFingerprint {
+			anchor = &versions[i]
+		}
+	}
+	if anchor == nil {
+		return "", fmt.Errorf("%w: anchor file is gone", ErrVersionNotAttached)
+	}
 	wanted := derivedVersionLabels(req.File.VideoWidthHint, req.File.VideoHeightHint, req.File.Path)
-	if anchorLabel != "" {
-		for _, label := range wanted {
+	if anchor.label != "" {
+		for kind, label := range wanted {
 			if label == "" {
+				continue
+			}
+			sameKind := true
+			for _, v := range versions {
+				if !derivedLabelOfKind(kind, v.label, v.path) {
+					sameKind = false
+					break
+				}
+			}
+			if !sameKind {
 				continue
 			}
 			free, err := versionSlotFreeTx(ctx, tx, req.MediaID, label, req.File.ContentFingerprint)
@@ -304,7 +338,12 @@ func placeDerivedVersionTx(ctx context.Context, tx *sql.Tx, req MediaVersionImpo
 				return label, err
 			}
 		}
-		return "", fmt.Errorf("%w: no derived label is free", ErrVersionSlotTaken)
+		return "", fmt.Errorf("%w: no derived label tells the file from the Media's Versions", ErrVersionSlotTaken)
+	}
+	if len(versions) != 1 {
+		// Another file shares the Media with an unlabelled anchor: the new
+		// file cannot be told from it by facts the store holds.
+		return "", fmt.Errorf("%w: the Media has other Versions", ErrVersionSlotTaken)
 	}
 	// The Media row's frame size is its first Version's; it is the anchor's
 	// only while the anchor is that first Version.
@@ -314,32 +353,37 @@ func placeDerivedVersionTx(ctx context.Context, tx *sql.Tx, req MediaVersionImpo
 			return "", err
 		}
 	}
-	anchor := derivedVersionLabels(int(width.Int64), int(height.Int64), anchorPath)
-	for i, label := range wanted {
-		if label == "" || anchor[i] == "" || label == anchor[i] {
-			continue
-		}
-		free, err := versionSlotFreeTx(ctx, tx, req.MediaID, label, req.File.ContentFingerprint)
-		if err != nil {
-			return "", err
-		}
-		anchorFree, err := versionSlotFreeTx(ctx, tx, req.MediaID, anchor[i], req.AnchorFingerprint)
-		if err != nil {
-			return "", err
-		}
-		if !free || !anchorFree {
+	anchorLabels := derivedVersionLabels(int(width.Int64), int(height.Int64), anchor.path)
+	for kind, label := range wanted {
+		if label == "" || anchorLabels[kind] == "" || label == anchorLabels[kind] {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE media_file SET version_label = ?
 			WHERE content_fingerprint = ? AND media_id = ? AND version_label = '' AND part_ordinal = 0
 			  AND missing_at_ms IS NULL
-		`, anchor[i], req.AnchorFingerprint, req.MediaID); err != nil {
+		`, anchorLabels[kind], req.AnchorFingerprint, req.MediaID); err != nil {
 			return "", err
 		}
 		return label, nil
 	}
 	return "", fmt.Errorf("%w: no derived label tells the files apart", ErrVersionSlotTaken)
+}
+
+// derivedLabelOfKind reports whether label is a derived label of the given
+// kind (see derivedVersionLabels) for the file at path: a resolution class,
+// or that file's own container.
+func derivedLabelOfKind(kind int, label, path string) bool {
+	switch kind {
+	case 0:
+		switch label {
+		case "4320p", "2160p", "1440p", "1080p", "720p", "SD":
+			return true
+		}
+		return false
+	default:
+		return label != "" && label == derivedVersionLabels(0, 0, path)[1]
+	}
 }
 
 // derivedVersionLabels lists the labels a file without a parsed one can take,

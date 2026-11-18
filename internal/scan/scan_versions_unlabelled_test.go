@@ -158,3 +158,26 @@ func TestScanAddsAnUnlabelledCopyBesideACatalogedFilm(t *testing.T) {
 	third := scanReleaseLibrary(t, st, libraryID, root, prober)
 	assertVersions(t, mediaVersions(t, st, libraryID, third), want)
 }
+
+// TestScanKeepsAReplacedUnlabelledCopyOnItsMedia: new bytes written over a
+// grouped copy keep its Media and its label on the next scan.
+func TestScanKeepsAReplacedUnlabelledCopyOnItsMedia(t *testing.T) {
+	root := t.TempDir()
+	const remux = "Disclosure.Day.2026.REPACK.1080p.Blu-ray.Remux-CiNEPHiLES.mkv"
+	const web = "Disclosure.Day.2026.2160p.WEB-DL.H265-CUT.mkv"
+	prober := frameProber{remux: {1920, 800}, web: {3840, 1600}}
+	writeScanFile(t, root, "Disclosure Day (2026)/"+remux, []byte("disclosure day remux"))
+	writeScanFile(t, root, "Disclosure Day (2026)/"+web, []byte("disclosure day web"))
+	st := storetest.Open(t)
+	libraryID := createVersionLibrary(t, st)
+	got := mediaVersions(t, st, libraryID, scanReleaseLibrary(t, st, libraryID, root, prober))
+	media := got[web][0]
+	want := map[string][2]string{remux: {media, "1080p"}, web: {media, "2160p"}}
+	assertVersions(t, got, want)
+
+	for _, name := range []string{remux, web} {
+		writeScanFile(t, root, "Disclosure Day (2026)/"+name, []byte("replaced bytes of "+name))
+		again := scanReleaseLibrary(t, st, libraryID, root, prober)
+		assertVersions(t, mediaVersions(t, st, libraryID, again), want)
+	}
+}
