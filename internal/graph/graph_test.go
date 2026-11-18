@@ -3203,10 +3203,10 @@ func graphIntPtr(value int) *int {
 	return &value
 }
 
-func newIdentifyTestHandler(t *testing.T) (*Handler, *store.Store) {
+func newIdentifyTestHandler(t *testing.T, adjust ...func(*plugin.Bundle)) (*Handler, *store.Store) {
 	t.Helper()
 	st := storetest.Open(t)
-	registry, err := newTestPluginRegistry([]plugin.Bundle{{
+	bundle := plugin.Bundle{
 		ID:          "demo",
 		Version:     "0.1.0",
 		DisplayName: plugin.L("Demo"),
@@ -3223,7 +3223,11 @@ func newIdentifyTestHandler(t *testing.T) (*Handler, *store.Store) {
 			LookupTemplate:  "/title/{id}",
 			FieldMap:        map[string]string{"title": "name", "summary": "overview", "year": "year"},
 		}},
-	}})
+	}
+	for _, apply := range adjust {
+		apply(&bundle)
+	}
+	registry, err := newTestPluginRegistry([]plugin.Bundle{bundle})
 	if err != nil {
 		t.Fatal(err)
 	}

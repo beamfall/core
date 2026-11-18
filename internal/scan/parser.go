@@ -31,6 +31,14 @@ type MediaTitler interface {
 	MediaTitle(path string, probe ParseProbe) string
 }
 
+// IdentifiedMediaTitler is an optional extension of MediaTitler for parsers
+// whose per-file title can name what identification found ("S03E01 · Smells
+// Like Mean Spirit"). fields are the identification's plugin-declared Media
+// field values by bare name, as text. A "" result keeps the MediaTitle rule.
+type IdentifiedMediaTitler interface {
+	IdentifiedMediaTitle(path string, probe ParseProbe, fields map[string]string) string
+}
+
 // PartMarkerTitler is an optional extension of FilenameParser for parsers that
 // group several files into one Media's ordered Parts. It supplies the
 // human-facing navigation Marker title for one Part without adding domain

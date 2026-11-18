@@ -270,6 +270,55 @@ func TestFixMatchPreviewProposesTheAppliedTitle(t *testing.T) {
 	}
 }
 
+// stubIdentifiedTitles is a stubMediaTitles whose parser also names the file
+// from the identification's "phase" field value.
+type stubIdentifiedTitles struct{ stubMediaTitles }
+
+func (s stubIdentifiedTitles) IdentifiedMediaTitle(_ context.Context, _ store.MediaID, _ string, fields map[string]string) (string, error) {
+	return string(s.stubMediaTitles) + " · " + fields["phase"], nil
+}
+
+// TestFixMatchPreviewProposesTheIdentifiedTitle (CORE-2470): when the parser
+// builds the title from the identification's field values, the preview
+// proposes that title and Apply writes it.
+func TestFixMatchPreviewProposesTheIdentifiedTitle(t *testing.T) {
+	handler, st := newIdentifyTestHandler(t, func(bundle *plugin.Bundle) {
+		bundle.MediaFields = []plugin.FieldSpec{{Name: "phase", Type: "text"}}
+		bundle.Scrapers[0].ImpliedMediaFields = map[string]string{"media.phase": "Smells Like Mean Spirit"}
+	})
+	handler.identify.SetFields(st)
+	handler.identify.SetMediaTitles(stubIdentifiedTitles{stubMediaTitles("S03E01")})
+	ctx := context.Background()
+	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: "/fixtures/episode.mkv", Title: "S03E01",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "sha256:episode",
+	})
+	if err != nil {
+		t.Fatalf("ImportMediaFile: %v", err)
+	}
+	const want = "S03E01 · Smells Like Mean Spirit"
+	vars := map[string]any{"mediaID": string(media.ID), "pluginID": "demo", "scraperID": "lookup", "candidateID": "42"}
+	diff, err := handler.fixMatchPreview(ctx, managerScope(), request{Variables: vars})
+	if err != nil {
+		t.Fatalf("fixMatchPreview: %v", err)
+	}
+	for _, row := range diff {
+		if row.Field == "title" && (row.Proposed != want || !row.Changed) {
+			t.Fatalf("title diff = %#v, want %q proposed", row, want)
+		}
+	}
+	if err := handler.identify.Apply(ctx, media.ID, "demo", "lookup", "42"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.Media(ctx, media.ID, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Title != want {
+		t.Fatalf("applied title = %q, want the previewed %q", after.Title, want)
+	}
+}
+
 // TestFixMatchPreviewRejectsHiddenMedia keeps the preview on the same
 // reveal-and-Library posture as fixMatch — a preview must not leak a hidden
 // item's current metadata.

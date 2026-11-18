@@ -391,12 +391,12 @@ func (h *Handler) fixMatchPreview(ctx context.Context, scope auth.Scope, req req
 	if err != nil {
 		return nil, clientError("unknown media")
 	}
-	candidate, err := h.identify.Lookup(ctx, pluginID, scraperID, candidateID, store.MediaID(mediaID))
+	candidate, title, err := h.identify.PreviewLookup(ctx, pluginID, scraperID, candidateID, store.MediaID(mediaID))
 	if err != nil {
 		return nil, err
 	}
 	return []FixMatchFieldDiff{
-		fieldDiff("title", media.Title, h.identify.AppliedTitle(ctx, store.MediaID(mediaID), pluginID, candidate.Title)),
+		fieldDiff("title", media.Title, title),
 		fieldDiff("summary", media.Summary, candidate.Summary),
 		fieldDiff("year", yearText(media.Year), yearText(candidate.Year)),
 	}, nil
