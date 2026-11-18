@@ -233,7 +233,7 @@ test.describe("console", () => {
     await gotoConsole(page, "access");
     await expect(page.getByRole("heading", { level: 2, name: "Profiles" })).toBeVisible();
 
-    const kind = page.getByRole("combobox", { name: "Kind" }).first();
+    const kind = page.getByRole("combobox", { name: "Profile type" }).first();
     await openSelectState(page, kind, "Adult");
     await expectLocatorVisualParity(
       page.locator('[data-slot="select-content"]'),
