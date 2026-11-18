@@ -360,7 +360,13 @@ func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed
 	if parsedOK {
 		out = appendParsedStructuralMediaFields(out, parsed)
 	}
-	refresh := store.ParserFieldRefresh{Fields: out, Authoritative: authoritative}
+	// Hydration and image local metadata write at the scan tier too, so
+	// older scan-tier values are the parser's own only where neither runs.
+	refresh := store.ParserFieldRefresh{
+		Fields:          out,
+		Authoritative:   authoritative,
+		LegacyScanOwned: s.metadataHydrator == nil && !imageClassForPath(path),
+	}
 	if parseProbeEmpty(probe) {
 		return refresh
 	}

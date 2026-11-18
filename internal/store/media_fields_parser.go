@@ -28,6 +28,13 @@ const (
 	// such field where a parse without the probe would. Only a probed parse
 	// may add the field back, so a later unprobed parse cannot undo it.
 	parserOwnedProbeAbsent = 4
+	// parserOwnedLegacyScan is any other scan-tier text, number or date
+	// value written before the marker existed. The parser wrote it unless
+	// hydration or image local metadata did, and only the scan knows whether
+	// either could have: the next authoritative parse reconciles it like
+	// parserOwnedLegacy when ParserFieldRefresh.LegacyScanOwned says neither
+	// could, and otherwise keeps the value and marks it parserOwnedNone.
+	parserOwnedLegacyScan = 5
 )
 
 // ParserFieldRefresh is the filename parser's whole Media field output for one
@@ -44,6 +51,12 @@ type ParserFieldRefresh struct {
 	// Authoritative is true when the parse saw the probe the full import
 	// would see, so probe-dependent and legacy fields may be settled by it.
 	Authoritative bool
+	// LegacyScanOwned is true when no scan-tier writer other than the parser
+	// could have written the Media's fields (the Library hydrates no metadata
+	// and the file is not an image). An authoritative parse then reconciles
+	// the Media's older scan-tier values (parserOwnedLegacyScan) as parser
+	// output; without it, it keeps them and stops tracking them.
+	LegacyScanOwned bool
 }
 
 // RefreshParserMediaFields applies one rescan parse to the fields the parser
@@ -100,6 +113,22 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 			return err
 		}
 		delete(owned, name)
+	}
+	// An older scan-tier value the parser may not have written is settled by
+	// an authoritative parse that cannot vouch for it: the value is kept and
+	// is no longer the parser's.
+	if refresh.Authoritative && !refresh.LegacyScanOwned {
+		for name, marker := range owned {
+			if marker != parserOwnedLegacyScan {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx,
+				"UPDATE media_field_provenance SET parser_owned = ? WHERE media_id = ? AND field = ? AND parser_owned = ?",
+				parserOwnedNone, id, name, parserOwnedLegacyScan); err != nil {
+				return err
+			}
+			delete(owned, name)
+		}
 	}
 	refreshable := func(marker int) bool {
 		return marker == parserOwnedStable || (refresh.Authoritative && marker != parserOwnedNone)
@@ -238,9 +267,9 @@ func (s *Store) LibraryFilePathsWithLegacyParserFields(ctx context.Context, libr
 		WHERE m.library_id = ?
 		  AND EXISTS (
 		    SELECT 1 FROM media_field_provenance p
-		    WHERE p.media_id = m.id AND p.parser_owned = ?
+		    WHERE p.media_id = m.id AND p.parser_owned IN (?, ?)
 		  )
-	`, libraryID, parserOwnedLegacy)
+	`, libraryID, parserOwnedLegacy, parserOwnedLegacyScan)
 	if err != nil {
 		return nil, err
 	}

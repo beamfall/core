@@ -346,3 +346,28 @@ func TestRescanOwnershipFollowsThePreflightProbe(t *testing.T) {
 		}
 	}
 }
+
+// TestParserFieldRefreshVouchesForLegacyScanValuesOnlyWithoutOtherWriters:
+// older scan-tier values are the parser's own only where no hydration and no
+// image local metadata could have written them at that tier (CORE-2554).
+func TestParserFieldRefreshVouchesForLegacyScanValuesOnlyWithoutOtherWriters(t *testing.T) {
+	parser := &refreshParser{}
+	for _, tc := range []struct {
+		name     string
+		path     string
+		hydrator MetadataHydrator
+		want     bool
+	}{
+		{name: "video", path: "/media/show.mkv", want: true},
+		{name: "image", path: "/media/photo.jpg", want: false},
+		{name: "hydrated", path: "/media/track.mkv", hydrator: &fakeMetadataHydrator{}, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &scanWalkState{parser: parser, metadataHydrator: tc.hydrator}
+			refresh := s.parserFieldRefresh(tc.path, ParseProbe{}, ParsedMedia{}, false, nil, true)
+			if refresh.LegacyScanOwned != tc.want {
+				t.Fatalf("LegacyScanOwned = %v, want %v", refresh.LegacyScanOwned, tc.want)
+			}
+		})
+	}
+}

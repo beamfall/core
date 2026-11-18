@@ -107,8 +107,8 @@ func TestRefreshParserMediaFieldsHoldsProbeAndLegacyFieldsUntilAuthoritative(t *
 	class := func(value string) MediaField { return MediaField{Name: "class", Type: EntityFieldText, Text: value} }
 	sequence := MediaField{Name: "sequence", Type: EntityFieldNumber, Number: 3}
 
-	// A field marked legacy (the migration marks only pre-marker scan-tier
-	// classes; the store treats any legacy marker the same way).
+	// A field marked legacy (the migration marks pre-marker scan-tier classes
+	// 2 and other pre-marker scan-tier values 5; this one is held like either).
 	if err := st.UpsertMediaFields(ctx, id, []MediaField{sequence}); err != nil {
 		t.Fatal(err)
 	}
