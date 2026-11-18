@@ -23,12 +23,13 @@ import (
 // client: clientError(<sentinel>.Error()) sites, and clientError(err.Error())
 // re-wraps guarded by errors.Is(err, <sentinel>). The gate classifies that text.
 var graphqlErrorSentinels = map[string]error{
-	"store.ErrJobNotFound":     store.ErrJobNotFound,
-	"store.ErrJobNotTerminal":  store.ErrJobNotTerminal,
-	"store.ErrJobTerminal":     store.ErrJobTerminal,
-	"store.ErrMarkerNotFound":  store.ErrMarkerNotFound,
-	"store.ErrNoRevealPath":    store.ErrNoRevealPath,
-	"store.ErrProfileDisabled": store.ErrProfileDisabled,
+	"store.ErrJobNotFound":          store.ErrJobNotFound,
+	"store.ErrJobNotTerminal":       store.ErrJobNotTerminal,
+	"store.ErrJobTerminal":          store.ErrJobTerminal,
+	"store.ErrMarkerNotFound":       store.ErrMarkerNotFound,
+	"store.ErrNoRevealPath":         store.ErrNoRevealPath,
+	"store.ErrProfileDisabled":      store.ErrProfileDisabled,
+	"store.ErrRestoreMergedVersion": store.ErrRestoreMergedVersion,
 }
 
 // TestGraphQLErrorSitesCarryCodes enumerates every place internal/graph builds

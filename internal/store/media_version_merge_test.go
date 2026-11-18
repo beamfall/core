@@ -461,3 +461,32 @@ func TestRestoreMediaRefusesAMergedVersion(t *testing.T) {
 		t.Fatalf("%s still trashed after undo", drop)
 	}
 }
+
+func TestUndoVersionMergeRefusesAHiddenCopy(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	keep, drop, _, _ := splitTitle(t, st)
+	now := time.Now().UTC()
+	result, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden := LibraryFilter{AllowedIDs: []LibraryID{"library-elsewhere"}, Revealed: true}
+	if _, err := st.UndoBatch(ctx, result.BatchID, hidden, now.Add(time.Minute)); err == nil || err.Error() != "batch not found" {
+		t.Fatalf("UndoBatch outside scope = %v, want batch not found", err)
+	}
+	full := LibraryFilter{Revealed: true, AllLibraries: true}
+	if err := st.RestoreMedia(ctx, drop, full); !errors.Is(err, ErrRestoreMergedVersion) {
+		t.Fatalf("RestoreMedia after refused undo = %v, want ErrRestoreMergedVersion", err)
+	}
+	if _, err := st.UndoBatch(ctx, result.BatchID, full, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("UndoBatch in scope: %v", err)
+	}
+	var trashed sql.NullInt64
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT trashed_at_ms FROM media WHERE id = ?`, drop).Scan(&trashed); err != nil {
+		t.Fatal(err)
+	}
+	if trashed.Valid {
+		t.Fatalf("%s still trashed after undo", drop)
+	}
+}

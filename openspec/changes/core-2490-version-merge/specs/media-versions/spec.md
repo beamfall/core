@@ -50,3 +50,9 @@ encrypted library or while trash is disabled.
 
 - **WHEN** a user restores the merged Media from Trash while its merge batch is not undone
 - **THEN** the restore is refused with a message to undo the merge, and the survivor keeps the file
+
+#### Scenario: Undo from a scope that cannot see the merge
+
+- **WHEN** a caller whose Library scope hides the merged Media undoes the merge batch
+- **THEN** the undo is refused as if the batch did not exist, and the batch stays undoable from a
+  scope that can see it

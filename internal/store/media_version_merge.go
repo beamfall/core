@@ -514,8 +514,8 @@ func nullInt64Ptr(v sql.NullInt64) *int64 {
 // repointed point back, in an events transaction that commits just before
 // the catalog one. Copied favourites, ratings, watchlist entries and progress
 // stay on the survivor, as an entity merge's copies do. A merged Media
-// outside the caller's scope or already purged is skipped; one whose file has
-// since left the survivor, gone missing or been replaced refuses the undo.
+// already purged is skipped; one outside the caller's scope, or whose file
+// has since left the survivor, gone missing or been replaced, refuses the undo.
 func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filter LibraryFilter, now time.Time) (BulkOpBatch, error) {
 	items, err := batchItems(ctx, s.catalogR, batchID)
 	if err != nil {
@@ -535,6 +535,17 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 			return BulkOpBatch{}, err
 		}
 		if _, err := visibleMediaTx(ctx, tx, item.MediaID, filter); errors.Is(err, errMediaNotVisible) {
+			// A purged copy has nothing to restore. One the caller cannot see
+			// refuses the whole undo: skipping it would mark the batch undone
+			// while its file stays on the survivor, leaving no way to split it.
+			// A merge never spans Libraries, so the batch reads as not found.
+			var exists bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM media WHERE id = ?)`, item.MediaID).Scan(&exists); err != nil {
+				return BulkOpBatch{}, err
+			}
+			if exists {
+				return BulkOpBatch{}, ValidationError("batch not found")
+			}
 			continue
 		} else if err != nil {
 			return BulkOpBatch{}, err
