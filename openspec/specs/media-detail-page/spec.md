@@ -190,3 +190,61 @@ header SHALL be one column with the primary action full width.
 
 - **WHEN** the overview is longer than the clamp threshold
 - **THEN** it is clamped and a More control expands it and then reads Less
+
+### Requirement: The detail page carries the item's actions
+
+The web Media detail page SHALL show the calling Profile's watched, watchlist and rating controls for
+the Media item, acting on the `{mediaID}` target through the item-state API, and a More menu that
+offers Add to playlist and Copy link. Play or Resume SHALL stay the only accent-filled action. Each
+change SHALL show at once and SHALL come back from the server after a reload.
+
+#### Scenario: Mark watched and rate
+
+- **WHEN** a viewer opens the detail page of an unwatched, unrated item, chooses Mark watched and
+  then four stars
+- **THEN** the page calls `setWatched` and `setRating` for that `mediaID`, shows Mark unwatched and
+  four filled stars, and a fresh load of the page shows the same state
+
+#### Scenario: Add to playlist from the More menu
+
+- **WHEN** a viewer opens the More menu and chooses Add to playlist
+- **THEN** the playlist dialog opens for that Media item
+
+#### Scenario: State load fails
+
+- **WHEN** the item-state read fails
+- **THEN** the controls report the failure with a retry, and Play still starts the item
+
+### Requirement: More with the first billed person
+
+The web Media detail page SHALL show a row titled with the name of the item's first
+person-archetype credit in the server's order, listing at most 20 other Media credited to that
+person. The row SHALL leave out Media the profile muted, as other passive-discovery rows do, and
+SHALL NOT list the current item, and SHALL NOT be shown when no other Media remain or the read fails. Choosing a
+card SHALL open that Media item's detail page.
+
+#### Scenario: Lead person with other titles
+
+- **WHEN** a Media item's first person credit is credited on two other Media
+- **THEN** the page shows a "More with" row named for that person with those two cards and not the
+  current item
+
+#### Scenario: Muted title left out
+
+- **WHEN** the profile marked one of the lead person's other Media "Not interested"
+- **THEN** that Media is not in the "More with" row
+
+#### Scenario: Lead person with no other titles
+
+- **WHEN** the first person credit is credited only on the current item
+- **THEN** the page shows no "More with" row
+
+### Requirement: Related row
+
+The web Media detail page SHALL show the Media `relatedMedia` returns for the item as a Related
+row, and SHALL NOT show the row when none are returned or the read fails.
+
+#### Scenario: Nothing related
+
+- **WHEN** `relatedMedia` returns no Media for the item
+- **THEN** the page shows no Related row

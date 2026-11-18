@@ -3,6 +3,6 @@
 - [x] Store and graph tests cover each sort and filter; wire goldens regenerated with `make regen-wire-goldens`
 - [x] Web: Entity-kind view toolbar and letter rail, state in the URL
 - [x] Wire contract published as a new version (lander): client-core-wire 2.26.0
-- [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
+- [x] Verified on tower with screenshots at desktop and 375px widths (lander; 716f3bd3 on the tower, 2026-11-18)
 - [x] `make gate` (gate run plexpar-gate-1118g PASSED at 153215ed)
-- [ ] `openspec archive core-2440-entity-browse-filters` after landing
+- [x] `openspec archive core-2440-entity-browse-filters` after landing

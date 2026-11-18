@@ -2,6 +2,6 @@
 - [x] Web: Collections pivot listing only the Library's Collections
 - [x] Web: Categories pivot with one tile per grouping value, opening the filtered Media view
 - [x] Web strings in every shipped locale; vitest coverage for the pivots
-- [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
+- [x] Verified on tower with screenshots at desktop and 375px widths (lander; 716f3bd3 on the tower, 2026-11-18)
 - [x] `make gate` (gate run plexpar-gate-1118g PASSED at 153215ed)
-- [ ] `openspec archive core-2437-library-pivots` after landing
+- [x] `openspec archive core-2437-library-pivots` after landing

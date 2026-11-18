@@ -100,8 +100,9 @@ accessible name.
 
 ### Requirement: Browse display options
 
-The browse display SHALL be one of a poster grid, a landscape thumbnail grid and a compact list
-whose rows show the ordinal, title, subtitle, duration and progress. The display choice SHALL be
+The browse display SHALL be one of a poster grid, a landscape thumbnail grid, a compact list
+whose rows show the ordinal, title, subtitle, duration and progress, and the table view (see Web
+Library browse offers a table view). The display choice SHALL be
 remembered per library, SHALL apply to the all-titles view and an open folder, and SHALL fit a
 375px viewport without horizontal scrolling.
 
@@ -214,3 +215,148 @@ letter with titles and announce the substitution.
 
 - **WHEN** no title starts with `J` and the user types "j" on the rail
 - **THEN** the rail jumps to the next letter with titles and announces that none start with J
+
+### Requirement: Web Library page offers pivot tabs
+
+Every web Library page SHALL show, under the Library name, links to four pivots in this order:
+Recommended (`/n/:nodeId`, the plugin's hub Layout), Library (`/n/:nodeId/all`), Collections
+(`/n/:nodeId/collections`) and Categories (`/n/:nodeId/categories`). The open pivot SHALL carry
+`aria-current="page"`, and each pivot SHALL be reachable directly by its address.
+
+#### Scenario: Deep link to a pivot
+
+- **WHEN** a viewer opens `/n/:nodeId/categories` for a Library node
+- **THEN** the page shows the Library name, the four pivots with Categories marked current, and the
+  Categories view
+
+#### Scenario: Keyboard navigation
+
+- **WHEN** a keyboard user tabs to the pivot row and activates the Collections link
+- **THEN** the Collections pivot opens and its link is marked current
+
+### Requirement: Collections pivot lists the Library's own Collections
+
+The Collections pivot SHALL list only the Collections of the open Library, in curated order with
+their item counts, each linking to its Collection page.
+
+#### Scenario: Collections of another Library
+
+- **WHEN** the household has Collections in Libraries A and B and the viewer opens A's Collections
+  pivot
+- **THEN** only A's Collections are listed
+
+### Requirement: Categories pivot tiles each grouping value
+
+The Categories pivot SHALL show one tile per value of each grouping the Library's plugin reports in
+`libraryItems.facets.groupings`, grouped under the grouping's title. Activating a tile SHALL open
+the Library pivot's Media view filtered to that grouping value.
+
+#### Scenario: Open a category
+
+- **WHEN** the plugin reports a grouping `genre` with value `Drama` and the viewer activates the
+  `Drama` tile
+- **THEN** the browser opens `/n/:nodeId/all?view=media&group.genre=Drama` and the grid lists only
+  Media in that grouping value
+
+#### Scenario: No groupings
+
+- **WHEN** the Library's plugin reports no grouping
+- **THEN** the Categories pivot shows an empty-state message
+
+### Requirement: Entity-kind browse sorts and filters by reached Media
+
+`libraryEntities` SHALL accept the `libraryItems` browse arguments (`sort`, `direction`, `seed`,
+`watch`, `groupFilters`, `yearFrom`, `yearTo`, `quality`, `minRating`) with the same validation.
+It SHALL judge each listed Entity by the visible Media linked to it or to its child Entities: the
+earliest year, the latest added, the total duration, the latest watched and the highest Profile
+rating. `total` SHALL count the filtered Entities while kind totals stay unfiltered.
+
+#### Scenario: Sort an Entity kind by year
+
+- **WHEN** a client asks for an Entity kind sorted by `year` descending
+- **THEN** Entities order by the earliest year of the Media they reach, newest first, and Entities
+  with no year come last
+
+#### Scenario: Unwatched Entities
+
+- **WHEN** a client asks for an Entity kind with `watch: "unwatched"`
+- **THEN** only Entities that reach at least one Media the Profile has not watched are listed
+
+#### Scenario: Group filter on an Entity kind
+
+- **WHEN** a client filters an Entity kind by a grouping value
+- **THEN** an Entity linked to that value, or reaching Media linked to it, is listed, and others are
+  not
+
+#### Scenario: Invalid argument
+
+- **WHEN** a client sends an unknown sort to `libraryEntities`
+- **THEN** the read fails with a client error
+
+### Requirement: Entity-kind browse reports a letter index
+
+For a title sort, `libraryEntities` SHALL answer `letters`, the offset and count of each title
+initial in the filtered set (`#` for titles that do not open with a letter); any other sort SHALL
+answer an empty list.
+
+#### Scenario: Jump to a letter
+
+- **WHEN** a client requests the offset a letter reports
+- **THEN** the first Entity of the page opens with that initial
+
+### Requirement: Web Entity-kind view offers the browse toolbar and letter rail
+
+The web Entity-kind view SHALL offer the Media view's sort, direction and filter controls and its
+letter rail, keeping their state in the URL with the same keys as the Media view.
+
+#### Scenario: Shared filtered address
+
+- **WHEN** a viewer opens `/n/:nodeId/all?view=<kind>&sort=year&dir=desc&watch=unwatched`
+- **THEN** the Entity-kind view opens sorted by year, newest first, showing only unwatched Entities
+
+### Requirement: Library browse sorts by release date, audience score and plays
+
+`libraryItems` and `libraryEntities` SHALL accept the sort keys `release-date` (the `release-date`
+field, else 1 January of the year), `audience-score` (the 0 to 10 `community-rating` field) and
+`plays` (the Profile's play count, unplayed counting 0). Items without the key SHALL sort last in
+both directions. An Entity SHALL take the earliest release, highest score and total plays of the
+visible Media it reaches.
+
+#### Scenario: Newest release first
+
+- **WHEN** a client asks for a Library sorted by `release-date` descending
+- **THEN** Media order by release date, newest first, a Media with only a year sorts as 1 January
+  of that year, and Media with neither come last
+
+#### Scenario: Best audience score first
+
+- **WHEN** a client asks for a Library sorted by `audience-score` descending
+- **THEN** Media order by their audience score, highest first, and unscored Media come last
+
+#### Scenario: Most played first
+
+- **WHEN** a Profile asks for a Library sorted by `plays` descending
+- **THEN** Media order by that Profile's play count, most played first, with unplayed Media last
+
+### Requirement: Web Library browse offers a year range
+
+The web Library browse SHALL offer a release-year range kept in the URL as `from` and `to`, sent as
+`yearFrom` and `yearTo`. Setting a range SHALL clear the decade filter and setting a decade SHALL
+clear the range. An active range SHALL show a chip that clears it.
+
+#### Scenario: Shared year range
+
+- **WHEN** a viewer opens `/n/:nodeId/all?from=1990&to=1999`
+- **THEN** the browse reads Media released from 1990 to 1999 and shows a chip naming that range
+
+### Requirement: Web Library browse offers a table view
+
+The web Library browse SHALL offer a table view mode: dense rows without artwork that show each
+item's title, year, runtime and audience score where it has them, remembered per Library with the
+other view modes.
+
+#### Scenario: Switch to the table view
+
+- **WHEN** a viewer picks the table view
+- **THEN** the Library's items render as dense rows with their year and runtime, and the choice is
+  kept for that Library on the next visit
