@@ -223,11 +223,13 @@ function LibraryBrowse({
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);
+  // The list and table views draw one item per row.
+  const rowColumns = viewMode === "list" || viewMode === "table" ? 1 : undefined;
   const gridWindow = useVirtualGrid({
     gridRef: listRef,
     itemCount,
     enabled: itemCount > VIRTUAL_GRID_MIN_ITEMS,
-    columns: viewMode === "list" ? 1 : undefined,
+    columns: rowColumns,
     maxItems: BROWSE_MAX_RENDERED,
   });
   const start = gridWindow?.startIndex ?? 0;
@@ -247,7 +249,7 @@ function LibraryBrowse({
     listRef,
     letters,
     enabled: showLetterRail,
-    columns: viewMode === "list" ? 1 : undefined,
+    columns: rowColumns,
     titleAt: (index) =>
       pagesRef.current.get(Math.floor(index / LIBRARY_BROWSE_PAGE))?.[index % LIBRARY_BROWSE_PAGE]
         ?.title,

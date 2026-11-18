@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,10 @@ import { displayString } from "@/lib/display";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import {
+  browseYear,
+  LIBRARY_MAX_YEAR,
   LIBRARY_MIN_RATINGS,
+  LIBRARY_MIN_YEAR,
   LIBRARY_SORTS,
   LIBRARY_WATCH_STATES,
   LIBRARY_WATCHING_SORTS,
@@ -33,6 +37,9 @@ const SORT_LABELS: Record<LibrarySort, StringKey> = {
   duration: "libraryBrowseSortDuration",
   "last-watched": "libraryBrowseSortLastWatched",
   rating: "libraryBrowseSortRating",
+  "release-date": "libraryBrowseSortReleaseDate",
+  "audience-score": "libraryBrowseSortAudienceScore",
+  plays: "libraryBrowseSortPlays",
 };
 const WATCH_LABELS: Record<string, StringKey> = {
   unwatched: "libraryBrowseWatchUnwatched",
@@ -51,6 +58,8 @@ export const CLEARED_BROWSE_FILTERS = {
   watch: "",
   groups: {},
   decade: 0,
+  yearFrom: 0,
+  yearTo: 0,
   quality: "",
   minRating: 0,
 } as const satisfies Partial<LibraryBrowseState>;
@@ -61,6 +70,8 @@ export function hasBrowseFilters(state: LibraryBrowseState): boolean {
     !!state.watch ||
     Object.keys(state.groups).length > 0 ||
     state.decade > 0 ||
+    state.yearFrom > 0 ||
+    state.yearTo > 0 ||
     !!state.quality ||
     state.minRating > 0
   );
@@ -136,6 +147,8 @@ export function LibraryBrowseToolbar({
     }
   }
   if (state.decade) activeFilters.push({ label: decadeLabel(state.decade), clear: { decade: 0 } });
+  const yearRange = yearRangeLabel(state.yearFrom, state.yearTo, t);
+  if (yearRange) activeFilters.push({ label: yearRange, clear: { yearFrom: 0, yearTo: 0 } });
   if (state.quality) {
     activeFilters.push({ label: qualityLabel(state.quality), clear: { quality: "" } });
   }
@@ -221,13 +234,27 @@ export function LibraryBrowseToolbar({
             id="library-browse-decade"
             label={t("libraryBrowseDecadeLabel")}
             value={state.decade ? String(state.decade) : ALL}
-            onChange={(value) => onUpdate({ decade: value === ALL ? 0 : Number(value) })}
+            onChange={(value) =>
+              onUpdate({ decade: value === ALL ? 0 : Number(value), yearFrom: 0, yearTo: 0 })
+            }
             options={[
               { value: ALL, label: t("libraryBrowseAny") },
               ...decades.map((decade) => ({ value: String(decade), label: decadeLabel(decade) })),
             ]}
           />
         )}
+        <YearInput
+          id="library-browse-year-from"
+          label={t("libraryBrowseYearFromLabel")}
+          value={state.yearFrom}
+          onCommit={(year) => onUpdate(yearRangePatch(year, state.yearTo))}
+        />
+        <YearInput
+          id="library-browse-year-to"
+          label={t("libraryBrowseYearToLabel")}
+          value={state.yearTo}
+          onCommit={(year) => onUpdate(yearRangePatch(state.yearFrom, year))}
+        />
         {qualities.length > 0 && (
           <BrowseSelect
             id="library-browse-quality"
@@ -307,6 +334,70 @@ function BrowseSelect({
           ))}
         </SelectContent>
       </Select>
+    </div>
+  );
+}
+
+// A year range edit: in order, and clearing the decade it stands in for.
+function yearRangePatch(from: number, to: number): Partial<LibraryBrowseState> {
+  const [yearFrom, yearTo] = from && to && from > to ? [to, from] : [from, to];
+  return yearFrom || yearTo ? { yearFrom, yearTo, decade: 0 } : { yearFrom, yearTo };
+}
+
+function yearRangeLabel(from: number, to: number, t: ReturnType<typeof useT>): string {
+  if (from && to) return t("libraryBrowseYearRange", { from: String(from), to: String(to) });
+  if (from) return t("libraryBrowseYearFrom", { year: String(from) });
+  if (to) return t("libraryBrowseYearTo", { year: String(to) });
+  return "";
+}
+
+// One side of the year range. The draft is free text while typing and is
+// committed on blur or Enter: a year in range sets the side, an empty field
+// clears it, and anything else reverts to the committed value.
+function YearInput({
+  id,
+  label,
+  value,
+  onCommit,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onCommit: (year: number) => void;
+}) {
+  const committed = value ? String(value) : "";
+  const [draft, setDraft] = useState<{ base: string; text: string }>({
+    base: committed,
+    text: committed,
+  });
+  // A new committed value (a chip, a link, the other side swapping) resets the draft.
+  const text = draft.base === committed ? draft.text : committed;
+  const commit = () => {
+    const trimmed = text.trim();
+    const year = browseYear(trimmed);
+    if ((year || !trimmed) && year !== value) onCommit(year);
+    else setDraft({ base: committed, text: committed });
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="bf-field-label">
+        {label}
+      </label>
+      <Input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={LIBRARY_MIN_YEAR}
+        max={LIBRARY_MAX_YEAR}
+        step={1}
+        value={text}
+        onChange={(event) => setDraft({ base: committed, text: event.target.value })}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+        className="h-8 w-24"
+      />
     </div>
   );
 }

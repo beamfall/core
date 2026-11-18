@@ -15,10 +15,13 @@ export const LIBRARY_SORTS = [
   "duration",
   "last-watched",
   "rating",
+  "release-date",
+  "audience-score",
+  "plays",
 ] as const;
 export type LibrarySort = (typeof LIBRARY_SORTS)[number];
 /** Sorts that only mean something for items a viewer watches (CORE-2327). */
-export const LIBRARY_WATCHING_SORTS: readonly LibrarySort[] = ["last-watched"];
+export const LIBRARY_WATCHING_SORTS: readonly LibrarySort[] = ["last-watched", "plays"];
 export const LIBRARY_WATCH_STATES = ["unwatched", "in-progress", "watched"] as const;
 export type LibraryWatch = (typeof LIBRARY_WATCH_STATES)[number];
 export const LIBRARY_QUALITIES = ["uhd", "hd1080", "hd720", "sd"] as const;
@@ -28,9 +31,18 @@ export type LibraryQuality = (typeof LIBRARY_QUALITIES)[number];
 export const LIBRARY_MIN_RATINGS = [1, 6, 8, 10] as const;
 export type LibraryDirection = "asc" | "desc";
 // How a Library's items are drawn (CORE-2386): a poster grid, a landscape
-// thumbnail grid, or a compact list of rows.
-export type LibraryViewMode = "poster" | "thumbnail" | "list";
-export const LIBRARY_VIEW_MODES: readonly LibraryViewMode[] = ["poster", "thumbnail", "list"];
+// thumbnail grid, a compact list of rows, or a dense table of rows without
+// artwork (CORE-2443).
+export type LibraryViewMode = "poster" | "thumbnail" | "list" | "table";
+export const LIBRARY_VIEW_MODES: readonly LibraryViewMode[] = [
+  "poster",
+  "thumbnail",
+  "list",
+  "table",
+];
+/** The release years a year range accepts (CORE-2443). */
+export const LIBRARY_MIN_YEAR = 1800;
+export const LIBRARY_MAX_YEAR = 2200;
 
 // A grouping selection travels in the URL as `group.<kind>=<value>`. The kinds
 // and their labels are the Library plugin's, reported by the server.
@@ -45,6 +57,12 @@ export interface LibraryBrowseState {
   groups: Record<string, string>;
   /** A decade start year (1990 = the 1990s), or 0 for none. */
   decade: number;
+  /**
+   * A release-year range, inclusive, with 0 leaving a side open (CORE-2443).
+   * It and the decade exclude each other.
+   */
+  yearFrom: number;
+  yearTo: number;
   quality: LibraryQuality | "";
   /** The lowest personal rating to keep (1-10), or 0 for none. */
   minRating: number;
@@ -56,6 +74,8 @@ export const DEFAULT_BROWSE_STATE: LibraryBrowseState = {
   watch: "",
   groups: {},
   decade: 0,
+  yearFrom: 0,
+  yearTo: 0,
   quality: "",
   minRating: 0,
 };
@@ -68,6 +88,12 @@ export const DEFAULT_BROWSE_STATE: LibraryBrowseState = {
 export function isAudioOnly(items: readonly SourceItem[]): boolean {
   const media = items.filter((item) => item.kind === "media");
   return media.length > 0 && media.every((item) => item.mediaClass === "audio");
+}
+
+/** A release year in range, or 0 for anything else. */
+export function browseYear(raw: string | null | undefined): number {
+  const year = /^\s*\d{4}\s*$/.test(raw ?? "") ? Number(raw) : 0;
+  return year >= LIBRARY_MIN_YEAR && year <= LIBRARY_MAX_YEAR ? year : 0;
 }
 
 function oneOf<T extends string>(values: readonly T[], value: string | null): T | "" {
@@ -84,12 +110,20 @@ export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
     if (kind && value) groups[kind] = value;
   }
   const rated = Number.parseInt(params.get("rated") ?? "", 10);
+  const decadeYear = Number.isFinite(decade) && decade > 0 ? Math.floor(decade / 10) * 10 : 0;
+  // A decade wins over a range, which a hand-written URL could carry both of;
+  // a reversed range reads in order.
+  let yearFrom = decadeYear ? 0 : browseYear(params.get("from"));
+  let yearTo = decadeYear ? 0 : browseYear(params.get("to"));
+  if (yearFrom && yearTo && yearFrom > yearTo) [yearFrom, yearTo] = [yearTo, yearFrom];
   return {
     sort: oneOf(LIBRARY_SORTS, params.get("sort")) || DEFAULT_BROWSE_STATE.sort,
     direction: params.get("dir") === "desc" ? "desc" : "asc",
     watch: oneOf(LIBRARY_WATCH_STATES, params.get("watch")),
     groups,
-    decade: Number.isFinite(decade) && decade > 0 ? Math.floor(decade / 10) * 10 : 0,
+    decade: decadeYear,
+    yearFrom,
+    yearTo,
     quality: oneOf(LIBRARY_QUALITIES, params.get("quality")),
     minRating: (LIBRARY_MIN_RATINGS as readonly number[]).includes(rated) ? rated : 0,
   };
@@ -105,6 +139,8 @@ export function browseStateParams(state: LibraryBrowseState): URLSearchParams {
     params.set(GROUP_PARAM + kind, state.groups[kind]);
   }
   if (state.decade) params.set("decade", String(state.decade));
+  if (state.yearFrom) params.set("from", String(state.yearFrom));
+  if (state.yearTo) params.set("to", String(state.yearTo));
   if (state.quality) params.set("quality", state.quality);
   if (state.minRating) params.set("rated", String(state.minRating));
   return params;
@@ -149,7 +185,7 @@ export interface LibraryItemsRequest {
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values } decades qualities } letters { letter offset count } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values } decades qualities } letters { letter offset count } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;
@@ -167,6 +203,9 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
   if (state.decade) {
     vars.yearFrom = state.decade;
     vars.yearTo = state.decade + 9;
+  } else {
+    if (state.yearFrom) vars.yearFrom = state.yearFrom;
+    if (state.yearTo) vars.yearTo = state.yearTo;
   }
   if (Object.keys(state.groups).length) vars.groupFilters = state.groups;
   return vars;
@@ -212,6 +251,7 @@ export function readLibraryViewMode(libraryID: string): LibraryViewMode {
 /** The class of the list that draws a Library's items in a view mode. */
 export function libraryViewClass(mode: LibraryViewMode): string {
   if (mode === "list") return "bf-stack bf-rows";
+  if (mode === "table") return "bf-stack bf-rows bf-table-rows";
   return mode === "thumbnail" ? "bf-grid bf-grid-wide" : "bf-grid";
 }
 

@@ -371,6 +371,78 @@ describe("Library browse", () => {
     );
   });
 
+  it("reads a year range from the URL, names it in a chip, and clears it (CORE-2443)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all?from=1990&to=1999&sort=plays");
+
+    await screen.findByRole("button", { name: "Item 0" });
+    expect(vi.mocked(fetchLibraryItems).mock.calls[0][0].state).toMatchObject({
+      sort: "plays",
+      yearFrom: 1990,
+      yearTo: 1999,
+    });
+    expect(screen.getByLabelText("From year")).toHaveValue(1990);
+    await user.click(screen.getByRole("button", { name: "Remove filter: 1990–1999" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all\?sort=plays$/),
+    );
+    expect(screen.getByLabelText("From year")).toHaveValue(null);
+  });
+
+  it("commits a typed year range in order, replacing the decade (CORE-2443)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all?decade=1990");
+
+    await screen.findByRole("button", { name: "Item 0" });
+    expect(screen.getByRole("button", { name: "Remove filter: 1990s" })).toBeInTheDocument();
+    // Typing alone changes nothing; a year out of range reverts on commit.
+    await user.type(screen.getByLabelText("To year"), "19{Enter}");
+    expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?decade=1990");
+    expect(screen.getByLabelText("To year")).toHaveValue(null);
+
+    await user.type(screen.getByLabelText("To year"), "1985{Enter}");
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?to=1985"),
+    );
+    await user.type(screen.getByLabelText("From year"), "2001");
+    await user.tab();
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?from=1985&to=2001"),
+    );
+    expect(screen.queryByRole("button", { name: "Remove filter: 1990s" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove filter: 1985–2001" })).toBeInTheDocument();
+  });
+
+  it("draws the table view as dense rows without artwork, with year, runtime and score (CORE-2443)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
+      const page = pageFor(request);
+      return {
+        ...page,
+        items: page.items.map((item) => ({
+          ...item,
+          year: 1994,
+          durationSeconds: 5400,
+          audienceScore: 8.2,
+        })),
+      };
+    });
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all");
+
+    await screen.findByRole("button", { name: /^Item 0/ });
+    await user.click(screen.getByRole("button", { name: "Table" }));
+    const list = screen.getByRole("list", { name: "Films" });
+    expect(list).toHaveClass("bf-stack", "bf-table-rows");
+    expect(list.querySelector(".bf-poster")).toBeNull();
+    const row = screen.getByRole("button", { name: /^Item 0/ });
+    expect(row).toHaveTextContent("1994");
+    expect(row.querySelector(".bf-card-runtime")).not.toBeNull();
+    expect(row).toHaveTextContent("8.2");
+    expect(window.localStorage.getItem("beamfall.libraryView.lib")).toBe("table");
+  });
+
   it("jumps to a title initial from the letter rail and focuses its first item (CORE-1685)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     // jsdom lays nothing out; the jump's scroll is observed, not performed.

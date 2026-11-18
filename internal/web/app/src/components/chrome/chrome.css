@@ -1220,6 +1220,44 @@
   flex: 1;
 }
 
+/* Table (CORE-2443): dense rows without artwork, ruled instead of carded, the
+ * title and its year on one line so a long Library scans like a spreadsheet. */
+[data-register="viewer"] .bf-table-rows {
+  gap: 0;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-poster {
+  display: none;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card {
+  min-height: 36px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  background: transparent;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card-copy {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card-title,
+[data-register="viewer"] .bf-table-rows .bf-card-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+[data-register="viewer"] .bf-table-rows .bf-card-rating {
+  margin-inline-start: auto;
+  flex: none;
+}
+
 /* ============================================================ *
  *  Hero Section (Viewer) — one featured item in a wide frame,
  *  Display title over a text-safe scrim, one focusable primary action.

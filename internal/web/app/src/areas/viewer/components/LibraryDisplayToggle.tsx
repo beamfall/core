@@ -1,4 +1,4 @@
-import { GalleryHorizontal, LayoutGrid, List } from "lucide-react";
+import { GalleryHorizontal, LayoutGrid, List, Table2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
@@ -13,9 +13,15 @@ const MODE_LABELS: Record<LibraryViewMode, StringKey> = {
   poster: "libraryBrowseViewPoster",
   thumbnail: "libraryBrowseViewThumbnail",
   list: "libraryBrowseViewList",
+  table: "libraryBrowseViewTable",
 };
 
-const MODE_ICONS = { poster: LayoutGrid, thumbnail: GalleryHorizontal, list: List } as const;
+const MODE_ICONS = {
+  poster: LayoutGrid,
+  thumbnail: GalleryHorizontal,
+  list: List,
+  table: Table2,
+} as const;
 
 /**
  * The display a Library's items are drawn in (CORE-2386), remembered per
@@ -40,7 +46,7 @@ export function useLibraryViewMode(
   return [mode, choose];
 }
 
-/** The poster / thumbnail / list chips for a Library's items. */
+/** The poster / thumbnail / list / table chips for a Library's items. */
 export function LibraryDisplayToggle({
   mode,
   onChange,
