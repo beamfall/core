@@ -13,6 +13,7 @@ import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar } from "./LibrarySidebar";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
+import { useSidebarPrefs } from "./sidebarPrefs";
 import { NOTIFICATION_BADGE_LIMIT, useUnreadNotifications } from "./unreadNotifications";
 import "./chrome.css";
 
@@ -86,6 +87,11 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const hasSidebar = register === "viewer" && !!manifest && manifest.navigation.length > 0;
+  // The Profile's own pin and order choice over the server navigation (CORE-2435).
+  const [sidebarPrefs, saveSidebarPrefs] = useSidebarPrefs(
+    hasSidebar && session && !needsEnroll ? session.profileID : null,
+  );
+  const sidebarEditable = hasSidebar && !!session && !needsEnroll;
   // The Console is reached by an Admin Session, which the server grants to the
   // adult owner Profile whatever the Device Role (auth.BeginAdminSession). The
   // Profile kind is the eligibility the client can see, so the link follows it
@@ -228,6 +234,8 @@ export function AppShell({
                       collapsed={false}
                       drawer
                       onNavigate={() => setDrawerOpen(false)}
+                      prefs={sidebarPrefs}
+                      onSavePrefs={sidebarEditable ? saveSidebarPrefs : undefined}
                     />
                   }
                 />
@@ -242,6 +250,8 @@ export function AppShell({
               collapsed={collapsed}
               drawer={false}
               onNavigate={() => setDrawerOpen(false)}
+              prefs={sidebarPrefs}
+              onSavePrefs={sidebarEditable ? saveSidebarPrefs : undefined}
             />
           ))}
         <div className="bf-content">

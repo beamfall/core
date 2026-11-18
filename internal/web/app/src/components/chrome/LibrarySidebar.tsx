@@ -1,11 +1,21 @@
-import { House, LayoutGrid } from "lucide-react";
-import type { ComponentProps, CSSProperties } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  House,
+  LayoutGrid,
+  Pencil,
+  Pin,
+  PinOff,
+} from "lucide-react";
+import { type ComponentProps, type CSSProperties, type KeyboardEvent, useState } from "react";
 import { Link } from "react-router";
 import { displayString } from "@/lib/display";
 import type { LibrarySummary, NavigationNode } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { libraryIcon } from "@/lib/libraryIcons";
 import { nodePath } from "@/lib/nodePath";
+import { applySidebarPrefs, EMPTY_SIDEBAR_PREFS, type SidebarLibraryPrefs } from "./sidebarPrefs";
 
 // The Viewer's left sidebar (CORE-1131): the manifest's navigation as a
 // vertical list, so any number of libraries fits where a header tab strip ran
@@ -21,6 +31,11 @@ import { nodePath } from "@/lib/nodePath";
 // Only views this client renders get an entry: BrowsePage draws "layout" nodes
 // and sends anything else to Home, so an Ambient entry would be a link that
 // goes nowhere of its own.
+//
+// Each Profile pins, unpins and reorders its own libraries (CORE-2435): the
+// Libraries heading carries an edit button, and the choice (prefs) layers over
+// the navigation the server already shaped with its server-wide override.
+// Unpinned libraries stay reachable under More.
 export function LibrarySidebar({
   id,
   navigation,
@@ -29,6 +44,8 @@ export function LibrarySidebar({
   collapsed,
   drawer,
   onNavigate,
+  prefs = EMPTY_SIDEBAR_PREFS,
+  onSavePrefs,
   className,
   ...aside
 }: Omit<ComponentProps<"aside">, "id" | "children"> & {
@@ -40,6 +57,10 @@ export function LibrarySidebar({
   /** Phone layout: the sidebar is an overlay drawer, mounted only while open. */
   drawer: boolean;
   onNavigate: () => void;
+  /** The Profile's own pin and order choice. */
+  prefs?: SidebarLibraryPrefs;
+  /** Saves an edited choice; without it the sidebar offers no edit mode. */
+  onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>;
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -48,6 +69,14 @@ export function LibrarySidebar({
   const rendered = navigation.filter((node) => node.view === "layout");
   const aggregates = rendered.filter((node) => !node.libraryID);
   const libraryNodes = rendered.filter((node) => node.libraryID);
+  const libraryIDOf = (node: NavigationNode) => node.libraryID ?? "";
+  const { pinned, unpinned } = applySidebarPrefs(libraryNodes, libraryIDOf, prefs);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [editing, setEditing] = useState<EditDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const canEdit = !!onSavePrefs && libraryNodes.length > 0 && (!collapsed || drawer);
+  const moreId = `${id}-more`;
   const homeId = rendered[0]?.id;
   // Only tiles without an icon carry a monogram, so only those can collide.
   const lettered = libraryNodes.filter((node) => !icons.get(node.libraryID ?? ""));
@@ -108,12 +137,251 @@ export function LibrarySidebar({
         <ul className="bf-side-list">{aggregates.map(item)}</ul>
         {libraryNodes.length > 0 && (
           <>
-            <h2 className="bf-side-heading">{t("libraries")}</h2>
-            <ul className="bf-side-list">{libraryNodes.map(item)}</ul>
+            <div className="bf-side-heading-row">
+              <h2 className="bf-side-heading">{t("libraries")}</h2>
+              {canEdit && !editing && (
+                <button
+                  type="button"
+                  className="bf-side-tool"
+                  aria-label={t("sidebarEdit")}
+                  title={t("sidebarEdit")}
+                  onClick={() => {
+                    setSaveFailed(false);
+                    setEditing(startDraft(pinned, unpinned, libraryIDOf));
+                  }}
+                >
+                  <Pencil aria-hidden className="size-3.5" />
+                </button>
+              )}
+            </div>
+            {editing ? (
+              <SidebarEditor
+                draft={editing}
+                titleOf={(libraryID) => {
+                  const node = libraryNodes.find((n) => n.libraryID === libraryID);
+                  return node ? displayString(node.title, displayLocale) : libraryID;
+                }}
+                saving={saving}
+                onChange={setEditing}
+                onCancel={() => setEditing(null)}
+                onDone={async () => {
+                  if (!onSavePrefs) return;
+                  setSaving(true);
+                  setSaveFailed(false);
+                  try {
+                    await onSavePrefs({ order: editing.order, hidden: [...editing.hidden] });
+                    setEditing(null);
+                  } catch {
+                    setSaveFailed(true);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              />
+            ) : (
+              <>
+                <ul className="bf-side-list">{pinned.map(item)}</ul>
+                {unpinned.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="bf-side-more"
+                      aria-expanded={moreOpen}
+                      aria-controls={moreOpen ? moreId : undefined}
+                      onClick={() => setMoreOpen((open) => !open)}
+                    >
+                      <span className="bf-side-label">{t("sidebarMore")}</span>
+                      {moreOpen ? (
+                        <ChevronUp aria-hidden className="size-4" />
+                      ) : (
+                        <ChevronDown aria-hidden className="size-4" />
+                      )}
+                    </button>
+                    {moreOpen && (
+                      <ul id={moreId} className="bf-side-list">
+                        {unpinned.map(item)}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {saveFailed && (
+              <p role="alert" className="bf-side-error">
+                {t("sidebarSaveFailed")}
+              </p>
+            )}
           </>
         )}
       </nav>
     </aside>
+  );
+}
+
+// An edit session's working copy: every library the server lists, in the
+// order being edited, and the ones unpinned.
+interface EditDraft {
+  order: string[];
+  hidden: Set<string>;
+}
+
+function startDraft(
+  pinned: NavigationNode[],
+  unpinned: NavigationNode[],
+  libraryIDOf: (node: NavigationNode) => string,
+): EditDraft {
+  return {
+    order: [...pinned, ...unpinned].map(libraryIDOf),
+    hidden: new Set(unpinned.map(libraryIDOf)),
+  };
+}
+
+/** Move one entry of a list from one index to another. */
+export function moveEntry<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list;
+  const next = [...list];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
+// The edit mode: one row per library with a pin toggle and move buttons.
+// Rows drag to reorder; for the keyboard, the move buttons and Alt+Up/Down on
+// a focused row do the same, and a live region announces the new position.
+function SidebarEditor({
+  draft,
+  titleOf,
+  saving,
+  onChange,
+  onCancel,
+  onDone,
+}: {
+  draft: EditDraft;
+  titleOf: (libraryID: string) => string;
+  saving: boolean;
+  onChange: (draft: EditDraft) => void;
+  onCancel: () => void;
+  onDone: () => void;
+}) {
+  const t = useT();
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const count = draft.order.length;
+
+  function move(from: number, to: number) {
+    const order = moveEntry(draft.order, from, to);
+    if (order === draft.order) return;
+    onChange({ ...draft, order });
+    setAnnouncement(
+      t("sidebarMoved", { name: titleOf(draft.order[from]), position: to + 1, count }),
+    );
+  }
+
+  function togglePin(libraryID: string) {
+    const hidden = new Set(draft.hidden);
+    if (hidden.has(libraryID)) hidden.delete(libraryID);
+    else hidden.add(libraryID);
+    onChange({ ...draft, hidden });
+  }
+
+  function onRowKeyDown(event: KeyboardEvent, index: number) {
+    if (!event.altKey) return;
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      move(index, index - 1);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      move(index, index + 1);
+    }
+  }
+
+  return (
+    <div className="bf-side-editor">
+      <ul className="bf-side-list">
+        {draft.order.map((libraryID, index) => {
+          const title = titleOf(libraryID);
+          const isPinned = !draft.hidden.has(libraryID);
+          return (
+            <li
+              key={libraryID}
+              className={
+                "bf-side-edit-row" +
+                (isPinned ? "" : " is-unpinned") +
+                (dragging === libraryID ? " is-dragging" : "")
+              }
+              draggable
+              onDragStart={(event) => {
+                setDragging(libraryID);
+                event.dataTransfer?.setData("text/plain", libraryID);
+                if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+              }}
+              onDragOver={(event) => {
+                if (dragging) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (dragging) move(draft.order.indexOf(dragging), index);
+                setDragging(null);
+              }}
+              onDragEnd={() => setDragging(null)}
+              onKeyDown={(event) => onRowKeyDown(event, index)}
+            >
+              <span aria-hidden className="bf-side-grip" title={t("sidebarDragHint")}>
+                <GripVertical className="size-4" />
+              </span>
+              <span className="bf-side-label">{title}</span>
+              <button
+                type="button"
+                className="bf-side-tool"
+                aria-pressed={isPinned}
+                aria-label={t("sidebarPin", { name: title })}
+                onClick={() => togglePin(libraryID)}
+              >
+                {isPinned ? (
+                  <Pin aria-hidden className="size-4" />
+                ) : (
+                  <PinOff aria-hidden className="size-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                className="bf-side-tool"
+                aria-label={t("sidebarMoveUp", { name: title })}
+                aria-disabled={index === 0}
+                onClick={() => move(index, index - 1)}
+              >
+                <ChevronUp aria-hidden className="size-4" />
+              </button>
+              <button
+                type="button"
+                className="bf-side-tool"
+                aria-label={t("sidebarMoveDown", { name: title })}
+                aria-disabled={index === count - 1}
+                onClick={() => move(index, index + 1)}
+              >
+                <ChevronDown aria-hidden className="size-4" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="bf-side-edit-actions">
+        <button type="button" className="bf-side-action" onClick={onCancel} disabled={saving}>
+          {t("sidebarCancel")}
+        </button>
+        <button
+          type="button"
+          className="bf-side-action is-primary"
+          onClick={onDone}
+          disabled={saving}
+        >
+          {t("sidebarDone")}
+        </button>
+      </div>
+      <p aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
+    </div>
   );
 }
 

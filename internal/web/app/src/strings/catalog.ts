@@ -67,6 +67,7 @@ import { setupStrings } from "./setup";
 import { setupFinishStrings } from "./setup-finish";
 import { setupLibraryStrings } from "./setup-library";
 import { sharedStateStrings } from "./shared-states";
+import { sidebarStrings } from "./sidebar";
 import { stagedRestoreStrings } from "./staged-restore";
 import { subtitleAppearanceStrings } from "./subtitle-appearance";
 import { trackMenuStrings } from "./track-menu";
@@ -80,6 +81,7 @@ import { workbenchPageStrings } from "./workbench-pages";
 
 export const en = {
   ...appShellStrings.en,
+  ...sidebarStrings.en,
   ...libraryOperationsStrings.en,
   ...pathPickerStrings.en,
   ...consoleAccessStrings.en,
@@ -162,6 +164,7 @@ export const en = {
 
 export const fr = {
   ...appShellStrings.fr,
+  ...sidebarStrings.fr,
   ...libraryOperationsStrings.fr,
   ...pathPickerStrings.fr,
   ...consoleAccessStrings.fr,
@@ -244,6 +247,7 @@ export const fr = {
 
 export const de = {
   ...appShellStrings.de,
+  ...sidebarStrings.de,
   ...libraryOperationsStrings.de,
   ...pathPickerStrings.de,
   ...consoleAccessStrings.de,
@@ -326,6 +330,7 @@ export const de = {
 
 export const es = {
   ...appShellStrings.es,
+  ...sidebarStrings.es,
   ...libraryOperationsStrings.es,
   ...pathPickerStrings.es,
   ...consoleAccessStrings.es,
@@ -408,6 +413,7 @@ export const es = {
 
 export const pt = {
   ...appShellStrings.pt,
+  ...sidebarStrings.pt,
   ...libraryOperationsStrings.pt,
   ...pathPickerStrings.pt,
   ...consoleAccessStrings.pt,
