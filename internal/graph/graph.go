@@ -4411,6 +4411,18 @@ type MediaInfo struct {
 	// read.
 	AudienceScoreLabel plugin.LocaleString `json:"audienceScoreLabel,omitempty"`
 	AudienceScoreVotes int                 `json:"audienceScoreVotes,omitempty"`
+	// Sequence and Index are the item's stored ordinals, as on SourceItem;
+	// Headline renders the plugin's MediaSubtitle segments that name no
+	// ordinal (the item's own title when stored), ClassLabel is the plugin's
+	// label for the item's class, and VideoWidth and VideoHeight the probed
+	// frame size (CORE-2469). Filled only by the media(id) read and omitted
+	// when unknown.
+	Sequence    float64             `json:"sequence,omitempty"`
+	Index       float64             `json:"index,omitempty"`
+	Headline    plugin.LocaleString `json:"headline,omitempty"`
+	ClassLabel  plugin.LocaleString `json:"classLabel,omitempty"`
+	VideoWidth  int                 `json:"videoWidth,omitempty"`
+	VideoHeight int                 `json:"videoHeight,omitempty"`
 }
 
 // MediaCreditInfo is one Entity a Media item is linked to, with the declared
@@ -4468,6 +4480,8 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 			info.AudienceScoreLabel = h.mediaFieldSpecs(ctx, media.ID)[store.AudienceScoreField].Label
 		}
 	}
+	info.VideoWidth, info.VideoHeight = media.VideoWidth, media.VideoHeight
+	h.describeOrderedMedia(ctx, media, &info)
 	return info, nil
 }
 

@@ -131,6 +131,27 @@ describe("detailFacts", () => {
     }
   });
 
+  // CORE-2469: an air date shows as a date chip and leaves the Details list.
+  it("takes the first declared date with a real day, and Details drops it", () => {
+    const aired = field({
+      name: "aired",
+      type: "date",
+      value: "2008-01-20",
+      label: { en: "Aired" },
+    });
+    const fields = [
+      field({ name: "stamp", type: "date", value: "2008-02-01", label: undefined }),
+      field({ name: "year-only", type: "date", value: "1999-01-01", label: { en: "Year" } }),
+      aired,
+      field({ name: "later", type: "date", value: "2009-03-04", label: { en: "Later" } }),
+    ];
+    const facts = detailFacts(media, fields);
+    expect(facts.date).toBe(aired);
+    expect(
+      viewerFacingFields(fields, { year: 1999, dateField: facts.date?.name }).map((f) => f.name),
+    ).toEqual(["later"]);
+  });
+
   it("omits what is unknown", () => {
     expect(detailFacts({ id: "m", title: "T", favorited: false }, [], 30)).toEqual({
       categories: [],

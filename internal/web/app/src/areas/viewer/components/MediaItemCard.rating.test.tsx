@@ -60,6 +60,21 @@ describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
     }
   });
 
+  // CORE-2472: a 0 with no votes is a provider placeholder, not a score.
+  it("shows no score of 0 without votes, and one with them", () => {
+    const { container } = renderCard({ certification: "TV-14", audienceScore: 0 });
+    expect(container.querySelector(".bf-card-rating")).not.toHaveTextContent("★");
+    expect(screen.getByRole("button", { name: "Alpha, Rated TV-14" })).toBeInTheDocument();
+    cleanup();
+
+    const alone = renderCard({ audienceScore: 0, audienceScoreVotes: 0 });
+    expect(alone.container.querySelector(".bf-card-rating")).toBeNull();
+    cleanup();
+
+    const voted = renderCard({ audienceScore: 0, audienceScoreVotes: 3 });
+    expect(voted.container.querySelector(".bf-card-rating")).toHaveTextContent("★ 0.0");
+  });
+
   it("leaves entity cards without a rating line", () => {
     const { container } = renderCard({ kind: "entity", certification: "PG" });
     expect(container.querySelector(".bf-card-rating")).toBeNull();

@@ -8,7 +8,9 @@ import type { DisplayString, GenericMediaInfo, SourceItem } from "@/lib/graphql/
 // the "container" archetype is a parent, its mediaForEntity list is the
 // ordered set of siblings (sort_order first), and a related Entity that is an
 // ordered container holding at least as many items as the parent is the
-// parent's own parent (a grouping above it). Nothing here names a plugin kind.
+// parent's own parent (a grouping above it). When no related Entity reports a
+// count, the one related container-archetype Entity of another kind is that
+// grouping (CORE-2469). Nothing here names a plugin kind.
 
 const CONTAINER_ARCHETYPE = "container";
 
@@ -26,9 +28,22 @@ export interface ContainerContext {
   next: SourceItem | null;
   /** This item as the nearest container lists it (carries engagement such as duration). */
   current: SourceItem | null;
+  /**
+   * The nearest container: the only credited one at once, else the one whose
+   * list is smallest once read. Null without a container credit.
+   */
+  container: ContainerLink | null;
+  /** The nearest container's items in its order, this one included; empty until read. */
+  items: SourceItem[];
 }
 
-const EMPTY: ContainerContext = { parents: [], next: null, current: null };
+const EMPTY: ContainerContext = {
+  parents: [],
+  next: null,
+  current: null,
+  container: null,
+  items: [],
+};
 
 /** The item's container credits, de-duplicated, in the server's order. */
 export function containerCredits(media: GenericMediaInfo | null | undefined): ContainerLink[] {
@@ -92,11 +107,12 @@ export function nearestContainer(
  * different kind, holding at least as many items as the container does.
  */
 export function ancestorItems(
-  related: ReadonlyArray<{ items: SourceItem[] }> | undefined,
+  related: ReadonlyArray<{ archetype?: string; items: SourceItem[] }> | undefined,
   container: { id: string; kind: string },
   childCount: number,
 ): SourceItem[] {
   const out: SourceItem[] = [];
+  const uncounted: SourceItem[] = [];
   for (const group of related ?? []) {
     for (const item of group.items) {
       if (item.id === container.id || item.kind === container.kind) continue;
@@ -104,8 +120,16 @@ export function ancestorItems(
       if (total > 0 && total >= childCount && !out.some((seen) => seen.id === item.id)) {
         out.push(item);
       }
+      if (
+        group.archetype === CONTAINER_ARCHETYPE &&
+        !uncounted.some((seen) => seen.id === item.id)
+      ) {
+        uncounted.push(item);
+      }
     }
   }
+  // No count to compare: only an unambiguous single container is the grouping.
+  if (out.length === 0 && uncounted.length === 1) return uncounted;
   return out;
 }
 
@@ -130,7 +154,7 @@ export function useContainerContext(
   useEffect(() => {
     void creditKey;
     const links = containerCredits(mediaRef.current);
-    setContext({ ...EMPTY, parents: links });
+    setContext({ ...EMPTY, parents: links, container: links.length === 1 ? links[0] : null });
     if (links.length === 0) return;
     const controller = new AbortController();
     void (async () => {
@@ -160,6 +184,8 @@ export function useContainerContext(
           parents,
           next: nextAfter(nearest.items, mediaID),
           current: nearest.items.find((item) => item.id === mediaID) ?? null,
+          container: nearest.link,
+          items: nearest.items,
         });
       } catch {
         // Context is an enhancement: the credited parents already show.

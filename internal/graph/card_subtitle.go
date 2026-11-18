@@ -13,6 +13,10 @@ import (
 // whatever its plugin's subtitle reads.
 var cardOrdinalFields = []string{"sequence", "index"}
 
+// mediaClassField is the conventional text Media field whose values key a
+// bundle's MediaClassLabels.
+const mediaClassField = "class"
+
 // annotateSubtitles sets each Media item's stored ordinals and renders its
 // Library plugin's MediaSubtitle template in every locale the template
 // declares (CORE-1226, CORE-2386). It runs after AnnotateMediaClass, which
@@ -61,31 +65,95 @@ func (h *Handler) annotateSubtitles(ctx context.Context, items []store.SourceIte
 		if len(segments) == 0 {
 			continue
 		}
-		lookup := func(name string) (string, bool) {
-			field, ok := fields[name]
-			if !ok {
-				return "", false
-			}
-			if field.Type == store.EntityFieldNumber {
-				return strconv.FormatFloat(field.Number, 'f', -1, 64), true
-			}
-			return field.Text, field.Text != ""
-		}
-		subtitle := map[string]string{}
-		for _, locale := range plugin.MediaSubtitleLocales(segments) {
-			if text := plugin.RenderMediaSubtitle(segments, locale, lookup); text != "" {
-				subtitle[locale] = text
-			}
-		}
-		// A translation that renders like English adds nothing on the wire.
-		for locale, text := range subtitle {
-			if locale != "en" && text == subtitle["en"] {
-				delete(subtitle, locale)
-			}
-		}
-		if subtitle["en"] != "" {
+		subtitle := renderSubtitle(segments, fields)
+		if len(subtitle) > 0 {
 			item.Subtitle = subtitle
 		}
 	}
 	return nil
+}
+
+// renderSubtitle renders MediaSubtitle segments in every locale they declare
+// from one item's field values. A translation that renders like English is
+// left out, and the result is nil when English renders nothing.
+func renderSubtitle(segments []plugin.LocaleString, fields map[string]store.MediaField) plugin.LocaleString {
+	if len(segments) == 0 {
+		return nil
+	}
+	lookup := func(name string) (string, bool) {
+		field, ok := fields[name]
+		if !ok {
+			return "", false
+		}
+		if field.Type == store.EntityFieldNumber {
+			return strconv.FormatFloat(field.Number, 'f', -1, 64), true
+		}
+		return field.Text, field.Text != ""
+	}
+	subtitle := plugin.LocaleString{}
+	for _, locale := range plugin.MediaSubtitleLocales(segments) {
+		if text := plugin.RenderMediaSubtitle(segments, locale, lookup); text != "" {
+			subtitle[locale] = text
+		}
+	}
+	// A translation that renders like English adds nothing on the wire.
+	for locale, text := range subtitle {
+		if locale != "en" && text == subtitle["en"] {
+			delete(subtitle, locale)
+		}
+	}
+	if subtitle["en"] == "" {
+		return nil
+	}
+	return subtitle
+}
+
+// describeOrderedMedia fills a media(id) read's ordinals, the headline its
+// plugin's ordinal-free MediaSubtitle segments render, and the plugin's label
+// for its class (CORE-2469). Core still never reads the template's words: a
+// segment is kept or dropped only by the placeholders it names. A failed read
+// leaves the fields absent; they decorate the read, never gate it.
+func (h *Handler) describeOrderedMedia(ctx context.Context, media store.Media, info *MediaInfo) {
+	bundle, found := h.libraryBundle(ctx, media.LibraryID)
+	if !found {
+		return
+	}
+	var segments []plugin.LocaleString
+	for _, segment := range bundle.MediaSubtitle {
+		if !namesOrdinal(segment) {
+			segments = append(segments, segment)
+		}
+	}
+	names := append(slices.Clone(cardOrdinalFields), mediaClassField)
+	for _, name := range plugin.MediaSubtitleFields(segments) {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	values, err := h.store.MediaCardFieldValues(ctx, []store.MediaID{media.ID}, names)
+	if err != nil {
+		return
+	}
+	fields := values[media.ID]
+	info.Sequence = fields["sequence"].Number
+	info.Index = fields["index"].Number
+	info.Headline = renderSubtitle(segments, fields)
+	// Unmapped classes fall back to the plugin's Media label, as the SDK
+	// documents.
+	info.ClassLabel = bundle.MediaClassLabels[fields[mediaClassField].Text]
+	if len(info.ClassLabel) == 0 {
+		info.ClassLabel = bundle.MediaLabel
+	}
+}
+
+// namesOrdinal reports whether any locale of a MediaSubtitle segment names a
+// structural ordinal placeholder.
+func namesOrdinal(segment plugin.LocaleString) bool {
+	ordinals := plugin.MediaSubtitleOrdinals()
+	for _, name := range plugin.MediaSubtitleFields([]plugin.LocaleString{segment}) {
+		if slices.Contains(ordinals, name) {
+			return true
+		}
+	}
+	return false
 }

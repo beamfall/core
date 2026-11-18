@@ -167,7 +167,24 @@ export function codecName(codec: string): string {
   return CODEC_NAMES[key] ?? codec.toUpperCase();
 }
 
-function channelLayout(channels: number | undefined, text: TrackLabelText): string {
+const HDR_NAMES: Record<string, string> = {
+  hdr10: "HDR10",
+  hdr10plus: "HDR10+",
+  hlg: "HLG",
+};
+
+/** The display name of a Version's HDR token ("hdr10", "dolby-vision-p8"); unknown tokens show as sent. */
+export function hdrName(token: string): string {
+  const key = token.toLowerCase();
+  if (key.startsWith("dolby-vision")) return "Dolby Vision";
+  return HDR_NAMES[key] ?? token;
+}
+
+/** "Stereo", "5.1": a track's channel count as a viewer reads it; "" when unknown. */
+export function channelLayout(
+  channels: number | undefined,
+  text: Pick<TrackLabelText, "mono" | "stereo" | "channels">,
+): string {
   if (!channels) return "";
   if (channels === 1) return text.mono;
   if (channels === 2) return text.stereo;

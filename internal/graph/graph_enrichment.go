@@ -125,7 +125,92 @@ func (h *Handler) searchResult(ctx context.Context, scope auth.Scope, req reques
 	if err := h.describeSearchRows(ctx, scope.LibraryFilter(), resp.Items); err != nil {
 		return SearchResultResponse{}, err
 	}
+	if resp.Mode != SearchModeRecommend {
+		resp.Items = h.groupOrderedSearchRows(ctx, resp.Items)
+	}
 	return resp, nil
+}
+
+// containerArchetype is the fixed archetype of Entity kinds that hold Media
+// or other containers.
+const containerArchetype = "container"
+
+// groupOrderedSearchRows keeps the visible Media rows that share an ordered
+// container root together, at the first one's position, in sequence then
+// index order (CORE-2471). The root is the container-archetype Entity of
+// another kind the item's ordered container relates to, or the container
+// itself. Ties and every other row keep rank order; a failed read keeps the
+// rank order whole.
+func (h *Handler) groupOrderedSearchRows(ctx context.Context, items []SearchResultItem) []SearchResultItem {
+	var ids []store.MediaID
+	for _, item := range items {
+		if item.Kind != "entity" && item.LibraryID != "" {
+			ids = append(ids, store.MediaID(item.ID))
+		}
+	}
+	if len(ids) < 2 {
+		return items
+	}
+	containers, err := h.store.MediaOrderedContainers(ctx, ids)
+	if err != nil || len(containers) < 2 {
+		return items
+	}
+	type kindKey struct {
+		library store.LibraryID
+		kind    string
+	}
+	archetypes := map[kindKey]string{}
+	archetype := func(library store.LibraryID, kind string) string {
+		key := kindKey{library, kind}
+		if value, ok := archetypes[key]; ok {
+			return value
+		}
+		value := h.entityKindSpec(ctx, library, kind).Archetype
+		archetypes[key] = value
+		return value
+	}
+	roots := make([]store.EntityID, len(items))
+	members := map[store.EntityID][]int{}
+	for i, item := range items {
+		container, ok := containers[store.MediaID(item.ID)]
+		if !ok || item.Kind == "entity" || item.LibraryID == "" {
+			continue
+		}
+		root := container.ID
+		for _, linked := range container.Linked {
+			if linked.Kind != container.Kind && archetype(container.LibraryID, linked.Kind) == containerArchetype {
+				root = linked.ID
+				break
+			}
+		}
+		roots[i] = root
+		members[root] = append(members[root], i)
+	}
+	out := make([]SearchResultItem, 0, len(items))
+	placed := map[store.EntityID]bool{}
+	for i, item := range items {
+		root := roots[i]
+		if root == "" {
+			out = append(out, item)
+			continue
+		}
+		if placed[root] {
+			continue
+		}
+		placed[root] = true
+		group := members[root]
+		sort.SliceStable(group, func(a, b int) bool {
+			left, right := items[group[a]], items[group[b]]
+			if left.Sequence != right.Sequence {
+				return left.Sequence < right.Sequence
+			}
+			return left.Index < right.Index
+		})
+		for _, at := range group {
+			out = append(out, items[at])
+		}
+	}
+	return out
 }
 
 // describeSearchRows fills each row's display detail in place: Library, year,

@@ -59,8 +59,8 @@ SHALL leave out that container's items.
 
 ### Requirement: Grouping found without an item count
 
-When no related Entity of the nearest container reports an item count, the page SHALL take the one
-related Entity of another kind with the container archetype as the grouping above it.
+When no related Entity of the nearest container qualifies by its item count, the page SHALL take
+the one related Entity of another kind with the container archetype as the grouping above it.
 
 #### Scenario: Grouping without a count
 

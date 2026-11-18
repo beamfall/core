@@ -39,7 +39,8 @@
 
 [data-register="viewer"] .bf-detail-back:focus-visible,
 [data-register="viewer"] .bf-detail-more:focus-visible,
-[data-register="viewer"] .bf-detail-parents a:focus-visible {
+[data-register="viewer"] .bf-detail-parents a:focus-visible,
+[data-register="viewer"] .bf-detail-position a:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -101,6 +102,11 @@
   gap: 24px;
 }
 
+/* An ordered item leads with its wide still (CORE-2469). */
+[data-register="viewer"] .bf-detail-lockup[data-wide] {
+  grid-template-columns: minmax(200px, 400px) minmax(0, 1fr);
+}
+
 [data-register="viewer"] .bf-detail-poster {
   width: 100%;
   border-radius: var(--radius-card);
@@ -145,6 +151,24 @@
 
 [data-register="viewer"] .bf-detail-parents a:hover {
   color: var(--text-primary);
+  text-decoration: underline;
+}
+
+[data-register="viewer"] .bf-detail-position {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+[data-register="viewer"] .bf-detail-position a {
+  color: var(--text-primary);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-detail-position a:hover {
   text-decoration: underline;
 }
 
@@ -307,6 +331,12 @@
   }
   [data-register="viewer"] .bf-detail-poster {
     width: 120px;
+  }
+  [data-register="viewer"] .bf-detail-lockup[data-wide] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  [data-register="viewer"] .bf-detail-lockup[data-wide] .bf-detail-poster {
+    width: min(100%, 320px);
   }
   [data-register="viewer"] .bf-detail-actions > :not(.bf-detail-more) {
     flex: 1 1 auto;

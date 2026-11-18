@@ -16,7 +16,8 @@ order, so one container's items scatter through the results. A card whose plugin
 - `media(id)` gains the item's `sequence` and `index` ordinals, a `headline` rendered from the
   plugin's MediaSubtitle segments that name no ordinal (the item's own title, when stored), the
   `classLabel` its plugin declares for the item's class, and the stored `videoWidth` and
-  `videoHeight`. The client-core wire contract 2.26.0 is re-published additively.
+  `videoHeight`. The six fields are additive and need the next client-core-wire minor version,
+  which the landing owner publishes with the stack.
 - The web Media detail page, for an item with a container credit and ordinals: the grouping above
   the container links first, then "<container kind> N · <class label> M" with the container part
   linked, then the headline as the H1 (falling back to the title). The hero uses the item's `thumb`

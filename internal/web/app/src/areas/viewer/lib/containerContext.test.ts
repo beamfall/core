@@ -77,6 +77,23 @@ describe("ancestorItems", () => {
     ).toEqual(["outer"]);
     expect(ancestorItems(undefined, { id: "self", kind: "inner" }, 6)).toEqual([]);
   });
+
+  // CORE-2469: a grouping that reports no item count is found by archetype alone.
+  it("takes the one container-archetype Entity of another kind when none qualifies by count", () => {
+    const tagged = { kind: "t", items: [item("tag", { kind: "t" })] };
+    const outer = { kind: "o", archetype: "container", items: [item("outer", { kind: "o" })] };
+    const self = {
+      kind: "inner",
+      archetype: "container",
+      items: [item("peer", { kind: "inner" })],
+    };
+    expect(
+      ancestorItems([tagged, outer, self], { id: "self", kind: "inner" }, 6).map((e) => e.id),
+    ).toEqual(["outer"]);
+    const another = { kind: "x", archetype: "container", items: [item("other", { kind: "x" })] };
+    expect(ancestorItems([outer, another], { id: "self", kind: "inner" }, 6)).toEqual([]);
+    expect(ancestorItems([tagged], { id: "self", kind: "inner" }, 6)).toEqual([]);
+  });
 });
 
 // CORE-2327: a track's detail names its artists; a video's person credits are a
