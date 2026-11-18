@@ -24,6 +24,7 @@
     ],
     "sourceItems": [
       {
+        "durationSeconds": 90,
         "id": "media-archive",
         "kind": "media",
         "mediaClass": "video",
@@ -39,6 +40,7 @@
           "backdrop": "/api/media/artwork/media-alpha/backdrop?v=av1",
           "poster": "/api/media/artwork/media-alpha/poster?v=av1"
         },
+        "durationSeconds": 120,
         "id": "media-alpha",
         "kind": "media",
         "mediaClass": "video",

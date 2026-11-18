@@ -1,3 +1,4 @@
+import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { cardByline } from "./cardArt";
 
@@ -28,11 +29,17 @@ export function showsYear(item: SourceItem, repeated: ReadonlySet<string>): bool
 }
 
 /**
- * The line under a card's title: its year first when the title repeats in the
+ * The line under a card's title: the plugin's subtitle first, which tells
+ * siblings apart (CORE-1226), then its year when the title repeats in the
  * list, then who made it (an audio card's byline, CORE-2362), then its
  * summary, never repeating a part.
  */
-export function cardSubline(item: SourceItem, showYear: boolean): string {
-  const parts = [showYear && item.year ? String(item.year) : "", cardByline(item), item.summary];
+export function cardSubline(item: SourceItem, showYear: boolean, locale = "en"): string {
+  const parts = [
+    displayString(item.subtitle, locale),
+    showYear && item.year ? String(item.year) : "",
+    cardByline(item),
+    item.summary,
+  ];
   return [...new Set(parts.filter(Boolean))].join(" · ");
 }

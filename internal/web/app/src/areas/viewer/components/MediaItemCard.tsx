@@ -2,8 +2,9 @@ import { Check, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
-import { useT } from "@/lib/i18n";
+import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
@@ -11,9 +12,11 @@ import { artFrameClass } from "../lib/cardArt";
 import { cardAccessibleName, cardState } from "../lib/cardState";
 import { cardSubline } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
+import type { LibraryViewMode } from "../lib/libraryBrowse";
 import { mediaLinkState } from "../lib/mediaDetail";
 import { fetchPreviewInfo } from "../lib/playback";
 import { type RenderFocusAnchor, rememberRenderFocus } from "../lib/renderFocus";
+import { formatDuration } from "../lib/trackList";
 import { type PlayerNavState, type PlayQueueItem, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
@@ -47,6 +50,7 @@ export function MediaItemCard({
   queue,
   playOnActivate,
   showYear = false,
+  display = "poster",
 }: {
   item: SourceItem;
   /** 1-based aria-posinset for grid a11y; omit outside a grid. */
@@ -60,22 +64,34 @@ export function MediaItemCard({
   playOnActivate?: boolean;
   /** The title repeats in this list, so the card shows its year (CORE-2320). */
   showYear?: boolean;
+  /**
+   * How the Library draws its items (CORE-2386): a poster, a landscape
+   * thumbnail (the thumb slot, else the poster), or a compact list row with
+   * the item's ordinal and runtime.
+   */
+  display?: LibraryViewMode;
 }) {
   const navigate = useNavigate();
   const identity = useViewerIdentity();
   const t = useT();
+  const displayLocale = useDisplayLocale();
   const location = useLocation();
   const [imageFailed, setImageFailed] = useState(false);
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
   const state = cardState(item, t);
-  const subline = cardSubline(item, showYear);
+  const subline = cardSubline(item, showYear, displayLocale);
+  const subtitle = displayString(item.subtitle, displayLocale);
+  const isRow = display === "list";
+  const wide = display === "thumbnail";
   // The page the card's own activation opens (and the More menu's copied link).
   const path = `/${isMedia ? (playOnActivate ? "watch" : "media") : "entity"}/${encodeURIComponent(item.id)}`;
   const primaryLabel = isMedia
     ? t(state.progressPercent === undefined ? "play" : "cardResume")
     : t("cardOpen");
-  const poster = artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
+  const poster = wide
+    ? artworkSlotURL(item, "thumb") || artworkSlotURL(item, "poster")
+    : artworkSlotURL(item, "poster") || artworkSlotURL(item, "thumb");
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewRequestRef = useRef(0);
@@ -218,7 +234,7 @@ export function MediaItemCard({
       <button
         type="button"
         aria-label={cardAccessibleName(
-          showYear && item.year ? { ...item, title: `${item.title} (${item.year})` } : item,
+          { ...item, title: cardLabelTitle(item, showYear, subtitle) },
           state,
         )}
         onClick={activate}
@@ -233,7 +249,12 @@ export function MediaItemCard({
         data-focus-id={focusAnchor?.item}
         className="bf-card"
       >
-        <div className={artFrameClass(item)}>
+        {isRow && item.index !== undefined && item.index > 0 && (
+          <span aria-hidden="true" className="bf-card-ordinal">
+            {item.index}
+          </span>
+        )}
+        <div className={wide ? "bf-poster bf-poster-wide" : artFrameClass(item)}>
           {poster && !imageFailed ? (
             <img
               alt=""
@@ -277,6 +298,11 @@ export function MediaItemCard({
           <span className="bf-card-title">{item.title}</span>
           {subline && <span className="bf-card-sub">{subline}</span>}
         </div>
+        {isRow && isMedia && item.durationSeconds ? (
+          <span aria-hidden="true" className="bf-card-runtime">
+            {formatDuration(item.durationSeconds)}
+          </span>
+        ) : null}
       </button>
       <MediaItemCardMenu
         title={item.title}
@@ -289,6 +315,14 @@ export function MediaItemCard({
       />
     </li>
   );
+}
+
+// The title a card's accessible name starts with: the year when the title
+// repeats in the list (CORE-2320), then the plugin's subtitle, so siblings that
+// share a title are told apart by ear as by eye (CORE-1226).
+function cardLabelTitle(item: SourceItem, showYear: boolean, subtitle: string): string {
+  const title = showYear && item.year ? `${item.title} (${item.year})` : item.title;
+  return subtitle ? `${title}, ${subtitle}` : title;
 }
 
 // The state drawn on the artwork. Decorative for assistive technology: the

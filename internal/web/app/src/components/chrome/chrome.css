@@ -1162,6 +1162,42 @@
   transform: none;
 }
 
+/* Library displays (CORE-2386). Thumbnails: wider cells around a 16:9 frame,
+ * two columns on a phone. */
+[data-register="viewer"] .bf-grid.bf-grid-wide {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+[data-register="viewer"] .bf-poster.bf-poster-wide {
+  aspect-ratio: 16 / 9;
+}
+
+@media (max-width: 760px) {
+  [data-register="viewer"] .bf-grid.bf-grid-wide {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
+/* Compact list: the ordinal leads the row and the runtime trails the copy,
+ * both in tabular figures so a folder's rows line up. */
+[data-register="viewer"] .bf-rows .bf-card-ordinal,
+[data-register="viewer"] .bf-rows .bf-card-runtime {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"] .bf-rows .bf-card-ordinal {
+  min-width: 2ch;
+  text-align: end;
+}
+
+[data-register="viewer"] .bf-rows .bf-card-copy {
+  flex: 1;
+}
+
 /* ============================================================ *
  *  Hero Section (Viewer) — one featured item in a wide frame,
  *  Display title over a text-safe scrim, one focusable primary action.

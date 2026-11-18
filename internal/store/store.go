@@ -849,6 +849,10 @@ type SourceItem struct {
 	// Year is a media-kind item's stored year, set by AnnotateMediaClass in
 	// the same read; 0 for entities and for Media with no year (CORE-2269).
 	Year int
+	// DurationSeconds is a media-kind item's stored runtime, set by
+	// AnnotateMediaClass in the same read so a list row can state it
+	// (CORE-2386); 0 for entities and for Media with no known runtime.
+	DurationSeconds int
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.
@@ -867,6 +871,17 @@ type SourceItem struct {
 	// Byline names the people a card credits under its title, set by the
 	// graph from MediaEntityLinks (CORE-2362); nil means none.
 	Byline []string
+	// LibraryID is a media-kind item's Library, set by AnnotateMediaClass so
+	// the graph can render that Library plugin's card subtitle. Never on the
+	// wire; empty for entities.
+	LibraryID LibraryID
+	// Subtitle is the Library plugin's MediaSubtitle rendered per locale
+	// (BCP-47 tag → text), set by the graph (CORE-1226); nil means none.
+	Subtitle map[string]string
+	// Sequence and Index are a media-kind item's stored structural ordinals,
+	// set by the graph from MediaCardFieldValues; 0 means absent.
+	Sequence float64
+	Index    float64
 }
 
 // PairingCode is a short-lived enrollment grant.

@@ -2569,6 +2569,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -2606,6 +2611,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -2628,6 +2638,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -7865,6 +7889,11 @@
                       }
                     },
                     {
+                      "name": "durationSeconds",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "engagement",
                       "kind": "object",
                       "optional": true,
@@ -7902,6 +7931,11 @@
                       "kind": "scalar"
                     },
                     {
+                      "name": "index",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "kind",
                       "kind": "scalar"
                     },
@@ -7924,6 +7958,20 @@
                       "name": "restricted",
                       "kind": "scalar",
                       "optional": true
+                    },
+                    {
+                      "name": "sequence",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "subtitle",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
                     },
                     {
                       "name": "summary",
@@ -7978,6 +8026,11 @@
                     }
                   },
                   {
+                    "name": "durationSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "engagement",
                     "kind": "object",
                     "optional": true,
@@ -8015,6 +8068,11 @@
                     "kind": "scalar"
                   },
                   {
+                    "name": "index",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "kind",
                     "kind": "scalar"
                   },
@@ -8037,6 +8095,20 @@
                     "name": "restricted",
                     "kind": "scalar",
                     "optional": true
+                  },
+                  {
+                    "name": "sequence",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "subtitle",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
                   },
                   {
                     "name": "summary",
@@ -8118,6 +8190,11 @@
                     }
                   },
                   {
+                    "name": "durationSeconds",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "engagement",
                     "kind": "object",
                     "optional": true,
@@ -8155,6 +8232,11 @@
                     "kind": "scalar"
                   },
                   {
+                    "name": "index",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "kind",
                     "kind": "scalar"
                   },
@@ -8177,6 +8259,20 @@
                     "name": "restricted",
                     "kind": "scalar",
                     "optional": true
+                  },
+                  {
+                    "name": "sequence",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "subtitle",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
                   },
                   {
                     "name": "summary",
@@ -8231,6 +8327,11 @@
                   }
                 },
                 {
+                  "name": "durationSeconds",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "engagement",
                   "kind": "object",
                   "optional": true,
@@ -8268,6 +8369,11 @@
                   "kind": "scalar"
                 },
                 {
+                  "name": "index",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
                   "name": "kind",
                   "kind": "scalar"
                 },
@@ -8290,6 +8396,20 @@
                   "name": "restricted",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "sequence",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "subtitle",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
                 },
                 {
                   "name": "summary",
@@ -10450,6 +10570,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -10485,6 +10610,11 @@
               {
                 "name": "id",
                 "kind": "scalar"
+              },
+              {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "kind",
@@ -10543,6 +10673,20 @@
                 "optional": true
               },
               {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "summary",
                 "kind": "scalar",
                 "optional": true
@@ -10599,6 +10743,11 @@
               "kind": "scalar"
             },
             {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "engagement",
               "kind": "object",
               "optional": true,
@@ -10634,6 +10783,11 @@
             {
               "name": "id",
               "kind": "scalar"
+            },
+            {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "kind",
@@ -10690,6 +10844,20 @@
               "name": "restricted",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -10902,6 +11070,11 @@
                 }
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -10939,6 +11112,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -10961,6 +11139,20 @@
                 "name": "restricted",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
               },
               {
                 "name": "summary",
@@ -11015,6 +11207,11 @@
               }
             },
             {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "engagement",
               "kind": "object",
               "optional": true,
@@ -11052,6 +11249,11 @@
               "kind": "scalar"
             },
             {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "kind",
               "kind": "scalar"
             },
@@ -11074,6 +11276,20 @@
               "name": "restricted",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -11390,6 +11606,11 @@
                 }
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -11427,6 +11648,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -11449,6 +11675,20 @@
                 "name": "restricted",
                 "kind": "scalar",
                 "optional": true
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
               },
               {
                 "name": "summary",
@@ -11503,6 +11743,11 @@
               }
             },
             {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "engagement",
               "kind": "object",
               "optional": true,
@@ -11540,6 +11785,11 @@
               "kind": "scalar"
             },
             {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "kind",
               "kind": "scalar"
             },
@@ -11562,6 +11812,20 @@
               "name": "restricted",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -12829,6 +13093,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -12866,6 +13135,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -12888,6 +13162,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17272,6 +17560,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -17309,6 +17602,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17331,6 +17629,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17388,6 +17700,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -17425,6 +17742,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17447,6 +17769,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17504,6 +17840,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -17541,6 +17882,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17563,6 +17909,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -17620,6 +17980,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -17657,6 +18022,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -17679,6 +18049,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -20549,6 +20933,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -20586,6 +20975,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -20608,6 +21002,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -20672,6 +21080,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -20709,6 +21122,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -20731,6 +21149,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -20841,6 +21273,11 @@
                 }
               },
               {
+                "name": "durationSeconds",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "engagement",
                 "kind": "object",
                 "optional": true,
@@ -20892,6 +21329,11 @@
                 "kind": "scalar"
               },
               {
+                "name": "index",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "kind",
                 "kind": "scalar"
               },
@@ -20937,6 +21379,20 @@
               {
                 "name": "score",
                 "kind": "scalar"
+              },
+              {
+                "name": "sequence",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "subtitle",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
               },
               {
                 "name": "summary",
@@ -20996,6 +21452,11 @@
               }
             },
             {
+              "name": "durationSeconds",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "engagement",
               "kind": "object",
               "optional": true,
@@ -21047,6 +21508,11 @@
               "kind": "scalar"
             },
             {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "kind",
               "kind": "scalar"
             },
@@ -21092,6 +21558,20 @@
             {
               "name": "score",
               "kind": "scalar"
+            },
+            {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "subtitle",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "summary",
@@ -29026,6 +29506,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -29063,6 +29548,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -29085,6 +29575,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",
@@ -29604,6 +30108,11 @@
           }
         },
         {
+          "name": "durationSeconds",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "engagement",
           "kind": "object",
           "optional": true,
@@ -29641,6 +30150,11 @@
           "kind": "scalar"
         },
         {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "kind",
           "kind": "scalar"
         },
@@ -29663,6 +30177,20 @@
           "name": "restricted",
           "kind": "scalar",
           "optional": true
+        },
+        {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "subtitle",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
         },
         {
           "name": "summary",

@@ -27,7 +27,10 @@ export type LibraryQuality = (typeof LIBRARY_QUALITIES)[number];
 // scale: any rating, then 3, 4 and 5 stars.
 export const LIBRARY_MIN_RATINGS = [1, 6, 8, 10] as const;
 export type LibraryDirection = "asc" | "desc";
-export type LibraryViewMode = "grid" | "list";
+// How a Library's items are drawn (CORE-2386): a poster grid, a landscape
+// thumbnail grid, or a compact list of rows.
+export type LibraryViewMode = "poster" | "thumbnail" | "list";
+export const LIBRARY_VIEW_MODES: readonly LibraryViewMode[] = ["poster", "thumbnail", "list"];
 
 // A grouping selection travels in the URL as `group.<kind>=<value>`. The kinds
 // and their labels are the Library plugin's, reported by the server.
@@ -146,7 +149,7 @@ export interface LibraryItemsRequest {
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values } decades qualities } letters { letter offset count } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year byline subtitle sequence index durationSeconds engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values } decades qualities } letters { letter offset count } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;
@@ -192,15 +195,24 @@ export async function fetchLibraryItems(
 }
 
 // View mode is a per-viewer, per-library convenience, so it lives in this
-// browser only; a blocked or cleared store just means the default grid.
+// browser only; a blocked or cleared store just means the default poster grid.
+// The earlier "grid" choice (CORE-2362) reads as the poster grid it drew.
 const VIEW_MODE_KEY = "beamfall.libraryView.";
 
 export function readLibraryViewMode(libraryID: string): LibraryViewMode {
+  let stored: string | null = null;
   try {
-    return window.localStorage.getItem(VIEW_MODE_KEY + libraryID) === "list" ? "list" : "grid";
+    stored = window.localStorage.getItem(VIEW_MODE_KEY + libraryID);
   } catch {
-    return "grid";
+    // A blocked store falls back to the default.
   }
+  return LIBRARY_VIEW_MODES.find((mode) => mode === stored) ?? "poster";
+}
+
+/** The class of the list that draws a Library's items in a view mode. */
+export function libraryViewClass(mode: LibraryViewMode): string {
+  if (mode === "list") return "bf-stack bf-rows";
+  return mode === "thumbnail" ? "bf-grid bf-grid-wide" : "bf-grid";
 }
 
 export function writeLibraryViewMode(libraryID: string, mode: LibraryViewMode): void {

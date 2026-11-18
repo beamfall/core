@@ -189,12 +189,18 @@ func (h *Handler) describeSearchCards(ctx context.Context, details []store.Searc
 	if err := h.annotateBylines(ctx, cards); err != nil {
 		return err
 	}
+	if err := h.annotateSubtitles(ctx, cards); err != nil {
+		return err
+	}
 	for j, card := range cards {
 		i := at[j]
 		if items[i].EntityKind != "" {
 			items[i].MediaClass = string(card.MediaClass)
 		}
 		items[i].Byline = card.Byline
+		items[i].Subtitle = plugin.LocaleString(card.Subtitle)
+		items[i].Sequence, items[i].Index = card.Sequence, card.Index
+		items[i].DurationSeconds = card.DurationSeconds
 	}
 	return nil
 }

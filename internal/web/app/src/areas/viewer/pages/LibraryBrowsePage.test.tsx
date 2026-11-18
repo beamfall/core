@@ -336,6 +336,41 @@ describe("Library browse", () => {
     );
   }
 
+  it("offers poster, thumbnail and list layouts and remembers the choice per library (CORE-2386)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    // A choice stored before CORE-2386 ("grid") opens as posters.
+    window.localStorage.setItem("beamfall.libraryView.lib", "grid");
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all");
+
+    await screen.findByRole("button", { name: "Item 0" });
+    const group = screen.getByRole("group", { name: "View" });
+    expect(group).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Posters" })).toHaveAttribute("aria-pressed", "true");
+    const list = screen.getByRole("list", { name: "Films" });
+    expect(list).toHaveClass("bf-grid");
+    expect(list).not.toHaveClass("bf-grid-wide");
+
+    await user.click(screen.getByRole("button", { name: "Thumbnails" }));
+    expect(screen.getByRole("list", { name: "Films" })).toHaveClass("bf-grid", "bf-grid-wide");
+    expect(document.querySelector(".bf-poster-wide")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Thumbnails" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(window.localStorage.getItem("beamfall.libraryView.lib")).toBe("thumbnail");
+
+    // A fresh visit to the same library opens on the remembered layout.
+    cleanup();
+    renderBrowse("/n/films/all");
+    await screen.findByRole("button", { name: "Item 0" });
+    expect(screen.getByRole("list", { name: "Films" })).toHaveClass("bf-grid-wide");
+    expect(screen.getByRole("button", { name: "Thumbnails" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
   it("jumps to a title initial from the letter rail and focuses its first item (CORE-1685)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     // jsdom lays nothing out; the jump's scroll is observed, not performed.

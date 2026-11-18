@@ -59,6 +59,20 @@ const (
 
 func L(value string) LocaleString { return sdk.L(value) }
 
+// RenderMediaSubtitle renders a bundle's MediaSubtitle for one Media item in
+// one locale (CORE-1226).
+func RenderMediaSubtitle(segments []LocaleString, locale string, lookup func(name string) (string, bool)) string {
+	return sdk.RenderMediaSubtitle(segments, locale, lookup)
+}
+
+// MediaSubtitleLocales lists the locale tags a MediaSubtitle declares.
+func MediaSubtitleLocales(segments []LocaleString) []string {
+	return sdk.MediaSubtitleLocales(segments)
+}
+
+// MediaSubtitleFields lists the placeholder names a MediaSubtitle reads.
+func MediaSubtitleFields(segments []LocaleString) []string { return sdk.MediaSubtitleFields(segments) }
+
 func LocalFileScraperKind(kind string) bool { return sdk.LocalFileScraperKind(kind) }
 
 func ClassifyMediaFieldKey(key string, mediaFields map[string]string) (MediaFieldRoute, error) {

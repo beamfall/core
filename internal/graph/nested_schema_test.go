@@ -142,14 +142,16 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 // surface). `mediaClass` was added deliberately by CORE-1492 for class-aware
 // card placeholders, `artwork.dominantColor` by CORE-0315 for a poster's
 // tint, `year` by CORE-2269 so a card can state it, and `byline` by CORE-2362
-// so an audio card can name its people. Any further field must be added the
+// so an audio card can name its people, and `subtitle`, `sequence`, `index` and
+// `durationSeconds` by CORE-1226/CORE-2386 so sibling items in a folder can be
+// told apart, ordered and timed. Any further field must be added the
 // same way, alongside the golden.
 func TestNestedSchemaSourceItemShape(t *testing.T) {
 	si := topLevel(t, "sourceitems")
 	if si.Kind != "object" {
 		t.Fatalf("sourceItems kind = %q, want object", si.Kind)
 	}
-	want := []string{"artwork", "artworkSlots", "byline", "engagement", "id", "kind", "locked", "mediaClass", "muted", "restricted", "summary", "title", "year"}
+	want := []string{"artwork", "artworkSlots", "byline", "durationSeconds", "engagement", "id", "index", "kind", "locked", "mediaClass", "muted", "restricted", "sequence", "subtitle", "summary", "title", "year"}
 	if got := childNames(si.Children); !slices.Equal(got, want) {
 		t.Fatalf("sourceItems fields = %v, want %v", got, want)
 	}
