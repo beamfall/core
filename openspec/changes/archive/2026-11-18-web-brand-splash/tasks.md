@@ -12,5 +12,5 @@
 
 ## 3. Gate and archive
 
-- [ ] 3.1 `corvint-tasks gate run`
-- [ ] 3.2 Archive the change
+- [x] 3.1 `corvint-tasks gate run` (green on efb7b1f4, landed a974e7cd..efb7b1f4)
+- [x] 3.2 Archive the change
