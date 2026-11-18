@@ -125,9 +125,9 @@ test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ 
   const shelf = page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "Recently Added" }) })
-    .filter({ has: page.getByRole("button", { name: /Sample Media/ }) })
-    .filter({ has: page.getByRole("button", { name: trackCard }) });
-  const card = shelf.getByRole("button", { name: trackCard }).first();
+    .filter({ has: page.getByRole("link", { name: /Sample Media/ }) })
+    .filter({ has: page.getByRole("link", { name: trackCard }) });
+  const card = shelf.getByRole("link", { name: trackCard }).first();
   const label = (await card.getAttribute("aria-label")) ?? (await card.innerText());
   const title = titles.find((candidate) => label.includes(candidate));
   await card.click();

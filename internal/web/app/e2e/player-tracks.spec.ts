@@ -153,11 +153,11 @@ test("HLS route offers every audio and subtitle stream of a multi-track file", a
   const subtitles = await openMenu(page, "Subtitles");
   const subtitleNames = [
     "Subtitles off",
-    "English · SRT",
-    "Spanish · ASS",
-    "French · DVD · Burned in",
-    "German · Forced · SRT · External",
-    "English · SDH · SRT · External",
+    "English",
+    "English · SDH",
+    "French · Burned in",
+    "German · Forced",
+    "Spanish",
   ];
   for (const name of subtitleNames) {
     await expect(subtitles.getByRole("option", { name, exact: true })).toBeVisible();
@@ -168,7 +168,7 @@ test("HLS route offers every audio and subtitle stream of a multi-track file", a
   await expect(unavailable).toHaveAttribute("aria-disabled", "true");
 
   await subtitles
-    .getByRole("option", { name: "German · Forced · SRT · External", exact: true })
+    .getByRole("option", { name: "German · Forced", exact: true })
     .click();
   await expect.poll(() => shownCaption(page)).toBe("sidecar-main-0");
 
@@ -176,7 +176,7 @@ test("HLS route offers every audio and subtitle stream of a multi-track file", a
   const beforeBurn = requests.length;
   const subtitlesAgain = await openMenu(page, "Subtitles");
   await subtitlesAgain
-    .getByRole("option", { name: "French · DVD · Burned in", exact: true })
+    .getByRole("option", { name: "French · Burned in", exact: true })
     .click();
   await expect
     .poll(() => requests.slice(beforeBurn).map((r) => r.selectedSubtitleIndex))
