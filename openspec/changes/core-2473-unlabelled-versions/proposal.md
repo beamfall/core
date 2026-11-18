@@ -23,7 +23,8 @@ the Version picker never appears.
   moves the file in the default slot to its label and stores the new file under its own. A file
   joining a Media whose files are already labelled joins only under a free label of the kind they
   are all labelled by, so it differs from each of them in that fact; new bytes written over a
-  Version's file keep that Version's slot. When nothing tells them apart, the file imports as its
+  Version's file keep that Version's slot, and a missing Version's label stays reserved for its
+  return. When nothing tells them apart, the file imports as its
   own Media, as before. File names are not a fallback: two same-titled files that differ only by
   name may be different items a plugin could not tell apart, and they stay apart.
 - Labels are stored once. A rescan re-imports the same bytes into the slot they hold, so labels

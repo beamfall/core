@@ -10,7 +10,8 @@ from the first of these that tells them apart and leaves both slots free: the re
 probed frame, then the container; the file that held the default Version moves to its label.
 Files that differ only by name SHALL stay separate Media, since they may be different items. A
 further unlabelled copy SHALL join only under a free label of the kind the Media's Versions are
-all labelled by, and new bytes written over a Version's file SHALL keep that Version's slot. A file whose label is stored SHALL keep it on later scans. It
+all labelled by, and new bytes written over a Version's file SHALL keep that Version's slot. A missing
+Version's label SHALL stay reserved for its return. A file whose label is stored SHALL keep it on later scans. It
 SHALL import the file as its own Media when no such slot is free or when the file's content already
 belongs to another Media.
 

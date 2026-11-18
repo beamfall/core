@@ -226,3 +226,35 @@ func TestImportMediaFileVersionRelabelledAnchorDropsItsFrame(t *testing.T) {
 		t.Fatalf("frame = %dx%d, want unknown once 1080p b.mkv is first", got.VideoWidth, got.VideoHeight)
 	}
 }
+
+// TestImportMediaFileVersionDerivedLabelWaitsForAMissingFile: a missing
+// Version's label stays reserved, so a new copy that would take it stays its
+// own Media and the missing file returns to its slot (Codex review of
+// CORE-2473).
+func TestImportMediaFileVersionDerivedLabelWaitsForAMissingFile(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	remux := framedImport("library-local", filepath.Join(root, "Disclosure.Day.2026.Remux.mkv"), 1920, 1080)
+	media, anchor, err := st.ImportMediaFile(ctx, remux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attach := func(file ImportMediaFile, anchorFingerprint string) (MediaFile, error) {
+		return st.ImportMediaFileVersion(ctx, MediaVersionImport{MediaID: media.ID, File: file, AnchorFingerprint: anchorFingerprint, DeriveLabels: true})
+	}
+	web := framedImport("library-local", filepath.Join(root, "Disclosure.Day.2026.WEB.mkv"), 3840, 2160)
+	if _, err := attach(web, anchor.ContentFingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkMediaFileMissing(ctx, "library-local", remux.Path); err != nil {
+		t.Fatal(err)
+	}
+	other := framedImport("library-local", filepath.Join(root, "Disclosure.Day.2026.Other.mkv"), 1920, 1080)
+	if _, err := attach(other, web.ContentFingerprint); !errors.Is(err, ErrVersionSlotTaken) {
+		t.Fatalf("copy over a missing file's label err = %v, want ErrVersionSlotTaken", err)
+	}
+	if file, err := attach(remux, web.ContentFingerprint); err != nil || file.VersionLabel != "1080p" {
+		t.Fatalf("returning remux = %+v, %v; want 1080p", file, err)
+	}
+}

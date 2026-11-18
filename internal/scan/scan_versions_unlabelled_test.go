@@ -181,3 +181,25 @@ func TestScanKeepsAReplacedUnlabelledCopyOnItsMedia(t *testing.T) {
 		assertVersions(t, mediaVersions(t, st, libraryID, again), want)
 	}
 }
+
+// TestScanGroupsACopyAddedWhileItsAnchorIsReplaced: a copy walked after the
+// scan replaced its anchor's bytes still joins the Media.
+func TestScanGroupsACopyAddedWhileItsAnchorIsReplaced(t *testing.T) {
+	root := t.TempDir()
+	const remux = "Disclosure.Day.2026.1080p.Remux.mkv"
+	const web = "Disclosure.Day.2026.2160p.WEB.mkv"
+	const small = "Disclosure.Day.2026.720p.WEB.mkv"
+	prober := frameProber{remux: {1920, 800}, web: {3840, 1600}, small: {1280, 536}}
+	writeScanFile(t, root, "Disclosure Day (2026)/"+remux, []byte("disclosure day remux"))
+	writeScanFile(t, root, "Disclosure Day (2026)/"+web, []byte("disclosure day web"))
+	st := storetest.Open(t)
+	libraryID := createVersionLibrary(t, st)
+	got := mediaVersions(t, st, libraryID, scanReleaseLibrary(t, st, libraryID, root, prober))
+	media := got[web][0]
+
+	writeScanFile(t, root, "Disclosure Day (2026)/"+remux, []byte("replaced remux bytes"))
+	writeScanFile(t, root, "Disclosure Day (2026)/"+small, []byte("disclosure day small"))
+	want := map[string][2]string{remux: {media, "1080p"}, web: {media, "2160p"}, small: {media, "720p"}}
+	assertVersions(t, mediaVersions(t, st, libraryID, scanReleaseLibrary(t, st, libraryID, root, prober)), want)
+	assertVersions(t, mediaVersions(t, st, libraryID, scanReleaseLibrary(t, st, libraryID, root, prober)), want)
+}
