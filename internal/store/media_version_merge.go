@@ -45,11 +45,9 @@ type versionMergeItemState struct {
 	// the merge, for each part-0 file the merge relabelled.
 	Relabels      map[string]string `json:"relabels,omitempty"`
 	SurvivorFacts versionMergeFacts `json:"survivorFacts"`
-	// PriorFirst and FirstAfter are the survivor's first Version before and
-	// after the merge: SurvivorFacts describe PriorFirst, and the row's facts
-	// describe the merged file when it became FirstAfter.
+	// PriorFirst is the survivor's first Version before the merge, the file
+	// SurvivorFacts describe.
 	PriorFirst string `json:"priorFirst"`
-	FirstAfter string `json:"firstAfter"`
 	// Collections and Tags are the memberships the merge copied onto the
 	// survivor; undo removes exactly these.
 	Collections []string `json:"collections,omitempty"`
@@ -85,8 +83,9 @@ type versionMergeCandidate struct {
 // copied in the merge's catalog transaction; favourites, ratings, watchlist
 // entries and watch progress are copied, and queue entries repointed, in an
 // events transaction that commits just before it, so a failed copy rolls the
-// merge back for the next scan to retry. The copies are idempotent: should
-// the catalog commit fail after the events commit, the retry adds nothing.
+// merge back for the next scan to retry. Should the catalog commit fail after
+// the events commit, the queue moves are reverted in their own events
+// transaction and the other copies, being idempotent, stay for the retry.
 // Copies stay on undo, as an entity merge's do; undo repoints queue entries.
 //
 // It does nothing for an encrypted Library (its catalog lives on its own
@@ -190,7 +189,12 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 		return VersionMerge{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return VersionMerge{}, fmt.Errorf("version merge %s: user state copied, catalog commit failed: %w", batchID, err)
+		moved := make([]versionMergeRestored, len(states))
+		for i, state := range states {
+			moved[i] = versionMergeRestored{result.Merged[i], state}
+		}
+		return VersionMerge{}, errors.Join(fmt.Errorf("version merge %s: catalog commit failed: %w", batchID, err),
+			s.revertQueueMovesLocked(ctx, moved, true))
 	}
 
 	// Emit after the catalog commit (appendMediaEventLocked): each merged
@@ -321,9 +325,6 @@ func mergeVersionTx(ctx context.Context, tx *sql.Tx, survivor MediaID, loser ver
 		return state, false, err
 	}
 	if err := refreshFirstVersionFactsTx(ctx, tx, survivor, file, priorFirst); err != nil {
-		return state, false, err
-	}
-	if state.FirstAfter, err = firstVersionFingerprintSQL(ctx, tx, survivor); err != nil {
 		return state, false, err
 	}
 	if state.Collections, err = copyMediaMembershipTx(ctx, tx, `
@@ -557,7 +558,8 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 		return BulkOpBatch{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return BulkOpBatch{}, fmt.Errorf("version merge %s: queue entries restored, catalog commit failed: %w", batchID, err)
+		return BulkOpBatch{}, errors.Join(fmt.Errorf("version merge %s undo: catalog commit failed: %w", batchID, err),
+			s.revertQueueMovesLocked(ctx, done, false))
 	}
 
 	updated := map[MediaID]bool{}
@@ -573,6 +575,31 @@ func (s *Store) undoVersionMergeBatch(ctx context.Context, batchID string, filte
 		}
 	}
 	return BulkOpBatch{ID: batchID, Kind: opKindMergeVersion, Affected: len(done)}, nil
+}
+
+// revertQueueMovesLocked reverses the queue moves an events commit carried
+// when the catalog commit that should have followed it failed: toLoser undoes
+// a merge's moves, otherwise an undo's. It runs in its own events transaction,
+// outside the caller's possibly cancelled context.
+func (s *Store) revertQueueMovesLocked(ctx context.Context, items []versionMergeRestored, toLoser bool) error {
+	ctx = context.WithoutCancel(ctx)
+	tx, err := s.eventsW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, r := range items {
+		from, to := r.loser, r.state.Survivor
+		if toLoser {
+			from, to = to, from
+		}
+		for _, m := range r.state.Queue {
+			if err := repointQueueEntryTx(ctx, tx, m, from, to); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 // undoVersionMergeItemTx puts one merged Media back as it was before the
@@ -594,6 +621,10 @@ func undoVersionMergeItemTx(ctx context.Context, tx *sql.Tx, loser MediaID, stat
 		// restored Media would hold no live file.
 		return ValidationError("a merged Version's file is missing or was replaced; the merge cannot be undone")
 	}
+	firstBefore, err := firstVersionFingerprintSQL(ctx, tx, state.Survivor)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_file SET media_id = ?, version_label = '' WHERE content_fingerprint = ? AND media_id = ?
 	`, loser, state.Fingerprint, state.Survivor); err != nil {
@@ -606,7 +637,7 @@ func undoVersionMergeItemTx(ctx context.Context, tx *sql.Tx, loser MediaID, stat
 			return err
 		}
 	}
-	if err := restoreVersionMergeFactsTx(ctx, tx, state); err != nil {
+	if err := restoreVersionMergeFactsTx(ctx, tx, state, firstBefore); err != nil {
 		return err
 	}
 	for _, collection := range state.Collections {
@@ -624,12 +655,13 @@ func undoVersionMergeItemTx(ctx context.Context, tx *sql.Tx, loser MediaID, stat
 }
 
 // restoreVersionMergeFactsTx brings the survivor's probe facts back in line
-// with its first Version once a merged file has left. When that is again the
-// file first before the merge, its snapshot facts return. Otherwise, if the
-// merged file had become first, the row stops claiming its frame size, as
-// refreshFirstVersionFactsTx does for a first file the store holds no facts
-// for; a later merge undone out of order thus never restores stale facts.
-func restoreVersionMergeFactsTx(ctx context.Context, tx *sql.Tx, state versionMergeItemState) error {
+// with its first Version once a merged file has left; firstBefore was first
+// just before it left. When the first Version is again the one first before
+// the merge, its snapshot facts return. Otherwise, if the departed file was
+// first (so the row's facts were its), the row stops claiming its frame size,
+// as refreshFirstVersionFactsTx does for a first file the store holds no facts
+// for. Merges undone out of order thus never restore stale facts.
+func restoreVersionMergeFactsTx(ctx context.Context, tx *sql.Tx, state versionMergeItemState, firstBefore string) error {
 	first, err := firstVersionFingerprintSQL(ctx, tx, state.Survivor)
 	if err != nil {
 		return err
@@ -640,7 +672,7 @@ func restoreVersionMergeFactsTx(ctx context.Context, tx *sql.Tx, state versionMe
 		_, err = tx.ExecContext(ctx, `
 			UPDATE media SET container = ?, codec = ?, duration_seconds = ?, video_width = ?, video_height = ? WHERE id = ?
 		`, facts.Container, facts.Codec, facts.DurationSeconds, facts.VideoWidth, facts.VideoHeight, state.Survivor)
-	case state.FirstAfter == state.Fingerprint:
+	case firstBefore == state.Fingerprint:
 		_, err = tx.ExecContext(ctx, `UPDATE media SET video_width = 0, video_height = 0 WHERE id = ?`, state.Survivor)
 	}
 	return err

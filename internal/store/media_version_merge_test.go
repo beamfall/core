@@ -290,46 +290,54 @@ func TestUndoVersionMergeRefusesAMissingMergedFile(t *testing.T) {
 
 // TestUndoVersionMergesOutOfOrderRestoresTheFirstVersionFacts: two merges
 // into one survivor undone first-to-last leave the survivor with its own
-// file's facts, not the second merge's stale snapshot.
+// file's facts, whether the second merged file became first (a stale
+// snapshot must not return) or not (restored facts must not be cleared).
 func TestUndoVersionMergesOutOfOrderRestoresTheFirstVersionFacts(t *testing.T) {
-	st := openSeeded(t)
-	ctx := context.Background()
-	filter := LibraryFilter{Revealed: true, AllLibraries: true}
-	root := t.TempDir()
-	var ids []MediaID
-	for _, f := range []struct {
+	type copyFile struct {
 		name          string
 		width, height int
+	}
+	for _, tc := range []struct {
+		name          string
+		second, third copyFile
 	}{
-		{"Disclosure.Day.2026.2160p.WEB-DL.mkv", 3840, 1600},
-		{"Disclosure.Day.2026.REPACK.1080p.Remux.mkv", 1920, 800},
-		{"Disclosure.Day.2026.720p.HDTV.mkv", 1280, 536},
+		{"third sorts after the first merged", copyFile{"Disclosure.Day.2026.REPACK.1080p.Remux.mkv", 1920, 800}, copyFile{"Disclosure.Day.2026.720p.HDTV.mkv", 1280, 536}},
+		{"third sorts first", copyFile{"Disclosure.Day.2026.1440p.WEB-DL.mkv", 2560, 1072}, copyFile{"Disclosure.Day.2026.REPACK.1080p.Remux.mkv", 1920, 800}},
 	} {
-		media, _, err := st.ImportMediaFile(ctx, framedImport("library-local", filepath.Join(root, f.name), f.width, f.height))
-		if err != nil {
-			t.Fatal(err)
-		}
-		ids = append(ids, media.ID)
-	}
-	if ids[0] == ids[1] || ids[1] == ids[2] {
-		t.Fatal("the copies share a Media; the test needs a split title")
-	}
-	now := time.Now().UTC()
-	first, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{ids[0], ids[1]}, now)
-	if err != nil || first.Survivor != ids[0] || len(first.Merged) != 1 {
-		t.Fatalf("first merge = %+v err=%v", first, err)
-	}
-	second, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{ids[0], ids[2]}, now)
-	if err != nil || second.Survivor != ids[0] || len(second.Merged) != 1 {
-		t.Fatalf("second merge = %+v err=%v", second, err)
-	}
-	for _, batch := range []string{first.BatchID, second.BatchID} {
-		if _, err := st.UndoBatch(ctx, batch, filter, now.Add(time.Minute)); err != nil {
-			t.Fatalf("UndoBatch %s: %v", batch, err)
-		}
-	}
-	if width, height := mediaFrame(t, st, ids[0]); width != 3840 || height != 1600 {
-		t.Fatalf("survivor frame after both undos = %dx%d, want its own 3840x1600", width, height)
+		t.Run(tc.name, func(t *testing.T) {
+			st := openSeeded(t)
+			ctx := context.Background()
+			filter := LibraryFilter{Revealed: true, AllLibraries: true}
+			root := t.TempDir()
+			var ids []MediaID
+			for _, f := range []copyFile{{"Disclosure.Day.2026.2160p.WEB-DL.mkv", 3840, 1600}, tc.second, tc.third} {
+				media, _, err := st.ImportMediaFile(ctx, framedImport("library-local", filepath.Join(root, f.name), f.width, f.height))
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids = append(ids, media.ID)
+			}
+			if ids[0] == ids[1] || ids[1] == ids[2] {
+				t.Fatal("the copies share a Media; the test needs a split title")
+			}
+			now := time.Now().UTC()
+			first, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{ids[0], ids[1]}, now)
+			if err != nil || first.Survivor != ids[0] || len(first.Merged) != 1 {
+				t.Fatalf("first merge = %+v err=%v", first, err)
+			}
+			second, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{ids[0], ids[2]}, now)
+			if err != nil || second.Survivor != ids[0] || len(second.Merged) != 1 {
+				t.Fatalf("second merge = %+v err=%v", second, err)
+			}
+			for _, batch := range []string{first.BatchID, second.BatchID} {
+				if _, err := st.UndoBatch(ctx, batch, filter, now.Add(time.Minute)); err != nil {
+					t.Fatalf("UndoBatch %s: %v", batch, err)
+				}
+			}
+			if width, height := mediaFrame(t, st, ids[0]); width != 3840 || height != 1600 {
+				t.Fatalf("survivor frame after both undos = %dx%d, want its own 3840x1600", width, height)
+			}
+		})
 	}
 }
 
