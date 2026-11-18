@@ -27,7 +27,8 @@ var extraFolderNames = map[string]bool{
 // titleExtraFolderNames are the further extras folders Plex and Jellyfin
 // recognise. Their names are common words a library may use as a category
 // ("Other", "Scenes"), so, as in those servers, they count only inside a
-// title folder, never directly under the Library root.
+// title folder, never directly under the Library root, and only for video
+// files: a music or photo folder named "Other" holds main Media.
 var titleExtraFolderNames = map[string]bool{
 	"behind the scenes": true,
 	"deleted scenes":    true,
@@ -48,12 +49,23 @@ var extraNameSuffixes = []string{
 	"-featurette",
 	"-short",
 	"-behindthescenes",
+}
+
+// videoExtraNameSuffixes are the further suffixes Plex and Jellyfin
+// recognise. Words like "-other" or "-scene" also end ordinary song and
+// photo names, so they mark only a video file as an Extra.
+var videoExtraNameSuffixes = []string{
 	"-deleted",
 	"-deletedscene",
 	"-scene",
 	"-clip",
 	"-other",
 	"-extra",
+}
+
+// isVideoPath reports whether path has a video file extension.
+func isVideoPath(path string) bool {
+	return videoExtensions[strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")]
 }
 
 // isExtraPath reports whether a scanned file is an Extra by the established
@@ -69,8 +81,15 @@ func isExtraPath(root, path string) bool {
 			return true
 		}
 	}
-	if videoExtensions[strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")] && extraOrdinalStem.MatchString(stem) {
-		return true
+	if isVideoPath(path) {
+		for _, suffix := range videoExtraNameSuffixes {
+			if strings.HasSuffix(stem, suffix) {
+				return true
+			}
+		}
+		if extraOrdinalStem.MatchString(stem) {
+			return true
+		}
 	}
 	return extraContainerDir(root, path) != ""
 }
@@ -194,6 +213,7 @@ func extraContainerDir(root, path string) string {
 		return ""
 	}
 	root = filepath.Clean(root)
+	video := isVideoPath(path)
 	dir := filepath.Clean(filepath.Dir(path))
 	for dir != root {
 		rel, err := filepath.Rel(root, dir)
@@ -201,7 +221,7 @@ func extraContainerDir(root, path string) string {
 			return ""
 		}
 		name := strings.ToLower(filepath.Base(dir))
-		if extraFolderNames[name] || (titleExtraFolderNames[name] && strings.ContainsRune(rel, filepath.Separator)) {
+		if extraFolderNames[name] || (video && titleExtraFolderNames[name] && strings.ContainsRune(rel, filepath.Separator)) {
 			return dir
 		}
 		dir = filepath.Dir(dir)

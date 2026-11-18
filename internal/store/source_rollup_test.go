@@ -98,6 +98,24 @@ func TestSourceItemsContainerRollUpListsShowsNotEpisodes(t *testing.T) {
 	if muted := mustSourceItems(t, st, local, SourceQuery{Kind: "all-items", EntityFilter: comedy, RollUp: rollUp, ProfileID: profile}); len(muted) != 0 {
 		t.Fatalf("rolled-up Comedy with Comedy muted = %v, want none", sourceItemIDs(muted))
 	}
+	// A Favorite episode keeps its show card on the muted rail, and the card
+	// still carries the Muted badge (§2.7: badge by reach, not by drop set).
+	if err := st.SetMediaFavorite(ctx, profile, hell, true, local); err != nil {
+		t.Fatal(err)
+	}
+	favored := mustSourceItems(t, st, local, SourceQuery{Kind: "all-items", EntityFilter: comedy, RollUp: rollUp, ProfileID: profile})
+	if len(favored) != 1 || favored[0].ID != "entity-itcrowd" {
+		t.Fatalf("rolled-up Comedy muted with From Hell favorited = %v, want the show", sourceItemIDs(favored))
+	}
+	if err := st.AnnotateMuted(ctx, profile, local, favored); err != nil {
+		t.Fatal(err)
+	}
+	if !favored[0].Muted {
+		t.Fatal("Favorite-kept show card under a Comedy mute is not badged Muted")
+	}
+	if err := st.SetMediaFavorite(ctx, profile, hell, false, local); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.SetMute(ctx, profile, MuteKindEntity, "entity-comedy", true, false); err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +124,15 @@ func TestSourceItemsContainerRollUpListsShowsNotEpisodes(t *testing.T) {
 	}
 	if kept := mustSourceItems(t, st, local, SourceQuery{Kind: "all-items", EntityFilter: comedy, RollUp: rollUp, ProfileID: profile}); len(kept) != 3 || kept[2].ID != "entity-itcrowd" {
 		t.Fatalf("rolled-up Comedy with Season 1 muted = %v, want the show kept for Season 3", sourceItemIDs(kept))
+	}
+	unmuted := mustSourceItems(t, st, local, SourceQuery{Kind: "all-items", EntityFilter: comedy, RollUp: rollUp})
+	if err := st.AnnotateMuted(ctx, profile, local, unmuted); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range unmuted {
+		if want := item.ID == "entity-itcrowd"; item.Muted != want {
+			t.Fatalf("Muted on %s = %v with Season 1 muted, want %v", item.ID, item.Muted, want)
+		}
 	}
 	if err := st.SetMute(ctx, profile, MuteKindEntity, "entity-s3", false, true); err != nil {
 		t.Fatal(err)

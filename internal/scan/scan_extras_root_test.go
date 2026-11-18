@@ -49,6 +49,11 @@ func TestIsExtraPathCountsOnlyFoldersBelowRoot(t *testing.T) {
 		{"scene suffix", root, filepath.Join(root, "Synthetic Title", "Opening-scene.mkv"), true},
 		{"numbered music track", root, filepath.Join(root, "X Ambassadors", "VHS", "01 - X Ambassadors - Renegades.flac"), false},
 		{"numbered music track without dash", root, filepath.Join(root, "X Ambassadors", "VHS", "01 X Ambassadors.flac"), false},
+		{"music in an artist's Other folder", root, filepath.Join(root, "Artist", "Other", "01 Song.flac"), false},
+		{"photo in a Scenes folder", root, filepath.Join(root, "2026", "Scenes", "IMG_001.jpg"), false},
+		{"song ending in -other", root, filepath.Join(root, "Artist", "Album", "The Other.flac"), false},
+		{"song with a -scene suffix", root, filepath.Join(root, "Artist", "Album", "Opening-scene.flac"), false},
+		{"trailer suffix stays for any type", root, filepath.Join(root, "Synthetic Title", "Synthetic Title-trailer.mp3"), true},
 		{"dashed number before an x title", tvRoot, filepath.Join(tvRoot, "Synthetic Show", "01 - X Marks the Spot.mkv"), false},
 	}
 	for _, tc := range cases {

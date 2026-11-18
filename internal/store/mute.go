@@ -338,7 +338,16 @@ func (s *Store) AnnotateMuted(ctx context.Context, profileID ProfileID, filter L
 // plane holding the items' relations: the shared catalog, or an open Encrypted
 // Library's own database.
 func (s *Store) annotateMutedLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, items []SourceItem) error {
-	reach, err := s.mutedReachLocked(ctx, relations, profileID, items)
+	candidates := items
+	if hasRollUpMembers(items) {
+		candidates = append([]SourceItem{}, items...)
+		for _, item := range items {
+			for _, member := range item.rollUpMembers {
+				candidates = append(candidates, SourceItem{ID: member, Kind: "media"})
+			}
+		}
+	}
+	reach, err := s.mutedReachLocked(ctx, relations, profileID, candidates)
 	if err != nil {
 		return err
 	}
@@ -349,6 +358,15 @@ func (s *Store) annotateMutedLocked(ctx context.Context, relations *sql.DB, prof
 			_, broad := reach.broadEntities[id]
 			if direct || broad {
 				items[i].Muted = true
+			}
+			// A rolled-up container badges when a mute reaches any of its
+			// member Media, as each episode would badge on an unrolled rail;
+			// a Favorite that keeps the card visible does not clear it.
+			for _, member := range items[i].rollUpMembers {
+				if reach.directlyMuted[member] || reach.broadlyMuted[member] {
+					items[i].Muted = true
+					break
+				}
 			}
 			continue
 		}
