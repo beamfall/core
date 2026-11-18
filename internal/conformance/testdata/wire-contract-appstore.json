@@ -2031,6 +2031,24 @@
                 "optional": true
               },
               {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "attributes",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "entityID",
                 "kind": "scalar"
               },
@@ -2062,6 +2080,24 @@
               "name": "archetype",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "attributes",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "entityID",
@@ -6015,6 +6051,24 @@
                 "optional": true
               },
               {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "attributes",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "entityID",
                 "kind": "scalar"
               },
@@ -6046,6 +6100,24 @@
               "name": "archetype",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "attributes",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "entityID",
@@ -7522,6 +7594,15 @@
           "optional": true
         },
         {
+          "name": "artworkSlots",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "fields",
           "kind": "list",
           "nullable": true,
@@ -8251,6 +8332,24 @@
                     "optional": true
                   },
                   {
+                    "name": "artworkSlots",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "attributes",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
                     "name": "entityID",
                     "kind": "scalar"
                   },
@@ -8282,6 +8381,24 @@
                   "name": "archetype",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "artworkSlots",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
                 },
                 {
                   "name": "entityID",
@@ -8500,6 +8617,24 @@
                 "optional": true
               },
               {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "attributes",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "entityID",
                 "kind": "scalar"
               },
@@ -8531,6 +8666,24 @@
               "name": "archetype",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "attributes",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "entityID",
@@ -8902,6 +9055,24 @@
                 "optional": true
               },
               {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "attributes",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "entityID",
                 "kind": "scalar"
               },
@@ -8933,6 +9104,24 @@
               "name": "archetype",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "attributes",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "entityID",
@@ -12350,6 +12539,24 @@
                 "optional": true
               },
               {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "attributes",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "entityID",
                 "kind": "scalar"
               },
@@ -12381,6 +12588,24 @@
               "name": "archetype",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "attributes",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "entityID",
@@ -12787,6 +13012,24 @@
                     "optional": true
                   },
                   {
+                    "name": "artworkSlots",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "attributes",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
                     "name": "entityID",
                     "kind": "scalar"
                   },
@@ -12818,6 +13061,24 @@
                   "name": "archetype",
                   "kind": "scalar",
                   "optional": true
+                },
+                {
+                  "name": "artworkSlots",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "attributes",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
                 },
                 {
                   "name": "entityID",
@@ -22709,6 +22970,24 @@
                 "optional": true
               },
               {
+                "name": "artworkSlots",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "attributes",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
                 "name": "entityID",
                 "kind": "scalar"
               },
@@ -22740,6 +23019,24 @@
               "name": "archetype",
               "kind": "scalar",
               "optional": true
+            },
+            {
+              "name": "artworkSlots",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "attributes",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
             },
             {
               "name": "entityID",

@@ -229,6 +229,8 @@ export interface EntityInfo {
   archetype?: string;
   /** Entities related in either direction, grouped by kind; only entity(id) fills it. */
   relatedEntities?: RelatedEntityGroup[];
+  /** The Entity's own artwork slots; only entity(id) fills it (CORE-2406). */
+  artworkSlots?: Record<string, string>;
 }
 
 /** One kind's share of an Entity's related Entities (graph.RelatedEntityGroupInfo). */
@@ -283,6 +285,10 @@ export interface MediaCredit {
   /** The kind's fixed archetype ("container", "person", …). */
   archetype?: string;
   relation: string;
+  /** The relation's render-only attributes (plugin-declared names); absent when none (CORE-2406). */
+  attributes?: Record<string, string>;
+  /** The credited Entity's artwork slots (a person's headshot is its poster). */
+  artworkSlots?: Record<string, string>;
 }
 
 /** One backing file/Version/Part row for a Media item (graph.MediaFileInfo). */

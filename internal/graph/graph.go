@@ -1118,10 +1118,7 @@ func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 		return resp
 	}
 	if item.Kind == "entity" {
-		id := store.EntityID(item.ID)
-		resp.ArtworkSlots = artworkSlots("/api/entity/artwork/"+string(item.ID), func(slot string) (string, bool) {
-			return h.artwork.EntityArtworkVersion(id, slot)
-		})
+		resp.ArtworkSlots = h.entityArtworkSlots(store.EntityID(item.ID))
 	} else {
 		resp.ArtworkSlots = artworkSlots("/api/media/artwork/"+string(item.ID), func(slot string) (string, bool) {
 			return h.artwork.ArtworkVersion(item.ID, slot)
@@ -4321,6 +4318,9 @@ type MediaInfo struct {
 
 // MediaCreditInfo is one Entity a Media item is linked to, with the declared
 // kind's display strings so clients can label it without domain knowledge.
+// Attributes are the relation's render-only attributes (the plugin declares
+// their names) and ArtworkSlots the Entity's artwork; both are omitted when
+// empty (CORE-2406).
 type MediaCreditInfo struct {
 	EntityID        string              `json:"entityID"`
 	Title           string              `json:"title"`
@@ -4328,6 +4328,8 @@ type MediaCreditInfo struct {
 	KindDisplayName plugin.LocaleString `json:"kindDisplayName,omitempty"`
 	Archetype       string              `json:"archetype,omitempty"`
 	Relation        string              `json:"relation"`
+	Attributes      map[string]string   `json:"attributes,omitempty"`
+	ArtworkSlots    map[string]string   `json:"artworkSlots,omitempty"`
 }
 
 func (h *Handler) mediaInfo(ctx context.Context, scope auth.Scope, media store.Media) (MediaInfo, error) {
@@ -4418,11 +4420,40 @@ func (h *Handler) mediaCredits(ctx context.Context, scope auth.Scope, mediaID st
 					KindDisplayName: spec.DisplayName,
 					Archetype:       spec.Archetype,
 					Relation:        relation.Name,
+					Attributes:      nonEmptyAttributes(item.Attributes),
+					ArtworkSlots:    h.entityArtworkSlots(item.Entity.ID),
 				})
 			}
 		}
 	}
 	return credits
+}
+
+// nonEmptyAttributes drops blank attribute values and returns nil when none
+// remain, so an attribute-less credit omits the key on the wire.
+func nonEmptyAttributes(attributes map[string]string) map[string]string {
+	var out map[string]string
+	for name, value := range attributes {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string, len(attributes))
+		}
+		out[name] = value
+	}
+	return out
+}
+
+// entityArtworkSlots maps an Entity's artwork slots to their versioned URLs,
+// or nil when it has none or no artwork service is wired.
+func (h *Handler) entityArtworkSlots(id store.EntityID) map[string]string {
+	if h.artwork == nil {
+		return nil
+	}
+	return artworkSlots("/api/entity/artwork/"+string(id), func(slot string) (string, bool) {
+		return h.artwork.EntityArtworkVersion(id, slot)
+	})
 }
 
 func (h *Handler) setFavorite(ctx context.Context, scope auth.Scope, req request) (MediaInfo, error) {
@@ -4592,8 +4623,11 @@ type EntityInfo struct {
 // related to it through Entity-to-Entity relations in both directions,
 // grouped by kind (CORE-1210). RelatedEntities is omitted when there are none.
 // Reads that embed EntityInfo elsewhere do not carry the groups.
+// ArtworkSlots maps the Entity's own artwork slots (a person's headshot is
+// its poster) to versioned URLs, omitted when it has none (CORE-2406).
 type EntityDetailInfo struct {
 	EntityInfo
+	ArtworkSlots    map[string]string        `json:"artworkSlots,omitempty"`
 	RelatedEntities []RelatedEntityGroupInfo `json:"relatedEntities,omitempty"`
 }
 
@@ -4626,7 +4660,10 @@ func (h *Handler) entityQuery(ctx context.Context, scope auth.Scope, req request
 	if err != nil {
 		return EntityDetailInfo{}, clientError("unknown entity")
 	}
-	info := EntityDetailInfo{EntityInfo: entityInfo(entity, h.entityKindSpec(ctx, entity.LibraryID, entity.Kind))}
+	info := EntityDetailInfo{
+		EntityInfo:   entityInfo(entity, h.entityKindSpec(ctx, entity.LibraryID, entity.Kind)),
+		ArtworkSlots: h.entityArtworkSlots(entity.ID),
+	}
 	groups, err := h.store.RelatedEntityGroups(ctx, entity.ID, scope.LibraryFilter())
 	if err != nil {
 		return EntityDetailInfo{}, err

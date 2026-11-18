@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSourceItems } from "@/lib/graphql";
 import type { MediaRow } from "@/lib/graphql/browse";
 import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { filmographyOrder } from "../lib/people";
 import {
   appearsOn,
   audioQueue,
@@ -24,7 +25,8 @@ import type { ListingRows } from "./useListingRows";
 // "container" lists numbered tracks, grouped under a heading per stored
 // sequence when it has several (discs), an audio "person" lists top tracks,
 // then all its tracks when there are more (CORE-2362), and the containers it
-// appears on; anything else lists its children grouped by
+// appears on; any other "person" lists its Media as a poster grid, newest year
+// first (CORE-2406); anything else lists its children grouped by
 // kind (ContainerChildren, CORE-1786). The page reads the per-Media rows
 // (useListingRows) and passes them in, so its Play action and this list use
 // one track order (containerTrackRows).
@@ -55,7 +57,35 @@ export function EntityMediaBrowse({
   if (tracks) return <ContainerTracks tracks={tracks} />;
   if (entity && rows && entity.archetype === "person" && isAudioListing(items, rows))
     return <PersonListening entity={entity} items={items} rows={rows} />;
+  if (entity?.archetype === "person") return <PersonFilmography items={items} />;
   return <ContainerChildren items={items} label={label} />;
+}
+
+function PersonFilmography({ items }: { items: SourceItem[] }) {
+  const t = useT();
+  const ordered = useMemo(
+    () => filmographyOrder(items.filter((item) => item.kind === "media")),
+    [items],
+  );
+  if (ordered.length === 0) return null;
+  return (
+    <section className="bf-section flex flex-col gap-3">
+      <h2 className="bf-section-title">
+        <span>{t("personAppearsIn")}</span>
+      </h2>
+      <ul className="bf-grid" aria-label={t("personAppearsIn")}>
+        {ordered.map((item, index) => (
+          <MediaItemCard
+            key={item.id}
+            item={item}
+            posInSet={index + 1}
+            setSize={ordered.length}
+            showYear
+          />
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function ContainerTracks({ tracks }: { tracks: TrackRow[] }) {

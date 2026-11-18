@@ -26,6 +26,7 @@ import { NotAvailable } from "../components/NotAvailable";
 import type { SeeAllTarget } from "../components/SectionView";
 import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
+import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
 import { entityLinkState, readEntityPreview } from "../lib/entityPreview";
 import { entityPeople, listensOverLayout, shuffled } from "../lib/listeningLayout";
@@ -92,6 +93,8 @@ export function EntityPage() {
   const kindHint = entity?.kind ?? navPreview?.kind;
   const kindLabel = displayString(entity?.kindDisplayName, displayLocale) || kindHint;
   const fields = entity ? viewerFacingFields(entity.fields, { title: entity.title }) : [];
+  // A person's headshot is its poster (CORE-2406).
+  const photo = entity?.artworkSlots?.poster ?? "";
   const layouts = manifest?.layouts || [];
   const detailLayout: Layout | null =
     (kindHint && layouts.find((l) => l.role === "detail" && l.entityKind === kindHint)) || null;
@@ -306,7 +309,18 @@ export function EntityPage() {
       {!notFound && (entity || previewTitle) && (
         <div className="flex flex-col gap-8">
           <header className="bf-detail-stage">
-            <div className="bf-detail-lockup bf-entity-lockup">
+            <div
+              className={`bf-detail-lockup bf-entity-lockup${photo ? " bf-entity-has-photo" : ""}`}
+            >
+              {photo && (
+                <img
+                  className="bf-detail-poster bf-entity-photo"
+                  src={artworkBucketURL(photo, "w320")}
+                  srcSet={artworkSrcSet(photo, ["w320", "w640"])}
+                  sizes="(max-width: 640px) 120px, 200px"
+                  alt=""
+                />
+              )}
               <div className="bf-detail-copy">
                 <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
                 {people.length > 0 && (

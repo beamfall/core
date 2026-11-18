@@ -319,3 +319,80 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* Cast row (CORE-2406): headshot cards in a horizontal shelf. */
+[data-register="viewer"] .bf-cast-group-title {
+  margin: 4px 0 0;
+  padding: 0 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+[data-register="viewer"] .bf-cast-card {
+  width: 120px;
+}
+
+[data-register="viewer"] .bf-cast-link {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-card);
+}
+
+[data-register="viewer"] .bf-cast-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-cast-photo {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-card);
+}
+
+[data-register="viewer"] .bf-cast-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+[data-register="viewer"] .bf-cast-initial {
+  color: var(--text-secondary);
+  font-size: 32px;
+  font-weight: 600;
+}
+
+[data-register="viewer"] .bf-cast-name,
+[data-register="viewer"] .bf-cast-part {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+[data-register="viewer"] .bf-cast-name {
+  font-weight: 600;
+}
+
+[data-register="viewer"] .bf-cast-link:hover .bf-cast-name {
+  text-decoration: underline;
+}
+
+[data-register="viewer"] .bf-cast-part {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  [data-register="viewer"] .bf-cast-card {
+    width: 96px;
+  }
+}

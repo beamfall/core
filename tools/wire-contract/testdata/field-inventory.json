@@ -1104,6 +1104,7 @@
       "tier": "session",
       "children": [
         "archetype",
+        "artworkSlots",
         "fields",
         "id",
         "kind",
