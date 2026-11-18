@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { type CollectionInfo, fetchCollections } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
@@ -249,10 +249,22 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
     await expectNoAxeViolations(container);
     expectNoPositiveTabindex(container);
 
+    // jsdom has no scrollIntoView; record what the A-Z list scrolls to.
+    const scrolled = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrolled,
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    });
     await userEvent.click(within(studio).getByRole("link", { name: "See all 45: Studio" }));
     expect(screen.getByTestId("where")).toHaveTextContent(
       /^\/n\/library-films\/categories\?kind=studio$/,
     );
+    // The A-Z list opens at its top even from a scrolled overview.
+    expect(scrolled.mock.contexts[0]).toHaveClass("bf-category-index");
+    expect(screen.getByRole("heading", { name: "Studio" })).toHaveFocus();
   });
 
   it("lists every value A-Z with a filter that ignores case and accents", async () => {

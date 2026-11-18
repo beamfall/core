@@ -424,14 +424,22 @@ function CategoryIndex({ plan, nodeID }: { plan: CategoryPlan; nodeID: string })
   const title = groupingTitle(plan, displayLocale);
   const [query, setQuery] = useState("");
   const groups = useMemo(() => groupByInitial(plan.values, query), [plan.values, query]);
+  const sectionRef = useRef<HTMLElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const filterID = useId();
+  // Entering from a scrolled overview keeps its scroll position, so bring the
+  // list's top (back link, heading, filter) into view before focusing it.
   useEffect(() => {
+    sectionRef.current?.scrollIntoView?.({ block: "start" });
     headingRef.current?.focus({ preventScroll: true });
   }, []);
 
   return (
-    <section aria-labelledby={sectionID(plan.kind)} className="flex flex-col gap-4">
+    <section
+      ref={sectionRef}
+      aria-labelledby={sectionID(plan.kind)}
+      className="bf-category-index flex flex-col gap-4"
+    >
       <Link className="bf-category-back" to={{ search: "" }}>
         {t("libraryCategoriesBack")}
       </Link>

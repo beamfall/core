@@ -37,7 +37,8 @@
 }
 
 /* Jump targets clear the 60px sticky header (chrome.css .bf-header). */
-[data-register="viewer"] .bf-categories [id^="bf-category-"] {
+[data-register="viewer"] .bf-categories [id^="bf-category-"],
+[data-register="viewer"] .bf-category-index {
   scroll-margin-top: 72px;
 }
 
