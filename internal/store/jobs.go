@@ -502,6 +502,21 @@ func (s *Store) JobStats(ctx context.Context) ([]JobStatsRow, error) {
 	return s.jobStatsSQL(ctx)
 }
 
+// HasRunnableJob reports whether kind has a queued or yielded job available now.
+func (s *Store) HasRunnableJob(ctx context.Context, kind JobKind, now time.Time) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var exists bool
+	err := s.eventsR.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM job
+		WHERE kind = ? AND status IN ('queued', 'yielded') AND available_at_ms <= ?)
+	`, kind, timeToMillis(now)).Scan(&exists)
+	return exists, err
+}
+
 // OldestQueuedJobAgeMs returns how long, in milliseconds, the oldest job still
 // waiting to run (queued or yielded) has been enqueued, and whether any such job
 // exists. It backs ADR-0146 §8's server-observable job-queue-age SLI: the

@@ -1,0 +1,11 @@
+- [x] Preserve the existing CORE-2570 keyframe and hardware-decode implementation and tests
+- [x] Admit scans ahead of the four generation sweeps while retaining playback preemption
+- [x] Preempt worker-holding sweeps when a runnable scan is queued
+- [x] Assign scan priority 5 and verify deduplication retains priority
+- [x] Cover lease admission, cancellation, checkpoint preservation and sweep resumption
+- [x] Translate first-start timing and attempt labels in all five Console locales
+- [x] Cover live, yielded and finished attempt labels in Console tests
+- [x] Run Go tests and vet, web tests, typecheck, Biome and string-catalog checks
+- [x] Validate all OpenSpec changes and specifications with strict checking
+- [x] Pass golangci-lint with a comment-only G703 annotation for the test-owned shim path
+- [ ] Run ESLint successfully (the repository uses Biome and has no ESLint configuration)

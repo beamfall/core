@@ -625,7 +625,13 @@ func (r *Runner) ScaleImage(ctx context.Context, src string, width int, dst stri
 // to tileWidth (keeping aspect), and tiles them into columns×rows JPEG sprite
 // sheets written to dstPattern (an image2 sequence pattern like sheet-%04d.jpg,
 // numbered from 1). One FFmpeg pass — fps + scale + tile filters, no per-frame
-// seeking. Sheets are written directly; the caller publishes a
+// seeking — on one thread at the generation niceness. Only keyframes are
+// decoded (CORE-2570): the fps filter takes the keyframe nearest each interval,
+// so the sheet count and layout are those of trickplay:v1 while the decoder
+// skips every frame the filter would drop. When a VA-API or QSV device was
+// verified and the Console has not chosen software only, the keyframes decode
+// on it. A failed pass is retried in software, then decoding every frame, the
+// order Jellyfin uses. Sheets are written directly; the caller publishes a
 // manifest last, so readers never trust a directory without one.
 func (r *Runner) SpriteSheets(ctx context.Context, src string, intervalSeconds, tileWidth, columns, rows int, dstPattern string) error {
 	if err := checkPath(src); err != nil {
@@ -635,19 +641,62 @@ func (r *Runner) SpriteSheets(ctx context.Context, src string, intervalSeconds, 
 	if err != nil {
 		return fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	cmd := r.generationCommand(ctx, transformConfinement(src, dstPattern), ffmpegPath,
-		"-v", "error",
-		"-protocol_whitelist", productionProtocolAllowlist,
-		"-i", src,
-		"-vf", fmt.Sprintf("fps=1/%d,scale=%d:-2,tile=%dx%d", intervalSeconds, tileWidth, columns, rows),
-		"-q:v", "5",
-		"-f", "image2",
-		"-y", "--", dstPattern,
-	)
-	if detail, err := r.runDetail(ctx, cmd); err != nil {
-		return fmt.Errorf("ffmpeg sprite sheets: %s", detail)
+	run := func(pass spriteSheetPass) error {
+		args := append([]string{"-v", "error", "-protocol_whitelist", productionProtocolAllowlist},
+			spriteSheetDecodeArgs(pass)...)
+		args = append(args,
+			"-i", src,
+			"-vf", fmt.Sprintf("fps=1/%d,scale=%d:-2,tile=%dx%d", intervalSeconds, tileWidth, columns, rows),
+			"-q:v", "5",
+			"-f", "image2",
+			"-y", "--", dstPattern,
+		)
+		conf := transformConfinement(src, dstPattern).withGPU(pass.accel)
+		if detail, err := r.runDetail(ctx, r.generationCommand(ctx, conf, ffmpegPath, args...)); err != nil {
+			return fmt.Errorf("ffmpeg sprite sheets: %s", detail)
+		}
+		return nil
 	}
-	return nil
+	for _, pass := range r.spriteSheetPasses() {
+		if err = run(pass); err == nil || ctx.Err() != nil {
+			return err
+		}
+	}
+	return err
+}
+
+// spriteSheetPass is one way to decode a trickplay pass: on accel (none for
+// software), keyframes only or every frame.
+type spriteSheetPass struct {
+	accel         HWAccel
+	keyframesOnly bool
+}
+
+// spriteSheetPasses are the decodes a trickplay pass tries in order: keyframes
+// on the verified VA-API or QSV device unless the Console chose software only,
+// keyframes in software, then every frame in software for a file whose
+// keyframes the decoder cannot skip to.
+func (r *Runner) spriteSheetPasses() []spriteSheetPass {
+	passes := []spriteSheetPass{{keyframesOnly: true}, {}}
+	if driAccel(r.hwAccel) && !r.EncodePolicy().SoftwareOnly {
+		passes = append([]spriteSheetPass{{accel: r.hwAccel, keyframesOnly: true}}, passes...)
+	}
+	return passes
+}
+
+// spriteSheetDecodeArgs are the input options of a trickplay pass: one decode
+// thread, keyframes only when asked, and VA-API on the render node when the
+// pass's accel uses /dev/dri. No hwaccel output format is set, so decoded
+// frames come back to system memory for the software scale and tile filters.
+func spriteSheetDecodeArgs(pass spriteSheetPass) []string {
+	args := []string{"-threads", "1"}
+	if pass.keyframesOnly {
+		args = append(args, "-skip_frame", "nokey")
+	}
+	if driAccel(pass.accel) {
+		args = append(args, "-hwaccel", "vaapi", "-hwaccel_device", vaapiDevicePath())
+	}
+	return args
 }
 
 // SampleClip encodes a silent H.264 MP4 stitched from segments of src: each

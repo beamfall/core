@@ -26,6 +26,17 @@ import (
 // (shutdown, the caller's own deadline) is left to its normal semantics.
 var ErrPreempted = errors.New("governor: background generation preempted by realtime transcode")
 
+// ErrScanPriority is the cause a background sweep's context is cancelled with
+// when a library scan begins or waits for a worker (CORE-2571). Like
+// ErrPreempted it means yield and resume later, never fail.
+var ErrScanPriority = errors.New("governor: background sweep yielded to a library scan")
+
+// Yielded reports whether cause asks a background job to yield and resume
+// later rather than fail: realtime transcode preemption or scan priority.
+func Yielded(cause error) bool {
+	return errors.Is(cause, ErrPreempted) || errors.Is(cause, ErrScanPriority)
+}
+
 // Options configures the resource governor. The zero value is a
 // no-budget governor (generation only yields to transcode); Config supplies the
 // low-power defaults for Celeron/N100-class hardware.
@@ -52,6 +63,9 @@ type Governor struct {
 	// whether claimed through a cancellable BeginGeneration lease or the plain
 	// AcquireGeneration compatibility path. It is the number the budget caps.
 	activeGeneration int
+	// activeScans counts BeginScan leases held. Any non-zero value keeps
+	// BeginSweep from admitting a sweep (CORE-2571).
+	activeScans int
 	// generations holds the cancellable in-flight generation leases keyed by id
 	// so a beginning transcode can cancel each one's context. Plain
 	// AcquireGeneration claims count toward activeGeneration but are not here:
@@ -185,6 +199,9 @@ type GenerationLease struct {
 	// budgeted is false for a BeginPreemptible lease: it yields to transcodes
 	// but never held a background-CPU budget slot, so Release returns none.
 	budgeted bool
+	// scan marks a BeginScan lease, whose Release ends a scan; sweep marks a
+	// BeginSweep lease, which a scan cancels with ErrScanPriority.
+	scan, sweep bool
 }
 
 // BeginGeneration admits one background generation against the transcode-
@@ -219,13 +236,96 @@ func (g *Governor) BeginGeneration(parent context.Context) (*GenerationLease, bo
 func (g *Governor) BeginPreemptible(parent context.Context) (*GenerationLease, bool) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	return g.beginLocked(parent, false)
+}
+
+// BeginScan admits a library scan: background work that yields to realtime
+// transcodes like BeginPreemptible and takes no budget slot, but also has
+// priority over the generation sweeps (CORE-2571). It cancels every running
+// sweep with ErrScanPriority and, until the lease is released, BeginSweep
+// refuses, so a sweep never holds the job worker a scan is waiting for.
+func (g *Governor) BeginScan(parent context.Context) (*GenerationLease, bool) {
+	g.mu.Lock()
+	lease, ok := g.beginLocked(parent, false)
+	if !ok {
+		g.mu.Unlock()
+		return nil, false
+	}
+	lease.scan = true
+	g.activeScans++
+	sweeps := g.sweepsLocked()
+	g.mu.Unlock()
+	for _, sweep := range sweeps {
+		sweep.cancel(ErrScanPriority)
+	}
+	return lease, true
+}
+
+// BeginSweep admits a generation sweep (artwork, assets, skip detection,
+// decode verification): a BeginGeneration lease that also refuses while a scan
+// runs and is cancelled with ErrScanPriority when one begins or waits.
+func (g *Governor) BeginSweep(parent context.Context) (*GenerationLease, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.activeScans != 0 || g.activeGeneration >= g.budget {
+		return nil, false
+	}
+	lease, ok := g.beginLocked(parent, true)
+	if !ok {
+		return nil, false
+	}
+	lease.sweep = true
+	g.activeGeneration++
+	return lease, true
+}
+
+// PreemptSweeps cancels every running sweep with ErrScanPriority and returns
+// how many it cancelled. The job runner calls it when a scan is runnable but
+// queued, so a sweep holding the worker yields it (CORE-2571).
+func (g *Governor) PreemptSweeps() int {
+	g.mu.Lock()
+	sweeps := g.sweepsLocked()
+	g.mu.Unlock()
+	for _, sweep := range sweeps {
+		sweep.cancel(ErrScanPriority)
+	}
+	return len(sweeps)
+}
+
+// ActiveSweeps counts the sweeps holding a lease.
+func (g *Governor) ActiveSweeps() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.sweepsLocked())
+}
+
+// ActiveScans counts the scans holding a lease.
+func (g *Governor) ActiveScans() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.activeScans
+}
+
+func (g *Governor) sweepsLocked() []*GenerationLease {
+	var sweeps []*GenerationLease
+	for _, lease := range g.generations {
+		if lease.sweep {
+			sweeps = append(sweeps, lease)
+		}
+	}
+	return sweeps
+}
+
+// beginLocked registers a lease when no transcode is active. The caller holds
+// g.mu and does any budget or scan accounting.
+func (g *Governor) beginLocked(parent context.Context, budgeted bool) (*GenerationLease, bool) {
 	if g.activeTranscodes != 0 {
 		return nil, false
 	}
 	g.nextGenID++
 	id := g.nextGenID
 	leaseCtx, cancel := context.WithCancelCause(parent)
-	lease := &GenerationLease{g: g, id: id, ctx: leaseCtx, cancel: cancel}
+	lease := &GenerationLease{g: g, id: id, ctx: leaseCtx, cancel: cancel, budgeted: budgeted}
 	g.generations[id] = lease
 	return lease, true
 }
@@ -251,6 +351,11 @@ func (l *GenerationLease) Release() {
 			if l.budgeted {
 				if l.g.activeGeneration--; l.g.activeGeneration < 0 {
 					l.g.activeGeneration = 0
+				}
+			}
+			if l.scan {
+				if l.g.activeScans--; l.g.activeScans < 0 {
+					l.g.activeScans = 0
 				}
 			}
 		}

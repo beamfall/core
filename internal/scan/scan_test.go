@@ -2279,6 +2279,10 @@ func TestNewJobUsesStablePayloadAndNormalizedRoot(t *testing.T) {
 		t.Fatalf("NewJob returned error: %v", err)
 	}
 
+	if job.Priority != JobPriority || JobPriority != 5 {
+		t.Fatalf("Priority = %d, want scan priority 5", job.Priority)
+	}
+
 	expectedRoot := filepath.Clean(root)
 	if job.DedupeKey != "library-local:"+expectedRoot {
 		t.Fatalf("DedupeKey = %q, want normalized root %q", job.DedupeKey, expectedRoot)

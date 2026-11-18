@@ -31,7 +31,10 @@ func pipeHead(inputURL string, timeout time.Duration, pre ...string) []string {
 }
 
 func pipeSpriteSheetArgs(inputURL string, timeout time.Duration, intervalSeconds, tileWidth, columns, rows int) []string {
-	args := pipeHead(inputURL, timeout)
+	// Keyframes only on one thread, as SpriteSheets (CORE-2570). The pipe path
+	// has no GPU grant, so it always decodes in software, and it does not retry
+	// decoding every frame: a failed pass may already have written to stdout.
+	args := pipeHead(inputURL, timeout, spriteSheetDecodeArgs(spriteSheetPass{keyframesOnly: true})...)
 	args = append(args,
 		"-vf", fmt.Sprintf("fps=1/%d,scale=%d:-2,tile=%dx%d", intervalSeconds, tileWidth, columns, rows),
 		"-q:v", "5")

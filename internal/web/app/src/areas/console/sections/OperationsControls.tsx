@@ -382,15 +382,14 @@ function formatJobDuration(seconds: number, t: ReturnType<typeof useT>): string 
   return t("jobDurationHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
 }
 
-// When a job was queued, started or finished, relative to now, and how long it
-// ran (CORE-2308). Empty when the server sent no times. A paused job says it is
-// paused rather than how long since it started, which is wall-clock time and
-// not time spent working (CORE-2352).
+// Times are elapsed since the first claim, including waits and yields, not
+// active run time (CORE-2572). Paused jobs keep their paused note (CORE-2352).
 function jobWhen(job: JobInfo, now: number, locale: string, t: ReturnType<typeof useT>): string {
   const live = isLive(job.status);
   const at = job.status === "queued" ? job.createdAt : live ? job.startedAt : job.finishedAt;
   const parsed = Date.parse(at ?? "");
   const parts: string[] = [];
+  const attempts = job.attempts ?? 0;
   if (!Number.isNaN(parsed)) {
     const when = formatRelativeTime(new Date(parsed), new Date(now), locale);
     const key =
@@ -399,13 +398,16 @@ function jobWhen(job: JobInfo, now: number, locale: string, t: ReturnType<typeof
   }
   if (job.status === "yielded") {
     parts.push(t("jobPausedNote"));
+    if (attempts > 1) parts.push(t("jobAttempt", { attempts }));
     return parts.join(" · ");
   }
   const seconds = job.status === "queued" ? null : jobRunSeconds(job, now);
   if (seconds !== null) {
     const duration = formatJobDuration(seconds, t);
-    parts.push(t(live ? "jobRunningFor" : "jobTook", { duration }));
+    const key = live ? "jobSinceFirstStart" : attempts > 1 ? "jobTookOverAttempts" : "jobTook";
+    parts.push(t(key, { duration, attempts }));
   }
+  if (job.status === "running" && attempts > 1) parts.push(t("jobAttempt", { attempts }));
   return parts.join(" · ");
 }
 

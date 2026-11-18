@@ -292,3 +292,158 @@ func TestBeginPreemptibleYieldsToTranscodesWithoutBudget(t *testing.T) {
 	}
 	again.Release()
 }
+
+func TestBeginScanPreemptsOnlySweepsAndResumesAfterRelease(t *testing.T) {
+	g := NewWithOptions(Options{BackgroundCPUBudget: 2})
+	ctx := context.Background()
+	sweep, ok := g.BeginSweep(ctx)
+	if !ok {
+		t.Fatal("sweep not admitted")
+	}
+	defer sweep.Release()
+	generation, ok := g.BeginGeneration(ctx)
+	if !ok {
+		t.Fatal("generation not admitted")
+	}
+	defer generation.Release()
+	scan, ok := g.BeginScan(ctx)
+	if !ok {
+		t.Fatal("scan refused despite taking no budget slot")
+	}
+	defer scan.Release()
+	if cause := context.Cause(sweep.Context()); !errors.Is(cause, ErrScanPriority) || !Yielded(cause) {
+		t.Fatalf("sweep cause = %v, want yielded ErrScanPriority", cause)
+	}
+	if err := generation.Context().Err(); err != nil {
+		t.Fatalf("ordinary generation cancelled by scan: %v", err)
+	}
+	sweep.Release() // Return its budget slot; the scan still blocks admission.
+	if _, ok := g.BeginSweep(ctx); ok {
+		t.Fatal("sweep admitted while scan holds a lease")
+	}
+	if got := g.ActiveScans(); got != 1 {
+		t.Fatalf("ActiveScans = %d, want 1", got)
+	}
+	scan.Release()
+	scan.Release()
+	if got := g.ActiveScans(); got != 0 {
+		t.Fatalf("ActiveScans after double Release = %d, want 0", got)
+	}
+	resumed, ok := g.BeginSweep(ctx)
+	if !ok {
+		t.Fatal("sweep not admitted after scan finishes")
+	}
+	resumed.Release()
+}
+
+func TestScanAndSweepStillYieldToTranscode(t *testing.T) {
+	g := New()
+	ctx := context.Background()
+	tx := g.BeginTranscode()
+	defer tx.Release()
+	if _, ok := g.BeginScan(ctx); ok {
+		t.Fatal("scan admitted during transcode")
+	}
+	if _, ok := g.BeginSweep(ctx); ok {
+		t.Fatal("sweep admitted during transcode")
+	}
+	tx.Release()
+	scan, ok := g.BeginScan(ctx)
+	if !ok {
+		t.Fatal("scan refused after transcode")
+	}
+	defer scan.Release()
+	tx = g.BeginTranscode()
+	defer tx.Release()
+	if cause := context.Cause(scan.Context()); !errors.Is(cause, ErrPreempted) || !Yielded(cause) {
+		t.Fatalf("scan cause = %v, want yielded ErrPreempted", cause)
+	}
+	scan.Release()
+	tx.Release()
+	sweep, ok := g.BeginSweep(ctx)
+	if !ok {
+		t.Fatal("sweep refused after transcode")
+	}
+	defer sweep.Release()
+	tx = g.BeginTranscode()
+	defer tx.Release()
+	if cause := context.Cause(sweep.Context()); !errors.Is(cause, ErrPreempted) {
+		t.Fatalf("sweep cause = %v, want ErrPreempted", cause)
+	}
+}
+
+func TestBeginSweepSharesGenerationBudget(t *testing.T) {
+	g := New()
+	ctx := context.Background()
+	generation, ok := g.BeginGeneration(ctx)
+	if !ok {
+		t.Fatal("generation not admitted")
+	}
+	defer generation.Release()
+	if _, ok := g.BeginSweep(ctx); ok {
+		t.Fatal("sweep admitted beyond generation budget")
+	}
+	generation.Release()
+	sweep, ok := g.BeginSweep(ctx)
+	if !ok {
+		t.Fatal("sweep not admitted after budget released")
+	}
+	defer sweep.Release()
+	if _, ok := g.BeginGeneration(ctx); ok {
+		t.Fatal("generation admitted beyond sweep's shared budget")
+	}
+	if _, ok := g.BeginSweep(ctx); ok {
+		t.Fatal("second sweep admitted beyond budget")
+	}
+}
+
+func TestPreemptSweepsCountsAndCancelsOnlySweeps(t *testing.T) {
+	g := NewWithOptions(Options{BackgroundCPUBudget: 3})
+	ctx := context.Background()
+	generation, ok := g.BeginGeneration(ctx)
+	if !ok {
+		t.Fatal("generation not admitted")
+	}
+	defer generation.Release()
+	preemptible, ok := g.BeginPreemptible(ctx)
+	if !ok {
+		t.Fatal("preemptible work not admitted")
+	}
+	defer preemptible.Release()
+	var sweeps []*GenerationLease
+	for range 2 {
+		sweep, ok := g.BeginSweep(ctx)
+		if !ok {
+			t.Fatal("sweep not admitted")
+		}
+		defer sweep.Release()
+		sweeps = append(sweeps, sweep)
+	}
+	if got := g.ActiveSweeps(); got != 2 {
+		t.Fatalf("ActiveSweeps = %d, want 2", got)
+	}
+	if got := g.PreemptSweeps(); got != 2 {
+		t.Fatalf("PreemptSweeps = %d, want 2", got)
+	}
+	for _, sweep := range sweeps {
+		if cause := context.Cause(sweep.Context()); !errors.Is(cause, ErrScanPriority) {
+			t.Fatalf("sweep cause = %v, want ErrScanPriority", cause)
+		}
+		sweep.Release()
+	}
+	if generation.Context().Err() != nil || preemptible.Context().Err() != nil {
+		t.Fatal("PreemptSweeps cancelled non-sweep work")
+	}
+	if got := g.PreemptSweeps(); got != 0 {
+		t.Fatalf("PreemptSweeps after release = %d, want 0", got)
+	}
+	scan, ok := g.BeginScan(ctx)
+	if !ok {
+		t.Fatal("scan not admitted")
+	}
+	defer scan.Release()
+	g.PreemptSweeps()
+	if scan.Context().Err() != nil {
+		t.Fatal("PreemptSweeps cancelled a scan")
+	}
+}

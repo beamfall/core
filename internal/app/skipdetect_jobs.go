@@ -45,7 +45,7 @@ func configureSkipDetectionJobs(
 ) *skipDetectionJobs {
 	configured := &skipDetectionJobs{store: st, wake: wake, logger: logger}
 	video := skipdetect.NewService(st, extractor)
-	registry.Register(skipdetect.SweepJobKind, governedGeneration(resourceGovernor, skipdetect.SweepHandler(video)))
+	registry.Register(skipdetect.SweepJobKind, governedSweep(resourceGovernor, logger, skipdetect.SweepHandler(video)))
 
 	projection, err := loadAudioAdProjection(filepath.Join(dataDir, "models", audioAdModelDirectory))
 	if err != nil {

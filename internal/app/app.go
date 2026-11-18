@@ -682,9 +682,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// ADR-0013: realtime transcode preempts generation — the sweeps yield and
 	// retry while any transcode session is active.
 	sweepHandler := artwork.SweepHandler(artworkService)
-	jobRegistry.Register(artwork.SweepJobKind, governedGeneration(resourceGovernor, sweepHandler))
+	jobRegistry.Register(artwork.SweepJobKind, governedSweep(resourceGovernor, logger, sweepHandler))
 	assetSweepHandler := genassets.SweepHandler(assetService)
-	jobRegistry.Register(genassets.SweepJobKind, governedGeneration(resourceGovernor, assetSweepHandler))
+	jobRegistry.Register(genassets.SweepJobKind, governedSweep(resourceGovernor, logger, assetSweepHandler))
 	// Decode-verify sampling: a low-priority background
 	// sweep that sample-decodes media bytes and flags corrupt/truncated files as
 	// broken in Library Health. Governed like the other generation sweeps so a
@@ -692,7 +692,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// below (registerBuiltInSchedules).
 	decodeVerifyService := decodeverify.NewService(st, ffmpegRunner)
 	decodeVerifyHandler := decodeverify.SweepHandler(decodeVerifyService)
-	jobRegistry.Register(decodeverify.SweepJobKind, governedGeneration(resourceGovernor, decodeVerifyHandler))
+	jobRegistry.Register(decodeverify.SweepJobKind, governedSweep(resourceGovernor, logger, decodeVerifyHandler))
 	// Conversion Workflow (apple ADR-0003 §1): a user-directed convert-to-managed-file
 	// that drives the core FFmpeg engine to write a new managed file, preserves the
 	// original in trash (invariant 6), and is per-op Profile-authority gated by the
@@ -1649,23 +1649,23 @@ func governedGeneration(g *governor.Governor, handler jobs.Handler) jobs.Handler
 	return yieldsToPlayback(g.BeginGeneration, nil, handler)
 }
 
-// scanYieldsToPlayback lets a realtime transcode preempt a library scan the
-// same way it preempts generation (CORE-2393). Scans read and probe whole
-// files from the same disks a live transcode reads its source from; on the
-// Tower three concurrent scans kept a 4K transcode from writing its first
-// segment inside the stall timeout. The scan checkpoints per file, so a
-// preempted scan resumes where it stopped once playback ends. It takes no
-// background-CPU budget slot (governor.BeginPreemptible), so on an idle server
-// scans and sweeps keep running side by side as before.
-func scanYieldsToPlayback(g *governor.Governor, logger *slog.Logger, handler jobs.Handler) jobs.Handler {
-	return yieldsToPlayback(g.BeginPreemptible, logger, handler)
+// governedSweep wraps a generation sweep so both realtime playback and library
+// scans can preempt it, preserving its checkpoint for a later retry (CORE-2571).
+func governedSweep(g *governor.Governor, logger *slog.Logger, handler jobs.Handler) jobs.Handler {
+	return yieldsToPlayback(g.BeginSweep, logger, handler)
 }
 
-// yieldsToPlayback is the shared preemption wrapper. begin admits the job
-// (false means a transcode is active or the budget is spent, so the job
-// re-queues without running); a transcode that begins mid-run cancels the
-// lease context with governor.ErrPreempted and the job yields with its latest
-// checkpoint. A non-nil logger records each mid-run yield.
+// scanYieldsToPlayback lets realtime transcodes preempt a library scan
+// (CORE-2393), while scans preempt generation sweeps and block new sweeps until
+// they finish (CORE-2571). Scans take no background-CPU budget slot and resume
+// from their checkpoints after playback ends.
+func scanYieldsToPlayback(g *governor.Governor, logger *slog.Logger, handler jobs.Handler) jobs.Handler {
+	return yieldsToPlayback(g.BeginScan, logger, handler)
+}
+
+// yieldsToPlayback is the shared preemption wrapper. Refused admission re-queues
+// without running. Playback or scan preemption yields with the latest checkpoint
+// and a bounded retry delay. A non-nil logger records each mid-run yield.
 func yieldsToPlayback(begin func(context.Context) (*governor.GenerationLease, bool), logger *slog.Logger, handler jobs.Handler) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		lease, ok := begin(ctx)
@@ -1674,13 +1674,17 @@ func yieldsToPlayback(begin func(context.Context) (*governor.GenerationLease, bo
 		}
 		defer lease.Release()
 		result, err := handler(lease.Context(), job)
-		if errors.Is(context.Cause(lease.Context()), governor.ErrPreempted) {
+		if cause := context.Cause(lease.Context()); governor.Yielded(cause) {
 			checkpoint := result.Checkpoint
 			if checkpoint == nil {
 				checkpoint = job.Checkpoint
 			}
 			if logger != nil {
-				logger.Info("background job yielded to live playback", "job", string(job.ID), "kind", string(job.Kind), "retryAfter", generationRetryDelay.String())
+				message := "background job yielded to live playback"
+				if errors.Is(cause, governor.ErrScanPriority) {
+					message = "background sweep yielded to a library scan"
+				}
+				logger.Info(message, "job", string(job.ID), "kind", string(job.Kind), "retryAfter", generationRetryDelay.String())
 			}
 			return jobs.Result{Checkpoint: checkpoint, RunAfter: time.Now().UTC().Add(generationRetryDelay)}, jobs.ErrYielded
 		}
@@ -2509,6 +2513,7 @@ func (a *App) runJobsWithClaims(ctx, claimsCtx context.Context, claimsDrained ch
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	scanPreemptionLogged := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -2519,6 +2524,23 @@ func (a *App) runJobsWithClaims(ctx, claimsCtx context.Context, claimsDrained ch
 				a.logger.Error("job lease recovery failed", "error", err)
 			} else if recovered > 0 {
 				a.jobWake.notify()
+			}
+			// A scan cannot acquire its lease while every worker is inside a
+			// sweep. Preempt from the ticker too, so queued scans get a turn.
+			if a.governor != nil && a.governor.ActiveSweeps() > 0 {
+				runnable, err := a.store.HasRunnableJob(ctx, scanpkg.JobKind, now)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					a.logger.Error("runnable scan lookup failed", "error", err)
+				} else if runnable {
+					if count := a.governor.PreemptSweeps(); count > 0 && !scanPreemptionLogged {
+						a.logger.Info("background sweeps preempted for a queued library scan", "sweeps", count)
+						scanPreemptionLogged = true
+					}
+				} else {
+					scanPreemptionLogged = false
+				}
+			} else {
+				scanPreemptionLogged = false
 			}
 			if a.schedule != nil {
 				if err := a.schedule.Tick(ctx, now); err != nil && !errors.Is(err, context.Canceled) {
