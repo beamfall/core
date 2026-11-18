@@ -103,6 +103,7 @@ const SHIPPED = new Set(
 // merged with the CORE-2406 cast row and person filmography headings.
 // merged with the CORE-2400 card content rating and audience score labels.
 // merged with the CORE-2435 sidebar library pin and order editor copy.
+// merged with the CORE-2441 entity hero on-deck, unwatched and item-count copy.
 const BASE_SERIALIZED_LENGTH = 787_228;
 const BASE_REGISTRY_SHA256 = "0ad8d9ac37fc2ff0457fbd707ed51397a364d9a254a6234d71ca752b4ef794bd";
 const BASE_KEY_ORDER_SHA256 = "a7decd9e45f8d9158d69960d00fa3377de46b51fada61588336dfd0fc1b0bc9b";

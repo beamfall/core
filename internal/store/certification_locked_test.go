@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -182,5 +183,64 @@ func TestEnforcedFilterRevealNeverLocked(t *testing.T) {
 		if _, err := st.Media(ctx, ids["low"], filter); err == nil {
 			t.Fatalf("[%s] restricted in-ceiling media visible without reveal", mode.name)
 		}
+	}
+}
+
+// TestMediaForEntityFlagsLockedModeMedia: the direct Entity Media read keeps
+// above-ceiling Media visible under a locked-mode ceiling, like browse, and
+// flags them Locked so clients never count them as playable (CORE-2441).
+func TestMediaForEntityFlagsLockedModeMedia(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	libraryID, ids := seedCertifiedLibrary(t, st, "filmtv", false, "low", "high")
+	if err := st.UpsertEntity(ctx, widgetEntity("entity-locked", libraryID)); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if err := st.UpsertEntityRelation(ctx, EntityRelation{
+			FromEntityID: "entity-locked", Name: "linked", ToMediaID: id,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	filter := LibraryFilter{AllowedIDs: []LibraryID{libraryID}, Certification: []CertificationConstraint{lockedConstraint()}}
+
+	items, err := st.MediaForEntity(ctx, "entity-locked", filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertItemSet(t, "locked entity media", items, ids, "low", "high")
+	locked := lockedSet(items)
+	if !locked[ids["high"]] || locked[ids["low"]] {
+		t.Fatalf("locked = %v, want only %q", locked, ids["high"])
+	}
+
+	// A playback-gate filter never reaches above-ceiling Media at all.
+	filter.PlaybackGate = true
+	gated, err := st.MediaForEntity(ctx, "entity-locked", filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertItemSet(t, "gated entity media", gated, ids, "low")
+}
+
+// TestAnnotateLockedBatchesLargeReads keeps an unpaged read (MediaForEntity
+// over a large Entity) under SQLite's parameter limit: IDs past the first
+// batch are still checked and flagged.
+func TestAnnotateLockedBatchesLargeReads(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	_, ids := seedCertifiedLibrary(t, st, "filmtv", false, "low", "high")
+	items := make([]SourceItem, 0, 3*annotateLockedBatch+2)
+	for i := range 3 * annotateLockedBatch {
+		items = append(items, SourceItem{ID: MediaID(fmt.Sprintf("absent-%d", i)), Kind: "media"})
+	}
+	items = append(items, SourceItem{ID: ids["low"], Kind: "media"}, SourceItem{ID: ids["high"], Kind: "media"})
+	if err := st.annotateLockedLocked(ctx, []CertificationConstraint{lockedConstraint()}, items, nil); err != nil {
+		t.Fatal(err)
+	}
+	locked := lockedSet(items)
+	if len(locked) != 1 || !locked[ids["high"]] {
+		t.Fatalf("locked = %v, want only %q", locked, ids["high"])
 	}
 }

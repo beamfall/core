@@ -75,48 +75,51 @@ func (s *Store) annotateLockedLocked(ctx context.Context, constraints []Certific
 			if c.PluginID != pluginID {
 				continue
 			}
-			placeholders := make([]string, len(ids))
-			queryArgs := make([]any, 0, len(ids)+1+len(c.Allowed))
-			queryArgs = append(queryArgs, library.ID)
-			for i, id := range ids {
-				placeholders[i] = "?"
-				queryArgs = append(queryArgs, id)
-			}
-			blockedClause := ""
-			if len(c.Allowed) > 0 {
-				placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(c.Allowed)), ", ")
-				blockedClause += ` AND NOT EXISTS (
-					SELECT 1 FROM media_field_text cf
-					WHERE cf.media_id = m.id AND cf.field = '` + certificationField + `' AND cf.value IN (` + placeholders + `))`
-				for _, value := range c.Allowed {
-					queryArgs = append(queryArgs, value)
+			for start := 0; start < len(ids); start += annotateLockedBatch {
+				chunk := ids[start:min(start+annotateLockedBatch, len(ids))]
+				placeholders := make([]string, len(chunk))
+				queryArgs := make([]any, 0, len(chunk)+1+len(c.Allowed))
+				queryArgs = append(queryArgs, library.ID)
+				for i, id := range chunk {
+					placeholders[i] = "?"
+					queryArgs = append(queryArgs, id)
 				}
-			}
-			if c.AllowUnrated {
-				blockedClause += ` AND EXISTS (
-					SELECT 1 FROM media_field_text cf
-					WHERE cf.media_id = m.id AND cf.field = '` + certificationField + `')`
-			}
-			// #nosec G202 -- only generated placeholders and closed certification clauses are interpolated.
-			rows, err := reader.QueryContext(ctx, `SELECT m.id FROM media m
-				WHERE m.library_id = ? AND m.id IN (`+strings.Join(placeholders, ", ")+`)`+blockedClause, queryArgs...)
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				var id MediaID
-				if err := rows.Scan(&id); err != nil {
+				blockedClause := ""
+				if len(c.Allowed) > 0 {
+					placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(c.Allowed)), ", ")
+					blockedClause += ` AND NOT EXISTS (
+						SELECT 1 FROM media_field_text cf
+						WHERE cf.media_id = m.id AND cf.field = '` + certificationField + `' AND cf.value IN (` + placeholders + `))`
+					for _, value := range c.Allowed {
+						queryArgs = append(queryArgs, value)
+					}
+				}
+				if c.AllowUnrated {
+					blockedClause += ` AND EXISTS (
+						SELECT 1 FROM media_field_text cf
+						WHERE cf.media_id = m.id AND cf.field = '` + certificationField + `')`
+				}
+				// #nosec G202 -- only generated placeholders and closed certification clauses are interpolated.
+				rows, err := reader.QueryContext(ctx, `SELECT m.id FROM media m
+					WHERE m.library_id = ? AND m.id IN (`+strings.Join(placeholders, ", ")+`)`+blockedClause, queryArgs...)
+				if err != nil {
+					return err
+				}
+				for rows.Next() {
+					var id MediaID
+					if err := rows.Scan(&id); err != nil {
+						_ = rows.Close()
+						return err
+					}
+					lockedIDs[id] = true
+				}
+				if err := rows.Err(); err != nil {
 					_ = rows.Close()
 					return err
 				}
-				lockedIDs[id] = true
-			}
-			if err := rows.Err(); err != nil {
-				rows.Close()
-				return err
-			}
-			if err := rows.Close(); err != nil {
-				return err
+				if err := rows.Close(); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -129,6 +132,11 @@ func (s *Store) annotateLockedLocked(ctx context.Context, constraints []Certific
 	}
 	return nil
 }
+
+// annotateLockedBatch bounds the Media IDs bound in one locked-annotation
+// query, keeping unpaged reads such as MediaForEntity under SQLite's parameter
+// limit.
+const annotateLockedBatch = 500
 
 // certificationField is the conventional text Media field a plugin's ordered
 // certification scale ranks. The name is core convention; the

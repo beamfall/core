@@ -242,7 +242,7 @@ describe("EntityPage related Entities", () => {
     ],
   };
 
-  it("renders each related group under its display name before the Media list", async () => {
+  it("renders each related group under its display name after the Media list", async () => {
     vi.mocked(fetchEntity).mockResolvedValue(withGroups);
     vi.mocked(fetchMediaForEntity).mockResolvedValue([related]);
 
@@ -252,8 +252,9 @@ describe("EntityPage related Entities", () => {
     expect(screen.getByRole("heading", { name: "Boxes" })).toBeInTheDocument();
     // A group without a declared display name falls back to the kind.
     expect(screen.getByRole("heading", { name: "place" })).toBeInTheDocument();
+    // Children first, then the related rows (CORE-2441).
     const box = screen.getByText("Linked box");
-    expect(box.compareDocumentPosition(media) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(media.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders related groups when the Entity has no direct Media", async () => {
@@ -286,7 +287,7 @@ describe("EntityPage related Entities", () => {
     expect(fetchEntity).toHaveBeenCalledTimes(2);
   });
 
-  it("renders related groups before a detail Layout", async () => {
+  it("renders related groups after a detail Layout", async () => {
     mocks.layouts = [{ id: "rack-detail", sections: [], role: "detail", entityKind: "rack" }];
     vi.mocked(fetchEntity).mockResolvedValue(withGroups);
 
@@ -294,7 +295,7 @@ describe("EntityPage related Entities", () => {
 
     const box = await screen.findByText("Linked box");
     const layout = screen.getByText("detail layout rack-detail");
-    expect(box.compareDocumentPosition(layout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(layout.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -641,7 +642,9 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
 
     expect(screen.getByText("detail layout record-detail")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Shuffle" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Makers" })).toBeInTheDocument();
+    // A person relation renders through the cast row (CORE-2441).
+    expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Maker A/ })).toHaveAttribute("href", "/entity/p1");
   });
 
   it("renders the Layout at once when the opening link says the Media are not audio", () => {
@@ -664,5 +667,157 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
       ),
     );
     expect(screen.queryByText("detail layout record-detail")).toBeNull();
+  });
+});
+
+describe("EntityPage hero (CORE-2441)", () => {
+  const show: EntityInfo = {
+    id: "e1",
+    kind: "set",
+    archetype: "container",
+    title: "Hero set",
+    artworkSlots: { poster: "/a/poster", backdrop: "/a/backdrop" },
+    fields: [
+      { name: "year", type: "number", value: "2004", label: { en: "Year" } },
+      { name: "summary", type: "text", value: "An overview.", label: { en: "Summary" } },
+      { name: "certification", type: "text", value: "PG", label: { en: "Rating" } },
+      { name: "network", type: "text", value: "Channel", label: { en: "Network" } },
+    ],
+    relatedEntities: [
+      {
+        kind: "part",
+        kindDisplayName: { en: "Parts" },
+        archetype: "container",
+        items: [
+          {
+            id: "b1",
+            kind: "entity",
+            title: "Part one",
+            engagement: { totalCount: 4, remainingCount: 1 },
+          },
+          {
+            id: "b2",
+            kind: "entity",
+            title: "Part two",
+            engagement: { totalCount: 6, remainingCount: 6 },
+          },
+        ],
+      },
+      {
+        kind: "genre",
+        archetype: "category",
+        items: [{ id: "g1", kind: "entity", title: "Drama" }],
+      },
+      {
+        kind: "cast",
+        archetype: "person",
+        items: [{ id: "p1", kind: "entity", title: "Person A" }],
+      },
+    ],
+  };
+
+  it("draws the backdrop, facts, overview and rows from data present", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue(show);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    const { container } = renderEntity();
+    await act(async () => {});
+
+    expect(
+      container.querySelector(".bf-detail-stage[data-backdrop] .bf-detail-backdrop img"),
+    ).not.toBeNull();
+    const facts = within(screen.getByRole("list", { name: "About this item" }))
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(facts).toEqual(["set", "2004", "PG", "Drama"]);
+    // Related containers never feed the badge: their direction is unknown.
+    expect(screen.queryByText(/unwatched/)).toBeNull();
+    expect(screen.getByText("An overview.")).toBeInTheDocument();
+    // The overview and year are not repeated in the field list; the rest is.
+    expect(screen.queryByText("Summary")).toBeNull();
+    expect(screen.getByText("Channel")).toBeInTheDocument();
+    // Child containers carry their item counts on the card.
+    expect(screen.getByText("Part one")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Parts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
+  });
+
+  it("degrades without a backdrop or overview", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...show,
+      artworkSlots: {},
+      fields: [],
+      relatedEntities: [],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    const { container } = renderEntity();
+    await act(async () => {});
+
+    expect(container.querySelector(".bf-detail-stage")).not.toHaveAttribute("data-backdrop");
+    expect(container.querySelector(".bf-detail-backdrop")).toBeNull();
+    expect(container.querySelector(".bf-detail-overview")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: "Hero set" })).toBeInTheDocument();
+  });
+
+  it("heads a middle-level parent's own children with their count and names the next one", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({ ...show, relatedEntities: [] });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { id: "m1", kind: "media", title: "One", engagement: { completed: true } },
+      { id: "m2", kind: "media", title: "Two", subtitle: "Ordinal 2" },
+    ]);
+    renderEntity();
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { level: 2, name: "2 items" })).toBeInTheDocument();
+    expect(screen.getByText("On deck")).toBeInTheDocument();
+    expect(screen.getByText("Next up: Two")).toBeInTheDocument();
+    expect(screen.getByText("Ordinal 2")).toBeInTheDocument();
+    expect(screen.getByText("1 unwatched")).toBeInTheDocument();
+  });
+
+  // Codex round 2 repros: related groups carry both directions, so neither a
+  // lone parent nor equal parent and child groups may produce a count.
+  const container = (id: string, remaining: number, total: number) => ({
+    id,
+    kind: "entity",
+    title: id,
+    engagement: { remainingCount: remaining, totalCount: total },
+  });
+
+  it("shows no badge from a lone parent container, before or after its Media load", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...show,
+      relatedEntities: [{ kind: "whole", archetype: "container", items: [container("w", 9, 20)] }],
+    });
+    let resolveMedia: (items: SourceItem[]) => void = () => {};
+    vi.mocked(fetchMediaForEntity).mockReturnValue(
+      new Promise((resolve) => {
+        resolveMedia = resolve;
+      }),
+    );
+    renderEntity();
+    await act(async () => {});
+    expect(screen.queryByText(/unwatched/)).toBeNull();
+
+    await act(async () => {
+      resolveMedia([
+        { id: "m1", kind: "media", title: "One", engagement: { completed: true } },
+        { id: "m2", kind: "media", title: "Two" },
+      ]);
+    });
+    expect(screen.getByText("1 unwatched")).toBeInTheDocument();
+  });
+
+  it("shows no badge when parent and child container groups have equal counts", async () => {
+    vi.mocked(fetchEntity).mockResolvedValue({
+      ...show,
+      relatedEntities: [
+        { kind: "whole", archetype: "container", items: [container("w", 3, 10)] },
+        { kind: "part", archetype: "container", items: [container("b", 3, 10)] },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    await act(async () => {});
+    expect(screen.queryByText(/unwatched/)).toBeNull();
   });
 });

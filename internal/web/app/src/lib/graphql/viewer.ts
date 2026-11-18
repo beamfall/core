@@ -200,7 +200,7 @@ export async function fetchMetadataCredits(signal?: AbortSignal): Promise<Metada
 }
 
 const MEDIA_FOR_ENTITY_QUERY =
-  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+  "query MediaForEntity($entityID: String!) { mediaForEntity(entityID: $entityID) { id kind title summary locked artwork { poster } artworkSlots mediaClass year certification audienceScore byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
 
 /** MediaForEntity — the hand-rolled related-Media fallback list for a detail view. */
 export async function fetchMediaForEntity(
@@ -212,7 +212,14 @@ export async function fetchMediaForEntity(
     { entityID },
     signal,
   );
-  return data.mediaForEntity ?? [];
+  // Two relations to the same Media return it twice; every view lists, counts
+  // and queues it once, in its first position.
+  const seen = new Set<string>();
+  return (data.mediaForEntity ?? []).filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 // --- Search ---------------------------------------------------------------

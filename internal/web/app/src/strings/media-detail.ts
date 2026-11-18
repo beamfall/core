@@ -33,6 +33,9 @@ export const mediaDetailStrings = {
     entityDetailNextUp: "Next up: {title}",
     entityDetailWatched: "Watched",
     entityDetailChildrenLabel: "In {title}",
+    entityDetailOnDeck: "On deck",
+    entityDetailUnwatched: "{count} unwatched",
+    entityDetailItemCount: "{count} items",
   },
   fr: {
     mediaDetailResume: "Reprendre",
@@ -63,6 +66,9 @@ export const mediaDetailStrings = {
     entityDetailNextUp: "À suivre : {title}",
     entityDetailWatched: "Vu",
     entityDetailChildrenLabel: "Dans {title}",
+    entityDetailOnDeck: "Au programme",
+    entityDetailUnwatched: "{count} non vus",
+    entityDetailItemCount: "{count} éléments",
   },
   de: {
     mediaDetailResume: "Fortsetzen",
@@ -95,6 +101,9 @@ export const mediaDetailStrings = {
     entityDetailNextUp: "Als Nächstes: {title}",
     entityDetailWatched: "Gesehen",
     entityDetailChildrenLabel: "In {title}",
+    entityDetailOnDeck: "Als Nächstes dran",
+    entityDetailUnwatched: "{count} ungesehen",
+    entityDetailItemCount: "{count} Einträge",
   },
   es: {
     mediaDetailResume: "Reanudar",
@@ -125,6 +134,9 @@ export const mediaDetailStrings = {
     entityDetailNextUp: "A continuación: {title}",
     entityDetailWatched: "Visto",
     entityDetailChildrenLabel: "En {title}",
+    entityDetailOnDeck: "A continuación",
+    entityDetailUnwatched: "{count} sin ver",
+    entityDetailItemCount: "{count} elementos",
   },
   pt: {
     mediaDetailResume: "Retomar",
@@ -155,5 +167,8 @@ export const mediaDetailStrings = {
     entityDetailNextUp: "A seguir: {title}",
     entityDetailWatched: "Assistido",
     entityDetailChildrenLabel: "Em {title}",
+    entityDetailOnDeck: "A seguir",
+    entityDetailUnwatched: "{count} não vistos",
+    entityDetailItemCount: "{count} itens",
   },
 };

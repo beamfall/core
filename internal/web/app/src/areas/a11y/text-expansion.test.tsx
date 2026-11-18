@@ -213,7 +213,9 @@ const CLIP_UTILITY =
 // `title`, and each member row's buttons are labelled with the member title.
 // 2026-11-17 (CORE-2353): -1 → 31. The Console Operations rewrite dropped the
 // `console-mono truncate` span on the job row; the job name now wraps.
-const CLIP_BASELINE = 31;
+// 2026-11-18 (CORE-2438): -1 → 30. The viewer Collections list became a poster
+// grid; the collection name under each collage wraps instead of truncating.
+const CLIP_BASELINE = 30;
 
 function tsSources(dir: string, acc: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

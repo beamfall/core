@@ -7,7 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
-import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
+import type {
+  EntityInfo,
+  Layout,
+  RelatedEntityGroup,
+  Section,
+  SourceItem,
+} from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import {
@@ -18,6 +24,8 @@ import {
 } from "@/lib/viewerCache";
 import { ItemActions } from "../actions";
 import { useEngagementEpoch } from "../actions/engagementSync";
+import { CastRow } from "../components/CastRow";
+import { DetailBackdrop, DetailOverview } from "../components/DetailStage";
 import { EntityMediaBrowse } from "../components/EntityMediaBrowse";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { LayoutView } from "../components/LayoutView";
@@ -28,11 +36,20 @@ import { useListingRows } from "../components/useListingRows";
 import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
+import {
+  entityFacts,
+  entitySummary,
+  groupCredits,
+  heroFields,
+  heroGroups,
+  unwatchedCount,
+  withItemCount,
+} from "../lib/entityHero";
 import { entityLinkState, readEntityPreview } from "../lib/entityPreview";
 import { entityPeople, listensOverLayout, shuffled } from "../lib/listeningLayout";
 import { seeAllTargetFor } from "../lib/seeall";
 import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
-import { fieldDisplayValue, viewerFacingFields } from "../lib/viewerFields";
+import { fieldDisplayValue, formatScore } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import "./media-detail.css";
@@ -92,9 +109,15 @@ export function EntityPage() {
   const previewTitle = navPreview?.title ?? findCachedSectionItem(identity, entityId)?.title ?? "";
   const kindHint = entity?.kind ?? navPreview?.kind;
   const kindLabel = displayString(entity?.kindDisplayName, displayLocale) || kindHint;
-  const fields = entity ? viewerFacingFields(entity.fields, { title: entity.title }) : [];
+  // The hero (CORE-2441): backdrop, poster, facts, overview and the fields
+  // left over, all from what the Entity declares.
+  const facts = entityFacts(entity);
+  const fields = heroFields(entity, facts.year);
+  const summary = entitySummary(entity);
+  const backdrop = entity?.artworkSlots?.backdrop ?? "";
   // A person's headshot is its poster (CORE-2406).
   const photo = entity?.artworkSlots?.poster ?? "";
+  const groups = heroGroups(entity?.relatedEntities);
   const layouts = manifest?.layouts || [];
   const detailLayout: Layout | null =
     (kindHint && layouts.find((l) => l.role === "detail" && l.entityKind === kindHint)) || null;
@@ -159,6 +182,38 @@ export function EntityPage() {
     return listedItems.filter((item) => item.kind === "media");
   }, [trackOrder, entity, listedItems, listing.rows]);
   const people = trackOrder ? entityPeople(entity) : [];
+  const unwatched = unwatchedCount(fallback);
+  const factItems = [
+    { key: "kind", text: kindLabel ?? "", className: "bf-entity-kind" },
+    { key: "year", text: facts.year ? String(facts.year) : "" },
+    { key: "rating", text: facts.rating ?? "", variant: "rating" as const },
+    ...(facts.score
+      ? [
+          {
+            key: "score",
+            text: `\u2605 ${formatScore(facts.score.value, displayLocale)}`,
+            variant: "score" as const,
+            spoken: t("mediaDetailScoreLabel", {
+              label: displayString(facts.score.label, displayLocale) || t("mediaDetailScore"),
+              score: formatScore(facts.score.value, displayLocale),
+              votes: facts.score.votes,
+            }),
+          },
+        ]
+      : []),
+    ...facts.categories.map((category) => ({ key: `category:${category}`, text: category })),
+    // Without a poster to carry it, the unwatched count is a chip.
+    ...(!photo && unwatched > 0
+      ? [{ key: "unwatched", text: t("entityDetailUnwatched", { count: unwatched }) }]
+      : []),
+  ].filter((item) => item.text !== "");
+  const itemCount = (count: number) => t("entityDetailItemCount", { count });
+  // A middle-level parent heads its own children with their count; an audio
+  // container's track list and a person's Media keep their own headings.
+  const childCount =
+    entity?.archetype === "container" && !trackOrder && fallback
+      ? fallback.filter((item) => item.kind === "media").length
+      : 0;
 
   // The Entity read carries related-Entity engagement, so it reloads with it.
   const engagementEpoch = useEngagementEpoch();
@@ -308,18 +363,29 @@ export function EntityPage() {
       {notFound && !loading && <NotAvailable />}
       {!notFound && (entity || previewTitle) && (
         <div className="flex flex-col gap-8">
-          <header className="bf-detail-stage">
+          <header className="bf-detail-stage" data-backdrop={backdrop ? "" : undefined}>
+            {backdrop && <DetailBackdrop key={backdrop} url={backdrop} />}
             <div
               className={`bf-detail-lockup bf-entity-lockup${photo ? " bf-entity-has-photo" : ""}`}
             >
               {photo && (
-                <img
-                  className="bf-detail-poster bf-entity-photo"
-                  src={artworkBucketURL(photo, "w320")}
-                  srcSet={artworkSrcSet(photo, ["w320", "w640"])}
-                  sizes="(max-width: 640px) 120px, 200px"
-                  alt=""
-                />
+                <div className="bf-entity-poster">
+                  <img
+                    className="bf-detail-poster bf-entity-photo"
+                    src={artworkBucketURL(photo, "w320")}
+                    srcSet={artworkSrcSet(photo, ["w320", "w640"])}
+                    sizes="(max-width: 640px) 120px, 200px"
+                    alt=""
+                  />
+                  {unwatched > 0 && (
+                    <span className="bf-card-badge bf-entity-unwatched">
+                      <span aria-hidden="true">{unwatched}</span>
+                      <span className="sr-only">
+                        {t("entityDetailUnwatched", { count: unwatched })}
+                      </span>
+                    </span>
+                  )}
+                </div>
               )}
               <div className="bf-detail-copy">
                 <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
@@ -338,9 +404,24 @@ export function EntityPage() {
                     ))}
                   </p>
                 )}
-                {kindLabel && (
+                {factItems.length > 0 && (
                   <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
-                    <li className="bf-detail-fact bf-entity-kind">{kindLabel}</li>
+                    {factItems.map((item) => (
+                      <li
+                        key={item.key}
+                        className={`bf-detail-fact${"className" in item ? ` ${item.className}` : ""}`}
+                        data-variant={"variant" in item ? item.variant : undefined}
+                      >
+                        {"spoken" in item ? (
+                          <>
+                            <span aria-hidden="true">{item.text}</span>
+                            <span className="sr-only">{item.spoken}</span>
+                          </>
+                        ) : (
+                          item.text
+                        )}
+                      </li>
+                    ))}
                   </ul>
                 )}
                 {!entity && <Skeleton aria-hidden className="bf-shimmer h-10 w-80 max-w-full" />}
@@ -376,11 +457,18 @@ export function EntityPage() {
                       </button>
                     )}
                     <p className="bf-entity-next">
-                      {t("entityDetailNextUp", { title: nextUp.item.title })}
+                      <span className="bf-entity-ondeck">{t("entityDetailOnDeck")}</span>
+                      <span>{t("entityDetailNextUp", { title: nextUp.item.title })}</span>
+                      {displayString(nextUp.item.subtitle, displayLocale) && (
+                        <span className="bf-entity-next-sub">
+                          {displayString(nextUp.item.subtitle, displayLocale)}
+                        </span>
+                      )}
                     </p>
                   </div>
                 )}
                 {entity && <ItemActions target={{ entityID: entityId }} />}
+                {summary && <DetailOverview text={summary} id="bf-entity-overview" />}
                 {fields.length > 0 && (
                   <dl className="bf-metadata">
                     {fields.map((field, i) => (
@@ -395,26 +483,14 @@ export function EntityPage() {
             </div>
           </header>
 
-          {entity?.relatedEntities?.map((group) =>
-            // An audio container names its people under the title instead.
-            people.length > 0 && group.archetype === "person" ? null : (
-              <section key={group.kind} className="bf-section flex flex-col gap-3">
-                <h2 className="bf-section-title">
-                  <span>{displayString(group.kindDisplayName, displayLocale) || group.kind}</span>
-                </h2>
-                <ul className="bf-grid">
-                  {group.items.map((item, index) => (
-                    <MediaItemCard
-                      key={`${item.id}-${index}`}
-                      item={item}
-                      posInSet={index + 1}
-                      setSize={group.items.length}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ),
-          )}
+          {/* Child containers first, each card counting its items. */}
+          {groups.containers.map((group) => (
+            <RelatedGroup
+              key={group.kind}
+              group={group}
+              items={group.items.map((item) => withItemCount(item, itemCount, displayLocale))}
+            />
+          ))}
 
           {detailLayout && listens === false ? (
             <LayoutView
@@ -427,16 +503,58 @@ export function EntityPage() {
           ) : (
             (needsFallback || listens) &&
             fallback && (
-              <EntityMediaBrowse
-                entity={entity}
-                items={fallback}
-                listing={listing}
-                label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
-              />
+              <>
+                {childCount > 0 && (
+                  <h2 className="bf-section-title bf-entity-children-count">
+                    {itemCount(childCount)}
+                  </h2>
+                )}
+                <EntityMediaBrowse
+                  entity={entity}
+                  items={fallback}
+                  listing={listing}
+                  label={t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })}
+                />
+              </>
             )
           )}
+
+          {/* An audio container names its people under the title instead. */}
+          {people.length === 0 && <CastRow credits={groupCredits(groups.people, displayLocale)} />}
+
+          {groups.other.map((group) => (
+            <RelatedGroup key={group.kind} group={group} items={group.items} />
+          ))}
         </div>
       )}
     </AppShell>
+  );
+}
+
+/** One related group as a poster grid under its display name. */
+function RelatedGroup({
+  group,
+  items,
+}: {
+  group: RelatedEntityGroup;
+  items: readonly SourceItem[];
+}) {
+  const displayLocale = useDisplayLocale();
+  return (
+    <section className="bf-section flex flex-col gap-3">
+      <h2 className="bf-section-title">
+        <span>{displayString(group.kindDisplayName, displayLocale) || group.kind}</span>
+      </h2>
+      <ul className="bf-grid">
+        {items.map((item, index) => (
+          <MediaItemCard
+            key={`${item.id}-${index}`}
+            item={item}
+            posInSet={index + 1}
+            setSize={items.length}
+          />
+        ))}
+      </ul>
+    </section>
   );
 }
