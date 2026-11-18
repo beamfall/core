@@ -5,8 +5,7 @@
 When a container map declares `ContainerRelations`, identification SHALL link the container Entity to
 each Entity a non-container map with the named relation hydrated in the same lookup, under the
 container relation, keeping that Entity's sort order. A link SHALL be written only when the bundle
-declares the container relation on the container kind toward that Entity's kind. The links under each
-container relation the lookup yields SHALL replace the container Entity's earlier links under it.
+declares the container relation on the container kind toward that Entity's kind.
 
 #### Scenario: Series genres and cast
 
@@ -15,10 +14,21 @@ container relation the lookup yields SHALL replace the container Entity's earlie
 - **THEN** the series Entity is linked to Drama under `in-genre` and to both people under `credit` in
   billing order
 
+### Requirement: Container links replace earlier links
+
+A lookup that resolves a container map SHALL replace the container Entity's earlier links under every
+container relation the map declares and the bundle declares on the container kind, so a relation the
+lookup yields nothing for is cleared.
+
 #### Scenario: Corrected match replaces genres and cast
 
 - **WHEN** the series was linked to Drama and two cast members and a later identification yields Comedy and one other cast member
 - **THEN** the series Entity is linked only to Comedy and the other cast member
+
+#### Scenario: Corrected match without cast clears cast
+
+- **WHEN** the series was linked to two cast members and a later identification's lookup has an empty cast
+- **THEN** the series Entity has no `credit` links and keeps its genre links from that lookup
 
 ## MODIFIED Requirements
 
