@@ -328,6 +328,13 @@ type JobRunner interface {
 	RunOne(context.Context, []store.JobClass, time.Time) (store.Job, error)
 }
 
+// RunningJobCanceler is the optional half of a JobRunner that can stop a job's
+// handler in this process at once. jobCancel uses it, when the runner has it,
+// so a cancelled job stops working now rather than at its next lease renewal.
+type RunningJobCanceler interface {
+	CancelRunning(store.JobID) bool
+}
+
 type GovernorStatusProvider interface {
 	GenerationWorkers() int
 	BackgroundCPUBudget() int
@@ -1913,6 +1920,14 @@ func (h *Handler) jobCancel(ctx context.Context, scope auth.Scope, req request) 
 			return JobInfo{}, clientError(err.Error())
 		}
 		return JobInfo{}, err
+	}
+	// Stop the worker now. Without this it keeps running, child ffmpegs
+	// included, until its next lease renewal finds the job cancelled, which
+	// can be minutes later (CORE-2394).
+	if prior == store.JobStatusRunning {
+		if canceler, ok := h.jobRunner.(RunningJobCanceler); ok {
+			canceler.CancelRunning(store.JobID(id))
+		}
 	}
 	// A cancelled offline pack build job never finishes its build, so put
 	// the build row back to failed (retryable, dismissable) instead of

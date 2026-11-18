@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/beamfall/core/internal/redact"
@@ -55,6 +56,10 @@ type Registry struct {
 	// clock measures how long a handler ran, so the writes after it carry the
 	// time the work actually ended rather than the claim time. Tests replace it.
 	clock func() time.Time
+	// running maps each job whose handler is running in this process to its
+	// stop handle, so CancelRunning can reach the handler directly.
+	runningMu sync.Mutex
+	running   map[store.JobID]*leaseGuard
 }
 
 func NewRegistry(st Store, workerID string) *Registry {
@@ -125,10 +130,18 @@ func (r *Registry) RunOne(ctx context.Context, classes []store.JobClass, now tim
 	// under a context the renewal loop cancels the moment the lease is lost.
 	leaseCtx, lease := r.startLeaseRenewal(ctx, job)
 	defer lease.stop()
+	untrack := r.trackRunning(job.ID, lease)
 	result, err := r.runHandler(leaseCtx, handler, job)
+	untrack()
 	// Join the renewal goroutine before reading its verdict, so the lease state
 	// this decision rests on is final rather than one tick behind.
 	lease.stop()
+	if lease.cancelRequested() {
+		// The store already holds the job as cancelled; a yield, failure or
+		// completion written now would be refused or would undo the cancel.
+		r.logger.InfoContext(ctx, "job stopped after cancel", "id", job.ID, "kind", job.Kind)
+		return job, nil
+	}
 	if lease.leaseLost() {
 		r.logger.WarnContext(ctx, "job abandoned after lease loss", "id", job.ID, "kind", job.Kind)
 		return job, ErrLeaseLost
