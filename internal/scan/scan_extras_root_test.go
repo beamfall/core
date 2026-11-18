@@ -271,3 +271,62 @@ func TestScanLinksSuffixedExtraInsideExtrasFolder(t *testing.T) {
 	}
 	t.Fatalf("suffixed Extra inside Extras/ not linked to main Media; extras = %#v", extras)
 }
+
+// TestLinkExtraTitleAmbiguityCountsDistinctMedia: a suffixed Extra links to
+// its parent title when every file of that title belongs to one Media (two
+// Versions), and stays unlinked when the title names two different Media.
+func TestLinkExtraTitleAmbiguityCountsDistinctMedia(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	writeScanFile(t, root, "Night Harbor.mkv", []byte("harbor mkv"))
+	writeScanFile(t, root, "Night Harbor.mp4", []byte("harbor mp4"))
+	writeScanFile(t, root, "Night Harbor-trailer.mkv", []byte("harbor trailer"))
+	st := storetest.Open(t)
+	ctx := context.Background()
+	const libraryID = store.LibraryID("library-local")
+	result, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: libraryID, Root: root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	files := map[string]ImportedFile{}
+	for _, f := range result.Files {
+		files[filepath.Base(f.Path)] = f
+	}
+	mkv, mp4, trailer := files["Night Harbor.mkv"], files["Night Harbor.mp4"], files["Night Harbor-trailer.mkv"]
+	if mkv.MediaID == "" || mp4.MediaID == "" || trailer.MediaID == "" || mkv.MediaID == mp4.MediaID {
+		t.Fatalf("want three files in three Media before any merge: %#v", files)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{libraryID}}
+	linked := func(parent store.MediaID) bool {
+		t.Helper()
+		extras, err := st.MediaRelationsOf(ctx, parent, store.MediaRelationExtraOf, filter)
+		if err != nil {
+			t.Fatalf("MediaRelationsOf: %v", err)
+		}
+		for _, extra := range extras {
+			if extra.ID == trailer.MediaID {
+				return true
+			}
+		}
+		return false
+	}
+	if linked(mkv.MediaID) || linked(mp4.MediaID) {
+		t.Fatal("Extra linked although its title names two different Media")
+	}
+
+	// Attach the mp4 to the mkv's Media as a second Version: the title now
+	// names one Media, so the trailer resolves to it.
+	if err := st.AddMediaFileVersion(ctx, mkv.MediaID, store.MediaFile{
+		Path:               mp4.Path,
+		ContentFingerprint: mp4.ContentFingerprint,
+		VersionLabel:       "mp4",
+	}, nil); err != nil {
+		t.Fatalf("AddMediaFileVersion: %v", err)
+	}
+	if err := linkExtraRelationsForLibrary(ctx, st, libraryID, root); err != nil {
+		t.Fatalf("linkExtraRelationsForLibrary: %v", err)
+	}
+	if !linked(mkv.MediaID) {
+		t.Fatal("Extra not linked when both files of its title are Versions of one Media")
+	}
+}
