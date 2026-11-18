@@ -1,0 +1,10 @@
+- [ ] `HelpTip` popover and `tip`/`setting` props on the workbench field primitives
+- [ ] Help text for unclear Console and Manage settings, every locale
+- [ ] Preset dropdowns (workers, event retention, remote limits, stream cap, access window times, rename digits) and defaults
+- [ ] Console/Manage purpose lines and cross-links; Backups Console-only; renames; drop duplicate Layout & Navigation
+- [ ] Settings index, search in both menus, reveal-and-highlight on choose
+- [ ] Tests: help tip, dropdown off-preset values, index anchors exist, search navigation
+- [ ] Browser check at desktop and 375 px
+- [ ] Codex review of the exact head
+- [ ] Gate receipt via `corvint-tasks gate run`
+- [ ] `openspec archive core-2445-settings-clarity` after landing
