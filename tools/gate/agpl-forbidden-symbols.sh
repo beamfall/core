@@ -47,13 +47,24 @@ strip_line_comments() {
 allowed_match() {
   local file="$1" line="$2"
 
-  # No active allow-exceptions. Plugin repos (beamfall-plugin-*) are separate
-  # Go modules in sibling workspace dirs and are not tracked by this repo's
-  # git ls-files, so they are out of scope for this gate. If they are ever
-  # brought in-scope, re-add allow-exceptions for media-credit billing metadata
-  # (Attributes: "billing" in plugin bundle.go files).
-
-  return 1
+  # Plugin repos (beamfall-plugin-*) are separate Go modules in sibling
+  # workspace dirs and are not tracked by this repo's git ls-files, so they are
+  # out of scope for this gate. If they are ever brought in-scope, re-add
+  # allow-exceptions for media-credit billing metadata (Attributes: "billing"
+  # in plugin bundle.go files).
+  #
+  # The web cast view reads a credit's plugin-declared "billing" attribute, the
+  # cast order position (CORE-2503). Only that one file may name it, and only
+  # as the bare word: a line that still matches once the word is removed, or
+  # that names a billing portal/system/service-style compound, still fails.
+  case "$file" in
+    internal/web/app/src/areas/viewer/lib/people.ts) ;;
+    *) return 1 ;;
+  esac
+  if grep -qiE 'billing[-_ ](portal|system|service|ledger|provider|integration|webhook)' <<<"$line"; then
+    return 1
+  fi
+  ! perl -pe 's/\b_?billing\b//gi' <<<"$line" | grep -qiE "$pattern"
 }
 
 pattern='(entitlement|stripe|premium|payment[-_ ]source|purchase[-_ ]state|beamfall[-_ ]account|account[-_ ](service|portal|deletion|identity|ledger|token|id)|Account(Service|Portal|Ledger|Token|ID|Id)|billing|billing[-_ ](portal|system|service|ledger|provider|integration|webhook)|checkout[-_ ](entry|flow|session|portal)|web[-_ ]checkout|license[-_ ]key|licensed[-_ ]feature|licensing[-_ ](code|logic)|license[-_ ]check)'

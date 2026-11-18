@@ -139,4 +139,32 @@ GO
 git -C "$TMP" add internal/server/tunnel_notes.go
 "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
 
+# CORE-2503: the web cast view may read a credit's "billing" order attribute,
+# in that one file only and never beside another commerce symbol.
+mkdir -p "$TMP/internal/web/app/src/areas/viewer/lib"
+cat >"$TMP/internal/web/app/src/areas/viewer/lib/people.ts" <<'TS'
+const cast = attribute(credit, "billing") !== "";
+const { billing: _billing, ...crew } = attributes;
+TS
+git -C "$TMP" add internal/web/app/src/areas/viewer/lib/people.ts
+"$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
+for bad in 'const portal = "billing-portal";' 'const billing = stripe;'; do
+  printf '%s\n' "$bad" >>"$TMP/internal/web/app/src/areas/viewer/lib/people.ts"
+  git -C "$TMP" add internal/web/app/src/areas/viewer/lib/people.ts
+  if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+    echo "expected people.ts line to fail: $bad" >&2
+    exit 1
+  fi
+  sed -i.bak '$d' "$TMP/internal/web/app/src/areas/viewer/lib/people.ts"
+  rm -f "$TMP/internal/web/app/src/areas/viewer/lib/people.ts.bak"
+done
+cp "$TMP/internal/web/app/src/areas/viewer/lib/people.ts" "$TMP/internal/server/people.ts"
+git -C "$TMP" add internal/server/people.ts
+if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+  echo "expected billing outside the cast view to fail" >&2
+  exit 1
+fi
+git -C "$TMP" rm -q --cached internal/server/people.ts
+rm "$TMP/internal/server/people.ts"
+
 echo "agpl-forbidden-symbols_test: OK"
