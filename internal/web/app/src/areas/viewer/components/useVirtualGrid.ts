@@ -12,9 +12,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // overscan rows above and below, and a hard cap on rendered items so a giant
 // grid never mounts an unbounded card count in one frame.
 export const VIRTUAL_GRID_MIN_ITEMS = 40;
-const VIRTUAL_GRID_MAX_ITEMS = 72;
+// Sized for the Small poster setting (110px columns), which fits about twice
+// as many cards per row as Large.
+const VIRTUAL_GRID_MAX_ITEMS = 120;
 const VIRTUAL_GRID_OVERSCAN_ROWS = 2;
-// The grid's CSS column floor (chrome.css .bf-grid minmax(150px, 1fr)).
+// Fallback column floor before the grid template is measured: the Large poster
+// size (chrome.css --bf-grid-min). Smaller sizes are read from the template.
 const VIRTUAL_GRID_COLUMN_MIN = 150;
 // A sane row-height fallback before a card has been measured.
 const VIRTUAL_GRID_FALLBACK_ROW_HEIGHT = 300;

@@ -12,6 +12,7 @@ import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
 import { LibrarySidebar } from "./LibrarySidebar";
+import { usePosterSizeRoot } from "./posterSize";
 import { MAIN_CONTENT_ID, SkipLink } from "./SkipLink";
 import { useSidebarPrefs } from "./sidebarPrefs";
 import { NOTIFICATION_BADGE_LIMIT, useUnreadNotifications } from "./unreadNotifications";
@@ -81,6 +82,7 @@ export function AppShell({
       : null,
   );
   const beamfallHost = getBeamfallHost();
+  usePosterSizeRoot();
   const sidebarId = useId();
   const phone = usePhoneLayout();
   const [collapsed, setCollapsed] = useState(readCollapsedPref);
