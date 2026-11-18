@@ -76,7 +76,9 @@ file that breaks any rule, does not parse or is missing admits no dev builds at 
 says why. A dev record never replaces a build the release linked in. A device admits a dev build the first
 time only with the exact artifact hash in the record; after that, rebuilding the same build ID on
 that device needs no change to the file. A new device, or a new build ID (a version bump), needs
-its record listed once. Delete the file, or empty its `builds`, to revoke every dev build.
+its record listed once. Removing a record pauses the devices that used it: listing the same build
+ID again lets them back in. To shut a device out for good, unpair it. Delete the file, or empty
+its `builds`, to stop admitting every dev build.
 
 Each refused handshake logs `compatibility handshake refused` with the device, build ID,
 artifact hash and the server-side finding (for example `unknown-build` or

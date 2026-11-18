@@ -352,3 +352,24 @@ func findRecord(catalog BuildCatalog, buildID string) BuildRecord {
 	}
 	return BuildRecord{}
 }
+
+func TestDevRebuildDigestReportsOnlyARebuiltDevRecord(t *testing.T) {
+	catalog := testCatalog()
+	record := catalog.Builds[0]
+	rebuilt := ClientContract{BuildID: record.BuildID, ArtifactHash: testArtifactHash("rebuilt")}
+	exact := ClientContract{BuildID: record.BuildID, ArtifactHash: record.ArtifactHash}
+
+	if _, ok := catalog.DevRebuildDigest(rebuilt); ok {
+		t.Fatal("a release record reported a dev rebuild")
+	}
+	catalog.Builds[0].Dev = true
+	if got, ok := catalog.DevRebuildDigest(rebuilt); !ok || got != record.ArtifactHash {
+		t.Fatalf("DevRebuildDigest(rebuilt) = %q, %v; want %q, true", got, ok, record.ArtifactHash)
+	}
+	if _, ok := catalog.DevRebuildDigest(exact); ok {
+		t.Fatal("an exact digest reported a dev rebuild")
+	}
+	if _, ok := catalog.DevRebuildDigest(ClientContract{BuildID: "unknown", ArtifactHash: rebuilt.ArtifactHash}); ok {
+		t.Fatal("an unknown build reported a dev rebuild")
+	}
+}

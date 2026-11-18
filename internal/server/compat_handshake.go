@@ -82,6 +82,7 @@ func (s *Server) compatHandshake(w http.ResponseWriter, r *http.Request) {
 	if accepted {
 		s.compat.clearRefused(subject)
 		response.DecisionID = record.DecisionID
+		s.logDevRebuildHandshake(r.Context(), scope, contract)
 	} else {
 		s.compat.markRefused(subject)
 		s.logRefusedHandshake(r.Context(), scope, contract, derivedSurface, credentialClass == compatCredentialWeb, result)
@@ -150,6 +151,23 @@ func (s *Server) logRefusedHandshake(ctx context.Context, scope auth.Scope, cont
 		"decision", string(result.Decision),
 		"reason", string(result.ReasonCode),
 		"finding", finding)
+}
+
+// logDevRebuildHandshake records a handshake admitted through the CORE-2573
+// dev-rebuild exception: a device already mapped to an operator dev build
+// presenting a digest the dev-build file does not name. It keeps the
+// mismatch in the operator's audit trail (ADR-0063 compatibility evidence).
+func (s *Server) logDevRebuildHandshake(ctx context.Context, scope auth.Scope, contract capabilities.ClientContract) {
+	cataloged, ok := s.compat.snapshot().Builds.DevRebuildDigest(contract)
+	if !ok {
+		return
+	}
+	slog.InfoContext(ctx, "compatibility handshake admitted a rebuilt dev build",
+		"device", scope.DeviceID,
+		"surface", contract.Surface,
+		"build", contract.BuildID,
+		"artifactHash", artifactHashPrefix(contract.ArtifactHash),
+		"catalogedArtifactHash", artifactHashPrefix(cataloged))
 }
 
 func compatHasCredential(r *http.Request) bool {

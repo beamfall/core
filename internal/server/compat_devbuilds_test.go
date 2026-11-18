@@ -341,9 +341,15 @@ func TestRuntimeDevBuildRebuildKeepsItsDevice(t *testing.T) {
 	malformed.ArtifactHash = "not-a-digest"
 	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, malformed, device.authorize))
 
-	// Removing the record revokes the mapped device too, without a restart.
+	// Removing the record suspends the mapped device too, without a restart.
 	h.remove()
 	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, rebuilt, device.authorize))
+
+	// The mapping outlives the record: re-listing the build id, even with
+	// another digest, restores the device. Lasting revocation is unpairing the
+	// device or revoking the build.
+	h.writeBuilds(devViewerBuild("relisted"))
+	assertServable(t, compatHandshakeRecord(t, h.srv, rebuilt, device.authorize))
 }
 
 // TestReleaseBuildDigestStaysExactForAMappedDevice covers the boundary of the

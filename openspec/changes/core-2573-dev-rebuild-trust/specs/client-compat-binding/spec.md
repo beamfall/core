@@ -28,3 +28,9 @@ require the record's exact digest, and a release record SHALL always require its
 
 - **WHEN** the operator removes the `-dev` record from the dev-build file
 - **THEN** the mapped device's next handshake is refused, without a restart
+- **AND** listing the same build id again, with any digest, restores that device
+
+#### Scenario: Rebuild is audited
+
+- **WHEN** a handshake is admitted through the dev-rebuild exception
+- **THEN** the server logs the device, build id and both digest prefixes, and nothing new reaches the wire

@@ -197,6 +197,18 @@ func (c BuildCatalog) match(buildID string) []BuildRecord {
 	return matched
 }
 
+// DevRebuildDigest returns the cataloged digest of the dev record contract
+// names when the presented digest differs from it, so a caller can audit a
+// handshake admitted through the CORE-2573 dev-rebuild exception. It reports
+// false for release records, unknown or ambiguous builds, and exact matches.
+func (c BuildCatalog) DevRebuildDigest(contract ClientContract) (string, bool) {
+	matched := c.match(strings.TrimSpace(contract.BuildID))
+	if len(matched) != 1 || !matched[0].Dev || artifactHashMatches(contract.ArtifactHash, matched[0].ArtifactHash) {
+		return "", false
+	}
+	return matched[0].ArtifactHash, true
+}
+
 // Clone returns a deep copy so an installed catalog cannot be mutated through
 // a shared slice or map.
 func (c BuildCatalog) Clone() BuildCatalog {

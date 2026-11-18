@@ -29,8 +29,12 @@ ADR-0063 already treats the artifact digest as a bearer claim and accepts the re
 substituted artifact presenting a known digest while enrollment is limited to operator-managed
 devices. A device that holds the mapping could present the cataloged digest anyway, so relaxing the
 digest for that device's `-dev` build grants nothing beyond the device credential the operator
-paired. Unknown and third-party builds stay refused, release records stay exact, and removing the
-record from the file revokes every device within the file's re-read interval, with no restart.
+paired. Unknown and third-party builds stay refused and release records stay exact. Removing the
+record from the file refuses every device using it within the file's re-read interval, with no
+restart. The device mapping outlives the record, so listing the same build id again restores
+those devices. Lasting revocation is unpairing the device. A handshake admitted through the
+exception logs `compatibility handshake admitted a rebuilt dev build` with both digest prefixes, so
+the mismatch stays in the operator's audit trail.
 
 ## Non-goals
 

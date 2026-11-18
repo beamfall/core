@@ -101,5 +101,7 @@ advances the decision generation. Every dev record goes through the provenance c
 exception (CORE-2573): once a device has verified a dev build with the listed artifact hash and
 holds the mapping to it, that device keeps working after the build is rebuilt with a new hash.
 Any other hash mismatch is still refused: a device without the mapping, a new build ID, a
-malformed hash or any release record. A missing or invalid file admits no dev builds.
+malformed hash or any release record. The device's mapping outlives the record: removing the
+record refuses the device until the same build ID is listed again, with any hash. To shut a device
+out for good, unpair it. A missing or invalid file admits no dev builds.
 Release builds and the linked catalog are unaffected; leave the variable unset in production.

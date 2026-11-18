@@ -223,8 +223,9 @@ func validateFirstPartyBuild(record BuildRecord) error {
 }
 
 // EnrollmentBindingFor returns the exact enrollment-to-build mapping an
-// enrollment may record for contract. It runs the unchanged
-// VerifyBuildProvenance against the catalog plus that one candidate mapping, so
+// enrollment may record for contract. It runs provenance verification, without
+// the CORE-2573 dev-rebuild exception, against the catalog plus that one
+// candidate mapping, so
 // every other check (known usable record, surface, digest, rollback floor, role
 // and distribution) must already pass; the only thing supplied is the mapping
 // this enrollment is creating. It never grants a mapping to another enrollment.

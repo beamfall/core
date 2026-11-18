@@ -67,8 +67,9 @@ func validateDevBuild(record BuildRecord) error {
 // build id the catalog already carries is skipped and reported in shadowed, so
 // a release build keeps exactly the record its release linked. Rollback floors
 // and enrollment bindings are untouched; every dev record still goes through
-// the unchanged VerifyBuildProvenance (digest, surface, floor, role,
-// distribution and exact enrollment mapping).
+// VerifyBuildProvenance (digest, surface, floor, role, distribution and exact
+// enrollment mapping), whose only dev exception is a rebuilt digest on an
+// enrollment already mapped to the build (CORE-2573).
 func (c BuildCatalog) WithDevBuilds(dev BuildCatalog) (merged BuildCatalog, shadowed []string) {
 	merged = c.Clone()
 	known := make(map[string]struct{}, len(merged.Builds))
