@@ -544,7 +544,7 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // (deterministic per frame) — no state stored across frames except via feedbackTrail.
 //
 // param0 Density      → particle count (maps to 56..80)
-// param1 Burst        → outward explosion radius on bassImpact (0.2..0.5 scale)
+// param1 Burst        → outward explosion radius on bassImpact (0.06..0.15 scale)
 // param2 Trail Length → feedbackTrail zoom factor (trail persistence)
 
 vec3 visual(vec2 uv, VisualUniforms u) {
@@ -552,7 +552,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- param interpretation ----
     int   K          = int(mix(56.0, 80.0, clamp(u.param0, 0.0, 1.0)));   // Density
-    float burstScale = mix(0.2, 0.5, clamp(u.param1, 0.0, 1.0));          // Burst
+    float burstScale = mix(0.06, 0.15, clamp(u.param1, 0.0, 1.0));        // Burst
     float trailZoom  = mix(0.003, 0.018, clamp(u.param2, 0.0, 1.0));      // Trail Length
 
     // ---- attractor ring radii: 3 spectral bands (bass/mid/treble) ----
@@ -649,16 +649,15 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float along = dot(delta, vhat);
         float perp  = dot(delta, vec2(-vhat.y, vhat.x));
         float streakLen = pSize * (2.5 + 3.0 * energy + 2.0 * u.treble * tierFrac);
-        float streakGlow = 0.0;
-        if (along < 0.0) {  // only behind particle
-            float perpG  = exp(-(perp * perp) / pSizeSq);
-            float alongG = exp(-(along * along) / max(streakLen * streakLen, 1e-8));
-            streakGlow   = perpG * alongG * 0.42;
-        }
+        // Behind the particle only, faded in over its core: a hard along < 0 cut left a seam that the
+        // feedback trail smeared into wedges.
+        float perpG  = exp(-(perp * perp) / pSizeSq);
+        float alongG = exp(-(along * along) / max(streakLen * streakLen, 1e-8));
+        float streakGlow = perpG * alongG * 0.42 * (1.0 - smoothstep(-pSize, 0.0, along));
 
         // ---- brightness ----
-        float bassBeat    = (tierFrac < 0.1) ? (1.0 + u.beat * 5.0 + u.bassImpact * 4.0) : (1.0 + u.beat * 1.6);
-        float trebleFlash = (tierFrac > 0.9) ? (1.0 + u.onset * 3.5 + u.treble * 2.5) : 1.0;
+        float bassBeat    = (tierFrac < 0.1) ? (1.0 + u.beat * 0.6 + u.bassImpact * 0.4) : (1.0 + u.beat * 0.3);
+        float trebleFlash = (tierFrac > 0.9) ? (1.0 + u.onset * 0.6 + u.treble * 0.5) : 1.0;
         float brightness  = (0.4 + 1.6 * energy) * bassBeat * trebleFlash * visibilityFade;
         float hdrCap = (tierFrac < 0.1) ? 6.0 : 3.5;
         brightness = min(brightness, hdrCap);
@@ -673,7 +672,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         // Bass embers: tint orange/red
         if (tierFrac < 0.1) {
             vec3 emberCol = palVisual(0.02 + 0.10 * h5, u);  // orange-red range
-            pCol = mix(pCol, emberCol, 0.70 + 0.25 * u.bassImpact);
+            pCol = mix(pCol, emberCol, 0.35);
         }
         // Treble sparks: tint cyan-white
         if (tierFrac > 0.9) {
@@ -687,7 +686,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     }
 
     // ---- feedback trails: small zoom gives motion persistence ----
-    float trailRot = 0.002 * u.beat + 0.001 * u.bassImpact;
+    // No beat-driven rotation: turning the whole trail field on each beat changed every pixel at once.
+    float trailRot = 0.0;
     col = feedbackTrail(col, uv, u.trailDecay, trailZoom, trailRot);
 
     return col; // LINEAR HDR — post chain tonemaps

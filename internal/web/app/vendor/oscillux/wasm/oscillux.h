@@ -108,9 +108,9 @@ extern "C" {
 /* Release version of this header; equals the crate version in Cargo.toml. */
 #define OSCILLUX_VERSION_MAJOR 0u
 #define OSCILLUX_VERSION_MINOR 2u
-#define OSCILLUX_VERSION_PATCH 7u
+#define OSCILLUX_VERSION_PATCH 8u
 /* OSCILLUX_VERSION_MAJOR << 16 | OSCILLUX_VERSION_MINOR << 8 | OSCILLUX_VERSION_PATCH */
-#define OSCILLUX_VERSION 519u
+#define OSCILLUX_VERSION 520u
 
 /* Status: success. */
 #define OSCILLUX_OK 0
