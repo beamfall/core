@@ -125,9 +125,9 @@ describe("ADR-0100 web a11y conformance — Viewer (browse)", () => {
     const { container } = renderViewerShelf();
     // Section heading carries real h2 semantics; the card grid is a labelled list.
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("Continue Watching");
-    // Each card is a reachable, labelled button (accessible name = its title).
-    expect(screen.getByRole("button", { name: /^Alpha/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: /^Bravo/ })).toBeVisible();
+    // Each card is a reachable, labelled link (accessible name = its title; CORE-2510 card anchors).
+    expect(screen.getByRole("link", { name: /^Alpha/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /^Bravo/ })).toBeVisible();
     await expectNoAxeViolations(container);
     expectNoPositiveTabindex(container);
   });
