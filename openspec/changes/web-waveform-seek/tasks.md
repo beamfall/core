@@ -1,14 +1,14 @@
 ## 1. Server
 
-- [ ] 1.1 Advertise `assets.waveform` for every audio-class playback decision
-- [ ] 1.2 Generate a missing waveform on demand in the asset route (single-flight, bounded)
-- [ ] 1.3 Go tests for both
+- [x] 1.1 Advertise `assets.waveform` for every audio-class playback decision
+- [x] 1.2 Generate a missing waveform on demand in the asset route (single-flight, bounded)
+- [x] 1.3 Go tests for both
 
 ## 2. Web
 
-- [ ] 2.1 `waveform` on `PlaybackAssets`; peak loader with per-Media cache and next-track prefetch
-- [ ] 2.2 Waveform seek bar in the player transport: played/unplayed, plain-bar fallback, 375px
-- [ ] 2.3 vitest: peaks drawn, fallback, slider role kept, no reset between tracks
+- [x] 2.1 `waveform` on `PlaybackAssets`; peak loader with per-Media cache and next-track prefetch
+- [x] 2.2 Waveform seek bar in the player transport: played/unplayed, plain-bar fallback, 375px
+- [x] 2.3 vitest: peaks drawn, fallback, slider role kept, no reset between tracks
 
 ## 3. Follow-ups (not in this change)
 

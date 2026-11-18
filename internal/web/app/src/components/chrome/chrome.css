@@ -1889,6 +1889,102 @@
   outline-offset: 4px;
 }
 
+/* Music seek bar (CORE-2401): the track's waveform replaces the hairline.
+ * Unplayed peaks sit underneath; the played peaks are clipped at the
+ * playhead. The slider, its thumb and keyboard seeking stay as they are. */
+.bf-scrub-wrap.has-waveform .bf-scrubber-visual,
+.bf-scrub-wrap.has-waveform .bf-slider-control {
+  min-height: 48px;
+}
+
+.bf-scrub-wrap.has-waveform .bf-slider-track,
+.bf-scrub-wrap.has-waveform:hover .bf-slider-track,
+.bf-scrub-wrap.has-waveform:has(:focus-visible) .bf-slider-track,
+.bf-scrub-wrap.has-waveform:has([data-dragging]) .bf-slider-track {
+  height: 40px;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+}
+
+.bf-scrub-wrap.has-waveform .bf-slider-buffered,
+.bf-scrub-wrap.has-waveform .bf-slider-indicator {
+  opacity: 0;
+}
+
+.bf-scrub-wrap.has-waveform .bf-slider-hover {
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--on-scrim) 8%, transparent);
+}
+
+.bf-waveform {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bf-waveform-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.bf-waveform-layer.is-unplayed {
+  fill: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--on-scrim) 78%, var(--on-scrim-muted)) 34%,
+    transparent
+  );
+}
+
+.bf-waveform-layer.is-played {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 45%, transparent));
+}
+
+.bf-waveform.is-placeholder .bf-waveform-layer.is-played {
+  fill: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+
+/* The thumb becomes a slim playhead the height of the waveform. */
+.bf-scrub-wrap.has-waveform .bf-slider-thumb {
+  width: 12px;
+  height: 44px;
+}
+
+.bf-scrub-wrap.has-waveform .bf-slider-thumb::after {
+  inset: 0 5px;
+  border-radius: 1px;
+  box-shadow: 0 0 10px color-mix(in oklab, var(--accent) 70%, transparent);
+  scale: 1 0.6;
+}
+
+.bf-scrub-wrap.has-waveform:hover .bf-slider-thumb::after,
+.bf-scrub-wrap.has-waveform:has(:focus-visible) .bf-slider-thumb::after,
+.bf-scrub-wrap.has-waveform:has([data-dragging]) .bf-slider-thumb::after {
+  scale: 1;
+}
+
+@media (max-width: 640px) {
+  .bf-scrub-wrap.has-waveform .bf-scrubber-visual,
+  .bf-scrub-wrap.has-waveform .bf-slider-control {
+    min-height: 40px;
+  }
+
+  .bf-scrub-wrap.has-waveform .bf-slider-track,
+  .bf-scrub-wrap.has-waveform:hover .bf-slider-track,
+  .bf-scrub-wrap.has-waveform:has(:focus-visible) .bf-slider-track,
+  .bf-scrub-wrap.has-waveform:has([data-dragging]) .bf-slider-track {
+    height: 32px;
+  }
+
+  .bf-scrub-wrap.has-waveform .bf-slider-thumb {
+    height: 36px;
+  }
+}
+
 .bf-marker-strip {
   position: absolute;
   inset: 0;

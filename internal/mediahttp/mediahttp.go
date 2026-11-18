@@ -338,6 +338,11 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown asset", http.StatusNotFound)
 		return
 	}
+	if name == genassets.WaveformName {
+		// Audio decisions advertise the waveform before the sweep reaches the
+		// file, so the first fetch generates it (CORE-2401).
+		h.assets.EnsureWaveform(r.Context(), grant.MediaID, file.ContentFingerprint)
+	}
 	path, err := h.assets.AssetPath(file.ContentFingerprint, name)
 	if err != nil {
 		http.Error(w, "unknown asset", http.StatusNotFound)

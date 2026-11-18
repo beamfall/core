@@ -3404,6 +3404,12 @@ func (l playbackAssetsLocator) WaveformAsset(fingerprint string) (string, bool) 
 	return l.service.WaveformAsset(fingerprint)
 }
 
+// WaveformOnDemandAsset names the waveform the asset route generates on its
+// first fetch (CORE-2401), so audio decisions advertise it before the sweep.
+func (l playbackAssetsLocator) WaveformOnDemandAsset() string {
+	return genassets.WaveformName
+}
+
 // BeatGridAsset and SyncLanesAsset keep the reserved wire fields always absent:
 // core no longer analyses beats; clients compute them on device through
 // Oscillux (ADR-0228).
