@@ -10,8 +10,7 @@ Groups files of one title that differ only in resolution or edition under one Me
 A scan SHALL attach a parsed, non-part, non-image file to the Media of another file from the same
 directory and library when both parse to the same class, title, year, sequence and index, storing it
 as a Version under the parser's version label. The other file MAY be one this scan imported or one an
-earlier scan cataloged. It SHALL import the file as its own Media when that Version slot is already
-held by another live file or when the file's content already belongs to another Media.
+earlier scan cataloged.
 
 #### Scenario: Two resolutions of one title
 
@@ -35,6 +34,92 @@ held by another live file or when the file's content already belongs to another 
 
 - **WHEN** two files in one directory parse to different titles or years
 - **THEN** the scan creates one Media for each
+
+### Requirement: Unlabelled pairs use resolution class then container labels
+
+When neither file carries a parsed version label, the scan SHALL label both from the first of these
+that tells them apart and leaves both slots free: the resolution class of the probed frame, then the
+container; the file that held the default Version moves to its label.
+
+#### Scenario: Two unlabelled copies of one title
+
+- **WHEN** a directory holds `Disclosure.Day.2026.REPACK.1080p.Remux.mkv`, probed at 1920x800, and
+  `Disclosure.Day.2026.2160p.WEB-DL.mkv`, probed at 3840x1600, and the parser reports one title and
+  year and no label for both
+- **THEN** the scan creates one Media with two Versions labelled `1080p` and `2160p`, and a rescan
+  keeps those labels
+
+#### Scenario: Unprobed unlabelled copies
+
+- **WHEN** two unlabelled copies of one title have no probed frame size and are `.mkv` and `.mp4`
+- **THEN** their Versions are labelled `MKV` and `MP4`; two copies in one container stay separate
+  Media
+
+### Requirement: Name-only differences stay separate
+
+Files that differ only by name SHALL stay separate Media, since they may be different items.
+
+#### Scenario: Names alone do not group files
+
+- **WHEN** two files of one parsed title differ only by name
+- **THEN** the scan keeps them as separate Media
+
+### Requirement: Further unlabelled copies use the existing label kind
+
+A further unlabelled copy SHALL join only under a free label of the kind the Media's Versions are
+all labelled by.
+
+#### Scenario: Another resolution joins a labelled Media
+
+- **WHEN** a Media has Versions labelled by resolution class as `1080p` and `2160p`, and a further
+  unlabelled copy has a probed resolution class of `720p`
+- **THEN** the copy joins as the `720p` Version if that slot is free
+
+### Requirement: Unlabelled overwrites keep their Version slot
+
+New bytes without a parsed label written over a Version's file SHALL keep that Version's slot.
+
+#### Scenario: New bytes replace a Version file
+
+- **WHEN** new bytes without a parsed label overwrite the file in a Media's `1080p` Version
+- **THEN** the next scan keeps the file in that Version's slot
+
+### Requirement: Missing Version labels stay reserved
+
+A missing Version's label SHALL stay reserved for its return.
+
+#### Scenario: A missing Version reserves its label
+
+- **WHEN** a Media's `1080p` Version is missing and a different unlabelled copy needs that label
+- **THEN** the scan keeps the `1080p` label reserved for the missing Version's return
+
+### Requirement: Stored labels survive later scans
+
+A file whose label is stored SHALL keep it on later scans.
+
+#### Scenario: A rescan preserves a stored label
+
+- **WHEN** a file has a stored Version label and is scanned again
+- **THEN** the file keeps its stored label
+
+### Requirement: Files with no free Version slot import as their own Media
+
+The scan SHALL import the file as its own Media when no such slot is free.
+
+#### Scenario: All eligible labels are occupied
+
+- **WHEN** an unlabelled copy has no free slot under the label rules above
+- **THEN** the scan imports the file as its own Media
+
+### Requirement: Content belonging to another Media imports as its own Media
+
+The scan SHALL import the file as its own Media when the file's content already belongs to another
+Media.
+
+#### Scenario: Content already belongs to another Media
+
+- **WHEN** a file otherwise eligible to join a Media has content that already belongs to another Media
+- **THEN** the scan imports the file as its own Media
 
 ### Requirement: A Version copied into another library detaches
 
@@ -139,3 +224,67 @@ choice per profile and item, sending it as `selectedVersion` on the next playbac
 
 - **WHEN** a viewer picks the `Extended` Version and later plays the item again
 - **THEN** the request carries the `Extended` Version's id and the player starts that Version
+
+### Requirement: A rescan merges an already-split copy into its title's Media
+
+When a scan finds cataloged files of one title in one directory, none with a parsed version label,
+on more than one live Media, it SHALL merge them. The Media with the most files, or the earliest
+imported on a tie, survives. Each other Media whose single live file is unlabelled SHALL have that
+file moved onto the survivor under the derived label a fresh scan would give it, and SHALL move to
+the trash in the same journaled, undoable batch. A Media no derived label can place SHALL stay as it
+is.
+
+#### Scenario: A split from an earlier scan heals on rescan
+
+- **WHEN** an earlier scan imported `Disclosure.Day.2026.REPACK.1080p.Remux.mkv` (1920x800) and
+  `Disclosure.Day.2026.2160p.WEB-DL.mkv` (3840x1600) as two Media, and the library is rescanned
+- **THEN** one Media holds both files as Versions labelled `1080p` and `2160p`, and the other Media
+  is in the trash
+
+#### Scenario: Undo restores the split
+
+- **WHEN** the merge batch is undone
+- **THEN** each Media again holds its own unlabelled file, the merged Media leaves the trash, and a
+  later rescan leaves the two Media apart
+
+### Requirement: A version merge keeps user state and stays within its limits
+
+A version merge SHALL copy the merged Media's Collection membership, tags, playback progress,
+ratings, favourites and watchlist entries to the survivor only where the survivor has none, and SHALL
+point its queue entries at the survivor unless the survivor is already queued. It SHALL emit
+`media.deleted` for each merged Media and `media.updated` for the survivor. It SHALL NOT run in an
+encrypted library or while trash is disabled.
+
+#### Scenario: User state survives the merge
+
+- **WHEN** a profile has progress, a rating and a queue entry on the merged Media and its own rating
+  on the survivor
+- **THEN** the survivor shows the merged Media's progress and queue entry and keeps its own rating
+
+#### Scenario: Encrypted library
+
+- **WHEN** the split is in an encrypted library
+- **THEN** the rescan leaves both Media as they are
+
+#### Scenario: Explicit Editions and Extras stay apart
+
+- **WHEN** the split copies are linked by an `edition-of` or `extra-of` relation, or one is an Extra
+- **THEN** the rescan leaves both Media as they are
+
+#### Scenario: Trash Restore of a merged copy
+
+- **WHEN** a user restores the merged Media from Trash while its merge batch is not undone
+- **THEN** the restore is refused with a message to undo the merge, and the survivor keeps the file
+
+#### Scenario: Undo from a scope that cannot see the merge
+
+- **WHEN** a caller whose Library scope hides the merged Media undoes the merge batch
+- **THEN** the undo is refused as if the batch did not exist, and the batch stays undoable from a
+  scope that can see it
+
+#### Scenario: Undo of an older merge that trashed the merged copy
+
+- **WHEN** a duplicate merge trashed a Media, the Media was restored and later merged as a Version,
+  and the older duplicate merge is undone while the version merge is not
+- **THEN** that undo is refused with a message to undo the version merge first, and the Media stays
+  in the trash

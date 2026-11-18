@@ -248,3 +248,88 @@ row, and SHALL NOT show the row when none are returned or the read fails.
 
 - **WHEN** `relatedMedia` returns no Media for the item
 - **THEN** the page shows no Related row
+
+### Requirement: Ordered item fields on the Media read
+
+The `media(id)` read SHALL carry the item's stored `sequence` and `index` ordinals, a `headline`
+locale map rendered from the owning plugin's MediaSubtitle segments that name no ordinal
+placeholder, the `classLabel` the plugin declares for the item's class, and the stored
+`videoWidth` and `videoHeight`. Each SHALL be omitted when unknown.
+
+#### Scenario: Ordered item with a stored title
+
+- **WHEN** an item stores sequence 1, index 3 and the field the plugin's title segment names, and
+  its class has a declared label
+- **THEN** `media(id)` returns sequence 1, index 3, that title as `headline` and the class label
+
+### Requirement: Ordered item hero
+
+For an item with a container credit and an `index`, the page SHALL link the grouping above the
+nearest container first, then show a position line of the nearest container's kind name and the
+item's `sequence`, linked to that container, and the item's class label and `index`, and SHALL use
+the `headline` as the H1, falling back to the title. The hero SHALL use the item's `thumb` artwork
+in a wide frame when present, and the poster otherwise.
+
+#### Scenario: Ordered item with a headline
+
+- **WHEN** the item is credited to container "Part Two" of kind "Part", grouped under "The Whole",
+  with sequence 2, index 5, class label "Chapter" and headline "Arrival"
+- **THEN** the page links "The Whole", shows "Part 2 · Chapter 5" with "Part 2" linking to the
+  container, and the H1 reads "Arrival"
+
+#### Scenario: No headline
+
+- **WHEN** the same item has no headline
+- **THEN** the H1 reads the item's title
+
+### Requirement: Air date and stream badges
+
+The facts row SHALL show the item's first date field as a date, the first Version's server
+resolution label as a resolution badge, an HDR badge when the first Version reports HDR, and the
+default audio track's codec and channel layout, each only when known.
+
+#### Scenario: A UHD HDR item
+
+- **WHEN** the item's first Version reports resolution `4K` and HDR10 and its default audio track is
+  E-AC-3 with 6 channels
+- **THEN** the facts row shows "4K", "HDR10" and "Dolby Digital Plus 5.1"
+
+### Requirement: More in the nearest container
+
+For an item in an ordered container, the page SHALL show a rail headed "More in" and the nearest
+container's title listing that container's other items in order, and the More with and Related rows
+SHALL leave out that container's items.
+
+#### Scenario: Container rail replaces repeats
+
+- **WHEN** the item's container holds m1, m2 and m3 and the page shows m1, whose first billed person
+  also appears in m2
+- **THEN** a "More in" rail lists m2 and m3 and the More with row does not list m2
+
+### Requirement: Grouping found without an item count
+
+When no related Entity of the nearest container qualifies by its item count, the page SHALL take
+the one related Entity of another kind with the container archetype as the grouping above it.
+
+#### Scenario: Grouping without a count
+
+- **WHEN** the nearest container relates to one container-archetype Entity of another kind that
+  reports no item count
+- **THEN** the page links that Entity before the container
+
+### Requirement: Resolution and HDR badges
+
+Each Version listed by `mediaTracks` SHALL carry the resolution label of its stored frame size when
+that size is known. The web Media detail page SHALL show the shown Version's resolution label and,
+when the Version is HDR, its HDR format (HDR10, HDR10+, HLG or Dolby Vision) as badges, and SHALL
+show no badge for an unknown resolution or an SDR Version.
+
+#### Scenario: 4K Dolby Vision title
+
+- **WHEN** a title's only Version is 3840x2160 Dolby Vision
+- **THEN** the detail page shows `4K` and `Dolby Vision` badges
+
+#### Scenario: Unknown frame size
+
+- **WHEN** the Version's frame size is not stored
+- **THEN** no resolution badge is shown
