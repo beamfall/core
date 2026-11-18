@@ -20,7 +20,7 @@ const MEDIA_RELATIONS_QUERY =
   "query MediaRelations($mediaID: String!, $relation: String!) { mediaRelations(mediaID: $mediaID, relation: $relation) { locked media { id title year durationSeconds mediaClass artworkSlots } } }";
 
 const MEDIA_TRACKS_QUERY =
-  "query MediaTracks($mediaID: String!) { mediaTracks(mediaID: $mediaID) { versions { id label videoCodec hdr audioTracks { streamIndex codec language channels default commentary visualImpaired } captionTracks { id format streamIndex language forced sdh visualImpaired commentary title } } } }";
+  "query MediaTracks($mediaID: String!) { mediaTracks(mediaID: $mediaID) { versions { id label videoCodec hdr resolution audioTracks { streamIndex codec language channels default commentary visualImpaired } captionTracks { id format streamIndex language forced sdh visualImpaired commentary title } } } }";
 
 /** The server answer for an id that is missing or hidden from this Profile (no oracle). */
 const UNKNOWN_MEDIA = "unknown media";
@@ -108,6 +108,8 @@ export interface MediaTrackVersion {
   label: string;
   videoCodec?: string;
   hdr?: string;
+  /** "8K" | "4K" | "1080p" | "720p" | "SD"; absent when the frame size is unknown (CORE-2485). */
+  resolution?: string;
   audioTracks: PlaybackAudioTrack[];
   captionTracks: PlaybackCaptionTrack[];
 }

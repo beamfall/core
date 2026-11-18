@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { hdrName, type PlaybackInfo } from "./playback";
 import {
   autoSkipSegmentAt,
   autoSkipSegmentKey,
   buildChapterList,
   buildRenditionMenuModel,
+  buildRouteDetailModel,
   chapterSeekTarget,
   playbackDurationSeconds,
   renditionIndex,
@@ -223,5 +225,45 @@ describe("playbackDurationSeconds (CORE-2314)", () => {
   it("never returns NaN or a negative length", () => {
     expect(playbackDurationSeconds(undefined, Number.NaN)).toBe(0);
     expect(playbackDurationSeconds(-5, Number.POSITIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe("resolution labels (CORE-2485)", () => {
+  it("names HDR formats the way players do", () => {
+    expect(hdrName("dolby-vision-p8")).toBe("Dolby Vision");
+    expect(hdrName("hdr10plus")).toBe("HDR10+");
+    expect(hdrName("hlg")).toBe("HLG");
+    expect(hdrName(undefined)).toBe("");
+  });
+
+  it("prefers the server's resolution class for a rendition", () => {
+    const hls = {
+      kind: "hls",
+      url: "/h",
+      renditions: [
+        { id: "a", height: 1600, resolution: "4K" },
+        { id: "b", height: 720 },
+      ],
+    };
+    const model = buildRenditionMenuModel({ stream: hls });
+    expect(model.options.map((o) => o.label)).toContain("4K");
+    expect(model.options.map((o) => o.label)).toContain("720p");
+  });
+
+  it("shows the source video's resolution, HDR and frame size", () => {
+    const info = {
+      streams: [],
+      sourceVideo: { resolution: "4K", width: 3840, height: 1600, hdr: "hdr10" },
+    } as unknown as PlaybackInfo;
+    const rows = buildRouteDetailModel({ stream: { kind: "direct-play", url: "/d" }, info });
+    expect(rows.find((r) => r.labelKey === "infoSource")?.value).toBe("4K · HDR10 · 3840×1600");
+  });
+
+  it("omits the source row when the server does not know the video", () => {
+    const rows = buildRouteDetailModel({
+      stream: { kind: "direct-play", url: "/d" },
+      info: { streams: [] } as unknown as PlaybackInfo,
+    });
+    expect(rows.some((r) => r.labelKey === "infoSource")).toBe(false);
   });
 });

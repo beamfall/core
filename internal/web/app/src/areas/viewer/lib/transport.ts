@@ -1,6 +1,12 @@
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import type { StringKey } from "@/strings";
-import type { PlaybackInfo, PlaybackNext, PlaybackRendition, PlaybackStream } from "./playback";
+import {
+  hdrName,
+  type PlaybackInfo,
+  type PlaybackNext,
+  type PlaybackRendition,
+  type PlaybackStream,
+} from "./playback";
 
 // Pure transport model helpers, ported faithfully from the vanilla
 // internal/web/static/player-transport.js. These are the browser-free core of
@@ -310,7 +316,12 @@ export function autoSkipSegmentAt(
         : finiteNumber(marker.endSeconds);
     if (endSeconds <= startSeconds) continue;
     if (current >= startSeconds && current < endSeconds) {
-      return { segmentKind, startSeconds, endSeconds, title: markerTitle(marker) };
+      return {
+        segmentKind,
+        startSeconds,
+        endSeconds,
+        title: markerTitle(marker),
+      };
     }
   }
   return null;
@@ -525,6 +536,9 @@ export function buildTrackMenuModel(
 // --- Quality menu + route detail (honest ABR, ADR-0010) -------------------
 
 function renditionLabel(rendition: PlaybackRendition | undefined): string {
+  if (rendition && rendition.resolution) {
+    return rendition.resolution;
+  }
   if (rendition && rendition.height) {
     return `${rendition.height}p`;
   }
@@ -746,6 +760,15 @@ export function buildRouteDetailModel({
           : labels.engineNativeHls || "Native HLS"
         : labels.engineNative || "Native player",
   });
+  // Source: the original video's resolution class, HDR format and frame size.
+  const source = info?.sourceVideo;
+  if (source) {
+    const size = source.width && source.height ? `${source.width}×${source.height}` : "";
+    const value = [source.resolution ?? "", hdrName(source.hdr), size].filter(Boolean).join(" · ");
+    if (value) {
+      rows.push({ labelKey: "infoSource", value });
+    }
+  }
   // Quality: the active rendition for transcodes; honest direct otherwise.
   const renditions = stream && Array.isArray(stream.renditions) ? stream.renditions : [];
   if (renditions.length) {
