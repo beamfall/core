@@ -7,13 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import { fetchEntity, fetchMediaForEntity } from "@/lib/graphql";
-import type {
-  EntityInfo,
-  Layout,
-  RelatedEntityGroup,
-  Section,
-  SourceItem,
-} from "@/lib/graphql/types";
+import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useSession, useViewerIdentity } from "@/lib/session";
 import {
@@ -25,6 +19,7 @@ import {
 import { ItemActions } from "../actions";
 import { useEngagementEpoch } from "../actions/engagementSync";
 import { CastRow } from "../components/CastRow";
+import { ContainerMediaRows } from "../components/ContainerMediaRows";
 import { DetailBackdrop, DetailOverview } from "../components/DetailStage";
 import { EntityMediaBrowse } from "../components/EntityMediaBrowse";
 import { findCachedSectionItem } from "../components/HydratedSection";
@@ -37,6 +32,16 @@ import { ViewerActions } from "../components/ViewerActions";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
 import { nextUpChild, nextUpChildContainer } from "../lib/containerChildren";
 import {
+  ancestorOf,
+  nextUpName,
+  siblingContainers,
+  similarContainers,
+  similarityGroups,
+  textOverview,
+  withoutItem,
+} from "../lib/containerPage";
+import { entityIdFromAddress, entityPath, useCanonicalEntityAddress } from "../lib/entityAddress";
+import {
   entityFacts,
   entitySummary,
   groupCredits,
@@ -46,7 +51,12 @@ import {
   withItemCount,
 } from "../lib/entityHero";
 import { entityLinkState, readEntityPreview } from "../lib/entityPreview";
-import { entityPeople, listensOverLayout, shuffled } from "../lib/listeningLayout";
+import {
+  entityPeople,
+  layoutListsOnlyMedia,
+  listensOverLayout,
+  shuffled,
+} from "../lib/listeningLayout";
 import { seeAllTargetFor } from "../lib/seeall";
 import { audioQueue, containerTrackRows, isAudioListing, playState } from "../lib/trackList";
 import { fieldDisplayValue, formatScore } from "../lib/viewerFields";
@@ -58,8 +68,13 @@ import "./entity-detail.css";
 const NO_ITEMS: SourceItem[] = [];
 const entityCacheKey = (id: string) => `entity:${id}`;
 const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
+/** How many person Entities a similar-container search reads through. */
+const SIMILAR_PEOPLE = 6;
+/** The most similar containers the rail lists. */
+const SIMILAR_LIMIT = 20;
 
-// Entity detail (/entity/:entityId), ported from the vanilla openEntity
+// Entity detail (/entity/:entityId, a bare ID or a readable address naming one,
+// CORE-2511), ported from the vanilla openEntity
 // (app.js). The header shows the Entity's declared fields (server-stringified
 // values). When the manifest carries a detail Layout for this Entity's Kind
 // (role: "detail", matching entityKind), its Sections render through the same
@@ -85,9 +100,10 @@ const entityMediaCacheKey = (id: string) => `entity-media:${id}`;
 // detail Layout's sections once its Kind is known from a preview, and the
 // related list whenever the manifest has no detail Layout at all.
 export function EntityPage() {
-  const { entityId = "" } = useParams();
+  const { entityId: address = "" } = useParams();
+  const entityId = entityIdFromAddress(address);
   const location = useLocation();
-  const { manifest } = useSession();
+  const { manifest, revealed } = useSession();
   const identity = useViewerIdentity();
   const displayLocale = useDisplayLocale();
   const t = useT();
@@ -112,12 +128,15 @@ export function EntityPage() {
   // The hero (CORE-2441): backdrop, poster, facts, overview and the fields
   // left over, all from what the Entity declares.
   const facts = entityFacts(entity);
-  const fields = heroFields(entity, facts.year);
-  const summary = entitySummary(entity);
+  // Without a summary, a free-text field reads as the clamped overview (CORE-2522).
+  const { overview: summary, fields } = textOverview(
+    entitySummary(entity),
+    heroFields(entity, facts.year),
+  );
   const backdrop = entity?.artworkSlots?.backdrop ?? "";
   // A person's headshot is its poster (CORE-2406).
   const photo = entity?.artworkSlots?.poster ?? "";
-  const groups = heroGroups(entity?.relatedEntities);
+  const heroGrouped = heroGroups(entity?.relatedEntities);
   const layouts = manifest?.layouts || [];
   const detailLayout: Layout | null =
     (kindHint && layouts.find((l) => l.role === "detail" && l.entityKind === kindHint)) || null;
@@ -232,6 +251,31 @@ export function EntityPage() {
     entity?.archetype === "container" && !trackOrder && fallback
       ? fallback.filter((item) => item.kind === "media").length
       : 0;
+  // A container with Media of its own names the container it sits under and
+  // drops that container's one-card rail (CORE-2510).
+  const ancestor = useMemo(
+    () =>
+      ancestorOf(entity, fallback ? fallback.filter((item) => item.kind === "media").length : 0),
+    [entity, fallback],
+  );
+  const groups = { ...heroGrouped, containers: withoutItem(heroGrouped.containers, ancestor?.id) };
+  // Whether the ancestor (and so the readable address) is settled.
+  const ancestorKnown = !!entity && (entity.archetype !== "container" || fallback !== null);
+  useCanonicalEntityAddress(entity, ancestor?.title, ancestorKnown);
+  const [ancestorEntity, setAncestorEntity] = useState<EntityInfo | null>(null);
+  const siblings = siblingContainers(
+    ancestorEntity?.id === ancestor?.id ? ancestorEntity : null,
+    entity,
+  );
+  const [similar, setSimilar] = useState<{ id: string; items: SourceItem[] } | null>(null);
+  const similarItems = similar?.id === entityId ? similar.items : [];
+  // A detail Layout that only lists a container's own video Media renders as
+  // rows that open each item's detail page (CORE-2510).
+  const listsOwnMedia = !!detailLayout && layoutListsOnlyMedia(detailLayout) && listens === false;
+  const mediaRows = listsOwnMedia && entity?.archetype === "container";
+  const rowsTitle = detailLayout
+    ? displayString(detailLayout.sections[0]?.title, displayLocale)
+    : "";
 
   // The Entity read carries related-Entity engagement, so it reloads with it.
   const engagementEpoch = useEngagementEpoch();
@@ -322,6 +366,60 @@ export function EntityPage() {
     };
   }, [childContainerID, engagementEpoch]);
 
+  // The ancestor's own read lists this container's siblings (CORE-2522).
+  const ancestorID = ancestor?.id ?? "";
+  useEffect(() => {
+    if (!ancestorID) return;
+    let alive = true;
+    const controller = new AbortController();
+    fetchEntity(ancestorID, controller.signal)
+      .then((read) => {
+        if (alive) setAncestorEntity(read);
+      })
+      .catch((err: unknown) => {
+        if (alive && isAuthRejection(err)) clearViewerCache();
+      });
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [ancestorID]);
+
+  // A top-level container finds similar ones through its category and person
+  // Entities (CORE-2512). Each read may fail on its own; the rail shows what
+  // the rest found.
+  const similarFrom =
+    entity?.archetype === "container" && entity.id === entityId && ancestorKnown && !ancestor
+      ? entity
+      : null;
+  useEffect(() => {
+    if (!similarFrom) return;
+    const through = similarityGroups(similarFrom);
+    const ids = [
+      ...through.filter((g) => g.archetype === "category").flatMap((g) => g.items),
+      ...through
+        .filter((g) => g.archetype === "person")
+        .flatMap((g) => g.items)
+        .slice(0, SIMILAR_PEOPLE),
+    ].map((item) => item.id);
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return;
+    let alive = true;
+    const controller = new AbortController();
+    Promise.allSettled(unique.map((id) => fetchEntity(id, controller.signal))).then((reads) => {
+      if (!alive) return;
+      const found = reads.map((read) => (read.status === "fulfilled" ? read.value : null));
+      setSimilar({
+        id: similarFrom.id,
+        items: similarContainers(similarFrom, found, SIMILAR_LIMIT),
+      });
+    });
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [similarFrom]);
+
   // Plays or resumes the next-up child with the container's order as the queue.
   function playNext() {
     if (!nextUp) return;
@@ -406,7 +504,43 @@ export function EntityPage() {
                 </div>
               )}
               <div className="bf-detail-copy">
+                {ancestor && (
+                  <p className="bf-entity-parent">
+                    <Link
+                      to={entityPath(ancestor.id, revealed ? undefined : { title: ancestor.title })}
+                      state={entityLinkState(ancestor, identity)}
+                    >
+                      {ancestor.title}
+                    </Link>
+                  </p>
+                )}
                 <h1 className="bf-page-title">{entity?.title ?? previewTitle}</h1>
+                {siblings && (
+                  <nav
+                    className="bf-entity-siblings"
+                    aria-label={
+                      displayString(siblings.group.kindDisplayName, displayLocale) ||
+                      siblings.group.kind
+                    }
+                  >
+                    <ul>
+                      {siblings.items.map((item) => (
+                        <li key={item.id}>
+                          <Link
+                            to={entityPath(
+                              item.id,
+                              revealed ? undefined : { title: item.title, parent: ancestor?.title },
+                            )}
+                            state={entityLinkState(item, identity)}
+                            aria-current={item.id === entityId ? "page" : undefined}
+                          >
+                            {item.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </nav>
+                )}
                 {people.length > 0 && (
                   <p className="bf-entity-people">
                     {people.map((person, index) => (
@@ -478,12 +612,11 @@ export function EntityPage() {
                     )}
                     <p className="bf-entity-next">
                       <span className="bf-entity-ondeck">{t("entityDetailOnDeck")}</span>
-                      <span>{t("entityDetailNextUp", { title: nextUp.item.title })}</span>
-                      {displayString(nextUp.item.subtitle, displayLocale) && (
-                        <span className="bf-entity-next-sub">
-                          {displayString(nextUp.item.subtitle, displayLocale)}
-                        </span>
-                      )}
+                      <span>
+                        {t("entityDetailNextUp", {
+                          title: nextUpName(nextUp.item, displayLocale),
+                        })}
+                      </span>
                     </p>
                   </div>
                 )}
@@ -507,12 +640,38 @@ export function EntityPage() {
           {groups.containers.map((group) => (
             <RelatedGroup
               key={group.kind}
-              group={group}
+              title={displayString(group.kindDisplayName, displayLocale) || group.kind}
               items={group.items.map((item) => withItemCount(item, itemCount, displayLocale))}
             />
           ))}
 
-          {detailLayout && listens === false ? (
+          {mediaRows ? (
+            fallback &&
+            (fallback.some((item) => item.kind === "media") ? (
+              <section className="bf-section flex flex-col gap-3">
+                {rowsTitle && (
+                  <h2 className="bf-section-title">
+                    <span>{rowsTitle}</span>
+                  </h2>
+                )}
+                <ContainerMediaRows
+                  items={fallback}
+                  label={
+                    rowsTitle ||
+                    t("entityDetailChildrenLabel", { title: entity?.title ?? previewTitle })
+                  }
+                />
+              </section>
+            ) : (
+              <LayoutView
+                layout={detailLayout}
+                libraryID=""
+                entityID={entityId || ""}
+                buildSeeAll={buildSeeAll}
+                navigationID={`entity:${entityId || ""}`}
+              />
+            ))
+          ) : listsOwnMedia && !entity ? null : detailLayout && listens === false ? (
             <LayoutView
               layout={detailLayout}
               libraryID=""
@@ -542,8 +701,17 @@ export function EntityPage() {
           {/* An audio container names its people under the title instead. */}
           {people.length === 0 && <CastRow credits={groupCredits(groups.people, displayLocale)} />}
 
+          {/* Similar containers, ranked by shared categories and people (CORE-2512). */}
+          {similarItems.length > 0 && (
+            <RelatedGroup title={t("mediaDetailRelated")} items={similarItems} />
+          )}
+
           {groups.other.map((group) => (
-            <RelatedGroup key={group.kind} group={group} items={group.items} />
+            <RelatedGroup
+              key={group.kind}
+              title={displayString(group.kindDisplayName, displayLocale) || group.kind}
+              items={group.items}
+            />
           ))}
         </div>
       )}
@@ -551,19 +719,12 @@ export function EntityPage() {
   );
 }
 
-/** One related group as a poster grid under its display name. */
-function RelatedGroup({
-  group,
-  items,
-}: {
-  group: RelatedEntityGroup;
-  items: readonly SourceItem[];
-}) {
-  const displayLocale = useDisplayLocale();
+/** One related group as a poster grid under its heading. */
+function RelatedGroup({ title, items }: { title: string; items: readonly SourceItem[] }) {
   return (
     <section className="bf-section flex flex-col gap-3">
       <h2 className="bf-section-title">
-        <span>{displayString(group.kindDisplayName, displayLocale) || group.kind}</span>
+        <span>{title}</span>
       </h2>
       <ul className="bf-grid">
         {items.map((item, index) => (

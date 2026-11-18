@@ -58,7 +58,7 @@ afterEach(cleanup);
 describe("card activation", () => {
   it.each(["shelf", "grid"])("opens the detail page from a %s poster", (kind) => {
     renderSection(kind);
-    fireEvent.click(screen.getByRole("button", { name: "Alpha" }));
+    fireEvent.click(screen.getByRole("link", { name: "Alpha" }));
 
     expect(screen.getByTestId("path")).toHaveTextContent("/media/m1");
     const state = JSON.parse(screen.getByTestId("state").textContent || "null");
@@ -70,7 +70,7 @@ describe("card activation", () => {
 
   it("plays a list row at once", () => {
     renderSection("list");
-    fireEvent.click(screen.getByRole("button", { name: "Alpha" }));
+    fireEvent.click(screen.getByRole("link", { name: "Alpha" }));
 
     expect(screen.getByTestId("path")).toHaveTextContent("/watch/m1");
     // The row hands its playable siblings to the player as the queue.
@@ -82,7 +82,7 @@ describe("card activation", () => {
 
   it.each(["shelf", "list"])("still opens a non-media %s card's entity page", (kind) => {
     renderSection(kind);
-    fireEvent.click(screen.getByRole("button", { name: "Bundle" }));
+    fireEvent.click(screen.getByRole("link", { name: "Bundle" }));
     expect(screen.getByTestId("path")).toHaveTextContent("/entity/e1");
   });
 });

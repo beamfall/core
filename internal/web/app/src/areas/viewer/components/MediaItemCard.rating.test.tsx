@@ -26,7 +26,7 @@ describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
     const { container } = renderCard({ certification: "PG-13", audienceScore: 7.8 });
     expect(container.querySelector(".bf-card-rating")).toHaveTextContent("PG-13★ 7.8");
     expect(
-      screen.getByRole("button", { name: "Alpha, Rated PG-13, audience score 7.8" }),
+      screen.getByRole("link", { name: "Alpha, Rated PG-13, audience score 7.8" }),
     ).toBeInTheDocument();
   });
 
@@ -40,7 +40,7 @@ describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
     const line = container.querySelector(".bf-card-rating");
     expect(line).toHaveTextContent("TV-MA");
     expect(line).not.toHaveTextContent("★");
-    expect(screen.getByRole("button", { name: "Alpha, Rated TV-MA" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Alpha, Rated TV-MA" })).toBeInTheDocument();
   });
 
   it("shows only the score when there is no rating", () => {
@@ -48,14 +48,14 @@ describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
     const line = container.querySelector(".bf-card-rating");
     expect(line).toHaveTextContent("★ 6.5");
     expect(container.querySelector(".bf-card-cert")).toBeNull();
-    expect(screen.getByRole("button", { name: "Alpha, Audience score 6.5" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Alpha, Audience score 6.5" })).toBeInTheDocument();
   });
 
   it("renders nothing when both are absent, blank or off the scale", () => {
     for (const overrides of [{}, { certification: "  " }, { audienceScore: 73 }]) {
       const { container } = renderCard(overrides);
       expect(container.querySelector(".bf-card-rating")).toBeNull();
-      expect(screen.getByRole("button", { name: "Alpha" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Alpha" })).toBeInTheDocument();
       cleanup();
     }
   });
@@ -64,7 +64,7 @@ describe("MediaItemCard content rating and audience score (CORE-2400)", () => {
   it("shows no score of 0 without votes, and one with them", () => {
     const { container } = renderCard({ certification: "TV-14", audienceScore: 0 });
     expect(container.querySelector(".bf-card-rating")).not.toHaveTextContent("★");
-    expect(screen.getByRole("button", { name: "Alpha, Rated TV-14" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Alpha, Rated TV-14" })).toBeInTheDocument();
     cleanup();
 
     const alone = renderCard({ audienceScore: 0, audienceScoreVotes: 0 });

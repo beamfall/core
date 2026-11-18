@@ -61,7 +61,7 @@ describe("See All rendering contract", () => {
       </I18nProvider>,
     );
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     await user.click(screen.getByRole("button", { name: /load more/i }));
     await waitFor(() => expect(fetchSectionItems).toHaveBeenCalledTimes(2));
     await waitFor(() => {
@@ -88,10 +88,10 @@ describe("See All rendering contract", () => {
       </I18nProvider>,
     );
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     act(() => notifyEngagementChanged());
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Item 0" })).toBeNull());
-    expect(screen.getByRole("button", { name: "Item 1" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Item 0" })).toBeNull());
+    expect(screen.getByRole("link", { name: "Item 1" })).toBeInTheDocument();
     expect(vi.mocked(fetchSectionItems).mock.calls.at(-1)?.[1]).toMatchObject({
       paging: { offset: 0 },
     });
@@ -116,7 +116,7 @@ describe("See All rendering contract", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load these items.");
     expect(screen.queryByRole("status")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Retry" }));
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -134,7 +134,7 @@ describe("See All rendering contract", () => {
       </I18nProvider>,
     );
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     expect(vi.mocked(fetchSectionItems).mock.calls[0][1]).toMatchObject({
       libraryID: "",
       home: true,

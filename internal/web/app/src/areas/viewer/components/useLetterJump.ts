@@ -56,7 +56,7 @@ export function useLetterJump({
     const cell = listRef.current?.querySelector<HTMLElement>(
       `[aria-posinset="${jump.offset + 1}"]`,
     );
-    const card = cell?.querySelector<HTMLElement>(":scope > button");
+    const card = cell?.querySelector<HTMLElement>(":scope > .bf-card");
     if (!cell || !card) return;
     pendingJumpRef.current = null;
     const top = cell.getBoundingClientRect().top + window.scrollY - LETTER_JUMP_HEADER_CLEARANCE;

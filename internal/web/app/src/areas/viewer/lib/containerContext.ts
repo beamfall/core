@@ -121,6 +121,7 @@ export function ancestorItems(
         out.push(item);
       }
       if (
+        total <= 0 &&
         group.archetype === CONTAINER_ARCHETYPE &&
         !uncounted.some((seen) => seen.id === item.id)
       ) {

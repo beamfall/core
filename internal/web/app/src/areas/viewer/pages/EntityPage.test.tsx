@@ -16,6 +16,7 @@ import { EntityPage } from "./EntityPage";
 const mocks = vi.hoisted(() => ({
   identity: null as string | null,
   layouts: [] as Layout[],
+  revealed: false,
 }));
 
 vi.mock("@/lib/graphql", () => ({
@@ -24,7 +25,7 @@ vi.mock("@/lib/graphql", () => ({
 }));
 vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ manifest: { layouts: mocks.layouts } }),
+  useSession: () => ({ manifest: { layouts: mocks.layouts }, revealed: mocks.revealed }),
   useViewerIdentity: () => mocks.identity,
 }));
 vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
@@ -631,7 +632,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     );
   });
 
-  it("keeps the Layout for a container whose Media are not audio", async () => {
+  it("lists a video container's own Media as detail rows over its Media-only Layout (CORE-2510)", async () => {
     vi.mocked(fetchMediaForEntity).mockResolvedValue([
       track("v1", "First Part", "video"),
       track("v2", "Second Part", "video"),
@@ -640,14 +641,22 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     await act(async () => {});
     await act(async () => {});
 
-    expect(screen.getByText("detail layout record-detail")).toBeInTheDocument();
+    // The rows replace the Layout's poster list, headed by its Section title.
+    expect(screen.queryByText("detail layout record-detail")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Rows" })).toBeInTheDocument();
+    const rows = screen.getByRole("list", { name: "Rows" });
+    expect(within(rows).getByRole("link", { name: /^First Part/ })).toHaveAttribute(
+      "href",
+      "/media/v1",
+    );
+    expect(within(rows).getByRole("button", { name: "Play Second Part" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Shuffle" })).toBeNull();
     // A person relation renders through the cast row (CORE-2441).
     expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Maker A/ })).toHaveAttribute("href", "/entity/p1");
   });
 
-  it("renders the Layout at once when the opening link says the Media are not audio", () => {
+  it("holds a Media-only Layout back until the Entity says whether its Media read as rows", () => {
     vi.mocked(fetchEntity).mockReturnValue(new Promise(() => {}));
     renderEntity(
       entityLinkState(
@@ -655,7 +664,8 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
         identity,
       ),
     );
-    expect(screen.getByText("detail layout record-detail")).toBeInTheDocument();
+    // A container lists them as rows (CORE-2510), so nothing paints that the rows would replace.
+    expect(screen.queryByText("detail layout record-detail")).toBeNull();
   });
 
   it("holds the Layout back while an audio container's Media are unknown", () => {
@@ -769,8 +779,9 @@ describe("EntityPage hero (CORE-2441)", () => {
 
     expect(screen.getByRole("heading", { level: 2, name: "2 items" })).toBeInTheDocument();
     expect(screen.getByText("On deck")).toBeInTheDocument();
-    expect(screen.getByText("Next up: Two")).toBeInTheDocument();
-    expect(screen.getByText("Ordinal 2")).toBeInTheDocument();
+    // The On Deck line names the next child once: its ordinal, then its title (CORE-2510).
+    expect(screen.getByText("Next up: Ordinal 2 · Two")).toBeInTheDocument();
+    expect(screen.queryByText("Ordinal 2")).toBeNull();
     expect(screen.getByText("1 unwatched")).toBeInTheDocument();
   });
 
@@ -819,5 +830,198 @@ describe("EntityPage hero (CORE-2441)", () => {
     renderEntity();
     await act(async () => {});
     expect(screen.queryByText(/unwatched/)).toBeNull();
+  });
+});
+
+// feature:container-entity-page (CORE-2510, CORE-2512, CORE-2522)
+describe("EntityPage middle and top containers", () => {
+  const ref = (id: string, title: string, extra: Partial<SourceItem> = {}): SourceItem => ({
+    id,
+    kind: "entity",
+    title,
+    ...extra,
+  });
+  const longOverview = "A season of football and second chances. ".repeat(8).trim();
+  const part: EntityInfo = {
+    id: "e1",
+    kind: "part",
+    archetype: "container",
+    title: "Part 2",
+    fields: [{ name: "overview", type: "text", value: longOverview, label: { en: "Overview" } }],
+    relatedEntities: [
+      {
+        kind: "whole",
+        kindDisplayName: { en: "Wholes" },
+        archetype: "container",
+        items: [ref("w1", "The Whole", { engagement: { totalCount: 20, remainingCount: 20 } })],
+      },
+    ],
+  };
+  const whole: EntityInfo = {
+    id: "w1",
+    kind: "whole",
+    archetype: "container",
+    title: "The Whole",
+    fields: [],
+    relatedEntities: [
+      {
+        kind: "part",
+        kindDisplayName: { en: "Parts" },
+        archetype: "container",
+        items: [ref("p1", "Part 1"), ref("e1", "Part 2"), ref("p3", "Part 3")],
+      },
+    ],
+  };
+  const episodes: SourceItem[] = [
+    { id: "m1", kind: "media", title: "One" },
+    { id: "m2", kind: "media", title: "Two" },
+  ];
+
+  function serve(entities: EntityInfo[]) {
+    vi.mocked(fetchEntity).mockImplementation((id: string) => {
+      const found = entities.find((candidate) => candidate.id === id);
+      return found ? Promise.resolve(found) : Promise.reject(new Error("unknown entity"));
+    });
+  }
+
+  it("names its parent above the title and switches between its siblings", async () => {
+    serve([part, whole]);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(episodes);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    const parent = screen.getByRole("link", { name: "The Whole" });
+    expect(parent).toHaveAttribute("href", "/entity/w1");
+    expect(parent.closest(".bf-entity-parent")).not.toBeNull();
+    // The parent no longer appears as a one-card rail.
+    expect(screen.queryByRole("heading", { name: "Wholes" })).toBeNull();
+
+    const switcher = screen.getByRole("navigation", { name: "Parts" });
+    const links = within(switcher).getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual(["Part 1", "Part 2", "Part 3"]);
+    expect(links[0]).toHaveAttribute("href", "/entity/p1");
+    expect(links[1]).toHaveAttribute("aria-current", "page");
+    expect(links[0]).not.toHaveAttribute("aria-current");
+    // A middle container is not offered similar ones.
+    expect(screen.queryByRole("heading", { name: "Related" })).toBeNull();
+  });
+
+  it("links the parent and siblings by readable address, bare in a Revealed session", async () => {
+    const parentID = `entity-${"a".repeat(32)}`;
+    const siblingID = `entity-${"b".repeat(32)}`;
+    const readablePart: EntityInfo = {
+      ...part,
+      relatedEntities: [
+        {
+          ...part.relatedEntities![0],
+          items: [ref(parentID, "The Whole", { engagement: { totalCount: 20 } })],
+        },
+      ],
+    };
+    const readableWhole: EntityInfo = {
+      ...whole,
+      id: parentID,
+      relatedEntities: [
+        { ...whole.relatedEntities![0], items: [ref(siblingID, "Part 1"), ref("e1", "Part 2")] },
+      ],
+    };
+    serve([readablePart, readableWhole]);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(episodes);
+    for (const revealed of [false, true]) {
+      mocks.revealed = revealed;
+      const { unmount } = renderEntity();
+      await act(async () => {});
+      await act(async () => {});
+      expect(screen.getByRole("link", { name: "The Whole" })).toHaveAttribute(
+        "href",
+        revealed ? `/entity/${parentID}` : `/entity/the-whole-${"a".repeat(32)}`,
+      );
+      expect(screen.getByRole("link", { name: "Part 1" })).toHaveAttribute(
+        "href",
+        revealed ? `/entity/${siblingID}` : `/entity/the-whole-part-1-${"b".repeat(32)}`,
+      );
+      unmount();
+    }
+    mocks.revealed = false;
+  });
+
+  it("clamps a long overview field with a More toggle instead of listing it", async () => {
+    serve([part, whole]);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(episodes);
+    renderEntity();
+    await act(async () => {});
+
+    expect(screen.queryByText("Overview")).toBeNull();
+    expect(screen.getByText(longOverview)).toHaveAttribute("data-clamped");
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByText(longOverview)).not.toHaveAttribute("data-clamped");
+    expect(screen.getByRole("button", { name: "Less" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("degrades to no switcher or parent link when the parent cannot be read", async () => {
+    serve([{ ...part, relatedEntities: [] }]);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(episodes);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { level: 1, name: "Part 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Parts" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "The Whole" })).toBeNull();
+  });
+
+  const top: EntityInfo = {
+    id: "e1",
+    kind: "whole",
+    archetype: "container",
+    title: "The Whole",
+    fields: [],
+    relatedEntities: [
+      { kind: "genre", archetype: "category", items: [ref("g1", "Comedy")] },
+      { kind: "network", archetype: "category", items: [ref("n1", "Channel")] },
+      { kind: "maker", archetype: "person", items: [ref("p1", "Maker")] },
+    ],
+  };
+  const through = (id: string, ids: string[]): EntityInfo => ({
+    id,
+    kind: "genre",
+    title: id,
+    fields: [],
+    relatedEntities: [
+      { kind: "whole", items: ids.map((other) => ref(other, other.toUpperCase())) },
+    ],
+  });
+
+  it("ends a top container with similar ones ranked by shared genres, networks and people", async () => {
+    serve([
+      top,
+      through("g1", ["e1", "a", "b"]),
+      through("n1", ["b", "c"]),
+      through("p1", ["c", "b"]),
+    ]);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    const heading = screen.getByRole("heading", { name: "Related" });
+    const rail = heading.closest("section") as HTMLElement;
+    expect(
+      within(rail)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["B", "C", "A"]);
+  });
+
+  it("hides the similar rail when nothing is similar or the reads fail", async () => {
+    serve([top, through("g1", ["e1"])]);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([]);
+    renderEntity();
+    await act(async () => {});
+    await act(async () => {});
+
+    expect(screen.getByRole("heading", { level: 1, name: "The Whole" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Related" })).toBeNull();
   });
 });
