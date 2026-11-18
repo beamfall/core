@@ -858,6 +858,12 @@ type SourceItem struct {
 	// empty and nil for entities and for Media without them (CORE-2398).
 	Certification string
 	AudienceScore *float64
+	// AudienceScoreVotes is the vote count behind AudienceScore, set in the
+	// same read; 0 without a score or a positive count. AudienceScoreLabel is
+	// the Library plugin's label for the score field, set by the graph layer
+	// after AnnotateMediaClass (CORE-2415); nil when there is none.
+	AudienceScoreVotes int
+	AudienceScoreLabel map[string]string
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.

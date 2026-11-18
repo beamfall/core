@@ -173,7 +173,7 @@ func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFi
 
 // describeSearchCards gives each visible row the card fields every other card
 // surface carries: an entity row the class its Media share, an audio row its
-// byline (CORE-2362), and its rating (CORE-2398).
+// byline (CORE-2362), and its rating (CORE-2398, CORE-2415).
 func (h *Handler) describeSearchCards(ctx context.Context, details []store.SearchRowDetail, rows []store.SourceItem, items []SearchResultItem) error {
 	cards := make([]store.SourceItem, 0, len(rows))
 	at := make([]int, 0, len(rows))
@@ -192,6 +192,7 @@ func (h *Handler) describeSearchCards(ctx context.Context, details []store.Searc
 	if err := h.annotateSubtitles(ctx, cards); err != nil {
 		return err
 	}
+	h.annotateScoreLabels(ctx, cards)
 	for j, card := range cards {
 		i := at[j]
 		if items[i].EntityKind != "" {
@@ -202,6 +203,8 @@ func (h *Handler) describeSearchCards(ctx context.Context, details []store.Searc
 		items[i].Sequence, items[i].Index = card.Sequence, card.Index
 		items[i].DurationSeconds = card.DurationSeconds
 		items[i].Certification, items[i].AudienceScore = card.Certification, card.AudienceScore
+		items[i].AudienceScoreLabel = plugin.LocaleString(card.AudienceScoreLabel)
+		items[i].AudienceScoreVotes = card.AudienceScoreVotes
 	}
 	return nil
 }
