@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
-import { cardSubline, repeatedTitles, showsYear } from "./cardTitles";
+import { cardHeading, cardSubline, repeatedTitles, showsYear } from "./cardTitles";
 
 function item(id: string, title: string, year?: number, summary?: string): SourceItem {
   return { id, kind: "media", title, year, summary } as SourceItem;
@@ -30,7 +30,10 @@ describe("card titles (CORE-2320)", () => {
   });
 
   it("names an audio card's byline after the year and before the summary (CORE-2362)", () => {
-    const track = { ...item("t", "Bohemian Rhapsody", 1975, "Side one"), byline: ["Queen"] };
+    const track = {
+      ...item("t", "Bohemian Rhapsody", 1975, "Side one"),
+      byline: ["Queen"],
+    };
     expect(cardSubline(track, false)).toBe("Queen · Side one");
     expect(cardSubline(track, true)).toBe("1975 · Queen · Side one");
     expect(cardSubline({ ...track, summary: "Queen" }, false)).toBe("Queen");
@@ -46,5 +49,40 @@ describe("card titles (CORE-2320)", () => {
     expect(cardSubline(episode, true, "fr")).toBe("S5 · É3 · 2024 · Reunion");
     expect(cardSubline({ ...episode, summary: "S5 · E3" }, false)).toBe("S5 · E3");
     expect(cardSubline({ ...episode, subtitle: undefined }, false)).toBe("Reunion");
+  });
+});
+
+describe("cardHeading (CORE-2524)", () => {
+  const episode = {
+    ...item("e", "S01E02 · Earthfall"),
+    subtitle: "S1 · E2 · Earthfall",
+    container: { id: "show", title: "The Expanse" },
+  } as SourceItem;
+
+  it("heads an item a container holds with the container and leads with its subtitle", () => {
+    const { heading, lead } = cardHeading(episode, true);
+    expect(heading).toBe("The Expanse");
+    expect(lead).toBe("S1 · E2 · Earthfall");
+    expect(cardSubline(episode, false, "en", lead)).toBe("S1 · E2 · Earthfall");
+  });
+
+  it("leads with the item's own title when it has no subtitle", () => {
+    expect(cardHeading({ ...episode, subtitle: undefined }, true)).toEqual({
+      heading: "The Expanse",
+      lead: "S01E02 · Earthfall",
+    });
+  });
+
+  it("keeps the item's own title inside the container's page or without a container", () => {
+    expect(cardHeading(episode, false)).toEqual({
+      heading: "S01E02 · Earthfall",
+      lead: "S1 · E2 · Earthfall",
+    });
+    expect(cardHeading({ ...episode, container: undefined }, true).heading).toBe(
+      "S01E02 · Earthfall",
+    );
+    expect(cardHeading({ ...episode, container: { id: "show", title: "  " } }, true).heading).toBe(
+      "S01E02 · Earthfall",
+    );
   });
 });

@@ -22,6 +22,11 @@ func TestNewRegistersPluginEntityKindPolicies(t *testing.T) {
 			}},
 		},
 		{Name: "topic", Archetype: "container"},
+		{Name: "part", Archetype: "container", Relations: []plugin.RelationSpec{
+			{Name: "holds", ToKind: plugin.MediaKindName, Cardinality: "one"},
+			{Name: "part-of", ToKind: "volume"},
+		}},
+		{Name: "volume", Archetype: "container"},
 	}
 	beamfall, err := New(t.Context(), testConfig(t), nil, []plugin.Bundle{bundle})
 	if err != nil {
@@ -38,6 +43,14 @@ func TestNewRegistersPluginEntityKindPolicies(t *testing.T) {
 	}
 	if _, ok := beamfall.store.EntityKindPolicy("topic"); ok {
 		t.Fatal("non-opted-in topic policy was registered")
+	}
+	// A container chain's outermost kind is title-searchable by default
+	// (CORE-2525); the inner kind of the chain is not.
+	if policy, ok := beamfall.store.EntityKindPolicy("volume"); !ok || !policy.FullTextSearchable || policy.OrphanGC {
+		t.Fatalf("outermost container policy = %#v, registered = %t", policy, ok)
+	}
+	if _, ok := beamfall.store.EntityKindPolicy("part"); ok {
+		t.Fatal("inner container kind policy was registered")
 	}
 	ordering, ok := beamfall.store.EntityKindOrdering("chapter")
 	if !ok || ordering.SourceField != "ordinal" {

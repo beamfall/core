@@ -94,7 +94,7 @@ func (s *Store) AnnotateMediaClass(ctx context.Context, items []SourceItem) erro
 		items[i].LibraryID = facts[items[i].ID].library
 		items[i].DurationSeconds = facts[items[i].ID].duration
 		items[i].Certification = facts[items[i].ID].certification
-		items[i].AudienceScore = audienceScore(facts[items[i].ID].score)
+		items[i].AudienceScore = votedAudienceScore(facts[items[i].ID].score, facts[items[i].ID].votes)
 		items[i].AudienceScoreVotes = audienceScoreVotes(items[i].AudienceScore, facts[items[i].ID].votes)
 	}
 	return nil

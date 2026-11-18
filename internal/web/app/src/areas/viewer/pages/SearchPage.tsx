@@ -19,7 +19,12 @@ import type { StringKey } from "@/strings";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
 import { availableModes } from "../lib/searchModes";
-import { groupSearchRows, searchCountLabel, searchRowDetail } from "../lib/searchRows";
+import {
+  groupSearchRows,
+  nestUnderContainers,
+  searchCountLabel,
+  searchRowDetail,
+} from "../lib/searchRows";
 import { useLiveSearch, useSearchShortcut } from "../lib/useLiveSearch";
 import { playQueueOf } from "../lib/watchQueue";
 
@@ -84,12 +89,25 @@ export function SearchPage() {
     inputRef.current?.focus();
   }
 
+  // Rows found only through a container that is itself a result fold under it (CORE-2525).
+  const { rows, nested } = useMemo(
+    () => nestUnderContainers(live.items ?? [], live.resultTerm, displayLocale),
+    [live.items, live.resultTerm, displayLocale],
+  );
   const groups = useMemo(
-    () => groupSearchRows(live.items ?? [], t, [displayLocale, locale]),
-    [live.items, t, displayLocale, locale],
+    () => groupSearchRows(rows, t, [displayLocale, locale]),
+    [rows, t, displayLocale, locale],
   );
   // Playable results are the player's queue in the order they are shown (CORE-1143).
-  const queue = useMemo(() => playQueueOf(groups.flatMap((group) => group.rows)), [groups]);
+  const queue = useMemo(
+    () =>
+      playQueueOf(
+        groups.flatMap((group) =>
+          group.rows.flatMap((row) => [row, ...(nested.get(row.id) ?? [])]),
+        ),
+      ),
+    [groups, nested],
+  );
   const total = live.items?.length ?? 0;
   const answered = live.items !== null && !live.failed;
   // 4-state honesty: requested non-keyword but keyword was served → the plugin
@@ -171,13 +189,45 @@ export function SearchPage() {
                       key={`${item.kind}:${item.id}`}
                       // The card's second line carries the year and Library so
                       // same-titled results can be told apart.
-                      item={{ ...item, summary: searchRowDetail(item) || item.summary }}
+                      item={{
+                        ...item,
+                        summary: searchRowDetail(item) || item.summary,
+                      }}
                       posInSet={index + 1}
                       setSize={group.rows.length}
                       queue={queue}
                     />
                   ))}
                 </ul>
+                {group.rows.map((row) => {
+                  const held = nested.get(row.id);
+                  if (!held) return null;
+                  return (
+                    <details key={`nested:${row.id}`} className="flex flex-col gap-2">
+                      <summary className="cursor-pointer text-sm text-[var(--text-secondary)]">
+                        {t("searchContainerMatches", {
+                          count: held.length,
+                          title: row.title,
+                        })}
+                      </summary>
+                      <ul className="bf-grid mt-2">
+                        {held.map((item, index) => (
+                          <MediaItemCard
+                            key={`${item.kind}:${item.id}`}
+                            item={{
+                              ...item,
+                              summary: searchRowDetail(item) || item.summary,
+                            }}
+                            posInSet={index + 1}
+                            setSize={held.length}
+                            queue={queue}
+                            nameContainer={false}
+                          />
+                        ))}
+                      </ul>
+                    </details>
+                  );
+                })}
               </section>
             ))}
           </section>

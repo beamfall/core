@@ -33,6 +33,7 @@ export function SectionView({
   seeAll,
   navigationID,
   playOnActivate,
+  nameContainer = true,
 }: {
   section: Section;
   items: SourceItem[];
@@ -41,6 +42,8 @@ export function SectionView({
   navigationID?: string;
   /** Cards start playback instead of opening a detail page; defaults to list Sections only. */
   playOnActivate?: boolean;
+  /** Cards name the container holding their item; false inside a container's page (CORE-2524). */
+  nameContainer?: boolean;
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -115,9 +118,14 @@ export function SectionView({
               queue={queue}
               playOnActivate={playOnActivate ?? section.kind === "list"}
               showYear={showsYear(item, repeated)}
+              nameContainer={nameContainer}
               focusAnchor={
                 navigationID
-                  ? { navigation: navigationID, section: section.id, item: item.id }
+                  ? {
+                      navigation: navigationID,
+                      section: section.id,
+                      item: item.id,
+                    }
                   : undefined
               }
             />

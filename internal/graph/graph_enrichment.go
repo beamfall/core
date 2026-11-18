@@ -269,7 +269,8 @@ func (h *Handler) describeSearchRows(ctx context.Context, filter store.LibraryFi
 
 // describeSearchCards gives each visible row the card fields every other card
 // surface carries: an entity row the class its Media share, an audio row its
-// byline (CORE-2362), and its rating (CORE-2398, CORE-2415).
+// byline (CORE-2362), its rating (CORE-2398, CORE-2415) and its container
+// (CORE-2524).
 func (h *Handler) describeSearchCards(ctx context.Context, details []store.SearchRowDetail, rows []store.SourceItem, items []SearchResultItem) error {
 	cards := make([]store.SourceItem, 0, len(rows))
 	at := make([]int, 0, len(rows))
@@ -288,9 +289,13 @@ func (h *Handler) describeSearchCards(ctx context.Context, details []store.Searc
 	if err := h.annotateSubtitles(ctx, cards); err != nil {
 		return err
 	}
+	if err := h.annotateContainers(ctx, cards); err != nil {
+		return err
+	}
 	h.annotateScoreLabels(ctx, cards)
 	for j, card := range cards {
 		i := at[j]
+		items[i].Container = h.sourceItemContainer(card)
 		if items[i].EntityKind != "" {
 			items[i].MediaClass = string(card.MediaClass)
 		}
@@ -408,22 +413,9 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 		return SearchResultResponse{}, err
 	}
 	results = append(results, entities...)
-	sort.SliceStable(results, func(i, j int) bool {
-		left, right := store.SearchRank(text, results[i].Title), store.SearchRank(text, results[j].Title)
-		if left < 0 {
-			left = 1 << 30
-		}
-		if right < 0 {
-			right = 1 << 30
-		}
-		if left != right {
-			return left < right
-		}
-		if results[i].Kind != results[j].Kind {
-			return results[i].Kind < results[j].Kind
-		}
-		return results[i].ID < results[j].ID
-	})
+	if err := h.orderKeywordResults(ctx, text, results); err != nil {
+		return SearchResultResponse{}, err
+	}
 	if len(results) > 50 {
 		results = results[:50]
 	}

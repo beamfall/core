@@ -80,6 +80,42 @@ export function groupSearchRows(
   return [...groups.values()];
 }
 
+/** The rows a container in the results holds, nested under it (CORE-2525). */
+export interface NestedSearchRows {
+  rows: SearchResultItem[];
+  /** By container Entity id, in the server's order. */
+  nested: Map<string, SearchResultItem[]>;
+}
+
+/**
+ * Moves rows found only through their container's name under that container
+ * when the container is itself a result (CORE-2525): searching a show's name
+ * lists the show once, with its matching episodes folded beneath it, instead
+ * of a wall of episodes. A row whose own title has the term stays in its group.
+ */
+export function nestUnderContainers(
+  items: SearchResultItem[],
+  term: string,
+  locale = "en",
+): NestedSearchRows {
+  const containers = new Set(items.filter((item) => item.kind === "entity").map((item) => item.id));
+  const needle = term.trim().toLocaleLowerCase(locale);
+  const rows: SearchResultItem[] = [];
+  const nested = new Map<string, SearchResultItem[]>();
+  for (const item of items) {
+    const container = item.container?.id;
+    const ownMatch = needle !== "" && item.title.toLocaleLowerCase(locale).includes(needle);
+    if (item.kind !== "media" || !container || !containers.has(container) || ownMatch) {
+      rows.push(item);
+      continue;
+    }
+    const under = nested.get(container);
+    if (under) under.push(item);
+    else nested.set(container, [item]);
+  }
+  return { rows, nested };
+}
+
 /**
  * Where "open" takes a row. An Entity opens its page; a Media row opens the
  * player because the web app has no Media page yet (CORE-1144) — change it here.
