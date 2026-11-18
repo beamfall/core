@@ -76,6 +76,8 @@ describe("entityHero", () => {
       engagement: { completed },
     });
     expect(unwatchedCount([media("a", true), media("b"), media("c", false, true)])).toBe(1);
+    // Two relations to the same Media count it once.
+    expect(unwatchedCount([media("b"), media("b"), media("d")])).toBe(2);
     expect(unwatchedCount([])).toBe(0);
     expect(unwatchedCount(null)).toBe(0);
   });

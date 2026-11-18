@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -221,4 +222,25 @@ func TestMediaForEntityFlagsLockedModeMedia(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertItemSet(t, "gated entity media", gated, ids, "low")
+}
+
+// TestAnnotateLockedBatchesLargeReads keeps an unpaged read (MediaForEntity
+// over a large Entity) under SQLite's parameter limit: IDs past the first
+// batch are still checked and flagged.
+func TestAnnotateLockedBatchesLargeReads(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	_, ids := seedCertifiedLibrary(t, st, "filmtv", false, "low", "high")
+	items := make([]SourceItem, 0, 3*annotateLockedBatch+2)
+	for i := range 3 * annotateLockedBatch {
+		items = append(items, SourceItem{ID: MediaID(fmt.Sprintf("absent-%d", i)), Kind: "media"})
+	}
+	items = append(items, SourceItem{ID: ids["low"], Kind: "media"}, SourceItem{ID: ids["high"], Kind: "media"})
+	if err := st.annotateLockedLocked(ctx, []CertificationConstraint{lockedConstraint()}, items, nil); err != nil {
+		t.Fatal(err)
+	}
+	locked := lockedSet(items)
+	if len(locked) != 1 || !locked[ids["high"]] {
+		t.Fatalf("locked = %v, want only %q", locked, ids["high"])
+	}
 }

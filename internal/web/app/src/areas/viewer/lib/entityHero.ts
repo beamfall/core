@@ -79,11 +79,14 @@ function playable(item: SourceItem): boolean {
  * container groups carry relations in both directions with no direction on
  * the wire, so a parent cannot be told from a child and their counts are never
  * summed. A container of containers shows no count until the wire carries the
- * Entity's own engagement.
+ * Entity's own engagement. A Media item reached by two relations counts once.
  */
 export function unwatchedCount(items: readonly SourceItem[] | null | undefined): number {
-  return (items ?? []).filter(playable).filter((item) => item.engagement?.completed !== true)
-    .length;
+  const unfinished = new Set<string>();
+  for (const item of items ?? []) {
+    if (playable(item) && item.engagement?.completed !== true) unfinished.add(item.id);
+  }
+  return unfinished.size;
 }
 
 /** The hero's rows: child containers first, then people, then everything else. */
