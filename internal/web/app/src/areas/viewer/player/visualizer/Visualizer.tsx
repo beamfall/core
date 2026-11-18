@@ -233,6 +233,15 @@ export function Visualizer({
     // superseded build's failure is ignored: a context lost mid-create rejects it, and removing the
     // canvas then would leave no context to restore.
     let build = 0;
+    // A context lost before its webglcontextlost event arrives: GL calls fail first, and the loss
+    // and restore handlers will recover it, so a failure then does not remove the canvas.
+    const lostNow = () => {
+      try {
+        return !!canvas.getContext("webgl2")?.isContextLost();
+      } catch {
+        return false;
+      }
+    };
     const start = () => {
       const mine = ++build;
       const current = () => alive && mine === build;
@@ -258,7 +267,7 @@ export function Visualizer({
           });
         })
         .catch((err: unknown) => {
-          if (current()) fail(err);
+          if (current() && !lostNow()) fail(err);
         });
     };
     // A lost context (CORE-2482): preventDefault asks the browser to restore it, rendering

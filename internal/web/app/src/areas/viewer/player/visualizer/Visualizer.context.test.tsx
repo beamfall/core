@@ -137,6 +137,23 @@ describe("Visualizer context loss (CORE-2482)", () => {
     expect(canvas.isConnected).toBe(true);
   });
 
+  it("waits for the loss event when a create fails on a context already lost", async () => {
+    let reject!: (err: Error) => void;
+    made.gate = new Promise((_, no) => {
+      reject = no;
+    });
+    const { canvas } = mount();
+    const lostContext = { isContextLost: () => true } as unknown as RenderingContext;
+    vi.spyOn(canvas, "getContext").mockReturnValue(lostContext);
+    await act(async () => reject(new Error("createBuffer returned null")));
+    expect(canvas.isConnected).toBe(true);
+    act(() => void canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true })));
+    act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
+    await waitFor(() => expect(pending.size).toBe(1));
+    expect(made.renderers).toHaveLength(1);
+    expect(canvas.isConnected).toBe(true);
+  });
+
   it("waits for the loss event when a draw throws on a context already lost", async () => {
     const { canvas, videoRef } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
