@@ -4,7 +4,7 @@
 - [x] Web: cast row on the Media detail page
 - [x] Web: headshot and year-sorted filmography on the person page
 - [x] Web strings in every shipped locale; vitest coverage
-- [ ] Wire contract published as 2.22.0 (lander)
+- [x] Wire contract published as client-core-wire 2.25.0
 - [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
 - [ ] `make gate`
 - [ ] `openspec archive core-2406-people-credits` after landing

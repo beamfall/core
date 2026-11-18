@@ -25,8 +25,8 @@ in the server's order rather than as a filmography sorted by year.
   by it. Otherwise the row is labelled with the kind's display name.
 - The web person page shows the headshot beside the name, and lists the person's Media from the
   viewer's Libraries newest year first.
-- Wire contract: additive. The goldens are regenerated. The next minor version (2.22.0) is
-  published by the lander.
+- client-core-wire 2.25.0 (additive, on top of 2.24.0) carries the added fields. The goldens are
+  regenerated.
 
 ## Non-goals
 
