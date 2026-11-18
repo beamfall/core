@@ -91,8 +91,10 @@ type versionMergeCandidate struct {
 // It does nothing for an encrypted Library (its catalog lives on its own
 // plane), when trash is disabled (the merged Media could not be undone), for
 // fewer than two candidates, or for a Media a merge of this kind already
-// folded and the user undid. A file no derived label tells apart stays on its
-// own Media.
+// folded and the user undid. An Extra, or a Media in any Media relation (an
+// explicit edition-of cut, an extra-of parent or child), is never a candidate:
+// those are separate Media on purpose. A file no derived label tells apart
+// stays on its own Media.
 func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, mediaIDs []MediaID, now time.Time) (VersionMerge, error) {
 	if libraryID == "" {
 		return VersionMerge{}, errors.New("library ID is required")
@@ -214,7 +216,10 @@ func (s *Store) MergeSplitVersions(ctx context.Context, libraryID LibraryID, med
 
 // versionMergeCandidatesTx loads the live Media of libraryID among ids, in
 // order and without duplicates, leaving out any Media an undone version merge
-// journaled: the user split it back, so a rescan must not fold it again. A
+// journaled: the user split it back, so a rescan must not fold it again. It
+// also leaves out Extras and any Media in a Media relation: an edition-of cut
+// keeps its own timeline and engagement (CORE-2467), and folding an extra-of
+// parent or child would leave its relation pointing at a trashed Media. A
 // candidate's files are its live ones; a missing predecessor a replacement
 // left behind does not count.
 func versionMergeCandidatesTx(ctx context.Context, tx *sql.Tx, libraryID LibraryID, ids []MediaID) ([]versionMergeCandidate, error) {
@@ -234,7 +239,8 @@ func versionMergeCandidatesTx(ctx context.Context, tx *sql.Tx, libraryID Library
 			  EXISTS (SELECT 1 FROM op_batch_item i JOIN op_batch b ON b.id = i.batch_id
 			          WHERE i.media_id = m.id AND b.kind = ? AND b.undone_at_ms <> 0)
 			FROM media m
-			WHERE m.id = ? AND m.library_id = ? AND m.trashed_at_ms IS NULL
+			WHERE m.id = ? AND m.library_id = ? AND m.trashed_at_ms IS NULL AND m.extra = 0
+			  AND NOT EXISTS (SELECT 1 FROM media_relation r WHERE r.from_media_id = m.id OR r.to_media_id = m.id)
 		`, opKindMergeVersion, id, libraryID).Scan(&c.rowid, &c.facts.Container, &c.facts.Codec,
 			&c.facts.DurationSeconds, &c.facts.VideoWidth, &c.facts.VideoHeight, &c.files, &undone)
 		if errors.Is(err, sql.ErrNoRows) {

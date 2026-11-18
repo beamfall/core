@@ -142,9 +142,16 @@ func (s *Store) TrashMediaRetiredByScan(ctx context.Context, libraryID LibraryID
 	return trashed, false, nil
 }
 
+// ErrRestoreMergedVersion reports that a trashed Media was folded into
+// another Media as a Version by a rescan's version merge (CORE-2490): its file
+// now lives on the survivor, so a plain restore would bring back an empty
+// Media. Undoing the merge batch splits it back with its file.
+var ErrRestoreMergedVersion = errors.New("this item was merged into another item as a Version; undo the merge to split it back")
+
 // RestoreMedia returns a trashed Media item to its Library. The restore is
 // reveal-gated the same way the trash listing is: the target Library must be
-// visible to the caller.
+// visible to the caller. A Media a live version merge trashed is refused with
+// ErrRestoreMergedVersion.
 func (s *Store) RestoreMedia(ctx context.Context, id MediaID, filter LibraryFilter) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -164,6 +171,16 @@ func (s *Store) RestoreMedia(ctx context.Context, id MediaID, filter LibraryFilt
 	}
 	if !known {
 		return errors.New("media not found")
+	}
+	var merged bool
+	if err := s.catalogR.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM op_batch_item i JOIN op_batch b ON b.id = i.batch_id
+		               WHERE i.media_id = ? AND b.kind = ? AND b.undone_at_ms = 0)
+	`, id, opKindMergeVersion).Scan(&merged); err != nil {
+		return err
+	}
+	if merged {
+		return ErrRestoreMergedVersion
 	}
 	now := time.Now().UTC()
 	if _, err = s.catalogW.ExecContext(ctx,

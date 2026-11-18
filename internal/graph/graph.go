@@ -3893,6 +3893,9 @@ func (h *Handler) restoreMedia(ctx context.Context, scope auth.Scope, req reques
 		}
 	}
 	if err := h.store.RestoreMedia(ctx, store.MediaID(mediaID), scope.LibraryFilter()); err != nil {
+		if errors.Is(err, store.ErrRestoreMergedVersion) {
+			return nil, clientError(err.Error())
+		}
 		return nil, clientError("unknown media")
 	}
 	if err := h.logActivity(ctx, scope, store.ActivityMediaRestore, "media", mediaID, libraryID); err != nil {

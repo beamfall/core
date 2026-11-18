@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -394,5 +395,69 @@ func TestMergeSplitVersionsCountsOnlyLiveFiles(t *testing.T) {
 	}
 	if result.Survivor != keep || len(result.Merged) != 1 || result.Merged[0] != drop {
 		t.Fatalf("merge = %+v, want %s folded into %s", result, drop, keep)
+	}
+}
+
+// TestMergeSplitVersionsLeavesRelatedMediaApart: explicit edition-of cuts and
+// Extras are separate Media on purpose, so a rescan never folds them.
+func TestMergeSplitVersionsLeavesRelatedMediaApart(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, st *Store, keep, drop MediaID)
+	}{
+		{"edition-of cuts", func(t *testing.T, st *Store, keep, drop MediaID) {
+			if err := st.LinkMediaRelation(context.Background(), drop, MediaRelationEditionOf, keep); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"an Extra", func(t *testing.T, st *Store, _, drop MediaID) {
+			if _, err := st.catalogW.ExecContext(context.Background(), `UPDATE media SET extra = 1 WHERE id = ?`, drop); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := openSeeded(t)
+			keep, drop, _, _ := splitTitle(t, st)
+			tc.setup(t, st, keep, drop)
+			result, err := st.MergeSplitVersions(context.Background(), "library-local", []MediaID{keep, drop}, time.Now().UTC())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Merged) != 0 {
+				t.Fatalf("merge = %+v, want %s left apart", result, drop)
+			}
+		})
+	}
+}
+
+// TestRestoreMediaRefusesAMergedVersion: the merged Media's file lives on the
+// survivor, so Trash Restore refuses it until the merge is undone, after which
+// the Media is live again with its file.
+func TestRestoreMediaRefusesAMergedVersion(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	keep, drop, _, _ := splitTitle(t, st)
+	now := time.Now().UTC()
+	result, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Merged) != 1 {
+		t.Fatalf("merge = %+v, want %s folded", result, drop)
+	}
+	if err := st.RestoreMedia(ctx, drop, filter); !errors.Is(err, ErrRestoreMergedVersion) {
+		t.Fatalf("RestoreMedia = %v, want ErrRestoreMergedVersion", err)
+	}
+	if _, err := st.UndoBatch(ctx, result.BatchID, filter, now.Add(time.Minute)); err != nil {
+		t.Fatalf("UndoBatch: %v", err)
+	}
+	var trashed sql.NullInt64
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT trashed_at_ms FROM media WHERE id = ?`, drop).Scan(&trashed); err != nil {
+		t.Fatal(err)
+	}
+	if trashed.Valid {
+		t.Fatalf("%s still trashed after undo", drop)
 	}
 }

@@ -40,3 +40,13 @@ encrypted library or while trash is disabled.
 
 - **WHEN** the split is in an encrypted library
 - **THEN** the rescan leaves both Media as they are
+
+#### Scenario: Explicit Editions and Extras stay apart
+
+- **WHEN** the split copies are linked by an `edition-of` or `extra-of` relation, or one is an Extra
+- **THEN** the rescan leaves both Media as they are
+
+#### Scenario: Trash Restore of a merged copy
+
+- **WHEN** a user restores the merged Media from Trash while its merge batch is not undone
+- **THEN** the restore is refused with a message to undo the merge, and the survivor keeps the file
