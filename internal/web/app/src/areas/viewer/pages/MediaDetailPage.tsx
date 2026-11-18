@@ -19,6 +19,7 @@ import { ItemActions } from "../actions";
 import { CastRow } from "../components/CastRow";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
+import { MediaMoreRows } from "../components/MediaMoreRows";
 import { MediaRelationRows } from "../components/MediaRelationRows";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
@@ -411,6 +412,8 @@ export function MediaDetailPage() {
             navigationID={`media:${mediaId}`}
           />
         )}
+
+        {media && <MediaMoreRows mediaID={mediaId} credits={media.credits} />}
       </article>
     </AppShell>
   );

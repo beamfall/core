@@ -63,3 +63,10 @@ export function filmographyOrder(items: readonly SourceItem[]): SourceItem[] {
     })
     .map(({ item }) => item);
 }
+
+/** The item's first billed person: its first person-archetype credit, or null. */
+export function firstBilledPerson(
+  credits: readonly MediaCredit[] | null | undefined,
+): MediaCredit | null {
+  return castGroups(credits)[0]?.credits[0] ?? null;
+}

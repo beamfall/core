@@ -717,4 +717,119 @@ describe("MediaDetailPage", () => {
     expect(screen.queryByRole("heading", { name: "Extras" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Editions" })).not.toBeInTheDocument();
   });
+  it("ends with More with the first billed person and Related titles, without the current item (CORE-2444)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        {
+          entityID: "g1",
+          title: "Drama",
+          kind: "genre",
+          archetype: "category",
+          relation: "tagged",
+        },
+        {
+          entityID: "g2",
+          title: "Heist",
+          kind: "genre",
+          archetype: "category",
+          relation: "tagged",
+        },
+        {
+          entityID: "p1",
+          title: "Ada Lead",
+          kind: "person",
+          archetype: "person",
+          relation: "credited-in",
+        },
+      ],
+    });
+    const item = (id: string, title: string): SourceItem => ({ id, kind: "media", title });
+    vi.mocked(fetchMediaForEntity).mockImplementation(async (entityID) => {
+      if (entityID === "p1") return [item("m1", "Server title"), item("a1", "Lead Again")];
+      if (entityID === "g1")
+        return [item("r1", "One Genre"), item("r2", "Both Genres"), item("m1", "Server title")];
+      if (entityID === "g2") return [item("r2", "Both Genres")];
+      return [];
+    });
+    renderAt(["/media/m1"]);
+
+    const moreWith = await screen.findByRole("list", { name: "More with Ada Lead" });
+    expect(within(moreWith).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(moreWith).getByRole("button", { name: /^Lead Again/ })).toBeInTheDocument();
+
+    const related = screen.getByRole("list", { name: "Related" });
+    const titles = within(related)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(titles).toHaveLength(2);
+    expect(titles[0]).toContain("Both Genres");
+    expect(titles[1]).toContain("One Genre");
+
+    fireEvent.click(within(related).getByRole("button", { name: /^Both Genres/ }));
+    expect(screen.queryByTestId("path")).toBeNull();
+    await screen.findByRole("heading", { name: "Both Genres" });
+  });
+
+  it("hides More with and Related when the lead has no other titles and there are no categories (CORE-2444)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        {
+          entityID: "p1",
+          title: "Ada Lead",
+          kind: "person",
+          archetype: "person",
+          relation: "credited-in",
+        },
+        {
+          entityID: "p2",
+          title: "Second",
+          kind: "person",
+          archetype: "person",
+          relation: "credited-in",
+        },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { id: "m1", kind: "media", title: "Server title" },
+    ]);
+    renderAt(["/media/m1"]);
+
+    await screen.findByRole("heading", { name: "Server title" });
+    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalledWith("p1", expect.anything()));
+    // Without a category nothing can be Related, so only the lead is read.
+    expect(fetchMediaForEntity).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("heading", { name: /More with/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
+  });
+
+  it("hides the closing rows when every read fails (CORE-2444)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        {
+          entityID: "g1",
+          title: "Drama",
+          kind: "genre",
+          archetype: "category",
+          relation: "tagged",
+        },
+        {
+          entityID: "p1",
+          title: "Ada Lead",
+          kind: "person",
+          archetype: "person",
+          relation: "credited-in",
+        },
+      ],
+    });
+    vi.mocked(fetchMediaForEntity).mockRejectedValue(new TypeError("Failed to fetch"));
+    renderAt(["/media/m1"]);
+
+    await screen.findByRole("heading", { name: "Server title" });
+    await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("heading", { name: /More with/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
+  });
 });
