@@ -23,7 +23,11 @@ describe("brand splash plugin", () => {
     }
     expect(markup).toContain('viewBox="0 0 686 256"');
     expect(markup).toContain('viewBox="0 0 448 350"');
-    expect(doc.getElementById("bf-splash")?.getAttribute("aria-hidden")).toBe("true");
+    const splash = doc.getElementById("bf-splash");
+    expect(splash?.getAttribute("aria-hidden")).toBe("true");
+    // The ready sentinel comes after both intros: its arrival starts both clocks together.
+    expect(splash?.lastElementChild?.className).toBe("bf-splash__ready");
+    expect(markup).toContain("animation-play-state:var(--bf-splash-play,running)!important");
   });
 
   it("replaces the index.html marker and refuses a page without one", () => {

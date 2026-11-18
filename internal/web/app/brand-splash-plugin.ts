@@ -16,7 +16,14 @@ const LAYOUTS = [
   { layout: "stacked", file: "beamfall-stacked-intro.svg" },
 ] as const;
 
-const SHADOW_STYLE = ":host{display:block}svg{display:block;width:100%;height:auto}";
+// Each intro's animations start when the parser reaches its SVG, so a response that streams in
+// slowly would leave the two clocks apart and a mid-intro rotation would jump. The play state
+// comes from --bf-splash-play, which brand-splash.css holds at paused until the ready sentinel
+// after both intros has been parsed; both then start in the same frame. The !important beats the
+// `animation` shorthand in the SVG's own stylesheet, which resets the play state to running.
+const SHADOW_STYLE =
+  ":host{display:block}svg{display:block;width:100%;height:auto}" +
+  "svg,svg *{animation-play-state:var(--bf-splash-play,running)!important}";
 
 export function brandSplashMarkup(appDir: string): string {
   const read = (path: string) => readFileSync(join(appDir, path), "utf8").trim();
@@ -28,7 +35,8 @@ export function brandSplashMarkup(appDir: string): string {
   ).join("");
   return (
     `<style>${read("src/styles/brand-splash.css")}</style>` +
-    `<div id="bf-splash" class="bf-splash" aria-hidden="true">${layouts}</div>`
+    `<div id="bf-splash" class="bf-splash" aria-hidden="true">${layouts}` +
+    `<i class="bf-splash__ready" hidden></i></div>`
   );
 }
 

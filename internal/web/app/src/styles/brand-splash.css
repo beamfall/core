@@ -2,7 +2,9 @@
  * Cut Beam intros, so it applies from the first paint, before the bundle runs. Both intros
  * animate from the same moment and the aspect ratio only toggles visibility (not display, which
  * would stop an animation), so a rotation or resize mid-intro switches layout at the same time.
- * Reduced motion needs nothing here: each intro's own stylesheet then shows the static lockup.
+ * Each intro stays paused until the ready sentinel after both has been parsed (see
+ * brand-splash-plugin.ts), so a slowly streamed response cannot start one clock before the other;
+ * without :has() support they run unsynchronised, as before. Reduced motion needs nothing here: each intro's own stylesheet then shows the static lockup.
  * src/lib/brandSplash.ts fades the splash out once the intro and the first screen are ready. */
 .bf-splash {
   position: fixed;
@@ -13,6 +15,12 @@
   background: var(--bg-root);
   pointer-events: none;
   transition: opacity 240ms ease-out;
+}
+
+@supports selector(:has(*)) {
+  .bf-splash:not(:has(> .bf-splash__ready)) {
+    --bf-splash-play: paused;
+  }
 }
 
 .bf-splash[data-state="done"] {
