@@ -32,7 +32,7 @@ describe("groupByContainer (CORE-2524)", () => {
     expect(grouped[0]).toMatchObject({
       kind: "entity",
       title: "Alpha",
-      summary: "3 new",
+      subtitle: "3 new",
       artwork: { poster: "/art/Alpha" },
     });
   });

@@ -10,7 +10,8 @@ export function groupsNewByContainer(section: Section): boolean {
  * three new episodes of a show read as the show with "3 new" instead of three
  * near-identical cards. The card opens the container's page and keeps the
  * position of the container's first item; an item alone in its container, or
- * held by none, stays as it is.
+ * held by none, stays as it is. The count is the card's subtitle, so it leads
+ * under the title and is part of the card's accessible name (CORE-2553).
  */
 export function groupByContainer(
   items: readonly SourceItem[],
@@ -36,7 +37,7 @@ export function groupByContainer(
       id: container.id,
       kind: "entity",
       title: container.title,
-      summary: countLabel(count),
+      subtitle: countLabel(count),
       artwork: container.artwork,
       mediaClass: item.mediaClass,
     });

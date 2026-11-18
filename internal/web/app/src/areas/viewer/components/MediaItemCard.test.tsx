@@ -8,6 +8,7 @@ import { fetchItemState, setWatched } from "@/lib/graphql";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { STRINGS } from "@/strings";
+import { groupByContainer } from "../lib/containerGroups";
 import { readEntityPreview } from "../lib/entityPreview";
 import { fetchPreviewInfo } from "../lib/playback";
 import { readPlayerNavState } from "../lib/watchQueue";
@@ -382,6 +383,18 @@ describe("MediaItemCard placeholder glyph (CORE-1492)", () => {
     const { container } = renderCard({ mediaClass: "audio" });
     expect(container.querySelector(".bf-poster img")).not.toBeNull();
     expect(container.querySelector(".bf-poster-glyph")).toBeNull();
+  });
+});
+
+describe("MediaItemCard grouped container card (CORE-2553)", () => {
+  it("says the new count in the card's accessible name", () => {
+    const show = { id: "show-1", title: "Fresh Meat" };
+    const [card] = groupByContainer(
+      [baseItem({ id: "e1", container: show }), baseItem({ id: "e2", container: show })],
+      (count) => `${count} new`,
+    );
+    renderCard(card);
+    expect(screen.getByRole("link", { name: /^Fresh Meat, 2 new/ })).toBeInTheDocument();
   });
 });
 
