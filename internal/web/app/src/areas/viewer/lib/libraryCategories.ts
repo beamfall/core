@@ -128,7 +128,8 @@ export async function runBounded<T>(
       const index = next++;
       let value: T | null = null;
       try {
-        value = await reads[index]();
+        const read = reads[index];
+        value = await read();
       } catch {
         value = null;
       }
