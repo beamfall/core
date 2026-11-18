@@ -327,6 +327,10 @@ func (s *Store) undoFileMoveItemTx(ctx context.Context, tx *sql.Tx, item opBatch
 	return move, moved, err
 }
 
+// errUndoMergedVersionText refuses a merge undo whose loser a later version
+// merge folded into another Media.
+const errUndoMergedVersionText = "an item in this batch was later merged into another item as a Version; undo that merge first"
+
 // undoMergeItemTx restores one merged-away member from Trash (the reverse of the
 // merge's audited soft-delete), inside the undo transaction. Visibility was
 // already re-confirmed by UndoBatch before this runs. The bool reports whether
@@ -339,6 +343,13 @@ func undoMergeItemTx(ctx context.Context, tx *sql.Tx, item opBatchItem) (bool, e
 	}
 	if !state.Trashed {
 		return false, nil
+	}
+	// A later version merge took this Media's file; untrashing it here would
+	// bring back an empty Media (CORE-2490).
+	if merged, err := mergedAsVersion(ctx, tx, item.MediaID); err != nil {
+		return false, err
+	} else if merged {
+		return false, ValidationError(errUndoMergedVersionText)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE media SET trashed_at_ms = NULL WHERE id = ?`, item.MediaID); err != nil {

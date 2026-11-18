@@ -56,3 +56,10 @@ encrypted library or while trash is disabled.
 - **WHEN** a caller whose Library scope hides the merged Media undoes the merge batch
 - **THEN** the undo is refused as if the batch did not exist, and the batch stays undoable from a
   scope that can see it
+
+#### Scenario: Undo of an older merge that trashed the merged copy
+
+- **WHEN** a duplicate merge trashed a Media, the Media was restored and later merged as a Version,
+  and the older duplicate merge is undone while the version merge is not
+- **THEN** that undo is refused with a message to undo the version merge first, and the Media stays
+  in the trash

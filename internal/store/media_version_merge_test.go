@@ -490,3 +490,38 @@ func TestUndoVersionMergeRefusesAHiddenCopy(t *testing.T) {
 		t.Fatalf("%s still trashed after undo", drop)
 	}
 }
+
+func TestUndoOrdinaryMergeRefusesAVersionMergedCopy(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	keep, drop, _, _ := splitTitle(t, st)
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET oshash = '00000000eeee0001' WHERE media_id IN (?, ?)`, keep, drop); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	dedupe, err := st.MergeApply(ctx, "library-local", keep, filter, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RestoreMedia(ctx, drop, filter); err != nil {
+		t.Fatal(err)
+	}
+	result, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Merged) != 1 {
+		t.Fatalf("version merge = %+v, want %s folded", result, drop)
+	}
+	if _, err := st.UndoBatch(ctx, dedupe.ID, filter, now.Add(2*time.Minute)); err == nil || err.Error() != errUndoMergedVersionText {
+		t.Fatalf("UndoBatch of the older merge = %v, want %q", err, errUndoMergedVersionText)
+	}
+	var trashed sql.NullInt64
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT trashed_at_ms FROM media WHERE id = ?`, drop).Scan(&trashed); err != nil {
+		t.Fatal(err)
+	}
+	if !trashed.Valid {
+		t.Fatalf("%s left the trash without its file", drop)
+	}
+}
