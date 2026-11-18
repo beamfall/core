@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -491,13 +490,15 @@ func TestOfflinePackOperatorCancelOfRunningBuildWaitsForTheWorker(t *testing.T) 
 		if active := activeOfflinePackBuildJobs(t, st, created.ID); len(active) != 0 {
 			t.Errorf("active jobs while the cancelled worker runs = %+v, want none", active)
 		}
-		// The runner cancels the handler once it loses the job's lease.
-		lost, stop := context.WithCancel(ctx)
-		stop()
-		return jobs.Result{}, svc.RunBuildJob(lost, st, job)
+		// jobCancel stops the running handler at once (CORE-2394), not at the
+		// next lease renewal.
+		if ctx.Err() == nil {
+			t.Error("jobCancel did not cancel the running handler's context")
+		}
+		return jobs.Result{}, svc.RunBuildJob(ctx, st, job)
 	})
-	if _, err := handler.jobRunner.RunOne(t.Context(), []store.JobClass{store.JobClassBackground}, time.Now().UTC()); !errors.Is(err, jobs.ErrLeaseLost) {
-		t.Fatalf("RunOne for the cancelled job = %v, want ErrLeaseLost", err)
+	if _, err := handler.jobRunner.RunOne(t.Context(), []store.JobClass{store.JobClassBackground}, time.Now().UTC()); err != nil {
+		t.Fatalf("RunOne for the cancelled job = %v, want nil", err)
 	}
 	if !cancelledWhileRunning {
 		t.Fatal("the build job never ran")
