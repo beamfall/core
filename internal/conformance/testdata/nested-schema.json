@@ -9200,10 +9200,13 @@
         "optional": true,
         "enum": [
           "added",
+          "audience-score",
           "duration",
           "last-watched",
+          "plays",
           "random",
           "rating",
+          "release-date",
           "title",
           "year"
         ]
@@ -10253,10 +10256,13 @@
         "optional": true,
         "enum": [
           "added",
+          "audience-score",
           "duration",
           "last-watched",
+          "plays",
           "random",
           "rating",
+          "release-date",
           "title",
           "year"
         ]

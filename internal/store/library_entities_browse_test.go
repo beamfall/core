@@ -15,7 +15,7 @@ import (
 //	Beta:  c (2010, 300s, 1080p, watched second, rated 8), in genre Rock
 //	Delta: d through its lid (1980, 1000s, 480p, in progress last), linked to genre Jazz
 //	Gamma: no Media
-func libraryEntityBrowseFixture(t *testing.T) (*Store, LibraryEntitiesQuery) {
+func libraryEntityBrowseFixture(t *testing.T) (*Store, LibraryEntitiesQuery, map[string]MediaID) {
 	t.Helper()
 	st, lib, _ := relatedFixture(t)
 	ctx := context.Background()
@@ -74,7 +74,7 @@ func libraryEntityBrowseFixture(t *testing.T) (*Store, LibraryEntitiesQuery) {
 		Kind:       "box",
 		ChildKinds: []string{"lid"},
 		Browse:     LibraryBrowseQuery{ProfileID: profile},
-	}
+	}, media
 }
 
 func browseEntityTitles(t *testing.T, st *Store, query LibraryEntitiesQuery) ([]string, LibraryEntitiesResult) {
@@ -94,7 +94,7 @@ func browseEntityTitles(t *testing.T, st *Store, query LibraryEntitiesQuery) ([]
 // from reached Media, an Entity without the key trails in both directions, and
 // a title sort reports the letter index.
 func TestLibraryEntitiesBrowseSorts(t *testing.T) {
-	st, base := libraryEntityBrowseFixture(t)
+	st, base, _ := libraryEntityBrowseFixture(t)
 	for _, tc := range []struct {
 		sort string
 		desc bool
@@ -153,7 +153,7 @@ func TestLibraryEntitiesBrowseSorts(t *testing.T) {
 // Entity reaching no Media drops out of every filtered view; kind totals stay
 // unfiltered.
 func TestLibraryEntitiesBrowseFilters(t *testing.T) {
-	st, base := libraryEntityBrowseFixture(t)
+	st, base, _ := libraryEntityBrowseFixture(t)
 	for name, tc := range map[string]struct {
 		browse LibraryBrowseQuery
 		want   []string
@@ -185,5 +185,73 @@ func TestLibraryEntitiesBrowseFilters(t *testing.T) {
 	anon.Browse = LibraryBrowseQuery{Watch: LibraryBrowseWatchUnwatched}
 	if titles, _ := browseEntityTitles(t, st, anon); !reflect.DeepEqual(titles, []string{"Alpha", "Beta", "Delta"}) {
 		t.Fatalf("unwatched without a Profile = %v, want every box with Media", titles)
+	}
+}
+
+// TestLibraryBrowseReleaseScorePlaysSorts pins the CORE-2443 sorts on the
+// Media browse and on an Entity kind. Fields: a released 2001-05-04 scored
+// 7.5 played 3 times; b with only its year (1995); c released 2010-02-01
+// scored 9 played twice; d with only its year (1980) and a score off the 0-10
+// scale. An Entity takes the earliest release, the highest score and the
+// total plays of the Media it reaches.
+func TestLibraryBrowseReleaseScorePlaysSorts(t *testing.T) {
+	st, base, media := libraryEntityBrowseFixture(t)
+	ctx := context.Background()
+	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	for name, fields := range map[string][]MediaField{
+		"a": {{Name: "release-date", Type: EntityFieldDate, Date: day(2001, time.May, 4)}, {Name: "community-rating", Type: EntityFieldNumber, Number: 7.5}},
+		"c": {{Name: "release-date", Type: EntityFieldDate, Date: day(2010, time.February, 1)}, {Name: "community-rating", Type: EntityFieldNumber, Number: 9}},
+		"d": {{Name: "community-rating", Type: EntityFieldNumber, Number: 11}},
+	} {
+		if err := st.UpsertMediaFields(ctx, media[name], fields); err != nil {
+			t.Fatal(err)
+		}
+	}
+	profile := base.Browse.ProfileID
+	for name, plays := range map[string]int{"a": 3, "c": 2} {
+		if err := st.ApplyImportedPlays(ctx, profile, media[name], plays, day(2026, time.January, 1), EngagementProvenance{Source: "import"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mediaTitles := func(browse LibraryBrowseQuery) []string {
+		browse.LibraryID = base.LibraryID
+		got, err := st.LibraryBrowse(ctx, LibraryFilter{AllLibraries: true}, browse)
+		if err != nil {
+			t.Fatal(err)
+		}
+		titles := make([]string, len(got.Items))
+		for i, item := range got.Items {
+			titles[i] = item.Title
+		}
+		return titles
+	}
+	for _, tc := range []struct {
+		sort        string
+		desc        bool
+		noProfile   bool
+		wantMedia   []string
+		wantEntites []string
+	}{
+		{LibraryBrowseSortReleaseDate, true, false, []string{"c", "a", "b", "d"}, []string{"Beta", "Alpha", "Delta", "Gamma"}},
+		{LibraryBrowseSortReleaseDate, false, false, []string{"d", "b", "a", "c"}, []string{"Delta", "Alpha", "Beta", "Gamma"}},
+		{LibraryBrowseSortAudienceScore, true, false, []string{"c", "a", "b", "d"}, []string{"Beta", "Alpha", "Delta", "Gamma"}},
+		{LibraryBrowseSortAudienceScore, false, false, []string{"a", "c", "b", "d"}, []string{"Alpha", "Beta", "Delta", "Gamma"}},
+		{LibraryBrowseSortPlays, true, false, []string{"a", "c", "b", "d"}, []string{"Alpha", "Beta", "Delta", "Gamma"}},
+		{LibraryBrowseSortPlays, false, false, []string{"b", "d", "c", "a"}, []string{"Delta", "Beta", "Alpha", "Gamma"}},
+		{LibraryBrowseSortPlays, true, true, []string{"a", "b", "c", "d"}, []string{"Alpha", "Beta", "Delta", "Gamma"}},
+	} {
+		browse := LibraryBrowseQuery{ProfileID: profile, Sort: tc.sort, Descending: tc.desc}
+		if tc.noProfile {
+			browse.ProfileID = ""
+		}
+		if got := mediaTitles(browse); !reflect.DeepEqual(got, tc.wantMedia) {
+			t.Errorf("media sort %q desc=%v profile=%v = %v, want %v", tc.sort, tc.desc, !tc.noProfile, got, tc.wantMedia)
+		}
+		query := base
+		query.Browse = browse
+		if got, _ := browseEntityTitles(t, st, query); !reflect.DeepEqual(got, tc.wantEntites) {
+			t.Errorf("entity sort %q desc=%v profile=%v = %v, want %v", tc.sort, tc.desc, !tc.noProfile, got, tc.wantEntites)
+		}
 	}
 }

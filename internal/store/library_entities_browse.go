@@ -62,13 +62,8 @@ func (s *Store) libraryEntityBrowseFilterLocked(ctx context.Context, reader *sql
 		return nil, err
 	}
 	media := set.candidates
-	if browse.ProfileID != "" && (browse.Watch != "" || browse.Sort == LibraryBrowseSortLastWatched) {
-		if err := s.libraryBrowseProgressLocked(ctx, browse.ProfileID, media); err != nil {
-			return nil, err
-		}
-	}
-	if browse.ProfileID != "" && (browse.MinRating > 0 || browse.Sort == LibraryBrowseSortRating) {
-		if err := s.libraryBrowseRatingsLocked(ctx, browse.ProfileID, media); err != nil {
+	if len(set.visible) > 0 {
+		if err := s.libraryBrowseKeysLocked(ctx, set.reader, set.visible, browse, media); err != nil {
 			return nil, err
 		}
 	}
@@ -131,15 +126,19 @@ func (s *Store) libraryEntityBrowseFilterLocked(ctx context.Context, reader *sql
 }
 
 // libraryEntityKeys accumulates one Entity's browse keys from its reached
-// Media: the earliest year, the latest added, the total duration, the latest
-// watched, the highest rating, whether all are watched and any is in
-// progress, and every quality tier present.
+// Media: the earliest year and release date, the latest added, the total
+// duration and plays, the latest watched, the highest rating and audience
+// score, whether all are watched and any is in progress, and every quality
+// tier present.
 type libraryEntityKeys struct {
 	year        int
 	rowID       int64
 	duration    int
 	lastWatched int64
 	rating      int
+	release     int64
+	audience    int64
+	plays       int64
 	watched     bool
 	inProgress  bool
 	tiers       map[string]bool
@@ -153,6 +152,14 @@ func (k *libraryEntityKeys) add(m libraryBrowseCandidate) {
 	k.duration += max(m.duration, 0)
 	k.lastWatched = max(k.lastWatched, m.lastWatched)
 	k.rating = max(k.rating, m.rating)
+	if m.release > 0 && (k.release == 0 || m.release < k.release) {
+		k.release = m.release
+	}
+	k.audience = max(k.audience, m.audience)
+	// plays carries the count plus one; the sum keeps that offset once.
+	if m.plays > 0 {
+		k.plays = max(k.plays, 1) + m.plays - 1
+	}
 	k.watched = k.watched && m.watched
 	k.inProgress = k.inProgress || m.inProgress
 	if m.height > 0 {
@@ -166,6 +173,9 @@ func (k *libraryEntityKeys) apply(c *libraryBrowseCandidate) {
 	c.duration = k.duration
 	c.lastWatched = k.lastWatched
 	c.rating = k.rating
+	c.release = k.release
+	c.audience = k.audience
+	c.plays = k.plays
 	c.watched = k.watched
 	c.inProgress = k.inProgress
 }

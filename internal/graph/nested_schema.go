@@ -450,10 +450,13 @@ func libraryItemsArguments() []NestedArgument {
 		{Name: "seed", Kind: "string", Optional: true},
 		{Name: "sort", Kind: "string", Optional: true, Enum: []string{
 			store.LibraryBrowseSortAdded,
+			store.LibraryBrowseSortAudienceScore,
 			store.LibraryBrowseSortDuration,
 			store.LibraryBrowseSortLastWatched,
+			store.LibraryBrowseSortPlays,
 			store.LibraryBrowseSortRandom,
 			store.LibraryBrowseSortRating,
+			store.LibraryBrowseSortReleaseDate,
 			store.LibraryBrowseSortTitle,
 			store.LibraryBrowseSortYear,
 		}},
