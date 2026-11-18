@@ -15,8 +15,10 @@ import {
   readViewerCache,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { ItemActions } from "../actions";
 import { CastRow } from "../components/CastRow";
 import { findCachedSectionItem } from "../components/HydratedSection";
+import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
 import { SectionView } from "../components/SectionView";
@@ -354,7 +356,17 @@ export function MediaDetailPage() {
                     positionSeconds={progress?.positionSeconds}
                   />
                 )}
+                {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
               </div>
+              {/* The Profile's own state for this item (CORE-2436), keyed so a
+                  route change to another item starts from that item's state. */}
+              {mediaId && (
+                <ItemActions
+                  key={mediaId}
+                  target={{ mediaID: mediaId }}
+                  className="bf-detail-item-actions"
+                />
+              )}
               {summary && <DetailOverview key={summary} text={summary} />}
               {!media && status === "loading" && <Skeleton aria-hidden className="h-4 w-40" />}
               {status === "failed" && !media && retry}

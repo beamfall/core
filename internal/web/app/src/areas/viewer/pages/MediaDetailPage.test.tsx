@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { calibrateWatchPartyClock, fetchEntity, fetchMediaForEntity } from "@/li
 import type { GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import { expectNoAxeViolations } from "@/test/axe";
 import { sectionCacheKey } from "../components/HydratedSection";
 import {
   fetchMedia,
@@ -17,7 +18,12 @@ import {
 import { resetHomeNetworkProbeForTest } from "../lib/watchTogether";
 import { MediaDetailPage } from "./MediaDetailPage";
 
-const mocks = vi.hoisted(() => ({ identity: null as string | null }));
+const mocks = vi.hoisted(() => ({
+  identity: null as string | null,
+  // The server's item state for the page's Media (CORE-2436); it outlives a render.
+  itemState: { id: "m1", kind: "media", watched: false, watchlisted: false, rating: 0 },
+  itemCalls: [] as Array<[string, unknown, unknown]>,
+}));
 
 vi.mock("../lib/mediaDetail", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/mediaDetail")>()),
@@ -29,6 +35,20 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
   fetchEntity: vi.fn(),
   fetchMediaForEntity: vi.fn(),
   calibrateWatchPartyClock: vi.fn(),
+  fetchItemState: vi.fn(async () => mocks.itemState),
+  ...Object.fromEntries(
+    (["setWatched", "setWatchlisted", "setRating"] as const).map((name) => [
+      name,
+      vi.fn(async (target: unknown, value: unknown) => {
+        mocks.itemCalls.push([name, target, value]);
+        const field = { setWatched: "watched", setWatchlisted: "watchlisted", setRating: "rating" }[
+          name
+        ];
+        mocks.itemState = { ...mocks.itemState, [field]: value };
+        return mocks.itemState;
+      }),
+    ]),
+  ),
 }));
 vi.mock("@/lib/session", () => ({
   useViewerIdentity: () => mocks.identity,
@@ -113,6 +133,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearViewerCache();
+  mocks.itemState = { id: "m1", kind: "media", watched: false, watchlisted: false, rating: 0 };
+  mocks.itemCalls = [];
 });
 
 describe("MediaDetailPage", () => {
@@ -580,5 +602,78 @@ describe("MediaDetailPage", () => {
     fireEvent.load(img as Element);
     expect(img).toHaveAttribute("data-loaded");
     expect(container.querySelector(".bf-detail-stage")).toHaveAttribute("data-backdrop");
+  });
+
+  it("marks the item watched, watchlists and rates it, and the state survives a reload (CORE-2436)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    renderAt(["/media/m1"]);
+    const watched = await screen.findByRole("button", { name: "Mark watched" });
+    await waitFor(() => expect(watched).toBeEnabled());
+
+    fireEvent.click(watched);
+    await screen.findByRole("button", { name: "Mark unwatched", pressed: true });
+    fireEvent.click(screen.getByRole("button", { name: "Add to watchlist" }));
+    await screen.findByRole("button", { name: "Remove from watchlist", pressed: true });
+    fireEvent.click(screen.getByRole("button", { name: "Rate 4 out of 5" }));
+    await screen.findByRole("button", { name: "Clear your rating" });
+    expect(mocks.itemCalls).toEqual([
+      ["setWatched", { mediaID: "m1" }, true],
+      ["setWatchlisted", { mediaID: "m1" }, true],
+      ["setRating", { mediaID: "m1" }, 8],
+    ]);
+
+    // A fresh page load reads the stored state back.
+    cleanup();
+    clearViewerCache();
+    renderAt(["/media/m1"]);
+    expect(
+      await screen.findByRole("button", { name: "Mark unwatched", pressed: true }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove from watchlist" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // The chosen fourth star reads "Clear your rating"; the three below it are filled too.
+    expect(screen.getByRole("button", { name: "Clear your rating" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Rate 3 out of 5" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Play stays the one accent-filled action.
+    expect(document.querySelectorAll(".bg-primary")).toHaveLength(1);
+  });
+
+  it("offers Add to playlist and Copy link from the More menu (CORE-2436)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    renderAt(["/media/m1"]);
+    const more = await screen.findByRole("button", { name: "More actions for Server title" });
+    fireEvent.click(more);
+    expect(await screen.findByRole("menuitem", { name: "Copy link" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add to playlist" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Add “Server title” to a playlist" }),
+    ).toBeInTheDocument();
+  });
+
+  it("has no axe violations with the action row loaded (CORE-2436)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        {
+          entityID: "p1",
+          title: "Lead",
+          kind: "person",
+          archetype: "person",
+          relation: "credited-in",
+          attributes: { character: "Hero" },
+        },
+      ],
+    });
+    const { container } = renderAt(["/media/m1"]);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark watched" })).toBeEnabled());
+    await expectNoAxeViolations(container);
   });
 });
