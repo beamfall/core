@@ -404,11 +404,11 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 	}
 
 	// keyword path (also the fallback for auto).
-	results, err := h.store.SearchMedia(ctx, filter, text, 50)
+	results, err := h.store.SearchMedia(ctx, filter, text, keywordCandidateLimit)
 	if err != nil {
 		return SearchResultResponse{}, err
 	}
-	entities, err := h.store.SearchEntities(ctx, filter, text, 50)
+	entities, err := h.store.SearchEntities(ctx, filter, text, keywordCandidateLimit)
 	if err != nil {
 		return SearchResultResponse{}, err
 	}
@@ -416,8 +416,8 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 	if err := h.orderKeywordResults(ctx, text, results); err != nil {
 		return SearchResultResponse{}, err
 	}
-	if len(results) > 50 {
-		results = results[:50]
+	if len(results) > keywordResultLimit {
+		results = results[:keywordResultLimit]
 	}
 	// Keyword search is a deliberately-surfaced surface: muted items appear on
 	// purpose and carry the Muted badge.

@@ -107,6 +107,15 @@ func (h *Handler) sourceItemContainer(item store.SourceItem) *SourceItemContaine
 	return container
 }
 
+// Keyword search reads a wider candidate window than it returns, so
+// container ordering runs before the cut: a container with more matching
+// items than the cut keeps its first items rather than the alphabetically
+// first ones (CORE-2525).
+const (
+	keywordResultLimit    = 50
+	keywordCandidateLimit = 250
+)
+
 // orderKeywordResults orders keyword hits by relevance, scoring a Media item
 // by its own title or its container's, whichever matches better, so items
 // found through their container rank with it (CORE-2525). Within a relevance

@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -171,5 +172,51 @@ func TestKeywordSearchGroupsItemsUnderTheirContainer(t *testing.T) {
 	}
 	if c := search.Items[2].Container; c == nil || c.ID != "entity-vol-a" || c.Title != "Harbour" {
 		t.Fatalf("a1 search container = %+v, want entity-vol-a Harbour", c)
+	}
+}
+
+// TestKeywordSearchKeepsAContainersFirstItemsPastTheCut pins the CORE-2525
+// candidate window: ordinal ordering runs before the 50-hit cut, so a
+// container with more matching items than the cut still lists its first
+// items, whatever their titles.
+func TestKeywordSearchKeepsAContainersFirstItemsPastTheCut(t *testing.T) {
+	handler, libraryID, _ := newContainerLibrary(t)
+	ctx := context.Background()
+	var first store.MediaID
+	for i := 1; i <= 55; i++ {
+		title := fmt.Sprintf("Alpha %02d", i)
+		if i == 1 {
+			title = "Zulu"
+		}
+		item, _, err := handler.store.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: libraryID, Path: fmt.Sprintf("/volumes/extra-%02d.mkv", i), Title: title,
+			Container: "mkv", Codec: "h264", ContentFingerprint: fmt.Sprintf("fp-extra-%02d", i),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := handler.store.SetMediaFields(ctx, item.ID, []store.MediaField{
+			{Name: "sequence", Type: store.EntityFieldNumber, Number: 3},
+			{Name: "index", Type: store.EntityFieldNumber, Number: float64(i)},
+			{Name: "volume-name", Type: store.EntityFieldText, Text: "Harbour"},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if err := handler.store.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "entity-part-a2", Name: "holds", ToMediaID: item.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			first = item.ID
+		}
+	}
+	var search SearchResultResponse
+	execGraph(t, handler, authorizeViewer,
+		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id } } }`,
+		map[string]any{"query": "Harbour"}, "searchResult", &search)
+	if len(search.Items) != 50 {
+		t.Fatalf("search returned %d hits, want the 50-hit cut", len(search.Items))
+	}
+	if !slices.ContainsFunc(search.Items, func(item SearchResultItem) bool { return item.ID == string(first) }) {
+		t.Fatalf("search dropped the container's first item %s", first)
 	}
 }
