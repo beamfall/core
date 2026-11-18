@@ -207,6 +207,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"SemanticSearch":                          {},
 	"Session":                                 {},
 	"SessionHasApprovedExtension":             {},
+	"SessionIDsByDevice":                      {},
 	"SetCapabilityEnabled":                    {},
 	"SetClientPref":                           {},
 	"SetConsoleConfig":                        {},
