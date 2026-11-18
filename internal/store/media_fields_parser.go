@@ -24,6 +24,10 @@ const (
 	// parserOwnedProbe is the parser's output that changes with the media
 	// probe: only a probed parse refreshes it.
 	parserOwnedProbe = 3
+	// parserOwnedProbeAbsent is a value-less row: a probed parse emitted no
+	// such field where a parse without the probe would. Only a probed parse
+	// may add the field back, so a later unprobed parse cannot undo it.
+	parserOwnedProbeAbsent = 4
 )
 
 // ParserFieldRefresh is the filename parser's whole Media field output for one
@@ -34,6 +38,9 @@ type ParserFieldRefresh struct {
 	// ProbeDependent names the Fields whose value came from the media probe
 	// (the parse differs without it).
 	ProbeDependent map[string]bool
+	// ProbeAbsent names fields a parse without the probe emits that this
+	// probed parse does not: the probe decided their absence.
+	ProbeAbsent map[string]bool
 	// Authoritative is true when the parse saw the probe the full import
 	// would see, so probe-dependent and legacy fields may be settled by it.
 	Authoritative bool
@@ -45,7 +52,9 @@ type ParserFieldRefresh struct {
 // another writer last won (identification, NFO, manual, hydration, local
 // metadata) and tombstoned values are left alone; a tombstoned value counts as
 // not emitted. A non-authoritative parse (no probe) leaves probe-dependent and
-// legacy fields as they are; an authoritative one settles both.
+// legacy fields as they are; an authoritative one settles both, and records a
+// probe-decided absence (ProbeAbsent) so a later unprobed parse cannot add the
+// field back.
 func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refresh ParserFieldRefresh) error {
 	if id == "" {
 		return errors.New("media ID is required")
@@ -98,6 +107,9 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 		if exists && (!isOwned || !refreshable(stored)) {
 			continue
 		}
+		if stored == parserOwnedProbeAbsent && !refresh.Authoritative {
+			continue
+		}
 		emitted[field.Name] = true
 		if exists && mediaFieldValuesEqual(current, field) {
 			if stored != marker {
@@ -134,14 +146,45 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 		if emitted[name] || !refreshable(marker) {
 			continue
 		}
-		if err := deleteMediaFieldValueTx(ctx, tx, id, name); err != nil {
-			return err
+		if marker != parserOwnedProbeAbsent {
+			if err := deleteMediaFieldValueTx(ctx, tx, id, name); err != nil {
+				return err
+			}
+			changed = true
+		}
+		if refresh.Authoritative && refresh.ProbeAbsent[name] {
+			if _, err := tx.ExecContext(ctx,
+				"UPDATE media_field_provenance SET parser_owned = ? WHERE media_id = ? AND field = ?",
+				parserOwnedProbeAbsent, id, name); err != nil {
+				return err
+			}
+			continue
 		}
 		if _, err := tx.ExecContext(ctx,
 			"DELETE FROM media_field_provenance WHERE media_id = ? AND field = ?", id, name); err != nil {
 			return err
 		}
-		changed = true
+	}
+	if refresh.Authoritative {
+		// A probe-decided absence of a field no one holds yet is recorded too,
+		// so the first unprobed rescan after a probed import cannot add it.
+		for name := range refresh.ProbeAbsent {
+			if _, isOwned := owned[name]; isOwned || emitted[name] {
+				continue
+			}
+			if _, exists, err := mediaFieldValueTx(ctx, tx, id, name); err != nil {
+				return err
+			} else if exists {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO media_field_provenance(media_id, field, source, parser_owned)
+				SELECT ?, ?, ?, ?
+				WHERE NOT EXISTS (SELECT 1 FROM media_field_provenance WHERE media_id = ? AND field = ?)
+			`, id, name, string(MutationSourceScan), parserOwnedProbeAbsent, id, name); err != nil {
+				return err
+			}
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return err

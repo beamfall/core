@@ -352,9 +352,9 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 
 // parserFieldRefresh is the parser's whole Media field output for one file:
 // its declared fields plus the structural ones. When the parse saw a probe,
-// the file is parsed again without it, and each field that differs is marked
-// probe-dependent so a later parse without a probe leaves it alone
-// (CORE-2554).
+// the file is parsed again without it: each field that differs is marked
+// probe-dependent, and each field only that parse emits probe-absent, so a
+// later parse without a probe leaves both alone (CORE-2554).
 func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed ParsedMedia, parsedOK bool, fields []store.MediaField, authoritative bool) store.ParserFieldRefresh {
 	out := append([]store.MediaField(nil), fields...)
 	if parsedOK {
@@ -379,7 +379,12 @@ func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed
 	for _, field := range baseline {
 		byName[field.Name] = field
 	}
+	absent := make(map[string]bool, len(byName))
+	for name := range byName {
+		absent[name] = true
+	}
 	for _, field := range out {
+		delete(absent, field.Name)
 		if base, ok := byName[field.Name]; ok && sameMediaFieldValue(base, field) {
 			continue
 		}
@@ -387,6 +392,14 @@ func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed
 			refresh.ProbeDependent = map[string]bool{}
 		}
 		refresh.ProbeDependent[field.Name] = true
+	}
+	// What is left the parse without the probe emits and this one does not:
+	// the probe decided its absence.
+	for name := range absent {
+		if refresh.ProbeAbsent == nil {
+			refresh.ProbeAbsent = map[string]bool{}
+		}
+		refresh.ProbeAbsent[name] = true
 	}
 	return refresh
 }

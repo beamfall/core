@@ -234,3 +234,115 @@ func TestRescanKeepsProbeDependentFieldsWithoutProbe(t *testing.T) {
 		}
 	}
 }
+
+// absentOnVideoParser emits no class when the probe shows video and an
+// audio-track class otherwise, as a revised parser that leaves video out.
+type absentOnVideoParser struct{}
+
+func (absentOnVideoParser) Parse(_ string, probe ParseProbe) (ParsedMedia, bool) {
+	if probe.HasVideo {
+		return ParsedMedia{Title: "Song"}, true
+	}
+	return ParsedMedia{Title: "Song", Class: "audio-track"}, true
+}
+
+// TestRescanKeepsProbeDecidedAbsence: a class the probed parse leaves out is
+// not added by a later unprobed parse on the fast path or without a prober
+// (CORE-2554).
+func TestRescanKeepsProbeDecidedAbsence(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	writeScanFile(t, root, "song.mkv", []byte("song"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Film TV", false, filmtv.PluginID, "profile-default")
+	if err != nil {
+		t.Fatalf("CreateLibrary: %v", err)
+	}
+	parsers := map[string]FilenameParser{filmtv.PluginID: absentOnVideoParser{}}
+	for pass := 0; pass < 3; pass++ {
+		var prober Prober = videoProber{}
+		if pass == 2 {
+			prober = nil
+		}
+		result, err := Scan(ctx, st, prober, nil, parsers, nil, nil, Request{LibraryID: library.ID, Root: root})
+		if err != nil || len(result.Files) != 1 {
+			t.Fatalf("Scan pass %d: files %d, error %v", pass, len(result.Files), err)
+		}
+		fields, err := st.MediaFields(ctx, result.Files[0].MediaID, store.LibraryFilter{AllLibraries: true})
+		if err != nil {
+			t.Fatalf("MediaFields: %v", err)
+		}
+		for _, field := range fields {
+			if field.Name == "class" {
+				t.Fatalf("pass %d class = %q, want none (the probe saw video)", pass, field.Text)
+			}
+		}
+	}
+}
+
+// contextProbeClassParser is probeClassParser with folder context, so a
+// multi-file folder is parsed once by the scan's preflight.
+type contextProbeClassParser struct{ probeClassParser }
+
+func (p contextProbeClassParser) ParseWithContext(path string, probe ParseProbe, _ ParseContext) (ParsedMedia, bool) {
+	return p.Parse(path, probe)
+}
+
+// firstProbeFailsProber fails the first probe of one file and reports video
+// otherwise: the worker's probe of that file fails, the folder preflight's
+// succeeds.
+type firstProbeFailsProber struct {
+	mu     sync.Mutex
+	target string
+	failed bool
+}
+
+func (p *firstProbeFailsProber) Probe(ctx context.Context, path string) (ffmpeg.Probe, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if filepath.Base(path) == p.target && !p.failed {
+		p.failed = true
+		return ffmpeg.Probe{}, context.DeadlineExceeded
+	}
+	return videoProber{}.Probe(ctx, path)
+}
+
+// TestRescanOwnershipFollowsThePreflightProbe: when the folder preflight's
+// probe decided the parse but the worker's probe failed, the class is still
+// probe-dependent, so a scan without a prober leaves it (CORE-2554).
+func TestRescanOwnershipFollowsThePreflightProbe(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	writeScanFile(t, root, "a.mkv", []byte("a"))
+	writeScanFile(t, root, "b.mkv", []byte("b"))
+	st := storetest.Open(t)
+	library, err := st.CreateLibrary(ctx, "Film TV", false, filmtv.PluginID, "profile-default")
+	if err != nil {
+		t.Fatalf("CreateLibrary: %v", err)
+	}
+	parsers := map[string]FilenameParser{filmtv.PluginID: contextProbeClassParser{}}
+	for pass, prober := range []Prober{&firstProbeFailsProber{target: "a.mkv"}, nil} {
+		result, err := Scan(ctx, st, prober, nil, parsers, nil, nil, Request{LibraryID: library.ID, Root: root})
+		if err != nil || len(result.Files) != 2 {
+			t.Fatalf("Scan pass %d: files %d, error %v", pass, len(result.Files), err)
+		}
+		for _, file := range result.Files {
+			if filepath.Base(file.Path) != "a.mkv" {
+				continue
+			}
+			fields, err := st.MediaFields(ctx, file.MediaID, store.LibraryFilter{AllLibraries: true})
+			if err != nil {
+				t.Fatalf("MediaFields: %v", err)
+			}
+			class := ""
+			for _, field := range fields {
+				if field.Name == "class" {
+					class = field.Text
+				}
+			}
+			if class != "video-track" {
+				t.Fatalf("pass %d a.mkv class = %q, want the preflight-probed video-track", pass, class)
+			}
+		}
+	}
+}

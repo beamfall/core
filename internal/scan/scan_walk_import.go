@@ -260,6 +260,13 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		DurationSeconds: imported.DurationSecondsHint,
 		Tags:            probeTags,
 	}
+	authoritative := probeSucceeded || isImage
+	// A folder preflight parsed the file with its own probe, so the parse and
+	// its field ownership follow that probe, not the worker's (CORE-2554).
+	if decision := s.directoryPreflights[filepath.Dir(path)]; decision != nil {
+		parseProbe = decision.probes[path]
+		authoritative = isImage || !parseProbeEmpty(parseProbe)
+	}
 	if s.parser != nil {
 		var refused bool
 		parsed, parsedOK, refused = s.parseFilename(path, parseProbe)
@@ -271,7 +278,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
-		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, probeSucceeded || isImage)
+		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
 	// The fast path took every file whose size and mtime are unchanged, so a
 	// file here is new to the catalog or changed on disk (CORE-2040).

@@ -13,6 +13,8 @@
 --       scan-tier fields stay 0, since hydration writes at that tier too.
 --   3 = the parser's output that depends on the media probe: refreshed only
 --       by a parse that saw a real probe.
+--   4 = no value: a probed parse left the field out where a parse without
+--       the probe emits it, so only a probed parse may add it back.
 ALTER TABLE media_field_provenance ADD COLUMN parser_owned INTEGER NOT NULL DEFAULT 0;
 UPDATE media_field_provenance SET parser_owned = 2
   WHERE source = 'scan' AND field = 'class';

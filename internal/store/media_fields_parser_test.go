@@ -232,3 +232,83 @@ func TestRefreshParserMediaFieldsRemovesLegacyClassOnAuthoritativeParse(t *testi
 		t.Fatalf("removed class provenance = %q (%v), want none", source, err)
 	}
 }
+
+// TestRefreshParserMediaFieldsKeepsProbeDecidedAbsence: a field a probed parse
+// left out, where the parse without the probe emits it, stays out until a
+// probed parse says otherwise; an unprobed parse cannot add it back, whether
+// the probed parse removed it or never had it (CORE-2554).
+func TestRefreshParserMediaFieldsKeepsProbeDecidedAbsence(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	const id MediaID = "media-alpha"
+	class := func(value string) MediaField { return MediaField{Name: "class", Type: EntityFieldText, Text: value} }
+	fallback := MediaField{Name: "note", Type: EntityFieldText, Text: "fallback"}
+	unprobed := ParserFieldRefresh{Fields: []MediaField{class("audio-track"), fallback}}
+	assertAbsent := func(step, name string) {
+		t.Helper()
+		if field, ok := parserFieldsByName(t, st, id)[name]; ok {
+			t.Fatalf("%s: %s = %#v, want absent", step, name, field)
+		}
+	}
+
+	if err := st.RefreshParserMediaFields(ctx, id, ParserFieldRefresh{
+		Fields: []MediaField{class("video-track")}, ProbeDependent: map[string]bool{"class": true}, Authoritative: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The probed parse now emits no class, nor the never-held note, though
+	// the unprobed parse emits both.
+	probedNone := ParserFieldRefresh{ProbeAbsent: map[string]bool{"class": true, "note": true}, Authoritative: true}
+	if err := st.RefreshParserMediaFields(ctx, id, probedNone); err != nil {
+		t.Fatal(err)
+	}
+	assertAbsent("probed parse without class", "class")
+	if got := parserMarker(t, st, id, "class"); got != parserOwnedProbeAbsent {
+		t.Fatalf("class marker = %d, want %d", got, parserOwnedProbeAbsent)
+	}
+	for pass := 0; pass < 2; pass++ {
+		if err := st.RefreshParserMediaFields(ctx, id, unprobed); err != nil {
+			t.Fatal(err)
+		}
+		assertAbsent("unprobed parse", "class")
+		assertAbsent("unprobed parse", "note")
+	}
+	// A probed parse emitting the class takes it back.
+	if err := st.RefreshParserMediaFields(ctx, id, ParserFieldRefresh{
+		Fields: []MediaField{class("video-track")}, ProbeDependent: map[string]bool{"class": true},
+		ProbeAbsent: map[string]bool{"note": true}, Authoritative: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := parserFieldsByName(t, st, id)["class"].Text; got != "video-track" {
+		t.Fatalf("probed parse class = %q, want video-track", got)
+	}
+	// Once the absence no longer depends on the probe, the record goes and an
+	// unprobed parse adds the field again.
+	if err := st.RefreshParserMediaFields(ctx, id, ParserFieldRefresh{
+		Fields: []MediaField{class("video-track")}, ProbeDependent: map[string]bool{"class": true}, Authoritative: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if source, err := st.MediaFieldProvenance(ctx, id, "note"); err != nil || source != "" {
+		t.Fatalf("settled absence provenance = %q (%v), want none", source, err)
+	}
+	if err := st.RefreshParserMediaFields(ctx, id, ParserFieldRefresh{Fields: []MediaField{fallback}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := parserFieldsByName(t, st, id)["note"].Text; got != "fallback" {
+		t.Fatalf("note after settled absence = %q, want fallback", got)
+	}
+	// Another writer's value is never turned into an absence.
+	if err := st.UpsertMediaFieldsWithSource(ctx, id, []MediaField{{Name: "kept", Type: EntityFieldText, Text: "x"}}, MutationSourceOperator); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RefreshParserMediaFields(ctx, id, ParserFieldRefresh{
+		Fields: []MediaField{class("video-track")}, ProbeAbsent: map[string]bool{"kept": true}, Authoritative: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := parserFieldsByName(t, st, id)["kept"].Text; got != "x" {
+		t.Fatalf("operator field = %q, want x", got)
+	}
+}
