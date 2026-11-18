@@ -60,9 +60,14 @@ func (h *Handler) annotateContainers(ctx context.Context, items []store.SourceIt
 		frontier[i] = true
 	}
 	for depth := 1; depth < identify.MaxContainerDepth && len(frontier) > 0; depth++ {
+		// Siblings share their containers, so each Entity is read once.
 		var next []store.EntityID
+		queued := map[store.EntityID]bool{}
 		for i := range frontier {
-			next = append(next, current[i].EntityID)
+			if id := current[i].EntityID; !queued[id] {
+				queued[id] = true
+				next = append(next, id)
+			}
 		}
 		targets, err := h.store.EntityTargetLinksBatch(ctx, next)
 		if err != nil {
@@ -107,13 +112,13 @@ func (h *Handler) sourceItemContainer(item store.SourceItem) *SourceItemContaine
 	return container
 }
 
-// Keyword search reads a wider candidate window than it returns, so
-// container ordering runs before the cut: a container with more matching
+// Keyword search asks for every hit the store scores and cuts to its result
+// limit only after container ordering, so a container with more matching
 // items than the cut keeps its first items rather than the alphabetically
 // first ones (CORE-2525).
 const (
 	keywordResultLimit    = 50
-	keywordCandidateLimit = 250
+	keywordCandidateLimit = store.SearchCandidateLimit
 )
 
 // orderKeywordResults orders keyword hits by relevance, scoring a Media item

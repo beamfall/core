@@ -11,6 +11,11 @@ import (
 
 const fuzzySearchScanLimit = 5000
 
+// SearchCandidateLimit is the most hits a search can score: the rows one
+// scan reads. A caller that reorders hits asks for this many and cuts after
+// its own ordering, so no scored hit is dropped before it (CORE-2525).
+const SearchCandidateLimit = fuzzySearchScanLimit
+
 type rankedSourceItem struct {
 	item  SourceItem
 	score int

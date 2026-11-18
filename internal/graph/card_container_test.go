@@ -175,22 +175,22 @@ func TestKeywordSearchGroupsItemsUnderTheirContainer(t *testing.T) {
 	}
 }
 
-// TestKeywordSearchKeepsAContainersFirstItemsPastTheCut pins the CORE-2525
-// candidate window: ordinal ordering runs before the 50-hit cut, so a
+// TestKeywordSearchKeepsAContainersFirstItemsPastTheCut pins CORE-2525:
+// container ordering runs over every scored hit before the 50-hit cut, so a
 // container with more matching items than the cut still lists its first
 // items, whatever their titles.
 func TestKeywordSearchKeepsAContainersFirstItemsPastTheCut(t *testing.T) {
 	handler, libraryID, _ := newContainerLibrary(t)
 	ctx := context.Background()
 	var first store.MediaID
-	for i := 1; i <= 55; i++ {
-		title := fmt.Sprintf("Alpha %02d", i)
+	for i := 1; i <= 260; i++ {
+		title := fmt.Sprintf("Alpha %03d", i)
 		if i == 1 {
 			title = "Zulu"
 		}
 		item, _, err := handler.store.ImportMediaFile(ctx, store.ImportMediaFile{
-			LibraryID: libraryID, Path: fmt.Sprintf("/volumes/extra-%02d.mkv", i), Title: title,
-			Container: "mkv", Codec: "h264", ContentFingerprint: fmt.Sprintf("fp-extra-%02d", i),
+			LibraryID: libraryID, Path: fmt.Sprintf("/volumes/extra-%03d.mkv", i), Title: title,
+			Container: "mkv", Codec: "h264", ContentFingerprint: fmt.Sprintf("fp-extra-%03d", i),
 		})
 		if err != nil {
 			t.Fatal(err)
