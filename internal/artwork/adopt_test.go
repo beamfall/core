@@ -215,3 +215,24 @@ func TestAdoptEntityArtworkFailsOnAnUnreadableLegacyOverlay(t *testing.T) {
 		t.Fatal("adoption past an unreadable legacy logo succeeded")
 	}
 }
+
+// A survivor whose Library cannot be read fails the adoption instead of
+// reading as protected, so the merge waits for a retry that copies the art.
+func TestAdoptEntityArtworkFailsWhenTheSurvivorCannotBeRead(t *testing.T) {
+	s := newShelf(t)
+	s.svc.SetSealed(func(store.LibraryID) bool { return false })
+	s.entity("entity-kept", "box")
+	s.entity("entity-merged", "box")
+	writeSlotFile(t, s.svc.EntityArtworkPath("entity-merged", SlotPoster), "merged poster")
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := s.svc.AdoptEntityArtwork(cancelled, "entity-kept", "entity-merged"); err == nil {
+		t.Fatal("adoption with an unreadable survivor succeeded")
+	}
+	if err := s.svc.AdoptEntityArtwork(context.Background(), "entity-kept", "entity-merged"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if !regularFileExists(s.svc.EntityArtworkPath("entity-kept", SlotPoster)) {
+		t.Fatal("retry did not copy the poster to the survivor")
+	}
+}

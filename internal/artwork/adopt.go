@@ -3,6 +3,7 @@ package artwork
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -15,10 +16,15 @@ import (
 // Entity's is its own. Each copy carries the slot's lock and inherited marks.
 // The merged Entity keeps its files, so undoing the merge restores it whole,
 // and the survivor's own artwork is never replaced. A survivor in a Sealed or
-// Encrypted Library gets nothing, as with every Entity artwork write.
+// Encrypted Library gets nothing, as with every Entity artwork write; a
+// survivor whose Library cannot be read fails the adoption, and with it the
+// merge, rather than reading as protected and leaving the artwork behind.
 func (s *Service) AdoptEntityArtwork(ctx context.Context, survivor, merged store.EntityID) error {
-	if survivor == merged || s.entityProtected(ctx, survivor) {
+	if survivor == merged {
 		return nil
+	}
+	if protected, err := s.adoptionProtected(ctx, survivor); err != nil || protected {
+		return err
 	}
 	s.entityPosterMu.Lock()
 	defer s.entityPosterMu.Unlock()
@@ -48,6 +54,19 @@ func (s *Service) AdoptEntityArtwork(ctx context.Context, survivor, merged store
 		}
 	}
 	return nil
+}
+
+// adoptionProtected is entityProtected for an adoption: a failed lookup of
+// the survivor is an error, not a protected Library.
+func (s *Service) adoptionProtected(ctx context.Context, survivor store.EntityID) (bool, error) {
+	if s.sealed == nil && s.encrypted == nil {
+		return false, nil
+	}
+	entity, err := s.store.Entity(ctx, survivor, store.LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		return false, fmt.Errorf("read survivor %s: %w", survivor, err)
+	}
+	return (s.sealed != nil && s.sealed(entity.LibraryID)) || (s.encrypted != nil && s.encrypted(entity.LibraryID)), nil
 }
 
 // adoptsSlot reports whether the merged Entity's slot file src goes to the

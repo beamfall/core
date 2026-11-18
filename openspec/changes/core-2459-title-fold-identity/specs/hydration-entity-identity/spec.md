@@ -80,7 +80,7 @@ poster it only inherited, and the merged-away variant SHALL keep its own files f
 #### Scenario: The merged variant's artwork cannot be read
 
 - **WHEN** the merged-away variant's artwork, or the legacy JPEG of an overlay slot, cannot be
-  inspected
+  inspected, or the survivor's Library cannot be read
 - **THEN** the merge does not commit, so the artwork is not left behind on a trashed variant
 
 ### Requirement: Automatic title-variant merges are recorded in activity history
