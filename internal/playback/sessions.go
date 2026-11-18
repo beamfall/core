@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,10 +43,12 @@ type transcodeCodecSupporter interface {
 }
 
 // encodePolicySource is a transcoder that applies the Console encode policy
-// (CORE-2452). Each session snapshots it at creation, so a later Console save
-// changes only sessions started after it.
+// (CORE-2452). Each session snapshots it once at creation and decides both its
+// ladder and its encoder from that snapshot, so a later Console save changes
+// only sessions started after it.
 type encodePolicySource interface {
 	EncodePolicy() ffmpeg.EncodePolicy
+	SupportsTranscodeCodecUnder(policy ffmpeg.EncodePolicy, codec string) bool
 }
 
 // SessionKey identifies one transcode session: the same auth session asking
@@ -437,11 +438,6 @@ func IsAudioCopyArtifact(name string) bool {
 	return name == audioCopyRungID || strings.HasPrefix(name, audioCopyRungID+"/")
 }
 
-// encodesHEVC reports whether the session offers an HEVC rung.
-func (h *hlsSession) encodesHEVC() bool {
-	return slices.ContainsFunc(h.rungs, func(rung Rung) bool { return rung.Codec == "hevc" && !rung.CopyVideo })
-}
-
 func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 	rendition := ffmpeg.Rendition{
 		Height:           rung.Height,
@@ -643,6 +639,24 @@ func (s *Sessions) SetTranscodeCap(limit int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cap = max(1, limit)
+}
+
+// sessionEncodePolicy is the encode policy a session for existing's key
+// runs under, and whether that policy lets it encode HEVC: existing's pinned
+// snapshot when it has one, else the transcoder's current policy. A
+// transcoder without an encode policy pins nothing.
+func (s *Sessions) sessionEncodePolicy(existing *hlsSession) (*ffmpeg.EncodePolicy, bool) {
+	source, ok := s.transcoder.(encodePolicySource)
+	if !ok {
+		return nil, s.SupportsTranscodeCodec("hevc")
+	}
+	var policy ffmpeg.EncodePolicy
+	if existing != nil && existing.encodePolicy != nil {
+		policy = *existing.encodePolicy
+	} else {
+		policy = source.EncodePolicy()
+	}
+	return &policy, source.SupportsTranscodeCodecUnder(policy, "hevc")
 }
 
 func (s *Sessions) SupportsTranscodeCodec(codec string) bool {
@@ -1316,13 +1330,13 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	if s.closed {
 		return nil, ErrSessionEvicted
 	}
-	// A session already encoding HEVC keeps it across a Console change that
-	// withholds HEVC from new sessions, and so does a reshaped replacement of
-	// it, under the policy it started with (CORE-2452). Otherwise HEVC follows
-	// the current policy.
+	// One encode policy decides both the ladder and the encoder (CORE-2452):
+	// an existing session's pinned snapshot, which a reshaped replacement
+	// inherits, so a Console save in either direction never changes the rungs
+	// of a session already playing; otherwise the current policy, read once.
 	existing, hasExisting := s.sessions[key]
-	keepHEVC := hasExisting && existing.encodesHEVC()
-	if caps.HEVC && !keepHEVC && !s.SupportsTranscodeCodec("hevc") {
+	policy, hevcAllowed := s.sessionEncodePolicy(existing)
+	if caps.HEVC && !hevcAllowed {
 		caps.HEVC = false
 		caps.HEVCMaxHeight = 0
 	}
@@ -1347,13 +1361,9 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			return nil, err
 		}
 	}
-	var inheritedPolicy *ffmpeg.EncodePolicy
 	if hasExisting {
 		if existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
-			if keepHEVC {
-				inheritedPolicy = existing.encodePolicy
-			}
 		} else {
 			// A position noted while this session ran was kept only for a
 			// reshaped replacement; the unchanged session ignores it.
@@ -1399,11 +1409,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	if live != nil {
 		session.secure = secure
 	}
-	session.encodePolicy = inheritedPolicy
-	if source, ok := s.transcoder.(encodePolicySource); ok && inheritedPolicy == nil {
-		policy := source.EncodePolicy()
-		session.encodePolicy = &policy
-	}
+	session.encodePolicy = policy
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)
 		if s.now().Sub(hint.at) < sessionIdleTimeout {

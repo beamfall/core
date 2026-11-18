@@ -384,7 +384,15 @@ func (r *Runner) launchRendition(rendition Rendition) Rendition {
 
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
 func (r *Runner) SupportsTranscodeCodec(codec string) bool {
-	policy := r.EncodePolicy()
+	return r.SupportsTranscodeCodecUnder(r.EncodePolicy(), codec)
+}
+
+// SupportsTranscodeCodecUnder is SupportsTranscodeCodec under a given encode
+// policy, so a session can decide its ladder and its encoder from one
+// snapshot (CORE-2452).
+//
+//io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
+func (r *Runner) SupportsTranscodeCodecUnder(policy EncodePolicy, codec string) bool {
 	switch {
 	case codec == "" || codec == "h264":
 		return true
