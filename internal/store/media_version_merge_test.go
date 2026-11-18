@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -242,5 +243,148 @@ func TestMergeSplitVersionsSkipsAnEncryptedLibrary(t *testing.T) {
 	}
 	if batches != 0 {
 		t.Fatalf("version merge batches = %d, want 0", batches)
+	}
+}
+
+// mediaFrame reads a Media row's frame size.
+func mediaFrame(t *testing.T, st *Store, id MediaID) (int, int) {
+	t.Helper()
+	var width, height int
+	if err := st.catalogR.QueryRowContext(context.Background(), `SELECT video_width, video_height FROM media WHERE id = ?`, id).Scan(&width, &height); err != nil {
+		t.Fatal(err)
+	}
+	return width, height
+}
+
+// TestUndoVersionMergeRefusesAMissingMergedFile: once the merged file is
+// missing (or replaced in place), undo would restore a Media with no live
+// file, so it refuses and leaves the batch undoable.
+func TestUndoVersionMergeRefusesAMissingMergedFile(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	keep, drop, _, web := splitTitle(t, st)
+	now := time.Now().UTC()
+	result, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, now)
+	if err != nil || len(result.Merged) != 1 {
+		t.Fatalf("merge = %+v err=%v", result, err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET missing_at_ms = 1 WHERE path LIKE ?`, "%"+web); err != nil {
+		t.Fatal(err)
+	}
+	var verr ValidationError
+	if _, err := st.UndoBatch(ctx, result.BatchID, filter, now.Add(time.Minute)); !errors.As(err, &verr) {
+		t.Fatalf("UndoBatch with the merged file missing: err = %v, want a validation error", err)
+	}
+	var undone int64
+	if err := st.catalogR.QueryRowContext(ctx, `SELECT undone_at_ms FROM op_batch WHERE id = ?`, result.BatchID).Scan(&undone); err != nil {
+		t.Fatal(err)
+	}
+	if undone != 0 {
+		t.Fatal("a refused undo marked the batch undone")
+	}
+	if _, err := st.Media(ctx, drop, filter); err == nil {
+		t.Fatal("a refused undo restored the merged Media")
+	}
+}
+
+// TestUndoVersionMergesOutOfOrderRestoresTheFirstVersionFacts: two merges
+// into one survivor undone first-to-last leave the survivor with its own
+// file's facts, not the second merge's stale snapshot.
+func TestUndoVersionMergesOutOfOrderRestoresTheFirstVersionFacts(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	root := t.TempDir()
+	var ids []MediaID
+	for _, f := range []struct {
+		name          string
+		width, height int
+	}{
+		{"Disclosure.Day.2026.2160p.WEB-DL.mkv", 3840, 1600},
+		{"Disclosure.Day.2026.REPACK.1080p.Remux.mkv", 1920, 800},
+		{"Disclosure.Day.2026.720p.HDTV.mkv", 1280, 536},
+	} {
+		media, _, err := st.ImportMediaFile(ctx, framedImport("library-local", filepath.Join(root, f.name), f.width, f.height))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, media.ID)
+	}
+	if ids[0] == ids[1] || ids[1] == ids[2] {
+		t.Fatal("the copies share a Media; the test needs a split title")
+	}
+	now := time.Now().UTC()
+	first, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{ids[0], ids[1]}, now)
+	if err != nil || first.Survivor != ids[0] || len(first.Merged) != 1 {
+		t.Fatalf("first merge = %+v err=%v", first, err)
+	}
+	second, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{ids[0], ids[2]}, now)
+	if err != nil || second.Survivor != ids[0] || len(second.Merged) != 1 {
+		t.Fatalf("second merge = %+v err=%v", second, err)
+	}
+	for _, batch := range []string{first.BatchID, second.BatchID} {
+		if _, err := st.UndoBatch(ctx, batch, filter, now.Add(time.Minute)); err != nil {
+			t.Fatalf("UndoBatch %s: %v", batch, err)
+		}
+	}
+	if width, height := mediaFrame(t, st, ids[0]); width != 3840 || height != 1600 {
+		t.Fatalf("survivor frame after both undos = %dx%d, want its own 3840x1600", width, height)
+	}
+}
+
+// TestUndoVersionMergeLeavesARequeuedSurvivorEntry: an entry the Profile
+// queued for the survivor after the merge is the Profile's own, so undo
+// leaves it on the survivor.
+func TestUndoVersionMergeLeavesARequeuedSurvivorEntry(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	keep, drop, _, _ := splitTitle(t, st)
+	insertRawQueueRow(t, st, "profile-default", 0, drop)
+	now := time.Now().UTC()
+	result, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, now)
+	if err != nil || len(result.Merged) != 1 {
+		t.Fatalf("merge = %+v err=%v", result, err)
+	}
+	tx, err := st.eventsW.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteMyQueueMedia(ctx, tx, "profile-default", keep); err != nil {
+		t.Fatal(errors.Join(err, tx.Rollback()))
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(5 * time.Millisecond) // a new added time
+	insertRawQueueRow(t, st, "profile-default", 0, keep)
+	if _, err := st.UndoBatch(ctx, result.BatchID, filter, now.Add(time.Minute)); err != nil {
+		t.Fatalf("UndoBatch: %v", err)
+	}
+	if got := queuedMedia(t, st); len(got) != 1 || got[0] != keep {
+		t.Fatalf("queue after undo = %v, want the Profile's own survivor entry", got)
+	}
+}
+
+// TestMergeSplitVersionsCountsOnlyLiveFiles: a copy whose file replaced an
+// earlier one still holds a single live file, so it merges.
+func TestMergeSplitVersionsCountsOnlyLiveFiles(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	keep, drop, _, web := splitTitle(t, st)
+	if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET missing_at_ms = 1 WHERE path LIKE ?`, "%"+web); err != nil {
+		t.Fatal(err)
+	}
+	replacement := framedImport("library-local", filepath.Join(t.TempDir(), web), 3840, 1600)
+	if _, err := st.ImportMediaFileVersion(ctx, MediaVersionImport{MediaID: drop, File: replacement}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := st.MergeSplitVersions(ctx, "library-local", []MediaID{keep, drop}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Survivor != keep || len(result.Merged) != 1 || result.Merged[0] != drop {
+		t.Fatalf("merge = %+v, want %s folded into %s", result, drop, keep)
 	}
 }
