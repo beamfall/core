@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePosterSize } from "@/components/chrome/posterSize";
 
 // Lightweight viewport windowing for large browse grids, ported in spirit from
 // the vanilla VIRTUAL_GRID_* windowing (internal/web/static/app.js). NO
@@ -126,9 +127,10 @@ export function useVirtualGrid({
   // does not oscillate as rows of different heights scroll in and out.
   const cardHeightRef = useRef(0);
   // The layout the retained height was measured in: a switch between grid
-  // and list starts the measurement over, or the spacers and jumps would
-  // keep the other layout's row height.
-  const layoutKey = `${layout ?? ""}:${fixedColumns ?? ""}`;
+  // and list, or to another poster size (CORE-2468), starts the measurement
+  // over, or the spacers and jumps would keep the old layout's row height.
+  const [posterSize] = usePosterSize();
+  const layoutKey = `${layout ?? ""}:${fixedColumns ?? ""}:${posterSize}`;
   const layoutRef = useRef(layoutKey);
   const compute = useCallback((): VirtualGridWindow | null => {
     const grid = gridRef.current;

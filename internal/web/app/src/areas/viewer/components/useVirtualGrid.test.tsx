@@ -1,9 +1,11 @@
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setPosterSize } from "@/components/chrome/posterSize";
 import { useVirtualGrid, virtualGridScrollTop } from "./useVirtualGrid";
 
 afterEach(() => {
   cleanup();
+  setPosterSize("large");
   vi.restoreAllMocks();
 });
 
@@ -81,5 +83,27 @@ describe("useVirtualGrid", () => {
       ),
     );
     expect(virtualGridScrollTop(gridRef.current, 10, 1)).toBe(360);
+  });
+
+  it("measures rows afresh when the poster size shrinks (CORE-2468)", async () => {
+    const gridRef = gridScrolledTo(0);
+    const card = document.createElement("li");
+    gridRef.current.append(card);
+    const height = vi.spyOn(card, "getBoundingClientRect");
+    height.mockReturnValue({ height: 290 } as DOMRect);
+    const view = renderHook(() =>
+      useVirtualGrid({ gridRef, itemCount: 1000, enabled: true, columns: 1 }),
+    );
+    await waitFor(() => expect(virtualGridScrollTop(gridRef.current, 10, 1)).toBe(2900));
+
+    // Small posters draw shorter cards, so the retained Large height must go.
+    height.mockReturnValue({ height: 190 } as DOMRect);
+    act(() => setPosterSize("small"));
+    await waitFor(() =>
+      expect(view.result.current?.bottomPad).toBe(
+        (1000 - (view.result.current?.endIndex ?? 0)) * 190,
+      ),
+    );
+    expect(virtualGridScrollTop(gridRef.current, 10, 1)).toBe(1900);
   });
 });
