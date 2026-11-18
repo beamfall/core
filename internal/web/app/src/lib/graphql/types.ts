@@ -643,6 +643,12 @@ export interface LibraryPreviewClipsResult {
   previewClips: boolean;
 }
 
+/** The setLibraryRestricted result (CORE-2463). */
+export interface LibraryRestrictedResult {
+  id: string;
+  restricted: boolean;
+}
+
 /** The setLibraryShowOnHome result (CORE-2360). */
 export interface LibraryShowOnHomeResult {
   id: string;

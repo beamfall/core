@@ -20,6 +20,7 @@ import {
   fetchSkipDetectionEnabled,
   refreshLibraryMetadata,
   scanLibrary,
+  setLibraryRestricted,
   setLibraryRoots,
   setLibraryShowOnHome,
   setScraperCredential,
@@ -31,6 +32,7 @@ import type {
   PathPickerInfo,
 } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { type SessionState, useSession } from "@/lib/session";
 import { Libraries } from "./Libraries";
 
 class ResizeObserverStub {
@@ -40,6 +42,7 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
+vi.mock("@/lib/session", () => ({ useSession: vi.fn(() => ({ revealed: false })) }));
 vi.mock("@/lib/graphql", () => ({
   addPathPickerRoot: vi.fn(),
   browseServerFolders: vi.fn(),
@@ -61,6 +64,7 @@ vi.mock("@/lib/graphql", () => ({
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
   setLibraryShowOnHome: vi.fn(),
+  setLibraryRestricted: vi.fn(),
   setLibraryRoots: vi.fn(),
   setScraperCredential: vi.fn(),
   setSkipDetectionEnabled: vi.fn(),
@@ -621,6 +625,53 @@ describe("Console Libraries scan", () => {
 
     const card = await screen.findByRole("article", { name: "Library" });
     expect(within(card).getByRole("switch", { name: /Show on Home/ })).not.toBeChecked();
+  });
+
+  it("restricts a Library from an unlocked session and reloads the list (CORE-2463)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useSession).mockReturnValue({ revealed: true } as SessionState);
+    vi.mocked(setLibraryRestricted).mockResolvedValue({ id: "library-1", restricted: true });
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    const toggle = within(card).getByRole("switch", { name: /Restricted/ });
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeEnabled();
+    const loads = vi.mocked(fetchLibraries).mock.calls.length;
+
+    toggle.focus();
+    await user.keyboard(" ");
+
+    await waitFor(() => expect(setLibraryRestricted).toHaveBeenCalledWith("library-1", true));
+    await waitFor(() => expect(vi.mocked(fetchLibraries).mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it("holds the Restricted switch until the session is unlocked (CORE-2463)", async () => {
+    vi.mocked(useSession).mockReturnValue({ revealed: false } as SessionState);
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    expect(within(card).getByRole("switch", { name: /Restricted/ })).toBeDisabled();
+    expect(within(card).getByText(/Unlock with the Restrictions PIN first/)).toBeInTheDocument();
+    expect(setLibraryRestricted).not.toHaveBeenCalled();
+  });
+
+  it("says so when the server refuses a restriction change (CORE-2463)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(useSession).mockReturnValue({ revealed: true } as SessionState);
+    vi.mocked(setLibraryRestricted).mockRejectedValue(
+      new Error("reveal required to change library restriction"),
+    );
+    renderLibraries();
+
+    const card = await screen.findByRole("article", { name: "Library" });
+    const toggle = within(card).getByRole("switch", { name: /Restricted/ });
+    toggle.focus();
+    await user.keyboard(" ");
+
+    expect(
+      await within(card).findByText("The change was not saved. Try again."),
+    ).toBeInTheDocument();
   });
 });
 

@@ -114,6 +114,22 @@ export async function reveal(pin: string, signal?: AbortSignal): Promise<RevealS
   return data.reveal;
 }
 
+const SET_REVEAL_PIN_MUTATION =
+  "mutation SetRevealPin($pin: String!) { setRevealPin(pin: $pin) { revealed } }";
+
+/**
+ * SetRevealPin — set or replace this Profile's Restrictions PIN (manager only,
+ * CORE-2463). The PIN goes into this call and nowhere else.
+ */
+export async function setRevealPin(pin: string, signal?: AbortSignal): Promise<RevealState> {
+  const data = await graphql<{ setRevealPin: RevealState }>(
+    SET_REVEAL_PIN_MUTATION,
+    { pin },
+    signal,
+  );
+  return data.setRevealPin;
+}
+
 const RELOCK_MUTATION = "mutation Relock { relock { revealed } }";
 
 /** Relock — drop restricted content from every view at once (no PIN). */
