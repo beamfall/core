@@ -170,3 +170,51 @@ func assertFilmTVPlanDeclared(t *testing.T, plan app.HydrationPlan) {
 		checkEntity(relation.From)
 	}
 }
+
+// CORE-2459: one show folder whose episode file names spell the series title
+// in different case and punctuation is one show. The Tower's
+// "Gangs of London" folder held lower-case dotted names in "Season 1" and
+// differently spelled names in "Season 02" and "Season 3", and scanned as
+// three shows. The folder now names the show and scopes its seasons.
+func TestFilmTVHydrationNamesShowFromItsFolder(t *testing.T) {
+	mapper := firstPartyHooks().HydrationMappers[filmtv.PluginID]
+	paths := []string{
+		"/mnt/user/tv/Gangs of London/Season 1/gangs.of.london.s01e01.part.1.2160p.web.h265-ggwp.mkv",
+		"/mnt/user/tv/Gangs of London/Season 1/gangs.of.london.s01e02.part.2.2160p.web.h265-ggwp.mkv",
+		"/mnt/user/tv/Gangs of London/Season 02/Gangs.Of.London.S02E01.1080p.WEB.H264-GLHF.mkv",
+		"/mnt/user/tv/Gangs of London/Season 3/GANGS OF LONDON - S03E01 - Episode 1.mkv",
+		"/mnt/user/tv/Gangs of London (2020)/Season 3/gangs_of_london_s03e02.mkv",
+	}
+	for _, path := range paths {
+		plan := mapper.MapHydration(nil, path)
+		assertFilmTVPlanDeclared(t, plan)
+		var show *app.HydrationEntity
+		for _, relation := range plan.Relations {
+			if relation.Name == filmtv.SeasonOfRelation {
+				show = relation.ToEntity
+			}
+			if relation.From.Scope != "Gangs of London" {
+				t.Errorf("%s: season scope = %q, want the folder's title", path, relation.From.Scope)
+			}
+		}
+		if show == nil || show.Title != "Gangs of London" {
+			t.Errorf("%s: show = %+v, want \"Gangs of London\"", path, show)
+		}
+	}
+
+	// A folder that does not name the series keeps the file name's title.
+	plan := mapper.MapHydration(nil, "/tv/Unsorted/ted.lasso.s01e01.mkv")
+	want := filmtv.LocalHydration("/tv/Unsorted/ted.lasso.s01e01.mkv").SeriesTitle
+	found := false
+	for _, relation := range plan.Relations {
+		if relation.Name == filmtv.SeasonOfRelation {
+			found = true
+			if relation.ToEntity == nil || relation.ToEntity.Title != want || want == "Unsorted" {
+				t.Errorf("unsorted show = %+v, want the parsed title %q", relation.ToEntity, want)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("unsorted plan = %+v, want a season-of relation", plan.Relations)
+	}
+}
