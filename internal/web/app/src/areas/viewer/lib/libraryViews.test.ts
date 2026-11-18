@@ -119,11 +119,12 @@ describe("library entities variables (CORE-2440)", () => {
   it("sends the Media view's sort and filters under the same names", () => {
     const state = parseBrowseState(
       new URLSearchParams(
-        "sort=year&dir=desc&watch=unwatched&group.genre=Rock&decade=1990&quality=uhd&rated=8",
+        "q=space+rock&sort=year&dir=desc&watch=unwatched&group.genre=Rock&decade=1990&quality=uhd&rated=8",
       ),
     );
     expect(libraryEntitiesVariables({ libraryID: "lib", state, limit: 100, offset: 0 })).toEqual({
       libraryID: "lib",
+      query: "space rock",
       sort: "year",
       direction: "desc",
       watch: "unwatched",

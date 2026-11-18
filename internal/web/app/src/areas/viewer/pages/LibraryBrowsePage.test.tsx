@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -72,6 +72,13 @@ function Where() {
   return <output data-testid="where">{location.pathname + location.search}</output>;
 }
 
+// Opens the toolbar's Filters panel, unless it is already open, and returns it.
+async function openFilters(user: ReturnType<typeof userEvent.setup>) {
+  const button = screen.getByRole("button", { name: /^Filters/ });
+  if (button.getAttribute("aria-expanded") !== "true") await user.click(button);
+  return screen.findByRole("dialog", { name: "Filters" });
+}
+
 afterEach(() => {
   cleanup();
   vi.mocked(fetchLibraryItems).mockReset();
@@ -105,8 +112,10 @@ describe("Library browse", () => {
     expect(screen.getByRole("button", { name: "Play all" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Shuffle" })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: "Sort direction: Descending" }));
+    await user.click(screen.getByRole("button", { name: "Sort by Year, Descending" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Ascending" }));
     expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?sort=year");
+    expect(screen.getByRole("button", { name: "Sort by Year, Ascending" })).toBeInTheDocument();
 
     // Posters open the detail page; only list rows play on activation.
     expect(document.querySelector(".bf-card-play")).toBeNull();
@@ -138,6 +147,66 @@ describe("Library browse", () => {
     expect(screen.queryByRole("button", { name: /Remove filter/ })).toBeNull();
   });
 
+  it("searches the whole library from the toolbar, debounced, and keeps it in the URL (CORE-2568)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
+      const page = pageFor(request);
+      if (!request.state.query) return page;
+      const total = request.state.query === "nothing" ? 0 : 2;
+      return { ...page, total, items: page.items.slice(0, total), letters: [] };
+    });
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all?watch=unwatched");
+
+    expect(await screen.findByText("3 items")).toBeInTheDocument();
+    const search = screen.getByRole("searchbox", { name: "Search Films" });
+    await user.type(search, "  blue moon ");
+    // The draft keeps what is typed; the URL and the read take it trimmed.
+    expect(search).toHaveValue("  blue moon ");
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(
+        /^\/n\/films\/all\?q=blue\+moon&watch=unwatched$/,
+      ),
+    );
+    expect(await screen.findByText("2 items")).toBeInTheDocument();
+    expect(vi.mocked(fetchLibraryItems).mock.calls.at(-1)?.[0].state).toMatchObject({
+      query: "blue moon",
+      watch: "unwatched",
+    });
+    // A search and a filter together offer Clear all, which clears both.
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/));
+    expect(search).toHaveValue("");
+
+    await user.type(search, "nothing{Enter}");
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all\?q=nothing$/);
+    expect(
+      await screen.findByText("Nothing in this library matches “nothing”."),
+    ).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1) as HTMLElement);
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/));
+    expect(search).toHaveValue("");
+  });
+
+  it("opens the filters from one button that counts them and returns focus on Escape (CORE-2568)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all?decade=1990&quality=hd1080");
+
+    await screen.findByRole("link", { name: "Item 0" });
+    const button = screen.getByRole("button", { name: "Filters, 2 active" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    const panel = await openFilters(user);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("combobox", { name: "Decade" })).toHaveTextContent("1990s");
+
+    await user.click(within(panel).getByRole("button", { name: "Clear all" }));
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/));
+    expect(screen.getByRole("button", { name: "Filters" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Filters" })).toBeNull());
+    expect(button).toHaveFocus();
+  });
+
   it("drops the watching controls from an all-audio library (CORE-2327)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
       const page = pageFor(request);
@@ -158,11 +227,14 @@ describe("Library browse", () => {
     );
 
     expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await openFilters(user);
     await waitFor(() => expect(screen.queryByLabelText("Watched")).toBeNull());
     expect(screen.queryByLabelText("Resolution")).toBeNull();
-    await userEvent.setup().click(screen.getByLabelText("Sort by"));
-    expect(await screen.findByRole("option", { name: "Title" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "Last watched" })).toBeNull();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^Sort by/ }));
+    expect(await screen.findByRole("menuitemradio", { name: "Title" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio", { name: "Last watched" })).toBeNull();
   });
 
   it("keeps the watching controls for a video library", async () => {
@@ -185,10 +257,13 @@ describe("Library browse", () => {
     );
 
     expect(await screen.findByText("1,200 items")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await openFilters(user);
     expect(screen.getByLabelText("Watched")).toBeInTheDocument();
     expect(screen.getByLabelText("Resolution")).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByLabelText("Sort by"));
-    expect(await screen.findByRole("option", { name: "Last watched" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: /^Sort by/ }));
+    expect(await screen.findByRole("menuitemradio", { name: "Last watched" })).toBeInTheDocument();
   });
 
   it("offers the plugin's groupings by their own names and keeps the choice in the URL", async () => {
@@ -210,7 +285,10 @@ describe("Library browse", () => {
     expect(vi.mocked(fetchLibraryItems).mock.calls[0][0]).toMatchObject({
       state: { groups: { sector: "Outer" } },
     });
+    expect(screen.getByRole("button", { name: "Filters, 1 active" })).toBeInTheDocument();
+    await openFilters(user);
     expect(screen.getByRole("combobox", { name: "Sector" })).toHaveTextContent("Outer");
+    await user.keyboard("{Escape}");
 
     await user.click(screen.getByRole("button", { name: "Remove filter: Sector: Outer" }));
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/\/n\/films\/all$/));
@@ -382,11 +460,14 @@ describe("Library browse", () => {
       yearFrom: 1990,
       yearTo: 1999,
     });
+    await openFilters(user);
     expect(screen.getByLabelText("From year")).toHaveValue(1990);
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Remove filter: 1990–1999" }));
     await waitFor(() =>
       expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all\?sort=plays$/),
     );
+    await openFilters(user);
     expect(screen.getByLabelText("From year")).toHaveValue(null);
   });
 
@@ -398,6 +479,7 @@ describe("Library browse", () => {
     await screen.findByRole("link", { name: "Item 0" });
     expect(screen.getByRole("button", { name: "Remove filter: 1990s" })).toBeInTheDocument();
     // Typing alone changes nothing; a year out of range reverts on commit.
+    await openFilters(user);
     await user.type(screen.getByLabelText("To year"), "19{Enter}");
     expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?decade=1990");
     expect(screen.getByLabelText("To year")).toHaveValue(null);
@@ -411,6 +493,7 @@ describe("Library browse", () => {
     await waitFor(() =>
       expect(screen.getByTestId("where")).toHaveTextContent("/n/films/all?from=1985&to=2001"),
     );
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("button", { name: "Remove filter: 1990s" })).toBeNull();
     expect(screen.getByRole("button", { name: "Remove filter: 1985–2001" })).toBeInTheDocument();
   });
@@ -421,13 +504,16 @@ describe("Library browse", () => {
     renderBrowse("/n/films/all");
 
     await screen.findByRole("link", { name: "Item 0" });
+    await openFilters(user);
     await user.type(screen.getByLabelText("From year"), "1990");
     await user.tab();
     await waitFor(() =>
       expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all\?from=1990$/),
     );
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Remove filter: From 1990" }));
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/));
+    await openFilters(user);
     expect(screen.getByLabelText("From year")).toHaveValue(null);
 
     await user.click(screen.getByLabelText("From year"));
@@ -442,6 +528,7 @@ describe("Library browse", () => {
     renderBrowse("/n/films/all?from=1990&to=1990");
 
     await screen.findByRole("link", { name: "Item 0" });
+    await openFilters(user);
     await user.clear(screen.getByLabelText("From year"));
     await user.type(screen.getByLabelText("From year"), "2000");
     await user.tab();

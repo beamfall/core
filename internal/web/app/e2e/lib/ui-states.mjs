@@ -175,7 +175,8 @@ export const IN_PAGE_STATES = Object.freeze({
   "/n/:nodeId": [{ kind: "empty", name: "node" }],
   "/n/:nodeId/all": [
     { kind: "loading", name: "page" },
-    { kind: "select", name: "sort" },
+    { kind: "menu", name: "sort" },
+    { kind: "dialog", name: "filters" },
     { kind: "select", name: "watch" },
     { kind: "select", name: "rating" },
     { kind: "select", name: "grouping" },

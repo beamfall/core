@@ -1,6 +1,16 @@
-import { ArrowDown, ArrowUp, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Search, SlidersHorizontal, X } from "lucide-react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { Menu, Popover } from "@/components/ui/astryx-primitives";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -13,7 +23,9 @@ import { displayString } from "@/lib/display";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import type { StringKey } from "@/strings";
 import {
+  browseQuery,
   browseYear,
+  LIBRARY_MAX_QUERY,
   LIBRARY_MAX_YEAR,
   LIBRARY_MIN_RATINGS,
   LIBRARY_MIN_YEAR,
@@ -21,6 +33,7 @@ import {
   LIBRARY_WATCH_STATES,
   LIBRARY_WATCHING_SORTS,
   type LibraryBrowseState,
+  type LibraryDirection,
   type LibraryItemsFacets,
   type LibrarySort,
 } from "../lib/libraryBrowse";
@@ -29,6 +42,10 @@ const ALL = "all";
 // Grouping values are free text from the library, so their option values are
 // prefixed to stay distinct from the "Any" option.
 const GROUP_VALUE = "value:";
+// How long typing pauses before the search reaches the URL and the server.
+export const BROWSE_SEARCH_DEBOUNCE_MS = 300;
+// Below this width the Filters panel is a bottom sheet rather than a popover.
+const SHEET_QUERY = "(max-width: 640px)";
 
 const SORT_LABELS: Record<LibrarySort, StringKey> = {
   title: "libraryBrowseSortTitle",
@@ -40,6 +57,10 @@ const SORT_LABELS: Record<LibrarySort, StringKey> = {
   "release-date": "libraryBrowseSortReleaseDate",
   "audience-score": "libraryBrowseSortAudienceScore",
   plays: "libraryBrowseSortPlays",
+};
+const DIRECTION_LABELS: Record<LibraryDirection, StringKey> = {
+  asc: "libraryBrowseAscending",
+  desc: "libraryBrowseDescending",
 };
 const WATCH_LABELS: Record<string, StringKey> = {
   unwatched: "libraryBrowseWatchUnwatched",
@@ -53,8 +74,9 @@ const QUALITY_LABELS: Record<string, StringKey> = {
   sd: "libraryBrowseQualitySd",
 };
 
-/** The browse state with every filter cleared, keeping the order. */
+/** The browse state with the search and every filter cleared, keeping the order. */
 export const CLEARED_BROWSE_FILTERS = {
+  query: "",
   watch: "",
   groups: {},
   decade: 0,
@@ -64,8 +86,8 @@ export const CLEARED_BROWSE_FILTERS = {
   minRating: 0,
 } as const satisfies Partial<LibraryBrowseState>;
 
-/** Whether a browse state narrows the result. */
-export function hasBrowseFilters(state: LibraryBrowseState): boolean {
+/** Whether a browse state narrows the result by a filter, not counting the search. */
+function hasFilters(state: LibraryBrowseState): boolean {
   return (
     !!state.watch ||
     Object.keys(state.groups).length > 0 ||
@@ -77,23 +99,37 @@ export function hasBrowseFilters(state: LibraryBrowseState): boolean {
   );
 }
 
-// The sort, direction and filter controls of a Library browse, and the chips
-// that name and clear each active filter (CORE-1190). The Media view and each
-// Entity kind's view share it (CORE-2440), so one URL state reads the same in
-// both. `audioOnly` drops the controls that only fit watching (CORE-2327); a
-// value already selected stays offered so a shared URL still reads back.
+/** Whether a browse state narrows the result, by the search or a filter. */
+export function hasBrowseFilters(state: LibraryBrowseState): boolean {
+  return !!browseQuery(state.query) || hasFilters(state);
+}
+
+// The browse toolbar of a Library (CORE-1190, one row since CORE-2568): the
+// title search, the view switcher, a Filters button that opens the filters in
+// a popover (a bottom sheet on a phone), one Sort menu for the field and the
+// direction, and the display controls. Under it, a chip names and clears each
+// active filter. The Media view and each Entity kind's view share it
+// (CORE-2440), so one URL state reads the same in both. `audioOnly` drops the
+// controls that only fit watching (CORE-2327); a value already selected stays
+// offered so a shared URL still reads back.
 export function LibraryBrowseToolbar({
   state,
   facets,
   audioOnly,
   onUpdate,
+  libraryName,
+  leading,
   trailing,
 }: {
   state: LibraryBrowseState;
   facets: LibraryItemsFacets;
   audioOnly: boolean | null;
   onUpdate: (patch: Partial<LibraryBrowseState>) => void;
-  /** Placed at the end of the controls row, such as the display toggle. */
+  /** The Library's name, for the search box's label. */
+  libraryName: string;
+  /** Placed after the search, such as the view switcher. */
+  leading?: ReactNode;
+  /** Placed at the end of the row, such as the poster size and display toggle. */
   trailing?: ReactNode;
 }) {
   const t = useT();
@@ -155,94 +191,92 @@ export function LibraryBrowseToolbar({
   if (state.minRating) {
     activeFilters.push({ label: ratingLabel(state.minRating), clear: { minRating: 0 } });
   }
+  const query = browseQuery(state.query);
+  // The panel's Clear all leaves the search, which has its own clear button;
+  // the chip row's clears both.
+  const clearFilters = () => onUpdate({ ...CLEARED_BROWSE_FILTERS, query: state.query });
 
-  return (
+  const fields = (
     <>
-      <div className="flex flex-wrap items-end gap-3">
+      {showWatch && (
         <BrowseSelect
-          id="library-browse-sort"
-          label={t("libraryBrowseSortLabel")}
-          value={state.sort}
-          onChange={(value) => onUpdate({ sort: value as LibrarySort })}
-          options={sorts.map((sort) => ({ value: sort, label: t(SORT_LABELS[sort]) }))}
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label={t("libraryBrowseDirectionLabel", {
-            direction: t(
-              state.direction === "asc" ? "libraryBrowseAscending" : "libraryBrowseDescending",
-            ),
-          })}
-          onClick={() => onUpdate({ direction: state.direction === "asc" ? "desc" : "asc" })}
-        >
-          {state.direction === "asc" ? <ArrowUp aria-hidden /> : <ArrowDown aria-hidden />}
-          {t(state.direction === "asc" ? "libraryBrowseAscending" : "libraryBrowseDescending")}
-        </Button>
-        {showWatch && (
-          <BrowseSelect
-            id="library-browse-watch"
-            label={t("libraryBrowseWatchLabel")}
-            value={state.watch || ALL}
-            onChange={(value) =>
-              onUpdate({ watch: value === ALL ? "" : (value as LibraryBrowseState["watch"]) })
-            }
-            options={[
-              { value: ALL, label: t("libraryBrowseAny") },
-              ...LIBRARY_WATCH_STATES.map((watch) => ({
-                value: watch,
-                label: t(WATCH_LABELS[watch]),
-              })),
-            ]}
-          />
-        )}
-        <BrowseSelect
-          id="library-browse-rating"
-          label={t("libraryBrowseRatingLabel")}
-          value={state.minRating ? String(state.minRating) : ALL}
-          onChange={(value) => onUpdate({ minRating: value === ALL ? 0 : Number(value) })}
+          id="library-browse-watch"
+          label={t("libraryBrowseWatchLabel")}
+          value={state.watch || ALL}
+          onChange={(value) =>
+            onUpdate({ watch: value === ALL ? "" : (value as LibraryBrowseState["watch"]) })
+          }
           options={[
             { value: ALL, label: t("libraryBrowseAny") },
-            ...LIBRARY_MIN_RATINGS.map((minRating) => ({
-              value: String(minRating),
-              label: ratingLabel(minRating),
+            ...LIBRARY_WATCH_STATES.map((watch) => ({
+              value: watch,
+              label: t(WATCH_LABELS[watch]),
             })),
           ]}
         />
-        {groupings.map((grouping) => (
-          <BrowseSelect
-            key={grouping.kind}
-            id={`library-browse-group-${grouping.kind}`}
-            label={grouping.label}
-            value={state.groups[grouping.kind] ? GROUP_VALUE + state.groups[grouping.kind] : ALL}
-            onChange={(value) =>
-              onUpdate({
-                groups: withGroup(
-                  grouping.kind,
-                  value === ALL ? "" : value.slice(GROUP_VALUE.length),
-                ),
-              })
-            }
-            options={[
-              { value: ALL, label: t("libraryBrowseAny") },
-              ...grouping.values.map((value) => ({ value: GROUP_VALUE + value, label: value })),
-            ]}
-          />
-        ))}
-        {decades.length > 0 && (
-          <BrowseSelect
-            id="library-browse-decade"
-            label={t("libraryBrowseDecadeLabel")}
-            value={state.decade ? String(state.decade) : ALL}
-            onChange={(value) =>
-              onUpdate({ decade: value === ALL ? 0 : Number(value), yearFrom: 0, yearTo: 0 })
-            }
-            options={[
-              { value: ALL, label: t("libraryBrowseAny") },
-              ...decades.map((decade) => ({ value: String(decade), label: decadeLabel(decade) })),
-            ]}
-          />
-        )}
+      )}
+      <BrowseSelect
+        id="library-browse-rating"
+        label={t("libraryBrowseRatingLabel")}
+        value={state.minRating ? String(state.minRating) : ALL}
+        onChange={(value) => onUpdate({ minRating: value === ALL ? 0 : Number(value) })}
+        options={[
+          { value: ALL, label: t("libraryBrowseAny") },
+          ...LIBRARY_MIN_RATINGS.map((minRating) => ({
+            value: String(minRating),
+            label: ratingLabel(minRating),
+          })),
+        ]}
+      />
+      {groupings.map((grouping) => (
+        <BrowseSelect
+          key={grouping.kind}
+          id={`library-browse-group-${grouping.kind}`}
+          label={grouping.label}
+          value={state.groups[grouping.kind] ? GROUP_VALUE + state.groups[grouping.kind] : ALL}
+          onChange={(value) =>
+            onUpdate({
+              groups: withGroup(
+                grouping.kind,
+                value === ALL ? "" : value.slice(GROUP_VALUE.length),
+              ),
+            })
+          }
+          options={[
+            { value: ALL, label: t("libraryBrowseAny") },
+            ...grouping.values.map((value) => ({ value: GROUP_VALUE + value, label: value })),
+          ]}
+        />
+      ))}
+      {decades.length > 0 && (
+        <BrowseSelect
+          id="library-browse-decade"
+          label={t("libraryBrowseDecadeLabel")}
+          value={state.decade ? String(state.decade) : ALL}
+          onChange={(value) =>
+            onUpdate({ decade: value === ALL ? 0 : Number(value), yearFrom: 0, yearTo: 0 })
+          }
+          options={[
+            { value: ALL, label: t("libraryBrowseAny") },
+            ...decades.map((decade) => ({ value: String(decade), label: decadeLabel(decade) })),
+          ]}
+        />
+      )}
+      {qualities.length > 0 && (
+        <BrowseSelect
+          id="library-browse-quality"
+          label={t("libraryBrowseQualityLabel")}
+          value={state.quality || ALL}
+          onChange={(value) =>
+            onUpdate({ quality: value === ALL ? "" : (value as LibraryBrowseState["quality"]) })
+          }
+          options={[
+            { value: ALL, label: t("libraryBrowseAny") },
+            ...qualities.map((quality) => ({ value: quality, label: qualityLabel(quality) })),
+          ]}
+        />
+      )}
+      <div className="bf-filter-year">
         <YearInput
           id="library-browse-year-from"
           label={t("libraryBrowseYearFromLabel")}
@@ -255,21 +289,31 @@ export function LibraryBrowseToolbar({
           value={state.yearTo}
           onCommit={(year) => onUpdate(yearRangePatch(state.yearFrom, year))}
         />
-        {qualities.length > 0 && (
-          <BrowseSelect
-            id="library-browse-quality"
-            label={t("libraryBrowseQualityLabel")}
-            value={state.quality || ALL}
-            onChange={(value) =>
-              onUpdate({ quality: value === ALL ? "" : (value as LibraryBrowseState["quality"]) })
-            }
-            options={[
-              { value: ALL, label: t("libraryBrowseAny") },
-              ...qualities.map((quality) => ({ value: quality, label: qualityLabel(quality) })),
-            ]}
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className="bf-browse-toolbar">
+        <BrowseSearch
+          value={query}
+          label={t("libraryBrowseSearchLabel", { library: libraryName })}
+          onCommit={(next) => onUpdate({ query: next })}
+        />
+        {leading}
+        <div className="bf-browse-toolbar-end">
+          <BrowseFilters count={activeFilters.length} onClear={clearFilters}>
+            {fields}
+          </BrowseFilters>
+          <SortMenu
+            sorts={sorts}
+            sort={state.sort}
+            direction={state.direction}
+            onUpdate={onUpdate}
           />
-        )}
-        {trailing}
+          {trailing}
+        </div>
       </div>
 
       {activeFilters.length > 0 && (
@@ -287,20 +331,293 @@ export function LibraryBrowseToolbar({
               </button>
             </li>
           ))}
-          {activeFilters.length > 1 && (
+          {activeFilters.length + (query ? 1 : 0) > 1 && (
             <li>
               <button
                 type="button"
-                className="bf-chip"
+                className="bf-chip bf-chip-quiet"
                 onClick={() => onUpdate(CLEARED_BROWSE_FILTERS)}
               >
-                {t("libraryBrowseClearFilters")}
+                {t("libraryBrowseClearAll")}
               </button>
             </li>
           )}
         </ul>
       )}
     </>
+  );
+}
+
+/**
+ * What an empty browse result says: that the search or the filters matched
+ * nothing, with the controls that widen it, or that the Library is empty.
+ */
+export function LibraryBrowseEmpty({
+  state,
+  onUpdate,
+}: {
+  state: LibraryBrowseState;
+  onUpdate: (patch: Partial<LibraryBrowseState>) => void;
+}) {
+  const t = useT();
+  const query = browseQuery(state.query);
+  const filtered = hasFilters(state);
+  let message = t("libraryEmptyLead");
+  if (query) message = t("libraryBrowseNoSearchMatches", { query });
+  else if (filtered) message = t("libraryBrowseNoMatches");
+  return (
+    <div role="status" className="bf-empty flex flex-col gap-3">
+      <p className="text-sm text-[var(--text-secondary)]">{message}</p>
+      {(query || filtered) && (
+        <div className="flex flex-wrap justify-center gap-2">
+          {query && (
+            <Button variant="outline" onClick={() => onUpdate({ query: "" })}>
+              {t("libraryBrowseSearchClear")}
+            </Button>
+          )}
+          {filtered && (
+            <Button variant="outline" onClick={() => onUpdate(CLEARED_BROWSE_FILTERS)}>
+              {t(query ? "libraryBrowseClearAll" : "libraryBrowseClearFilters")}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The title search. The draft is the field's own while typing and reaches the
+// URL once typing pauses (or on Enter), trimmed; a new value from elsewhere
+// (a chip, Clear all, Back) replaces the draft.
+function BrowseSearch({
+  value,
+  label,
+  onCommit,
+}: {
+  value: string;
+  label: string;
+  onCommit: (query: string) => void;
+}) {
+  const t = useT();
+  const id = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [text, setText] = useState(value);
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    // The draft's own commit comes back trimmed; keep what is being typed.
+    if (browseQuery(text) !== value) setText(value);
+  }
+  // The latest commit, so a pending timer never writes an older browse state.
+  const commitRef = useRef(onCommit);
+  useEffect(() => {
+    commitRef.current = onCommit;
+  });
+  useEffect(() => {
+    if (browseQuery(text) === value) return;
+    const timer = setTimeout(() => commitRef.current(browseQuery(text)), BROWSE_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [text, value]);
+
+  return (
+    <div className="bf-browse-search">
+      <label htmlFor={id} className="sr-only">
+        {label}
+      </label>
+      <Search aria-hidden className="bf-browse-search-icon" />
+      <Input
+        ref={inputRef}
+        id={id}
+        type="search"
+        enterKeyHint="search"
+        autoComplete="off"
+        spellCheck={false}
+        maxLength={LIBRARY_MAX_QUERY}
+        placeholder={label}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commitRef.current(browseQuery(text));
+        }}
+        className="h-8 pr-8 pl-8"
+      />
+      {text && (
+        <button
+          type="button"
+          className="bf-browse-search-clear"
+          aria-label={t("libraryBrowseSearchClear")}
+          onClick={() => {
+            setText("");
+            commitRef.current("");
+            inputRef.current?.focus();
+          }}
+        >
+          <X aria-hidden className="size-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function useSheetLayout(): boolean {
+  const [sheet, setSheet] = useState(
+    () => typeof window.matchMedia === "function" && window.matchMedia(SHEET_QUERY).matches,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(SHEET_QUERY);
+    const onChange = () => setSheet(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return sheet;
+}
+
+// The Filters button and its panel: a popover under the button on a wide
+// screen, a modal bottom sheet on a phone (CORE-1787). Both come from the
+// Base UI primitives, so aria-expanded, Escape, outside clicks and focus
+// return are theirs.
+function BrowseFilters({
+  count,
+  onClear,
+  children,
+}: {
+  count: number;
+  onClear: () => void;
+  children: ReactNode;
+}) {
+  const t = useT();
+  const sheet = useSheetLayout();
+  const triggerProps = {
+    className: "bf-chip",
+    "aria-label": t("libraryBrowseFiltersButton", { count }),
+    children: (
+      <>
+        <SlidersHorizontal aria-hidden className="size-4" />
+        <span className="bf-chip-label">{t("libraryBrowseFilters")}</span>
+        {count > 0 && (
+          <span aria-hidden className="bf-chip-count">
+            {count}
+          </span>
+        )}
+      </>
+    ),
+  };
+  const clear = (
+    <Button variant="ghost" size="sm" disabled={count === 0} onClick={onClear}>
+      {t("libraryBrowseClearAll")}
+    </Button>
+  );
+
+  if (sheet) {
+    return (
+      <Dialog>
+        <DialogTrigger {...triggerProps} />
+        <DialogContent
+          className="bf-filter-sheet top-auto bottom-0 left-0 max-h-[85dvh] max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-t-[var(--radius-card)] rounded-b-none border-x-0 border-b-0 p-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:max-w-none"
+          data-register="viewer"
+        >
+          <DialogHeader>
+            <DialogTitle>{t("libraryBrowseFilters")}</DialogTitle>
+          </DialogHeader>
+          <div className="bf-filter-fields">{children}</div>
+          <DialogFooter className="flex-row justify-between">
+            {clear}
+            <DialogClose render={<Button size="sm" />}>{t("libraryBrowseFiltersDone")}</DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <Popover.Root>
+      <Popover.Trigger {...triggerProps} />
+      <Popover.Portal>
+        <Popover.Positioner side="bottom" align="end" sideOffset={6} className="bf-card-menu-layer">
+          <Popover.Popup className="bf-filter-popover" data-register="viewer">
+            <Popover.Title className="bf-filter-popover-title">
+              {t("libraryBrowseFilters")}
+            </Popover.Title>
+            <div className="bf-filter-fields">{children}</div>
+            <div className="bf-filter-popover-footer">{clear}</div>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+// One menu for the order: the sort field and the direction, each a radio
+// group, behind a button that names both.
+function SortMenu({
+  sorts,
+  sort,
+  direction,
+  onUpdate,
+}: {
+  sorts: readonly LibrarySort[];
+  sort: LibrarySort;
+  direction: LibraryDirection;
+  onUpdate: (patch: Partial<LibraryBrowseState>) => void;
+}) {
+  const t = useT();
+  const field = t(SORT_LABELS[sort]);
+  const DirectionIcon = direction === "asc" ? ArrowUp : ArrowDown;
+  const item = (value: string, label: string) => (
+    <Menu.RadioItem key={value} value={value} closeOnClick className="bf-card-menu-item">
+      <span className="bf-menu-check">
+        <Menu.RadioItemIndicator>
+          <Check aria-hidden size={15} />
+        </Menu.RadioItemIndicator>
+      </span>
+      {label}
+    </Menu.RadioItem>
+  );
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        className="bf-chip"
+        aria-label={t("libraryBrowseSortButton", {
+          field,
+          direction: t(DIRECTION_LABELS[direction]),
+        })}
+      >
+        <ArrowUpDown aria-hidden className="size-4" />
+        {field}
+        <DirectionIcon aria-hidden className="size-3.5" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner side="bottom" align="end" sideOffset={6} className="bf-card-menu-layer">
+          <Menu.Popup className="bf-card-menu" data-register="viewer">
+            <Menu.Group>
+              <Menu.GroupLabel className="bf-menu-group-label">
+                {t("libraryBrowseSortLabel")}
+              </Menu.GroupLabel>
+              <Menu.RadioGroup
+                value={sort}
+                onValueChange={(value: LibrarySort) => onUpdate({ sort: value })}
+              >
+                {sorts.map((option) => item(option, t(SORT_LABELS[option])))}
+              </Menu.RadioGroup>
+            </Menu.Group>
+            <Menu.Separator className="bf-menu-separator" />
+            <Menu.Group>
+              <Menu.GroupLabel className="bf-menu-group-label">
+                {t("libraryBrowseOrderLabel")}
+              </Menu.GroupLabel>
+              <Menu.RadioGroup
+                value={direction}
+                onValueChange={(value: LibraryDirection) => onUpdate({ direction: value })}
+              >
+                {(["asc", "desc"] as const).map((option) =>
+                  item(option, t(DIRECTION_LABELS[option])),
+                )}
+              </Menu.RadioGroup>
+            </Menu.Group>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 

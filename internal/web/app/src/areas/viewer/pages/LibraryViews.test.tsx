@@ -199,7 +199,8 @@ describe("Library views (CORE-2362)", () => {
     // Only the kinds are read for the Media view.
     expect(vi.mocked(fetchLibraryEntities).mock.calls[0][0]).toMatchObject({ limit: 1 });
 
-    await user.click(screen.getByRole("button", { name: "Sort direction: Descending" }));
+    await user.click(screen.getByRole("button", { name: "Sort by Year, Descending" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Ascending" }));
     expect(screen.getByTestId("where")).toHaveTextContent("/n/tunes/all?sort=year&view=media");
 
     await user.click(screen.getByRole("button", { name: "Makers" }));
@@ -290,7 +291,8 @@ describe("Entity kind sort, filters and letter rail (CORE-2440)", () => {
     renderAt("/n/tunes/all?view=maker");
     await screen.findByRole("list", { name: "Makers" });
 
-    await user.click(screen.getByRole("button", { name: "Sort direction: Ascending" }));
+    await user.click(screen.getByRole("button", { name: "Sort by Title, Ascending" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Descending" }));
 
     expect(screen.getByTestId("where")).toHaveTextContent("/n/tunes/all?dir=desc&view=maker");
     await waitFor(() =>

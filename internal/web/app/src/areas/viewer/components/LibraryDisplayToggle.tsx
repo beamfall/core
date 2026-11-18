@@ -46,7 +46,7 @@ export function useLibraryViewMode(
   return [mode, choose];
 }
 
-/** The poster / thumbnail / list / table chips for a Library's items. */
+/** The poster / thumbnail / list / table icon chips for a Library's items. */
 export function LibraryDisplayToggle({
   mode,
   onChange,
@@ -61,7 +61,7 @@ export function LibraryDisplayToggle({
     <div
       role="group"
       aria-label={t("libraryBrowseViewLabel")}
-      className={`flex flex-wrap items-center gap-2 ${className}`}
+      className={`flex items-center gap-1 ${className}`}
     >
       {LIBRARY_VIEW_MODES.map((option) => {
         const Icon = MODE_ICONS[option];
@@ -69,12 +69,13 @@ export function LibraryDisplayToggle({
           <button
             key={option}
             type="button"
-            className="bf-chip"
+            className="bf-chip bf-chip-square"
+            aria-label={t(MODE_LABELS[option])}
+            title={t(MODE_LABELS[option])}
             aria-pressed={mode === option}
             onClick={() => onChange(option)}
           >
             <Icon aria-hidden className="size-4" />
-            {t(MODE_LABELS[option])}
           </button>
         );
       })}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/plugin"
@@ -18,6 +19,10 @@ const libraryGroupingArchetype = "category"
 // maxLibraryGroupFilters bounds how many groupings one browse may filter by;
 // each one is a further intersection over the Library's candidates.
 const maxLibraryGroupFilters = 8
+
+// maxLibraryBrowseQueryRunes bounds the title text one browse may narrow by
+// (CORE-2568); a longer one is refused rather than cut.
+const maxLibraryBrowseQueryRunes = 200
 
 // LibraryItemsGrouping is one plugin-declared way to group the browsed
 // Library: the Entity Kind, the plugin's display name for it, the values the
@@ -175,6 +180,10 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 	if minRating < 0 || minRating > store.ItemRatingMax {
 		return store.LibraryBrowseQuery{}, clientError("minRating must be between 0 and 10")
 	}
+	text := trimmedVariable(req, "query")
+	if utf8.RuneCountInString(text) > maxLibraryBrowseQueryRunes {
+		return store.LibraryBrowseQuery{}, clientError("query must be at most 200 characters")
+	}
 	// groupFilters maps an Entity Kind to the one value selected for it. The
 	// kinds are applied in name order so the same request always reads the
 	// same way.
@@ -206,6 +215,7 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 		YearTo:        yearTo,
 		Quality:       quality,
 		MinRating:     minRating,
+		Text:          text,
 		Limit:         boundedIntVar(req, "limit", 50, 200),
 		Offset:        nonNegativeIntVar(req, "offset"),
 	}, nil
