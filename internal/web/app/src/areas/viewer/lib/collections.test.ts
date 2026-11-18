@@ -4,10 +4,12 @@ import type { CollectionInfo } from "@/lib/graphql/types";
 import {
   COLLECTION_PAGE,
   fetchCollectionItems,
+  fetchCollectionPosters,
   fetchEntryLocks,
   MAX_COLLECTION_ENTRIES,
   memberOrder,
   moveEntry,
+  POSTER_BATCH,
   sortCollections,
 } from "./collections";
 
@@ -119,5 +121,37 @@ describe("fetchEntryLocks (CORE-1876)", () => {
       .mocked(graphql)
       .mock.calls.map(([, vars]) => (vars as { offset: number }).offset);
     expect(offsets.at(-1)).toBe(MAX_COLLECTION_ENTRIES);
+  });
+});
+
+describe("fetchCollectionPosters", () => {
+  it("reads each collection's first posters through aliased feed fields, batched", async () => {
+    vi.mocked(graphql).mockImplementation(async (_query, variables) => {
+      const vars = variables as Record<string, string>;
+      const data: Record<string, unknown> = {};
+      for (const [key, id] of Object.entries(vars)) {
+        const alias = `c${key.slice(1)}`;
+        data[alias] =
+          id === "c0"
+            ? [
+                { id: "m1", artworkSlots: { poster: "/p/1" } },
+                { id: "m2", artwork: { poster: "/p/2" } },
+                { id: "m3" },
+              ]
+            : null;
+      }
+      return data;
+    });
+    const ids = Array.from({ length: POSTER_BATCH + 1 }, (_, i) => `c${i}`);
+
+    const posters = await fetchCollectionPosters(ids);
+
+    expect(graphql).toHaveBeenCalledTimes(2);
+    const [query, variables] = vi.mocked(graphql).mock.calls[0];
+    expect(query).toContain('c0: sourceItems(kind: "collection", value: $v0, limit: 4)');
+    expect(Object.keys(variables as object)).toHaveLength(POSTER_BATCH);
+    expect(posters.get("c0")).toEqual(["/p/1", "/p/2"]);
+    expect(posters.get(`c${POSTER_BATCH}`)).toEqual([]);
+    expect(posters.size).toBe(ids.length);
   });
 });

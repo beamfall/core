@@ -1,0 +1,96 @@
+/* Collections as a poster grid (CORE-2438). The card reuses the viewer poster
+ * frame (chrome.css .bf-poster); a collage tiles up to four member posters two
+ * by two. Spacing 4/8/16 and --radius-card only; motion is the token focus
+ * ring and hover edge, removed under reduce-motion. */
+
+[data-register="viewer"] .bf-collection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 24px 16px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-collection-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-collection-link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-collection-link:focus-visible {
+  outline: none;
+}
+
+[data-register="viewer"] .bf-collection-link:focus-visible .bf-poster {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+[data-register="viewer"] .bf-collection-link:hover .bf-poster {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--text-primary) 14%, transparent),
+    0 10px 28px color-mix(in oklab, var(--bg-root) 60%, transparent);
+}
+
+[data-register="viewer"] .bf-collection-collage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+}
+
+[data-register="viewer"] .bf-collection-collage[data-tiles="1"] {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* Grid items, not the absolutely placed card image. */
+[data-register="viewer"] .bf-collection-collage .bf-collection-tile {
+  position: static;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  background: var(--bg-raised);
+}
+
+[data-register="viewer"] .bf-collection-name {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-register="viewer"] .bf-collection-count {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-register="viewer"] .bf-collection-link .bf-poster {
+    transition: none;
+  }
+}
+
+@media (max-width: 760px) {
+  [data-register="viewer"] .bf-collection-grid {
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    gap: 20px 12px;
+  }
+}

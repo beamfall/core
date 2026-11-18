@@ -1,4 +1,4 @@
-import { ListVideo, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
@@ -8,13 +8,22 @@ import { NativeSelect } from "@/components/ui/select";
 import { createCollection } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { useSession } from "@/lib/session";
+import { PosterGlyph } from "../components/PosterGlyph";
 import { ViewerActions } from "../components/ViewerActions";
-import { fetchViewerCollections, type LibraryCollections } from "../lib/collections";
+import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
+import {
+  COLLAGE_POSTERS,
+  fetchCollectionPosters,
+  fetchViewerCollections,
+  type LibraryCollections,
+} from "../lib/collections";
+import "./collection-grid.css";
 
 // The viewer's Collections (/collections, CORE-1684): every ordered Collection
 // the session can see, grouped by Library, each opening its own page. A Manager
 // Device can start a new one here; Collections are household-shared, so there
-// is no per-Profile owner to record.
+// is no per-Profile owner to record. Each Collection is a poster card (CORE-2438):
+// a collage of its first visible members' posters, its name and its item count.
 export function CollectionListPage() {
   const t = useT();
   const navigate = useNavigate();
@@ -22,6 +31,8 @@ export function CollectionListPage() {
   const libraries = manifest?.libraries ?? [];
   const [groups, setGroups] = useState<LibraryCollections[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // Member posters by Collection id; absent until read, so cards paint first.
+  const [posters, setPosters] = useState<Map<string, string[]>>(() => new Map());
 
   const load = useCallback(async () => {
     setFailed(false);
@@ -37,6 +48,24 @@ export function CollectionListPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const memberKey =
+    groups
+      ?.flatMap((group) => group.collections)
+      .filter((collection) => collection.memberCount > 0)
+      .map((collection) => collection.id)
+      .join("\n") ?? "";
+  useEffect(() => {
+    if (!memberKey) return;
+    const controller = new AbortController();
+    fetchCollectionPosters(memberKey.split("\n"), controller.signal)
+      .then((read) => {
+        if (!controller.signal.aborted) setPosters(read);
+      })
+      // The cards keep their placeholders: the posters are decoration.
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [memberKey]);
 
   const total = groups?.reduce((sum, group) => sum + group.collections.length, 0) ?? 0;
   const showLibrary = libraries.length > 1;
@@ -85,18 +114,19 @@ export function CollectionListPage() {
               aria-label={showLibrary ? group.library.title : t("viewerCollectionsTitle")}
             >
               {showLibrary && <h2 className="mydata-panel-title">{group.library.title}</h2>}
-              <ul className="mydata-list">
+              <ul className="bf-collection-grid">
                 {group.collections.map((collection) => (
-                  <li key={collection.id} className="mydata-row">
-                    <ListVideo aria-hidden className="size-4 shrink-0" />
+                  <li key={collection.id} className="bf-collection-card">
                     <Link
-                      className="min-w-0 flex-1 truncate"
-                      title={collection.name}
+                      className="bf-collection-link"
                       to={`/collections/${encodeURIComponent(group.library.id)}/${encodeURIComponent(collection.id)}`}
                     >
-                      {collection.name}
+                      <CollectionCollage urls={posters.get(collection.id) ?? []} />
+                      <span className="bf-collection-name" title={collection.name}>
+                        {collection.name}
+                      </span>
                     </Link>
-                    <span className="mydata-muted">
+                    <span className="bf-collection-count">
                       {t("viewerCollectionsItemCount", { count: collection.memberCount })}
                     </span>
                   </li>
@@ -106,6 +136,39 @@ export function CollectionListPage() {
           ))}
       </div>
     </AppShell>
+  );
+}
+
+// The card's artwork: one poster fills the frame, more tile it two by two; a
+// Collection with no member posters shows the placeholder glyph. Decorative:
+// the link's name is the Collection's name.
+function CollectionCollage({ urls }: { urls: readonly string[] }) {
+  const tiles = urls.slice(0, COLLAGE_POSTERS);
+  return (
+    <span className="bf-poster bf-collection-collage" data-tiles={tiles.length} aria-hidden>
+      {tiles.length === 0 ? (
+        <PosterGlyph />
+      ) : (
+        tiles.map((url, index) => <CollageTile key={`${url}-${index}`} url={url} />)
+      )}
+    </span>
+  );
+}
+
+function CollageTile({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="bf-collection-tile" />;
+  return (
+    <img
+      className="bf-collection-tile"
+      alt=""
+      loading="lazy"
+      decoding="async"
+      src={artworkBucketURL(url, "w320")}
+      srcSet={artworkSrcSet(url, ["w320", "w640"])}
+      sizes="200px"
+      onError={() => setFailed(true)}
+    />
   );
 }
 

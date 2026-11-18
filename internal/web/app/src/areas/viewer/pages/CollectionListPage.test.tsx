@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCollection, fetchCollections } from "@/lib/graphql";
 import type { CollectionInfo, LibrarySummary } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { fetchCollectionPosters } from "../lib/collections";
 import { CollectionListPage } from "./CollectionListPage";
 
 const session = vi.hoisted(() => ({
@@ -23,6 +24,10 @@ vi.mock("@/lib/session", () => ({
 vi.mock("@/lib/graphql", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/graphql")>();
   return { ...actual, fetchCollections: vi.fn(), createCollection: vi.fn() };
+});
+vi.mock("../lib/collections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/collections")>();
+  return { ...actual, fetchCollectionPosters: vi.fn() };
 });
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -55,6 +60,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  vi.mocked(fetchCollectionPosters).mockResolvedValue(new Map());
   session.isManager = true;
   session.libraries = [library("lib-a", "Videos"), library("lib-b", "Home clips")];
 });
@@ -63,6 +69,7 @@ afterEach(() => {
   cleanup();
   vi.mocked(fetchCollections).mockReset();
   vi.mocked(createCollection).mockReset();
+  vi.mocked(fetchCollectionPosters).mockReset();
 });
 
 describe("CollectionListPage", () => {
@@ -80,6 +87,39 @@ describe("CollectionListPage", () => {
     expect(screen.queryByRole("region", { name: "Home clips" })).toBeNull();
     expect(fetchCollections).toHaveBeenCalledWith("lib-a");
     expect(fetchCollections).toHaveBeenCalledWith("lib-b");
+  });
+
+  it("draws each collection as a poster collage of its first members (CORE-2438)", async () => {
+    vi.mocked(fetchCollections).mockImplementation(async (libraryID) =>
+      libraryID === "lib-a"
+        ? [
+            collection("c1", "lib-a", "Weekend set", 5),
+            collection("c2", "lib-a", "Empty set", 0),
+            collection("c3", "lib-a", "No art", 2),
+          ]
+        : [],
+    );
+    vi.mocked(fetchCollectionPosters).mockResolvedValue(
+      new Map([
+        ["c1", ["/a/1", "/a/2", "/a/3", "/a/4"]],
+        ["c3", []],
+      ]),
+    );
+
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: "Weekend set" });
+    await waitFor(() => expect(link.querySelectorAll("img")).toHaveLength(4));
+    expect(link.querySelector("img")).toHaveAttribute("src", "/a/1?bucket=w320");
+    expect(screen.getByText("5 items")).toBeInTheDocument();
+    // Only collections with members are read, in one call.
+    expect(fetchCollectionPosters).toHaveBeenCalledTimes(1);
+    expect([...vi.mocked(fetchCollectionPosters).mock.calls[0][0]].sort()).toEqual(["c1", "c3"]);
+    for (const name of ["Empty set", "No art"]) {
+      const card = screen.getByRole("link", { name });
+      expect(card.querySelector("img")).toBeNull();
+      expect(card.querySelector("[data-glyph]")).not.toBeNull();
+    }
   });
 
   it("creates a collection in the chosen library and opens it", async () => {

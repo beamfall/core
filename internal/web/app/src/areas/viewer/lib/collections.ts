@@ -1,6 +1,7 @@
 import { graphql } from "@/lib/api";
 import { type CollectionInfo, fetchCollections } from "@/lib/graphql";
 import type { LibrarySummary, SourceItem } from "@/lib/graphql/types";
+import { artworkSlotURL } from "./artwork";
 
 // Ordered Collections in the web viewer (CORE-1684). An ordered Collection is
 // the playlist: a household-shared, library-scoped list of Media in a curated
@@ -133,4 +134,52 @@ export function moveEntry(
   next[from] = neighbour;
   next[to] = id;
   return next;
+}
+
+/** How many member posters a collection card's collage shows (CORE-2438). */
+export const COLLAGE_POSTERS = 4;
+/** Collections per poster read; the server bounds top-level fields per operation at 64. */
+export const POSTER_BATCH = 32;
+
+/**
+ * The first visible members' poster URLs of each Collection, in curated order,
+ * for the list page's collage (CORE-2438). Collections have no artwork of
+ * their own, so the posters come through the same collection feed the
+ * Collection page reads (visibility, Mute and reveal filtering included), one
+ * aliased `sourceItems` field per Collection and one request per batch. A
+ * Collection whose members have no poster maps to an empty list.
+ */
+export async function fetchCollectionPosters(
+  collectionIDs: readonly string[],
+  signal?: AbortSignal,
+): Promise<Map<string, string[]>> {
+  const posters = new Map<string, string[]>();
+  const batches: string[][] = [];
+  for (let at = 0; at < collectionIDs.length; at += POSTER_BATCH) {
+    batches.push(collectionIDs.slice(at, at + POSTER_BATCH));
+  }
+  await Promise.all(
+    batches.map(async (ids) => {
+      const variables: Record<string, string> = {};
+      const declared: string[] = [];
+      const fields: string[] = [];
+      ids.forEach((id, index) => {
+        variables[`v${index}`] = id;
+        declared.push(`$v${index}: String`);
+        fields.push(
+          `c${index}: sourceItems(kind: "collection", value: $v${index}, limit: ${COLLAGE_POSTERS}) { id artwork { poster } artworkSlots }`,
+        );
+      });
+      const query = `query CollectionPosters(${declared.join(", ")}) { ${fields.join(" ")} }`;
+      const data = await graphql<Record<string, SourceItem[] | null>>(query, variables, signal);
+      ids.forEach((id, index) => {
+        const items = data[`c${index}`] ?? [];
+        posters.set(
+          id,
+          items.map((item) => artworkSlotURL(item, "poster")).filter((url) => url !== ""),
+        );
+      });
+    }),
+  );
+  return posters;
 }
