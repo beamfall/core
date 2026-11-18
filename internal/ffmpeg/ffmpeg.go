@@ -313,11 +313,33 @@ func (r *Runner) SetEncodePolicy(policy EncodePolicy) {
 	r.policy.Store(&policy)
 }
 
-func (r *Runner) encodePolicy() EncodePolicy {
+// EncodePolicy is the Console transcode policy new sessions start under. A
+// playback session snapshots it at creation and pins it on every rendition
+// (WithEncodePolicy), so a later Console save never changes the encoder of a
+// session already playing.
+//
+//io:ignore — in-memory config read, not an I/O operation (cmd/ioe2e ledger).
+func (r *Runner) EncodePolicy() EncodePolicy {
 	if policy := r.policy.Load(); policy != nil {
 		return *policy
 	}
 	return EncodePolicy{}
+}
+
+// renditionPolicy is the policy a rendition encodes under: its pinned
+// snapshot, else the runner's current policy.
+func (r *Runner) renditionPolicy(rendition Rendition) EncodePolicy {
+	if rendition.policy != nil {
+		return *rendition.policy
+	}
+	return r.EncodePolicy()
+}
+
+// withQuality applies only the Console quality, for the software-only paths
+// (encrypted and composed) that never take a hardware encoder.
+func (r *Runner) withQuality(rendition Rendition) Rendition {
+	rendition.quality = r.renditionPolicy(rendition).Quality
+	return rendition
 }
 
 // renditionHWAccel is the accelerator a rendition encodes on. An HEVC or AV1
@@ -339,7 +361,7 @@ func (r *Runner) renditionHWAccel(rendition Rendition, policy EncodePolicy) HWAc
 // accelerator, the low-power flag when that accelerator encodes only in
 // low-power mode, and the Console quality.
 func (r *Runner) hardwareRendition(rendition Rendition) Rendition {
-	policy := r.encodePolicy()
+	policy := r.renditionPolicy(rendition)
 	accel := r.renditionHWAccel(rendition, policy)
 	rendition = rendition.withHWAccel(accel)
 	rendition.hwLowPower = accel != "" && r.hwLowPower
@@ -347,9 +369,22 @@ func (r *Runner) hardwareRendition(rendition Rendition) Rendition {
 	return rendition
 }
 
+// launchRendition prepares a video rendition for spawn: the encode policy,
+// then the tone-map backend and device decode. Under the software-only
+// policy the tone-map and decode stay on the CPU too, so no stage of the
+// conversion touches a graphics device (CORE-2452).
+func (r *Runner) launchRendition(rendition Rendition) Rendition {
+	rendition = r.hardwareRendition(rendition)
+	if r.renditionPolicy(rendition).SoftwareOnly {
+		return rendition
+	}
+	rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
+	return rendition.withDeviceDecode(selectRenditionDeviceDecode(rendition))
+}
+
 //io:ignore — in-memory capability check, not an I/O operation (cmd/ioe2e ledger).
 func (r *Runner) SupportsTranscodeCodec(codec string) bool {
-	policy := r.encodePolicy()
+	policy := r.EncodePolicy()
 	switch {
 	case codec == "" || codec == "h264":
 		return true
@@ -1435,6 +1470,9 @@ type Rendition struct {
 	hwLowPower bool
 	// quality is the Console quality (CORE-2452); empty is balanced.
 	quality string
+	// policy is the encode policy snapshot the rendition's session started
+	// under (WithEncodePolicy); nil takes the runner's current policy.
+	policy *EncodePolicy
 	// toneMapAccel is the accelerator the HDR→SDR transform itself runs on.
 	// It is NOT hwAccel: the encoder may be hardware while the tone-map is
 	// software (that is the shipped behaviour), and ADR-0075 Amendment
@@ -1479,6 +1517,22 @@ func (r Rendition) WithComposedPicture(picture ComposedPicture) Rendition {
 // Picture reports the composed picture this rendition draws, if any.
 func (r Rendition) Picture() (ComposedPicture, bool) {
 	return r.picture, r.picture != ComposedPicture{}
+}
+
+// WithEncodePolicy pins the encode policy a rendition launches under, so a
+// session's restarts and seeks keep the encoder it started with after the
+// Console policy changes (CORE-2452).
+func (r Rendition) WithEncodePolicy(policy EncodePolicy) Rendition {
+	r.policy = &policy
+	return r
+}
+
+// PinnedEncodePolicy is the policy WithEncodePolicy pinned, if any.
+func (r Rendition) PinnedEncodePolicy() (EncodePolicy, bool) {
+	if r.policy == nil {
+		return EncodePolicy{}, false
+	}
+	return *r.policy, true
 }
 
 // WithBurnSubtitle returns a copy of the rendition that burns the subtitle at
@@ -2560,9 +2614,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 		return nil, errors.New("ffmpeg: " + reason)
 	}
 	if !rendition.AudioOnly {
-		rendition = r.hardwareRendition(rendition)
-		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
-		rendition = rendition.withDeviceDecode(selectRenditionDeviceDecode(rendition))
+		rendition = r.launchRendition(rendition)
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -2731,9 +2783,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 		return nil, errors.New("ffmpeg: an adjusted encode must be audio-only or a composed picture")
 	}
 	if !rendition.AudioOnly {
-		rendition = r.hardwareRendition(rendition)
-		rendition = rendition.withToneMapAccel(selectRenditionToneMapBackend(rendition))
-		rendition = rendition.withDeviceDecode(selectRenditionDeviceDecode(rendition))
+		rendition = r.launchRendition(rendition)
 	}
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {

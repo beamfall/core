@@ -39,7 +39,7 @@ func (r *Runner) StartEncryptedHLSSegments(ctx context.Context, ep EncryptedLive
 }
 
 func (r *Runner) startEncryptedHLSSegments(ctx context.Context, goos string, ep EncryptedLiveEndpoint, startSegment, segmentSeconds int, rendition Rendition) (*HLSProcess, error) {
-	args, port, err := encryptedSegmentArgs(ep, startSegment, segmentSeconds, rendition)
+	args, port, err := encryptedSegmentArgs(ep, startSegment, segmentSeconds, r.withQuality(rendition))
 	if err != nil {
 		return nil, err
 	}

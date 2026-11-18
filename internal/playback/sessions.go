@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,6 +41,13 @@ type Transcoder interface {
 
 type transcodeCodecSupporter interface {
 	SupportsTranscodeCodec(codec string) bool
+}
+
+// encodePolicySource is a transcoder that applies the Console encode policy
+// (CORE-2452). Each session snapshots it at creation, so a later Console save
+// changes only sessions started after it.
+type encodePolicySource interface {
+	EncodePolicy() ffmpeg.EncodePolicy
 }
 
 // SessionKey identifies one transcode session: the same auth session asking
@@ -221,6 +229,9 @@ type hlsSession struct {
 	audioStreamIndex  *int
 	sourceVideo       VideoSignal
 	burnSubtitleIndex int
+	// encodePolicy is the Console encode policy this session started under
+	// (CORE-2452); nil when the transcoder applies none.
+	encodePolicy *ffmpeg.EncodePolicy
 	// audioSource marks a source without a picture (no frame size): an encode
 	// from its start keeps the source's priming (ffmpeg.Rendition.KeepPriming),
 	// so the output carries exactly the encoder delay playbackInfo reports.
@@ -426,6 +437,11 @@ func IsAudioCopyArtifact(name string) bool {
 	return name == audioCopyRungID || strings.HasPrefix(name, audioCopyRungID+"/")
 }
 
+// encodesHEVC reports whether the session offers an HEVC rung.
+func (h *hlsSession) encodesHEVC() bool {
+	return slices.ContainsFunc(h.rungs, func(rung Rung) bool { return rung.Codec == "hevc" && !rung.CopyVideo })
+}
+
 func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 	rendition := ffmpeg.Rendition{
 		Height:           rung.Height,
@@ -451,6 +467,9 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 	}
 	if h.picture != nil {
 		rendition = rendition.WithComposedPicture(*h.picture)
+	}
+	if h.encodePolicy != nil {
+		rendition = rendition.WithEncodePolicy(*h.encodePolicy)
 	}
 	return rendition.WithAudioAdjust(h.adjust)
 }
@@ -973,10 +992,6 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 // FilePathShaped is FilePathPriorityWithBurnSubtitleAudioLadderMap with the
 // grant's StreamShape, which can reshape the session beyond its ladder.
 func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (string, error) {
-	if caps.HEVC && !s.SupportsTranscodeCodec("hevc") {
-		caps.HEVC = false
-		caps.HEVCMaxHeight = 0
-	}
 	if shape.Encrypted != nil && shape.ComposedPicture {
 		return "", ErrEncryptedLiveUnavailable // ADR-0236 D4
 	}
@@ -1301,6 +1316,16 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	if s.closed {
 		return nil, ErrSessionEvicted
 	}
+	// A session already encoding HEVC keeps it across a Console change that
+	// withholds HEVC from new sessions, and so does a reshaped replacement of
+	// it, under the policy it started with (CORE-2452). Otherwise HEVC follows
+	// the current policy.
+	existing, hasExisting := s.sessions[key]
+	keepHEVC := hasExisting && existing.encodesHEVC()
+	if caps.HEVC && !keepHEVC && !s.SupportsTranscodeCodec("hevc") {
+		caps.HEVC = false
+		caps.HEVCMaxHeight = 0
+	}
 	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
 	if picture != nil {
 		rung, err := composedLiveRung(caps)
@@ -1322,9 +1347,13 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			return nil, err
 		}
 	}
-	if existing, ok := s.sessions[key]; ok {
+	var inheritedPolicy *ffmpeg.EncodePolicy
+	if hasExisting {
 		if existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
+			if keepHEVC {
+				inheritedPolicy = existing.encodePolicy
+			}
 		} else {
 			// A position noted while this session ran was kept only for a
 			// reshaped replacement; the unchanged session ignores it.
@@ -1369,6 +1398,11 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	}
 	if live != nil {
 		session.secure = secure
+	}
+	session.encodePolicy = inheritedPolicy
+	if source, ok := s.transcoder.(encodePolicySource); ok && inheritedPolicy == nil {
+		policy := source.EncodePolicy()
+		session.encodePolicy = &policy
 	}
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)

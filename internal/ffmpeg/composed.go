@@ -78,7 +78,7 @@ func (r *Runner) StartBackgroundComposedHLS(ctx context.Context, audioSrc, dir s
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	cmd := r.generationCommand(ctx, dirConfinement(audioSrc, dir), ffmpegPath, composedHLSArgs(audioSrc, dir, picture, rendition)...)
+	cmd := r.generationCommand(ctx, dirConfinement(audioSrc, dir), ffmpegPath, composedHLSArgs(audioSrc, dir, picture, r.withQuality(rendition))...)
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg composed encode: %w", err)
@@ -99,7 +99,7 @@ func (r *Runner) startComposedHLSSegments(ctx context.Context, audioSrc, dir str
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
 	conf := dirConfinement(audioSrc, dir)
-	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, composedSegmentArgs(audioSrc, dir, picture, startSegment, segmentSeconds, rendition))
+	cmd := r.hardenedCommand(ctx, ffmpegPath, conf.ReadOnly, conf.ReadWrite, composedSegmentArgs(audioSrc, dir, picture, startSegment, segmentSeconds, r.withQuality(rendition)))
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg composed transcode: %w", err)
@@ -216,7 +216,7 @@ func composedEncodeArgs(audioSrc string, picture ComposedPicture, rendition Rend
 	args = append(args, "-i", audioSrc,
 		"-map", "0:v:0", "-map", audioMap,
 		"-vf", strings.Join(filters, ","),
-		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+		"-c:v", "libx264", "-preset", "veryfast", "-crf", rendition.softwareCRF(), "-pix_fmt", "yuv420p",
 		"-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds),
 	)
 	if rendition.VideoKbps > 0 {

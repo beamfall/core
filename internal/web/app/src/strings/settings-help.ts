@@ -40,7 +40,7 @@ export const settingsHelpStrings = {
       "Video format for converted files. Server default uses HEVC (smaller files) when the device and the hardware encoder support it, and H.264 otherwise. H.264 only plays on almost every device. Applies to new conversions.",
     transcodeCodecH264: "H.264 only (most compatible)",
     transcodeQualityTip:
-      "Picture quality against bandwidth and processing. Low saves bandwidth and CPU; High gives a better picture for more CPU or graphics-card work; Server default is Balanced. Applies to new conversions.",
+      "Picture quality against bandwidth and processing. Low saves bandwidth and CPU; High gives a better picture for more CPU or graphics-card work where the encoder supports it, and otherwise matches Balanced; Server default is Balanced. Applies to new conversions.",
     transcodeQualityLow: "Low (saves bandwidth)",
     transcodeQualityBalanced: "Balanced",
     transcodeQualityHigh: "High (best picture)",
@@ -90,7 +90,7 @@ export const settingsHelpStrings = {
       "Format vidéo des fichiers convertis. Réglage par défaut du serveur utilise HEVC (fichiers plus petits) si l’appareil et l’encodeur matériel le gèrent, sinon H.264. H.264 uniquement se lit presque partout. S’applique aux nouvelles conversions.",
     transcodeCodecH264: "H.264 uniquement (le plus compatible)",
     transcodeQualityTip:
-      "Qualité d’image contre bande passante et calcul. Basse économise bande passante et processeur ; Haute donne une meilleure image pour plus de calcul ; Réglage par défaut du serveur vaut Équilibrée. S’applique aux nouvelles conversions.",
+      "Qualité d’image contre bande passante et calcul. Basse économise bande passante et processeur ; Haute donne une meilleure image pour plus de calcul si l’encodeur le permet, sinon vaut Équilibrée ; Réglage par défaut du serveur vaut Équilibrée. S’applique aux nouvelles conversions.",
     transcodeQualityLow: "Basse (économise la bande passante)",
     transcodeQualityBalanced: "Équilibrée",
     transcodeQualityHigh: "Haute (meilleure image)",
@@ -139,7 +139,7 @@ export const settingsHelpStrings = {
       "Videoformat umgewandelter Dateien. Servervorgabe nutzt HEVC (kleinere Dateien), wenn Gerät und Hardware-Encoder es unterstützen, sonst H.264. Nur H.264 läuft auf fast jedem Gerät. Gilt für neue Umwandlungen.",
     transcodeCodecH264: "Nur H.264 (am kompatibelsten)",
     transcodeQualityTip:
-      "Bildqualität gegen Bandbreite und Rechenaufwand. Niedrig spart Bandbreite und CPU; Hoch liefert ein besseres Bild bei mehr Rechenarbeit; Servervorgabe entspricht Ausgewogen. Gilt für neue Umwandlungen.",
+      "Bildqualität gegen Bandbreite und Rechenaufwand. Niedrig spart Bandbreite und CPU; Hoch liefert ein besseres Bild bei mehr Rechenarbeit, sofern der Encoder es unterstützt, sonst wie Ausgewogen; Servervorgabe entspricht Ausgewogen. Gilt für neue Umwandlungen.",
     transcodeQualityLow: "Niedrig (spart Bandbreite)",
     transcodeQualityBalanced: "Ausgewogen",
     transcodeQualityHigh: "Hoch (bestes Bild)",
@@ -188,7 +188,7 @@ export const settingsHelpStrings = {
       "Formato de vídeo de los archivos convertidos. Valor predeterminado del servidor usa HEVC (archivos más pequeños) si el dispositivo y el codificador por hardware lo admiten, y si no H.264. Solo H.264 funciona casi en todas partes. Se aplica a las nuevas conversiones.",
     transcodeCodecH264: "Solo H.264 (el más compatible)",
     transcodeQualityTip:
-      "Calidad de imagen frente a ancho de banda y procesamiento. Baja ahorra ancho de banda y CPU; Alta da mejor imagen con más procesamiento; Valor predeterminado del servidor equivale a Equilibrada. Se aplica a las nuevas conversiones.",
+      "Calidad de imagen frente a ancho de banda y procesamiento. Baja ahorra ancho de banda y CPU; Alta da mejor imagen con más procesamiento si el codificador lo admite, si no equivale a Equilibrada; Valor predeterminado del servidor equivale a Equilibrada. Se aplica a las nuevas conversiones.",
     transcodeQualityLow: "Baja (ahorra ancho de banda)",
     transcodeQualityBalanced: "Equilibrada",
     transcodeQualityHigh: "Alta (mejor imagen)",
@@ -237,7 +237,7 @@ export const settingsHelpStrings = {
       "Formato de vídeo dos arquivos convertidos. Padrão do servidor usa HEVC (arquivos menores) se o dispositivo e o codificador de hardware suportam, senão H.264. Só H.264 funciona em quase tudo. Vale para novas conversões.",
     transcodeCodecH264: "Só H.264 (mais compatível)",
     transcodeQualityTip:
-      "Qualidade de imagem contra banda e processamento. Baixa economiza banda e CPU; Alta dá imagem melhor com mais processamento; Padrão do servidor equivale a Equilibrada. Vale para novas conversões.",
+      "Qualidade de imagem contra banda e processamento. Baixa economiza banda e CPU; Alta dá imagem melhor com mais processamento se o codificador suportar, senão equivale a Equilibrada; Padrão do servidor equivale a Equilibrada. Vale para novas conversões.",
     transcodeQualityLow: "Baixa (economiza banda)",
     transcodeQualityBalanced: "Equilibrada",
     transcodeQualityHigh: "Alta (melhor imagem)",
