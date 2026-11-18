@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { notifyEngagementChanged } from "../actions/engagementSync";
+import { BROWSE_SEARCH_DEBOUNCE_MS } from "../components/LibraryBrowseToolbar";
 import { letterRailOwner } from "../components/LibraryLetterRail";
 import { fetchLibraryItems, type LibraryItemsRequest } from "../lib/libraryBrowse";
 import { LibraryBrowsePage } from "./LibraryBrowsePage";
@@ -185,6 +186,22 @@ describe("Library browse", () => {
     await user.click(screen.getAllByRole("button", { name: "Clear search" }).at(-1) as HTMLElement);
     await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/));
     expect(search).toHaveValue("");
+  });
+
+  it("lets a Clear all clicked mid-typing stay cleared (CORE-2568)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all?watch=unwatched&decade=1990");
+
+    await screen.findByRole("link", { name: "Item 0" });
+    const search = screen.getByRole("searchbox", { name: "Search Films" });
+    await user.type(search, "moon");
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/);
+    expect(search).toHaveValue("");
+    // No draft is left pending to land after the debounce.
+    await new Promise((resolve) => setTimeout(resolve, BROWSE_SEARCH_DEBOUNCE_MS + 100));
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/);
   });
 
   it("opens the filters from one button that counts them and returns focus on Escape (CORE-2568)", async () => {

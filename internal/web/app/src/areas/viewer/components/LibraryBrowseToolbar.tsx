@@ -387,8 +387,10 @@ export function LibraryBrowseEmpty({
 }
 
 // The title search. The draft is the field's own while typing and reaches the
-// URL once typing pauses (or on Enter), trimmed; a new value from elsewhere
-// (a chip, Clear all, Back) replaces the draft.
+// URL once typing pauses, on Enter, or when focus leaves the field, trimmed; a
+// new value from elsewhere (a chip, Clear all, Back) replaces the draft. Leaving
+// commits so a pending draft lands before the control that took focus acts, and
+// never lands after it (a Clear all clicked mid-typing stays cleared).
 function BrowseSearch({
   value,
   label,
@@ -438,6 +440,9 @@ function BrowseSearch({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter") commitRef.current(browseQuery(text));
+        }}
+        onBlur={() => {
+          if (browseQuery(text) !== value) commitRef.current(browseQuery(text));
         }}
         className="h-8 pr-8 pl-8"
       />
