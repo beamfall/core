@@ -853,6 +853,11 @@ type SourceItem struct {
 	// AnnotateMediaClass in the same read so a list row can state it
 	// (CORE-2386); 0 for entities and for Media with no known runtime.
 	DurationSeconds int
+	// Certification and AudienceScore are a media-kind item's display rating
+	// and 0-10 audience score, set by AnnotateMediaClass in the same read;
+	// empty and nil for entities and for Media without them (CORE-2398).
+	Certification string
+	AudienceScore *float64
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.

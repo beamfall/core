@@ -135,6 +135,8 @@
       "tier": "session",
       "children": [
         "artworkSlots",
+        "audienceScore",
+        "certification",
         "credits",
         "durationSeconds",
         "favorited",
@@ -200,7 +202,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -706,6 +710,8 @@
       "tier": "session",
       "children": [
         "artworkSlots",
+        "audienceScore",
+        "certification",
         "credits",
         "durationSeconds",
         "favorited",
@@ -1158,6 +1164,8 @@
       "tier": "session",
       "children": [
         "artworkSlots",
+        "audienceScore",
+        "certification",
         "credits",
         "durationSeconds",
         "favorited",
@@ -1236,6 +1244,8 @@
       "tier": "session",
       "children": [
         "artworkSlots",
+        "audienceScore",
+        "certification",
         "credits",
         "durationSeconds",
         "favorited",
@@ -1660,6 +1670,8 @@
       "tier": "session",
       "children": [
         "artworkSlots",
+        "audienceScore",
+        "certification",
         "credits",
         "durationSeconds",
         "favorited",
@@ -1713,7 +1725,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -2235,7 +2249,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -2259,7 +2275,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -2283,7 +2301,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -2307,7 +2327,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -3051,7 +3073,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -3075,7 +3099,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -3243,6 +3269,8 @@
       "tier": "session",
       "children": [
         "artworkSlots",
+        "audienceScore",
+        "certification",
         "credits",
         "durationSeconds",
         "favorited",
@@ -3698,7 +3726,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",
@@ -3802,7 +3832,9 @@
       "children": [
         "artwork",
         "artworkSlots",
+        "audienceScore",
         "byline",
+        "certification",
         "durationSeconds",
         "engagement",
         "id",

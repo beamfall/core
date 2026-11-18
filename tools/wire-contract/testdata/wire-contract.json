@@ -2063,6 +2063,17 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -2560,6 +2571,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -2567,6 +2584,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -6243,6 +6265,17 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -7880,6 +7913,12 @@
                       }
                     },
                     {
+                      "name": "audienceScore",
+                      "kind": "scalar",
+                      "optional": true,
+                      "nullable": true
+                    },
+                    {
                       "name": "byline",
                       "kind": "list",
                       "optional": true,
@@ -7887,6 +7926,11 @@
                       "elem": {
                         "kind": "scalar"
                       }
+                    },
+                    {
+                      "name": "certification",
+                      "kind": "scalar",
+                      "optional": true
                     },
                     {
                       "name": "durationSeconds",
@@ -8017,6 +8061,12 @@
                     }
                   },
                   {
+                    "name": "audienceScore",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
                     "name": "byline",
                     "kind": "list",
                     "optional": true,
@@ -8024,6 +8074,11 @@
                     "elem": {
                       "kind": "scalar"
                     }
+                  },
+                  {
+                    "name": "certification",
+                    "kind": "scalar",
+                    "optional": true
                   },
                   {
                     "name": "durationSeconds",
@@ -8181,6 +8236,12 @@
                     }
                   },
                   {
+                    "name": "audienceScore",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
                     "name": "byline",
                     "kind": "list",
                     "optional": true,
@@ -8188,6 +8249,11 @@
                     "elem": {
                       "kind": "scalar"
                     }
+                  },
+                  {
+                    "name": "certification",
+                    "kind": "scalar",
+                    "optional": true
                   },
                   {
                     "name": "durationSeconds",
@@ -8318,6 +8384,12 @@
                   }
                 },
                 {
+                  "name": "audienceScore",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
                   "name": "byline",
                   "kind": "list",
                   "optional": true,
@@ -8325,6 +8397,11 @@
                   "elem": {
                     "kind": "scalar"
                   }
+                },
+                {
+                  "name": "certification",
+                  "kind": "scalar",
+                  "optional": true
                 },
                 {
                   "name": "durationSeconds",
@@ -8575,6 +8652,17 @@
               }
             },
             {
+              "name": "audienceScore",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
+              "name": "certification",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
               "name": "credits",
               "kind": "list",
               "optional": true,
@@ -8822,6 +8910,17 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "credits",
@@ -9224,6 +9323,17 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "credits",
@@ -10557,6 +10667,12 @@
                 }
               },
               {
+                "name": "audienceScore",
+                "kind": "scalar",
+                "optional": true,
+                "nullable": true
+              },
+              {
                 "name": "byline",
                 "kind": "list",
                 "optional": true,
@@ -10564,6 +10680,11 @@
                 "elem": {
                   "kind": "scalar"
                 }
+              },
+              {
+                "name": "certification",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "childCount",
@@ -10730,6 +10851,12 @@
               }
             },
             {
+              "name": "audienceScore",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
               "name": "byline",
               "kind": "list",
               "optional": true,
@@ -10737,6 +10864,11 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "certification",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "childCount",
@@ -11061,6 +11193,12 @@
                 }
               },
               {
+                "name": "audienceScore",
+                "kind": "scalar",
+                "optional": true,
+                "nullable": true
+              },
+              {
                 "name": "byline",
                 "kind": "list",
                 "optional": true,
@@ -11068,6 +11206,11 @@
                 "elem": {
                   "kind": "scalar"
                 }
+              },
+              {
+                "name": "certification",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "durationSeconds",
@@ -11198,6 +11341,12 @@
               }
             },
             {
+              "name": "audienceScore",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
               "name": "byline",
               "kind": "list",
               "optional": true,
@@ -11205,6 +11354,11 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "certification",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "durationSeconds",
@@ -11597,6 +11751,12 @@
                 }
               },
               {
+                "name": "audienceScore",
+                "kind": "scalar",
+                "optional": true,
+                "nullable": true
+              },
+              {
                 "name": "byline",
                 "kind": "list",
                 "optional": true,
@@ -11604,6 +11764,11 @@
                 "elem": {
                   "kind": "scalar"
                 }
+              },
+              {
+                "name": "certification",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "durationSeconds",
@@ -11734,6 +11899,12 @@
               }
             },
             {
+              "name": "audienceScore",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
               "name": "byline",
               "kind": "list",
               "optional": true,
@@ -11741,6 +11912,11 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "certification",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "durationSeconds",
@@ -12818,6 +12994,17 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -13084,6 +13271,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -13091,6 +13284,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -13277,6 +13475,17 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "audienceScore",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
+              "name": "certification",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "credits",
@@ -17551,6 +17760,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -17558,6 +17773,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -17691,6 +17911,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -17698,6 +17924,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -17831,6 +18062,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -17838,6 +18075,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -17971,6 +18213,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -17978,6 +18226,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -20924,6 +21177,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -20931,6 +21190,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -21071,6 +21335,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -21078,6 +21348,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -21264,6 +21539,12 @@
                 }
               },
               {
+                "name": "audienceScore",
+                "kind": "scalar",
+                "optional": true,
+                "nullable": true
+              },
+              {
                 "name": "byline",
                 "kind": "list",
                 "optional": true,
@@ -21271,6 +21552,11 @@
                 "elem": {
                   "kind": "scalar"
                 }
+              },
+              {
+                "name": "certification",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "durationSeconds",
@@ -21443,6 +21729,12 @@
               }
             },
             {
+              "name": "audienceScore",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
               "name": "byline",
               "kind": "list",
               "optional": true,
@@ -21450,6 +21742,11 @@
               "elem": {
                 "kind": "scalar"
               }
+            },
+            {
+              "name": "certification",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "durationSeconds",
@@ -23892,6 +24189,17 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "credits",
@@ -29497,6 +29805,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -29504,6 +29818,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
@@ -30099,6 +30418,12 @@
           }
         },
         {
+          "name": "audienceScore",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -30106,6 +30431,11 @@
           "elem": {
             "kind": "scalar"
           }
+        },
+        {
+          "name": "certification",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "durationSeconds",
