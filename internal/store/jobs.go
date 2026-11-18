@@ -460,7 +460,12 @@ func (s *Store) RetryJob(ctx context.Context, id JobID, now time.Time) (Job, err
 		Payload:           cloneBytes(previous.Payload),
 		Checkpoint:        cloneBytes(previous.Checkpoint),
 		CheckpointVersion: previous.CheckpointVersion,
-		CreatedAt:         now,
+		// The retry resumes from the checkpoint, so it starts at the progress
+		// that checkpoint stands for. A resumed scan re-walks the tree to its
+		// cursor before it reports again, and a retry that showed 0 for that
+		// walk looked like it had started over (CORE-2395).
+		Progress:  previous.Progress,
+		CreatedAt: now,
 	})
 	if err != nil {
 		return Job{}, err
@@ -742,11 +747,13 @@ func enqueueJobTx(ctx context.Context, tx *sql.Tx, job Job) (Job, error) {
 		}
 	}
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO job(id, kind, class, payload_json, dedupe_key, priority, status, created_at_ms, updated_at_ms, available_at_ms, attempt_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO job(id, kind, class, payload_json, dedupe_key, priority, status, created_at_ms, updated_at_ms, available_at_ms, attempt_count,
+			progress_current, progress_total, progress_unit, progress_message)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		job.ID, job.Kind, job.Class, string(job.Payload), nullableString(job.DedupeKey), job.Priority, job.Status,
 		timeToMillis(job.CreatedAt), timeToMillis(job.UpdatedAt), timeToMillis(job.RunAfter), job.Attempts,
+		job.Progress.Current, job.Progress.Total, nullableString(job.Progress.Unit), nullableString(job.Progress.Message),
 	)
 	if err != nil {
 		return Job{}, err
