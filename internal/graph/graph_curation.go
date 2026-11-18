@@ -140,7 +140,12 @@ func (h *Handler) mediaRelations(ctx context.Context, scope auth.Scope, req requ
 	}
 	out := make([]MediaRelationInfo, len(related))
 	for i, media := range related {
-		out[i] = MediaRelationInfo{Relation: string(relation), Media: mediaInfoWithFavorite(media, favorites[media.ID])}
+		info := mediaInfoWithFavorite(media, favorites[media.ID])
+		// The card fields a detail page's Extras and Editions rows draw (CORE-2439).
+		info.ArtworkSlots = h.mediaArtworkSlots(media.ID)
+		info.DurationSeconds = media.DurationSeconds
+		info.MediaClass = string(media.Class)
+		out[i] = MediaRelationInfo{Relation: string(relation), Media: info}
 	}
 	return out, nil
 }

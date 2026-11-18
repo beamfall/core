@@ -4354,15 +4354,17 @@ type MediaInfo struct {
 	Year      int    `json:"year,omitempty"`
 	Favorited bool   `json:"favorited"`
 	// DurationSeconds and MediaClass are the stored runtime and playback
-	// class; filled only by the media(id) read and omitted when unknown, so a
-	// client can render a track-list row (CORE-1635).
+	// class; filled by the media(id) and mediaRelations reads and omitted when
+	// unknown, so a client can render a track-list row or card (CORE-1635,
+	// CORE-2439).
 	DurationSeconds int    `json:"durationSeconds,omitempty"`
 	MediaClass      string `json:"mediaClass,omitempty"`
 	// LibraryID names the owning Library so a client can build a readable
 	// address for the item (CORE-2329); filled only by the media(id) read.
 	LibraryID string `json:"libraryID,omitempty"`
-	// ArtworkSlots maps each present artwork slot to its URL; filled only by
-	// the media(id) read, omitted when the item carries no artwork.
+	// ArtworkSlots maps each present artwork slot to its URL; filled by the
+	// media(id) and mediaRelations reads, omitted when the item carries no
+	// artwork.
 	ArtworkSlots map[string]string `json:"artworkSlots,omitempty"`
 	// Credits lists the Entities linked to this Media item through the owning
 	// plugin's Media-targeted relations, in declaration order; filled only by
@@ -4422,11 +4424,7 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	if err != nil {
 		return MediaInfo{}, err
 	}
-	if h.artwork != nil {
-		info.ArtworkSlots = artworkSlots("/api/media/artwork/"+string(media.ID), func(slot string) (string, bool) {
-			return h.artwork.ArtworkVersion(media.ID, slot)
-		})
-	}
+	info.ArtworkSlots = h.mediaArtworkSlots(media.ID)
 	info.DurationSeconds = media.DurationSeconds
 	info.MediaClass = string(media.Class)
 	info.LibraryID = string(media.LibraryID)
@@ -4436,6 +4434,17 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 		info.Certification, info.AudienceScore = store.MediaRatingFrom(fields)
 	}
 	return info, nil
+}
+
+// mediaArtworkSlots maps a Media item's stored artwork slots to versioned
+// URLs, or nil when the item has none or no artwork store is wired.
+func (h *Handler) mediaArtworkSlots(id store.MediaID) map[string]string {
+	if h.artwork == nil {
+		return nil
+	}
+	return artworkSlots("/api/media/artwork/"+string(id), func(slot string) (string, bool) {
+		return h.artwork.ArtworkVersion(id, slot)
+	})
 }
 
 // mediaCredits walks the owning bundle's Media-targeted relations in
