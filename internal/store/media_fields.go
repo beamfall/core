@@ -168,11 +168,13 @@ func fieldProvenanceTx(ctx context.Context, tx *sql.Tx, id MediaID, field string
 // within the caller's transaction, but only raises it — a lower-rank source
 // never demotes a field's recorded provenance. It is the write half of the
 // source-precedence gate: callers first check canWriteFieldTx to decide whether
-// the value itself lands, then call this to record the winning source.
+// the value itself lands, then call this to record the winning source. A
+// write that lands also clears the parser marker (CORE-2554): the field is now
+// that source's, so a rescan parse no longer refreshes it.
 func recordFieldProvenanceTx(ctx context.Context, tx *sql.Tx, id MediaID, field string, source MutationSource) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO media_field_provenance(media_id, field, source) VALUES (?, ?, ?)
-		ON CONFLICT(media_id, field) DO UPDATE SET source = excluded.source
+		ON CONFLICT(media_id, field) DO UPDATE SET source = excluded.source, parser_owned = 0
 		WHERE ? >= (SELECT rank FROM (`+sourceRankValues()+`) WHERE src = media_field_provenance.source)
 	`, id, field, string(source), metadataSourceRank(source))
 	return err

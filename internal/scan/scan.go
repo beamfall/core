@@ -394,7 +394,7 @@ type parsedPartImport struct {
 	key           string
 	imported      store.ImportMediaFile
 	parsed        ParsedMedia
-	fields        []store.MediaField
+	refresh       store.ParserFieldRefresh
 	markerTitle   string
 	probeChapters []ffmpeg.ProbeChapter
 	probed        bool

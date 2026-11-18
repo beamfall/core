@@ -31,9 +31,12 @@ type scanWalkState struct {
 	// the Library's Plugin declares (CORE-0043, CORE-2361).
 	imageRule     ImageRule
 	backfillStale map[store.MediaID]struct{}
-	req           Request
-	checkpoint    jobCheckpoint
-	scanStarted   time.Time
+	// legacyParserPaths are the unchanged files probed on the fast path so
+	// their parse settles legacy parser fields (CORE-2554).
+	legacyParserPaths map[string]struct{}
+	req               Request
+	checkpoint        jobCheckpoint
+	scanStarted       time.Time
 	// completedFingerprints maps the bytes of each file this pass completed
 	// to its Media (keepCountedMediaBeforeMove, CORE-2197).
 	completedFingerprints map[string]store.MediaID
@@ -188,6 +191,13 @@ func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
 	}
 	defer s.releaseBudget()
 	task.fill(ctx, s.st, s.prober, s.grabber)
+	if task.err == nil && task.fastPath {
+		// An unchanged file whose Media still holds legacy parser fields is
+		// probed once, so its parse can settle them (CORE-2554).
+		if _, legacy := s.legacyParserPaths[task.path]; legacy {
+			task.probeFile(ctx, s.prober)
+		}
+	}
 	if task.err == nil && imageClassForPath(task.path) {
 		task.local = extractLocalMetadata(ctx, s.req.Root, task.path, s.localExtractors)
 	}
