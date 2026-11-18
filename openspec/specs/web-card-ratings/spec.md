@@ -34,12 +34,16 @@ the parts present. Entity cards, which carry neither field, SHALL be unchanged.
 - **WHEN** a card has neither field
 - **THEN** it renders no rating element and its accessible name is unchanged
 
-### Requirement: A zero score needs votes
+### Requirement: A zero score is never shown
 
-A web card SHALL NOT show an audience score of 0 unless the card carries `audienceScoreVotes`
-above zero.
+A web card SHALL NOT show an audience score of 0 or less, whatever `audienceScoreVotes` it carries.
 
 #### Scenario: Zero without votes
 
 - **WHEN** a card has `audienceScore` 0 and no `audienceScoreVotes`
+- **THEN** it renders no "★" score
+
+#### Scenario: Zero with votes
+
+- **WHEN** a card has `audienceScore` 0 and `audienceScoreVotes` 3
 - **THEN** it renders no "★" score
