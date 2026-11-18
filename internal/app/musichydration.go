@@ -236,8 +236,16 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 		return nil
 	}
 	// Relations first: a failed relation write (a title-variant merge among
-	// them) leaves the completion marker unset, so a later scan retries.
+	// them) leaves the completion marker unset, so a later scan retries. A
+	// Media hydrated before carries its marker already, so where merges run
+	// the marker is cleared and a backfill scan queued for the next start.
 	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations, write == HydrationWriteReplace); err != nil {
+		if a.foldStore != nil && marker != "" {
+			reopenErr := a.foldStore.ReopenMediaHydration(context.WithoutCancel(ctx), input.LibraryID, input.MediaID, marker, time.Now().UTC())
+			if reopenErr != nil && !errors.Is(reopenErr, serverrole.ErrAttachedAuthorityRefused) {
+				return errors.Join(err, fmt.Errorf("reopen hydration: %w", reopenErr))
+			}
+		}
 		return err
 	}
 	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write, locked); err != nil {
@@ -695,14 +703,19 @@ func (a *hydrationAdapter) entityID(ctx context.Context, libraryID store.Library
 	if mapped.Scope == "" {
 		return identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title), nil
 	}
-	id, err := a.scopedEntityID(ctx, libraryID, mapped)
+	id, err := a.scopedEntityID(ctx, libraryID, mapped, resolved)
 	if err == nil {
 		resolved[key] = id
 	}
 	return id, err
 }
 
-func (a *hydrationAdapter) scopedEntityID(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity) (store.EntityID, error) {
+// scopedEntityID is entityID's lookup for a scoped Entity not yet resolved in
+// the plan. The plan's relations are written only after every id resolves, so
+// a title-only Entity one scope keeps is claimed in resolved (under its id
+// behind a \x01 prefix, naming the scope) and another scope of the same plan
+// gets its scoped id instead of keeping the same Entity.
+func (a *hydrationAdapter) scopedEntityID(ctx context.Context, libraryID store.LibraryID, mapped HydrationEntity, resolved map[string]store.EntityID) (store.EntityID, error) {
 	unscoped := identify.EntityIDForName(libraryID, mapped.Kind, mapped.Title)
 	relation := a.entityScopes[mapped.Kind]
 	scoped := identify.EntityIDForScopedName(libraryID, mapped.Kind, mapped.Scope, mapped.Title)
@@ -719,6 +732,11 @@ func (a *hydrationAdapter) scopedEntityID(ctx context.Context, libraryID store.L
 			return scoped, nil
 		}
 	}
+	claim := "\x01" + string(unscoped)
+	if claimant, claimed := resolved[claim]; claimed && claimant != scope {
+		return scoped, nil
+	}
+	resolved[claim] = scope
 	return unscoped, nil
 }
 

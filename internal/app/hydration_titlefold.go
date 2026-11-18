@@ -29,6 +29,7 @@ type hydrationFoldStore interface {
 	LiveFoldEqualEntities(ctx context.Context, libraryID store.LibraryID, kind, title, scopeRelation string, scopeTarget store.EntityID) ([]store.Entity, error)
 	LiveFoldEqualEntitiesByID(ctx context.Context, libraryID store.LibraryID, kind, title string, ids []store.EntityID) ([]store.Entity, error)
 	EntityTitleFoldApplies(ctx context.Context, libraryID store.LibraryID) (bool, error)
+	ReopenMediaHydration(ctx context.Context, libraryID store.LibraryID, mediaID store.MediaID, markerField string, now time.Time) error
 }
 
 // titleFoldOn reports whether this hydration merges title variants: the

@@ -28,8 +28,14 @@ func (s *Service) AdoptEntityArtwork(ctx context.Context, survivor, merged store
 	}
 	defer unlock()
 	for _, slot := range KnownSlots {
-		src := storedSlotPath(s.EntityArtworkPath(merged, slot))
-		own := storedSlotPath(s.EntityArtworkPath(survivor, slot))
+		src, err := adoptedSlotPath(s.EntityArtworkPath(merged, slot))
+		if err != nil {
+			return err
+		}
+		own, err := adoptedSlotPath(s.EntityArtworkPath(survivor, slot))
+		if err != nil {
+			return err
+		}
 		adopt, err := adoptsSlot(src, own, slot)
 		if err != nil {
 			return err
@@ -78,6 +84,27 @@ func adoptsSlot(src, own, slot string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// adoptedSlotPath is storedSlotPath for an adoption: the file that holds a
+// slot, path or its legacy overlay JPEG, except that a file which cannot be
+// inspected is an error rather than read as absent, so a legacy JPEG behind
+// an unreadable path is not passed over for a PNG that does not exist.
+func adoptedSlotPath(path string) (string, error) {
+	legacy := legacyOverlayPath(path)
+	if legacy == "" {
+		return path, nil
+	}
+	for _, candidate := range []string{path, legacy} {
+		info, err := statAdopted(candidate)
+		if err != nil {
+			return "", err
+		}
+		if info != nil && info.Mode().IsRegular() {
+			return candidate, nil
+		}
+	}
+	return path, nil
 }
 
 // statAdopted stats path; a missing file is a nil FileInfo, not an error.

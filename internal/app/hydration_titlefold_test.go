@@ -290,6 +290,11 @@ func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) 
 		t.Fatalf("legacy holders = %+v; want a child holding the Media", links)
 	}
 
+	// The Media was hydrated before, so it carries its marker.
+	if err := st.InsertMediaFieldsIfAbsent(ctx, media.ID, []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}); err != nil {
+		t.Fatal(err)
+	}
+
 	adapter := newTestAdapterWithMapper(st, foldedAlbumMapper{})
 	recorder := &recordingFoldStore{hydrationFoldStore: adapter.foldStore, failCopies: 1}
 	adapter.foldStore = recorder
@@ -307,6 +312,10 @@ func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) 
 		t.Fatal(err)
 	} else if _, ok := open[media.ID]; !ok {
 		t.Fatalf("after failed merge unmarked Media = %v; want %s left for the next scan", open, media.ID)
+	}
+	// An ordinary scan skips the unchanged file, so a backfill is queued.
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 1 || pending[0] != lib.ID {
+		t.Fatalf("pending backfills = %v, %v; want %s", pending, err, lib.ID)
 	}
 	if err := adapter.HydrateMetadata(ctx, input); err != nil {
 		t.Fatalf("retry: %v", err)

@@ -152,6 +152,41 @@ func (s *Store) ReopenFoldedEntityTitles(ctx context.Context, pluginID, kind, ma
 	return reopened, nil
 }
 
+// ReopenMediaHydration leaves one Media for hydration to finish later: its
+// hydration marker is cleared and its Library recorded as awaiting a backfill
+// scan (see PendingEntityScopeBackfills), in one transaction. Hydration calls
+// it when a relation write (a title-variant merge among them) fails, since an
+// ordinary scan does not hydrate the unchanged file again and a backfill skips
+// a Media that still carries its marker.
+func (s *Store) ReopenMediaHydration(ctx context.Context, libraryID LibraryID, mediaID MediaID, markerField string, now time.Time) error {
+	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
+		return err
+	}
+	if libraryID == "" || mediaID == "" || markerField == "" {
+		return errors.New("library ID, media ID and marker field are required")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	tx, err := s.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM media_field_int WHERE field = ? AND media_id = ?`, markerField, mediaID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO server_config(key, value, updated_at_ms) VALUES (?, '', ?)
+		ON CONFLICT(key) DO NOTHING
+	`, entityScopeBackfillPrefix+string(libraryID), timeToMillis(now)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // CopyEntityItemState copies the per-Profile item state (ratings and
 // watchlist entries) and the tags of one Entity onto another, so merging two
 // Entities that are one item keeps what people recorded against either. A

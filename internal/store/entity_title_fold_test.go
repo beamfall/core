@@ -197,3 +197,48 @@ func TestLiveFoldEqualEntitiesQueriesSeekTheirIndexes(t *testing.T) {
 		t.Fatalf("by-ID plan = %q, want a primary key search", got)
 	}
 }
+
+// TestReopenMediaHydrationClearsOneMarkerAndQueuesABackfill pins CORE-2459's
+// retry of a failed title-variant merge: the failing Media loses its
+// hydration marker, other Media keep theirs, and the Library awaits a
+// backfill scan.
+func TestReopenMediaHydrationClearsOneMarkerAndQueuesABackfill(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir(), Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	lib, err := st.CreateLibrary(ctx, "Shelf", false, "", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "hydrated"
+	var media []MediaID
+	for _, name := range []string{"one", "two"} {
+		imported, _, err := st.ImportMediaFile(ctx, ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
+			Class: MediaClassAudio, ContentFingerprint: "fp-" + name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.InsertMediaFieldsIfAbsent(ctx, imported.ID, []MediaField{{Name: marker, Type: EntityFieldFlag, Flag: true}}); err != nil {
+			t.Fatal(err)
+		}
+		media = append(media, imported.ID)
+	}
+	if err := st.ReopenMediaHydration(ctx, lib.ID, media[0], marker, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	open, err := st.MediaLackingFieldInLibrary(ctx, lib.ID, MediaClassAudio, marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := open[media[0]]; !ok || len(open) != 1 {
+		t.Fatalf("unmarked Media = %v; want %s alone", open, media[0])
+	}
+	if pending, err := st.PendingEntityScopeBackfills(ctx); err != nil || len(pending) != 1 || pending[0] != lib.ID {
+		t.Fatalf("pending backfills = %v, %v; want %s", pending, err, lib.ID)
+	}
+}

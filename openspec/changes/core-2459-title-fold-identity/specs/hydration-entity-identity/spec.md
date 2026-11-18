@@ -79,7 +79,8 @@ poster it only inherited, and the merged-away variant SHALL keep its own files f
 
 #### Scenario: The merged variant's artwork cannot be read
 
-- **WHEN** the merged-away variant's artwork cannot be inspected
+- **WHEN** the merged-away variant's artwork, or the legacy JPEG of an overlay slot, cannot be
+  inspected
 - **THEN** the merge does not commit, so the artwork is not left behind on a trashed variant
 
 ### Requirement: Automatic title-variant merges are recorded in activity history
@@ -115,12 +116,32 @@ written rows and checked against them, and a scoped lookup SHALL read only the s
 ### Requirement: A failed title-variant merge is retried
 
 When a title-variant merge fails, hydration SHALL fail for that Media before its hydration marker
-is written, so the next scan hydrates it again and completes the merge.
+is written, SHALL clear a marker an earlier hydration wrote and SHALL queue a backfill scan of its
+Library for the next start, so the Media is hydrated again and the merge completes.
 
 #### Scenario: A merge fails
 
 - **WHEN** a title-variant merge fails during hydration
 - **THEN** the Media stays unmarked and the next hydration completes the merge
+
+#### Scenario: A merge fails for a Media hydrated before
+
+- **WHEN** a title-variant merge fails while a changed file whose Media carries its hydration marker
+  is hydrated again
+- **THEN** the marker is cleared and the Library awaits a backfill scan
+
+### Requirement: A title-only Entity goes to one scope of a plan
+
+When one hydration plan carries same-titled Entities of a scoped kind under different scopes and a
+title-only Entity of that title records no scope yet, hydration SHALL keep the title-only Entity
+for the first of those scopes and SHALL give each other scope its own scoped Entity.
+
+#### Scenario: Two scopes in one plan
+
+- **WHEN** a plan carries two same-titled albums under different album artists and a title-only
+  album of that title records no album artist
+- **THEN** the title-only album records the first album artist alone and the second gets its own
+  album
 
 ### Requirement: Encrypted Libraries are not title-folded
 

@@ -196,3 +196,22 @@ func TestAdoptEntityArtworkFailsOnUnreadableArtwork(t *testing.T) {
 		t.Fatal("adoption of unreadable artwork succeeded")
 	}
 }
+
+// A legacy overlay JPEG that cannot be inspected fails the adoption rather
+// than reading as absent and sending the lookup to a PNG that does not exist.
+func TestAdoptEntityArtworkFailsOnAnUnreadableLegacyOverlay(t *testing.T) {
+	s := newShelf(t)
+	s.entity("entity-kept", "box")
+	s.entity("entity-merged", "box")
+	logo := s.svc.EntityArtworkPath("entity-merged", SlotLogo)
+	legacy := legacyOverlayPath(logo)
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(legacy), legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.svc.AdoptEntityArtwork(context.Background(), "entity-kept", "entity-merged"); err == nil {
+		t.Fatal("adoption past an unreadable legacy logo succeeded")
+	}
+}
