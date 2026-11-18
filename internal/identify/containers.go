@@ -239,11 +239,19 @@ func (s *Service) applyEntityArtworkSlots(ctx context.Context, id store.EntityID
 	}
 }
 
+// entityRelationReplacer is the optional EntityStore extension that rewrites a
+// source Entity's relations by name; *store.Store satisfies it.
+type entityRelationReplacer interface {
+	ReplaceEntityRelations(ctx context.Context, fromID store.EntityID, relations []store.EntityRelation) error
+}
+
 // applyContainerLinks relates the container Entity to each Entity a sibling
 // map hydrated, under the container relation its ContainerRelations entry
 // names, keeping the sibling's sort order. A link is written only when the
 // bundle declares that relation on the container kind toward the linked
-// Entity's kind.
+// Entity's kind. Each relation the result links replaces the container's
+// previous links under it, so a corrected match drops the old cast and
+// genres; a store without the replace extension only adds links.
 func (s *Service) applyContainerLinks(ctx context.Context, library store.LibraryID, bundle plugin.Bundle, target store.EntityID, result scrape.EntityResult) error {
 	if len(result.Links) == 0 {
 		return nil
@@ -256,18 +264,25 @@ func (s *Service) applyContainerLinks(ctx context.Context, library store.Library
 			}
 		}
 	}
+	var rows []store.EntityRelation
 	for _, link := range result.Links {
 		relation, ok := declared[link.Relation]
 		if !ok || relation.ToKind != link.Kind {
 			continue
 		}
-		if err := s.entities.UpsertEntityRelation(ctx, store.EntityRelation{
+		rows = append(rows, store.EntityRelation{
 			FromEntityID: target,
 			Name:         link.Relation,
 			ToEntityID:   entityIDForName(library, link.Kind, link.Name),
 			Cardinality:  relation.Cardinality,
 			SortOrder:    link.SortOrder,
-		}); err != nil {
+		})
+	}
+	if replacer, ok := s.entities.(entityRelationReplacer); ok {
+		return replacer.ReplaceEntityRelations(ctx, target, rows)
+	}
+	for _, row := range rows {
+		if err := s.entities.UpsertEntityRelation(ctx, row); err != nil {
 			return err
 		}
 	}
