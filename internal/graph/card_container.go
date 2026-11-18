@@ -126,7 +126,8 @@ const (
 // found through their container rank with it (CORE-2525). Within a relevance
 // tie hits group by container: the container Entity first, then its items by
 // their stored ordinals, so siblings read in order and a client can collapse
-// them under the container.
+// them under the container. A group ranks as its best-matching row, so it
+// never splits across ranks.
 func (h *Handler) orderKeywordResults(ctx context.Context, text string, results []store.SourceItem) error {
 	if err := h.annotateContainers(ctx, results); err != nil {
 		return err
@@ -171,6 +172,18 @@ func (h *Handler) orderKeywordResults(ctx context.Context, text string, results 
 			key.sequence, key.index = fields["sequence"].Number, fields["index"].Number
 		}
 		keys[i] = key
+	}
+	// A group ranks as its best row, so an item that outranks its container
+	// lifts the whole group and the container still leads it; CORE-2471's
+	// regrouping then has nothing to move.
+	groupRank := map[string]int{}
+	for _, key := range keys {
+		if best, ok := groupRank[key.groupID]; !ok || key.rank < best {
+			groupRank[key.groupID] = key.rank
+		}
+	}
+	for i := range keys {
+		keys[i].rank = groupRank[keys[i].groupID]
 	}
 	indexes := make([]int, len(results))
 	for i := range indexes {

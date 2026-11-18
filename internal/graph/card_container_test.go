@@ -220,3 +220,53 @@ func TestKeywordSearchKeepsAContainersFirstItemsPastTheCut(t *testing.T) {
 		t.Fatalf("search dropped the container's first item %s", first)
 	}
 }
+
+// TestKeywordSearchKeepsAContainerGroupWholeAtItsBestRank pins CORE-2525 with
+// CORE-2471's ordered regrouping: an item whose own title outranks its
+// container's lifts the whole group to that rank, so the container still leads
+// its items in ordinal order rather than trailing the item that matched best.
+func TestKeywordSearchKeepsAContainerGroupWholeAtItsBestRank(t *testing.T) {
+	handler, libraryID, media := newContainerLibrary(t)
+	ctx := context.Background()
+	if err := handler.store.UpsertEntity(ctx, store.Entity{ID: "entity-vol-a", LibraryID: libraryID, Kind: "volume", Title: "Harbours"}); err != nil {
+		t.Fatal(err)
+	}
+	exact, _, err := handler.store.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: libraryID, Path: "/volumes/a4.mkv", Title: "Harbour",
+		Container: "mkv", Codec: "h264", ContentFingerprint: "fp-a4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handler.store.SetMediaFields(ctx, exact.ID, []store.MediaField{
+		{Name: "sequence", Type: store.EntityFieldNumber, Number: 2},
+		{Name: "index", Type: store.EntityFieldNumber, Number: 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Ordered holds give CORE-2471's regrouping a root to group under.
+	for i, held := range []struct {
+		part  store.EntityID
+		media store.MediaID
+	}{{"entity-part-a1", media["a1"]}, {"entity-part-a1", media["a2"]}, {"entity-part-a2", media["a3"]}, {"entity-part-a2", exact.ID}} {
+		order := i
+		if err := handler.store.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: held.part, Name: "holds", ToMediaID: held.media, SortOrder: &order}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var search SearchResultResponse
+	execGraph(t, handler, authorizeViewer,
+		`query($query: String!) { searchResult(query: $query, mode: keyword) { items { id } } }`,
+		map[string]any{"query": "Harbour"}, "searchResult", &search)
+	var got []string
+	for _, item := range search.Items {
+		got = append(got, item.ID)
+	}
+	want := []string{
+		string(media["b1"]), string(media["loose"]),
+		"entity-vol-a", string(media["a1"]), string(media["a2"]), string(media["a3"]), string(exact.ID),
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("search order = %v, want %v", got, want)
+	}
+}
