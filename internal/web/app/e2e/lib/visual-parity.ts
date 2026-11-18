@@ -5,6 +5,12 @@ import { expectArchivedVisualParity } from "./archived-visual-parity";
 
 const postDir = process.env.TECHDUR_VISUAL_POST_DIR;
 
+// The cold-load logo intro (CORE-2556) covers the first screen until it hands off; a pixel
+// comparison taken before then would capture the splash instead of the UI.
+export async function waitForSplashHandoff(page: Page): Promise<void> {
+  await expect(page.locator("#bf-splash")).toHaveCount(0, { timeout: 10_000 });
+}
+
 // CORE-1112: the live goldens and the archived signatures were rasterized on
 // macOS, where system-ui is SF Pro and no web font is bundled, so on any other
 // host an exact pixel comparison measures the font, not the UI. Other hosts
@@ -91,6 +97,7 @@ export async function expectVisualParity(
   options: { archivedSubject?: Locator; mask?: Locator[] } = {},
 ): Promise<void> {
   const fileName = `${name}.png`;
+  await waitForSplashHandoff(page);
   if (postDir) {
     const root = isAbsolute(postDir) ? postDir : resolve(process.cwd(), postDir);
     const projectDir = join(root, testInfo.project.name);
@@ -123,6 +130,7 @@ export async function expectLocatorVisualParity(
   name: string,
 ): Promise<void> {
   const fileName = `${name}.png`;
+  await waitForSplashHandoff(locator.page());
   if (postDir) {
     const root = isAbsolute(postDir) ? postDir : resolve(process.cwd(), postDir);
     const projectDir = join(root, testInfo.project.name);
