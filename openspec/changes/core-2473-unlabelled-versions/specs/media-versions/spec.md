@@ -7,8 +7,8 @@ directory and library when both parse to the same class, title, year, sequence a
 as a Version under the parser's version label. The other file MAY be one this scan imported or one an
 earlier scan cataloged. When neither file carries a parsed version label, the scan SHALL label both
 from the first of these that tells them apart and leaves both slots free: the resolution class of the
-probed frame, the container, then the file name without its extension; the file that held the
-default Version moves to its label. A file whose label is stored SHALL keep it on later scans. It
+probed frame, then the container; the file that held the default Version moves to its label.
+Files that differ only by name SHALL stay separate Media, since they may be different items. A file whose label is stored SHALL keep it on later scans. It
 SHALL import the file as its own Media when no such slot is free or when the file's content already
 belongs to another Media.
 
@@ -41,8 +41,8 @@ belongs to another Media.
 #### Scenario: Unprobed unlabelled copies
 
 - **WHEN** two unlabelled copies of one title have no probed frame size and are `.mkv` and `.mp4`
-- **THEN** their Versions are labelled `MKV` and `MP4`; two copies in one container are labelled by
-  their file names
+- **THEN** their Versions are labelled `MKV` and `MP4`; two copies in one container stay separate
+  Media
 
 #### Scenario: Different titles stay apart
 

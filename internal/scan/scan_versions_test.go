@@ -114,18 +114,25 @@ func TestScanGroupsFilesOfOneTitleIntoVersions(t *testing.T) {
 	}
 }
 
-// TestScanKeepsUnlabelledDuplicatesAndOtherDirectoriesApart: two unlabelled
-// files of one title, or one title in two directories, stay separate Media.
-func TestScanKeepsUnlabelledDuplicatesAndOtherDirectoriesApart(t *testing.T) {
+// TestScanKeepsOtherDirectoriesApart: two unlabelled files of one title join
+// as Versions labelled by container (CORE-2473), but one title in two
+// directories stays two Media.
+func TestScanKeepsOtherDirectoriesApart(t *testing.T) {
 	root := t.TempDir()
 	writeScanFile(t, root, "a/Night Harbor (2004).mkv", []byte("harbor mkv"))
 	writeScanFile(t, root, "a/Night Harbor (2004).mp4", []byte("harbor mp4"))
 	writeScanFile(t, root, "b/Night Harbor (2004) - 4K.mkv", []byte("harbor 4k elsewhere"))
 	st := storetest.Open(t)
 
-	_, result := scanVersionLibrary(t, st, root)
-	if result.FilesSeen != 3 || result.MediaImported != 3 {
-		t.Fatalf("result = files %d media %d, want 3 separate Media", result.FilesSeen, result.MediaImported)
+	libraryID, result := scanVersionLibrary(t, st, root)
+	if result.FilesSeen != 3 || result.MediaImported != 2 {
+		t.Fatalf("result = files %d media %d, want 3 files in 2 Media", result.FilesSeen, result.MediaImported)
+	}
+	got := mediaVersions(t, st, libraryID, result)
+	a := got["Night Harbor (2004).mkv"][0]
+	if got["Night Harbor (2004).mkv"] != [2]string{a, "MKV"} || got["Night Harbor (2004).mp4"] != [2]string{a, "MP4"} ||
+		got["Night Harbor (2004) - 4K.mkv"][0] == a {
+		t.Fatalf("versions = %v", got)
 	}
 }
 

@@ -19,15 +19,14 @@ the Version picker never appears.
   label, the scan asks the store to label both from facts core already holds, instead of asking for
   the default slot. The store tries, in order: the probed resolution class (`2160p`, `1080p`, ...,
   judged by width as well as height so a letterboxed 1920x800 frame is `1080p`), the container
-  (`MKV`, `MP4`), then the file name without its extension. It takes the first kind that tells the
-  two files apart and whose slots are free, moves the file in the default slot to its label and
-  stores the new file under its own. A file joining a Media whose files are already labelled takes
-  the first of its own labels that is free. When nothing tells them apart, the file imports as its
-  own Media, as before.
+  (`MKV`, `MP4`). It takes the first kind that tells the two files apart and whose slots are free,
+  moves the file in the default slot to its label and stores the new file under its own. A file
+  joining a Media whose files are already labelled takes the first of its own labels that is free. When nothing tells them apart, the file imports as its
+  own Media, as before. File names are not a fallback: two same-titled files that differ only by
+  name may be different items a plugin could not tell apart, and they stay apart.
 - Labels are stored once. A rescan re-imports the same bytes into the slot they hold, so labels
-  stay put however the files' probes or names later change.
-- The labels are generic file facts (frame size, container, file name), so the rule needs no
-  domain knowledge; plugins still decide which files are one title.
+  stay put however the files' probes later change.
+- The labels are generic file facts (frame size, container), so the rule needs no domain knowledge; plugins still decide which files are one title.
 
 ## Not in this change
 
