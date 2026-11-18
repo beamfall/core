@@ -22,8 +22,15 @@ part SHALL be omitted when its data is absent.
 
 #### Scenario: Unwatched count
 
-- **WHEN** an Entity's child containers report remaining counts of 3 and 2
-- **THEN** the poster shows an unwatched badge of 5
+- **WHEN** an Entity lists three direct playable Media, one finished and one locked by the
+  Profile's locked-mode ceiling
+- **THEN** the poster shows an unwatched badge of 1, counted from its direct Media only
+
+#### Scenario: No unwatched badge without direct Media left
+
+- **WHEN** an Entity has no unfinished, unlocked direct Media (including one that only relates
+  to other containers, whose remaining counts are never summed)
+- **THEN** the poster shows no unwatched badge
 
 ### Requirement: Parent entity rows
 

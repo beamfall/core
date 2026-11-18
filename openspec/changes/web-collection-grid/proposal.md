@@ -12,9 +12,12 @@ no artwork of their own.
 
 - `/collections` renders each library's collections as a grid of cards: a collage of the first
   four visible members' posters, the collection name and "N items".
-- The member posters come from the existing collection feed (`sourceItems` kind `collection`,
-  `limit: 4`), batched as aliased fields into one query per 32 collections, so they carry the same
-  visibility, Mute and reveal filtering as the collection page itself.
+- The member posters come from the existing collection feed (`sourceItems` kind `collection`),
+  so they carry the same visibility, Mute and reveal filtering as the collection page itself. The
+  feed applies its limit before Mute filtering, so the read pages by offset in 16-member pages,
+  as aliased fields in one query per 32 collections per page, until a collection has four
+  posters, its member count is covered, or 8 pages have been read. That is a 128-member scan
+  ceiling: posters beyond it may never be found, and the card then keeps its placeholder.
 - A collection with no visible member posters shows a placeholder glyph, never a broken image, and
   a failed poster read leaves the card with its placeholder.
 

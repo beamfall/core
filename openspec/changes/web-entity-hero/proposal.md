@@ -18,8 +18,11 @@ artwork slots, declared fields and related Entities with engagement counts.
   category-archetype related Entities.
 - A `summary` field (the builtin Media field name) renders as the clamped overview instead of a
   definition-list row.
-- The poster carries an unwatched-count badge: the unfinished playable Media the page lists, else
-  the sum of the child containers' remaining counts.
+- The poster carries an unwatched-count badge counted from the Entity's direct playable Media
+  only: unfinished and not locked. Related container groups carry relations in both directions,
+  so their remaining counts are never summed; with no such Media left there is no badge.
+- The direct `mediaForEntity` read flags Media above a locked-mode certification ceiling as
+  `locked`, as browse surfaces already do, and the page requests that existing field.
 - The next-up label names the child Play starts, with its plugin subtitle when it has one.
 - Related groups render in a fixed order after the header: container groups as a poster row whose
   cards show "N items" from the child's total count, then the page's own Media list, then person
@@ -35,4 +38,6 @@ artwork slots, declared fields and related Entities with engagement counts.
 ## Impact
 
 `internal/web/app/src/areas/viewer/pages/EntityPage.tsx`, a new `lib/entityHero.ts` helper, a
-shared `components/DetailStage.tsx` (backdrop and overview), entity-detail CSS and strings.
+shared `components/DetailStage.tsx` (backdrop and overview), entity-detail CSS and strings;
+`internal/store` `MediaForEntity` annotates locked-mode Media (no wire schema change: `locked`
+already exists on `SourceItem`).
