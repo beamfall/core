@@ -1,10 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LibrarySummary, NavigationNode } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
-import { LibrarySidebar, libraryMonograms } from "./LibrarySidebar";
+import { expectNoAxeViolations } from "@/test/axe";
+import { LibrarySidebar, libraryMonograms, moveEntry } from "./LibrarySidebar";
+import type { SidebarLibraryPrefs } from "./sidebarPrefs";
 
 afterEach(cleanup);
 
@@ -102,5 +104,251 @@ describe("LibrarySidebar library tiles", () => {
     expect(tile("Family")).toHaveTextContent(/^F$/);
     expect(tile("Music")).toHaveTextContent("Mu");
     expect(tile("Mixtapes")).toHaveTextContent("Mi");
+  });
+});
+
+describe("moveEntry", () => {
+  it("moves one entry and ignores out-of-range moves", () => {
+    expect(moveEntry(["a", "b", "c"], 2, 0)).toEqual(["c", "a", "b"]);
+    const list = ["a", "b"];
+    expect(moveEntry(list, 0, -1)).toBe(list);
+    expect(moveEntry(list, 1, 2)).toBe(list);
+  });
+});
+
+describe("LibrarySidebar per-Profile pin and order (CORE-2435)", () => {
+  const titles: Record<string, string> = { a: "Films", b: "Music", c: "Photos" };
+  const navigation: NavigationNode[] = [
+    { id: "home", title: "Home", view: "layout", layoutID: "layout-home" },
+    ...Object.entries(titles).map(([id, title]) => ({
+      id: `library-${id}`,
+      title,
+      view: "layout",
+      layoutID: "layout-home",
+      libraryID: id,
+    })),
+  ];
+  const libraries: LibrarySummary[] = Object.entries(titles).map(([id, title]) => ({
+    id,
+    title,
+    pluginID: null,
+    previewClips: false,
+  }));
+
+  function renderSidebar(
+    prefs: SidebarLibraryPrefs | undefined,
+    onSavePrefs?: (prefs: SidebarLibraryPrefs) => Promise<void>,
+    collapsed = false,
+    prefsReady = true,
+  ) {
+    return render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="home"
+            collapsed={collapsed}
+            drawer={false}
+            onNavigate={() => {}}
+            prefs={prefs}
+            prefsReady={prefsReady}
+            onSavePrefs={onSavePrefs}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  const linkNames = (list: HTMLElement) =>
+    within(list)
+      .getAllByRole("link")
+      .map((link) => link.querySelector(".bf-side-label")?.textContent);
+
+  it("lists libraries in the Profile's order with unpinned ones under More", () => {
+    renderSidebar({ order: ["b", "a"], hidden: ["c"] });
+    const nav = screen.getByRole("navigation");
+    const lists = within(nav).getAllByRole("list");
+    expect(linkNames(lists[1])).toEqual(["Music", "Films"]);
+    expect(screen.queryByRole("link", { name: "Photos" })).toBeNull();
+    const more = screen.getByRole("button", { name: "More" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(more);
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "Photos" })).toBeInTheDocument();
+  });
+
+  it("offers no edit button without a saver or on the icon rail", () => {
+    renderSidebar(undefined);
+    expect(screen.queryByRole("button", { name: "Edit libraries" })).toBeNull();
+    cleanup();
+    renderSidebar(undefined, async () => {}, true);
+    expect(screen.queryByRole("button", { name: "Edit libraries" })).toBeNull();
+  });
+
+  it("reorders with buttons and the keyboard, unpins, and saves on Done", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const { container } = renderSidebar(undefined, save);
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    await expectNoAxeViolations(container);
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Music up" }));
+    expect(screen.getByText("Music moved to position 1 of 3")).toBeInTheDocument();
+    // Alt+Up on a focused row moves it too.
+    const photosPin = screen.getByRole("button", { name: "Pin Photos" });
+    fireEvent.keyDown(photosPin, { key: "ArrowUp", altKey: true });
+    expect(screen.getByText("Photos moved to position 2 of 3")).toBeInTheDocument();
+    // The first row cannot move up, but its button keeps focusability.
+    const musicUp = screen.getByRole("button", { name: "Move Music up" });
+    expect(musicUp).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(musicUp);
+
+    expect(photosPin).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(photosPin);
+    expect(photosPin).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({ order: ["b", "c", "a"], hidden: ["c"] });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Edit libraries" })).toBeVisible(),
+    );
+  });
+
+  it("reorders by drag", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    renderSidebar(undefined, save);
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    const row = (name: string) => screen.getByText(name).closest("li") as HTMLElement;
+    fireEvent.dragStart(row("Photos"));
+    fireEvent.dragOver(row("Films"));
+    fireEvent.drop(row("Films"));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({ order: ["c", "a", "b"], hidden: [] });
+  });
+
+  it("stays in edit mode and says so when saving fails; Cancel discards", async () => {
+    const save = vi.fn(async () => {
+      throw new Error("offline");
+    });
+    renderSidebar(undefined, save);
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Photos up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("could not be saved");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    const lists = within(screen.getByRole("navigation")).getAllByRole("list");
+    expect(linkNames(lists[1])).toEqual(["Films", "Music", "Photos"]);
+  });
+
+  it("keeps Edit inert until the saved choice has loaded", () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const view = renderSidebar(undefined, save, false, false);
+    const edit = screen.getByRole("button", { name: "Edit libraries" });
+    expect(edit).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(edit);
+    // No draft from server order, so no Done that could overwrite the choice.
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    view.rerender(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="home"
+            collapsed={false}
+            drawer={false}
+            onNavigate={() => {}}
+            prefs={{ order: ["c", "b", "a"], hidden: [] }}
+            prefsReady
+            onSavePrefs={save}
+          />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(save.mock.calls[0][0]).toEqual({ order: ["c", "b", "a"], hidden: [] });
+  });
+
+  it("ignores edits while a save is in flight", async () => {
+    let finish: () => void = () => {};
+    const save = vi.fn(
+      (_prefs: SidebarLibraryPrefs) =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    renderSidebar(undefined, save);
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Photos up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    const filmsPin = screen.getByRole("button", { name: "Pin Films" });
+    for (const name of ["Pin Films", "Move Films down", "Cancel", "Done"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-disabled", "true");
+    }
+    fireEvent.click(filmsPin);
+    fireEvent.click(screen.getByRole("button", { name: "Move Films down" }));
+    fireEvent.keyDown(filmsPin, { key: "ArrowDown", altKey: true });
+    const row = (name: string) => screen.getByText(name).closest("li") as HTMLElement;
+    expect(row("Films")).toHaveAttribute("draggable", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(filmsPin).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0]).toEqual({ order: ["a", "c", "b"], hidden: [] });
+    await act(async () => finish());
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+  });
+
+  it("shows rail navigation when collapsed mid-edit and resumes the draft on expand", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const sidebar = (collapsed: boolean) => (
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="home"
+            collapsed={collapsed}
+            drawer={false}
+            onNavigate={() => {}}
+            onSavePrefs={save}
+          />
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    const view = render(sidebar(false));
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Photos up" }));
+    view.rerender(sidebar(true));
+    // The rail carries library links, not the editor.
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pin Films" })).toBeNull();
+    const lists = within(screen.getByRole("navigation")).getAllByRole("list");
+    expect(within(lists[1]).getAllByRole("link")).toHaveLength(3);
+    view.rerender(sidebar(false));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({ order: ["a", "c", "b"], hidden: [] });
+  });
+
+  it("moves focus into the editor and back to Edit on Cancel and Done", async () => {
+    renderSidebar(undefined, async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    expect(screen.getByRole("button", { name: "Pin Films" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Edit libraries" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    expect(screen.getByRole("button", { name: "Pin Films" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Edit libraries" })).toHaveFocus(),
+    );
   });
 });
