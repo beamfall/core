@@ -10505,6 +10505,14 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "counts",
+                  "kind": "list",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
                   "name": "kind",
                   "kind": "scalar"
                 },
@@ -10528,6 +10536,14 @@
               ]
             },
             "children": [
+              {
+                "name": "counts",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
               {
                 "name": "kind",
                 "kind": "scalar"

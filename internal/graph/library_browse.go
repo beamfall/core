@@ -20,12 +20,14 @@ const libraryGroupingArchetype = "category"
 const maxLibraryGroupFilters = 8
 
 // LibraryItemsGrouping is one plugin-declared way to group the browsed
-// Library: the Entity Kind, the plugin's display name for it, and the values
-// the calling Profile can actually reach.
+// Library: the Entity Kind, the plugin's display name for it, the values the
+// calling Profile can actually reach, in title order, and parallel to them how
+// many distinct visible Media reach each value (CORE-2505).
 type LibraryItemsGrouping struct {
 	Kind   string              `json:"kind"`
 	Title  plugin.LocaleString `json:"title,omitempty"`
 	Values []string            `json:"values"`
+	Counts []int               `json:"counts"`
 }
 
 // LibraryItemsFacets lists the filter values that actually occur in the
@@ -106,6 +108,7 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 			Kind:   facet.Kind,
 			Title:  kinds[i].DisplayName,
 			Values: facet.Titles,
+			Counts: facet.Counts,
 		})
 	}
 	if result.Facets.Decades != nil {
