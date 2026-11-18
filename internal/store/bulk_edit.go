@@ -269,6 +269,11 @@ func (s *Store) UndoBatch(ctx context.Context, batchID string, filter LibraryFil
 	if kind == opKindMergeEntity {
 		return s.undoEntityMergeBatch(ctx, batchID, filter, now)
 	}
+	// A version merge moves a file between Media and restores the survivor's
+	// labels and facts, so it replays its own journal entries (CORE-2490).
+	if kind == opKindMergeVersion {
+		return s.undoVersionMergeBatch(ctx, batchID, filter, now)
+	}
 	if kind == opKindBulkEdit {
 		ids, err := batchItemMediaIDs(ctx, s.catalogR, batchID)
 		if err != nil {

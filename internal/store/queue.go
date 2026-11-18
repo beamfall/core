@@ -337,6 +337,58 @@ func deleteMyQueueMedia(ctx context.Context, tx *sql.Tx, profileID ProfileID, me
 	return err
 }
 
+// queueMove is one Profile's queue entry a version merge pointed at another
+// Media (CORE-2490). AddedAtMS tells it from an entry the Profile queues later.
+type queueMove struct {
+	Profile   ProfileID `json:"profile"`
+	AddedAtMS int64     `json:"addedAtMs"`
+}
+
+// moveQueueEntriesTx points each Profile's queue entry for from at to,
+// keeping its position and added time, unless that Profile already queues to,
+// and returns the entries it moved. It lives in queue.go for the firewall
+// reason above.
+func moveQueueEntriesTx(ctx context.Context, tx *sql.Tx, from, to MediaID) ([]queueMove, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT profile_id, added_at_ms FROM play_queue AS q
+		WHERE media_id = ?
+		  AND NOT EXISTS (SELECT 1 FROM play_queue WHERE profile_id = q.profile_id AND media_id = ?)
+		ORDER BY profile_id
+	`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	var moves []queueMove
+	for rows.Next() {
+		var m queueMove
+		if err := rows.Scan(&m.Profile, &m.AddedAtMS); err != nil {
+			return nil, errors.Join(err, rows.Close())
+		}
+		moves = append(moves, m)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
+	for _, m := range moves {
+		if err := repointQueueEntryTx(ctx, tx, m, from, to); err != nil {
+			return nil, err
+		}
+	}
+	return moves, nil
+}
+
+// repointQueueEntryTx points m's queue entry for from at to, unless the
+// Profile has since removed it, queued it again (a new added time) or already
+// queues to.
+func repointQueueEntryTx(ctx context.Context, tx *sql.Tx, m queueMove, from, to MediaID) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE play_queue SET media_id = ?
+		WHERE profile_id = ? AND media_id = ? AND added_at_ms = ?
+		  AND NOT EXISTS (SELECT 1 FROM play_queue WHERE profile_id = ? AND media_id = ?)
+	`, to, m.Profile, from, m.AddedAtMS, m.Profile, to)
+	return err
+}
+
 func queueEntries(ctx context.Context, tx *sql.Tx, profileID ProfileID) ([]queueEntry, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT media_id, added_at_ms
