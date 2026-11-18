@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { type KeyboardEvent, useEffect, useId, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Input } from "@/components/ui/input";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
@@ -149,8 +149,9 @@ export function SettingsMenuIntro({ area }: { area: SettingsArea }) {
 // gives it a brief ring and focuses its control. A setting that only appears
 // after an action (a form's Add button, a picked profile, an existing row) has
 // an opener: once the page has had a second to load, the opener is shown
-// instead. Render it inside the page area, below any admin lock, so it starts
-// once the page can show.
+// instead. Render it inside the page area, below any admin lock: while the
+// page sits inert behind an unlock prompt it waits, without counting towards
+// giving up, and starts once the page shows.
 const REVEAL_POLL_MS = 100;
 const REVEAL_ADVANCED_AFTER = 10;
 const REVEAL_OPENER_AFTER = 10;
@@ -164,6 +165,7 @@ export function RevealSetting() {
   const advanced = state?.revealAdvanced === true;
   const opener = state?.revealOpener;
   const { pathname, search, hash } = location;
+  const marker = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -177,6 +179,10 @@ export function RevealSetting() {
     const find = (anchor: string) =>
       document.querySelector<HTMLElement>(`[data-setting="${CSS.escape(anchor)}"]`);
     const tick = () => {
+      if (marker.current?.closest("[inert]")) {
+        timer = setTimeout(tick, REVEAL_POLL_MS);
+        return;
+      }
       const el = find(id);
       if (el) {
         revealElement(el);
@@ -201,7 +207,7 @@ export function RevealSetting() {
     return () => clearTimeout(timer);
   }, [id, advanced, opener, pathname, search, hash, navigate]);
 
-  return null;
+  return <span ref={marker} hidden />;
 }
 
 function revealElement(el: HTMLElement) {

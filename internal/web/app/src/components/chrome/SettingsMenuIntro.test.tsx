@@ -65,6 +65,24 @@ function WebhooksPage() {
   );
 }
 
+// A stand-in page behind an unlock prompt: kept mounted but inert until unlocked.
+function LockedPage() {
+  const [locked, setLocked] = useState(true);
+  return (
+    <div>
+      <button type="button" onClick={() => setLocked(false)}>
+        unlock
+      </button>
+      <div inert={locked}>
+        <RevealSetting />
+        <div data-setting="console.playback.maxTranscodes">
+          <button type="button">cap</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function renderIntro(area: "console" | "manage" = "console") {
   return render(
     <I18nProvider>
@@ -136,6 +154,32 @@ describe("SettingsMenuIntro", () => {
       timeout: 3000,
     });
     expect(screen.getByTestId("path")).toHaveTextContent("/console/webhooks");
+  });
+
+  it("waits for an unlock prompt to close before revealing the setting", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: "/manage/libraries",
+            state: { revealSetting: "console.playback.maxTranscodes" },
+          },
+        ]}
+      >
+        <LockedPage />
+      </MemoryRouter>,
+    );
+    const cap = screen.getByRole("button", { name: "cap", hidden: true });
+
+    // Several polls: an unlocked page would have revealed it on the first.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(cap).not.toHaveFocus();
+    expect(cap.parentElement).not.toHaveClass("bf-setting-found");
+
+    await user.click(screen.getByRole("button", { name: "unlock" }));
+    await waitFor(() => expect(cap).toHaveFocus());
+    expect(cap.parentElement).toHaveClass("bf-setting-found");
   });
 
   it("says so when nothing matches and clears on Escape", async () => {

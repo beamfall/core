@@ -274,6 +274,7 @@ function PageAdminLock({ children }: { children: ReactNode }) {
     [settle],
   );
 
+  const locked = gate !== null && !unlocked;
   return (
     <>
       {gate !== null && (
@@ -281,8 +282,12 @@ function PageAdminLock({ children }: { children: ReactNode }) {
           <AdminUnlocked onChange={onUnlockedChange} />
         </AdminGate>
       )}
-      {/* Kept mounted behind the prompt so nothing the manager entered is lost. */}
-      <div className={gate !== null && !unlocked ? "hidden" : "contents"}>{children}</div>
+      {/* Kept mounted behind the prompt so nothing the manager entered is lost.
+          Inert while locked, so nothing behind the prompt takes focus and a
+          settings search waits to reveal its setting until the page shows. */}
+      <div className={locked ? "hidden" : "contents"} inert={locked}>
+        {children}
+      </div>
     </>
   );
 }

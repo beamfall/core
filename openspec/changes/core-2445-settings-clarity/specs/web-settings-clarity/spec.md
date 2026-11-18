@@ -98,3 +98,8 @@ Choosing a settings search result SHALL open its page, reveal the setting (turni
 
 - **WHEN** an operator chooses the Webhooks "Secret" result, a field shown only once the Add or Edit webhook form is open
 - **THEN** `/console/webhooks` opens with the Add webhook button highlighted and focused, since the field itself is not on the page yet
+
+#### Scenario: Page behind an unlock prompt
+
+- **WHEN** a manager without an open Admin Session chooses the Manage "Preview clips" result and the page asks for the password
+- **THEN** nothing is revealed behind the prompt, and once the page unlocks the setting is highlighted and focused
