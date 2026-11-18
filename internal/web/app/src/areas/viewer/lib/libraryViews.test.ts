@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_BROWSE_STATE, parseBrowseState } from "./libraryBrowse";
 import { FOLDER_VIEW } from "./libraryFolders";
 import {
   entityCardLine,
   type LibraryEntityItem,
+  libraryCategorySearch,
+  libraryEntitiesVariables,
   libraryViews,
   MEDIA_VIEW,
   selectedView,
@@ -85,5 +88,60 @@ describe("library views (CORE-2362)", () => {
     ).toBe("First, Second");
     expect(entityCardLine(entity({ mediaCount: 4 }), count)).toBe("4 items");
     expect(entityCardLine(entity({}), count)).toBe("");
+  });
+});
+
+describe("library category search (CORE-2437)", () => {
+  it("opens the Media view filtered to one grouping value and nothing else", () => {
+    const search = libraryCategorySearch("genre", "Sci-Fi & Fantasy");
+    const params = new URLSearchParams(search);
+    expect(params.get("view")).toBe("media");
+    const state = parseBrowseState(params);
+    expect(state.groups).toEqual({ genre: "Sci-Fi & Fantasy" });
+    expect(state.watch).toBeFalsy();
+  });
+});
+
+describe("library entities variables (CORE-2440)", () => {
+  it("sends the kind with title order when no browse state is given", () => {
+    expect(
+      libraryEntitiesVariables({ libraryID: "lib", kind: "maker", limit: 10, offset: 20 }),
+    ).toEqual({
+      libraryID: "lib",
+      kind: "maker",
+      sort: "title",
+      direction: "asc",
+      limit: 10,
+      offset: 20,
+    });
+  });
+
+  it("sends the Media view's sort and filters under the same names", () => {
+    const state = parseBrowseState(
+      new URLSearchParams(
+        "sort=year&dir=desc&watch=unwatched&group.genre=Rock&decade=1990&quality=uhd&rated=8",
+      ),
+    );
+    expect(libraryEntitiesVariables({ libraryID: "lib", state, limit: 100, offset: 0 })).toEqual({
+      libraryID: "lib",
+      sort: "year",
+      direction: "desc",
+      watch: "unwatched",
+      groupFilters: { genre: "Rock" },
+      yearFrom: 1990,
+      yearTo: 1999,
+      quality: "uhd",
+      minRating: 8,
+      limit: 100,
+      offset: 0,
+    });
+    expect(
+      libraryEntitiesVariables({
+        libraryID: "lib",
+        state: DEFAULT_BROWSE_STATE,
+        limit: 1,
+        offset: 0,
+      }),
+    ).not.toHaveProperty("kind");
   });
 });

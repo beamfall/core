@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  libraryCategorySearch,
-  libraryViewClass,
-  parseBrowseState,
-  readLibraryViewMode,
-  writeLibraryViewMode,
-} from "./libraryBrowse";
+import { libraryViewClass, readLibraryViewMode, writeLibraryViewMode } from "./libraryBrowse";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -43,16 +37,5 @@ describe("library view mode (CORE-2386)", () => {
     expect(libraryViewClass("poster")).toBe("bf-grid");
     expect(libraryViewClass("thumbnail")).toBe("bf-grid bf-grid-wide");
     expect(libraryViewClass("list")).toBe("bf-stack bf-rows");
-  });
-});
-
-describe("library category search (CORE-2437)", () => {
-  it("opens the Media view filtered to one grouping value and nothing else", () => {
-    const search = libraryCategorySearch("genre", "Sci-Fi & Fantasy");
-    const params = new URLSearchParams(search);
-    expect(params.get("view")).toBe("media");
-    const state = parseBrowseState(params);
-    expect(state.groups).toEqual({ genre: "Sci-Fi & Fantasy" });
-    expect(state.watch).toBeFalsy();
   });
 });

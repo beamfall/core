@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
-import { fetchLibraryItems } from "../lib/libraryBrowse";
+import { expectNoAxeViolations } from "@/test/axe";
+import { DEFAULT_BROWSE_STATE, fetchLibraryItems } from "../lib/libraryBrowse";
 import {
   fetchLibraryEntities,
   type LibraryEntitiesPage,
@@ -84,6 +85,7 @@ function entitiesPage(request: LibraryEntitiesRequest): LibraryEntitiesPage {
     kind,
     total: items.length,
     items: items.slice(request.offset, request.offset + request.limit),
+    letters: [],
   };
 }
 
@@ -143,15 +145,21 @@ describe("Library views (CORE-2362)", () => {
     expect(chips[0]).toHaveAttribute("aria-pressed", "true");
     expect(chips[1]).toHaveAttribute("aria-pressed", "false");
 
-    // The first read already holds the opening grid; the Media view is not read.
+    // The first read already holds the opening grid, read under the URL's
+    // browse state; the Media view is read once, only for the filter values.
     expect(fetchLibraryEntities).toHaveBeenCalledTimes(1);
     expect(vi.mocked(fetchLibraryEntities).mock.calls[0][0]).toEqual({
       libraryID: "lib",
       kind: undefined,
+      state: DEFAULT_BROWSE_STATE,
       limit: 100,
       offset: 0,
     });
-    expect(fetchLibraryItems).not.toHaveBeenCalled();
+    await waitFor(() => expect(fetchLibraryItems).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(fetchLibraryItems).mock.calls[0][0]).toMatchObject({
+      state: DEFAULT_BROWSE_STATE,
+      offset: 0,
+    });
   });
 
   it("switches to another kind by keyboard and keeps the choice in the URL", async () => {
@@ -198,7 +206,13 @@ describe("Library views (CORE-2362)", () => {
   });
 
   it("opens on the Media view, with Folders beside it, when the Library has no browse kinds", async () => {
-    vi.mocked(fetchLibraryEntities).mockResolvedValue({ kinds: [], kind: "", total: 0, items: [] });
+    vi.mocked(fetchLibraryEntities).mockResolvedValue({
+      kinds: [],
+      kind: "",
+      total: 0,
+      items: [],
+      letters: [],
+    });
     renderAt("/n/tunes/all");
 
     expect(await screen.findByText("4 items")).toBeInTheDocument();
@@ -236,5 +250,126 @@ describe("Library views (CORE-2362)", () => {
     expect(
       within(screen.getByRole("list", { name: "Records" })).getByText("Record One"),
     ).toBeVisible();
+  });
+});
+
+// A kind long enough for the letter rail: "#" holds 5 titles, then 70 under
+// "A" and 45 under "C".
+function longKindPage(request: LibraryEntitiesRequest): LibraryEntitiesPage {
+  const titles = Array.from({ length: 120 }, (_, i) =>
+    i < 5 ? `${i} Count` : i < 75 ? `A Maker ${i}` : `C Maker ${i}`,
+  );
+  return {
+    kinds: KINDS,
+    allLabel: { en: "Library" },
+    kind: request.kind ?? "maker",
+    total: titles.length,
+    items: titles.slice(request.offset, request.offset + request.limit).map((title, i) => ({
+      id: `m${request.offset + i}`,
+      kind: "entity",
+      title,
+      childCount: 0,
+      mediaCount: 1,
+      parents: [],
+    })),
+    letters:
+      request.state?.sort === "title" || !request.state
+        ? [
+            { letter: "#", offset: 0, count: 5 },
+            { letter: "A", offset: 5, count: 70 },
+            { letter: "C", offset: 75, count: 45 },
+          ]
+        : [],
+  };
+}
+
+describe("Entity kind sort, filters and letter rail (CORE-2440)", () => {
+  it("sorts a kind from the Media view's toolbar and keeps the order in the URL", async () => {
+    const user = userEvent.setup();
+    renderAt("/n/tunes/all?view=maker");
+    await screen.findByRole("list", { name: "Makers" });
+
+    await user.click(screen.getByRole("button", { name: "Sort direction: Ascending" }));
+
+    expect(screen.getByTestId("where")).toHaveTextContent("/n/tunes/all?dir=desc&view=maker");
+    await waitFor(() =>
+      expect(vi.mocked(fetchLibraryEntities).mock.calls.at(-1)?.[0]).toMatchObject({
+        kind: "maker",
+        state: { sort: "title", direction: "desc" },
+        offset: 0,
+      }),
+    );
+  });
+
+  it("reads a shared link's filters into the first read, names them, and clears them", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchLibraryEntities).mockImplementation(async (request) =>
+      request.state?.watch
+        ? { ...entitiesPage(request), total: 0, items: [] }
+        : entitiesPage(request),
+    );
+    renderAt("/n/tunes/all?view=maker&watch=unwatched&sort=year");
+
+    expect(
+      await screen.findByText("Nothing in this library matches these filters."),
+    ).toBeInTheDocument();
+    expect(vi.mocked(fetchLibraryEntities).mock.calls[0][0]).toMatchObject({
+      kind: "maker",
+      state: { sort: "year", watch: "unwatched" },
+    });
+    const chips = screen.getByRole("list", { name: "Active filters" });
+    expect(within(chips).getByRole("button", { name: "Remove filter: Unwatched" })).toBeVisible();
+
+    await user.click(within(chips).getByRole("button", { name: "Remove filter: Unwatched" }));
+    expect(screen.getByTestId("where")).toHaveTextContent("/n/tunes/all?sort=year&view=maker");
+    expect(
+      await within(screen.getByRole("list", { name: "Makers" })).findByText("Maker A"),
+    ).toBeVisible();
+  });
+
+  it("carries the browse state across kinds and into the Media view", async () => {
+    const user = userEvent.setup();
+    renderAt("/n/tunes/all?view=maker&sort=added&dir=desc");
+    await screen.findByRole("list", { name: "Makers" });
+
+    await user.click(screen.getByRole("button", { name: "Records" }));
+    await screen.findByRole("list", { name: "Records" });
+    expect(vi.mocked(fetchLibraryEntities).mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: "record",
+      state: { sort: "added", direction: "desc" },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await waitFor(() =>
+      expect(vi.mocked(fetchLibraryItems).mock.calls.at(-1)?.[0]).toMatchObject({
+        state: { sort: "added", direction: "desc" },
+      }),
+    );
+  });
+
+  it("offers the letter rail on a long title-sorted kind and jumps the grid", async () => {
+    vi.mocked(fetchLibraryEntities).mockImplementation(async (request) => longKindPage(request));
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const { container } = renderAt("/n/tunes/all?view=maker");
+
+    const rail = await screen.findByRole("navigation", { name: "Jump to letter" });
+    expect(within(rail).getByRole("button", { name: "B, no titles" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    scrollTo.mockClear();
+    await user.click(within(rail).getByRole("button", { name: "C, 45 titles" }));
+    expect(scrollTo).toHaveBeenCalled();
+    await expectNoAxeViolations(container);
+    scrollTo.mockRestore();
+  });
+
+  it("offers no letter rail on a sort other than title", async () => {
+    vi.mocked(fetchLibraryEntities).mockImplementation(async (request) => longKindPage(request));
+    renderAt("/n/tunes/all?view=maker&sort=year");
+
+    await screen.findByRole("list", { name: "Makers" });
+    expect(screen.queryByRole("navigation", { name: "Jump to letter" })).toBeNull();
   });
 });

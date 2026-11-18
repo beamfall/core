@@ -14,8 +14,8 @@ import {
   DEFAULT_BROWSE_STATE,
   fetchLibraryItems,
   type LibraryItemsGrouping,
-  libraryCategorySearch,
 } from "../lib/libraryBrowse";
+import { libraryCategorySearch } from "../lib/libraryViews";
 
 export type LibraryPivotName = "collections" | "categories";
 

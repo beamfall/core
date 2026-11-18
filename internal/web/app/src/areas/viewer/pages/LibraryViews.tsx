@@ -1,14 +1,32 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { displayString } from "@/lib/display";
 import type { DisplayString } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
+import { useEngagementEpoch } from "../actions";
+import {
+  CLEARED_BROWSE_FILTERS,
+  hasBrowseFilters,
+  LibraryBrowseToolbar,
+} from "../components/LibraryBrowseToolbar";
+import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
+import { LETTER_RAIL_MIN_ITEMS, useLetterJump } from "../components/useLetterJump";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
+import {
+  browseStateParams,
+  DEFAULT_BROWSE_STATE,
+  fetchLibraryItems,
+  isAudioOnly,
+  type LibraryBrowseState,
+  type LibraryItemsFacets,
+  type LibraryItemsLetter,
+  parseBrowseState,
+} from "../lib/libraryBrowse";
 import { FOLDER_VIEW } from "../lib/libraryFolders";
 import {
   entityCardLine,
@@ -28,7 +46,17 @@ import { LibraryFolders } from "./LibraryFolders";
 // A wide viewport shows more cards than the See All cap allows for.
 const ENTITY_MAX_RENDERED = 240;
 
-type Plan = { page: LibraryEntitiesPage; limit: number } | "failed" | null;
+// Enough Media to tell an audio-only Library from the facets read.
+const FACETS_SAMPLE = 24;
+
+type Plan = { page: LibraryEntitiesPage; limit: number; stateKey: string } | "failed" | null;
+/** The Library's filter values before any filter, and whether it is all audio. */
+type LibraryFacets = { facets: LibraryItemsFacets; audioOnly: boolean | null };
+
+const NO_FACETS: LibraryFacets = {
+  facets: { groupings: [], decades: [], qualities: [] },
+  audioOnly: null,
+};
 
 // The Library page's views (CORE-2362). It reads which Entity kinds the
 // Library is browsed by, then shows the view the URL names: an Entity kind's
@@ -57,17 +85,25 @@ export function LibraryViews({
   // One read per Library learns its kinds. It already asks for the first page
   // of the kind the URL names (or of the first kind), so that grid paints from
   // it; the Media and Folders views need only the kinds.
-  const firstRequestRef = useRef(requested);
+  const firstRequestRef = useRef({ view: requested, params: searchParams });
   useEffect(() => {
-    const first = firstRequestRef.current;
+    const { view: first, params } = firstRequestRef.current;
     const kindless = first === MEDIA_VIEW || first === FOLDER_VIEW;
     const limit = kindless ? 1 : LIBRARY_ENTITY_PAGE;
+    const state = parseBrowseState(params);
+    const stateKey = browseStateParams(state).toString();
     const controller = new AbortController();
     fetchLibraryEntities(
-      { libraryID, kind: first && !kindless ? first : undefined, limit, offset: 0 },
+      {
+        libraryID,
+        kind: first && !kindless ? first : undefined,
+        ...(kindless ? {} : { state }),
+        limit,
+        offset: 0,
+      },
       controller.signal,
     )
-      .then((page) => setPlan({ page, limit }))
+      .then((page) => setPlan({ page, limit, stateKey }))
       .catch(() => {
         if (!controller.signal.aborted) setPlan("failed");
       });
@@ -86,6 +122,7 @@ export function LibraryViews({
           t("libraryBrowseViewFolders"),
         );
   const view = selectedView(views, requested);
+  const facets = useLibraryFacets(libraryID, !!view?.kind && plan !== null && plan !== "failed");
   const choose = (id: string) =>
     setSearchParams(viewSearchParams(searchParams, id), { replace: true });
   const switcher =
@@ -111,8 +148,7 @@ export function LibraryViews({
     );
   }
   if (!view?.kind || plan === null || plan === "failed") return media(switcher);
-  const seed =
-    plan.limit === LIBRARY_ENTITY_PAGE && plan.page.kind === view.kind ? plan.page : null;
+  const seed = plan.limit === LIBRARY_ENTITY_PAGE && plan.page.kind === view.kind ? plan : null;
   return (
     <LibraryEntityGrid
       key={view.kind}
@@ -122,9 +158,37 @@ export function LibraryViews({
       kind={view.kind}
       label={view.label}
       seed={seed}
+      facets={facets}
       switcher={switcher}
     />
   );
+}
+
+// The Library's filter values for an Entity kind's toolbar (CORE-2440): one
+// unfiltered libraryItems read, made once an Entity kind's view opens, so the
+// toolbar offers the same values the Media view does before any filter. A
+// failed read leaves the sort, direction, watch and rating controls.
+function useLibraryFacets(libraryID: string, wanted: boolean): LibraryFacets {
+  const [read, setRead] = useState<LibraryFacets | null>(null);
+  const started = useRef(false);
+  useEffect(() => {
+    if (!wanted || started.current) return;
+    started.current = true;
+    fetchLibraryItems({
+      libraryID,
+      state: DEFAULT_BROWSE_STATE,
+      limit: FACETS_SAMPLE,
+      offset: 0,
+    })
+      .then((page) =>
+        setRead({
+          facets: page.facets,
+          audioOnly: page.items.length > 0 ? isAudioOnly(page.items) : null,
+        }),
+      )
+      .catch(() => {});
+  }, [libraryID, wanted]);
+  return read ?? NO_FACETS;
 }
 
 /** The row of view chips: one per view, the open one pressed. */
@@ -188,8 +252,10 @@ function EntityPageFrame({
 }
 
 // One Entity kind's cards, paged by the server and windowed here like the
-// Media view. A card's line names the Entities it sits under, else how many
-// Media it holds.
+// Media view, under the Media view's toolbar (CORE-2440): the same sort and
+// filters, read from and written to the same URL keys, judge each Entity by
+// the Media it reaches. A title-sorted long list gets the letter rail. A
+// card's line names the Entities it sits under, else how many Media it holds.
 function LibraryEntityGrid({
   libraryID,
   nodeID,
@@ -197,6 +263,7 @@ function LibraryEntityGrid({
   kind,
   label,
   seed,
+  facets,
   switcher,
 }: {
   libraryID: string;
@@ -204,15 +271,22 @@ function LibraryEntityGrid({
   heading: string;
   kind: string;
   label: string;
-  /** The kind's first page, when the page already read it. */
-  seed: LibraryEntitiesPage | null;
+  /** The kind's first page, when the page already read it, and the state it was read under. */
+  seed: { page: LibraryEntitiesPage; stateKey: string } | null;
+  facets: LibraryFacets;
   switcher: ReactNode;
 }) {
   const t = useT();
-  const [total, setTotal] = useState<number | null>(() => seed?.total ?? null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const state = useMemo(() => parseBrowseState(searchParams), [searchParams]);
+  const stateKey = browseStateParams(state).toString();
+  const seedRef = useRef(seed);
+  const [total, setTotal] = useState<number | null>(null);
+  const [letters, setLetters] = useState<LibraryItemsLetter[]>([]);
   const [failed, setFailed] = useState(false);
-  const [, setLoadedTick] = useState(0);
-  const pagesRef = useRef(new Map<number, LibraryEntityItem[]>(seed ? [[0, seed.items]] : []));
+  const [loadedTick, setLoadedTick] = useState(0);
+  const [retryTick, setRetryTick] = useState(0);
+  const pagesRef = useRef(new Map<number, LibraryEntityItem[]>());
   const pendingRef = useRef(new Set<number>());
   const generationRef = useRef(0);
 
@@ -224,6 +298,7 @@ function LibraryEntityGrid({
       fetchLibraryEntities({
         libraryID,
         kind,
+        state,
         limit: LIBRARY_ENTITY_PAGE,
         offset: pageIndex * LIBRARY_ENTITY_PAGE,
       })
@@ -232,6 +307,7 @@ function LibraryEntityGrid({
           pendingRef.current.delete(pageIndex);
           pagesRef.current.set(pageIndex, page.items);
           setTotal(page.total);
+          if (pageIndex === 0) setLetters(page.letters);
           setLoadedTick((tick) => tick + 1);
         })
         .catch(() => {
@@ -240,20 +316,47 @@ function LibraryEntityGrid({
           setFailed(true);
         });
     },
-    [libraryID, kind],
+    // `state` is derived from stateKey; keying on the string keeps loadPage
+    // stable across unrelated renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [libraryID, kind, stateKey],
   );
 
-  useEffect(() => loadPage(0), [loadPage]);
-
-  // A retry drops what was read and starts again from the first page.
-  function retry() {
+  // A new query (or a retry) drops every cached page and starts again; the
+  // opening page the Library read already holds paints at once.
+  useEffect(() => {
     generationRef.current += 1;
-    pagesRef.current = new Map();
     pendingRef.current = new Set();
     setFailed(false);
+    const opening = seedRef.current;
+    seedRef.current = null;
+    if (opening && opening.stateKey === stateKey && retryTick === 0) {
+      pagesRef.current = new Map([[0, opening.page.items]]);
+      setTotal(opening.page.total);
+      setLetters(opening.page.letters);
+      setLoadedTick((tick) => tick + 1);
+      return;
+    }
+    pagesRef.current = new Map();
     setTotal(null);
+    setLetters([]);
     loadPage(0);
-  }
+  }, [loadPage, stateKey, retryTick]);
+
+  // Watched state and ratings can change under a query that sorts or filters
+  // by them; the cached pages are then stale, so the query starts again.
+  const engagementEpoch = useEngagementEpoch();
+  const seenEpochRef = useRef(engagementEpoch);
+  const followsEngagement =
+    state.watch !== "" ||
+    state.minRating > 0 ||
+    state.sort === "rating" ||
+    state.sort === "last-watched";
+  useEffect(() => {
+    if (seenEpochRef.current === engagementEpoch) return;
+    seenEpochRef.current = engagementEpoch;
+    if (followsEngagement) setRetryTick((tick) => tick + 1);
+  }, [engagementEpoch, followsEngagement]);
 
   const itemCount = total ?? 0;
   const listRef = useRef<HTMLUListElement | null>(null);
@@ -273,12 +376,31 @@ function LibraryEntityGrid({
     for (let pageIndex = first; pageIndex <= last; pageIndex += 1) loadPage(pageIndex);
   }, [start, end, loadPage]);
 
+  const itemAt = (index: number) =>
+    pagesRef.current.get(Math.floor(index / LIBRARY_ENTITY_PAGE))?.[index % LIBRARY_ENTITY_PAGE];
+  const showLetterRail =
+    state.sort === "title" && letters.length > 0 && itemCount > LETTER_RAIL_MIN_ITEMS;
+  const { jumpTo, currentLetter } = useLetterJump({
+    listRef,
+    letters,
+    enabled: showLetterRail,
+    titleAt: (index) => itemAt(index)?.title,
+    loadedTick,
+    resultKey: `${stateKey}:${retryTick}`,
+  });
+
+  function update(patch: Partial<LibraryBrowseState>) {
+    const params = browseStateParams({ ...state, ...patch });
+    const view = searchParams.get(LIBRARY_VIEW_PARAM);
+    if (view) params.set(LIBRARY_VIEW_PARAM, view);
+    setSearchParams(params, { replace: true });
+  }
+  const filtered = hasBrowseFilters(state);
+
   const count = (mediaCount: number) => t("libraryBrowseCount", { count: mediaCount });
   const cells = [];
   for (let index = start; index < end; index += 1) {
-    const item = pagesRef.current.get(Math.floor(index / LIBRARY_ENTITY_PAGE))?.[
-      index % LIBRARY_ENTITY_PAGE
-    ];
+    const item = itemAt(index);
     cells.push(
       item ? (
         <MediaItemCard
@@ -297,24 +419,47 @@ function LibraryEntityGrid({
     total === null ? (failed ? "" : t("loading")) : t("libraryBrowseCount", { count: total });
   return (
     <EntityPageFrame nodeID={nodeID} heading={heading} status={status} switcher={switcher}>
-      <ul ref={listRef} aria-label={label} aria-busy={total === null} className="bf-grid min-w-0">
-        {gridWindow && gridWindow.topPad > 0 && <Spacer height={gridWindow.topPad} />}
-        {cells}
-        {gridWindow && gridWindow.bottomPad > 0 && <Spacer height={gridWindow.bottomPad} />}
-      </ul>
+      <LibraryBrowseToolbar
+        state={state}
+        facets={facets.facets}
+        audioOnly={facets.audioOnly}
+        onUpdate={update}
+      />
       {failed && (
         <div role="alert" className="bf-empty flex flex-col gap-3">
           <p className="text-sm text-[var(--text-secondary)]">{t("libraryBrowseLoadFailed")}</p>
-          <Button variant="outline" onClick={retry}>
+          <Button variant="outline" onClick={() => setRetryTick((tick) => tick + 1)}>
             {t("jobRetryAction")}
           </Button>
         </div>
       )}
       {total === 0 && !failed && (
         <div role="status" className="bf-empty flex flex-col gap-3">
-          <p className="text-sm text-[var(--text-secondary)]">{t("libraryEmptyLead")}</p>
+          <p className="text-sm text-[var(--text-secondary)]">
+            {t(filtered ? "libraryBrowseNoMatches" : "libraryEmptyLead")}
+          </p>
+          {filtered && (
+            <Button variant="outline" onClick={() => update(CLEARED_BROWSE_FILTERS)}>
+              {t("libraryBrowseClearFilters")}
+            </Button>
+          )}
         </div>
       )}
+      <div className="flex items-start gap-2">
+        <ul
+          ref={listRef}
+          aria-label={label}
+          aria-busy={total === null}
+          className="bf-grid min-w-0 flex-1"
+        >
+          {gridWindow && gridWindow.topPad > 0 && <Spacer height={gridWindow.topPad} />}
+          {cells}
+          {gridWindow && gridWindow.bottomPad > 0 && <Spacer height={gridWindow.bottomPad} />}
+        </ul>
+        {showLetterRail && (
+          <LibraryLetterRail letters={letters} current={currentLetter} onJump={jumpTo} />
+        )}
+      </div>
     </EntityPageFrame>
   );
 }
