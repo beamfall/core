@@ -575,7 +575,8 @@
       {
         "name": "index",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "libraryID",
@@ -619,7 +620,8 @@
       {
         "name": "sequence",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "summary",
@@ -4879,7 +4881,8 @@
       {
         "name": "index",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "libraryID",
@@ -4923,7 +4926,8 @@
       {
         "name": "sequence",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "summary",
@@ -7419,7 +7423,8 @@
           {
             "name": "index",
             "kind": "scalar",
-            "optional": true
+            "optional": true,
+            "nullable": true
           },
           {
             "name": "libraryID",
@@ -7463,7 +7468,8 @@
           {
             "name": "sequence",
             "kind": "scalar",
-            "optional": true
+            "optional": true,
+            "nullable": true
           },
           {
             "name": "summary",
@@ -7767,7 +7773,8 @@
       {
         "name": "index",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "libraryID",
@@ -7811,7 +7818,8 @@
       {
         "name": "sequence",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "summary",
@@ -8268,7 +8276,8 @@
       {
         "name": "index",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "libraryID",
@@ -8312,7 +8321,8 @@
       {
         "name": "sequence",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "summary",
@@ -12223,7 +12233,8 @@
       {
         "name": "index",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "libraryID",
@@ -12267,7 +12278,8 @@
       {
         "name": "sequence",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "summary",
@@ -12813,7 +12825,8 @@
           {
             "name": "index",
             "kind": "scalar",
-            "optional": true
+            "optional": true,
+            "nullable": true
           },
           {
             "name": "libraryID",
@@ -12857,7 +12870,8 @@
           {
             "name": "sequence",
             "kind": "scalar",
-            "optional": true
+            "optional": true,
+            "nullable": true
           },
           {
             "name": "summary",
@@ -24339,7 +24353,8 @@
       {
         "name": "index",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "libraryID",
@@ -24383,7 +24398,8 @@
       {
         "name": "sequence",
         "kind": "scalar",
-        "optional": true
+        "optional": true,
+        "nullable": true
       },
       {
         "name": "summary",

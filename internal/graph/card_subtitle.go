@@ -135,8 +135,12 @@ func (h *Handler) describeOrderedMedia(ctx context.Context, media store.Media, i
 		return
 	}
 	fields := values[media.ID]
-	info.Sequence = fields["sequence"].Number
-	info.Index = fields["index"].Number
+	if field, ok := fields["sequence"]; ok {
+		info.Sequence = &field.Number
+	}
+	if field, ok := fields["index"]; ok {
+		info.Index = &field.Number
+	}
 	info.Headline = renderSubtitle(segments, fields)
 	// Unmapped classes fall back to the plugin's Media label, as the SDK
 	// documents.

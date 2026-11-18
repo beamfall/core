@@ -151,8 +151,8 @@ func (h *Handler) groupOrderedSearchRows(ctx context.Context, items []SearchResu
 	if len(ids) < 2 {
 		return items
 	}
-	containers, err := h.store.MediaOrderedContainers(ctx, ids)
-	if err != nil || len(containers) < 2 {
+	holders, err := h.store.MediaOrderedContainers(ctx, ids)
+	if err != nil || len(holders) < 2 {
 		return items
 	}
 	type kindKey struct {
@@ -172,8 +172,19 @@ func (h *Handler) groupOrderedSearchRows(ctx context.Context, items []SearchResu
 	roots := make([]store.EntityID, len(items))
 	members := map[store.EntityID][]int{}
 	for i, item := range items {
-		container, ok := containers[store.MediaID(item.ID)]
-		if !ok || item.Kind == "entity" || item.LibraryID == "" {
+		if item.Kind == "entity" || item.LibraryID == "" {
+			continue
+		}
+		// Only a container-archetype holder places the item; other credits
+		// can carry a sort order too.
+		var container *store.OrderedContainer
+		for at, holder := range holders[store.MediaID(item.ID)] {
+			if archetype(holder.LibraryID, holder.Kind) == containerArchetype {
+				container = &holders[store.MediaID(item.ID)][at]
+				break
+			}
+		}
+		if container == nil {
 			continue
 		}
 		root := container.ID

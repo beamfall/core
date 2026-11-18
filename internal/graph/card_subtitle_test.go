@@ -175,15 +175,16 @@ func TestMediaReadCarriesOrdinalsHeadlineAndClassLabel(t *testing.T) {
 		{Name: "part-title", Type: store.EntityFieldText, Text: "Arrival"},
 		{Name: "class", Type: store.EntityFieldText, Text: "chapter"},
 	})
+	// Stored zero ordinals reach the client (Codex review of CORE-2469).
 	untitled := importItem("untitled", []store.MediaField{
-		{Name: "sequence", Type: store.EntityFieldNumber, Number: 2},
-		{Name: "index", Type: store.EntityFieldNumber, Number: 6},
+		{Name: "sequence", Type: store.EntityFieldNumber, Number: 0},
+		{Name: "index", Type: store.EntityFieldNumber, Number: 0},
 	})
 
 	const query = `query($id: String!) { media(id: $id) { id title sequence index headline classLabel videoWidth videoHeight } }`
 	var got MediaInfo
 	execGraph(t, handler, authorizeViewer, query, map[string]any{"id": string(titled)}, "media", &got)
-	if got.Sequence != 2 || got.Index != 5 || got.VideoWidth != 3840 || got.VideoHeight != 2160 {
+	if got.Sequence == nil || *got.Sequence != 2 || got.Index == nil || *got.Index != 5 || got.VideoWidth != 3840 || got.VideoHeight != 2160 {
 		t.Fatalf("titled media = %+v, want ordinals 2/5 and 3840x2160", got)
 	}
 	if got.Headline.Resolve("en") != "Arrival" || len(got.Headline) != 1 {
@@ -194,7 +195,7 @@ func TestMediaReadCarriesOrdinalsHeadlineAndClassLabel(t *testing.T) {
 	}
 	var bare MediaInfo
 	execGraph(t, handler, authorizeViewer, query, map[string]any{"id": string(untitled)}, "media", &bare)
-	if len(bare.Headline) != 0 || bare.Index != 6 || bare.Title != "Code untitled" || bare.ClassLabel.Resolve("en") != "Part" {
+	if len(bare.Headline) != 0 || bare.Sequence == nil || *bare.Sequence != 0 || bare.Index == nil || *bare.Index != 0 || bare.Title != "Code untitled" || bare.ClassLabel.Resolve("en") != "Part" {
 		t.Fatalf("untitled media = %+v, want no headline and the Media label", bare)
 	}
 }

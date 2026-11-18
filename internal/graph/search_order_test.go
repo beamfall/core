@@ -24,6 +24,10 @@ func TestSearchKeepsOrderedItemsTogetherInOrder(t *testing.T) {
 		EntityKinds: []plugin.EntityKind{
 			{Name: "box", Archetype: "container", DisplayName: plugin.L("Box"),
 				Relations: []plugin.RelationSpec{{Name: "holds", ToKind: plugin.MediaKindName}}},
+			// A non-container credit with a sort order and a lower id than
+			// any lid must not place its item (Codex review of CORE-2471).
+			{Name: "badge", Archetype: "category", DisplayName: plugin.L("Badge"),
+				Relations: []plugin.RelationSpec{{Name: "badges", ToKind: plugin.MediaKindName}}},
 			{Name: "lid", Archetype: "container", DisplayName: plugin.L("Lid"), OrderedChildren: true,
 				Relations: []plugin.RelationSpec{{Name: "lid-of", ToKind: "box"}, {Name: "lid-holds", ToKind: plugin.MediaKindName}}},
 		},
@@ -57,6 +61,9 @@ func TestSearchKeepsOrderedItemsTogetherInOrder(t *testing.T) {
 		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: lid, Name: "lid-of", ToEntityID: "box-1"}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := st.UpsertEntity(ctx, store.Entity{ID: "a-badge", LibraryID: library.ID, Kind: "badge", Title: "Shiny"}); err != nil {
+		t.Fatal(err)
 	}
 	// Imported in an order that scatters the box's pieces through the ranking.
 	pieces := []struct {
@@ -92,6 +99,11 @@ func TestSearchKeepsOrderedItemsTogetherInOrder(t *testing.T) {
 		order := i
 		if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: piece.lid, Name: "lid-holds", ToMediaID: item.ID, SortOrder: &order}); err != nil {
 			t.Fatal(err)
+		}
+		if piece.name == "second" {
+			if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: "a-badge", Name: "badges", ToMediaID: item.ID, SortOrder: &order}); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 

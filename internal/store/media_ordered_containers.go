@@ -17,15 +17,16 @@ type LinkedEntity struct {
 	Kind string
 }
 
-// MediaOrderedContainers maps each of many Media to the ordered container
-// holding it (the relation row carries a sort_order) and that container's
-// related Entities, ordered by kind then id, so a caller can find the root the
-// container sits under (CORE-2471). An item in several ordered containers gets
-// the one with the smallest id. Every open catalog plane is read, so an
-// unsealed Encrypted Library's Media are covered; Media in no ordered
-// container are absent from the result.
-func (s *Store) MediaOrderedContainers(ctx context.Context, ids []MediaID) (map[MediaID]OrderedContainer, error) {
-	out := map[MediaID]OrderedContainer{}
+// MediaOrderedContainers maps each of many Media to every Entity holding it in
+// order (the relation row carries a sort_order), by id, each with its related
+// Entities ordered by kind then id, so a caller can pick the container whose
+// kind is of the container archetype and find the root it sits under
+// (CORE-2471). Other credits can carry a sort_order too; the store does not
+// know archetypes, so it returns them all. Every open catalog plane is read,
+// so an unsealed Encrypted Library's Media are covered; Media held in no
+// order are absent from the result.
+func (s *Store) MediaOrderedContainers(ctx context.Context, ids []MediaID) (map[MediaID][]OrderedContainer, error) {
+	out := map[MediaID][]OrderedContainer{}
 	if len(ids) == 0 {
 		return out, nil
 	}
@@ -44,10 +45,10 @@ func (s *Store) MediaOrderedContainers(ctx context.Context, ids []MediaID) (map[
 			// #nosec G202 -- only generated placeholders are interpolated; every value is a bound arg.
 			rows, err := reader.QueryContext(ctx, `
 				WITH held AS (
-					SELECT er.to_media_id AS media_id, MIN(er.from_entity_id) AS container_id
+					SELECT DISTINCT er.to_media_id AS media_id, er.from_entity_id AS container_id
 					FROM entity_relation er
-					WHERE er.sort_order IS NOT NULL AND er.to_media_id IN (`+sqlPlaceholders(len(chunk))+`)
-					GROUP BY er.to_media_id
+					WHERE er.sort_order IS NOT NULL AND er.from_entity_id IS NOT NULL
+					  AND er.to_media_id IN (`+sqlPlaceholders(len(chunk))+`)
 				),
 				links AS (
 					SELECT er.from_entity_id AS container_id, er.to_entity_id AS linked_id
@@ -63,7 +64,7 @@ func (s *Store) MediaOrderedContainers(ctx context.Context, ids []MediaID) (map[
 				JOIN entity c ON c.id = held.container_id
 				LEFT JOIN links ON links.container_id = held.container_id
 				LEFT JOIN entity l ON l.id = links.linked_id
-				ORDER BY held.media_id, l.kind, l.id`, args...)
+				ORDER BY held.media_id, held.container_id, l.kind, l.id`, args...)
 			if err != nil {
 				return nil, err
 			}
@@ -75,14 +76,15 @@ func (s *Store) MediaOrderedContainers(ctx context.Context, ids []MediaID) (map[
 					_ = rows.Close()
 					return nil, err
 				}
-				held, ok := out[mediaID]
-				if !ok {
-					held = container
+				holders := out[mediaID]
+				if len(holders) == 0 || holders[len(holders)-1].ID != container.ID {
+					holders = append(holders, container)
 				}
 				if linked.ID != "" {
-					held.Linked = append(held.Linked, linked)
+					last := &holders[len(holders)-1]
+					last.Linked = append(last.Linked, linked)
 				}
-				out[mediaID] = held
+				out[mediaID] = holders
 			}
 			if err := rows.Close(); err != nil {
 				return nil, err

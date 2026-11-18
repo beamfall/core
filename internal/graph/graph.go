@@ -4416,9 +4416,9 @@ type MediaInfo struct {
 	// ordinal (the item's own title when stored), ClassLabel is the plugin's
 	// label for the item's class, and VideoWidth and VideoHeight the probed
 	// frame size (CORE-2469). Filled only by the media(id) read and omitted
-	// when unknown.
-	Sequence    float64             `json:"sequence,omitempty"`
-	Index       float64             `json:"index,omitempty"`
+	// when unknown; a stored zero ordinal is kept.
+	Sequence    *float64            `json:"sequence,omitempty"`
+	Index       *float64            `json:"index,omitempty"`
 	Headline    plugin.LocaleString `json:"headline,omitempty"`
 	ClassLabel  plugin.LocaleString `json:"classLabel,omitempty"`
 	VideoWidth  int                 `json:"videoWidth,omitempty"`
