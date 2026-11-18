@@ -3155,14 +3155,12 @@ func parseProbeTimestamp(value string) (float64, bool) {
 
 // applySubtitleTitleFlags sets the forced, hearing-impaired and commentary
 // flags a subtitle stream's title names but its dispositions do not: many
-// files mark "English (SDH)" or "Forced" only in the title (CORE-2523). A
-// role word after "non", "not" or "no" is a denial and sets nothing.
+// files mark "English (SDH)" or "Forced" only in the title (CORE-2523).
+// "non-SDH", "Not Forced" and "No SDH or CC" deny the roles they name: a
+// negation covers the role words (and "and", "or", "nor") after it, up to the
+// next bracket, comma, semicolon or bar, so "(non-SDH) [Forced]" is forced.
 func applySubtitleTitleFlags(ps *ProbeStream) {
-	words := strings.FieldsFunc(strings.ToLower(ps.Title), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
-	// "non-SDH", "Not Forced" and "No SDH/CC" deny the roles they name: a
-	// negation covers the role words that follow it.
+	words := subtitleTitleWords(ps.Title)
 	negated := false
 	for i, word := range words {
 		switch word {
@@ -3174,8 +3172,8 @@ func applySubtitleTitleFlags(ps *ProbeStream) {
 			if i+1 < len(words) && words[i+1] == "impaired" {
 				ps.HearingImpaired = ps.HearingImpaired || !negated
 			}
-		case "impaired":
-			// The second word of "hearing impaired"; keeps a negation running.
+		case "impaired", "and", "or", "nor":
+			// Inside a role phrase or list; a negation keeps running.
 		case "forced":
 			ps.Forced = ps.Forced || !negated
 		case "commentary":
@@ -3184,6 +3182,32 @@ func applySubtitleTitleFlags(ps *ProbeStream) {
 			negated = false
 		}
 	}
+}
+
+// subtitleTitleWords lowercases a title into its letter/digit words, with ","
+// standing for each qualifier boundary (a bracket, comma, semicolon or bar).
+func subtitleTitleWords(title string) []string {
+	var words []string
+	var word strings.Builder
+	flush := func() {
+		if word.Len() > 0 {
+			words = append(words, word.String())
+			word.Reset()
+		}
+	}
+	for _, r := range strings.ToLower(title) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			word.WriteRune(r)
+		case strings.ContainsRune("()[]{},;|", r):
+			flush()
+			words = append(words, ",")
+		default:
+			flush()
+		}
+	}
+	flush()
+	return words
 }
 
 func caseInsensitiveTag(tags map[string]string, name string) string {

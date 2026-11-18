@@ -208,10 +208,11 @@ const TITLE_ROLE_WORDS: Record<"forced" | "sdh" | "commentary" | "visualImpaired
   visualImpaired: /\b(described|audio description)\b/i,
 };
 
-// "non-SDH", "Not Forced", "No SDH/CC": a negation and the role words after it,
-// which deny a role rather than name it.
+// "non-SDH", "Not Forced", "No SDH or CC": a negation and the role words (and
+// "and", "or", "nor") after it, up to a bracket, comma, semicolon or bar; they
+// deny a role rather than name it.
 const NEGATED_ROLES =
-  /\b(non|not|no)\b(?:[^a-z0-9]+(?:sdh|cc|hearing|impaired|forced|commentary|described|audio|description)\b)+/gi;
+  /\b(non|not|no)\b(?:[^a-z0-9()[\]{},;|]+(?:sdh|cc|hearing|impaired|forced|commentary|described|audio|description|and|or|nor)\b)+/gi;
 
 /**
  * A caption track's label without the parts that only tell same-label tracks

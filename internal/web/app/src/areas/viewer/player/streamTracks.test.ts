@@ -201,6 +201,12 @@ describe("same-language subtitle labels (CORE-2315)", () => {
     expect(captionTrackLabel({ ...base, title: "English (No SDH/CC)", sdh: true }, text)).toBe(
       "English (No SDH/CC) · SDH · SRT · External",
     );
+    expect(captionTrackLabel({ ...base, title: "No SDH or CC", sdh: true }, text)).toBe(
+      "English · No SDH or CC · SDH · SRT · External",
+    );
+    expect(
+      captionTrackLabel({ ...base, title: "English (non-SDH) [Forced]", forced: true }, text),
+    ).toBe("English (non-SDH) [Forced] · SRT · External");
   });
 
   it("numbers labels that still read the same and leaves unique ones", () => {
