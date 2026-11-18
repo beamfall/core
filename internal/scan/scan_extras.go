@@ -23,20 +23,6 @@ var extraFolderNames = map[string]bool{
 	"shorts":      true,
 }
 
-// titleExtraFolderNames are the further extras folders Plex and Jellyfin
-// recognise. Their names are common words a library may use as a category
-// ("Other", "Scenes"), so, as in those servers, they count only inside a
-// title folder, never directly under the Library root, and only for video
-// files: a music or photo folder named "Other" holds main Media.
-var titleExtraFolderNames = map[string]bool{
-	"behind the scenes": true,
-	"deleted scenes":    true,
-	"scenes":            true,
-	"clips":             true,
-	"samples":           true,
-	"other":             true,
-}
-
 // extraNameSuffixes are the established filename-stem suffixes that mark a
 // single file as an Extra: e.g. "Title-trailer.mkv" or
 // "Title-sample.mp4". Matched case-insensitively against the stem (filename
@@ -48,23 +34,6 @@ var extraNameSuffixes = []string{
 	"-featurette",
 	"-short",
 	"-behindthescenes",
-}
-
-// videoExtraNameSuffixes are the further suffixes Plex and Jellyfin
-// recognise. Words like "-other" or "-scene" also end ordinary song and
-// photo names, so they mark only a video file as an Extra.
-var videoExtraNameSuffixes = []string{
-	"-deleted",
-	"-deletedscene",
-	"-scene",
-	"-clip",
-	"-other",
-	"-extra",
-}
-
-// isVideoPath reports whether path has a video file extension.
-func isVideoPath(path string) bool {
-	return videoExtensions[strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")]
 }
 
 // isExtraPath reports whether a scanned file is an Extra by the established
@@ -101,14 +70,6 @@ func matchExtraPath(root, path string) extraMatch {
 			break
 		}
 	}
-	if match.suffix == "" && isVideoPath(path) {
-		for _, suffix := range videoExtraNameSuffixes {
-			if strings.HasSuffix(stem, suffix) {
-				match.suffix = suffix
-				break
-			}
-		}
-	}
 	match.container = extraContainerDir(root, path)
 	return match
 }
@@ -142,8 +103,12 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 		dir := filepath.Clean(filepath.Dir(imported.Path))
 		byDir[dir] = append(byDir[dir], imported.MediaID)
 		key := extraParentTitleKey{dir: dir, title: strings.ToLower(titleFromPath(imported.Path))}
-		if byDirTitle[key] != "" {
-			ambiguousTitle[key] = true
+		if existing := byDirTitle[key]; existing != "" {
+			// Two Versions of one Media may share a title; only a different
+			// Media makes the title ambiguous.
+			if existing != imported.MediaID {
+				ambiguousTitle[key] = true
+			}
 			return nil
 		}
 		byDirTitle[key] = imported.MediaID
@@ -194,13 +159,18 @@ func extraParentMediaID(root, path string, byDir map[string][]store.MediaID, byD
 	return ""
 }
 
-// soleMediaID returns the only ID in candidates, or "" when there is not
-// exactly one.
+// soleMediaID returns the only distinct ID in candidates, or "" when there is
+// not exactly one. A Media with several Versions in the folder lists its ID
+// once per file, and still counts as one.
 func soleMediaID(candidates []store.MediaID) store.MediaID {
-	if len(candidates) == 1 {
-		return candidates[0]
+	sole := store.MediaID("")
+	for _, id := range candidates {
+		if sole != "" && id != sole {
+			return ""
+		}
+		sole = id
 	}
-	return ""
+	return sole
 }
 
 // extrasRootFor returns the folder that bounds the Extras folder conventions
@@ -239,15 +209,13 @@ func extraContainerDir(root, path string) string {
 		return ""
 	}
 	root = filepath.Clean(root)
-	video := isVideoPath(path)
 	dir := filepath.Clean(filepath.Dir(path))
 	for dir != root {
 		rel, err := filepath.Rel(root, dir)
 		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 			return ""
 		}
-		name := strings.ToLower(filepath.Base(dir))
-		if extraFolderNames[name] || (video && titleExtraFolderNames[name] && strings.ContainsRune(rel, filepath.Separator)) {
+		if extraFolderNames[strings.ToLower(filepath.Base(dir))] {
 			return dir
 		}
 		dir = filepath.Dir(dir)

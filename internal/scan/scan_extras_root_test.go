@@ -38,23 +38,7 @@ func TestIsExtraPathCountsOnlyFoldersBelowRoot(t *testing.T) {
 		{"leading episode pair", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.01 From Hell.mkv"), false},
 		{"plain outtakes title", root, filepath.Join(root, "Outtakes", "Outtakes.mkv"), false},
 		{"exact library-tv outtakes name", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3 x Out Takes.mkv"), false},
-		// The Plex/Jellyfin extras folders and suffixes. The common-word folders
-		// count only inside a title folder, never as a top-level category.
-		{"Behind The Scenes in a show", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "Behind The Scenes", "Making Of.mkv"), true},
-		{"Deleted Scenes in a season", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "Season 3", "Deleted Scenes", "Cut.mkv"), true},
-		{"Other in a title folder", root, filepath.Join(root, "Synthetic Title", "Other", "Clip.mkv"), true},
-		{"Other as a top-level category", root, filepath.Join(root, "Other", "Synthetic Title.mkv"), false},
-		{"Scenes as a top-level category", root, filepath.Join(root, "Scenes", "Synthetic Title", "Synthetic Title.mkv"), false},
-		{"deleted suffix", root, filepath.Join(root, "Synthetic Title", "Synthetic Title-deleted.mkv"), true},
-		{"scene suffix", root, filepath.Join(root, "Synthetic Title", "Opening-scene.mkv"), true},
-		{"numbered music track", root, filepath.Join(root, "X Ambassadors", "VHS", "01 - X Ambassadors - Renegades.flac"), false},
-		{"numbered music track without dash", root, filepath.Join(root, "X Ambassadors", "VHS", "01 X Ambassadors.flac"), false},
-		{"music in an artist's Other folder", root, filepath.Join(root, "Artist", "Other", "01 Song.flac"), false},
-		{"photo in a Scenes folder", root, filepath.Join(root, "2026", "Scenes", "IMG_001.jpg"), false},
-		{"song ending in -other", root, filepath.Join(root, "Artist", "Album", "The Other.flac"), false},
-		{"song with a -scene suffix", root, filepath.Join(root, "Artist", "Album", "Opening-scene.flac"), false},
 		{"trailer suffix stays for any type", root, filepath.Join(root, "Synthetic Title", "Synthetic Title-trailer.mp3"), true},
-		{"dashed number before an x title", tvRoot, filepath.Join(tvRoot, "Synthetic Show", "01 - X Marks the Spot.mkv"), false},
 	}
 	for _, tc := range cases {
 		if got := isExtraPath(tc.root, tc.path); got != tc.want {
@@ -209,50 +193,43 @@ func TestRescanClearsStaleExtraFlagFromAboveRootFolder(t *testing.T) {
 	}
 }
 
-// TestExtraParentCoversEveryExtraConvention: every path isExtraPath marks as
-// an Extra resolves its parent by the same convention, so no classified Extra
-// silently loses its extra-of relation. The newly recognised video suffixes,
-// the title-scoped Extras folders and a file matching both are covered here.
+// TestExtraParentCoversEveryExtraConvention: parent resolution reads the same
+// conventions isExtraPath classifies by, falls back from a filename suffix to
+// the Extras folder holding the file, and counts a Media with several
+// Versions in the folder once (CORE-2424).
 func TestExtraParentCoversEveryExtraConvention(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "mnt", "media")
 	titleDir := filepath.Join(root, "Synthetic Title")
 	seasonDir := filepath.Join(root, "Synthetic Show", "Season 3")
+	versionsDir := filepath.Join(root, "Versioned Title")
 	byDir := map[string][]store.MediaID{
-		titleDir:  {"title"},
-		seasonDir: {"ep1", "ep2"},
+		titleDir:    {"title"},
+		seasonDir:   {"ep1", "ep2"},
+		versionsDir: {"versioned", "versioned"},
 	}
 	byDirTitle := map[extraParentTitleKey]store.MediaID{
-		{dir: titleDir, title: "synthetic title"}: "title",
-		{dir: seasonDir, title: "pilot"}:          "ep1",
+		{dir: titleDir, title: "synthetic title"}:    "title",
+		{dir: seasonDir, title: "pilot"}:             "ep1",
+		{dir: versionsDir, title: "versioned title"}: "versioned",
 	}
 	cases := []struct {
 		name string
 		path string
 		want store.MediaID
 	}{
-		{"established suffix", filepath.Join(titleDir, "Synthetic Title-trailer.mkv"), "title"},
-		{"deleted suffix", filepath.Join(titleDir, "Synthetic Title-deleted.mkv"), "title"},
-		{"deletedscene suffix", filepath.Join(titleDir, "Synthetic Title-DeletedScene.mkv"), "title"},
-		{"scene suffix", filepath.Join(titleDir, "Synthetic Title-scene.mkv"), "title"},
-		{"clip suffix", filepath.Join(titleDir, "Synthetic Title-clip.mp4"), "title"},
-		{"other suffix", filepath.Join(titleDir, "Synthetic Title-other.mkv"), "title"},
-		{"extra suffix", filepath.Join(titleDir, "Synthetic Title-extra.mkv"), "title"},
-		{"episode suffix", filepath.Join(seasonDir, "Pilot-deleted.mkv"), "ep1"},
-		{"suffix with no matching title", filepath.Join(titleDir, "Elsewhere-deleted.mkv"), ""},
-		{"ordinal-numbered file inside an Extras folder", filepath.Join(titleDir, "Extras", "3.x Out Takes.mkv"), "title"},
-		{"suffix inside an Extras folder", filepath.Join(titleDir, "Extras", "Cut-deleted.mkv"), "title"},
-		{"established suffix inside an Extras folder", filepath.Join(titleDir, "Trailers", "Teaser-trailer.mkv"), "title"},
-		{"Behind The Scenes folder", filepath.Join(titleDir, "Behind The Scenes", "Making Of.mkv"), "title"},
-		{"Deleted Scenes folder", filepath.Join(titleDir, "Deleted Scenes", "Cut.mkv"), "title"},
-		{"Scenes folder", filepath.Join(titleDir, "Scenes", "Opening.mkv"), "title"},
-		{"Clips folder", filepath.Join(titleDir, "Clips", "Clip.mkv"), "title"},
-		{"Samples folder", filepath.Join(titleDir, "Samples", "Sample.mkv"), "title"},
-		{"Other folder", filepath.Join(titleDir, "Other", "Clip.mkv"), "title"},
-		{"Extras folder beside several Media", filepath.Join(seasonDir, "Deleted Scenes", "Cut.mkv"), ""},
+		{"suffix", filepath.Join(titleDir, "Synthetic Title-trailer.mkv"), "title"},
+		{"suffix beside several Media", filepath.Join(seasonDir, "Pilot-featurette.mkv"), "ep1"},
+		{"suffix with no matching title", filepath.Join(titleDir, "Elsewhere-trailer.mkv"), ""},
+		{"suffix inside an Extras folder falls back to the folder", filepath.Join(titleDir, "Extras", "Cut-trailer.mkv"), "title"},
+		{"suffix inside a Trailers folder", filepath.Join(titleDir, "Trailers", "Teaser-trailer.mkv"), "title"},
+		{"Extras folder", filepath.Join(titleDir, "Extras", "Making Of.mkv"), "title"},
+		{"nested below an Extras folder", filepath.Join(titleDir, "Extras", "Scenes", "Cut.mkv"), "title"},
+		{"Extras folder beside several Media", filepath.Join(seasonDir, "Extras", "Cut.mkv"), ""},
+		{"Extras folder beside one Media with two Versions", filepath.Join(versionsDir, "Featurettes", "Making Of.mkv"), "versioned"},
 	}
 	for _, tc := range cases {
-		if !matchExtraPath(root, tc.path).isExtra() {
-			t.Fatalf("%s: matchExtraPath(%q) matched no Extra convention", tc.name, tc.path)
+		if !isExtraPath(root, tc.path) {
+			t.Fatalf("%s: isExtraPath(%q) = false, want true", tc.name, tc.path)
 		}
 		if got := extraParentMediaID(root, tc.path, byDir, byDirTitle); got != tc.want {
 			t.Errorf("%s: extraParentMediaID(%q) = %q, want %q", tc.name, tc.path, got, tc.want)
@@ -260,15 +237,14 @@ func TestExtraParentCoversEveryExtraConvention(t *testing.T) {
 	}
 }
 
-// TestScanLinksNewExtraConventionsToParent: an end-to-end scan links a
-// -deleted suffix file and a title-scoped Extras folder file to the sole main
-// Media of their folder.
-func TestScanLinksNewExtraConventionsToParent(t *testing.T) {
+// TestScanLinksSuffixedExtraInsideExtrasFolder: an end-to-end scan links a
+// suffixed file whose title names no sibling, inside an Extras folder, to the
+// sole main Media holding that folder.
+func TestScanLinksSuffixedExtraInsideExtrasFolder(t *testing.T) {
 	// feature:scan-pipeline
 	root := t.TempDir()
 	writeScanFile(t, root, "Synthetic Feature/Synthetic Feature.mp4", []byte("feature content"))
-	writeScanFile(t, root, "Synthetic Feature/Synthetic Feature-deleted.mp4", []byte("deleted content"))
-	writeScanFile(t, root, "Synthetic Feature/Behind The Scenes/Making Of.mp4", []byte("making-of content"))
+	writeScanFile(t, root, "Synthetic Feature/Extras/Teaser-trailer.mp4", []byte("teaser content"))
 	st := storetest.Open(t)
 	ctx := context.Background()
 	result, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root})
@@ -279,22 +255,19 @@ func TestScanLinksNewExtraConventionsToParent(t *testing.T) {
 	for _, f := range result.Files {
 		ids[filepath.Base(f.Path)] = f.MediaID
 	}
-	featureID := ids["Synthetic Feature.mp4"]
-	if featureID == "" {
-		t.Fatalf("main Media not imported: %#v", ids)
+	featureID, teaserID := ids["Synthetic Feature.mp4"], ids["Teaser-trailer.mp4"]
+	if featureID == "" || teaserID == "" {
+		t.Fatalf("scan result missing files: %#v", ids)
 	}
 	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
 	extras, err := st.MediaRelationsOf(ctx, featureID, store.MediaRelationExtraOf, filter)
 	if err != nil {
 		t.Fatalf("MediaRelationsOf(extra-of): %v", err)
 	}
-	got := map[store.MediaID]bool{}
 	for _, extra := range extras {
-		got[extra.ID] = true
-	}
-	for _, name := range []string{"Synthetic Feature-deleted.mp4", "Making Of.mp4"} {
-		if ids[name] == "" || !got[ids[name]] {
-			t.Errorf("extra %q (id %q) not linked to main Media; extras = %#v", name, ids[name], extras)
+		if extra.ID == teaserID {
+			return
 		}
 	}
+	t.Fatalf("suffixed Extra inside Extras/ not linked to main Media; extras = %#v", extras)
 }
