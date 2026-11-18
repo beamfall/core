@@ -1,0 +1,10 @@
+- [ ] Probe: subtitle stream `title` tag kept; SDH/CC, forced, commentary words set the flags
+- [ ] Store: `title` column on `media_file_stream` in both planes (append-only migrations)
+- [ ] Scan: sidecar tag parsing skips numeric segments and accepts `_` region separators
+- [ ] Playback: caption tracks carry `title` in `mediaTracks` and `playbackInfo`
+- [ ] Wire goldens regenerated; client-core-wire 2.27.0 published (additive `title`)
+- [ ] Web: language/region/flag labels, number only for identical tracks
+- [ ] Web: preferred-language-first, grouped forced/regular/SDH order in picker and player menu
+- [ ] Go and vitest coverage
+- [ ] Verified on tower after a rescan (lander)
+- [ ] `openspec archive core-2523-subtitle-picker` after landing
