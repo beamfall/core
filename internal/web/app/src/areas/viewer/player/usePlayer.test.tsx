@@ -158,12 +158,14 @@ function Harness({
   nextMediaID,
   selectedVersion,
   startTracks,
+  startID,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
   nextMediaID?: string;
   selectedVersion?: string;
   startTracks?: StartTracks;
+  startID?: string;
 }) {
   const { videoRef, state, retry, restart, switchToHls, adjust } = usePlayer(
     mediaID,
@@ -172,6 +174,7 @@ function Harness({
     nextMediaID,
     selectedVersion,
     startTracks,
+    startID,
   );
   return (
     <>
@@ -1312,6 +1315,46 @@ describe("usePlayer", () => {
         selectedAudioIndex: 4,
         selectedSubtitleIndex: undefined,
       });
+    });
+
+    // Codex round 2, P2-1: Start over pressed again (same ?t=0) with new picks
+    // is a new start, told apart by its startID; the same startID is not.
+    it("starts afresh with new picks on a repeated Start over, keyed by its startID", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(textTracks);
+      const view = render(
+        <Harness
+          startAtSeconds={0}
+          startID="s1"
+          startTracks={{ mediaID: "media-alpha", audioIndex: 2 }}
+        />,
+      );
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+
+      view.rerender(
+        <Harness
+          startAtSeconds={0}
+          startID="s2"
+          startTracks={{ mediaID: "media-alpha", audioIndex: 4 }}
+        />,
+      );
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toEqual({
+        selectedAudioIndex: 4,
+        selectedSubtitleIndex: undefined,
+      });
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+      // The same start (the mini player expanded) does not reload.
+      view.rerender(
+        <Harness
+          startAtSeconds={0}
+          startID="s2"
+          startTracks={{ mediaID: "media-alpha", audioIndex: 4 }}
+        />,
+      );
+      await act(async () => {});
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
     });
 
     it("starts with subtitles off when Off was picked, and ignores picks for another Media", async () => {

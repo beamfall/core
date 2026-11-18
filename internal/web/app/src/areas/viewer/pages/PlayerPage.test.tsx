@@ -1145,7 +1145,7 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     return null;
   }
 
-  function renderHosted(info: Partial<PlaybackInfo>) {
+  function renderHosted(info: Partial<PlaybackInfo>, extraState: object = {}) {
     vi.mocked(usePlayer).mockImplementation((mediaID) => ({
       videoRef: { current: null },
       hlsRef: { current: null },
@@ -1163,7 +1163,13 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
             { pathname: "/" },
             {
               pathname: "/watch/media-alpha",
-              state: { skipPrePlay: true, title: "Track One", queue, queueIdentity: "viewer-1" },
+              state: {
+                skipPrePlay: true,
+                title: "Track One",
+                queue,
+                queueIdentity: "viewer-1",
+                ...extraState,
+              },
             },
           ]}
           initialIndex={1}
@@ -1211,6 +1217,49 @@ describe("PlayerPage in the player host (CORE-1633)", () => {
     expect(screen.queryByText("search route")).toBeNull();
     expect(stageVideo()).toBe(video);
     expect(document.querySelector("main")).toBeVisible();
+  });
+
+  // Codex round 2, P2-2: the in-player Version pick belongs to the playback
+  // start (its startID), which docking and expanding keep; a new start from
+  // the detail page brings its own Version.
+  it("keeps the player's Version pick across dock and expand, until a new start", async () => {
+    renderHosted(
+      { mediaClass: "audio" },
+      { tracks: { mediaID: "media-alpha", versionID: "v-a" }, startID: "s1" },
+    );
+    await waitFor(() => stageVideo());
+    const lastCall = () => vi.mocked(usePlayer).mock.calls.at(-1);
+    expect(lastCall()?.[4]).toBe("v-a");
+    expect(lastCall()?.[6]).toBe("s1");
+
+    act(() => vi.mocked(PlayerTransport).mock.calls.at(-1)?.[0]?.onSelectVersion?.("v-b"));
+    await waitFor(() => expect(lastCall()?.[4]).toBe("v-b"));
+
+    act(() => {
+      void go("/search");
+    });
+    const region = await waitFor(() => {
+      const found = miniPlayer();
+      if (!found) throw new Error("mini player not docked");
+      return found;
+    });
+    fireEvent.click(within(region).getByRole("button", { name: "Open player" }));
+    await waitFor(() => expect(miniPlayer()).toBeNull());
+    expect(lastCall()?.[4]).toBe("v-b");
+    expect(lastCall()?.[6]).toBe("s1");
+
+    act(() => {
+      void go("/watch/media-alpha?t=0", {
+        state: {
+          skipPrePlay: true,
+          tracks: { mediaID: "media-alpha", versionID: "v-c", audioIndex: 2 },
+          startID: "s2",
+        },
+      });
+    });
+    await waitFor(() => expect(lastCall()?.[6]).toBe("s2"));
+    expect(lastCall()?.[4]).toBe("v-c");
+    expect(lastCall()?.[5]).toEqual({ mediaID: "media-alpha", versionID: "v-c", audioIndex: 2 });
   });
 
   it("advances to the next track in place while docked", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { unavailableReasonMessage } from "./playback";
 import {
+  newStartID,
   playQueueOf,
   queueNeighbours,
   queueOfClass,
@@ -120,6 +121,16 @@ describe("start tracks in nav state (CORE-2442)", () => {
         queue: undefined,
       });
     }
+  });
+});
+
+describe("playback start identity", () => {
+  it("carries a start's id, drops a malformed one, and mints a new id each time", () => {
+    expect(readPlayerNavState({ title: "T", startID: "s1" }, "v").startID).toBe("s1");
+    for (const startID of ["", 7, null]) {
+      expect(readPlayerNavState({ title: "T", startID }, "v")).not.toHaveProperty("startID");
+    }
+    expect(newStartID()).not.toBe(newStartID());
   });
 });
 

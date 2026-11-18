@@ -45,6 +45,18 @@ export interface PlayerNavState {
   /** The viewer identity the queue was listed for; a queue without it is ignored. */
   queueIdentity?: string;
   tracks?: StartTracks;
+  /**
+   * The identity of one explicit playback start (Play or Start over on a
+   * detail page): a new one starts the Media afresh with the picks it carries,
+   * even when the player already plays that Media from the same position.
+   * Opening the full player from the mini player carries it unchanged.
+   */
+  startID?: string;
+}
+
+/** A new playback-start identity for {@link PlayerNavState.startID}. */
+export function newStartID(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 // Nav state is serialised into history; a huge section must not bloat it, so
@@ -151,6 +163,7 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
     queue?: unknown;
     queueIdentity?: unknown;
     tracks?: unknown;
+    startID?: unknown;
   };
   const title = typeof raw.title === "string" ? raw.title : undefined;
   const sameViewer = !!identity && raw.queueIdentity === identity;
@@ -176,6 +189,7 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
     queue,
     ...(queue ? { queueIdentity: identity as string } : {}),
     ...(tracks ? { tracks } : {}),
+    ...(typeof raw.startID === "string" && raw.startID ? { startID: raw.startID } : {}),
   };
 }
 

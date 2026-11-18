@@ -232,19 +232,21 @@ function FeaturePlayer({
         ?.id ?? "")
     : undefined;
   // The Version this profile picked for this Media (CORE-1676): a pick made in
-  // this player since the last start, else the one the detail page sent with
-  // its track picks (CORE-2442; "" is Auto), else a pick made in this player
-  // earlier, else the one remembered from an earlier visit. The detail page's
-  // pick rides the nav state so blocked storage cannot split it from its tracks.
+  // this player during this playback start, else the one the detail page sent
+  // with its track picks (CORE-2442; "" is Auto), else a pick made in this
+  // player earlier, else the one remembered from an earlier visit. The detail
+  // page's pick rides the nav state so blocked storage cannot split it from its
+  // tracks. A start is its startID, which docking and expanding keep, so the
+  // player's own pick survives the mini player and gives way to a new start.
   const [versionPick, setVersionPick] = useState<{
     mediaID: string;
     id: string;
-    entry: unknown;
+    startID: string | undefined;
   } | null>(null);
   const navVersion = navState.tracks?.mediaID === mediaId ? navState.tracks.versionID : undefined;
   const ownPick = versionPick?.mediaID === mediaId ? versionPick : null;
   const selectedVersion =
-    ownPick && (navVersion === undefined || ownPick.entry === entry.state)
+    ownPick && (navVersion === undefined || ownPick.startID === navState.startID)
       ? ownPick.id
       : (navVersion ?? readVersionChoice(profileID, mediaId || ""));
 
@@ -273,16 +275,17 @@ function FeaturePlayer({
     declaredNextID,
     selectedVersion,
     navState.tracks,
+    navState.startID,
   );
   // A new Version is another file: remember it, then reload at the playhead.
   const selectVersion = useCallback(
     (versionID: string) => {
       if (!mediaId || versionID === selectedVersion) return;
       writeVersionChoice(profileID, mediaId, versionID);
-      setVersionPick({ mediaID: mediaId, id: versionID, entry: entry.state });
+      setVersionPick({ mediaID: mediaId, id: versionID, startID: navState.startID });
       retry();
     },
-    [mediaId, profileID, selectedVersion, retry, entry.state],
+    [mediaId, profileID, selectedVersion, retry, navState.startID],
   );
 
   // The queue stays within the playing item's class (CORE-1490): a track

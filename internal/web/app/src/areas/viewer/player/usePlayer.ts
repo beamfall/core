@@ -449,6 +449,8 @@ export function usePlayer(
   selectedVersion = "",
   /** Audio and caption picks made before playback (CORE-2442); used only for their Media. */
   startTracks?: StartTracks,
+  /** One explicit start's identity (PlayerNavState.startID): a new one loads afresh. */
+  startID?: string,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -475,8 +477,9 @@ export function usePlayer(
   if (trackChoiceRef.current.mediaID !== mediaID) {
     trackChoiceRef.current = startChoice(mediaID, startTracks);
   }
-  // Read by the load effect: every explicit start (a new ?t= for the same
-  // Media, as Start over while docked) begins from the picks it was handed.
+  // Read by the load effect: every explicit start (a new startID or ?t= for
+  // the same Media, as Start over while docked) begins from the picks it was
+  // handed.
   const startTracksRef = useRef(startTracks);
   startTracksRef.current = startTracks;
   const captionTracksRef = useRef<PlaybackCaptionTrack[]>([]);
@@ -1385,7 +1388,7 @@ export function usePlayer(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaID, startAtSeconds, retryKey]);
+  }, [mediaID, startAtSeconds, retryKey, startID]);
 
   // Report on pause / seek / end edges.
   useEffect(() => {

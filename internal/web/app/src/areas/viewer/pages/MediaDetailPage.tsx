@@ -51,7 +51,12 @@ import {
   runtimeParts,
   viewerFacingFields,
 } from "../lib/viewerFields";
-import { type PlayerNavState, readPlayerNavState, type StartTracks } from "../lib/watchQueue";
+import {
+  newStartID,
+  type PlayerNavState,
+  readPlayerNavState,
+  type StartTracks,
+} from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { PlayOnButton } from "../remote/PlayOnButton";
 import "./media-detail.css";
@@ -168,7 +173,9 @@ export function MediaDetailPage() {
     // Forward the queue the opening card carried (CORE-1143), still bound to
     // the viewer identity it was listed for.
     const { queue } = readPlayerNavState(location.state, identity);
-    const state: PlayerNavState = { title };
+    // Every Play or Start over is its own start, so pressing one while the
+    // mini player already plays this Media starts it again with these picks.
+    const state: PlayerNavState = { title, startID: newStartID() };
     if (identity && queue) {
       state.queue = queue;
       state.queueIdentity = identity;

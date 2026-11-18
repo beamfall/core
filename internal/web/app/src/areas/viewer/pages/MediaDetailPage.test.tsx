@@ -124,6 +124,16 @@ function renderAt(entries: Array<string | { pathname: string; state?: unknown }>
   );
 }
 
+// The player nav state the last Play or Start over sent, without its startID,
+// which is checked to be present: each press is its own playback start.
+function watchState() {
+  const state = JSON.parse(screen.getByTestId("state").textContent || "null");
+  expect(state.startID).toEqual(expect.any(String));
+  expect(state.startID).not.toBe("");
+  const { startID: _, ...rest } = state;
+  return rest;
+}
+
 function pending<T>() {
   let resolve!: (value: T) => void;
   let reject!: (err: unknown) => void;
@@ -201,7 +211,7 @@ describe("MediaDetailPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
     expect(screen.getByTestId("path")).toHaveTextContent("/watch/m1");
-    expect(JSON.parse(screen.getByTestId("state").textContent || "null")).toEqual({
+    expect(watchState()).toEqual({
       title: "Card title",
     });
   });
@@ -220,7 +230,7 @@ describe("MediaDetailPage", () => {
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
-    expect(JSON.parse(screen.getByTestId("state").textContent || "null")).toEqual({
+    expect(watchState()).toEqual({
       title: "Card title",
       queue,
       queueIdentity: identity,
@@ -241,7 +251,7 @@ describe("MediaDetailPage", () => {
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Play Card title" }));
-    expect(JSON.parse(screen.getByTestId("state").textContent || "null")).toEqual({
+    expect(watchState()).toEqual({
       title: "Card title",
     });
   });
@@ -524,9 +534,19 @@ describe("MediaDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start Server title from the beginning" }));
     expect(screen.getByTestId("path")).toHaveTextContent("/watch/m1");
     expect(screen.getByTestId("search")).toHaveTextContent("?t=0");
-    expect(JSON.parse(screen.getByTestId("state").textContent || "null")).toEqual({
+    expect(watchState()).toEqual({
       title: "Server title",
     });
+
+    // Codex round 2, P2-1: pressing Start over again is another start, so a
+    // player already docked on this Media starts afresh with the new picks.
+    const first = JSON.parse(screen.getByTestId("state").textContent || "null").startID;
+    cleanup();
+    renderAt([{ pathname: "/media/m1", state: mediaLinkState(started as SourceItem, identity) }]);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Start Server title from the beginning" }));
+    expect(watchState()).toEqual({ title: "Server title" });
+    expect(JSON.parse(screen.getByTestId("state").textContent || "null").startID).not.toBe(first);
   });
 
   it("links the container credit and the grouping above it, and offers Next", async () => {
@@ -890,7 +910,7 @@ describe("MediaDetailPage", () => {
       audioTracks: [{ streamIndex: 1, codec: "aac", language: "eng", channels: 2 }],
       captionTracks: [],
     };
-    const navState = () => JSON.parse(screen.getByTestId("state").textContent || "null");
+    const navState = watchState;
 
     it("lists Versions and tracks without a session and carries picks into playback", async () => {
       mocks.session = { profileID: "p1" };
