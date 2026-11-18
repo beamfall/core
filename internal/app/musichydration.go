@@ -78,6 +78,13 @@ type hydrationAdapter struct {
 	declaredExternalIDs   map[string]bool
 	// entityScopes maps a scoped entity kind to the relation recording its scope.
 	entityScopes map[string]string
+	// foldKinds holds the kinds whose title variants merge on rehydration
+	// (HydrationTitleFoldMapper); foldStore is nil when the store cannot merge.
+	foldKinds map[string]bool
+	foldStore hydrationFoldStore
+	// foldChecked holds the Entities mergeFoldSiblings already checked; it is
+	// guarded by scopeMu.
+	foldChecked map[store.EntityID]bool
 	// scopeMu serialises a scoped plan's identity resolution with the relation
 	// writes that record its scope, so two scans hydrating one Library at once
 	// cannot both adopt the same title-only Entity for different scopes.
@@ -109,6 +116,10 @@ func newHydrationAdapters(registry *plugin.Registry, st hydrationStore, mappers 
 			declaredRelationSpecs: declaredRelationSpecs(bundle),
 			declaredExternalIDs:   declaredExternalIDSet(mapper.ExternalIDSchemes()),
 			entityScopes:          declaredEntityScopes(mapper),
+			foldKinds:             declaredTitleFoldKinds(mapper),
+		}
+		if foldStore, ok := st.(hydrationFoldStore); ok && len(adapter.foldKinds) > 0 {
+			adapter.foldStore = foldStore
 		}
 		if rehydrator, ok := mapper.(HydrationRehydrator); ok {
 			adapter.rehydrator = rehydrator
@@ -218,10 +229,12 @@ func (a *hydrationAdapter) HydrateMetadata(ctx context.Context, input scanpkg.Me
 	if validated.Empty() {
 		return nil
 	}
-	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write, locked); err != nil {
+	// Relations first: a failed relation write (a title-variant merge among
+	// them) leaves the completion marker unset, so a later scan retries.
+	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations, write == HydrationWriteReplace); err != nil {
 		return err
 	}
-	if err := a.writeRelations(ctx, input.MediaID, input.LibraryID, validated.Relations, write == HydrationWriteReplace); err != nil {
+	if err := a.writeMediaFields(ctx, input.MediaID, validated, marker, write, locked); err != nil {
 		return err
 	}
 	for _, externalID := range validated.ExternalIDs {
@@ -540,18 +553,43 @@ func (a *hydrationAdapter) lockedFields(ctx context.Context, mediaID store.Media
 // rows for every relation name the plan carries — single- and many-valued
 // alike — are dropped and relation names the plan does not carry are kept.
 func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.MediaID, libraryID store.LibraryID, relations []HydrationRelation, replace bool) error {
-	if len(a.entityScopes) > 0 {
+	if len(a.entityScopes) > 0 || a.foldStore != nil {
 		a.scopeMu.Lock()
 		defer a.scopeMu.Unlock()
 	}
+	fold, err := a.titleFoldOn(ctx, libraryID)
+	if err != nil {
+		return err
+	}
+	written := make([]store.EntityRelation, len(relations))
 	resolved := map[string]store.EntityID{}
+	var holders []foldHolder
+	if fold {
+		if relations, err = a.redirectMergedFoldTitles(ctx, libraryID, relations); err != nil {
+			return err
+		}
+		if holders, err = a.priorFoldHolders(ctx, mediaID, libraryID, relations); err != nil {
+			return err
+		}
+	}
 	var mediaRelations []store.EntityRelation
-	for _, mapped := range relations {
+	for i, mapped := range relations {
 		relation, ok, err := a.resolveRelation(ctx, mediaID, libraryID, mapped, resolved)
 		if err != nil {
 			return err
 		}
-		if !ok {
+		if ok {
+			written[i] = relation
+		}
+	}
+	// Merge title variants while the Media is still on its previous holder, so
+	// the merge journals and moves it with the rest (undo restores it) and a
+	// failed merge leaves it there for the next hydration to retry.
+	if err := a.mergeFoldedHolders(ctx, libraryID, relations, written, holders); err != nil {
+		return err
+	}
+	for _, relation := range written {
+		if relation.FromEntityID == "" {
 			continue
 		}
 		if replace && relation.ToMediaID != "" {
@@ -562,10 +600,17 @@ func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.Med
 			return err
 		}
 	}
-	if len(mediaRelations) == 0 {
+	if len(mediaRelations) > 0 {
+		if err := a.store.ReplaceMediaRelations(ctx, mediaID, mediaRelations); err != nil {
+			return err
+		}
+	}
+	if !fold {
 		return nil
 	}
-	return a.store.ReplaceMediaRelations(ctx, mediaID, mediaRelations)
+	// A failed merge here leaves the completion marker unset, so the next
+	// hydration retries it.
+	return a.mergeFoldSiblings(ctx, libraryID, relations, written)
 }
 
 // resolveRelation upserts a mapped relation's Entities and returns the store
@@ -679,7 +724,9 @@ type entityScopeSplitter interface {
 // ordinary scan never hydrates an unchanged file again, so a backfill scan is
 // then queued for every root of each Library the repair reopened Media in. A
 // failure only delays the repair or the queueing to the next start; an
-// Attached node never authors catalog rows and skips both.
+// Attached node never authors catalog rows and skips both. The one-time
+// title-fold repair (reopenFoldedHydrationTitles) runs here too and shares
+// the backfill queue.
 func splitAmbiguousHydrationScopes(ctx context.Context, st entityScopeSplitter, hydrators map[string]scanpkg.MetadataHydrator, mappers map[string]HydrationMapper, logger *slog.Logger) {
 	for pluginID := range hydrators {
 		mapper := mappers[pluginID]
@@ -696,6 +743,11 @@ func splitAmbiguousHydrationScopes(ctx context.Context, st entityScopeSplitter, 
 			case reopened > 0:
 				logger.Info("entity scope repair reopened entities for the next scan", "plugin", pluginID, "kind", scope.Kind, "entities", reopened)
 			}
+		}
+	}
+	for pluginID := range hydrators {
+		if mapper := mappers[pluginID]; mapper != nil {
+			reopenFoldedHydrationTitles(ctx, st, pluginID, mapper, logger)
 		}
 	}
 	queueEntityScopeBackfills(ctx, st, logger)
