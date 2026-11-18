@@ -3155,12 +3155,17 @@ func parseProbeTimestamp(value string) (float64, bool) {
 
 // applySubtitleTitleFlags sets the forced, hearing-impaired and commentary
 // flags a subtitle stream's title names but its dispositions do not: many
-// files mark "English (SDH)" or "Forced" only in the title (CORE-2523).
+// files mark "English (SDH)" or "Forced" only in the title (CORE-2523). A
+// role word after "non", "not" or "no" is a denial and sets nothing.
 func applySubtitleTitleFlags(ps *ProbeStream) {
 	words := strings.FieldsFunc(strings.ToLower(ps.Title), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
 	for i, word := range words {
+		// "non-SDH", "Not Forced", "No CC" deny the role rather than name it.
+		if i > 0 && (words[i-1] == "non" || words[i-1] == "not" || words[i-1] == "no") {
+			continue
+		}
 		switch word {
 		case "sdh", "cc":
 			ps.HearingImpaired = true

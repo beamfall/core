@@ -15,7 +15,10 @@ func TestParseProbeSubtitleTitleFlags(t *testing.T) {
 			{"index": 5, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Hearing Impaired"}},
 			{"index": 6, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Director's Commentary"}},
 			{"index": 7, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "spa", "title": "Spanish (Latin America)"}},
-			{"index": 8, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "hin", "title": "Hindi"}, "disposition": {"forced": 1}}
+			{"index": 8, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "hin", "title": "Hindi"}, "disposition": {"forced": 1}},
+			{"index": 9, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "English (non-SDH)"}},
+			{"index": 10, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Not Forced"}},
+			{"index": 11, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Non Hearing Impaired"}}
 		],
 		"format": {"format_name": "matroska,webm", "duration": "10"}
 	}`), "/media/episode.mkv")
@@ -36,6 +39,9 @@ func TestParseProbeSubtitleTitleFlags(t *testing.T) {
 		{title: "Director's Commentary", commentary: true},
 		{title: "Spanish (Latin America)"},
 		{title: "Hindi", forced: true},
+		{title: "English (non-SDH)"},
+		{title: "Not Forced"},
+		{title: "Non Hearing Impaired"},
 	}
 	for i, w := range want {
 		s := probe.Streams[i]

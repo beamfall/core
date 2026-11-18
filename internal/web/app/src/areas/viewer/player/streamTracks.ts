@@ -287,8 +287,11 @@ function captionRoleRank(track: PlaybackCaptionTrack): number {
 /**
  * A file's caption tracks in menu order (CORE-2523): tracks in the preferred
  * languages first, in preference order, then the rest by language name, then
- * untagged tracks. A language's tracks stay together, regional variants after
- * the plain language, forced before regular before SDH; ties keep file order.
+ * untagged tracks. A language's tracks stay together whatever region a
+ * preference names (a pt-BR preference still lists Portuguese (Portugal) with
+ * the Portuguese tracks); within it the preferred variants come first, then
+ * the plain language before regional variants, forced before regular before
+ * SDH; ties keep file order.
  */
 export function orderCaptionTracks(
   tracks: readonly PlaybackCaptionTrack[],
@@ -296,16 +299,20 @@ export function orderCaptionTracks(
   locale: string,
 ): PlaybackCaptionTrack[] {
   const collator = new Intl.Collator([locale]);
+  const primaryOf = (tag: string | undefined) => canonicalLanguage(tag).split("-")[0];
+  const preferredPrimaries = preferred.map(primaryOf);
   const keys = tracks.map((track, index) => {
     const canonical = canonicalLanguage(track.language);
     const tagged = canonical !== "" && canonical !== "und";
-    const primary = canonical.split("-")[0];
-    const rank = preferred.findIndex((want) => sameLanguage(track.language, want));
+    const primary = primaryOf(track.language);
+    const rank = tagged ? preferredPrimaries.indexOf(primary) : -1;
+    const variant = preferred.findIndex((want) => sameLanguage(track.language, want));
     return {
       track,
       index,
       tagged,
       rank: rank < 0 ? preferred.length : rank,
+      variant: variant < 0 ? preferred.length : variant,
       group: tagged ? languageName(primary, locale) : "",
       name: tagged ? languageName(track.language, locale) : "",
       role: captionRoleRank(track),
@@ -316,6 +323,7 @@ export function orderCaptionTracks(
       Number(b.tagged) - Number(a.tagged) ||
       a.rank - b.rank ||
       collator.compare(a.group, b.group) ||
+      a.variant - b.variant ||
       collator.compare(a.name, b.name) ||
       a.role - b.role ||
       a.index - b.index,

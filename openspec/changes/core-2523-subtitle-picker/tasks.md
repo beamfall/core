@@ -1,8 +1,6 @@
-- [x] Probe: subtitle stream `title` tag kept; SDH/CC, forced, commentary words set the flags
-- [x] Store: `title` column on catalog `media_file_stream` (append-only migration 0122; the encrypted plane already has it)
+- [x] Probe: SDH/CC, forced, commentary words in a subtitle stream `title` set the flags (negations ignored)
 - [x] Scan: sidecar tag parsing skips numeric segments and accepts `_` region separators
-- [x] Playback: caption tracks carry `title` in `mediaTracks` and `playbackInfo`
-- [x] Wire goldens regenerated; client-core-wire 2.27.0 published (additive `title`)
+- [x] No wire change (flags already on the wire); title exposure left to a later wire minor
 - [x] Web: language/region/flag labels, number only for identical tracks
 - [x] Web: preferred-language-first, grouped forced/regular/SDH order in picker and player menu
 - [x] Go and vitest coverage

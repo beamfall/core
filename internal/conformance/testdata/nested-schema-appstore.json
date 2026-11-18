@@ -12600,11 +12600,6 @@
                     "nullable": true
                   },
                   {
-                    "name": "title",
-                    "kind": "scalar",
-                    "optional": true
-                  },
-                  {
                     "name": "url",
                     "kind": "scalar",
                     "optional": true
@@ -12650,11 +12645,6 @@
                   "kind": "scalar",
                   "optional": true,
                   "nullable": true
-                },
-                {
-                  "name": "title",
-                  "kind": "scalar",
-                  "optional": true
                 },
                 {
                   "name": "url",
@@ -12819,11 +12809,6 @@
                   "nullable": true
                 },
                 {
-                  "name": "title",
-                  "kind": "scalar",
-                  "optional": true
-                },
-                {
                   "name": "url",
                   "kind": "scalar",
                   "optional": true
@@ -12869,11 +12854,6 @@
                 "kind": "scalar",
                 "optional": true,
                 "nullable": true
-              },
-              {
-                "name": "title",
-                "kind": "scalar",
-                "optional": true
               },
               {
                 "name": "url",

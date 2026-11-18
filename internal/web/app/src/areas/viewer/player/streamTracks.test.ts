@@ -228,7 +228,7 @@ describe("subtitle picker labels and order (CORE-2523)", () => {
     expect(
       captionTrackLabels(
         [
-          muxed(2, "eng", { title: "English (SDH)", sdh: true }),
+          muxed(2, "eng", { sdh: true }),
           muxed(3, "es-419"),
           muxed(4, "zh-Hant"),
           muxed(5, "eng", { forced: true }),
@@ -238,7 +238,7 @@ describe("subtitle picker labels and order (CORE-2523)", () => {
         numbered,
       ),
     ).toEqual([
-      "English (SDH)",
+      "English · SDH",
       "Spanish (Latin America)",
       "Chinese (Traditional)",
       "English · Forced",
@@ -281,6 +281,20 @@ describe("subtitle picker labels and order (CORE-2523)", () => {
       orderCaptionTracks(tracks, preferred, "en").map((track) => track.streamIndex);
     expect(order(["es"])).toEqual([7, 5, 9, 8, 6, 3, 2, 4]);
     expect(order(["en"])).toEqual([8, 6, 3, 2, 7, 5, 9, 4]);
+  });
+
+  it("keeps a language's regional variants together under a regional preference", () => {
+    const tracks = [
+      muxed(2, "pt-PT"),
+      muxed(3, "eng"),
+      muxed(4, "pt"),
+      muxed(5, "pt-BR"),
+      muxed(6, "ara"),
+    ];
+    const order = (preferred: string[]) =>
+      orderCaptionTracks(tracks, preferred, "en").map((track) => track.streamIndex);
+    expect(order(["pt-BR", "en"])).toEqual([4, 5, 2, 3, 6]);
+    expect(order(["en-US"])).toEqual([3, 6, 4, 5, 2]);
   });
 });
 

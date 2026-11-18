@@ -1,16 +1,20 @@
 ## ADDED Requirements
 
-### Requirement: Subtitle stream titles and flags are kept
+### Requirement: Subtitle stream title words set flags
 
-The scan SHALL store a subtitle stream's container `title` tag with the stream and SHALL set the
-hearing-impaired, forced and commentary flags from SDH or CC, forced and commentary words in that
-title when the stream's dispositions do not already set them. Caption tracks in `mediaTracks` and
-`playbackInfo` SHALL carry the stored title, omitted when empty.
+The scan SHALL set a subtitle stream's hearing-impaired, forced and commentary flags from SDH or
+CC, forced and commentary words in its container `title` tag when the stream's dispositions do not
+already set them, and SHALL NOT set a flag from a word that "non", "not" or "no" negates.
 
 #### Scenario: SDH named only in the title
 
 - **WHEN** a muxed subtitle stream has the title "English (SDH)" and no hearing-impaired disposition
-- **THEN** its caption track has the SDH flag and the title "English (SDH)"
+- **THEN** its caption track has the SDH flag
+
+#### Scenario: Negated role
+
+- **WHEN** a muxed subtitle stream has the title "English (non-SDH)"
+- **THEN** its caption track has no SDH flag
 
 ### Requirement: Sidecar filename tags
 
@@ -25,9 +29,9 @@ skipping numeric segments, and SHALL read `_` between language and region as `-`
 ### Requirement: Subtitle labels name language, region and flags
 
 The web Subtitles picker and the player caption menu SHALL label a track by its language display
-name including region or script, followed by its forced, SDH, commentary and described flags, and
-SHALL use the stream title in place of the language name when the title names more than the
-language. A number SHALL be added only when two tracks would otherwise share a label.
+name including region or script, followed by its forced, SDH, commentary and described flags. Format and source SHALL be added only
+where they tell tracks with the same label apart, and a number only when two tracks would still
+share a label.
 
 #### Scenario: Regional and flagged tracks
 
@@ -44,7 +48,7 @@ language. A number SHALL be added only when two tracks would otherwise share a l
 The picker SHALL list Auto and Off first, then the tracks in the profile's subtitle languages in
 preference order (the display locale's language when the profile has none), then the other tracks
 by language display name, then tracks with no language. Each language's tracks SHALL stay together,
-forced first, then regular, then SDH.
+including regions other than a preferred region, forced first, then regular, then SDH.
 
 #### Scenario: Preferred language first
 

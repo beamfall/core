@@ -43,7 +43,6 @@ func streamsFromProbe(streams []ffmpeg.ProbeStream) []store.MediaFileStream {
 			Profile:         s.Profile,
 			Level:           s.Level,
 			Language:        s.Language,
-			Title:           s.Title,
 			Default:         s.Default,
 			Forced:          s.Forced,
 			HearingImpaired: s.HearingImpaired,

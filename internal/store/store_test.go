@@ -565,7 +565,7 @@ func TestImportMediaFilePersistsStreamInventory(t *testing.T) {
 			{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Language: "eng", Default: true,
 				Level: 153, BitDepth: 10, ColorTransfer: "smpte2084", ColorPrimaries: "bt2020", HDR10Plus: true, DoViProfile: 7, DoViBLCompatID: 6},
 			{Index: 1, Type: "audio", Codec: "truehd", Language: "eng", Default: true, Channels: 8, ChannelLayout: "7.1"},
-			{Index: 2, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "spa", Title: "Spanish (Latin America)", Forced: true, HearingImpaired: true, VisualImpaired: true, Commentary: true},
+			{Index: 2, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "spa", Forced: true, HearingImpaired: true, VisualImpaired: true, Commentary: true},
 			{Index: 3, Type: "attachment", Codec: "ttf"},
 		},
 		FontAttachments: []MediaFileFontAttachment{{Filename: "Arial.ttf", MimeType: "application/x-truetype-font"}},
@@ -604,18 +604,14 @@ func TestImportMediaFilePersistsStreamInventory(t *testing.T) {
 		t.Fatalf("audio channel_layout = %q, want 7.1", layout)
 	}
 	var hearingImpaired, visualImpaired, commentary int
-	var subtitleTitle string
 	if err := st.catalogR.QueryRowContext(ctx, `
-		SELECT is_hearing_impaired, is_visual_impaired, is_commentary, title
+		SELECT is_hearing_impaired, is_visual_impaired, is_commentary
 		FROM media_file_stream WHERE content_fingerprint = ? AND stream_index = 2`, fp).
-		Scan(&hearingImpaired, &visualImpaired, &commentary, &subtitleTitle); err != nil {
+		Scan(&hearingImpaired, &visualImpaired, &commentary); err != nil {
 		t.Fatal(err)
 	}
 	if hearingImpaired != 1 || visualImpaired != 1 || commentary != 1 {
 		t.Fatalf("subtitle dispositions = %d/%d/%d, want 1/1/1", hearingImpaired, visualImpaired, commentary)
-	}
-	if subtitleTitle != "Spanish (Latin America)" {
-		t.Fatalf("subtitle title = %q, want the stream title tag (CORE-2523)", subtitleTitle)
 	}
 
 	// A probe-less re-scan (nil slices) must NOT clobber the stored inventory —
