@@ -8,7 +8,7 @@ import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
 import type { EntityFieldInfo, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
-import { useViewerIdentity } from "@/lib/session";
+import { useSession, useViewerIdentity } from "@/lib/session";
 import {
   clearViewerCache,
   deleteViewerCache,
@@ -21,10 +21,14 @@ import { findCachedSectionItem } from "../components/HydratedSection";
 import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
 import { MediaMoreRows } from "../components/MediaMoreRows";
 import { MediaRelationRows } from "../components/MediaRelationRows";
-import { MediaTrackPickers } from "../components/MediaTrackPickers";
+import {
+  MediaTrackPickers,
+  shownVersion,
+  useMediaTracks,
+  versionFileFacts,
+} from "../components/MediaTrackPickers";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
-import { SectionView } from "../components/SectionView";
 import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
@@ -34,7 +38,6 @@ import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   fetchMedia,
   fetchMediaDetailFields,
-  findCachedSiblings,
   type MediaDetail,
   mediaDetailCacheKey,
   mediaLinkState,
@@ -44,7 +47,9 @@ import {
 import { castHasDetail } from "../lib/people";
 import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
+  type CategoryFacts,
   type DetailScore,
+  detailCreditRows,
   detailFacts,
   fieldDisplayValue,
   formatScore,
@@ -102,7 +107,6 @@ export function MediaDetailPage() {
 
   const preview = readMediaPreview(location.state, identity, mediaId);
   const card: SourceItem | undefined = preview?.item ?? findCachedSectionItem(identity, mediaId);
-  const siblings = findCachedSiblings(identity, mediaId, preview?.sectionID);
 
   // `attempt` is a dependency so that Try again re-runs the request.
   useEffect(() => {
@@ -160,6 +164,9 @@ export function MediaDetailPage() {
   const people = castRow ? [] : audioPeople(media);
   // Version, audio and subtitle picks made here before playback (CORE-2442), for one Media.
   const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
+  // Read alongside the item, once, for the pickers and Details (CORE-2509).
+  const versions = useMediaTracks(mediaId);
+  const profileID = useSession().session?.profileID;
 
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -257,8 +264,16 @@ export function MediaDetailPage() {
     { key: "runtime", text: facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "" },
     { key: "rating", text: facts.rating ?? "", variant: "rating" as const },
     ...scoreFact(facts.score, locale, t),
-    ...facts.categories.map((category) => ({ key: `category:${category}`, text: category })),
+    ...facts.categories.flatMap((group) => categoryFacts(group, t)),
   ].filter((item) => item.text !== "");
+  const creditRows = media ? detailCreditRows(media.credits) : [];
+  const fileFacts = media
+    ? versionFileFacts(shownVersion(versions, trackPicks, profileID, mediaId), t, locale)
+    : [];
+  const hasDetails = creditRows.length > 0 || fields.length > 0 || fileFacts.length > 0;
+  // Until the item arrives, the stage keeps the space its backdrop, facts
+  // and overview will take, so they do not push the page down (CORE-2509).
+  const reserving = !media && status === "loading";
   const progressText = progress ? t("mediaDetailProgress", { percent: progress.percent }) : "";
   const next = context.next;
 
@@ -266,7 +281,7 @@ export function MediaDetailPage() {
     <AppShell actions={<ViewerActions />}>
       <article className="bf-detail" aria-labelledby={TITLE_ID}>
         {back}
-        <section className="bf-detail-stage" data-backdrop={backdrop ? "" : undefined}>
+        <section className="bf-detail-stage" data-backdrop={backdrop || reserving ? "" : undefined}>
           {backdrop && <DetailBackdrop key={backdrop} url={backdrop} />}
           <div className="bf-detail-lockup">
             <DetailPoster key={poster} url={poster} mediaClass={card?.mediaClass} />
@@ -295,11 +310,14 @@ export function MediaDetailPage() {
                   ))}
                 </p>
               )}
+              {reserving && factItems.length === 0 && <FactsPlaceholder />}
               {factItems.length > 0 && (
                 <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
                   {factItems.map((item) => (
                     <li key={item.key} className="bf-detail-fact" data-variant={item.variant}>
-                      {item.spoken ? (
+                      {item.to ? (
+                        <Link to={item.to}>{item.text}</Link>
+                      ) : item.spoken ? (
                         <>
                           <span aria-hidden="true">{item.text}</span>
                           <span className="sr-only">{item.spoken}</span>
@@ -384,7 +402,12 @@ export function MediaDetailPage() {
                 {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
               </div>
               {media && (
-                <MediaTrackPickers mediaID={mediaId} picks={trackPicks} onPick={setTrackPicks} />
+                <MediaTrackPickers
+                  mediaID={mediaId}
+                  versions={versions}
+                  picks={trackPicks}
+                  onPick={setTrackPicks}
+                />
               )}
               {/* The Profile's own state for this item (CORE-2436), keyed so a
                   route change to another item starts from that item's state. */}
@@ -396,7 +419,7 @@ export function MediaDetailPage() {
                 />
               )}
               {summary && <DetailOverview key={summary} text={summary} />}
-              {!media && status === "loading" && <Skeleton aria-hidden className="h-4 w-40" />}
+              {reserving && !summary && <OverviewPlaceholder />}
               {status === "failed" && !media && retry}
             </div>
           </div>
@@ -404,38 +427,50 @@ export function MediaDetailPage() {
 
         {media && castRow && <CastRow credits={media.credits} />}
 
-        {media && <MediaRelationRows mediaID={mediaId} />}
-
-        {fields.length > 0 && (
+        {/* Details renders with the item, before the rows that load on their
+            own, so their arrival does not move it (CORE-2509). */}
+        {hasDetails && (
           <section className="bf-section flex flex-col gap-3" aria-labelledby="bf-media-fields">
             <h2 id="bf-media-fields" className="bf-section-title">
               <span>{t("mediaDetailDetails")}</span>
             </h2>
             <dl className="bf-metadata">
+              {creditRows.map((row) => (
+                <div key={row.key} className="contents">
+                  <dt>{displayString(row.label, locale)}</dt>
+                  <dd className="bf-detail-credits">
+                    {row.credits.map((credit, index) => (
+                      <span key={credit.entityID || credit.title}>
+                        {index > 0 && ", "}
+                        {credit.entityID ? (
+                          <Link to={`/entity/${encodeURIComponent(credit.entityID)}`}>
+                            {credit.title}
+                          </Link>
+                        ) : (
+                          credit.title
+                        )}
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+              ))}
               {fields.map((field, i) => (
                 <div key={`${field.name}-${i}`} className="contents">
                   <dt>{displayString(field.label, locale)}</dt>
                   <dd>{fieldDisplayValue(field, locale)}</dd>
                 </div>
               ))}
+              {fileFacts.map((fact) => (
+                <div key={`file:${fact.key}`} className="contents">
+                  <dt>{fact.label}</dt>
+                  <dd>{fact.value}</dd>
+                </div>
+              ))}
             </dl>
           </section>
         )}
 
-        {siblings && (
-          <SectionView
-            section={{
-              ...siblings.section,
-              kind: "shelf",
-              // The rest of the row the viewer came from. Naming that row
-              // ("More from Next Up") reads as if the items came from it as a
-              // place (CORE-2320), so the shelf gets a neutral title.
-              title: t("mediaDetailKeepBrowsing"),
-            }}
-            items={siblings.items}
-            navigationID={`media:${mediaId}`}
-          />
-        )}
+        {media && <MediaRelationRows mediaID={mediaId} />}
 
         {media && <MediaMoreRows mediaID={mediaId} credits={media.credits} />}
       </article>
@@ -443,12 +478,35 @@ export function MediaDetailPage() {
   );
 }
 
-/** One chip of the facts row; `spoken` replaces `text` for assistive technology. */
+/**
+ * One chip of the facts row; `spoken` replaces `text` for assistive
+ * technology, and a chip with `to` is a link to that page.
+ */
 interface FactItem {
   key: string;
   text: string;
-  variant?: "rating" | "score";
+  variant?: "rating" | "score" | "link";
   spoken?: string;
+  to?: string;
+}
+
+/** One category kind's chips, each linked to its Entity, then "+N" for the rest (CORE-2504). */
+function categoryFacts(group: CategoryFacts, t: ReturnType<typeof useT>): FactItem[] {
+  const chips: FactItem[] = group.shown.map((credit) => ({
+    key: `category:${group.kind}:${credit.entityID || credit.title}`,
+    text: credit.title,
+    ...(credit.entityID
+      ? { variant: "link" as const, to: `/entity/${encodeURIComponent(credit.entityID)}` }
+      : {}),
+  }));
+  if (group.more > 0) {
+    chips.push({
+      key: `category:${group.kind}:more`,
+      text: `+${group.more}`,
+      spoken: t("mediaDetailMoreCount", { count: group.more }),
+    });
+  }
+  return chips;
 }
 
 /** The community score chip (CORE-2399): "★ 7.3", spoken with its source and vote count. */
@@ -554,17 +612,50 @@ function DetailPoster({ url, mediaClass }: { url: string; mediaClass?: string })
   );
 }
 
+/** The facts row's space while the item loads. */
+function FactsPlaceholder() {
+  return (
+    <div className="bf-detail-facts" aria-hidden>
+      <Skeleton className="h-6 w-12" />
+      <Skeleton className="h-6 w-16" />
+      <Skeleton className="h-6 w-20" />
+    </div>
+  );
+}
+
+/** The overview's space while the item loads: three summary lines. */
+function OverviewPlaceholder() {
+  return (
+    <div className="bf-detail-overview" aria-hidden>
+      <Skeleton className="h-4 w-full max-w-xl" />
+      <Skeleton className="h-4 w-full max-w-xl" />
+      <Skeleton className="h-4 w-2/3 max-w-md" />
+    </div>
+  );
+}
+
+/**
+ * The page before anything is known, in the stage's shape (CORE-2509):
+ * backdrop space, poster, title, facts, actions, item actions and overview,
+ * so the stage does not grow when the item paints.
+ */
 function DetailSkeleton({ label }: { label: string }) {
   return (
-    <div className="bf-detail-stage" role="status" aria-busy="true" aria-label={label}>
+    <div
+      className="bf-detail-stage"
+      data-backdrop=""
+      role="status"
+      aria-busy="true"
+      aria-label={label}
+    >
       <div className="bf-detail-lockup">
         <Skeleton aria-hidden className="bf-detail-poster aspect-[2/3]" />
         <div className="bf-detail-copy" aria-hidden>
           <Skeleton className="h-9 w-3/4" />
-          <Skeleton className="h-5 w-16 rounded-full" />
+          <FactsPlaceholder />
           <Skeleton className="h-11 w-28" />
-          <Skeleton className="h-4 w-full max-w-xl" />
-          <Skeleton className="h-4 w-2/3 max-w-md" />
+          <Skeleton className="h-9 w-48" />
+          <OverviewPlaceholder />
         </div>
       </div>
     </div>

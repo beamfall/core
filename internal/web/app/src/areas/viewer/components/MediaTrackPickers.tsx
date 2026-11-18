@@ -25,6 +25,104 @@ interface Listing {
   versions: MediaTrackVersion[];
 }
 
+/**
+ * The item's Versions and tracks (mediaTracks), read once per item and
+ * viewer identity; [] until they arrive and when the read fails. The page
+ * reads it alongside the item and shares it between the pickers and Details.
+ */
+export function useMediaTracks(mediaID: string): MediaTrackVersion[] {
+  const identity = useViewerIdentity();
+  const key = `${identity ?? ""}:${mediaID}`;
+  const [listing, setListing] = useState<Listing | null>(null);
+
+  useEffect(() => {
+    if (!mediaID) return;
+    const controller = new AbortController();
+    void fetchMediaTracks(mediaID, controller.signal)
+      .catch((): MediaTrackVersion[] => [])
+      .then((versions) => {
+        if (!controller.signal.aborted) setListing({ key, versions });
+      });
+    return () => controller.abort();
+  }, [key, mediaID]);
+
+  return listing?.key === key ? listing.versions : [];
+}
+
+/** The picked Version, else the remembered one; undefined leaves the choice to the server. */
+function pickedVersion(
+  versions: readonly MediaTrackVersion[],
+  picks: StartTracks | null,
+  profileID: string | undefined,
+  mediaID: string,
+): MediaTrackVersion | undefined {
+  const pickedID =
+    (picks?.mediaID === mediaID ? picks.versionID : undefined) ??
+    readVersionChoice(profileID, mediaID);
+  return versions.find((candidate) => candidate.id === pickedID);
+}
+
+/** The Version the pickers show: the picked one, else the remembered one, else the server's default. */
+export function shownVersion(
+  versions: readonly MediaTrackVersion[],
+  picks: StartTracks | null,
+  profileID: string | undefined,
+  mediaID: string,
+): MediaTrackVersion | undefined {
+  return pickedVersion(versions, picks, profileID, mediaID) ?? versions[0];
+}
+
+/** The localized words a track label is built from. */
+export function trackLabelText(t: ReturnType<typeof useT>, locale: string): TrackLabelText {
+  return {
+    locale,
+    unknownLanguage: t("trackLanguageUnknown"),
+    mono: t("trackChannelsMono"),
+    stereo: t("trackChannelsStereo"),
+    channels: (count) => t("trackChannelsCount", { count }),
+    commentary: t("trackRoleCommentary"),
+    described: t("trackRoleDescribed"),
+    forced: t("trackRoleForced"),
+    sdh: t("trackRoleSDH"),
+    external: t("trackExternal"),
+    // The listing carries no stream URLs, so how a muxed track reaches the
+    // screen is decided at playback, not here.
+    burnedIn: "",
+  };
+}
+
+/** One row of the Details section's file facts. */
+export interface FileFact {
+  key: string;
+  label: string;
+  value: string;
+}
+
+/**
+ * The shown Version's file facts for Details (CORE-2508): its label, video
+ * codec with HDR format, and default audio track. Unknown parts are left out.
+ */
+export function versionFileFacts(
+  version: MediaTrackVersion | undefined,
+  t: ReturnType<typeof useT>,
+  locale: string,
+): FileFact[] {
+  if (!version) return [];
+  const audio = version.audioTracks.find((track) => track.default) ?? version.audioTracks[0];
+  const video = [version.videoCodec ? codecName(version.videoCodec) : "", version.hdr ?? ""]
+    .filter(Boolean)
+    .join(" · ");
+  return [
+    { key: "version", label: t("version"), value: version.label.trim() },
+    { key: "video", label: t("mediaDetailVideo"), value: video },
+    {
+      key: "audio",
+      label: t("audio"),
+      value: audio ? audioTrackLabel(audio, trackLabelText(t, locale)) : "",
+    },
+  ].filter((fact) => fact.value !== "");
+}
+
 // The Version, Audio and Subtitles pickers of a Media detail page (CORE-2442),
 // read from the stored inventory (mediaTracks) without starting a session.
 // Every pick is handed to the page and rides into playback in the watch
@@ -38,35 +136,23 @@ interface Listing {
 // failed read shows none.
 export function MediaTrackPickers({
   mediaID,
+  versions,
   picks,
   onPick,
 }: {
   mediaID: string;
+  /** The item's listing from useMediaTracks, shared with the Details section. */
+  versions: MediaTrackVersion[];
   picks: StartTracks | null;
   onPick: (picks: StartTracks) => void;
 }) {
   const t = useT();
   const locale = useDisplayLocale();
   const profileID = useSession().session?.profileID;
-  const identity = useViewerIdentity();
-  const key = `${identity ?? ""}:${mediaID}`;
-  const [listing, setListing] = useState<Listing | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetchMediaTracks(mediaID, controller.signal)
-      .catch((): MediaTrackVersion[] => [])
-      .then((versions) => {
-        if (!controller.signal.aborted) setListing({ key, versions });
-      });
-    return () => controller.abort();
-  }, [key, mediaID]);
-
-  const versions = listing?.key === key ? listing.versions : [];
   if (versions.length === 0) return null;
   const current: StartTracks = picks?.mediaID === mediaID ? picks : { mediaID };
-  const chosenID = current.versionID ?? readVersionChoice(profileID, mediaID);
-  const chosen = versions.find((candidate) => candidate.id === chosenID);
+  const chosen = pickedVersion(versions, current, profileID, mediaID);
   // Auto lists the server's default, the first in label order.
   const version = chosen ?? versions[0];
   const audioIndex = version.audioTracks.some((track) => track.streamIndex === current.audioIndex)
@@ -92,21 +178,7 @@ export function MediaTrackPickers({
     onPick({ mediaID, versionID: version.id, ...next });
   };
 
-  const labelText: TrackLabelText = {
-    locale,
-    unknownLanguage: t("trackLanguageUnknown"),
-    mono: t("trackChannelsMono"),
-    stereo: t("trackChannelsStereo"),
-    channels: (count) => t("trackChannelsCount", { count }),
-    commentary: t("trackRoleCommentary"),
-    described: t("trackRoleDescribed"),
-    forced: t("trackRoleForced"),
-    sdh: t("trackRoleSDH"),
-    external: t("trackExternal"),
-    // The listing carries no stream URLs, so how a muxed track reaches the
-    // screen is decided at playback, not here.
-    burnedIn: "",
-  };
+  const labelText = trackLabelText(t, locale);
   const numbered = (number: number) => t("trackDuplicateNumber", { number });
   const versionLabels = distinctLabels(
     versions.map((candidate) =>

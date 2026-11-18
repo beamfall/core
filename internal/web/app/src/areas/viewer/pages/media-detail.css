@@ -180,6 +180,43 @@
   color: var(--text-primary);
 }
 
+/* A category chip is a link to its Entity (CORE-2504): the whole chip is the
+   target, with the chip's look. */
+[data-register="viewer"] .bf-detail-fact[data-variant="link"] {
+  padding: 0;
+}
+
+[data-register="viewer"] .bf-detail-fact[data-variant="link"] a {
+  display: block;
+  padding: 4px 12px;
+  border-radius: inherit;
+  color: inherit;
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-detail-fact[data-variant="link"] a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+[data-register="viewer"] .bf-detail-fact[data-variant="link"] a:focus-visible,
+[data-register="viewer"] .bf-detail-credits a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-detail-credits a {
+  color: inherit;
+  border-radius: var(--radius-control);
+  text-decoration: underline;
+  text-decoration-color: var(--border-subtle);
+  text-underline-offset: 3px;
+}
+
+[data-register="viewer"] .bf-detail-credits a:hover {
+  text-decoration-color: currentColor;
+}
+
 [data-register="viewer"] .bf-detail-progress {
   display: flex;
   flex-direction: column;

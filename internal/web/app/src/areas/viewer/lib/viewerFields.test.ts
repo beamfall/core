@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { EntityFieldInfo, GenericMediaInfo } from "@/lib/graphql/types";
-import { detailFacts, fieldDisplayValue, runtimeParts, viewerFacingFields } from "./viewerFields";
+import {
+  detailCreditRows,
+  detailFacts,
+  fieldDisplayValue,
+  runtimeParts,
+  viewerFacingFields,
+} from "./viewerFields";
 
 const field = (over: Partial<EntityFieldInfo>): EntityFieldInfo => ({
   name: "f",
@@ -88,15 +94,27 @@ describe("detailFacts", () => {
       { entityID: "d", title: "Two", kind: "k", archetype: "category", relation: "r" },
       { entityID: "e", title: "Three", kind: "k", archetype: "category", relation: "r" },
       { entityID: "f", title: "Four", kind: "k", archetype: "category", relation: "r" },
+      { entityID: "g", title: "Alpha", kind: "j", archetype: "category", relation: "r" },
+      { entityID: "h", title: "Beta", kind: "i", archetype: "category", relation: "r" },
     ],
   };
 
-  it("collects year, runtime, rating and up to three distinct categories", () => {
+  it("collects year, runtime, rating and two distinct categories of the first two kinds (CORE-2504)", () => {
     expect(detailFacts(media, [field({ name: "certification", value: " R " })], 3600)).toEqual({
       year: 1999,
       runtimeSeconds: 3600,
       rating: "R",
-      categories: ["One", "Two", "Three"],
+      categories: [
+        {
+          kind: "k",
+          shown: [
+            { entityID: "a", title: "One" },
+            { entityID: "d", title: "Two" },
+          ],
+          more: 2,
+        },
+        { kind: "j", shown: [{ entityID: "g", title: "Alpha" }], more: 0 },
+      ],
     });
   });
 
@@ -136,6 +154,83 @@ describe("detailFacts", () => {
       categories: [],
     });
     expect(detailFacts(null, [])).toEqual({ categories: [] });
+  });
+});
+
+describe("detailCreditRows (CORE-2508)", () => {
+  it("lists each category kind under its display name, then person credits by job", () => {
+    const rows = detailCreditRows([
+      {
+        entityID: "c1",
+        title: "Cat A",
+        kind: "k1",
+        kindDisplayName: { en: "Kind One" },
+        archetype: "category",
+        relation: "r",
+      },
+      {
+        entityID: "p1",
+        title: "Lead",
+        kind: "p",
+        archetype: "person",
+        relation: "r",
+        attributes: { character: "Hero" },
+      },
+      {
+        entityID: "d1",
+        title: "Maker",
+        kind: "p",
+        archetype: "person",
+        relation: "r",
+        attributes: { job: "Lead Maker" },
+      },
+      { entityID: "c2", title: "Cat B", kind: "k2", archetype: "category", relation: "r" },
+      {
+        entityID: "c3",
+        title: "Cat C",
+        kind: "k1",
+        kindDisplayName: { en: "Kind One" },
+        archetype: "category",
+        relation: "r",
+      },
+      {
+        entityID: "d2",
+        title: "Other",
+        kind: "p",
+        archetype: "person",
+        relation: "r",
+        attributes: { job: " Lead Maker " },
+      },
+      {
+        entityID: "",
+        title: "Unlinked",
+        kind: "p",
+        archetype: "person",
+        relation: "r",
+        attributes: { job: "Aide" },
+      },
+    ]);
+    expect(rows).toEqual([
+      {
+        key: "kind:k1",
+        label: { en: "Kind One" },
+        credits: [
+          { entityID: "c1", title: "Cat A" },
+          { entityID: "c3", title: "Cat C" },
+        ],
+      },
+      { key: "kind:k2", label: "k2", credits: [{ entityID: "c2", title: "Cat B" }] },
+      {
+        key: "job:Lead Maker",
+        label: "Lead Maker",
+        credits: [
+          { entityID: "d1", title: "Maker" },
+          { entityID: "d2", title: "Other" },
+        ],
+      },
+      { key: "job:Aide", label: "Aide", credits: [{ entityID: "", title: "Unlinked" }] },
+    ]);
+    expect(detailCreditRows(undefined)).toEqual([]);
   });
 });
 
