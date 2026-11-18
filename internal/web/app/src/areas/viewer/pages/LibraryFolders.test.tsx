@@ -302,8 +302,8 @@ describe("Library folder view (CORE-2359)", () => {
 
     const list = await screen.findByRole("list", { name: "Season 5" });
     expect(list).toHaveClass("bf-grid");
-    expect(screen.getByRole("button", { name: "The Single Life, S5 · E1 · Part 1" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "The Single Life, S5 · E2 · Part 2" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "The Single Life, S5 · E1 · Part 1" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "The Single Life, S5 · E2 · Part 2" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "List" }));
     const rows = screen.getByRole("list", { name: "Season 5" });

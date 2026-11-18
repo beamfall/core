@@ -46,7 +46,9 @@ describe("entityHero", () => {
     const facts = entityFacts(entity);
     expect(facts.year).toBe(1999);
     expect(facts.score).toMatchObject({ value: 7.5, votes: 12 });
-    expect(facts.categories).toEqual(["A"]);
+    expect(facts.categories.flatMap((group) => group.shown.map((credit) => credit.title))).toEqual([
+      "A",
+    ]);
     expect(entitySummary(entity)).toBe("Overview");
     expect(heroFields(entity, facts.year).map((f) => f.name)).toEqual(["network"]);
     expect(entityFacts(null)).toEqual({ categories: [] });

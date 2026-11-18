@@ -10714,6 +10714,14 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "counts",
+                  "kind": "list",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
                   "name": "kind",
                   "kind": "scalar"
                 },
@@ -10737,6 +10745,14 @@
               ]
             },
             "children": [
+              {
+                "name": "counts",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
               {
                 "name": "kind",
                 "kind": "scalar"
@@ -17134,6 +17150,10 @@
         "kind": "scalar"
       },
       {
+        "name": "pictureURL",
+        "kind": "scalar"
+      },
+      {
         "name": "remoteMaxBitrate",
         "kind": "scalar"
       }
@@ -19014,6 +19034,72 @@
         "name": "updatedAt",
         "kind": "scalar",
         "optional": true
+      }
+    ]
+  },
+  {
+    "field": "reorderprofiles",
+    "kind": "object",
+    "children": [
+      {
+        "name": "avatar",
+        "kind": "scalar"
+      },
+      {
+        "name": "certificationCeilings",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "allowUnrated",
+              "kind": "scalar"
+            },
+            {
+              "name": "ceiling",
+              "kind": "scalar"
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "allowUnrated",
+            "kind": "scalar"
+          },
+          {
+            "name": "ceiling",
+            "kind": "scalar"
+          },
+          {
+            "name": "pluginID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "name",
+        "kind": "scalar"
+      },
+      {
+        "name": "pictureURL",
+        "kind": "scalar"
+      },
+      {
+        "name": "remoteMaxBitrate",
+        "kind": "scalar"
       }
     ]
   },
@@ -28911,6 +28997,72 @@
             "kind": "scalar"
           }
         ]
+      }
+    ]
+  },
+  {
+    "field": "setprofileavatar",
+    "kind": "object",
+    "children": [
+      {
+        "name": "avatar",
+        "kind": "scalar"
+      },
+      {
+        "name": "certificationCeilings",
+        "kind": "list",
+        "nullable": true,
+        "elem": {
+          "kind": "object",
+          "children": [
+            {
+              "name": "allowUnrated",
+              "kind": "scalar"
+            },
+            {
+              "name": "ceiling",
+              "kind": "scalar"
+            },
+            {
+              "name": "pluginID",
+              "kind": "scalar"
+            }
+          ]
+        },
+        "children": [
+          {
+            "name": "allowUnrated",
+            "kind": "scalar"
+          },
+          {
+            "name": "ceiling",
+            "kind": "scalar"
+          },
+          {
+            "name": "pluginID",
+            "kind": "scalar"
+          }
+        ]
+      },
+      {
+        "name": "id",
+        "kind": "scalar"
+      },
+      {
+        "name": "kind",
+        "kind": "scalar"
+      },
+      {
+        "name": "name",
+        "kind": "scalar"
+      },
+      {
+        "name": "pictureURL",
+        "kind": "scalar"
+      },
+      {
+        "name": "remoteMaxBitrate",
+        "kind": "scalar"
       }
     ]
   },

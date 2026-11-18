@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -2161,20 +2162,40 @@ func libraryIDs(ids []store.LibraryID) []string {
 // control can display the stored cap it edits (CORE-1717, CORE-1853); bits per
 // second, 0 meaning unlimited. Avatar is the
 // Profile's chosen avatar token, empty when it has none; it is opaque to core
-// and clients fall back to a generated avatar (CORE-1196).
+// and clients fall back to a generated avatar (CORE-1196). PictureURL is the
+// Profile's uploaded picture, empty when it has none; clients display it in place
+// of the avatar (CORE-1240).
 type ProfileSummary struct {
 	ID                    string                     `json:"id"`
 	Name                  string                     `json:"name"`
 	Kind                  string                     `json:"kind"`
 	Avatar                string                     `json:"avatar"`
+	PictureURL            string                     `json:"pictureURL"`
 	CertificationCeilings []CertificationCeilingInfo `json:"certificationCeilings"`
 	RemoteMaxBitrate      int                        `json:"remoteMaxBitrate"`
+}
+
+// profilePictureURL is the versioned path a client fetches a Profile's
+// picture from, empty when the Profile has none (CORE-1240). The version
+// changes on every upload, so clients may cache the response indefinitely.
+func profilePictureURL(id store.ProfileID, version int64) string {
+	if version == 0 {
+		return ""
+	}
+	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=" + strconv.FormatInt(version, 10)
 }
 
 // profiles lists the Profiles a picker may offer to any session: Profiles
 // are not accounts, so the list is not role-gated, and disabled
 // Profiles are hidden — they refuse new sessions and profile switches alike.
+// The list is in the manager-chosen picker order (CORE-2477).
 func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
+	return h.profileSummaries(ctx, func(profile store.Profile) bool { return !profile.Disabled })
+}
+
+// profileSummaries builds the picker shape for every Profile include accepts,
+// in picker order.
+func (h *Handler) profileSummaries(ctx context.Context, include func(store.Profile) bool) ([]ProfileSummary, error) {
 	all, err := h.store.Profiles(ctx)
 	if err != nil {
 		return nil, err
@@ -2183,9 +2204,13 @@ func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
 	if err != nil {
 		return nil, err
 	}
+	pictures, err := h.store.ProfilePictureVersions(ctx)
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]ProfileSummary, 0, len(all))
 	for _, profile := range all {
-		if profile.Disabled {
+		if !include(profile) {
 			continue
 		}
 		ceilings := make([]CertificationCeilingInfo, 0, len(profile.CertificationCeilings))
@@ -2201,11 +2226,69 @@ func (h *Handler) profiles(ctx context.Context) ([]ProfileSummary, error) {
 			Name:                  profile.Name,
 			Kind:                  string(profile.Kind),
 			Avatar:                avatars[profile.ID],
+			PictureURL:            profilePictureURL(profile.ID, pictures[profile.ID]),
 			CertificationCeilings: ceilings,
 			RemoteMaxBitrate:      profile.RemoteMaxBitrate,
 		})
 	}
 	return summaries, nil
+}
+
+// reorderProfiles sets the order every Profile picker shows (CORE-2477,
+// manager-gated in execute) and returns the picker list in that order.
+func (h *Handler) reorderProfiles(ctx context.Context, scope auth.Scope, req request) ([]ProfileSummary, error) {
+	v := newVars(req)
+	raw, ok := v.StringList("profileIDs", "profile IDs")
+	if err := v.Err(); err != nil {
+		return nil, err
+	}
+	if !ok || len(raw) == 0 {
+		return nil, clientError("profileIDs is required")
+	}
+	ids := make([]store.ProfileID, 0, len(raw))
+	for _, id := range raw {
+		ids = append(ids, store.ProfileID(strings.TrimSpace(id)))
+	}
+	if err := h.store.ReorderProfiles(ctx, ids); err != nil {
+		return nil, err
+	}
+	if err := h.logActivity(ctx, scope, store.ActivityProfileOrder, "profile", "", ""); err != nil {
+		return nil, err
+	}
+	return h.profiles(ctx)
+}
+
+// setProfileAvatar sets any Profile's avatar token (CORE-1241,
+// manager-gated in execute); a Profile sets its own with setClientPref. An
+// empty avatar returns the Profile to its generated avatar.
+func (h *Handler) setProfileAvatar(ctx context.Context, scope auth.Scope, req request) (ProfileSummary, error) {
+	profileID := trimmedVariable(req, "profileID")
+	if profileID == "" {
+		return ProfileSummary{}, clientError("profileID is required")
+	}
+	v := newVars(req)
+	avatar, ok := v.String("avatar")
+	if err := v.Err(); err != nil {
+		return ProfileSummary{}, err
+	}
+	if !ok {
+		return ProfileSummary{}, clientError("avatar is required")
+	}
+	id := store.ProfileID(profileID)
+	if err := h.store.SetClientPref(ctx, id, store.ProfileAvatarPrefKey, strings.TrimSpace(avatar), time.Now()); err != nil {
+		return ProfileSummary{}, err
+	}
+	if err := h.logActivity(ctx, scope, store.ActivityProfileAvatar, "profile", profileID, ""); err != nil {
+		return ProfileSummary{}, err
+	}
+	summaries, err := h.profileSummaries(ctx, func(profile store.Profile) bool { return profile.ID == id })
+	if err != nil {
+		return ProfileSummary{}, err
+	}
+	if len(summaries) == 0 {
+		return ProfileSummary{}, clientError("unknown profile")
+	}
+	return summaries[0], nil
 }
 
 // switchProfile rebinds the calling session to another Profile. The rebind
@@ -5846,6 +5929,8 @@ var mutationFields = map[string]bool{
 	"restorenavoverride":                 true, // WEB-5J (ADR-0061 §Layout editor): restore a history entry
 	"createprofile":                      true,
 	"updateprofile":                      true,
+	"reorderprofiles":                    true, // CORE-2477: picker order
+	"setprofileavatar":                   true, // CORE-1241: admin sets any Profile's avatar
 	"setprofilelibraries":                true,
 	"setcertificationceiling":            true,
 	"setaccessschedule":                  true,
@@ -6083,6 +6168,8 @@ var adminFields = map[string]bool{
 	// Profiles & access — CRUD + policies (§4)
 	"createprofile":           true,
 	"updateprofile":           true,
+	"reorderprofiles":         true,
+	"setprofileavatar":        true,
 	"setprofilelibraries":     true,
 	"setcertificationceiling": true,
 	"accessschedule":          true,

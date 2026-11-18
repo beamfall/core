@@ -99,7 +99,7 @@ describe("Library browse", () => {
       libraryID: "lib",
       state: { sort: "year", direction: "desc" },
     });
-    const first = await screen.findByRole("button", { name: "Item 0" });
+    const first = await screen.findByRole("link", { name: "Item 0" });
     expect(first.closest("li")).toHaveAttribute("aria-setsize", "1200");
     expect(document.querySelectorAll(".bf-card").length).toBeLessThan(TOTAL);
     expect(screen.getByRole("button", { name: "Play all" })).toBeEnabled();
@@ -233,7 +233,7 @@ describe("Library browse", () => {
       </I18nProvider>,
     );
 
-    await user.click(await screen.findByRole("button", { name: "Item 1" }));
+    await user.click(await screen.findByRole("link", { name: "Item 1" }));
     const queue = (await screen.findByTestId("watch")).textContent?.split(",") ?? [];
     expect(queue.slice(0, 3)).toEqual(["media-0", "media-1", "media-2"]);
   });
@@ -298,11 +298,11 @@ describe("Library browse", () => {
       items: pageFor(request).items.slice(0, matches),
     }));
     mount("/n/films/all?rated=8");
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Item 0" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Item 0" })).toBeNull());
     await waitFor(() => expect(vi.mocked(fetchLibraryItems)).toHaveBeenCalled());
     matches = 1;
     act(() => notifyEngagementChanged());
-    expect(await screen.findByRole("button", { name: "Item 0" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Item 0" })).toBeInTheDocument();
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
 
     // A query that does not depend on engagement keeps its pages and count, and
@@ -310,7 +310,7 @@ describe("Library browse", () => {
     cleanup();
     mount("/n/films/all?sort=year");
     expect(await screen.findByText("1,200 items")).toBeInTheDocument();
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
       const page = pageFor(request);
       return {
@@ -319,7 +319,7 @@ describe("Library browse", () => {
       };
     });
     act(() => notifyEngagementChanged());
-    expect(await screen.findByRole("button", { name: "Item 0, Finished" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Item 0, Finished" })).toBeInTheDocument();
     expect(screen.getByText("1,200 items")).toBeInTheDocument();
   });
 
@@ -343,7 +343,7 @@ describe("Library browse", () => {
     const user = userEvent.setup();
     renderBrowse("/n/films/all");
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     const group = screen.getByRole("group", { name: "View" });
     expect(group).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Posters" })).toHaveAttribute("aria-pressed", "true");
@@ -363,7 +363,7 @@ describe("Library browse", () => {
     // A fresh visit to the same library opens on the remembered layout.
     cleanup();
     renderBrowse("/n/films/all");
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     expect(screen.getByRole("list", { name: "Films" })).toHaveClass("bf-grid-wide");
     expect(screen.getByRole("button", { name: "Thumbnails" })).toHaveAttribute(
       "aria-pressed",
@@ -376,7 +376,7 @@ describe("Library browse", () => {
     const user = userEvent.setup();
     renderBrowse("/n/films/all?from=1990&to=1999&sort=plays");
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     expect(vi.mocked(fetchLibraryItems).mock.calls[0][0].state).toMatchObject({
       sort: "plays",
       yearFrom: 1990,
@@ -395,7 +395,7 @@ describe("Library browse", () => {
     const user = userEvent.setup();
     renderBrowse("/n/films/all?decade=1990");
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     expect(screen.getByRole("button", { name: "Remove filter: 1990s" })).toBeInTheDocument();
     // Typing alone changes nothing; a year out of range reverts on commit.
     await user.type(screen.getByLabelText("To year"), "19{Enter}");
@@ -420,7 +420,7 @@ describe("Library browse", () => {
     const user = userEvent.setup();
     renderBrowse("/n/films/all");
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     await user.type(screen.getByLabelText("From year"), "1990");
     await user.tab();
     await waitFor(() =>
@@ -441,7 +441,7 @@ describe("Library browse", () => {
     const user = userEvent.setup();
     renderBrowse("/n/films/all?from=1990&to=1990");
 
-    await screen.findByRole("button", { name: "Item 0" });
+    await screen.findByRole("link", { name: "Item 0" });
     await user.clear(screen.getByLabelText("From year"));
     await user.type(screen.getByLabelText("From year"), "2000");
     await user.tab();
@@ -472,12 +472,12 @@ describe("Library browse", () => {
     const user = userEvent.setup();
     renderBrowse("/n/films/all");
 
-    await screen.findByRole("button", { name: /^Item 0/ });
+    await screen.findByRole("link", { name: /^Item 0/ });
     await user.click(screen.getByRole("button", { name: "Table" }));
     const list = screen.getByRole("list", { name: "Films" });
     expect(list).toHaveClass("bf-stack", "bf-table-rows");
     expect(list.querySelector(".bf-poster")).toBeNull();
-    const row = screen.getByRole("button", { name: /^Item 0/ });
+    const row = screen.getByRole("link", { name: /^Item 0/ });
     expect(row).toHaveTextContent("1994");
     expect(row.querySelector(".bf-card-runtime")).not.toBeNull();
     expect(row).toHaveTextContent("8.2");
@@ -525,7 +525,7 @@ describe("Library browse", () => {
 
     // A click also lands focus on the letter's first title.
     await user.click(letterI);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Item 5" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("link", { name: "Item 5" })).toHaveFocus());
     // Clicking an empty letter does nothing.
     scrollTo.mockClear();
     await user.click(letterB);
@@ -564,7 +564,7 @@ describe("Library browse", () => {
       expect(empty).toHaveAttribute("tabindex", "-1");
       await user.click(screen.getByRole("button", { name: "I, 895 titles" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-      await waitFor(() => expect(screen.getByRole("button", { name: "Item 5" })).toHaveFocus());
+      await waitFor(() => expect(screen.getByRole("link", { name: "Item 5" })).toHaveFocus());
     } finally {
       window.matchMedia = matchMedia;
       scrollTo.mockRestore();

@@ -82,6 +82,9 @@ func TestLibraryBrowseFiltersAndFacets(t *testing.T) {
 		all.Facets.Entities[1].Kind != "absent" || len(all.Facets.Entities[1].Titles) != 0 {
 		t.Fatalf("entity facets = %+v, want category [Comedy Science] then an empty absent kind", all.Facets.Entities)
 	}
+	if counts := all.Facets.Entities[0].Counts; len(counts) != 2 || counts[0] != 2 || counts[1] < 1 || len(all.Facets.Entities[1].Counts) != 0 {
+		t.Fatalf("entity facet counts = %v / %v, want Comedy's two Media first and none for absent", counts, all.Facets.Entities[1].Counts)
+	}
 	if !slices.Contains(all.Facets.Decades, 2010) || !slices.Contains(all.Facets.Decades, 2020) || !slices.IsSortedFunc(all.Facets.Decades, func(a, b int) int { return b - a }) {
 		t.Fatalf("decade facets = %v, want newest-first incl. 2010 and 2020", all.Facets.Decades)
 	}
@@ -371,5 +374,15 @@ func TestLibraryBrowseSortsAndFiltersByOwnRating(t *testing.T) {
 	other := mustLibraryBrowse(t, st, LibraryBrowseQuery{ProfileID: "profile-demo-other", MinRating: 1})
 	if other.Total != 0 {
 		t.Fatalf("another profile's rated total = %d, want 0", other.Total)
+	}
+}
+
+func TestTopEntityTitlesKeepsTheMostUsedInTitleOrder(t *testing.T) {
+	counts := map[string]int{"Warner": 9, "acme": 1, "Zeta": 4, "Beta": 4, "Gamma": 1}
+	if got := topEntityTitles(counts, 3); !slices.Equal(got, []string{"Beta", "Warner", "Zeta"}) {
+		t.Fatalf("top 3 = %v, want the three most used, ties by title, in title order", got)
+	}
+	if got := topEntityTitles(counts, 10); !slices.Equal(got, []string{"acme", "Beta", "Gamma", "Warner", "Zeta"}) {
+		t.Fatalf("under the cap = %v, want every title in case-insensitive title order", got)
 	}
 }

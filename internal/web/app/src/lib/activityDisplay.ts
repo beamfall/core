@@ -100,6 +100,14 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
 
   // Profiles and access.
   "profile.switch": label("access", "activityEventProfileSwitch"),
+  "profile.order": label("access", "activityEventProfileOrder"),
+  "profile.avatar": label("access", "activityEventProfileAvatar", "activityNounProfile", "profile"),
+  "profile.picture": label(
+    "access",
+    "activityEventProfilePicture",
+    "activityNounProfile",
+    "profile",
+  ),
   "profile.library": label(
     "access",
     "activityEventProfileLibrary",

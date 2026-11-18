@@ -73,9 +73,44 @@ describe("SectionView repeated titles", () => {
         </MemoryRouter>
       </I18nProvider>,
     );
-    expect(screen.getByRole("button", { name: /^Dune \(1984\)/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Dune \(2021\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Dune \(1984\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Dune \(2021\)/ })).toBeInTheDocument();
     expect(screen.getByText("2021")).toBeInTheDocument();
     expect(screen.queryByText("2016")).toBeNull();
+  });
+});
+
+// CORE-2512: a catalog shelf is ranked, never A-Z; a grid keeps the server's order.
+describe("SectionView shelf ranking", () => {
+  const row: SourceItem[] = [
+    { id: "a", kind: "entity", title: "Alpha", year: 2001, artwork: { poster: "" } },
+    { id: "b", kind: "entity", title: "Bravo", year: 2020, artwork: { poster: "" } },
+    {
+      id: "c",
+      kind: "entity",
+      title: "Charlie",
+      year: 1999,
+      engagement: { totalCount: 4, remainingCount: 2 },
+      artwork: { poster: "" },
+    },
+  ];
+  function hrefs(section: Section) {
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <SectionView section={section} items={row} />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    return screen.getAllByRole("link").map((link) => link.getAttribute("href"));
+  }
+
+  it("puts in-progress, then newer items first on a catalog shelf", () => {
+    const shelf = { ...grid, kind: "shelf", source: { kind: "entity-items" } } as Section;
+    expect(hrefs(shelf)).toEqual(["/entity/c", "/entity/b", "/entity/a"]);
+  });
+
+  it("keeps the server's order in a grid", () => {
+    expect(hrefs(grid)).toEqual(["/entity/a", "/entity/b", "/entity/c"]);
   });
 });

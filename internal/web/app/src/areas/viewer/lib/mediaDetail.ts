@@ -1,6 +1,5 @@
 import { ApiError, graphql } from "@/lib/api";
-import type { EntityFieldInfo, GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
-import { viewerCacheEntries } from "@/lib/viewerCache";
+import type { EntityFieldInfo, GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
 import type { PlaybackAudioTrack, PlaybackCaptionTrack } from "./playback";
 
 // Data for the Media detail page (/media/:mediaId, CORE-1144).
@@ -204,54 +203,4 @@ export function resumeProgress(item: SourceItem | null | undefined): ResumeProgr
   }
   const percent = Math.min(99, Math.max(1, Math.round((positionSeconds / durationSeconds) * 100)));
   return { positionSeconds, durationSeconds, percent };
-}
-
-// Mirrors sectionCacheKey (HydratedSection.tsx): "section:" + JSON of
-// [section, libraryID, entityID, extraFilters].
-const SECTION_CACHE_PREFIX = "section:";
-
-export interface CachedSiblings {
-  section: Section;
-  items: SourceItem[];
-}
-
-/**
- * The other items of a hydrated section that holds this item, from the viewer
- * cache only (no request). The section the card came from wins; otherwise the
- * first cached section holding the item. Hero sections are skipped: they are a
- * promotion, not a set.
- */
-export function findCachedSiblings(
-  identity: string | null,
-  mediaID: string,
-  sectionID?: string,
-): CachedSiblings | null {
-  let first: CachedSiblings | null = null;
-  for (const [key, value] of viewerCacheEntries(identity)) {
-    if (!key.startsWith(SECTION_CACHE_PREFIX) || !Array.isArray(value)) continue;
-    const items = value as SourceItem[];
-    if (!items.some((item) => item?.id === mediaID)) continue;
-    const section = parseSection(key.slice(SECTION_CACHE_PREFIX.length));
-    if (!section || section.kind === "hero") continue;
-    const others = items.filter((item) => item?.id !== mediaID);
-    if (others.length === 0) continue;
-    const match = { section, items: others };
-    if (sectionID && section.id === sectionID) return match;
-    first ??= match;
-  }
-  return first;
-}
-
-function parseSection(serialized: string): Section | null {
-  try {
-    const parts: unknown = JSON.parse(serialized);
-    const section = Array.isArray(parts) ? parts[0] : null;
-    if (!section || typeof section !== "object") return null;
-    const candidate = section as Partial<Section>;
-    return typeof candidate.id === "string" && typeof candidate.kind === "string"
-      ? (candidate as Section)
-      : null;
-  } catch {
-    return null;
-  }
 }

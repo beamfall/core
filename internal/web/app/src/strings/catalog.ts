@@ -50,6 +50,7 @@ import { playerShortcutStrings } from "./player-shortcuts";
 import { pluginStrings } from "./plugins";
 import { pluginConfigStrings } from "./plugins-config";
 import { powerToolStrings } from "./power-tools";
+import { profileCustomizationStrings } from "./profile-customization";
 import { profileSearchStrings } from "./profile-search";
 import { profileSearchLibraryStrings } from "./profile-search-library";
 import { profileDeviceStrings } from "./profiles-devices";
@@ -138,6 +139,7 @@ export const en = {
   ...profileDeviceStrings.en,
   ...profileDevicePairingStrings.en,
   ...profileDeviceRequestStrings.en,
+  ...profileCustomizationStrings.en,
   ...migrationStrings.en,
   ...migrationUnmatchedStrings.en,
   ...migrationFixmatchStrings.en,
@@ -230,6 +232,7 @@ export const fr = {
   ...profileDeviceStrings.fr,
   ...profileDevicePairingStrings.fr,
   ...profileDeviceRequestStrings.fr,
+  ...profileCustomizationStrings.fr,
   ...migrationStrings.fr,
   ...migrationUnmatchedStrings.fr,
   ...migrationFixmatchStrings.fr,
@@ -322,6 +325,7 @@ export const de = {
   ...profileDeviceStrings.de,
   ...profileDevicePairingStrings.de,
   ...profileDeviceRequestStrings.de,
+  ...profileCustomizationStrings.de,
   ...migrationStrings.de,
   ...migrationUnmatchedStrings.de,
   ...migrationFixmatchStrings.de,
@@ -414,6 +418,7 @@ export const es = {
   ...profileDeviceStrings.es,
   ...profileDevicePairingStrings.es,
   ...profileDeviceRequestStrings.es,
+  ...profileCustomizationStrings.es,
   ...migrationStrings.es,
   ...migrationUnmatchedStrings.es,
   ...migrationFixmatchStrings.es,
@@ -506,6 +511,7 @@ export const pt = {
   ...profileDeviceStrings.pt,
   ...profileDevicePairingStrings.pt,
   ...profileDeviceRequestStrings.pt,
+  ...profileCustomizationStrings.pt,
   ...migrationStrings.pt,
   ...migrationUnmatchedStrings.pt,
   ...migrationFixmatchStrings.pt,

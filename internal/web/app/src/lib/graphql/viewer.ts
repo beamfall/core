@@ -73,7 +73,7 @@ export async function fetchCurrentSession(signal?: AbortSignal): Promise<Session
   );
 }
 
-const PROFILES_QUERY = "query Profiles { profiles { id name kind avatar } }";
+const PROFILES_QUERY = "query Profiles { profiles { id name kind avatar pictureURL } }";
 
 /** Profiles — the profile-picker roster. */
 export async function fetchProfiles(signal?: AbortSignal): Promise<ProfileSummary[]> {

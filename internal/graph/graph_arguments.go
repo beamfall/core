@@ -1154,6 +1154,13 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "tags", Kind: "list", Optional: true},
 		{Name: "title", Kind: "string"},
 	},
+	"reorderprofiles": {
+		{Name: "profileIDs", Kind: "list"},
+	},
+	"setprofileavatar": {
+		{Name: "avatar", Kind: "string"},
+		{Name: "profileID", Kind: "string"},
+	},
 	"updateprofile": {
 		{Name: "audioLanguages", Kind: "list", Optional: true},
 		{Name: "disabled", Kind: "boolean", Optional: true},

@@ -1,6 +1,18 @@
-import { type FormEvent, useState } from "react";
+import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
+import { type FormEvent, type KeyboardEvent, useRef, useState } from "react";
+import { AvatarChooser, ProfileAvatar, ProfilePhotoEditor } from "@/components/beamfall/profile";
 import { EmptyState, ErrorState, HelpTip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -10,7 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createProfile, disableProfile, fetchProfilesAdmin, updateProfile } from "@/lib/graphql";
+import {
+  createProfile,
+  disableProfile,
+  fetchProfilesAdmin,
+  reorderProfiles,
+  setProfileAvatar,
+  updateProfile,
+} from "@/lib/graphql";
 import type { ProfileAdminInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { ConfirmButton } from "../ConfirmButton";
@@ -28,9 +47,59 @@ import { useAsync } from "../useAsync";
 // excludes disabled Profiles, so an offboarded Profile drops off the list and
 // cannot yet be re-enabled here (server follow-up). The confirm copy is honest
 // about this.
+//
+// The list order is the household's picker order on every device (CORE-2477):
+// rows drag by their grip, and for the keyboard the move buttons and Alt+Up/
+// Down on a focused row do the same, with a live region announcing the new
+// position. Each row's avatar opens a dialog for its icon, colour and picture
+// (CORE-1240, CORE-1241).
 export function Profiles() {
+  const t = useT();
   const profiles = useAsync(fetchProfilesAdmin);
   const rows = profiles.data ?? [];
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const [reorderFailed, setReorderFailed] = useState(false);
+  const saving = useRef(false);
+  const pendingOrder = useRef<string[] | null>(null);
+  // After a failed save the list reloads from the server; moves wait for it so
+  // none is queued against an order that is about to be replaced.
+  const [recovering, setRecovering] = useState(false);
+
+  async function move(from: number, to: number) {
+    if (recovering || from === to || from < 0 || to < 0 || to >= rows.length) return;
+    const next = rows.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    profiles.setData(next);
+    setReorderFailed(false);
+    setAnnouncement(
+      t("consoleProfilesMoved", { name: moved.name, position: to + 1, total: next.length }),
+    );
+    pendingOrder.current = next.map((p) => p.id);
+    if (saving.current) return;
+    saving.current = true;
+    try {
+      // One save at a time, always of the newest order: concurrent requests
+      // could commit out of order and leave the server on an older one.
+      while (pendingOrder.current) {
+        const order = pendingOrder.current;
+        pendingOrder.current = null;
+        await reorderProfiles(order);
+      }
+    } catch {
+      pendingOrder.current = null;
+      setReorderFailed(true);
+      setRecovering(true);
+      try {
+        await profiles.refresh();
+      } finally {
+        setRecovering(false);
+      }
+    } finally {
+      saving.current = false;
+    }
+  }
 
   if (profiles.failed) {
     return (
@@ -48,12 +117,40 @@ export function Profiles() {
         {rows.length === 0 ? (
           <EmptyState message="consoleProfilesEmpty" />
         ) : (
-          <ul className="console-card divide-y divide-border">
-            {rows.map((p) => (
-              <ProfileRow key={p.id} profile={p} onDisabled={() => void profiles.refresh()} />
-            ))}
-          </ul>
+          <div className="space-y-2">
+            {rows.length > 1 && (
+              <p className="m-0 text-sm text-muted-foreground">{t("consoleProfilesOrderLead")}</p>
+            )}
+            {reorderFailed && (
+              <p role="alert" className="m-0 text-sm text-[var(--state-danger)]">
+                {t("consoleProfilesReorderFailed")}
+              </p>
+            )}
+            <ul className="console-card divide-y divide-border">
+              {rows.map((p, index) => (
+                <ProfileRow
+                  key={p.id}
+                  profile={p}
+                  index={index}
+                  count={rows.length}
+                  locked={recovering}
+                  dragging={dragging}
+                  onDragging={setDragging}
+                  onMove={(from, to) => void move(from, to)}
+                  onDropHere={() => {
+                    const from = rows.findIndex((r) => r.id === dragging);
+                    setDragging(null);
+                    void move(from, index);
+                  }}
+                  onChanged={() => void profiles.refresh()}
+                />
+              ))}
+            </ul>
+          </div>
         )}
+        <p aria-live="polite" className="sr-only">
+          {announcement}
+        </p>
       </div>
     </Section>
   );
@@ -125,17 +222,36 @@ function CreateProfileForm({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+type AdminProfile = Omit<ProfileAdminInfo, "disabled">;
+
 function ProfileRow({
   profile,
-  onDisabled,
+  index,
+  count,
+  locked,
+  dragging,
+  onDragging,
+  onMove,
+  onDropHere,
+  onChanged,
 }: {
-  profile: ProfileAdminInfo;
-  onDisabled: () => void;
+  profile: AdminProfile;
+  index: number;
+  count: number;
+  locked: boolean;
+  dragging: string | null;
+  onDragging: (id: string | null) => void;
+  onMove: (from: number, to: number) => void;
+  onDropHere: () => void;
+  onChanged: () => void;
 }) {
   const t = useT();
   const [name, setName] = useState(profile.name);
   const [kind, setKind] = useState(profile.kind);
   const [busy, setBusy] = useState(false);
+  // Only a drag that starts on the grip moves the row, so text in the fields
+  // still selects normally.
+  const [armed, setArmed] = useState(false);
   const dirty = name.trim() !== profile.name || kind !== profile.kind;
 
   async function save() {
@@ -144,15 +260,80 @@ function ProfileRow({
     setBusy(true);
     try {
       await updateProfile(profile.id, trimmed, kind);
-      onDisabled();
+      onChanged();
     } finally {
       setBusy(false);
     }
   }
 
+  function onRowKeyDown(e: KeyboardEvent<HTMLLIElement>) {
+    if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault();
+    onMove(index, e.key === "ArrowUp" ? index - 1 : index + 1);
+  }
+
   return (
-    <li className="console-card-pad space-y-3">
+    <li
+      className={
+        "console-card-pad bf-profile-row" + (dragging === profile.id ? " is-dragging" : "")
+      }
+      data-profile-id={profile.id}
+      draggable={armed}
+      onKeyDown={onRowKeyDown}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", profile.id);
+        onDragging(profile.id);
+      }}
+      onDragOver={(e) => {
+        if (dragging && dragging !== profile.id) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDropHere();
+      }}
+      onDragEnd={() => {
+        setArmed(false);
+        onDragging(null);
+      }}
+    >
       <div className="flex flex-wrap items-end gap-3">
+        <div className="flex items-center gap-1 self-center">
+          <span
+            className="bf-profile-grip"
+            title={t("consoleProfilesDragHandle", { name: profile.name })}
+            aria-hidden
+            onPointerDown={() => setArmed(true)}
+            onPointerUp={() => setArmed(false)}
+          >
+            <GripVertical className="size-4" />
+          </span>
+          <div className="flex flex-col">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label={t("consoleProfilesMoveUp", { name: profile.name })}
+              disabled={locked || index === 0}
+              onClick={() => onMove(index, index - 1)}
+            >
+              <ChevronUp aria-hidden />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label={t("consoleProfilesMoveDown", { name: profile.name })}
+              disabled={locked || index === count - 1}
+              onClick={() => onMove(index, index + 1)}
+            >
+              <ChevronDown aria-hidden />
+            </Button>
+          </div>
+        </div>
+        <CustomizeProfile profile={profile} onChanged={onChanged} />
         <div className="min-w-48 flex-1 space-y-1">
           <Label htmlFor={`profile-name-${profile.id}`}>{t("consoleProfilesNameLabel")}</Label>
           <Input
@@ -189,12 +370,73 @@ function ProfileRow({
           size="sm"
           onConfirm={async () => {
             await disableProfile(profile.id);
-            onDisabled();
+            onChanged();
           }}
         >
           {t("consoleProfilesDisableEffect")}
         </ConfirmButton>
       </div>
     </li>
+  );
+}
+
+// The icon, colour and picture for one Profile, edited by an Admin Session.
+function CustomizeProfile({
+  profile,
+  onChanged,
+}: {
+  profile: AdminProfile;
+  onChanged: () => void;
+}) {
+  const t = useT();
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const title = t("consoleProfilesCustomizeTitle", { name: profile.name });
+
+  return (
+    <Dialog onOpenChange={() => setAvatarFailed(false)}>
+      <DialogTrigger asChild>
+        <button type="button" className="bf-profile-customize" aria-label={title}>
+          <ProfileAvatar profile={profile} size="md" />
+          <span className="text-xs text-muted-foreground">{t("consoleProfilesCustomize")}</span>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{t("consoleProfilesCustomizeLead")}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-6">
+          <section className="space-y-3">
+            <h3 className="m-0 text-sm font-semibold">{t("profilePhotoHeading")}</h3>
+            <ProfilePhotoEditor profile={profile} onChanged={onChanged} />
+          </section>
+          <section className="space-y-3">
+            <h3 className="m-0 text-sm font-semibold">{t("consoleProfilesAvatarHeading")}</h3>
+            {avatarFailed && (
+              <p role="alert" className="m-0 text-sm text-[var(--state-danger)]">
+                {t("consoleProfilesAvatarFailed")}
+              </p>
+            )}
+            <AvatarChooser
+              profile={profile}
+              onSave={async (token) => {
+                setAvatarFailed(false);
+                try {
+                  await setProfileAvatar(profile.id, token);
+                } catch (err) {
+                  setAvatarFailed(true);
+                  throw err;
+                }
+                onChanged();
+              }}
+              preview={false}
+            />
+          </section>
+        </div>
+        <DialogFooter>
+          <DialogClose render={<Button type="button" />}>{t("consoleProfilesDone")}</DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -2,8 +2,9 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { type CollectionInfo, fetchCollections } from "@/lib/graphql";
+import type { SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { expectNoAxeViolations, expectNoPositiveTabindex } from "@/test/axe";
 import { fetchLibraryItems } from "../lib/libraryBrowse";
@@ -149,35 +150,50 @@ describe("Library Collections pivot (CORE-2437)", () => {
   });
 });
 
-describe("Library Categories pivot (CORE-2437)", () => {
-  it("tiles each grouping value and opens the filtered Media view", async () => {
-    vi.mocked(fetchLibraryItems).mockResolvedValue({
-      total: 3,
-      items: [],
-      facets: {
-        groupings: [
-          { kind: "genre", title: { en: "Genre" }, values: ["Drama", "Sci-Fi"] },
-          { kind: "studio", title: { en: "Studio" }, values: [] },
-        ],
-        decades: [],
-        qualities: [],
-      },
+type Grouping = { kind: string; title?: { en: string }; values: string[]; counts?: number[] };
+
+const studioValues = Array.from({ length: 45 }, (_, i) => `Studio ${String(i).padStart(2, "0")}`);
+const studioCounts = studioValues.map((_, i) => (i === 44 ? 1 : i % 5));
+
+/** The facet read answers with the groupings; a per-value read with that value's items. */
+function serveCategories(groupings: Grouping[], art: Record<string, SourceItem[]> = {}) {
+  vi.mocked(fetchLibraryItems).mockImplementation(async ({ state }) => {
+    const [kind, value] = Object.entries(state.groups)[0] ?? [];
+    return {
+      total: 0,
+      items: kind ? (art[`${kind}=${value}`] ?? []) : [],
+      facets: { groupings, decades: [], qualities: [] },
       letters: [],
-    });
+    };
+  });
+}
+
+function withArt(id: string, backdrop: string): SourceItem {
+  return { id, kind: "media", title: id, artworkSlots: { backdrop } } as unknown as SourceItem;
+}
+
+describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
+  it("tiles a featured grouping's values with counts and opens the filtered Media view", async () => {
+    serveCategories([
+      { kind: "genre", title: { en: "Genre" }, values: ["Drama", "Sci-Fi"], counts: [12, 1] },
+      { kind: "studio", title: { en: "Studio" }, values: [] },
+    ]);
     renderAt("/n/library-films/categories");
 
-    const drama = await screen.findByRole("link", { name: "Drama" });
+    const drama = await screen.findByRole("link", { name: "Drama 12 items" });
     expect(vi.mocked(fetchLibraryItems).mock.calls[0]?.[0]).toMatchObject({
       libraryID: "library-films",
     });
     expect(drama).toHaveAttribute("href", "/n/library-films/all?group.genre=Drama&view=media");
-    expect(screen.getByRole("link", { name: "Sci-Fi" })).toHaveAttribute(
+    // A featured grouping keeps a single-item value.
+    expect(screen.getByRole("link", { name: "Sci-Fi 1 item" })).toHaveAttribute(
       "href",
       "/n/library-films/all?group.genre=Sci-Fi&view=media",
     );
-    // A grouping with no values gets no section; a lone grouping needs no heading.
+    // An empty kind gets no section; a lone grouping needs no heading or jump links.
     expect(screen.queryByRole("region", { name: "Studio" })).toBeNull();
     expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Jump to a category" })).toBeNull();
 
     await expectNoAxeViolations(document.body);
     await userEvent.click(drama);
@@ -186,15 +202,140 @@ describe("Library Categories pivot (CORE-2437)", () => {
     );
   });
 
-  it("says when the Library has no categories", async () => {
-    vi.mocked(fetchLibraryItems).mockResolvedValue({
-      total: 0,
-      items: [],
-      facets: { groupings: [], decades: [], qualities: [] },
-      letters: [],
+  it("shows each featured value's best rated backdrop, never the same picture twice", async () => {
+    serveCategories([{ kind: "genre", values: ["Drama", "Noir", "Western"], counts: [3, 2, 2] }], {
+      "genre=Drama": [withArt("a", "/art/a")],
+      "genre=Noir": [withArt("a", "/art/a"), withArt("b", "/art/b")],
+      "genre=Western": [withArt("c", "/art/a")],
     });
+    const { container } = renderAt("/n/library-films/categories");
+
+    await screen.findByRole("link", { name: "Drama 3 items" });
+    await vi.waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(2));
+    const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src"));
+    expect(sources).toEqual(["/art/a?bucket=w640", "/art/b?bucket=w640"]);
+    const reads = vi.mocked(fetchLibraryItems).mock.calls.map(([request]) => request);
+    expect(reads.find((request) => request.state.groups.genre === "Noir")?.state).toMatchObject({
+      sort: "audience-score",
+      direction: "desc",
+    });
+    // The Western tile keeps the accent surface: its only picture is Drama's.
+    expect(
+      within(screen.getByRole("link", { name: "Western 2 items" })).queryByRole("img"),
+    ).toBeNull();
+  });
+
+  it("shortens a long-tail grouping to its most used values, with jump links and See all", async () => {
+    serveCategories([
+      { kind: "studio", title: { en: "Studio" }, values: studioValues, counts: studioCounts },
+      { kind: "genre", title: { en: "Genre" }, values: ["Drama"], counts: [4] },
+    ]);
+    const { container } = renderAt("/n/library-films/categories");
+
+    const studio = await screen.findByRole("region", { name: "Studio" });
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+    expect(headings).toEqual(["Genre", "Studio"]);
+    const top = within(studio)
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href")?.includes("group.studio="));
+    expect(top).toHaveLength(12);
+    expect(top[0]).toHaveAccessibleName("Studio 04 4 items");
+    expect(within(studio).queryByRole("link", { name: /Studio 44/ })).toBeNull();
+    expect(within(studio).queryByRole("link", { name: /^Studio 00/ })).toBeNull();
+
+    const jump = within(screen.getByRole("navigation", { name: "Jump to a category" }));
+    await userEvent.click(jump.getByRole("link", { name: "Studio" }));
+    expect(screen.getByRole("heading", { name: "Studio" })).toHaveFocus();
+    await expectNoAxeViolations(container);
+    expectNoPositiveTabindex(container);
+
+    // jsdom has no scrollIntoView; record what the A-Z list scrolls to.
+    const scrolled = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrolled,
+    });
+    onTestFinished(() => {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    });
+    await userEvent.click(within(studio).getByRole("link", { name: "See all 45: Studio" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(
+      /^\/n\/library-films\/categories\?kind=studio$/,
+    );
+    // The A-Z list opens at its top even from a scrolled overview.
+    expect(scrolled.mock.contexts[0]).toHaveClass("bf-category-index");
+    expect(screen.getByRole("heading", { name: "Studio" })).toHaveFocus();
+  });
+
+  it("lists every value A-Z with a filter that ignores case and accents", async () => {
+    serveCategories([
+      {
+        kind: "studio",
+        title: { en: "Studio" },
+        values: [...studioValues.slice(0, 40), "Pathé", "Warner Bros.", "warner home", "20th"],
+        counts: [...studioCounts.slice(0, 40), 3, 9, 1, 2],
+      },
+    ]);
+    const { container } = renderAt("/n/library-films/categories?kind=studio");
+
+    expect(await screen.findByRole("heading", { level: 2, name: "Studio" })).toHaveFocus();
+    const letters = within(screen.getByRole("navigation", { name: "Jump to a letter" }));
+    expect(letters.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "#",
+      "P",
+      "S",
+      "W",
+    ]);
+    // Single-item values belong in the full list.
+    expect(screen.getByRole("link", { name: "warner home 1 item" })).toBeInTheDocument();
+    await expectNoAxeViolations(container);
+
+    const filter = screen.getByRole("searchbox", { name: "Filter Studio" });
+    await userEvent.type(filter, "WARNER");
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("href")?.includes("group.studio="))
+        .map((link) => link.textContent),
+    ).toEqual(["Warner Bros.9 items", "warner home1 item"]);
+    await userEvent.clear(filter);
+    await userEvent.type(filter, "pathe");
+    expect(screen.getByRole("link", { name: "Pathé 3 items" })).toHaveAttribute(
+      "href",
+      "/n/library-films/all?group.studio=Path%C3%A9&view=media",
+    );
+    await userEvent.type(filter, "zzz");
+    expect(screen.getByText("Nothing matches “pathezzz”.")).toHaveAttribute("role", "status");
+
+    await userEvent.click(screen.getByRole("link", { name: "All categories" }));
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/library-films\/categories$/);
+  });
+
+  it("degrades to See all alone when the server reports no counts, and ignores an unknown kind", async () => {
+    serveCategories([{ kind: "studio", title: { en: "Studio" }, values: studioValues }]);
+    renderAt("/n/library-films/categories?kind=nope");
+
+    const studio = await screen.findByRole("region", { name: "Studio" });
+    expect(within(studio).getAllByRole("link")).toHaveLength(1);
+    expect(within(studio).getByRole("link", { name: "See all 45: Studio" })).toHaveTextContent(
+      "See all 45",
+    );
+  });
+
+  it("says when the Library has no categories", async () => {
+    serveCategories([]);
     renderAt("/n/library-films/categories");
 
     expect(await screen.findByText("This library has no categories.")).toBeInTheDocument();
+  });
+
+  it("offers a retry when the facet read fails", async () => {
+    vi.mocked(fetchLibraryItems).mockRejectedValueOnce(new Error("down"));
+    renderAt("/n/library-films/categories");
+
+    const alert = await screen.findByRole("alert");
+    serveCategories([{ kind: "genre", values: ["Drama"], counts: [2] }]);
+    await userEvent.click(within(alert).getByRole("button"));
+    expect(await screen.findByRole("link", { name: "Drama 2 items" })).toBeInTheDocument();
   });
 });

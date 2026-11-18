@@ -1896,7 +1896,7 @@ func (s *Store) Profiles(ctx context.Context) ([]Profile, error) {
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM profile ORDER BY name, id`)
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT id FROM profile ORDER BY sort_order, name, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -4069,8 +4069,10 @@ func insertProfileTx(ctx context.Context, tx *sql.Tx, name string, kind ProfileK
 		id = ProfileID(string(base) + "-" + strconv.Itoa(suffix))
 	}
 	createdAt := time.Now().UTC().UnixMilli()
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO profile(id, name, kind, created_at_ms) VALUES (?, ?, ?, ?)`, id, name, kind, createdAt); err != nil {
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO profile(id, name, kind, created_at_ms, sort_order)
+		VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM profile))
+	`, id, name, kind, createdAt); err != nil {
 		return Profile{}, err
 	}
 	for position, libraryID := range grants {

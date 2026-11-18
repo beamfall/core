@@ -267,6 +267,8 @@ var resultTypes = map[string]any{
 	"restorenavoverride":                 NavOverrideInfo{}, // WEB-5J (ADR-0061 §Layout editor): restored override blob
 	"createprofile":                      ProfileInfo{},
 	"updateprofile":                      ProfileInfo{},
+	"reorderprofiles":                    ProfileSummary{},
+	"setprofileavatar":                   ProfileSummary{},
 	"setprofilelibraries":                ProfileInfo{},
 	"setcertificationceiling":            ProfileInfo{},
 	"setaccessschedule":                  AccessScheduleInfo{},
