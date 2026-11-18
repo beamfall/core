@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -38,8 +39,8 @@ func FoldEntityTitle(title string) string {
 // Entity that relates to them, is cleared and the Library is recorded as
 // awaiting a backfill scan (see PendingEntityScopeBackfills). The next scan
 // hydrates those Media again under the mapper's current identity, and the
-// hydration adapter merges each Media's old Entity into the new one.
-// Nothing is deleted here.
+// hydration adapter keeps the oldest of the variants and merges the others
+// into it. Nothing is deleted here.
 //
 // It runs once per (plugin, kind): the run is recorded in server_config. It
 // returns how many Entities it reopened. Only the shared catalog is repaired.
@@ -202,50 +203,22 @@ func (s *Store) CopyEntityItemState(ctx context.Context, from, to EntityID) erro
 	return tx.Commit()
 }
 
-// LiveFoldEqualEntityTitle reports, for an Entity that is in trash, the title
-// of a live Entity of the same kind and Library whose title folds equal to its
-// own: the Entity a title-fold merge folded it into. Hydration uses it so a
-// file still spelling the merged-away title lands on the live Entity instead
-// of the trashed one. ok is false when the Entity is live or absent, or no
-// fold-equal Entity is live; the lowest id wins a tie.
-func (s *Store) LiveFoldEqualEntityTitle(ctx context.Context, libraryID LibraryID, id EntityID) (string, bool, error) {
-	if libraryID == "" || id == "" {
-		return "", false, errors.New("library ID and entity ID are required")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
-		return "", false, err
-	}
-	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
-	if err != nil {
-		return "", false, err
-	}
-	var kind, title string
-	var trashed sql.NullInt64
-	err = plane.reader.QueryRowContext(ctx, `
-		SELECT kind, title, trashed_at_ms FROM entity WHERE id = ? AND library_id = ?
-	`, id, libraryID).Scan(&kind, &title, &trashed)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !trashed.Valid) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, err
-	}
-	live, err := liveFoldEqualEntities(ctx, plane.reader, libraryID, kind, title, "", "")
-	if err != nil || len(live) == 0 {
-		return "", false, err
-	}
-	return live[0].Title, true, nil
-}
-
 // LiveFoldEqualEntities lists the live Entities of a kind in a Library whose
-// titles fold equal to title, lowest id first. With a scope relation, only
-// Entities whose relation of that name points at scopeTarget are listed.
+// titles fold equal to title, oldest first (catalog insertion order, which an
+// Entity keeps through updates, trash and restore). With a scope relation,
+// only Entities whose relation of that name points at scopeTarget are listed:
+// that lookup seeks the relation index and reads only the scope's members.
+// Without one it reads the Store's title-fold index for the Library and kind
+// (entityTitleFoldIndex), so a scan's lookups cost one pass over the kind,
+// not one per call, and checks each candidate against its row.
 func (s *Store) LiveFoldEqualEntities(ctx context.Context, libraryID LibraryID, kind, title, scopeRelation string, scopeTarget EntityID) ([]Entity, error) {
 	if libraryID == "" || kind == "" {
 		return nil, errors.New("library ID and entity kind are required")
 	}
+	folded := FoldEntityTitle(title)
+	if folded == "" {
+		return nil, nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
@@ -255,39 +228,63 @@ func (s *Store) LiveFoldEqualEntities(ctx context.Context, libraryID LibraryID, 
 	if err != nil {
 		return nil, err
 	}
-	return liveFoldEqualEntities(ctx, plane.reader, libraryID, kind, title, scopeRelation, scopeTarget)
+	if scopeRelation != "" {
+		return foldEqualRows(ctx, plane.reader, folded, libraryID, kind, titleFoldScopedSQL, scopeTarget, scopeRelation, libraryID, kind)
+	}
+	if plane.encrypted {
+		// An encrypted Library's Entities live in its own database, which
+		// title folding never merges (EntityTitleFoldApplies); read it plainly.
+		return foldEqualRows(ctx, plane.reader, folded, libraryID, kind, `
+			SELECT rowid, id, title FROM entity
+			WHERE library_id = ? AND kind = ? AND trashed_at_ms IS NULL
+			ORDER BY rowid
+		`, libraryID, kind)
+	}
+	candidates, err := s.titleFolds.candidates(ctx, plane.reader, libraryID, kind, folded)
+	if err != nil || len(candidates) == 0 {
+		return nil, err
+	}
+	args := []any{libraryID, kind}
+	for _, id := range candidates {
+		args = append(args, id)
+	}
+	return foldEqualRows(ctx, plane.reader, folded, libraryID, kind, `
+		SELECT rowid, id, title FROM entity
+		WHERE library_id = ? AND kind = ? AND trashed_at_ms IS NULL
+		  AND id IN (?`+strings.Repeat(", ?", len(candidates)-1)+`)
+		ORDER BY rowid
+	`, args...)
 }
 
-func liveFoldEqualEntities(ctx context.Context, reader *sql.DB, libraryID LibraryID, kind, title, scopeRelation string, scopeTarget EntityID) ([]Entity, error) {
-	folded := FoldEntityTitle(title)
-	if folded == "" {
-		return nil, nil
-	}
-	var rows *sql.Rows
-	var err error
-	if scopeRelation == "" {
-		rows, err = reader.QueryContext(ctx, `
-			SELECT id, title FROM entity
-			WHERE library_id = ? AND kind = ? AND trashed_at_ms IS NULL
-			ORDER BY id
-		`, libraryID, kind)
-	} else {
-		rows, err = reader.QueryContext(ctx, `
-			SELECT DISTINCT e.id, e.title FROM entity_relation r
-			JOIN entity e ON e.id = r.from_entity_id
-			WHERE r.to_entity_id = ? AND r.relation = ?
-				AND e.library_id = ? AND e.kind = ? AND e.trashed_at_ms IS NULL
-			ORDER BY e.id
-		`, scopeTarget, scopeRelation, libraryID, kind)
-	}
+// titleFoldScopedSQL lists a scope's live members of a kind, oldest first,
+// through entity_relation_to_entity_idx; the unary plus keeps the planner off
+// the (library_id, kind) index, which would read the whole kind.
+const titleFoldScopedSQL = `
+	SELECT e.rowid, e.id, e.title FROM entity_relation r
+	JOIN entity e ON e.id = r.from_entity_id
+	WHERE r.to_entity_id = ? AND r.relation = ?
+	  AND +e.library_id = ? AND +e.kind = ? AND e.trashed_at_ms IS NULL
+	ORDER BY e.rowid
+`
+
+// titleFoldCatchUpSQL reads a Library's rows of a kind in a rowid range. The
+// unary plus keeps the planner on the rowid range rather than the
+// (library_id, kind) index, which would read the whole kind again.
+const titleFoldCatchUpSQL = `SELECT id, title FROM entity WHERE rowid > ? AND rowid <= ? AND +library_id = ? AND +kind = ?`
+
+// foldEqualRows runs a query selecting (rowid, id, title) and keeps the rows
+// whose titles fold to folded, in the query's order.
+func foldEqualRows(ctx context.Context, reader *sql.DB, folded string, libraryID LibraryID, kind, query string, args ...any) ([]Entity, error) {
+	rows, err := reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Entity
 	for rows.Next() {
+		var rowid int64
 		var entity Entity
-		if err := rows.Scan(&entity.ID, &entity.Title); err != nil {
+		if err := rows.Scan(&rowid, &entity.ID, &entity.Title); err != nil {
 			return nil, err
 		}
 		if FoldEntityTitle(entity.Title) == folded {
@@ -296,6 +293,117 @@ func liveFoldEqualEntities(ctx context.Context, reader *sql.DB, libraryID Librar
 		}
 	}
 	return out, rows.Err()
+}
+
+// entityTitleFoldIndex maps the folded titles of a shared-catalog Library's
+// Entities of one kind to the IDs that have carried them, built by one read
+// of the kind the first time it is asked for. It is a hint, not a record:
+// every candidate is checked against its row before use, so an Entity that
+// was trashed, purged, renamed or moved since drops out there. It learns of
+// new rows two ways: UpsertEntity notes each one it writes, and each lookup
+// first reads the rows added past the highest rowid it has seen, which also
+// covers rows another writer of the catalog added.
+type entityTitleFoldIndex struct {
+	mu    sync.Mutex
+	lists map[entityTitleFoldKey]*entityTitleFoldList
+}
+
+type entityTitleFoldKey struct {
+	library LibraryID
+	kind    string
+}
+
+type entityTitleFoldList struct {
+	// seen is the highest entity rowid in the catalog when the list was last
+	// brought up to date.
+	seen   int64
+	byFold map[string][]EntityID
+}
+
+func (l *entityTitleFoldList) add(id EntityID, title string) {
+	folded := FoldEntityTitle(title)
+	if folded == "" {
+		return
+	}
+	for _, known := range l.byFold[folded] {
+		if known == id {
+			return
+		}
+	}
+	l.byFold[folded] = append(l.byFold[folded], id)
+}
+
+// note records that UpsertEntity wrote id with title, if the list for its
+// Library and kind is built; an unbuilt list reads it when it is built.
+func (x *entityTitleFoldIndex) note(libraryID LibraryID, kind string, id EntityID, title string) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if list := x.lists[entityTitleFoldKey{library: libraryID, kind: kind}]; list != nil {
+		list.add(id, title)
+	}
+}
+
+// candidates returns the IDs the index holds for folded in a Library and
+// kind, building the list or bringing it up to date first.
+func (x *entityTitleFoldIndex) candidates(ctx context.Context, reader *sql.DB, libraryID LibraryID, kind, folded string) ([]EntityID, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	key := entityTitleFoldKey{library: libraryID, kind: kind}
+	list := x.lists[key]
+	if list == nil {
+		list = &entityTitleFoldList{byFold: map[string][]EntityID{}}
+	}
+	if err := list.catchUp(ctx, reader, libraryID, kind, list == x.lists[key]); err != nil {
+		return nil, err
+	}
+	if x.lists == nil {
+		x.lists = map[entityTitleFoldKey]*entityTitleFoldList{}
+	}
+	x.lists[key] = list
+	return append([]EntityID(nil), list.byFold[folded]...), nil
+}
+
+// catchUp reads, in one snapshot, the catalog's highest entity rowid and the
+// Library's rows of the kind past what the list has seen: every row (trashed
+// ones too, which a restore can bring back) when the list is new, or the
+// rowid range added since otherwise.
+func (l *entityTitleFoldList) catchUp(ctx context.Context, reader *sql.DB, libraryID LibraryID, kind string, built bool) error {
+	tx, err := reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var high sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT max(rowid) FROM entity`).Scan(&high); err != nil {
+		return err
+	}
+	if built && high.Int64 <= l.seen {
+		return nil
+	}
+	query := `SELECT id, title FROM entity WHERE library_id = ? AND kind = ?`
+	args := []any{libraryID, kind}
+	if built {
+		query = titleFoldCatchUpSQL
+		args = []any{l.seen, high.Int64, libraryID, kind}
+	}
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id EntityID
+		var title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return err
+		}
+		l.add(id, title)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	l.seen = high.Int64
+	return nil
 }
 
 // EntityTitleFoldApplies reports whether title-fold merging can run in a

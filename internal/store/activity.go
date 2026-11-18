@@ -230,7 +230,13 @@ const (
 	// TargetID is the op-batch id (the undo handle), TargetType "batch" — same
 	// audit-anchor shape as the Media batch ops; the journal holds the detail.
 	ActivityEntityMerge = "entity.merge"
-	ActivityBatchUndo   = "batch.undo"
+	// ActivityEntityTitleFoldMerge audits an Entity merge the library scan
+	// made on its own: a newer spelling of an item (titles that differ only in
+	// case, spacing or punctuation) folded into the established one (CORE-2459).
+	// Same shape as ActivityEntityMerge — TargetType "batch", TargetID the
+	// op-batch id (the undo handle), LibraryID set — with no actor.
+	ActivityEntityTitleFoldMerge = "entity.title_fold_merge"
+	ActivityBatchUndo            = "batch.undo"
 	// ActivityMediaFieldLock audits a per-field source-precedence lock change
 	// from the Console. TargetID is the Media id and
 	// the entry carries the Media's LibraryID for reveal-filtered visibility;

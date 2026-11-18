@@ -219,7 +219,13 @@ func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if !plane.encrypted {
+		s.titleFolds.note(entity.LibraryID, entity.Kind, entity.ID, entity.Title)
+	}
+	return nil
 }
 
 var entityFieldTables = []string{

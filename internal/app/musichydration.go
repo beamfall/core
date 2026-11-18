@@ -565,7 +565,7 @@ func (a *hydrationAdapter) writeRelations(ctx context.Context, mediaID store.Med
 	resolved := map[string]store.EntityID{}
 	var holders []foldHolder
 	if fold {
-		if relations, err = a.redirectMergedFoldTitles(ctx, libraryID, relations); err != nil {
+		if relations, err = a.redirectToEstablishedFoldTitles(ctx, libraryID, relations); err != nil {
 			return err
 		}
 		if holders, err = a.priorFoldHolders(ctx, mediaID, libraryID, relations); err != nil {

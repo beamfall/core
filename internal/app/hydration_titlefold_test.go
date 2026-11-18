@@ -26,11 +26,13 @@ func (foldedAlbumMapper) MapHydration(metadata map[string]string, path string) H
 
 // TestTitleFoldRepairMergesSplitEntitiesOnRescan pins CORE-2459's rescan path:
 // a library hydrated while each file's own spelling named its container
-// ("First Band", "first.band") holds two parents and two scoped children. The
-// one-time repair reopens their Media, the next scan hydrates them under the
-// one settled spelling, and the old Entities merge into the new ones: one
-// parent and one child hold every Media, the loser is trashed (recoverable),
-// and a rating and a watchlist entry recorded on the losers carry over.
+// ("First Band", "first.band", "FIRST BAND") holds three parents and three
+// scoped children. The one-time repair reopens their Media, the next scan
+// hydrates them under the one settled spelling, and the newer variants merge
+// into the oldest one, which keeps its ID (and so its artwork) and its
+// spelling: one parent and one child hold every Media, the losers are trashed
+// (recoverable), a rating and a watchlist entry recorded on a loser carry over,
+// and each merge is in activity history with the batch that undoes it.
 func TestTitleFoldRepairMergesSplitEntitiesOnRescan(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
@@ -44,27 +46,25 @@ func TestTitleFoldRepairMergesSplitEntitiesOnRescan(t *testing.T) {
 	}
 	all := store.LibraryFilter{AllLibraries: true, Revealed: true}
 	spelling := map[store.MediaID]string{}
-	for name, artist := range map[string]string{"one": "First Band", "two": "first.band", "three": "FIRST BAND"} {
+	// The split, oldest first: every spelling hydrated into its own parent
+	// and child.
+	legacy := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	for _, file := range []struct{ name, artist string }{{"one", "First Band"}, {"two", "first.band"}, {"three", "FIRST BAND"}} {
 		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-			LibraryID: lib.ID, Path: "/shelf/" + name + ".flac", Title: name, Container: "flac", Codec: "flac",
-			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + name,
+			LibraryID: lib.ID, Path: "/shelf/" + file.name + ".flac", Title: file.name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + file.name,
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		spelling[media.ID] = artist
-	}
-
-	// The split: every spelling hydrated into its own parent and child.
-	legacy := newTestAdapterWithMapper(st, scopedAlbumMapper{})
-	for media, artist := range spelling {
+		spelling[media.ID] = file.artist
 		if err := legacy.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
-			MediaID: media, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
-			Metadata: map[string]string{"album": "Shared Collection", "album-artist": artist},
+			MediaID: media.ID, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+			Metadata: map[string]string{"album": "Shared Collection", "album-artist": file.artist},
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := st.SetMediaFields(ctx, media, []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}); err != nil {
+		if err := st.SetMediaFields(ctx, media.ID, []store.MediaField{{Name: testHydrationMarkerField, Type: store.EntityFieldFlag, Flag: true}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -80,10 +80,13 @@ func TestTitleFoldRepairMergesSplitEntitiesOnRescan(t *testing.T) {
 	if len(artists) != 3 || len(albums) != 3 {
 		t.Fatalf("before repair: %d parents, %d children; want the three-way split", len(artists), len(albums))
 	}
-	var loserArtist, loserAlbum store.EntityID
+	var loserArtist, loserAlbum, establishedArtist store.EntityID
 	for _, artist := range artists {
-		if artist.Title == "first.band" {
+		switch artist.Title {
+		case "first.band":
 			loserArtist = artist.ID
+		case "First Band":
+			establishedArtist = artist.ID
 		}
 	}
 	for _, album := range albums {
@@ -130,8 +133,8 @@ func TestTitleFoldRepairMergesSplitEntitiesOnRescan(t *testing.T) {
 		}
 	}
 	artists, albums = entities("artist"), entities("album")
-	if len(artists) != 1 || artists[0].Title != "First Band" {
-		t.Fatalf("after rescan parents = %+v, want one \"First Band\"", artists)
+	if len(artists) != 1 || artists[0].Title != "First Band" || artists[0].ID != establishedArtist {
+		t.Fatalf("after rescan parents = %+v, want the established \"First Band\" %s", artists, establishedArtist)
 	}
 	if len(albums) != 1 {
 		t.Fatalf("after rescan children = %+v, want one", albums)
@@ -152,6 +155,10 @@ func TestTitleFoldRepairMergesSplitEntitiesOnRescan(t *testing.T) {
 	}
 	if state, err := st.ItemStateFor(ctx, profile, store.ItemTarget{EntityID: albums[0].ID}, all); err != nil || !state.Watchlisted {
 		t.Fatalf("child state = %+v, %v; want the loser's watchlist entry", state, err)
+	}
+	// Four merges (two parents, two children), each in activity history.
+	if merges := titleFoldMerges(t, st); len(merges) != 4 {
+		t.Fatalf("title-fold merge activity = %+v, want four", merges)
 	}
 	// A later file still spelling a merged-away title joins the live Entities,
 	// not the trashed ones.
@@ -208,9 +215,11 @@ func (r *recordingFoldStore) MergeEntities(ctx context.Context, winner, loser st
 }
 
 // TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia pins CORE-2459's
-// failure and undo paths for a holder with a single Media: a failed merge fails
-// the hydration with the Media still on its previous holder, the next
-// hydration merges, and undoing the merges gives the old holder its Media back.
+// failure and undo paths for a newer variant holding a single Media: a failed
+// merge fails the hydration with the Media still on its previous holder, the
+// next hydration merges it into the established variant and records each merge
+// in activity history (parent first) with the batch that undoes it, and undoing
+// those batches newest first gives the old holder its Media back.
 func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
@@ -223,18 +232,24 @@ func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) 
 		t.Fatal(err)
 	}
 	all := store.LibraryFilter{AllLibraries: true, Revealed: true}
-	media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
-		LibraryID: lib.ID, Path: "/shelf/one.flac", Title: "one", Container: "flac", Codec: "flac",
-		Class: store.MediaClassAudio, ContentFingerprint: "fp-one",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := newTestAdapterWithMapper(st, scopedAlbumMapper{}).HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
-		MediaID: media.ID, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
-		Metadata: map[string]string{"album": "Shared Collection", "album-artist": "first.band"},
-	}); err != nil {
-		t.Fatal(err)
+	// "First Band" is established; "first.band" came later and holds media.
+	legacy := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	var media store.Media
+	for _, file := range []struct{ name, artist string }{{"one", "First Band"}, {"two", "first.band"}} {
+		imported, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + file.name + ".flac", Title: file.name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + file.name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := legacy.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+			MediaID: imported.ID, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+			Metadata: map[string]string{"album": "Shared Collection", "album-artist": file.artist},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		media = imported
 	}
 	links, err := st.MediaHolderLinks(ctx, lib.ID, media.ID)
 	if err != nil {
@@ -263,8 +278,10 @@ func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) 
 	if members, err := st.MediaForEntity(ctx, oldHolder, all); err != nil || len(members) != 1 {
 		t.Fatalf("after failed merge the old holder has %d members, %v; want the Media kept", len(members), err)
 	}
-	if open, err := st.MediaLackingFieldInLibrary(ctx, lib.ID, store.MediaClassAudio, testHydrationMarkerField); err != nil || len(open) != 1 {
-		t.Fatalf("after failed merge unmarked Media = %v, %v; want it left for the next scan", open, err)
+	if open, err := st.MediaLackingFieldInLibrary(ctx, lib.ID, store.MediaClassAudio, testHydrationMarkerField); err != nil {
+		t.Fatal(err)
+	} else if _, ok := open[media.ID]; !ok {
+		t.Fatalf("after failed merge unmarked Media = %v; want %s left for the next scan", open, media.ID)
 	}
 	if err := adapter.HydrateMetadata(ctx, input); err != nil {
 		t.Fatalf("retry: %v", err)
@@ -275,8 +292,19 @@ func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) 
 	if len(recorder.batches) != 2 {
 		t.Fatalf("merge batches = %d, want the parent and the child", len(recorder.batches))
 	}
-	for i := len(recorder.batches) - 1; i >= 0; i-- {
-		if _, err := st.UndoBatch(ctx, recorder.batches[i].ID, all, time.Now().UTC()); err != nil {
+	// History lists the merges newest first: the child's, then the parent's.
+	merges := titleFoldMerges(t, st)
+	if len(merges) != 2 {
+		t.Fatalf("title-fold merge activity = %+v, want two", merges)
+	}
+	for i, entry := range merges {
+		want := recorder.batches[len(recorder.batches)-1-i].ID
+		if entry.TargetType != "batch" || entry.TargetID != want || entry.LibraryID != lib.ID || entry.ProfileID != "" || entry.OperationID == "" {
+			t.Fatalf("merge activity %d = %+v, want batch %s in %s with no actor", i, entry, want, lib.ID)
+		}
+	}
+	for _, entry := range merges {
+		if _, err := st.UndoBatch(ctx, entry.TargetID, all, time.Now().UTC()); err != nil {
 			t.Fatalf("undo merge: %v", err)
 		}
 	}
@@ -285,15 +313,13 @@ func TestTitleFoldMergeRetriesAfterFailureAndUndoRestoresTheMedia(t *testing.T) 
 	}
 }
 
-// TestTitleFoldNewSpellingAbsorbsTheOnlyExistingVariant pins CORE-2459's
+// TestTitleFoldNewSpellingJoinsTheEstablishedVariant pins CORE-2459's
 // upgrade path for a container no older scan split: every file hydrated under
-// one file-name spelling, so the one-time repair has nothing to reopen. The
-// first new file named by the folder's spelling creates its container, and the
-// existing fold-equal parent and child merge into it with their Media and item
-// state instead of staying beside it as twins. A failed merge is retried by
-// the next hydration, and undoing the merges keeps the new Media on its new
-// container.
-func TestTitleFoldNewSpellingAbsorbsTheOnlyExistingVariant(t *testing.T) {
+// one file-name spelling, so the one-time repair has nothing to reopen. A new
+// file named by the folder's spelling joins the existing parent and child
+// instead of creating twins beside them: they keep their IDs (and so their
+// artwork), their spelling and their item state, and nothing is merged.
+func TestTitleFoldNewSpellingJoinsTheEstablishedVariant(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
 	if err != nil {
@@ -333,69 +359,62 @@ func TestTitleFoldNewSpellingAbsorbsTheOnlyExistingVariant(t *testing.T) {
 		}
 		return out
 	}
-	old := entities("artist")
-	if len(old) != 1 {
-		t.Fatalf("legacy parents = %+v, want one", old)
+	oldArtists, oldAlbums := entities("artist"), entities("album")
+	if len(oldArtists) != 1 || len(oldAlbums) != 1 {
+		t.Fatalf("legacy parents %+v, children %+v; want one of each", oldArtists, oldAlbums)
 	}
 	const profile = store.ProfileID("profile-default")
-	if err := st.SetItemRating(ctx, profile, store.ItemTarget{EntityID: old[0].ID}, 7, all); err != nil {
+	if err := st.SetItemRating(ctx, profile, store.ItemTarget{EntityID: oldArtists[0].ID}, 7, all); err != nil {
 		t.Fatal(err)
-	}
-
-	oldAlbums := entities("album")
-	if len(oldAlbums) != 1 {
-		t.Fatalf("legacy children = %+v, want one", oldAlbums)
 	}
 
 	adapter := newTestAdapterWithMapper(st, foldedAlbumMapper{})
-	recorder := &recordingFoldStore{hydrationFoldStore: adapter.foldStore, failCopies: 1}
+	recorder := &recordingFoldStore{hydrationFoldStore: adapter.foldStore}
 	adapter.foldStore = recorder
 	three := importMedia("three")
-	input := scanpkg.MetadataHydrationInput{
+	if err := adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
 		MediaID: three, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
 		Metadata: map[string]string{"album": "Shared Collection", "folder": "First Band"},
-	}
-	if err := adapter.HydrateMetadata(ctx, input); err == nil {
-		t.Fatal("hydration with a failing merge succeeded")
-	}
-	if open, err := st.MediaLackingFieldInLibrary(ctx, lib.ID, store.MediaClassAudio, testHydrationMarkerField); err != nil {
+	}); err != nil {
 		t.Fatal(err)
-	} else if _, ok := open[three]; !ok {
-		t.Fatalf("after failed merge unmarked Media = %v; want %s left for the next scan", open, three)
-	}
-	if err := adapter.HydrateMetadata(ctx, input); err != nil {
-		t.Fatalf("retry: %v", err)
 	}
 	artists, albums := entities("artist"), entities("album")
-	if len(artists) != 1 || artists[0].Title != "First Band" {
-		t.Fatalf("parents = %+v, want one \"First Band\"", artists)
+	if len(artists) != 1 || artists[0].ID != oldArtists[0].ID || artists[0].Title != "first.band" {
+		t.Fatalf("parents = %+v, want the established %+v", artists, oldArtists[0])
 	}
-	if len(albums) != 1 {
-		t.Fatalf("children = %+v, want one", albums)
+	if len(albums) != 1 || albums[0].ID != oldAlbums[0].ID {
+		t.Fatalf("children = %+v, want the established %+v", albums, oldAlbums[0])
 	}
 	if members, err := st.MediaForEntity(ctx, albums[0].ID, all); err != nil || len(members) != 3 {
 		t.Fatalf("child members = %d, %v; want all three Media", len(members), err)
 	}
-	if targets, _, err := st.EntityRelationTargets(ctx, lib.ID, albums[0].ID, "album-artist"); err != nil || len(targets) != 1 || targets[0] != artists[0].ID {
-		t.Fatalf("child scope = %v, %v; want %s", targets, err, artists[0].ID)
-	}
 	if state, err := st.ItemStateFor(ctx, profile, store.ItemTarget{EntityID: artists[0].ID}, all); err != nil || state.Rating != 7 {
-		t.Fatalf("parent state = %+v, %v; want the old rating 7", state, err)
+		t.Fatalf("parent state = %+v, %v; want the rating 7 kept", state, err)
 	}
-	if len(recorder.batches) != 2 {
-		t.Fatalf("merge batches = %d, want the parent and the child", len(recorder.batches))
+	if len(recorder.batches) != 0 {
+		t.Fatalf("merge batches = %+v, want none", recorder.batches)
 	}
-	for i := len(recorder.batches) - 1; i >= 0; i-- {
-		if _, err := st.UndoBatch(ctx, recorder.batches[i].ID, all, time.Now().UTC()); err != nil {
-			t.Fatalf("undo merge: %v", err)
+	if merges := titleFoldMerges(t, st); len(merges) != 0 {
+		t.Fatalf("title-fold merge activity = %+v, want none", merges)
+	}
+}
+
+// titleFoldMerges lists the title-fold merge activity entries, newest first.
+func titleFoldMerges(t *testing.T, st *store.Store) []store.ActivityEntry {
+	t.Helper()
+	entries, err := st.ActivityEntries(context.Background(), store.ActivityQuery{
+		Filter: store.LibraryFilter{AllLibraries: true, Revealed: true}, Limit: 500,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []store.ActivityEntry
+	for _, entry := range entries {
+		if entry.Action == store.ActivityEntityTitleFoldMerge {
+			out = append(out, entry)
 		}
 	}
-	if members, err := st.MediaForEntity(ctx, oldAlbums[0].ID, all); err != nil || len(members) != 2 {
-		t.Fatalf("after undo the old child has %d members, %v; want its two Media back", len(members), err)
-	}
-	if members, err := st.MediaForEntity(ctx, albums[0].ID, all); err != nil || len(members) != 1 || members[0].ID != three {
-		t.Fatalf("after undo the new child has %v, %v; want the new Media kept", members, err)
-	}
+	return out
 }
 
 // TestTitleFoldRescanMergesVariantsThatKeepTheirSpelling pins CORE-2459's

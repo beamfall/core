@@ -16,11 +16,16 @@ art and metadata split across them. Ted Lasso and Police Suspect No 1 split the 
   trailing year or id tags stripped) when that folder's name folds equal to the parsed title;
   otherwise it keeps the parsed title.
 - A mapper may declare title-fold kinds (`HydrationTitleFoldMapper`). For those kinds, hydration
-  merges Entities whose titles differ only in case, spacing or punctuation through the existing
-  recoverable entity merge, after copying ratings, watchlist entries and tags to the survivor.
-  It merges a Media's previous holder into its new one, merges every live fold-equal variant
-  into the Entity a hydration names (checked once per Entity per process), and sends a file
-  still spelling a merged-away title to the survivor.
+  treats Entities whose titles differ only in case, spacing or punctuation as one item. A file
+  naming any spelling joins the established variant (the oldest live one), which keeps its ID,
+  spelling, artwork and item state. Newer variants merge into it through the existing recoverable
+  entity merge, after copying ratings, watchlist entries and tags to it; a parent merges before
+  its children, and each merge is recorded in activity history (`entity.title_fold_merge`, no
+  actor, target the merge batch) so it can be found and undone.
+- The variant lookup reads a per-Library, per-kind index of folded titles that the Store builds
+  once and keeps current (rows UpsertEntity writes, rows added past the highest rowid it has
+  seen), checking each candidate against its row; a scoped lookup seeks the relation index. A
+  scan's lookups therefore cost one pass over the kind, not one per hydration.
 - A one-time startup repair per plugin and kind reopens the Media of fold-equal Entities and
   queues the backfill scan, so libraries hydrated before the fix are merged by the next scan.
 
@@ -40,16 +45,19 @@ art and metadata split across them. Ted Lasso and Police Suspect No 1 split the 
 
 - Mapper test with the Gangs of London folder shape (Season 1 dotted lower-case names, Season 02,
   Season 3) producing one series.
-- Hydration tests: rescan merge with item state kept, failed-merge retry, undo restoring Media
-  membership, a new spelling absorbing the only existing variant, and encrypted Libraries left
+- Hydration tests: rescan merge into the established variant with its ID and item state kept,
+  failed-merge retry, merge activity entries undone newest first restoring Media membership, a
+  new spelling joining the established variant without a merge, and encrypted Libraries left
   alone.
+- Store tests: the variant index sees upserts, rows written past the Store, renames, trash and
+  restore; its catch-up and scoped queries seek the rowid range and the relation index.
 - Tower check: Gangs of London, Ted Lasso and Police Suspect No 1 each listed once.
 
 ## Rollback
 
 Revert the change. Merges already made can be undone per merge batch from the activity log, and
-merged-away Entities can be restored from trash. No migration is added; the repair records its run
-in `server_config`.
+merged-away Entities can be restored from trash. No migration is added: the variant index lives in
+memory, and the repair records its run in `server_config`.
 
 ## Capabilities
 

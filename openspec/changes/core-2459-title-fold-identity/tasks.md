@@ -2,6 +2,7 @@
 - [x] Title-fold mapper interface, hydration merges, redirect of merged-away titles
 - [x] One-time startup repair for fold-equal Entities
 - [x] Tests: mapper folder shape, rescan merge, retry, undo, new spelling, encrypted Library
+- [x] Established variant survives; merge activity entries; indexed variant lookup (review round 2)
 - [x] Codex review of the exact head
 - [ ] Tower check of the TV Shows view
 - [ ] Gate receipt via `corvint-tasks gate run` (make gate)

@@ -16,25 +16,52 @@ the title parsed from the file name, and SHALL keep the parsed title when no fol
 
 For a kind a mapper declares as title-fold, hydration SHALL treat Entities of the kind in one
 Library whose titles fold equal (letters and digits only, lower case), and for a scoped kind share
-the scope Entity, as one item. It SHALL merge them through the recoverable entity merge after
-copying ratings, watchlist entries and tags to the surviving Entity, and SHALL send a file still
-spelling a merged-away title to the surviving Entity.
+the scope Entity, as one item, and SHALL merge newer variants into the oldest live one through the
+recoverable entity merge, copying ratings, watchlist entries and tags to it first, a parent kind
+before its children.
 
 #### Scenario: Rescan of a split library
 
 - **WHEN** the Media of two fold-equal Entities are hydrated again under one spelling
-- **THEN** one Entity holds them all and keeps the ratings recorded against either, and the other
-  is in trash
+- **THEN** the oldest Entity holds them all, keeps its ID and the ratings recorded against either,
+  the other is in trash, and activity history lists the merge batch
+
+#### Scenario: Undo a merge
+
+- **WHEN** the batches of title-variant merges listed in activity history are undone, newest first
+- **THEN** each Entity holds the Media it held before the merges
+
+### Requirement: The established title variant keeps its identity
+
+For a title-fold kind, the oldest live variant SHALL keep its ID and title, and hydration SHALL
+add a file naming any fold-equal variant to it.
 
 #### Scenario: A new spelling of an existing item
 
 - **WHEN** a file spells an existing Entity's title differently but fold-equal
-- **THEN** the existing Entity merges into the Entity the file names, with its Media
+- **THEN** the file joins the existing Entity, which keeps its ID and title, and nothing is merged
 
-#### Scenario: Undo a merge
+### Requirement: Automatic title-variant merges are recorded in activity history
 
-- **WHEN** a title-variant merge is undone
-- **THEN** each Entity holds the Media it held before the merge, including a newly hydrated one
+Hydration SHALL record each title-variant merge it makes in activity history as
+`entity.title_fold_merge`, with no actor, the Library, and the merge batch as its target.
+
+#### Scenario: A scan merges a parent and its child
+
+- **WHEN** a scan merges a newer parent variant and its child into the established ones
+- **THEN** activity history lists two `entity.title_fold_merge` entries, the child's newest, each
+  naming the batch that undoes it
+
+### Requirement: The title-variant lookup does not reread the kind
+
+Finding the live title variants of an Entity SHALL NOT read every Entity of its kind in the Library
+on each hydration: an unscoped lookup SHALL use an index of folded titles kept current with
+written rows and checked against them, and a scoped lookup SHALL read only the scope's members.
+
+#### Scenario: Many hydrations in one scan
+
+- **WHEN** a scan hydrates many Media of one Library
+- **THEN** the variant lookups read the kind once and afterwards only rows added since
 
 ### Requirement: A failed title-variant merge is retried
 
