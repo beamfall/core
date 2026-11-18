@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { SearchResultItem } from "@/lib/graphql/types";
 import type { StringKey } from "@/strings";
-import { groupSearchRows, SEARCH_RESULT_CAP, searchCountLabel } from "./searchRows";
+import {
+  groupSearchRows,
+  nestUnderContainers,
+  SEARCH_RESULT_CAP,
+  searchCountLabel,
+} from "./searchRows";
 
 const t = (key: StringKey) => key;
 
@@ -46,5 +51,36 @@ describe("searchCountLabel", () => {
     expect(searchCountLabel(label, SEARCH_RESULT_CAP, "dune")).toBe(
       `searchResultCountCapped:${SEARCH_RESULT_CAP}`,
     );
+  });
+});
+
+describe("nestUnderContainers (CORE-2525)", () => {
+  function media(id: string, title: string, container?: string): SearchResultItem {
+    return {
+      id,
+      kind: "media",
+      title,
+      mode: "keyword",
+      score: 0,
+      mediaClass: "video",
+      container: container ? { id: container, title: container } : undefined,
+    };
+  }
+
+  it("folds rows found through a container that is itself a result", () => {
+    const show = { ...entity("show", "Series"), title: "Harbour" };
+    const { rows, nested } = nestUnderContainers(
+      [
+        show,
+        media("e1", "Arrival", "show"),
+        media("e2", "Harbour Lights", "show"),
+        media("e3", "Departure", "show"),
+        media("x1", "Return", "other"),
+        media("f1", "Harbour Notes"),
+      ],
+      "harbour",
+    );
+    expect(rows.map((row) => row.id)).toEqual(["show", "e2", "x1", "f1"]);
+    expect(nested.get("show")?.map((row) => row.id)).toEqual(["e1", "e3"]);
   });
 });

@@ -55,3 +55,31 @@ func TestMediaRatingFromPrecedenceAndRange(t *testing.T) {
 		t.Fatalf("MediaRatingFrom = %q, %v; want TV-MA and 6.4", cert, score)
 	}
 }
+
+// TestMediaRatingFromDropsZeroAndVotelessScores covers CORE-2524: a zero
+// score, and a score whose stored vote count is zero, are no score; a score
+// stored without any vote count is kept.
+func TestMediaRatingFromDropsZeroAndVotelessScores(t *testing.T) {
+	score := func(fields ...MediaField) *float64 {
+		_, got, _ := MediaRatingFrom(fields)
+		return got
+	}
+	rating := func(v float64) MediaField {
+		return MediaField{Name: "community-rating", Type: EntityFieldNumber, Number: v}
+	}
+	votes := func(v float64) MediaField {
+		return MediaField{Name: "community-rating-votes", Type: EntityFieldNumber, Number: v}
+	}
+	if got := score(rating(0)); got != nil {
+		t.Fatalf("zero score = %v, want none", *got)
+	}
+	if got := score(rating(7.5), votes(0)); got != nil {
+		t.Fatalf("score with zero votes = %v, want none", *got)
+	}
+	if got := score(rating(7.5)); got == nil || *got != 7.5 {
+		t.Fatalf("score without a vote count = %v, want 7.5", got)
+	}
+	if got := score(rating(7.5), votes(12)); got == nil || *got != 7.5 {
+		t.Fatalf("voted score = %v, want 7.5", got)
+	}
+}

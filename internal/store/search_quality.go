@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"sort"
 	"strings"
 	"unicode"
@@ -10,6 +11,12 @@ import (
 )
 
 const fuzzySearchScanLimit = 5000
+
+// SearchCandidateLimit asks a search for every hit it scores, uncut. Each
+// scan the union draws on is still bounded by fuzzySearchScanLimit. A caller
+// that reorders hits asks for this many and cuts after its own ordering, so
+// no scored hit is dropped before it (CORE-2525).
+const SearchCandidateLimit = math.MaxInt32
 
 type rankedSourceItem struct {
 	item  SourceItem

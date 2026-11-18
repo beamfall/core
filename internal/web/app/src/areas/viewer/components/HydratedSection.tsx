@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import type { FieldFilters, Section, SourceItem } from "@/lib/graphql/types";
+import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import {
   clearViewerCache,
@@ -10,6 +11,7 @@ import {
   writeViewerCache,
 } from "@/lib/viewerCache";
 import { useEngagementEpoch } from "../actions/engagementSync";
+import { groupByContainer, groupsNewByContainer } from "../lib/containerGroups";
 import { fetchSectionItems } from "../lib/sections";
 import { Hero } from "./Hero";
 import { SectionView, type SeeAllTarget } from "./SectionView";
@@ -81,6 +83,7 @@ export function HydratedSection({
   navigationID?: string;
 }) {
   const identity = useViewerIdentity();
+  const t = useT();
   // Watched, watchlist and rating changes (here or on another client) revalidate
   // the section behind the items already shown.
   const engagementEpoch = useEngagementEpoch();
@@ -139,17 +142,33 @@ export function HydratedSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, section, cacheKey, engagementEpoch]);
 
-  if (items === null) {
+  // Newly added items fold under their container (CORE-2524); a container's own
+  // page lists its items as they are.
+  const shown = useMemo(
+    () =>
+      items && !entityID && groupsNewByContainer(section)
+        ? groupByContainer(items, (count) => t("cardNewCount", { count }))
+        : items,
+    [items, entityID, section, t],
+  );
+
+  if (shown === null) {
     return <SectionSkeleton hero={section.kind === "hero"} />;
   }
-  if (!items.length) {
+  if (!shown.length) {
     return null; // empty sections are hidden (ADR-0014)
   }
   if (section.kind === "hero") {
-    return <Hero section={section} item={items[0]} navigationID={navigationID} />;
+    return <Hero section={section} item={shown[0]} navigationID={navigationID} />;
   }
   return (
-    <SectionView section={section} items={items} seeAll={seeAll} navigationID={navigationID} />
+    <SectionView
+      section={section}
+      items={shown}
+      seeAll={seeAll}
+      navigationID={navigationID}
+      nameContainer={!entityID}
+    />
   );
 }
 

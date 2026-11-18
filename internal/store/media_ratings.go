@@ -50,16 +50,29 @@ func MediaRatingFrom(fields []MediaField) (certification string, score *float64,
 	if certification == "" {
 		certification = fallback
 	}
-	score = audienceScore(raw)
+	score = votedAudienceScore(raw, rawVotes)
 	return certification, score, audienceScoreVotes(score, rawVotes)
 }
 
+// audienceScore is a stored 0-10 audience score. Zero is no score: no
+// provider rates a title 0.0, and a stored zero is a provider's placeholder
+// for "unrated" (CORE-2524).
 func audienceScore(raw sql.NullFloat64) *float64 {
-	if !raw.Valid || raw.Float64 < 0 || raw.Float64 > audienceScoreMax {
+	if !raw.Valid || raw.Float64 <= 0 || raw.Float64 > audienceScoreMax {
 		return nil
 	}
 	score := raw.Float64
 	return &score
+}
+
+// votedAudienceScore is audienceScore, dropped when a vote count is stored
+// and is zero: a score nobody voted for is no score (CORE-2524). A score
+// stored without any vote count is kept.
+func votedAudienceScore(raw, votes sql.NullFloat64) *float64 {
+	if votes.Valid && votes.Float64 < 1 {
+		return nil
+	}
+	return audienceScore(raw)
 }
 
 // audienceScoreVotes is the vote count behind a usable score; zero when there

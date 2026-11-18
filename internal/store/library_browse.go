@@ -452,17 +452,31 @@ func libraryBrowseReleaseDates(ctx context.Context, reader *sql.DB, visible []Li
 	return nil
 }
 
-// libraryBrowseAudienceScores attaches each candidate's 0-10 audience score;
-// a value off that scale is no score.
+// libraryBrowseAudienceScores attaches each candidate's 0-10 audience score
+// by the rule cards use: a value off that scale, a zero, or a score
+// with a stored zero vote count is no score (CORE-2524).
 func libraryBrowseAudienceScores(ctx context.Context, reader *sql.DB, visible []LibraryID, candidates []libraryBrowseCandidate) error {
-	byMedia := map[MediaID]int64{}
-	err := libraryBrowseFieldRows(ctx, reader, "media_field_real", "value", audienceScoreField, visible, func(rows *sql.Rows) error {
+	votes := map[MediaID]sql.NullFloat64{}
+	err := libraryBrowseFieldRows(ctx, reader, "media_field_real", "value", audienceScoreVotesField, visible, func(rows *sql.Rows) error {
 		var id MediaID
 		var raw sql.NullFloat64
 		if err := rows.Scan(&id, &raw); err != nil {
 			return err
 		}
-		if score := audienceScore(raw); score != nil {
+		votes[id] = raw
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	byMedia := map[MediaID]int64{}
+	err = libraryBrowseFieldRows(ctx, reader, "media_field_real", "value", audienceScoreField, visible, func(rows *sql.Rows) error {
+		var id MediaID
+		var raw sql.NullFloat64
+		if err := rows.Scan(&id, &raw); err != nil {
+			return err
+		}
+		if score := votedAudienceScore(raw, votes[id]); score != nil {
 			byMedia[id] = int64(math.Round(*score*100)) + 1
 		}
 		return nil

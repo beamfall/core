@@ -12,9 +12,9 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
-// maxContainerDepth bounds the container chain walk: a plugin's container
+// MaxContainerDepth bounds the container chain walk: a plugin's container
 // kinds nest a few levels, and a relation cycle must not loop.
-const maxContainerDepth = 8
+const MaxContainerDepth = 8
 
 // containerArchetype is the EntityKind archetype of a kind that groups Media.
 const containerArchetype = "container"
@@ -66,14 +66,14 @@ func (s *Service) ContainerEntitiesForMedia(ctx context.Context, mediaID store.M
 	if !ok {
 		return nil, nil
 	}
-	relations := containerRelations(bundle)
+	relations := ContainerRelations(bundle)
 	holders, err := containers.MediaHolderLinks(ctx, library, mediaID)
 	if err != nil {
 		return nil, err
 	}
 	var chain []ContainerEntity
 	for _, link := range holders {
-		if relations.holds(link.Kind, link.Relation) {
+		if relations.Holds(link.Kind, link.Relation) {
 			chain = append(chain, ContainerEntity{ID: link.EntityID, Kind: link.Kind})
 			break
 		}
@@ -82,7 +82,7 @@ func (s *Service) ContainerEntitiesForMedia(ctx context.Context, mediaID store.M
 		return nil, nil
 	}
 	seen := map[store.EntityID]bool{chain[0].ID: true}
-	for len(chain) < maxContainerDepth {
+	for len(chain) < MaxContainerDepth {
 		current := &chain[len(chain)-1]
 		targets, err := containers.EntityTargetLinks(ctx, library, current.ID)
 		if err != nil {
@@ -90,7 +90,7 @@ func (s *Service) ContainerEntitiesForMedia(ctx context.Context, mediaID store.M
 		}
 		var next *store.EntityLink
 		for i, link := range targets {
-			if !seen[link.EntityID] && relations.nests(current.Kind, link.Relation, link.Kind) {
+			if !seen[link.EntityID] && relations.Nests(current.Kind, link.Relation, link.Kind) {
 				next = &targets[i]
 				break
 			}
@@ -107,8 +107,8 @@ func (s *Service) ContainerEntitiesForMedia(ctx context.Context, mediaID store.M
 	return chain, nil
 }
 
-// containerRelationIndex is a bundle's container relations by source kind.
-type containerRelationIndex struct {
+// ContainerRelationIndex is a bundle's container relations by source kind.
+type ContainerRelationIndex struct {
 	// holders: kind\x00relation for a container kind's single-holder Media
 	// relations.
 	holders map[string]bool
@@ -117,14 +117,12 @@ type containerRelationIndex struct {
 	nesting map[string]string
 }
 
-func containerRelations(bundle plugin.Bundle) containerRelationIndex {
-	containerKinds := map[string]bool{}
-	for _, kind := range bundle.EntityKinds {
-		if kind.Archetype == containerArchetype {
-			containerKinds[kind.Name] = true
-		}
-	}
-	index := containerRelationIndex{holders: map[string]bool{}, nesting: map[string]string{}}
+// ContainerRelations indexes a bundle's container relations: each container
+// kind's single-holder Media relations and its relations to another container
+// kind.
+func ContainerRelations(bundle plugin.Bundle) ContainerRelationIndex {
+	containerKinds := containerKindNames(bundle)
+	index := ContainerRelationIndex{holders: map[string]bool{}, nesting: map[string]string{}}
 	for _, kind := range bundle.EntityKinds {
 		if !containerKinds[kind.Name] {
 			continue
@@ -142,12 +140,50 @@ func containerRelations(bundle plugin.Bundle) containerRelationIndex {
 	return index
 }
 
-func (i containerRelationIndex) holds(kind, relation string) bool {
+// Holds reports whether relation is a single-holder Media relation of the
+// container kind.
+func (i ContainerRelationIndex) Holds(kind, relation string) bool {
 	return i.holders[kind+"\x00"+relation]
 }
 
-func (i containerRelationIndex) nests(kind, relation, targetKind string) bool {
+// Nests reports whether relation leads from the container kind to the
+// container targetKind.
+func (i ContainerRelationIndex) Nests(kind, relation, targetKind string) bool {
 	return i.nesting[kind+"\x00"+relation] == targetKind
+}
+
+// OutermostContainerKinds names the container kinds a container chain ends
+// at: kinds that declare no relation to another container kind yet hold Media
+// themselves or are nested into by another container kind. A container kind
+// outside every chain is not one.
+func OutermostContainerKinds(bundle plugin.Bundle) map[string]bool {
+	index := ContainerRelations(bundle)
+	inChain := map[string]bool{}
+	nests := map[string]bool{}
+	for key := range index.holders {
+		inChain[strings.SplitN(key, "\x00", 2)[0]] = true
+	}
+	for key, target := range index.nesting {
+		nests[strings.SplitN(key, "\x00", 2)[0]] = true
+		inChain[target] = true
+	}
+	outermost := map[string]bool{}
+	for kind := range inChain {
+		if !nests[kind] {
+			outermost[kind] = true
+		}
+	}
+	return outermost
+}
+
+func containerKindNames(bundle plugin.Bundle) map[string]bool {
+	names := map[string]bool{}
+	for _, kind := range bundle.EntityKinds {
+		if kind.Archetype == containerArchetype {
+			names[kind.Name] = true
+		}
+	}
+	return names
 }
 
 // applyContainerEntities hydrates the existing container Entities a lookup's

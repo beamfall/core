@@ -255,3 +255,33 @@ func TestLibraryBrowseReleaseScorePlaysSorts(t *testing.T) {
 		}
 	}
 }
+
+// TestLibraryBrowseAudienceScoreSortSkipsUnvotedScores pins CORE-2524: the
+// audience-score sort uses the rule cards show a score by, so a score with a
+// stored zero vote count sorts as no score rather than above a voted one.
+func TestLibraryBrowseAudienceScoreSortSkipsUnvotedScores(t *testing.T) {
+	st, base, media := libraryEntityBrowseFixture(t)
+	ctx := context.Background()
+	for name, fields := range map[string][]MediaField{
+		"a": {{Name: "community-rating", Type: EntityFieldNumber, Number: 8}, {Name: "community-rating-votes", Type: EntityFieldNumber, Number: 3}},
+		"c": {{Name: "community-rating", Type: EntityFieldNumber, Number: 9.9}, {Name: "community-rating-votes", Type: EntityFieldNumber, Number: 0}},
+	} {
+		if err := st.UpsertMediaFields(ctx, media[name], fields); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := st.LibraryBrowse(ctx, LibraryFilter{AllLibraries: true}, LibraryBrowseQuery{
+		LibraryID: base.LibraryID, ProfileID: base.Browse.ProfileID, Sort: LibraryBrowseSortAudienceScore, Descending: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) == 0 || got.Items[0].Title != "a" {
+		t.Fatalf("audience-score sort leads with %v, want the voted a", got.Items)
+	}
+	for _, item := range got.Items {
+		if item.Title == "c" && item.AudienceScore != nil {
+			t.Fatalf("c carries score %v with zero votes", *item.AudienceScore)
+		}
+	}
+}

@@ -167,6 +167,19 @@ export interface SourceItem {
   index?: number;
   /** A Media item's stored runtime, for a list row (CORE-2386). */
   durationSeconds?: number;
+  /**
+   * The outermost container Entity holding a Media item, so a card can name
+   * what it belongs to and siblings can group under it (CORE-2524); absent
+   * for entities and for Media no container holds.
+   */
+  container?: SourceItemContainer;
+}
+
+/** The container Entity a Media item belongs to (graph.SourceItemContainer). */
+export interface SourceItemContainer {
+  id: string;
+  title: string;
+  artwork?: SourceItemArtwork;
 }
 
 /**
