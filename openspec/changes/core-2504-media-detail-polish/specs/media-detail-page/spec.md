@@ -6,7 +6,8 @@ Under the title the page SHALL show a row of facts: the year, the runtime when t
 carried a duration of at least a minute, the content rating, the community score, and the item's
 category-archetype credits. Category credits SHALL be grouped by kind in credit order; the row
 SHALL show the first two kinds, at most two distinct credits of each, followed by a "+N" chip
-counting that kind's remaining credits. Each category chip with an entity id SHALL be a
+counting that kind's remaining credits. Category credits of one kind are distinct by title: a name
+that reads the same shows once. Each category chip with an entity id SHALL be a
 keyboard-focusable link to that Entity's page whose accessible name is the credit's title. Unknown
 facts SHALL be omitted.
 
@@ -53,8 +54,9 @@ another reason, the page SHALL show an error with a retry control.
 ### Requirement: Details lists the item's credits
 
 The Details section SHALL list each category kind, labelled with the kind's display name, with every
-distinct credit linked to its Entity page, then person credits carrying a `job` attribute grouped
-under the attribute's value and linked, then the viewer-facing fields. Empty rows SHALL be omitted.
+distinct credit (by title, as in the facts row) linked to its Entity page, then person credits
+carrying a `job` attribute grouped under the attribute's value and linked, each person once by entity
+id so two people sharing a name both appear, then the viewer-facing fields. Empty rows SHALL be omitted.
 
 #### Scenario: Film credits
 
