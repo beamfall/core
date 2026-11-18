@@ -7,8 +7,9 @@
 --   1 = the parser's output, independent of the media probe: refreshed by
 --       every rescan parse.
 --   2 = an older scan-tier class, written before this marker: the next
---       rescan re-reads it with a fresh probe, claims it when the parse emits
---       a class and otherwise disowns it, never removing it. Other older
+--       rescan re-reads it with a fresh probe and replaces it, or removes it
+--       when the parse emits no class (only the parser and image local
+--       metadata, re-applied every scan, write a scan-tier class). Other older
 --       scan-tier fields stay 0, since hydration writes at that tier too.
 --   3 = the parser's output that depends on the media probe: refreshed only
 --       by a parse that saw a real probe.

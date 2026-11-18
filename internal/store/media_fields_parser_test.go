@@ -138,13 +138,10 @@ func TestRefreshParserMediaFieldsHoldsProbeAndLegacyFieldsUntilAuthoritative(t *
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// The probed parse does not emit the legacy sequence, which hydration may
-	// have written: it is disowned, not removed. Class is probe-dependent.
-	if got := parserFieldsByName(t, st, id)["sequence"].Number; got != 3 {
-		t.Fatalf("legacy sequence = %v, want 3 kept", got)
-	}
-	if got := parserMarker(t, st, id, "sequence"); got != parserOwnedNone {
-		t.Fatalf("unemitted legacy sequence marker = %d, want disowned", got)
+	// The probed parse does not emit the legacy sequence, so it is removed.
+	// Class is probe-dependent.
+	if field, ok := parserFieldsByName(t, st, id)["sequence"]; ok {
+		t.Fatalf("unemitted legacy sequence survived an authoritative parse: %#v", field)
 	}
 	if got := parserMarker(t, st, id, "class"); got != parserOwnedProbe {
 		t.Fatalf("class marker = %d, want %d", got, parserOwnedProbe)
@@ -202,5 +199,36 @@ func TestRefreshParserMediaFieldsClaimsLegacyFieldOnAuthoritativeParse(t *testin
 	}
 	if got := parserMarker(t, st, id, "class"); got != parserOwnedStable {
 		t.Fatalf("claimed class marker = %d, want %d", got, parserOwnedStable)
+	}
+}
+
+// TestRefreshParserMediaFieldsRemovesLegacyClassOnAuthoritativeParse: a
+// pre-marker movie class goes when a probed parse no longer emits a class,
+// so a rescan takes an extra out of the movies (CORE-2554).
+func TestRefreshParserMediaFieldsRemovesLegacyClassOnAuthoritativeParse(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	const id MediaID = "media-alpha"
+	if err := st.UpsertMediaFields(ctx, id, []MediaField{{Name: "class", Type: EntityFieldText, Text: "movie"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.catalogW.ExecContext(ctx,
+		"UPDATE media_field_provenance SET parser_owned = ? WHERE media_id = ? AND field = 'class'", parserOwnedLegacy, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RefreshParserMediaFields(ctx, id, ParserFieldRefresh{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := parserFieldsByName(t, st, id)["class"].Text; got != "movie" {
+		t.Fatalf("unprobed parse class = %q, want legacy movie kept", got)
+	}
+	if err := st.RefreshParserMediaFields(ctx, id, ParserFieldRefresh{Authoritative: true}); err != nil {
+		t.Fatal(err)
+	}
+	if field, ok := parserFieldsByName(t, st, id)["class"]; ok {
+		t.Fatalf("legacy class survived an authoritative parse with no class: %#v", field)
+	}
+	if source, err := st.MediaFieldProvenance(ctx, id, "class"); err != nil || source != "" {
+		t.Fatalf("removed class provenance = %q (%v), want none", source, err)
 	}
 }
