@@ -11,6 +11,7 @@ const made = vi.hoisted(() => ({
     prepare: ReturnType<typeof vi.fn>;
     draw: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
+    contextLost: boolean;
   }[],
   fail: false,
   // When set, the next create waits on it, as a create still compiling when the context goes.
@@ -31,6 +32,7 @@ vi.mock("./renderer", () => ({
         prepare: vi.fn(() => Promise.resolve()),
         draw: vi.fn(),
         dispose: vi.fn(),
+        contextLost: false,
       };
       made.renderers.push(r);
       return r;
@@ -40,6 +42,7 @@ vi.mock("./renderer", () => ({
 
 const direct = { kind: "direct-play", url: "/api/media/m1/stream" };
 let pending: Set<number>;
+let callbacks: Map<number, FrameRequestCallback>;
 let nextFrame: number;
 
 beforeEach(() => {
@@ -47,11 +50,13 @@ beforeEach(() => {
   made.fail = false;
   made.gate = null;
   pending = new Set();
+  callbacks = new Map();
   nextFrame = 0;
   vi.stubGlobal("WebGL2RenderingContext", class {});
   vi.stubGlobal("OfflineAudioContext", class {});
-  vi.stubGlobal("requestAnimationFrame", () => {
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
     pending.add(++nextFrame);
+    callbacks.set(nextFrame, cb);
     return nextFrame;
   });
   vi.stubGlobal("cancelAnimationFrame", (id: number) => pending.delete(id));
@@ -129,6 +134,25 @@ describe("Visualizer context loss (CORE-2482)", () => {
     await waitFor(() => expect(pending.size).toBe(1));
     await act(async () => reject(new Error("shader import failed")));
     expect(made.renderers).toHaveLength(2);
+    expect(canvas.isConnected).toBe(true);
+  });
+
+  it("waits for the loss event when a draw throws on a context already lost", async () => {
+    const { canvas, videoRef } = mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    (videoRef as { current: HTMLVideoElement | null }).current = document.createElement("video");
+    const first = made.renderers[0];
+    first.contextLost = true;
+    first.draw.mockImplementation(() => {
+      throw new Error("FRAMEBUFFER_UNSUPPORTED");
+    });
+    const [id] = pending;
+    act(() => callbacks.get(id)?.(16));
+    expect(first.draw).toHaveBeenCalled();
+    expect(canvas.isConnected).toBe(true);
+    act(() => void canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true })));
+    act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
+    await waitFor(() => expect(made.renderers).toHaveLength(2));
     expect(canvas.isConnected).toBe(true);
   });
 

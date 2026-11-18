@@ -245,6 +245,11 @@ export class Renderer {
   private clockMs = 0;
   private presented = 0;
 
+  /** Whether the GL context is lost, which a draw can hit before the loss event arrives (CORE-2482). */
+  get contextLost(): boolean {
+    return this.gl.isContextLost();
+  }
+
   /** The feedback and history format in use, for diagnostics (CORE-2481). */
   get feedbackLabel(): FeedbackLabel {
     return this.feedbackFormat.label;

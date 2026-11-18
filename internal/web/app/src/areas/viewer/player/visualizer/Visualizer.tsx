@@ -192,9 +192,9 @@ export function Visualizer({
       renderer
         .use(next)
         .then(() => queueUpcoming(renderer, r, next))
-        // A renderer replaced after a context loss may still reject; only the live one fails.
+        // A renderer replaced or lost after a context loss may still reject; only the live one fails.
         .catch((err: unknown) => {
-          if (rendererRef.current === renderer) fail(err);
+          if (rendererRef.current === renderer && !renderer.contextLost) fail(err);
         });
     };
     const tick = (now: number) => {
@@ -222,7 +222,9 @@ export function Visualizer({
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {
         cancelAnimationFrame(frame);
-        fail(err);
+        // A context lost mid-frame throws before its webglcontextlost event arrives; the loss and
+        // restore handlers recover it, so only a live context fails the visualizer.
+        if (!renderer.contextLost) fail(err);
       }
     };
     // Builds the renderer and starts drawing. It runs again after a lost context is restored,
@@ -309,8 +311,8 @@ export function Visualizer({
       ?.use(visual)
       .then(() => queueUpcoming(renderer, rotation, visual))
       .catch((err) => {
-        // Ignore a switch on a renderer that a context loss has since replaced.
-        if (rendererRef.current !== renderer) return;
+        // Ignore a switch on a renderer that a context loss has since replaced or is replacing.
+        if (rendererRef.current !== renderer || renderer.contextLost) return;
         console.warn("visualizer: off", err);
         setFailed(true);
       });
