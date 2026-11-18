@@ -68,6 +68,11 @@ FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2
 ARG TARGETARCH
 COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock /tmp/
 
+# jellyfin-ffmpeg is a GPL-3.0-or-later build (CORE-2497), so the image carries
+# its corresponding source: the locked upstream release archive (FFmpeg tree,
+# debian/patches and the build scripts for every architecture), verified and
+# kept under /usr/share/beamfall/source/ffmpeg, served by GET /source/ffmpeg and
+# named in NOTICE.
 # intel-opencl-icd is Intel's OpenCL runtime, for the GPU tone-map (CORE-2156).
 # Debian ships it for amd64 only; without it the host probe keeps the software
 # chain.
@@ -77,7 +82,9 @@ RUN set -eux; \
 	FFMPEG_LINUX_AMD64_SHA256="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' /tmp/ffmpeg.lock)"; \
 	FFMPEG_LINUX_ARM64_URL="$(sed -n 's/^FFMPEG_LINUX_ARM64_URL=//p' /tmp/ffmpeg.lock)"; \
 	FFMPEG_LINUX_ARM64_SHA256="$(sed -n 's/^FFMPEG_LINUX_ARM64_SHA256=//p' /tmp/ffmpeg.lock)"; \
-	test -n "$FFMPEG_PIN_SHA256" -a -n "$FFMPEG_LINUX_AMD64_URL" -a -n "$FFMPEG_LINUX_AMD64_SHA256" -a -n "$FFMPEG_LINUX_ARM64_URL" -a -n "$FFMPEG_LINUX_ARM64_SHA256"; \
+	FFMPEG_SOURCE_URL="$(sed -n 's/^FFMPEG_SOURCE_URL=//p' /tmp/ffmpeg.lock)"; \
+	FFMPEG_SOURCE_SHA256="$(sed -n 's/^FFMPEG_SOURCE_SHA256=//p' /tmp/ffmpeg.lock)"; \
+	test -n "$FFMPEG_PIN_SHA256" -a -n "$FFMPEG_LINUX_AMD64_URL" -a -n "$FFMPEG_LINUX_AMD64_SHA256" -a -n "$FFMPEG_LINUX_ARM64_URL" -a -n "$FFMPEG_LINUX_ARM64_SHA256" -a -n "$FFMPEG_SOURCE_URL" -a -n "$FFMPEG_SOURCE_SHA256"; \
 	printf '%s  %s\n' "$FFMPEG_PIN_SHA256" /tmp/ffmpeg.pin | sha256sum -c -; \
 	apt-get update; \
 	apt-get install -y --no-install-recommends ca-certificates curl; \
@@ -105,6 +112,11 @@ RUN set -eux; \
 	set -- $(ffmpeg -version | sed -n '1p'); \
 	test "$3" = "$(cat /tmp/ffmpeg.pin)"; \
 	rm -f "/tmp/${ffmpeg_pkg}"; \
+	ffmpeg_src_dir=/usr/share/beamfall/source/ffmpeg; \
+	ffmpeg_src="jellyfin-ffmpeg-${FFMPEG_SOURCE_URL##*/}"; \
+	mkdir -p "$ffmpeg_src_dir"; \
+	curl -fsSL "$FFMPEG_SOURCE_URL" -o "${ffmpeg_src_dir}/${ffmpeg_src}"; \
+	(cd "$ffmpeg_src_dir" && printf '%s  %s\n' "$FFMPEG_SOURCE_SHA256" "$ffmpeg_src" | tee SHA256SUMS | sha256sum -c -); \
 	rm -f /tmp/ffmpeg.pin /tmp/ffmpeg.lock; \
 	apt-get clean; \
 	rm -rf /var/lib/apt/lists/*

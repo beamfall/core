@@ -459,7 +459,7 @@ func TestAppWiresRoutesAndSurfaces(t *testing.T) {
 	// (CORE-2070).
 	// This constant is rebase-hidden coupling: git keeps it as common context,
 	// so every lane that adds a route must bump it explicitly.
-	if got, want := len(beamfall.Routes()), 68; got != want {
+	if got, want := len(beamfall.Routes()), 69; got != want {
 		t.Fatalf("len(Routes) = %d, want %d", got, want)
 	}
 	if got := len(beamfall.Surfaces().All()); got < 5 {

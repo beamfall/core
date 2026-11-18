@@ -13,6 +13,19 @@ https://github.com/jellyfin/jellyfin-ffmpeg), which bundles the Fraunhofer
 FDK AAC library (libfdk-aac, under the Software License for The Fraunhofer
 FDK AAC Codec Library for Android).
 
+Written offer for the FFmpeg corresponding source (GPL-3.0 §6). The container
+image, for every architecture it ships (linux/amd64 and linux/arm64), installs
+the jellyfin-ffmpeg 7.1.4-3 release packages. Their corresponding source is
+the upstream release tag v7.1.4-3 (commit
+d4590e12452f94d40e413caecb34b08de608353b): the FFmpeg source, the Debian
+packaging, the patch series under debian/patches and the build scripts
+(build, build.yaml, docker-build.sh). The image carries that archive at
+/usr/share/beamfall/source/ffmpeg/jellyfin-ffmpeg-v7.1.4-3.tar.gz, SHA-256
+38fff90f73b3c4f9c3c7270711411a4ec3cbe63b205d4b4a5525bcc532d3d31f, and a
+running server serves it to anyone, without sign-in, at GET /source/ffmpeg.
+It is also available from
+https://github.com/jellyfin/jellyfin-ffmpeg/archive/refs/tags/v7.1.4-3.tar.gz.
+
 -------------------------------------------------------------------------------
 
 1. hashicorp/yamux (MPL-2.0)

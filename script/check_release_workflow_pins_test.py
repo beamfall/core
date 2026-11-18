@@ -50,6 +50,7 @@ class SupplyChainPolicyTests(unittest.TestCase):
         "https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3/arm64/"
         "jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb"
     )
+    source_url = "https://github.com/jellyfin/jellyfin-ffmpeg/archive/refs/tags/v7.1.4-3.tar.gz"
 
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -74,7 +75,7 @@ FROM node:22-bookworm@sha256:{node}
 FROM golang:${{GO_VERSION}}-bookworm@sha256:{go}
 FROM debian:bookworm@sha256:{debian}
 COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock /tmp/
-RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_AMD64_SHA256="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_ARM64_URL="$(sed -n 's/^FFMPEG_LINUX_ARM64_URL=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_ARM64_SHA256="$(sed -n 's/^FFMPEG_LINUX_ARM64_SHA256=//p' /tmp/ffmpeg.lock)"; case "$TARGETARCH" in amd64) ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"; ffmpeg_sha="$FFMPEG_LINUX_AMD64_SHA256";; arm64) ffmpeg_url="$FFMPEG_LINUX_ARM64_URL"; ffmpeg_sha="$FFMPEG_LINUX_ARM64_SHA256";; esac
+RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_AMD64_SHA256="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_ARM64_URL="$(sed -n 's/^FFMPEG_LINUX_ARM64_URL=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_ARM64_SHA256="$(sed -n 's/^FFMPEG_LINUX_ARM64_SHA256=//p' /tmp/ffmpeg.lock)"; FFMPEG_SOURCE_URL="$(sed -n 's/^FFMPEG_SOURCE_URL=//p' /tmp/ffmpeg.lock)"; FFMPEG_SOURCE_SHA256="$(sed -n 's/^FFMPEG_SOURCE_SHA256=//p' /tmp/ffmpeg.lock)"; curl -fsSL "$FFMPEG_SOURCE_URL" -o /tmp/src.tar.gz; printf '%s  %s\\n' "$FFMPEG_SOURCE_SHA256" /tmp/src.tar.gz | sha256sum -c -; case "$TARGETARCH" in amd64) ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"; ffmpeg_sha="$FFMPEG_LINUX_AMD64_SHA256";; arm64) ffmpeg_url="$FFMPEG_LINUX_ARM64_URL"; ffmpeg_sha="$FFMPEG_LINUX_ARM64_SHA256";; esac
 """.format(node="c" * 64, go="d" * 64, debian="e" * 64),
         )
         workflow = """jobs:
@@ -138,6 +139,8 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
         arm64_url: str | None = None,
         amd64_sha: str | None = None,
         arm64_sha: str | None = None,
+        source_url: str | None = None,
+        source_sha: str | None = None,
     ) -> None:
         pin = self.read("internal/ffmpeg/ffmpeg.pin")
         self.write(
@@ -150,6 +153,8 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
                     "FFMPEG_LINUX_AMD64_SHA256=" + (amd64_sha or "1" * 64),
                     "FFMPEG_LINUX_ARM64_URL=" + (arm64_url or self.arm64_url),
                     "FFMPEG_LINUX_ARM64_SHA256=" + (arm64_sha or "2" * 64),
+                    "FFMPEG_SOURCE_URL=" + (source_url or self.source_url),
+                    "FFMPEG_SOURCE_SHA256=" + (source_sha or "3" * 64),
                 )
             )
             + "\n",
@@ -273,6 +278,22 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
             ),
         )
         self.assert_error("does not map TARGETARCH amd64")
+
+    def test_rejects_source_archive_for_another_release(self) -> None:
+        self.write_lock(source_url=self.source_url.replace("v7.1.4-3", "v7.1.4-2"))
+        self.assert_error("FFMPEG_SOURCE_URL is release 7.1.4-2, not the locked debs' 7.1.4-3")
+
+    def test_rejects_source_archive_off_the_release_tag(self) -> None:
+        self.write_lock(source_url="https://github.com/jellyfin/jellyfin-ffmpeg/archive/refs/heads/jellyfin.tar.gz")
+        self.assert_error("FFMPEG_SOURCE_URL is not a jellyfin-ffmpeg release tag archive")
+
+    def test_rejects_malformed_source_digest(self) -> None:
+        self.write_lock(source_sha="ABC")
+        self.assert_error("FFMPEG_SOURCE_SHA256 must be a lowercase SHA-256")
+
+    def test_rejects_image_that_omits_corresponding_source(self) -> None:
+        self.write("Dockerfile", self.read("Dockerfile").replace('"$FFMPEG_SOURCE_URL"', '"$UNRELATED"'))
+        self.assert_error("does not ship the locked FFmpeg corresponding source")
 
     def test_rejects_toolchain_version_drift(self) -> None:
         self.write("Dockerfile", self.read("Dockerfile").replace("GO_VERSION=1.26.5", "GO_VERSION=1.26.4"))

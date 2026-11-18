@@ -32,6 +32,8 @@ LOCK_KEYS = {
     "FFMPEG_LINUX_AMD64_SHA256",
     "FFMPEG_LINUX_ARM64_URL",
     "FFMPEG_LINUX_ARM64_SHA256",
+    "FFMPEG_SOURCE_URL",
+    "FFMPEG_SOURCE_SHA256",
 }
 PIN_RE = re.compile(r"^(\d+\.\d+\.\d+)-Jellyfin\n$")
 LOCK_LINE_RE = re.compile(r"^([A-Z0-9_]+)=([^\s#]+)$")
@@ -44,6 +46,13 @@ FFMPEG_URL_RE = re.compile(
     r"^https://repo\.jellyfin\.org/files/ffmpeg/debian/\d+\.x/"
     r"(\d+\.\d+\.\d+-\d+)/(amd64|arm64)/"
     r"jellyfin-ffmpeg\d+_\1-bookworm_\2\.deb$"
+)
+# The GPL corresponding source for the locked debs (CORE-2497): the upstream
+# release tag's archive, which carries the FFmpeg tree, debian/patches and the
+# build scripts for every architecture.
+FFMPEG_SOURCE_URL_RE = re.compile(
+    r"^https://github\.com/jellyfin/jellyfin-ffmpeg/archive/refs/tags/"
+    r"v(\d+\.\d+\.\d+-\d+)\.tar\.gz$"
 )
 
 
@@ -179,6 +188,7 @@ def _check_ffmpeg_lock(root: Path) -> list[str]:
     elif pin_sha != hashlib.sha256(pin).hexdigest():
         errors.append(f"{lock_path}: FFMPEG_PIN_SHA256 does not match ffmpeg.pin")
 
+    deb_releases: set[str] = set()
     for arch in ("amd64", "arm64"):
         prefix = f"FFMPEG_LINUX_{arch.upper()}"
         url = lock[f"{prefix}_URL"]
@@ -191,8 +201,24 @@ def _check_ffmpeg_lock(root: Path) -> list[str]:
             errors.append(f"{lock_path}: {prefix}_URL does not match linux/{arch}")
         elif match.group(1).rsplit("-", 1)[0] != pin_version:
             errors.append(f"{lock_path}: {prefix}_URL ships FFmpeg {match.group(1)}, not ffmpeg.pin's {pin_version}")
+        if match:
+            deb_releases.add(match.group(1))
         if not SHA256_RE.fullmatch(digest):
             errors.append(f"{lock_path}: {prefix}_SHA256 must be a lowercase SHA-256")
+
+    # The image conveys GPL binaries, so it must carry their corresponding
+    # source: a deb bump that leaves the source archive behind fails here.
+    source_url = lock["FFMPEG_SOURCE_URL"]
+    source_match = FFMPEG_SOURCE_URL_RE.fullmatch(source_url)
+    if not source_match:
+        errors.append(f"{lock_path}: FFMPEG_SOURCE_URL is not a jellyfin-ffmpeg release tag archive")
+    elif deb_releases and deb_releases != {source_match.group(1)}:
+        errors.append(
+            f"{lock_path}: FFMPEG_SOURCE_URL is release {source_match.group(1)}, "
+            f"not the locked debs' {', '.join(sorted(deb_releases))}"
+        )
+    if not SHA256_RE.fullmatch(lock["FFMPEG_SOURCE_SHA256"]):
+        errors.append(f"{lock_path}: FFMPEG_SOURCE_SHA256 must be a lowercase SHA-256")
 
     consumers = [root / "Dockerfile", root / ".github/workflows/release-gate.yml"]
     coordinate_literals = [value for key, value in lock.items() if key != "FFMPEG_PIN_SHA256"]
@@ -211,6 +237,8 @@ def _check_ffmpeg_lock(root: Path) -> list[str]:
                 prefix = f"FFMPEG_LINUX_{arch.upper()}"
                 if not block or any(f"${prefix}_{field}" not in block.group(1) for field in ("URL", "SHA256")):
                     errors.append(f"{path}: does not map TARGETARCH {arch} to its locked artifact")
+            if any(f"$FFMPEG_SOURCE_{field}" not in content for field in ("URL", "SHA256")):
+                errors.append(f"{path}: does not ship the locked FFmpeg corresponding source")
         else:
             policy = content.find("python3 script/check-release-workflow-pins.py")
             use = content.find("$FFMPEG_LINUX_AMD64_URL")

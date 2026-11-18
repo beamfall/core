@@ -26,6 +26,9 @@ func TestEveryRouteRegistered(t *testing.T) {
 		// Public AGPL §13 corresponding-source offer. It redirects to the
 		// release-injected source archive and exposes no library/Reveal data.
 		"GET /source": false,
+		// Public GPL corresponding source for the image's FFmpeg build
+		// (CORE-2497): a static bundled archive, no library/Reveal data.
+		"GET /source/ffmpeg": false,
 		// Public developer API reference (CORE-1714): the embedded OpenAPI
 		// document and a page rendered from it. Static, no library/Reveal data.
 		"GET /api/docs":              false,
