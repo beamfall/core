@@ -201,6 +201,9 @@ export interface SessionInfo {
   /** The bound Profile's kind ("adult"/"managed"); wire field name `profile`. */
   profile: string;
   revealed: boolean;
+  /** Whether the bound Profile has a Restrictions PIN (CORE-2462). Absent from
+   * a server that predates the field; callers then assume a PIN is set. */
+  revealPinSet?: boolean;
 }
 
 /** A Profile row offered to the picker (graph.ProfileSummary). */
@@ -638,6 +641,12 @@ export interface LibraryPurgeResult {
 export interface LibraryPreviewClipsResult {
   id: string;
   previewClips: boolean;
+}
+
+/** The setLibraryRestricted result (CORE-2463). */
+export interface LibraryRestrictedResult {
+  id: string;
+  restricted: boolean;
 }
 
 /** The setLibraryShowOnHome result (CORE-2360). */

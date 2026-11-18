@@ -5,6 +5,7 @@
       "id": "session-revealed",
       "profile": "adult",
       "profileID": "profile-default",
+      "revealPinSet": true,
       "revealed": true,
       "subtitleMode": "off"
     },

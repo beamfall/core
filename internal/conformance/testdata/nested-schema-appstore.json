@@ -5119,6 +5119,10 @@
         "kind": "scalar"
       },
       {
+        "name": "revealPinSet",
+        "kind": "scalar"
+      },
+      {
         "name": "revealed",
         "kind": "scalar"
       },
@@ -17839,6 +17843,10 @@
     "kind": "object",
     "children": [
       {
+        "name": "revealPinSet",
+        "kind": "scalar"
+      },
+      {
         "name": "revealed",
         "kind": "scalar"
       }
@@ -19017,6 +19025,10 @@
     "field": "reveal",
     "kind": "object",
     "children": [
+      {
+        "name": "revealPinSet",
+        "kind": "scalar"
+      },
       {
         "name": "revealed",
         "kind": "scalar"
@@ -28250,6 +28262,10 @@
     "kind": "object",
     "children": [
       {
+        "name": "revealPinSet",
+        "kind": "scalar"
+      },
+      {
         "name": "revealed",
         "kind": "scalar"
       }
@@ -29623,6 +29639,10 @@
       },
       {
         "name": "profileID",
+        "kind": "scalar"
+      },
+      {
+        "name": "revealPinSet",
         "kind": "scalar"
       },
       {

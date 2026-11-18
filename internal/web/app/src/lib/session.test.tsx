@@ -178,6 +178,9 @@ function Probe() {
       <button type="button" onClick={() => void session.refresh()}>
         Refresh
       </button>
+      <button type="button" onClick={() => void session.refreshSession()}>
+        Refresh session
+      </button>
       <button type="button" onClick={() => void session.reveal("1234").catch(() => {})}>
         Reveal
       </button>
@@ -1240,5 +1243,34 @@ describe("SessionProvider identity-epoch fetch lifecycle", () => {
       await late.promise;
     });
     expect(screen.getByTestId("manifest")).toHaveTextContent("p2-current-epoch-home");
+  });
+
+  it("re-reads currentSession in place without clearing state (CORE-2463)", async () => {
+    vi.mocked(fetchCurrentSession).mockResolvedValue(p1Session);
+    const user = userEvent.setup();
+    render(
+      <SessionProvider>
+        <Probe />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home"),
+    );
+    expect(vi.mocked(fetchManifest)).toHaveBeenCalledTimes(1);
+
+    const next = deferred<SessionInfo>();
+    vi.mocked(fetchCurrentSession).mockReturnValueOnce(next.promise);
+    await user.click(screen.getByRole("button", { name: "Refresh session" }));
+    // Nothing is cleared while the re-read is in flight.
+    expect(screen.getByTestId("loading")).toHaveTextContent("false");
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home");
+    await act(async () => {
+      next.resolve({ ...p1Session, revealed: false });
+      await next.promise;
+    });
+    expect(screen.getByTestId("revealed")).toHaveTextContent("false");
+    expect(screen.getByTestId("profile")).toHaveTextContent("p1");
+    expect(screen.getByTestId("manifest")).toHaveTextContent("p1-revealed-epoch-home");
+    expect(vi.mocked(fetchManifest)).toHaveBeenCalledTimes(1);
   });
 });

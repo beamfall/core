@@ -36,6 +36,7 @@ import type {
   LibraryInfo,
   LibraryPreviewClipsResult,
   LibraryPurgeResult,
+  LibraryRestrictedResult,
   LibraryRootsResult,
   LibraryShowOnHomeResult,
   ManagedPathInfo,
@@ -104,6 +105,24 @@ export async function setLibraryPreviewClips(
     setLibraryPreviewClips: LibraryPreviewClipsResult;
   }>(SET_LIBRARY_PREVIEW_CLIPS_MUTATION, { libraryID, enabled });
   return data.setLibraryPreviewClips;
+}
+
+const SET_LIBRARY_RESTRICTED_MUTATION =
+  "mutation SetLibraryRestricted($libraryID: String!, $restricted: Boolean!) { setLibraryRestricted(libraryID: $libraryID, restricted: $restricted) { id restricted } }";
+
+/**
+ * SetLibraryRestricted — hide a Library behind the Restrictions PIN, or show it
+ * again (CORE-2463). The server needs an Admin Session and a revealed session in
+ * both directions.
+ */
+export async function setLibraryRestricted(
+  libraryID: string,
+  restricted: boolean,
+): Promise<LibraryRestrictedResult> {
+  const data = await graphql<{
+    setLibraryRestricted: LibraryRestrictedResult;
+  }>(SET_LIBRARY_RESTRICTED_MUTATION, { libraryID, restricted });
+  return data.setLibraryRestricted;
 }
 
 const SET_LIBRARY_SHOW_ON_HOME_MUTATION =

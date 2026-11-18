@@ -854,6 +854,7 @@
         "preferSDH",
         "profile",
         "profileID",
+        "revealPinSet",
         "revealed",
         "subtitleLanguages",
         "subtitleMode"
@@ -2486,6 +2487,7 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "revealPinSet",
         "revealed"
       ]
     },
@@ -2808,6 +2810,7 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "revealPinSet",
         "revealed"
       ]
     },
@@ -3645,6 +3648,7 @@
       "effect": "write",
       "tier": "session",
       "children": [
+        "revealPinSet",
         "revealed"
       ]
     },
@@ -3957,6 +3961,7 @@
         "preferSDH",
         "profile",
         "profileID",
+        "revealPinSet",
         "revealed",
         "subtitleLanguages",
         "subtitleMode"

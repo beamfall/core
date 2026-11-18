@@ -57,6 +57,7 @@ import {
   fetchWatcherStatus,
   restoreLibrary,
   setLibraryPreviewClips,
+  setLibraryRestricted,
   setLibraryRoots,
   setLibraryShowOnHome,
   setSkipDetectionEnabled,
@@ -70,6 +71,7 @@ import type {
 } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { requestManifestRefresh } from "@/lib/manifestRefresh";
+import { useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
@@ -92,6 +94,7 @@ function SettingRow({
   tip,
   setting,
   checked,
+  disabled,
   onChange,
 }: {
   label: string;
@@ -99,6 +102,7 @@ function SettingRow({
   tip?: StringKey;
   setting?: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   const id = useId();
@@ -119,6 +123,7 @@ function SettingRow({
       </span>
       <Switch
         checked={checked}
+        disabled={disabled}
         onCheckedChange={onChange}
         aria-labelledby={`${id}-label`}
         aria-describedby={`${id}-help`}
@@ -136,6 +141,7 @@ function LibraryCard({
   library,
   plugins,
   skipDetectionEnabled,
+  revealed,
   watcher,
   onChanged,
   onDeleted,
@@ -143,6 +149,8 @@ function LibraryCard({
   library: LibraryInfo;
   plugins: PluginSummary[];
   skipDetectionEnabled: boolean;
+  /** Changing a Library's restriction needs a revealed session (CORE-2463). */
+  revealed: boolean;
   watcher?: WatcherStatusInfo;
   onChanged: () => void;
   onDeleted: () => void;
@@ -266,6 +274,21 @@ function LibraryCard({
 
   async function toggleShowOnHome(enabled: boolean) {
     await setLibraryShowOnHome(library.id, enabled);
+    onChanged();
+  }
+
+  // Restricting moves the reveal boundary, so the server needs this session
+  // revealed; navigation follows the change at once (CORE-2463).
+  const [restrictedError, setRestrictedError] = useState("");
+  async function toggleRestricted(restricted: boolean) {
+    setRestrictedError("");
+    try {
+      await setLibraryRestricted(library.id, restricted);
+    } catch {
+      setRestrictedError(t("libraryRestrictedNotSaved"));
+      return;
+    }
+    requestManifestRefresh();
     onChanged();
   }
 
@@ -459,7 +482,17 @@ function LibraryCard({
                   checked={skipDetectionEnabled}
                   onChange={(c) => void toggleSkipDetection(c)}
                 />
+                <SettingRow
+                  label={t("libraryRestrictedLabel")}
+                  help={t(revealed ? "libraryRestrictedHelp" : "libraryRestrictedNeedsUnlock")}
+                  tip="libraryRestrictedTip"
+                  setting="console.libraries.restricted"
+                  checked={library.restricted}
+                  disabled={!revealed}
+                  onChange={(c) => void toggleRestricted(c)}
+                />
               </div>
+              <ErrorLine message={restrictedError} />
             </section>
           </div>
 
@@ -519,6 +552,7 @@ type LibraryNotice =
 // deleted libraries that can still be restored (CORE-1201).
 export function Libraries() {
   const t = useT();
+  const { revealed } = useSession();
   const libs = useAsync(fetchLibraries);
   const plugins = useAsync(fetchPlugins);
   const skipDetection = useAsync(fetchSkipDetectionEnabled);
@@ -707,6 +741,7 @@ export function Libraries() {
                 library={library}
                 plugins={pluginList}
                 skipDetectionEnabled={skipDetectionByLibrary.get(library.id) ?? false}
+                revealed={revealed}
                 watcher={watchers.data?.find((w) => w.libraryID === library.id)}
                 onChanged={() => {
                   void refreshLibraries();

@@ -82,11 +82,16 @@ func serverVersion() string {
 // audio/subtitle tracks deterministically (session-scoped client overrides
 // stay client-side).
 type SessionInfo struct {
-	ID                string   `json:"id"`
-	DeviceRole        string   `json:"deviceRole"`
-	ProfileID         string   `json:"profileID"`
-	Profile           string   `json:"profile"`
-	Revealed          bool     `json:"revealed"`
+	ID         string `json:"id"`
+	DeviceRole string `json:"deviceRole"`
+	ProfileID  string `json:"profileID"`
+	Profile    string `json:"profile"`
+	Revealed   bool   `json:"revealed"`
+	// RevealPinSet reports whether this session's Profile can reveal (an adult
+	// Profile with a Restrictions PIN). It never says whether restricted
+	// Libraries exist (ADR-0004); clients use it to hide a PIN prompt that
+	// cannot succeed (CORE-2462).
+	RevealPinSet      bool     `json:"revealPinSet"`
 	ExpiresAt         string   `json:"expiresAt,omitempty"`
 	AudioLanguages    []string `json:"audioLanguages,omitempty"`
 	SubtitleLanguages []string `json:"subtitleLanguages,omitempty"`
@@ -2259,13 +2264,18 @@ func (h *Handler) switchProfile(ctx context.Context, scope auth.Scope, req reque
 	if !scope.ExpiresAt.IsZero() {
 		expiresAt = scope.ExpiresAt.UTC().Format(time.RFC3339)
 	}
+	pinSet, err := h.store.ProfileRevealPINSet(ctx, profile.ID)
+	if err != nil {
+		return SessionInfo{}, err
+	}
 	return SessionInfo{
-		ID:         string(scope.SessionID),
-		DeviceRole: string(scope.DeviceRole),
-		ProfileID:  string(profile.ID),
-		Profile:    string(profile.Kind),
-		Revealed:   false,
-		ExpiresAt:  expiresAt,
+		ID:           string(scope.SessionID),
+		DeviceRole:   string(scope.DeviceRole),
+		ProfileID:    string(profile.ID),
+		Profile:      string(profile.Kind),
+		Revealed:     false,
+		RevealPinSet: pinSet,
+		ExpiresAt:    expiresAt,
 	}, nil
 }
 
@@ -3385,8 +3395,10 @@ func (h *Handler) searchEntities(ctx context.Context, scope auth.Scope, req requ
 }
 
 // RevealState reports the session's reveal state after a reveal mutation.
+// RevealPinSet mirrors SessionInfo.RevealPinSet.
 type RevealState struct {
-	Revealed bool `json:"revealed"`
+	Revealed     bool `json:"revealed"`
+	RevealPinSet bool `json:"revealPinSet"`
 }
 
 const (
@@ -3780,7 +3792,7 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 			}
 			return nil, err
 		}
-		data["setrevealpin"] = RevealState{Revealed: scope.Revealed}
+		data["setrevealpin"] = RevealState{Revealed: scope.Revealed, RevealPinSet: true}
 	}
 	if fields["reveal"] {
 		now := time.Now().UTC()
@@ -3817,7 +3829,7 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 		if err := h.logActivity(ctx, scope, store.ActivityReveal, "", "", ""); err != nil {
 			return nil, err
 		}
-		data["reveal"] = RevealState{Revealed: true}
+		data["reveal"] = RevealState{Revealed: true, RevealPinSet: true}
 	}
 	if fields["relock"] {
 		if err := h.store.SetSessionRevealed(ctx, scope.SessionID, false); err != nil {
@@ -3826,7 +3838,11 @@ func (h *Handler) revealOps(ctx context.Context, scope auth.Scope, fields map[st
 		if err := h.logActivity(ctx, scope, store.ActivityRelock, "", "", ""); err != nil {
 			return nil, err
 		}
-		data["relock"] = RevealState{Revealed: false}
+		pinSet, err := h.store.ProfileRevealPINSet(ctx, scope.ProfileID)
+		if err != nil {
+			return nil, err
+		}
+		data["relock"] = RevealState{Revealed: false, RevealPinSet: pinSet}
 	}
 	return data, nil
 }

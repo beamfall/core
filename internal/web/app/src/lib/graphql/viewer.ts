@@ -54,7 +54,7 @@ export function fetchManifest(signal?: AbortSignal): Promise<NavigationManifest>
 // --- Session, profiles, reveal (ADR-0004) ---------------------------------
 
 const CURRENT_SESSION_QUERY =
-  "query CurrentSession { currentSession { deviceRole profileID profile revealed } }";
+  "query CurrentSession { currentSession { deviceRole profileID profile revealed revealPinSet } }";
 
 /** CurrentSession — the session's deviceRole, bound Profile, and reveal state. */
 export async function fetchCurrentSession(signal?: AbortSignal): Promise<SessionInfo> {
@@ -112,6 +112,22 @@ export async function reveal(pin: string, signal?: AbortSignal): Promise<RevealS
   const data = await graphql<{ reveal: RevealState }>(REVEAL_MUTATION, { pin }, signal);
   if (data.reveal.revealed) await rebindCompatibility();
   return data.reveal;
+}
+
+const SET_REVEAL_PIN_MUTATION =
+  "mutation SetRevealPin($pin: String!) { setRevealPin(pin: $pin) { revealed } }";
+
+/**
+ * SetRevealPin — set or replace this Profile's Restrictions PIN (manager only,
+ * CORE-2463). The PIN goes into this call and nowhere else.
+ */
+export async function setRevealPin(pin: string, signal?: AbortSignal): Promise<RevealState> {
+  const data = await graphql<{ setRevealPin: RevealState }>(
+    SET_REVEAL_PIN_MUTATION,
+    { pin },
+    signal,
+  );
+  return data.setRevealPin;
 }
 
 const RELOCK_MUTATION = "mutation Relock { relock { revealed } }";

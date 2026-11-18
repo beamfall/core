@@ -77,6 +77,12 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         help: "skipDetectionTip",
         opener: "console.libraries.list",
       },
+      {
+        id: "console.libraries.restricted",
+        label: "libraryRestrictedLabel",
+        help: "libraryRestrictedTip",
+        opener: "console.libraries.list",
+      },
     ],
   },
   {
@@ -472,6 +478,19 @@ export const SETTINGS_INDEX: SettingsPage[] = [
         help: "manageNavAccentHelp",
       },
       { id: "manage.navigation.sections", label: "navOverrideSectionsHeading" },
+    ],
+  },
+  {
+    area: "manage",
+    path: "restrictions",
+    page: "navUnlockRestricted",
+    settings: [
+      // Set PIN with none set, the unlock field otherwise, Change PIN once unlocked (CORE-2463).
+      {
+        id: "manage.restrictions.pin",
+        label: "restrictionsSetPin",
+        help: "restrictionsSetupStepPin",
+      },
     ],
   },
 ];

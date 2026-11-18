@@ -761,6 +761,9 @@ func dispatchFieldBlock001(dispatch *fieldDispatchContext) response {
 				session.SubtitleMode = string(profile.SubtitleMode)
 				session.PreferSDH = profile.PreferSDH
 			}
+			if pinSet, err := h.store.ProfileRevealPINSet(ctx, scope.ProfileID); err == nil {
+				session.RevealPinSet = pinSet
+			}
 		}
 		setField(dispatch, "currentsession", session)
 	}

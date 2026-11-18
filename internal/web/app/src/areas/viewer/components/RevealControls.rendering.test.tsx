@@ -63,3 +63,39 @@ describe("Reveal focus transition", () => {
     );
   });
 });
+
+describe("Restrictions PIN presence (CORE-2462)", () => {
+  function renderWith(session: { revealPinSet?: boolean } | null, revealed = false) {
+    vi.mocked(useSession).mockReturnValue({
+      session,
+      revealed,
+      reveal: vi.fn(),
+      relock: vi.fn(),
+    } as unknown as ReturnType<typeof useSession>);
+    render(
+      <I18nProvider>
+        <RevealControls />
+      </I18nProvider>,
+    );
+  }
+
+  it("offers no Restrictions control when no PIN is set", () => {
+    renderWith({ revealPinSet: false });
+    expect(screen.queryByRole("button", { name: /restrictions/i })).toBeNull();
+  });
+
+  it("keeps the Restrictions control when a PIN is set", () => {
+    renderWith({ revealPinSet: true });
+    expect(screen.getByRole("button", { name: /restrictions/i })).toBeInTheDocument();
+  });
+
+  it("keeps the Restrictions control for a server that predates the field", () => {
+    renderWith({});
+    expect(screen.getByRole("button", { name: /restrictions/i })).toBeInTheDocument();
+  });
+
+  it("keeps Relock reachable while revealed", () => {
+    renderWith({ revealPinSet: false }, true);
+    expect(screen.getByRole("button", { name: /relock/i })).toBeInTheDocument();
+  });
+});

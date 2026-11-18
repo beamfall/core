@@ -25,6 +25,7 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 
+vi.mock("@/lib/session", () => ({ useSession: vi.fn(() => ({ revealed: false })) }));
 vi.mock("@/lib/graphql", () => ({
   createLibrary: vi.fn(),
   deleteLibrary: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("@/lib/graphql", () => ({
   scanLibrary: vi.fn(),
   setLibraryPreviewClips: vi.fn(),
   setLibraryShowOnHome: vi.fn(),
+  setLibraryRestricted: vi.fn(),
   setLibraryRoots: vi.fn(),
   setScraperCredential: vi.fn(),
   setSkipDetectionEnabled: vi.fn(),
