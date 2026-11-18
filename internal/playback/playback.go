@@ -2503,7 +2503,8 @@ func audioOnlyMedia(media store.Media) bool {
 // probe-less file falls back to Media.Codec against the envelope.
 func audioOnlyCodecDeclared(media store.Media, streams []store.MediaFileStream, profile CapabilityProfile) bool {
 	if len(profile.AudioCodecs) == 0 {
-		return slices.Contains(profile.DirectCodecs, media.Codec)
+		return slices.Contains(profile.DirectCodecs, media.Codec) ||
+			(audioCodecFamily(media.Codec) == "pcm" && slices.Contains(profile.DirectCodecs, "pcm"))
 	}
 	for _, stream := range streams {
 		if stream.Type == "audio" {
@@ -3009,9 +3010,9 @@ func videoCodecCap(caps []VideoCodecCap, codec string) (VideoCodecCap, bool) {
 }
 
 func audioCodecCap(caps []AudioCodecCap, codec string) (AudioCodecCap, bool) {
-	want := normalizedAudioCodec(codec)
+	want := audioCodecFamily(codec)
 	for _, c := range caps {
-		if normalizedAudioCodec(c.Codec) == want {
+		if audioCodecFamily(c.Codec) == want {
 			return c, true
 		}
 	}
@@ -3027,6 +3028,20 @@ func normalizedAudioCodec(codec string) string {
 		return "dts-hd-ma"
 	}
 	return codec
+}
+
+// audioCodecFamily is the token capability matching compares. It folds
+// ffprobe's concrete linear-PCM names (pcm_s16le, pcm_s24be, pcm_f32le,
+// pcm_bluray, ...) into the wire token "pcm", so a profile declaring "pcm"
+// matches a WAV or AIFF track (CORE-0409). A-law and mu-law are companded, not
+// linear PCM, and keep their own names. normalizedAudioCodec is left unchanged
+// because losslessAudioStream and the quirk canonicalizer read its output.
+func audioCodecFamily(codec string) string {
+	name := normalizedAudioCodec(codec)
+	if strings.HasPrefix(name, "pcm-") && name != "pcm-alaw" && name != "pcm-mulaw" {
+		return "pcm"
+	}
+	return name
 }
 
 func dtsHDMasterAudioProfile(profile string) bool {
