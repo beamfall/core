@@ -74,11 +74,20 @@ export function applySidebarPrefs<T>(
 interface Entry {
   profileID: string;
   prefs: SidebarLibraryPrefs;
-  // A failed read is retried on the next mount: an aborted first load (a
-  // reveal or relock cancels in-flight requests) must not pin server order.
+  // Only a successful read (or write) makes the choice editable: an edit
+  // begun from server order would overwrite a saved choice it never read. A
+  // failed read is retried on the next mount, since a reveal or relock
+  // aborts in-flight requests.
   state: "loading" | "loaded" | "failed";
-  // Set once the Profile saves: a read still in flight must not overwrite it.
+  // What the server last confirmed holding, from a read or a write; a failed
+  // save rolls back to it.
+  confirmed: SidebarLibraryPrefs | null;
+  // Set while the Profile has unconfirmed saves: a read still in flight must
+  // not overwrite them.
   dirty: boolean;
+  // Writes run one after another, in save order, so the server ends on the
+  // same choice as the cache even across remounts.
+  writes: Promise<unknown>;
 }
 
 let entry: Entry | null = null;
@@ -95,32 +104,40 @@ function subscribe(listener: () => void) {
   };
 }
 
-function isReady(current: Entry) {
-  return current.dirty || current.state !== "loading";
+function freshEntry(profileID: string): Entry {
+  return {
+    profileID,
+    prefs: EMPTY_SIDEBAR_PREFS,
+    state: "loading",
+    confirmed: null,
+    dirty: false,
+    // A refetch for the same Profile keeps queueing behind earlier writes.
+    writes: entry?.profileID === profileID ? entry.writes : Promise.resolve(),
+  };
 }
 
 function load(profileID: string) {
   if (entry?.profileID === profileID && (entry.dirty || entry.state !== "failed")) return;
-  const current: Entry = {
-    profileID,
-    prefs: EMPTY_SIDEBAR_PREFS,
-    state: "loading",
-    dirty: false,
-  };
+  const current = freshEntry(profileID);
   entry = current;
   emit();
   fetchClientPrefs()
     .then((prefs) => {
-      if (entry !== current || current.dirty) return;
-      current.prefs = parseSidebarPrefs(
+      if (entry !== current) return;
+      const read = parseSidebarPrefs(
         prefs.find((pref) => pref.key === SIDEBAR_LIBRARIES_PREF_KEY)?.value,
       );
+      // A write confirmed meanwhile is newer than this read.
+      if (!current.confirmed) {
+        current.confirmed = read;
+        if (!current.dirty) current.prefs = read;
+      }
       current.state = "loaded";
       emit();
     })
     .catch(() => {
       // Keep the server order for now; the next mount tries again.
-      if (entry !== current) return;
+      if (entry !== current || current.state === "loaded") return;
       current.state = "failed";
       emit();
     });
@@ -133,8 +150,8 @@ export function resetSidebarPrefsCache() {
 
 /**
  * The signed-in Profile's sidebar choice, a saver, and whether the saved
- * choice has settled (loaded, failed or since saved). With no Profile the
- * choice is empty, ready, and saving does nothing.
+ * choice has been read so it can be edited. With no Profile the choice is
+ * empty, ready, and saving does nothing.
  */
 export function useSidebarPrefs(
   profileID: string | null,
@@ -149,29 +166,40 @@ export function useSidebarPrefs(
   );
   const ready = useSyncExternalStore(
     subscribe,
-    () => !profileID || (entry?.profileID === profileID && isReady(entry)),
+    () => !profileID || (entry?.profileID === profileID && entry.state === "loaded"),
     () => !profileID,
   );
   const save = useCallback(
     async (next: SidebarLibraryPrefs) => {
       if (!profileID) return;
-      if (entry?.profileID !== profileID) {
-        entry = { profileID, prefs: EMPTY_SIDEBAR_PREFS, state: "loading", dirty: false };
-      }
+      if (entry?.profileID !== profileID) entry = freshEntry(profileID);
       const current = entry;
-      const previous = current.prefs;
       current.prefs = next;
       current.dirty = true;
       emit();
+      const write = current.writes.then(() =>
+        setClientPref(SIDEBAR_LIBRARIES_PREF_KEY, serializeSidebarPrefs(next)),
+      );
+      current.writes = write.catch(() => {});
       try {
-        await setClientPref(SIDEBAR_LIBRARIES_PREF_KEY, serializeSidebarPrefs(next));
+        await write;
       } catch (error) {
+        // Roll back unless a later save has replaced this one; its write is
+        // queued behind this and settles the choice itself. Earlier writes
+        // have settled, so nothing is left unconfirmed and a failed read may
+        // be retried.
         if (entry === current && current.prefs === next) {
-          current.prefs = previous;
+          current.prefs = current.confirmed ?? EMPTY_SIDEBAR_PREFS;
+          current.dirty = false;
           emit();
         }
         throw error;
       }
+      if (entry !== current) return;
+      current.confirmed = next;
+      current.state = "loaded";
+      if (current.prefs === next) current.dirty = false;
+      emit();
     },
     [profileID],
   );

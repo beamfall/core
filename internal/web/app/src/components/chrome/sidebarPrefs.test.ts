@@ -108,20 +108,81 @@ describe("useSidebarPrefs", () => {
     expect(result.current[0]).toEqual({ order: ["c"], hidden: [] });
   });
 
-  it("retries a load that failed instead of keeping server order", async () => {
+  it("holds editing after a failed read and retries it on the next mount", async () => {
     vi.mocked(fetchClientPrefs)
       .mockRejectedValueOnce(new DOMException("aborted", "AbortError"))
       .mockResolvedValueOnce([
         { key: SIDEBAR_LIBRARIES_PREF_KEY, value: '{"order":["b"],"hidden":[]}' },
       ]);
     const first = renderHook(() => useSidebarPrefs("p1"));
-    // A failed load still settles, so editing is not held forever.
-    await waitFor(() => expect(first.result.current[2]).toBe(true));
+    await waitFor(() => expect(fetchClientPrefs).toHaveBeenCalledTimes(1));
+    await act(async () => {});
+    // Never read, so not editable: Done would overwrite the saved choice.
+    expect(first.result.current[2]).toBe(false);
     expect(first.result.current[0]).toBe(EMPTY_SIDEBAR_PREFS);
     first.unmount();
     const second = renderHook(() => useSidebarPrefs("p1"));
-    expect(second.result.current[2]).toBe(false);
     await waitFor(() => expect(second.result.current[0]).toEqual({ order: ["b"], hidden: [] }));
+    expect(second.result.current[2]).toBe(true);
+    expect(fetchClientPrefs).toHaveBeenCalledTimes(2);
+  });
+
+  it("writes saves in order across remounts, so the server ends on the last", async () => {
+    vi.mocked(fetchClientPrefs).mockResolvedValue([]);
+    let finishA: () => void = () => {};
+    vi.mocked(setClientPref)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishA = () => resolve({ key: SIDEBAR_LIBRARIES_PREF_KEY });
+          }),
+      )
+      .mockResolvedValueOnce({ key: SIDEBAR_LIBRARIES_PREF_KEY });
+    const first = renderHook(() => useSidebarPrefs("p1"));
+    await waitFor(() => expect(first.result.current[2]).toBe(true));
+    let saveA: Promise<void> = Promise.resolve();
+    act(() => {
+      saveA = first.result.current[1]({ order: ["a"], hidden: [] });
+    });
+    first.unmount();
+    const second = renderHook(() => useSidebarPrefs("p1"));
+    let saveB: Promise<void> = Promise.resolve();
+    act(() => {
+      saveB = second.result.current[1]({ order: ["b"], hidden: [] });
+    });
+    await act(async () => {});
+    // B waits for A instead of landing first and being overwritten by it.
+    expect(setClientPref).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishA();
+      await saveA;
+      await saveB;
+    });
+    expect(vi.mocked(setClientPref).mock.calls.map((call) => call[1])).toEqual([
+      '{"order":["a"],"hidden":[]}',
+      '{"order":["b"],"hidden":[]}',
+    ]);
+    expect(second.result.current[0]).toEqual({ order: ["b"], hidden: [] });
+  });
+
+  it("lets a failed read retry after a failed save rolls back", async () => {
+    vi.mocked(fetchClientPrefs)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce([
+        { key: SIDEBAR_LIBRARIES_PREF_KEY, value: '{"order":["c"],"hidden":[]}' },
+      ]);
+    vi.mocked(setClientPref).mockRejectedValueOnce(new Error("offline"));
+    const first = renderHook(() => useSidebarPrefs("p1"));
+    await waitFor(() => expect(fetchClientPrefs).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await expect(first.result.current[1]({ order: ["a"], hidden: [] })).rejects.toThrow(
+        "offline",
+      );
+    });
+    expect(first.result.current[0]).toBe(EMPTY_SIDEBAR_PREFS);
+    first.unmount();
+    const second = renderHook(() => useSidebarPrefs("p1"));
+    await waitFor(() => expect(second.result.current[0]).toEqual({ order: ["c"], hidden: [] }));
     expect(second.result.current[2]).toBe(true);
     expect(fetchClientPrefs).toHaveBeenCalledTimes(2);
   });
