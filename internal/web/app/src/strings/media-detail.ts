@@ -7,6 +7,7 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent}% complete",
     mediaDetailDetails: "Details",
     mediaDetailKeepBrowsing: "Keep browsing",
+    mediaDetailPeople: "People",
     mediaDetailLoadFailed: "This item couldn’t be loaded. Check your connection and try again.",
     // Media detail lockup (CORE-1785).
     mediaDetailStartOver: "Start over",
@@ -40,6 +41,7 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % terminé",
     mediaDetailDetails: "Détails",
     mediaDetailKeepBrowsing: "Continuer à parcourir",
+    mediaDetailPeople: "Personnes",
     mediaDetailLoadFailed:
       "Impossible de charger cet élément. Vérifiez votre connexion et réessayez.",
     mediaDetailStartOver: "Recommencer",
@@ -69,6 +71,7 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % abgeschlossen",
     mediaDetailDetails: "Details",
     mediaDetailKeepBrowsing: "Weiter stöbern",
+    mediaDetailPeople: "Personen",
     mediaDetailLoadFailed:
       "Dieses Element konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
     mediaDetailStartOver: "Von vorn",
@@ -100,6 +103,7 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % completado",
     mediaDetailDetails: "Detalles",
     mediaDetailKeepBrowsing: "Seguir explorando",
+    mediaDetailPeople: "Personas",
     mediaDetailLoadFailed:
       "No se pudo cargar este elemento. Comprueba tu conexión e inténtalo de nuevo.",
     mediaDetailStartOver: "Empezar de nuevo",
@@ -129,6 +133,7 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent}% concluído",
     mediaDetailDetails: "Detalhes",
     mediaDetailKeepBrowsing: "Continuar explorando",
+    mediaDetailPeople: "Pessoas",
     mediaDetailLoadFailed:
       "Não foi possível carregar este item. Verifique sua conexão e tente novamente.",
     mediaDetailStartOver: "Começar de novo",

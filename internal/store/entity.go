@@ -502,8 +502,9 @@ func insertMediaRelationTx(ctx context.Context, tx *sql.Tx, relation EntityRelat
 }
 
 // EntitiesForMedia returns the Entities related to one visible Media item by
-// the named relation, with the relation's render-only attributes. Entities
-// whose own Library is not visible under the filter are omitted.
+// the named relation, with the relation's render-only attributes, in relation
+// sort order (the provider's billing order) and then by title. Entities whose
+// own Library is not visible under the filter are omitted.
 func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationName string, filter LibraryFilter) ([]RelatedEntity, error) {
 	if relationName == "" {
 		return nil, errors.New("relation name is required")
@@ -534,7 +535,7 @@ func (s *Store) EntitiesForMedia(ctx context.Context, mediaID MediaID, relationN
 		FROM entity_relation r
 		JOIN entity e ON e.id = r.from_entity_id
 		WHERE r.to_media_id = ? AND r.relation = ? AND e.trashed_at_ms IS NULL
-		ORDER BY e.title, e.id
+		ORDER BY (r.sort_order IS NULL), r.sort_order, e.title, e.id
 	`, mediaID, relationName)
 	if err != nil {
 		return nil, err

@@ -15,6 +15,7 @@ import {
   readViewerCache,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { CastRow } from "../components/CastRow";
 import { findCachedSectionItem } from "../components/HydratedSection";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
@@ -359,6 +360,9 @@ export function MediaDetailPage() {
             </div>
           </div>
         </section>
+
+        {/* Audio names its people under the title instead (audioPeople). */}
+        {media && media.mediaClass !== "audio" && <CastRow credits={media.credits} />}
 
         {fields.length > 0 && (
           <section className="bf-section flex flex-col gap-3" aria-labelledby="bf-media-fields">

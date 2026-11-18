@@ -262,3 +262,27 @@ describe("EntityMediaBrowse", () => {
     expect(container.querySelector(".bf-children")).not.toBeNull();
   });
 });
+
+describe("EntityMediaBrowse person filmography (CORE-2406)", () => {
+  it("lists a person's video Media as cards, newest year first and undated last", () => {
+    const actor: EntityInfo = {
+      id: "person-v",
+      kind: "person",
+      title: "Lead",
+      archetype: "person",
+      fields: [],
+    };
+    renderBrowse(actor, [
+      { id: "m-old", kind: "media", title: "Old Reel", year: 1999, mediaClass: "video" },
+      { id: "m-undated", kind: "media", title: "Undated Reel", mediaClass: "video" },
+      { id: "m-new", kind: "media", title: "New Reel", year: 2015, mediaClass: "video" },
+    ]);
+    const grid = screen.getByRole("list", { name: "Appears in" });
+    const cards = within(grid).getAllByRole("listitem");
+    expect(cards.map((card) => card.textContent)).toEqual([
+      expect.stringContaining("New Reel"),
+      expect.stringContaining("Old Reel"),
+      expect.stringContaining("Undated Reel"),
+    ]);
+  });
+});

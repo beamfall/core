@@ -169,3 +169,20 @@
     flex: 1 1 auto;
   }
 }
+
+/* A person's headshot beside the name (CORE-2406). */
+[data-register="viewer"] .bf-entity-lockup.bf-entity-has-photo {
+  grid-template-columns: minmax(120px, 200px) minmax(0, 1fr);
+}
+
+[data-register="viewer"] .bf-entity-photo {
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: var(--bg-raised);
+}
+
+@media (max-width: 640px) {
+  [data-register="viewer"] .bf-entity-lockup.bf-entity-has-photo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -167,7 +167,7 @@ export async function fetchSourceItems(
 // --- Entity detail --------------------------------------------------------
 
 const ENTITY_QUERY =
-  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype fields { name type value label } relatedEntities { kind kindDisplayName archetype items { id kind title summary artwork { poster } artworkSlots mediaClass byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
+  "query Entity($id: String!) { entity(id: $id) { id kind kindDisplayName title archetype artworkSlots fields { name type value label } relatedEntities { kind kindDisplayName archetype items { id kind title summary artwork { poster } artworkSlots mediaClass byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } } } }";
 
 /** Entity — the detail header (declared fields, server-stringified) and its related Entities. */
 export async function fetchEntity(id: string, signal?: AbortSignal): Promise<EntityInfo | null> {
@@ -176,7 +176,7 @@ export async function fetchEntity(id: string, signal?: AbortSignal): Promise<Ent
 }
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title mediaClass libraryID artworkSlots credits { entityID title kind kindDisplayName archetype relation } metadataAttribution { providerName text url } } }";
+  "query Media($id: String!) { media(id: $id) { id title mediaClass libraryID artworkSlots credits { entityID title kind kindDisplayName archetype relation attributes artworkSlots } metadataAttribution { providerName text url } } }";
 
 /** Media — the player's now-playing read: title, artwork, linked credits and metadata credit. */
 export async function fetchMedia(
