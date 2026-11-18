@@ -19,9 +19,10 @@ has the `ItemActions` component that the Entity page uses.
   Copy link.
 - The page's Media read requests the credit `attributes` and `artworkSlots` that `media(id)` has
   carried since CORE-2406, so the cast row can show headshots and characters on this page.
-- CORE-2406 follow-up: the cast row names a department even when it is the only one, and the
-  people-credits spec records that audio Media names its people under the title instead of in a
-  cast row (music artists are person credits and may carry photos, so a row would list them twice).
+- CORE-2406 follow-up: the cast row names a department even when it is the only one. Audio Media
+  shows the cast row too when a person credit carries a headshot or a part (an audio drama's cast),
+  and then drops the names under the title so no one is listed twice; audio whose credits are names
+  only keeps the linked names under the title.
 
 ## Non-goals
 

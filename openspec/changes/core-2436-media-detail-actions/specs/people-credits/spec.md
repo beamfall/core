@@ -6,8 +6,10 @@ The web Media detail page SHALL show the Media item's person-archetype credits a
 in credit order. Each card SHALL show the headshot (or the name's initial when there is none), the
 name, and the credit's character or role attribute when present, and SHALL link to the person
 page. Credits with a `department` attribute SHALL be grouped under a heading naming that
-department, even when every credit shares one department. Audio Media names its people under the
-title instead and SHALL NOT show the cast row, so a name is never listed twice.
+department, even when every credit shares one department. Audio Media SHALL show the cast row too
+when any person credit carries a headshot or a part (character, role or job); it then SHALL NOT
+also name its people under the title, so a name is never listed twice. Audio Media whose person
+credits carry neither SHALL name them, linked, under the title instead of in a cast row.
 
 #### Scenario: Cast with characters
 
@@ -24,7 +26,12 @@ title instead and SHALL NOT show the cast row, so a name is never listed twice.
 - **WHEN** a Media item has no person-archetype credits
 - **THEN** no cast row is shown
 
-#### Scenario: Audio item with credited people
+#### Scenario: Audio item with headshots or parts
 
-- **WHEN** an audio Media item has person credits, with or without headshots
+- **WHEN** an audio Media item has a person credit with a headshot or a role
+- **THEN** the page shows the cast row and names no people under the title
+
+#### Scenario: Audio item with names only
+
+- **WHEN** an audio Media item's person credits carry no headshot and no part
 - **THEN** each person is named once, linked under the title, and no cast row is shown
