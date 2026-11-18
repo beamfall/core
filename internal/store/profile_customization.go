@@ -105,13 +105,16 @@ func (s *Store) SetProfilePicture(ctx context.Context, id ProfileID, image []byt
 	} else if !exists {
 		return 0, ValidationError("unknown profile")
 	}
-	version := now.UTC().UnixMilli()
-	_, err := s.catalogW.ExecContext(ctx, `
+	// The version is the picture's immutable cache identity, so a replacement
+	// always gets a larger one, even within the same millisecond.
+	var version int64
+	err := s.catalogW.QueryRowContext(ctx, `
 		INSERT INTO profile_picture(profile_id, image, updated_at_ms) VALUES (?, ?, ?)
 		ON CONFLICT(profile_id) DO UPDATE SET
 			image = excluded.image,
-			updated_at_ms = excluded.updated_at_ms
-	`, id, image, version)
+			updated_at_ms = MAX(excluded.updated_at_ms, profile_picture.updated_at_ms + 1)
+		RETURNING updated_at_ms
+	`, id, image, now.UTC().UnixMilli()).Scan(&version)
 	if err != nil {
 		return 0, err
 	}

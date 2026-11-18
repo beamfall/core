@@ -170,6 +170,29 @@ describe("Console Profiles lane", () => {
     expect(rowOrder()).toEqual(["Kid", "Owner"]);
   });
 
+  it("holds moves while the list reloads after a failed save", async () => {
+    const user = userEvent.setup();
+    vi.mocked(reorderProfiles).mockRejectedValueOnce(new Error("nope"));
+    renderSection();
+    await screen.findByDisplayValue("Kid");
+    let reload = () => {};
+    vi.mocked(fetchProfilesAdmin).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          reload = () => resolve(rows);
+        }),
+    );
+    await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+    await screen.findByText("Could not save the new order.");
+    expect(screen.getByRole("button", { name: "Move Kid down" })).toBeDisabled();
+    reload();
+    await waitFor(() => expect(rowOrder()).toEqual(["Owner", "Kid"]));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move Kid up" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+    expect(reorderProfiles).toHaveBeenCalledTimes(2);
+    expect(reorderProfiles).toHaveBeenLastCalledWith(["p2", "p1"]);
+  });
+
   it("restores the server order and says so when saving the order fails", async () => {
     const user = userEvent.setup();
     vi.mocked(reorderProfiles).mockRejectedValue(new Error("nope"));

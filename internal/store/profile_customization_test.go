@@ -116,6 +116,29 @@ func TestProfilePictureRoundTripAndClear(t *testing.T) {
 	}
 }
 
+// A replacement in the same millisecond still gets a new version: the version
+// is the picture URL's immutable cache identity.
+func TestSetProfilePictureVersionAlwaysAdvances(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	first, err := st.SetProfilePicture(ctx, "profile-default", []byte{1}, now)
+	if err != nil {
+		t.Fatalf("first SetProfilePicture: %v", err)
+	}
+	second, err := st.SetProfilePicture(ctx, "profile-default", []byte{2}, now)
+	if err != nil {
+		t.Fatalf("second SetProfilePicture: %v", err)
+	}
+	if second <= first {
+		t.Fatalf("second version = %d, want > %d", second, first)
+	}
+	got, gotVersion, err := st.ProfilePicture(ctx, "profile-default")
+	if err != nil || !bytes.Equal(got, []byte{2}) || gotVersion != second {
+		t.Fatalf("ProfilePicture = %x, %d, %v; want 02, %d", got, gotVersion, err, second)
+	}
+}
+
 func TestSetProfilePictureRejectsUnknownEmptyAndOversized(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()

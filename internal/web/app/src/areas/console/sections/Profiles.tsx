@@ -62,9 +62,12 @@ export function Profiles() {
   const [reorderFailed, setReorderFailed] = useState(false);
   const saving = useRef(false);
   const pendingOrder = useRef<string[] | null>(null);
+  // After a failed save the list reloads from the server; moves wait for it so
+  // none is queued against an order that is about to be replaced.
+  const [recovering, setRecovering] = useState(false);
 
   async function move(from: number, to: number) {
-    if (from === to || from < 0 || to < 0 || to >= rows.length) return;
+    if (recovering || from === to || from < 0 || to < 0 || to >= rows.length) return;
     const next = rows.slice();
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
@@ -87,7 +90,12 @@ export function Profiles() {
     } catch {
       pendingOrder.current = null;
       setReorderFailed(true);
-      await profiles.refresh();
+      setRecovering(true);
+      try {
+        await profiles.refresh();
+      } finally {
+        setRecovering(false);
+      }
     } finally {
       saving.current = false;
     }
@@ -125,6 +133,7 @@ export function Profiles() {
                   profile={p}
                   index={index}
                   count={rows.length}
+                  locked={recovering}
                   dragging={dragging}
                   onDragging={setDragging}
                   onMove={(from, to) => void move(from, to)}
@@ -219,6 +228,7 @@ function ProfileRow({
   profile,
   index,
   count,
+  locked,
   dragging,
   onDragging,
   onMove,
@@ -228,6 +238,7 @@ function ProfileRow({
   profile: AdminProfile;
   index: number;
   count: number;
+  locked: boolean;
   dragging: string | null;
   onDragging: (id: string | null) => void;
   onMove: (from: number, to: number) => void;
@@ -304,7 +315,7 @@ function ProfileRow({
               size="icon"
               className="size-6"
               aria-label={t("consoleProfilesMoveUp", { name: profile.name })}
-              disabled={index === 0}
+              disabled={locked || index === 0}
               onClick={() => onMove(index, index - 1)}
             >
               <ChevronUp aria-hidden />
@@ -315,7 +326,7 @@ function ProfileRow({
               size="icon"
               className="size-6"
               aria-label={t("consoleProfilesMoveDown", { name: profile.name })}
-              disabled={index === count - 1}
+              disabled={locked || index === count - 1}
               onClick={() => onMove(index, index + 1)}
             >
               <ChevronDown aria-hidden />
