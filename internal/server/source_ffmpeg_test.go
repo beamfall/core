@@ -75,3 +75,33 @@ func TestFFmpegSourceIsNotFoundWithoutAValidBundle(t *testing.T) {
 		})
 	}
 }
+
+// The GPL source offer stays downloadable for a signed-in client whose
+// compatibility decision was refused, like GET /source; protected routes
+// remain refused for the same session.
+func TestFFmpegSourceIsExemptFromCompatibilityRefusal(t *testing.T) {
+	name := "beamfall-ffmpeg-7.1.4-3-linux-amd64-source.tar"
+	dir := writeFFmpegSource(t, testFFmpegSourceSum+"  "+name+"\n", map[string]string{name: "tar bytes"})
+	srv := compatTestServer(t)
+	srv.ffmpegSourceDir = dir
+	srv.compat.markRefused("session:session-default")
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		req := httptest.NewRequest(method, "/source/ffmpeg", nil)
+		authorizeViewerCookies(req)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s /source/ffmpeg under compatibility refusal = %d: %s", method, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("X-Checksum-SHA256"); got != testFFmpegSourceSum {
+			t.Fatalf("%s checksum header = %q", method, got)
+		}
+	}
+
+	refused := httptest.NewRecorder()
+	srv.ServeHTTP(refused, cookieManifestRequest())
+	if refused.Code != http.StatusForbidden {
+		t.Fatalf("protected route under the same refusal = %d, want 403", refused.Code)
+	}
+}

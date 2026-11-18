@@ -32,6 +32,7 @@ var compatExemptRoutes = map[string]string{
 	"GET /health":                 "public liveness",
 	"GET /metrics":                "public operator surface",
 	"GET /source":                 "public source offer",
+	"GET /source/ffmpeg":          "public GPL source offer",
 	"GET /api/docs":               "public API reference",
 	"GET /api/docs/openapi.json":  "public API reference",
 	"GET /{$}":                    "public process root",

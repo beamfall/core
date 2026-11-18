@@ -37,6 +37,14 @@ where `<name>` is the filename from the checksum entry.
 - **THEN** the response is 200 with the archive bytes and tar content type
 - **AND** the attachment filename is the archive name from `SHA256SUMS`
 
+#### Scenario: A compatibility-refused session can still download the source
+
+- **WHEN** a client whose session has a refused compatibility decision sends GET or HEAD to
+  `/source/ffmpeg` with its session cookies and a usable bundle exists
+- **THEN** the response is 200, as for `GET /source`, because the route is exempt from
+  compatibility enforcement
+- **AND** protected routes remain refused for that session
+
 ### Requirement: Source delivery retains standard file response semantics
 
 The GET route SHALL also accept HEAD through Go's method routing. Delivery SHALL use
