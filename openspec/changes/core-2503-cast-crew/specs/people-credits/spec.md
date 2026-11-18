@@ -45,9 +45,9 @@ Neither line SHALL be shown when no credit holds that job.
 
 The web Media detail page SHALL show only the first group of the cast row, at most 20 people,
 and SHALL offer "See all" when credits are left out. "See all" SHALL open a Cast & Crew page for
-the item listing every person credit grouped by department in credit order, cast first. A credit
-carrying both a character and a job SHALL appear in the cast with the character and in each of
-its departments with the job.
+the item listing every person credit grouped by department in credit order, cast first. A cast
+credit (one with a character or a billing position) that also names departments SHALL appear in
+the cast and, with its job, in each of its departments.
 
 #### Scenario: Lead first with characters
 

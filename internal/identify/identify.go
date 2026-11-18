@@ -739,6 +739,9 @@ func relationCardinalities(bundle plugin.Bundle) map[string]string {
 func mergeEntityLinks(library store.LibraryID, hydrated []scrape.EntityResult) []scrape.EntityResult {
 	index := map[string]int{}
 	var merged []scrape.EntityResult
+	// The distinct values of each merged attribute, kept apart from the
+	// joined display string: a value may itself contain ", ".
+	var values []map[string][]string
 	for _, result := range hydrated {
 		key := string(entityIDForName(library, result.Kind, result.Name)) + "\x00" + result.Relation
 		at, seen := index[key]
@@ -747,6 +750,11 @@ func mergeEntityLinks(library store.LibraryID, hydrated []scrape.EntityResult) [
 			result.Fields = maps.Clone(result.Fields)
 			result.RelationAttributes = maps.Clone(result.RelationAttributes)
 			merged = append(merged, result)
+			first := map[string][]string{}
+			for name, value := range result.RelationAttributes {
+				first[name] = []string{value}
+			}
+			values = append(values, first)
 			continue
 		}
 		into := &merged[at]
@@ -764,18 +772,15 @@ func mergeEntityLinks(library store.LibraryID, hydrated []scrape.EntityResult) [
 				into.Fields[name] = value
 			}
 		}
-		for _, name := range slices.Sorted(maps.Keys(result.RelationAttributes)) {
-			value := result.RelationAttributes[name]
-			existing, present := into.RelationAttributes[name]
-			switch {
-			case !present:
-				if into.RelationAttributes == nil {
-					into.RelationAttributes = map[string]string{}
-				}
-				into.RelationAttributes[name] = value
-			case !slices.Contains(strings.Split(existing, ", "), value):
-				into.RelationAttributes[name] = existing + ", " + value
+		for name, value := range result.RelationAttributes {
+			if slices.Contains(values[at][name], value) {
+				continue
 			}
+			values[at][name] = append(values[at][name], value)
+			if into.RelationAttributes == nil {
+				into.RelationAttributes = map[string]string{}
+			}
+			into.RelationAttributes[name] = strings.Join(values[at][name], ", ")
 		}
 		if result.SortOrder != nil && (into.SortOrder == nil || *result.SortOrder < *into.SortOrder) {
 			into.SortOrder = result.SortOrder

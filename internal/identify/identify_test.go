@@ -1009,7 +1009,7 @@ func (f *ensuringEntityStore) EnsureEntity(_ context.Context, entity store.Entit
 }
 
 // Links of one Entity to the Media under one relation merge into one relation
-// row: distinct attribute values join in order, the smallest sort order wins
+// row: distinct attribute values (even ones holding ", ") join in order, the smallest sort order wins
 // and typed fields union. A link that hydrated no fields only ensures its
 // Entity exists, so it never wipes fields an earlier identification stored.
 func TestApplyMergesEntityLinksIntoOneRelationRow(t *testing.T) {
@@ -1017,7 +1017,7 @@ func TestApplyMergesEntityLinksIntoOneRelationRow(t *testing.T) {
 		Fields: map[string]any{"title": "Blue Harvest"},
 		Entities: []scrape.EntityResult{
 			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(0),
-				Fields: map[string]string{"bio": "Pioneer."}, RelationAttributes: map[string]string{"character": "Herself"}},
+				Fields: map[string]string{"bio": "Pioneer."}, RelationAttributes: map[string]string{"character": "Herself, Jr."}},
 			{Kind: "maker", Relation: "made", Name: "Bea", SortOrder: identifyIntPtr(1)},
 			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(1000),
 				RelationAttributes: map[string]string{"job": "Director", "department": "Directing"}},
@@ -1025,6 +1025,8 @@ func TestApplyMergesEntityLinksIntoOneRelationRow(t *testing.T) {
 				RelationAttributes: map[string]string{"job": "Writer", "department": "Writing"}},
 			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(1002),
 				RelationAttributes: map[string]string{"job": "Director", "department": "Directing"}},
+			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(1003),
+				RelationAttributes: map[string]string{"character": "Herself, Jr."}},
 		},
 	}}
 	entities := &ensuringEntityStore{fakeEntityStore: fakeEntityStore{library: "lib-main"}}
@@ -1052,7 +1054,7 @@ func TestApplyMergesEntityLinksIntoOneRelationRow(t *testing.T) {
 		t.Fatalf("relations = %#v, want one row per person", entities.relations)
 	}
 	ada := entities.relations[0]
-	want := map[string]string{"character": "Herself", "job": "Director, Writer", "department": "Directing, Writing"}
+	want := map[string]string{"character": "Herself, Jr.", "job": "Director, Writer", "department": "Directing, Writing"}
 	if !maps.Equal(ada.Attributes, want) {
 		t.Fatalf("Ada attributes = %#v, want %#v", ada.Attributes, want)
 	}

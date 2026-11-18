@@ -224,35 +224,52 @@ func (s *Store) EnsureEntity(ctx context.Context, entity Entity) error {
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return err
 	}
-	exists, err := s.entityExists(ctx, entity)
-	if err != nil || exists {
-		return err
-	}
-	return s.UpsertEntity(ctx, entity)
-}
-
-func (s *Store) entityExists(ctx context.Context, entity Entity) (bool, error) {
 	if entity.ID == "" {
-		return false, errors.New("entity ID is required")
+		return errors.New("entity ID is required")
 	}
 	if entity.LibraryID == "" {
-		return false, errors.New("library ID is required")
+		return errors.New("library ID is required")
+	}
+	if entity.Kind == "" {
+		return errors.New("entity kind is required")
+	}
+	if entity.Title == "" {
+		return errors.New("entity title is required")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.guardLocked(); err != nil {
-		return false, err
+		return err
 	}
 	plane, err := s.catalogPlaneForLibraryLocked(ctx, entity.LibraryID)
 	if err != nil {
-		return false, err
+		return err
 	}
-	var one int
-	err = plane.writer.QueryRowContext(ctx, `SELECT 1 FROM entity WHERE id = ?`, entity.ID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+	tx, err := plane.writer.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	return err == nil, err
+	defer tx.Rollback()
+	// One insert-if-absent statement, so a concurrent UpsertEntity of the
+	// same Entity either lands first and is kept or lands after and wins.
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO entity(id, library_id, kind, title) VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING
+	`, entity.ID, entity.LibraryID, entity.Kind, entity.Title)
+	if err != nil {
+		return err
+	}
+	if inserted, err := result.RowsAffected(); err != nil || inserted == 0 {
+		return err
+	}
+	if s.entityKindFullTextSearchableLocked(entity.Kind) {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO entity_fts(entity_id, title, fields) VALUES (?, ?, ?)
+		`, entity.ID, entity.Title, s.entitySearchTextLocked(entity)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 var entityFieldTables = []string{

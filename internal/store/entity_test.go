@@ -110,6 +110,38 @@ func TestEnsureEntityKeepsExistingFields(t *testing.T) {
 	}
 }
 
+// TestEnsureEntityRacingUpsertKeepsFields pins the insert-if-absent: field-less
+// ensures racing a field-carrying upsert of the same Entity never erase its
+// fields, whichever lands first.
+func TestEnsureEntityRacingUpsertKeepsFields(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for i := range 50 {
+		id := EntityID(fmt.Sprintf("entity-race-%d", i))
+		full := widgetEntity(id, "library-local")
+		full.Fields = []EntityField{{Name: "summary", Type: EntityFieldText, Text: "kept"}}
+		start := make(chan struct{})
+		errs := make(chan error, 9)
+		for range 8 {
+			go func() { <-start; errs <- st.EnsureEntity(ctx, widgetEntity(id, "library-local")) }()
+		}
+		go func() { <-start; errs <- st.UpsertEntity(ctx, full) }()
+		close(start)
+		for range 9 {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := st.Entity(ctx, id, LibraryFilter{AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Fields) != 1 {
+			t.Fatalf("iteration %d: fields = %#v, want the upserted summary kept", i, got.Fields)
+		}
+	}
+}
+
 func TestUpsertEntityValidation(t *testing.T) {
 	st := openSeeded(t)
 	cases := []Entity{

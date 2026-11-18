@@ -61,6 +61,20 @@ describe("castGroups", () => {
       ["Production", [["akiva", "Screenplay, Producer"]]],
     ]);
   });
+
+  it("keeps a billed credit without a character in the cast, and the cast first", () => {
+    const groups = castGroups([
+      person("dp", { job: "Director of Photography", department: "Camera" }),
+      person("lead", { billing: "0", job: "Director", department: "Directing" }),
+      person("second", { billing: "1", character: "" }),
+    ]);
+    expect(groups.map((g) => [g.department, g.credits.map((c) => c.entityID)])).toEqual([
+      ["", ["lead", "second"]],
+      ["Camera", ["dp"]],
+      ["Directing", ["lead"]],
+    ]);
+    expect(groups[2].credits[0].attributes).toEqual({ job: "Director", department: "Directing" });
+  });
 });
 
 describe("creditsWithJob", () => {
