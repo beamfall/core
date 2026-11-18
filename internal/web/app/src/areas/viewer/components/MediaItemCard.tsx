@@ -2,6 +2,7 @@ import { Check, Play } from "lucide-react";
 import type { PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { useCardImageSizes } from "@/components/chrome/posterSize";
 import { displayString } from "@/lib/display";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
@@ -28,7 +29,6 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 // Shelf cards are 150px and grid cells (minmax(150px, 1fr)) reach ~300px, so a
 // 300px slot picks w320 at 1x and w640 on 2x screens instead of upscaling w320.
 const CARD_BUCKETS = ["w320", "w640"] as const;
-const CARD_SIZES = "300px";
 
 // One catalog card, ported from the vanilla renderItem (app.js). Generic by
 // invariant #1: the wire entity is Media and `kind` is a plugin display
@@ -73,6 +73,7 @@ export function MediaItemCard({
   display?: LibraryViewMode;
 }) {
   const navigate = useNavigate();
+  const cardImageSizes = useCardImageSizes();
   const identity = useViewerIdentity();
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -267,7 +268,7 @@ export function MediaItemCard({
                 decoding="async"
                 src={artworkBucketURL(poster, "w320")}
                 srcSet={artworkSrcSet(poster, CARD_BUCKETS)}
-                sizes={CARD_SIZES}
+                sizes={cardImageSizes}
                 onError={() => setImageFailed(true)}
               />
             ) : (

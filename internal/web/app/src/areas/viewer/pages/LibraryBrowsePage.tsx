@@ -18,6 +18,7 @@ import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryD
 import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
+import { PosterSizeControl } from "../components/PosterSizeControl";
 import { LETTER_RAIL_MIN_ITEMS, useLetterJump } from "../components/useLetterJump";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
@@ -375,7 +376,10 @@ function LibraryBrowse({
           audioOnly={audioOnly}
           onUpdate={update}
           trailing={
-            <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} className="ml-auto" />
+            <div className="ml-auto flex flex-wrap items-center gap-3">
+              {(viewMode === "poster" || viewMode === "thumbnail") && <PosterSizeControl />}
+              <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} />
+            </div>
           }
         />
 

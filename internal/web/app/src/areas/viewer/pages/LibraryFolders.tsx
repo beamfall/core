@@ -7,6 +7,7 @@ import { useT } from "@/lib/i18n";
 import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
+import { PosterSizeControl } from "../components/PosterSizeControl";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import { libraryViewClass } from "../lib/libraryBrowse";
@@ -170,7 +171,12 @@ export function LibraryFolders({
 
         {items.length > 0 && page && (
           <>
-            <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} />
+            <div className="flex flex-wrap items-center gap-3">
+              <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} />
+              {(viewMode === "poster" || viewMode === "thumbnail") && (
+                <PosterSizeControl className="ml-auto" />
+              )}
+            </div>
             {/* The server orders the folder's Media by their ordinals, then file name. */}
             <ul aria-label={openName} className={libraryViewClass(viewMode)}>
               {items.map((item, index) => (

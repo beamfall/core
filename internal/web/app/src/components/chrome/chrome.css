@@ -873,10 +873,42 @@
   scroll-snap-align: start;
 }
 
+/* Poster size (CORE-2468): the root's data-poster-size sets the grids' column
+ * floors, so one choice reaches every viewer grid. Large is the original size. */
+[data-register="viewer"] {
+  --bf-grid-min: 150px;
+  --bf-grid-wide-min: 220px;
+}
+
+[data-register="viewer"][data-poster-size="medium"] {
+  --bf-grid-min: 130px;
+  --bf-grid-wide-min: 190px;
+}
+
+[data-register="viewer"][data-poster-size="small"] {
+  --bf-grid-min: 110px;
+  --bf-grid-wide-min: 160px;
+}
+
+@media (max-width: 760px) {
+  [data-register="viewer"] {
+    --bf-grid-min: 96px;
+    --bf-grid-wide-min: 150px;
+  }
+  [data-register="viewer"][data-poster-size="medium"] {
+    --bf-grid-min: 84px;
+    --bf-grid-wide-min: 130px;
+  }
+  [data-register="viewer"][data-poster-size="small"] {
+    --bf-grid-min: 72px;
+    --bf-grid-wide-min: 110px;
+  }
+}
+
 /* Paged / virtualized grid. */
 [data-register="viewer"] .bf-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--bf-grid-min), 1fr));
   gap: 24px 18px;
   padding: 6px 4px;
 }
@@ -1017,6 +1049,17 @@
   text-overflow: ellipsis;
 }
 
+/* Small posters take the phone's card type so two title lines still fit. */
+[data-register="viewer"][data-poster-size="small"] .bf-grid .bf-card-title {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+[data-register="viewer"][data-poster-size="small"] .bf-grid .bf-card-sub {
+  font-size: 12px;
+  line-height: 16px;
+}
+
 /* Content rating and audience score (CORE-2400): one muted line that clips
  * rather than wraps, so it never pushes the title or crowds a narrow card. */
 [data-register="viewer"] .bf-card-rating {
@@ -1046,7 +1089,6 @@
     gap: 12px;
   }
   [data-register="viewer"] .bf-grid {
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
     gap: 20px 12px;
   }
   [data-register="viewer"] .bf-shelf .bf-card {
@@ -1319,17 +1361,11 @@
 /* Library displays (CORE-2386). Thumbnails: wider cells around a 16:9 frame,
  * two columns on a phone. */
 [data-register="viewer"] .bf-grid.bf-grid-wide {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--bf-grid-wide-min), 1fr));
 }
 
 [data-register="viewer"] .bf-poster.bf-poster-wide {
   aspect-ratio: 16 / 9;
-}
-
-@media (max-width: 760px) {
-  [data-register="viewer"] .bf-grid.bf-grid-wide {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
 }
 
 /* Compact list: the ordinal leads the row and the runtime trails the copy,
@@ -1527,6 +1563,13 @@
   border-color: color-mix(in oklab, var(--library-accent, var(--accent)) 70%, transparent);
   background: color-mix(in oklab, var(--library-accent, var(--accent)) 18%, var(--bg-surface));
   color: var(--text-primary);
+}
+
+/* A one-letter chip (the poster size steps) is as wide as it is tall. */
+[data-register="viewer"] .bf-chip.bf-chip-square {
+  justify-content: center;
+  width: 32px;
+  padding: 0;
 }
 
 /* ============================================================ *

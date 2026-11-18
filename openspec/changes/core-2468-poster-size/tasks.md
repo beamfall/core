@@ -1,0 +1,7 @@
+- [x] Web: poster size preference, root attribute and CSS column floors
+- [x] Web: Small / Medium / Large control in the Library toolbars, strings in every catalog locale
+- [x] Web: card image `sizes` hint follows the size; virtual grid cap covers a dense screen
+- [x] Unit tests for the preference and control; Playwright spec for column counts
+- [x] Verified in the browser at small, medium and large sizes with screenshots
+- [ ] `make gate` (lander)
+- [ ] `openspec archive core-2468-poster-size` after landing

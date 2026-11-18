@@ -14,6 +14,7 @@ import {
 import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
+import { PosterSizeControl } from "../components/PosterSizeControl";
 import { LETTER_RAIL_MIN_ITEMS, useLetterJump } from "../components/useLetterJump";
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
@@ -433,6 +434,7 @@ function LibraryEntityGrid({
         facets={facets.facets}
         audioOnly={facets.audioOnly}
         onUpdate={update}
+        trailing={<PosterSizeControl className="ml-auto" />}
       />
       {failed && (
         <div role="alert" className="bf-empty flex flex-col gap-3">
