@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -148,6 +149,34 @@ func TestProfilePictureWriteAuthorization(t *testing.T) {
 	anonGet := httptest.NewRequest(http.MethodGet, "/api/profiles/picture/profile-managed", nil)
 	if rec := servePicture(srv, anonGet); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous GET: status = %d, want 401", rec.Code)
+	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
+}
+
+// An unknown session is refused before any of the upload is read, so an
+// unauthenticated caller cannot make the server spool a 16 MiB body.
+func TestProfilePictureUploadAuthenticatesBeforeReadingBody(t *testing.T) {
+	srv, _ := newArtworkUploadTestServer(t)
+	req := profilePictureUploadRequest(t, "profile-default", pngArtwork(t, 16, 16), "image/png")
+	body := &countingReader{r: req.Body}
+	req.Body = io.NopCloser(body)
+	req.Header.Set("X-Beamfall-Session", "session-unknown")
+	req.Header.Set("X-Beamfall-Device", "device-tv")
+	if rec := servePicture(srv, req); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown session upload: status = %d, want 401", rec.Code)
+	}
+	if body.n != 0 {
+		t.Fatalf("read %d body bytes before refusing an unknown session, want 0", body.n)
 	}
 }
 

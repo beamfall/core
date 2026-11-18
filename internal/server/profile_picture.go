@@ -43,10 +43,9 @@ func profilePictureURL(id store.ProfileID, version int64) string {
 	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=" + strconv.FormatInt(version, 10)
 }
 
-// profilePictureWriteScope authorizes a picture change: a session (never an
-// API token or key) sending the CSRF header, acting on its own Profile or
-// holding an Admin Session.
-func (s *Server) profilePictureWriteScope(w http.ResponseWriter, r *http.Request, target store.ProfileID) (auth.Scope, bool) {
+// profilePictureWriteSession authenticates a picture change before any body
+// is read: a session (never an API token or key) sending the CSRF header.
+func (s *Server) profilePictureWriteSession(w http.ResponseWriter, r *http.Request) (auth.Scope, bool) {
 	if r.Header.Get(auth.CSRFHeader) == "" {
 		writeError(w, r, http.StatusForbidden, "missing CSRF header")
 		return auth.Scope{}, false
@@ -56,19 +55,29 @@ func (s *Server) profilePictureWriteScope(w http.ResponseWriter, r *http.Request
 		writeError(w, r, http.StatusUnauthorized, "invalid session")
 		return auth.Scope{}, false
 	}
+	return scope, true
+}
+
+// authorizeProfilePictureTarget lets an authenticated session change its own
+// Profile's picture, or any Profile's when it is an Admin Session.
+func (s *Server) authorizeProfilePictureTarget(w http.ResponseWriter, r *http.Request, scope auth.Scope, target store.ProfileID) bool {
 	if !scope.Admin && scope.ProfileID != target {
 		writeError(w, r, http.StatusForbidden, "admin session required")
-		return auth.Scope{}, false
+		return false
 	}
 	if s.profilePictures == nil {
 		writeError(w, r, http.StatusServiceUnavailable, "profile pictures unavailable")
-		return auth.Scope{}, false
+		return false
 	}
-	return scope, true
+	return true
 }
 
 func (s *Server) uploadProfilePicture(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
+	scope, ok := s.profilePictureWriteSession(w, r)
+	if !ok {
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxProfilePictureUploadBody)
 	if err := r.ParseMultipartForm(maxArtworkMultipartMemory); err != nil {
 		writeDecodeError(w, r, err)
@@ -80,8 +89,7 @@ func (s *Server) uploadProfilePicture(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "profileID is required")
 		return
 	}
-	scope, ok := s.profilePictureWriteScope(w, r, target)
-	if !ok {
+	if !s.authorizeProfilePictureTarget(w, r, scope, target) {
 		return
 	}
 	file, _, err := r.FormFile("file")
@@ -106,9 +114,12 @@ func (s *Server) uploadProfilePicture(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteProfilePicture(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-	target := store.ProfileID(strings.TrimSpace(r.PathValue("id")))
-	scope, ok := s.profilePictureWriteScope(w, r, target)
+	scope, ok := s.profilePictureWriteSession(w, r)
 	if !ok {
+		return
+	}
+	target := store.ProfileID(strings.TrimSpace(r.PathValue("id")))
+	if !s.authorizeProfilePictureTarget(w, r, scope, target) {
 		return
 	}
 	if err := s.profilePictures.ClearProfilePicture(r.Context(), target); err != nil {
