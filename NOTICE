@@ -8,7 +8,10 @@ Apache-2.0 licenses used by the dependencies listed below.
 Source code and full license texts are available at the repository URLs shown.
 This file covers dependencies bundled in non-container release tarballs; the
 container image (Dockerfile) additionally incorporates Jellyfin-ffmpeg
-(LGPL-2.1, see https://github.com/jellyfin/jellyfin-ffmpeg).
+(GPL-3.0-or-later: built with --enable-gpl --enable-version3, see
+https://github.com/jellyfin/jellyfin-ffmpeg), which bundles the Fraunhofer
+FDK AAC library (libfdk-aac, under the Software License for The Fraunhofer
+FDK AAC Codec Library for Android).
 
 -------------------------------------------------------------------------------
 
