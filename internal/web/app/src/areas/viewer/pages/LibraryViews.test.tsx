@@ -1,10 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/lib/i18n";
 import { expectNoAxeViolations } from "@/test/axe";
+import { notifyEngagementChanged } from "../actions/engagementSync";
 import { DEFAULT_BROWSE_STATE, fetchLibraryItems } from "../lib/libraryBrowse";
 import {
   fetchLibraryEntities,
@@ -325,6 +326,53 @@ describe("Entity kind sort, filters and letter rail (CORE-2440)", () => {
     expect(
       await within(screen.getByRole("list", { name: "Makers" })).findByText("Maker A"),
     ).toBeVisible();
+  });
+
+  it("reads a plays-sorted kind afresh when watched state changes (CORE-2443)", async () => {
+    renderAt("/n/tunes/all?view=maker&sort=plays");
+    await within(await screen.findByRole("list", { name: "Makers" })).findByText("Maker A");
+    const before = vi.mocked(fetchLibraryEntities).mock.calls.length;
+
+    act(() => notifyEngagementChanged());
+    await waitFor(() =>
+      expect(vi.mocked(fetchLibraryEntities).mock.calls.length).toBeGreaterThan(before),
+    );
+    expect(vi.mocked(fetchLibraryEntities).mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: "maker",
+      state: { sort: "plays" },
+      offset: 0,
+    });
+  });
+
+  it("reads a filtered kind afresh when it opens again after a watched change (CORE-2443)", async () => {
+    const user = userEvent.setup();
+    let watched = false;
+    vi.mocked(fetchLibraryEntities).mockImplementation(async (request) =>
+      watched && request.state?.watch === "unwatched"
+        ? { ...entitiesPage(request), total: 0, items: [] }
+        : entitiesPage(request),
+    );
+    renderAt("/n/tunes/all?view=maker&watch=unwatched");
+    await within(await screen.findByRole("list", { name: "Makers" })).findByText("Maker A");
+
+    // Marking the kind's Media watched empties the unwatched filter.
+    watched = true;
+    act(() => notifyEngagementChanged());
+    expect(
+      await screen.findByText("Nothing in this library matches these filters."),
+    ).toBeInTheDocument();
+
+    // Leaving for the Media view and coming back must not repaint the
+    // Library's opening read from before the change.
+    await user.click(screen.getByRole("button", { name: "Library" }));
+    await waitFor(() => expect(vi.mocked(fetchLibraryItems)).toHaveBeenCalled());
+    const before = vi.mocked(fetchLibraryEntities).mock.calls.length;
+    await user.click(screen.getByRole("button", { name: "Makers" }));
+    expect(
+      await screen.findByText("Nothing in this library matches these filters."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Maker A")).toBeNull();
+    expect(vi.mocked(fetchLibraryEntities).mock.calls.length).toBeGreaterThan(before);
   });
 
   it("carries the browse state across kinds and into the Media view", async () => {

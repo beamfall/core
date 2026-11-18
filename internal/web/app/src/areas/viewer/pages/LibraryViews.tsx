@@ -18,6 +18,7 @@ import { LETTER_RAIL_MIN_ITEMS, useLetterJump } from "../components/useLetterJum
 import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtualGrid";
 import { ViewerActions } from "../components/ViewerActions";
 import {
+  browseFollowsEngagement,
   browseStateParams,
   DEFAULT_BROWSE_STATE,
   fetchLibraryItems,
@@ -81,6 +82,10 @@ export function LibraryViews({
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get(LIBRARY_VIEW_PARAM);
   const [plan, setPlan] = useState<Plan>(null);
+  // The opening page paints only the first grid that takes it: a grid opened
+  // again later (after the Media view, say) reads afresh, since watched state
+  // or ratings may have changed what the query returns since.
+  const seedTakenRef = useRef(false);
 
   // One read per Library learns its kinds. It already asks for the first page
   // of the kind the URL names (or of the first kind), so that grid paints from
@@ -149,6 +154,11 @@ export function LibraryViews({
   }
   if (!view?.kind || plan === null || plan === "failed") return media(switcher);
   const seed = plan.limit === LIBRARY_ENTITY_PAGE && plan.page.kind === view.kind ? plan : null;
+  const takeSeed = () => {
+    if (!seed || seedTakenRef.current) return null;
+    seedTakenRef.current = true;
+    return seed;
+  };
   return (
     <LibraryEntityGrid
       key={view.kind}
@@ -157,7 +167,7 @@ export function LibraryViews({
       heading={displayString(title, displayLocale)}
       kind={view.kind}
       label={view.label}
-      seed={seed}
+      takeSeed={takeSeed}
       facets={facets}
       switcher={switcher}
     />
@@ -262,7 +272,7 @@ function LibraryEntityGrid({
   heading,
   kind,
   label,
-  seed,
+  takeSeed,
   facets,
   switcher,
 }: {
@@ -271,8 +281,11 @@ function LibraryEntityGrid({
   heading: string;
   kind: string;
   label: string;
-  /** The kind's first page, when the page already read it, and the state it was read under. */
-  seed: { page: LibraryEntitiesPage; stateKey: string } | null;
+  /**
+   * Hands over the kind's first page, when the page already read it, and the
+   * state it was read under; it does so once per Library page.
+   */
+  takeSeed: () => { page: LibraryEntitiesPage; stateKey: string } | null;
   facets: LibraryFacets;
   switcher: ReactNode;
 }) {
@@ -280,7 +293,7 @@ function LibraryEntityGrid({
   const [searchParams, setSearchParams] = useSearchParams();
   const state = useMemo(() => parseBrowseState(searchParams), [searchParams]);
   const stateKey = browseStateParams(state).toString();
-  const seedRef = useRef(seed);
+  const takeSeedRef = useRef(takeSeed);
   const [total, setTotal] = useState<number | null>(null);
   const [letters, setLetters] = useState<LibraryItemsLetter[]>([]);
   const [failed, setFailed] = useState(false);
@@ -328,8 +341,8 @@ function LibraryEntityGrid({
     generationRef.current += 1;
     pendingRef.current = new Set();
     setFailed(false);
-    const opening = seedRef.current;
-    seedRef.current = null;
+    const opening = takeSeedRef.current();
+    takeSeedRef.current = () => null;
     if (opening && opening.stateKey === stateKey && retryTick === 0) {
       pagesRef.current = new Map([[0, opening.page.items]]);
       setTotal(opening.page.total);
@@ -347,11 +360,7 @@ function LibraryEntityGrid({
   // by them; the cached pages are then stale, so the query starts again.
   const engagementEpoch = useEngagementEpoch();
   const seenEpochRef = useRef(engagementEpoch);
-  const followsEngagement =
-    state.watch !== "" ||
-    state.minRating > 0 ||
-    state.sort === "rating" ||
-    state.sort === "last-watched";
+  const followsEngagement = browseFollowsEngagement(state);
   useEffect(() => {
     if (seenEpochRef.current === engagementEpoch) return;
     seenEpochRef.current = engagementEpoch;

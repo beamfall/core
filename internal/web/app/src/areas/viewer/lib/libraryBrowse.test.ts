@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  browseFollowsEngagement,
   browseStateParams,
   DEFAULT_BROWSE_STATE,
   libraryItemsVariables,
@@ -56,6 +57,27 @@ describe("library view mode (CORE-2386)", () => {
 
 describe("library browse sorts and year range (CORE-2443)", () => {
   const read = (query: string) => parseBrowseState(new URLSearchParams(query));
+
+  it("restarts a plays-sorted read on an engagement change, like the other watching sorts", () => {
+    for (const query of [
+      "sort=plays",
+      "sort=last-watched",
+      "sort=rating",
+      "watch=unwatched",
+      "rated=8",
+    ]) {
+      expect(browseFollowsEngagement(read(query))).toBe(true);
+    }
+    for (const query of [
+      "",
+      "sort=year",
+      "sort=release-date",
+      "sort=audience-score",
+      "from=1990",
+    ]) {
+      expect(browseFollowsEngagement(read(query))).toBe(false);
+    }
+  });
 
   it("reads the release-date, audience-score and plays sorts", () => {
     for (const sort of ["release-date", "audience-score", "plays"] as const) {

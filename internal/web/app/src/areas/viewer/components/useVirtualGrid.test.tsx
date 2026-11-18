@@ -58,4 +58,28 @@ describe("useVirtualGrid", () => {
     );
     expect(virtualGridScrollTop(gridRef.current, 10, 1)).toBe(800);
   });
+
+  it("measures rows afresh when one column count switches layout, list to table (CORE-2443)", async () => {
+    const gridRef = gridScrolledTo(0);
+    const card = document.createElement("li");
+    gridRef.current.append(card);
+    const height = vi.spyOn(card, "getBoundingClientRect");
+    height.mockReturnValue({ height: 80 } as DOMRect);
+    const view = renderHook(
+      ({ layout }: { layout: string }) =>
+        useVirtualGrid({ gridRef, itemCount: 1000, enabled: true, columns: 1, layout }),
+      { initialProps: { layout: "list" } },
+    );
+    await waitFor(() => expect(virtualGridScrollTop(gridRef.current, 10, 1)).toBe(800));
+
+    // The table's rows are shorter than the list's, under the same one column.
+    height.mockReturnValue({ height: 36 } as DOMRect);
+    view.rerender({ layout: "table" });
+    await waitFor(() =>
+      expect(view.result.current?.bottomPad).toBe(
+        (1000 - (view.result.current?.endIndex ?? 0)) * 36,
+      ),
+    );
+    expect(virtualGridScrollTop(gridRef.current, 10, 1)).toBe(360);
+  });
 });

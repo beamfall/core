@@ -366,17 +366,19 @@ function YearInput({
   onCommit: (year: number) => void;
 }) {
   const committed = value ? String(value) : "";
-  const [draft, setDraft] = useState<{ base: string; text: string }>({
-    base: committed,
-    text: committed,
-  });
-  // A new committed value (a chip, a link, the other side swapping) resets the draft.
-  const text = draft.base === committed ? draft.text : committed;
+  const [text, setText] = useState(committed);
+  // Every new committed value (this field's own commit, a chip, a link, the
+  // other side swapping) replaces the draft, so a cleared year stays cleared.
+  const [shown, setShown] = useState(committed);
+  if (shown !== committed) {
+    setShown(committed);
+    setText(committed);
+  }
   const commit = () => {
     const trimmed = text.trim();
     const year = browseYear(trimmed);
     if ((year || !trimmed) && year !== value) onCommit(year);
-    else setDraft({ base: committed, text: committed });
+    else setText(committed);
   };
   return (
     <div className="flex flex-col gap-1">
@@ -391,7 +393,7 @@ function YearInput({
         max={LIBRARY_MAX_YEAR}
         step={1}
         value={text}
-        onChange={(event) => setDraft({ base: committed, text: event.target.value })}
+        onChange={(event) => setText(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === "Enter") commit();

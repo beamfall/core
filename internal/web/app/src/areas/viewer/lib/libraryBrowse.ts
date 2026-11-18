@@ -101,6 +101,19 @@ function oneOf<T extends string>(values: readonly T[], value: string | null): T 
 }
 
 /** Reads browse state from the URL; unknown values fall back to defaults. */
+/**
+ * Whether a watched-state or rating change can reorder or refilter a read in
+ * this state, so the read starts over instead of refreshing its cards.
+ */
+export function browseFollowsEngagement(state: LibraryBrowseState): boolean {
+  return (
+    state.watch !== "" ||
+    state.minRating > 0 ||
+    state.sort === "rating" ||
+    LIBRARY_WATCHING_SORTS.includes(state.sort)
+  );
+}
+
 export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
   const decade = Number.parseInt(params.get("decade") ?? "", 10);
   const groups: Record<string, string> = {};

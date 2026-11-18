@@ -415,6 +415,27 @@ describe("Library browse", () => {
     expect(screen.getByRole("button", { name: "Remove filter: 1985–2001" })).toBeInTheDocument();
   });
 
+  it("keeps a cleared year cleared when its field loses focus again (CORE-2443)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all");
+
+    await screen.findByRole("button", { name: "Item 0" });
+    await user.type(screen.getByLabelText("From year"), "1990");
+    await user.tab();
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all\?from=1990$/),
+    );
+    await user.click(screen.getByRole("button", { name: "Remove filter: From 1990" }));
+    await waitFor(() => expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/));
+    expect(screen.getByLabelText("From year")).toHaveValue(null);
+
+    await user.click(screen.getByLabelText("From year"));
+    await user.tab();
+    expect(screen.getByLabelText("From year")).toHaveValue(null);
+    expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/);
+  });
+
   it("draws the table view as dense rows without artwork, with year, runtime and score (CORE-2443)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => {
       const page = pageFor(request);

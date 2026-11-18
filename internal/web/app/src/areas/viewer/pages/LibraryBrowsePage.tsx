@@ -23,6 +23,7 @@ import { useVirtualGrid, VIRTUAL_GRID_MIN_ITEMS } from "../components/useVirtual
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
 import {
+  browseFollowsEngagement,
   browseStateParams,
   fetchLibraryItems,
   isAudioOnly,
@@ -184,11 +185,7 @@ function LibraryBrowse({
   const engagementEpoch = useEngagementEpoch();
   const seenEpochRef = useRef(engagementEpoch);
   const [refreshTick, setRefreshTick] = useState(0);
-  const followsEngagement =
-    state.watch !== "" ||
-    state.minRating > 0 ||
-    state.sort === "rating" ||
-    state.sort === "last-watched";
+  const followsEngagement = browseFollowsEngagement(state);
   useEffect(() => {
     if (seenEpochRef.current === engagementEpoch) return;
     seenEpochRef.current = engagementEpoch;
@@ -230,6 +227,7 @@ function LibraryBrowse({
     itemCount,
     enabled: itemCount > VIRTUAL_GRID_MIN_ITEMS,
     columns: rowColumns,
+    layout: viewMode,
     maxItems: BROWSE_MAX_RENDERED,
   });
   const start = gridWindow?.startIndex ?? 0;
