@@ -86,6 +86,7 @@ var exactRouteClasses = map[string]AccessClass{
 	"GET /health":                 AccessInternalOnly,
 	"GET /metrics":                AccessInternalOnly,
 	"GET /source":                 AccessInternalOnly,
+	"GET /source/ffmpeg":          AccessInternalOnly,
 	"GET /api/docs":               AccessInternalOnly,
 	"GET /api/docs/openapi.json":  AccessInternalOnly,
 	"GET /{$}":                    AccessInternalOnly,

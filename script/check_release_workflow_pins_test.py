@@ -42,13 +42,10 @@ class ReleaseWorkflowPinsTests(unittest.TestCase):
 
 
 class SupplyChainPolicyTests(unittest.TestCase):
-    amd64_url = (
-        "https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3/amd64/"
-        "jellyfin-ffmpeg7_7.1.4-3-bookworm_amd64.deb"
-    )
-    arm64_url = (
-        "https://repo.jellyfin.org/files/ffmpeg/debian/7.x/7.1.4-3/arm64/"
-        "jellyfin-ffmpeg7_7.1.4-3-bookworm_arm64.deb"
+    source_url = "https://github.com/jellyfin/jellyfin-ffmpeg/archive/refs/tags/v7.1.4-3.tar.gz"
+    nvcodec_url = "https://github.com/FFmpeg/nv-codec-headers/archive/refs/tags/n12.0.16.1.tar.gz"
+    amf_url = (
+        "https://github.com/GPUOpen-LibrariesAndSDKs/AMF/releases/download/v1.4.36/AMF-headers-v1.4.36.tar.gz"
     )
 
     def setUp(self) -> None:
@@ -58,6 +55,7 @@ class SupplyChainPolicyTests(unittest.TestCase):
         directories = (
             ".github/workflows",
             "internal/ffmpeg",
+            "tools/ffmpeg",
             "packaging/compose",
             "packaging/truenas",
             "packaging/unraid",
@@ -73,8 +71,12 @@ class SupplyChainPolicyTests(unittest.TestCase):
 FROM node:22-bookworm@sha256:{node}
 FROM golang:${{GO_VERSION}}-bookworm@sha256:{go}
 FROM debian:bookworm@sha256:{debian}
-COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock /tmp/
-RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_AMD64_SHA256="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_ARM64_URL="$(sed -n 's/^FFMPEG_LINUX_ARM64_URL=//p' /tmp/ffmpeg.lock)"; FFMPEG_LINUX_ARM64_SHA256="$(sed -n 's/^FFMPEG_LINUX_ARM64_SHA256=//p' /tmp/ffmpeg.lock)"; case "$TARGETARCH" in amd64) ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"; ffmpeg_sha="$FFMPEG_LINUX_AMD64_SHA256";; arm64) ffmpeg_url="$FFMPEG_LINUX_ARM64_URL"; ffmpeg_sha="$FFMPEG_LINUX_ARM64_SHA256";; esac
+FROM debian:bookworm@sha256:{debian} AS ffmpeg
+COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock tools/ffmpeg/build.sh tools/ffmpeg/apt-snapshot.sh /in/
+RUN sh /in/build.sh /in/ffmpeg.lock /in/ffmpeg.pin "$TARGETARCH" /out
+FROM debian:bookworm@sha256:{debian} AS ffmpeg-runtime
+COPY --from=ffmpeg /out/SHA256SUMS /out/*-source.tar /usr/share/beamfall/source/ffmpeg/
+FROM ffmpeg-runtime AS runtime
 """.format(node="c" * 64, go="d" * 64, debian="e" * 64),
         )
         workflow = """jobs:
@@ -91,11 +93,10 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
             workflow
             + "      - run: |\n"
             + "          python3 script/check-release-workflow-pins.py\n"
-            + "          FFMPEG_LINUX_AMD64_URL=\"$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' internal/ffmpeg/ffmpeg.lock)\"\n"
-            + "          FFMPEG_LINUX_AMD64_SHA256=\"$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' internal/ffmpeg/ffmpeg.lock)\"\n"
-            + "          ffmpeg_url=\"$FFMPEG_LINUX_AMD64_URL\"\n"
-            + "          ffmpeg_sha=\"$FFMPEG_LINUX_AMD64_SHA256\"\n",
+            + "          docker build --target ffmpeg-runtime -t beamfall-ffmpeg-runtime .\n",
         )
+        self.write("tools/ffmpeg/build.sh", 'lock="$1"\nsed -n "s/^$1=//p" "$lock"\n')
+        self.write("tools/ffmpeg/apt-snapshot.sh", "sed -n 's/^FFMPEG_DEBIAN_SNAPSHOT=//p' \"$1\"\n")
         self.write(
             "packaging/compose/compose.public.yml",
             "services:\n  proxy:\n    image: caddy:2.9.1-alpine@sha256:" + "f" * 64 + "\n",
@@ -134,10 +135,12 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
         self,
         *,
         pin_sha: str | None = None,
-        amd64_url: str | None = None,
-        arm64_url: str | None = None,
-        amd64_sha: str | None = None,
-        arm64_sha: str | None = None,
+        source_url: str | None = None,
+        source_sha: str | None = None,
+        nvcodec_url: str | None = None,
+        amf_url: str | None = None,
+        amf_sha: str | None = None,
+        snapshot: str | None = None,
     ) -> None:
         pin = self.read("internal/ffmpeg/ffmpeg.pin")
         self.write(
@@ -146,10 +149,13 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
                 (
                     "FFMPEG_PIN_SHA256="
                     + (pin_sha or hashlib.sha256(pin.encode()).hexdigest()),
-                    "FFMPEG_LINUX_AMD64_URL=" + (amd64_url or self.amd64_url),
-                    "FFMPEG_LINUX_AMD64_SHA256=" + (amd64_sha or "1" * 64),
-                    "FFMPEG_LINUX_ARM64_URL=" + (arm64_url or self.arm64_url),
-                    "FFMPEG_LINUX_ARM64_SHA256=" + (arm64_sha or "2" * 64),
+                    "FFMPEG_SOURCE_URL=" + (source_url or self.source_url),
+                    "FFMPEG_SOURCE_SHA256=" + (source_sha or "3" * 64),
+                    "FFMPEG_NVCODEC_URL=" + (nvcodec_url or self.nvcodec_url),
+                    "FFMPEG_NVCODEC_SHA256=" + "4" * 64,
+                    "FFMPEG_AMF_URL=" + (amf_url or self.amf_url),
+                    "FFMPEG_AMF_SHA256=" + (amf_sha or "5" * 64),
+                    "FFMPEG_DEBIAN_SNAPSHOT=" + (snapshot or "20261115T000000Z"),
                 )
             )
             + "\n",
@@ -252,27 +258,51 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
                 self.assert_error(f"must {verb} digest-pinned deployment manifests")
                 self.write(path, content)
 
-    def test_rejects_missing_architecture(self) -> None:
+    def test_rejects_missing_lock_key(self) -> None:
         lock = self.read("internal/ffmpeg/ffmpeg.lock")
         self.write(
             "internal/ffmpeg/ffmpeg.lock",
-            "\n".join(line for line in lock.splitlines() if "ARM64" not in line) + "\n",
+            "\n".join(line for line in lock.splitlines() if "AMF" not in line) + "\n",
         )
         self.assert_error("missing lock keys")
 
-    def test_rejects_wrong_architecture(self) -> None:
-        self.write_lock(amd64_url=self.arm64_url)
-        self.assert_error("does not match linux/amd64")
+    def test_rejects_prebuilt_deb_lock_keys(self) -> None:
+        lock = self.read("internal/ffmpeg/ffmpeg.lock")
+        self.write("internal/ffmpeg/ffmpeg.lock", lock + "FFMPEG_LINUX_AMD64_URL=" + self.source_url + "\n")
+        self.assert_error("unexpected lock keys: FFMPEG_LINUX_AMD64_URL")
 
-    def test_rejects_wrong_consumer_architecture(self) -> None:
-        self.write(
-            "Dockerfile",
-            self.read("Dockerfile").replace(
-                'amd64) ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"',
-                'amd64) ffmpeg_url="$FFMPEG_LINUX_ARM64_URL"',
-            ),
-        )
-        self.assert_error("does not map TARGETARCH amd64")
+    def test_rejects_image_that_does_not_build_from_the_lock(self) -> None:
+        self.write("Dockerfile", self.read("Dockerfile").replace("RUN sh /in/build.sh", "RUN sh /in/other.sh"))
+        self.assert_error("does not build ffmpeg from internal/ffmpeg/ffmpeg.lock")
+
+    def test_rejects_source_archive_off_the_release_tag(self) -> None:
+        self.write_lock(source_url="https://github.com/jellyfin/jellyfin-ffmpeg/archive/refs/heads/jellyfin.tar.gz")
+        self.assert_error("FFMPEG_SOURCE_URL is not an immutable release tag archive")
+
+    def test_rejects_header_archives_off_release_tags(self) -> None:
+        self.write_lock(nvcodec_url="https://github.com/FFmpeg/nv-codec-headers/archive/refs/heads/master.tar.gz")
+        self.assert_error("FFMPEG_NVCODEC_URL is not an immutable release tag archive")
+        self.write_lock(amf_url=self.amf_url.replace("AMF-headers-v1.4.36", "AMF-headers-v1.4.35"))
+        self.assert_error("FFMPEG_AMF_URL is not an immutable release tag archive")
+
+    def test_rejects_malformed_debian_snapshot(self) -> None:
+        self.write_lock(snapshot="20261115")
+        self.assert_error("FFMPEG_DEBIAN_SNAPSHOT must be a snapshot.debian.org timestamp")
+
+    def test_rejects_malformed_source_digest(self) -> None:
+        self.write_lock(source_sha="ABC")
+        self.assert_error("FFMPEG_SOURCE_SHA256 must be a lowercase SHA-256")
+
+    def test_rejects_image_that_omits_corresponding_source(self) -> None:
+        self.write("Dockerfile", self.read("Dockerfile").replace("/out/*-source.tar ", ""))
+        self.assert_error("does not ship the FFmpeg corresponding source bundle")
+
+    def test_accepts_earlier_stage_as_base(self) -> None:
+        self.assertEqual([], [e for e in self.errors() if "container reference is mutable" in e])
+
+    def test_rejects_unnamed_mutable_base(self) -> None:
+        self.write("Dockerfile", self.read("Dockerfile").replace("FROM ffmpeg-runtime AS runtime", "FROM ffmpeg-runtimes AS runtime"))
+        self.assert_error("container reference is mutable: ffmpeg-runtimes")
 
     def test_rejects_toolchain_version_drift(self) -> None:
         self.write("Dockerfile", self.read("Dockerfile").replace("GO_VERSION=1.26.5", "GO_VERSION=1.26.4"))
@@ -316,38 +346,42 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
 
     def test_rejects_duplicate_ffmpeg_coordinate_literal(self) -> None:
         path = ".github/workflows/release-gate.yml"
-        self.write(path, self.read(path) + "# " + self.amd64_url + "\n")
+        self.write(path, self.read(path) + "# " + self.nvcodec_url + "\n")
         self.assert_error("duplicates FFmpeg artifact coordinates")
 
     def test_rejects_moving_ffmpeg_url(self) -> None:
         for moving in (
-            self.amd64_url.replace("7.x/7.1.4-3", "latest-7.x"),
-            self.amd64_url.replace("7.1.4-3", "${FFMPEG_VERSION}"),
-            self.amd64_url + "?channel=stable",
+            self.source_url.replace("v7.1.4-3", "${FFMPEG_VERSION}"),
+            self.source_url + "?channel=stable",
         ):
             with self.subTest(moving=moving):
-                self.write_lock(amd64_url=moving)
-                self.assert_error("is not an immutable versioned URL")
+                self.write_lock(source_url=moving)
+                self.assert_error("is not an immutable release tag archive")
+
+    def test_rejects_build_script_that_hardcodes_coordinates(self) -> None:
+        path = "tools/ffmpeg/build.sh"
+        self.write(path, self.read(path) + "curl " + self.amf_url + "\n")
+        self.assert_error("tools/ffmpeg/build.sh: duplicates FFmpeg artifact coordinates")
 
     def test_rejects_unauthenticated_artifact(self) -> None:
-        self.write_lock(amd64_sha="not-a-sha")
+        self.write_lock(amf_sha="not-a-sha")
         self.assert_error("must be a lowercase SHA-256")
 
     def test_rejects_shell_metacharacters_in_lock(self) -> None:
         for value in ("$(touch/tmp/pwned)", "`touch/tmp/pwned`", "value;false", "value|false"):
             with self.subTest(value=value):
-                self.write_lock(amd64_sha=value)
+                self.write_lock(amf_sha=value)
                 self.assert_error("unsafe shell metacharacters")
 
     def test_rejects_shell_sourcing_lock(self) -> None:
         path = "Dockerfile"
-        self.write(path, self.read(path).replace("RUN ", "RUN . /tmp/ffmpeg.lock; ", 1))
+        self.write(path, self.read(path).replace("RUN sh", "RUN . /in/ffmpeg.lock; sh", 1))
         self.assert_error("without shell-sourcing")
 
     def test_requires_workflow_validation_before_lock_use(self) -> None:
         path = ".github/workflows/release-gate.yml"
         self.write(path, self.read(path).replace("          python3 script/check-release-workflow-pins.py\n", ""))
-        self.assert_error("must validate ffmpeg.lock before using")
+        self.assert_error("must validate ffmpeg.lock before building")
 
     def test_make_gate_runs_policy_and_planted_red_suite(self) -> None:
         root = MODULE_PATH.parent.parent
@@ -381,7 +415,7 @@ RUN FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg
         # Dockerfile's version assert was the only thing that noticed, at build time.
         self.write("internal/ffmpeg/ffmpeg.pin", "7.1.2-Jellyfin\n")
         self.write_lock()
-        self.assert_error("ships FFmpeg 7.1.4-3, not ffmpeg.pin's 7.1.2")
+        self.assert_error("ships FFmpeg 7.1.4, not ffmpeg.pin's 7.1.2")
 
     def test_rejects_unparseable_pin(self) -> None:
         for pin in ("7.1.4\n", "7.1.4-Jellyfin", "7.1.4-Jellyfin\n# comment\n"):

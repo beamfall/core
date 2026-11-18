@@ -14,7 +14,7 @@ trap 'rm -rf "$TMP"' EXIT
 failures=0
 
 DIGEST="$(python3 "$GATE" --root "$ROOT" --print-digest)"
-LOCKED_SHA="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' "$ROOT/internal/ffmpeg/ffmpeg.lock")"
+LOCKED_SHA="$(shasum -a 256 "$ROOT/internal/ffmpeg/ffmpeg.lock" | cut -d' ' -f1)"
 DARWIN_SHA="$(python3 -c 'import hashlib;print(hashlib.sha256(b"darwin-binary").hexdigest())')"
 
 # green_evidence writes the smallest evidence packet the gate accepts: both

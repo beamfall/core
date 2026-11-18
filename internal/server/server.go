@@ -95,6 +95,7 @@ type Server struct {
 	seedVersion         string
 	capabilities        []string
 	sourceOfferURL      string
+	ffmpegSourceDir     string
 	proxyTee            http.HandlerFunc
 	packAuthority       http.HandlerFunc
 	packManifest        http.HandlerFunc
@@ -259,20 +260,21 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	}
 	defaultCapabilities := capabilities.EnabledIDs(nil)
 	s := &Server{
-		mux:           http.NewServeMux(),
-		accessClasses: make(map[string]AccessClass),
-		manifest:      manifests,
-		playback:      playbackInfo,
-		beam:          beamService,
-		pairing:       pairingService,
-		graph:         graphHandler,
-		media:         mediaHandler,
-		auth:          authService,
-		jobStats:      jobStats,
-		buildSHA:      detectBuildSHA(),
-		capabilities:  append([]string(nil), defaultCapabilities...),
-		baseURL:       baseURL,
-		knownProxies:  knownProxies,
+		mux:             http.NewServeMux(),
+		accessClasses:   make(map[string]AccessClass),
+		ffmpegSourceDir: ffmpegSourceDir,
+		manifest:        manifests,
+		playback:        playbackInfo,
+		beam:            beamService,
+		pairing:         pairingService,
+		graph:           graphHandler,
+		media:           mediaHandler,
+		auth:            authService,
+		jobStats:        jobStats,
+		buildSHA:        detectBuildSHA(),
+		capabilities:    append([]string(nil), defaultCapabilities...),
+		baseURL:         baseURL,
+		knownProxies:    knownProxies,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -308,6 +310,9 @@ func New(manifests *manifest.Service, playbackInfo *playback.Service, beamServic
 	// is injected at build time through capabilities.SourceOfferURL and is never
 	// accepted from a request. Development builds with no offer fail closed.
 	s.handle(http.MethodGet, "/source", "", s.sourceOffer)
+	// GPL corresponding source for the FFmpeg build the container image ships
+	// (CORE-2497), served from the archive the image carries.
+	s.handle(http.MethodGet, "/source/ffmpeg", "", s.ffmpegSource)
 	s.handle(http.MethodGet, apiDocsPath, "", s.apiDocsReference)
 	s.handle(http.MethodGet, apiDocsOpenAPIPath, "", s.apiDocsOpenAPI)
 	s.handle(http.MethodPost, "/api/graphql", reveal.ContentJSON, s.graphQL)

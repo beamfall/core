@@ -54,7 +54,9 @@ FAILURES = (
 # MEASURES. Orchestration that merely invokes it is excluded on purpose —
 # including `tools/gate/**` or `Makefile` would invalidate every row almost
 # continuously and force a two-host physical re-probe for unrelated work.
-SCOPE_DIR_PREFIXES = ("internal/ffmpeg/",)
+# tools/ffmpeg/ builds the image's ffmpeg (configure flags and the libraries it
+# links), so it moves what the probe measures as much as ffmpeg.lock does.
+SCOPE_DIR_PREFIXES = ("internal/ffmpeg/", "tools/ffmpeg/")
 SCOPE_EXACT_PATHS = (
     "internal/playback/playback.go",
     "tools/gate/ffmpeg-tonemap-conforming.sh",
@@ -107,13 +109,14 @@ def certification_scope_digest(root: Path, rev: str) -> str:
 
 
 def locked_ffmpeg_identities(root: Path) -> set[str]:
-    """The Linux pin identities: the artifact SHA-256s ffmpeg.lock authenticates."""
+    """The Linux pin identity: the SHA-256 of ffmpeg.lock, which pins every
+    input of the ffmpeg the image builds from source (CORE-2497)."""
     lock = root / "internal" / "ffmpeg" / "ffmpeg.lock"
     try:
-        text = lock.read_text(encoding="utf-8")
+        data = lock.read_bytes()
     except OSError as err:
         raise Red(f"cannot read {lock}: {err}") from err
-    return set(re.findall(r"^FFMPEG_LINUX_\w+_SHA256=([0-9a-f]{64})$", text, re.M))
+    return {hashlib.sha256(data).hexdigest()}
 
 
 def load_evidence(path: Path) -> dict:
@@ -225,8 +228,8 @@ def validate_hardware_row(row: dict, where: str, thresholds: dict, locked: set[s
         raise Red(f"{where}.ffmpeg_pin_identity is not a sha256 hex digest")
     if row["host_os"] == "linux" and identity not in locked:
         raise Red(
-            f"{where} is a linux row whose ffmpeg_pin_identity is not an artifact ffmpeg.lock "
-            "authenticates, so it was not produced by the pinned build"
+            f"{where} is a linux row whose ffmpeg_pin_identity is not the SHA-256 of ffmpeg.lock, "
+            "so it was not produced by the pinned build"
         )
 
 

@@ -25,8 +25,9 @@ package ffmpeg
 //
 // This is not a cache of probe results (ADR-0075 §5 forbids that, and
 // ToneMapCapability's in-process sync.Once remains the only memoization). It is
-// a static record of a specific immutable artifact — the deb whose URL and
-// SHA-256 are pinned in ffmpeg.lock — and it changes only when that pin does.
+// a static record of a specific build — the image's ffmpeg stage, built by
+// tools/ffmpeg/build.sh from the sources ffmpeg.lock pins — and it changes
+// only when that lock does.
 // The two tests are complementary: this one proves the recipe is well-formed
 // for the build Beamfall ships, the execution test proves it actually
 // transforms the picture.

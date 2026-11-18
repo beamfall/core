@@ -63,51 +63,52 @@ RUN --mount=type=secret,id=beamfall_bundled_credentials,required=false set -eu; 
 	CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 	go build -trimpath -ldflags="-s -w -X github.com/beamfall/core/internal/capabilities.ReleaseVersion=${version} -X github.com/beamfall/core/internal/capabilities.ReleaseCommit=${BEAMFALL_COMMIT} -X github.com/beamfall/core/internal/capabilities.FirstPartyBuildManifest=${BEAMFALL_FIRST_PARTY_BUILDS} -X github.com/beamfall/core/internal/app.BundledCredentials=${bundled}" -o /out/beamfall ./cmd/beamfall
 
-FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS runtime
-
+# ffmpeg (CORE-2497): jellyfin-ffmpeg's locked source release, patched and
+# built against the Debian snapshot named in ffmpeg.lock, GPL-3.0-or-later with
+# no nonfree component (no libfdk-aac; core uses the native aac encoder). It
+# runs on the build platform and cross-compiles for the target, and it also
+# writes the exact runtime package list and the corresponding-source bundle.
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS ffmpeg
 ARG TARGETARCH
-COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock /tmp/
+COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock tools/ffmpeg/build.sh tools/ffmpeg/apt-snapshot.sh /in/
+RUN sh /in/build.sh /in/ffmpeg.lock /in/ffmpeg.pin "$TARGETARCH" /out
 
-# intel-opencl-icd is Intel's OpenCL runtime, for the GPU tone-map (CORE-2156).
-# Debian ships it for amd64 only; without it the host probe keeps the software
-# chain.
+# The runtime base: ffmpeg and everything it loads. The tone-map gate and the
+# release workflow's I/O job build this stage alone to run the shipped ffmpeg.
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS ffmpeg-runtime
+
+# Every library ffmpeg links, and on amd64 the Intel VA-API, QSV and OpenCL
+# runtimes (CORE-2156), at the exact versions the builder recorded from the
+# same Debian snapshot. The corresponding source of all of it is kept under
+# /usr/share/beamfall/source/ffmpeg, served by GET /source/ffmpeg and named
+# in NOTICE.
+COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock tools/ffmpeg/apt-snapshot.sh /tmp/
+COPY --from=ffmpeg /out/runtime-packages.txt /tmp/
 RUN set -eux; \
-	FFMPEG_PIN_SHA256="$(sed -n 's/^FFMPEG_PIN_SHA256=//p' /tmp/ffmpeg.lock)"; \
-	FFMPEG_LINUX_AMD64_URL="$(sed -n 's/^FFMPEG_LINUX_AMD64_URL=//p' /tmp/ffmpeg.lock)"; \
-	FFMPEG_LINUX_AMD64_SHA256="$(sed -n 's/^FFMPEG_LINUX_AMD64_SHA256=//p' /tmp/ffmpeg.lock)"; \
-	FFMPEG_LINUX_ARM64_URL="$(sed -n 's/^FFMPEG_LINUX_ARM64_URL=//p' /tmp/ffmpeg.lock)"; \
-	FFMPEG_LINUX_ARM64_SHA256="$(sed -n 's/^FFMPEG_LINUX_ARM64_SHA256=//p' /tmp/ffmpeg.lock)"; \
-	test -n "$FFMPEG_PIN_SHA256" -a -n "$FFMPEG_LINUX_AMD64_URL" -a -n "$FFMPEG_LINUX_AMD64_SHA256" -a -n "$FFMPEG_LINUX_ARM64_URL" -a -n "$FFMPEG_LINUX_ARM64_SHA256"; \
-	printf '%s  %s\n' "$FFMPEG_PIN_SHA256" /tmp/ffmpeg.pin | sha256sum -c -; \
+	sh /tmp/apt-snapshot.sh /tmp/ffmpeg.lock; \
 	apt-get update; \
 	apt-get install -y --no-install-recommends ca-certificates curl; \
-	case "$TARGETARCH" in \
-		amd64) \
-			ffmpeg_url="$FFMPEG_LINUX_AMD64_URL"; \
-			ffmpeg_sha="$FFMPEG_LINUX_AMD64_SHA256"; \
-			apt-get install -y --no-install-recommends intel-opencl-icd; \
-			;; \
-		arm64) \
-			ffmpeg_url="$FFMPEG_LINUX_ARM64_URL"; \
-			ffmpeg_sha="$FFMPEG_LINUX_ARM64_SHA256"; \
-			;; \
-		*) \
-			echo "unsupported TARGETARCH for jellyfin-ffmpeg: $TARGETARCH" >&2; \
-			exit 1; \
-			;; \
-	esac; \
-	ffmpeg_pkg="${ffmpeg_url##*/}"; \
-	curl -fsSL "$ffmpeg_url" -o "/tmp/${ffmpeg_pkg}"; \
-	printf '%s  %s\n' "$ffmpeg_sha" "/tmp/${ffmpeg_pkg}" | sha256sum -c -; \
-	apt-get install -y --no-install-recommends "/tmp/${ffmpeg_pkg}"; \
-	if [ -x /usr/lib/jellyfin-ffmpeg/ffmpeg ]; then ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg; fi; \
-	if [ -x /usr/lib/jellyfin-ffmpeg/ffprobe ]; then ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe; fi; \
-	set -- $(ffmpeg -version | sed -n '1p'); \
-	test "$3" = "$(cat /tmp/ffmpeg.pin)"; \
-	rm -f "/tmp/${ffmpeg_pkg}"; \
-	rm -f /tmp/ffmpeg.pin /tmp/ffmpeg.lock; \
+	dpkg-query -W -f '${Package}=${Version}\n' | sort >/tmp/before; \
+	apt-get install -y --no-install-recommends $(cat /tmp/runtime-packages.txt); \
+	dpkg-query -W -f '${Package}=${Version}\n' | sort >/tmp/after; \
+	sort /tmp/runtime-packages.txt >/tmp/recorded; \
+	unrecorded="$(comm -13 /tmp/before /tmp/after | comm -23 - /tmp/recorded)"; \
+	test -z "$unrecorded" || { echo "packages without bundled source: $unrecorded" >&2; exit 1; }; \
+	rm -f /tmp/before /tmp/after /tmp/recorded; \
 	apt-get clean; \
 	rm -rf /var/lib/apt/lists/*
+COPY --from=ffmpeg /out/root/usr/lib/jellyfin-ffmpeg /usr/lib/jellyfin-ffmpeg
+COPY --from=ffmpeg /out/SHA256SUMS /out/*-source.tar /usr/share/beamfall/source/ffmpeg/
+RUN set -eux; \
+	ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg; \
+	ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe; \
+	set -- $(ffmpeg -version | sed -n '1p'); \
+	test "$3" = "$(cat /tmp/ffmpeg.pin)"; \
+	if ffmpeg -hide_banner -buildconf | grep -q -e '--enable-nonfree' -e 'libfdk'; then exit 1; fi; \
+	(cd /usr/share/beamfall/source/ffmpeg && sha256sum -c SHA256SUMS); \
+	rm -f /tmp/ffmpeg.pin /tmp/ffmpeg.lock /tmp/apt-snapshot.sh /tmp/runtime-packages.txt
+
+FROM ffmpeg-runtime AS runtime
 
 COPY --from=build /out/beamfall /usr/local/bin/beamfall
 

@@ -42,7 +42,7 @@ case "$(uname -m)" in
     ;;
 esac
 
-for input in Dockerfile go.mod internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock; do
+for input in Dockerfile go.mod internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock tools/ffmpeg/build.sh tools/ffmpeg/apt-snapshot.sh; do
   [ -f "$BUILD_ROOT/$input" ] || {
     echo "image buildability: missing required input: $BUILD_ROOT/$input" >&2
     exit 1
