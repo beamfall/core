@@ -3640,40 +3640,46 @@ func annotateRestrictedFromPlane(ctx context.Context, db sourceItemLibraryQuerye
 				ids = append(ids, key.id)
 			}
 		}
-		if len(ids) == 0 {
-			continue
+		// Bounded chunks keep a large candidate set (CORE-2525) under
+		// SQLite's bound-variable limit.
+		for start := 0; start < len(ids); start += engagementChunkSize {
+			chunk := ids[start:min(start+engagementChunkSize, len(ids))]
+			if err := annotateRestrictedChunk(ctx, db, kind, chunk, restricted, items, pending); err != nil {
+				return err
+			}
 		}
-		placeholders := make([]string, len(ids))
-		args := make([]any, len(ids))
-		for i, id := range ids {
-			placeholders[i] = "?"
-			args[i] = id
-		}
-		rows, err := db.QueryContext(ctx,
-			`SELECT id, library_id FROM `+kind+` WHERE id IN (`+strings.Join(placeholders, ", ")+`)`, args...)
-		if err != nil {
+	}
+	return nil
+}
+
+// annotateRestrictedChunk resolves one chunk of pending ids of one kind.
+func annotateRestrictedChunk(ctx context.Context, db sourceItemLibraryQueryer, kind string, ids []MediaID, restricted map[LibraryID]bool, items []SourceItem, pending map[sourceItemIdentity][]int) error {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := db.QueryContext(ctx,
+		`SELECT id, library_id FROM `+kind+` WHERE id IN (`+sqlPlaceholders(len(ids))+`)`, args...)
+	if err != nil {
+		return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id MediaID
+		var libraryID LibraryID
+		if err := rows.Scan(&id, &libraryID); err != nil {
 			return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
 		}
-		for rows.Next() {
-			var id MediaID
-			var libraryID LibraryID
-			if err := rows.Scan(&id, &libraryID); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
+		key := sourceItemIdentity{kind: kind, id: id}
+		for _, index := range pending[key] {
+			if restricted[libraryID] {
+				items[index].Restricted = true
 			}
-			key := sourceItemIdentity{kind: kind, id: id}
-			for _, index := range pending[key] {
-				if restricted[libraryID] {
-					items[index].Restricted = true
-				}
-			}
-			delete(pending, key)
 		}
-		err = rows.Err()
-		_ = rows.Close()
-		if err != nil {
-			return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
-		}
+		delete(pending, key)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("resolve %s libraries for restriction: %w", kind, err)
 	}
 	return nil
 }
