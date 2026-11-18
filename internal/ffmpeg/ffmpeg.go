@@ -3161,22 +3161,27 @@ func applySubtitleTitleFlags(ps *ProbeStream) {
 	words := strings.FieldsFunc(strings.ToLower(ps.Title), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
+	// "non-SDH", "Not Forced" and "No SDH/CC" deny the roles they name: a
+	// negation covers the role words that follow it.
+	negated := false
 	for i, word := range words {
-		// "non-SDH", "Not Forced", "No CC" deny the role rather than name it.
-		if i > 0 && (words[i-1] == "non" || words[i-1] == "not" || words[i-1] == "no") {
-			continue
-		}
 		switch word {
+		case "non", "not", "no":
+			negated = true
 		case "sdh", "cc":
-			ps.HearingImpaired = true
+			ps.HearingImpaired = ps.HearingImpaired || !negated
 		case "hearing":
 			if i+1 < len(words) && words[i+1] == "impaired" {
-				ps.HearingImpaired = true
+				ps.HearingImpaired = ps.HearingImpaired || !negated
 			}
+		case "impaired":
+			// The second word of "hearing impaired"; keeps a negation running.
 		case "forced":
-			ps.Forced = true
+			ps.Forced = ps.Forced || !negated
 		case "commentary":
-			ps.Commentary = true
+			ps.Commentary = ps.Commentary || !negated
+		default:
+			negated = false
 		}
 	}
 }

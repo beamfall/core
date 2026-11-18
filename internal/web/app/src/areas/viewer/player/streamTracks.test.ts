@@ -191,6 +191,16 @@ describe("same-language subtitle labels (CORE-2315)", () => {
       "English · Signs & Songs · SRT · External",
     );
     expect(captionTrackLabel({ ...base, title: "english" }, text)).toBe("English · SRT · External");
+    expect(captionTrackLabel({ ...base, title: "English (SDH)", sdh: true }, text)).toBe(
+      "English (SDH) · SRT · External",
+    );
+    // CORE-2523: a title that denies a role does not stand in for the flag.
+    expect(captionTrackLabel({ ...base, title: "Not Forced", forced: true }, text)).toBe(
+      "English · Not Forced · Forced · SRT · External",
+    );
+    expect(captionTrackLabel({ ...base, title: "English (No SDH/CC)", sdh: true }, text)).toBe(
+      "English (No SDH/CC) · SDH · SRT · External",
+    );
   });
 
   it("numbers labels that still read the same and leaves unique ones", () => {

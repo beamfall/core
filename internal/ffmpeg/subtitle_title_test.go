@@ -18,7 +18,9 @@ func TestParseProbeSubtitleTitleFlags(t *testing.T) {
 			{"index": 8, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "hin", "title": "Hindi"}, "disposition": {"forced": 1}},
 			{"index": 9, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "English (non-SDH)"}},
 			{"index": 10, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Not Forced"}},
-			{"index": 11, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Non Hearing Impaired"}}
+			{"index": 11, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Non Hearing Impaired"}},
+			{"index": 12, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "English (No SDH/CC)"}},
+			{"index": 13, "codec_type": "subtitle", "codec_name": "subrip", "tags": {"language": "eng", "title": "Forced, not SDH"}}
 		],
 		"format": {"format_name": "matroska,webm", "duration": "10"}
 	}`), "/media/episode.mkv")
@@ -42,6 +44,8 @@ func TestParseProbeSubtitleTitleFlags(t *testing.T) {
 		{title: "English (non-SDH)"},
 		{title: "Not Forced"},
 		{title: "Non Hearing Impaired"},
+		{title: "English (No SDH/CC)"},
+		{title: "Forced, not SDH", forced: true},
 	}
 	for i, w := range want {
 		s := probe.Streams[i]

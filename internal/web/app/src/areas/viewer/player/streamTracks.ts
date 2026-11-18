@@ -208,6 +208,11 @@ const TITLE_ROLE_WORDS: Record<"forced" | "sdh" | "commentary" | "visualImpaired
   visualImpaired: /\b(described|audio description)\b/i,
 };
 
+// "non-SDH", "Not Forced", "No SDH/CC": a negation and the role words after it,
+// which deny a role rather than name it.
+const NEGATED_ROLES =
+  /\b(non|not|no)\b(?:[^a-z0-9]+(?:sdh|cc|hearing|impaired|forced|commentary|described|audio|description)\b)+/gi;
+
 /**
  * A caption track's label without the parts that only tell same-label tracks
  * apart: "English · SDH", "Spanish (Latin America)", "English · Forced". The
@@ -225,7 +230,8 @@ function captionBaseLabel(
   const title = track.title?.trim() ?? "";
   const titleLower = title.toLocaleLowerCase();
   const languageLower = language.toLocaleLowerCase();
-  const named = (role: keyof typeof TITLE_ROLE_WORDS) => TITLE_ROLE_WORDS[role].test(title);
+  const affirmed = title.replace(NEGATED_ROLES, " ");
+  const named = (role: keyof typeof TITLE_ROLE_WORDS) => TITLE_ROLE_WORDS[role].test(affirmed);
   let head: string[];
   if (!title || languageLower.includes(titleLower)) head = [language];
   else if (titleLower.includes(languageLower) || !languageName(track.language, text.locale)) {
