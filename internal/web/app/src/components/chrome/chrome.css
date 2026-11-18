@@ -885,6 +885,28 @@
   text-overflow: ellipsis;
 }
 
+/* Content rating and audience score (CORE-2400): one muted line that clips
+ * rather than wraps, so it never pushes the title or crowds a narrow card. */
+[data-register="viewer"] .bf-card-rating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+[data-register="viewer"] .bf-card-cert {
+  padding: 0 4px;
+  border: 1px solid var(--text-muted);
+  border-radius: 3px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 /* Phone: a shelf shows two and a half posters so it reads as scrollable, and
  * a grid packs three columns instead of two oversized ones. */
 @media (max-width: 760px) {

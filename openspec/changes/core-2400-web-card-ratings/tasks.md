@@ -1,0 +1,6 @@
+- [x] Spec delta `web-card-ratings`
+- [x] Web: select `certification` and `audienceScore` in card queries; type them on `SourceItem`
+- [x] Web: rating line and accessible name on `MediaItemCard`; shared score format; strings in every shipped locale
+- [x] Web: vitest coverage for present, absent and partial cases
+- [ ] `make gate` (lander)
+- [ ] `openspec archive core-2400-web-card-ratings` after landing

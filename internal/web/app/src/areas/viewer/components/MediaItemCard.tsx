@@ -9,7 +9,7 @@ import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
-import { cardAccessibleName, cardState } from "../lib/cardState";
+import { cardAccessibleName, cardRating, cardState } from "../lib/cardState";
 import { cardSubline } from "../lib/cardTitles";
 import { entityLinkState } from "../lib/entityPreview";
 import type { LibraryViewMode } from "../lib/libraryBrowse";
@@ -80,6 +80,7 @@ export function MediaItemCard({
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
   const state = cardState(item, t);
+  const rating = isMedia ? cardRating(item, displayLocale, t) : undefined;
   const subline = cardSubline(item, showYear, displayLocale);
   const subtitle = displayString(item.subtitle, displayLocale);
   const isRow = display === "list";
@@ -236,6 +237,7 @@ export function MediaItemCard({
         aria-label={cardAccessibleName(
           { ...item, title: cardLabelTitle(item, showYear, subtitle) },
           state,
+          rating,
         )}
         onClick={activate}
         onBlur={stopPreview}
@@ -297,6 +299,12 @@ export function MediaItemCard({
         <div className="bf-card-copy">
           <span className="bf-card-title">{item.title}</span>
           {subline && <span className="bf-card-sub">{subline}</span>}
+          {rating && (
+            <span aria-hidden="true" className="bf-card-rating">
+              {rating.text && <span className="bf-card-cert">{rating.text}</span>}
+              {rating.score && <span>{`\u2605 ${rating.score}`}</span>}
+            </span>
+          )}
         </div>
         {isRow && isMedia && item.durationSeconds ? (
           <span aria-hidden="true" className="bf-card-runtime">

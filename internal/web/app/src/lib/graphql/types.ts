@@ -149,6 +149,10 @@ export interface SourceItem {
   mediaClass?: string;
   /** A media item's stored year (CORE-2269); absent for entities and undated Media. */
   year?: number;
+  /** A Media item's display content rating (PG-13, TV-MA); absent when unrated (CORE-2398). */
+  certification?: string;
+  /** A Media item's audience score from 0 to 10; absent when it has none (CORE-2398). */
+  audienceScore?: number;
   /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
   byline?: string[];
   /**

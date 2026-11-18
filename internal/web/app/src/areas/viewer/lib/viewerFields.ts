@@ -193,3 +193,13 @@ export function fieldDisplayValue(
     return new Intl.DateTimeFormat(undefined, options).format(date);
   }
 }
+
+/** A 0-10 score with one decimal in the display locale (CORE-2399, CORE-2400). */
+export function formatScore(value: number, locale: string): string {
+  const options = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+  try {
+    return new Intl.NumberFormat(locale || "en", options).format(value);
+  } catch {
+    return new Intl.NumberFormat("en", options).format(value);
+  }
+}
