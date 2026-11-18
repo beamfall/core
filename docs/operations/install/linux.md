@@ -156,9 +156,19 @@ server, substituting the server URL, API token, and allowed server-side destinat
 CLI token while stopped with `beamfall token create -data-dir DIR -name backups`; run it as
 the data owner, protect its output, then restart before backing up. See `beamfall token --help`.
 
-Restore while stopped with `beamfall restore -data-dir DIR -manifest PATH`. Use the installed
-binary and correct owner. The [backup runbook](../../security/runbooks/backup-restore.md) and
-[offline recovery guide](../restore.md) govern verification, keys, paths, and recovery; for
+Restore while stopped. An encrypted Backup Set (`set.bbk`) needs its Backup Key; a legacy
+`manifest.json` takes no key:
+
+```sh
+sudo systemctl stop beamfall.service
+sudo /usr/local/bin/beamfall restore -data-dir /var/lib/beamfall -manifest /path/to/set.bbk --key 'BACKUP-KEY'
+sudo chown -R beamfall:beamfall /var/lib/beamfall
+```
+
+Run it as root: restore first renames the data directory to a sibling
+`/var/lib/beamfall.pre-restore-*` rollback copy, which needs write access to `/var/lib`. The
+`chown` hands the restored directory back to the service account. The
+[backup runbook](../../security/runbooks/backup-restore.md) and [offline recovery guide](../restore.md) govern verification, keys, paths, and recovery; for
 containers, preserve the data volume and provide offline tooling access to its contents.
 
 ## Uninstall

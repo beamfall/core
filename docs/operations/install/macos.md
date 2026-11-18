@@ -143,7 +143,10 @@ destination. Mint a token while stopped with `beamfall token create -data-dir DI
 (using the actual data directory), protect its output, and restart before backing up.
 See `beamfall token --help`.
 
-Unload the agent before `beamfall restore -data-dir DIR -manifest PATH`. Follow the canonical
+Unload the agent before `beamfall restore -data-dir DIR -manifest PATH --key 'BACKUP-KEY'`.
+An encrypted Backup Set (`set.bbk`) needs its Backup Key; a legacy `manifest.json` takes no key.
+Restore renames `DIR` to a sibling `DIR.pre-restore-*` rollback copy, so run it as the user who
+owns `DIR`'s parent folder. Follow the canonical
 [backup runbook](../../security/runbooks/backup-restore.md) and [offline recovery](../restore.md)
 for verification, keys, and restore paths before reloading it.
 
