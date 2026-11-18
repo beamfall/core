@@ -312,3 +312,78 @@ func TestRefreshParserMediaFieldsKeepsProbeDecidedAbsence(t *testing.T) {
 		t.Fatalf("operator field = %q, want x", got)
 	}
 }
+
+// TestRefreshParserMediaFieldsYieldsAbsenceToApprovedValue: a value another
+// writer puts under a probe-decided absence is not the parser's, so an
+// authoritative parse emitting the field leaves it alone (CORE-2554).
+func TestRefreshParserMediaFieldsYieldsAbsenceToApprovedValue(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	const id MediaID = "media-alpha"
+	filter := LibraryFilter{Revealed: true, AllLibraries: true}
+	mood := func(value string) MediaField { return MediaField{Name: "mood", Type: EntityFieldText, Text: value} }
+	absent := ParserFieldRefresh{ProbeAbsent: map[string]bool{"mood": true}, Authoritative: true}
+	emitting := ParserFieldRefresh{Fields: []MediaField{mood("parsed")}, ProbeDependent: map[string]bool{"mood": true}, Authoritative: true}
+	assertMood := func(step, want string) {
+		t.Helper()
+		if got := parserFieldsByName(t, st, id)["mood"]; got.Text != want {
+			t.Fatalf("%s: mood = %#v, want %q", step, got, want)
+		}
+	}
+
+	// Approval clears the absence.
+	if err := st.RefreshParserMediaFields(ctx, id, absent); err != nil {
+		t.Fatal(err)
+	}
+	if got := parserMarker(t, st, id, "mood"); got != parserOwnedProbeAbsent {
+		t.Fatalf("mood marker = %d, want %d", got, parserOwnedProbeAbsent)
+	}
+	if err := st.ProposePendingAITag(ctx, PendingAITag{
+		ID: "pt-mood", MediaID: id, TagKind: "mood", Value: "noir", ProposedBy: "ai",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PromotePendingAITag(ctx, "pt-mood", filter); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RefreshParserMediaFields(ctx, id, emitting); err != nil {
+		t.Fatal(err)
+	}
+	assertMood("approved then probed parse", "noir")
+	if err := st.RefreshParserMediaFields(ctx, id, absent); err != nil {
+		t.Fatal(err)
+	}
+	assertMood("approved then probed parse without mood", "noir")
+
+	// A writer that records no provenance does not leave the parser owning it.
+	clear, err := st.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteMediaFieldValueTx(ctx, clear, id, "mood"); err != nil {
+		t.Fatal(err)
+	}
+	if err := clear.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RefreshParserMediaFields(ctx, id, absent); err != nil {
+		t.Fatal(err)
+	}
+	if got := parserMarker(t, st, id, "mood"); got != parserOwnedProbeAbsent {
+		t.Fatalf("mood marker = %d, want %d", got, parserOwnedProbeAbsent)
+	}
+	tx, err := st.catalogW.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertMediaFields(ctx, tx, id, []MediaField{mood("restored")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RefreshParserMediaFields(ctx, id, emitting); err != nil {
+		t.Fatal(err)
+	}
+	assertMood("restored then probed parse", "restored")
+}

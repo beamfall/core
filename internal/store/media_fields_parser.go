@@ -82,6 +82,25 @@ func (s *Store) RefreshParserMediaFields(ctx context.Context, id MediaID, refres
 	if err != nil {
 		return err
 	}
+	// A probe-decided absence holds no value, so a value under one came from
+	// another writer (an approved AI tag, an undo, an edit): the parser no
+	// longer owns the field, and the stale absence is dropped.
+	for name, marker := range owned {
+		if marker != parserOwnedProbeAbsent {
+			continue
+		}
+		if _, exists, err := mediaFieldValueTx(ctx, tx, id, name); err != nil {
+			return err
+		} else if !exists {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			"DELETE FROM media_field_provenance WHERE media_id = ? AND field = ? AND parser_owned = ?",
+			id, name, parserOwnedProbeAbsent); err != nil {
+			return err
+		}
+		delete(owned, name)
+	}
 	refreshable := func(marker int) bool {
 		return marker == parserOwnedStable || (refresh.Authoritative && marker != parserOwnedNone)
 	}
