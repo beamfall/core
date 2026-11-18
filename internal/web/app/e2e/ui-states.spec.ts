@@ -85,8 +85,8 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       return;
     case "/n/:nodeId/all":
       await page.goto(`${await libraryNodeHref(page)}/all`);
-      // The page redirects away when the node has no library, so wait for its own filter bar.
-      await expect(page.getByRole("combobox", { name: "Sort by" })).toBeVisible();
+      // The page redirects away when the node has no library, so wait for its own toolbar.
+      await expect(page.getByRole("button", { name: /^Sort by / })).toBeVisible();
       await expect(page).toHaveURL(/\/all$/);
       return;
     case "/n/:nodeId/collections":
@@ -233,12 +233,18 @@ test.describe("UI state inventory in-page states", () => {
     coverUiStates(testInfo, "/entity/:entityId#error:not-found");
   });
 
-  test("library browse sort and load failure", async ({ page }, testInfo) => {
+  test("library browse sort, filters and load failure", async ({ page }, testInfo) => {
     await gotoScreen(page, "/n/:nodeId/all");
-    await page.getByRole("combobox", { name: "Sort by" }).click();
-    await expect(page.getByRole("option").first()).toBeVisible();
+    await page.getByRole("button", { name: /^Sort by / }).click();
+    await expect(page.getByRole("menuitemradio").first()).toBeVisible();
     await page.keyboard.press("Escape");
-    coverUiStates(testInfo, "/n/:nodeId/all#select:sort");
+    coverUiStates(testInfo, "/n/:nodeId/all#menu:sort");
+
+    await page.getByRole("button", { name: /^Filters/ }).click();
+    await expect(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Filters" })).toBeHidden();
+    coverUiStates(testInfo, "/n/:nodeId/all#dialog:filters");
 
     await routeOperation(page, "LibraryItems", { errors: [{ message: "unavailable" }] });
     await page.reload();

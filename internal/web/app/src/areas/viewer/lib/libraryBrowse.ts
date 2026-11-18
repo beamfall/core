@@ -48,8 +48,13 @@ export const LIBRARY_MAX_YEAR = 2200;
 // and their labels are the Library plugin's, reported by the server.
 const GROUP_PARAM = "group.";
 
+/** The longest title search the server accepts, in characters (CORE-2568). */
+export const LIBRARY_MAX_QUERY = 200;
+
 /** The browse state the URL carries (defaults are omitted from the URL). */
 export interface LibraryBrowseState {
+  /** Title text the result must hold, word by word (CORE-2568); "" for none. */
+  query: string;
   sort: LibrarySort;
   direction: LibraryDirection;
   watch: LibraryWatch | "";
@@ -69,6 +74,7 @@ export interface LibraryBrowseState {
 }
 
 export const DEFAULT_BROWSE_STATE: LibraryBrowseState = {
+  query: "",
   sort: "title",
   direction: "asc",
   watch: "",
@@ -100,7 +106,14 @@ function oneOf<T extends string>(values: readonly T[], value: string | null): T 
   return (values as readonly string[]).includes(value ?? "") ? (value as T) : "";
 }
 
-/** Reads browse state from the URL; unknown values fall back to defaults. */
+/** A title search as the server takes it: trimmed and cut to its length limit. */
+export function browseQuery(raw: string | null | undefined): string {
+  return Array.from((raw ?? "").trim())
+    .slice(0, LIBRARY_MAX_QUERY)
+    .join("")
+    .trim();
+}
+
 /**
  * Whether a watched-state or rating change can reorder or refilter a read in
  * this state, so the read starts over instead of refreshing its cards.
@@ -114,6 +127,7 @@ export function browseFollowsEngagement(state: LibraryBrowseState): boolean {
   );
 }
 
+/** Reads browse state from the URL; unknown values fall back to defaults. */
 export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
   const decade = Number.parseInt(params.get("decade") ?? "", 10);
   const groups: Record<string, string> = {};
@@ -130,6 +144,7 @@ export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
   let yearTo = decadeYear ? 0 : browseYear(params.get("to"));
   if (yearFrom && yearTo && yearFrom > yearTo) [yearFrom, yearTo] = [yearTo, yearFrom];
   return {
+    query: browseQuery(params.get("q")),
     sort: oneOf(LIBRARY_SORTS, params.get("sort")) || DEFAULT_BROWSE_STATE.sort,
     direction: params.get("dir") === "desc" ? "desc" : "asc",
     watch: oneOf(LIBRARY_WATCH_STATES, params.get("watch")),
@@ -145,6 +160,8 @@ export function parseBrowseState(params: URLSearchParams): LibraryBrowseState {
 /** Writes browse state as URL params, leaving defaults out. */
 export function browseStateParams(state: LibraryBrowseState): URLSearchParams {
   const params = new URLSearchParams();
+  const query = browseQuery(state.query);
+  if (query) params.set("q", query);
   if (state.sort !== DEFAULT_BROWSE_STATE.sort) params.set("sort", state.sort);
   if (state.direction !== DEFAULT_BROWSE_STATE.direction) params.set("dir", state.direction);
   if (state.watch) params.set("watch", state.watch);
@@ -200,7 +217,7 @@ export interface LibraryItemsRequest {
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values counts } decades qualities } letters { letter offset count } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $query: String, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, query: $query, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values counts } decades qualities } letters { letter offset count } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;
@@ -223,6 +240,8 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
     if (state.yearTo) vars.yearTo = state.yearTo;
   }
   if (Object.keys(state.groups).length) vars.groupFilters = state.groups;
+  const query = browseQuery(state.query);
+  if (query) vars.query = query;
   return vars;
 }
 

@@ -160,6 +160,43 @@ func TestLibraryBrowseFiltersAndFacets(t *testing.T) {
 	}
 }
 
+// TestLibraryBrowseNarrowsByTitleText pins the CORE-2568 title search: every
+// word must appear in the title, ignoring case, accents and punctuation, over
+// the whole Library (not a page), combined with the other filters, while the
+// facets still describe the unfiltered Library.
+func TestLibraryBrowseNarrowsByTitleText(t *testing.T) {
+	st := openDemo(t)
+	all := mustLibraryBrowse(t, st, LibraryBrowseQuery{})
+	ids := func(result LibraryBrowseResult) []MediaID {
+		out := make([]MediaID, len(result.Items))
+		for i, item := range result.Items {
+			out[i] = item.ID
+		}
+		return out
+	}
+	for name, tc := range map[string]struct {
+		query LibraryBrowseQuery
+		want  []MediaID
+	}{
+		"one word":         {LibraryBrowseQuery{Text: "steel"}, []MediaID{"media-demo-steel"}},
+		"case and order":   {LibraryBrowseQuery{Text: "BUNNY big"}, []MediaID{"media-demo-bunny"}},
+		"accent and punct": {LibraryBrowseQuery{Text: "  Sintél! "}, []MediaID{"media-demo-sintel"}},
+		"every word":       {LibraryBrowseQuery{Text: "tears bunny"}, []MediaID{}},
+		"with a filter":    {LibraryBrowseQuery{Text: "s", Quality: QualityTierUHD}, []MediaID{"media-demo-steel"}},
+		"filter excludes":  {LibraryBrowseQuery{Text: "spring", Quality: QualityTierUHD}, []MediaID{}},
+		"blank":            {LibraryBrowseQuery{Text: " ,  "}, ids(all)},
+		"last page":        {LibraryBrowseQuery{Text: "caminandes", Limit: 1}, []MediaID{"media-demo-caminandes"}},
+	} {
+		got := mustLibraryBrowse(t, st, tc.query)
+		if !slices.Equal(ids(got), tc.want) || got.Total != len(tc.want) {
+			t.Errorf("%s = %v (total %d), want %v", name, ids(got), got.Total, tc.want)
+		}
+		if !slices.Equal(got.Facets.Decades, all.Facets.Decades) {
+			t.Errorf("%s: decade facets = %v, want the unfiltered %v", name, got.Facets.Decades, all.Facets.Decades)
+		}
+	}
+}
+
 func TestLibraryBrowseEntityFacetsOnlyNameVisibleItems(t *testing.T) {
 	st := openDemo(t)
 	ctx := context.Background()

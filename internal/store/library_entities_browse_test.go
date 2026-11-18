@@ -170,6 +170,12 @@ func TestLibraryEntitiesBrowseFilters(t *testing.T) {
 		"direct group": {LibraryBrowseQuery{EntityFilters: []EntityFilter{{Kind: "genre", Name: "Jazz"}}}, []string{"Delta"}},
 		"both groups":  {LibraryBrowseQuery{EntityFilters: []EntityFilter{{Kind: "genre", Name: "Rock"}, {Kind: "genre", Name: "Jazz"}}}, []string{}},
 		"combined":     {LibraryBrowseQuery{Watch: LibraryBrowseWatchUnwatched, Sort: LibraryBrowseSortYear, Descending: true}, []string{"Alpha", "Delta"}},
+		// Text matches the Entity's own title, never the Media it reaches
+		// (all titled a to d here), and holds an Entity without Media.
+		"text":               {LibraryBrowseQuery{Text: "ELT"}, []string{"Delta"}},
+		"text without media": {LibraryBrowseQuery{Text: "gam"}, []string{"Gamma"}},
+		"text and filter":    {LibraryBrowseQuery{Text: "a", Watch: LibraryBrowseWatchWatched}, []string{"Beta"}},
+		"text no match":      {LibraryBrowseQuery{Text: "c"}, []string{}},
 	} {
 		query := base
 		tc.browse.ProfileID = base.Browse.ProfileID

@@ -9,11 +9,7 @@ import { useDisplayLocale, useT } from "@/lib/i18n";
 import { findNodeBySlug, nodePath, nodeSlug } from "@/lib/nodePath";
 import { useSession } from "@/lib/session";
 import { useEngagementEpoch } from "../actions";
-import {
-  CLEARED_BROWSE_FILTERS,
-  hasBrowseFilters,
-  LibraryBrowseToolbar,
-} from "../components/LibraryBrowseToolbar";
+import { LibraryBrowseEmpty, LibraryBrowseToolbar } from "../components/LibraryBrowseToolbar";
 import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
 import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { LibraryHeader } from "../components/LibraryPivots";
@@ -103,7 +99,7 @@ function LibraryBrowse({
   libraryID: string;
   nodeID: string;
   title: Parameters<typeof displayString>[0];
-  /** The Library's view switcher, shown under the heading. */
+  /** The Library's view switcher, shown in the browse toolbar. */
   switcher?: ReactNode;
 }) {
   const t = useT();
@@ -290,8 +286,6 @@ function LibraryBrowse({
     }
   }
 
-  const filtered = hasBrowseFilters(state);
-
   // A card hands the player the loaded items around it as its queue
   // (CORE-1143): the run of contiguous loaded pages, so Previous and Next
   // never skip over a page that has not arrived yet.
@@ -368,18 +362,18 @@ function LibraryBrowse({
             </>
           }
         />
-        {switcher}
-
         <LibraryBrowseToolbar
           state={state}
           facets={facets}
           audioOnly={audioOnly}
           onUpdate={update}
+          libraryName={heading}
+          leading={switcher}
           trailing={
-            <div className="ml-auto flex flex-wrap items-center gap-3">
+            <>
               {(viewMode === "poster" || viewMode === "thumbnail") && <PosterSizeControl />}
               <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} />
-            </div>
+            </>
           }
         />
 
@@ -391,18 +385,7 @@ function LibraryBrowse({
             </Button>
           </div>
         )}
-        {total === 0 && !failed && (
-          <div role="status" className="bf-empty flex flex-col gap-3">
-            <p className="text-sm text-[var(--text-secondary)]">
-              {t(filtered ? "libraryBrowseNoMatches" : "libraryEmptyLead")}
-            </p>
-            {filtered && (
-              <Button variant="outline" onClick={() => update(CLEARED_BROWSE_FILTERS)}>
-                {t("libraryBrowseClearFilters")}
-              </Button>
-            )}
-          </div>
-        )}
+        {total === 0 && !failed && <LibraryBrowseEmpty state={state} onUpdate={update} />}
 
         <div className="flex items-start gap-2">
           <ul

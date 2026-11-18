@@ -9704,6 +9704,11 @@
         ]
       },
       {
+        "name": "query",
+        "kind": "string",
+        "optional": true
+      },
+      {
         "name": "seed",
         "kind": "string",
         "optional": true
@@ -10946,6 +10951,11 @@
           "sd",
           "uhd"
         ]
+      },
+      {
+        "name": "query",
+        "kind": "string",
+        "optional": true
       },
       {
         "name": "seed",

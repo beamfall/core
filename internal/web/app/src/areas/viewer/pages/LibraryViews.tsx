@@ -6,11 +6,7 @@ import { displayString } from "@/lib/display";
 import type { DisplayString } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useEngagementEpoch } from "../actions";
-import {
-  CLEARED_BROWSE_FILTERS,
-  hasBrowseFilters,
-  LibraryBrowseToolbar,
-} from "../components/LibraryBrowseToolbar";
+import { LibraryBrowseEmpty, LibraryBrowseToolbar } from "../components/LibraryBrowseToolbar";
 import { LibraryLetterRail } from "../components/LibraryLetterRail";
 import { LibraryHeader } from "../components/LibraryPivots";
 import { MediaItemCard } from "../components/MediaItemCard";
@@ -75,7 +71,7 @@ export function LibraryViews({
   libraryID: string;
   nodeID: string;
   title: DisplayString;
-  /** Renders the Media view, with the switcher to place under its heading. */
+  /** Renders the Media view, with the switcher to place in its browse toolbar. */
   media: (switcher: ReactNode) => ReactNode;
 }) {
   const t = useT();
@@ -234,13 +230,11 @@ function EntityPageFrame({
   nodeID,
   heading,
   status,
-  switcher,
   children,
 }: {
   nodeID: string;
   heading: string;
   status: string;
-  switcher?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -255,7 +249,6 @@ function EntityPageFrame({
             </p>
           }
         />
-        {switcher}
         {children}
       </div>
     </AppShell>
@@ -405,7 +398,6 @@ function LibraryEntityGrid({
     if (view) params.set(LIBRARY_VIEW_PARAM, view);
     setSearchParams(params, { replace: true });
   }
-  const filtered = hasBrowseFilters(state);
 
   const count = (mediaCount: number) => t("libraryBrowseCount", { count: mediaCount });
   const cells = [];
@@ -428,13 +420,15 @@ function LibraryEntityGrid({
   const status =
     total === null ? (failed ? "" : t("loading")) : t("libraryBrowseCount", { count: total });
   return (
-    <EntityPageFrame nodeID={nodeID} heading={heading} status={status} switcher={switcher}>
+    <EntityPageFrame nodeID={nodeID} heading={heading} status={status}>
       <LibraryBrowseToolbar
         state={state}
         facets={facets.facets}
         audioOnly={facets.audioOnly}
         onUpdate={update}
-        trailing={<PosterSizeControl className="ml-auto" />}
+        libraryName={heading}
+        leading={switcher}
+        trailing={<PosterSizeControl />}
       />
       {failed && (
         <div role="alert" className="bf-empty flex flex-col gap-3">
@@ -444,18 +438,7 @@ function LibraryEntityGrid({
           </Button>
         </div>
       )}
-      {total === 0 && !failed && (
-        <div role="status" className="bf-empty flex flex-col gap-3">
-          <p className="text-sm text-[var(--text-secondary)]">
-            {t(filtered ? "libraryBrowseNoMatches" : "libraryEmptyLead")}
-          </p>
-          {filtered && (
-            <Button variant="outline" onClick={() => update(CLEARED_BROWSE_FILTERS)}>
-              {t("libraryBrowseClearFilters")}
-            </Button>
-          )}
-        </div>
-      )}
+      {total === 0 && !failed && <LibraryBrowseEmpty state={state} onUpdate={update} />}
       <div className="flex items-start gap-2">
         <ul
           ref={listRef}
