@@ -753,7 +753,7 @@ func recordFieldProvenanceBatchTx(ctx context.Context, tx *sql.Tx, ids []MediaID
 		//nolint:gosec // G202: rank is an integer literal from metadataSourceRank's closed enum, sourceRankValues renders that same package-owned enum, values is joined "(?, ?, ?)" placeholders; all values bound via args.
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO media_field_provenance(media_id, field, source) VALUES `+values+`
-			ON CONFLICT(media_id, field) DO UPDATE SET source = excluded.source
+			ON CONFLICT(media_id, field) DO UPDATE SET source = excluded.source, parser_owned = 0
 			WHERE `+rank+` >= (SELECT rank FROM (`+sourceRankValues()+`) WHERE src = media_field_provenance.source)
 		`, args...); err != nil {
 			return err
