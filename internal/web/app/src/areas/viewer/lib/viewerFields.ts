@@ -1,5 +1,10 @@
 import { displayString } from "@/lib/display";
-import type { EntityFieldInfo, GenericMediaInfo } from "@/lib/graphql/types";
+import type {
+  DisplayString,
+  EntityFieldInfo,
+  GenericMediaInfo,
+  MediaCredit,
+} from "@/lib/graphql/types";
 
 // Which of an item's stored fields the Viewer shows (CORE-1785).
 //
@@ -24,8 +29,13 @@ export const SCORE_FIELD = "community-rating";
 export const SCORE_VOTES_FIELD = "community-rating-votes";
 /** Fields the facts row already shows; listing them again would repeat them. */
 const FACT_FIELDS = new Set([RATING_FIELD, RATING_DISPLAY_FIELD, SCORE_FIELD, SCORE_VOTES_FIELD]);
-/** At most this many category credits (the plugin's "category" archetype) become chips. */
-const MAX_CATEGORY_FACTS = 3;
+/**
+ * The facts row shows the first MAX_CATEGORY_KINDS kinds of category credits
+ * (the plugin's "category" archetype), at most MAX_CATEGORY_FACTS_PER_KIND
+ * of each followed by a "+N" chip for the rest (CORE-2504). Details lists them all.
+ */
+const MAX_CATEGORY_KINDS = 2;
+const MAX_CATEGORY_FACTS_PER_KIND = 2;
 
 /** What the page already shows, so a field that only repeats it is dropped. */
 export interface ShownFacts {
@@ -116,7 +126,81 @@ export interface DetailFacts {
   runtimeSeconds?: number;
   rating?: string;
   score?: DetailScore;
-  categories: string[];
+  categories: CategoryFacts[];
+}
+
+/** One linked credit: its Entity id ("" when it has none) and title. */
+export interface CreditLink {
+  entityID: string;
+  title: string;
+}
+
+/** One category kind's chips: the credits shown and how many more there are. */
+export interface CategoryFacts {
+  kind: string;
+  shown: CreditLink[];
+  more: number;
+}
+
+/** One credit row of the Details section: a plugin-provided label and its linked credits. */
+export interface CreditRow {
+  key: string;
+  label: DisplayString;
+  credits: CreditLink[];
+}
+
+interface CreditGroup {
+  key: string;
+  label: DisplayString;
+  credits: CreditLink[];
+  seen: Set<string>;
+}
+
+function addCredit(
+  groups: CreditGroup[],
+  key: string,
+  label: DisplayString,
+  credit: MediaCredit,
+  identity: string,
+) {
+  let group = groups.find((candidate) => candidate.key === key);
+  if (!group) {
+    group = { key, label, credits: [], seen: new Set() };
+    groups.push(group);
+  }
+  if (group.seen.has(identity)) return;
+  group.seen.add(identity);
+  group.credits.push({ entityID: credit.entityID, title: credit.title });
+}
+
+/** The item's category credits grouped by kind, in credit order, each title once. */
+function categoryGroups(credits: readonly MediaCredit[] | null | undefined): CreditGroup[] {
+  const groups: CreditGroup[] = [];
+  for (const credit of credits ?? []) {
+    if (credit.archetype !== "category" || !credit.title) continue;
+    // Two categories reading the same would show one name twice.
+    addCredit(groups, credit.kind, credit.kindDisplayName || credit.kind, credit, credit.title);
+  }
+  return groups;
+}
+
+/**
+ * The Details section's credit rows (CORE-2508): each category kind under its
+ * display name, then person credits carrying a `job` attribute grouped under
+ * the job. Both labels come from the plugin; nothing here names a kind.
+ */
+export function detailCreditRows(credits: readonly MediaCredit[] | null | undefined): CreditRow[] {
+  const jobs: CreditGroup[] = [];
+  for (const credit of credits ?? []) {
+    const job = credit.attributes?.job?.trim();
+    if (credit.archetype !== "person" || !credit.title || !job) continue;
+    // Two people may share a name; one person credited twice for a job shows once.
+    addCredit(jobs, job, job, credit, credit.entityID || credit.title);
+  }
+  return [
+    ...categoryGroups(credits).map((group) => ({ ...group, key: `kind:${group.key}` })),
+    ...jobs.map((group) => ({ ...group, key: `job:${group.key}` })),
+  ].map(({ key, label, credits: links }) => ({ key, label, credits: links }));
 }
 
 /** A community score out of 10, with its vote count and the plugin's field label. */
@@ -129,7 +213,7 @@ export interface DetailScore {
 /**
  * The facts chips' data: year, or the first declared date with a real day,
  * runtime (when the opening card knew the duration), the rating, the community
- * score when anyone voted, and the first few category credits.
+ * score when anyone voted, and the first category credits of the first kinds.
  */
 export function detailFacts(
   media: GenericMediaInfo | null | undefined,
@@ -158,12 +242,13 @@ export function detailFacts(
   if (score && scoreValue > 0 && scoreValue <= 10 && votes > 0) {
     facts.score = { value: scoreValue, votes, label: score.label };
   }
-  for (const credit of media?.credits ?? []) {
-    if (credit.archetype !== "category" || !credit.title) continue;
-    if (facts.categories.includes(credit.title)) continue;
-    facts.categories.push(credit.title);
-    if (facts.categories.length === MAX_CATEGORY_FACTS) break;
-  }
+  facts.categories = categoryGroups(media?.credits)
+    .slice(0, MAX_CATEGORY_KINDS)
+    .map((group) => ({
+      kind: group.key,
+      shown: group.credits.slice(0, MAX_CATEGORY_FACTS_PER_KIND),
+      more: Math.max(0, group.credits.length - MAX_CATEGORY_FACTS_PER_KIND),
+    }));
   return facts;
 }
 

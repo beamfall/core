@@ -1,12 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, graphql } from "@/lib/api";
-import type { Section, SourceItem } from "@/lib/graphql/types";
-import { clearViewerCache, writeViewerCache } from "@/lib/viewerCache";
-import { sectionCacheKey } from "../components/HydratedSection";
+import type { SourceItem } from "@/lib/graphql/types";
+import { clearViewerCache } from "@/lib/viewerCache";
 import {
   fetchMedia,
   fetchMediaRelations,
-  findCachedSiblings,
   mediaLinkState,
   readMediaPreview,
   resumeProgress,
@@ -24,13 +22,6 @@ const item = (id: string, extra: Partial<SourceItem> = {}): SourceItem => ({
   kind: "media",
   title: `Item ${id}`,
   ...extra,
-});
-const section = (id: string, kind = "shelf"): Section => ({
-  id,
-  kind,
-  title: { en: `Section ${id}` },
-  artworkSlot: "poster",
-  source: { kind: "library" } as Section["source"],
 });
 
 afterEach(() => {
@@ -87,37 +78,6 @@ describe("resumeProgress", () => {
       resumeProgress(withEngagement({ positionSeconds: 2400, durationSeconds: 2400 })),
     ).toBeNull();
     expect(resumeProgress(withEngagement({ positionSeconds: "600" }))).toBeNull();
-  });
-});
-
-describe("findCachedSiblings", () => {
-  it("prefers the section the card came from and excludes the item", () => {
-    writeViewerCache(identity, sectionCacheKey(section("a"), "lib", "", null), [
-      item("m1"),
-      item("m9"),
-    ]);
-    writeViewerCache(identity, sectionCacheKey(section("b"), "lib", "", null), [
-      item("m2"),
-      item("m1"),
-      item("m3"),
-    ]);
-
-    const found = findCachedSiblings(identity, "m1", "b");
-    expect(found?.section.id).toBe("b");
-    expect(found?.items.map((i) => i.id)).toEqual(["m2", "m3"]);
-    expect(findCachedSiblings(identity, "m1")?.section.id).toBe("a");
-  });
-
-  it("skips hero sections, sections holding only the item, and other identities", () => {
-    writeViewerCache(identity, sectionCacheKey(section("h", "hero"), "lib", "", null), [
-      item("m1"),
-      item("m2"),
-    ]);
-    writeViewerCache(identity, sectionCacheKey(section("solo"), "lib", "", null), [item("m1")]);
-
-    expect(findCachedSiblings(identity, "m1")).toBeNull();
-    expect(findCachedSiblings("other", "m1")).toBeNull();
-    expect(findCachedSiblings(null, "m1")).toBeNull();
   });
 });
 

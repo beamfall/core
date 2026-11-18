@@ -201,7 +201,25 @@ export function EntityPage() {
           },
         ]
       : []),
-    ...facts.categories.map((category) => ({ key: `category:${category}`, text: category })),
+    // Category chips link to their Entity, with "+N" for the rest of a kind (CORE-2504).
+    ...facts.categories.flatMap((group) => [
+      ...group.shown.map((credit) => ({
+        key: `category:${group.kind}:${credit.entityID || credit.title}`,
+        text: credit.title,
+        ...(credit.entityID
+          ? { variant: "link" as const, to: `/entity/${encodeURIComponent(credit.entityID)}` }
+          : {}),
+      })),
+      ...(group.more > 0
+        ? [
+            {
+              key: `category:${group.kind}:more`,
+              text: `+${group.more}`,
+              spoken: t("mediaDetailMoreCount", { count: group.more }),
+            },
+          ]
+        : []),
+    ]),
     // Without a poster to carry it, the unwatched count is a chip.
     ...(!photo && unwatched > 0
       ? [{ key: "unwatched", text: t("entityDetailUnwatched", { count: unwatched }) }]
@@ -412,7 +430,9 @@ export function EntityPage() {
                         className={`bf-detail-fact${"className" in item ? ` ${item.className}` : ""}`}
                         data-variant={"variant" in item ? item.variant : undefined}
                       >
-                        {"spoken" in item ? (
+                        {"to" in item && item.to ? (
+                          <Link to={item.to}>{item.text}</Link>
+                        ) : "spoken" in item ? (
                           <>
                             <span aria-hidden="true">{item.text}</span>
                             <span className="sr-only">{item.spoken}</span>

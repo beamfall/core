@@ -306,6 +306,37 @@ describe("MediaDetailPage", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("reads the Versions again on Try again, and leaves an all-unknown audio track out of Details", async () => {
+    vi.mocked(fetchMedia).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    vi.mocked(fetchMediaTracks).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+    expect(fetchMediaTracks).toHaveBeenCalledTimes(1);
+
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    vi.mocked(fetchMediaTracks).mockResolvedValue([
+      {
+        id: "va",
+        label: "",
+        videoCodec: "h264",
+        audioTracks: [{ streamIndex: 1, codec: "", language: "", channels: 0 }],
+        captionTracks: [],
+      },
+    ]);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    });
+
+    expect(fetchMediaTracks).toHaveBeenCalledTimes(2);
+    const details = screen.getByRole("heading", { level: 2, name: "Details" }).closest("section");
+    const rows = Array.from(
+      (details as HTMLElement).querySelectorAll("dt"),
+      (dt) => dt.textContent,
+    );
+    expect(rows).toContain("Video");
+    expect(rows).not.toContain("Audio");
+  });
+
   it("keeps a cached detail when revalidation fails", async () => {
     writeViewerCache(identity, mediaDetailCacheKey("m1"), { media, fields: [] });
     vi.mocked(fetchMedia).mockRejectedValue(new TypeError("Failed to fetch"));
@@ -330,29 +361,180 @@ describe("MediaDetailPage", () => {
     expect(screen.getByTestId("path")).toHaveTextContent(/^\/$/);
   });
 
-  it("shows the rest of the cached section the card came from, which open their own pages", async () => {
-    vi.mocked(fetchMedia).mockResolvedValue(media);
+  it("shows no generic shelf of the row the card came from, only rows about the item (CORE-2507)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        { entityID: "p1", title: "Ada Lead", kind: "person", archetype: "person", relation: "by" },
+      ],
+    });
+    vi.mocked(fetchMediaRelations).mockImplementation(async (_id, relation) =>
+      relation === "extra-of" ? [{ id: "x1", kind: "media", title: "Trailer" }] : [],
+    );
+    vi.mocked(fetchSourceItems).mockResolvedValue([{ id: "a1", kind: "media", title: "Also Ada" }]);
+    vi.mocked(fetchRelatedMedia).mockResolvedValue([{ id: "r1", kind: "media", title: "Alike" }]);
+    // The viewer came from a cached Continue Watching row holding other items.
     writeViewerCache(identity, sectionCacheKey(shelf, "lib", "", null), [
       card,
       { id: "m2", kind: "media", title: "Second" },
     ]);
     renderAt([{ pathname: "/media/m1", state: mediaLinkState(card, identity, shelf.id) }]);
-    await act(async () => {});
+    await screen.findByRole("heading", { level: 2, name: "Related" });
 
-    // Titled neutrally, not after the source row (CORE-2320).
-    expect(screen.queryByText(/More from Recent/)).not.toBeInTheDocument();
-    const rail = screen.getByRole("list", { name: "Keep browsing" });
-    expect(rail).toHaveTextContent("Second");
-    expect(rail).not.toHaveTextContent("Card title");
-
-    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Second" }));
-    });
-    // The previous item's server detail never paints under the new id.
-    expect(screen.getByRole("heading", { level: 1, name: "Second" })).toBeInTheDocument();
-    expect(screen.queryByText("Server summary")).toBeNull();
+    expect(screen.queryByText("Keep browsing")).toBeNull();
+    expect(screen.queryByText("Second")).toBeNull();
+    expect(
+      screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual(["People", "Extras", "More with Ada Lead", "Related"]);
   });
+
+  it("links category chips to their Entity, two per kind with +N for the rest (CORE-2504)", async () => {
+    const category = (entityID: string, title: string, kind: string) => ({
+      entityID,
+      title,
+      kind,
+      kindDisplayName: { en: kind === "g" ? "Genre" : "Maker" },
+      archetype: "category",
+      relation: "in",
+    });
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        category("g1", "Drama", "g"),
+        category("g2", "Biography", "g"),
+        category("s1", "Universal Pictures", "s"),
+        category("s2", "DreamWorks Pictures", "s"),
+        category("s3", "Imagine Entertainment", "s"),
+      ],
+    });
+    renderAt(["/media/m1"]);
+    await screen.findByRole("heading", { level: 1, name: "Server title" });
+
+    const facts = screen.getByRole("list", { name: "About this item" });
+    expect(Array.from(facts.querySelectorAll("li"), (li) => li.textContent)).toEqual([
+      "2001",
+      "Drama",
+      "Biography",
+      "Universal Pictures",
+      "DreamWorks Pictures",
+      "+11 more",
+    ]);
+    const links = within(facts).getAllByRole("link");
+    expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["Drama", "/entity/g1"],
+      ["Biography", "/entity/g2"],
+      ["Universal Pictures", "/entity/s1"],
+      ["DreamWorks Pictures", "/entity/s2"],
+    ]);
+    // Keyboard-reachable, and the chip keeps its look around the link.
+    links[2].focus();
+    expect(links[2]).toHaveFocus();
+    expect(links[2].closest("li")).toHaveClass("bf-detail-fact");
+    // Details lists every credit of each kind, the overflow included.
+    const details = screen.getByRole("heading", { level: 2, name: "Details" }).closest("section");
+    expect(
+      within(details as HTMLElement).getByRole("link", { name: "Imagine Entertainment" }),
+    ).toHaveAttribute("href", "/entity/s3");
+    fireEvent.click(links[2]);
+    expect(screen.getByTestId("path")).toHaveTextContent("/entity/s1");
+  });
+
+  it("lists credits by kind and job and the shown Version's file in Details (CORE-2508)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        {
+          entityID: "g1",
+          title: "Drama",
+          kind: "g",
+          kindDisplayName: { en: "Genre" },
+          archetype: "category",
+          relation: "in",
+        },
+        {
+          entityID: "p1",
+          title: "Ada Lead",
+          kind: "person",
+          archetype: "person",
+          relation: "by",
+          attributes: { character: "Hero" },
+        },
+        {
+          entityID: "d1",
+          title: "Dee Rector",
+          kind: "person",
+          archetype: "person",
+          relation: "by",
+          attributes: { job: "Director", department: "Directing" },
+        },
+        {
+          entityID: "w1",
+          title: "Wri Ter",
+          kind: "person",
+          archetype: "person",
+          relation: "by",
+          attributes: { job: "Screenplay" },
+        },
+      ],
+    });
+    vi.mocked(fetchMediaDetailFields).mockResolvedValue([
+      { name: "country", type: "text", value: "United States", label: { en: "Country" } },
+      { name: "empty", type: "text", value: " ", label: { en: "Empty" } },
+    ]);
+    vi.mocked(fetchMediaTracks).mockResolvedValue([
+      {
+        id: "va",
+        label: "4K",
+        videoCodec: "hevc",
+        hdr: "HDR10",
+        audioTracks: [
+          { streamIndex: 1, codec: "aac", language: "eng", channels: 2 },
+          { streamIndex: 2, codec: "eac3", language: "eng", channels: 6, default: true },
+        ],
+        captionTracks: [],
+      },
+    ]);
+    renderAt(["/media/m1"]);
+    await screen.findByText("HEVC · HDR10");
+
+    const details = screen.getByRole("heading", { level: 2, name: "Details" }).closest("section");
+    const rows = Array.from((details as HTMLElement).querySelectorAll("dt"), (dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+    expect(rows).toEqual([
+      ["Genre", "Drama"],
+      ["Director", "Dee Rector"],
+      ["Screenplay", "Wri Ter"],
+      ["Country", "United States"],
+      ["Version", "4K"],
+      ["Video", "HEVC · HDR10"],
+      ["Audio", "English · Dolby Digital Plus · 5.1"],
+    ]);
+    expect(
+      within(details as HTMLElement).getByRole("link", { name: "Dee Rector" }),
+    ).toHaveAttribute("href", "/entity/d1");
+    // One listing feeds the pickers and Details.
+    expect(fetchMediaTracks).toHaveBeenCalledTimes(1);
+  });
+
+  it("reserves the stage's space while the item loads (CORE-2509)", async () => {
+    vi.mocked(fetchMedia).mockReturnValue(new Promise(() => {}));
+    renderAt(["/media/m1"]);
+    const skeleton = screen.getByRole("status", { name: "Loading..." });
+    expect(skeleton).toHaveAttribute("data-backdrop", "");
+    expect(skeleton.querySelector(".bf-detail-facts")).not.toBeNull();
+    expect(skeleton.querySelector(".bf-detail-overview")).not.toBeNull();
+    cleanup();
+
+    // Painted from the opening card: the backdrop, facts and overview space stays reserved.
+    renderAt([{ pathname: "/media/m1", state: mediaLinkState(card, identity) }]);
+    const stage = screen.getByRole("heading", { level: 1, name: "Card title" }).closest("section");
+    expect(stage).toHaveAttribute("data-backdrop", "");
+    expect(stage?.querySelector(".bf-detail-facts")).not.toBeNull();
+    expect(stage?.querySelector(".bf-detail-overview")).not.toBeNull();
+  });
+
   it("takes the runtime from the probed media duration over a short reported one (CORE-2314)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({ ...media, durationSeconds: 7260 });
     vi.mocked(fetchMediaDetailFields).mockResolvedValue([]);
