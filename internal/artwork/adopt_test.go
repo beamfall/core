@@ -100,3 +100,77 @@ func TestAdoptEntityArtworkSkipsAProtectedSurvivor(t *testing.T) {
 		t.Fatalf("sealed survivor got artwork %q", got)
 	}
 }
+
+// An adoption interrupted part way leaves the slot reading as one the survivor
+// only inherited, so the merge's retry adopts it again and finishes the marks.
+// Both states a stop can leave are covered: marks settled before the image,
+// and the image published before the survivor's inherited mark is removed.
+func TestAdoptEntityArtworkFinishesAnInterruptedCopy(t *testing.T) {
+	for _, state := range []struct {
+		name  string
+		image string
+	}{{"before the image", "inherited poster"}, {"before the inherited mark is removed", "merged poster"}} {
+		t.Run(state.name, func(t *testing.T) {
+			s := newShelf(t)
+			s.entity("entity-kept", "box")
+			s.entity("entity-merged", "box")
+			svc := s.svc
+			kept, merged := store.EntityID("entity-kept"), store.EntityID("entity-merged")
+			path := svc.EntityArtworkPath
+			writeSlotFile(t, path(merged, SlotPoster), "merged poster")
+			writeSlotFile(t, lockMarkerPath(path(merged, SlotPoster)), `{"source":"local"}`)
+			writeSlotFile(t, path(kept, SlotPoster), state.image)
+			writeSlotFile(t, lockMarkerPath(path(kept, SlotPoster)), `{"source":"local"}`)
+			writeSlotFile(t, inheritedMarkerPath(path(kept, SlotPoster)), "{}")
+
+			if err := svc.AdoptEntityArtwork(context.Background(), kept, merged); err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []struct{ path, body string }{
+				{path(kept, SlotPoster), "merged poster"},
+				{lockMarkerPath(path(kept, SlotPoster)), `{"source":"local"}`},
+				{inheritedMarkerPath(path(kept, SlotPoster)), ""},
+			} {
+				if got := readSlotFile(t, want.path); got != want.body {
+					t.Errorf("%s = %q, want %q", want.path, got, want.body)
+				}
+			}
+		})
+	}
+}
+
+// A mark that cannot be written fails the adoption before the image is
+// published, so the slot still reads as missing and the retry copies it with
+// every mark.
+func TestAdoptEntityArtworkPublishesTheImageAfterItsMarks(t *testing.T) {
+	s := newShelf(t)
+	s.entity("entity-kept", "box")
+	s.entity("entity-merged", "box")
+	svc := s.svc
+	kept, merged := store.EntityID("entity-kept"), store.EntityID("entity-merged")
+	path := svc.EntityArtworkPath
+	writeSlotFile(t, path(merged, SlotLogo), "merged logo")
+	writeSlotFile(t, generatedMarkerPath(path(merged, SlotLogo)), "{}")
+	// A directory where the generated mark goes makes its write fail.
+	blocker := generatedMarkerPath(path(kept, SlotLogo))
+	writeSlotFile(t, filepath.Join(blocker, "x"), "")
+
+	if err := svc.AdoptEntityArtwork(context.Background(), kept, merged); err == nil {
+		t.Fatal("adoption with an unwritable mark succeeded")
+	}
+	if got := readSlotFile(t, path(kept, SlotLogo)); got != "" {
+		t.Fatalf("logo published before its marks: %q", got)
+	}
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AdoptEntityArtwork(context.Background(), kept, merged); err != nil {
+		t.Fatal(err)
+	}
+	if got := readSlotFile(t, path(kept, SlotLogo)); got != "merged logo" {
+		t.Fatalf("logo = %q, want the merged one", got)
+	}
+	if got := readSlotFile(t, generatedMarkerPath(path(kept, SlotLogo))); got != "{}" {
+		t.Fatalf("generated mark = %q, want the merged one's", got)
+	}
+}

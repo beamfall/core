@@ -433,7 +433,10 @@ func TestTitleFoldNewSpellingJoinsTheEstablishedVariant(t *testing.T) {
 // holds "One", the newer "first.band" holds "Two". Rehydrated under the
 // settled spelling, in either order, the parents merge and both children
 // survive under the established parent with their own IDs: "Two", whose id
-// derives from the merged-away spelling, is reused rather than twinned.
+// derives from the merged-away spelling, is reused rather than twinned. The
+// first parent merge fails: the retry neither twins "Two" nor leaves it under
+// two parents, and undoing the merge puts each child back under its own
+// spelling alone.
 func TestTitleFoldKeepsAChildThatOnlyTheNewerParentHeld(t *testing.T) {
 	for _, order := range [][]int{{0, 1}, {1, 0}} {
 		ctx := context.Background()
@@ -487,14 +490,21 @@ func TestTitleFoldKeepsAChildThatOnlyTheNewerParentHeld(t *testing.T) {
 			t.Fatalf("legacy parents %v, children %v; want two of each", parents, children)
 		}
 		adapter := newTestAdapterWithMapper(st, foldedAlbumMapper{})
-		hydrate := func(i int) {
-			t.Helper()
-			if err := adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+		adapter.foldStore = &recordingFoldStore{hydrationFoldStore: adapter.foldStore, failCopies: 1}
+		hydrateErr := func(i int) error {
+			return adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
 				MediaID: files[i].media, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
 				Metadata: map[string]string{"album": files[i].album, "folder": "First Band"},
-			}); err != nil {
+			})
+		}
+		hydrate := func(i int) {
+			t.Helper()
+			if err := hydrateErr(i); err != nil {
 				t.Fatalf("order %v: hydrate %s: %v", order, files[i].name, err)
 			}
+		}
+		if err := hydrateErr(order[0]); err == nil {
+			t.Fatalf("order %v: hydration with a failing parent merge succeeded", order)
 		}
 		for _, i := range order {
 			hydrate(i)
@@ -520,8 +530,19 @@ func TestTitleFoldKeepsAChildThatOnlyTheNewerParentHeld(t *testing.T) {
 				t.Fatalf("order %v: %s members = %+v, %v; want its own Media", order, file.album, members, err)
 			}
 		}
-		if merges := titleFoldMerges(t, st); len(merges) != 1 {
+		merges := titleFoldMerges(t, st)
+		if len(merges) != 1 {
 			t.Fatalf("order %v: title-fold merge activity = %+v, want the parent's alone", order, merges)
+		}
+		for _, entry := range merges {
+			if _, err := st.UndoBatch(ctx, entry.TargetID, all, time.Now().UTC()); err != nil {
+				t.Fatalf("order %v: undo %s: %v", order, entry.TargetID, err)
+			}
+		}
+		for _, file := range files {
+			if targets, _, err := st.EntityRelationTargets(ctx, lib.ID, children[file.album], "album-artist"); err != nil || len(targets) != 1 || targets[0] != parents[file.artist] {
+				t.Fatalf("order %v: %s scope after undo = %v, %v; want %s alone", order, file.album, targets, err, parents[file.artist])
+			}
 		}
 		_ = st.Close()
 	}
@@ -637,7 +658,6 @@ func TestTitleFoldMergeOwesItsActivityEntryUntilWritten(t *testing.T) {
 	}
 }
 
-// titleFoldMerges lists the title-fold merge activity entries, newest first.
 // failingFoldArtwork fails the first failures artwork copies, then hands
 // them to the real artwork store.
 type failingFoldArtwork struct {
@@ -736,6 +756,7 @@ func TestTitleFoldMergeKeepsArtworkOnTheSurvivor(t *testing.T) {
 	}
 }
 
+// titleFoldMerges lists the title-fold merge activity entries, newest first.
 func titleFoldMerges(t *testing.T, st *store.Store) []store.ActivityEntry {
 	t.Helper()
 	entries, err := st.ActivityEntries(context.Background(), store.ActivityQuery{

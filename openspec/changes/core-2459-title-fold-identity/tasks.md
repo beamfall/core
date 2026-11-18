@@ -5,6 +5,7 @@
 - [x] Established variant survives; merge activity entries; indexed variant lookup (review round 2)
 - [x] Reparented children keep their IDs; owed activity entries; by-ID newer-variant check (review round 3)
 - [x] Survivor takes the merged variant's artwork it lacks (review round 4)
+- [x] Parent variants merge before a reparented child is written; artwork marks settle before the image (review round 5)
 - [x] Codex review of the exact head
 - [ ] Tower check of the TV Shows view
 - [ ] Gate receipt via `corvint-tasks gate run` (make gate)
