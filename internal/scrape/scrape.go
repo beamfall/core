@@ -94,6 +94,10 @@ type EntityResult struct {
 	// Entities sibling maps hydrated in the same lookup, each under the
 	// container relation it is linked by.
 	Links []EntityLink
+	// LinkRelations lists, sorted, the container relations the map declares:
+	// Links holds every link under them this lookup resolved, so a relation
+	// with no Links resolved to none.
+	LinkRelations []string
 	// containerRelations is the container map's ContainerRelations, which
 	// linkContainerResults resolves into Links once every map has resolved.
 	containerRelations map[string]string
@@ -980,7 +984,10 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 func linkContainerResults(entities []EntityResult) {
 	for i := range entities {
 		container := &entities[i]
-		for _, relation := range slices.Sorted(maps.Keys(container.containerRelations)) {
+		if len(container.containerRelations) > 0 {
+			container.LinkRelations = slices.Sorted(maps.Keys(container.containerRelations))
+		}
+		for _, relation := range container.LinkRelations {
 			sibling := container.containerRelations[relation]
 			for _, hydrated := range entities {
 				if hydrated.Container || hydrated.Relation != sibling {

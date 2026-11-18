@@ -907,7 +907,8 @@ func TestReplaceMediaRelationsRewritesNamedKindsOnly(t *testing.T) {
 // TestReplaceEntityRelationsRewritesNamedRelationsOnly: replacing a source
 // Entity's links under one relation name drops its previous Entity targets
 // under that name and keeps its other names and its Media-target rows; a row
-// from another source is rejected before anything is deleted.
+// from another source or under an unnamed relation is rejected before
+// anything is deleted, and a named relation with no rows is cleared.
 func TestReplaceEntityRelationsRewritesNamedRelationsOnly(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
@@ -927,7 +928,7 @@ func TestReplaceEntityRelationsRewritesNamedRelationsOnly(t *testing.T) {
 		}
 	}
 	order := 0
-	if err := st.ReplaceEntityRelations(ctx, "entity-a", []EntityRelation{
+	if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, []EntityRelation{
 		{FromEntityID: "entity-a", Name: "linked", ToEntityID: "entity-d", SortOrder: &order},
 	}); err != nil {
 		t.Fatalf("ReplaceEntityRelations: %v", err)
@@ -951,13 +952,27 @@ func TestReplaceEntityRelationsRewritesNamedRelationsOnly(t *testing.T) {
 		t.Fatalf("media-target row = %v, %v; want entity-a kept", related, err)
 	}
 
-	if err := st.ReplaceEntityRelations(ctx, "entity-a", []EntityRelation{
-		{FromEntityID: "entity-b", Name: "linked", ToEntityID: "entity-c"},
-	}); err == nil {
-		t.Fatal("ReplaceEntityRelations accepted a row from another source")
+	for name, rows := range map[string][]EntityRelation{
+		"a row from another source":       {{FromEntityID: "entity-b", Name: "linked", ToEntityID: "entity-c"}},
+		"a row under an unnamed relation": {{FromEntityID: "entity-a", Name: "other", ToEntityID: "entity-c"}},
+	} {
+		if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, rows); err == nil {
+			t.Fatalf("ReplaceEntityRelations accepted %s", name)
+		}
 	}
 	if got := targets("linked"); len(got) != 1 || got[0] != "entity-d" {
 		t.Fatalf("rejected replace disturbed rows: %v", got)
+	}
+
+	// A named relation with no rows is cleared.
+	if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, nil); err != nil {
+		t.Fatalf("ReplaceEntityRelations clearing: %v", err)
+	}
+	if got := targets("linked"); len(got) != 0 {
+		t.Fatalf("cleared relation targets = %v, want none", got)
+	}
+	if got := targets("other"); len(got) != 1 {
+		t.Fatalf("clearing disturbed another relation: %v", got)
 	}
 }
 

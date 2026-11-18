@@ -51,7 +51,7 @@ func showDetailsBundle(endpoint string) singleBundle {
 // backdrop, and relations to the genres and cast in billing order. A title
 // path that does not resolve keeps the folder spelling. Re-identifying against
 // a match with other genres and cast replaces the links rather than adding to
-// them.
+// them, and a match with an empty cast clears the cast.
 func TestIdentifyHydratesShowDetails(t *testing.T) {
 	for _, tc := range []struct{ folder, matched, want string }{
 		{"A Mothers Son", `"name":"A Mother's Son",`, "A Mother's Son"},
@@ -143,6 +143,14 @@ func TestIdentifyHydratesShowDetails(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertRelated(map[string][]string{"genre": {"Comedy"}, "person": {"Other Actor"}})
+
+			mu.Lock()
+			cast = ""
+			mu.Unlock()
+			if err := service.Apply(ctx, media.ID, "demo", "tv", "42"); err != nil {
+				t.Fatal(err)
+			}
+			assertRelated(map[string][]string{"genre": {"Comedy"}, "person": nil})
 		})
 	}
 }

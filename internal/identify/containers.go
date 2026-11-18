@@ -242,20 +242,18 @@ func (s *Service) applyEntityArtworkSlots(ctx context.Context, id store.EntityID
 // entityRelationReplacer is the optional EntityStore extension that rewrites a
 // source Entity's relations by name; *store.Store satisfies it.
 type entityRelationReplacer interface {
-	ReplaceEntityRelations(ctx context.Context, fromID store.EntityID, relations []store.EntityRelation) error
+	ReplaceEntityRelations(ctx context.Context, fromID store.EntityID, names []string, relations []store.EntityRelation) error
 }
 
 // applyContainerLinks relates the container Entity to each Entity a sibling
 // map hydrated, under the container relation its ContainerRelations entry
 // names, keeping the sibling's sort order. A link is written only when the
 // bundle declares that relation on the container kind toward the linked
-// Entity's kind. Each relation the result links replaces the container's
-// previous links under it, so a corrected match drops the old cast and
-// genres; a store without the replace extension only adds links.
+// Entity's kind. The result's links replace the container's previous links
+// under every container relation the map and the bundle declare, so a
+// corrected match drops the old cast and genres, and an empty cast clears it;
+// a store without the replace extension only adds links.
 func (s *Service) applyContainerLinks(ctx context.Context, library store.LibraryID, bundle plugin.Bundle, target store.EntityID, result scrape.EntityResult) error {
-	if len(result.Links) == 0 {
-		return nil
-	}
 	declared := map[string]plugin.RelationSpec{}
 	for _, kind := range bundle.EntityKinds {
 		if kind.Name == result.Kind {
@@ -263,6 +261,15 @@ func (s *Service) applyContainerLinks(ctx context.Context, library store.Library
 				declared[relation.Name] = relation
 			}
 		}
+	}
+	var names []string
+	for _, name := range result.LinkRelations {
+		if _, ok := declared[name]; ok {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
 	}
 	var rows []store.EntityRelation
 	for _, link := range result.Links {
@@ -279,7 +286,7 @@ func (s *Service) applyContainerLinks(ctx context.Context, library store.Library
 		})
 	}
 	if replacer, ok := s.entities.(entityRelationReplacer); ok {
-		return replacer.ReplaceEntityRelations(ctx, target, rows)
+		return replacer.ReplaceEntityRelations(ctx, target, names, rows)
 	}
 	for _, row := range rows {
 		if err := s.entities.UpsertEntityRelation(ctx, row); err != nil {

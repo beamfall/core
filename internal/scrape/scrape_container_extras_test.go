@@ -59,4 +59,7 @@ func TestLookupResolvesContainerArtworkTitleAndLinks(t *testing.T) {
 	if fmt.Sprint(links) != want {
 		t.Fatalf("links = %v, want %s", links, want)
 	}
+	if fmt.Sprint(series.LinkRelations) != "[credit in-genre]" {
+		t.Fatalf("link relations = %v, want [credit in-genre]", series.LinkRelations)
+	}
 }

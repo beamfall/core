@@ -476,12 +476,12 @@ func (s *Store) ReplaceMediaRelations(ctx context.Context, mediaID MediaID, rela
 }
 
 // ReplaceEntityRelations rewrites the Entity-target relations of one source
-// Entity for every relation name the given rows carry: the source's previous
-// Entity-target rows under each of those names are deleted and the given rows
-// inserted, in one transaction. Relation names absent from the rows, and
-// Media-target rows, are left as they are. Every row must come from fromID
-// and target an Entity.
-func (s *Store) ReplaceEntityRelations(ctx context.Context, fromID EntityID, relations []EntityRelation) error {
+// Entity under each of names: the source's previous Entity-target rows under
+// those names are deleted and the given rows inserted, in one transaction, so
+// a name with no rows is cleared. Other relation names, and Media-target rows,
+// are left as they are. Every row must come from fromID, target an Entity and
+// carry one of names.
+func (s *Store) ReplaceEntityRelations(ctx context.Context, fromID EntityID, names []string, relations []EntityRelation) error {
 	// Authority face: Entity-relation catalog rows are main-only.
 	if err := s.guardAuthority(serverrole.FaceCatalogRow); err != nil {
 		return err
@@ -494,15 +494,20 @@ func (s *Store) ReplaceEntityRelations(ctx context.Context, fromID EntityID, rel
 		attributes any
 		sortOrder  any
 	}
+	named := map[string]bool{}
+	for _, name := range names {
+		if name == "" {
+			return errors.New("relation name is required")
+		}
+		named[name] = true
+	}
 	rows := make([]row, 0, len(relations))
-	names := []string{}
-	seen := map[string]bool{}
 	for _, relation := range relations {
 		if relation.FromEntityID != fromID || relation.ToEntityID == "" || relation.ToMediaID != "" {
 			return errors.New("replaced relations must all come from the entity and target an entity")
 		}
-		if relation.Name == "" {
-			return errors.New("relation name is required")
+		if !named[relation.Name] {
+			return errors.New("replaced relation " + relation.Name + " is not one of the replaced names")
 		}
 		switch relation.Cardinality {
 		case "", "one", "many":
@@ -514,12 +519,8 @@ func (s *Store) ReplaceEntityRelations(ctx context.Context, fromID EntityID, rel
 			return err
 		}
 		rows = append(rows, row{relation: relation, attributes: attributes, sortOrder: sortOrder})
-		if !seen[relation.Name] {
-			seen[relation.Name] = true
-			names = append(names, relation.Name)
-		}
 	}
-	if len(rows) == 0 {
+	if len(names) == 0 {
 		return nil
 	}
 
