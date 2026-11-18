@@ -1,7 +1,7 @@
 # media-rating-wire Specification
 
 ## Purpose
-TBD - created by archiving change core-2398-media-rating-wire. Update Purpose after archive.
+Carry an item's content rating (certification) and audience score on the client wire, so clients can show them on browse cards and the media detail read without extra round-trips (CORE-2398).
 
 ## Requirements
 
