@@ -76,9 +76,6 @@ type scanWalkState struct {
 	// extrasRoot is the configured Library root holding req.Root; it bounds
 	// the Extras folder conventions even when req.Root is a subfolder.
 	extrasRoot string
-	// soleMainMediaDirs caches, per folder, whether it holds exactly one
-	// main Media (see folderHasSoleMainMedia).
-	soleMainMediaDirs map[string]bool
 	// walkMediaFiles counts the media-file candidates this run's walk saw,
 	// including ones a resumed checkpoint skips as already done. Zero means
 	// the root walked empty, so the post-walk missing pass must not run.
