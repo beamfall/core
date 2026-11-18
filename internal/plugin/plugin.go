@@ -337,11 +337,10 @@ func (r *Registry) EntityParentRelations() []string {
 // ContainerRollUpRelations returns the relations activated bundles declare
 // for a nested container hierarchy a catalog feed lists by its top container:
 // members are the relations a container Kind holds one Media by
-// (Cardinality "one", the season's episode), parents the relations that
-// container climbs to a container Kind the bundle's browse Layout lists
-// whole (the show). A container whose parent is not browsed, or which holds
-// Media many-to-many (an album), contributes nothing, so its Media stay
-// listed as themselves. Both are sorted and without repeats; core names no
+// (Cardinality "one"), parents the relations that container climbs to a
+// container Kind the bundle's browse Layout lists whole. A container whose
+// parent is not browsed, or which holds Media many-to-many, contributes
+// nothing, so its Media stay listed as themselves. Both are sorted and without repeats; core names no
 // Kind or relation (invariant #1).
 func (r *Registry) ContainerRollUpRelations() (members, parents []string) {
 	if r == nil {

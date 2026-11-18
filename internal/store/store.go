@@ -808,7 +808,7 @@ type SourceQuery struct {
 	// indistinguishable). Ignored on every other kind, like FieldFilters.
 	EntityFilter *EntityFilter
 	// RollUp lists an "all-items" Media that sits in a nested container
-	// hierarchy as its top container instead (the series, not the episode).
+	// hierarchy as its top container instead, not the member.
 	// Nil lists every Media as itself. Ignored on every other kind.
 	RollUp *ContainerRollUp
 	// Seed parameterizes the "random" Source kind: the same seed yields the

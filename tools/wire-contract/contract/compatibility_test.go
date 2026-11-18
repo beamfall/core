@@ -70,3 +70,23 @@ func graphFieldForTest(field, effect string) graph.SchemaField {
 func unmarshalSnapshotForTest(raw []byte, snapshot *Snapshot) error {
 	return json.Unmarshal(raw, snapshot)
 }
+
+func TestJSONSubsetTreatsEnumValuesAsASet(t *testing.T) {
+	decode := func(raw string) any {
+		var value any
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	previous := decode(`{"name":"sort","enum":["added","duration","title"]}`)
+	if !jsonSubset(previous, decode(`{"name":"sort","enum":["added","audience-score","duration","plays","title"]}`)) {
+		t.Fatal("a sorted enum gaining values was reported as breaking")
+	}
+	if jsonSubset(previous, decode(`{"name":"sort","enum":["added","title"]}`)) {
+		t.Fatal("an enum losing a value passed as additive")
+	}
+	if jsonSubset(previous, decode(`{"name":"sort","enum":["added","length","title"]}`)) {
+		t.Fatal("an enum renaming a value passed as additive")
+	}
+}

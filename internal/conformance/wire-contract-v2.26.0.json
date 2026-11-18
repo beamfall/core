@@ -2079,6 +2079,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "certification",
           "kind": "scalar",
           "optional": true
@@ -2621,6 +2635,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "byline",
@@ -6317,6 +6345,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "certification",
           "kind": "scalar",
           "optional": true
@@ -8010,6 +8052,20 @@
                       "nullable": true
                     },
                     {
+                      "name": "audienceScoreLabel",
+                      "kind": "map",
+                      "optional": true,
+                      "nullable": true,
+                      "elem": {
+                        "kind": "scalar"
+                      }
+                    },
+                    {
+                      "name": "audienceScoreVotes",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "byline",
                       "kind": "list",
                       "optional": true,
@@ -8156,6 +8212,20 @@
                     "kind": "scalar",
                     "optional": true,
                     "nullable": true
+                  },
+                  {
+                    "name": "audienceScoreLabel",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "audienceScoreVotes",
+                    "kind": "scalar",
+                    "optional": true
                   },
                   {
                     "name": "byline",
@@ -8333,6 +8403,20 @@
                     "nullable": true
                   },
                   {
+                    "name": "audienceScoreLabel",
+                    "kind": "map",
+                    "optional": true,
+                    "nullable": true,
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  },
+                  {
+                    "name": "audienceScoreVotes",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "byline",
                     "kind": "list",
                     "optional": true,
@@ -8479,6 +8563,20 @@
                   "kind": "scalar",
                   "optional": true,
                   "nullable": true
+                },
+                {
+                  "name": "audienceScoreLabel",
+                  "kind": "map",
+                  "optional": true,
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "audienceScoreVotes",
+                  "kind": "scalar",
+                  "optional": true
                 },
                 {
                   "name": "byline",
@@ -8747,6 +8845,20 @@
               "kind": "scalar",
               "optional": true,
               "nullable": true
+            },
+            {
+              "name": "audienceScoreLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScoreVotes",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "certification",
@@ -9043,6 +9155,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "certification",
@@ -9492,6 +9618,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "certification",
@@ -10803,6 +10943,23 @@
       "kind": "object",
       "arguments": [
         {
+          "name": "direction",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        {
+          "name": "groupFilters",
+          "kind": "map",
+          "optional": true,
+          "elem": {
+            "kind": "string"
+          }
+        },
+        {
           "name": "kind",
           "kind": "string",
           "optional": true
@@ -10817,7 +10974,65 @@
           "optional": true
         },
         {
+          "name": "minRating",
+          "kind": "int",
+          "optional": true
+        },
+        {
           "name": "offset",
+          "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "quality",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "hd1080",
+            "hd720",
+            "sd",
+            "uhd"
+          ]
+        },
+        {
+          "name": "seed",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "sort",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "added",
+            "audience-score",
+            "duration",
+            "last-watched",
+            "plays",
+            "random",
+            "rating",
+            "release-date",
+            "title",
+            "year"
+          ]
+        },
+        {
+          "name": "watch",
+          "kind": "string",
+          "optional": true,
+          "enum": [
+            "in-progress",
+            "unwatched",
+            "watched"
+          ]
+        },
+        {
+          "name": "yearFrom",
+          "kind": "int",
+          "optional": true
+        },
+        {
+          "name": "yearTo",
           "kind": "int",
           "optional": true
         }
@@ -10870,6 +11085,20 @@
                 "kind": "scalar",
                 "optional": true,
                 "nullable": true
+              },
+              {
+                "name": "audienceScoreLabel",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "audienceScoreVotes",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "byline",
@@ -11054,6 +11283,20 @@
               "kind": "scalar",
               "optional": true,
               "nullable": true
+            },
+            {
+              "name": "audienceScoreLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScoreVotes",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "byline",
@@ -11285,6 +11528,42 @@
           ]
         },
         {
+          "name": "letters",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "count",
+                "kind": "scalar"
+              },
+              {
+                "name": "letter",
+                "kind": "scalar"
+              },
+              {
+                "name": "offset",
+                "kind": "scalar"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "count",
+              "kind": "scalar"
+            },
+            {
+              "name": "letter",
+              "kind": "scalar"
+            },
+            {
+              "name": "offset",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
           "name": "total",
           "kind": "scalar"
         }
@@ -11396,6 +11675,20 @@
                 "kind": "scalar",
                 "optional": true,
                 "nullable": true
+              },
+              {
+                "name": "audienceScoreLabel",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "audienceScoreVotes",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "byline",
@@ -11544,6 +11837,20 @@
               "kind": "scalar",
               "optional": true,
               "nullable": true
+            },
+            {
+              "name": "audienceScoreLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScoreVotes",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "byline",
@@ -11810,10 +12117,13 @@
           "optional": true,
           "enum": [
             "added",
+            "audience-score",
             "duration",
             "last-watched",
+            "plays",
             "random",
             "rating",
+            "release-date",
             "title",
             "year"
           ]
@@ -11954,6 +12264,20 @@
                 "kind": "scalar",
                 "optional": true,
                 "nullable": true
+              },
+              {
+                "name": "audienceScoreLabel",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "audienceScoreVotes",
+                "kind": "scalar",
+                "optional": true
               },
               {
                 "name": "byline",
@@ -12102,6 +12426,20 @@
               "kind": "scalar",
               "optional": true,
               "nullable": true
+            },
+            {
+              "name": "audienceScoreLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScoreVotes",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "byline",
@@ -13199,6 +13537,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "certification",
           "kind": "scalar",
           "optional": true
@@ -13512,6 +13864,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -13716,6 +14082,20 @@
               "kind": "scalar",
               "optional": true,
               "nullable": true
+            },
+            {
+              "name": "audienceScoreLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScoreVotes",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "certification",
@@ -18473,6 +18853,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -18622,6 +19016,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "byline",
@@ -18775,6 +19183,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -18924,6 +19346,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "byline",
@@ -19329,6 +19765,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "byline",
@@ -22052,6 +22502,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -22208,6 +22672,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "byline",
@@ -22414,6 +22892,20 @@
                 "nullable": true
               },
               {
+                "name": "audienceScoreLabel",
+                "kind": "map",
+                "optional": true,
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "audienceScoreVotes",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
                 "name": "byline",
                 "kind": "list",
                 "optional": true,
@@ -22602,6 +23094,20 @@
               "kind": "scalar",
               "optional": true,
               "nullable": true
+            },
+            {
+              "name": "audienceScoreLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
+              "name": "audienceScoreVotes",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "byline",
@@ -25064,6 +25570,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "certification",
@@ -30716,6 +31236,20 @@
           "nullable": true
         },
         {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
           "name": "byline",
           "kind": "list",
           "optional": true,
@@ -31327,6 +31861,20 @@
           "kind": "scalar",
           "optional": true,
           "nullable": true
+        },
+        {
+          "name": "audienceScoreLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
+          "name": "audienceScoreVotes",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "byline",

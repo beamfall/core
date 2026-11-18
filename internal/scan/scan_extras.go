@@ -96,7 +96,7 @@ func isExtraPath(root, path string) bool {
 
 // extraOrdinalStem matches a filename stem numbered by a group but not by an
 // item within it, with an "x" in the item's place and a label after it ("3.x
-// Out Takes", "2x Set Tour"): the disc-rip convention for a season's or
+// Out Takes", "2x Set Tour"): the disc-rip convention for a group's or
 // volume's bonus material. The label must start with a letter, so an ordinal
 // pair ("3x07") never matches. It applies to video files only, and a dash
 // may not sit between the number and the "x", so a numbered music track

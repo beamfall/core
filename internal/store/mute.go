@@ -360,7 +360,7 @@ func (s *Store) annotateMutedLocked(ctx context.Context, relations *sql.DB, prof
 				items[i].Muted = true
 			}
 			// A rolled-up container badges when a mute reaches any of its
-			// member Media, as each episode would badge on an unrolled rail;
+			// member Media, as each member would badge on an unrolled rail;
 			// a Favorite that keeps the card visible does not clear it.
 			for _, member := range items[i].rollUpMembers {
 				if reach.directlyMuted[member] || reach.broadlyMuted[member] {
@@ -633,7 +633,7 @@ func hasRollUpMembers(items []SourceItem) bool {
 // applyMuteFilterRolledUpLocked filters a rail holding rolled-up container
 // items (ContainerRollUp): each container's member Media are judged as if the
 // rail were unrolled, and the container stays while any member survives, so
-// muting a genre or a show hides its rolled-up card exactly as it hides the
+// muting a genre or a container hides its rolled-up card exactly as it hides the
 // episodes. Items without members are judged directly.
 func (s *Store) applyMuteFilterRolledUpLocked(ctx context.Context, relations *sql.DB, profileID ProfileID, filter LibraryFilter, items []SourceItem) ([]SourceItem, error) {
 	flat := make([]SourceItem, 0, len(items))

@@ -130,6 +130,14 @@ func jsonSubset(previous, next any) bool {
 			return false
 		}
 		for i, value := range old {
+			if isJSONScalar(value) {
+				// A scalar list (an enum's values) is a set: inserting a value
+				// in sorted order shifts the others but removes none.
+				if !containsScalar(current, value) {
+					return false
+				}
+				continue
+			}
 			key, keyed := jsonIdentity(value)
 			if !keyed {
 				if i >= len(current) || !jsonSubset(value, current[i]) {
@@ -153,6 +161,23 @@ func jsonSubset(previous, next any) bool {
 	default:
 		return fmt.Sprint(previous) == fmt.Sprint(next)
 	}
+}
+
+func isJSONScalar(value any) bool {
+	switch value.(type) {
+	case map[string]any, []any:
+		return false
+	}
+	return true
+}
+
+func containsScalar(list []any, value any) bool {
+	for _, candidate := range list {
+		if isJSONScalar(candidate) && fmt.Sprint(candidate) == fmt.Sprint(value) {
+			return true
+		}
+	}
+	return false
 }
 
 func jsonIdentity(value any) (string, bool) {
