@@ -487,6 +487,18 @@ func (a *hydrationAdapter) mergeFoldSiblings(ctx context.Context, libraryID stor
 			if !after {
 				continue // older: the established item stays
 			}
+			if scopeRelation != "" {
+				// A variant also recorded under another scope is shared
+				// with another item (see scopedEntityID): merging it would
+				// carry that item's members here.
+				targets, _, err := a.store.EntityRelationTargets(ctx, libraryID, variant.ID, scopeRelation)
+				if err != nil {
+					return fmt.Errorf("read scope of title variant %s: %w", variant.ID, err)
+				}
+				if len(targets) != 1 || targets[0] != scopeTarget {
+					continue
+				}
+			}
 			err := a.mergeEntity(ctx, libraryID, survivor.id, variant.ID)
 			if errors.Is(err, serverrole.ErrAttachedAuthorityRefused) {
 				return nil // an attached server leaves catalog merges to the main one

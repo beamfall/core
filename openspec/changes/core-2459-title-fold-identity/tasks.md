@@ -6,6 +6,7 @@
 - [x] Reparented children keep their IDs; owed activity entries; by-ID newer-variant check (review round 3)
 - [x] Survivor takes the merged variant's artwork it lacks (review round 4)
 - [x] Parent variants merge before a reparented child is written; artwork marks settle before the image (review round 5)
+- [x] Shared child variants are not merged; unreadable artwork fails the merge (review round 6)
 - [x] Codex review of the exact head
 - [ ] Tower check of the TV Shows view
 - [ ] Gate receipt via `corvint-tasks gate run` (make gate)

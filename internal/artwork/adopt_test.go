@@ -174,3 +174,25 @@ func TestAdoptEntityArtworkPublishesTheImageAfterItsMarks(t *testing.T) {
 		t.Fatalf("generated mark = %q, want the merged one's", got)
 	}
 }
+
+// Artwork of the merged Entity that cannot be inspected fails the adoption,
+// and with it the merge, instead of reading as absent and staying behind on
+// the trashed Entity.
+func TestAdoptEntityArtworkFailsOnUnreadableArtwork(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory without permissions")
+	}
+	s := newShelf(t)
+	s.entity("entity-kept", "box")
+	s.entity("entity-merged", "box")
+	poster := s.svc.EntityArtworkPath("entity-merged", SlotPoster)
+	writeSlotFile(t, poster, "merged poster")
+	dir := filepath.Dir(poster)
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) }) // #nosec G302 -- restores the test directory for cleanup.
+	if err := s.svc.AdoptEntityArtwork(context.Background(), "entity-kept", "entity-merged"); err == nil {
+		t.Fatal("adoption of unreadable artwork succeeded")
+	}
+}

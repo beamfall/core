@@ -858,3 +858,75 @@ func TestTitleFoldRescanMergesVariantsThatKeepTheirSpelling(t *testing.T) {
 		t.Fatalf("unmarked after rescan = %v, %v; want none", open, err)
 	}
 }
+
+// TestTitleFoldLeavesASharedChildVariantAlone pins CORE-2459's sibling merge
+// to children of the survivor's parent alone: a newer fold-equal child also
+// recorded under an unrelated parent is shared with that parent's item, so
+// rehydrating the older child neither trashes it nor carries its other parent
+// and Media over.
+func TestTitleFoldLeavesASharedChildVariantAlone(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	lib, err := st.CreateLibrary(ctx, "Shelf", false, testHydrationPluginID, "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := store.LibraryFilter{AllLibraries: true, Revealed: true}
+	legacy := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	var media []store.MediaID
+	for _, file := range []struct{ name, album, artist string }{{"one", "Shared", "First Band"}, {"two", "shared", "Other Band"}} {
+		imported, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: lib.ID, Path: "/shelf/" + file.name + ".flac", Title: file.name, Container: "flac", Codec: "flac",
+			Class: store.MediaClassAudio, ContentFingerprint: "fp-" + file.name,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := legacy.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+			MediaID: imported.ID, LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+			Metadata: map[string]string{"album": file.album, "album-artist": file.artist},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		media = append(media, imported.ID)
+	}
+	ids := map[string]store.EntityID{}
+	for _, kind := range []string{"artist", "album"} {
+		entities, err := st.EntitiesByKind(ctx, lib.ID, kind, all, store.EntityKindOptions{}, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entity := range entities {
+			ids[entity.Title] = entity.ID
+		}
+	}
+	older, shared, first, other := ids["Shared"], ids["shared"], ids["First Band"], ids["Other Band"]
+	if older == "" || shared == "" || first == "" || other == "" {
+		t.Fatalf("legacy entities = %v", ids)
+	}
+	// The newer child is also recorded under the first parent.
+	if err := st.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: shared, Name: "album-artist", ToEntityID: first}); err != nil {
+		t.Fatal(err)
+	}
+
+	adapter := newTestAdapterWithMapper(st, foldedAlbumMapper{})
+	if err := adapter.HydrateMetadata(ctx, scanpkg.MetadataHydrationInput{
+		MediaID: media[0], LibraryID: lib.ID, Class: store.MediaClassAudio, Path: "/x.bin",
+		Metadata: map[string]string{"album": "Shared", "folder": "First Band"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if targets, _, err := st.EntityRelationTargets(ctx, lib.ID, older, "album-artist"); err != nil || len(targets) != 1 || targets[0] != first {
+		t.Fatalf("older child scope = %v, %v; want %s alone", targets, err, first)
+	}
+	if members, err := st.MediaForEntity(ctx, shared, all); err != nil || len(members) != 1 || members[0].ID != media[1] {
+		t.Fatalf("shared child members = %+v, %v; want its own Media", members, err)
+	}
+	if merges := titleFoldMerges(t, st); len(merges) != 0 {
+		t.Fatalf("title-fold merge activity = %+v, want none", merges)
+	}
+}

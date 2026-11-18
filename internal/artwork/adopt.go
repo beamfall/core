@@ -29,11 +29,12 @@ func (s *Service) AdoptEntityArtwork(ctx context.Context, survivor, merged store
 	defer unlock()
 	for _, slot := range KnownSlots {
 		src := storedSlotPath(s.EntityArtworkPath(merged, slot))
-		if !nonEmptyRegularFile(src) {
-			continue
-		}
 		own := storedSlotPath(s.EntityArtworkPath(survivor, slot))
-		if regularFileExists(own) && (slot != SlotPoster || !regularFileExists(inheritedMarkerPath(own)) || regularFileExists(inheritedMarkerPath(src))) {
+		adopt, err := adoptsSlot(src, own, slot)
+		if err != nil {
+			return err
+		}
+		if !adopt {
 			continue
 		}
 		if err := s.copyAdoptedSlot(src, filepath.Join(filepath.Dir(own), filepath.Base(src)), slot); err != nil {
@@ -41,6 +42,51 @@ func (s *Service) AdoptEntityArtwork(ctx context.Context, survivor, merged store
 		}
 	}
 	return nil
+}
+
+// adoptsSlot reports whether the merged Entity's slot file src goes to the
+// survivor, whose own slot file is own: src is a non-empty file and own is
+// missing, or own is a poster the survivor only inherited while src is not.
+// A file that cannot be inspected fails the adoption, and with it the merge,
+// rather than reading as absent and leaving the artwork on the trashed
+// Entity.
+func adoptsSlot(src, own, slot string) (bool, error) {
+	srcInfo, err := statAdopted(src)
+	if err != nil || srcInfo == nil || !srcInfo.Mode().IsRegular() || srcInfo.Size() == 0 {
+		return false, err
+	}
+	ownInfo, err := statAdopted(own)
+	if err != nil {
+		return false, err
+	}
+	if ownInfo == nil || !ownInfo.Mode().IsRegular() {
+		return true, nil
+	}
+	if slot != SlotPoster {
+		return false, nil
+	}
+	for _, mark := range []struct {
+		path string
+		want bool
+	}{{inheritedMarkerPath(own), true}, {inheritedMarkerPath(src), false}} {
+		info, err := statAdopted(mark.path)
+		if err != nil {
+			return false, err
+		}
+		if (info != nil && info.Mode().IsRegular()) != mark.want {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// statAdopted stats path; a missing file is a nil FileInfo, not an error.
+func statAdopted(path string) (os.FileInfo, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	return info, err
 }
 
 // copyAdoptedSlot copies one slot file and its marks to dst. A mark src lacks
