@@ -119,7 +119,7 @@ const SHIPPED = new Set(
 // merged with the CORE-2459 title-fold merge activity sentence.
 // merged with the CORE-2505 Categories pivot jump, count, See all, A-Z filter and letter copy.
 const BASE_SERIALIZED_LENGTH = 898_092;
-const BASE_REGISTRY_SHA256 = "80e93fd3cd5d16c379a8bc832fa44bd9a6773b041aab33d3678a26fbd601f05a";
+const BASE_REGISTRY_SHA256 = "81772abd4a9bf0bb30c4ce4c55f5a4eaf292f8a0adaa821f2fc42f5cbc867482";
 const BASE_KEY_ORDER_SHA256 = "20b85e75bdde8e5356d793e18cb4cd8dca6ab570b3aca2cc31d812a226d7d263";
 const BASE_PLACEHOLDER_SHA256 = "e594cfb4306c6ab44289e229d705b4715419d49af929f29c2007a68db7974ae1";
 const BASE_CATALOGS = {
