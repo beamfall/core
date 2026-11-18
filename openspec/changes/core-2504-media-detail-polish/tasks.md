@@ -1,0 +1,10 @@
+- [ ] Web: category chips grouped by kind, two per kind with +N overflow, linked to `/entity/:id` (CORE-2504)
+- [ ] Web: "Keep browsing" shelf and `findCachedSiblings` removed (CORE-2507)
+- [ ] Web: Details lists category kinds, job credits, fields and the selected Version's file facts (CORE-2508)
+- [ ] Web: one `mediaTracks` read shared by the pickers and Details, requested alongside the item
+- [ ] Web: stage-shaped skeleton, reserved space while loading, Details before the async rows (CORE-2509)
+- [ ] Vitest: link targets, Details rows, rendered rows, request count under 15 with nothing aborted or repeated
+- [ ] Strings in every shipped locale
+- [ ] Follow-up ticket for resolution, container and size on the wire
+- [ ] Tower check: A Beautiful Mind studio chip opens Universal Pictures; CLS < 0.1 (lander, after deploy)
+- [ ] `openspec archive core-2504-media-detail-polish` after landing
