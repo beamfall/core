@@ -3457,6 +3457,64 @@ func TestGovernedGenerationYieldsOnTranscodePreemption(t *testing.T) {
 	}
 }
 
+// TestScanYieldsToLivePlayback covers CORE-2393: a library scan running when a
+// realtime transcode begins yields with its mid-run checkpoint and a bounded
+// retry, logs that it yielded to live playback, and is not entered at all
+// while the transcode stays active. Before the fix scans took no lease and
+// kept the Tower's disks busy through a 4K transcode's first segment.
+func TestScanYieldsToLivePlayback(t *testing.T) {
+	g := governor.New()
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	started := make(chan struct{})
+	checkpoint := []byte(`{"cursor":"movies/b"}`)
+	handler := scanYieldsToPlayback(g, logger, func(ctx context.Context, _ store.Job) (jobs.Result, error) {
+		close(started)
+		<-ctx.Done()
+		return jobs.Result{Checkpoint: checkpoint}, ctx.Err()
+	})
+
+	type outcome struct {
+		result jobs.Result
+		err    error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := handler(context.Background(), store.Job{ID: "scan-1", Kind: "scan", Checkpoint: []byte(`{"cursor":"movies/a"}`)})
+		done <- outcome{result, err}
+	}()
+
+	<-started
+	tx := g.BeginTranscode()
+	defer tx.Release()
+	got := <-done
+	if !errors.Is(got.err, jobs.ErrYielded) {
+		t.Fatalf("err = %v, want jobs.ErrYielded", got.err)
+	}
+	if string(got.result.Checkpoint) != string(checkpoint) {
+		t.Fatalf("Checkpoint = %s, want the scan's mid-run checkpoint", got.result.Checkpoint)
+	}
+	if got.result.RunAfter.IsZero() {
+		t.Fatal("RunAfter not set: a preempted scan must re-queue with a bounded retry")
+	}
+	if line := logs.String(); !strings.Contains(line, "background job yielded to live playback") || !strings.Contains(line, "job=scan-1") {
+		t.Fatalf("yield not logged: %q", line)
+	}
+
+	entered := false
+	blocked := scanYieldsToPlayback(g, logger, func(context.Context, store.Job) (jobs.Result, error) {
+		entered = true
+		return jobs.Result{}, nil
+	})
+	result, err := blocked(context.Background(), store.Job{ID: "scan-2", Checkpoint: checkpoint})
+	if entered {
+		t.Fatal("scan ran while a transcode was active")
+	}
+	if !errors.Is(err, jobs.ErrYielded) || string(result.Checkpoint) != string(checkpoint) || result.RunAfter.IsZero() {
+		t.Fatalf("refused scan = (%+v, %v), want ErrYielded with its checkpoint and a retry", result, err)
+	}
+}
+
 // TestGovernedGenerationThrottleYieldsWithoutRunning proves that when a
 // transcode is already active the generation handler is never entered: the
 // governor refuses admission and the wrapper yields with the job's own

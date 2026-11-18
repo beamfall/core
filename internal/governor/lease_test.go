@@ -248,3 +248,47 @@ func TestParentCancellationPropagatesWithoutPreemptCause(t *testing.T) {
 	}
 	gen.Release()
 }
+
+// TestBeginPreemptibleYieldsToTranscodesWithoutBudget covers the scan lease
+// (CORE-2393): refused while a transcode is active, cancelled with
+// ErrPreempted when one begins, and never counted against the background-CPU
+// budget, so it neither blocks generation nor is blocked by it.
+func TestBeginPreemptibleYieldsToTranscodesWithoutBudget(t *testing.T) {
+	g := NewWithOptions(Options{BackgroundCPUBudget: 1})
+
+	gen, ok := g.BeginGeneration(context.Background())
+	if !ok {
+		t.Fatal("generation blocked under a fresh budget of 1")
+	}
+	scan, ok := g.BeginPreemptible(context.Background())
+	if !ok {
+		t.Fatal("preemptible lease refused because the generation budget is full; it must not take a slot")
+	}
+	if g.ActiveGeneration() != 1 {
+		t.Fatalf("ActiveGeneration = %d, want 1 (the preemptible lease takes no slot)", g.ActiveGeneration())
+	}
+
+	tx := g.BeginTranscode()
+	if !errors.Is(context.Cause(scan.Context()), ErrPreempted) {
+		t.Fatalf("preemptible lease cause = %v, want ErrPreempted", context.Cause(scan.Context()))
+	}
+	if _, ok := g.BeginPreemptible(context.Background()); ok {
+		t.Fatal("preemptible lease admitted while a transcode is active")
+	}
+
+	scan.Release()
+	scan.Release() // idempotent
+	if g.ActiveGeneration() != 1 {
+		t.Fatalf("ActiveGeneration = %d after preemptible release, want 1 (no slot to return)", g.ActiveGeneration())
+	}
+	gen.Release()
+	tx.Release()
+	if g.ActiveGeneration() != 0 {
+		t.Fatalf("ActiveGeneration = %d, want 0", g.ActiveGeneration())
+	}
+	again, ok := g.BeginPreemptible(context.Background())
+	if !ok {
+		t.Fatal("preemptible lease refused after the transcode ended")
+	}
+	again.Release()
+}
