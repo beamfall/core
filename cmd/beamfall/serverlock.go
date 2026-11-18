@@ -123,7 +123,7 @@ func refuseServerLock(dataDir string) error {
 	defer f.Close()
 	if err := lockFileExclusive(f); err != nil {
 		if errors.Is(err, errServerLockHeld) {
-			return errors.New("server appears to be running; stop the server before bootstrapping the first API token")
+			return errors.New("server appears to be running; stop the server, then run this command again")
 		}
 		return err
 	}
