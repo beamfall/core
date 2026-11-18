@@ -1769,6 +1769,14 @@
       ]
     },
     {
+      "field": "mediatracks",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "versions"
+      ]
+    },
+    {
       "field": "mergeentities",
       "effect": "write",
       "tier": "session",

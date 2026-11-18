@@ -184,6 +184,7 @@ var originalScopedFields = []string{
 	"mediafiles",    // WEB-5B: Versions/Parts file-plane read
 	"mediaforentity",
 	"mediarelations", // WEB-5B: generic Media relation read
+	"mediatracks",    // CORE-2442: Versions and tracks before playback
 	"mergeentities",
 	"mergemedia",
 	"metadataexport",

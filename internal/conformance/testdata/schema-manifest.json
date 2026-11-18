@@ -685,6 +685,11 @@
     "tier": "session"
   },
   {
+    "field": "mediatracks",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "mergeentities",
     "effect": "write",
     "tier": "session"

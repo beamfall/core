@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/store"
 )
@@ -16,6 +17,12 @@ type MediaFileInfo struct {
 	PartOrdinal        int    `json:"partOrdinal"`
 	OSHash             string `json:"osHash,omitempty"`
 	PHash              string `json:"pHash,omitempty"`
+}
+
+// MediaTracksInfo lists a Media's Versions with the audio and caption tracks
+// of each, read before playback (CORE-2442).
+type MediaTracksInfo struct {
+	Versions []playback.VersionTracks `json:"versions"`
 }
 
 type EntityRelationInfo struct {
@@ -58,6 +65,25 @@ func (h *Handler) mediaFiles(ctx context.Context, scope auth.Scope, req request)
 		out[i] = mediaFileInfo(file)
 	}
 	return out, nil
+}
+
+// mediaTracks lists a Media's Versions and their tracks from the stored
+// inventory, without negotiating a stream, issuing a token or starting a
+// playback session (CORE-2442).
+func (h *Handler) mediaTracks(ctx context.Context, scope auth.Scope, req request) (MediaTracksInfo, error) {
+	mediaID := store.MediaID(trimmedVariable(req, "mediaID"))
+	if mediaID == "" {
+		return MediaTracksInfo{}, clientError("mediaID is required")
+	}
+	files, err := h.store.MediaFilesForMedia(ctx, mediaID, scope.LibraryFilter())
+	if err != nil {
+		return MediaTracksInfo{}, clientError("unknown media")
+	}
+	versions, err := playback.ListTracks(ctx, h.store, mediaID, files)
+	if err != nil {
+		return MediaTracksInfo{}, err
+	}
+	return MediaTracksInfo{Versions: versions}, nil
 }
 
 func (h *Handler) entityRelations(ctx context.Context, scope auth.Scope, req request) ([]EntityRelationInfo, error) {

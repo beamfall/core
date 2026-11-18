@@ -5562,6 +5562,7 @@ var queryFields = map[string]bool{
 	"entityrelations":        true,
 	"mediaforentity":         true,
 	"mediafiles":             true,
+	"mediatracks":            true,
 	"mediarelations":         true,
 	"mediafields":            true,
 	"artworkcandidates":      true,

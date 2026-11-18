@@ -688,6 +688,11 @@
       "tier": "session"
     },
     {
+      "field": "mediatracks",
+      "effect": "read",
+      "tier": "session"
+    },
+    {
       "field": "mergeentities",
       "effect": "write",
       "tier": "session"
@@ -13892,6 +13897,442 @@
         {
           "name": "relation",
           "kind": "scalar"
+        }
+      ]
+    },
+    {
+      "field": "mediatracks",
+      "kind": "object",
+      "arguments": [
+        {
+          "name": "mediaID",
+          "kind": "string"
+        }
+      ],
+      "children": [
+        {
+          "name": "versions",
+          "kind": "list",
+          "nullable": true,
+          "elem": {
+            "kind": "object",
+            "children": [
+              {
+                "name": "audioTracks",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "object",
+                  "children": [
+                    {
+                      "name": "channels",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "codec",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "commentary",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "default",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "language",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "selected",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "streamIndex",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "visualImpaired",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                "children": [
+                  {
+                    "name": "channels",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "codec",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "commentary",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "default",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "language",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "selected",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "streamIndex",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "visualImpaired",
+                    "kind": "scalar",
+                    "optional": true
+                  }
+                ]
+              },
+              {
+                "name": "captionTracks",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "object",
+                  "children": [
+                    {
+                      "name": "commentary",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "forced",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "format",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "id",
+                      "kind": "scalar"
+                    },
+                    {
+                      "name": "language",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "sdh",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "streamIndex",
+                      "kind": "scalar",
+                      "optional": true,
+                      "nullable": true
+                    },
+                    {
+                      "name": "url",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
+                      "name": "visualImpaired",
+                      "kind": "scalar",
+                      "optional": true
+                    }
+                  ]
+                },
+                "children": [
+                  {
+                    "name": "commentary",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "forced",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "format",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "language",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "sdh",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "streamIndex",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
+                    "name": "url",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "visualImpaired",
+                    "kind": "scalar",
+                    "optional": true
+                  }
+                ]
+              },
+              {
+                "name": "hdr",
+                "kind": "scalar",
+                "optional": true
+              },
+              {
+                "name": "id",
+                "kind": "scalar"
+              },
+              {
+                "name": "label",
+                "kind": "scalar"
+              },
+              {
+                "name": "videoCodec",
+                "kind": "scalar",
+                "optional": true
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "audioTracks",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "channels",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "codec",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "commentary",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "default",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "language",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "selected",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "streamIndex",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "visualImpaired",
+                    "kind": "scalar",
+                    "optional": true
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "channels",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "codec",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "commentary",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "default",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "language",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "selected",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "streamIndex",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "visualImpaired",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            {
+              "name": "captionTracks",
+              "kind": "list",
+              "nullable": true,
+              "elem": {
+                "kind": "object",
+                "children": [
+                  {
+                    "name": "commentary",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "forced",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "format",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "id",
+                    "kind": "scalar"
+                  },
+                  {
+                    "name": "language",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "sdh",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "streamIndex",
+                    "kind": "scalar",
+                    "optional": true,
+                    "nullable": true
+                  },
+                  {
+                    "name": "url",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
+                    "name": "visualImpaired",
+                    "kind": "scalar",
+                    "optional": true
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "commentary",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "forced",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "format",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "id",
+                  "kind": "scalar"
+                },
+                {
+                  "name": "language",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "sdh",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "streamIndex",
+                  "kind": "scalar",
+                  "optional": true,
+                  "nullable": true
+                },
+                {
+                  "name": "url",
+                  "kind": "scalar",
+                  "optional": true
+                },
+                {
+                  "name": "visualImpaired",
+                  "kind": "scalar",
+                  "optional": true
+                }
+              ]
+            },
+            {
+              "name": "hdr",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "id",
+              "kind": "scalar"
+            },
+            {
+              "name": "label",
+              "kind": "scalar"
+            },
+            {
+              "name": "videoCodec",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
         }
       ]
     },

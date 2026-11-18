@@ -483,6 +483,7 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 	},
 	"mediafields":    fieldArguments["mediafields"],
 	"mediafiles":     fieldArguments["mediafiles"],
+	"mediatracks":    fieldArguments["mediatracks"],
 	"mediaforentity": fieldArguments["mediaforentity"],
 	"mediametadata": {
 		{Name: "mediaID", Kind: "string"},
