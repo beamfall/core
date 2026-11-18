@@ -1,0 +1,15 @@
+- [x] Film and TV mapper names the series from its folder
+- [x] Title-fold mapper interface, hydration merges, redirect of merged-away titles
+- [x] One-time startup repair for fold-equal Entities
+- [x] Tests: mapper folder shape, rescan merge, retry, undo, new spelling, encrypted Library
+- [x] Established variant survives; merge activity entries; indexed variant lookup (review round 2)
+- [x] Reparented children keep their IDs; owed activity entries; by-ID newer-variant check (review round 3)
+- [x] Survivor takes the merged variant's artwork it lacks (review round 4)
+- [x] Parent variants merge before a reparented child is written; artwork marks settle before the image (review round 5)
+- [x] Shared child variants are not merged; unreadable artwork fails the merge (review round 6)
+- [x] A failed merge reopens a marked Media; one plan gives a title-only Entity to one scope; unreadable legacy overlay JPEG fails the merge (review round 7)
+- [x] An unreadable survivor fails artwork adoption instead of reading as protected (review round 8)
+- [x] Codex review of the exact head
+- [ ] Tower check of the TV Shows view
+- [ ] Gate receipt via `corvint-tasks gate run` (make gate)
+- [ ] `openspec archive core-2459-title-fold-identity` after landing

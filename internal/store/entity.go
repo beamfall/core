@@ -65,6 +65,12 @@ type Entity struct {
 
 var errVisibleEntityNotFound = errors.New("entity not found")
 
+// IsEntityNotFound reports whether err is the error Entity returns for an
+// Entity that does not exist, is in trash or is not visible under the filter.
+func IsEntityNotFound(err error) bool {
+	return errors.Is(err, errVisibleEntityNotFound)
+}
+
 // EntityRelation is one relation row: entity→entity or entity→Media (exactly
 // one target set), named per the declaring plugin's RelationSpec, with
 // render-only attributes (ADR-0003 §2: credit-style links are relations with
@@ -213,7 +219,13 @@ func (s *Store) UpsertEntity(ctx context.Context, entity Entity) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if !plane.encrypted {
+		s.titleFolds.note(entity.LibraryID, entity.Kind, entity.ID, entity.Title)
+	}
+	return nil
 }
 
 var entityFieldTables = []string{

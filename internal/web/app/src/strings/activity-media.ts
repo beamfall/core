@@ -12,6 +12,7 @@ export const activityMediaStrings = {
     activityEventMediaMetadataRefresh: "{actor} refreshed the details of {target}",
     activityEventMediaRelation: "{actor} changed how {target} is related to others",
     activityEventEntityMerge: "{actor} merged two entries",
+    activityEventEntityTitleFoldMerge: "A library scan merged two spellings of one entry",
     activityEventEntityRelation: "{actor} changed how an entry is related to others",
     activityEventBatchUndo: "{actor} undid a batch change",
     activityEventManagedFileCreate: "{actor} added a managed file",
@@ -39,6 +40,8 @@ export const activityMediaStrings = {
     activityEventMediaMetadataRefresh: "{actor} a actualisé les informations sur {target}",
     activityEventMediaRelation: "{actor} a modifié les liens entre {target} et d’autres éléments",
     activityEventEntityMerge: "{actor} a fusionné deux entrées",
+    activityEventEntityTitleFoldMerge:
+      "Une analyse de bibliothèque a fusionné deux graphies d’une même entrée",
     activityEventEntityRelation: "{actor} a modifié les liens entre une entrée et d’autres",
     activityEventBatchUndo: "{actor} a annulé une modification par lot",
     activityEventManagedFileCreate: "{actor} a ajouté un fichier géré",
@@ -67,6 +70,8 @@ export const activityMediaStrings = {
     activityEventMediaRelation:
       "{actor} hat geändert, wie {target} mit anderen Elementen verknüpft ist",
     activityEventEntityMerge: "{actor} hat zwei Einträge zusammengeführt",
+    activityEventEntityTitleFoldMerge:
+      "Ein Bibliotheksscan hat zwei Schreibweisen eines Eintrags zusammengeführt",
     activityEventEntityRelation: "{actor} hat geändert, wie ein Eintrag mit anderen verknüpft ist",
     activityEventBatchUndo: "{actor} hat eine Stapeländerung rückgängig gemacht",
     activityEventManagedFileCreate: "{actor} hat eine verwaltete Datei hinzugefügt",
@@ -94,6 +99,8 @@ export const activityMediaStrings = {
     activityEventMediaMetadataRefresh: "{actor} actualizó los detalles de {target}",
     activityEventMediaRelation: "{actor} cambió cómo se relaciona {target} con otros elementos",
     activityEventEntityMerge: "{actor} combinó dos entradas",
+    activityEventEntityTitleFoldMerge:
+      "Un análisis de la biblioteca combinó dos grafías de una misma entrada",
     activityEventEntityRelation: "{actor} cambió cómo se relaciona una entrada con otras",
     activityEventBatchUndo: "{actor} deshizo un cambio por lotes",
     activityEventManagedFileCreate: "{actor} agregó un archivo gestionado",
@@ -121,6 +128,8 @@ export const activityMediaStrings = {
     activityEventMediaMetadataRefresh: "{actor} atualizou os detalhes de {target}",
     activityEventMediaRelation: "{actor} alterou como {target} se relaciona com outros itens",
     activityEventEntityMerge: "{actor} mesclou duas entradas",
+    activityEventEntityTitleFoldMerge:
+      "Uma análise da biblioteca mesclou duas grafias de uma mesma entrada",
     activityEventEntityRelation: "{actor} alterou como uma entrada se relaciona com outras",
     activityEventBatchUndo: "{actor} desfez uma alteração em lote",
     activityEventManagedFileCreate: "{actor} adicionou um arquivo gerenciado",

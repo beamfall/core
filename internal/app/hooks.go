@@ -132,6 +132,19 @@ type HydrationScopeMapper interface {
 	EntityScopes() []HydrationEntityScope
 }
 
+// HydrationTitleFoldMapper is implemented by a HydrationMapper whose Entity
+// titles come from file names, where one title can be spelled in different
+// case or punctuation. For each listed kind, a Media hydrated again that moves
+// from one Entity of the kind to another whose title folds equal
+// (store.FoldEntityTitle) merges the old Entity into the new one, with its
+// item state, through the recoverable entity merge. Listed kinds that are not
+// scoped also get a one-time startup repair that reopens the Media of
+// fold-equal Entities, so a library hydrated before the mapper settled one
+// spelling is merged by the next scan.
+type HydrationTitleFoldMapper interface {
+	TitleFoldKinds() []string
+}
+
 // HydrationRelation targets the current Media when ToEntity is nil.
 type HydrationRelation struct {
 	From             HydrationEntity

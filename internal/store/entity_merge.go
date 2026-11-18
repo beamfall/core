@@ -115,6 +115,10 @@ func (s *Store) RestoreEntity(ctx context.Context, id EntityID, filter LibraryFi
 // "merge-entity") so UndoBatch reverses the whole merge. Returns the batch id
 // (the undo handle); the affected count is 1 (the trashed loser).
 func (s *Store) MergeEntities(ctx context.Context, winnerID, loserID EntityID, filter LibraryFilter, now time.Time) (BulkOpBatch, error) {
+	return s.mergeEntities(ctx, winnerID, loserID, filter, now, false)
+}
+
+func (s *Store) mergeEntities(ctx context.Context, winnerID, loserID EntityID, filter LibraryFilter, now time.Time, titleFold bool) (BulkOpBatch, error) {
 	if winnerID == "" || loserID == "" {
 		return BulkOpBatch{}, ValidationError("winner and loser entity ids are required")
 	}
@@ -233,6 +237,13 @@ func (s *Store) MergeEntities(ctx context.Context, winnerID, loserID EntityID, f
 	}
 	if err := appendBatchEntityItemTx(ctx, tx, batchID, 0, loserID, state); err != nil {
 		return BulkOpBatch{}, err
+	}
+	if titleFold {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO server_config(key, value, updated_at_ms) VALUES (?, ?, ?)`,
+			titleFoldUnrecordedPrefix+batchID, string(loser.LibraryID), timeToMillis(now.UTC())); err != nil {
+			return BulkOpBatch{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return BulkOpBatch{}, err

@@ -212,6 +212,7 @@ export const ACTIVITY_LABELS: Record<string, ActivityLabel> = {
   ),
   "media.relation": label("library", "activityEventMediaRelation", "activityNounItem", "media"),
   "entity.merge": label("library", "activityEventEntityMerge"),
+  "entity.title_fold_merge": label("library", "activityEventEntityTitleFoldMerge"),
   "entity.relation": label("library", "activityEventEntityRelation"),
   "batch.undo": label("library", "activityEventBatchUndo"),
   "managed_file.create": label("library", "activityEventManagedFileCreate"),

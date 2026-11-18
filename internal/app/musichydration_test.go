@@ -779,6 +779,36 @@ func TestHydrationAdoptsUnscopedEntityForItsOnlyScope(t *testing.T) {
 	}
 }
 
+// TestHydrationGivesATitleOnlyEntityToOneScopeOfAPlan pins a plan that carries
+// two same-titled Entities of different scopes: the plan's relations are
+// written only after every id resolves, so the title-only Entity, which
+// records no scope yet, goes to the first scope and the second gets its own.
+func TestHydrationGivesATitleOnlyEntityToOneScopeOfAPlan(t *testing.T) {
+	st := newFakeHydrationStore()
+	legacy := identify.EntityIDForName(testLib, "album", "Shared Collection")
+	st.entities[legacy] = store.Entity{ID: legacy, LibraryID: testLib, Kind: "album", Title: "Shared Collection"}
+	adapter := newTestAdapterWithMapper(st, scopedAlbumMapper{})
+	var relations []HydrationRelation
+	for _, artist := range []string{"First Band", "Second Band"} {
+		album := HydrationEntity{Kind: "album", Title: "Shared Collection", Scope: artist}
+		relations = append(relations,
+			HydrationRelation{From: album, Name: "album-track"},
+			HydrationRelation{From: album, Name: "album-artist", RequiresRelation: "album-track",
+				ToEntity: &HydrationEntity{Kind: "artist", Title: artist}})
+	}
+	if err := adapter.writeRelations(context.Background(), "media-1", testLib, relations, true); err != nil {
+		t.Fatal(err)
+	}
+	targets, _, _ := st.EntityRelationTargets(context.Background(), testLib, legacy, "album-artist")
+	if first := identify.EntityIDForName(testLib, "artist", "First Band"); len(targets) != 1 || targets[0] != first {
+		t.Fatalf("title-only entity's scopes = %v, want %s alone", targets, first)
+	}
+	scoped := identify.EntityIDForScopedName(testLib, "album", "Second Band", "Shared Collection")
+	if _, ok := st.entities[scoped]; !ok {
+		t.Fatalf("second scope's entity %s missing: %+v", scoped, st.entities)
+	}
+}
+
 // TestHydrationKeepsUnscopedEntityOfAnotherScope pins the other half: a
 // title-only Entity that records a different scope is somebody else's, so the
 // scope being hydrated gets its own Entity and the existing one is untouched.
