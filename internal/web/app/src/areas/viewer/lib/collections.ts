@@ -138,6 +138,13 @@ export function moveEntry(
 
 /** How many member posters a collection card's collage shows (CORE-2438). */
 export const COLLAGE_POSTERS = 4;
+/**
+ * Members read per Collection for the collage. The server applies the feed
+ * limit before Mute filtering, so a window of exactly COLLAGE_POSTERS would
+ * come back empty when the leading members are muted or posterless; reading a
+ * wider window and keeping the first COLLAGE_POSTERS posters skips them.
+ */
+export const POSTER_WINDOW = 16;
 /** Collections per poster read; the server bounds top-level fields per operation at 64. */
 export const POSTER_BATCH = 32;
 
@@ -167,7 +174,7 @@ export async function fetchCollectionPosters(
         variables[`v${index}`] = id;
         declared.push(`$v${index}: String`);
         fields.push(
-          `c${index}: sourceItems(kind: "collection", value: $v${index}, limit: ${COLLAGE_POSTERS}) { id artwork { poster } artworkSlots }`,
+          `c${index}: sourceItems(kind: "collection", value: $v${index}, limit: ${POSTER_WINDOW}) { id artwork { poster } artworkSlots }`,
         );
       });
       const query = `query CollectionPosters(${declared.join(", ")}) { ${fields.join(" ")} }`;
@@ -176,7 +183,10 @@ export async function fetchCollectionPosters(
         const items = data[`c${index}`] ?? [];
         posters.set(
           id,
-          items.map((item) => artworkSlotURL(item, "poster")).filter((url) => url !== ""),
+          items
+            .map((item) => artworkSlotURL(item, "poster"))
+            .filter((url) => url !== "")
+            .slice(0, COLLAGE_POSTERS),
         );
       });
     }),

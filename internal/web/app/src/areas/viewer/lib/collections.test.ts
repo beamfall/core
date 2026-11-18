@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { graphql } from "@/lib/api";
 import type { CollectionInfo } from "@/lib/graphql/types";
 import {
+  COLLAGE_POSTERS,
   COLLECTION_PAGE,
   fetchCollectionItems,
   fetchCollectionPosters,
@@ -10,6 +11,7 @@ import {
   memberOrder,
   moveEntry,
   POSTER_BATCH,
+  POSTER_WINDOW,
   sortCollections,
 } from "./collections";
 
@@ -148,10 +150,34 @@ describe("fetchCollectionPosters", () => {
 
     expect(graphql).toHaveBeenCalledTimes(2);
     const [query, variables] = vi.mocked(graphql).mock.calls[0];
-    expect(query).toContain('c0: sourceItems(kind: "collection", value: $v0, limit: 4)');
+    expect(query).toContain(
+      `c0: sourceItems(kind: "collection", value: $v0, limit: ${POSTER_WINDOW})`,
+    );
     expect(Object.keys(variables as object)).toHaveLength(POSTER_BATCH);
     expect(posters.get("c0")).toEqual(["/p/1", "/p/2"]);
     expect(posters.get(`c${POSTER_BATCH}`)).toEqual([]);
     expect(posters.size).toBe(ids.length);
+  });
+
+  it("keeps the first visible posters past muted or posterless leading members", async () => {
+    // The server limits the feed before Mute filtering, so the window it
+    // answers can start with members that carry no poster (CORE-2438).
+    vi.mocked(graphql).mockResolvedValue({
+      c0: [
+        { id: "m1" },
+        { id: "m2" },
+        { id: "m3" },
+        { id: "m4" },
+        ...Array.from({ length: 6 }, (_, i) => ({
+          id: `v${i}`,
+          artworkSlots: { poster: `/p/v${i}` },
+        })),
+      ],
+    });
+
+    const posters = await fetchCollectionPosters(["c0"]);
+
+    expect(posters.get("c0")).toEqual(["/p/v0", "/p/v1", "/p/v2", "/p/v3"]);
+    expect(POSTER_WINDOW).toBeGreaterThan(COLLAGE_POSTERS);
   });
 });
