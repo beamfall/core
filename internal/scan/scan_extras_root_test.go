@@ -29,15 +29,16 @@ func TestIsExtraPathCountsOnlyFoldersBelowRoot(t *testing.T) {
 		{"suffix convention", root, filepath.Join(root, "Synthetic Title-trailer.mkv"), true},
 		{"path outside root", root, filepath.Join(string(filepath.Separator), "other", "Extras", "Clip.mkv"), false},
 		{"no root", "", filepath.Join(string(filepath.Separator), "x", "Extras", "Clip.mkv"), false},
-		// CORE-2424: season-numbered bonus labels in a TV library are Extras;
-		// an episode code and a plain title are not.
-		{"season extra outtakes", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Out Takes.mkv"), true},
-		{"season extra deleted scene", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Deleted Scene.mkv"), true},
-		{"season extra set tour", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Set Tour.mkv"), true},
+		// CORE-2424: a season-numbered bonus label alone is not a static Extra;
+		// it is one only when its folder has a sole parent (see
+		// TestExtraOrdinalStemMatches and TestScanOrdinalStemNeedsSoleParent).
+		{"season extra outtakes", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Out Takes.mkv"), false},
+		{"season extra deleted scene", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Deleted Scene.mkv"), false},
+		{"season extra set tour", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.x Set Tour.mkv"), false},
 		{"season by episode code", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "3x07 Calamity Jen.mkv"), false},
 		{"leading episode pair", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3.01 From Hell.mkv"), false},
 		{"plain outtakes title", root, filepath.Join(root, "Outtakes", "Outtakes.mkv"), false},
-		{"exact library-tv outtakes name", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3 x Out Takes.mkv"), true},
+		{"exact library-tv outtakes name", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "The IT Crowd  Series 3", "3 x Out Takes.mkv"), false},
 		// The Plex/Jellyfin extras folders and suffixes. The common-word folders
 		// count only inside a title folder, never as a top-level category.
 		{"Behind The Scenes in a show", tvRoot, filepath.Join(tvRoot, "The IT Crowd", "Behind The Scenes", "Making Of.mkv"), true},
@@ -244,6 +245,9 @@ func TestExtraParentCoversEveryExtraConvention(t *testing.T) {
 		{"ordinal stem, sole Media", filepath.Join(soloSeasonDir, "2.x Out Takes.mkv"), "solo"},
 		{"ordinal stem, spaced x", filepath.Join(soloSeasonDir, "2 x Set Tour.mkv"), "solo"},
 		{"ordinal stem, several Media", filepath.Join(seasonDir, "3.x Out Takes.mkv"), ""},
+		{"ordinal stem inside an Extras folder", filepath.Join(titleDir, "Extras", "3.x Out Takes.mkv"), "title"},
+		{"suffix inside an Extras folder", filepath.Join(titleDir, "Extras", "Cut-deleted.mkv"), "title"},
+		{"established suffix inside an Extras folder", filepath.Join(titleDir, "Trailers", "Teaser-trailer.mkv"), "title"},
 		{"Behind The Scenes folder", filepath.Join(titleDir, "Behind The Scenes", "Making Of.mkv"), "title"},
 		{"Deleted Scenes folder", filepath.Join(titleDir, "Deleted Scenes", "Cut.mkv"), "title"},
 		{"Scenes folder", filepath.Join(titleDir, "Scenes", "Opening.mkv"), "title"},
@@ -253,8 +257,8 @@ func TestExtraParentCoversEveryExtraConvention(t *testing.T) {
 		{"Extras folder beside several Media", filepath.Join(seasonDir, "Deleted Scenes", "Cut.mkv"), ""},
 	}
 	for _, tc := range cases {
-		if !isExtraPath(root, tc.path) {
-			t.Fatalf("%s: isExtraPath(%q) = false, want true", tc.name, tc.path)
+		if match := matchExtraPath(root, tc.path); match.mainMedia() {
+			t.Fatalf("%s: matchExtraPath(%q) matched no Extra convention", tc.name, tc.path)
 		}
 		if got := extraParentMediaID(root, tc.path, byDir, byDirTitle); got != tc.want {
 			t.Errorf("%s: extraParentMediaID(%q) = %q, want %q", tc.name, tc.path, got, tc.want)
@@ -298,6 +302,73 @@ func TestScanLinksNewExtraConventionsToParent(t *testing.T) {
 	for _, name := range []string{"Synthetic Feature-deleted.mp4", "1.x Out Takes.mp4", "Making Of.mp4"} {
 		if ids[name] == "" || !got[ids[name]] {
 			t.Errorf("extra %q (id %q) not linked to main Media; extras = %#v", name, ids[name], extras)
+		}
+	}
+}
+
+// TestExtraOrdinalStemMatches: the ordinal-stem convention recognises a
+// group-numbered bonus label and never an ordinal pair or a numbered track.
+func TestExtraOrdinalStemMatches(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "mnt", "user", "tv")
+	dir := filepath.Join(root, "The IT Crowd", "The IT Crowd  Series 3")
+	cases := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"dotted x", filepath.Join(dir, "3.x Out Takes.mkv"), true},
+		{"spaced x", filepath.Join(dir, "3 x Out Takes.mkv"), true},
+		{"bare x", filepath.Join(dir, "3x Set Tour.mkv"), true},
+		{"episode code", filepath.Join(dir, "3x07 Calamity Jen.mkv"), false},
+		{"episode pair", filepath.Join(dir, "3.01 From Hell.mkv"), false},
+		{"dashed number", filepath.Join(dir, "01 - X Marks the Spot.mkv"), false},
+		{"audio file", filepath.Join(dir, "3.x Out Takes.flac"), false},
+	}
+	for _, tc := range cases {
+		if got := matchExtraPath(root, tc.path).ordinal; got != tc.want {
+			t.Errorf("%s: ordinal(%q) = %v, want %v", tc.name, tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestScanOrdinalStemNeedsSoleParent: an ordinal-stem file beside several
+// main Media is ordinary visible Media, not a hidden parentless Extra, and a
+// rescan clears the Extra flag it got while its folder had a sole parent.
+func TestScanOrdinalStemNeedsSoleParent(t *testing.T) {
+	// feature:scan-pipeline
+	root := t.TempDir()
+	writeScanFile(t, root, "Synthetic Show/Season 3/Pilot.mp4", []byte("pilot content"))
+	writeScanFile(t, root, "Synthetic Show/Season 3/3.x Out Takes.mp4", []byte("outtakes content"))
+	st := storetest.Open(t)
+	ctx := context.Background()
+	if err := st.SetLibraryRoots(ctx, "library-local", []string{root}); err != nil {
+		t.Fatalf("SetLibraryRoots: %v", err)
+	}
+	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{"library-local"}}
+	scanVisible := func() []store.SourceItem {
+		t.Helper()
+		if _, err := Scan(ctx, st, nil, nil, nil, nil, nil, Request{LibraryID: "library-local", Root: root}); err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		items, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "recently-added"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return items
+	}
+
+	if items := scanVisible(); hasSourceItemWithTitle(items, "3.x Out Takes") {
+		t.Fatalf("setup: ordinal-stem file beside a sole parent was not an Extra: %#v", items)
+	}
+
+	writeScanFile(t, root, "Synthetic Show/Season 3/Second.mp4", []byte("second content"))
+	items := scanVisible()
+	if !hasSourceItemWithTitle(items, "3.x Out Takes") {
+		t.Fatalf("ordinal-stem file beside several main Media is hidden: %#v", items)
+	}
+	for _, title := range []string{"Pilot", "Second"} {
+		if !hasSourceItemWithTitle(items, title) {
+			t.Fatalf("main Media %q missing from browse: %#v", title, items)
 		}
 	}
 }

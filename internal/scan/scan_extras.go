@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -68,50 +69,105 @@ func isVideoPath(path string) bool {
 	return videoExtensions[strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")]
 }
 
-// isExtraPath reports whether a scanned file is an Extra by the established
-// folder/suffix conventions. It looks at the filename stem and at the
+// isExtraPath reports whether a scanned file is an Extra by the
+// folder/suffix conventions alone. It looks at the filename stem and at the
 // directory components between the Library root and the file; the root
 // itself and the folders above it never count, so a Library stored under a
 // folder named "Trailers" or "Extras" still holds main Media (CORE-2189). It
-// does not stat the filesystem.
+// does not stat the filesystem. An ordinal stem alone is not enough: it marks
+// an Extra only when its folder has one main Media to own it (see
+// scanWalkState.isExtraFile).
 func isExtraPath(root, path string) bool {
-	_, ok := matchExtraPath(root, path)
-	return ok
+	return matchExtraPath(root, path).static()
 }
 
-// extraMatch says which convention marked a file as an Extra, carrying what
-// parent resolution needs. Exactly one of suffix, ordinal or container is set.
+// extraMatch records every Extra convention a path matches, so parent
+// resolution can fall back from one to the next.
 type extraMatch struct {
-	suffix    string // the matched filename-stem suffix
-	ordinal   bool   // the stem matched extraOrdinalStem
-	container string // the nearest Extras folder holding the file
+	suffix    string // the matched filename-stem suffix, if any
+	ordinal   bool   // the stem matched extraOrdinalStem (video files only)
+	container string // the nearest Extras folder holding the file, if any
 }
 
-// matchExtraPath is the single classifier behind isExtraPath and
-// extraParentMediaID, so every path classified an Extra is also considered
-// for an extra-of relation. Conventions are tried in a fixed order: stem
-// suffixes, then the video-only suffixes and ordinal stem, then folders.
-func matchExtraPath(root, path string) (extraMatch, bool) {
+// static reports whether a convention that needs no folder context marks the
+// file as an Extra.
+func (m extraMatch) static() bool {
+	return m.suffix != "" || m.container != ""
+}
+
+// mainMedia reports whether the file is main Media whatever its folder holds.
+func (m extraMatch) mainMedia() bool {
+	return !m.static() && !m.ordinal
+}
+
+// matchExtraPath is the single classifier behind isExtraPath, the scan's
+// ordinal-stem decision and extraParentMediaID, so classification and parent
+// resolution read the same conventions.
+func matchExtraPath(root, path string) extraMatch {
+	var match extraMatch
 	stem := strings.ToLower(titleFromPath(path))
 	for _, suffix := range extraNameSuffixes {
 		if strings.HasSuffix(stem, suffix) {
-			return extraMatch{suffix: suffix}, true
+			match.suffix = suffix
+			break
 		}
 	}
 	if isVideoPath(path) {
-		for _, suffix := range videoExtraNameSuffixes {
-			if strings.HasSuffix(stem, suffix) {
-				return extraMatch{suffix: suffix}, true
+		if match.suffix == "" {
+			for _, suffix := range videoExtraNameSuffixes {
+				if strings.HasSuffix(stem, suffix) {
+					match.suffix = suffix
+					break
+				}
 			}
 		}
-		if extraOrdinalStem.MatchString(stem) {
-			return extraMatch{ordinal: true}, true
+		match.ordinal = extraOrdinalStem.MatchString(stem)
+	}
+	match.container = extraContainerDir(root, path)
+	return match
+}
+
+// isExtraFile is the scan's Extra decision for a file it imports. A file the
+// static conventions mark is an Extra; an ordinal-stem file is one only when
+// its folder holds exactly one main Media to own it. Otherwise it stays main
+// Media, as it was before the ordinal convention: hiding it with no parent to
+// list it under would lose it, and picking one of several candidates would
+// attach it to the wrong item.
+func (s *scanWalkState) isExtraFile(path string) bool {
+	match := matchExtraPath(s.extrasRoot, path)
+	if match.static() {
+		return true
+	}
+	return match.ordinal && s.folderHasSoleMainMedia(filepath.Dir(path))
+}
+
+// folderHasSoleMainMedia reports whether dir holds exactly one supported
+// media file that is main Media by matchExtraPath, the same count
+// linkExtraRelationsForLibrary resolves ordinal-stem parents from. The answer
+// is cached per folder for the walk.
+func (s *scanWalkState) folderHasSoleMainMedia(dir string) bool {
+	dir = filepath.Clean(dir)
+	if cached, ok := s.soleMainMediaDirs[dir]; ok {
+		return cached
+	}
+	count := 0
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			candidate := filepath.Join(dir, entry.Name())
+			if s.isSupportedMediaFile(candidate, info) && matchExtraPath(s.extrasRoot, candidate).mainMedia() {
+				count++
+			}
 		}
 	}
-	if dir := extraContainerDir(root, path); dir != "" {
-		return extraMatch{container: dir}, true
+	if s.soleMainMediaDirs == nil {
+		s.soleMainMediaDirs = map[string]bool{}
 	}
-	return extraMatch{}, false
+	s.soleMainMediaDirs[dir] = count == 1
+	return count == 1
 }
 
 // extraOrdinalStem matches a filename stem numbered by a group but not by an
@@ -145,7 +201,7 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 		if imported.MediaID == "" || imported.Path == "" {
 			return nil
 		}
-		if isExtraPath(root, imported.Path) {
+		if !matchExtraPath(root, imported.Path).mainMedia() {
 			extras = append(extras, imported)
 			return nil
 		}
@@ -176,38 +232,40 @@ func linkExtraRelationsForLibrary(ctx context.Context, st *store.Store, libraryI
 	return nil
 }
 
-// extraParentMediaID resolves the main Media an Extra belongs to, following
-// the convention matchExtraPath reported for it:
+// extraParentMediaID resolves the main Media an Extra belongs to. Every
+// convention the path matches is tried in turn, so an Extra matching two (a
+// "-deleted" file inside an Extras folder) still resolves through the second
+// when the first finds nothing:
 //   - a stem suffix names its parent by title in the same folder
 //     ("Title-deleted.mkv" beside "Title.mkv");
-//   - an ordinal stem ("3.x Out Takes") belongs to its folder's group, so the
-//     parent is the folder's main Media when there is exactly one;
-//   - an Extras folder belongs to the folder holding it, again only when
-//     that folder has exactly one main Media.
+//   - an ordinal stem ("3.x Out Takes") belongs to its folder's sole main
+//     Media;
+//   - an Extras folder belongs to the sole main Media of the folder holding
+//     it.
 //
-// When no single parent can be determined (no title match, or a folder with
-// several main Media) it returns "" and the file stays an unlinked Extra:
-// guessing among several candidates would attach it to the wrong item, and
-// the classification must not depend on what else the folder holds, so a
-// rescan never flips a file between Extra and main Media.
+// It returns "" when none resolves. A static-convention Extra then stays an
+// unlinked Extra; an ordinal-stem-only file is main Media in that case (see
+// scanWalkState.isExtraFile), so it is never left hidden.
 func extraParentMediaID(root, path string, byDir map[string][]store.MediaID, byDirTitle map[extraParentTitleKey]store.MediaID) store.MediaID {
-	match, ok := matchExtraPath(root, path)
-	if !ok {
-		return ""
-	}
+	match := matchExtraPath(root, path)
 	dir := filepath.Clean(filepath.Dir(path))
-	switch {
-	case match.suffix != "":
+	if match.suffix != "" {
 		parentTitle := strings.TrimSuffix(strings.ToLower(titleFromPath(path)), match.suffix)
-		if parentTitle == "" {
-			return ""
+		if parentTitle != "" {
+			if id := byDirTitle[extraParentTitleKey{dir: dir, title: parentTitle}]; id != "" {
+				return id
+			}
 		}
-		return byDirTitle[extraParentTitleKey{dir: dir, title: parentTitle}]
-	case match.ordinal:
-		return soleMediaID(byDir[dir])
-	default:
+	}
+	if match.ordinal {
+		if id := soleMediaID(byDir[dir]); id != "" {
+			return id
+		}
+	}
+	if match.container != "" {
 		return soleMediaID(byDir[filepath.Clean(filepath.Dir(match.container))])
 	}
+	return ""
 }
 
 // soleMediaID returns the only ID in candidates, or "" when there is not
