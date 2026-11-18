@@ -199,6 +199,16 @@ export async function createSeedAdultProfile(
   return profile.id;
 }
 
+// Disables a Profile a spec created, so it drops off the shared harness
+// server's pickers and Console list before later visual-parity goldens run.
+export async function disableSeedProfile(baseURL: string, profileID: string): Promise<void> {
+  await graphqlWithSeedManager(
+    baseURL,
+    "mutation D($profileID: String!) { updateProfile(profileID: $profileID, disabled: true) { id } }",
+    { profileID },
+  );
+}
+
 export async function switchEnrolledProfile(
   baseURL: string,
   cookies: EnrolledCookies,

@@ -1,6 +1,7 @@
 import {
   ADMIN_PASSWORD,
   createSeedAdultProfile,
+  disableSeedProfile,
   enrollRole,
   storageStateFor,
   switchEnrolledProfile,
@@ -493,6 +494,7 @@ test.describe("manage", () => {
       expect(errors, errors.join("\n")).toEqual([]);
     } finally {
       await context.close();
+      await disableSeedProfile(baseURL, profileID);
     }
   });
 
