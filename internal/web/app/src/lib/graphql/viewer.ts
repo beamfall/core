@@ -212,7 +212,14 @@ export async function fetchMediaForEntity(
     { entityID },
     signal,
   );
-  return data.mediaForEntity ?? [];
+  // Two relations to the same Media return it twice; every view lists, counts
+  // and queues it once, in its first position.
+  const seen = new Set<string>();
+  return (data.mediaForEntity ?? []).filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 // --- Search ---------------------------------------------------------------

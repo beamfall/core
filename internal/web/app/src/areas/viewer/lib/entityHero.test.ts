@@ -100,6 +100,20 @@ describe("entityHero", () => {
     expect(unwatchedCount(items)).toBe(0);
   });
 
+  it("returns a Media item reached by two relations once, in its first position", async () => {
+    vi.mocked(graphql).mockResolvedValue({
+      mediaForEntity: [
+        { id: "m1", kind: "media", title: "One" },
+        { id: "m2", kind: "media", title: "Two" },
+        { id: "m1", kind: "media", title: "One" },
+      ],
+    });
+
+    const items = await fetchMediaForEntity("e1");
+
+    expect(items.map((item) => item.id)).toEqual(["m1", "m2"]);
+  });
+
   it("adds an item count to a child card's subline", () => {
     const text = (count: number) => `${count} items`;
     const item: SourceItem = { id: "b", kind: "entity", title: "B", engagement: { totalCount: 4 } };
