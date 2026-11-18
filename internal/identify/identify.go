@@ -584,8 +584,9 @@ func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, b
 
 // identifiedFieldTexts is the text of the plugin-declared Media field values
 // an identification writes (applyMediaFields' two routes, document values over
-// implied constants) by bare field name, blanks dropped: what a parser builds
-// an identified per-file title from.
+// implied constants) by bare field name, blanks and values that do not parse
+// to the declared type dropped like applyMediaFields drops them: what a parser
+// builds an identified per-file title from.
 func identifiedFieldTexts(bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) map[string]string {
 	mediaFieldTypes := bundle.MediaFieldTypes()
 	texts := map[string]string{}
@@ -603,8 +604,9 @@ func identifiedFieldTexts(bundle plugin.Bundle, spec plugin.ScraperSpec, result 
 		if err != nil || route.Builtin || route.CandidateSignal {
 			continue
 		}
-		if value := strings.TrimSpace(fieldString(result.Fields, key)); value != "" {
-			texts[route.MediaField] = value
+		raw := fieldString(result.Fields, key)
+		if _, ok := mediaFieldFromValue(route.MediaField, route.Type, raw); ok {
+			texts[route.MediaField] = strings.TrimSpace(raw)
 		}
 	}
 	return texts

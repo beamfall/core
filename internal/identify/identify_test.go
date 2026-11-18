@@ -1620,6 +1620,9 @@ func (f *fakeIdentifiedTitles) IdentifiedMediaTitle(_ context.Context, _ store.M
 func TestApplyIdentifiedMediaTitleSource(t *testing.T) {
 	withFields := map[string]any{"title": "Synthetic Group", "summary": "A summary.", "sequence": "3",
 		"media.code": "  Smells Like Mean Spirit ", "media.rating": 7.5}
+	// A value Apply does not store (not a number for the number field)
+	// never reaches the hook either.
+	unstored := map[string]any{"title": "Synthetic Group", "media.code": "Smells Like Mean Spirit", "media.rating": "not-a-number"}
 	cases := []struct {
 		name         string
 		fields       map[string]any
@@ -1633,6 +1636,10 @@ func TestApplyIdentifiedMediaTitleSource(t *testing.T) {
 			titles:    &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: " S03E01 · Smells Like Mean Spirit "},
 			wantTitle: "S03E01 · Smells Like Mean Spirit", wantIdentify: 1,
 			wantFields: map[string]string{"code": "Smells Like Mean Spirit", "phase": "flight", "rating": "7.5"}},
+		{name: "unstored value withheld", fields: unstored,
+			titles:    &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: "S03E01 · Smells Like Mean Spirit"},
+			wantTitle: "S03E01 · Smells Like Mean Spirit", wantIdentify: 1,
+			wantFields: map[string]string{"code": "Smells Like Mean Spirit", "phase": "flight"}},
 		{name: "blank identified title", fields: withFields,
 			titles:    &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: "  "},
 			wantTitle: "S03E01", wantIdentify: 1, wantPerFile: 1,
