@@ -331,7 +331,8 @@ export function MediaItemCard({
         ) : null}
       </Link>
       <MediaItemCardMenu
-        title={heading}
+        // The actions target this item, not the container its card is headed by.
+        title={item.title}
         primaryLabel={primaryLabel}
         isMedia={isMedia}
         isAudio={item.mediaClass === "audio"}

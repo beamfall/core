@@ -307,20 +307,7 @@ func (s *Service) applyContainerLinks(ctx context.Context, library store.Library
 	if len(names) == 0 {
 		return nil
 	}
-	var rows []store.EntityRelation
-	for _, link := range result.Links {
-		relation, ok := declared[link.Relation]
-		if !ok || relation.ToKind != link.Kind {
-			continue
-		}
-		rows = append(rows, store.EntityRelation{
-			FromEntityID: target,
-			Name:         link.Relation,
-			ToEntityID:   entityIDForName(library, link.Kind, link.Name),
-			Cardinality:  relation.Cardinality,
-			SortOrder:    link.SortOrder,
-		})
-	}
+	rows := containerRelationRows(library, target, declared, result.Links)
 	if replacer, ok := s.entities.(entityRelationReplacer); ok {
 		return replacer.ReplaceEntityRelations(ctx, target, names, rows)
 	}
@@ -330,6 +317,37 @@ func (s *Service) applyContainerLinks(ctx context.Context, library store.Library
 		}
 	}
 	return nil
+}
+
+// containerRelationRows turns a container's declared links into relation rows.
+// A person credited in both cast and crew arrives as two links to one Entity;
+// it keeps one row with the smaller ordinal, so billing order holds.
+func containerRelationRows(library store.LibraryID, target store.EntityID, declared map[string]plugin.RelationSpec, links []scrape.EntityLink) []store.EntityRelation {
+	var rows []store.EntityRelation
+	seen := map[[2]string]int{}
+	for _, link := range links {
+		relation, ok := declared[link.Relation]
+		if !ok || relation.ToKind != link.Kind {
+			continue
+		}
+		to := entityIDForName(library, link.Kind, link.Name)
+		key := [2]string{link.Relation, string(to)}
+		if i, dup := seen[key]; dup {
+			if cur := rows[i].SortOrder; link.SortOrder != nil && (cur == nil || *link.SortOrder < *cur) {
+				rows[i].SortOrder = link.SortOrder
+			}
+			continue
+		}
+		seen[key] = len(rows)
+		rows = append(rows, store.EntityRelation{
+			FromEntityID: target,
+			Name:         link.Relation,
+			ToEntityID:   to,
+			Cardinality:  relation.Cardinality,
+			SortOrder:    link.SortOrder,
+		})
+	}
+	return rows
 }
 
 // containerOfKind returns the innermost chain Entity of kind.

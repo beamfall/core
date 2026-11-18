@@ -1068,10 +1068,14 @@ describe("MediaDetailPage", () => {
     vi.mocked(fetchSourceItems).mockResolvedValue([]);
     renderAt(["/media/m1"]);
 
-    const director = await screen.findByRole("link", { name: "Ron Howard" });
+    await screen.findAllByRole("link", { name: "Ron Howard" });
+    // Details (CORE-2504) lists every credit too; these assertions read the crew line.
+    const crew = document.querySelector<HTMLElement>(".bf-detail-crew");
+    expect(crew).not.toBeNull();
+    const director = within(crew as HTMLElement).getByRole("link", { name: "Ron Howard" });
     expect(director).toHaveAttribute("href", "/entity/rh");
     expect(director.closest("div")).toHaveTextContent("DirectorRon Howard");
-    const writer = screen.getByRole("link", { name: "Akiva Goldsman" });
+    const writer = within(crew as HTMLElement).getByRole("link", { name: "Akiva Goldsman" });
     expect(writer).toHaveAttribute("href", "/entity/ag");
     expect(writer.closest("div")).toHaveTextContent("WriterAkiva Goldsman");
     const people = screen.getByRole("list", { name: "People" });

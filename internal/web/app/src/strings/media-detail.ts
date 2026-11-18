@@ -70,8 +70,8 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Aussi dans {title}",
     mediaDetailPeople: "Personnes",
-    mediaDetailDirectors: "Réalisation",
-    mediaDetailWriters: "Scénario",
+    mediaDetailDirectors: "{count, plural, other {Réalisation}}",
+    mediaDetailWriters: "{count, plural, other {Scénario}}",
     mediaDetailCastCrew: "Distribution et équipe",
     mediaDetailCast: "Distribution",
     mediaDetailLoadFailed:
@@ -115,8 +115,8 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Mehr aus {title}",
     mediaDetailPeople: "Personen",
-    mediaDetailDirectors: "Regie",
-    mediaDetailWriters: "Drehbuch",
+    mediaDetailDirectors: "{count, plural, other {Regie}}",
+    mediaDetailWriters: "{count, plural, other {Drehbuch}}",
     mediaDetailCastCrew: "Besetzung und Stab",
     mediaDetailCast: "Besetzung",
     mediaDetailLoadFailed:
@@ -162,8 +162,8 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Más de {title}",
     mediaDetailPeople: "Personas",
-    mediaDetailDirectors: "Dirección",
-    mediaDetailWriters: "Guion",
+    mediaDetailDirectors: "{count, plural, other {Dirección}}",
+    mediaDetailWriters: "{count, plural, other {Guion}}",
     mediaDetailCastCrew: "Reparto y equipo",
     mediaDetailCast: "Reparto",
     mediaDetailLoadFailed:
@@ -207,8 +207,8 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Mais de {title}",
     mediaDetailPeople: "Pessoas",
-    mediaDetailDirectors: "Direção",
-    mediaDetailWriters: "Roteiro",
+    mediaDetailDirectors: "{count, plural, other {Direção}}",
+    mediaDetailWriters: "{count, plural, other {Roteiro}}",
     mediaDetailCastCrew: "Elenco e equipe",
     mediaDetailCast: "Elenco",
     mediaDetailLoadFailed:
