@@ -171,7 +171,7 @@ func TestLibraryItemsGroupsByThePluginsDeclaredKinds(t *testing.T) {
 
 	const query = `query($libraryID: String!, $groupFilters: Map) {
 		libraryItems(libraryID: $libraryID, groupFilters: $groupFilters) {
-			total items { id title } facets { groupings { kind title values } decades qualities }
+			total items { id title } facets { groupings { kind title values counts } decades qualities }
 		}
 	}`
 	var all LibraryItemsResponse
@@ -185,6 +185,10 @@ func TestLibraryItemsGroupsByThePluginsDeclaredKinds(t *testing.T) {
 	}
 	if groupings[1].Kind != "era" || !slices.Equal(groupings[1].Values, []string{"Early"}) {
 		t.Fatalf("second grouping = %+v, want era with Early", groupings[1])
+	}
+	// Each value carries how many Media reach it (CORE-2505).
+	if !slices.Equal(groupings[0].Counts, []int{2, 1}) || !slices.Equal(groupings[1].Counts, []int{2}) {
+		t.Fatalf("grouping counts = %v and %v, want [2 1] and [2]", groupings[0].Counts, groupings[1].Counts)
 	}
 
 	var both LibraryItemsResponse

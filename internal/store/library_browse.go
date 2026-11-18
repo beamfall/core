@@ -84,10 +84,12 @@ type LibraryBrowseFacets struct {
 }
 
 // LibraryBrowseEntityFacet is the titles of one Entity Kind that the visible
-// set actually reaches.
+// set actually reaches, in title order. Counts is parallel to Titles: how many
+// distinct visible Media reach each title.
 type LibraryBrowseEntityFacet struct {
 	Kind   string
 	Titles []string
+	Counts []int
 }
 
 // LibraryBrowseResult is one page of a Library browse plus the size of the
@@ -191,11 +193,11 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	result := LibraryBrowseResult{Items: []SourceItem{}, Letters: []LibraryBrowseLetter{}}
 	result.Facets = libraryBrowseFacets(candidates)
 	for _, kind := range query.FacetEntityKinds {
-		titles, err := libraryBrowseEntityTitles(ctx, reader, kind, visible, candidates)
+		facet, err := libraryBrowseEntityTitles(ctx, reader, kind, visible, candidates)
 		if err != nil {
 			return empty, err
 		}
-		result.Facets.Entities = append(result.Facets.Entities, LibraryBrowseEntityFacet{Kind: kind, Titles: titles})
+		result.Facets.Entities = append(result.Facets.Entities, facet)
 	}
 
 	for i := range query.EntityFilters {
@@ -504,10 +506,14 @@ func (s *Store) libraryBrowseRatingsLocked(ctx context.Context, profileID Profil
 }
 
 // libraryBrowseEntityTitles lists the Entities of one kind that at least one
-// visible candidate belongs to. It is built from the candidates, never from the
-// Library's whole Entity table, so a title reachable only through Media the
-// caller cannot see (certification, Mute) is not offered as a filter.
-func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string, visible []LibraryID, candidates []libraryBrowseCandidate) ([]string, error) {
+// visible candidate belongs to, each with how many distinct visible candidates
+// reach it. It is built from the candidates, never from the Library's whole
+// Entity table, so a title reachable only through Media the caller cannot see
+// (certification, Mute) is not offered as a filter and never counted. Past the
+// cap it keeps the most used titles (ties by title), then answers in title
+// order.
+func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string, visible []LibraryID, candidates []libraryBrowseCandidate) (LibraryBrowseEntityFacet, error) {
+	facet := LibraryBrowseEntityFacet{Kind: kind, Titles: []string{}, Counts: []int{}}
 	placeholders := make([]string, len(visible))
 	args := make([]any, 0, len(visible)+1)
 	args = append(args, kind)
@@ -524,36 +530,69 @@ func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string,
 		  AND e.trashed_at_ms IS NULL AND r.to_media_id IS NOT NULL
 	`, args...)
 	if err != nil {
-		return nil, err
+		return facet, err
 	}
 	defer rows.Close()
 	shown := make(map[MediaID]bool, len(candidates))
 	for _, c := range candidates {
 		shown[c.item.ID] = true
 	}
-	seen := map[string]bool{}
-	titles := []string{}
+	// Two Entities may share a title; a Media reaching both counts once.
+	reached := map[string]map[MediaID]bool{}
 	for rows.Next() {
 		var title string
 		var mediaID MediaID
 		if err := rows.Scan(&title, &mediaID); err != nil {
-			return nil, err
+			return facet, err
 		}
-		if shown[mediaID] && !seen[title] {
-			seen[title] = true
-			titles = append(titles, title)
+		if !shown[mediaID] {
+			continue
 		}
+		if reached[title] == nil {
+			reached[title] = map[MediaID]bool{}
+		}
+		reached[title][mediaID] = true
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return facet, err
 	}
-	slices.SortFunc(titles, func(a, b string) int {
+	counts := make(map[string]int, len(reached))
+	for title, media := range reached {
+		counts[title] = len(media)
+	}
+	facet.Titles = topEntityTitles(counts, libraryBrowseEntityFacetCap)
+	facet.Counts = make([]int, len(facet.Titles))
+	for i, title := range facet.Titles {
+		facet.Counts[i] = counts[title]
+	}
+	return facet, nil
+}
+
+// topEntityTitles keeps at most limit titles, the ones with the highest counts
+// (ties by title), and answers them in title order: case-insensitive, then
+// exact.
+func topEntityTitles(counts map[string]int, limit int) []string {
+	byTitle := func(a, b string) int {
 		if c := strings.Compare(strings.ToLower(a), strings.ToLower(b)); c != 0 {
 			return c
 		}
 		return strings.Compare(a, b)
-	})
-	return titles[:min(len(titles), libraryBrowseEntityFacetCap)], nil
+	}
+	titles := make([]string, 0, len(counts))
+	for title := range counts {
+		titles = append(titles, title)
+	}
+	if len(titles) > limit {
+		slices.SortFunc(titles, func(a, b string) int {
+			if c := counts[b] - counts[a]; c != 0 {
+				return c
+			}
+			return byTitle(a, b)
+		})
+		titles = titles[:limit]
+	}
+	slices.SortFunc(titles, byTitle)
+	return titles
 }
 
 func libraryBrowseFacets(candidates []libraryBrowseCandidate) LibraryBrowseFacets {
