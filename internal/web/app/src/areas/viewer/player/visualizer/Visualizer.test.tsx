@@ -3,8 +3,8 @@ import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioStage } from "../AudioStage";
 import { easeFrame, silentFrame } from "./analysis";
-import { canVisualize, type Rotation, takeUpcoming, Visualizer } from "./Visualizer";
-import { VISUALS, visualFor } from "./visuals";
+import { backingSize, canVisualize, type Rotation, takeUpcoming, Visualizer } from "./Visualizer";
+import { chosenVisual, VISUALS, visualFor } from "./visuals";
 
 // The Oscillux core never loads in jsdom: a pending load keeps the visualizer mounted and idle.
 vi.mock("./oscillux", () => ({
@@ -136,5 +136,39 @@ describe("rotation (CORE-2368)", () => {
     expect(takeUpcoming(rotation(VISUALS[0]), VISUALS[0], false)).not.toBe(VISUALS[0]);
     if (!calm || !lively) throw new Error("the release has calm and lively visuals");
     expect(takeUpcoming(rotation(lively), calm, true).calm).toBe(true);
+  });
+});
+
+describe("backingSize", () => {
+  it("uses the device-pixel box at DPR up to 2", () => {
+    expect(backingSize({ inlineSize: 781, blockSize: 439 }, 390.5, 219.5, 2)).toEqual([781, 439]);
+  });
+
+  it("scales the device-pixel box down to DPR 2", () => {
+    expect(backingSize({ inlineSize: 1200, blockSize: 900 }, 400, 300, 3)).toEqual([800, 600]);
+  });
+
+  it("falls back to the CSS box, and to DPR 1 for a bad ratio", () => {
+    expect(backingSize(null, 400.4, 300.6, 1.5)).toEqual([601, 451]);
+    expect(backingSize(null, 400, 300, 0)).toEqual([400, 300]);
+  });
+});
+
+describe("chosenVisual", () => {
+  const calm = VISUALS.find((v) => v.calm);
+  const lively = VISUALS.find((v) => !v.calm);
+
+  it("keeps a pinned visual unless it is lively under reduced motion", () => {
+    if (!calm || !lively) throw new Error("the release has calm and lively visuals");
+    expect(chosenVisual(lively.id, "k", false)).toBe(lively);
+    expect(chosenVisual(calm.id, "k", true)).toBe(calm);
+    expect(chosenVisual(lively.id, "k", true).calm).toBe(true);
+  });
+
+  it("draws a per-key visual from the calm set under reduced motion, stably", () => {
+    for (const key of ["a", "album-1", "track-42", "zz"]) {
+      expect(chosenVisual("album", key, true).calm).toBe(true);
+      expect(chosenVisual("album", key, true)).toBe(visualFor(key, true));
+    }
   });
 });

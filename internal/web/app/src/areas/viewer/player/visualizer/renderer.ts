@@ -5,8 +5,10 @@
 // frame to the canvas. The pass order, bindings and limiter clock follow the release's own
 // reference hosts (hosts/web/host.js and tools/shader/limiter-check.mjs at the pinned rev).
 // Every shader is Oscillux's, unchanged; this file only binds and schedules them.
+
 import type { AudioFrame } from "./analysis";
 import { AUDIO_KEYS } from "./analysis";
+import { CadenceGate } from "./cadence";
 import type { Oscillux } from "./oscillux";
 import { shaderSource } from "./oscillux";
 import type { Visual } from "./visuals";
@@ -25,7 +27,7 @@ export const MIN_HEIGHT = 36;
 
 const LIMITER = ["rows", "reduce", "cells", "windows", "grant", "state", "output"] as const;
 const LIMITER_SAMPLERS: Record<(typeof LIMITER)[number], readonly string[]> = {
-  rows: ["uFrame"],
+  rows: ["uFrame", "uHist"],
   reduce: ["uRows", "uT0", "uT1"],
   cells: ["uS", "uT2"],
   windows: ["uC"],
@@ -154,19 +156,60 @@ interface Size {
   limiter: Limiter;
 }
 
+export type FeedbackLabel = "float" | "half-float" | "8-bit";
+export interface FeedbackFormat {
+  internal: number;
+  type: number;
+  label: FeedbackLabel;
+}
+
+/**
+ * The feedback format: RGBA16F where the browser renders to it, through EXT_color_buffer_float
+ * or else EXT_color_buffer_half_float, otherwise RGBA8, which clamps HDR feedback and steps
+ * gradients (CORE-2481). An enabled extension does not promise a complete framebuffer, so each
+ * is probed on a 1x1 attachment, as the reference host does (hosts/web/host.js feedbackFormat).
+ */
+export function pickFeedbackFormat(gl: WebGL2RenderingContext): FeedbackFormat {
+  const candidates: [string, FeedbackLabel][] = [
+    ["EXT_color_buffer_float", "float"],
+    ["EXT_color_buffer_half_float", "half-float"],
+  ];
+  for (const [ext, label] of candidates) {
+    if (!gl.getExtension(ext)) continue;
+    const texture = gl.createTexture();
+    const fbo = gl.createFramebuffer();
+    let complete = false;
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, 1, 1);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    } finally {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.deleteFramebuffer(fbo);
+      gl.deleteTexture(texture);
+    }
+    if (complete) return { internal: gl.RGBA16F, type: gl.HALF_FLOAT, label };
+  }
+  return { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE, label: "8-bit" };
+}
+
 /** A WebGL2 renderer for one canvas, or null where the browser cannot run it. */
 export class Renderer {
   private readonly gl: WebGL2RenderingContext;
   private readonly osc: Oscillux;
   private readonly overlay: InstanceType<Oscillux["OverlayConfig"]>;
   private readonly regions: InstanceType<Oscillux["OverlayRegions"]>;
-  private readonly feedbackFormat: { internal: number; type: number };
+  private readonly feedbackFormat: FeedbackFormat;
   private readonly quad: WebGLBuffer;
   // The current visual's image input; during a switch the outgoing visual keeps the one it had.
   private image: WebGLTexture;
   private readonly transition: InstanceType<Oscillux["Transition"]>;
   // Oscillux's quality governor and the level the targets are built for (CORE-2215).
   private readonly governor: InstanceType<Oscillux["Governor"]>;
+  private readonly cadence = new CadenceGate();
   private level = TOP_LEVEL;
   private readonly switchUbo: WebGLBuffer;
   private readonly switchBlock = new Float32Array(12);
@@ -201,6 +244,11 @@ export class Renderer {
   private time = 0;
   private clockMs = 0;
   private presented = 0;
+
+  /** The feedback and history format in use, for diagnostics (CORE-2481). */
+  get feedbackLabel(): FeedbackLabel {
+    return this.feedbackFormat.label;
+  }
 
   /**
    * A renderer on the canvas, or null without a hardware WebGL2 context. A software one
@@ -268,9 +316,7 @@ export class Renderer {
         quality.free();
       }
       this.parallel = !!gl.getExtension("KHR_parallel_shader_compile");
-      this.feedbackFormat = gl.getExtension("EXT_color_buffer_float")
-        ? { internal: gl.RGBA16F, type: gl.HALF_FLOAT }
-        : { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE };
+      this.feedbackFormat = pickFeedbackFormat(gl);
 
       this.quad = must(gl.createBuffer());
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
@@ -479,8 +525,11 @@ export class Renderer {
     // as in the reference host. It reads the raw frame interval, not the clamped step, so a
     // stall or a throttled page is a pause it ignores rather than a slow frame that steps the
     // render scale down.
+    // A steady browser cap at 30 Hz is not overload: the cadence gate scales it to the target
+    // (CORE-2483).
     if (p === null) {
-      this.governor.record(frameMs);
+      const sample = this.cadence.sample(frameMs);
+      if (sample !== null) this.governor.record(sample);
       this.setLevel(size, this.governor.level);
     }
     const v = this.visual;
@@ -721,7 +770,7 @@ export class Renderer {
     const [rows, reduce, cells, windows, grant, state, output] = this.limiter;
     const W = size.width;
     const H = size.height;
-    this.pass(rows, L.fRows, 64, H, [size.frame]);
+    this.pass(rows, L.fRows, 64, H, [size.frame, L.out[a]]);
     this.pass(reduce, L.fS, 64, 36, [L.rows, L.t0[a], L.t1[a]]);
     this.pass(cells, L.fC, 16, 9, [L.s, L.t2[a]]);
     this.pass(windows, L.fW, 16, 9, [L.c]);
@@ -746,12 +795,17 @@ export class Renderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  // The targets for a W x H canvas, rebuilt (and cleared) when the size changes.
+  // The targets for a W x H canvas, rebuilt when the size changes. The flash limiter's
+  // temporal state (trackers, hold field and tokens) lives on the fixed 64 x 36 sub-block grid,
+  // so it carries over a resize, and the last output is scaled into the new history: resizing
+  // never hands a strobe a fresh flash budget (CORE-2516).
   private resize(W: number, H: number): Size {
     if (this.size && this.size.width === W && this.size.height === H) return this.size;
     // A size change ends a switch, as in the reference host.
     this.endSwitch();
-    this.freeSize();
+    const old = this.size;
+    const kept = old?.limiter ?? null;
+    this.freeSize(kept !== null);
     const gl = this.gl;
     const canvas = gl.canvas as HTMLCanvasElement;
     canvas.width = W;
@@ -766,39 +820,26 @@ export class Renderer {
       gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
       return { tex, fbo };
     });
-    const u16 = (w: number, h: number) => this.storage(w, h, gl.RGBA16UI);
-    const two = <T>(make: () => T) => [make(), make()];
     const rows = this.storage(64, H, gl.RGBA32UI);
-    const s = u16(64, 36);
-    const c = u16(16, 9);
-    const w = u16(16, 9);
-    const g = two(() => u16(1, 1));
-    const t0 = two(() => u16(64, 36));
-    const t1 = two(() => u16(64, 36));
-    const t2 = two(() => u16(64, 36));
-    const out = two(() => this.storage(W, H, gl.RGBA8));
-    const limiter: Limiter = {
-      rows,
-      s,
-      c,
-      w,
-      g,
-      t0,
-      t1,
-      t2,
-      out,
-      fRows: this.framebuffer([rows]),
-      fS: this.framebuffer([s]),
-      fC: this.framebuffer([c]),
-      fW: this.framebuffer([w]),
-      fG: g.map((x) => this.framebuffer([x])),
-      fState: [0, 1].map((i) => this.framebuffer([t0[i], t1[i], t2[i]])),
-      fOut: out.map((x) => this.framebuffer([x])),
-      cur: 0,
-    };
-    // The limiter starts with no sub-block tracked.
-    for (const f of limiter.fG) this.clearUint(f, 1);
-    for (const f of limiter.fState) this.clearUint(f, 3);
+    const out = [0, 1].map(() => this.storage(W, H, gl.RGBA8));
+    const fOut = out.map((x) => this.framebuffer([x]));
+    const limiter: Limiter = kept
+      ? { ...kept, rows, out, fRows: this.framebuffer([rows]), fOut }
+      : this.newLimiterState(rows, out, fOut);
+    if (kept && old) {
+      this.copy(
+        { tex: kept.out[kept.cur], fbo: kept.fOut[kept.cur] },
+        old.width,
+        old.height,
+        { tex: out[kept.cur], fbo: fOut[kept.cur] },
+        W,
+        H,
+      );
+      gl.deleteTexture(kept.rows);
+      gl.deleteFramebuffer(kept.fRows);
+      kept.out.forEach((t) => gl.deleteTexture(t));
+      kept.fOut.forEach((f) => gl.deleteFramebuffer(f));
+    }
     this.size = {
       width: W,
       height: H,
@@ -879,7 +920,49 @@ export class Renderer {
     });
   }
 
-  private freeSize(): void {
+  // A fresh limiter on the fixed sub-block grid, with no sub-block tracked.
+  private newLimiterState(
+    rows: WebGLTexture,
+    out: WebGLTexture[],
+    fOut: WebGLFramebuffer[],
+  ): Limiter {
+    const gl = this.gl;
+    const u16 = (w: number, h: number) => this.storage(w, h, gl.RGBA16UI);
+    const two = <T>(make: () => T) => [make(), make()];
+    const s = u16(64, 36);
+    const c = u16(16, 9);
+    const w = u16(16, 9);
+    const g = two(() => u16(1, 1));
+    const t0 = two(() => u16(64, 36));
+    const t1 = two(() => u16(64, 36));
+    const t2 = two(() => u16(64, 36));
+    const limiter: Limiter = {
+      rows,
+      s,
+      c,
+      w,
+      g,
+      t0,
+      t1,
+      t2,
+      out,
+      fRows: this.framebuffer([rows]),
+      fS: this.framebuffer([s]),
+      fC: this.framebuffer([c]),
+      fW: this.framebuffer([w]),
+      fG: g.map((x) => this.framebuffer([x])),
+      fState: [0, 1].map((i) => this.framebuffer([t0[i], t1[i], t2[i]])),
+      fOut,
+      cur: 0,
+    };
+    for (const f of limiter.fG) this.clearUint(f, 1);
+    for (const f of limiter.fState) this.clearUint(f, 3);
+    return limiter;
+  }
+
+  // Frees the size's targets. With keepLimiter the limiter's textures stay for resize to carry
+  // over (and free its size-bound ones after copying the last output).
+  private freeSize(keepLimiter = false): void {
     const s = this.size;
     if (!s) return;
     const gl = this.gl;
@@ -888,11 +971,14 @@ export class Renderer {
       gl.deleteTexture(t.tex);
       gl.deleteFramebuffer(t.fbo);
     }
-    for (const t of [s.frame, L.rows, L.s, L.c, L.w, ...L.g, ...L.t0, ...L.t1, ...L.t2, ...L.out]) {
-      gl.deleteTexture(t);
+    gl.deleteTexture(s.frame);
+    if (!keepLimiter) {
+      for (const t of [L.rows, L.s, L.c, L.w, ...L.g, ...L.t0, ...L.t1, ...L.t2, ...L.out]) {
+        gl.deleteTexture(t);
+      }
+      for (const f of [L.fRows, L.fS, L.fC, L.fW, ...L.fG, ...L.fState, ...L.fOut])
+        gl.deleteFramebuffer(f);
     }
-    for (const f of [L.fRows, L.fS, L.fC, L.fW, ...L.fG, ...L.fState, ...L.fOut])
-      gl.deleteFramebuffer(f);
     this.size = null;
   }
 

@@ -8,11 +8,11 @@ import { loadOscillux } from "./oscillux";
 import { Renderer } from "./renderer";
 import { canVisualize, type VisualChoice } from "./visualChoice";
 import {
+  chosenVisual,
   nextInRotation,
   ROTATE_GRACE_SECONDS,
   ROTATE_SECONDS,
   type Visual,
-  visualById,
   visualFor,
 } from "./visuals";
 
@@ -22,6 +22,26 @@ import {
 const MAX_DT = 0.1;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
+
+/**
+ * The canvas's backing size in device pixels, with the pixel ratio capped at MAX_DPR. The
+ * observer's device-pixel box is exact, so the blit lands one texel per pixel at a fractional
+ * ratio; without it the CSS size times the ratio is rounded (CORE-2516).
+ */
+export function backingSize(
+  device: { inlineSize: number; blockSize: number } | null,
+  cssWidth: number,
+  cssHeight: number,
+  ratio: number,
+): [number, number] {
+  const r = ratio > 0 ? ratio : 1;
+  const dpr = Math.min(MAX_DPR, r);
+  if (device) {
+    const k = dpr / r;
+    return [Math.round(device.inlineSize * k), Math.round(device.blockSize * k)];
+  }
+  return [Math.round(cssWidth * dpr), Math.round(cssHeight * dpr)];
+}
 // How the audio values glide across a track change (CORE-2218): toward rest while the next
 // track's analysis is not ready, and up into it once it is, for this long.
 const SETTLE_TAU = 0.5;
@@ -135,6 +155,24 @@ export function Visualizer({
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    // The canvas's size from a ResizeObserver, in device pixels where the browser reports them,
+    // so the draw loop reads no layout. Until it reports, and without one, the loop measures.
+    let device: { inlineSize: number; blockSize: number } | null = null;
+    let css: { width: number; height: number } | null = null;
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver((entries) => {
+            const entry = entries[entries.length - 1];
+            if (!entry) return;
+            device = entry.devicePixelContentBoxSize?.[0] ?? null;
+            css = { width: entry.contentRect.width, height: entry.contentRect.height };
+          });
+    try {
+      observer?.observe(canvas, { box: "device-pixel-content-box" });
+    } catch {
+      observer?.observe(canvas);
+    }
     const fail = (err: unknown) => {
       if (!alive) return;
       console.warn("visualizer: off", err);
@@ -166,8 +204,8 @@ export function Visualizer({
       if (!renderer || !video || document.hidden) return;
       // Paused by the listener: hold still. Paused while a new source loads: keep moving.
       if (video.paused && video.readyState >= HAVE_FUTURE_DATA) return;
-      const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(MAX_DPR, window.devicePixelRatio || 1);
+      const box = css ?? canvas.getBoundingClientRect();
+      const [width, height] = backingSize(device, box.width, box.height, window.devicePixelRatio);
       try {
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
@@ -177,49 +215,67 @@ export function Visualizer({
         if (target === silent) tau = SETTLE_TAU;
         else if (current && now - current.since < ARRIVE_SECONDS * 1000) tau = ARRIVE_TAU;
         easeFrame(shown, target, tau ? 1 - Math.exp(-dt / tau) : 1);
-        renderer.draw(
-          Math.round(rect.width * dpr),
-          Math.round(rect.height * dpr),
-          dt,
-          shown,
-          !!reduced?.matches,
-          frameMs,
-        );
+        renderer.draw(width, height, dt, shown, !!reduced?.matches, frameMs);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {
         cancelAnimationFrame(frame);
         fail(err);
       }
     };
-    loadOscillux()
-      .then((osc) => Renderer.create(canvas, osc))
-      .then((renderer) => {
-        // No hardware WebGL2: the slot stays empty, as without WebGL2 at all.
-        if (!renderer) {
-          if (alive) setFailed(true);
-          return;
-        }
-        if (!alive) return renderer.dispose();
-        rendererRef.current = renderer;
-        renderer.setImage(imageRef.current);
-        const first = visualRef.current ?? visualFor(trackRef.current);
-        visualRef.current = first;
-        return renderer.use(first).then(() => {
-          if (!alive) return;
-          frame = requestAnimationFrame(tick);
-          queueUpcoming(renderer, rotateRef.current, first);
-        });
-      })
-      .catch(fail);
+    // Builds the renderer and starts drawing. It runs again after a lost context is restored,
+    // when every GL resource is new: the visual and artwork are applied afresh and the
+    // feedback and limiter start empty. A newer build supersedes an older one still loading.
+    let build = 0;
+    const start = () => {
+      const mine = ++build;
+      const current = () => alive && mine === build;
+      return loadOscillux()
+        .then((osc) => Renderer.create(canvas, osc))
+        .then((renderer) => {
+          // No hardware WebGL2: the slot stays empty, as without WebGL2 at all.
+          if (!renderer) {
+            if (alive) setFailed(true);
+            return;
+          }
+          if (!current()) return renderer.dispose();
+          rendererRef.current = renderer;
+          renderer.setImage(imageRef.current);
+          const first = visualRef.current ?? visualFor(trackRef.current);
+          visualRef.current = first;
+          return renderer.use(first).then(() => {
+            if (!current()) return;
+            last = 0;
+            cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(tick);
+            queueUpcoming(renderer, rotateRef.current, first);
+          });
+        })
+        .catch(fail);
+    };
+    // A lost context (CORE-2482): preventDefault asks the browser to restore it, rendering
+    // stops, and the dead renderer is dropped. Its resources went with the context.
     const lost = (event: Event) => {
       event.preventDefault();
-      fail(new Error("WebGL context lost"));
+      build++;
+      cancelAnimationFrame(frame);
+      const old = rendererRef.current;
+      rendererRef.current = null;
+      try {
+        old?.dispose();
+      } catch {
+        // Deleting objects on a lost context is a no-op or throws; either way it is gone.
+      }
     };
+    const restored = () => void start();
     canvas.addEventListener("webglcontextlost", lost);
+    canvas.addEventListener("webglcontextrestored", restored);
+    void start();
     return () => {
       alive = false;
       cancelAnimationFrame(frame);
+      observer?.disconnect();
       canvas.removeEventListener("webglcontextlost", lost);
+      canvas.removeEventListener("webglcontextrestored", restored);
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };
@@ -238,7 +294,7 @@ export function Visualizer({
     };
     const visual = rotating
       ? takeUpcoming(rotation, visualRef.current, reducedMotion)
-      : (visualById(choice) ?? visualFor(visualKey));
+      : chosenVisual(choice, visualKey, reducedMotion);
     visualRef.current = visual;
     rotateRef.current = rotation;
     const renderer = rendererRef.current;
