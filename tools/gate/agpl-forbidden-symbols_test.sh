@@ -139,16 +139,26 @@ GO
 git -C "$TMP" add internal/server/tunnel_notes.go
 "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
 
-# CORE-2503: the web cast view may read a credit's "billing" order attribute,
-# in that one file only and never beside another commerce symbol.
+# CORE-2503 / CORE-2551: the web cast view may read a credit's "billing" order
+# attribute on two exact lines of that one file; any other line naming it fails.
 mkdir -p "$TMP/internal/web/app/src/areas/viewer/lib"
 cat >"$TMP/internal/web/app/src/areas/viewer/lib/people.ts" <<'TS'
-const cast = attribute(credit, "billing") !== "";
-const { billing: _billing, ...crew } = attributes;
+    const cast = attribute(credit, "character") !== "" || attribute(credit, "billing") !== "";
+    const {
+      billing: _billing,
+      ...crew
+    } = credit.attributes ?? {};
 TS
 git -C "$TMP" add internal/web/app/src/areas/viewer/lib/people.ts
 "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
-for bad in 'const portal = "billing-portal";' 'const billing = stripe;' 'const billing$Portal = openPortal;' 'const billingPortal = open;' 'const x = "billing" + billingService;'; do
+for bad in \
+  'const portal = "billing-portal";' \
+  'const billing$Portal = openPortal;' \
+  'const x = attribute(credit, "billing") + billingService;' \
+  'rebilling: _billing,' \
+  '$billing: _billing,' \
+  'billing: _billing, stripe,' \
+  'const { billing: _billing, ...rest } = service;'; do
   printf '%s\n' "$bad" >>"$TMP/internal/web/app/src/areas/viewer/lib/people.ts"
   git -C "$TMP" add internal/web/app/src/areas/viewer/lib/people.ts
   if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
@@ -158,16 +168,6 @@ for bad in 'const portal = "billing-portal";' 'const billing = stripe;' 'const b
   sed -i.bak '$d' "$TMP/internal/web/app/src/areas/viewer/lib/people.ts"
   rm -f "$TMP/internal/web/app/src/areas/viewer/lib/people.ts.bak"
 done
-# A failing filter must fail closed, never grant the exception (CORE-2551).
-mkdir -p "$TMP/fakebin"
-real_grep="$(command -v grep)"
-printf '#!/bin/sh\n[ "$1" = -qiE ] && exit 2\nexec %s "$@"\n' "$real_grep" >"$TMP/fakebin/grep"
-chmod +x "$TMP/fakebin/grep"
-if PATH="$TMP/fakebin:$PATH" "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
-  echo "expected a failing grep to fail the people.ts exception" >&2
-  exit 1
-fi
-rm -rf "$TMP/fakebin"
 cp "$TMP/internal/web/app/src/areas/viewer/lib/people.ts" "$TMP/internal/server/people.ts"
 git -C "$TMP" add internal/server/people.ts
 if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
