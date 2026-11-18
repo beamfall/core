@@ -5,6 +5,6 @@
 - [x] `internal/store`: `ReplaceEntityRelations` rewrites a source Entity's links by relation name
 - [x] Clear a declared container relation the lookup yields nothing for
 - [x] Tests in scrape, artwork, identify and the app container-hydration path (apostrophes and accents)
-- [ ] Repin plugin-sdk to the release with the fields (lander, after the SDK tag)
+- [x] Repin plugin-sdk to the release with the fields (lander, after the SDK tag)
 - [ ] Repin plugin-filmtv after its release, rescan on the Tower and check the 3 Body Problem page (lander)
 - [ ] `openspec archive core-2514-container-show-details` after landing

@@ -17,4 +17,4 @@
 
 ## 3. Release
 
-- [ ] 3.1 Repin plugin-sdk and plugin-filmtv once both are released (owner approval)
+- [x] 3.1 Repin plugin-sdk and plugin-filmtv once both are released (owner approval)
