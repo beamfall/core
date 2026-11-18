@@ -181,8 +181,50 @@
   background: var(--bg-raised);
 }
 
+/* Hero (CORE-2441): the poster carries the unwatched count; the next-up line
+ * leads with an "On deck" eyebrow and ends with the child's subtitle. */
+[data-register="viewer"] .bf-entity-poster {
+  position: relative;
+  align-self: end;
+}
+
+[data-register="viewer"] .bf-entity-poster .bf-entity-unwatched {
+  top: 8px;
+  left: auto;
+  right: 8px;
+}
+
+[data-register="viewer"] .bf-entity-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  flex-basis: 100%;
+}
+
+[data-register="viewer"] .bf-entity-ondeck {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+[data-register="viewer"] .bf-entity-next-sub::before {
+  content: "\00b7";
+  margin-right: 8px;
+}
+
+[data-register="viewer"] .bf-entity-children-count {
+  margin-bottom: -12px;
+}
+
 @media (max-width: 640px) {
   [data-register="viewer"] .bf-entity-lockup.bf-entity-has-photo {
     grid-template-columns: minmax(0, 1fr);
+  }
+  [data-register="viewer"] .bf-entity-poster {
+    width: 120px;
+    align-self: start;
   }
 }
