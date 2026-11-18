@@ -86,6 +86,10 @@ package store
 //     (CORE-2360). It is read with the other Library columns and, for Home
 //     shelf requests only, by one scan of the small library table; no index
 //     and no entity-query table changes.
+//   - 0122 adds media_file_stream.title, a stream's container title tag that
+//     subtitle pickers label tracks with (CORE-2523). It rides the existing
+//     fingerprint-keyed inventory read; no index and no entity-query table
+//     changes.
 //
 // `make bench` passed on 2026-08-11 for the 0108 bump; the worst measured
 // query was search/fts/revealed at 30.875084 ms against a 60 ms budget (P95
@@ -102,4 +106,4 @@ package store
 // query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
 // loaded shared host. 0113 adds no index or column on any benched table: the
 // provenance table is read only by the media(id) detail read.
-const schemaFreezeCatalogMigrations = 117
+const schemaFreezeCatalogMigrations = 118

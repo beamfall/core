@@ -54,7 +54,7 @@ export function fetchManifest(signal?: AbortSignal): Promise<NavigationManifest>
 // --- Session, profiles, reveal (ADR-0004) ---------------------------------
 
 const CURRENT_SESSION_QUERY =
-  "query CurrentSession { currentSession { deviceRole profileID profile revealed } }";
+  "query CurrentSession { currentSession { deviceRole profileID profile revealed subtitleLanguages } }";
 
 /** CurrentSession — the session's deviceRole, bound Profile, and reveal state. */
 export async function fetchCurrentSession(signal?: AbortSignal): Promise<SessionInfo> {

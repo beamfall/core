@@ -7,9 +7,10 @@ import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import type { StartTracks } from "../lib/watchQueue";
 import {
   audioTrackLabel,
-  captionTrackLabel,
+  captionTrackLabels,
   codecName,
   distinctLabels,
+  orderCaptionTracks,
   type TrackLabelText,
 } from "../player/streamTracks";
 
@@ -47,7 +48,8 @@ export function MediaTrackPickers({
 }) {
   const t = useT();
   const locale = useDisplayLocale();
-  const profileID = useSession().session?.profileID;
+  const session = useSession().session;
+  const profileID = session?.profileID;
   const identity = useViewerIdentity();
   const key = `${identity ?? ""}:${mediaID}`;
   const [listing, setListing] = useState<Listing | null>(null);
@@ -124,10 +126,13 @@ export function MediaTrackPickers({
     version.audioTracks.map((track) => audioTrackLabel(track, labelText)),
     numbered,
   );
-  const captionLabels = distinctLabels(
-    version.captionTracks.map((track) => captionTrackLabel(track, labelText)),
-    numbered,
-  );
+  // The Profile's subtitle languages lead, else the display language
+  // (CORE-2523).
+  const preferredSubtitles = session?.subtitleLanguages?.length
+    ? session.subtitleLanguages
+    : [locale];
+  const captionTracks = orderCaptionTracks(version.captionTracks, preferredSubtitles, locale);
+  const captionLabels = captionTrackLabels(captionTracks, labelText, numbered);
 
   return (
     <div className="bf-detail-tracks">
@@ -190,7 +195,7 @@ export function MediaTrackPickers({
           >
             <option value={AUTO}>{t("auto")}</option>
             <option value={OFF}>{t("subtitlesOff")}</option>
-            {version.captionTracks.map((track, index) => (
+            {captionTracks.map((track, index) => (
               <option key={track.id} value={track.id}>
                 {captionLabels[index]}
               </option>

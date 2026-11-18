@@ -26,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 )
 
 //go:embed ffmpeg.pin
@@ -124,8 +125,12 @@ type ProbeStream struct {
 	// Language is the BCP-47-ish ISO-639 language tag from the stream tags
 	// ("eng", "spa"); "" when untagged.
 	Language string
+	// Title is the stream's container title tag ("English (SDH)"); "" when
+	// untagged.
+	Title string
 	// Default, Forced, HearingImpaired, VisualImpaired, and Commentary mirror
-	// the ffprobe disposition flags.
+	// the ffprobe disposition flags. A subtitle stream also takes Forced,
+	// HearingImpaired and Commentary from words in its Title (CORE-2523).
 	Default         bool
 	Forced          bool
 	HearingImpaired bool
@@ -3068,6 +3073,7 @@ func parseProbe(data []byte, path string) (Probe, error) {
 			Profile:            cleanProfile(stream.Profile),
 			Level:              stream.Level,
 			Language:           stream.Tags["language"],
+			Title:              strings.TrimSpace(caseInsensitiveTag(stream.Tags, "title")),
 			Default:            stream.Disposition["default"] == 1,
 			Forced:             stream.Disposition["forced"] == 1,
 			HearingImpaired:    stream.Disposition["hearing_impaired"] == 1,
@@ -3085,6 +3091,9 @@ func parseProbe(data []byte, path string) (Probe, error) {
 			AverageFrameRate:   stream.AvgFrameRate,
 			ColorTransfer:      stream.ColorTransfer,
 			ColorPrimaries:     stream.ColorPrimaries,
+		}
+		if ps.Type == "subtitle" {
+			applySubtitleTitleFlags(&ps)
 		}
 		if ps.AttachedPicture && probe.embeddedArtworkStream < 0 {
 			probe.embeddedArtworkStream = stream.Index
@@ -3142,6 +3151,29 @@ func parseProbe(data []byte, path string) (Probe, error) {
 
 func parseProbeTimestamp(value string) (float64, bool) {
 	return parseBoundedNumber(value, "", 0, maxMediaSeconds)
+}
+
+// applySubtitleTitleFlags sets the forced, hearing-impaired and commentary
+// flags a subtitle stream's title names but its dispositions do not: many
+// files mark "English (SDH)" or "Forced" only in the title (CORE-2523).
+func applySubtitleTitleFlags(ps *ProbeStream) {
+	words := strings.FieldsFunc(strings.ToLower(ps.Title), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for i, word := range words {
+		switch word {
+		case "sdh", "cc":
+			ps.HearingImpaired = true
+		case "hearing":
+			if i+1 < len(words) && words[i+1] == "impaired" {
+				ps.HearingImpaired = true
+			}
+		case "forced":
+			ps.Forced = true
+		case "commentary":
+			ps.Commentary = true
+		}
+	}
 }
 
 func caseInsensitiveTag(tags map[string]string, name string) string {

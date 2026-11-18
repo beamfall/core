@@ -29,7 +29,7 @@ func TestMediaTracksListsVersionsAndTracks(t *testing.T) {
 			{Index: 0, Type: "video", Codec: "hevc", ColorTransfer: "smpte2084"},
 			{Index: 1, Type: "audio", Codec: "flac", Language: "eng", Channels: 2},
 			{Index: 2, Type: "audio", Codec: "ac3", Language: "fra", Channels: 6, Default: true},
-			{Index: 3, Type: "subtitle", Codec: "subrip", Language: "eng", Forced: true},
+			{Index: 3, Type: "subtitle", Codec: "subrip", Language: "eng", Title: "English (Forced)", Forced: true},
 		},
 		Sidecars: []store.MediaFileSidecarCaption{
 			{RelPath: "tracks.de.srt", Kind: store.SidecarKindCaption, Format: "srt", Language: "deu", SDH: true},
@@ -50,7 +50,7 @@ func TestMediaTracksListsVersionsAndTracks(t *testing.T) {
 	}
 
 	body := graphPost(t, handler, authorizeViewer,
-		`{"query":"query($mediaID:String!){ mediaTracks(mediaID:$mediaID){ versions { id label videoCodec hdr audioTracks { streamIndex codec language channels default } captionTracks { id format streamIndex language forced sdh } } } }","variables":{"mediaID":"`+string(media.ID)+`"}}`)
+		`{"query":"query($mediaID:String!){ mediaTracks(mediaID:$mediaID){ versions { id label videoCodec hdr audioTracks { streamIndex codec language channels default } captionTracks { id format streamIndex language title forced sdh } } } }","variables":{"mediaID":"`+string(media.ID)+`"}}`)
 	var resp struct {
 		Data struct {
 			MediaTracks MediaTracksInfo `json:"mediaTracks"`
@@ -89,7 +89,7 @@ func TestMediaTracksListsVersionsAndTracks(t *testing.T) {
 	if len(captions) != 2 {
 		t.Fatalf("first captions = %#v", captions)
 	}
-	if captions[0].ID != "muxed-main-3" || captions[0].StreamIndex == nil || *captions[0].StreamIndex != 3 || !captions[0].Forced || captions[0].URL != "" {
+	if captions[0].ID != "muxed-main-3" || captions[0].StreamIndex == nil || *captions[0].StreamIndex != 3 || !captions[0].Forced || captions[0].URL != "" || captions[0].Title != "English (Forced)" {
 		t.Fatalf("muxed caption = %#v", captions[0])
 	}
 	if captions[1].ID != "sidecar-main-0" || captions[1].StreamIndex != nil || captions[1].Language != "deu" || !captions[1].SDH {

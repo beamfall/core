@@ -14437,6 +14437,11 @@
                       "nullable": true
                     },
                     {
+                      "name": "title",
+                      "kind": "scalar",
+                      "optional": true
+                    },
+                    {
                       "name": "url",
                       "kind": "scalar",
                       "optional": true
@@ -14482,6 +14487,11 @@
                     "kind": "scalar",
                     "optional": true,
                     "nullable": true
+                  },
+                  {
+                    "name": "title",
+                    "kind": "scalar",
+                    "optional": true
                   },
                   {
                     "name": "url",
@@ -14646,6 +14656,11 @@
                     "nullable": true
                   },
                   {
+                    "name": "title",
+                    "kind": "scalar",
+                    "optional": true
+                  },
+                  {
                     "name": "url",
                     "kind": "scalar",
                     "optional": true
@@ -14691,6 +14706,11 @@
                   "kind": "scalar",
                   "optional": true,
                   "nullable": true
+                },
+                {
+                  "name": "title",
+                  "kind": "scalar",
+                  "optional": true
                 },
                 {
                   "name": "url",
@@ -38571,6 +38591,13 @@
                         }
                       },
                       {
+                        "name": "title",
+                        "shape": {
+                          "type": "string",
+                          "optional": true
+                        }
+                      },
+                      {
                         "name": "forced",
                         "shape": {
                           "type": "boolean",
@@ -38849,6 +38876,13 @@
                 },
                 {
                   "name": "language",
+                  "shape": {
+                    "type": "string",
+                    "optional": true
+                  }
+                },
+                {
+                  "name": "title",
                   "shape": {
                     "type": "string",
                     "optional": true

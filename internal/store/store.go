@@ -691,12 +691,15 @@ const mediaExcludeExtrasClause = ` AND m.extra = 0`
 // onto these so the store stays free of an ffmpeg import. Generic container
 // shape, never domain vocabulary (invariant #1).
 type MediaFileStream struct {
-	Index           int
-	Type            string
-	Codec           string
-	Profile         string
-	Level           int
-	Language        string
+	Index    int
+	Type     string
+	Codec    string
+	Profile  string
+	Level    int
+	Language string
+	// Title is the stream's container title tag ("English (SDH)"); "" when
+	// untagged (CORE-2523).
+	Title           string
 	Default         bool
 	Forced          bool
 	HearingImpaired bool

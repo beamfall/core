@@ -2718,7 +2718,7 @@ func mediaFileStreamsFromPlane(ctx context.Context, db *sql.DB, fingerprint stri
 		  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 		  channels, channel_layout, bit_depth,
 		  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id,
-		  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples
+		  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples, title
 		FROM media_file_stream
 		WHERE content_fingerprint = ?
 		ORDER BY stream_index
@@ -2735,7 +2735,7 @@ func mediaFileStreamsFromPlane(ctx context.Context, db *sql.DB, fingerprint stri
 			&isDefault, &isForced, &hearingImpaired, &visualImpaired, &commentary,
 			&st.Channels, &st.ChannelLayout, &st.BitDepth,
 			&st.ColorTransfer, &st.ColorPrimaries, &hdr10Plus, &st.DoViProfile, &st.DoViBLCompatID,
-			&st.SampleRate, &st.EncoderDelaySamples, &st.EncoderPaddingSamples, &st.DecodedSamples); err != nil {
+			&st.SampleRate, &st.EncoderDelaySamples, &st.EncoderPaddingSamples, &st.DecodedSamples, &st.Title); err != nil {
 			return nil, err
 		}
 		st.Default = isDefault != 0
@@ -2803,7 +2803,7 @@ func replaceMediaFileInventoryTx(ctx context.Context, tx *sql.Tx, encrypted bool
 			boolInt(stream.VisualImpaired), boolInt(stream.Commentary),
 			stream.Channels, stream.ChannelLayout, stream.BitDepth,
 			stream.ColorTransfer, stream.ColorPrimaries, boolInt(stream.HDR10Plus), stream.DoViProfile, stream.DoViBLCompatID,
-			stream.SampleRate, stream.EncoderDelaySamples, stream.EncoderPaddingSamples, stream.DecodedSamples}
+			stream.SampleRate, stream.EncoderDelaySamples, stream.EncoderPaddingSamples, stream.DecodedSamples, stream.Title}
 		if encrypted {
 			args = append(args, stream.Type)
 		}
@@ -2813,8 +2813,8 @@ func replaceMediaFileInventoryTx(ctx context.Context, tx *sql.Tx, encrypted bool
 			  is_default, is_forced, is_hearing_impaired, is_visual_impaired, is_commentary,
 			  channels, channel_layout, bit_depth,
 			  color_transfer, color_primaries, hdr10_plus, dovi_profile, dovi_bl_compat_id,
-			  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples`+streamLegacyColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`+streamLegacyValues+`)
+			  sample_rate, encoder_delay_samples, encoder_padding_samples, decoded_samples, title`+streamLegacyColumns+`)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`+streamLegacyValues+`)
 		`, args...); err != nil {
 			return err
 		}

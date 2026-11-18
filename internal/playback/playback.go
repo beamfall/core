@@ -368,11 +368,14 @@ type InfoResponse struct {
 // URL; muxed subtitle tracks use StreamIndex. Forced/SDH/VisualImpaired/
 // Commentary are generic player roles, never domain vocabulary (invariant #1).
 type CaptionTrack struct {
-	ID             string `json:"id"`
-	URL            string `json:"url,omitempty"`
-	Format         string `json:"format"`
-	StreamIndex    *int   `json:"streamIndex,omitempty"`
-	Language       string `json:"language,omitempty"`
+	ID          string `json:"id"`
+	URL         string `json:"url,omitempty"`
+	Format      string `json:"format"`
+	StreamIndex *int   `json:"streamIndex,omitempty"`
+	Language    string `json:"language,omitempty"`
+	// Title is a muxed track's container title tag ("English (SDH)"), which
+	// pickers use to label the track; omitted when untagged (CORE-2523).
+	Title          string `json:"title,omitempty"`
 	Forced         bool   `json:"forced,omitempty"`
 	SDH            bool   `json:"sdh,omitempty"`
 	VisualImpaired bool   `json:"visualImpaired,omitempty"`
@@ -2213,6 +2216,7 @@ func (s *Service) muxedCaptionTracksInfo(ctx context.Context, grant streamtoken.
 			Format:         stream.Codec,
 			StreamIndex:    &index,
 			Language:       stream.Language,
+			Title:          stream.Title,
 			Forced:         stream.Forced,
 			SDH:            stream.HearingImpaired,
 			VisualImpaired: stream.VisualImpaired,

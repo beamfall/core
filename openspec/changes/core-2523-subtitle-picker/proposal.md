@@ -13,9 +13,9 @@ keep. Plex and Infuse show those labels and group the list by language.
 ## What changes
 
 - The scan keeps a subtitle stream's container `title` tag and reads SDH/CC, forced and commentary
-  words in it into the existing flags when the stream's dispositions do not set them. Two
-  append-only migrations add the `title` column to `media_file_stream` in both planes; rows probed
-  before stay empty until a rescan.
+  words in it into the existing flags when the stream's dispositions do not set them. An
+  append-only catalog migration (0122) adds the `title` column to `media_file_stream` (the
+  encrypted plane already has one); rows probed before stay empty until a rescan.
 - Sidecar filename tags skip numeric and non-language segments and accept `_` as a region
   separator (`movie.pt_BR.srt`).
 - `mediaTracks` and `playbackInfo` caption tracks carry the stream `title`. This is an additive

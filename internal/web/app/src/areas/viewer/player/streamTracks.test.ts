@@ -6,10 +6,12 @@ import {
   CAPTION_TRACK_ATTRIBUTE,
   captionElement,
   captionTrackLabel,
+  captionTrackLabels,
   distinctLabels,
   isBurnInCaption,
   languageName,
   matchSelectedCaption,
+  orderCaptionTracks,
   preferredLanguageIndex,
   reloadCaptionElement,
   removeCaptionElements,
@@ -203,6 +205,82 @@ describe("same-language subtitle labels (CORE-2315)", () => {
       "English · SRT · Track 2",
       "English · Forced · SRT",
     ]);
+  });
+});
+
+describe("subtitle picker labels and order (CORE-2523)", () => {
+  const muxed = (
+    streamIndex: number,
+    language: string,
+    extra: Partial<PlaybackCaptionTrack> = {},
+  ) =>
+    ({
+      id: `muxed-main-${streamIndex}`,
+      format: "subrip",
+      streamIndex,
+      language,
+      url: `/s/${streamIndex}.vtt`,
+      ...extra,
+    }) as PlaybackCaptionTrack;
+  const numbered = (n: number) => `Track ${n}`;
+
+  it("labels by language, region, script and role without format noise", () => {
+    expect(
+      captionTrackLabels(
+        [
+          muxed(2, "eng", { title: "English (SDH)", sdh: true }),
+          muxed(3, "es-419"),
+          muxed(4, "zh-Hant"),
+          muxed(5, "eng", { forced: true }),
+          muxed(6, "pt-BR", { title: "Commentary", commentary: true }),
+        ],
+        text,
+        numbered,
+      ),
+    ).toEqual([
+      "English (SDH)",
+      "Spanish (Latin America)",
+      "Chinese (Traditional)",
+      "English · Forced",
+      "Portuguese (Brazil) · Commentary",
+    ]);
+  });
+
+  it("adds format and source only where they tell tracks apart, then a number", () => {
+    expect(
+      captionTrackLabels(
+        [
+          muxed(2, "fre"),
+          { id: "sidecar-main-0", format: "srt", language: "fr", url: "/c/0.vtt" },
+          muxed(3, "eng"),
+          muxed(4, "eng"),
+        ],
+        text,
+        numbered,
+      ),
+    ).toEqual([
+      "French · SRT",
+      "French · SRT · External",
+      "English · Track 1",
+      "English · Track 2",
+    ]);
+  });
+
+  it("puts preferred languages first, then the rest by name, forced before regular before SDH", () => {
+    const tracks = [
+      muxed(2, "fre"),
+      muxed(3, "eng", { sdh: true }),
+      muxed(4, ""),
+      muxed(5, "spa", { sdh: true }),
+      muxed(6, "eng"),
+      muxed(7, "spa"),
+      muxed(8, "eng", { forced: true }),
+      muxed(9, "es-419"),
+    ];
+    const order = (preferred: string[]) =>
+      orderCaptionTracks(tracks, preferred, "en").map((track) => track.streamIndex);
+    expect(order(["es"])).toEqual([7, 5, 9, 8, 6, 3, 2, 4]);
+    expect(order(["en"])).toEqual([8, 6, 3, 2, 7, 5, 9, 4]);
   });
 });
 

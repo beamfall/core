@@ -237,9 +237,10 @@ describe("useLiveTracks file track menus (CORE-1709)", () => {
     ]);
     expect(rows).toEqual([
       ["off", "Subtitles off", false, false],
-      ["0", "English · SRT", false, false],
-      ["1", "French · DVD · Burned in", false, false],
-      ["2", "German · SRT · External", true, false],
+      // CORE-2523: format and source appear only to tell same-language tracks apart.
+      ["0", "English", false, false],
+      ["1", "French · Burned in", false, false],
+      ["2", "German", true, false],
       [SUBTITLES_UNAVAILABLE_ID, "Some subtitles can't be shown in this browser", false, true],
     ]);
     act(() => result.current.selectSubtitle("1"));

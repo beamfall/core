@@ -201,6 +201,8 @@ export interface SessionInfo {
   /** The bound Profile's kind ("adult"/"managed"); wire field name `profile`. */
   profile: string;
   revealed: boolean;
+  /** The bound Profile's subtitle languages, most preferred first; omitted when none. */
+  subtitleLanguages?: string[];
 }
 
 /** A Profile row offered to the picker (graph.ProfileSummary). */

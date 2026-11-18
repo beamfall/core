@@ -32,7 +32,7 @@ func TestEncryptedLibraryImportPersistsStreamInventory(t *testing.T) {
 			ColorTransfer: "smpte2084", ColorPrimaries: "bt2020", HDR10Plus: true, DoViProfile: 8, DoViBLCompatID: 1},
 		{Index: 1, Type: "audio", Codec: "eac3", Language: "eng", Default: true, Channels: 6, ChannelLayout: "5.1",
 			SampleRate: 48000, EncoderDelaySamples: 256, EncoderPaddingSamples: 12, DecodedSamples: 2880000},
-		{Index: 2, Type: "subtitle", Codec: "ass", Language: "eng", Forced: true, HearingImpaired: true,
+		{Index: 2, Type: "subtitle", Codec: "ass", Language: "eng", Title: "English (SDH)", Forced: true, HearingImpaired: true,
 			VisualImpaired: true, Commentary: true},
 	}
 	imported := encryptedImport(libraryID, "sha256:encrypted-streams", "/enc/streams.mkv")
