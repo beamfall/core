@@ -16,8 +16,8 @@ const (
 // mediaRatingColumns selects the display certification and the audience score
 // of the media row in scope, for queries over `media`.
 const mediaRatingColumns = `COALESCE(
-		(SELECT value FROM media_field_text WHERE media_id = media.id AND field = '` + certificationDisplayField + `' AND value <> ''),
-		(SELECT value FROM media_field_text WHERE media_id = media.id AND field = '` + certificationField + `'),
+		(SELECT value FROM media_field_text WHERE media_id = media.id AND field = '` + certificationDisplayField + `' AND field_type = 'text' AND value <> ''),
+		(SELECT value FROM media_field_text WHERE media_id = media.id AND field = '` + certificationField + `' AND field_type = 'text'),
 		''),
 	(SELECT value FROM media_field_real WHERE media_id = media.id AND field = '` + audienceScoreField + `')`
 

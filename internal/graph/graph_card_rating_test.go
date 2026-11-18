@@ -9,7 +9,7 @@ import (
 	"github.com/beamfall/core/internal/store/storetest"
 )
 
-// TestCardsAndMediaCarryRating covers CORE-2398: cards and the media(id) read
+// TestCardsAndMediaCarryRating covers CORE-2398: cards, search cards and the media(id) read
 // carry the display certification (certification-display over certification)
 // and the 0-10 community score, omit both keys for an unrated item, and drop
 // a score off the 0-10 scale.
@@ -31,7 +31,7 @@ func TestCardsAndMediaCarryRating(t *testing.T) {
 	}
 	handler := newTestHandlerWithStore(st)
 
-	data, errs := post(t, handler, `{"query":"query { sourceItems { id certification audienceScore } }","variables":{"kind":"recently-added"}}`, authorizeRevealed)
+	data, errs := post(t, handler, `{"query":"query { sourceItems { id title certification audienceScore } }","variables":{"kind":"recently-added"}}`, authorizeRevealed)
 	if len(errs) != 0 {
 		t.Fatalf("sourceItems errors = %#v", errs)
 	}
@@ -52,6 +52,32 @@ func TestCardsAndMediaCarryRating(t *testing.T) {
 	var media map[string]json.RawMessage
 	mustUnmarshal(t, data["media"], &media)
 	assertRating(t, "media media-alpha", media, `"TV-MA"`, "7.3")
+
+	// Keyword search cards carry the same rating as every other card surface.
+	var title string
+	mustUnmarshal(t, cards["media-alpha"]["title"], &title)
+	query, err := json.Marshal(map[string]any{
+		"query":     `query S($query:String!){ searchResult(query:$query){ items { id certification audienceScore } } }`,
+		"variables": map[string]string{"query": title},
+	})
+	if err != nil {
+		t.Fatalf("marshal search query: %v", err)
+	}
+	data, errs = post(t, handler, string(query), authorizeRevealed)
+	if len(errs) != 0 {
+		t.Fatalf("searchResult errors = %#v", errs)
+	}
+	var result struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
+	mustUnmarshal(t, data["searchResult"], &result)
+	var found map[string]json.RawMessage
+	for _, item := range result.Items {
+		if string(item["id"]) == `"media-alpha"` {
+			found = item
+		}
+	}
+	assertRating(t, "search media-alpha", found, `"TV-MA"`, "7.3")
 }
 
 func assertRating(t *testing.T, label string, item map[string]json.RawMessage, certification, score string) {
