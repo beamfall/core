@@ -1,0 +1,215 @@
+/* The Categories pivot (CORE-2505). Featured values are landscape cards on the
+ * Library accent surface, with a backdrop when one loads under a token scrim;
+ * long-tail values are chips (chrome.css .bf-chip). Spacing 4/8/12/16 and
+ * --radius-card only; motion is the token hover and focus ring, removed under
+ * reduce-motion. No effect code: visual effects belong to Oscillux. */
+
+[data-register="viewer"] .bf-category-chips,
+[data-register="viewer"] .bf-category-letters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-category-chips .bf-chip,
+[data-register="viewer"] .bf-category-letters .bf-chip {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-category-chips .bf-chip:focus-visible,
+[data-register="viewer"] .bf-category-letters .bf-chip:focus-visible,
+[data-register="viewer"] .bf-category-az a:focus-visible,
+[data-register="viewer"] .bf-category-see-all:focus-visible,
+[data-register="viewer"] .bf-category-back:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+[data-register="viewer"] .bf-category-letters .bf-chip {
+  justify-content: center;
+  min-width: 32px;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"] .bf-category-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+[data-register="viewer"] .bf-category-head .bf-section-title,
+[data-register="viewer"] .bf-categories h2.bf-section-title:focus {
+  outline: none;
+}
+
+[data-register="viewer"] .bf-category-see-all,
+[data-register="viewer"] .bf-category-back {
+  flex: none;
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+[data-register="viewer"] .bf-category-back {
+  align-self: flex-start;
+}
+
+[data-register="viewer"] .bf-category-see-all:hover,
+[data-register="viewer"] .bf-category-back:hover {
+  color: var(--text-primary);
+}
+
+[data-register="viewer"] .bf-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-category-card {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklab, var(--library-accent, var(--accent)) 22%, var(--bg-surface));
+  color: var(--on-scrim);
+  text-decoration: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+[data-register="viewer"] .bf-category-card:hover {
+  border-color: color-mix(in oklab, var(--library-accent, var(--accent)) 60%, transparent);
+  box-shadow: 0 10px 28px color-mix(in oklab, var(--bg-root) 60%, transparent);
+}
+
+[data-register="viewer"] .bf-category-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+[data-register="viewer"] .bf-category-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A scrim under the label keeps the name legible on any backdrop. */
+[data-register="viewer"] .bf-category-label {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 32px 12px 12px;
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--scrim) 88%, transparent),
+    color-mix(in oklab, var(--scrim) 0%, transparent)
+  );
+}
+
+[data-register="viewer"] .bf-category-card .bf-category-name {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-register="viewer"] .bf-category-card .bf-category-count {
+  color: var(--on-scrim-muted);
+}
+
+[data-register="viewer"] .bf-category-count {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-register="viewer"] .bf-category-filter {
+  max-width: 360px;
+}
+
+[data-register="viewer"] .bf-category-letter {
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  outline: none;
+}
+
+[data-register="viewer"] .bf-category-az {
+  columns: 16rem;
+  column-gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+[data-register="viewer"] .bf-category-az li {
+  break-inside: avoid;
+}
+
+[data-register="viewer"] .bf-category-az a {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-category-az a:hover {
+  background: var(--control-bg-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-register="viewer"] .bf-category-card {
+    transition: none;
+  }
+}
+
+@media (max-width: 760px) {
+  [data-register="viewer"] .bf-category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  [data-register="viewer"] .bf-category-label {
+    padding: 24px 8px 8px;
+  }
+
+  [data-register="viewer"] .bf-category-card .bf-category-name {
+    font-size: 15px;
+    line-height: 20px;
+  }
+
+  [data-register="viewer"] .bf-category-filter {
+    max-width: none;
+  }
+}
