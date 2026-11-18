@@ -192,7 +192,10 @@ export function Visualizer({
       renderer
         .use(next)
         .then(() => queueUpcoming(renderer, r, next))
-        .catch(fail);
+        // A renderer replaced after a context loss may still reject; only the live one fails.
+        .catch((err: unknown) => {
+          if (rendererRef.current === renderer) fail(err);
+        });
     };
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
@@ -306,6 +309,8 @@ export function Visualizer({
       ?.use(visual)
       .then(() => queueUpcoming(renderer, rotation, visual))
       .catch((err) => {
+        // Ignore a switch on a renderer that a context loss has since replaced.
+        if (rendererRef.current !== renderer) return;
         console.warn("visualizer: off", err);
         setFailed(true);
       });

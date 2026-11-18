@@ -62,11 +62,10 @@ afterEach(() => {
 });
 
 function mount() {
-  const view = render(
-    <Visualizer videoRef={createRef<HTMLVideoElement>()} stream={direct} trackKey="m1" />,
-  );
+  const videoRef = createRef<HTMLVideoElement>();
+  const view = render(<Visualizer videoRef={videoRef} stream={direct} trackKey="m1" />);
   const canvas = view.container.querySelector("canvas") as HTMLCanvasElement;
-  return { ...view, canvas };
+  return { ...view, canvas, videoRef };
 }
 
 describe("Visualizer context loss (CORE-2482)", () => {
@@ -110,6 +109,26 @@ describe("Visualizer context loss (CORE-2482)", () => {
     act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
     await waitFor(() => expect(pending.size).toBe(1));
     expect(made.renderers).toHaveLength(1);
+    expect(canvas.isConnected).toBe(true);
+  });
+
+  it("ignores a visual switch that fails on a renderer a context loss replaced", async () => {
+    const { canvas, rerender, videoRef } = mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    let reject!: (err: Error) => void;
+    made.renderers[0].use.mockImplementation(
+      () =>
+        new Promise<void>((_, no) => {
+          reject = no;
+        }),
+    );
+    rerender(<Visualizer videoRef={videoRef} stream={direct} trackKey="m2" />);
+    expect(reject).toBeDefined();
+    act(() => void canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true })));
+    act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
+    await waitFor(() => expect(pending.size).toBe(1));
+    await act(async () => reject(new Error("shader import failed")));
+    expect(made.renderers).toHaveLength(2);
     expect(canvas.isConnected).toBe(true);
   });
 
