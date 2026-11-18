@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageField,
   ManageInlineForm,
   ManageSection,
   ManageTable,
   PathPickerField,
+  PresetSelect,
 } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
@@ -42,9 +44,15 @@ import { useSession } from "@/lib/session";
 
 const RETENTION_KINDS = [
   { value: "keep-all", key: "retentionKeepAll" as const },
-  { value: "keep-last-n", key: "retentionKeepLastN" as const },
+  { value: "keep-last-n", key: "manageSubKeepNewest" as const },
   { value: "delete-after-played", key: "retentionDeleteAfterPlayed" as const },
 ];
+
+// How many downloads "Keep only the newest" keeps (CORE-2445): a few named
+// counts instead of a free number, 10 when nothing is saved yet. The server
+// needs at least 1.
+const KEEP_COUNT_PRESETS = [1, 3, 5, 10, 25, 50].map((n) => ({ value: n, label: String(n) }));
+const DEFAULT_KEEP_COUNT = 10;
 
 // Subscriptions (ADR-0030): Library-level feed Subscriptions with a retention
 // policy. Feed URLs can carry private-feed credentials, so error text is always
@@ -185,7 +193,15 @@ export function SubscriptionsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t("title")}</TableHead>
-                <TableHead>{t("retentionPolicy")}</TableHead>
+                <TableHead>
+                  <span className="bf-label-with-tip">
+                    {t("manageSubKeepDownloads")}
+                    <HelpTip
+                      label={t("manageSubKeepDownloads")}
+                      text="manageSubKeepDownloadsHelp"
+                    />
+                  </span>
+                </TableHead>
                 <TableHead className="text-right">{t("remove")}</TableHead>
               </TableRow>
             </TableHeader>
@@ -216,15 +232,23 @@ export function SubscriptionsPage() {
               className="w-72"
             />
           </ManageField>
-          <PathPickerField
-            id="subscription-root"
-            label={t("downloadFolder")}
-            role="downloadDestination"
-            value={root}
-            onChange={setRoot}
-            suppressAppStoreDownload
-          />
-          <ManageField id="subscription-auth" label={t("authorizationHeader")}>
+          <div data-setting="manage.subscriptions.downloadFolder">
+            <PathPickerField
+              id="subscription-root"
+              label={t("downloadFolder")}
+              role="downloadDestination"
+              value={root}
+              onChange={setRoot}
+              suppressAppStoreDownload
+              actions={<HelpTip label={t("downloadFolder")} text="manageSubDownloadFolderHelp" />}
+            />
+          </div>
+          <ManageField
+            id="subscription-auth"
+            label={t("authorizationHeader")}
+            tip="manageSubAuthHeaderHelp"
+            setting="manage.subscriptions.authorizationHeader"
+          >
             <Input
               id="subscription-auth"
               type="password"
@@ -253,9 +277,7 @@ function SubscriptionRow({
 }) {
   const t = useT();
   const [kind, setKind] = useState(subscription.retentionKind || "keep-all");
-  const [n, setN] = useState(
-    subscription.retentionN == null ? "" : String(subscription.retentionN),
-  );
+  const [n, setN] = useState(subscription.retentionN ?? DEFAULT_KEEP_COUNT);
 
   return (
     <TableRow>
@@ -263,13 +285,13 @@ function SubscriptionRow({
         {subscription.title || subscription.feedURL}
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" data-setting="manage.subscriptions.keepDownloads">
           <Select value={kind} onValueChange={setKind}>
             <SelectTrigger
               size="sm"
-              className="w-44"
-              title={t("retentionPolicy")}
-              aria-label={t("retentionPolicy")}
+              className="w-48"
+              title={t("manageSubKeepDownloads")}
+              aria-label={t("manageSubKeepDownloads")}
             >
               <SelectValue />
             </SelectTrigger>
@@ -282,23 +304,21 @@ function SubscriptionRow({
             </SelectContent>
           </Select>
           {kind === "keep-last-n" && (
-            <Input
-              type="number"
-              min={0}
-              step={1}
-              inputMode="numeric"
-              aria-label={t("retentionCount")}
-              title={t("retentionCount")}
-              value={n}
-              onChange={(e) => setN(e.target.value)}
-              className="w-20"
-            />
+            <span data-setting="manage.subscriptions.downloadsToKeep">
+              <PresetSelect
+                value={n}
+                presets={KEEP_COUNT_PRESETS}
+                onChange={setN}
+                aria-label={t("manageSubDownloadsToKeep")}
+                className="min-w-20"
+              />
+            </span>
           )}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => onSaveRetention(subscription, kind, Number(n || "0"))}
+            onClick={() => onSaveRetention(subscription, kind, n)}
           >
             {t("save")}
           </Button>

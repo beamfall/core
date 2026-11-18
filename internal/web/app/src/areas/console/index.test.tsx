@@ -162,7 +162,7 @@ describe("ConsoleArea App Store host firewall", () => {
     renderConsole("/console/remote");
 
     expect(screen.getByText("remote-status")).toBeVisible();
-    expect(screen.queryByRole("link", { name: "Capabilities" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Optional features" })).toBeNull();
     expect(screen.queryByText("qbittorrent-panel")).toBeNull();
     expect(screen.queryByRole("link", { name: "Migration" })).toBeNull();
   });
@@ -172,7 +172,7 @@ describe("ConsoleArea App Store host firewall", () => {
 
     renderConsole("/console/remote");
 
-    expect(screen.getByRole("link", { name: "Capabilities" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Optional features" })).toBeVisible();
     expect(screen.getByText("qbittorrent-panel")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Migration" })).toBeInTheDocument();
   });
@@ -180,7 +180,7 @@ describe("ConsoleArea App Store host firewall", () => {
   it("keeps the full Console for browser hosts with no native bridge", () => {
     renderConsole("/console/remote");
 
-    expect(screen.getByRole("link", { name: "Capabilities" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Optional features" })).toBeVisible();
     expect(screen.getByText("qbittorrent-panel")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Migration" })).toBeInTheDocument();
   });
@@ -213,10 +213,10 @@ describe("Console backups route", () => {
 
 const ADVANCED_RAIL = [
   "Activity",
-  "Capabilities",
-  "Layout & Navigation",
-  "API tokens",
-  "Retention rules",
+  "API keys & tokens",
+  "Webhooks",
+  "Leaving soon rules",
+  "Optional features",
 ];
 
 describe("Console IA conformance", () => {
@@ -248,18 +248,18 @@ describe("Console IA conformance", () => {
     }
 
     act(() => setAdvancedSettings(false));
-    expect(within(nav).queryByRole("link", { name: "API tokens" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "API keys & tokens" })).toBeNull();
   });
 
   it("keeps an Advanced destination in the rail while it is the current page", async () => {
     renderConsole("/console/retention");
 
     const nav = screen.getByRole("navigation", { name: "Console" });
-    expect(within(nav).getByRole("link", { name: "Retention rules" })).toHaveAttribute(
+    expect(within(nav).getByRole("link", { name: "Leaving soon rules" })).toHaveAttribute(
       "aria-current",
       "page",
     );
-    expect(within(nav).queryByRole("link", { name: "API tokens" })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: "API keys & tokens" })).toBeNull();
   });
 
   it("keeps the unlocked status and Lock action outside the folding phone menu", async () => {

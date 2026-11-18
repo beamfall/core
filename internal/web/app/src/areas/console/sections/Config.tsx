@@ -1,9 +1,16 @@
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { FolderPicker } from "@/areas/setup/FolderPicker";
-import { ControlRow, ErrorState, Fieldset } from "@/components/beamfall/workbench";
+import { ControlRow, ErrorState, Fieldset, PresetSelect } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Advanced } from "@/lib/advancedSettings";
 import {
@@ -28,13 +35,41 @@ import type { StringKey } from "@/strings";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
-type TextField = "codec" | "quality" | "device";
+type ChoiceField = "codec" | "quality";
 
-const TEXT_FIELDS: { field: TextField; label: StringKey }[] = [
-  { field: "codec", label: "transcodeCodec" },
-  { field: "quality", label: "transcodeQuality" },
-  { field: "device", label: "transcodeDevice" },
+// The server reads "" as its own default; a Select cannot hold "", so the
+// default choice carries this sentinel and is mapped back on change.
+const SERVER_DEFAULT = "__default";
+
+const CHOICE_FIELDS: {
+  field: ChoiceField;
+  label: StringKey;
+  tip: StringKey;
+  options: { value: string; label: StringKey }[];
+}[] = [
+  {
+    field: "codec",
+    label: "transcodeCodec",
+    tip: "transcodeCodecTip",
+    options: [
+      { value: "h264", label: "transcodeCodecH264" },
+      { value: "hevc", label: "transcodeCodecHevc" },
+    ],
+  },
+  {
+    field: "quality",
+    label: "transcodeQuality",
+    tip: "transcodeQualityTip",
+    options: [
+      { value: "low", label: "transcodeQualityLow" },
+      { value: "balanced", label: "transcodeQualityBalanced" },
+      { value: "high", label: "transcodeQualityHigh" },
+    ],
+  },
 ];
+
+// Simultaneous-transcode choices; 0 is automatic (the server sizes it).
+const CAP_PRESETS = [0, 1, 2, 3, 4, 6, 8];
 
 // Hardware transcoding policy (ADR-0007 §6 / ADR-0010). Empty string values
 // fall back to the server default server-side. The on/off switch is the Normal
@@ -42,8 +77,8 @@ const TEXT_FIELDS: { field: TextField; label: StringKey }[] = [
 // that holds a value, saved or being edited, stays visible in Normal so Save
 // never submits a setting out of sight (CORE-1117).
 //
-// Resource settings (CORE-1970): the concurrent-transcode cap (empty means
-// automatic) and the HDR tone-map switch are Normal and apply live; the temp
+// Resource settings (CORE-1970): the concurrent-transcode cap (automatic by
+// default) and the HDR tone-map switch are Normal and apply live; the temp
 // directory is Advanced and needs a restart. Each shows the value in effect and
 // says when an environment variable overrides the saved one.
 const EMPTY_TRANSCODE_CONFIG: TranscodeConfigInfo = {
@@ -64,20 +99,6 @@ const EMPTY_TRANSCODE_CONFIG: TranscodeConfigInfo = {
   toneMapEnabled: true,
 };
 
-function capText(cap: number): string {
-  return cap > 0 ? String(cap) : "";
-}
-
-// parseCap returns null for automatic (empty), a whole number of at least 1,
-// or undefined when the text is not a valid cap.
-function parseCap(text: string): number | null | undefined {
-  const trimmed = text.trim();
-  if (trimmed === "") return null;
-  if (!/^\d+$/.test(trimmed)) return undefined;
-  const n = Number(trimmed);
-  return n >= 1 ? n : undefined;
-}
-
 function errorReason(err: unknown): string {
   return err instanceof Error ? err.message : "";
 }
@@ -90,7 +111,7 @@ function TranscodeConfig() {
   const t = useT();
   const { data, failed, setData } = useAsync(fetchTranscodeConfig);
   const [form, setForm] = useState<TranscodeConfigInfo>(EMPTY_TRANSCODE_CONFIG);
-  const [cap, setCap] = useState("");
+  const [cap, setCap] = useState(0);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -103,15 +124,14 @@ function TranscodeConfig() {
   useEffect(() => {
     if (data) {
       setForm(data);
-      setCap(capText(data.maxConcurrentTranscodes));
+      setCap(Math.max(0, data.maxConcurrentTranscodes));
     }
   }, [data]);
 
-  const parsedCap = parseCap(cap);
   // "Saved" stays up only while the form still matches what the server holds.
   const unchanged =
     data != null &&
-    cap.trim() === capText(data.maxConcurrentTranscodes) &&
+    cap === Math.max(0, data.maxConcurrentTranscodes) &&
     form.hardwareEnabled === data.hardwareEnabled &&
     form.toneMapEnabled === data.toneMapEnabled &&
     form.codec === data.codec &&
@@ -151,10 +171,6 @@ function TranscodeConfig() {
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
-    if (parsedCap === undefined) {
-      setSaveError(t("transcodeMaxConcurrentInvalid"));
-      return;
-    }
     setSaveError("");
     setSaved(false);
     setSaving(true);
@@ -164,7 +180,7 @@ function TranscodeConfig() {
         codec: form.codec,
         quality: form.quality,
         device: form.device,
-        maxConcurrentTranscodes: parsedCap,
+        maxConcurrentTranscodes: cap > 0 ? cap : null,
         tempDir: form.tempDir.trim(),
         toneMapEnabled: form.toneMapEnabled,
       });
@@ -184,6 +200,8 @@ function TranscodeConfig() {
       <Fieldset title="transcodeConfigHeading" help="transcodeConfigLead">
         <ControlRow
           label="transcodeHardwareEnabled"
+          tip="transcodeHardwareEnabledTip"
+          setting="console.playback.hardware"
           control={
             <Switch
               aria-label={t("transcodeHardwareEnabled")}
@@ -194,16 +212,18 @@ function TranscodeConfig() {
         />
         <ControlRow
           label="transcodeMaxConcurrent"
+          tip="transcodeMaxConcurrentTip"
+          setting="console.playback.maxTranscodes"
           control={
-            <Input
+            <PresetSelect
               id="tc-max-concurrent"
               aria-label={t("transcodeMaxConcurrent")}
-              inputMode="numeric"
               value={cap}
-              placeholder={t("transcodeAutomatic")}
-              aria-invalid={parsedCap === undefined}
-              className="w-28"
-              onChange={(e) => setCap(e.target.value)}
+              presets={CAP_PRESETS.map((value) => ({
+                value,
+                label: value === 0 ? t("transcodeAutomatic") : String(value),
+              }))}
+              onChange={setCap}
             />
           }
         />
@@ -225,6 +245,7 @@ function TranscodeConfig() {
         <ControlRow
           label="transcodeToneMapEnabled"
           help="transcodeToneMapHelp"
+          setting="console.playback.toneMap"
           control={
             <Switch
               aria-label={t("transcodeToneMapEnabled")}
@@ -233,23 +254,55 @@ function TranscodeConfig() {
             />
           }
         />
-        {TEXT_FIELDS.map(({ field, label }) => (
+        {CHOICE_FIELDS.map(({ field, label, tip, options }) => (
           <Advanced key={field} keep={Boolean(form[field])}>
             <ControlRow
               label={label}
+              tip={tip}
+              setting={`console.playback.${field}`}
               control={
-                <Input
-                  id={`tc-${field}`}
-                  aria-label={t(label)}
-                  value={form[field]}
-                  placeholder={t("transcodeServerDefault")}
-                  className="w-44"
-                  onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
-                />
+                <Select
+                  value={form[field] || SERVER_DEFAULT}
+                  onValueChange={(next) =>
+                    setForm((f) => ({ ...f, [field]: next === SERVER_DEFAULT ? "" : next }))
+                  }
+                >
+                  <SelectTrigger id={`tc-${field}`} aria-label={t(label)} className="min-w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={SERVER_DEFAULT}>{t("transcodeServerDefault")}</SelectItem>
+                    {options.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {t(option.label)}
+                      </SelectItem>
+                    ))}
+                    {form[field] && !options.some((o) => o.value === form[field]) ? (
+                      <SelectItem value={form[field]}>{form[field]}</SelectItem>
+                    ) : null}
+                  </SelectContent>
+                </Select>
               }
             />
           </Advanced>
         ))}
+        <Advanced keep={Boolean(form.device)}>
+          <ControlRow
+            label="transcodeDevice"
+            tip="transcodeDeviceTip"
+            setting="console.playback.device"
+            control={
+              <Input
+                id="tc-device"
+                aria-label={t("transcodeDevice")}
+                value={form.device}
+                placeholder={t("transcodeServerDefault")}
+                className="w-44"
+                onChange={(e) => setForm((f) => ({ ...f, device: e.target.value }))}
+              />
+            }
+          />
+        </Advanced>
         <Advanced
           keep={
             Boolean(form.tempDir) ||
@@ -258,6 +311,8 @@ function TranscodeConfig() {
         >
           <ControlRow
             label="transcodeTempDir"
+            tip="transcodeTempDirTip"
+            setting="console.playback.tempDir"
             control={
               <div className="flex items-center gap-2">
                 <Input
@@ -371,6 +426,7 @@ function ViewerAccessConfig() {
     <Fieldset title="consoleConfigHeading" hideTitle>
       <ControlRow
         label="viewerPairingCodesDisabled"
+        setting="console.config.pairingCodes"
         help="viewerPairingCodesDisabledHelp"
         control={
           <Switch
@@ -431,6 +487,7 @@ function SessionsConfig() {
     <Fieldset title="sessionsHeading">
       <ControlRow
         label="sessionLifetimeLabel"
+        setting="console.config.sessionLifetime"
         help="sessionLifetimeHelp"
         control={
           <select
@@ -450,6 +507,7 @@ function SessionsConfig() {
       />
       <ControlRow
         label="adminSessionLengthLabel"
+        setting="console.config.adminSession"
         help="adminSessionLengthHelp"
         control={
           <select
@@ -630,7 +688,7 @@ function PrePlayClipsConfig() {
 // lives on Operations alone.
 export function Config() {
   return (
-    <Section heading="consoleConfigHeading" lead="consoleConfigLead">
+    <Section heading="navPlaybackSignIn" lead="configPageLead">
       <div className="space-y-6">
         <ViewerAccessConfig />
         <SessionsConfig />

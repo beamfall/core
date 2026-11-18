@@ -45,9 +45,9 @@ describe("Capabilities", () => {
   it("renders workflow capabilities with toggles and the probe group read-only", async () => {
     renderPanel();
 
-    expect(await screen.findByText("conversion")).toBeVisible();
-    expect(screen.getByText("rename")).toBeVisible();
-    expect(screen.getByText("share-mount")).toBeVisible();
+    expect(await screen.findByText("File conversion")).toBeVisible();
+    expect(screen.getByText("Rename files")).toBeVisible();
+    expect(screen.getByText("Network shares")).toBeVisible();
     // The probe-absent capability shows its degraded reason and NO toggle.
     expect(screen.getByText("Not detected on this host")).toBeVisible();
     // Two flippable workflow capabilities → exactly two switches (probe has none).
@@ -58,9 +58,9 @@ describe("Capabilities", () => {
   it("flips a workflow capability through the audited mutation", async () => {
     const user = userEvent.setup();
     renderPanel();
-    await screen.findByText("conversion");
+    await screen.findByText("File conversion");
 
-    await user.click(screen.getByLabelText("conversion"));
+    await user.click(screen.getByRole("switch", { name: "File conversion" }));
 
     expect(setCapabilityEnabled).toHaveBeenCalledWith("conversion", false);
   });

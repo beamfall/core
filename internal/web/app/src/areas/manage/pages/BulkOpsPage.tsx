@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ErrorLine,
+  HelpTip,
   ManageSection,
   ManageTable,
   StatusBadge,
@@ -164,8 +165,11 @@ function BulkEditSection({
   return (
     <ManageSection title={t("bulkEditPreviewHeading")}>
       <div className="space-y-3">
-        <div className="space-y-1">
-          <Label htmlFor="bulk-edit-ids">{t("bulkEditMediaIDs")}</Label>
+        <div className="space-y-1" data-setting="manage.bulk.mediaIds">
+          <span className="bf-label-with-tip">
+            <Label htmlFor="bulk-edit-ids">{t("bulkEditMediaIDs")}</Label>
+            <HelpTip label={t("bulkEditMediaIDs")} text="manageBulkMediaIdsHelp" />
+          </span>
           <Input
             id="bulk-edit-ids"
             value={ids}
@@ -175,8 +179,11 @@ function BulkEditSection({
           />
         </div>
         <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="bulk-edit-field-name">{t("bulkEditFieldName")}</Label>
+          <div className="space-y-1" data-setting="manage.bulk.fieldName">
+            <span className="bf-label-with-tip">
+              <Label htmlFor="bulk-edit-field-name">{t("bulkEditFieldName")}</Label>
+              <HelpTip label={t("bulkEditFieldName")} text="manageBulkFieldNameHelp" />
+            </span>
             <Input
               id="bulk-edit-field-name"
               value={fieldName}
@@ -312,11 +319,15 @@ function OrganizeSection({
               </SelectContent>
             </Select>
           </div>
-          <div className="grow space-y-1">
-            <Label htmlFor="organize-template">{t("organizeTemplate")}</Label>
+          <div className="grow space-y-1" data-setting="manage.bulk.namingTemplate">
+            <span className="bf-label-with-tip">
+              <Label htmlFor="organize-template">{t("organizeTemplate")}</Label>
+              <HelpTip label={t("organizeTemplate")} text="manageBulkTemplateHelp" />
+            </span>
             <Input
               id="organize-template"
               value={template}
+              placeholder="{year}/{title}"
               autoComplete="off"
               spellCheck={false}
               onChange={(e) => setTemplate(e.target.value)}

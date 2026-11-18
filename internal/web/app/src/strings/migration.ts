@@ -5,7 +5,6 @@ export const migrationStrings = {
       "Import from another system through an installed importer. Imports are additive and re-runnable.",
     migrationWizardEmpty: "No importers available. Install an import-capable plugin to migrate.",
     migrationWizardRun: "Run import",
-    migrationWizardConflict: "Conflict",
     migrationWizardInput: "Input",
     migrationInputExportFile: "Export file",
     migrationInputCredentials: "Sign-in",
@@ -13,7 +12,6 @@ export const migrationStrings = {
     migrationWizardUnavailable: "Could not load importers.",
     migrationWizardConfigure: "Configure",
     migrationWizardBack: "Back",
-    migrationWizardSourcePath: "Source path",
     migrationWizardSourcePathPlaceholder: "/path/to/export.xml",
     migrationWizardCategories: "Data categories",
     migrationWizardCategoryDesc:
@@ -33,8 +31,6 @@ export const migrationStrings = {
     migrationWizardCredentialMissing: "Credential required",
     migrationWizardCredentialError: "Could not save the credential.",
     migrationWizardMapping: "Profile and Library mapping",
-    migrationWizardMappingDesc:
-      "Choose whose engagement the import writes to, and optionally a single target Library to match against.",
     migrationWizardProfile: "Target profile",
     migrationWizardProfileDefault: "This session's profile",
     migrationWizardLibrary: "Target library",
@@ -57,7 +53,6 @@ export const migrationStrings = {
     migrationWizardEmpty:
       "Aucun importateur disponible. Installez un module capable d'importer pour migrer.",
     migrationWizardRun: "Lancer l'import",
-    migrationWizardConflict: "Conflit",
     migrationWizardInput: "Entrée",
     migrationInputExportFile: "Fichier d’export",
     migrationInputCredentials: "Connexion",
@@ -65,7 +60,6 @@ export const migrationStrings = {
     migrationWizardUnavailable: "Impossible de charger les importateurs.",
     migrationWizardConfigure: "Configurer",
     migrationWizardBack: "Retour",
-    migrationWizardSourcePath: "Chemin source",
     migrationWizardSourcePathPlaceholder: "/chemin/vers/export.xml",
     migrationWizardCategories: "Catégories de données",
     migrationWizardCategoryDesc:
@@ -86,8 +80,6 @@ export const migrationStrings = {
     migrationWizardCredentialMissing: "Identifiant requis",
     migrationWizardCredentialError: "Impossible d’enregistrer l’identifiant.",
     migrationWizardMapping: "Correspondance des profils et des bibliothèques",
-    migrationWizardMappingDesc:
-      "Choisissez à quel profil l’import attribue l’activité et, éventuellement, une seule bibliothèque cible pour l’appariement.",
     migrationWizardProfile: "Profil cible",
     migrationWizardProfileDefault: "Profil de cette session",
     migrationWizardLibrary: "Bibliothèque cible",
@@ -110,7 +102,6 @@ export const migrationStrings = {
     migrationWizardEmpty:
       "Keine Importer verfügbar. Installiere ein importfähiges Plugin, um zu migrieren.",
     migrationWizardRun: "Import starten",
-    migrationWizardConflict: "Konflikt",
     migrationWizardInput: "Eingabe",
     migrationInputExportFile: "Exportdatei",
     migrationInputCredentials: "Anmeldung",
@@ -118,7 +109,6 @@ export const migrationStrings = {
     migrationWizardUnavailable: "Importer konnten nicht geladen werden.",
     migrationWizardConfigure: "Konfigurieren",
     migrationWizardBack: "Zurück",
-    migrationWizardSourcePath: "Quellpfad",
     migrationWizardSourcePathPlaceholder: "/pfad/zu/export.xml",
     migrationWizardCategories: "Datenkategorien",
     migrationWizardCategoryDesc:
@@ -139,8 +129,6 @@ export const migrationStrings = {
     migrationWizardCredentialMissing: "Zugangsdaten erforderlich",
     migrationWizardCredentialError: "Die Zugangsdaten konnten nicht gespeichert werden.",
     migrationWizardMapping: "Profil- und Bibliothekszuordnung",
-    migrationWizardMappingDesc:
-      "Wähle, auf wessen Aktivität der Import schreibt, und optional eine einzelne Zielbibliothek für den Abgleich.",
     migrationWizardProfile: "Zielprofil",
     migrationWizardProfileDefault: "Profil dieser Sitzung",
     migrationWizardLibrary: "Zielbibliothek",
@@ -163,7 +151,6 @@ export const migrationStrings = {
     migrationWizardEmpty:
       "No hay importadores disponibles. Instala un complemento con capacidad de importación para migrar.",
     migrationWizardRun: "Ejecutar importación",
-    migrationWizardConflict: "Conflicto",
     migrationWizardInput: "Entrada",
     migrationInputExportFile: "Archivo de exportación",
     migrationInputCredentials: "Inicio de sesión",
@@ -171,7 +158,6 @@ export const migrationStrings = {
     migrationWizardUnavailable: "No se pudieron cargar los importadores.",
     migrationWizardConfigure: "Configurar",
     migrationWizardBack: "Atrás",
-    migrationWizardSourcePath: "Ruta de origen",
     migrationWizardSourcePathPlaceholder: "/ruta/hacia/exportacion.xml",
     migrationWizardCategories: "Categorías de datos",
     migrationWizardCategoryDesc:
@@ -192,8 +178,6 @@ export const migrationStrings = {
     migrationWizardCredentialMissing: "Credencial necesaria",
     migrationWizardCredentialError: "No se pudo guardar la credencial.",
     migrationWizardMapping: "Asignación de perfil y biblioteca",
-    migrationWizardMappingDesc:
-      "Elige a qué perfil se asigna la actividad importada y, opcionalmente, una única biblioteca de destino con la que comparar.",
     migrationWizardProfile: "Perfil de destino",
     migrationWizardProfileDefault: "Perfil de esta sesión",
     migrationWizardLibrary: "Biblioteca de destino",
@@ -216,7 +200,6 @@ export const migrationStrings = {
     migrationWizardEmpty:
       "Nenhum importador disponível. Instale um plugin com capacidade de importação para migrar.",
     migrationWizardRun: "Executar importação",
-    migrationWizardConflict: "Conflito",
     migrationWizardInput: "Entrada",
     migrationInputExportFile: "Arquivo de exportação",
     migrationInputCredentials: "Login",
@@ -224,7 +207,6 @@ export const migrationStrings = {
     migrationWizardUnavailable: "Não foi possível carregar os importadores.",
     migrationWizardConfigure: "Configurar",
     migrationWizardBack: "Voltar",
-    migrationWizardSourcePath: "Caminho de origem",
     migrationWizardSourcePathPlaceholder: "/caminho/para/exportacao.xml",
     migrationWizardCategories: "Categorias de dados",
     migrationWizardCategoryDesc:
@@ -244,8 +226,6 @@ export const migrationStrings = {
     migrationWizardCredentialMissing: "Credencial necessária",
     migrationWizardCredentialError: "Não foi possível salvar a credencial.",
     migrationWizardMapping: "Mapeamento de perfil e biblioteca",
-    migrationWizardMappingDesc:
-      "Escolha em qual perfil o import grava a atividade e, opcionalmente, uma única biblioteca de destino para a correspondência.",
     migrationWizardProfile: "Perfil de destino",
     migrationWizardProfileDefault: "Perfil desta sessão",
     migrationWizardLibrary: "Biblioteca de destino",

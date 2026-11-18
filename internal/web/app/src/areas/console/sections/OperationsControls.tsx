@@ -1,15 +1,15 @@
 import { RefreshCw } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RescanAllButton, useRescanState } from "@/components/beamfall/LibraryRescan";
 import {
   ControlRow,
   EmptyState,
   ErrorState,
+  PresetSelect,
   StatusChip,
   type StatusTone,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { formatRelativeTime, formatUtcTime } from "@/lib/activityDisplay";
@@ -152,43 +152,25 @@ function GovernorStatus() {
 function GovernorSettings() {
   const t = useT();
   const config = useAsync(fetchConsoleConfig);
-  const [workers, setWorkers] = useState(2);
-  const [retentionDays, setRetentionDays] = useState(180);
   const [compactionQueued, setCompactionQueued] = useState(false);
   const [compactionFailed, setCompactionFailed] = useState(false);
 
-  useEffect(() => {
-    if (!config.data) return;
-    setWorkers(Math.max(1, config.data.backgroundWorkers));
-    setRetentionDays(Math.max(1, config.data.eventsRetentionDays));
-  }, [config.data]);
-
-  // Low-power is the *persisted* posture (a single configured worker), not the
-  // transient edit value — so editing the worker field never flips the toggle
-  // or disables Save mid-keystroke. While low-power is on, the field locks to 1.
-  const lowPower = (config.data?.backgroundWorkers ?? 2) <= 1;
+  // Every control reads the *persisted* values, so the switch and the
+  // dropdowns always agree with what the server holds (CORE-2445).
+  const workers = Math.max(1, config.data?.backgroundWorkers ?? 2);
+  const retentionDays = Math.max(1, config.data?.eventsRetentionDays ?? 180);
+  const lowPower = workers <= 1;
   // Low-power on or off covers one and two workers; any other count, or a
   // retention other than the default, keeps its field in the Normal view.
-  const customWorkers = (config.data?.backgroundWorkers ?? 2) > 2;
-  const customRetention = (config.data?.eventsRetentionDays ?? 180) !== 180;
+  const customWorkers = workers > 2;
+  const customRetention = retentionDays !== 180;
 
   async function save(next: number) {
-    const clamped = Math.max(1, Math.floor(next));
-    const updated = await setConsoleConfig({ backgroundWorkers: clamped });
-    config.setData(updated);
-    setWorkers(Math.max(1, updated.backgroundWorkers));
+    config.setData(await setConsoleConfig({ backgroundWorkers: Math.max(1, Math.floor(next)) }));
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    await save(workers);
-  }
-
-  async function saveRetentionDays() {
-    const clamped = Math.max(1, Math.floor(retentionDays));
-    const updated = await setConsoleConfig({ eventsRetentionDays: clamped });
-    config.setData(updated);
-    setRetentionDays(Math.max(1, updated.eventsRetentionDays));
+  async function saveRetentionDays(next: number) {
+    config.setData(await setConsoleConfig({ eventsRetentionDays: Math.max(1, Math.floor(next)) }));
   }
 
   async function onToggleLowPower(on: boolean) {
@@ -206,6 +188,8 @@ function GovernorSettings() {
     }
   }
 
+  const days = (count: number) => t("sessionLengthDays", { count });
+
   return (
     <Section heading="governorSettingsHeading">
       {config.loading ? (
@@ -213,7 +197,7 @@ function GovernorSettings() {
       ) : config.failed ? (
         <ErrorState message="governorSettingsUnavailable" />
       ) : (
-        <form onSubmit={onSubmit} className="space-y-3">
+        <div className="space-y-3">
           {/* The section heading already names this group, so the fieldset
               carries it as its accessible name only and draws no second title
               (CORE-2352). */}
@@ -222,6 +206,8 @@ function GovernorSettings() {
               <ControlRow
                 label="governorLowPower"
                 help="governorLowPowerHelp"
+                tip="governorLowPowerTip"
+                setting="console.operations.lowPower"
                 control={
                   <Switch
                     checked={lowPower}
@@ -234,21 +220,15 @@ function GovernorSettings() {
                 <ControlRow
                   label="governorBackgroundWorkers"
                   help="governorBackgroundWorkersHelp"
+                  tip="governorBackgroundWorkersTip"
+                  setting="console.operations.workers"
                   control={
-                    <>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={workers}
-                        disabled={lowPower}
-                        onChange={(e) => setWorkers(Math.max(1, Number(e.target.value) || 1))}
-                        aria-label={t("governorBackgroundWorkers")}
-                        className="w-20"
-                      />
-                      <Button type="submit" size="sm" disabled={lowPower}>
-                        {t("governorBackgroundWorkersSave")}
-                      </Button>
-                    </>
+                    <PresetSelect
+                      value={workers}
+                      presets={WORKER_PRESETS.map((value) => ({ value, label: String(value) }))}
+                      onChange={(next) => void save(next)}
+                      aria-label={t("governorBackgroundWorkers")}
+                    />
                   }
                 />
               </Advanced>
@@ -256,20 +236,16 @@ function GovernorSettings() {
                 <ControlRow
                   label="eventsRetentionDays"
                   help="eventsRetentionDaysHelp"
+                  tip="eventsRetentionDaysTip"
+                  setting="console.operations.eventsRetention"
                   control={
-                    <>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={retentionDays}
-                        onChange={(e) => setRetentionDays(Math.max(1, Number(e.target.value) || 1))}
-                        aria-label={t("eventsRetentionDays")}
-                        className="w-24"
-                      />
-                      <Button type="button" size="sm" onClick={() => void saveRetentionDays()}>
-                        {t("eventsRetentionDaysSave")}
-                      </Button>
-                    </>
+                    <PresetSelect
+                      value={retentionDays}
+                      presets={RETENTION_PRESETS.map((value) => ({ value, label: days(value) }))}
+                      format={days}
+                      onChange={(next) => void saveRetentionDays(next)}
+                      aria-label={t("eventsRetentionDays")}
+                    />
                   }
                 />
               </Advanced>
@@ -294,11 +270,16 @@ function GovernorSettings() {
               </Advanced>
             </div>
           </fieldset>
-        </form>
+        </div>
       )}
     </Section>
   );
 }
+
+// Worker counts and event-retention windows offered as presets (CORE-2445);
+// a saved value outside these still shows as its own choice.
+const WORKER_PRESETS = [1, 2, 4, 8];
+const RETENTION_PRESETS = [30, 90, 180, 365];
 
 // The inline durable history/logs timeline for one job (jobEvents). Opened
 // under a selected job row. Payload is omitted by the server for restricted

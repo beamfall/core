@@ -196,18 +196,18 @@ test.describe("console", () => {
       "Libraries",
       "Plugins",
       "Profiles & access",
-      "Schedules",
+      "Parental controls",
       "Remote access",
       "Backups",
-      "Updates",
-      "Server configuration",
+      "Update notifications",
+      "Playback & sign-in",
     ];
     const advanced = [
       "Activity",
-      "Capabilities",
-      "Layout & Navigation",
-      "API tokens",
-      "Retention rules",
+      "API keys & tokens",
+      "Webhooks",
+      "Leaving soon rules",
+      "Optional features",
     ];
     for (const label of normal) {
       await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
@@ -221,7 +221,7 @@ test.describe("console", () => {
       await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
     await page.reload();
-    await expect(nav.getByRole("link", { name: "API tokens", exact: true })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "API keys & tokens", exact: true })).toBeVisible();
     await expect(page.getByText("beamfall-web")).toHaveCount(0);
     await expect(page.getByText(/checkout|pricing|entitlement/i)).toHaveCount(0);
     expect(errors, errors.join("\n")).toEqual([]);
@@ -321,7 +321,7 @@ test.describe("console", () => {
   const SECTIONS: { route: string; heading: string }[] = [
     { route: "libraries", heading: "Libraries" },
     { route: "plugins", heading: "Plugins" },
-    { route: "config", heading: "Server configuration" },
+    { route: "config", heading: "Playback & sign-in" },
     { route: "access", heading: "Profiles" },
     { route: "schedules", heading: "Enforced filters" },
     { route: "operations", heading: "Job queue" },
@@ -347,17 +347,17 @@ test.describe("console", () => {
     const errors = collectFatalErrors(page);
     await gotoConsole(page, "config");
 
-    await expect(
-      page.getByRole("heading", { level: 2, name: "Server configuration" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Playback & sign-in" })).toBeVisible();
     // The on/off switch is the Normal control; codec, quality and device are Advanced unless the
     // server already has a value for them (CORE-1117).
     await expect(page.getByText("Hardware transcoding").first()).toBeVisible();
     await expect(page.getByRole("switch", { name: "Hardware acceleration" })).toBeVisible();
     await page.getByRole("switch", { name: "Show advanced settings" }).click();
-    for (const label of ["Codec", "Quality", "Device"]) {
-      await expect(page.getByRole("textbox", { name: label })).toBeVisible();
+    // Codec and quality are dropdowns (CORE-2445); the device path stays free text.
+    for (const label of ["Codec", "Quality"]) {
+      await expect(page.getByRole("combobox", { name: label })).toBeVisible();
     }
+    await expect(page.getByRole("textbox", { name: "Device" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(1);
     expect(errors, errors.join("\n")).toEqual([]);
   });

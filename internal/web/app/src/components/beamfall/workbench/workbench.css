@@ -517,3 +517,83 @@ button.path-browser-crumb:hover {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* HelpTip (CORE-2445): the (?) beside a setting, and its explanation. */
+.bf-help-tip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.bf-help-tip:hover,
+.bf-help-tip[data-popup-open] {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
+
+.bf-help-tip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.bf-help-tip-popup {
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-card);
+  font-size: 13px;
+  line-height: 18px;
+  outline: none;
+}
+
+.bf-help-tip-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bf-help-tip-body {
+  margin: 0;
+}
+
+/* A label with its (?) beside it. */
+.bf-label-with-tip {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The setting a settings search opened: a brief ring so the eye finds it. */
+.bf-setting-found {
+  border-radius: var(--radius-control);
+  animation: bf-setting-found 2.4s ease-out;
+}
+
+@keyframes bf-setting-found {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bf-setting-found {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+}

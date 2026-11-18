@@ -34,11 +34,13 @@ import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { SectionMenu } from "@/components/chrome/SectionMenu";
+import { RevealSetting, SettingsMenuIntro } from "@/components/chrome/SettingsMenuIntro";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { setAdminUnlockHandler } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import type { SearchablePage } from "@/lib/settingsIndex";
 import type { StringKey } from "@/strings";
 import { AdminGate, type AdminGateCopy } from "../console/AdminGate";
 import "./manage.css";
@@ -77,11 +79,14 @@ import { UnmatchedPage } from "./pages/UnmatchedPage";
 // icon, label and one-line `lead` also make the page's heading (CORE-1125).
 // `advanced` items are expert destinations the Normal view leaves out of the nav
 // (CORE-1117); their routes stay registered, so a link or bookmark still works.
+// `hidden` items are never in the nav: an old route kept so a bookmark still
+// opens, whose page now lives in the Console (CORE-2445).
 type NavItem = {
   to: string;
   icon: ComponentType<LucideProps>;
   lead: StringKey;
   advanced?: true;
+  hidden?: true;
 } & ({ label: StringKey; text?: undefined } | { text: string; label?: undefined });
 const NAV_GROUPS: NavItem[][] = [
   [
@@ -89,8 +94,14 @@ const NAV_GROUPS: NavItem[][] = [
     { to: "/manage/operations", icon: ListChecks, label: "jobs", lead: "manageJobsLead" },
     { to: "/manage/convert", icon: FileCog, label: "convert", lead: "convertLead", advanced: true },
     { to: "/manage/rename", icon: PencilLine, label: "rename", lead: "renameLead", advanced: true },
-    { to: "/manage/trash", icon: Trash2, label: "trashPolicyHeading", lead: "trashPolicyLead" },
-    { to: "/manage/backups", icon: Archive, label: "backupHeading", lead: "manageBackupsLead" },
+    { to: "/manage/trash", icon: Trash2, label: "navTrash", lead: "manageTrashLead" },
+    {
+      to: "/manage/backups",
+      icon: Archive,
+      label: "backupHeading",
+      lead: "manageBackupsLead",
+      hidden: true,
+    },
     {
       to: "/manage/subscriptions",
       icon: Rss,
@@ -165,12 +176,26 @@ const NAV_GROUPS: NavItem[][] = [
     {
       to: "/manage/restrictions",
       icon: ShieldAlert,
-      label: "restrictionsTitle",
+      label: "navUnlockRestricted",
       lead: "restrictionsLead",
     },
-    { to: "/manage/profile", icon: UserCog, label: "profilesTitle", lead: "profilesLead" },
+    { to: "/manage/profile", icon: UserCog, label: "navSwitchProfile", lead: "profilesLead" },
   ],
 ];
+
+// Every named Manage page, so the settings search can find a page by name.
+const SEARCH_PAGES: SearchablePage[] = NAV_GROUPS.flat().flatMap((item) =>
+  item.hidden || !item.label
+    ? []
+    : [
+        {
+          area: "manage" as const,
+          path: item.to.replace("/manage/", ""),
+          label: item.label,
+          lead: item.lead,
+        },
+      ],
+);
 
 // The nav item of the current route: the one whose path the location is on or
 // under, falling back to the area itself.
@@ -189,12 +214,13 @@ function currentRoute(pathname: string): NavItem {
 
 // The Normal nav drops Advanced items, except the page being viewed, so a deep
 // link never lands on a page missing from its own nav, and drops any group left
-// empty. Advanced shows every group whole.
+// empty. Advanced shows every group whole, less the hidden items.
 function visibleNavGroups(advanced: boolean, pathname: string): NavItem[][] {
-  if (advanced) return NAV_GROUPS;
   return NAV_GROUPS.map((group) =>
     group.filter(
-      (item) => !item.advanced || pathname === item.to || pathname.startsWith(`${item.to}/`),
+      (item) =>
+        !item.hidden &&
+        (advanced || !item.advanced || pathname === item.to || pathname.startsWith(`${item.to}/`)),
     ),
   ).filter((group) => group.length > 0);
 }
@@ -315,6 +341,7 @@ export function ManageArea() {
           current={routeTitle}
           footer={<AdvancedSettingsSwitch className="manage-advanced-switch" />}
         >
+          <SettingsMenuIntro area="manage" pages={SEARCH_PAGES} />
           <div className="manage-nav">
             {visibleNavGroups(advanced, location.pathname).map((group, i) => (
               <div key={i} className="manage-nav-group">
@@ -336,6 +363,7 @@ export function ManageArea() {
           {/* The route's one h1 and its lead; each ManageSection card title below is an h2. */}
           <IconHeading icon={route.icon} title={routeTitle} lead={t(route.lead)} />
           <ManageAdminLock>
+            <RevealSetting />
             <Routes>
               <Route index element={<Navigate to="/manage/libraries" replace />} />
               <Route path="libraries" element={<LibrariesPage />} />

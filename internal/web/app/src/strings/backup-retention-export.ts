@@ -2,7 +2,7 @@ export const backupRetentionExportStrings = {
   en: {
     exportHeading: "Metadata export",
     exportLead:
-      "Generate the full, self-describing portability export of catalog curation, reveal-filtered to what this session can see. Download as JSON.",
+      "Download your catalog as one JSON file: libraries, items and their details, collections, markers and pinned artwork, limited to what this account can see. The media files themselves are not included. Use it to keep a copy or to move your catalog to other software.",
     exportGenerate: "Generate export",
     exportGenerating: "Generating…",
     exportDownload: "Download JSON",
@@ -12,9 +12,6 @@ export const backupRetentionExportStrings = {
     exportMediaCount: "Media",
     exportCollectionsCount: "Collections",
     exportExportedAt: "Exported at",
-    trashPolicyHeading: "Trash policy",
-    trashPolicyLead:
-      "Deleted items wait here until the retention window ends. Restore any of them before then.",
     trashRetainedCount: "{count} retained",
     purgeHeading: "Purge retained Trash",
     purgeBeforeLabel: "Purge items trashed before",
@@ -26,7 +23,6 @@ export const backupRetentionExportStrings = {
     purgeFailed: "The purge could not be completed.",
     purgeDone: "Purged · {count} removed",
     // Retention rules (ADR-0051, RET-2)
-    retentionRulesTitle: "Retention rules",
     retentionRulesEmpty: "No retention rules configured.",
     retentionRulesLoadError: "Could not load retention rules.",
     retentionRuleAdd: "Add rule",
@@ -36,7 +32,6 @@ export const backupRetentionExportStrings = {
     retentionRuleDeleteConfirm: "Delete this retention rule?",
     retentionRuleNamePlaceholder: "Rule name",
     retentionRuleSourceExprPlaceholder: "Source expression (JSON)",
-    retentionRuleTargetLibraryIDPlaceholder: "Target library ID",
     activityUndoHeading: "Activity",
     activityUndoLead:
       "Recent changes on this server. Undo opens the item in Trash so you can restore it.",
@@ -46,7 +41,7 @@ export const backupRetentionExportStrings = {
   fr: {
     exportHeading: "Export des métadonnées",
     exportLead:
-      "Générez l’export de portabilité complet et autodescriptif de la curation du catalogue, filtré selon ce que cette session peut voir. Téléchargement au format JSON.",
+      "Téléchargez votre catalogue dans un seul fichier JSON : bibliothèques, éléments et leurs détails, collections, repères et illustrations épinglées, limité à ce que ce compte peut voir. Les fichiers multimédias eux-mêmes ne sont pas inclus. Servez-vous-en pour garder une copie ou transférer votre catalogue vers un autre logiciel.",
     exportGenerate: "Générer l’export",
     exportGenerating: "Génération…",
     exportDownload: "Télécharger le JSON",
@@ -56,9 +51,6 @@ export const backupRetentionExportStrings = {
     exportMediaCount: "Médias",
     exportCollectionsCount: "Collections",
     exportExportedAt: "Exporté le",
-    trashPolicyHeading: "Politique de la corbeille",
-    trashPolicyLead:
-      "Les éléments supprimés restent ici jusqu’à la fin de la période de conservation. Restaurez-les avant cette échéance.",
     trashRetainedCount: "{count} conservés",
     purgeHeading: "Vider la corbeille conservée",
     purgeBeforeLabel: "Purger les éléments mis à la corbeille avant le",
@@ -70,7 +62,6 @@ export const backupRetentionExportStrings = {
     purgeNeedCutoff: "Choisissez une date et une heure limites.",
     purgeFailed: "La purge n’a pas pu être terminée.",
     purgeDone: "Purgé · {count} supprimés",
-    retentionRulesTitle: "Règles de conservation",
     retentionRulesEmpty: "Aucune règle de conservation configurée.",
     retentionRulesLoadError: "Impossible de charger les règles de conservation.",
     retentionRuleAdd: "Ajouter une règle",
@@ -80,7 +71,6 @@ export const backupRetentionExportStrings = {
     retentionRuleDeleteConfirm: "Supprimer cette règle de conservation ?",
     retentionRuleNamePlaceholder: "Nom de la règle",
     retentionRuleSourceExprPlaceholder: "Expression source (JSON)",
-    retentionRuleTargetLibraryIDPlaceholder: "ID de la bibliothèque cible",
     activityUndoHeading: "Activité",
     activityUndoLead:
       "Modifications récentes sur ce serveur. Annuler ouvre l’élément dans la corbeille pour que vous puissiez le restaurer.",
@@ -90,7 +80,7 @@ export const backupRetentionExportStrings = {
   de: {
     exportHeading: "Metadaten-Export",
     exportLead:
-      "Erzeuge den vollständigen, selbstbeschreibenden Portabilitätsexport der Katalogpflege, gefiltert auf das, was diese Sitzung sehen kann. Download als JSON.",
+      "Lade deinen Katalog als eine JSON-Datei herunter: Mediatheken, Elemente und ihre Details, Sammlungen, Marker und angeheftete Bilder, beschränkt auf das, was dieses Konto sehen kann. Die Mediendateien selbst sind nicht enthalten. Damit kannst du eine Kopie aufbewahren oder deinen Katalog in andere Software übernehmen.",
     exportGenerate: "Export erzeugen",
     exportGenerating: "Wird erzeugt…",
     exportDownload: "JSON herunterladen",
@@ -100,9 +90,6 @@ export const backupRetentionExportStrings = {
     exportMediaCount: "Medien",
     exportCollectionsCount: "Sammlungen",
     exportExportedAt: "Exportiert am",
-    trashPolicyHeading: "Papierkorb-Richtlinie",
-    trashPolicyLead:
-      "Gelöschte Elemente bleiben hier, bis die Aufbewahrungsfrist endet. Stelle sie bis dahin wieder her.",
     trashRetainedCount: "{count} aufbewahrt",
     purgeHeading: "Aufbewahrten Papierkorb leeren",
     purgeBeforeLabel: "Elemente bereinigen, die vor diesem Zeitpunkt in den Papierkorb kamen",
@@ -114,7 +101,6 @@ export const backupRetentionExportStrings = {
     purgeNeedCutoff: "Wähle Datum und Uhrzeit des Stichtags.",
     purgeFailed: "Die Bereinigung konnte nicht abgeschlossen werden.",
     purgeDone: "Bereinigt · {count} entfernt",
-    retentionRulesTitle: "Aufbewahrungsregeln",
     retentionRulesEmpty: "Keine Aufbewahrungsregeln konfiguriert.",
     retentionRulesLoadError: "Die Aufbewahrungsregeln konnten nicht geladen werden.",
     retentionRuleAdd: "Regel hinzufügen",
@@ -124,7 +110,6 @@ export const backupRetentionExportStrings = {
     retentionRuleDeleteConfirm: "Diese Aufbewahrungsregel löschen?",
     retentionRuleNamePlaceholder: "Regelname",
     retentionRuleSourceExprPlaceholder: "Quellausdruck (JSON)",
-    retentionRuleTargetLibraryIDPlaceholder: "ID der Zielbibliothek",
     activityUndoHeading: "Aktivität",
     activityUndoLead:
       "Letzte Änderungen auf diesem Server. „Rückgängig“ öffnet das Element im Papierkorb, damit du es wiederherstellen kannst.",
@@ -134,7 +119,7 @@ export const backupRetentionExportStrings = {
   es: {
     exportHeading: "Exportación de metadatos",
     exportLead:
-      "Genera la exportación de portabilidad completa y autodescriptiva de la curación del catálogo, filtrada según lo que puede ver esta sesión. Descarga como JSON.",
+      "Descarga tu catálogo en un solo archivo JSON: bibliotecas, elementos y sus detalles, colecciones, marcadores e imágenes fijadas, limitado a lo que esta cuenta puede ver. Los archivos multimedia no se incluyen. Úsalo para guardar una copia o llevar tu catálogo a otro programa.",
     exportGenerate: "Generar exportación",
     exportGenerating: "Generando…",
     exportDownload: "Descargar JSON",
@@ -144,9 +129,6 @@ export const backupRetentionExportStrings = {
     exportMediaCount: "Medios",
     exportCollectionsCount: "Colecciones",
     exportExportedAt: "Exportado el",
-    trashPolicyHeading: "Política de la papelera",
-    trashPolicyLead:
-      "Los elementos eliminados esperan aquí hasta que termine el periodo de retención. Restáuralos antes de que acabe.",
     trashRetainedCount: "{count} retenidos",
     purgeHeading: "Purgar la papelera retenida",
     purgeBeforeLabel: "Purgar los elementos enviados a la papelera antes de",
@@ -158,7 +140,6 @@ export const backupRetentionExportStrings = {
     purgeNeedCutoff: "Elige una fecha y hora límite.",
     purgeFailed: "No se pudo completar la purga.",
     purgeDone: "Purgado · {count} eliminados",
-    retentionRulesTitle: "Reglas de retención",
     retentionRulesEmpty: "No hay reglas de retención configuradas.",
     retentionRulesLoadError: "No se pudieron cargar las reglas de retención.",
     retentionRuleAdd: "Añadir regla",
@@ -168,7 +149,6 @@ export const backupRetentionExportStrings = {
     retentionRuleDeleteConfirm: "¿Eliminar esta regla de retención?",
     retentionRuleNamePlaceholder: "Nombre de la regla",
     retentionRuleSourceExprPlaceholder: "Expresión de origen (JSON)",
-    retentionRuleTargetLibraryIDPlaceholder: "ID de la biblioteca de destino",
     activityUndoHeading: "Actividad",
     activityUndoLead:
       "Cambios recientes en este servidor. Deshacer abre el elemento en la papelera para que puedas restaurarlo.",
@@ -178,7 +158,7 @@ export const backupRetentionExportStrings = {
   pt: {
     exportHeading: "Exportação de metadados",
     exportLead:
-      "Gere a exportação de portabilidade completa e autodescritiva da curadoria do catálogo, filtrada conforme o que esta sessão pode ver. Baixe como JSON.",
+      "Baixe seu catálogo em um único arquivo JSON: bibliotecas, itens e seus detalhes, coleções, marcadores e artes fixadas, limitado ao que esta conta pode ver. Os arquivos de mídia em si não são incluídos. Use-o para guardar uma cópia ou levar seu catálogo para outro programa.",
     exportGenerate: "Gerar exportação",
     exportGenerating: "Gerando…",
     exportDownload: "Baixar JSON",
@@ -188,9 +168,6 @@ export const backupRetentionExportStrings = {
     exportMediaCount: "Mídias",
     exportCollectionsCount: "Coleções",
     exportExportedAt: "Exportado em",
-    trashPolicyHeading: "Política da lixeira",
-    trashPolicyLead:
-      "Os itens excluídos ficam aqui até o fim do período de retenção. Restaure-os antes disso.",
     trashRetainedCount: "{count} retidos",
     purgeHeading: "Limpar a lixeira retida",
     purgeBeforeLabel: "Limpar os itens enviados à lixeira antes de",
@@ -202,7 +179,6 @@ export const backupRetentionExportStrings = {
     purgeNeedCutoff: "Escolha uma data e hora limite.",
     purgeFailed: "Não foi possível concluir a limpeza.",
     purgeDone: "Limpo · {count} removidos",
-    retentionRulesTitle: "Regras de retenção",
     retentionRulesEmpty: "Nenhuma regra de retenção configurada.",
     retentionRulesLoadError: "Não foi possível carregar as regras de retenção.",
     retentionRuleAdd: "Adicionar regra",
@@ -212,7 +188,6 @@ export const backupRetentionExportStrings = {
     retentionRuleDeleteConfirm: "Excluir esta regra de retenção?",
     retentionRuleNamePlaceholder: "Nome da regra",
     retentionRuleSourceExprPlaceholder: "Expressão de origem (JSON)",
-    retentionRuleTargetLibraryIDPlaceholder: "ID da biblioteca de destino",
     activityUndoHeading: "Atividade",
     activityUndoLead:
       "Alterações recentes neste servidor. Desfazer abre o item na lixeira para que você possa restaurá-lo.",

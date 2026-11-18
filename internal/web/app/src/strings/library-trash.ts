@@ -8,7 +8,7 @@ export const libraryTrashStrings = {
   en: {
     recentlyDeleted: "Recently deleted",
     recentlyDeletedLead:
-      "Deleted libraries wait here for 30 days. Restore one to bring back its media, watch history and settings exactly as they were.",
+      "Deleted libraries wait here for 30 days, then are removed for good. A library that holds the only copy of its media stays until you restore it. Restoring brings back its media, watch history and settings exactly as they were.",
     deletedLibraryWhen: "Deleted {date}",
     deletedLibraryItems: "Media items: {count, number}",
     deletedLibraryPurgeAfter: "Removed for good on {date}",
@@ -32,7 +32,7 @@ export const libraryTrashStrings = {
   fr: {
     recentlyDeleted: "Supprimées récemment",
     recentlyDeletedLead:
-      "Les bibliothèques supprimées restent ici pendant 30 jours. Restaurez-en une pour retrouver ses médias, son historique de lecture et ses réglages tels qu’ils étaient.",
+      "Les bibliothèques supprimées restent ici pendant 30 jours, puis sont retirées définitivement. Une bibliothèque qui détient la seule copie de ses médias reste jusqu’à sa restauration. La restauration rétablit ses médias, son historique de lecture et ses réglages tels qu’ils étaient.",
     deletedLibraryWhen: "Supprimée le {date}",
     deletedLibraryItems: "Éléments multimédias : {count, number}",
     deletedLibraryPurgeAfter: "Suppression définitive le {date}",
@@ -57,7 +57,7 @@ export const libraryTrashStrings = {
   de: {
     recentlyDeleted: "Zuletzt gelöscht",
     recentlyDeletedLead:
-      "Gelöschte Bibliotheken bleiben 30 Tage hier. Beim Wiederherstellen kehren Medien, Wiedergabeverlauf und Einstellungen genau so zurück, wie sie waren.",
+      "Gelöschte Bibliotheken bleiben 30 Tage hier und werden dann endgültig entfernt. Eine Bibliothek, die die einzige Kopie ihrer Medien enthält, bleibt, bis du sie wiederherstellst. Beim Wiederherstellen kehren Medien, Wiedergabeverlauf und Einstellungen genau so zurück, wie sie waren.",
     deletedLibraryWhen: "Gelöscht am {date}",
     deletedLibraryItems: "Medienelemente: {count, number}",
     deletedLibraryPurgeAfter: "Wird am {date} endgültig entfernt",
@@ -84,7 +84,7 @@ export const libraryTrashStrings = {
   es: {
     recentlyDeleted: "Eliminadas recientemente",
     recentlyDeletedLead:
-      "Las bibliotecas eliminadas permanecen aquí durante 30 días. Restaura una para recuperar su contenido, su historial de reproducción y sus ajustes tal como estaban.",
+      "Las bibliotecas eliminadas permanecen aquí durante 30 días y después se quitan definitivamente. Una biblioteca que guarda la única copia de su contenido se queda hasta que la restaures. Al restaurarla vuelven su contenido, su historial de reproducción y sus ajustes tal como estaban.",
     deletedLibraryWhen: "Eliminada el {date}",
     deletedLibraryItems: "Elementos multimedia: {count, number}",
     deletedLibraryPurgeAfter: "Se eliminará definitivamente el {date}",
@@ -109,7 +109,7 @@ export const libraryTrashStrings = {
   pt: {
     recentlyDeleted: "Excluídas recentemente",
     recentlyDeletedLead:
-      "As bibliotecas excluídas ficam aqui por 30 dias. Restaure uma para recuperar a mídia, o histórico de reprodução e os ajustes exatamente como estavam.",
+      "As bibliotecas excluídas ficam aqui por 30 dias e depois são removidas de vez. Uma biblioteca que guarda a única cópia da sua mídia fica até você restaurá-la. Restaurar traz de volta a mídia, o histórico de reprodução e os ajustes exatamente como estavam.",
     deletedLibraryWhen: "Excluída em {date}",
     deletedLibraryItems: "Itens de mídia: {count, number}",
     deletedLibraryPurgeAfter: "Será removida definitivamente em {date}",

@@ -289,7 +289,7 @@ export function ItemMetadataPage() {
   return (
     <ManageSection>
       <form
-        className="flex items-end gap-3"
+        className="flex flex-wrap items-end gap-3"
         onSubmit={(e) => {
           e.preventDefault();
           onOpen();

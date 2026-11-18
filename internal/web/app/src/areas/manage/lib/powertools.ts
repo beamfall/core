@@ -13,6 +13,7 @@
 import { ApiError, graphql } from "@/lib/api";
 import { fetchJobs } from "@/lib/graphql";
 import type { BatchResultInfo, JobInfo } from "@/lib/graphql/types";
+import type { StringKey } from "@/strings";
 
 /** The convert-managed-file job kind registered server-side (internal/convert). */
 export const CONVERT_JOB_KIND = "convert-managed-file";
@@ -20,15 +21,15 @@ export const CONVERT_JOB_KIND = "convert-managed-file";
 /** The server-side conversion presets (internal/ffmpeg/convert.go convertProfiles). */
 export interface ConvertPreset {
   id: string;
-  /** Human label — local to this surface (no global string key needed). */
-  label: string;
+  /** The preset's localized label (CORE-2445). */
+  labelKey: StringKey;
   audioOnly: boolean;
 }
 
 export const CONVERT_PRESETS: readonly ConvertPreset[] = [
-  { id: "h264-mp4", label: "H.264 / MP4 (compatible video)", audioOnly: false },
-  { id: "hevc-mp4", label: "HEVC / MP4 (smaller video)", audioOnly: false },
-  { id: "aac-m4a", label: "AAC / M4A (audio only)", audioOnly: true },
+  { id: "h264-mp4", labelKey: "manageConvertPresetH264", audioOnly: false },
+  { id: "hevc-mp4", labelKey: "manageConvertPresetHevc", audioOnly: false },
+  { id: "aac-m4a", labelKey: "manageConvertPresetAac", audioOnly: true },
 ];
 
 /** The convert jobs filtered out of the shared job substrate. */

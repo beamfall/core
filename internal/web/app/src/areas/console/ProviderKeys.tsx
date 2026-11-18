@@ -118,6 +118,7 @@ export function ProviderKeyRow({
               size="sm"
               variant="ghost"
               disabled={pending}
+              title={t("consoleScraperValidateTip")}
               onClick={() => void run(() => validateScraperCredential(authRef), false)}
             >
               {t("consoleScraperValidate")}

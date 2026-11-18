@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageSection,
   ManageTable,
   PathPickerField,
+  PresetSelect,
   StatusBadge,
 } from "@/components/beamfall/workbench";
 import {
@@ -32,6 +34,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/compon
 import { fetchFolderTree, fetchLibraries } from "@/lib/graphql";
 import type { FolderEntryInfo, LibraryInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import type { StringKey } from "@/strings";
 import { batchRenameManagedPaths, undoBatchRename } from "../lib/powertools";
 import {
   changedRenames,
@@ -40,6 +43,10 @@ import {
   type RenamePattern,
   type RenameSource,
 } from "../lib/renamePattern";
+
+// Number widths for the sequence number (CORE-2445): a few named choices
+// instead of a free 0–6 field. 0 is no padding; the default stays 2.
+const DIGIT_PRESETS = [2, 3, 4];
 
 // RENAME (apple ADR-0003 §2): journaled, reversible batch rename over managed
 // files (POWERTOOLS-2). The operator picks a folder with the host-aware picker,
@@ -196,6 +203,8 @@ export function RenamePage() {
         <div className="manage-fieldrow flex flex-wrap items-end gap-3">
           <Field
             label={t("renameFindLabel")}
+            tip="manageRenameFindHelp"
+            setting="manage.rename.find"
             value={pattern.find}
             onChange={(v) => setField("find", v)}
           />
@@ -206,6 +215,8 @@ export function RenamePage() {
           />
           <Field
             label={t("renamePrefixLabel")}
+            tip="manageRenamePrefixHelp"
+            setting="manage.rename.prefix"
             value={pattern.prefix}
             onChange={(v) => setField("prefix", v)}
           />
@@ -215,13 +226,23 @@ export function RenamePage() {
             min={0}
             onChange={(v) => setField("startAt", v)}
           />
-          <NumField
-            label={t("renamePadLabel")}
-            value={pattern.pad}
-            min={0}
-            max={6}
-            onChange={(v) => setField("pad", v)}
-          />
+          <div className="grid gap-1" data-setting="manage.rename.digits">
+            <span className="bf-label-with-tip">
+              <Label htmlFor="rename-digits">{t("manageRenameDigits")}</Label>
+              <HelpTip label={t("manageRenameDigits")} text="manageRenameDigitsHelp" />
+            </span>
+            <PresetSelect
+              id="rename-digits"
+              value={pattern.pad}
+              presets={[
+                { value: 0, label: t("none") },
+                ...DIGIT_PRESETS.map((n) => ({ value: n, label: formatDigits(n) })),
+              ]}
+              format={formatDigits}
+              onChange={(v) => setField("pad", v)}
+              className="w-32"
+            />
+          </div>
         </div>
       </ManageSection>
 
@@ -304,18 +325,34 @@ export function RenamePage() {
   );
 }
 
+// How a digit count reads in the dropdown: the number 1 padded to that width.
+function formatDigits(digits: number): string {
+  return "1".padStart(Math.max(digits, 1), "0");
+}
+
 function Field({
   label,
+  tip,
+  setting,
   value,
   onChange,
 }: {
   label: string;
+  tip?: StringKey;
+  setting?: string;
   value: string;
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="grid gap-1">
-      <Label>{label}</Label>
+    <div className="grid gap-1" data-setting={setting}>
+      {tip ? (
+        <span className="bf-label-with-tip">
+          <Label>{label}</Label>
+          <HelpTip label={label} text={tip} />
+        </span>
+      ) : (
+        <Label>{label}</Label>
+      )}
       <Input
         aria-label={label}
         value={value}

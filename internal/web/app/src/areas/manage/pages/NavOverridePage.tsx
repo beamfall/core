@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageSection,
   ManageTable,
   StatusBadge,
@@ -190,6 +191,7 @@ export function NavOverridePage() {
           </div>
         }
       >
+        <p className="text-sm text-muted-foreground">{t("manageNavEveryoneNote")}</p>
         <NodesPanel
           nodes={manifest?.navigation ?? []}
           override={override}
@@ -359,21 +361,29 @@ function ThemePanel({
   return (
     <ManageSection
       title={t("navOverrideThemeHeading")}
-      lead={t("navOverrideThemeLead")}
+      lead={t("manageNavThemeLead")}
       actions={
         override.themeAccentColor ? (
           <StatusBadge state="green">{t("navOverrideCustomAccent")}</StatusBadge>
         ) : undefined
       }
     >
-      <div className="flex flex-wrap items-end gap-3">
-        <span
-          className="h-7 w-7 shrink-0 rounded-md border"
-          style={{ background: effective }}
-          aria-hidden
+      <div className="flex flex-wrap items-end gap-3" data-setting="manage.navigation.accent">
+        {/* A native color picker next to the hex field (CORE-2445), so an
+            accent can be chosen without knowing its hex code. */}
+        <input
+          type="color"
+          className="h-9 w-9 shrink-0 cursor-pointer rounded-md border bg-transparent p-0.5"
+          value={(valid ? accent.trim() : effective).toLowerCase()}
+          onChange={(e) => setAccent(e.target.value)}
+          aria-label={t("manageNavAccentPicker")}
+          title={t("manageNavAccentPicker")}
         />
         <div className="grow space-y-1">
-          <Label htmlFor="nav-accent">{t("navOverrideAccentLabel")}</Label>
+          <span className="bf-label-with-tip">
+            <Label htmlFor="nav-accent">{t("navOverrideAccentLabel")}</Label>
+            <HelpTip label={t("navOverrideAccentLabel")} text="manageNavAccentHelp" />
+          </span>
           <Input
             id="nav-accent"
             value={accent}
@@ -473,7 +483,7 @@ function SectionsPanel({
   return (
     <ManageSection
       title={t("navOverrideSectionsHeading")}
-      lead={t("navOverrideSectionsLead")}
+      lead={t("manageNavSectionsLead")}
       actions={
         layouts.length > 0 ? (
           <Select value={layoutID} onValueChange={setLayoutID}>
@@ -494,7 +504,7 @@ function SectionsPanel({
       {ordered.length === 0 ? (
         <EmptyLine message={t("navOverrideNoSections")} />
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-1" data-setting="manage.navigation.sections">
           {ordered.map((section, index) => {
             const isHidden = hidden.has(section.id);
             return (

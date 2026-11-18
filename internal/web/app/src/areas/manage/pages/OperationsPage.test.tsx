@@ -1,8 +1,9 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchLibraries, fetchSchedules } from "@/lib/graphql";
+import { fetchLibraries, fetchSchedules, setScheduleTrigger } from "@/lib/graphql";
 import type { LibraryInfo, ScheduleInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { OperationsPage, scheduleLibraryID, scheduleLibraryLabel } from "./OperationsPage";
@@ -86,5 +87,41 @@ describe("Schedules name the Library of a per-Library schedule (CORE-2326)", () 
     );
 
     expect(await screen.findByText("scan:lib-a")).toBeInTheDocument();
+  });
+});
+
+describe("Schedule times are picked from a list (CORE-2445)", () => {
+  it("saves the chosen time of a daily schedule as hour and minute", async () => {
+    vi.mocked(fetchSchedules).mockResolvedValue([
+      {
+        ...schedule("backup", "backup"),
+        trigger: { kind: "daily", n: 0, unit: "", weekday: 0, hour: 2, minute: 0 },
+      },
+    ]);
+    vi.mocked(setScheduleTrigger).mockImplementation(async () => schedule("backup", "backup"));
+    const user = userEvent.setup();
+
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <OperationsPage />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+
+    const time = await screen.findByRole("combobox", { name: "Time" });
+    expect(time).toHaveTextContent("02:00");
+    expect(screen.getByRole("button", { name: "Help: Repeat" })).toBeInTheDocument();
+
+    await user.click(time);
+    await user.click(await screen.findByRole("option", { name: "04:30" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(setScheduleTrigger).toHaveBeenCalledWith("backup", {
+        kind: "daily",
+        hour: 4,
+        minute: 30,
+      }),
+    );
   });
 });

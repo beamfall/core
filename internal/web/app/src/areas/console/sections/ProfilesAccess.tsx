@@ -1,8 +1,13 @@
 import { type FormEvent, useState } from "react";
-import { EmptyState, ErrorState } from "@/components/beamfall/workbench";
+import {
+  EmptyState,
+  ErrorState,
+  HelpTip,
+  PresetSelect,
+  TimeOfDaySelect,
+} from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -41,6 +46,7 @@ import { ConfirmButton } from "../ConfirmButton";
 import { formatMinute, nextTransition } from "../lib/schedulePreview";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { useBitratePresets } from "./RemoteAccessBitrate";
 
 const WEEKDAYS: StringKey[] = [
   "weekdaySunday",
@@ -53,6 +59,9 @@ const WEEKDAYS: StringKey[] = [
 ];
 
 const NO_CEILING = "__none__";
+
+// Stream-cap choices besides "No limit" (0).
+const STREAM_CAPS = [1, 2, 3, 4, 5];
 
 // Access schedules + enforced certification filters share a profile picker, so
 // this screen loads the enforced-filters payload (profiles + plugins-with-scale)
@@ -83,7 +92,7 @@ export function ProfilesAccess() {
         <div className="console-card console-card-pad space-y-4">
           {/* Supervisor-authored policy, distinct from the managed Profile's own
               Mute (ADR-0087 §29). */}
-          <p className="text-dense text-muted-foreground">{t("managedPolicyFraming")}</p>
+          <p className="text-dense text-muted-foreground">{t("accessHelpManagedFraming")}</p>
           <div className="max-w-sm space-y-2">
             <Label>{t("accessScheduleProfileLabel")}</Label>
             <Select value={profileID} onValueChange={setProfileID}>
@@ -187,10 +196,13 @@ function LibraryGrantEditor({
   if (failed) return <ErrorState message="libraryAccessUnavailable" />;
 
   return (
-    <div className="space-y-2 border-t border-[var(--border-subtle)] pt-4">
+    <div
+      className="space-y-2 border-t border-[var(--border-subtle)] pt-4"
+      data-setting="console.schedules.libraryAccess"
+    >
       <div className="space-y-1">
         <Label className="text-xs">{t("libraryAccessHeading")}</Label>
-        <p className="text-xs text-muted-foreground">{t("libraryAccessHint")}</p>
+        <p className="text-xs text-muted-foreground">{t("accessHelpLibraryAccessHint")}</p>
       </div>
       {libraries.map((library) => {
         const disabled = library.restricted && !revealed;
@@ -240,9 +252,18 @@ function CeilingRow({
   }
 
   return (
-    <div className="console-card console-card-pad flex items-center justify-between gap-4">
-      <span className="text-sm font-medium">
-        {displayString(plugin.displayName, displayLocale)}
+    <div
+      className="console-card console-card-pad flex items-center justify-between gap-4"
+      data-setting="console.schedules.ratingLimit"
+    >
+      <span className="bf-label-with-tip">
+        <span className="text-sm font-medium">
+          {displayString(plugin.displayName, displayLocale)}
+        </span>
+        <HelpTip
+          label={displayString(plugin.displayName, displayLocale)}
+          text="accessHelpRatingLimitTip"
+        />
       </span>
       <Select value={current || NO_CEILING} onValueChange={(v) => void onChange(v)}>
         <SelectTrigger
@@ -252,7 +273,7 @@ function CeilingRow({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={NO_CEILING}>{t("enforcedFilterNoCeiling")}</SelectItem>
+          <SelectItem value={NO_CEILING}>{t("accessHelpNoLimit")}</SelectItem>
           {scale.map((step) => (
             <SelectItem key={step} value={step}>
               {step}
@@ -299,7 +320,11 @@ function AccessScheduleEditor({ profileID }: { profileID: string }) {
   if (failed) return <ErrorState message="accessSchedulesUnavailable" />;
 
   return (
-    <form onSubmit={save} className="space-y-3">
+    <form onSubmit={save} className="space-y-3" data-setting="console.schedules.accessSchedule">
+      <span className="bf-label-with-tip">
+        <Label className="text-xs">{t("accessHelpScheduleLabel")}</Label>
+        <HelpTip label={t("accessHelpScheduleLabel")} text="accessHelpScheduleTip" />
+      </span>
       {windows.length === 0 ? (
         <EmptyState message="accessScheduleAlwaysAllowed" />
       ) : (
@@ -324,25 +349,26 @@ function AccessScheduleEditor({ profileID }: { profileID: string }) {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">{t("accessScheduleStart")}</Label>
-              <Input
-                type="number"
-                min={0}
-                max={1440}
-                className="w-24"
+              <Label htmlFor={`schedule-start-${i}`} className="text-xs">
+                {t("accessHelpScheduleFrom")}
+              </Label>
+              <TimeOfDaySelect
+                id={`schedule-start-${i}`}
+                className="min-w-24"
                 value={w.startMinute}
-                onChange={(e) => editWindow(i, { startMinute: Number(e.target.value) })}
+                onChange={(startMinute) => editWindow(i, { startMinute })}
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">{t("accessScheduleEnd")}</Label>
-              <Input
-                type="number"
-                min={0}
-                max={1440}
-                className="w-24"
+              <Label htmlFor={`schedule-end-${i}`} className="text-xs">
+                {t("accessHelpScheduleUntil")}
+              </Label>
+              <TimeOfDaySelect
+                id={`schedule-end-${i}`}
+                endOfDay
+                className="min-w-24"
                 value={w.endMinute}
-                onChange={(e) => editWindow(i, { endMinute: Number(e.target.value) })}
+                onChange={(endMinute) => editWindow(i, { endMinute })}
               />
             </div>
             <Button type="button" size="sm" variant="outline" onClick={() => removeWindow(i)}>
@@ -412,6 +438,7 @@ function ManagedPolicyControls({
   const t = useT();
   const [cap, setCap] = useState("");
   const [capApplied, setCapApplied] = useState(false);
+  const bitrate = useBitratePresets();
   const [storedRemoteCap, setStoredRemoteCap] = useState(remoteMaxBitrate);
   // A profiles reread (after an Apply, possibly from an earlier mount of this
   // control) replaces the stored cap; an unsaved draft is left alone.
@@ -420,39 +447,32 @@ function ManagedPolicyControls({
     setSeenRemoteMaxBitrate(remoteMaxBitrate);
     setStoredRemoteCap(remoteMaxBitrate);
   }
-  const [remoteCapDraft, setRemoteCapDraft] = useState<string | null>(null);
   const [remoteCapApplied, setRemoteCapApplied] = useState(false);
-  const remoteCap =
-    remoteCapDraft ?? (storedRemoteCap > 0 ? String(storedRemoteCap / 1_000_000) : "");
   const [preauth, setPreauth] = useState(false);
   const [busy, setBusy] = useState(false);
   const showAdvanced = useShowAdvanced();
 
-  async function applyCap(e: FormEvent) {
-    e.preventDefault();
+  // The stream cap is chosen from a short list and saved as soon as it changes.
+  async function applyCap(value: string) {
+    setCap(value);
     setBusy(true);
     setCapApplied(false);
     try {
-      await setProfileStreamCap(profileID, Number(cap) || 0);
+      await setProfileStreamCap(profileID, Number(value) || 0);
       setCapApplied(true);
     } finally {
       setBusy(false);
     }
   }
 
-  // The remote cap is entered in Mbit/s and stored in bits per second
-  // (CORE-1717); an empty or non-positive entry clears it.
-  async function applyRemoteCap(e: FormEvent) {
-    e.preventDefault();
+  // The remote cap is stored in bits per second (CORE-1717) and chosen from
+  // quality presets (CORE-2445); 0 clears it. It saves as soon as it changes.
+  async function applyRemoteCap(bps: number) {
     setBusy(true);
     setRemoteCapApplied(false);
     try {
-      const saved = await setProfileRemoteBitrateCap(
-        profileID,
-        (Number(remoteCap) || 0) * 1_000_000,
-      );
+      const saved = await setProfileRemoteBitrateCap(profileID, bps);
       setStoredRemoteCap(saved.remoteMaxBitrate);
-      setRemoteCapDraft(null);
       setRemoteCapApplied(true);
       onChanged();
     } finally {
@@ -471,70 +491,73 @@ function ManagedPolicyControls({
   return (
     <div className="space-y-4 border-t border-[var(--border-subtle)] pt-4">
       <Advanced>
-        <form onSubmit={applyCap} className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2" data-setting="console.schedules.streamCap">
           <div className="space-y-1">
-            <Label htmlFor="stream-cap" className="text-xs">
-              {t("streamCapLabel")}
-            </Label>
-            <Input
-              id="stream-cap"
-              type="number"
-              min={0}
-              className="w-24"
-              value={cap}
-              placeholder="0"
-              onChange={(e) => {
-                setCap(e.target.value);
-                setCapApplied(false);
-              }}
-            />
+            <span className="bf-label-with-tip">
+              <Label htmlFor="stream-cap" className="text-xs">
+                {t("accessHelpStreamCapLabel")}
+              </Label>
+              <HelpTip label={t("accessHelpStreamCapLabel")} text="accessHelpStreamCapTip" />
+            </span>
+            <Select value={cap} onValueChange={(v) => void applyCap(v)} disabled={busy}>
+              <SelectTrigger id="stream-cap" className="min-w-40">
+                <SelectValue placeholder={t("accessHelpStreamCapPlaceholder")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="0">{t("accessHelpNoLimit")}</SelectItem>
+                {STREAM_CAPS.map((count) => (
+                  <SelectItem key={count} value={String(count)}>
+                    {t("accessHelpStreamCount", { count })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Button type="submit" size="sm" disabled={busy}>
-            {t("streamCapApply")}
-          </Button>
           {capApplied && (
             <span className="text-xs text-[var(--text-secondary)]" role="status">
               {t("streamCapApplied")}
             </span>
           )}
           <p className="w-full text-xs text-muted-foreground">{t("streamCapHint")}</p>
-        </form>
+        </div>
 
-        <form onSubmit={applyRemoteCap} className="flex flex-wrap items-end gap-2">
+        <div
+          className="flex flex-wrap items-end gap-2"
+          data-setting="console.schedules.remoteBitrateLimit"
+        >
           <div className="space-y-1">
-            <Label htmlFor="remote-bitrate-cap" className="text-xs">
-              {t("remoteBitrateCapLabel")}
-            </Label>
-            <Input
+            <span className="bf-label-with-tip">
+              <Label htmlFor="remote-bitrate-cap" className="text-xs">
+                {t("accessHelpRemoteCapLabel")}
+              </Label>
+              <HelpTip label={t("accessHelpRemoteCapLabel")} text="accessHelpProfileRemoteCapTip" />
+            </span>
+            <PresetSelect
               id="remote-bitrate-cap"
-              type="number"
-              min={0}
-              step="any"
-              className="w-24"
-              value={remoteCap}
-              placeholder="0"
+              value={storedRemoteCap}
+              presets={bitrate.presets}
+              format={bitrate.format}
               disabled={busy}
-              onChange={(e) => {
-                setRemoteCapDraft(e.target.value);
-                setRemoteCapApplied(false);
-              }}
+              onChange={(bps) => void applyRemoteCap(bps)}
             />
           </div>
-          <Button type="submit" size="sm" disabled={busy}>
-            {t("streamCapApply")}
-          </Button>
           {remoteCapApplied && (
             <span className="text-xs text-[var(--text-secondary)]" role="status">
               {t("streamCapApplied")}
             </span>
           )}
-          <p className="w-full text-xs text-muted-foreground">{t("remoteBitrateCapHint")}</p>
-        </form>
+        </div>
 
         {managed && (
-          <div className="flex items-start justify-between gap-4">
+          <div
+            className="flex items-start justify-between gap-4"
+            data-setting="console.schedules.extraTimeAutoApprove"
+          >
             <div className="space-y-1">
-              <Label htmlFor="extension-preauth">{t("extensionPreauthLabel")}</Label>
+              <span className="bf-label-with-tip">
+                <Label htmlFor="extension-preauth">{t("accessHelpExtraTimeLabel")}</Label>
+                <HelpTip label={t("accessHelpExtraTimeLabel")} text="accessHelpExtraTimeTip" />
+              </span>
               <p className="text-xs text-muted-foreground">{t("extensionPreauthHint")}</p>
             </div>
             <Switch

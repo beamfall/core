@@ -55,6 +55,23 @@ async function loadFiles(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("RenamePage", () => {
+  it("picks the number width from a list, defaulting to two digits", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await loadFiles(user);
+
+    const digits = screen.getByRole("combobox", { name: "Number digits" });
+    expect(digits).toHaveTextContent("01");
+    expect(screen.getByRole("button", { name: "Help: Find" })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Prefix ({n} = number)"), "Part ");
+    expect(await screen.findByText("Part 01 one.mp4")).toBeInTheDocument();
+
+    await user.click(digits);
+    await user.click(await screen.findByRole("option", { name: "001" }));
+    expect(await screen.findByText("Part 001 one.mp4")).toBeInTheDocument();
+  });
+
   it("starts with the empty preview catalog state", async () => {
     renderPage();
     expect(await screen.findByText("Load a folder to preview renames.")).toBeInTheDocument();

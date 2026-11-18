@@ -1,13 +1,27 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { DataTable, EmptyState, ErrorState } from "@/components/beamfall/workbench";
+import {
+  ControlRow,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  PresetSelect,
+} from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
   createRetentionRule,
   deleteRetentionRule,
+  fetchLibraries,
   fetchRetentionRules,
   updateRetentionRule,
 } from "@/lib/graphql";
@@ -17,24 +31,30 @@ import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
-/** Retention rules (ADR-0051, RET-2): Console UI for leaving-soon policy. */
+// The rule's source: every item in its library (the default) or a smart
+// collection query written as JSON, for admins who need one (CORE-2445).
+type SourceMode = "all" | "custom";
+const ALL_ITEMS_SOURCE = '{"kind":"all-items"}';
+const GRACE_PRESETS = [3, 7, 14, 30];
+const EMPTY_DRAFT = { name: "", sourceExpr: "", targetLibraryID: "", graceDays: 7, enabled: true };
+
+/** Leaving soon rules (ADR-0051, RET-2): Console UI for retention policy. */
 export function Retention() {
   const t = useT();
   const { data, loading, failed, refresh } = useAsync(fetchRetentionRules);
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState({
-    name: "",
-    sourceExpr: "",
-    targetLibraryID: "",
-    graceDays: 7,
-    enabled: true,
-  });
+  const libraries = useAsync(fetchLibraries);
+  const [sourceMode, setSourceMode] = useState<SourceMode>("all");
+  const [draft, setDraft] = useState(EMPTY_DRAFT);
+  const daysLabel = (days: number) => t("sessionLengthDays", { count: days });
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    await createRetentionRule({ ...draft });
+    const sourceExpr = sourceMode === "all" ? ALL_ITEMS_SOURCE : draft.sourceExpr;
+    await createRetentionRule({ ...draft, sourceExpr });
     setCreating(false);
-    setDraft({ name: "", sourceExpr: "", targetLibraryID: "", graceDays: 7, enabled: true });
+    setSourceMode("all");
+    setDraft(EMPTY_DRAFT);
     refresh();
   }
 
@@ -50,7 +70,8 @@ export function Retention() {
 
   return (
     <Section
-      heading="retentionRulesTitle"
+      heading="navLeavingSoonRules"
+      lead="retentionPageLead"
       actions={
         <Button size="sm" variant="outline" onClick={() => setCreating((v) => !v)}>
           <Plus className="mr-1 h-4 w-4" />
@@ -59,33 +80,87 @@ export function Retention() {
       }
     >
       {creating && (
-        <form onSubmit={handleCreate} className="mb-4 flex flex-col gap-2 rounded-md border p-4">
-          <Input
-            placeholder={t("retentionRuleNamePlaceholder")}
-            value={draft.name}
-            onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-            required
+        <form onSubmit={handleCreate} className="console-card console-card-pad mb-4 space-y-3">
+          <ControlRow
+            label="retentionRuleNameLabel"
+            setting="console.retention.name"
+            control={
+              <Input
+                aria-label={t("retentionRuleNameLabel")}
+                placeholder={t("retentionRuleNamePlaceholder")}
+                value={draft.name}
+                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                required
+              />
+            }
           />
-          <Input
-            placeholder={t("retentionRuleSourceExprPlaceholder")}
-            value={draft.sourceExpr}
-            onChange={(e) => setDraft((d) => ({ ...d, sourceExpr: e.target.value }))}
-            required
+          <ControlRow
+            label="retentionRuleLibraryLabel"
+            tip="retentionRuleLibraryTip"
+            setting="console.retention.library"
+            control={
+              <Select
+                value={draft.targetLibraryID}
+                onValueChange={(id) => setDraft((d) => ({ ...d, targetLibraryID: id }))}
+              >
+                <SelectTrigger aria-label={t("retentionRuleLibraryLabel")} className="min-w-48">
+                  <SelectValue placeholder={t("retentionRuleLibraryPick")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(libraries.data ?? []).map((lib) => (
+                    <SelectItem key={lib.id} value={lib.id}>
+                      {lib.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
           />
-          <Input
-            placeholder={t("retentionRuleTargetLibraryIDPlaceholder")}
-            value={draft.targetLibraryID}
-            onChange={(e) => setDraft((d) => ({ ...d, targetLibraryID: e.target.value }))}
-            required
+          <ControlRow
+            label="retentionRuleSourceLabel"
+            tip="retentionRuleSourceTip"
+            setting="console.retention.source"
+            control={
+              <Select
+                value={sourceMode}
+                onValueChange={(mode) => setSourceMode(mode as SourceMode)}
+              >
+                <SelectTrigger aria-label={t("retentionRuleSourceLabel")} className="min-w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("retentionRuleSourceAll")}</SelectItem>
+                  <SelectItem value="custom">{t("retentionRuleSourceCustom")}</SelectItem>
+                </SelectContent>
+              </Select>
+            }
           />
-          <Input
-            type="number"
-            min={1}
-            value={draft.graceDays}
-            onChange={(e) => setDraft((d) => ({ ...d, graceDays: Number(e.target.value) }))}
+          {sourceMode === "custom" && (
+            <Input
+              aria-label={t("retentionRuleSourceCustom")}
+              className="console-mono"
+              placeholder={t("retentionRuleSourceExprPlaceholder")}
+              value={draft.sourceExpr}
+              onChange={(e) => setDraft((d) => ({ ...d, sourceExpr: e.target.value }))}
+              required
+            />
+          )}
+          <ControlRow
+            label="retentionRuleGraceLabel"
+            tip="retentionRuleGraceTip"
+            setting="console.retention.grace"
+            control={
+              <PresetSelect
+                aria-label={t("retentionRuleGraceLabel")}
+                value={draft.graceDays}
+                presets={GRACE_PRESETS.map((days) => ({ value: days, label: daysLabel(days) }))}
+                format={daysLabel}
+                onChange={(graceDays) => setDraft((d) => ({ ...d, graceDays }))}
+              />
+            }
           />
           <div className="flex gap-2">
-            <Button type="submit" size="sm">
+            <Button type="submit" size="sm" disabled={!draft.name.trim() || !draft.targetLibraryID}>
               {t("retentionRuleCreate")}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>
@@ -111,7 +186,9 @@ export function Retention() {
           {data.map((rule) => (
             <tr key={rule.id}>
               <td className="py-2 pr-4 font-medium">{rule.name}</td>
-              <td className="py-2 pr-4 text-sm text-muted-foreground">{rule.graceDays}d</td>
+              <td className="py-2 pr-4 text-sm text-muted-foreground">
+                {daysLabel(rule.graceDays)}
+              </td>
               <td className="py-2 pr-4">
                 <Switch
                   checked={rule.enabled}

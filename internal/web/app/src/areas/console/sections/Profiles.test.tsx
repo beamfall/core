@@ -58,7 +58,7 @@ describe("Console Profiles lane", () => {
     renderSection();
     expect(await screen.findByDisplayValue("Owner")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Kid")).toBeInTheDocument();
-    expect(screen.getAllByText("Managed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Child (managed)").length).toBeGreaterThan(0);
   });
 
   it("creates an adult profile and refreshes the list", async () => {
@@ -82,7 +82,7 @@ describe("Console Profiles lane", () => {
     if (!row) throw new Error("expected profile row");
     await user.clear(kidName);
     await user.type(kidName, "Teen");
-    await user.click(within(row).getByRole("combobox", { name: "Kind" }));
+    await user.click(within(row).getByRole("combobox", { name: "Profile type" }));
     await user.click(await screen.findByRole("option", { name: "Adult" }));
     await user.click(within(row).getByRole("button", { name: "Save" }));
     expect(updateProfile).toHaveBeenCalledWith("p2", "Teen", "adult");

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageSection,
   ManageTable,
   PathPickerField,
@@ -116,8 +117,11 @@ function ConvertEnqueueSection() {
           placeholder="/path/to/source"
         />
 
-        <div className="grid gap-1">
-          <Label htmlFor="convert-preset">{t("convertPresetLabel")}</Label>
+        <div className="grid gap-1" data-setting="manage.convert.preset">
+          <span className="bf-label-with-tip">
+            <Label htmlFor="convert-preset">{t("convertPresetLabel")}</Label>
+            <HelpTip label={t("convertPresetLabel")} text="manageConvertPresetHelp" />
+          </span>
           <Select value={preset} onValueChange={setPreset}>
             <SelectTrigger id="convert-preset" className="w-64">
               <SelectValue />
@@ -125,7 +129,7 @@ function ConvertEnqueueSection() {
             <SelectContent>
               {CONVERT_PRESETS.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
-                  {p.label}
+                  {t(p.labelKey)}
                 </SelectItem>
               ))}
             </SelectContent>

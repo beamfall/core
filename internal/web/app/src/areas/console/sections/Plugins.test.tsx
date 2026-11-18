@@ -774,7 +774,7 @@ describe("Plugins", () => {
 
     const toggle = await screen.findByRole("switch", { name: "Film and TV" });
     expect(toggle).toBeDisabled();
-    expect(screen.getByTitle("Built-in plugins cannot be disabled.")).toContainElement(toggle);
+    expect(screen.getByTitle("Built-in plugins cannot be turned off.")).toContainElement(toggle);
 
     await user.click(toggle);
     expect(setPluginActive).not.toHaveBeenCalled();

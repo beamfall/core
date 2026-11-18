@@ -1,8 +1,6 @@
 export const remoteAccessStrings = {
   en: {
     remoteAccessHeading: "Remote access",
-    remoteAccessLead:
-      "How this server can be reached from outside your home network. This page only shows status. It never shows passwords or keys.",
     watchAwayHeading: "Watch away from home",
     watchAwayLead:
       "Start with Tailscale or WireGuard. Use Direct HTTPS only if you can change your domain settings and your router. The relay is for advanced setups.",
@@ -32,10 +30,6 @@ export const remoteAccessStrings = {
     remoteAccessRefresh: "Refresh",
     remoteAccessLanDirect: "Home network",
     remoteAccessLanDirectDetail: "Always reachable on your home network.",
-    remoteBitrateLimitLabel: "Remote bitrate cap (Mbit/s)",
-    remoteBitrateLimitHint:
-      "Highest bitrate for streams away from the local network, for every profile. 0 removes the cap. A profile’s own cap applies when it is lower.",
-    remoteBitrateLimitApply: "Apply",
     remoteBitrateLimitApplied: "Applied.",
     remoteBitrateLimitUnavailable: "Could not load the remote bitrate cap.",
     portMappingHeading: "Automatic port mapping",
@@ -58,8 +52,6 @@ export const remoteAccessStrings = {
   },
   fr: {
     remoteAccessHeading: "Accès à distance",
-    remoteAccessLead:
-      "Comment ce serveur peut être joint depuis l’extérieur de votre réseau domestique. Cette page n’affiche que l’état. Elle n’affiche jamais de mots de passe ni de clés.",
     watchAwayHeading: "Regarder hors de chez vous",
     watchAwayLead:
       "Commencez par Tailscale ou WireGuard. N’utilisez HTTPS direct que si vous pouvez modifier les réglages de votre domaine et de votre routeur. Le relais est destiné aux configurations avancées.",
@@ -89,10 +81,6 @@ export const remoteAccessStrings = {
     remoteAccessRefresh: "Actualiser",
     remoteAccessLanDirect: "Réseau domestique",
     remoteAccessLanDirectDetail: "Toujours joignable sur votre réseau domestique.",
-    remoteBitrateLimitLabel: "Débit distant maximal (Mbit/s)",
-    remoteBitrateLimitHint:
-      "Débit maximal des flux hors du réseau local, pour tous les profils. 0 supprime la limite. La limite propre d’un profil s’applique si elle est plus basse.",
-    remoteBitrateLimitApply: "Appliquer",
     remoteBitrateLimitApplied: "Appliqué.",
     remoteBitrateLimitUnavailable: "Impossible de charger le débit distant maximal.",
     portMappingHeading: "Redirection de port automatique",
@@ -115,8 +103,6 @@ export const remoteAccessStrings = {
   },
   de: {
     remoteAccessHeading: "Fernzugriff",
-    remoteAccessLead:
-      "Wie dieser Server von außerhalb deines Heimnetzes erreichbar ist. Diese Seite zeigt nur den Status. Passwörter oder Schlüssel zeigt sie nie an.",
     watchAwayHeading: "Unterwegs schauen",
     watchAwayLead:
       "Beginne mit Tailscale oder WireGuard. Nutze Direktes HTTPS nur, wenn du die Einstellungen deiner Domain und deines Routers ändern kannst. Das Relay ist für fortgeschrittene Setups gedacht.",
@@ -146,10 +132,6 @@ export const remoteAccessStrings = {
     remoteAccessRefresh: "Aktualisieren",
     remoteAccessLanDirect: "Heimnetz",
     remoteAccessLanDirectDetail: "In deinem Heimnetz immer erreichbar.",
-    remoteBitrateLimitLabel: "Maximale Remote-Bitrate (Mbit/s)",
-    remoteBitrateLimitHint:
-      "Höchste Bitrate für Streams außerhalb des lokalen Netzwerks, für alle Profile. 0 entfernt die Begrenzung. Die eigene Begrenzung eines Profils gilt, wenn sie niedriger ist.",
-    remoteBitrateLimitApply: "Anwenden",
     remoteBitrateLimitApplied: "Angewendet.",
     remoteBitrateLimitUnavailable: "Die maximale Remote-Bitrate konnte nicht geladen werden.",
     portMappingHeading: "Automatische Portzuordnung",
@@ -172,8 +154,6 @@ export const remoteAccessStrings = {
   },
   es: {
     remoteAccessHeading: "Acceso remoto",
-    remoteAccessLead:
-      "Cómo se puede acceder a este servidor desde fuera de tu red doméstica. Esta página solo muestra el estado. Nunca muestra contraseñas ni claves.",
     watchAwayHeading: "Ver fuera de casa",
     watchAwayLead:
       "Empieza con Tailscale o WireGuard. Usa HTTPS directo solo si puedes cambiar los ajustes de tu dominio y de tu router. El relay es para configuraciones avanzadas.",
@@ -203,10 +183,6 @@ export const remoteAccessStrings = {
     remoteAccessRefresh: "Actualizar",
     remoteAccessLanDirect: "Red doméstica",
     remoteAccessLanDirectDetail: "Siempre accesible en tu red doméstica.",
-    remoteBitrateLimitLabel: "Tasa de bits remota máxima (Mbit/s)",
-    remoteBitrateLimitHint:
-      "Tasa de bits máxima de los streams fuera de la red local, para todos los perfiles. 0 elimina el límite. Se aplica el límite propio de un perfil si es menor.",
-    remoteBitrateLimitApply: "Aplicar",
     remoteBitrateLimitApplied: "Aplicado.",
     remoteBitrateLimitUnavailable: "No se pudo cargar la tasa de bits remota máxima.",
     portMappingHeading: "Asignación automática de puertos",
@@ -229,8 +205,6 @@ export const remoteAccessStrings = {
   },
   pt: {
     remoteAccessHeading: "Acesso remoto",
-    remoteAccessLead:
-      "Como este servidor pode ser acessado de fora da sua rede doméstica. Esta página mostra apenas o status. Ela nunca mostra senhas nem chaves.",
     watchAwayHeading: "Assistir fora de casa",
     watchAwayLead:
       "Comece com Tailscale ou WireGuard. Use HTTPS direto só se você puder alterar as configurações do seu domínio e do roteador. O relay é para configurações avançadas.",
@@ -260,10 +234,6 @@ export const remoteAccessStrings = {
     remoteAccessRefresh: "Atualizar",
     remoteAccessLanDirect: "Rede doméstica",
     remoteAccessLanDirectDetail: "Sempre acessível na sua rede doméstica.",
-    remoteBitrateLimitLabel: "Taxa de bits remota máxima (Mbit/s)",
-    remoteBitrateLimitHint:
-      "Taxa de bits máxima dos streams fora da rede local, para todos os perfis. 0 remove o limite. Aplica-se o limite próprio de um perfil se for menor.",
-    remoteBitrateLimitApply: "Aplicar",
     remoteBitrateLimitApplied: "Aplicado.",
     remoteBitrateLimitUnavailable: "Não foi possível carregar a taxa de bits remota máxima.",
     portMappingHeading: "Mapeamento automático de portas",

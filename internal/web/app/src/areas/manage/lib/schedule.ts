@@ -53,14 +53,22 @@ export type TriggerFields = {
   minute: number;
 };
 
-/** Seed the editor fields from a trigger, falling back to app.js defaults. */
+/** The time a Daily or Weekly trigger starts at when none is saved: 03:00, a quiet hour. */
+export const DEFAULT_TRIGGER_HOUR = 3;
+
+/**
+ * Seed the editor fields from a trigger. A Daily or Weekly trigger keeps its
+ * saved time (midnight included); any other trigger starts the time at 03:00
+ * so switching it to Daily or Weekly does not default to midnight (CORE-2445).
+ */
 export function triggerFieldsFrom(trigger: ScheduleTriggerInfo | null | undefined): TriggerFields {
+  const timed = trigger?.kind === "daily" || trigger?.kind === "weekly";
   return {
     n: trigger?.n || 1,
     unit: trigger?.unit === "minutes" ? "minutes" : "hours",
     weekday: trigger?.weekday || 0,
-    hour: trigger?.hour || 0,
-    minute: trigger?.minute || 0,
+    hour: timed ? (trigger?.hour ?? 0) : DEFAULT_TRIGGER_HOUR,
+    minute: timed ? (trigger?.minute ?? 0) : 0,
   };
 }
 

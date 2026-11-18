@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageSection,
   ManageTable,
   StatusBadge,
   TableSkeletonRows,
+  TimeOfDaySelect,
 } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -257,7 +259,12 @@ function ScheduleRow({
             {jobKindLabel(schedule.jobKind, t)}
           </span>
           {library && <span className="break-all text-sm text-muted-foreground">{library}</span>}
-          {schedule.orphaned && <StatusBadge state="amber">{t("orphaned")}</StatusBadge>}
+          {schedule.orphaned && (
+            <span className="bf-label-with-tip">
+              <StatusBadge state="amber">{t("orphaned")}</StatusBadge>
+              <HelpTip label={t("orphaned")} text="manageScheduleOrphanedHelp" />
+            </span>
+          )}
         </div>
         <Label className="flex items-center gap-2">
           <Switch
@@ -273,17 +280,20 @@ function ScheduleRow({
         {t("lastEnqueued")}: {formatDateTime(schedule.lastEnqueued)}
       </p>
 
-      <div className="mt-2 flex flex-wrap items-end gap-2">
-        <Select value={kind} onValueChange={(v) => setKind(v as TriggerKind)}>
-          <SelectTrigger className="w-32" aria-label={t("triggerKind")}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="every">{t("every")}</SelectItem>
-            <SelectItem value="daily">{t("daily")}</SelectItem>
-            <SelectItem value="weekly">{t("weekly")}</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="bf-label-with-tip" data-setting="manage.operations.repeat">
+          <Select value={kind} onValueChange={(v) => setKind(v as TriggerKind)}>
+            <SelectTrigger className="w-32" aria-label={t("manageScheduleRepeat")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="every">{t("every")}</SelectItem>
+              <SelectItem value="daily">{t("daily")}</SelectItem>
+              <SelectItem value="weekly">{t("weekly")}</SelectItem>
+            </SelectContent>
+          </Select>
+          <HelpTip label={t("manageScheduleRepeat")} text="manageScheduleRepeatHelp" />
+        </span>
 
         {kind === "every" && (
           <>
@@ -328,22 +338,20 @@ function ScheduleRow({
         )}
 
         {(kind === "weekly" || kind === "daily") && (
-          <>
-            <NumberField
-              label={t("hour")}
-              min={0}
-              max={23}
-              value={fields.hour}
-              onChange={(h) => setField("hour", h)}
+          <span data-setting="manage.operations.time">
+            <TimeOfDaySelect
+              value={fields.hour * 60 + fields.minute}
+              onChange={(minute) =>
+                setFields((prev) => ({
+                  ...prev,
+                  hour: Math.floor(minute / 60),
+                  minute: minute % 60,
+                }))
+              }
+              aria-label={t("manageScheduleTime")}
+              className="min-w-24"
             />
-            <NumberField
-              label={t("minute")}
-              min={0}
-              max={59}
-              value={fields.minute}
-              onChange={(m) => setField("minute", m)}
-            />
-          </>
+          </span>
         )}
 
         <Button

@@ -3108,3 +3108,110 @@ main:has(> .bf-player-stage.is-chrome-hidden) > .bf-player-bar {
     background: none;
   }
 }
+
+/* The top of the Console and Manage menus: purpose, cross-link, search (CORE-2445). */
+.settings-menu-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.settings-menu-purpose {
+  margin: 0;
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--text-muted);
+}
+
+.settings-menu-crosslink {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.settings-menu-crosslink:hover {
+  color: var(--text-primary);
+}
+
+.settings-menu-crosslink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.settings-search {
+  position: relative;
+  margin-top: 4px;
+}
+
+.settings-search-icon {
+  position: absolute;
+  top: 12px;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.settings-search-input {
+  padding-left: 32px;
+}
+
+.settings-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+
+.settings-search-result {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.settings-search-result:hover {
+  background: var(--control-bg-hover);
+}
+
+.settings-search-result:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.settings-search-result-where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.settings-search-result-area {
+  padding: 0 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+.settings-search-empty {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}

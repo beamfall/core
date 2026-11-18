@@ -386,7 +386,7 @@ describe("BackupExportPage", () => {
       expect(screen.getByText("config, secrets")).toBeVisible();
       expect(screen.getAllByText("110")).toHaveLength(2);
 
-      await user.click(screen.getByLabelText(/Replace this server's secrets/));
+      await user.click(screen.getByRole("checkbox", { name: /Replace this server's secrets/ }));
       await user.click(screen.getByRole("button", { name: "Stage restore for next start" }));
 
       expect(mockStage).toHaveBeenCalledWith(

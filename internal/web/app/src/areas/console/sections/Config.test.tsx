@@ -83,6 +83,16 @@ afterEach(() => {
   vi.mocked(search).mockReset();
 });
 
+// The codec, quality and cap controls are listbox selects: open one and pick an option.
+async function choose(
+  user: ReturnType<typeof userEvent.setup>,
+  control: HTMLElement,
+  option: string,
+) {
+  await user.click(control);
+  await user.click(await screen.findByRole("option", { name: option }));
+}
+
 function renderConfig() {
   return render(
     <I18nProvider>
@@ -98,11 +108,17 @@ describe("transcoding config", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    await user.type(await screen.findByRole("textbox", { name: "Codec" }), "hevc");
+    await choose(
+      user,
+      await screen.findByRole("combobox", { name: "Codec" }),
+      "HEVC (smaller files)",
+    );
     act(() => setAdvancedSettings(false));
 
-    expect(screen.getByRole("textbox", { name: "Codec" })).toHaveValue("hevc");
-    expect(screen.queryByRole("textbox", { name: "Quality" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Codec" })).toHaveTextContent(
+      "HEVC (smaller files)",
+    );
+    expect(screen.queryByRole("combobox", { name: "Quality" })).toBeNull();
   });
 
   it("saves the cap and tone-map switch and shows the cap in effect", async () => {
@@ -115,9 +131,9 @@ describe("transcoding config", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    const cap = await screen.findByRole("textbox", { name: "Maximum simultaneous transcodes" });
+    const cap = await screen.findByRole("combobox", { name: "Maximum simultaneous transcodes" });
     expect(await screen.findByText("In effect: 3")).toBeInTheDocument();
-    await user.type(cap, "2");
+    await choose(user, cap, "2");
     await user.click(screen.getByRole("switch", { name: "HDR tone mapping" }));
     const form = cap.closest("form") as HTMLFormElement;
     await user.click(within(form).getByRole("button", { name: "Save" }));
@@ -134,7 +150,7 @@ describe("transcoding config", () => {
     });
   });
 
-  it("sends an empty cap as automatic", async () => {
+  it("sends Automatic as no cap", async () => {
     vi.mocked(fetchTranscodeConfig).mockResolvedValue({
       ...savedTranscode,
       maxConcurrentTranscodes: 4,
@@ -143,9 +159,9 @@ describe("transcoding config", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    const cap = await screen.findByRole("textbox", { name: "Maximum simultaneous transcodes" });
-    await waitFor(() => expect(cap).toHaveValue("4"));
-    await user.clear(cap);
+    const cap = await screen.findByRole("combobox", { name: "Maximum simultaneous transcodes" });
+    await waitFor(() => expect(cap).toHaveTextContent("4"));
+    await choose(user, cap, "Automatic");
     await user.click(
       within(cap.closest("form") as HTMLFormElement).getByRole("button", { name: "Save" }),
     );
@@ -155,23 +171,6 @@ describe("transcoding config", () => {
         expect.objectContaining({ maxConcurrentTranscodes: null }),
       ),
     );
-  });
-
-  it("refuses a zero or negative cap before sending it", async () => {
-    const user = userEvent.setup();
-    renderConfig();
-
-    const cap = await screen.findByRole("textbox", { name: "Maximum simultaneous transcodes" });
-    const save = within(cap.closest("form") as HTMLFormElement).getByRole("button", {
-      name: "Save",
-    });
-    for (const bad of ["0", "-2"]) {
-      await user.clear(cap);
-      await user.type(cap, bad);
-      await user.click(save);
-      expect(await screen.findByRole("alert")).toHaveTextContent("at least 1");
-    }
-    expect(setTranscodeConfig).not.toHaveBeenCalled();
   });
 
   it("shows the server's rejection of a temp directory", async () => {
@@ -332,8 +331,11 @@ describe("Viewer pairing-code switch", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    const codec = await screen.findByRole("textbox", { name: "Codec" });
-    await user.type(codec, "hevc");
+    await choose(
+      user,
+      await screen.findByRole("combobox", { name: "Codec" }),
+      "HEVC (smaller files)",
+    );
     act(() => setAdvancedSettings(false));
 
     const toggle = screen.getByRole("switch", { name: /Viewer pairing codes/i });
@@ -343,7 +345,9 @@ describe("Viewer pairing-code switch", () => {
     await waitFor(() => expect(toggle).toBeChecked());
     expect(setConsoleConfig).toHaveBeenCalledWith({ viewerPairingCodesDisabled: true });
     expect(setTranscodeConfig).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox", { name: "Codec" })).toHaveValue("hevc");
+    expect(screen.getByRole("combobox", { name: "Codec" })).toHaveTextContent(
+      "HEVC (smaller files)",
+    );
   });
 });
 

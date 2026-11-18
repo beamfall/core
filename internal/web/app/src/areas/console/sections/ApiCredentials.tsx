@@ -1,6 +1,12 @@
 import { Copy, KeyRound, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  HelpTip,
+  StatusChip,
+} from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -26,7 +32,7 @@ import { useAsync } from "../useAsync";
 const SCOPES: { id: string; label: StringKey }[] = [
   { id: "read-catalog", label: "scopeReadCatalog" },
   { id: "read-sessions", label: "scopeReadSessions" },
-  { id: "ingest", label: "scopeIngest" },
+  { id: "ingest", label: "accessHelpScopeIngest" },
   { id: "events-subscribe", label: "scopeEventsSubscribe" },
   { id: "playback-control", label: "scopePlaybackControl" },
 ];
@@ -106,8 +112,11 @@ function ApiTokens() {
     <Section heading="apiTokens" lead="apiTokensLead">
       <div className="console-card console-card-pad">
         <form onSubmit={onCreate} className="flex items-end gap-2">
-          <div className="flex-1 space-y-1.5">
-            <Label htmlFor="api-token-name">{t("apiTokenName")}</Label>
+          <div className="flex-1 space-y-1.5" data-setting="console.api.tokens">
+            <span className="bf-label-with-tip">
+              <Label htmlFor="api-token-name">{t("apiTokenName")}</Label>
+              <HelpTip label={t("apiTokens")} text="accessHelpApiTokensTip" />
+            </span>
             <Input id="api-token-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <Button type="submit" disabled={!name.trim()}>
@@ -208,13 +217,17 @@ function ApiKeys() {
     <Section heading="apiKeysHeading" lead="apiKeysLead">
       <div className="console-card console-card-pad">
         <form onSubmit={onCreate} className="space-y-3">
-          <div className="max-w-sm space-y-1.5">
-            <Label htmlFor="api-key-name">{t("apiKeyNameLabel")}</Label>
+          <div className="max-w-sm space-y-1.5" data-setting="console.api.keys">
+            <span className="bf-label-with-tip">
+              <Label htmlFor="api-key-name">{t("apiKeyNameLabel")}</Label>
+              <HelpTip label={t("apiKeysHeading")} text="accessHelpApiKeysTip" />
+            </span>
             <Input id="api-key-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-semibold text-foreground">
+          <fieldset className="space-y-2" data-setting="console.api.scopes">
+            <legend className="bf-label-with-tip text-sm font-semibold text-foreground">
               {t("apiKeyScopesLegend")}
+              <HelpTip label={t("apiKeyScopesLegend")} text="accessHelpApiScopesTip" />
             </legend>
             <div className="flex flex-wrap gap-x-5 gap-y-2">
               {SCOPES.map((scope) => (

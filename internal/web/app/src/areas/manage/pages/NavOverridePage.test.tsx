@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -138,6 +138,22 @@ describe("NavOverridePage", () => {
     await user.click(screen.getByRole("button", { name: "Apply" }));
 
     expect(setNavOverride).toHaveBeenCalledWith({ themeAccentColor: "#7A3CF0" });
+  });
+
+  it("fills the accent field from the color picker", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await ready();
+
+    expect(screen.getByText(/apply to everyone on this server/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Help: Accent color" })).toBeInTheDocument();
+    const picker = screen.getByLabelText("Pick accent color");
+    expect(picker).toHaveValue("#9fd8e5");
+    fireEvent.change(picker, { target: { value: "#7a3cf0" } });
+    expect(screen.getByLabelText("Accent color")).toHaveValue("#7a3cf0");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(setNavOverride).toHaveBeenCalledWith({ themeAccentColor: "#7a3cf0" });
   });
 
   it("shows the brand accent as the default when no accent is set", async () => {

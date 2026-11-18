@@ -63,8 +63,7 @@ const MANAGE_NAV = [
   ["Jobs", "/manage/operations"],
   ["Convert", "/manage/convert"],
   ["Rename", "/manage/rename"],
-  ["Trash policy", "/manage/trash"],
-  ["Backups", "/manage/backups"],
+  ["Trash", "/manage/trash"],
   ["Subscriptions", "/manage/subscriptions"],
   ["Unmatched records", "/manage/unmatched"],
   ["Collections", "/manage/collections"],
@@ -76,8 +75,8 @@ const MANAGE_NAV = [
   ["Markers", "/manage/markers"],
   ["Field locks", "/manage/field-locks"],
   ["Navigation", "/manage/navigation"],
-  ["Restrictions", "/manage/restrictions"],
-  ["Profiles", "/manage/profile"],
+  ["Show restricted content", "/manage/restrictions"],
+  ["Switch profile", "/manage/profile"],
 ] as const;
 
 function LocationProbe({ paths }: { paths: string[] }) {
@@ -285,7 +284,7 @@ describe("Manage navigation in the Normal view (CORE-1117)", () => {
     render(manageRouter("/manage/libraries", []));
 
     expect(screen.getByRole("link", { name: "Libraries" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Restrictions" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Show restricted content" })).toBeVisible();
     for (const label of ADVANCED_NAV) {
       expect(screen.queryByRole("link", { name: label })).toBeNull();
     }

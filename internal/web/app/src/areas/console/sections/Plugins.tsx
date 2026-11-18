@@ -351,7 +351,7 @@ function PluginCard({
               />
             </Button>
           )}
-          <div title={builtIn ? "Built-in plugins cannot be disabled." : undefined}>
+          <div title={builtIn ? t("pluginBuiltInCannotDisable") : undefined}>
             <Switch
               checked={plugin.active}
               disabled={builtIn}

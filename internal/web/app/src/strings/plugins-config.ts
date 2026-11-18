@@ -4,7 +4,7 @@ export const pluginConfigStrings = {
     pluginDetailsToggle: "Details for {name}",
     pluginConfigHeading: "Configuration",
     pluginConfigLead:
-      "Typed, non-secret settings for this plugin. Secrets are managed through scraper credentials, never here.",
+      "Options this plugin offers. API keys and passwords are not set here: enter them in the plugin's key fields.",
     pluginConfigSave: "Save configuration",
     pluginConfigSaved: "Configuration saved.",
     pluginConfigFailed: "Could not save the plugin configuration.",
@@ -52,7 +52,7 @@ export const pluginConfigStrings = {
     pluginDetailsToggle: "Détails de {name}",
     pluginConfigHeading: "Configuration",
     pluginConfigLead:
-      "Paramètres typés non secrets de ce plugin. Les secrets se gèrent via les identifiants des scrapers, jamais ici.",
+      "Options proposées par ce plugin. Les clés d’API et les mots de passe ne se saisissent pas ici : utilisez les champs de clé du plugin.",
     pluginConfigSave: "Enregistrer la configuration",
     pluginConfigSaved: "Configuration enregistrée.",
     pluginConfigFailed: "Impossible d’enregistrer la configuration du plugin.",
@@ -100,7 +100,7 @@ export const pluginConfigStrings = {
     pluginDetailsToggle: "Details zu {name}",
     pluginConfigHeading: "Konfiguration",
     pluginConfigLead:
-      "Typisierte, nicht geheime Einstellungen für dieses Plugin. Geheimnisse werden über die Scraper-Zugangsdaten verwaltet, nie hier.",
+      "Optionen, die dieses Plugin anbietet. API-Schlüssel und Passwörter werden nicht hier eingetragen, sondern in den Schlüsselfeldern des Plugins.",
     pluginConfigSave: "Konfiguration speichern",
     pluginConfigSaved: "Konfiguration gespeichert.",
     pluginConfigFailed: "Die Plugin-Konfiguration konnte nicht gespeichert werden.",
@@ -149,7 +149,7 @@ export const pluginConfigStrings = {
     pluginDetailsToggle: "Detalles de {name}",
     pluginConfigHeading: "Configuración",
     pluginConfigLead:
-      "Ajustes tipados y no secretos de este plugin. Los secretos se gestionan con las credenciales de los scrapers, nunca aquí.",
+      "Opciones que ofrece este plugin. Las claves de API y las contraseñas no se introducen aquí: usa los campos de clave del plugin.",
     pluginConfigSave: "Guardar configuración",
     pluginConfigSaved: "Configuración guardada.",
     pluginConfigFailed: "No se pudo guardar la configuración del plugin.",
@@ -197,7 +197,7 @@ export const pluginConfigStrings = {
     pluginDetailsToggle: "Detalhes de {name}",
     pluginConfigHeading: "Configuração",
     pluginConfigLead:
-      "Configurações tipadas e não secretas deste plugin. Os segredos são gerenciados pelas credenciais dos scrapers, nunca aqui.",
+      "Opções que este plugin oferece. Chaves de API e senhas não são definidas aqui: use os campos de chave do plugin.",
     pluginConfigSave: "Salvar configuração",
     pluginConfigSaved: "Configuração salva.",
     pluginConfigFailed: "Não foi possível salvar a configuração do plugin.",

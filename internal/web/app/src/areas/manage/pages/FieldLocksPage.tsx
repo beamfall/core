@@ -58,7 +58,7 @@ export function FieldLocksPage() {
 
   return (
     <ManageSection>
-      <div className="flex items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="field-locks-media">{t("fieldLocksMediaLabel")}</Label>
           <Input

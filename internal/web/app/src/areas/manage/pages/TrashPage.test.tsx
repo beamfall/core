@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchActivityRecords, fetchTrashList, purgeTrash, restoreMedia } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
-import { TrashPage } from "./TrashPage";
+import { datetimeLocalDaysAgo, TrashPage } from "./TrashPage";
 
 vi.mock("@/lib/graphql", () => ({
   fetchTrashList: vi.fn(),
@@ -102,6 +102,24 @@ describe("TrashPage", () => {
     );
     await waitFor(() => expect(purgeTrash).toHaveBeenCalledTimes(1));
     expect(vi.mocked(purgeTrash).mock.calls[0][1]).toBe(true);
+  });
+
+  it("fills the cutoff from a quick pick, and the purge stays gated", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Untitled clip 9c08");
+    expect(
+      screen.getByRole("button", { name: "Help: Purge items trashed before" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Older than 30 days" }));
+    const cutoff = document.getElementById("purge-before") as HTMLInputElement;
+    expect(cutoff.value).toBe(datetimeLocalDaysAgo(30));
+    expect(screen.getByRole("button", { name: "Purge before cutoff" })).toBeDisabled();
+  });
+
+  it("formats a local datetime N days back", () => {
+    expect(datetimeLocalDaysAgo(30, new Date(2026, 2, 15, 9, 5))).toBe("2026-02-13T09:05");
   });
 
   it("surfaces a reversible-action undo and flags the irreversible purge", async () => {

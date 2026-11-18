@@ -25,9 +25,6 @@ export const consoleOperationsCacheStrings = {
       "Removes prepared copies until the cache fits its disk budget. Beamfall can prepare them again later.",
     playbackCacheEvictAction: "Evict over budget",
     playbackCacheEvictConfirm: "Evict cache objects over the disk budget?",
-    capabilitiesHeading: "Capabilities",
-    capabilitiesLead:
-      "Turn workflow features on or off here. Detected features depend on this computer, so they can only be viewed.",
     capabilitiesRefresh: "Refresh",
     capabilitiesUnavailable: "Capabilities are unavailable right now.",
     capabilitiesEmpty: "No capabilities are compiled into this server.",
@@ -64,9 +61,6 @@ export const consoleOperationsCacheStrings = {
       "Supprime des copies préparées jusqu’à ce que le cache respecte son budget disque. Beamfall pourra les préparer à nouveau plus tard.",
     playbackCacheEvictAction: "Évincer au-delà du budget",
     playbackCacheEvictConfirm: "Évincer les objets du cache qui dépassent le budget disque ?",
-    capabilitiesHeading: "Capacités",
-    capabilitiesLead:
-      "Activez ou désactivez ici les fonctions de flux de travail. Les fonctions détectées dépendent de cet ordinateur et ne peuvent donc qu’être consultées.",
     capabilitiesRefresh: "Actualiser",
     capabilitiesUnavailable: "Les capacités sont indisponibles pour le moment.",
     capabilitiesEmpty: "Aucune capacité n’est compilée dans ce serveur.",
@@ -103,9 +97,6 @@ export const consoleOperationsCacheStrings = {
       "Entfernt vorbereitete Kopien, bis der Cache in sein Festplattenbudget passt. Beamfall kann sie später erneut vorbereiten.",
     playbackCacheEvictAction: "Über Budget bereinigen",
     playbackCacheEvictConfirm: "Cache-Objekte entfernen, die das Festplattenbudget überschreiten?",
-    capabilitiesHeading: "Funktionen",
-    capabilitiesLead:
-      "Schalte Workflow-Funktionen hier ein oder aus. Erkannte Funktionen hängen von diesem Computer ab und lassen sich deshalb nur ansehen.",
     capabilitiesRefresh: "Aktualisieren",
     capabilitiesUnavailable: "Funktionen sind momentan nicht verfügbar.",
     capabilitiesEmpty: "In diesen Server sind keine Funktionen einkompiliert.",
@@ -144,9 +135,6 @@ export const consoleOperationsCacheStrings = {
     playbackCacheEvictAction: "Expulsar el exceso de presupuesto",
     playbackCacheEvictConfirm:
       "¿Expulsar los objetos del caché que superan el presupuesto de disco?",
-    capabilitiesHeading: "Capacidades",
-    capabilitiesLead:
-      "Activa o desactiva aquí las funciones de flujo de trabajo. Las funciones detectadas dependen de este equipo, así que solo se pueden consultar.",
     capabilitiesRefresh: "Actualizar",
     capabilitiesUnavailable: "Las capacidades no están disponibles ahora mismo.",
     capabilitiesEmpty: "No hay capacidades compiladas en este servidor.",
@@ -183,9 +171,6 @@ export const consoleOperationsCacheStrings = {
       "Remove cópias preparadas até o cache caber no orçamento de disco. O Beamfall pode prepará-las de novo depois.",
     playbackCacheEvictAction: "Remover o excedente do orçamento",
     playbackCacheEvictConfirm: "Remover os objetos do cache que excedem o orçamento de disco?",
-    capabilitiesHeading: "Recursos",
-    capabilitiesLead:
-      "Ative ou desative aqui os recursos de fluxo de trabalho. Os recursos detectados dependem deste computador, por isso só podem ser consultados.",
     capabilitiesRefresh: "Atualizar",
     capabilitiesUnavailable: "Os recursos estão indisponíveis no momento.",
     capabilitiesEmpty: "Nenhum recurso está compilado neste servidor.",

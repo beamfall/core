@@ -3,6 +3,7 @@ import { withAdminEpoch } from "@/areas/console/adminEpoch";
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageSection,
   ManageTable,
   PathPickerField,
@@ -254,6 +255,7 @@ function BackupHistorySection({
             onChange={setDest}
             className="grow"
           />
+          <HelpTip label={t("backupDestLabel")} text="backupDestTip" />
           <Button
             type="button"
             variant="outline"
@@ -616,14 +618,21 @@ function StagedRestorePanel({ selected }: { selected: BackupHistoryEntry | null 
               <BackupContents contents={shown} />
               {shown.compatible && (
                 <div className="space-y-3">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={replaceIdentity}
-                      onChange={(e) => setReplaceIdentity(e.target.checked)}
+                  {/* The help button sits outside the label so opening it does not tick the box. */}
+                  <div className="flex items-center gap-2 text-sm">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={replaceIdentity}
+                        onChange={(e) => setReplaceIdentity(e.target.checked)}
+                      />
+                      {t("stagedRestoreReplaceIdentity")}
+                    </label>
+                    <HelpTip
+                      label={t("stagedRestoreReplaceIdentity")}
+                      text="stagedRestoreReplaceIdentityTip"
                     />
-                    {t("stagedRestoreReplaceIdentity")}
-                  </label>
+                  </div>
                   <Button
                     type="button"
                     onClick={onStage}
