@@ -1,0 +1,7 @@
+- [ ] `internal/store`: `SourceItem.Certification` and `AudienceScore` from the per-card media read; `MediaRatingFrom` for one item's fields
+- [ ] `internal/graph`: `certification` and `audienceScore` on `SourceItem` and `MediaInfo`
+- [ ] Demo seed ratings on films and series
+- [ ] Tests: precedence, range, omitted keys, demo seed
+- [ ] Wire contract minor published and goldens regenerated
+- [ ] `corvint-tasks gate run`
+- [ ] `openspec archive core-2398-media-rating-wire` after landing

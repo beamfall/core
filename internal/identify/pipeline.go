@@ -163,7 +163,7 @@ func (s *Service) AutoIdentify(ctx context.Context, mediaID store.MediaID, plugi
 	return AutoOutcome{Queued: true, ScraperID: scraper.ID, Decision: decision}, nil
 }
 
-const manualScraperID = "manual"
+const manualScraperID = store.UnmatchedManualScraperID
 
 // QueueManual parks a scanned item in the Unmatched queue for plugins with no
 // searchable catalog to score or auto-apply against. Local file/folder/sidecar

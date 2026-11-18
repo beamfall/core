@@ -141,10 +141,29 @@ type SourceItem struct {
 	// Year is a media-kind item's stored year, so a card can state it without
 	// a detail read (CORE-2269). Absent for entities and for Media with no year.
 	Year int `json:"year,omitempty"`
+	// DurationSeconds is a Media item's stored runtime, so a list row can
+	// state it without a detail read (CORE-2386). Absent for entities and for
+	// Media with no known runtime.
+	DurationSeconds int `json:"durationSeconds,omitempty"`
+	// Certification and AudienceScore are a media-kind item's display rating
+	// (PG-13, TV-MA) and 0-10 audience score from the core-conventional
+	// plugin fields, so a card can state them without a detail read
+	// (CORE-2398). Each is absent when the item carries none.
+	Certification string   `json:"certification,omitempty"`
+	AudienceScore *float64 `json:"audienceScore,omitempty"`
 	// Byline names, for an audio Media item, the person-archetype Entities
 	// linked to it, in link order, so a card credits them under its title
 	// (CORE-2362). Absent for every other item.
 	Byline []string `json:"byline,omitempty"`
+	// Subtitle tells a Media item apart from its siblings: the Library
+	// plugin's MediaSubtitle template rendered for the item in each locale
+	// the template declares (CORE-1226). Core renders it without reading its
+	// words. Absent when the plugin declares none or the item has no value.
+	Subtitle plugin.LocaleString `json:"subtitle,omitempty"`
+	// Sequence and Index are a Media item's stored structural ordinals, so a
+	// client can number and order siblings (CORE-2386). Absent when unset.
+	Sequence float64 `json:"sequence,omitempty"`
+	Index    float64 `json:"index,omitempty"`
 }
 
 // SourceItemArtwork describes an item's stored artwork. Poster is the
@@ -1040,6 +1059,9 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 	if err := h.annotateBylines(ctx, items); err != nil {
 		return err
 	}
+	if err := h.annotateSubtitles(ctx, items); err != nil {
+		return err
+	}
 	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
 }
 
@@ -1100,16 +1122,22 @@ func (h *Handler) annotateBylines(ctx context.Context, items []store.SourceItem)
 
 func (h *Handler) sourceItem(item store.SourceItem, revealed bool) SourceItem {
 	resp := SourceItem{
-		ID:         string(item.ID),
-		Kind:       item.Kind,
-		Title:      item.Title,
-		Summary:    item.Summary,
-		Locked:     item.Locked,
-		Muted:      item.Muted,
-		Engagement: sourceItemEngagement(item.Engagement),
-		MediaClass: string(item.MediaClass),
-		Year:       item.Year,
-		Byline:     item.Byline,
+		ID:              string(item.ID),
+		Kind:            item.Kind,
+		Title:           item.Title,
+		Summary:         item.Summary,
+		Locked:          item.Locked,
+		Muted:           item.Muted,
+		Engagement:      sourceItemEngagement(item.Engagement),
+		MediaClass:      string(item.MediaClass),
+		Year:            item.Year,
+		Byline:          item.Byline,
+		Subtitle:        plugin.LocaleString(item.Subtitle),
+		DurationSeconds: item.DurationSeconds,
+		Sequence:        item.Sequence,
+		Index:           item.Index,
+		Certification:   item.Certification,
+		AudienceScore:   item.AudienceScore,
 	}
 	if revealed {
 		resp.Restricted = item.Restricted
@@ -2850,6 +2878,36 @@ func (h *Handler) scanLibrary(ctx context.Context, scope auth.Scope, req request
 	return h.enqueueScanRoots(ctx, scope, libraryID, roots, backfill)
 }
 
+// refreshLibraryMetadata queues the durable Library-wide metadata refresh for a
+// Library the caller can see (CORE-1136). The job dedupes by Library while one
+// is queued, running or yielded, so a repeat request returns the active job;
+// the jobs query is the progress surface and jobCancel stops it.
+func (h *Handler) refreshLibraryMetadata(ctx context.Context, scope auth.Scope, req request) (JobInfo, error) {
+	if h.identify == nil {
+		return JobInfo{}, clientError("identification unavailable")
+	}
+	libraryID := store.LibraryID(trimmedVariable(req, "libraryID"))
+	if libraryID == "" {
+		return JobInfo{}, clientError("libraryID is required")
+	}
+	known, err := h.visibleLibrary(ctx, scope, libraryID)
+	if err != nil {
+		return JobInfo{}, err
+	}
+	if !known {
+		return JobInfo{}, clientError("unknown library")
+	}
+	job, err := identify.NewRefreshJob(libraryID, time.Now().UTC())
+	if err != nil {
+		return JobInfo{}, err
+	}
+	created, err := h.store.EnqueueJob(ctx, job)
+	if err != nil {
+		return JobInfo{}, err
+	}
+	return h.jobInfo(ctx, scope, created), nil
+}
+
 // resolveScanRoots checks the Library is visible and returns the roots a scan
 // of it walks: the given root when it is one of the Library's folders, or
 // every persisted root when root is empty.
@@ -4314,6 +4372,11 @@ type MediaInfo struct {
 	// that supplied this item's metadata; filled only by the media(id) read
 	// and omitted when there is none to give (CORE-1126).
 	MetadataAttribution *MetadataAttributionInfo `json:"metadataAttribution,omitempty"`
+	// Certification and AudienceScore are the display rating and 0-10
+	// audience score, as on SourceItem (CORE-2398); filled only by the
+	// media(id) read and omitted when the item carries none.
+	Certification string   `json:"certification,omitempty"`
+	AudienceScore *float64 `json:"audienceScore,omitempty"`
 }
 
 // MediaCreditInfo is one Entity a Media item is linked to, with the declared
@@ -4369,6 +4432,9 @@ func (h *Handler) media(ctx context.Context, scope auth.Scope, req request) (Med
 	info.LibraryID = string(media.LibraryID)
 	info.Credits = h.mediaCredits(ctx, scope, media.ID)
 	info.MetadataAttribution = h.mediaMetadataAttribution(ctx, media.ID)
+	if fields, err := h.store.MediaFields(ctx, media.ID, scope.LibraryFilter()); err == nil {
+		info.Certification, info.AudienceScore = store.MediaRatingFrom(fields)
+	}
 	return info, nil
 }
 
@@ -5724,6 +5790,7 @@ var mutationFields = map[string]bool{
 	"revealbackupkey":                    true, // CORE-2032: reveal the backup key to save
 	"acknowledgebackupkey":               true, // CORE-2032: confirm the backup key is saved
 	"scanlibrary":                        true,
+	"refreshlibrarymetadata":             true, // CORE-1136: queue a Library-wide metadata refresh
 	"scanpreview":                        true, // CORE-1054: plan a rescan and mint a single-use token
 	"commitscanpreview":                  true, // CORE-1054: spend the token and enqueue the rescan
 	"addsubscription":                    true,
@@ -5881,6 +5948,7 @@ var adminFields = map[string]bool{
 	"restorelibrary":         true,
 	"purgelibrary":           true,
 	"scanlibrary":            true,
+	"refreshlibrarymetadata": true, // CORE-1136: Library-wide metadata refresh job
 	"scanpreview":            true, // CORE-1054: rescan preview and its token-gated commit
 	"commitscanpreview":      true,
 	// Webhooks (CORE-1697): endpoint URLs and secrets are owner configuration.

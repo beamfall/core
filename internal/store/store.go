@@ -849,6 +849,15 @@ type SourceItem struct {
 	// Year is a media-kind item's stored year, set by AnnotateMediaClass in
 	// the same read; 0 for entities and for Media with no year (CORE-2269).
 	Year int
+	// DurationSeconds is a media-kind item's stored runtime, set by
+	// AnnotateMediaClass in the same read so a list row can state it
+	// (CORE-2386); 0 for entities and for Media with no known runtime.
+	DurationSeconds int
+	// Certification and AudienceScore are a media-kind item's display rating
+	// and 0-10 audience score, set by AnnotateMediaClass in the same read;
+	// empty and nil for entities and for Media without them (CORE-2398).
+	Certification string
+	AudienceScore *float64
 	// Locked is true when the item is visible in browse but blocked by a
 	// certification ceiling whose FilterVisibility is "locked" (ACCESS-1,
 	// ADR-0113 §2.1). Set by annotateLockedLocked; absent means not-locked.
@@ -867,6 +876,17 @@ type SourceItem struct {
 	// Byline names the people a card credits under its title, set by the
 	// graph from MediaEntityLinks (CORE-2362); nil means none.
 	Byline []string
+	// LibraryID is a media-kind item's Library, set by AnnotateMediaClass so
+	// the graph can render that Library plugin's card subtitle. Never on the
+	// wire; empty for entities.
+	LibraryID LibraryID
+	// Subtitle is the Library plugin's MediaSubtitle rendered per locale
+	// (BCP-47 tag → text), set by the graph (CORE-1226); nil means none.
+	Subtitle map[string]string
+	// Sequence and Index are a media-kind item's stored structural ordinals,
+	// set by the graph from MediaCardFieldValues; 0 means absent.
+	Sequence float64
+	Index    float64
 }
 
 // PairingCode is a short-lived enrollment grant.
@@ -1030,6 +1050,11 @@ type Store struct {
 	// purged encrypted Library's key material. Without it an encrypted Library
 	// cannot be purged. Guarded by mu; called only with mu released.
 	encKeyEraser EncryptedLibraryKeyEraser
+	// healthProfiler and healthArtworkProbe are the app-injected seams (nil by
+	// default) that make Library health follow each Library's plugin
+	// (CORE-2340, CORE-2383). Guarded by mu.
+	healthProfiler     LibraryHealthProfiler
+	healthArtworkProbe LibraryHealthArtworkProbe
 	// encDerivativePurgers are the app-injected seams that remove a purged
 	// encrypted Library's regenerable derivative ciphertext (CORE-2057).
 	// Guarded by mu; called only with mu released.
@@ -2670,6 +2695,47 @@ func (s *Store) MediaIDsForLibrary(ctx context.Context, libraryID LibraryID) ([]
 	}
 	defer rows.Close()
 	ids := []MediaID{}
+	for rows.Next() {
+		var id MediaID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// LibraryMediaIDsAfter lists up to limit live (not trashed) Media ids in one
+// Library with an id greater than after, in id order, from the Library's own
+// catalog plane. It is the keyset form of MediaIDsForLibrary for a durable job
+// that checkpoints by Media id; like that walk it carries no reveal filtering.
+func (s *Store) LibraryMediaIDsAfter(ctx context.Context, libraryID LibraryID, after MediaID, limit int) ([]MediaID, error) {
+	if libraryID == "" {
+		return nil, errors.New("library ID is required")
+	}
+	if limit <= 0 {
+		return nil, errors.New("limit must be positive")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	plane, err := s.catalogPlaneForLibraryLocked(ctx, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := plane.reader.QueryContext(ctx, `
+		SELECT id FROM media
+		WHERE library_id = ? AND trashed_at_ms IS NULL AND (? = '' OR id > ?)
+		ORDER BY id
+		LIMIT ?
+	`, libraryID, string(after), string(after), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]MediaID, 0, limit)
 	for rows.Next() {
 		var id MediaID
 		if err := rows.Scan(&id); err != nil {

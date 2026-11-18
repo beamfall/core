@@ -14,8 +14,16 @@ import type { EntityFieldInfo, GenericMediaInfo } from "@/lib/graphql/types";
 const CLASS_FIELD = "class";
 /** Core's regulatory label field (internal/store certification); shown as a facts chip. */
 export const RATING_FIELD = "certification";
+/**
+ * The label to show for that rating (CORE-2399). It may sit outside the ordered
+ * policy scale (a TV rating), so it wins over RATING_FIELD for display only.
+ */
+export const RATING_DISPLAY_FIELD = "certification-display";
+/** A provider's 0-10 community score and its vote count (CORE-2399); the field label names the source. */
+export const SCORE_FIELD = "community-rating";
+export const SCORE_VOTES_FIELD = "community-rating-votes";
 /** Fields the facts row already shows; listing them again would repeat them. */
-const FACT_FIELDS = new Set([RATING_FIELD]);
+const FACT_FIELDS = new Set([RATING_FIELD, RATING_DISPLAY_FIELD, SCORE_FIELD, SCORE_VOTES_FIELD]);
 /** At most this many category credits (the plugin's "category" archetype) become chips. */
 const MAX_CATEGORY_FACTS = 3;
 
@@ -102,12 +110,21 @@ export interface DetailFacts {
   year?: number;
   runtimeSeconds?: number;
   rating?: string;
+  score?: DetailScore;
   categories: string[];
+}
+
+/** A community score out of 10, with its vote count and the plugin's field label. */
+export interface DetailScore {
+  value: number;
+  votes: number;
+  label?: EntityFieldInfo["label"];
 }
 
 /**
  * The facts chips' data: year, runtime (when the opening card knew the
- * duration), the regulatory rating and the first few category credits.
+ * duration), the rating, the community score when anyone voted, and the
+ * first few category credits.
  */
 export function detailFacts(
   media: GenericMediaInfo | null | undefined,
@@ -119,8 +136,15 @@ export function detailFacts(
   if (durationSeconds && Number.isFinite(durationSeconds) && durationSeconds >= 60) {
     facts.runtimeSeconds = durationSeconds;
   }
-  const rating = fields.find((field) => field.name === RATING_FIELD)?.value.trim();
+  const value = (name: string) => fields.find((field) => field.name === name)?.value.trim() ?? "";
+  const rating = value(RATING_DISPLAY_FIELD) || value(RATING_FIELD);
   if (rating) facts.rating = rating;
+  const score = fields.find((field) => field.name === SCORE_FIELD);
+  const scoreValue = Number(score?.value);
+  const votes = Number(value(SCORE_VOTES_FIELD));
+  if (score && scoreValue > 0 && scoreValue <= 10 && votes > 0) {
+    facts.score = { value: scoreValue, votes, label: score.label };
+  }
   for (const credit of media?.credits ?? []) {
     if (credit.archetype !== "category" || !credit.title) continue;
     if (facts.categories.includes(credit.title)) continue;

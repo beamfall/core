@@ -24,8 +24,10 @@ import (
 
 // LibraryHealthInfo is one Library's per-dimension counts on the wire. Counts
 // is keyed by the fixed dimension vocabulary (unmatched/broken/scrape-failure/
-// missing-artwork/duplicate). The aggregate summary row is the element-wise sum
-// the client folds over the list (ADR-0042: no server-side aggregate score).
+// missing-artwork/duplicate/no-scraper). A dimension that does not apply to the
+// Library's plugin is absent, never zero (CORE-2383). The aggregate summary row
+// is the element-wise sum the client folds over the list (ADR-0042: no
+// server-side aggregate score).
 type LibraryHealthInfo struct {
 	LibraryID string         `json:"libraryID"`
 	Title     string         `json:"title"`
@@ -138,6 +140,20 @@ func (h *Handler) refreshHealthCache(ctx context.Context) error {
 	return h.store.RefreshLibraryHealthCache(ctx, time.Now().UTC())
 }
 
+// requireHealthDimension refuses a remediation whose dimension does not apply
+// to the Library's plugin: a Library without a searchable, auto-identifying
+// scraper has nothing a rescan or rescrape can fix (CORE-2383).
+func (h *Handler) requireHealthDimension(ctx context.Context, scope auth.Scope, libraryID store.LibraryID, dim store.HealthDimension) error {
+	applies, err := h.store.LibraryHealthApplies(ctx, libraryID, dim, scope.LibraryFilter())
+	if err != nil {
+		return err
+	}
+	if !applies {
+		return clientError(string(dim) + " is not applicable to this library")
+	}
+	return nil
+}
+
 func (h *Handler) selectedHealthItems(ctx context.Context, scope auth.Scope, libraryID store.LibraryID, dim store.HealthDimension, mediaIDs []string) ([]store.HealthItem, error) {
 	visible, err := h.visibleLibrary(ctx, scope, libraryID)
 	if err != nil {
@@ -166,6 +182,11 @@ func (h *Handler) selectedHealthItems(ctx context.Context, scope auth.Scope, lib
 func (h *Handler) remediateSelectedIdentification(ctx context.Context, scope auth.Scope, libraryID store.LibraryID, dim store.HealthDimension, mediaIDs []string) (BulkOpResult, error) {
 	items, err := h.selectedHealthItems(ctx, scope, libraryID, dim, mediaIDs)
 	if err != nil {
+		return BulkOpResult{}, err
+	}
+	// Retrying identification needs an automatic scrape, which is exactly when
+	// scrape-failure applies.
+	if err := h.requireHealthDimension(ctx, scope, libraryID, store.HealthScrapeFailure); err != nil {
 		return BulkOpResult{}, err
 	}
 	if len(items) == 0 {
@@ -223,6 +244,9 @@ func (h *Handler) bulkRescanUnmatched(ctx context.Context, scope auth.Scope, req
 	}
 	if !visible {
 		return BulkOpResult{}, clientError("unknown library")
+	}
+	if err := h.requireHealthDimension(ctx, scope, store.LibraryID(libraryID), store.HealthScrapeFailure); err != nil {
+		return BulkOpResult{}, err
 	}
 	roots, err := h.store.LibraryRoots(ctx, store.LibraryID(libraryID))
 	if err != nil {
@@ -356,6 +380,9 @@ func (h *Handler) bulkRescrapeScrapeFailures(ctx context.Context, scope auth.Sco
 	}
 	if !visible {
 		return BulkOpResult{}, clientError("unknown library")
+	}
+	if err := h.requireHealthDimension(ctx, scope, store.LibraryID(libraryID), store.HealthScrapeFailure); err != nil {
+		return BulkOpResult{}, err
 	}
 	roots, err := h.store.LibraryRoots(ctx, store.LibraryID(libraryID))
 	if err != nil {
@@ -600,6 +627,9 @@ func (h *Handler) bulkFetchMissingArtwork(ctx context.Context, scope auth.Scope,
 	}
 	if !visible {
 		return BulkOpResult{}, clientError("unknown library")
+	}
+	if err := h.requireHealthDimension(ctx, scope, store.LibraryID(libraryID), store.HealthMissingArtwork); err != nil {
+		return BulkOpResult{}, err
 	}
 	// Count missing-artwork items for the operator-visible Affected total.
 	items, err := h.store.LibraryHealthItems(ctx, store.LibraryID(libraryID), store.HealthMissingArtwork, scope.LibraryFilter(), 500)

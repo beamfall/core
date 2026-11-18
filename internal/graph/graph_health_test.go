@@ -20,7 +20,9 @@ import (
 // feature:unmatched-queue
 // feature:dedupe-review
 func TestLibraryHealthDashboardAdminGated(t *testing.T) {
-	st := storetest.Open(t)
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	storetest.SetLibraryPlugin(t, dataDir, "library-local", "health-plugin")
 	ctx := context.Background()
 	if err := st.SetAdminPassword(ctx, "correct horse battery", time.Now().UTC()); err != nil {
 		t.Fatal(err)

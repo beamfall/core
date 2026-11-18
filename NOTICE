@@ -182,7 +182,7 @@ container image (Dockerfile) additionally incorporates Jellyfin-ffmpeg
 
 -------------------------------------------------------------------------------
 
-21. Oscillux v0.2.5 (AGPL-3.0-only)
+21. Oscillux v0.2.7 (AGPL-3.0-only)
     https://github.com/beamfall/oscillux
     Vendored unchanged in internal/web/app/vendor/oscillux/ and bundled into
     the web UI as the audio visualizer (CORE-1309, ADR-0228). Same licence as

@@ -3,6 +3,7 @@ package mediahttp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -2523,6 +2524,92 @@ func TestAssetsServesTokenGatedBytes(t *testing.T) {
 	}
 	if *resolveCalls != len(cases) {
 		t.Fatalf("Media resolve calls = %d, want exactly one per request", *resolveCalls)
+	}
+}
+
+// waveformOnlyGen is a genassets.Generator that only produces waveform
+// amplitudes; every other generator method is unused by these tests.
+type waveformOnlyGen struct{ calls int }
+
+func (g *waveformOnlyGen) SpriteSheets(context.Context, string, int, int, int, int, string) error {
+	return errors.New("unused")
+}
+func (g *waveformOnlyGen) SampleClip(context.Context, string, []float64, float64, int, int, string) error {
+	return errors.New("unused")
+}
+func (g *waveformOnlyGen) FrameGrab(context.Context, string, float64, int, string) error {
+	return errors.New("unused")
+}
+func (g *waveformOnlyGen) WaveformAmplitudes(context.Context, string) ([]float64, error) {
+	g.calls++
+	return []float64{0.25, 1, 0.5}, nil
+}
+func (g *waveformOnlyGen) SilenceSpans(context.Context, string) ([][2]float64, error) {
+	return nil, errors.New("unused")
+}
+func (g *waveformOnlyGen) LoudnessMeasure(context.Context, string) (float64, float64, float64, bool, error) {
+	return 0, 0, 0, false, errors.New("unused")
+}
+
+func TestAssetsGeneratesMissingWaveformOnDemand(t *testing.T) {
+	// feature:waveform CORE-2401: audio decisions advertise the waveform before
+	// the sweep runs, so the first fetch generates and serves it.
+	st := storetest.Open(t)
+	path := filepath.Join(t.TempDir(), "track.mp3")
+	if err := os.WriteFile(path, []byte("audio bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := store.HashMediaFileContent(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := st.ImportMediaFile(context.Background(), store.ImportMediaFile{
+		LibraryID: "library-local", Path: path, Title: "Track", Container: "mp3", Codec: "mp3",
+		Class: store.MediaClassAudio, ContentFingerprint: fingerprint, DurationSecondsHint: 180,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authService := auth.NewService(st)
+	scope, err := authService.Scope(context.Background(), "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(100, 0).UTC()
+	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
+	token, err := tokens.Issue(context.Background(), streamtoken.Grant{
+		Target: streamtoken.TargetMediaAssets, MediaID: media.ID, DeviceID: scope.DeviceID,
+		SessionID: scope.SessionID, ProfileID: scope.ProfileID, ExpiresAt: now.Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen := &waveformOnlyGen{}
+	assets := genassets.NewService(st, gen, t.TempDir())
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler.SetAssets(assets)
+
+	rec := httptest.NewRecorder()
+	handler.Assets(rec, httptest.NewRequest(http.MethodGet, "/api/media/assets/"+token+"/"+genassets.WaveformName, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	var env genassets.WaveformEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil || len(env.Points) != 3 {
+		t.Fatalf("body = %q (err %v), want a 3-point envelope", rec.Body.String(), err)
+	}
+	if gen.calls != 1 {
+		t.Fatalf("waveform generations = %d, want 1", gen.calls)
+	}
+}
+
+func TestAssetsMissingWaveformForVideoStays404(t *testing.T) {
+	// feature:waveform
+	handler, _, token, _ := newAssetsTestHandler(t, "session-default", "media-alpha", false)
+	rec := httptest.NewRecorder()
+	handler.Assets(rec, httptest.NewRequest(http.MethodGet, "/api/media/assets/"+token+"/"+genassets.WaveformName, nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for a video without a waveform", rec.Code)
 	}
 }
 

@@ -338,6 +338,11 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown asset", http.StatusNotFound)
 		return
 	}
+	if name == genassets.WaveformName {
+		// Audio decisions advertise the waveform before the sweep reaches the
+		// file, so the first fetch generates it (CORE-2401).
+		h.assets.EnsureWaveform(r.Context(), grant.MediaID, file.ContentFingerprint)
+	}
 	path, err := h.assets.AssetPath(file.ContentFingerprint, name)
 	if err != nil {
 		http.Error(w, "unknown asset", http.StatusNotFound)
@@ -1093,6 +1098,15 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		// A shape the encrypted plane does not carry will not appear on retry.
 		if errors.Is(err, playback.ErrEncryptedLiveUnavailable) {
 			http.Error(w, "stream unavailable", http.StatusNotFound)
+			return
+		}
+		// The session's encoder kept crashing or stalling without output and
+		// the session has given up (CORE-2379). 503 would have the player
+		// retry for as long as it is open, behind an endless spinner; 500 says
+		// the stream failed, so the player can surface an error. The session
+		// logged the cause.
+		if errors.Is(err, playback.ErrTranscodeFailed) {
+			http.Error(w, "transcode failed", http.StatusInternalServerError)
 			return
 		}
 		logHLSServeFailure(r.Context(), err)

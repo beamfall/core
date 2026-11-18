@@ -36,4 +36,15 @@ describe("card titles (CORE-2320)", () => {
     expect(cardSubline({ ...track, summary: "Queen" }, false)).toBe("Queen");
     expect(cardSubline({ ...track, byline: ["A", "B"], summary: "" }, false)).toBe("A, B");
   });
+
+  it("puts the plugin subtitle first, in the display locale (CORE-2386)", () => {
+    const episode = {
+      ...item("e", "Reunion", 2024, "Reunion"),
+      subtitle: { en: "S5 · E3", fr: "S5 · É3" },
+    };
+    expect(cardSubline(episode, false)).toBe("S5 · E3 · Reunion");
+    expect(cardSubline(episode, true, "fr")).toBe("S5 · É3 · 2024 · Reunion");
+    expect(cardSubline({ ...episode, summary: "S5 · E3" }, false)).toBe("S5 · E3");
+    expect(cardSubline({ ...episode, subtitle: undefined }, false)).toBe("Reunion");
+  });
 });

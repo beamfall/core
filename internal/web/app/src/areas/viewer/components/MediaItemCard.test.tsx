@@ -487,6 +487,63 @@ function installMatchMedia({
 
 // CORE-1193: every card names itself to assistive technology. These fail if
 // the card button loses its accessible name or stops announcing state.
+describe("MediaItemCard display options (CORE-2386)", () => {
+  function renderDisplay(display: "poster" | "thumbnail" | "list", overrides: Partial<SourceItem>) {
+    return render(
+      <I18nProvider initialLocale="en">
+        <MemoryRouter>
+          <MediaItemCard item={baseItem(overrides)} display={display} />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+  }
+
+  const episode: Partial<SourceItem> = {
+    summary: "",
+    subtitle: { en: "S5 · E3 · Reunion" },
+    index: 3,
+    durationSeconds: 1830,
+    artworkSlots: { poster: "/art/poster.jpg", thumb: "/art/thumb.jpg" },
+  };
+
+  it("shows the plugin subtitle and names the card by it", () => {
+    const { container } = renderDisplay("poster", episode);
+    expect(container.querySelector(".bf-card-sub")).toHaveTextContent("S5 · E3 · Reunion");
+    expect(screen.getByRole("button", { name: "Alpha, S5 · E3 · Reunion" })).toBeInTheDocument();
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("/art/poster.jpg");
+    expect(container.querySelector(".bf-card-ordinal")).toBeNull();
+  });
+
+  it("draws a thumbnail card from the thumb slot in a wide frame", () => {
+    const { container } = renderDisplay("thumbnail", episode);
+    expect(container.querySelector(".bf-poster.bf-poster-wide")).not.toBeNull();
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("/art/thumb.jpg");
+  });
+
+  it("falls back to the poster when a thumbnail card has no thumb", () => {
+    const { container } = renderDisplay("thumbnail", { ...episode, artworkSlots: undefined });
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("/art/poster-alpha.jpg");
+  });
+
+  it("draws a list row with the ordinal and runtime", () => {
+    const { container } = renderDisplay("list", episode);
+    expect(container.querySelector(".bf-card-ordinal")).toHaveTextContent("3");
+    expect(container.querySelector(".bf-card-runtime")).toHaveTextContent("30:30");
+    expect(container.querySelector(".bf-card-sub")).toHaveTextContent("S5 · E3 · Reunion");
+  });
+
+  it("leaves the ordinal and runtime out of a row that has neither", () => {
+    const { container } = renderDisplay("list", { summary: "" });
+    expect(container.querySelector(".bf-card-ordinal")).toBeNull();
+    expect(container.querySelector(".bf-card-runtime")?.textContent ?? "").toBe("");
+  });
+
+  it("styles the wide frame 16:9", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/components/chrome/chrome.css"), "utf8");
+    expect(css).toMatch(/\.bf-poster\.bf-poster-wide \{\s*aspect-ratio: 16 \/ 9;/);
+  });
+});
+
 describe("MediaItemCard accessible name", () => {
   it("names a card with no playback state by its title", () => {
     renderCard();

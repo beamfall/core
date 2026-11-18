@@ -20,9 +20,13 @@ import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
-// The five launch health dimensions (ADR-0042). `dimKey` is the server wire
-// value; `countKey` is the raw key returned in LibraryHealthInfo.counts.
-const DIMENSIONS: {
+// The launch health dimensions (ADR-0042) plus no-scraper (CORE-2383).
+// `dimKey` is the server wire value; `countKey` is the raw key returned in
+// LibraryHealthInfo.counts. The server omits a dimension that does not apply to
+// a Library's plugin, so an absent key means "not applicable", never zero.
+// `bulkNeeds` names the dimension whose presence the bulk action needs: rescans
+// retry the automatic scrape, which exists exactly when scrape-failure applies.
+interface HealthDimension {
   dimKey: string;
   countKey: string;
   label: StringKey;
@@ -30,7 +34,11 @@ const DIMENSIONS: {
   selectedBulkField?: string;
   bulkLabel?: StringKey;
   confirmKey?: StringKey;
-}[] = [
+  bulkNeeds?: string;
+  bulkNeedsReason?: StringKey;
+}
+
+const DIMENSIONS: HealthDimension[] = [
   {
     dimKey: "unmatched",
     countKey: "unmatched",
@@ -38,6 +46,8 @@ const DIMENSIONS: {
     summaryBulkField: "bulkRescanUnmatched",
     selectedBulkField: "bulkRescanUnmatched",
     bulkLabel: "bulkRescanUnmatched",
+    bulkNeeds: "scrape-failure",
+    bulkNeedsReason: "healthRescanNeedsAutoIdentify",
   },
   {
     dimKey: "broken",
@@ -72,16 +82,44 @@ const DIMENSIONS: {
     bulkLabel: "bulkMergeDuplicates",
     confirmKey: "confirmBulkMergeDuplicates",
   },
+  {
+    dimKey: "no-scraper",
+    countKey: "no-scraper",
+    label: "healthNoScraper",
+  },
 ];
 
+// aggregateCounts sums each dimension over the Libraries it applies to. A
+// dimension no Library reports stays absent, so the aggregate shows it as not
+// applicable too.
 function aggregateCounts(rows: LibraryHealthInfo[]): Record<string, number> {
   const total: Record<string, number> = {};
   for (const row of rows) {
     for (const dim of DIMENSIONS) {
-      total[dim.countKey] = (total[dim.countKey] ?? 0) + (row.counts[dim.countKey] ?? 0);
+      const count = row.counts[dim.countKey];
+      if (count !== undefined) {
+        total[dim.countKey] = (total[dim.countKey] ?? 0) + count;
+      }
     }
   }
   return total;
+}
+
+// bulkBlockedReason returns why a dimension's bulk action cannot help this
+// Library, or undefined when it can.
+function bulkBlockedReason(
+  counts: LibraryHealthInfo["counts"],
+  dim: HealthDimension,
+): StringKey | undefined {
+  if (dim.bulkNeeds && counts[dim.bulkNeeds] === undefined) {
+    return dim.bulkNeedsReason;
+  }
+  return undefined;
+}
+
+function NotApplicableCell() {
+  const t = useT();
+  return <span className="text-muted-foreground">{t("healthNotApplicable")}</span>;
 }
 
 // A count cell: zero is muted, any positive count is an amber StatusChip (a
@@ -128,6 +166,7 @@ interface DrillTarget {
   selectedBulkField?: string;
   bulkLabel?: StringKey;
   confirmKey?: StringKey;
+  bulkBlockedReason?: StringKey;
 }
 
 // HealthDrillPanel: the per-item list for one (library, dimension) pair.
@@ -263,11 +302,17 @@ function HealthDrillPanel({
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={checked.size === 0}
+                  disabled={checked.size === 0 || Boolean(target.bulkBlockedReason)}
+                  title={target.bulkBlockedReason ? t(target.bulkBlockedReason) : undefined}
                   onClick={() => void runSelected()}
                 >
                   {t(target.bulkLabel)}
                 </Button>
+              )}
+              {target.bulkBlockedReason && (
+                <span className="text-dense text-muted-foreground">
+                  {t(target.bulkBlockedReason)}
+                </span>
               )}
             </div>
           )}
@@ -333,8 +378,8 @@ function HealthDrillPanel({
   );
 }
 
-// Library Health Dashboard (ADR-0042): per-Library counts across five
-// dimensions plus an aggregate row. Non-zero counts open per-item drilldowns;
+// Library Health Dashboard (ADR-0042): per-Library counts across the
+// dimensions each Library's plugin can check, plus an aggregate row. Non-zero counts open per-item drilldowns;
 // destructive selected operations stay confirm-gated.
 export function Health() {
   const t = useT();
@@ -347,7 +392,7 @@ export function Health() {
     await refresh();
   }
 
-  function openDrill(row: LibraryHealthInfo, dim: (typeof DIMENSIONS)[number]) {
+  function openDrill(row: LibraryHealthInfo, dim: HealthDimension) {
     setDrill({
       libraryID: row.libraryID,
       libraryTitle: row.title,
@@ -356,6 +401,7 @@ export function Health() {
       selectedBulkField: dim.selectedBulkField,
       bulkLabel: dim.bulkLabel,
       confirmKey: dim.confirmKey,
+      bulkBlockedReason: bulkBlockedReason(row.counts, dim),
     });
   }
 
@@ -414,16 +460,40 @@ export function Health() {
                 const agg = aggregateCounts(rows);
                 return DIMENSIONS.map((dim) => (
                   <TableCell key={dim.countKey} className="console-num" data-label={t(dim.label)}>
-                    <CountCell count={agg[dim.countKey] ?? 0} />
+                    {agg[dim.countKey] === undefined ? (
+                      <NotApplicableCell />
+                    ) : (
+                      <CountCell count={agg[dim.countKey]} />
+                    )}
                   </TableCell>
                 ));
               })()}
             </TableRow>
             {rows.map((row) => (
               <TableRow key={row.libraryID}>
-                <TableCell className="font-medium">{row.title}</TableCell>
+                <TableCell className="font-medium">
+                  {row.title}
+                  {row.counts["no-scraper"] !== undefined && (
+                    <span className="block text-dense font-normal text-muted-foreground">
+                      {t("healthNoPluginIdentifies")}
+                    </span>
+                  )}
+                </TableCell>
                 {DIMENSIONS.map((dim) => {
-                  const count = row.counts[dim.countKey] ?? 0;
+                  const raw = row.counts[dim.countKey];
+                  if (raw === undefined) {
+                    return (
+                      <TableCell
+                        key={dim.countKey}
+                        className="console-num"
+                        data-label={t(dim.label)}
+                      >
+                        <NotApplicableCell />
+                      </TableCell>
+                    );
+                  }
+                  const count = raw;
+                  const blocked = bulkBlockedReason(row.counts, dim);
                   return (
                     <TableCell key={dim.countKey} className="console-num" data-label={t(dim.label)}>
                       <div className="console-health-cell flex flex-wrap items-center justify-end gap-2">
@@ -452,6 +522,9 @@ export function Health() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={Boolean(blocked)}
+                              title={blocked ? t(blocked) : undefined}
+                              aria-description={blocked ? t(blocked) : undefined}
                               onClick={() => void runBulk(dim.summaryBulkField!, row.libraryID)}
                             >
                               {t(dim.bulkLabel)}

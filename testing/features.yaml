@@ -368,7 +368,7 @@ features:
     status: partial
   - id: library-health
     area: console
-    summary: Library Health Dashboard, five dimensions + bulk ops.
+    summary: Library Health Dashboard, plugin-applicable dimensions + bulk ops.
     adr: ["0042"]
     applies: [server, web, ipad, macos, windows]
     status: partial

@@ -66,10 +66,15 @@ func TestEntityRelationFilterSQLNeverInlinesValues(t *testing.T) {
 	}
 }
 
-func TestDimensionPredicateIsClosed(t *testing.T) {
-	for _, dim := range []HealthDimension{HealthUnmatched, HealthBroken, HealthScrapeFailure, HealthMissingArtwork, HealthDuplicate} {
-		if got := dimensionPredicate(dim); got == "" || strings.Contains(got, "?") {
-			t.Fatalf("dimensionPredicate(%q) = %q, want a non-empty fragment with no placeholders", dim, got)
+func TestDimensionPredicateNeverInlinesValues(t *testing.T) {
+	profile := LibraryHealthProfile{Plugin: true, Searchable: true, AutoIdentify: true, LocalIdentityField: sqlProbe}
+	for _, dim := range []HealthDimension{HealthUnmatched, HealthBroken, HealthScrapeFailure, HealthDuplicate, HealthNoScraper} {
+		got, args := dimensionPredicate(profile, dim)
+		if got == "" || strings.Contains(got, sqlProbe) || strings.Contains(got, "DROP") {
+			t.Fatalf("dimensionPredicate(%q) = %q, want a non-empty fragment that inlines no caller value", dim, got)
+		}
+		if n, want := strings.Count(got, "?"), len(args); n != want {
+			t.Fatalf("dimensionPredicate(%q): placeholders = %d, args = %d", dim, n, want)
 		}
 	}
 }

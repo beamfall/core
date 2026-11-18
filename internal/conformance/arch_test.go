@@ -64,8 +64,8 @@ var archWhitelist = map[string][]string{
 	"genassets":         {"store", "jobs"},
 	"skipdetect":        {"store", "jobs", "ffmpeg"}, // skip-segment detector (ENR-7 / ADR-0048): byte-level intro/recap/credits detection over the generic relation graph; imports store (markers + sibling walk), jobs (the sweep handler), ffmpeg (the hardened chapter/fingerprint seam)
 	"scan":              {"store", "jobs", "ffmpeg"},
-	"migrate":           {"store", "jobs"}, // Migration Wizard import job handler + match chain (ADR-0037)
-	"identify":          {"store", "artwork", "scrape", "plugin"},
+	"migrate":           {"store", "jobs"},                                // Migration Wizard import job handler + match chain (ADR-0037)
+	"identify":          {"store", "artwork", "scrape", "plugin", "jobs"}, // jobs: the Library-wide metadata refresh handler (CORE-1136)
 	"ingest":            {"store", "jobs", "scan", "scrape"},
 	"playback":          {"store", "auth", "ffmpeg", "governor", "streamtoken", "encderiv"},
 	"mediahttp":         {"store", "artwork", "genassets", "playback", "streamtoken", "auth"},

@@ -141,7 +141,9 @@ func TestEncoderCrashMidWaitRestartsInsideRequest(t *testing.T) {
 
 // TestEncoderCrashBudgetFailsFast proves crash recovery is bounded: a source
 // that kills FFmpeg every time is retried at most twice per request and within
-// the session budget, then fails fast without another spawn.
+// the session budget, then fails fast without another spawn. The first request
+// stays on the retryable 503 path; once encoderMaxFailedRuns runs in a row
+// produced nothing, the session is failed for good (CORE-2379).
 func TestEncoderCrashBudgetFailsFast(t *testing.T) {
 	t.Parallel()
 	transcoder := &scriptedTranscoder{}
@@ -153,20 +155,23 @@ func TestEncoderCrashBudgetFailsFast(t *testing.T) {
 	key := SessionKey{SessionID: "session-doomed", MediaID: "media-doomed"}
 
 	begin := time.Now()
-	for i, wantStarts := range []int{
-		1 + maxRequestEncoderRestarts, // first request: start + its per-request restarts
-		encoderRestartBudget + 1,      // second: its start spends the last budget slot
-		encoderRestartBudget + 1,      // third: budget spent, refused before spawning
+	for i, want := range []struct {
+		starts int
+		err    error
+	}{
+		{1 + maxRequestEncoderRestarts, errEncoderFailing}, // first request: start + its per-request restarts
+		{encoderRestartBudget + 1, ErrTranscodeFailed},     // second: its start is the last run that may fail
+		{encoderRestartBudget + 1, ErrTranscodeFailed},     // third: failed session, refused before spawning
 	} {
 		_, err := filePath720(sessions, key, "720p/seg00000.m4s")
-		if !errors.Is(err, errEncoderFailing) {
-			t.Fatalf("request %d err = %v, want errEncoderFailing (the 503 path)", i, err)
+		if !errors.Is(err, want.err) {
+			t.Fatalf("request %d err = %v, want %v", i, err, want.err)
 		}
 		if errors.Is(err, ErrNotFound) || errors.Is(err, ErrSessionEvicted) {
-			t.Fatalf("request %d err = %v must stay on the retryable 503 path", i, err)
+			t.Fatalf("request %d err = %v, want an encoder failure", i, err)
 		}
-		if got := transcoder.startCount(); got != wantStarts {
-			t.Fatalf("after request %d starts = %d, want %d", i, got, wantStarts)
+		if got := transcoder.startCount(); got != want.starts {
+			t.Fatalf("after request %d starts = %d, want %d", i, got, want.starts)
 		}
 	}
 	if elapsed := time.Since(begin); elapsed > 3*time.Second {

@@ -35,11 +35,14 @@ func openAdmin(t *testing.T, handler *Handler) {
 	}
 }
 
-// setupHealthStore opens a test store, sets the admin password, seeds one root
-// on library-local, and returns the store + handler.
+// setupHealthStore opens a test store, gives library-local a plugin (so every
+// health dimension applies), sets the admin password, seeds one root on
+// library-local, and returns the store + handler.
 func setupHealthStore(t *testing.T) (*store.Store, *Handler) {
 	t.Helper()
-	st := storetest.Open(t)
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	storetest.SetLibraryPlugin(t, dataDir, "library-local", "health-plugin")
 	ctx := context.Background()
 	if err := st.SetAdminPassword(ctx, "correct horse battery", time.Now().UTC()); err != nil {
 		t.Fatal(err)
@@ -113,7 +116,8 @@ func healthCount(t *testing.T, handler *Handler, libraryID, dimension string) in
 
 // importScrapeFailure imports a Media that will appear in the
 // HealthScrapeFailure dimension: title_identified=0 (default) with no external
-// IDs — the "identification pipeline ran but produced nothing" condition.
+// IDs and an unmatched row from an attempted scrape — the "identification
+// pipeline ran but produced nothing" condition.
 func importScrapeFailure(t *testing.T, st *store.Store, libraryID, title, fingerprint, oshash string) store.MediaID {
 	t.Helper()
 	ctx := context.Background()
@@ -129,6 +133,9 @@ func importScrapeFailure(t *testing.T, st *store.Store, libraryID, title, finger
 	})
 	if err != nil {
 		t.Fatalf("ImportMediaFile(%s): %v", title, err)
+	}
+	if err := st.QueueUnmatched(ctx, store.UnmatchedItem{MediaID: media.ID, PluginID: "health-plugin", ScraperID: "lookup"}); err != nil {
+		t.Fatalf("QueueUnmatched(%s): %v", title, err)
 	}
 	return media.ID
 }

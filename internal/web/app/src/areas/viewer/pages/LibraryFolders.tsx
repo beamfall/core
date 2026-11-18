@@ -5,9 +5,11 @@ import { AppShell } from "@/components/chrome/AppShell";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n";
 import { nodePath } from "@/lib/nodePath";
+import { LibraryDisplayToggle, useLibraryViewMode } from "../components/LibraryDisplayToggle";
 import { MediaItemCard } from "../components/MediaItemCard";
 import { ViewerActions } from "../components/ViewerActions";
 import { repeatedTitles, showsYear } from "../lib/cardTitles";
+import { libraryViewClass } from "../lib/libraryBrowse";
 import {
   fetchLibraryFolder,
   folderPath,
@@ -42,6 +44,7 @@ export function LibraryFolders({
   const [failed, setFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
+  const [viewMode, chooseViewMode] = useLibraryViewMode(libraryID);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -175,18 +178,24 @@ export function LibraryFolders({
         )}
 
         {items.length > 0 && page && (
-          <ul aria-label={openName} className="bf-grid">
-            {items.map((item, index) => (
-              <MediaItemCard
-                key={item.id}
-                item={item}
-                queue={queue}
-                posInSet={index + 1}
-                setSize={page.total}
-                showYear={showsYear(item, repeated)}
-              />
-            ))}
-          </ul>
+          <>
+            <LibraryDisplayToggle mode={viewMode} onChange={chooseViewMode} />
+            {/* The server orders the folder's Media by their ordinals, then file name. */}
+            <ul aria-label={openName} className={libraryViewClass(viewMode)}>
+              {items.map((item, index) => (
+                <MediaItemCard
+                  key={item.id}
+                  item={item}
+                  queue={queue}
+                  posInSet={index + 1}
+                  setSize={page.total}
+                  showYear={showsYear(item, repeated)}
+                  playOnActivate={viewMode === "list"}
+                  display={viewMode}
+                />
+              ))}
+            </ul>
+          </>
         )}
         {page && items.length < page.total && (
           <Button

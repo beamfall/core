@@ -865,6 +865,13 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// then hand the configured service to the scan adapter created above.
 	identifyService.SetAutoStores(st, st)
 	autoIdentifier.service = identifyService
+	if err := installLibraryHealthProfile(ctx, st, identifyService, hooks.HydrationMappers, artworkService); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	// Library-wide metadata refresh (CORE-1136): network-bound provider
+	// lookups, paced per item, so it stays outside the resource governor.
+	jobRegistry.Register(identify.RefreshJobKind, identify.RefreshJobHandler(st, identifyService, identify.RefreshJobPace))
 	// Construct the confined proxy archive before native root observation starts.
 	// A malformed/replaced archive root therefore cannot leak watcher resources.
 	proxyTee, err := proxytee.New(
@@ -3402,6 +3409,12 @@ func (l playbackAssetsLocator) PreviewClipAsset(fingerprint string) (string, boo
 // Asset locators (ADR-0098 area 2).
 func (l playbackAssetsLocator) WaveformAsset(fingerprint string) (string, bool) {
 	return l.service.WaveformAsset(fingerprint)
+}
+
+// WaveformOnDemandAsset names the waveform the asset route generates on its
+// first fetch (CORE-2401), so audio decisions advertise it before the sweep.
+func (l playbackAssetsLocator) WaveformOnDemandAsset() string {
+	return genassets.WaveformName
 }
 
 // BeatGridAsset and SyncLanesAsset keep the reserved wire fields always absent:

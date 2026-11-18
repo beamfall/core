@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -181,8 +182,24 @@ func (s *Store) LibraryFolder(ctx context.Context, filter LibraryFilter, query L
 			items = append(items, c.item)
 		}
 	}
+	ordinals, err := mediaOrdinalsSQL(ctx, set.reader, slices.Collect(maps.Keys(direct)))
+	if err != nil {
+		return empty, err
+	}
+	// Media carrying a structural ordinal sort by it, ahead of those carrying
+	// none, which keep file-name order (CORE-2386).
 	slices.SortFunc(items, func(a, b SourceItem) int {
+		oa, hasA := ordinals[a.ID]
+		ob, hasB := ordinals[b.ID]
+		if hasA != hasB {
+			if hasA {
+				return -1
+			}
+			return 1
+		}
 		return cmp.Or(
+			cmp.Compare(oa.sequence, ob.sequence),
+			cmp.Compare(oa.index, ob.index),
 			compareFold(direct[a.ID], direct[b.ID]),
 			compareFold(a.Title, b.Title),
 			strings.Compare(string(a.ID), string(b.ID)),
@@ -196,6 +213,51 @@ func (s *Store) LibraryFolder(ctx context.Context, filter LibraryFilter, query L
 		return empty, err
 	}
 	return result, nil
+}
+
+// mediaOrdinal is one Media's stored structural ordinals; 0 means absent.
+type mediaOrdinal struct{ sequence, index float64 }
+
+// mediaOrdinalsSQL reads the stored "sequence" and "index" number fields of
+// the given Media from one catalog plane. Media carrying neither are absent.
+func mediaOrdinalsSQL(ctx context.Context, reader *sql.DB, ids []MediaID) (map[MediaID]mediaOrdinal, error) {
+	ordinals := map[MediaID]mediaOrdinal{}
+	for start := 0; start < len(ids); start += engagementChunkSize {
+		chunk := ids[start:min(start+engagementChunkSize, len(ids))]
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			args[i] = id
+		}
+		// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
+		rows, err := reader.QueryContext(ctx, `SELECT media_id, field, value FROM media_field_real
+			WHERE field IN ('sequence', 'index') AND media_id IN (`+sqlPlaceholders(len(chunk))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id MediaID
+			var field string
+			var value float64
+			if err := rows.Scan(&id, &field, &value); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			ordinal := ordinals[id]
+			if field == "sequence" {
+				ordinal.sequence = value
+			} else {
+				ordinal.index = value
+			}
+			ordinals[id] = ordinal
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return ordinals, nil
 }
 
 // libraryFolderFiles reads the present files of the visible Media, from the

@@ -205,3 +205,19 @@ func BackdateStreamTokenActivity(t testing.TB, dataDir string, session store.Ses
 		t.Fatalf("backdate stream token activity: %v", err)
 	}
 }
+
+// SetLibraryPlugin assigns a plugin to a seeded fixture Library, which the dev
+// seed leaves plugin-less. Library health judges a Library by its plugin
+// (CORE-2383). It lives under internal/store so storage-driver access stays
+// inside the store boundary.
+func SetLibraryPlugin(t testing.TB, dataDir string, id store.LibraryID, pluginID string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(dataDir, "db", "catalog.db"))
+	if err != nil {
+		t.Fatalf("open catalog fixture: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE library SET plugin_id = ? WHERE id = ?`, pluginID, id); err != nil {
+		t.Fatalf("set library plugin: %v", err)
+	}
+}

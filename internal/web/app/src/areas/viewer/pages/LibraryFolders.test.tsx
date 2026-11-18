@@ -274,4 +274,53 @@ describe("Library folder view (CORE-2359)", () => {
     expect(await screen.findByText("1 item")).toBeInTheDocument();
     expect(screen.getByTestId("where").textContent).toBe("/n/archive/all?view=media");
   });
+
+  it("draws an open folder's items in the remembered layout with their subtitles (CORE-2386)", async () => {
+    const episodes: SourceItem[] = [1, 2].map((index) => ({
+      id: `e${index}`,
+      kind: "media",
+      title: "The Single Life",
+      subtitle: { en: `S5 · E${index} · Part ${index}` },
+      sequence: 5,
+      index,
+      durationSeconds: 2520,
+    }));
+    vi.mocked(fetchLibraryFolder).mockImplementation(async (request) =>
+      request.path === "/s5"
+        ? {
+            rootCount: 1,
+            path: "/s5",
+            crumbs: [{ path: "/s5", name: "Season 5" }],
+            folders: [],
+            total: episodes.length,
+            items: episodes,
+          }
+        : folderFor(request),
+    );
+    const user = userEvent.setup();
+    renderAt("/n/archive/all?view=folders&folder=%2Fs5");
+
+    const list = await screen.findByRole("list", { name: "Season 5" });
+    expect(list).toHaveClass("bf-grid");
+    expect(screen.getByRole("button", { name: "The Single Life, S5 · E1 · Part 1" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "The Single Life, S5 · E2 · Part 2" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "List" }));
+    const rows = screen.getByRole("list", { name: "Season 5" });
+    expect(rows).toHaveClass("bf-stack", "bf-rows");
+    expect([...rows.querySelectorAll(".bf-card-ordinal")].map((n) => n.textContent)).toEqual([
+      "1",
+      "2",
+    ]);
+    expect(rows.querySelector(".bf-card-runtime")).toHaveTextContent("42:00");
+    expect(window.localStorage.getItem("beamfall.libraryView.lib")).toBe("list");
+  });
+
+  it("hides the layout choice where a folder holds only folders", async () => {
+    vi.mocked(fetchLibraryFolder).mockImplementation(async (request) => folderFor(request));
+    renderAt("/n/archive/all?view=folders");
+
+    expect(await screen.findByRole("list", { name: "Folders" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Posters" })).toBeNull();
+  });
 });

@@ -180,3 +180,41 @@ func TestLibraryFolderOpensASingleRootAndPages(t *testing.T) {
 		t.Fatalf("second page = %v (total %d)", itemIDs(page.Items), page.Total)
 	}
 }
+
+// TestLibraryFolderSortsByOrdinalThenFileName pins CORE-2386: Media carrying
+// stored ordinals list by sequence then index, ahead of Media carrying none,
+// which keep file-name order.
+func TestLibraryFolderSortsByOrdinalThenFileName(t *testing.T) {
+	st, rootA, _, ids := folderFixture(t)
+	ctx := context.Background()
+	if err := st.SetLibraryRoots(ctx, "library-demo-open", []string{rootA}); err != nil {
+		t.Fatal(err)
+	}
+	// Four Media directly in the root. File names sort a, b, c, d; the
+	// ordinals say d (2.1), b (2.10) and c (3.1), with a carrying none.
+	names := []string{"d.mkv", "b.mkv", "c.mkv", "a.mkv"}
+	ordinals := [][2]float64{{2, 1}, {2, 10}, {3, 1}, {0, 0}}
+	for i, name := range names {
+		if _, err := st.catalogW.ExecContext(ctx, `UPDATE media_file SET path = ? || CASE WHEN part_ordinal = 0 AND version_label = '' THEN '' ELSE '.' || rowid END WHERE media_id = ?`, filepath.Join(rootA, name), ids[i]); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetMediaFields(ctx, ids[i], nil); err != nil {
+			t.Fatal(err)
+		}
+		var fields []MediaField
+		if ordinals[i][0] > 0 {
+			fields = append(fields, MediaField{Name: "sequence", Type: EntityFieldNumber, Number: ordinals[i][0]})
+		}
+		if ordinals[i][1] > 0 {
+			fields = append(fields, MediaField{Name: "index", Type: EntityFieldNumber, Number: ordinals[i][1]})
+		}
+		if err := st.SetMediaFields(ctx, ids[i], fields); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opened := mustLibraryFolder(t, st, LibraryFolderQuery{})
+	want := []MediaID{ids[0], ids[1], ids[2], ids[3]}
+	if !slices.Equal(itemIDs(opened.Items), want) {
+		t.Fatalf("folder items = %v, want ordinal order then file name %v", itemIDs(opened.Items), want)
+	}
+}

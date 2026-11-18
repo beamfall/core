@@ -771,13 +771,20 @@ func demoSeed(dataDir string) seedData {
 		media:      mediaRows,
 		mediaFiles: demoMediaFiles(dataDir, mediaRows, generated),
 		artwork:    demoArtwork(dataDir, generatedDemoMediaIDs()),
+		// Ratings (CORE-2398) use the core-conventional fields a client shows:
+		// films a certification and series a TV display rating, each with a
+		// 0-10 community score, so clients can render ratings in demo mode.
 		mediaFields: []seedMediaFields{
-			{"media-demo-bunny", []MediaField{{Name: "format", Type: EntityFieldText, Text: "short"}, {Name: "tone", Type: EntityFieldText, Text: "Comedy"}}},
-			{"media-demo-caminandes", []MediaField{{Name: "format", Type: EntityFieldText, Text: "short"}, {Name: "tone", Type: EntityFieldText, Text: "Comedy"}}},
-			{"media-demo-sintel", []MediaField{{Name: "format", Type: EntityFieldText, Text: "feature"}, {Name: "tone", Type: EntityFieldText, Text: "Adventure"}}},
-			{"media-demo-steel", []MediaField{{Name: "format", Type: EntityFieldText, Text: "feature"}, {Name: "tone", Type: EntityFieldText, Text: "Science"}}},
-			{"media-demo-series-1", []MediaField{{Name: "format", Type: EntityFieldText, Text: "serial"}}},
-			{"media-demo-series-2", []MediaField{{Name: "format", Type: EntityFieldText, Text: "serial"}}},
+			{"media-demo-bunny", demoRated("G", 7.6, MediaField{Name: "format", Type: EntityFieldText, Text: "short"}, MediaField{Name: "tone", Type: EntityFieldText, Text: "Comedy"})},
+			{"media-demo-caminandes", demoRated("G", 7.1, MediaField{Name: "format", Type: EntityFieldText, Text: "short"}, MediaField{Name: "tone", Type: EntityFieldText, Text: "Comedy"})},
+			{"media-demo-sintel", demoRated("PG-13", 7.4, MediaField{Name: "format", Type: EntityFieldText, Text: "feature"}, MediaField{Name: "tone", Type: EntityFieldText, Text: "Adventure"})},
+			{"media-demo-steel", demoRated("PG-13", 6.5, MediaField{Name: "format", Type: EntityFieldText, Text: "feature"}, MediaField{Name: "tone", Type: EntityFieldText, Text: "Science"})},
+			{"media-demo-spring", demoRated("PG", 7.8)},
+			{"media-demo-charge", demoRated("PG-13", 6.9)},
+			{"media-demo-orbit", demoRated("G", 8.2)},
+			{"media-demo-aurora", demoRated("G", 7.0)},
+			{"media-demo-series-1", demoSeriesRated("TV-PG", 8.1, MediaField{Name: "format", Type: EntityFieldText, Text: "serial"})},
+			{"media-demo-series-2", demoSeriesRated("TV-PG", 7.9, MediaField{Name: "format", Type: EntityFieldText, Text: "serial"})},
 		},
 		entities: []Entity{
 			{ID: "entity-demo-comedy", LibraryID: "library-demo-open", Kind: "category", Title: "Comedy"},
@@ -821,6 +828,21 @@ type generatedDemoMedia struct {
 	duration  int
 	year      int
 	vertical  bool
+}
+
+// demoRated appends a film's certification and community score to fields.
+func demoRated(certification string, score float64, fields ...MediaField) []MediaField {
+	return append(fields,
+		MediaField{Name: certificationField, Type: EntityFieldText, Text: certification},
+		MediaField{Name: audienceScoreField, Type: EntityFieldNumber, Number: score})
+}
+
+// demoSeriesRated appends a series TV display rating and community score to
+// fields; a series rating is display-only, never a ceiling value.
+func demoSeriesRated(rating string, score float64, fields ...MediaField) []MediaField {
+	return append(fields,
+		MediaField{Name: certificationDisplayField, Type: EntityFieldText, Text: rating},
+		MediaField{Name: audienceScoreField, Type: EntityFieldNumber, Number: score})
 }
 
 func generatedDemoMediaRows() []Media {

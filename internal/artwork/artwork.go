@@ -339,6 +339,13 @@ var slotFallback = map[string]string{
 	SlotContainerPoster: SlotPoster,
 }
 
+// SlotFallback returns the slot served in place of a Media slot whose own file
+// is absent, and whether the slot has one.
+func SlotFallback(slot string) (string, bool) {
+	fb, ok := slotFallback[slot]
+	return fb, ok
+}
+
 // ResolveSlot returns the slot to actually serve for a requested Media slot and
 // whether any artwork resolves: the requested slot when its file exists, else
 // its per-slot fallback. ok=false means neither the slot nor its

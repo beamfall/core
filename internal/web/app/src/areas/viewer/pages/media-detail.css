@@ -168,6 +168,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Content rating badge and community score (CORE-2399). */
+[data-register="viewer"] .bf-detail-fact[data-variant="rating"] {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+[data-register="viewer"] .bf-detail-fact[data-variant="score"] {
+  color: var(--text-primary);
+}
+
 [data-register="viewer"] .bf-detail-progress {
   display: flex;
   flex-direction: column;
