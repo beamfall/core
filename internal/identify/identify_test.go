@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -996,53 +997,73 @@ func TestApplyHydratesEntitiesAndRelations(t *testing.T) {
 	}
 }
 
-// A scraper EntityMap that declares an OrdinalField sources the relation's
-// sort_order from the plugin-supplied document value, not the array index —
-// the ordering source that lets OrderedChildren and the next-up Source land in
-// the intended order. The fixture lists episodes in
-// reverse so a passing assertion proves the ordinal, not document position,
-// drove sort_order; a non-numeric ordinal falls back to the array index.
-func TestApplyOrdinalFieldDrivesRelationSortOrder(t *testing.T) {
-	spec := plugin.ScraperSpec{
-		ID: "lookup",
-		EntityMaps: []plugin.EntityMap{{
-			Kind: "season", Relation: "contains", Path: "episodes", NamePath: "name",
-			FieldMap:     map[string]string{"position": "episode_number"},
-			OrdinalField: "position",
-		}},
-	}
-	// Document order is reversed relative to episode_number: index 0 carries
-	// ordinal 2, index 1 carries ordinal 1. SortOrder set by the scrape engine
-	// is the array index (0,1); the OrdinalField must override it to (2,1).
+// ensuringEntityStore is a fakeEntityStore that also implements
+// identify.EntityEnsurer, recording the field-less writes it received.
+type ensuringEntityStore struct {
+	fakeEntityStore
+	ensured []store.Entity
+}
+
+func (f *ensuringEntityStore) EnsureEntity(_ context.Context, entity store.Entity) error {
+	f.ensured = append(f.ensured, entity)
+	return nil
+}
+
+// Links of one Entity to the Media under one relation merge into one relation
+// row: distinct attribute values (even ones holding ", ") join in order, the smallest sort order wins
+// and typed fields union. A link that hydrated no fields only ensures its
+// Entity exists, so it never wipes fields an earlier identification stored.
+func TestApplyMergesEntityLinksIntoOneRelationRow(t *testing.T) {
 	engine := &fakeEngine{lookupResult: scrape.Result{
-		Fields: map[string]any{"title": "Voyages"},
+		Fields: map[string]any{"title": "Blue Harvest"},
 		Entities: []scrape.EntityResult{
-			{Kind: "season", Relation: "contains", Name: "The Return", SortOrder: identifyIntPtr(0), Fields: map[string]string{"position": "2"}},
-			{Kind: "season", Relation: "contains", Name: "The Departure", SortOrder: identifyIntPtr(1), Fields: map[string]string{"position": "1"}},
-			{Kind: "season", Relation: "contains", Name: "The Pilot", SortOrder: identifyIntPtr(2), Fields: map[string]string{"position": "notanumber"}},
+			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(0),
+				Fields: map[string]string{"bio": "Pioneer."}, RelationAttributes: map[string]string{"character": "Herself, Jr."}},
+			{Kind: "maker", Relation: "made", Name: "Bea", SortOrder: identifyIntPtr(1)},
+			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(1000),
+				RelationAttributes: map[string]string{"job": "Director", "department": "Directing"}},
+			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(1001),
+				RelationAttributes: map[string]string{"job": "Writer", "department": "Writing"}},
+			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(1002),
+				RelationAttributes: map[string]string{"job": "Director", "department": "Directing"}},
+			{Kind: "maker", Relation: "made", Name: "Ada", SortOrder: identifyIntPtr(1003),
+				RelationAttributes: map[string]string{"character": "Herself, Jr."}},
 		},
 	}}
-	entities := &fakeEntityStore{library: "lib-main"}
-	service := identify.NewService(engine, demoBundles(spec), &fakeStore{})
+	entities := &ensuringEntityStore{fakeEntityStore: fakeEntityStore{library: "lib-main"}}
+	bundles := demoBundles(plugin.ScraperSpec{ID: "lookup"})
+	bundle := bundles["demo"]
+	bundle.EntityKinds = []plugin.EntityKind{{
+		Name: "maker", Archetype: "person",
+		Fields:    []plugin.FieldSpec{{Name: "bio", Type: "text"}},
+		Relations: []plugin.RelationSpec{{Name: "made", ToKind: plugin.MediaKindName, Attributes: []string{"character", "job", "department"}}},
+	}}
+	bundles["demo"] = bundle
+	service := identify.NewService(engine, bundles, &fakeStore{})
 	service.SetEntities(entities)
 
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
 	}
-	if len(entities.relations) != 3 {
-		t.Fatalf("relations = %d, want 3", len(entities.relations))
+	if len(entities.entities) != 1 || entities.entities[0].Title != "Ada" || len(entities.entities[0].Fields) != 1 {
+		t.Fatalf("upserts = %#v, want Ada once with her bio", entities.entities)
 	}
-	got := map[string]int{}
-	for i, relation := range entities.relations {
-		if relation.SortOrder == nil {
-			t.Fatalf("relation %d (%s) has nil sort_order", i, entities.entities[i].Title)
-		}
-		got[entities.entities[i].Title] = *relation.SortOrder
+	if len(entities.ensured) != 1 || entities.ensured[0].Title != "Bea" {
+		t.Fatalf("ensured = %#v, want field-less Bea only", entities.ensured)
 	}
-	// The two numeric ordinals override array index; the non-numeric one falls
-	// back to its array index (2).
-	if got["The Return"] != 2 || got["The Departure"] != 1 || got["The Pilot"] != 2 {
-		t.Fatalf("sort_order by title = %#v, want Return:2 Departure:1 Pilot:2 (ordinal overrides index, non-numeric falls back)", got)
+	if len(entities.relations) != 2 {
+		t.Fatalf("relations = %#v, want one row per person", entities.relations)
+	}
+	ada := entities.relations[0]
+	want := map[string]string{"character": "Herself, Jr.", "job": "Director, Writer", "department": "Directing, Writing"}
+	if !maps.Equal(ada.Attributes, want) {
+		t.Fatalf("Ada attributes = %#v, want %#v", ada.Attributes, want)
+	}
+	if ada.SortOrder == nil || *ada.SortOrder != 0 {
+		t.Fatalf("Ada sort order = %v, want 0 (the smallest)", ada.SortOrder)
+	}
+	if bea := entities.relations[1]; bea.Attributes != nil || bea.SortOrder == nil || *bea.SortOrder != 1 {
+		t.Fatalf("Bea relation = %#v, want no attributes at order 1", bea)
 	}
 }
 
@@ -1370,13 +1391,13 @@ func TestApplyHydratesEntityFieldsAndDedupes(t *testing.T) {
 	if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
 		t.Fatal(err)
 	}
-	// Two hydrated results, one distinct maker → two upserts of one ID (dedupe
-	// is the shared (library, kind, name) key, idempotent on the store side).
-	if len(entities.entities) != 2 {
-		t.Fatalf("entity upserts = %d, want 2 (same maker twice)", len(entities.entities))
+	// Two hydrated results, one distinct maker → one upsert and one relation
+	// row (dedupe is the shared (library, kind, name) key), at the first order.
+	if len(entities.entities) != 1 || len(entities.relations) != 1 {
+		t.Fatalf("entity upserts = %d, relations = %d, want 1 each (same maker twice)", len(entities.entities), len(entities.relations))
 	}
-	if entities.entities[0].ID != entities.entities[1].ID {
-		t.Fatalf("duplicate maker forked IDs: %q vs %q", entities.entities[0].ID, entities.entities[1].ID)
+	if order := entities.relations[0].SortOrder; order == nil || *order != 0 {
+		t.Fatalf("merged sort order = %v, want 0", order)
 	}
 	got := entities.entities[0]
 	if got.Kind != "maker" || got.Title != "Ada Lovelace" {

@@ -13,6 +13,7 @@ import { useEngagementEvents } from "./actions";
 import { SectionSkeleton } from "./components/HydratedSection";
 import { useScrollRestoration } from "./lib/useScrollRestoration";
 import { BrowsePage } from "./pages/BrowsePage";
+import { CastCrewPage } from "./pages/CastCrewPage";
 import { CollectionListPage } from "./pages/CollectionListPage";
 import { CollectionPage } from "./pages/CollectionPage";
 import { EntityPage } from "./pages/EntityPage";
@@ -159,6 +160,7 @@ function ViewerRoutes({ profileID }: { profileID: string }) {
         <Route path="/n/:nodeId/categories" element={<LibraryPivotPage pivot="categories" />} />
         <Route path="/entity/:entityId" element={<EntityPage />} />
         <Route path="/media/*" element={<MediaDetailPage />} />
+        <Route path="/credits/*" element={<CastCrewPage />} />
         <Route path="/seeall/:sourceId" element={<SeeAllPage />} />
         <Route path="/collections" element={<CollectionListPage />} />
         <Route path="/collections/:libraryId/:collectionId" element={<CollectionPage />} />

@@ -521,3 +521,41 @@
   font-size: 13px;
   line-height: 18px;
 }
+
+/* Directors and writers under the facts (CORE-2503). */
+[data-register="viewer"] .bf-detail-crew {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+[data-register="viewer"] .bf-detail-crew > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+[data-register="viewer"] .bf-detail-crew dt {
+  color: var(--text-secondary);
+}
+
+[data-register="viewer"] .bf-detail-crew dd {
+  margin: 0;
+}
+
+[data-register="viewer"] .bf-detail-crew a {
+  color: inherit;
+  text-decoration: none;
+}
+
+[data-register="viewer"] .bf-detail-crew a:hover {
+  text-decoration: underline;
+}
+
+[data-register="viewer"] .bf-detail-crew a:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

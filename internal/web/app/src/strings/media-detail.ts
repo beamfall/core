@@ -20,6 +20,11 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "More in {title}",
     mediaDetailPeople: "People",
+    // Directors, writers and the Cast & Crew view (CORE-2503).
+    mediaDetailDirectors: "{count, plural, one {Director} other {Directors}}",
+    mediaDetailWriters: "{count, plural, one {Writer} other {Writers}}",
+    mediaDetailCastCrew: "Cast & Crew",
+    mediaDetailCast: "Cast",
     mediaDetailLoadFailed: "This item couldn’t be loaded. Check your connection and try again.",
     // Media detail lockup (CORE-1785).
     mediaDetailStartOver: "Start over",
@@ -65,6 +70,10 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Aussi dans {title}",
     mediaDetailPeople: "Personnes",
+    mediaDetailDirectors: "Réalisation",
+    mediaDetailWriters: "Scénario",
+    mediaDetailCastCrew: "Distribution et équipe",
+    mediaDetailCast: "Distribution",
     mediaDetailLoadFailed:
       "Impossible de charger cet élément. Vérifiez votre connexion et réessayez.",
     mediaDetailStartOver: "Recommencer",
@@ -106,6 +115,10 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Mehr aus {title}",
     mediaDetailPeople: "Personen",
+    mediaDetailDirectors: "Regie",
+    mediaDetailWriters: "Drehbuch",
+    mediaDetailCastCrew: "Besetzung und Stab",
+    mediaDetailCast: "Besetzung",
     mediaDetailLoadFailed:
       "Dieses Element konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
     mediaDetailStartOver: "Von vorn",
@@ -149,6 +162,10 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Más de {title}",
     mediaDetailPeople: "Personas",
+    mediaDetailDirectors: "Dirección",
+    mediaDetailWriters: "Guion",
+    mediaDetailCastCrew: "Reparto y equipo",
+    mediaDetailCast: "Reparto",
     mediaDetailLoadFailed:
       "No se pudo cargar este elemento. Comprueba tu conexión e inténtalo de nuevo.",
     mediaDetailStartOver: "Empezar de nuevo",
@@ -190,6 +207,10 @@ export const mediaDetailStrings = {
     mediaDetailOrdinal: "{label} {number}",
     mediaDetailMoreIn: "Mais de {title}",
     mediaDetailPeople: "Pessoas",
+    mediaDetailDirectors: "Direção",
+    mediaDetailWriters: "Roteiro",
+    mediaDetailCastCrew: "Elenco e equipe",
+    mediaDetailCast: "Elenco",
     mediaDetailLoadFailed:
       "Não foi possível carregar este item. Verifique sua conexão e tente novamente.",
     mediaDetailStartOver: "Começar de novo",

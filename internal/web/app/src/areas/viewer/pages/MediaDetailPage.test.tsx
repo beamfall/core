@@ -1046,6 +1046,43 @@ describe("MediaDetailPage", () => {
     );
   });
 
+  it("names directors and writers linked to their pages and previews the cast (CORE-2503)", async () => {
+    const credit = (entityID: string, title: string, attributes: Record<string, string>) => ({
+      ...person(entityID, title),
+      attributes,
+    });
+    vi.mocked(fetchMedia).mockResolvedValue({
+      ...media,
+      credits: [
+        credit("rc", "Russell Crowe", { character: "John Nash" }),
+        credit("rh", "Ron Howard", {
+          job: "Director, Producer",
+          department: "Directing, Production",
+        }),
+        credit("ag", "Akiva Goldsman", {
+          job: "Screenplay, Producer",
+          department: "Writing, Production",
+        }),
+      ],
+    });
+    vi.mocked(fetchSourceItems).mockResolvedValue([]);
+    renderAt(["/media/m1"]);
+
+    const director = await screen.findByRole("link", { name: "Ron Howard" });
+    expect(director).toHaveAttribute("href", "/entity/rh");
+    expect(director.closest("div")).toHaveTextContent("DirectorRon Howard");
+    const writer = screen.getByRole("link", { name: "Akiva Goldsman" });
+    expect(writer).toHaveAttribute("href", "/entity/ag");
+    expect(writer.closest("div")).toHaveTextContent("WriterAkiva Goldsman");
+    const people = screen.getByRole("list", { name: "People" });
+    expect(
+      within(people)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(["RRussell CroweJohn Nash"]);
+    expect(screen.getByRole("link", { name: "See all" })).toHaveAttribute("href", "/credits/m1");
+  });
+
   it("hides More with and Related when the reads return nothing else (CORE-2444)", async () => {
     vi.mocked(fetchMedia).mockResolvedValue({
       ...media,

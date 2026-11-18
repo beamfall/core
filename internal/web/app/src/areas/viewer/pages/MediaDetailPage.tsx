@@ -45,7 +45,7 @@ import {
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
-import { castHasDetail } from "../lib/people";
+import { castHasDetail, creditsWithJob } from "../lib/people";
 import { streamFacts } from "../lib/streamFacts";
 import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
@@ -66,6 +66,7 @@ import {
 } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { PlayOnButton } from "../remote/PlayOnButton";
+import { castCrewPath } from "./CastCrewPage";
 import "./media-detail.css";
 
 const POSTER_BUCKETS = ["w320", "w640"] as const;
@@ -78,6 +79,12 @@ const TITLE_ID = "bf-media-detail-title";
 const OVERVIEW_CLAMP_CHARS = 240;
 
 type Status = "loading" | "ready" | "missing" | "failed";
+
+/** People shown in the detail page's People row before "See all" (CORE-2503). */
+const CAST_PREVIEW_MAX = 20;
+/** The credit jobs named on the detail page's director and writer lines (CORE-2503). */
+const DIRECTOR_JOBS = ["Director"];
+const WRITER_JOBS = ["Writer", "Screenplay"];
 
 // One Media item (/media/:mediaId, CORE-1144, CORE-1785). Generic by
 // invariant #1: an artwork-led lockup of the item's title, facts and one
@@ -166,6 +173,18 @@ export function MediaDetailPage() {
   // no one is named twice.
   const castRow = !!media && (media.mediaClass !== "audio" || castHasDetail(media.credits));
   const people = castRow ? [] : audioPeople(media);
+  const crewLines = [
+    {
+      key: "directors",
+      label: "mediaDetailDirectors" as const,
+      people: creditsWithJob(media?.credits, DIRECTOR_JOBS),
+    },
+    {
+      key: "writers",
+      label: "mediaDetailWriters" as const,
+      people: creditsWithJob(media?.credits, WRITER_JOBS),
+    },
+  ].filter((line) => line.people.length > 0);
   // Version, audio and subtitle picks made here before playback (CORE-2442), for one Media.
   const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
   // Read alongside the item, once, for the pickers, the facts row's stream
@@ -368,6 +387,25 @@ export function MediaDetailPage() {
                   ))}
                 </ul>
               )}
+              {crewLines.length > 0 && (
+                <dl className="bf-detail-crew">
+                  {crewLines.map((line) => (
+                    <div key={line.key}>
+                      <dt>{t(line.label, { count: line.people.length })}</dt>
+                      <dd>
+                        {line.people.map((person, index) => (
+                          <span key={person.entityID}>
+                            {index > 0 && ", "}
+                            <Link to={`/entity/${encodeURIComponent(person.entityID)}`}>
+                              {person.title}
+                            </Link>
+                          </span>
+                        ))}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
               {progress && (
                 <div className="bf-detail-progress">
                   <div
@@ -464,7 +502,12 @@ export function MediaDetailPage() {
           </div>
         </section>
 
-        {media && castRow && <CastRow credits={media.credits} />}
+        {media && castRow && (
+          <CastRow
+            credits={media.credits}
+            preview={{ max: CAST_PREVIEW_MAX, to: castCrewPath(mediaId) }}
+          />
+        )}
 
         {/* Details renders with the item, before the rows that load on their
             own, so their arrival does not move it (CORE-2509). */}

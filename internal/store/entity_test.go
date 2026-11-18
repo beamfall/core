@@ -78,6 +78,70 @@ func TestUpsertEntityRoundTripsAllFieldTypes(t *testing.T) {
 	}
 }
 
+// EnsureEntity creates a missing Entity and leaves an existing one, its title
+// and its fields as they are.
+func TestEnsureEntityKeepsExistingFields(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	created := widgetEntity("entity-new", "library-local")
+	if err := st.EnsureEntity(ctx, created); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.Entity(ctx, "entity-new", LibraryFilter{AllLibraries: true}); err != nil || got.Title != created.Title {
+		t.Fatalf("ensured entity = %#v, %v; want it created", got, err)
+	}
+
+	stored := widgetEntity("entity-one", "library-local")
+	stored.Fields = []EntityField{{Name: "summary", Type: EntityFieldText, Text: "kept"}}
+	if err := st.UpsertEntity(ctx, stored); err != nil {
+		t.Fatal(err)
+	}
+	bare := widgetEntity("entity-one", "library-local")
+	bare.Title = "Other Casing"
+	if err := st.EnsureEntity(ctx, bare); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Entity(ctx, "entity-one", LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != stored.Title || len(got.Fields) != 1 || got.Fields[0].Text != "kept" {
+		t.Fatalf("entity after ensure = %#v, want the stored title and field kept", got)
+	}
+}
+
+// TestEnsureEntityRacingUpsertKeepsFields pins the insert-if-absent: field-less
+// ensures racing a field-carrying upsert of the same Entity never erase its
+// fields, whichever lands first.
+func TestEnsureEntityRacingUpsertKeepsFields(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for i := range 50 {
+		id := EntityID(fmt.Sprintf("entity-race-%d", i))
+		full := widgetEntity(id, "library-local")
+		full.Fields = []EntityField{{Name: "summary", Type: EntityFieldText, Text: "kept"}}
+		start := make(chan struct{})
+		errs := make(chan error, 9)
+		for range 8 {
+			go func() { <-start; errs <- st.EnsureEntity(ctx, widgetEntity(id, "library-local")) }()
+		}
+		go func() { <-start; errs <- st.UpsertEntity(ctx, full) }()
+		close(start)
+		for range 9 {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := st.Entity(ctx, id, LibraryFilter{AllLibraries: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Fields) != 1 {
+			t.Fatalf("iteration %d: fields = %#v, want the upserted summary kept", i, got.Fields)
+		}
+	}
+}
+
 func TestUpsertEntityValidation(t *testing.T) {
 	st := openSeeded(t)
 	cases := []Entity{
@@ -901,6 +965,78 @@ func TestReplaceMediaRelationsRewritesNamedKindsOnly(t *testing.T) {
 	}
 	if got := ids("tagged"); len(got) != 1 || got[0] != "entity-c" {
 		t.Fatalf("rejected replace disturbed rows: %v", got)
+	}
+}
+
+// TestReplaceEntityRelationsRewritesNamedRelationsOnly: replacing a source
+// Entity's links under one relation name drops its previous Entity targets
+// under that name and keeps its other names and its Media-target rows; a row
+// from another source or under an unnamed relation is rejected before
+// anything is deleted, and a named relation with no rows is cleared.
+func TestReplaceEntityRelationsRewritesNamedRelationsOnly(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	for _, id := range []EntityID{"entity-a", "entity-b", "entity-c", "entity-d"} {
+		if err := st.UpsertEntity(ctx, widgetEntity(id, "library-local")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, relation := range []EntityRelation{
+		{FromEntityID: "entity-a", Name: "linked", ToEntityID: "entity-b"},
+		{FromEntityID: "entity-a", Name: "linked", ToEntityID: "entity-c"},
+		{FromEntityID: "entity-a", Name: "other", ToEntityID: "entity-b"},
+		{FromEntityID: "entity-a", Name: "linked", ToMediaID: "media-alpha"},
+	} {
+		if err := st.UpsertEntityRelation(ctx, relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	order := 0
+	if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, []EntityRelation{
+		{FromEntityID: "entity-a", Name: "linked", ToEntityID: "entity-d", SortOrder: &order},
+	}); err != nil {
+		t.Fatalf("ReplaceEntityRelations: %v", err)
+	}
+	targets := func(name string) []EntityID {
+		t.Helper()
+		ids, _, err := st.EntityRelationTargets(ctx, "library-local", "entity-a", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ids
+	}
+	if got := targets("linked"); len(got) != 1 || got[0] != "entity-d" {
+		t.Fatalf("replaced relation targets = %v, want only entity-d", got)
+	}
+	if got := targets("other"); len(got) != 1 || got[0] != "entity-b" {
+		t.Fatalf("untouched relation targets = %v, want entity-b kept", got)
+	}
+	related, err := st.EntitiesForMedia(ctx, "media-alpha", "linked", LibraryFilter{AllLibraries: true})
+	if err != nil || len(related) != 1 || related[0].Entity.ID != "entity-a" {
+		t.Fatalf("media-target row = %v, %v; want entity-a kept", related, err)
+	}
+
+	for name, rows := range map[string][]EntityRelation{
+		"a row from another source":       {{FromEntityID: "entity-b", Name: "linked", ToEntityID: "entity-c"}},
+		"a row under an unnamed relation": {{FromEntityID: "entity-a", Name: "other", ToEntityID: "entity-c"}},
+	} {
+		if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, rows); err == nil {
+			t.Fatalf("ReplaceEntityRelations accepted %s", name)
+		}
+	}
+	if got := targets("linked"); len(got) != 1 || got[0] != "entity-d" {
+		t.Fatalf("rejected replace disturbed rows: %v", got)
+	}
+
+	// A named relation with no rows is cleared.
+	if err := st.ReplaceEntityRelations(ctx, "entity-a", []string{"linked"}, nil); err != nil {
+		t.Fatalf("ReplaceEntityRelations clearing: %v", err)
+	}
+	if got := targets("linked"); len(got) != 0 {
+		t.Fatalf("cleared relation targets = %v, want none", got)
+	}
+	if got := targets("other"); len(got) != 1 {
+		t.Fatalf("clearing disturbed another relation: %v", got)
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -57,9 +58,16 @@ type EntityResult struct {
 	Kind     string
 	Relation string
 	Name     string
-	// SortOrder is set to the source array index when the EntityMap Path
-	// resolves to an array. Nil means the map resolved a scalar node.
+	// SortOrder is the relation row's sort position: the map's OrdinalField
+	// value when it parses as an integer, else the source array index when the
+	// EntityMap Path resolves to an array, plus the map's OrdinalOffset. Nil
+	// means the map resolved a scalar node and declared no usable ordinal.
 	SortOrder *int
+	// RelationAttributes are the map's RelationAttributeMap resolutions:
+	// declared relation attribute → the Path element's scalar value (never a
+	// LookupTemplate document's). Nil when the map declares none or none
+	// resolved.
+	RelationAttributes map[string]string
 	// ArtworkURL is the absolute image URL the map's ArtworkPath resolved to
 	// (after ArtworkBaseURL composition, the ArtworkMap treatment). Empty when
 	// the map declares no ArtworkPath or the path did not resolve.
@@ -82,6 +90,34 @@ type EntityResult struct {
 	// no Name, Relation or parent and the consumer never creates an Entity
 	// from it.
 	Container bool
+	// Artwork holds a container result's ArtworkMap resolutions: artwork slot
+	// → absolute image URL, composed like Media artwork. Nil when the map
+	// declares no ArtworkMap or none of its paths resolved.
+	Artwork map[string]string
+	// Title is a container result's TitlePath resolution: the display title
+	// that replaces the container Entity's title. Empty keeps the title.
+	Title string
+	// Links are a container result's ContainerRelations resolutions: the
+	// Entities sibling maps hydrated in the same lookup, each under the
+	// container relation it is linked by.
+	Links []EntityLink
+	// LinkRelations lists, sorted, the container relations the map declares:
+	// Links holds every link under them this lookup resolved, so a relation
+	// with no Links resolved to none.
+	LinkRelations []string
+	// containerRelations is the container map's ContainerRelations, which
+	// linkContainerResults resolves into Links once every map has resolved.
+	containerRelations map[string]string
+}
+
+// EntityLink is one container → Entity link a ContainerRelations entry
+// resolved: the container relation name and the hydrated sibling Entity's
+// kind, name and sort order.
+type EntityLink struct {
+	Relation  string
+	Kind      string
+	Name      string
+	SortOrder *int
 }
 
 // CredentialSource resolves an AuthRef to its secret. The engine never reads
@@ -486,6 +522,7 @@ func (e *Engine) lookupDocument(ctx context.Context, spec plugin.ScraperSpec, te
 	if err != nil {
 		return Result{}, err
 	}
+	linkContainerResults(result.Entities)
 	if template == spec.LookupTemplate {
 		if err := e.overlayItemLookup(ctx, spec, id, v, config, &result); err != nil {
 			return Result{}, err
@@ -844,14 +881,17 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 		}
 		lookups := 0
 		for i, element := range elements {
+			if !elementMatchesFilter(element, entityMap.ElementFilter, config) {
+				continue
+			}
 			source := element
-			if entityMap.LookupTemplate != "" {
+			// Past MaxLookups the element itself is the source, as if the
+			// map declared no LookupTemplate (it needs no lookup ID then):
+			// the cap bounds requests, never which elements hydrate.
+			if entityMap.LookupTemplate != "" && (entityMap.MaxLookups <= 0 || lookups < entityMap.MaxLookups) {
 				id, ok := resolveJSONPath(element, substituteConfig(entityMap.LookupIDPath, config, identity))
 				if !ok || strings.TrimSpace(id) == "" {
 					continue
-				}
-				if entityMap.MaxLookups > 0 && lookups >= entityMap.MaxLookups {
-					break
 				}
 				lookups++
 				var err error
@@ -870,9 +910,15 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 				continue
 			}
 			entity := EntityResult{Kind: entityMap.Kind, Relation: entityMap.Relation, Name: name}
-			if isList {
-				order := i
-				entity.SortOrder = &order
+			for attribute, path := range entityMap.RelationAttributeMap {
+				value, ok := resolveJSONPath(element, substituteConfig(path, config, identity))
+				if value = strings.TrimSpace(value); !ok || value == "" {
+					continue
+				}
+				if entity.RelationAttributes == nil {
+					entity.RelationAttributes = map[string]string{}
+				}
+				entity.RelationAttributes[attribute] = value
 			}
 			if entityMap.ArtworkPath != "" {
 				if value, ok := resolveJSONPath(source, substituteConfig(entityMap.ArtworkPath, config, identity)); ok && value != "" {
@@ -898,10 +944,48 @@ func (e *Engine) resolveEntityMaps(ctx context.Context, spec plugin.ScraperSpec,
 					}
 				}
 			}
+			entity.SortOrder = entitySortOrder(entityMap, entity, i, isList)
 			entities = append(entities, entity)
 		}
 	}
 	return entities, nil
+}
+
+// elementMatchesFilter reports whether one EntityMap element passes the map's
+// ElementFilter: every filter path, resolved against the element, must equal
+// one of its accepted values. An empty filter keeps every element.
+func elementMatchesFilter(element any, filter map[string][]string, config map[string]string) bool {
+	for path, accepted := range filter {
+		value, ok := resolveJSONPath(element, substituteConfig(path, config, identity))
+		if !ok || !slices.Contains(accepted, strings.TrimSpace(value)) {
+			return false
+		}
+	}
+	return true
+}
+
+// entitySortOrder resolves a hydrated Entity's relation sort position. When
+// the map declares an OrdinalField whose FieldMap or RelationAttributeMap value
+// parses as an integer, that value is the position (a plugin-supplied
+// installment or billing number); otherwise an array element's index is. The
+// map's OrdinalOffset is added either way. A scalar node with no usable
+// ordinal stays unordered (nil) — the FieldMap "omit, never error" posture.
+func entitySortOrder(entityMap plugin.EntityMap, entity EntityResult, index int, isList bool) *int {
+	position, ok := index, isList
+	if entityMap.OrdinalField != "" {
+		raw, present := entity.Fields[entityMap.OrdinalField]
+		if !present {
+			raw, present = entity.RelationAttributes[entityMap.OrdinalField]
+		}
+		if ordinal, err := strconv.Atoi(strings.TrimSpace(raw)); present && err == nil {
+			position, ok = ordinal, true
+		}
+	}
+	if !ok {
+		return nil
+	}
+	position += entityMap.OrdinalOffset
+	return &position
 }
 
 // containerEntityResult maps a container map's node (the first element when it
@@ -914,10 +998,25 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 		}
 		node = elements[0]
 	}
-	entity := EntityResult{Kind: entityMap.Kind, Container: true}
+	entity := EntityResult{Kind: entityMap.Kind, Container: true, containerRelations: entityMap.ContainerRelations}
 	if entityMap.ArtworkPath != "" {
 		if value, ok := resolveJSONPath(node, substituteConfig(entityMap.ArtworkPath, config, identity)); ok && value != "" {
 			entity.ArtworkURL = renderArtworkURL(spec.ArtworkBaseURL, entityMap.ArtworkURLTemplate, value)
+		}
+	}
+	for slot, path := range entityMap.ArtworkMap {
+		value, ok := resolveJSONPath(node, substituteConfig(path, config, identity))
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		if entity.Artwork == nil {
+			entity.Artwork = map[string]string{}
+		}
+		entity.Artwork[slot] = renderArtworkURL(spec.ArtworkBaseURL, spec.ArtworkURLTemplates[slot], value)
+	}
+	if entityMap.TitlePath != "" {
+		if value, ok := resolveJSONPath(node, substituteConfig(entityMap.TitlePath, config, identity)); ok {
+			entity.Title = strings.TrimSpace(value)
 		}
 	}
 	for field, path := range entityMap.FieldMap {
@@ -930,7 +1029,28 @@ func containerEntityResult(spec plugin.ScraperSpec, entityMap plugin.EntityMap, 
 		}
 		entity.Fields[field] = value
 	}
-	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0
+	return entity, entity.ArtworkURL != "" || len(entity.Fields) > 0 || len(entity.Artwork) > 0 || entity.Title != "" || len(entityMap.ContainerRelations) > 0
+}
+
+// linkContainerResults fills each container result's Links from its map's
+// ContainerRelations: every non-container result in the same lookup whose
+// relation is the one a container relation names.
+func linkContainerResults(entities []EntityResult) {
+	for i := range entities {
+		container := &entities[i]
+		if len(container.containerRelations) > 0 {
+			container.LinkRelations = slices.Sorted(maps.Keys(container.containerRelations))
+		}
+		for _, relation := range container.LinkRelations {
+			sibling := container.containerRelations[relation]
+			for _, hydrated := range entities {
+				if hydrated.Container || hydrated.Relation != sibling {
+					continue
+				}
+				container.Links = append(container.Links, EntityLink{Relation: relation, Kind: hydrated.Kind, Name: hydrated.Name, SortOrder: hydrated.SortOrder})
+			}
+		}
+	}
 }
 
 // composeArtworkURL prefixes ArtworkBaseURL onto site-relative artwork paths
