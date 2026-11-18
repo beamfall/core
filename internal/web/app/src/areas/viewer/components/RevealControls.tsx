@@ -28,7 +28,9 @@ const revealFailure = createCarriedError();
 // and the field is cleared as soon as it is read. Error copy stays calm and
 // fixed; the throttle message does not leak security internals.
 // A profile with no PIN (or a managed profile) has no reveal path: say so
-// rather than blaming the PIN that was typed (CORE-1608).
+// rather than blaming the PIN that was typed (CORE-1608). When the session says
+// no Restrictions PIN is set the entry control is not rendered at all, since no
+// PIN could succeed (CORE-2462); Relock always stays reachable.
 function revealErrorKey(err: unknown): StringKey {
   const message = err instanceof Error ? err.message : "";
   if (message.includes("throttled")) return "tooManyAttempts";
@@ -38,7 +40,9 @@ function revealErrorKey(err: unknown): StringKey {
 
 export function RevealControls() {
   const t = useT();
-  const { revealed, reveal, relock } = useSession();
+  const { session, revealed, reveal, relock } = useSession();
+  // A server that predates revealPinSet leaves it absent: keep the control.
+  const pinSet = session?.revealPinSet !== false;
   const [open, setOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +105,8 @@ export function RevealControls() {
       </button>
     );
   }
+
+  if (!pinSet) return null;
 
   return (
     <Dialog

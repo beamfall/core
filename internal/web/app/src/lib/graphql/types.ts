@@ -201,6 +201,9 @@ export interface SessionInfo {
   /** The bound Profile's kind ("adult"/"managed"); wire field name `profile`. */
   profile: string;
   revealed: boolean;
+  /** Whether the bound Profile has a Restrictions PIN (CORE-2462). Absent from
+   * a server that predates the field; callers then assume a PIN is set. */
+  revealPinSet?: boolean;
 }
 
 /** A Profile row offered to the picker (graph.ProfileSummary). */
