@@ -111,10 +111,12 @@ test("elapsed clock advances (CORE-1491)", async ({ page }) => {
   await expect(page.locator(".bf-time.is-start")).not.toHaveText("0:00", { timeout: 10_000 });
 });
 
-// CORE-1490: Home > Recently Added mixes the seeded tracks with the seed's video.
-// Playing a track from that shelf must queue only the audio items, so the audio
-// stage counts the tracks alone. Shelf rows carry their mediaClass (CORE-1492),
-// so the player narrows the queue by class; before that it read "1 of 4".
+// CORE-1490: Recently Added mixes the seeded tracks with the seed's video.
+// Playing a track from that list must queue only the audio items, so the audio
+// stage counts the tracks alone. Rows carry their mediaClass (CORE-1492), so the
+// player narrows the queue by class; before that it read "1 of 4". The Home
+// shelf folds the album's new tracks into one card (CORE-2524), so the tracks
+// are played from the shelf's See all page, which lists every item.
 test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ page }) => {
   test.setTimeout(60_000);
   const titles = library.tracks.map((track) => track.title);
@@ -122,12 +124,14 @@ test("a track from a mixed shelf queues only audio items (CORE-1490)", async ({ 
   await page.goto("/web/");
   // Recently Added by name: earlier specs also fill "Your Most-Played" with the
   // video and a track, and that shelf queues a single audio item.
-  const shelf = page
+  await page
     .locator("section")
     .filter({ has: page.getByRole("heading", { name: "Recently Added" }) })
-    .filter({ has: page.getByRole("link", { name: /Sample Media/ }) })
-    .filter({ has: page.getByRole("link", { name: trackCard }) });
-  const card = shelf.getByRole("link", { name: trackCard }).first();
+    .getByRole("button", { name: "See all" })
+    .click();
+  await expect(page).toHaveURL(/\/seeall\//);
+  await expect(page.getByRole("link", { name: /Sample Media/ })).toBeVisible();
+  const card = page.getByRole("link", { name: trackCard }).first();
   const label = (await card.getAttribute("aria-label")) ?? (await card.innerText());
   const title = titles.find((candidate) => label.includes(candidate));
   await card.click();
