@@ -103,6 +103,9 @@ export function LibrarySidebar({
     setEditing(null);
   }
   const canEdit = !!onSavePrefs && libraryNodes.length > 0 && (!collapsed || drawer);
+  // Collapsing to the icon rail (or losing the saver) shows plain navigation;
+  // the draft is kept, so expanding again picks the edit up where it was.
+  const activeDraft = canEdit ? editing : null;
   const moreId = `${id}-more`;
   const homeId = rendered[0]?.id;
   // Only tiles without an icon carry a monogram, so only those can collide.
@@ -166,7 +169,7 @@ export function LibrarySidebar({
           <>
             <div className="bf-side-heading-row">
               <h2 className="bf-side-heading">{t("libraries")}</h2>
-              {canEdit && !editing && (
+              {canEdit && !activeDraft && (
                 <button
                   ref={editButtonRef}
                   type="button"
@@ -184,9 +187,9 @@ export function LibrarySidebar({
                 </button>
               )}
             </div>
-            {editing ? (
+            {activeDraft ? (
               <SidebarEditor
-                draft={editing}
+                draft={activeDraft}
                 titleOf={(libraryID) => {
                   const node = libraryNodes.find((n) => n.libraryID === libraryID);
                   return node ? displayString(node.title, displayLocale) : libraryID;
@@ -202,7 +205,10 @@ export function LibrarySidebar({
                   setSaving(true);
                   setSaveFailed(false);
                   try {
-                    await onSavePrefs({ order: editing.order, hidden: [...editing.hidden] });
+                    await onSavePrefs({
+                      order: activeDraft.order,
+                      hidden: [...activeDraft.hidden],
+                    });
                     leaveEditing();
                   } catch {
                     setSaveFailed(true);

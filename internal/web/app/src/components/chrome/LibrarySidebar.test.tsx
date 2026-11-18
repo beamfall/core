@@ -305,6 +305,39 @@ describe("LibrarySidebar per-Profile pin and order (CORE-2435)", () => {
     expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
   });
 
+  it("shows rail navigation when collapsed mid-edit and resumes the draft on expand", async () => {
+    const save = vi.fn(async (_prefs: SidebarLibraryPrefs) => {});
+    const sidebar = (collapsed: boolean) => (
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrarySidebar
+            id="side"
+            navigation={navigation}
+            libraries={libraries}
+            activeNodeId="home"
+            collapsed={collapsed}
+            drawer={false}
+            onNavigate={() => {}}
+            onSavePrefs={save}
+          />
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    const view = render(sidebar(false));
+    fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Photos up" }));
+    view.rerender(sidebar(true));
+    // The rail carries library links, not the editor.
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pin Films" })).toBeNull();
+    const lists = within(screen.getByRole("navigation")).getAllByRole("list");
+    expect(within(lists[1]).getAllByRole("link")).toHaveLength(3);
+    view.rerender(sidebar(false));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][0]).toEqual({ order: ["a", "c", "b"], hidden: [] });
+  });
+
   it("moves focus into the editor and back to Edit on Cancel and Done", async () => {
     renderSidebar(undefined, async () => {});
     fireEvent.click(screen.getByRole("button", { name: "Edit libraries" }));
