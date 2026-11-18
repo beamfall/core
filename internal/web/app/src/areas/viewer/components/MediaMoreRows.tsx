@@ -48,10 +48,10 @@ export function MediaMoreRows({
             entityKind: "",
             libraryID: "",
             entityID: leadID,
+            excludeEditionGroupOf: mediaID,
             fieldFilters: null,
             entityFilter: null,
-            // One extra, since the current item is left out.
-            limit: RELATED_LIMIT + 1,
+            limit: RELATED_LIMIT,
             offset: 0,
           },
           controller.signal,

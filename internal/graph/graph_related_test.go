@@ -201,3 +201,112 @@ func TestRelatedMediaHiddenOrUnknownMedia(t *testing.T) {
 		}
 	}
 }
+
+func TestEditionRailsExcludeGroup(t *testing.T) {
+	f := newRelatedFixture(t, false)
+	f.addMedia("parent", "edition", "sibling", "other-parent", "other-edition")
+	f.credit("category", "genre", 0, "parent", "edition", "sibling", "other-parent", "other-edition")
+	f.credit("person", "person", 1, "parent", "edition", "sibling", "other-parent", "other-edition")
+	for _, pair := range [][2]string{{"edition", "parent"}, {"sibling", "parent"}, {"other-edition", "other-parent"}} {
+		if err := f.st.LinkMediaRelation(context.Background(), f.media[pair[0]], store.MediaRelationEditionOf, f.media[pair[1]]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"parent", "edition", "sibling"} {
+		t.Run(name, func(t *testing.T) {
+			if got, want := f.related(name, 0), []string{"other-parent"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("related = %v, want %v", got, want)
+			}
+			items := graphData[[]SourceItem](t, f.handler,
+				`query($context:String!) { sourceItems(kind:"entity-media", entityID:"person", excludeEditionGroupOf:$context, limit:1) { id title } }`,
+				map[string]any{"context": string(f.media[name])}, "sourceItems")
+			if len(items) != 1 || items[0].ID != string(f.media["other-parent"]) {
+				t.Fatalf("More-with = %v, want other-parent", items)
+			}
+		})
+	}
+	items := graphData[[]SourceItem](t, f.handler,
+		`query { sourceItems(kind:"entity-media", entityID:"person") { id title } }`, nil, "sourceItems")
+	var titles []string
+	for _, item := range items {
+		titles = append(titles, item.Title)
+	}
+	if want := []string{"edition", "other-edition", "other-parent", "parent", "sibling"}; !reflect.DeepEqual(titles, want) {
+		t.Fatalf("person Source = %v, want %v", titles, want)
+	}
+}
+
+func TestRelatedMediaHiddenParentHasStableRepresentative(t *testing.T) {
+	f := newRelatedFixture(t, false)
+	f.addMedia("self", "edition", "sibling")
+	visibleLibrary := f.library
+	var err error
+	f.library, err = f.st.CreateLibrary(context.Background(), "Hidden", true, "reels", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.addMedia("parent")
+	f.library = visibleLibrary
+	f.credit("first", "genre", 0, "self", "edition")
+	f.credit("second", "genre", 1, "self", "sibling")
+	for _, name := range []string{"edition", "sibling"} {
+		if err := f.st.LinkMediaRelation(context.Background(), f.media[name], store.MediaRelationEditionOf, f.media["parent"]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := "edition"
+	if f.media["sibling"] < f.media["edition"] {
+		want = "sibling"
+	}
+	if got := f.related("self", 0); !reflect.DeepEqual(got, []string{want}) {
+		t.Fatalf("related = %v, want one %s", got, want)
+	}
+	if got := f.related("edition", 0); !reflect.DeepEqual(got, []string{"self"}) {
+		t.Fatalf("edition related = %v", got)
+	}
+}
+
+func TestEntityMediaEditionExclusionHiddenOrUnknown(t *testing.T) {
+	f := newRelatedFixture(t, false)
+	f.credit("person", "person", 0)
+	var err error
+	f.library, err = f.st.CreateLibrary(context.Background(), "Hidden", true, "reels", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.addMedia("hidden")
+	var message string
+	for _, id := range []string{string(f.media["hidden"]), "missing"} {
+		resp := postGraphJSON(t, f.handler, authorizeViewer,
+			`query($context:String!) { sourceItems(kind:"entity-media", entityID:"person", excludeEditionGroupOf:$context) { id } }`, map[string]any{"context": id})
+		if len(resp.Errors) != 1 {
+			t.Fatalf("errors = %v", resp.Errors)
+		}
+		if message != "" && resp.Errors[0].Message != message {
+			t.Fatalf("hidden/missing errors differ: %q and %q", message, resp.Errors[0].Message)
+		}
+		message = resp.Errors[0].Message
+	}
+}
+
+func TestEntityMediaSourcePreservesEditionChildren(t *testing.T) {
+	f := newRelatedFixture(t, false)
+	f.addMedia("parent", "edition")
+	f.credit("person", "person", 0, "edition")
+	ctx := context.Background()
+	if err := f.st.LinkMediaRelation(ctx, f.media["edition"], store.MediaRelationEditionOf, f.media["parent"]); err != nil {
+		t.Fatal(err)
+	}
+	children, err := f.st.MediaForEntity(ctx, "person", store.LibraryFilter{AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(children) != 1 || children[0].ID != f.media["edition"] {
+		t.Fatalf("MediaForEntity = %v, want only the edition", children)
+	}
+	items := graphData[[]SourceItem](t, f.handler,
+		`query { sourceItems(kind:"entity-media", entityID:"person") { id title } }`, nil, "sourceItems")
+	if len(items) != 1 || items[0].ID != string(children[0].ID) {
+		t.Fatalf("plain Source = %v, want MediaForEntity children %v", items, children)
+	}
+}
