@@ -105,7 +105,7 @@ describe("MediaItemCard container heading (CORE-2524)", () => {
     expect(container.querySelector(".bf-card-title")).toHaveTextContent("The Expanse");
     expect(container.querySelector(".bf-card-sub")).toHaveTextContent(/^S1 · E2 · Earthfall$/);
     expect(
-      screen.getByRole("button", { name: "The Expanse, S1 · E2 · Earthfall" }),
+      screen.getByRole("link", { name: "The Expanse, S1 · E2 · Earthfall" }),
     ).toBeInTheDocument();
   });
 });
