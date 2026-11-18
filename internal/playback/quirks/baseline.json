@@ -4,12 +4,13 @@
   "entries": [
     {
       "id": "chromecast-default-receiver-floor",
-      "note": "Google's Default Media Receiver (app id CC1AD845) plays H.264 up to 1080p with stereo AAC and no HDR on every Cast device, per Google's published Cast supported-media table. A sender casting to it declares client chromecast-default-receiver; this entry resolves that receiver (ADR-0194 section 6) and pins the floor so no route exceeds it. Per-model receivers need their own selectors and custom receiver (CORE-2567).",
+      "note": "Google's Default Media Receiver (app id CC1AD845) runs on every Cast device, and the client id cannot tell them apart. Google's Cast supported-media table puts the lowest of them, Nest Hub and Nest Hub Max, at 720p, so the floor every receiver plays is H.264 up to 720p with stereo AAC and no HDR. A sender casting to it declares client chromecast-default-receiver; this entry resolves that receiver (ADR-0194 section 6) and denies every video codec, audio codec and HDR format outside the floor, so a broader sender profile cannot route past it. Raising Chromecast and Google TV to their own ceilings needs per-model selectors (CORE-2567).",
       "selector": {"client": "chromecast-default-receiver"},
       "override": {
         "denyVideoCodecs": ["av1", "hevc", "mpeg2video", "vc1", "vp9", "vvc"],
         "denyHDRFormats": ["hdr10", "hdr10plus", "hlg", "dolby-vision-p5", "dolby-vision-p7", "dolby-vision-p8", "dolby-vision"],
-        "maxHeight": 1080,
+        "denyAudioCodecs": ["ac3", "alac", "dts", "dts-hd-ma", "eac3", "flac", "mp3", "opus", "pcm", "truehd", "vorbis"],
+        "maxHeight": 720,
         "maxAudioChannels": 2
       }
     }

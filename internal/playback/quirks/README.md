@@ -21,7 +21,8 @@ the output of triage on a real diagnostic bundle. Every entry is restrictive, so
 would degrade real devices that were working.
 
 The one entry today, `chromecast-default-receiver-floor`, resolves Google's Default Media Receiver
-(ADR-0194 §6) at its published floor: H.264, 1080 lines, stereo, no HDR (CORE-2563). Without a
+(ADR-0194 §6) at the floor every Cast device plays: H.264 up to 720 lines (Nest Hub's ceiling in
+Google's Cast supported-media table), stereo AAC, no HDR (CORE-2563). Without a
 matching selector a receiver-bound Stream Token is refused at the byte routes.
 
 ## Adding an entry
