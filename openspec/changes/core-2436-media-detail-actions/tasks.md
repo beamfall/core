@@ -3,5 +3,5 @@
 - [x] Web: Media read requests credit attributes and artwork
 - [x] Web strings in every shipped locale; vitest and axe coverage
 - [ ] Verified on tower at desktop and 375px widths (lander)
-- [ ] `make gate`
+- [x] `make gate` (gate run plexpar-gate-1118g PASSED at 153215ed)
 - [ ] `openspec archive core-2436-media-detail-actions` after landing

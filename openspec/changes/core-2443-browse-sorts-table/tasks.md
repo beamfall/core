@@ -3,8 +3,8 @@
 - [x] Store tests cover each new sort and its missing-key order
 - [x] Web: new sort options, year range control and chip, state in the URL
 - [x] Web: table view mode
-- [ ] Follow-up ticket for codec, HDR, audio-format and language filters
-- [ ] Wire contract published as a new version (lander)
+- [x] Follow-up ticket for codec, HDR, audio-format and language filters (filed)
+- [x] Wire contract published as a new version (lander): client-core-wire 2.26.0
 - [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
-- [ ] `make gate`
+- [x] `make gate` (gate run plexpar-gate-1118g PASSED at 153215ed)
 - [ ] `openspec archive core-2443-browse-sorts-table` after landing
