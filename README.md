@@ -132,6 +132,8 @@ As of the initial public commit:
 
 ## Get started
 
+Choose an [operator install guide for your platform](docs/operations/install/README.md).
+
 ### From source
 
 You need:
@@ -173,7 +175,7 @@ The CLI covers day-to-day operation:
 | `beamfall token` | Manage local API tokens. |
 | `beamfall export-config` / `apply-config` | Export or apply a Console config document: background workers, plugin activation and Libraries with their roots. `apply-config` creates missing Libraries and roots and never removes one. |
 | `beamfall reset-admin-password` | Set the local admin password while the server is stopped. |
-| `beamfall pairing-code` | Mint a one-time owner pairing code to sign a browser back in; run it on the server host while the server runs. |
+| `beamfall pairing-code` | Mint a one-time owner pairing code to sign a browser back in; run it on the server host while the server is stopped, then start the server to redeem the code. |
 | `beamfall capabilities` / `version` | Print runtime capabilities or build metadata. |
 
 `library list`, `scan`, `backup`, `token list` and `token revoke` talk to the running server with
