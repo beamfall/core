@@ -1,0 +1,51 @@
+## ADDED Requirements
+
+### Requirement: Cards name the outermost container holding a Media item
+
+Every Graph read that returns `SourceItem` cards, and search result rows, SHALL set `container` on a
+Media item held by a container-archetype Entity of its own Library to the `id`, `title` and stored
+artwork of the outermost such Entity. A Media item with no such holder, and every Entity item, SHALL
+omit the field.
+
+#### Scenario: Nested containers
+
+- **WHEN** a Media item is held through a single-holder relation by container Entity A, and A points
+  through a declared container relation at container Entity B
+- **THEN** the item's card carries `container` with B's id and title
+
+### Requirement: The container chain follows declared container relations
+
+The innermost container SHALL be the container Entity whose kind declares a single-holder relation
+to the Media; each next one SHALL be the container Entity the previous points at through a relation
+its kind declares to another container kind.
+
+#### Scenario: Non-holding container relation
+
+- **WHEN** a Media item is linked only from container Entities whose relation to it is not
+  single-holder
+- **THEN** the item's card carries no `container`
+
+### Requirement: Outermost container kinds are title-searchable
+
+The server SHALL make every container-archetype Entity kind that declares no relation to another
+container kind searchable by title in keyword search, whether or not its plugin opts it into full
+text search.
+
+#### Scenario: Searching a container title
+
+- **WHEN** a Library holds an outermost container Entity titled "Ted Lasso" and the viewer searches
+  "ted lasso"
+- **THEN** the keyword result includes that Entity
+
+### Requirement: Keyword search orders items within their container
+
+Keyword search SHALL rank a Media item that carries a `container` by the better of its own title
+match and its container's title match. Rows of equal rank SHALL be ordered by container title (an
+Entity's own title, an item's container title, else its own title), then the container Entity
+before the items it holds, then the items' sequence and index.
+
+#### Scenario: Container first, items in order
+
+- **WHEN** the viewer searches a container's exact title and the result holds that container and
+  three of its items
+- **THEN** the container row comes first and its items follow in sequence, then index, order
