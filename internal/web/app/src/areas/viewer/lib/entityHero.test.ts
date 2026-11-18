@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { EntityInfo, SourceItem } from "@/lib/graphql/types";
+import type { EntityInfo, RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
 import {
+  descendantContainerGroups,
   entityFacts,
   entitySummary,
   groupCredits,
@@ -89,6 +90,36 @@ describe("entityHero", () => {
       ),
     ).toBe(5);
     expect(unwatchedCount(null, null)).toBe(0);
+  });
+
+  it("counts only child containers, not the Entity's own parent, in the badge", () => {
+    // Related groups carry both relation directions: a parent container holds
+    // everything this Entity holds, so its remaining count is not this
+    // Entity's to report.
+    const container = (id: string, remaining: number, total: number) => ({
+      id,
+      kind: "entity",
+      title: id,
+      engagement: { remainingCount: remaining, totalCount: total },
+    });
+    const parent: RelatedEntityGroup = {
+      kind: "whole",
+      archetype: "container",
+      items: [container("w", 5, 20)],
+    };
+    const children: RelatedEntityGroup = {
+      kind: "part",
+      archetype: "container",
+      items: [container("b1", 1, 4), container("b2", 2, 6)],
+    };
+    expect(unwatchedCount([], [parent, children])).toBe(3);
+    expect(unwatchedCount([], [children, parent])).toBe(3);
+    expect(descendantContainerGroups([parent, children])).toEqual([children]);
+    // One container group reads as children; so does a tie where every group
+    // would read as a parent.
+    expect(unwatchedCount([], [parent])).toBe(5);
+    const twin: RelatedEntityGroup = { ...parent, kind: "twin", items: [container("t", 4, 20)] };
+    expect(unwatchedCount([], [parent, twin])).toBe(9);
   });
 
   it("adds an item count to a child card's subline", () => {
