@@ -161,7 +161,7 @@ const CODEC_NAMES: Record<string, string> = {
   dvb_subtitle: "DVB",
 };
 
-function codecName(codec: string): string {
+export function codecName(codec: string): string {
   const key = codec.toLowerCase();
   if (key.startsWith("pcm_")) return "PCM";
   return CODEC_NAMES[key] ?? codec.toUpperCase();

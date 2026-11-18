@@ -1,6 +1,7 @@
 import { ApiError, graphql } from "@/lib/api";
 import type { EntityFieldInfo, GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
 import { viewerCacheEntries } from "@/lib/viewerCache";
+import type { PlaybackAudioTrack, PlaybackCaptionTrack } from "./playback";
 
 // Data for the Media detail page (/media/:mediaId, CORE-1144).
 //
@@ -17,6 +18,9 @@ const MEDIA_FIELDS_QUERY =
 
 const MEDIA_RELATIONS_QUERY =
   "query MediaRelations($mediaID: String!, $relation: String!) { mediaRelations(mediaID: $mediaID, relation: $relation) { media { id title year durationSeconds mediaClass artworkSlots } } }";
+
+const MEDIA_TRACKS_QUERY =
+  "query MediaTracks($mediaID: String!) { mediaTracks(mediaID: $mediaID) { versions { id label videoCodec hdr audioTracks { streamIndex codec language channels default commentary visualImpaired } captionTracks { id format streamIndex language forced sdh visualImpaired commentary title } } } }";
 
 /** The server answer for an id that is missing or hidden from this Profile (no oracle). */
 const UNKNOWN_MEDIA = "unknown media";
@@ -91,6 +95,37 @@ export async function fetchMediaRelations(
       mediaClass: media.mediaClass,
       artworkSlots: media.artworkSlots,
     }));
+}
+
+/**
+ * One Version of a Media with the tracks its primary file holds (CORE-2442).
+ * Ids are the ones playbackInfo reports for the same file, so a pick made from
+ * this list names the same Version and caption track at playback start.
+ */
+export interface MediaTrackVersion {
+  id: string;
+  label: string;
+  videoCodec?: string;
+  hdr?: string;
+  audioTracks: PlaybackAudioTrack[];
+  captionTracks: PlaybackCaptionTrack[];
+}
+
+/** The item's Versions and their tracks, read from stored inventory without a playback session. */
+export async function fetchMediaTracks(
+  mediaID: string,
+  signal?: AbortSignal,
+): Promise<MediaTrackVersion[]> {
+  const data = await graphql<{ mediaTracks: { versions: MediaTrackVersion[] | null } | null }>(
+    MEDIA_TRACKS_QUERY,
+    { mediaID },
+    signal,
+  );
+  return (data.mediaTracks?.versions ?? []).map((version) => ({
+    ...version,
+    audioTracks: version.audioTracks ?? [],
+    captionTracks: version.captionTracks ?? [],
+  }));
 }
 
 function isUnknownMedia(err: unknown): boolean {

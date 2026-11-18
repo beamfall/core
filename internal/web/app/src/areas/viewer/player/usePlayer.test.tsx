@@ -11,6 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
+import type { StartTracks } from "../lib/watchQueue";
 import { deliverPlayerCommand, resetAppliedControlEvents } from "../remote/remoteControl";
 import { DEFAULT_ADJUSTMENT, selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
 
@@ -156,11 +157,13 @@ function Harness({
   startAtSeconds,
   nextMediaID,
   selectedVersion,
+  startTracks,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
   nextMediaID?: string;
   selectedVersion?: string;
+  startTracks?: StartTracks;
 }) {
   const { videoRef, state, retry, restart, switchToHls, adjust } = usePlayer(
     mediaID,
@@ -168,6 +171,7 @@ function Harness({
     startAtSeconds,
     nextMediaID,
     selectedVersion,
+    startTracks,
   );
   return (
     <>
@@ -1245,6 +1249,77 @@ describe("usePlayer", () => {
       });
       await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
       expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
+    });
+
+    // CORE-2442: picks made on the detail page before playback.
+    const textTracks = {
+      decision: "direct-play",
+      streams: [{ kind: "direct-play", url: "/api/media/direct/alpha" }],
+      captionTracks: [
+        { id: "muxed-main-3", format: "subrip", streamIndex: 3, language: "eng", url: "/s/3.vtt" },
+        { id: "sidecar-main-0", format: "srt", language: "deu", sdh: true, url: "/s/side.vtt" },
+      ],
+      selectedSubtitleTrack: {
+        track: { kind: "muxed", language: "eng" },
+        reason: "preferred-language subtitles",
+      },
+    };
+
+    it("starts with the audio and caption picked before playback, over the server's pick", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      render(
+        <Harness
+          startTracks={{ mediaID: "media-alpha", audioIndex: 2, captionID: "sidecar-main-0" }}
+        />,
+      );
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(shown(video)).toEqual(["sidecar-main-0"]));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[0][4]).toEqual({
+        selectedAudioIndex: 2,
+        selectedSubtitleIndex: undefined,
+      });
+    });
+
+    it("starts with subtitles off when Off was picked, and ignores picks for another Media", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      const view = render(<Harness startTracks={{ mediaID: "media-alpha", captionID: null }} />);
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(shown(video)).toEqual([]);
+      view.unmount();
+
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      render(<Harness startTracks={{ mediaID: "media-beta", audioIndex: 2, captionID: null }} />);
+      const next = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(shown(next)).toEqual(["muxed-main-3"]));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toBeUndefined();
+    });
+
+    it("burns in a picked picture-based track, and falls back when the file lacks the pick", async () => {
+      const picture = {
+        decision: "direct-stream",
+        streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
+        captionTracks: [
+          { id: "muxed-main-6", format: "hdmv_pgs_subtitle", streamIndex: 6, language: "fra" },
+        ],
+      };
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(picture).mockResolvedValueOnce(picture);
+      const view = render(
+        <Harness startTracks={{ mediaID: "media-alpha", captionID: "muxed-main-6" }} />,
+      );
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toEqual({
+        selectedAudioIndex: undefined,
+        selectedSubtitleIndex: 6,
+      });
+      view.unmount();
+
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      render(<Harness startTracks={{ mediaID: "media-alpha", captionID: "muxed-main-9" }} />);
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(shown(video)).toEqual(["muxed-main-3"]));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(3);
     });
   });
 

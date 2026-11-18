@@ -263,6 +263,7 @@ function FeaturePlayer({
     // an earlier Play all queue is left rather than resumed.
     declaredNextID,
     selectedVersion,
+    navState.tracks,
   );
   // A new Version is another file: remember it, then reload at the playhead.
   const selectVersion = useCallback(

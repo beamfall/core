@@ -78,6 +78,37 @@ describe("watchQueue (CORE-1143)", () => {
   });
 });
 
+describe("start tracks in nav state (CORE-2442)", () => {
+  it("carries audio and caption picks for their Media, with Off as null", () => {
+    expect(
+      readPlayerNavState(
+        { tracks: { mediaID: "m1", audioIndex: 2, captionID: "muxed-main-3" } },
+        "v",
+      ).tracks,
+    ).toEqual({ mediaID: "m1", audioIndex: 2, captionID: "muxed-main-3" });
+    expect(readPlayerNavState({ tracks: { mediaID: "m1", captionID: null } }, null).tracks).toEqual(
+      { mediaID: "m1", captionID: null },
+    );
+  });
+
+  it("drops malformed picks and picks with nothing in them", () => {
+    for (const tracks of [
+      null,
+      "m1",
+      { audioIndex: 2 },
+      { mediaID: "", audioIndex: 2 },
+      { mediaID: "m1" },
+      { mediaID: "m1", audioIndex: -1, captionID: "" },
+      { mediaID: "m1", audioIndex: 1.5, captionID: 4 },
+    ]) {
+      expect(readPlayerNavState({ title: "T", tracks }, "v")).toEqual({
+        title: "T",
+        queue: undefined,
+      });
+    }
+  });
+});
+
 describe("class-narrowed play queue (CORE-1490)", () => {
   const classed = (id: string, mediaClass?: string) =>
     ({ id, title: `T-${id}`, kind: "media", mediaClass }) as unknown as SourceItem;

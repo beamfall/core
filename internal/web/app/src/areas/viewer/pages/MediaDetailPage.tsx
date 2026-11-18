@@ -21,6 +21,7 @@ import { findCachedSectionItem } from "../components/HydratedSection";
 import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
 import { MediaMoreRows } from "../components/MediaMoreRows";
 import { MediaRelationRows } from "../components/MediaRelationRows";
+import { MediaTrackPickers } from "../components/MediaTrackPickers";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
 import { SectionView } from "../components/SectionView";
@@ -49,7 +50,7 @@ import {
   runtimeParts,
   viewerFacingFields,
 } from "../lib/viewerFields";
-import { type PlayerNavState, readPlayerNavState } from "../lib/watchQueue";
+import { type PlayerNavState, readPlayerNavState, type StartTracks } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { PlayOnButton } from "../remote/PlayOnButton";
 import "./media-detail.css";
@@ -147,6 +148,8 @@ export function MediaDetailPage() {
   useCanonicalMediaAddress("media", media ?? null);
   const context = useContainerContext(media, mediaId);
   const people = audioPeople(media);
+  // Audio and subtitle picks made here before playback (CORE-2442), for one Media.
+  const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
 
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -164,6 +167,12 @@ export function MediaDetailPage() {
     if (identity && queue) {
       state.queue = queue;
       state.queueIdentity = identity;
+    }
+    if (
+      trackPicks?.mediaID === mediaId &&
+      (trackPicks.audioIndex !== undefined || trackPicks.captionID !== undefined)
+    ) {
+      state.tracks = trackPicks;
     }
     // ?t=0 is the player's "from the beginning" (it also skips pre-play).
     const suffix = fromStart ? "?t=0" : "";
@@ -360,6 +369,9 @@ export function MediaDetailPage() {
                 )}
                 {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
               </div>
+              {media && (
+                <MediaTrackPickers mediaID={mediaId} picks={trackPicks} onPick={setTrackPicks} />
+              )}
               {/* The Profile's own state for this item (CORE-2436), keyed so a
                   route change to another item starts from that item's state. */}
               {mediaId && (

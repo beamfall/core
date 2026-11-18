@@ -21,12 +21,24 @@ export interface PlayQueueItem {
   mediaClass?: string;
 }
 
+/**
+ * The audio and caption tracks picked on a detail page before playback
+ * (CORE-2442), for the Media they were picked for. Unset fields leave the
+ * server's choice; captionID null starts with subtitles off.
+ */
+export interface StartTracks {
+  mediaID: string;
+  audioIndex?: number;
+  captionID?: string | null;
+}
+
 /** The nav state the watch route reads. */
 export interface PlayerNavState {
   title?: string;
   queue?: PlayQueueItem[];
   /** The viewer identity the queue was listed for; a queue without it is ignored. */
   queueIdentity?: string;
+  tracks?: StartTracks;
 }
 
 // Nav state is serialised into history; a huge section must not bloat it, so
@@ -128,7 +140,12 @@ export function queueNeighbours(
  */
 export function readPlayerNavState(state: unknown, identity: string | null): PlayerNavState {
   if (!state || typeof state !== "object") return {};
-  const raw = state as { title?: unknown; queue?: unknown; queueIdentity?: unknown };
+  const raw = state as {
+    title?: unknown;
+    queue?: unknown;
+    queueIdentity?: unknown;
+    tracks?: unknown;
+  };
   const title = typeof raw.title === "string" ? raw.title : undefined;
   const sameViewer = !!identity && raw.queueIdentity === identity;
   const queue =
@@ -147,5 +164,25 @@ export function readPlayerNavState(state: unknown, identity: string | null): Pla
               : { id, title },
           )
       : undefined;
-  return { title, queue, ...(queue ? { queueIdentity: identity as string } : {}) };
+  const tracks = readStartTracks(raw.tracks);
+  return {
+    title,
+    queue,
+    ...(queue ? { queueIdentity: identity as string } : {}),
+    ...(tracks ? { tracks } : {}),
+  };
+}
+
+function readStartTracks(raw: unknown): StartTracks | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const { mediaID, audioIndex, captionID } = raw as Record<string, unknown>;
+  if (typeof mediaID !== "string" || !mediaID) return undefined;
+  const tracks: StartTracks = { mediaID };
+  if (typeof audioIndex === "number" && Number.isInteger(audioIndex) && audioIndex >= 0) {
+    tracks.audioIndex = audioIndex;
+  }
+  if (captionID === null || (typeof captionID === "string" && captionID)) {
+    tracks.captionID = captionID;
+  }
+  return tracks.audioIndex === undefined && tracks.captionID === undefined ? undefined : tracks;
 }

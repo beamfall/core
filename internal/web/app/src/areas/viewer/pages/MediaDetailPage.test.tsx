@@ -13,9 +13,12 @@ import {
   fetchMedia,
   fetchMediaDetailFields,
   fetchMediaRelations,
+  fetchMediaTracks,
+  type MediaTrackVersion,
   mediaDetailCacheKey,
   mediaLinkState,
 } from "../lib/mediaDetail";
+import { readVersionChoice } from "../lib/versionChoice";
 import { resetHomeNetworkProbeForTest } from "../lib/watchTogether";
 import { MediaDetailPage } from "./MediaDetailPage";
 
@@ -24,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   // The server's item state for the page's Media (CORE-2436); it outlives a render.
   itemState: { id: "m1", kind: "media", watched: false, watchlisted: false, rating: 0 },
   itemCalls: [] as Array<[string, unknown, unknown]>,
+  session: null as { profileID: string } | null,
 }));
 
 vi.mock("../lib/mediaDetail", async (importOriginal) => ({
@@ -31,6 +35,7 @@ vi.mock("../lib/mediaDetail", async (importOriginal) => ({
   fetchMedia: vi.fn(),
   fetchMediaDetailFields: vi.fn(),
   fetchMediaRelations: vi.fn(),
+  fetchMediaTracks: vi.fn(),
 }));
 vi.mock("@/lib/graphql", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/graphql")>()),
@@ -54,7 +59,7 @@ vi.mock("@/lib/graphql", async (importOriginal) => ({
 }));
 vi.mock("@/lib/session", () => ({
   useViewerIdentity: () => mocks.identity,
-  useSession: () => ({ manifest: null, revealed: false }),
+  useSession: () => ({ manifest: null, revealed: false, session: mocks.session }),
 }));
 vi.mock("@/components/chrome/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
@@ -126,6 +131,7 @@ beforeEach(() => {
   vi.mocked(fetchMedia).mockReset();
   vi.mocked(fetchMediaDetailFields).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaRelations).mockReset().mockResolvedValue([]);
+  vi.mocked(fetchMediaTracks).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaForEntity).mockReset().mockResolvedValue([]);
   vi.mocked(fetchEntity).mockReset().mockResolvedValue(null);
   // Off the home network by default: Watch together is not offered (CORE-1764).
@@ -138,6 +144,8 @@ afterEach(() => {
   clearViewerCache();
   mocks.itemState = { id: "m1", kind: "media", watched: false, watchlisted: false, rating: 0 };
   mocks.itemCalls = [];
+  mocks.session = null;
+  window.localStorage.clear();
 });
 
 describe("MediaDetailPage", () => {
@@ -831,5 +839,121 @@ describe("MediaDetailPage", () => {
     await waitFor(() => expect(fetchMediaForEntity).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("heading", { name: /More with/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
+  });
+
+  describe("track pickers before playback (CORE-2442)", () => {
+    const main: MediaTrackVersion = {
+      id: "va",
+      label: "",
+      videoCodec: "hevc",
+      hdr: "HDR10",
+      audioTracks: [
+        { streamIndex: 1, codec: "eac3", language: "eng", channels: 6, default: true },
+        { streamIndex: 2, codec: "aac", language: "eng", channels: 2, commentary: true },
+      ],
+      captionTracks: [
+        { id: "muxed-main-3", format: "subrip", streamIndex: 3, language: "eng", forced: true },
+        { id: "sidecar-main-0", format: "srt", language: "deu", sdh: true },
+      ],
+    };
+    const small: MediaTrackVersion = {
+      id: "vb",
+      label: "720p",
+      videoCodec: "h264",
+      audioTracks: [{ streamIndex: 1, codec: "aac", language: "eng", channels: 2 }],
+      captionTracks: [],
+    };
+    const navState = () => JSON.parse(screen.getByTestId("state").textContent || "null");
+
+    it("lists Versions and tracks without a session and carries picks into playback", async () => {
+      mocks.session = { profileID: "p1" };
+      vi.mocked(fetchMedia).mockResolvedValue(media);
+      vi.mocked(fetchMediaTracks).mockResolvedValue([main, small]);
+      const { container } = renderAt(["/media/m1"]);
+
+      const version = await screen.findByRole("combobox", { name: "Version" });
+      expect(fetchMediaTracks).toHaveBeenCalledWith("m1", expect.any(AbortSignal));
+      expect(
+        within(version)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual(["Default · HEVC · HDR10", "720p · H264"]);
+      const audio = screen.getByRole("combobox", { name: "Audio" });
+      expect(
+        within(audio)
+          .getAllByRole("option")
+          .map((o) => o.textContent),
+      ).toEqual([
+        "Auto",
+        "English · Dolby Digital Plus · 5.1",
+        "English · AAC · Stereo · Commentary",
+      ]);
+      const subtitles = screen.getByRole("combobox", { name: "Subtitles" });
+      expect(within(subtitles).getAllByRole("option")).toHaveLength(4);
+      await expectNoAxeViolations(container);
+
+      fireEvent.change(audio, { target: { value: "2" } });
+      fireEvent.change(screen.getByRole("combobox", { name: "Subtitles" }), {
+        target: { value: "sidecar-main-0" },
+      });
+      // A track pick names the Version on screen, so that Version is remembered.
+      expect(readVersionChoice("p1", "m1")).toBe("va");
+
+      fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+      expect(screen.getByTestId("path")).toHaveTextContent("/watch/m1");
+      expect(navState()).toEqual({
+        title: "Server title",
+        tracks: { mediaID: "m1", audioIndex: 2, captionID: "sidecar-main-0" },
+      });
+    });
+
+    it("starts a new Version with no track picks and carries Off as null", async () => {
+      mocks.session = { profileID: "p1" };
+      vi.mocked(fetchMedia).mockResolvedValue(media);
+      vi.mocked(fetchMediaTracks).mockResolvedValue([main, small]);
+      renderAt(["/media/m1"]);
+
+      fireEvent.change(await screen.findByRole("combobox", { name: "Audio" }), {
+        target: { value: "2" },
+      });
+      fireEvent.change(screen.getByRole("combobox", { name: "Version" }), {
+        target: { value: "vb" },
+      });
+      expect(readVersionChoice("p1", "m1")).toBe("vb");
+      // One audio track and no captions: nothing left to pick for that Version.
+      expect(screen.queryByRole("combobox", { name: "Audio" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Subtitles" })).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByRole("combobox", { name: "Version" }), {
+        target: { value: "va" },
+      });
+      expect(screen.getByRole("combobox", { name: "Audio" })).toHaveValue("");
+      fireEvent.change(screen.getByRole("combobox", { name: "Subtitles" }), {
+        target: { value: "off" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+      expect(navState()).toEqual({
+        title: "Server title",
+        tracks: { mediaID: "m1", captionID: null },
+      });
+    });
+
+    it("shows no pickers without a choice to make, nor when the read fails", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(media);
+      vi.mocked(fetchMediaTracks).mockResolvedValue([small]);
+      const view = renderAt(["/media/m1"]);
+      await screen.findByRole("heading", { name: "Server title" });
+      await waitFor(() => expect(fetchMediaTracks).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      view.unmount();
+
+      vi.mocked(fetchMediaTracks).mockRejectedValue(new Error("offline"));
+      renderAt(["/media/m1"]);
+      await screen.findByRole("heading", { name: "Server title" });
+      await waitFor(() => expect(fetchMediaTracks).toHaveBeenCalledTimes(2));
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Play Server title" }));
+      expect(navState()).toEqual({ title: "Server title" });
+    });
   });
 });
