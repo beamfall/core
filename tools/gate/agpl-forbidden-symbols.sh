@@ -55,16 +55,18 @@ allowed_match() {
   #
   # The web cast view reads a credit's plugin-declared "billing" attribute, the
   # cast order position (CORE-2503). Only that one file may name it, and only
-  # as the bare word: a line that still matches once the word is removed, or
-  # that names a billing portal/system/service-style compound, still fails.
+  # as the exact string literal "billing" or the destructured `billing: _billing`
+  # (CORE-2551). Each allowed form is removed, and the line passes only when
+  # what remains matches no forbidden symbol; any grep error fails closed.
   case "$file" in
     internal/web/app/src/areas/viewer/lib/people.ts) ;;
     *) return 1 ;;
   esac
-  if grep -qiE 'billing[-_ ](portal|system|service|ledger|provider|integration|webhook)' <<<"$line"; then
-    return 1
-  fi
-  ! perl -pe 's/\b_?billing\b//gi' <<<"$line" | grep -qiE "$pattern"
+  local rest="${line//\"billing\"/}"
+  rest="${rest//billing: _billing,/}"
+  local rc=0
+  grep -qiE "$pattern" <<<"$rest" || rc=$?
+  [[ $rc -eq 1 ]]
 }
 
 pattern='(entitlement|stripe|premium|payment[-_ ]source|purchase[-_ ]state|beamfall[-_ ]account|account[-_ ](service|portal|deletion|identity|ledger|token|id)|Account(Service|Portal|Ledger|Token|ID|Id)|billing|billing[-_ ](portal|system|service|ledger|provider|integration|webhook)|checkout[-_ ](entry|flow|session|portal)|web[-_ ]checkout|license[-_ ]key|licensed[-_ ]feature|licensing[-_ ](code|logic)|license[-_ ]check)'

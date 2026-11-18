@@ -148,7 +148,7 @@ const { billing: _billing, ...crew } = attributes;
 TS
 git -C "$TMP" add internal/web/app/src/areas/viewer/lib/people.ts
 "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/dev/null
-for bad in 'const portal = "billing-portal";' 'const billing = stripe;'; do
+for bad in 'const portal = "billing-portal";' 'const billing = stripe;' 'const billing$Portal = openPortal;' 'const billingPortal = open;' 'const x = "billing" + billingService;'; do
   printf '%s\n' "$bad" >>"$TMP/internal/web/app/src/areas/viewer/lib/people.ts"
   git -C "$TMP" add internal/web/app/src/areas/viewer/lib/people.ts
   if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
@@ -158,6 +158,16 @@ for bad in 'const portal = "billing-portal";' 'const billing = stripe;'; do
   sed -i.bak '$d' "$TMP/internal/web/app/src/areas/viewer/lib/people.ts"
   rm -f "$TMP/internal/web/app/src/areas/viewer/lib/people.ts.bak"
 done
+# A failing filter must fail closed, never grant the exception (CORE-2551).
+mkdir -p "$TMP/fakebin"
+real_grep="$(command -v grep)"
+printf '#!/bin/sh\n[ "$1" = -qiE ] && exit 2\nexec %s "$@"\n' "$real_grep" >"$TMP/fakebin/grep"
+chmod +x "$TMP/fakebin/grep"
+if PATH="$TMP/fakebin:$PATH" "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then
+  echo "expected a failing grep to fail the people.ts exception" >&2
+  exit 1
+fi
+rm -rf "$TMP/fakebin"
 cp "$TMP/internal/web/app/src/areas/viewer/lib/people.ts" "$TMP/internal/server/people.ts"
 git -C "$TMP" add internal/server/people.ts
 if "$TMP/tools/gate/agpl-forbidden-symbols.sh" >/tmp/agpl-forbidden.out 2>/tmp/agpl-forbidden.err; then

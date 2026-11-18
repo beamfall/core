@@ -20,7 +20,7 @@ const PART_ATTRIBUTES = ["character", "role", "job"] as const;
  * attribute, the credits without one first and then each department in
  * first-seen order, keeping the server's credit order within each group.
  * Each person is taken from the first credit that lists them. A cast credit
- * (one with a character or a billing position) that also names departments
+ * (one with a character or a cast order position) that also names departments
  * (a director who also acts) is listed in the cast and, without its
  * character, under each of its departments; a merged credit joins several
  * departments with ", " (CORE-2503).
