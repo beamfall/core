@@ -1,0 +1,10 @@
+- [x] `internal/store`: `EntitiesForMedia` orders by relation sort order, then title
+- [x] `internal/graph`: credits carry `attributes` and `artworkSlots`; `entity(id)` carries `artworkSlots`
+- [x] Graph test; wire goldens regenerated with `make regen-wire-goldens`
+- [x] Web: cast row on the Media detail page
+- [x] Web: headshot and year-sorted filmography on the person page
+- [x] Web strings in every shipped locale; vitest coverage
+- [ ] Wire contract published as 2.22.0 (lander)
+- [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2406-people-credits` after landing
