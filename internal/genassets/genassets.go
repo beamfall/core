@@ -160,6 +160,10 @@ type Service struct {
 	// lock (CORE-2193). A restart ends every in-flight generation, and a
 	// purged Library has no catalog row to start a new one from.
 	purgedEncrypted map[store.LibraryID]bool
+	// waveformDemand holds the in-flight on-demand waveform generations
+	// (EnsureWaveform), keyed by content fingerprint, and the slots that bound
+	// how many run at once.
+	waveformDemand waveformDemand
 }
 
 // SealedPredicate reports whether a Library is currently Sealed (ADR-0098 area

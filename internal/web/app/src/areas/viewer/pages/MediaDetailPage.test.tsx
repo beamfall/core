@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -359,6 +359,32 @@ describe("MediaDetailPage", () => {
     for (const hidden of ["Class", "Grouped Locally", "index", "sequence", "Certification"]) {
       expect(details).not.toHaveTextContent(hidden);
     }
+  });
+
+  it("shows the display rating as a badge and the community score (CORE-2399)", async () => {
+    vi.mocked(fetchMedia).mockResolvedValue(media);
+    vi.mocked(fetchMediaDetailFields).mockResolvedValue([
+      { name: "certification-display", type: "text", value: "TV-MA", label: { en: "Rating" } },
+      { name: "community-rating", type: "number", value: "7.25", label: { en: "TMDB rating" } },
+      {
+        name: "community-rating-votes",
+        type: "number",
+        value: "1200",
+        label: { en: "TMDB votes" },
+      },
+    ]);
+    renderAt(["/media/m1"]);
+    await act(async () => {});
+
+    const facts = screen.getByRole("list", { name: "About this item" });
+    const badge = within(facts).getByText("TV-MA");
+    expect(badge).toHaveAttribute("data-variant", "rating");
+    const score = facts.querySelector('[data-variant="score"]');
+    expect(score?.querySelector('[aria-hidden="true"]')).toHaveTextContent("\u2605 7.3");
+    expect(score?.querySelector(".sr-only")).toHaveTextContent(
+      "TMDB rating 7.3 out of 10, 1,200 votes",
+    );
+    expect(screen.queryByRole("heading", { level: 2, name: "Details" })).toBeNull();
   });
 
   it("leaves the Details section out when no field is viewer-facing", async () => {

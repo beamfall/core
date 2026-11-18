@@ -42,6 +42,17 @@ from the catalog paths of Media the session can see, with the visibility of `lib
 - **WHEN** a session reads a folder of N Media with `limit: 1, offset: 1`
 - **THEN** `items` holds the second Media in file-name order and `total` is N
 
+### Requirement: Ordinals order a folder
+
+The Media directly in a folder SHALL be ordered by their stored `sequence`, then `index`; Media
+carrying neither SHALL follow in file-name order.
+
+#### Scenario: Ordinals order a folder
+
+- **WHEN** a folder holds Media whose file names sort as index 10, 2 and 1, plus one Media with no
+  ordinals
+- **THEN** `items` lists index 1, 2 and 10, then the Media with no ordinals
+
 ### Requirement: The folder read stays inside the Library
 
 `libraryFolder` SHALL refuse, as a client validation error, a `path` that is relative, outside

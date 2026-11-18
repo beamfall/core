@@ -942,6 +942,12 @@ function FeaturePlayer({
           onOpen={openFullPlayer}
           onStop={() => onStop?.()}
           onRestart={restart}
+          waveform={{
+            infoMediaID: state.mediaID,
+            url: state.info?.assets?.waveform,
+            nextMediaID: state.info?.next?.mediaID,
+            nextURL: state.info?.next?.assets?.waveform,
+          }}
         />
       )}
     </>

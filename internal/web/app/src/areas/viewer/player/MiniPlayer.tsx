@@ -3,6 +3,8 @@ import { type RefObject, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { formatAriaTime, formatClockTime } from "../lib/transport";
 import { useRemotePlayerTarget } from "../remote/remoteControl";
+import { useWaveform, type WaveformInput } from "./useWaveform";
+import { WaveformBars } from "./WaveformBars";
 
 // The docked mini player (CORE-1633): the audio Media playing while the
 // listener browses, with its artwork, title and credited people, play/pause,
@@ -22,6 +24,7 @@ export function MiniPlayer({
   onOpen,
   onStop,
   onRestart,
+  waveform,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   title: string;
@@ -35,6 +38,12 @@ export function MiniPlayer({
   onOpen: () => void;
   onStop: () => void;
   onRestart?: (atSeconds?: number) => void;
+  /**
+   * The playback info's waveform for this Media and the next one (CORE-2404).
+   * Peaks come from the same per-Media cache the full player fills, so docking
+   * shows them at once.
+   */
+  waveform?: Omit<WaveformInput, "mediaID">;
 }) {
   const t = useT();
   const [paused, setPaused] = useState(true);
@@ -77,13 +86,15 @@ export function MiniPlayer({
     else video.pause();
   }
 
+  const peaks = useWaveform({ mediaID, ...waveform });
+  const showWaveform = !!peaks.points || peaks.pending;
   const percent = time.duration > 0 ? Math.min(100, (time.current / time.duration) * 100) : 0;
   const showArtwork = !!artworkURL && failedArtwork !== artworkURL;
 
   return (
     <section className="bf-mini-player" aria-label={t("miniPlayerRegion")}>
       <div
-        className="bf-mini-progress"
+        className={`bf-mini-progress${showWaveform ? " has-waveform" : ""}`}
         role="progressbar"
         aria-label={t("playbackPosition")}
         aria-valuemin={0}
@@ -91,7 +102,11 @@ export function MiniPlayer({
         aria-valuenow={Math.round(time.current)}
         aria-valuetext={formatAriaTime(time.current, time.duration, t)}
       >
-        <div className="bf-mini-progress-fill" style={{ width: `${percent}%` }} />
+        {showWaveform ? (
+          <WaveformBars points={peaks.points} progressPercent={percent} />
+        ) : (
+          <div className="bf-mini-progress-fill" style={{ width: `${percent}%` }} />
+        )}
       </div>
       <div className="bf-mini-artwork" aria-hidden="true">
         {showArtwork && (

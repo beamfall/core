@@ -37,6 +37,7 @@ import {
 } from "../lib/mediaDetail";
 import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
+  type DetailScore,
   detailFacts,
   fieldDisplayValue,
   runtimeParts,
@@ -222,12 +223,13 @@ export function MediaDetailPage() {
     year: facts.year,
     runtimeSeconds: facts.runtimeSeconds,
   });
-  const factLabels = [
-    facts.year ? String(facts.year) : "",
-    facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "",
-    facts.rating ?? "",
-    ...facts.categories,
-  ].filter(Boolean);
+  const factItems: FactItem[] = [
+    { key: "year", text: facts.year ? String(facts.year) : "" },
+    { key: "runtime", text: facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "" },
+    { key: "rating", text: facts.rating ?? "", variant: "rating" as const },
+    ...scoreFact(facts.score, locale, t),
+    ...facts.categories.map((category) => ({ key: `category:${category}`, text: category })),
+  ].filter((item) => item.text !== "");
   const progressText = progress ? t("mediaDetailProgress", { percent: progress.percent }) : "";
   const next = context.next;
 
@@ -264,11 +266,18 @@ export function MediaDetailPage() {
                   ))}
                 </p>
               )}
-              {factLabels.length > 0 && (
+              {factItems.length > 0 && (
                 <ul className="bf-detail-facts" aria-label={t("mediaDetailFacts")}>
-                  {factLabels.map((label) => (
-                    <li key={label} className="bf-detail-fact">
-                      {label}
+                  {factItems.map((item) => (
+                    <li key={item.key} className="bf-detail-fact" data-variant={item.variant}>
+                      {item.spoken ? (
+                        <>
+                          <span aria-hidden="true">{item.text}</span>
+                          <span className="sr-only">{item.spoken}</span>
+                        </>
+                      ) : (
+                        item.text
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -384,6 +393,45 @@ export function MediaDetailPage() {
       </article>
     </AppShell>
   );
+}
+
+/** One chip of the facts row; `spoken` replaces `text` for assistive technology. */
+interface FactItem {
+  key: string;
+  text: string;
+  variant?: "rating" | "score";
+  spoken?: string;
+}
+
+/** The community score chip (CORE-2399): "★ 7.3", spoken with its source and vote count. */
+function scoreFact(
+  score: DetailScore | undefined,
+  locale: string,
+  t: ReturnType<typeof useT>,
+): FactItem[] {
+  if (!score) return [];
+  const formatted = formatScore(score.value, locale);
+  return [
+    {
+      key: "score",
+      text: `\u2605 ${formatted}`,
+      variant: "score",
+      spoken: t("mediaDetailScoreLabel", {
+        label: displayString(score.label, locale) || t("mediaDetailScore"),
+        score: formatted,
+        votes: score.votes,
+      }),
+    },
+  ];
+}
+
+function formatScore(value: number, locale: string): string {
+  const options = { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+  try {
+    return new Intl.NumberFormat(locale || "en", options).format(value);
+  } catch {
+    return new Intl.NumberFormat("en", options).format(value);
+  }
 }
 
 function formatRuntime(seconds: number, t: ReturnType<typeof useT>): string {
