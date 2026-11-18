@@ -1,0 +1,7 @@
+- [x] Playback: `TerminatePlayback(session, media)` stops only that pair's transcodes
+- [x] Graph: `endPlayback` calls it after clearing the ledger rows
+- [x] Graph: device revocation unions ledger sessions with the device's auth sessions
+- [x] Tests: playback `TerminatePlayback`; graph endPlayback-then-revoke aborts the transcode
+- [ ] `corvint-tasks gate run` on the landing stack (lander)
+- [ ] Verified on the tower: leaving a transcoding movie frees its slot (`liveSessions`, Tower logs)
+- [ ] `openspec archive core-2345-endplayback-stops-transcode` after landing
