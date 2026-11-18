@@ -910,6 +910,11 @@
     "tier": "admin"
   },
   {
+    "field": "relatedmedia",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "relock",
     "effect": "write",
     "tier": "session"
