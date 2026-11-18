@@ -94,7 +94,7 @@ test.describe("viewer", () => {
     const errors = collectFatalErrors(page);
     await page.goto("/web/");
     // The seeded "Sample Media" card is the first item in the home shelf.
-    const card = page.getByRole("button", { name: /Sample Media/ }).first();
+    const card = page.getByRole("link", { name: /Sample Media/ }).first();
     await expect(card).toBeVisible();
     await card.click();
     // A Media card activates to the player; an entity card opens detail. Either
