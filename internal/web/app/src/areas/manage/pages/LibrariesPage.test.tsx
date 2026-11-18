@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import {
@@ -90,13 +91,30 @@ describe("LibrariesPage folder tree", () => {
     });
   });
 
+  it("explains preview clips and points to the Server console for the rest", async () => {
+    render(
+      <I18nProvider>
+        <MemoryRouter>
+          <LibrariesPage />
+        </MemoryRouter>
+      </I18nProvider>,
+    );
+    expect(await screen.findByRole("button", { name: "Help: Preview clips" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open library settings" })).toHaveAttribute(
+      "href",
+      "/console/libraries",
+    );
+  });
+
   it("rescans every library from the section header", async () => {
     vi.mocked(scanLibrary).mockResolvedValue({ id: "job-1", status: "queued" });
     vi.mocked(fetchJobs).mockResolvedValue([]);
     const user = userEvent.setup();
     render(
       <I18nProvider>
-        <LibrariesPage />
+        <MemoryRouter>
+          <LibrariesPage />
+        </MemoryRouter>
       </I18nProvider>,
     );
     await user.click(await screen.findByRole("button", { name: "Rescan all libraries" }));
@@ -120,7 +138,9 @@ describe("LibrariesPage folder tree", () => {
     vi.mocked(fetchJobs).mockResolvedValue([]);
     const { container } = render(
       <I18nProvider>
-        <LibrariesPage />
+        <MemoryRouter>
+          <LibrariesPage />
+        </MemoryRouter>
       </I18nProvider>,
     );
     const rescan = await screen.findByRole("button", { name: "Rescan library" });
@@ -160,7 +180,9 @@ describe("LibrariesPage folder tree", () => {
     const user = userEvent.setup();
     render(
       <I18nProvider>
-        <LibrariesPage />
+        <MemoryRouter>
+          <LibrariesPage />
+        </MemoryRouter>
       </I18nProvider>,
     );
 
@@ -182,7 +204,9 @@ describe("LibrariesPage folder tree", () => {
   it("exposes tree a11y semantics and keyboard selection", async () => {
     render(
       <I18nProvider>
-        <LibrariesPage />
+        <MemoryRouter>
+          <LibrariesPage />
+        </MemoryRouter>
       </I18nProvider>,
     );
     const first = await screen.findByRole("treeitem", { name: /Folder A/ });
@@ -206,7 +230,9 @@ describe("LibrariesPage folder tree", () => {
     const user = userEvent.setup();
     render(
       <I18nProvider>
-        <LibrariesPage />
+        <MemoryRouter>
+          <LibrariesPage />
+        </MemoryRouter>
       </I18nProvider>,
     );
     const first = await screen.findByRole("treeitem", { name: /Folder A/ });

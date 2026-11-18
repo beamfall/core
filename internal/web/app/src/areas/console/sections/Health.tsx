@@ -1,7 +1,13 @@
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
-import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  HelpTip,
+  StatusChip,
+} from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -437,10 +443,13 @@ export function Health() {
       heading="libraryHealthHeading"
       lead="libraryHealthLead"
       actions={
-        <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw className="console-nav-icon" aria-hidden />
-          {t("libraryHealthRefresh")}
-        </Button>
+        <>
+          <HelpTip label={t("libraryHealthHeading")} text="healthColumnsTip" />
+          <Button variant="outline" size="sm" onClick={() => void refresh()}>
+            <RefreshCw className="console-nav-icon" aria-hidden />
+            {t("libraryHealthRefresh")}
+          </Button>
+        </>
       }
     >
       {loading ? (

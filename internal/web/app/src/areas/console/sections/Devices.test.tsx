@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchConsoleConfig,
@@ -51,7 +52,9 @@ const devices: DeviceInfo[] = [
 function renderDevices() {
   return render(
     <I18nProvider>
-      <Devices />
+      <MemoryRouter>
+        <Devices />
+      </MemoryRouter>
     </I18nProvider>,
   );
 }
@@ -131,7 +134,7 @@ describe("Devices (ADR-0081 administration)", () => {
   it("mints a manager pairing code behind a confirm and shows the code", async () => {
     renderDevices();
     await screen.findByText("My Browser");
-    await userEvent.click(screen.getByRole("button", { name: /manager code/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^[^:]*manager code/i }));
     const dialog = await screen.findByRole("alertdialog");
     expect(
       within(dialog).getByRole("heading", { name: /whoever redeems it can manage this server/i }),
@@ -271,6 +274,21 @@ describe("Devices (ADR-0081 administration)", () => {
     await userEvent.click(toggle);
     await waitFor(() =>
       expect(setConsoleConfig).toHaveBeenCalledWith({ remoteEnrollmentEnabled: false }),
+    );
+  });
+
+  it("explains pairing codes and remote enrollment and links to remote access (CORE-2445)", async () => {
+    renderDevices();
+    await screen.findByRole("switch", { name: /allow remote enrollment/i });
+    expect(
+      screen.getByRole("button", { name: "Help: Viewer and manager codes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Help: Allow remote enrollment/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Remote access settings" })).toHaveAttribute(
+      "href",
+      "/console/remote",
     );
   });
 });

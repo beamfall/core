@@ -1,6 +1,12 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  HelpTip,
+  StatusChip,
+} from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -221,7 +227,12 @@ export function Webhooks() {
         heading="webhooksHeading"
         lead="webhooksLead"
         actions={
-          <Button size="sm" variant="outline" onClick={() => edit(draft ? null : EMPTY_DRAFT)}>
+          <Button
+            size="sm"
+            variant="outline"
+            data-setting="console.webhooks.add"
+            onClick={() => edit(draft ? null : EMPTY_DRAFT)}
+          >
             <Plus className="mr-1 h-4 w-4" />
             {t("webhooksAdd")}
           </Button>
@@ -279,8 +290,11 @@ export function Webhooks() {
               </p>
             </div>
             {secretHint && (
-              <div className="space-y-1">
-                <Label htmlFor="webhook-secret">{t("webhookSecret")}</Label>
+              <div className="space-y-1" data-setting="console.webhooks.secret">
+                <span className="bf-label-with-tip">
+                  <Label htmlFor="webhook-secret">{t("webhookSecret")}</Label>
+                  <HelpTip label={t("webhookSecret")} text="accessHelpWebhookSecretTip" />
+                </span>
                 <Input
                   id="webhook-secret"
                   type="password"
@@ -326,7 +340,7 @@ export function Webhooks() {
               </div>
             )}
             {kinds.length > 0 && (
-              <fieldset className="space-y-2">
+              <fieldset className="space-y-2" data-setting="console.webhooks.events">
                 <legend className="text-sm font-medium">{t("webhookEvents")}</legend>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {kinds.map((kind) => (
@@ -351,16 +365,22 @@ export function Webhooks() {
                 />
                 {t("webhookPausedToggle")}
               </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  checked={draft.allowPrivateNetwork}
-                  onCheckedChange={(allowPrivateNetwork) =>
-                    setDraft({ ...draft, allowPrivateNetwork })
-                  }
-                  aria-label={t("webhookAllowPrivate")}
-                />
-                {t("webhookAllowPrivate")}
-              </label>
+              <div
+                className="flex items-center gap-1"
+                data-setting="console.webhooks.allowPrivateNetwork"
+              >
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    checked={draft.allowPrivateNetwork}
+                    onCheckedChange={(allowPrivateNetwork) =>
+                      setDraft({ ...draft, allowPrivateNetwork })
+                    }
+                    aria-label={t("webhookAllowPrivate")}
+                  />
+                  {t("webhookAllowPrivate")}
+                </label>
+                <HelpTip label={t("webhookAllowPrivate")} text="accessHelpWebhookPrivateTip" />
+              </div>
             </div>
             {saveError !== null && (
               <p role="alert" className="text-sm text-destructive">
@@ -521,7 +541,11 @@ function PublicBaseURL({
 
   return (
     <Section heading="webhookPublicBaseURL" lead="webhookPublicBaseURLHint">
-      <form onSubmit={handleSubmit} className="flex max-w-xl flex-wrap items-center gap-2">
+      <form
+        onSubmit={handleSubmit}
+        className="flex max-w-xl flex-wrap items-center gap-2"
+        data-setting="console.webhooks.publicServerUrl"
+      >
         <Input
           type="url"
           aria-label={t("webhookPublicBaseURL")}
@@ -531,6 +555,7 @@ function PublicBaseURL({
           disabled={!loaded}
           onChange={(e) => setValue(e.target.value)}
         />
+        <HelpTip label={t("webhookPublicBaseURL")} text="accessHelpWebhookPublicUrlTip" />
         <Button type="submit" size="sm" variant="outline" disabled={!loaded}>
           {t("webhookSettingsSave")}
         </Button>

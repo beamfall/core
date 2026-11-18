@@ -1,8 +1,6 @@
 export const pluginStrings = {
   en: {
     consoleConfigHeading: "Server configuration",
-    consoleConfigLead:
-      "Operational runtime settings and plugin activation. Bootstrap config (ports, data dir, secrets) is not editable here.",
     consoleConfigBackgroundWorkers: "Background workers",
     consoleConfigPlugins: "Plugins",
     consoleConfigActivate: "Activate",
@@ -47,8 +45,6 @@ export const pluginStrings = {
   },
   fr: {
     consoleConfigHeading: "Configuration du serveur",
-    consoleConfigLead:
-      "Paramètres d'exécution et activation des modules. La configuration d'amorçage (ports, dossier de données, secrets) n'est pas modifiable ici.",
     consoleConfigBackgroundWorkers: "Processus en arrière-plan",
     consoleConfigPlugins: "Modules",
     consoleConfigActivate: "Activer",
@@ -94,8 +90,6 @@ export const pluginStrings = {
   },
   de: {
     consoleConfigHeading: "Serverkonfiguration",
-    consoleConfigLead:
-      "Betriebseinstellungen zur Laufzeit und Plugin-Aktivierung. Die Bootstrap-Konfiguration (Ports, Datenverzeichnis, Geheimnisse) ist hier nicht bearbeitbar.",
     consoleConfigBackgroundWorkers: "Hintergrundprozesse",
     consoleConfigPlugins: "Plugins",
     consoleConfigActivate: "Aktivieren",
@@ -141,8 +135,6 @@ export const pluginStrings = {
   },
   es: {
     consoleConfigHeading: "Configuración del servidor",
-    consoleConfigLead:
-      "Ajustes operativos en tiempo de ejecución y activación de complementos. La configuración de arranque (puertos, directorio de datos, secretos) no se edita aquí.",
     consoleConfigBackgroundWorkers: "Procesos en segundo plano",
     consoleConfigPlugins: "Complementos",
     consoleConfigActivate: "Activar",
@@ -188,8 +180,6 @@ export const pluginStrings = {
   },
   pt: {
     consoleConfigHeading: "Configuração do servidor",
-    consoleConfigLead:
-      "Configurações operacionais de tempo de execução e ativação de plugins. A configuração de inicialização (portas, diretório de dados, segredos) não é editável aqui.",
     consoleConfigBackgroundWorkers: "Processos em segundo plano",
     consoleConfigPlugins: "Plugins",
     consoleConfigActivate: "Ativar",

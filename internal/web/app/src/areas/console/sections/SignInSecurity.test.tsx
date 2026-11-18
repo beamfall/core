@@ -66,6 +66,17 @@ describe("SignInSecurity", () => {
     await vi.waitFor(() => expect(screen.getByRole("radio", { name: /Strict/ })).toBeChecked());
   });
 
+  it("explains Strict in a tip and what the admin password is for (CORE-2445)", async () => {
+    render(
+      <I18nProvider>
+        <SignInSecurity />
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Help: Strict" })).toBeInTheDocument();
+    expect(screen.getByText("Enter it to confirm the change.")).toBeInTheDocument();
+  });
+
   it("switches the mode with the admin password and clears it", async () => {
     vi.mocked(setSignInSecurityMode).mockResolvedValue("strict");
 

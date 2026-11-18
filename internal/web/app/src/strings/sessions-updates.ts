@@ -14,8 +14,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaved: "Transcoding settings saved",
     transcodeMaxConcurrent: "Maximum simultaneous transcodes",
     transcodeAutomatic: "Automatic",
-    transcodeMaxConcurrentInvalid:
-      "Enter a whole number of at least 1, or leave it empty for automatic.",
     transcodeMaxConcurrentEffective: "In effect: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP sets the cap in effect. A value saved here applies once that variable is removed.",
@@ -56,8 +54,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaved: "Réglages de transcodage enregistrés",
     transcodeMaxConcurrent: "Nombre maximal de transcodages simultanés",
     transcodeAutomatic: "Automatique",
-    transcodeMaxConcurrentInvalid:
-      "Saisissez un nombre entier d’au moins 1, ou laissez vide pour l’automatique.",
     transcodeMaxConcurrentEffective: "En vigueur : {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP définit la limite en vigueur. Une valeur enregistrée ici s’applique une fois cette variable supprimée.",
@@ -99,8 +95,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaved: "Transcodierungseinstellungen gespeichert",
     transcodeMaxConcurrent: "Maximale gleichzeitige Transcodierungen",
     transcodeAutomatic: "Automatisch",
-    transcodeMaxConcurrentInvalid:
-      "Gib eine ganze Zahl von mindestens 1 ein oder lass das Feld für automatisch leer.",
     transcodeMaxConcurrentEffective: "Aktuell gültig: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP legt das aktuell gültige Limit fest. Ein hier gespeicherter Wert gilt, sobald diese Variable entfernt wird.",
@@ -141,8 +135,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaved: "Ajustes de transcodificación guardados",
     transcodeMaxConcurrent: "Máximo de transcodificaciones simultáneas",
     transcodeAutomatic: "Automático",
-    transcodeMaxConcurrentInvalid:
-      "Introduce un número entero de al menos 1, o déjalo vacío para automático.",
     transcodeMaxConcurrentEffective: "En vigor: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP define el límite en vigor. Un valor guardado aquí se aplica cuando se elimina esa variable.",
@@ -184,8 +176,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaved: "Configurações de transcodificação salvas",
     transcodeMaxConcurrent: "Máximo de transcodificações simultâneas",
     transcodeAutomatic: "Automático",
-    transcodeMaxConcurrentInvalid:
-      "Informe um número inteiro de pelo menos 1 ou deixe vazio para automático.",
     transcodeMaxConcurrentEffective: "Em vigor: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP define o limite em vigor. Um valor salvo aqui passa a valer quando essa variável for removida.",

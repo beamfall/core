@@ -29,7 +29,6 @@ export const metadataManagementStrings = {
     enforcedFiltersLoad: "Load",
     enforcedFiltersEmpty: "No installed plugin declares a certification scale.",
     enforcedFiltersUnavailable: "Could not load enforced filters.",
-    enforcedFilterNoCeiling: "No ceiling",
     qbittorrentHeading: "qBittorrent ingest",
     qbittorrentLead:
       "Category routing and recent ingest results. Each category routes to one library; uncategorized torrents are ignored, never guessed.",
@@ -72,7 +71,6 @@ export const metadataManagementStrings = {
     enforcedFiltersLoad: "Charger",
     enforcedFiltersEmpty: "Aucun module installé ne déclare d’échelle de classification.",
     enforcedFiltersUnavailable: "Impossible de charger les filtres imposés.",
-    enforcedFilterNoCeiling: "Aucun plafond",
     qbittorrentHeading: "Importation qBittorrent",
     qbittorrentLead:
       "Routage par catégorie et résultats d’importation récents. Chaque catégorie est dirigée vers une bibliothèque; les torrents sans catégorie sont ignorés, jamais devinés.",
@@ -115,7 +113,6 @@ export const metadataManagementStrings = {
     enforcedFiltersLoad: "Laden",
     enforcedFiltersEmpty: "Kein installiertes Plugin deklariert eine Altersfreigabeskala.",
     enforcedFiltersUnavailable: "Erzwungene Filter konnten nicht geladen werden.",
-    enforcedFilterNoCeiling: "Keine Obergrenze",
     qbittorrentHeading: "qBittorrent-Import",
     qbittorrentLead:
       "Kategorie-Routing und aktuelle Importergebnisse. Jede Kategorie wird einer Bibliothek zugeordnet; Torrents ohne Kategorie werden ignoriert, nie erraten.",
@@ -158,7 +155,6 @@ export const metadataManagementStrings = {
     enforcedFiltersLoad: "Cargar",
     enforcedFiltersEmpty: "Ningún complemento instalado declara una escala de clasificación.",
     enforcedFiltersUnavailable: "No se pudieron cargar los filtros impuestos.",
-    enforcedFilterNoCeiling: "Sin límite",
     qbittorrentHeading: "Importación de qBittorrent",
     qbittorrentLead:
       "Enrutamiento por categoría y resultados de importación recientes. Cada categoría se enruta a una biblioteca; los torrents sin categoría se ignoran, nunca se adivinan.",
@@ -201,7 +197,6 @@ export const metadataManagementStrings = {
     enforcedFiltersLoad: "Carregar",
     enforcedFiltersEmpty: "Nenhum plugin instalado declara uma escala de classificação.",
     enforcedFiltersUnavailable: "Não foi possível carregar os filtros impostos.",
-    enforcedFilterNoCeiling: "Sem limite",
     qbittorrentHeading: "Importação do qBittorrent",
     qbittorrentLead:
       "Roteamento por categoria e resultados de importação recentes. Cada categoria é roteada para uma biblioteca; torrents sem categoria são ignorados, nunca adivinhados.",

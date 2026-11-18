@@ -3,7 +3,6 @@ import {
   Boxes,
   Clock,
   Database,
-  FolderOpen,
   Gauge,
   HardDrive,
   History,
@@ -31,6 +30,7 @@ import {
 import { EmptyState, StatusChip } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { SectionMenu } from "@/components/chrome/SectionMenu";
+import { RevealSetting, SettingsMenuIntro } from "@/components/chrome/SettingsMenuIntro";
 import { Button } from "@/components/ui/button";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
@@ -39,6 +39,7 @@ import { useT } from "@/lib/i18n";
 import { jobKindLabel, jobTargetDetail } from "@/lib/jobDisplay";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
+import { APP_STORE_FIREWALL_PATHS } from "@/lib/settingsIndex";
 import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import { BackupExportPage } from "../manage/pages/BackupExportPage";
@@ -274,7 +275,8 @@ function Overview() {
   );
 }
 
-const GROUPS: NavGroup[] = [
+// Exported so the test can check the settings search's MENU_PAGES against it.
+export const CONSOLE_NAV_GROUPS: NavGroup[] = [
   {
     label: "consoleOverviewHeading",
     items: [
@@ -352,22 +354,6 @@ const GROUPS: NavGroup[] = [
         element: <Plugins />,
         placement: "Library/Plugins",
       },
-      {
-        path: "identification",
-        advanced: true,
-        label: "capabilitiesHeading",
-        icon: Layers,
-        element: <Capabilities />,
-        placement: "Library/Identification",
-      },
-      {
-        path: "layout",
-        advanced: true,
-        label: "consoleLayoutNavigation",
-        icon: FolderOpen,
-        element: <Capabilities />,
-        placement: "Library/Layout & Navigation",
-      },
     ],
   },
   {
@@ -382,7 +368,7 @@ const GROUPS: NavGroup[] = [
       },
       {
         path: "schedules",
-        label: "schedules",
+        label: "navParentalControls",
         icon: Clock,
         element: <ScheduleAdmin />,
         placement: "Access/Schedules & Policy",
@@ -397,7 +383,7 @@ const GROUPS: NavGroup[] = [
       {
         path: "api",
         advanced: true,
-        label: "apiTokens",
+        label: "navApiKeys",
         icon: KeyRound,
         element: <ApiCredentials />,
         placement: "Access/API Keys",
@@ -425,10 +411,18 @@ const GROUPS: NavGroup[] = [
       {
         path: "retention",
         advanced: true,
-        label: "retentionRulesTitle",
+        label: "navLeavingSoonRules",
         icon: Clock,
         element: <Retention />,
         placement: "Maintain/Trash & Retention",
+      },
+      {
+        path: "identification",
+        advanced: true,
+        label: "navOptionalFeatures",
+        icon: Layers,
+        element: <Capabilities />,
+        placement: "Library/Identification",
       },
       {
         path: "migrate",
@@ -439,14 +433,14 @@ const GROUPS: NavGroup[] = [
       },
       {
         path: "updates",
-        label: "consoleUpdates",
+        label: "navUpdateNotifications",
         icon: HardDrive,
         element: <UpdateAwareness />,
         placement: "Maintain/Updates",
       },
       {
         path: "config",
-        label: "consoleConfigHeading",
+        label: "navPlaybackSignIn",
         icon: ServerCog,
         element: <Config />,
         placement: "Maintain/Server Config",
@@ -457,15 +451,15 @@ const GROUPS: NavGroup[] = [
 
 const ROUTE_ALIASES = [
   { path: "capabilities", to: "/console/identification" },
+  // Layout & Navigation was a second rail entry for the same page (CORE-2445).
+  { path: "layout", to: "/console/identification" },
   { path: "operations-controls", to: "/console/operations" },
   { path: "playback-cache", to: "/console/operations" },
 ];
 
-const APP_STORE_FIREWALL_PATHS = new Set(["identification", "layout", "capabilities", "migrate"]);
-
 function groupsForHost(appStoreHost: boolean): NavGroup[] {
-  if (!appStoreHost) return GROUPS;
-  return GROUPS.map((group) => ({
+  if (!appStoreHost) return CONSOLE_NAV_GROUPS;
+  return CONSOLE_NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items
       .filter((item) => !APP_STORE_FIREWALL_PATHS.has(item.path))
@@ -600,9 +594,11 @@ export function ConsoleArea() {
                   current={t(routeTitle ?? "consoleHeading")}
                   footer={<SessionBar onLock={lock} />}
                 >
+                  <SettingsMenuIntro area="console" />
                   <ConsoleNav groups={groups} />
                 </SectionMenu>
                 <div className="console-content">
+                  <RevealSetting />
                   <Routes>
                     {allItems.map((item) => (
                       <Route key={item.path} path={item.path} element={item.element} />

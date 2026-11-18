@@ -268,7 +268,9 @@ export function UpdateAwareness() {
             <ControlRow
               label="updateStatusCurrent"
               control={
-                <span className="console-mono">{status.data?.currentVersion || "unknown"}</span>
+                <span className="console-mono">
+                  {status.data?.currentVersion || t("updateVersionUnknown")}
+                </span>
               }
             />
             <ControlRow

@@ -8,6 +8,7 @@ export {
   CompositeRoot,
 } from "@base-ui/react/internals/composite";
 export { Menu } from "@base-ui/react/menu";
+export { Popover } from "@base-ui/react/popover";
 export { Select } from "@base-ui/react/select";
 export { Slider } from "@base-ui/react/slider";
 export { Tabs } from "@/components/ui/tabs";

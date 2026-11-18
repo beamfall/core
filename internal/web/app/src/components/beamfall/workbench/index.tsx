@@ -16,7 +16,18 @@ import { cn } from "@/lib/utils";
 import type { StringKey } from "@/strings";
 import "./workbench.css";
 
+import { HelpTip } from "./HelpTip";
+
+export { HelpTip };
 export { PathPickerField } from "./PathPickerField";
+export {
+  formatMinuteOfDay,
+  minuteOfDayPresets,
+  type Preset,
+  PresetSelect,
+  presetOptions,
+  TimeOfDaySelect,
+} from "./PresetSelect";
 
 export type StatusTone = "neutral" | "green" | "amber" | "red" | "cyan" | "iris";
 
@@ -168,17 +179,30 @@ export function ManageInlineForm({
 export function ManageField({
   id,
   label,
+  tip,
+  setting,
   className,
   children,
 }: {
   id: string;
   label: ReactNode;
+  /** A (?) explanation for a setting whose name alone is not enough (CORE-2445). */
+  tip?: StringKey;
+  /** The settings-search anchor for this field (see lib/settingsIndex). */
+  setting?: string;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={cn("space-y-1", className)}>
-      <Label htmlFor={id}>{label}</Label>
+    <div className={cn("space-y-1", className)} data-setting={setting}>
+      {tip && typeof label === "string" ? (
+        <span className="bf-label-with-tip">
+          <Label htmlFor={id}>{label}</Label>
+          <HelpTip label={label} text={tip} />
+        </span>
+      ) : (
+        <Label htmlFor={id}>{label}</Label>
+      )}
       {children}
     </div>
   );
@@ -187,11 +211,17 @@ export function ManageField({
 export function Fieldset({
   title,
   help,
+  tip,
+  setting,
   hideTitle = false,
   children,
 }: {
   title: StringKey;
   help?: StringKey;
+  /** A (?) explanation beside the title (CORE-2445). */
+  tip?: StringKey;
+  /** The settings-search anchor for this group (see lib/settingsIndex). */
+  setting?: string;
   /** Keep the legend for assistive tech only, when the section heading already says it. */
   hideTitle?: boolean;
   children: ReactNode;
@@ -199,16 +229,19 @@ export function Fieldset({
   const t = useT();
   if (hideTitle && !help) {
     return (
-      <fieldset className="console-fieldset">
+      <fieldset className="console-fieldset" data-setting={setting}>
         <legend className="sr-only">{t(title)}</legend>
         <div className="console-fieldset-body">{children}</div>
       </fieldset>
     );
   }
   return (
-    <fieldset className="console-fieldset">
+    <fieldset className="console-fieldset" data-setting={setting}>
       <div className="console-fieldset-head">
-        <legend className="console-fieldset-title">{t(title)}</legend>
+        <legend className="console-fieldset-title">
+          {t(title)}
+          {tip && <HelpTip label={t(title)} text={tip} />}
+        </legend>
         {help && <p className="console-fieldset-help">{t(help)}</p>}
       </div>
       <div className="console-fieldset-body">{children}</div>
@@ -219,17 +252,26 @@ export function Fieldset({
 export function ControlRow({
   label,
   help,
+  tip,
+  setting,
   control,
 }: {
   label: StringKey;
   help?: StringKey;
+  /** A (?) explanation beside the label (CORE-2445). */
+  tip?: StringKey;
+  /** The settings-search anchor for this row (see lib/settingsIndex). */
+  setting?: string;
   control: ReactNode;
 }) {
   const t = useT();
   return (
-    <div className="console-control-row">
+    <div className="console-control-row" data-setting={setting}>
       <div className="min-w-0">
-        <div className="console-control-label">{t(label)}</div>
+        <div className="console-control-label">
+          {t(label)}
+          {tip && <HelpTip label={t(label)} text={tip} />}
+        </div>
         {help && <p className="console-control-help">{t(help)}</p>}
       </div>
       <div className="flex shrink-0 items-center gap-2">{control}</div>

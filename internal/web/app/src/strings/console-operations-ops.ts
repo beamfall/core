@@ -22,11 +22,9 @@ export const consoleOperationsOpsStrings = {
     governorLowPower: "Low-power mode",
     governorSettingsHeading: "Background work",
     governorBackgroundWorkers: "Background workers",
-    governorBackgroundWorkersSave: "Save background workers",
     governorBackgroundWorkersHelp:
       "How many background jobs can run at once within the CPU budget. Playback always comes first.",
     eventsRetentionDays: "Events retention days",
-    eventsRetentionDaysSave: "Save events retention days",
     eventsRetentionDaysHelp:
       "How many days to keep routine server events. Watch history and activity are never deleted here.",
     eventsCompactionRun: "Compact events now",
@@ -91,11 +89,9 @@ export const consoleOperationsOpsStrings = {
     governorLowPower: "Mode économie d’énergie",
     governorSettingsHeading: "Travail d’arrière-plan",
     governorBackgroundWorkers: "Travailleurs d’arrière-plan",
-    governorBackgroundWorkersSave: "Enregistrer les travailleurs d’arrière-plan",
     governorBackgroundWorkersHelp:
       "Nombre de tâches d’arrière-plan pouvant s’exécuter en même temps dans la limite du budget CPU. La lecture passe toujours en premier.",
     eventsRetentionDays: "Jours de conservation des événements",
-    eventsRetentionDaysSave: "Enregistrer les jours de conservation des événements",
     eventsRetentionDaysHelp:
       "Nombre de jours de conservation des événements courants du serveur. L’historique de visionnage et l’activité ne sont jamais supprimés ici.",
     eventsCompactionRun: "Compacter les événements maintenant",
@@ -162,11 +158,9 @@ export const consoleOperationsOpsStrings = {
     governorLowPower: "Energiesparmodus",
     governorSettingsHeading: "Hintergrundarbeit",
     governorBackgroundWorkers: "Hintergrund-Worker",
-    governorBackgroundWorkersSave: "Hintergrund-Worker speichern",
     governorBackgroundWorkersHelp:
       "Wie viele Hintergrund-Jobs gleichzeitig innerhalb des CPU-Budgets laufen können. Die Wiedergabe hat immer Vorrang.",
     eventsRetentionDays: "Aufbewahrungstage für Ereignisse",
-    eventsRetentionDaysSave: "Aufbewahrungstage für Ereignisse speichern",
     eventsRetentionDaysHelp:
       "Wie viele Tage routinemäßige Serverereignisse aufbewahrt werden. Wiedergabeverlauf und Aktivität werden hier nie gelöscht.",
     eventsCompactionRun: "Ereignisse jetzt komprimieren",
@@ -234,11 +228,9 @@ export const consoleOperationsOpsStrings = {
     governorLowPower: "Modo de bajo consumo",
     governorSettingsHeading: "Trabajo en segundo plano",
     governorBackgroundWorkers: "Procesos en segundo plano",
-    governorBackgroundWorkersSave: "Guardar procesos en segundo plano",
     governorBackgroundWorkersHelp:
       "Cuántos trabajos en segundo plano pueden ejecutarse a la vez dentro del presupuesto de CPU. La reproducción siempre va primero.",
     eventsRetentionDays: "Días de retención de eventos",
-    eventsRetentionDaysSave: "Guardar días de retención de eventos",
     eventsRetentionDaysHelp:
       "Cuántos días se conservan los eventos rutinarios del servidor. El historial de reproducción y la actividad nunca se eliminan aquí.",
     eventsCompactionRun: "Compactar eventos ahora",
@@ -304,11 +296,9 @@ export const consoleOperationsOpsStrings = {
     governorLowPower: "Modo de baixo consumo",
     governorSettingsHeading: "Trabalho em segundo plano",
     governorBackgroundWorkers: "Workers em segundo plano",
-    governorBackgroundWorkersSave: "Salvar workers em segundo plano",
     governorBackgroundWorkersHelp:
       "Quantas tarefas em segundo plano podem rodar ao mesmo tempo dentro do orçamento de CPU. A reprodução sempre vem primeiro.",
     eventsRetentionDays: "Dias de retenção de eventos",
-    eventsRetentionDaysSave: "Salvar dias de retenção de eventos",
     eventsRetentionDaysHelp:
       "Por quantos dias manter os eventos rotineiros do servidor. O histórico de exibição e a atividade nunca são excluídos aqui.",
     eventsCompactionRun: "Compactar eventos agora",

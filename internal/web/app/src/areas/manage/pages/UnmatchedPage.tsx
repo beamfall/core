@@ -115,7 +115,7 @@ export function UnmatchedPage() {
     <div className="space-y-4">
       <ManageSection
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {libraries.length > 0 && (
               <Select value={libraryID} onValueChange={setLibraryID}>
                 <SelectTrigger className="w-44" aria-label={t("library")}>

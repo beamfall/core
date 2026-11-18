@@ -1,7 +1,14 @@
 import { Copy, Link2, MonitorSmartphone, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { Link } from "react-router";
 import { QrCode } from "@/components/beamfall/QrCode";
-import { DataTable, EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  HelpTip,
+  StatusChip,
+} from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -429,7 +436,10 @@ export function Devices() {
 
       <Section heading="deviceAddHeading" lead="deviceAddLead">
         {minted && <PairingCodeBanner key={minted.code} code={minted} />}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div
+          className="mt-3 flex flex-wrap items-center gap-2"
+          data-setting="console.access.pairingCodes"
+        >
           <Button variant="outline" disabled={busy} onClick={() => void mint("viewer")}>
             <Plus className="console-nav-icon" aria-hidden />
             {t("deviceMintViewer")}
@@ -440,6 +450,7 @@ export function Devices() {
             variant="outline"
             onConfirm={() => mint("manager")}
           />
+          <HelpTip label={t("accessHelpPairingCodesLabel")} text="accessHelpPairingCodesTip" />
         </div>
         <p className="mt-2 text-[12px] leading-snug text-muted-foreground">{t("deviceMintHint")}</p>
       </Section>
@@ -452,12 +463,21 @@ export function Devices() {
           ) : config.failed || !config.data ? (
             <ErrorState message="devicesUnavailable" />
           ) : (
-            <div className="flex items-start justify-between gap-4 console-card console-card-pad">
+            <div
+              className="flex items-start justify-between gap-4 console-card console-card-pad"
+              data-setting="console.access.remoteEnrollment"
+            >
               <div className="space-y-1">
-                <p className="m-0 text-dense font-semibold">{t("remoteEnrollToggle")}</p>
+                <span className="bf-label-with-tip">
+                  <p className="m-0 text-dense font-semibold">{t("remoteEnrollToggle")}</p>
+                  <HelpTip label={t("remoteEnrollToggle")} text="accessHelpRemoteEnrollTip" />
+                </span>
                 <p className="m-0 text-[12px] leading-snug text-muted-foreground">
                   {t("remoteEnrollToggleHint")}
                 </p>
+                <Link to="/console/remote" className="text-[12px] underline underline-offset-2">
+                  {t("accessHelpRemoteEnrollLink")}
+                </Link>
               </div>
               <Switch
                 checked={config.data.remoteEnrollmentEnabled}

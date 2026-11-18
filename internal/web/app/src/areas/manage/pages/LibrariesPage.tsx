@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { DeleteLibraryButton } from "@/components/beamfall/LibraryDelete";
 import {
   RescanAllButton,
@@ -10,6 +11,7 @@ import {
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageField,
   ManageInlineForm,
   ManageSection,
@@ -132,26 +134,36 @@ export function LibrariesPage() {
   return (
     <div className="space-y-4">
       <ManageSection actions={<RescanAllButton libraries={libraries} />}>
-        {!loading && libraries.length === 0 ? (
-          <EmptyLine message={t("libraryEmptyTitle")} />
-        ) : (
-          <div className="flex flex-col gap-4">
-            {loading ? (
-              <Skeleton aria-hidden="true" data-library-skeleton className="h-48 rounded-xl" />
-            ) : (
-              libraries.map((lib) => (
-                <LibraryRow
-                  key={lib.id}
-                  library={lib}
-                  onTogglePreview={onTogglePreview}
-                  onRootsSaved={onRootsSaved}
-                  onDeleted={() => void load()}
-                  onError={setError}
-                />
-              ))
-            )}
-          </div>
-        )}
+        {/* The other library settings live in the Server console (CORE-2445):
+            say so here rather than leave people hunting for them. */}
+        <p className="mb-3 text-sm text-muted-foreground">
+          {t("manageLibConsoleNote")}{" "}
+          <Link to="/console/libraries" className="underline underline-offset-2">
+            {t("manageLibConsoleLink")}
+          </Link>
+        </p>
+        <div data-setting="manage.libraries.list">
+          {!loading && libraries.length === 0 ? (
+            <EmptyLine message={t("libraryEmptyTitle")} />
+          ) : (
+            <div className="flex flex-col gap-4">
+              {loading ? (
+                <Skeleton aria-hidden="true" data-library-skeleton className="h-48 rounded-xl" />
+              ) : (
+                libraries.map((lib) => (
+                  <LibraryRow
+                    key={lib.id}
+                    library={lib}
+                    onTogglePreview={onTogglePreview}
+                    onRootsSaved={onRootsSaved}
+                    onDeleted={() => void load()}
+                    onError={setError}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </div>
         <ErrorLine message={error} />
       </ManageSection>
 
@@ -385,7 +397,7 @@ function LibraryRow({
   const actionRow = "flex min-w-0 gap-2";
   const rootsEditor = (
     <div className="space-y-2 pb-1">
-      {rootsList.length > 0 ? (
+      {rootsList.length > 0 && (
         <ul className="flex flex-col gap-1">
           {rootsList.map((root) => (
             <li
@@ -405,8 +417,6 @@ function LibraryRow({
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="text-xs text-muted-foreground">{t("rootsPlaceholder")}</p>
       )}
       <PathPickerField
         id={`roots-${library.id}`}
@@ -445,14 +455,17 @@ function LibraryRow({
             {t("libraryFolderCount", { count: savedRoots.length })}
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Switch
-            aria-label={t("previewClips")}
-            checked={library.previewClips !== false}
-            onCheckedChange={(checked) => onTogglePreview(library, checked)}
-          />
-          {t("previewClips")}
-        </label>
+        <span className="bf-label-with-tip" data-setting="manage.libraries.previewClips">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch
+              aria-label={t("previewClips")}
+              checked={library.previewClips !== false}
+              onCheckedChange={(checked) => onTogglePreview(library, checked)}
+            />
+            {t("previewClips")}
+          </label>
+          <HelpTip label={t("previewClips")} text="manageLibPreviewClipsHelp" />
+        </span>
         <RescanButton libraryID={library.id} roots={savedRoots} />
       </header>
       <div className="mt-2">

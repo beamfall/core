@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { EmptyState, ErrorState, StatusChip } from "@/components/beamfall/workbench";
+import { EmptyState, ErrorState, HelpTip, StatusChip } from "@/components/beamfall/workbench";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { fetchCapabilityStates, setCapabilityEnabled } from "@/lib/graphql";
 import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import type { StringKey } from "@/strings";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
 
@@ -15,6 +16,26 @@ import { useAsync } from "../useAsync";
 // toggle (it is never operator-flipped). This whole section is suppressed on App
 // Store binaries — both the toggle UI here AND the server API (invariant 8) — so
 // it is only reachable on the web Console / direct-distribution Manager.
+// Plain names and help for the capabilities this server ships (CORE-2445). An id
+// not listed here (a newer server) still shows by its raw id.
+const CAPABILITY_TEXT: Record<string, { label: StringKey; tip: StringKey }> = {
+  conversion: { label: "capabilityConversion", tip: "capabilityConversionTip" },
+  rename: { label: "capabilityRename", tip: "capabilityRenameTip" },
+  "share-mount": { label: "capabilityShareMount", tip: "capabilityShareMountTip" },
+};
+
+function CapabilityName({ id }: { id: string }) {
+  const t = useT();
+  const text = CAPABILITY_TEXT[id];
+  if (!text) return <span className="console-control-label min-w-0 font-medium">{id}</span>;
+  return (
+    <span className="console-control-label bf-label-with-tip min-w-0 font-medium">
+      {t(text.label)}
+      <HelpTip label={t(text.label)} text={text.tip} />
+    </span>
+  );
+}
+
 export function Capabilities() {
   const t = useT();
   const { data, loading, failed, setData } = useAsync(fetchCapabilityStates);
@@ -35,7 +56,7 @@ export function Capabilities() {
   const probe = states.filter((s) => s.kind === "probe");
 
   return (
-    <Section heading="capabilitiesHeading" lead="capabilitiesLead">
+    <Section heading="navOptionalFeatures" lead="optionalFeaturesLead">
       {loading ? (
         <Skeleton className="h-32 w-full" />
       ) : failed ? (
@@ -51,15 +72,19 @@ export function Capabilities() {
               </div>
               <div className="console-card console-card-pad space-y-3">
                 {workflow.map((s) => (
-                  <div key={s.id} className="console-control-row">
+                  <div
+                    key={s.id}
+                    className="console-control-row"
+                    data-setting={`console.identification.${s.id}`}
+                  >
                     {/* The switch is the state; no chip repeats it (CORE-1117). */}
-                    <span className="console-control-label min-w-0 font-medium">{s.id}</span>
+                    <CapabilityName id={s.id} />
                     <div className="flex shrink-0 items-center gap-2">
                       <Switch
                         checked={s.enabled}
                         disabled={busy === s.id}
                         onCheckedChange={(c) => void toggle(s.id, c)}
-                        aria-label={s.id}
+                        aria-label={CAPABILITY_TEXT[s.id] ? t(CAPABILITY_TEXT[s.id].label) : s.id}
                       />
                     </div>
                   </div>
@@ -73,9 +98,13 @@ export function Capabilities() {
               <div className="console-control-label font-medium">{t("capabilitiesProbeGroup")}</div>
               <div className="console-card console-card-pad space-y-3">
                 {probe.map((s) => (
-                  <div key={s.id} className="console-control-row">
+                  <div
+                    key={s.id}
+                    className="console-control-row"
+                    data-setting={`console.identification.${s.id}`}
+                  >
                     <div className="min-w-0 flex items-center gap-2">
-                      <span className="console-control-label font-medium">{s.id}</span>
+                      <CapabilityName id={s.id} />
                       {/* Probe-derived: read-only, no toggle. A probe-absent
                           capability surfaces its degraded reason (ADR-0124 §5). */}
                       {s.enabled ? (

@@ -191,29 +191,40 @@ describe("RemoteBitrateLimit", () => {
     );
   }
 
-  it("shows the stored server-wide cap in Mbit/s", async () => {
+  const LIMIT = "Quality limit away from home";
+
+  beforeEach(() => {
+    if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = () => false;
+    if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+  });
+
+  it("shows a stored server-wide cap that is not a preset in Mbit/s", async () => {
     vi.mocked(fetchConsoleConfig).mockResolvedValue({
       ...baseConfig,
       remoteMaxBitrate: 12_500_000,
     });
     renderLimit();
-    expect(await screen.findByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(12.5);
+    expect(await screen.findByRole("combobox", { name: LIMIT })).toHaveTextContent("12.5 Mbit/s");
+    expect(
+      screen.getByRole("button", { name: "Help: Quality limit away from home" }),
+    ).toBeInTheDocument();
   });
 
-  it("writes the cap as bits per second and clears it with 0 (CORE-1717)", async () => {
+  it("saves a quality preset as bits per second and clears it with No limit (CORE-1717, CORE-2445)", async () => {
     vi.mocked(setConsoleConfig).mockResolvedValue({ ...baseConfig, remoteMaxBitrate: 4_000_000 });
     const user = userEvent.setup();
     renderLimit();
-    const input = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
-    await user.type(input, "4");
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    const trigger = await screen.findByRole("combobox", { name: LIMIT });
+    expect(trigger).toHaveTextContent("No limit");
+    await user.click(trigger);
+    await user.click(await screen.findByRole("option", { name: "4 Mbit/s · 720p" }));
     expect(setConsoleConfig).toHaveBeenLastCalledWith({ remoteMaxBitrate: 4_000_000 });
     expect(await screen.findByText("Applied.")).toBeInTheDocument();
-    expect(input).toHaveValue(4);
+    expect(screen.getByRole("combobox", { name: LIMIT })).toHaveTextContent("4 Mbit/s · 720p");
 
     vi.mocked(setConsoleConfig).mockResolvedValue({ ...baseConfig, remoteMaxBitrate: 0 });
-    await user.clear(input);
-    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(screen.getByRole("combobox", { name: LIMIT }));
+    await user.click(await screen.findByRole("option", { name: "No limit" }));
     expect(setConsoleConfig).toHaveBeenLastCalledWith({ remoteMaxBitrate: 0 });
   });
 });
@@ -263,6 +274,9 @@ describe("PortMapping (CORE-1969)", () => {
     expect(screen.getByText("18443")).toBeInTheDocument();
     expect(screen.getByText("203.0.113.7")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Map a router port automatically" })).toBeChecked();
+    expect(
+      screen.getByRole("button", { name: "Help: Map a router port automatically" }),
+    ).toBeInTheDocument();
 
     const direct = screen.getByTestId("reach-direct");
     expect(direct).toHaveTextContent("Direct (mapped port)");

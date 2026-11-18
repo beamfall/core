@@ -131,6 +131,12 @@ The keystone landing (§4). Not a group; always first.
 - The collapsed Maintain group is the visual primary-vs-advanced split. First-run setup
   (`/web/setup`, ADR-0080) is a pre-Console wizard, not a rail destination; its residual checklist
   lives on the Overview (§4) and is owned by the [onboarding funnel](onboarding-funnel.md).
+- The destination names above are the design's. The rail shows plain-language labels for some of
+  them (CORE-2445): Schedules & Policy is "Parental controls", API Keys is "API keys & tokens",
+  retention is "Leaving soon rules", Identification is "Optional features", Updates is "Update
+  notifications" and Server Config is "Playback & sign-in". Layout & Navigation has no rail entry
+  of its own; its old route redirects to Optional features. The top of the Console and Manage menus
+  says what each area is for, links to the other, and searches both areas' pages and settings.
 
 ---
 

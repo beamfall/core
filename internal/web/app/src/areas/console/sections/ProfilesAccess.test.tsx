@@ -167,71 +167,91 @@ describe("ProfilesAccess managed-Profile policy", () => {
       ],
     });
     const user = await pickProfile("Kid");
-    await user.click((await screen.findAllByRole("combobox"))[1]);
+    expect(screen.getByRole("button", { name: "Help: Film & TV" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("combobox", { name: "Film & TV" }));
+    expect(await screen.findByRole("option", { name: "No limit" })).toBeInTheDocument();
     await user.click(await screen.findByRole("option", { name: "PG" }));
     expect(setCertificationCeiling).toHaveBeenCalledWith("p2", "filmtv", "PG");
   });
 
-  // Both caps carry an "Apply" button, so each test scopes to its own form.
-  function formOf(input: HTMLElement) {
-    const form = input.closest("form");
-    if (!form) throw new Error("input is not inside a form");
-    return within(form);
+  async function choose(user: ReturnType<typeof userEvent.setup>, control: string, option: string) {
+    await user.click(await screen.findByRole("combobox", { name: control }));
+    await user.click(await screen.findByRole("option", { name: option }));
   }
 
-  it("applies a stream cap through setProfileStreamCap", async () => {
+  const STREAMS = "Streams at the same time";
+  const REMOTE_CAP = "Quality limit away from home";
+
+  it("edits access windows with time-of-day dropdowns (CORE-2445)", async () => {
     const user = await pickProfile("Kid");
-    const capInput = await screen.findByLabelText("Concurrent streams");
-    await user.type(capInput, "2");
-    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
-    expect(setProfileStreamCap).toHaveBeenCalledWith("p2", 2);
-    expect(await formOf(capInput).findByText("Applied.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Help: Viewing times" })).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Add window" }));
+    expect(screen.getByRole("combobox", { name: "From" })).toHaveTextContent("00:00");
+    expect(screen.getByRole("combobox", { name: "Until" })).toHaveTextContent("24:00");
+    await choose(user, "Until", "20:00");
+    await user.click(screen.getByRole("button", { name: "Save schedule" }));
+    expect(setAccessSchedule).toHaveBeenCalledWith("p2", [
+      { weekday: 0, startMinute: 0, endMinute: 1200 },
+    ]);
   });
 
-  it("clears the cap by sending 0 when the input is empty", async () => {
+  it("saves a stream cap chosen from the list (CORE-2445)", async () => {
     const user = await pickProfile("Kid");
-    const capInput = await screen.findByLabelText("Concurrent streams");
-    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
+    // The cap is not read back, so the control starts on its placeholder.
+    expect(await screen.findByRole("combobox", { name: STREAMS })).toHaveTextContent(
+      "Choose a limit",
+    );
+    expect(
+      screen.getByRole("button", { name: "Help: Streams at the same time" }),
+    ).toBeInTheDocument();
+    await choose(user, STREAMS, "2 streams");
+    expect(setProfileStreamCap).toHaveBeenCalledWith("p2", 2);
+    expect(await screen.findByText("Applied.")).toBeInTheDocument();
+  });
+
+  it("clears the stream cap by choosing No limit", async () => {
+    const user = await pickProfile("Kid");
+    await choose(user, STREAMS, "No limit");
     expect(setProfileStreamCap).toHaveBeenCalledWith("p2", 0);
   });
 
-  it("applies a remote bitrate cap in Mbit/s as bits per second (CORE-1717)", async () => {
+  it("saves a remote quality preset as bits per second (CORE-1717, CORE-2445)", async () => {
     const user = await pickProfile("Kid");
-    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
-    await user.type(capInput, "8");
-    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
+    expect(
+      await screen.findByRole("button", { name: "Help: Quality limit away from home" }),
+    ).toBeInTheDocument();
+    await choose(user, REMOTE_CAP, "8 Mbit/s · 1080p");
     expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p2", 8_000_000);
-    expect(await formOf(capInput).findByText("Applied.")).toBeInTheDocument();
+    expect(await screen.findByText("Applied.")).toBeInTheDocument();
     expect(setProfileStreamCap).not.toHaveBeenCalled();
   });
 
-  it("shows the Profile's stored remote bitrate cap in Mbit/s (CORE-1853)", async () => {
+  it("shows a stored remote cap that is not a preset in Mbit/s (CORE-1853)", async () => {
     await pickProfile("Owner");
-    expect(await screen.findByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(12.5);
+    expect(await screen.findByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent(
+      "12.5 Mbit/s",
+    );
   });
 
-  it("leaves the remote cap input empty when the Profile has no cap", async () => {
+  it("shows No limit when the Profile has no remote cap", async () => {
     await pickProfile("Kid");
-    expect(await screen.findByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(null);
+    expect(await screen.findByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent("No limit");
   });
 
-  it("shows the saved remote cap after Apply and rereads the profiles (CORE-1853)", async () => {
+  it("shows the saved remote cap after a save and rereads the profiles (CORE-1853)", async () => {
     vi.mocked(setProfileRemoteBitrateCap).mockResolvedValue({
       id: "p1",
       remoteMaxBitrate: 4_000_000,
     });
     const user = await pickProfile("Owner");
-    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
-    await user.clear(capInput);
-    await user.type(capInput, "4");
-    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
+    await choose(user, REMOTE_CAP, "4 Mbit/s · 720p");
     expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p1", 4_000_000);
-    expect(await formOf(capInput).findByText("Applied.")).toBeInTheDocument();
-    expect(capInput).toHaveValue(4);
+    expect(await screen.findByText("Applied.")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent("4 Mbit/s · 720p");
     await waitFor(() => expect(fetchEnforcedFilters).toHaveBeenCalledTimes(2));
   });
 
-  it("shows the reread remote cap when the profile is reselected mid-Apply (CORE-1853)", async () => {
+  it("shows the reread remote cap when the profile is reselected mid-save (CORE-1853)", async () => {
     let finishSave: (value: { id: string; remoteMaxBitrate: number }) => void = () => {};
     vi.mocked(setProfileRemoteBitrateCap).mockReturnValue(
       new Promise((resolve) => {
@@ -239,19 +259,18 @@ describe("ProfilesAccess managed-Profile policy", () => {
       }),
     );
     const user = await pickProfile("Owner");
-    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
-    await user.clear(capInput);
-    await user.type(capInput, "4");
-    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
-    // The input is locked while the save is in flight, so no edit is lost.
-    expect(capInput).toBeDisabled();
+    await choose(user, REMOTE_CAP, "4 Mbit/s · 720p");
+    // The control is locked while the save is in flight.
+    expect(screen.getByRole("combobox", { name: REMOTE_CAP })).toBeDisabled();
     // Switch away and back before the save returns: the control remounts with
     // the pre-save profiles payload.
     for (const name of ["Kid", "Owner"]) {
       await user.click(screen.getAllByRole("combobox")[0]);
       await user.click(await screen.findByRole("option", { name }));
     }
-    expect(await screen.findByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(12.5);
+    expect(await screen.findByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent(
+      "12.5 Mbit/s",
+    );
     const before = await fetchEnforcedFilters();
     vi.mocked(fetchEnforcedFilters).mockResolvedValue({
       ...before,
@@ -261,39 +280,43 @@ describe("ProfilesAccess managed-Profile policy", () => {
     });
     finishSave({ id: "p1", remoteMaxBitrate: 4_000_000 });
     await waitFor(() =>
-      expect(screen.getByLabelText("Remote bitrate cap (Mbit/s)")).toHaveValue(4),
+      expect(screen.getByRole("combobox", { name: REMOTE_CAP })).toHaveTextContent(
+        "4 Mbit/s · 720p",
+      ),
     );
   });
 
-  it("clears the remote bitrate cap by sending 0 when the input is empty", async () => {
-    const user = await pickProfile("Kid");
-    const capInput = await screen.findByLabelText("Remote bitrate cap (Mbit/s)");
-    await user.click(formOf(capInput).getByRole("button", { name: "Apply" }));
-    expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p2", 0);
+  it("clears the remote cap by choosing No limit", async () => {
+    const user = await pickProfile("Owner");
+    await choose(user, REMOTE_CAP, "No limit");
+    expect(setProfileRemoteBitrateCap).toHaveBeenCalledWith("p1", 0);
   });
 
   it("shows the extension pre-auth toggle for a managed Profile and wires it", async () => {
     const user = await pickProfile("Kid");
     const toggle = await screen.findByRole("switch", {
-      name: "Pre-authorize extension requests",
+      name: "Approve extra-time requests automatically",
     });
+    expect(
+      screen.getByRole("button", { name: "Help: Approve extra-time requests automatically" }),
+    ).toBeInTheDocument();
     await user.click(toggle);
     expect(setExtensionPreauthorization).toHaveBeenCalledWith("p2", true);
   });
 
   it("hides the extension pre-auth toggle for an adult Profile", async () => {
     await pickProfile("Owner");
-    await screen.findByLabelText("Concurrent streams");
+    await screen.findByRole("combobox", { name: "Streams at the same time" });
     expect(
       screen.queryByRole("switch", {
-        name: "Pre-authorize extension requests",
+        name: "Approve extra-time requests automatically",
       }),
     ).toBeNull();
   });
 
   it("blocks restricted Library grants until Reveal and saves visible grants", async () => {
     const user = await pickProfile("Kid");
-    await screen.findByLabelText("Concurrent streams");
+    await screen.findByRole("combobox", { name: "Streams at the same time" });
     const restricted = screen.getAllByText("Reveal required")[0].closest("label");
     if (!restricted) throw new Error("expected restricted library row");
     expect(within(restricted).getByRole("checkbox")).toBeDisabled();
@@ -306,7 +329,7 @@ describe("ProfilesAccess managed-Profile policy", () => {
       revealed: true,
     } as unknown as ReturnType<typeof useSession>);
     const user = await pickProfile("Kid");
-    await screen.findByLabelText("Concurrent streams");
+    await screen.findByRole("combobox", { name: "Streams at the same time" });
     const restricted = screen.getAllByText("Restricted")[0].closest("label");
     if (!restricted) throw new Error("expected restricted library row");
     await user.click(within(restricted).getByRole("checkbox"));
@@ -374,14 +397,16 @@ describe("ProfilesAccess in the Normal view (CORE-1117)", () => {
     await pickProfile("Kid");
 
     expect(await screen.findByRole("button", { name: "Save library access" })).toBeVisible();
-    expect(screen.queryByLabelText("Concurrent streams")).toBeNull();
-    expect(screen.queryByRole("switch", { name: "Pre-authorize extension requests" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Streams at the same time" })).toBeNull();
+    expect(
+      screen.queryByRole("switch", { name: "Approve extra-time requests automatically" }),
+    ).toBeNull();
   });
 
   it("shows an adult Profile's Library access without the Advanced stream cap", async () => {
     await pickProfile("Owner");
 
     expect(await screen.findByRole("button", { name: "Save library access" })).toBeVisible();
-    expect(screen.queryByLabelText("Concurrent streams")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Streams at the same time" })).toBeNull();
   });
 });

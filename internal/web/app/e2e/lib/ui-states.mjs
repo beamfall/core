@@ -87,8 +87,6 @@ export const CONSOLE_ROUTES = Object.freeze([
   "logs",
   "libraries",
   "plugins",
-  "identification",
-  "layout",
   "access",
   "schedules",
   "remote",
@@ -96,6 +94,7 @@ export const CONSOLE_ROUTES = Object.freeze([
   "webhooks",
   "backups",
   "retention",
+  "identification",
   "migrate",
   "updates",
   "config",
@@ -137,7 +136,7 @@ export const AREA_LOCALES = Object.freeze({
 // In-page states, keyed by screen: the dialogs, menus, tabs and Selects each screen opens, and the
 // empty, error and loading branches it renders. Seeded from the components' Dialog, AlertDialog,
 // Select, Tabs and popover usage and their empty/error/loading branches. Several Console screens
-// render another screen's sections (layout, schedules, backups, migrate, updates) and list no
+// render another screen's sections (schedules, backups, migrate, updates) and list no
 // states of their own. `visualParity` lists goldens (<project>/<file>.png); a passing comparison
 // of any of them covers the row.
 export const IN_PAGE_STATES = Object.freeze({

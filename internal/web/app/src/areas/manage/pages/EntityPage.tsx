@@ -43,7 +43,7 @@ export function EntityPage() {
 
   return (
     <ManageSection>
-      <div className="flex items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="entity-id">{t("fieldLocksMediaLabel")}</Label>
           <Input

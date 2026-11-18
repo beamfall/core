@@ -176,13 +176,10 @@ describe("OperationsControls", () => {
   it("saves the background worker count through setConsoleConfig", async () => {
     const user = userEvent.setup();
     renderPanel();
-    const input = await screen.findByLabelText("Background workers");
+    await user.click(await screen.findByRole("combobox", { name: "Background workers" }));
+    await user.click(await screen.findByRole("option", { name: "4" }));
 
-    await user.tripleClick(input);
-    await user.keyboard("6");
-    await user.click(screen.getByRole("button", { name: "Save background workers" }));
-
-    await waitFor(() => expect(setConsoleConfig).toHaveBeenCalledWith({ backgroundWorkers: 6 }));
+    await waitFor(() => expect(setConsoleConfig).toHaveBeenCalledWith({ backgroundWorkers: 4 }));
   });
 
   it("pins workers to one when low-power mode is enabled", async () => {
@@ -198,11 +195,8 @@ describe("OperationsControls", () => {
   it("saves events retention days through setConsoleConfig", async () => {
     const user = userEvent.setup();
     renderPanel();
-    const input = await screen.findByLabelText("Events retention days");
-
-    await user.tripleClick(input);
-    await user.keyboard("90");
-    await user.click(screen.getByRole("button", { name: "Save events retention days" }));
+    await user.click(await screen.findByRole("combobox", { name: "Events retention days" }));
+    await user.click(await screen.findByRole("option", { name: "90 days" }));
 
     await waitFor(() => expect(setConsoleConfig).toHaveBeenCalledWith({ eventsRetentionDays: 90 }));
   });

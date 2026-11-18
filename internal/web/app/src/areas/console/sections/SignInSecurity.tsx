@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { HelpTip } from "@/components/beamfall/workbench";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -47,6 +48,7 @@ export function SignInSecurity() {
   const t = useT();
   const passwordID = useId();
   const errorID = useId();
+  const hintID = useId();
   const errorRef = useRef<HTMLParagraphElement>(null);
   const [current, setCurrent] = useState<SignInSecurityMode | null>(null);
   const [selected, setSelected] = useState<SignInSecurityMode>("home");
@@ -127,33 +129,40 @@ export function SignInSecurity() {
         </div>
       )}
       <form onSubmit={onSubmit} className="grid max-w-xl gap-5" noValidate>
-        <fieldset className="m-0 grid gap-3 border-0 p-0" disabled={current === null}>
+        <fieldset
+          className="m-0 grid gap-3 border-0 p-0"
+          disabled={current === null}
+          data-setting="console.access.signinSecurity"
+        >
           <legend className="sr-only">{t("signinSecurityHeading")}</legend>
           {MODES.map(({ mode, label, detail }) => (
-            <label key={mode} className="flex items-start gap-2 text-sm">
-              <input
-                type="radio"
-                name="signin-security-mode"
-                value={mode}
-                checked={selected === mode}
-                onChange={() => setSelected(mode)}
-                className="mt-1"
-              />
-              <span className="grid gap-0.5">
-                <span className="flex items-center gap-2 font-medium text-foreground">
-                  {t(label)}
-                  {mode === "home" && (
-                    <span className="text-xs font-normal text-[var(--accent)]">
-                      {t("setupSecurityRecommended")}
-                    </span>
-                  )}
+            <div key={mode} className="flex items-start gap-1">
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="signin-security-mode"
+                  value={mode}
+                  checked={selected === mode}
+                  onChange={() => setSelected(mode)}
+                  className="mt-1"
+                />
+                <span className="grid gap-0.5">
+                  <span className="flex items-center gap-2 font-medium text-foreground">
+                    {t(label)}
+                    {mode === "home" && (
+                      <span className="text-xs font-normal text-[var(--accent)]">
+                        {t("setupSecurityRecommended")}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{t(detail)}</span>
                 </span>
-                <span className="text-xs text-muted-foreground">{t(detail)}</span>
-              </span>
-            </label>
+              </label>
+              {mode === "strict" && <HelpTip label={t(label)} text="accessHelpStrictTip" />}
+            </div>
           ))}
         </fieldset>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-setting="console.access.adminPassword">
           <Label htmlFor={passwordID}>{t("adminPasswordLabel")}</Label>
           <Input
             id={passwordID}
@@ -163,8 +172,11 @@ export function SignInSecurity() {
             autoComplete="current-password"
             required
             aria-invalid={error != null}
-            aria-describedby={error ? errorID : undefined}
+            aria-describedby={error ? `${hintID} ${errorID}` : hintID}
           />
+          <p id={hintID} className="text-xs text-muted-foreground">
+            {t("accessHelpAdminPasswordHint")}
+          </p>
         </div>
         <Button
           type="submit"

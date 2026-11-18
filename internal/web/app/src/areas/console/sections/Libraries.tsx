@@ -31,6 +31,7 @@ import {
   EmptyState,
   ErrorLine,
   ErrorState,
+  HelpTip,
   PathPickerField,
   StatusChip,
 } from "@/components/beamfall/workbench";
@@ -70,6 +71,7 @@ import type {
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { requestManifestRefresh } from "@/lib/manifestRefresh";
 import { cn } from "@/lib/utils";
+import type { StringKey } from "@/strings";
 import { ConfirmButton } from "../ConfirmButton";
 import { MissingProviderKeys } from "../ProviderKeys";
 import { Section } from "../Section";
@@ -87,22 +89,42 @@ function lastSegment(path: string): string {
 function SettingRow({
   label,
   help,
+  tip,
+  setting,
   checked,
   onChange,
 }: {
   label: string;
   help: string;
+  tip?: StringKey;
+  setting?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
+  const id = useId();
+  // The (?) button sits beside the label, outside it, so it never becomes part
+  // of the switch's name (CORE-2445).
   return (
-    <label className="flex cursor-pointer items-start justify-between gap-4 py-2">
+    <div className="flex items-start justify-between gap-4 py-2" data-setting={setting}>
       <span className="min-w-0">
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="block text-xs leading-snug text-muted-foreground">{help}</span>
+        <span className="bf-label-with-tip">
+          <span id={`${id}-label`} className="text-sm font-medium">
+            {label}
+          </span>
+          {tip && <HelpTip label={label} text={tip} />}
+        </span>
+        <span id={`${id}-help`} className="block text-xs leading-snug text-muted-foreground">
+          {help}
+        </span>
       </span>
-      <Switch checked={checked} onCheckedChange={onChange} className="mt-0.5" />
-    </label>
+      <Switch
+        checked={checked}
+        onCheckedChange={onChange}
+        aria-labelledby={`${id}-label`}
+        aria-describedby={`${id}-help`}
+        className="mt-0.5"
+      />
+    </div>
   );
 }
 
@@ -417,18 +439,23 @@ function LibraryCard({
                 <SettingRow
                   label={t("previewClips")}
                   help={t("previewClipsHelp")}
+                  tip="previewClipsTip"
+                  setting="console.libraries.previewClips"
                   checked={library.previewClips}
                   onChange={(c) => void togglePreview(c)}
                 />
                 <SettingRow
                   label={t("showOnHome")}
                   help={t("showOnHomeHelp")}
+                  setting="console.libraries.showOnHome"
                   checked={library.showOnHome !== false}
                   onChange={(c) => void toggleShowOnHome(c)}
                 />
                 <SettingRow
-                  label={t("skipDetection")}
+                  label={t("skipDetectionLabel")}
                   help={t("skipDetectionHelp")}
+                  tip="skipDetectionTip"
+                  setting="console.libraries.skipDetection"
                   checked={skipDetectionEnabled}
                   onChange={(c) => void toggleSkipDetection(c)}
                 />
@@ -665,30 +692,32 @@ export function Libraries() {
         </div>
       )}
 
-      {firstLoad ? (
-        <Skeleton className="h-40 w-full" />
-      ) : libs.failed ? (
-        <ErrorState message="consoleConfigUnavailable" />
-      ) : empty ? (
-        <EmptyState message="libraryEmptyLead" />
-      ) : (
-        <div className="grid gap-4">
-          {libraryList.map((library) => (
-            <LibraryCard
-              key={library.id}
-              library={library}
-              plugins={pluginList}
-              skipDetectionEnabled={skipDetectionByLibrary.get(library.id) ?? false}
-              watcher={watchers.data?.find((w) => w.libraryID === library.id)}
-              onChanged={() => {
-                void refreshLibraries();
-                void skipDetection.refresh();
-              }}
-              onDeleted={() => void onLibraryDeleted(library)}
-            />
-          ))}
-        </div>
-      )}
+      <div data-setting="console.libraries.list">
+        {firstLoad ? (
+          <Skeleton className="h-40 w-full" />
+        ) : libs.failed ? (
+          <ErrorState message="consoleConfigUnavailable" />
+        ) : empty ? (
+          <EmptyState message="libraryEmptyLead" />
+        ) : (
+          <div className="grid gap-4">
+            {libraryList.map((library) => (
+              <LibraryCard
+                key={library.id}
+                library={library}
+                plugins={pluginList}
+                skipDetectionEnabled={skipDetectionByLibrary.get(library.id) ?? false}
+                watcher={watchers.data?.find((w) => w.libraryID === library.id)}
+                onChanged={() => {
+                  void refreshLibraries();
+                  void skipDetection.refresh();
+                }}
+                onDeleted={() => void onLibraryDeleted(library)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Shown only once the list has loaded with something in it: a failed or
           empty load leaves the section as it was before libraries could be

@@ -29,8 +29,6 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonRelayNotConfigured: "No relay is configured.",
     reachabilityReasonRelayDisconnected: "The relay is not connected.",
     reachabilityReasonProbeError: "The probe could not run.",
-    reachabilityHint:
-      "The probe sends only a TLS greeting, never library data. The direct check needs a router that loops connections to its own public address back to the LAN; without that it can report unreachable even when outside clients can connect.",
     remoteAccessDirectHTTPS: "Direct HTTPS",
     remoteAccessRelay: "Self-hosted relay",
     remoteAccessHostedRelay: "Hosted relay",
@@ -84,8 +82,6 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonRelayNotConfigured: "Aucun relais n’est configuré.",
     reachabilityReasonRelayDisconnected: "Le relais n’est pas connecté.",
     reachabilityReasonProbeError: "La sonde n’a pas pu s’exécuter.",
-    reachabilityHint:
-      "La sonde n’envoie qu’une salutation TLS, jamais de données de bibliothèque. La vérification directe exige un routeur qui renvoie vers le réseau local les connexions à sa propre adresse publique ; sans cela, elle peut indiquer injoignable alors que des clients extérieurs peuvent se connecter.",
     remoteAccessDirectHTTPS: "HTTPS direct",
     remoteAccessRelay: "Relais auto-hébergé",
     remoteAccessHostedRelay: "Relais hébergé",
@@ -140,8 +136,6 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonRelayNotConfigured: "Es ist kein Relay konfiguriert.",
     reachabilityReasonRelayDisconnected: "Das Relay ist nicht verbunden.",
     reachabilityReasonProbeError: "Die Prüfung konnte nicht ausgeführt werden.",
-    reachabilityHint:
-      "Die Prüfung sendet nur eine TLS-Begrüßung, niemals Bibliotheksdaten. Die direkte Prüfung braucht einen Router, der Verbindungen zu seiner eigenen öffentlichen Adresse ins LAN zurückleitet; ohne das kann sie „nicht erreichbar“ melden, obwohl externe Clients sich verbinden können.",
     remoteAccessDirectHTTPS: "Direktes HTTPS",
     remoteAccessRelay: "Selbstgehostetes Relais",
     remoteAccessHostedRelay: "Gehostetes Relay",
@@ -195,8 +189,6 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonRelayNotConfigured: "No hay ningún relay configurado.",
     reachabilityReasonRelayDisconnected: "El relay no está conectado.",
     reachabilityReasonProbeError: "No se pudo ejecutar la sonda.",
-    reachabilityHint:
-      "La sonda solo envía un saludo TLS, nunca datos de la biblioteca. La comprobación directa necesita un router que devuelva a la LAN las conexiones dirigidas a su propia dirección pública; sin eso puede indicar inaccesible aunque los clientes externos sí se conecten.",
     remoteAccessDirectHTTPS: "HTTPS directo",
     remoteAccessRelay: "Relé autoalojado",
     remoteAccessHostedRelay: "Relay alojado",
@@ -250,8 +242,6 @@ export const remoteAccessMappingStrings = {
     reachabilityReasonRelayNotConfigured: "Nenhum relay está configurado.",
     reachabilityReasonRelayDisconnected: "O relay não está conectado.",
     reachabilityReasonProbeError: "Não foi possível executar a sondagem.",
-    reachabilityHint:
-      "A sondagem envia apenas uma saudação TLS, nunca dados da biblioteca. A verificação direta exige um roteador que devolva à LAN as conexões ao próprio endereço público; sem isso, ela pode indicar inacessível mesmo quando clientes externos conseguem se conectar.",
     remoteAccessDirectHTTPS: "HTTPS direto",
     remoteAccessRelay: "Relay auto-hospedado",
     remoteAccessHostedRelay: "Relay hospedado",

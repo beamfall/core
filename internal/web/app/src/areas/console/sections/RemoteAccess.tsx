@@ -1,10 +1,12 @@
 import { ChevronLeft, ExternalLink, RefreshCw, Wifi } from "lucide-react";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   DataTable,
   EmptyState,
   ErrorState,
+  HelpTip,
+  PresetSelect,
   StatusChip,
   type StatusTone,
 } from "@/components/beamfall/workbench";
@@ -62,6 +64,7 @@ import type { StringKey } from "@/strings";
 import { getAdminEpochSignal } from "../adminEpoch";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
+import { useBitratePresets } from "./RemoteAccessBitrate";
 
 const CERT_STATE: Record<string, StringKey> = {
   pending: "certPending",
@@ -333,8 +336,14 @@ function WatchAwayFlow({
         </div>
       </GuideStep>
       <Advanced keep={Boolean(relay?.enabled)}>
-        <div className="console-card console-card-pad space-y-3">
-          <h3 className="text-sm font-semibold">{t("watchAwayAdvancedRelay")}</h3>
+        <div
+          className="console-card console-card-pad space-y-3"
+          data-setting="console.remote.relay"
+        >
+          <span className="bf-label-with-tip">
+            <h3 className="text-sm font-semibold">{t("watchAwayAdvancedRelay")}</h3>
+            <HelpTip label={t("watchAwayAdvancedRelay")} text="accessHelpRelayTip" />
+          </span>
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>{t("watchAwayRelayDetail")}</p>
             {relay?.enabled ? (
@@ -370,7 +379,7 @@ export function RemoteAccessStatus() {
   return (
     <Section
       heading="remoteAccessHeading"
-      lead="remoteAccessLead"
+      lead="accessHelpRemoteAccessLead"
       actions={
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
           <RefreshCw className="console-nav-icon" aria-hidden />
@@ -467,7 +476,7 @@ export function PortMapping({
         </StatusChip>
       </div>
       <p className="text-xs text-muted-foreground">{t("portMappingLead")}</p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" data-setting="console.remote.portMapping">
         <Checkbox
           id="port-mapping-enabled"
           checked={mapping.enabled}
@@ -479,6 +488,7 @@ export function PortMapping({
         <Label htmlFor="port-mapping-enabled" className="text-sm">
           {t("portMappingToggle")}
         </Label>
+        <HelpTip label={t("portMappingToggle")} text="accessHelpPortMappingTip" />
       </div>
       {mapping.enabled && (
         <div className="space-y-1">
@@ -510,7 +520,7 @@ export function PortMapping({
           </span>
         </p>
       )}
-      <div className="space-y-2">
+      <div className="space-y-2" data-setting="console.remote.reachability">
         <div className="flex items-center justify-between gap-3">
           <h4 className="text-sm font-medium">{t("reachabilityHeading")}</h4>
           <Button
@@ -567,7 +577,7 @@ export function PortMapping({
         ) : (
           <p className="text-xs text-muted-foreground">{t("reachabilityNotChecked")}</p>
         )}
-        <p className="text-xs text-muted-foreground">{t("reachabilityHint")}</p>
+        <p className="text-xs text-muted-foreground">{t("accessHelpReachability")}</p>
       </div>
       {failed && (
         <p className="text-sm text-[var(--state-danger)]" role="alert">
@@ -579,12 +589,13 @@ export function PortMapping({
 }
 
 // RemoteBitrateLimit edits the server-wide remote streaming cap (CORE-1717).
-// The admin enters Mbit/s; the server stores bits per second, 0 = unlimited.
-// LAN playback never sees it, and a Profile's own cap applies when lower.
+// The admin picks a quality preset (CORE-2445); the server stores bits per
+// second, 0 = unlimited, and the choice saves at once. LAN playback never sees
+// it, and a Profile's own cap applies when lower.
 export function RemoteBitrateLimit() {
   const t = useT();
   const { data, failed, setData } = useAsync(fetchConsoleConfig);
-  const [draft, setDraft] = useState<string | null>(null);
+  const bitrate = useBitratePresets();
   const [busy, setBusy] = useState(false);
   const [applied, setApplied] = useState(false);
 
@@ -592,20 +603,12 @@ export function RemoteBitrateLimit() {
     return <p className="text-xs text-muted-foreground">{t("remoteBitrateLimitUnavailable")}</p>;
   }
   if (!data) return null;
-  const stored = data.remoteMaxBitrate ?? 0;
-  const value = draft ?? (stored > 0 ? String(stored / 1_000_000) : "");
 
-  async function apply(e: FormEvent) {
-    e.preventDefault();
+  async function apply(bps: number) {
     setBusy(true);
     setApplied(false);
     try {
-      const mbps = Number(value) || 0;
-      const next = await setConsoleConfig({
-        remoteMaxBitrate: mbps > 0 ? Math.round(mbps * 1_000_000) : 0,
-      });
-      setData(next);
-      setDraft(null);
+      setData(await setConsoleConfig({ remoteMaxBitrate: bps }));
       setApplied(true);
     } finally {
       setBusy(false);
@@ -613,38 +616,32 @@ export function RemoteBitrateLimit() {
   }
 
   return (
-    <form
-      onSubmit={apply}
+    <div
       className="flex flex-wrap items-end gap-2 border-t border-[var(--border-subtle)] pt-4"
+      data-setting="console.remote.bitrateLimit"
     >
       <div className="space-y-1">
-        <Label htmlFor="remote-bitrate-limit" className="text-xs">
-          {t("remoteBitrateLimitLabel")}
-        </Label>
-        <Input
+        <span className="bf-label-with-tip">
+          <Label htmlFor="remote-bitrate-limit" className="text-xs">
+            {t("accessHelpRemoteCapLabel")}
+          </Label>
+          <HelpTip label={t("accessHelpRemoteCapLabel")} text="accessHelpServerRemoteCapTip" />
+        </span>
+        <PresetSelect
           id="remote-bitrate-limit"
-          type="number"
-          min={0}
-          step="any"
-          className="w-24"
-          value={value}
-          placeholder="0"
-          onChange={(e) => {
-            setDraft(e.target.value);
-            setApplied(false);
-          }}
+          value={data.remoteMaxBitrate ?? 0}
+          presets={bitrate.presets}
+          format={bitrate.format}
+          disabled={busy}
+          onChange={(bps) => void apply(bps)}
         />
       </div>
-      <Button type="submit" size="sm" disabled={busy}>
-        {t("remoteBitrateLimitApply")}
-      </Button>
       {applied && (
         <span className="text-xs text-[var(--text-secondary)]" role="status">
           {t("remoteBitrateLimitApplied")}
         </span>
       )}
-      <p className="w-full text-xs text-muted-foreground">{t("remoteBitrateLimitHint")}</p>
-    </form>
+    </div>
   );
 }
 
@@ -679,7 +676,7 @@ function QBittorrentIngest() {
           ) : (
             <DataTable
               columns={[
-                { key: "category", label: t("migrationWizardConflict") },
+                { key: "category", label: t("accessHelpQbitCategory") },
                 { key: "library", label: t("library") },
               ]}
             >
@@ -811,10 +808,10 @@ function MappingStep({
   const PROFILE_DEFAULT = "__default__";
   const LIBRARY_ALL = "__all__";
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-setting="console.migrate.mapping">
       <div>
         <p className="text-sm font-medium">{t("migrationWizardMapping")}</p>
-        <p className="text-xs text-muted-foreground">{t("migrationWizardMappingDesc")}</p>
+        <p className="text-xs text-muted-foreground">{t("accessHelpMigrateMappingDesc")}</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
@@ -912,6 +909,25 @@ function MatchRateReport({ job }: { job: JobInfo | null }) {
   );
 }
 
+// The file each importer reads (CORE-2445), keyed by plugin and importer id and
+// checked against each plugin's importer. An importer missing here shows no hint.
+const IMPORTER_SOURCE_HINTS: Record<string, StringKey> = {
+  "filmtv:plex": "accessHelpMigrateSourcePlex",
+  "filmtv:emby": "accessHelpMigrateSourceEmby",
+  "filmtv:jellyfin": "accessHelpMigrateSourceJellyfin",
+  "filmtv:nfo": "accessHelpMigrateSourceNfo",
+  "filmtv:trakt": "accessHelpMigrateSourceTrakt",
+  "music:lastfm": "accessHelpMigrateSourceLastfm",
+  "music:listenbrainz": "accessHelpMigrateSourceListenBrainz",
+  "music:navidrome": "accessHelpMigrateSourceNavidrome",
+  "music:local-m3u": "accessHelpMigrateSourceM3u",
+  "photos:immich": "accessHelpMigrateSourceImmich",
+  "podcasts:opml": "accessHelpMigrateSourceOpml",
+  "podcasts:overcast": "accessHelpMigrateSourceOvercast",
+  "podcasts:antennapod": "accessHelpMigrateSourceAntennaPod",
+  "audiobook:audiobookshelf": "accessHelpMigrateSourceAudiobookshelf",
+};
+
 function ImporterWizard({
   importer: initialImporter,
   onBack,
@@ -923,6 +939,7 @@ function ImporterWizard({
   // The importer can change in place after a credential save (its
   // credentialConfigured flag flips), so it is local state, not just a prop.
   const [importer, setImporter] = useState<ImporterInfo>(initialImporter);
+  const sourceHint = IMPORTER_SOURCE_HINTS[`${importer.pluginID}:${importer.id}`];
   const [phase, setPhase] = useState<WizardPhase>("configuring");
   const [config, setConfig] = useState<WizardConfig>(() => initialWizardConfig(initialImporter));
   const [job, setJob] = useState<JobInfo | null>(null);
@@ -1034,16 +1051,28 @@ function ImporterWizard({
         )}
 
         {importer.input === "export-file" && (
-          <div className="space-y-1">
-            <Label htmlFor="migration-source-path">{t("migrationWizardSourcePath")}</Label>
+          <div className="space-y-1" data-setting="console.migrate.sourcePath">
+            <span className="bf-label-with-tip">
+              <Label htmlFor="migration-source-path">{t("accessHelpMigrateSourceLabel")}</Label>
+              <HelpTip
+                label={t("accessHelpMigrateSourceLabel")}
+                text="accessHelpMigrateSourceTip"
+              />
+            </span>
             <Input
               id="migration-source-path"
               value={config.sourcePath}
               autoComplete="off"
               spellCheck={false}
               placeholder={t("migrationWizardSourcePathPlaceholder")}
+              aria-describedby={sourceHint ? "migration-source-hint" : undefined}
               onChange={(e) => patchConfig({ sourcePath: e.target.value })}
             />
+            {sourceHint && (
+              <p id="migration-source-hint" className="text-xs text-muted-foreground">
+                {t(sourceHint)}
+              </p>
+            )}
           </div>
         )}
 
@@ -1147,37 +1176,39 @@ export function MigrationWizard() {
 
   return (
     <Section heading="migrationWizardHeading" lead="migrationWizardLead">
-      {failed ? (
-        <ErrorState message="migrationWizardUnavailable" />
-      ) : importers.length === 0 ? (
-        <EmptyState message="migrationWizardEmpty" />
-      ) : (
-        <DataTable
-          columns={[
-            { key: "name", label: t("title") },
-            { key: "input", label: t("migrationWizardInput") },
-            { key: "conflict", label: t("migrationWizardConflict") },
-            { key: "action", label: "" },
-          ]}
-        >
-          {importers.map((imp) => (
-            <TableRow key={`${imp.pluginID}:${imp.id}`}>
-              <TableCell className="font-medium">
-                {displayString(imp.displayName, displayLocale)}
-              </TableCell>
-              <TableCell>{importerInputLabel(imp, t)}</TableCell>
-              <TableCell>
-                {imp.conflict === "additive" ? t("migrationConflictAdditive") : imp.conflict}
-              </TableCell>
-              <TableCell className="text-right">
-                <Button size="sm" variant="outline" onClick={() => setActive(imp)}>
-                  {t("migrationWizardConfigure")}
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </DataTable>
-      )}
+      <div data-setting="console.migrate.importers">
+        {failed ? (
+          <ErrorState message="migrationWizardUnavailable" />
+        ) : importers.length === 0 ? (
+          <EmptyState message="migrationWizardEmpty" />
+        ) : (
+          <DataTable
+            columns={[
+              { key: "name", label: t("title") },
+              { key: "input", label: t("migrationWizardInput") },
+              { key: "conflict", label: t("accessHelpMigrateEffect") },
+              { key: "action", label: "" },
+            ]}
+          >
+            {importers.map((imp) => (
+              <TableRow key={`${imp.pluginID}:${imp.id}`}>
+                <TableCell className="font-medium">
+                  {displayString(imp.displayName, displayLocale)}
+                </TableCell>
+                <TableCell>{importerInputLabel(imp, t)}</TableCell>
+                <TableCell>
+                  {imp.conflict === "additive" ? t("migrationConflictAdditive") : imp.conflict}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="outline" onClick={() => setActive(imp)}>
+                    {t("migrationWizardConfigure")}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </DataTable>
+        )}
+      </div>
     </Section>
   );
 }

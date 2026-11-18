@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { createLibrary, fetchLibraries, fetchPlugins } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
-import { ManageArea } from ".";
+import { MENU_PAGES } from "@/lib/settingsIndex";
+import { MANAGE_NAV_GROUPS, ManageArea } from ".";
 
 const sessionState = vi.hoisted(() => ({
   current: {
@@ -63,8 +64,7 @@ const MANAGE_NAV = [
   ["Jobs", "/manage/operations"],
   ["Convert", "/manage/convert"],
   ["Rename", "/manage/rename"],
-  ["Trash policy", "/manage/trash"],
-  ["Backups", "/manage/backups"],
+  ["Trash", "/manage/trash"],
   ["Subscriptions", "/manage/subscriptions"],
   ["Unmatched records", "/manage/unmatched"],
   ["Collections", "/manage/collections"],
@@ -76,8 +76,8 @@ const MANAGE_NAV = [
   ["Markers", "/manage/markers"],
   ["Field locks", "/manage/field-locks"],
   ["Navigation", "/manage/navigation"],
-  ["Restrictions", "/manage/restrictions"],
-  ["Profiles", "/manage/profile"],
+  ["Show restricted content", "/manage/restrictions"],
+  ["Switch profile", "/manage/profile"],
 ] as const;
 
 function LocationProbe({ paths }: { paths: string[] }) {
@@ -285,7 +285,7 @@ describe("Manage navigation in the Normal view (CORE-1117)", () => {
     render(manageRouter("/manage/libraries", []));
 
     expect(screen.getByRole("link", { name: "Libraries" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Restrictions" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Show restricted content" })).toBeVisible();
     for (const label of ADVANCED_NAV) {
       expect(screen.queryByRole("link", { name: label })).toBeNull();
     }
@@ -305,5 +305,21 @@ describe("Manage navigation in the Normal view (CORE-1117)", () => {
       "page",
     );
     expect(screen.queryByRole("link", { name: "Markers" })).toBeNull();
+  });
+});
+
+describe("Manage settings search pages", () => {
+  it("lists every named Manage menu page, and no other, in MENU_PAGES", () => {
+    const nav = MANAGE_NAV_GROUPS.flat().flatMap((item) =>
+      item.hidden || !item.label
+        ? []
+        : [{ path: item.to.replace("/manage/", ""), label: item.label, lead: item.lead }],
+    );
+    const indexed = MENU_PAGES.filter((p) => p.area === "manage").map(({ path, label, lead }) => ({
+      path,
+      label,
+      lead,
+    }));
+    expect(indexed).toEqual(nav);
   });
 });

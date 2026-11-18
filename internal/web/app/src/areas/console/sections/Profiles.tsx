@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { EmptyState, ErrorState } from "@/components/beamfall/workbench";
+import { EmptyState, ErrorState, HelpTip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,14 +34,14 @@ export function Profiles() {
 
   if (profiles.failed) {
     return (
-      <Section heading="consoleProfilesHeading" lead="consoleProfilesLead">
+      <Section heading="consoleProfilesHeading" lead="accessHelpProfilesLead">
         <ErrorState message="consoleProfilesUnavailable" />
       </Section>
     );
   }
 
   return (
-    <Section heading="consoleProfilesHeading" lead="consoleProfilesLead">
+    <Section heading="consoleProfilesHeading" lead="accessHelpProfilesLead">
       <div className="space-y-6">
         <CreateProfileForm onCreated={() => void profiles.refresh()} />
 
@@ -98,15 +98,18 @@ function CreateProfileForm({ onCreated }: { onCreated: () => void }) {
           autoComplete="off"
         />
       </div>
-      <div className="space-y-1">
-        <Label>{t("consoleProfilesKindLabel")}</Label>
+      <div className="space-y-1" data-setting="console.access.profileType">
+        <span className="bf-label-with-tip">
+          <Label>{t("accessHelpProfileTypeLabel")}</Label>
+          <HelpTip label={t("accessHelpProfileTypeLabel")} text="accessHelpProfileTypeTip" />
+        </span>
         <Select value={kind} onValueChange={setKind}>
-          <SelectTrigger className="w-40" aria-label={t("consoleProfilesKindLabel")}>
+          <SelectTrigger className="w-40" aria-label={t("accessHelpProfileTypeLabel")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="adult">{t("consoleProfilesKindAdult")}</SelectItem>
-            <SelectItem value="managed">{t("consoleProfilesKindManaged")}</SelectItem>
+            <SelectItem value="managed">{t("accessHelpProfileTypeChild")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -160,14 +163,14 @@ function ProfileRow({
           />
         </div>
         <div className="space-y-1">
-          <Label>{t("consoleProfilesKindLabel")}</Label>
+          <Label>{t("accessHelpProfileTypeLabel")}</Label>
           <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger className="w-40" aria-label={t("consoleProfilesKindLabel")}>
+            <SelectTrigger className="w-40" aria-label={t("accessHelpProfileTypeLabel")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="adult">{t("consoleProfilesKindAdult")}</SelectItem>
-              <SelectItem value="managed">{t("consoleProfilesKindManaged")}</SelectItem>
+              <SelectItem value="managed">{t("accessHelpProfileTypeChild")}</SelectItem>
             </SelectContent>
           </Select>
         </div>

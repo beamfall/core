@@ -305,8 +305,8 @@ test.describe("manage", () => {
       "Unmatched records",
       "Entity lookup",
       "Artwork candidates",
-      "Restrictions",
-      "Profiles",
+      "Show restricted content",
+      "Switch profile",
     ]) {
       await expect(nav.getByRole("link", { name: label })).toBeVisible();
     }
@@ -431,14 +431,16 @@ test.describe("manage", () => {
   test("restrictions screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "restrictions");
-    await expect(page.getByText("Restrictions").filter({ visible: true }).first()).toBeVisible();
+    await expect(
+      page.getByText("Show restricted content").filter({ visible: true }).first(),
+    ).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 
   test("profile screen renders", async ({ page }) => {
     const errors = collectFatalErrors(page);
     await gotoManage(page, "profile");
-    await expect(page.getByText("Profiles").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText("Switch profile").filter({ visible: true }).first()).toBeVisible();
     expect(errors, errors.join("\n")).toEqual([]);
   });
 });

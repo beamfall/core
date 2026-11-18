@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { addSubscription, fetchSubscriptions } from "@/lib/graphql";
+import { addSubscription, fetchSubscriptions, setSubscriptionRetention } from "@/lib/graphql";
 import type { SubscriptionInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { SubscriptionsPage } from "./SubscriptionsPage";
@@ -118,5 +118,59 @@ describe("SubscriptionsPage", () => {
     );
     expect(feedURL).toHaveValue("https://new.test/feed");
     expect(screen.getByText("Beta feed")).toBeInTheDocument();
+  });
+  it("offers download counts for Keep only the newest, defaulting to 10", async () => {
+    vi.mocked(fetchSubscriptions).mockResolvedValue([
+      {
+        id: "sub-a",
+        title: "Alpha feed",
+        feedURL: "https://a.test/feed",
+        root: "",
+        retentionKind: "keep-all",
+        retentionN: null,
+      },
+    ]);
+    vi.mocked(setSubscriptionRetention).mockResolvedValue(undefined as never);
+    const user = userEvent.setup();
+    render(
+      <I18nProvider>
+        <SubscriptionsPage />
+      </I18nProvider>,
+    );
+    expect(await screen.findByText("Alpha feed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Help: Keep downloads" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("combobox", { name: "Keep downloads" }));
+    await user.click(await screen.findByRole("option", { name: "Keep only the newest" }));
+    const count = screen.getByRole("combobox", { name: "Downloads to keep" });
+    expect(count).toHaveTextContent("10");
+
+    await user.click(count);
+    await user.click(await screen.findByRole("option", { name: "25" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(setSubscriptionRetention).toHaveBeenCalledWith("sub-a", "keep-last-n", 25),
+    );
+  });
+
+  it("keeps a saved download count that is not one of the choices", async () => {
+    vi.mocked(fetchSubscriptions).mockResolvedValue([
+      {
+        id: "sub-a",
+        title: "Alpha feed",
+        feedURL: "https://a.test/feed",
+        root: "",
+        retentionKind: "keep-last-n",
+        retentionN: 7,
+      },
+    ]);
+    render(
+      <I18nProvider>
+        <SubscriptionsPage />
+      </I18nProvider>,
+    );
+    expect(await screen.findByRole("combobox", { name: "Downloads to keep" })).toHaveTextContent(
+      "7",
+    );
   });
 });

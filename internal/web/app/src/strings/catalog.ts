@@ -64,6 +64,13 @@ import { sessionUpdateStrings } from "./sessions-updates";
 import { sessionUpdateHistoryStrings } from "./sessions-updates-history";
 import { sessionUpdateLiveStrings } from "./sessions-updates-live";
 import { sessionUpdateUpdatesStrings } from "./sessions-updates-updates";
+import { settingsHelpStrings } from "./settings-help";
+import { settingsHelp2Strings } from "./settings-help-2";
+import { settingsHelpAccessStrings } from "./settings-help-access";
+import { settingsHelpAccess2Strings } from "./settings-help-access-2";
+import { settingsHelpAccess3Strings } from "./settings-help-access-3";
+import { settingsHelpManageStrings } from "./settings-help-manage";
+import { settingsHelpManage2Strings } from "./settings-help-manage-2";
 import { setupStrings } from "./setup";
 import { setupFinishStrings } from "./setup-finish";
 import { setupLibraryStrings } from "./setup-library";
@@ -81,6 +88,13 @@ import { whosWatchingStrings } from "./whos-watching";
 import { workbenchPageStrings } from "./workbench-pages";
 
 export const en = {
+  ...settingsHelpStrings.en,
+  ...settingsHelp2Strings.en,
+  ...settingsHelpAccessStrings.en,
+  ...settingsHelpAccess2Strings.en,
+  ...settingsHelpAccess3Strings.en,
+  ...settingsHelpManageStrings.en,
+  ...settingsHelpManage2Strings.en,
   ...appShellStrings.en,
   ...sidebarStrings.en,
   ...libraryOperationsStrings.en,
@@ -165,6 +179,13 @@ export const en = {
 } as const;
 
 export const fr = {
+  ...settingsHelpStrings.fr,
+  ...settingsHelp2Strings.fr,
+  ...settingsHelpAccessStrings.fr,
+  ...settingsHelpAccess2Strings.fr,
+  ...settingsHelpAccess3Strings.fr,
+  ...settingsHelpManageStrings.fr,
+  ...settingsHelpManage2Strings.fr,
   ...appShellStrings.fr,
   ...sidebarStrings.fr,
   ...libraryOperationsStrings.fr,
@@ -249,6 +270,13 @@ export const fr = {
 } as const;
 
 export const de = {
+  ...settingsHelpStrings.de,
+  ...settingsHelp2Strings.de,
+  ...settingsHelpAccessStrings.de,
+  ...settingsHelpAccess2Strings.de,
+  ...settingsHelpAccess3Strings.de,
+  ...settingsHelpManageStrings.de,
+  ...settingsHelpManage2Strings.de,
   ...appShellStrings.de,
   ...sidebarStrings.de,
   ...libraryOperationsStrings.de,
@@ -333,6 +361,13 @@ export const de = {
 } as const;
 
 export const es = {
+  ...settingsHelpStrings.es,
+  ...settingsHelp2Strings.es,
+  ...settingsHelpAccessStrings.es,
+  ...settingsHelpAccess2Strings.es,
+  ...settingsHelpAccess3Strings.es,
+  ...settingsHelpManageStrings.es,
+  ...settingsHelpManage2Strings.es,
   ...appShellStrings.es,
   ...sidebarStrings.es,
   ...libraryOperationsStrings.es,
@@ -417,6 +452,13 @@ export const es = {
 } as const;
 
 export const pt = {
+  ...settingsHelpStrings.pt,
+  ...settingsHelp2Strings.pt,
+  ...settingsHelpAccessStrings.pt,
+  ...settingsHelpAccess2Strings.pt,
+  ...settingsHelpAccess3Strings.pt,
+  ...settingsHelpManageStrings.pt,
+  ...settingsHelpManage2Strings.pt,
   ...appShellStrings.pt,
   ...sidebarStrings.pt,
   ...libraryOperationsStrings.pt,

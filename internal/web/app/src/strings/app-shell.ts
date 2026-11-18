@@ -56,7 +56,6 @@ export const appShellStrings = {
     promote: "Promote",
     cancel: "Cancel",
     dialogClose: "Close",
-    profilesTitle: "Profiles",
     profilesLead: "Choose a profile for this session.",
     restrictionsTitle: "Restrictions",
     restrictionsLead: "Enter this profile's PIN to show restricted content for this session.",
@@ -138,7 +137,6 @@ export const appShellStrings = {
     promote: "Promouvoir",
     cancel: "Annuler",
     dialogClose: "Fermer",
-    profilesTitle: "Profils",
     profilesLead: "Choisissez un profil pour cette session.",
     restrictionsTitle: "Restrictions",
     restrictionsLead:
@@ -222,7 +220,6 @@ export const appShellStrings = {
     promote: "Hochstufen",
     cancel: "Abbrechen",
     dialogClose: "Schließen",
-    profilesTitle: "Profile",
     profilesLead: "Wähle ein Profil für diese Sitzung.",
     restrictionsTitle: "Beschränkungen",
     restrictionsLead:
@@ -305,7 +302,6 @@ export const appShellStrings = {
     promote: "Promover",
     cancel: "Cancelar",
     dialogClose: "Cerrar",
-    profilesTitle: "Perfiles",
     profilesLead: "Elige un perfil para esta sesión.",
     restrictionsTitle: "Restricciones",
     restrictionsLead:
@@ -386,7 +382,6 @@ export const appShellStrings = {
     promote: "Promover",
     cancel: "Cancelar",
     dialogClose: "Fechar",
-    profilesTitle: "Perfis",
     profilesLead: "Escolha um perfil para esta sessão.",
     restrictionsTitle: "Restrições",
     restrictionsLead: "Insira o PIN deste perfil para mostrar conteúdo restrito nesta sessão.",

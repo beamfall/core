@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   EmptyLine,
   ErrorLine,
+  HelpTip,
   ManageSection,
   ManageTable,
   StatusBadge,
@@ -46,6 +47,23 @@ import { formatDateTime } from "../lib/schedule";
 // undone by restoring the Media from the Retained Trash table above.
 const REVERSIBLE_ACTIONS = new Set(["media.trash"]);
 const RETAINED_TRASH_ANCHOR = "retained-trash";
+
+// Quick purge cutoffs (CORE-2445): "older than N days" fills the datetime-local
+// field so the operator does not have to work out a date. Both purge gates
+// still apply.
+const PURGE_QUICK_DAYS = [
+  { days: 30, label: "manageTrashOlderThan30" as const },
+  { days: 90, label: "manageTrashOlderThan90" as const },
+];
+
+// datetimeLocalDaysAgo is the datetime-local value (local time, no zone, to the
+// minute) for `days` days before `now`.
+export function datetimeLocalDaysAgo(days: number, now: Date = new Date()): string {
+  const d = new Date(now.getTime());
+  d.setDate(d.getDate() - days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export function TrashPage() {
   const t = useT();
@@ -198,9 +216,12 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
       actions={<StatusBadge state="red">{t("purgeIrreversible")}</StatusBadge>}
     >
       <div className="space-y-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="grow space-y-1">
-            <Label htmlFor="purge-before">{t("purgeBeforeLabel")}</Label>
+        <div className="flex flex-wrap items-end gap-3" data-setting="manage.trash.purgeBefore">
+          <div className="space-y-1">
+            <span className="bf-label-with-tip">
+              <Label htmlFor="purge-before">{t("purgeBeforeLabel")}</Label>
+              <HelpTip label={t("purgeBeforeLabel")} text="manageTrashPurgeBeforeHelp" />
+            </span>
             <Input
               id="purge-before"
               type="datetime-local"
@@ -209,6 +230,17 @@ function PurgeSection({ onPurged }: { onPurged: () => Promise<void> | void }) {
               className="w-60"
             />
           </div>
+          {PURGE_QUICK_DAYS.map((quick) => (
+            <Button
+              key={quick.days}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setBefore(datetimeLocalDaysAgo(quick.days))}
+            >
+              {t(quick.label)}
+            </Button>
+          ))}
         </div>
 
         <label className="flex items-start gap-2">
