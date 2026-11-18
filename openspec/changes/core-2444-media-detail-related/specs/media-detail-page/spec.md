@@ -3,8 +3,9 @@
 ### Requirement: More with the first billed person
 
 The web Media detail page SHALL show a row titled with the name of the item's first
-person-archetype credit, listing the other Media credited to that person. The row SHALL NOT list
-the current item, and SHALL NOT be shown when no other Media remain or the read fails. Choosing a
+person-archetype credit in the server's order, listing at most 20 other Media credited to that
+person. The row SHALL leave out Media the profile muted, as other passive-discovery rows do, and
+SHALL NOT list the current item, and SHALL NOT be shown when no other Media remain or the read fails. Choosing a
 card SHALL open that Media item's detail page.
 
 #### Scenario: Lead person with other titles
@@ -13,6 +14,11 @@ card SHALL open that Media item's detail page.
 - **THEN** the page shows a "More with" row named for that person with those two cards and not the
   current item
 
+#### Scenario: Muted title left out
+
+- **WHEN** the profile marked one of the lead person's other Media "Not interested"
+- **THEN** that Media is not in the "More with" row
+
 #### Scenario: Lead person with no other titles
 
 - **WHEN** the first person credit is credited only on the current item
@@ -20,17 +26,10 @@ card SHALL open that Media item's detail page.
 
 ### Requirement: Related row
 
-The web Media detail page SHALL show a Related row listing Media that share at least one
-category-archetype credit with the item, ordered by the number of the item's category credits and
-first three person credits they share, most first, ties in the server's order. The row SHALL NOT
-list the current item, and SHALL NOT be shown when no Media qualify.
+The web Media detail page SHALL show the Media `relatedMedia` returns for the item as a Related
+row, and SHALL NOT show the row when none are returned or the read fails.
 
-#### Scenario: Ranked by shared credits
+#### Scenario: Nothing related
 
-- **WHEN** one Media shares two of the item's category credits and another shares one
-- **THEN** the Related row lists the first before the second, without the current item
-
-#### Scenario: No category credits
-
-- **WHEN** the item has no category credits
+- **WHEN** `relatedMedia` returns no Media for the item
 - **THEN** the page shows no Related row
