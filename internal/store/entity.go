@@ -623,7 +623,7 @@ func (s *Store) MediaForEntity(ctx context.Context, entityID EntityID, filter Li
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	items, err := s.mediaForEntitySQL(ctx, entityID, filter, -1, 0)
+	items, err := s.mediaForEntitySQL(ctx, entityID, filter, -1, 0, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -644,7 +644,7 @@ func (s *Store) MediaForEntity(ctx context.Context, entityID EntityID, filter Li
 // LIMIT -1). The context Entity must itself be visible under the filter; an
 // entity hidden behind the Reveal contract errors the same way a missing one
 // does.
-func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter LibraryFilter, limit, offset int) ([]SourceItem, error) {
+func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter LibraryFilter, limit, offset int, source *SourceQuery) ([]SourceItem, error) {
 	// Relations and Media live beside the Entity: the catalog, or an
 	// encrypted Library's own database (a sealed one errors here).
 	plane, err := s.catalogPlaneForEntityLocked(ctx, entityID)
@@ -691,17 +691,63 @@ func (s *Store) mediaForEntitySQL(ctx context.Context, entityID EntityID, filter
 		certClause, certArgs = planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
 	}
 	args = append(args, certArgs...)
-	args = append(args, limit, offset)
-	// #nosec G202 -- interpolated fragments are internally generated placeholders and closed certification SQL.
-	rows, err := plane.reader.QueryContext(ctx, `
+	// #nosec G202 -- fragments are generated placeholders and closed certification SQL.
+	statement := `
 		SELECT m.id, m.title, m.duration_seconds, m.library_id
 		FROM entity_relation r
 		JOIN media m ON m.id = r.to_media_id
 		WHERE r.from_entity_id = ? AND m.trashed_at_ms IS NULL
-			AND m.library_id IN (`+strings.Join(placeholders, ", ")+`)`+certClause+`
+			AND m.library_id IN (` + strings.Join(placeholders, ", ") + `)` + certClause + `
 		ORDER BY (r.sort_order IS NULL), r.sort_order, m.title, m.id
-		LIMIT ? OFFSET ?
-	`, args...)
+		LIMIT ? OFFSET ?`
+	if source != nil && source.ExcludeEditionGroupOf != "" {
+		if _, err := s.visibleMediaSQL(ctx, source.ExcludeEditionGroupOf, filter); err != nil {
+			return nil, err
+		}
+		// Eligibility starts with visible credits. Representatives use the same
+		// visible set, independent of the credit, so Related cannot pick different
+		// siblings for different signals. Mute still applies after Source selection.
+		// UNION terminates chains and cycles; relations stay in this reader's plane.
+		// #nosec G202 -- fragments are generated placeholders and closed certification SQL.
+		statement = `
+		WITH RECURSIVE visible_media AS (
+			SELECT m.id, m.title, m.duration_seconds, m.library_id FROM media m
+			WHERE m.trashed_at_ms IS NULL
+			AND m.library_id IN (` + strings.Join(placeholders, ", ") + `)` + certClause + `
+		), credited AS (
+			SELECT m.id, MIN(r.sort_order) AS sort_order
+			FROM visible_media m JOIN entity_relation r ON r.to_media_id = m.id
+			WHERE r.from_entity_id = ? GROUP BY m.id
+		), edition_group(seed, id) AS (
+			SELECT id, id FROM credited
+			UNION
+			SELECT g.seed, CASE WHEN r.from_media_id = g.id THEN r.to_media_id ELSE r.from_media_id END
+			FROM edition_group g JOIN media_relation r
+			ON r.relation = 'edition-of' AND (r.from_media_id = g.id OR r.to_media_id = g.id)
+		), group_keys AS (
+			SELECT seed, MIN(id) AS group_id FROM edition_group GROUP BY seed
+		), candidates AS (
+			SELECT k.group_id, m.id, m.title, m.duration_seconds, m.library_id,
+			       MIN(c.sort_order) AS sort_order,
+			       EXISTS (SELECT 1 FROM media_relation r WHERE r.from_media_id = m.id
+			               AND r.relation = 'edition-of') AS is_edition
+			FROM group_keys k JOIN credited c ON c.id = k.seed
+			JOIN edition_group g ON g.seed = k.seed JOIN visible_media m ON m.id = g.id
+			WHERE NOT EXISTS (SELECT 1 FROM edition_group excluded
+			                  WHERE excluded.seed = k.seed AND excluded.id = ?)
+			GROUP BY k.group_id, m.id
+		), ranked AS (
+			SELECT *, ROW_NUMBER() OVER (PARTITION BY group_id ORDER BY is_edition, id) AS position
+			FROM candidates
+		)
+		SELECT id, title, duration_seconds, library_id FROM ranked WHERE position = 1
+		ORDER BY (sort_order IS NULL), sort_order, title, id LIMIT ? OFFSET ?`
+		// The folded query binds visibility before the credited Entity.
+		args = append(args[1:], entityID, source.ExcludeEditionGroupOf)
+	}
+	args = append(args, limit, offset)
+	// #nosec G202 -- statement contains only closed SQL and generated placeholders.
+	rows, err := plane.reader.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -486,6 +486,10 @@ func sourceArguments() []NestedArgument {
 		entityFilterArgument(),
 		{Name: "entityID", Kind: "string", Optional: true},
 		{Name: "entityKind", Kind: "string", Optional: true},
+		// When non-empty, fold edition groups to one visible representative and
+		// exclude the context Media's group before paging an entity-media rail.
+		// Plain entity-media reads preserve Entity contents when omitted or empty.
+		{Name: "excludeEditionGroupOf", Kind: "string", Optional: true},
 		{Name: "fieldFilters", Kind: "map", Optional: true, Elem: &NestedArgument{
 			Kind: "union",
 			AnyOf: []NestedArgument{

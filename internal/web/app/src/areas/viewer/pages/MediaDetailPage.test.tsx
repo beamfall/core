@@ -834,7 +834,12 @@ describe("MediaDetailPage", () => {
     expect(within(moreWith).getAllByRole("listitem")).toHaveLength(20);
     expect(fetchSourceItems).toHaveBeenCalledTimes(1);
     expect(fetchSourceItems).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "entity-media", entityID: "p1", limit: 21 }),
+      expect.objectContaining({
+        kind: "entity-media",
+        entityID: "p1",
+        excludeEditionGroupOf: "m1",
+        limit: 20,
+      }),
       expect.anything(),
     );
     expect(fetchRelatedMedia).toHaveBeenCalledTimes(1);
