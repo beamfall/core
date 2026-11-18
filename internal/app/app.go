@@ -3040,6 +3040,22 @@ func (t parserMediaTitles) ParsedMediaTitle(ctx context.Context, mediaID store.M
 	return titler.MediaTitle(file.Path, scanpkg.ParseProbe{}), nil
 }
 
+// IdentifiedMediaTitle is the plugin parser's IdentifiedMediaTitle for the
+// Media's primary file given an identification's field values, read the same
+// unfiltered way as ParsedMediaTitle. A parser without the hook gives "", so
+// identification falls back to ParsedMediaTitle (the CORE-1713 rule).
+func (t parserMediaTitles) IdentifiedMediaTitle(ctx context.Context, mediaID store.MediaID, pluginID string, fields map[string]string) (string, error) {
+	titler, ok := t.parsers[pluginID].(scanpkg.IdentifiedMediaTitler)
+	if !ok {
+		return "", nil
+	}
+	file, err := t.store.PrimaryMediaFile(ctx, mediaID, metadataLibraryFilter)
+	if err != nil {
+		return "", err
+	}
+	return titler.IdentifiedMediaTitle(file.Path, scanpkg.ParseProbe{}, fields), nil
+}
+
 // ParsedMediaOrdinal is the plugin parser's sequence and index for the Media
 // item's primary file, read the same unfiltered way as ParsedMediaTitle.
 func (t parserMediaTitles) ParsedMediaOrdinal(ctx context.Context, mediaID store.MediaID, pluginID string) (string, int, error) {

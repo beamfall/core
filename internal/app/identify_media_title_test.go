@@ -122,3 +122,75 @@ func TestParserMediaTitlesWithoutFile(t *testing.T) {
 		t.Fatalf("ParsedMediaTitle for a plugin with no parser = %q, %v; want empty, nil", got, err)
 	}
 }
+
+// identifiedTitleParser is a fileTitleParser that also names the file from
+// an identification's "episode-title" field value.
+type identifiedTitleParser struct{ fileTitleParser }
+
+func (p identifiedTitleParser) IdentifiedMediaTitle(file string, probe scanpkg.ParseProbe, fields map[string]string) string {
+	if name := fields["episode-title"]; name != "" {
+		return p.MediaTitle(file, probe) + " · " + name
+	}
+	return ""
+}
+
+// TestIdentifyNamesTheEpisode (CORE-2470): through the real scrape engine and
+// store, a parser with the identified-title hook titles the identified Media
+// from the lookup's plugin Media field value, with its punctuation; a parser
+// without the hook keeps its per-file title, and so does one given no value.
+func TestIdentifyNamesTheEpisode(t *testing.T) {
+	cases := []struct {
+		name   string
+		body   string
+		parser scanpkg.FilenameParser
+		want   string
+	}{
+		{name: "identified name", body: `{"name": "Synthetic Group", "episode": "I Don't Want to Go"}`,
+			parser: identifiedTitleParser{}, want: "S03E02 · I Don't Want to Go"},
+		{name: "parser without the hook", body: `{"name": "Synthetic Group", "episode": "I Don't Want to Go"}`,
+			parser: fileTitleParser{}, want: "S03E02"},
+		{name: "no identified value", body: `{"name": "Synthetic Group"}`,
+			parser: identifiedTitleParser{}, want: "S03E02"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			spec := plugin.ScraperSpec{
+				ID: "episode", Kind: "http-json", Endpoint: server.URL, LookupTemplate: "/episode/{id}",
+				FieldMap: map[string]string{"title": "name", "media.episode-title": "episode"},
+			}
+			bundles := singleBundle{ID: "demo", Scrapers: []plugin.ScraperSpec{spec},
+				MediaFields: []plugin.FieldSpec{{Name: "episode-title", Type: "text"}}}
+			ctx := context.Background()
+			st, err := store.Open(ctx, t.TempDir(), store.Options{SeedDevelopmentData: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: "library-local", Path: "/synthetic/Synthetic Group/S03E02.mkv",
+				Title: "S03E02", Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
+				ContentFingerprint: "fp-media-title-0002",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			service := identify.NewService(scrape.New(scrape.WithInsecureLoopback()), bundles, st)
+			service.SetFields(st)
+			service.SetMediaTitles(parserMediaTitles{store: st, parsers: map[string]scanpkg.FilenameParser{"demo": tc.parser}})
+			if err := service.Apply(ctx, media.ID, "demo", "episode", "7"); err != nil {
+				t.Fatal(err)
+			}
+			got, err := st.Media(ctx, media.ID, metadataLibraryFilter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Title != tc.want {
+				t.Errorf("identified title = %q, want %q", got.Title, tc.want)
+			}
+		})
+	}
+}

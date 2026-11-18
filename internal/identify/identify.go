@@ -126,6 +126,15 @@ type MediaTitleSource interface {
 	ParsedMediaTitle(ctx context.Context, mediaID store.MediaID, pluginID string) (string, error)
 }
 
+// IdentifiedMediaTitleSource is optionally implemented by a MediaTitleSource.
+// It supplies the parser's per-file display title built from an
+// identification's plugin Media field values (bare name to text), so the title
+// can name what the lookup found ("S03E01 · Smells Like Mean Spirit"). It
+// returns "" when the parser builds none.
+type IdentifiedMediaTitleSource interface {
+	IdentifiedMediaTitle(ctx context.Context, mediaID store.MediaID, pluginID string, fields map[string]string) (string, error)
+}
+
 // MediaOrdinalSource is optionally implemented by a MediaTitleSource. It
 // supplies the plugin parser's ordinal for a Media item: the sequence the
 // file sits in and its index within it, substituted for a scraper's
@@ -269,9 +278,25 @@ func (s *Service) SetMediaTitles(titles MediaTitleSource) {
 // scraper's title rather than failing the identification. The Fix-Match
 // preview reads it so the proposed title is the one Apply keeps.
 func (s *Service) AppliedTitle(ctx context.Context, mediaID store.MediaID, pluginID, scraperTitle string) string {
+	return s.appliedTitle(ctx, mediaID, pluginID, scraperTitle, nil)
+}
+
+// appliedTitle is AppliedTitle given the identification's plugin Media field
+// values. When there are some and the title source builds a non-blank title
+// from them, that title wins; otherwise the parser's per-file title, else the
+// scraper's.
+func (s *Service) appliedTitle(ctx context.Context, mediaID store.MediaID, pluginID, scraperTitle string, fields map[string]string) string {
 	scraperTitle = strings.TrimSpace(scraperTitle)
 	if scraperTitle == "" || s.titles == nil || mediaID == "" {
 		return scraperTitle
+	}
+	if source, ok := s.titles.(IdentifiedMediaTitleSource); ok && len(fields) > 0 {
+		title, err := source.IdentifiedMediaTitle(ctx, mediaID, pluginID, fields)
+		if err != nil {
+			slog.Debug("identify: identified parser title unavailable", "media", mediaID, "error", err.Error())
+		} else if title = strings.TrimSpace(title); title != "" {
+			return title
+		}
 	}
 	title, err := s.titles.ParsedMediaTitle(ctx, mediaID, pluginID)
 	if err != nil {
@@ -342,21 +367,49 @@ func (s *Service) Lookup(ctx context.Context, pluginID, scraperID, candidateID s
 	if strings.TrimSpace(candidateID) == "" {
 		return Candidate{}, errors.New("identify: candidate ID is required")
 	}
-	_, spec, err := s.spec(pluginID, scraperID)
+	_, _, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
 	if err != nil {
 		return Candidate{}, err
 	}
+	return candidateFromResult(result), nil
+}
+
+// PreviewLookup is Lookup plus the title Apply would write for the candidate:
+// the parser's title built from the lookup's plugin Media field values when
+// the title source builds one, else AppliedTitle's. The Fix-Match preview
+// reads it so the proposed title is the one Apply writes.
+func (s *Service) PreviewLookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID) (Candidate, string, error) {
+	if strings.TrimSpace(candidateID) == "" {
+		return Candidate{}, "", errors.New("identify: candidate ID is required")
+	}
+	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
+	if err != nil {
+		return Candidate{}, "", err
+	}
+	candidate := candidateFromResult(result)
+	title := s.appliedTitle(ctx, mediaID, pluginID, candidate.Title, identifiedFieldTexts(bundle, spec, result))
+	return candidate, title, nil
+}
+
+// lookup resolves the scraper and runs the engine's lookup for candidateID
+// with mediaID's fingerprint and ordinal variables: the read Apply, Lookup and
+// PreviewLookup share.
+func (s *Service) lookup(ctx context.Context, pluginID, scraperID, candidateID string, mediaID store.MediaID) (plugin.Bundle, plugin.ScraperSpec, scrape.Result, error) {
+	bundle, spec, err := s.spec(pluginID, scraperID)
+	if err != nil {
+		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
+	}
 	vars, err := s.variables(ctx, mediaID)
 	if err != nil {
-		return Candidate{}, err
+		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
 	}
 	vars.PluginID = pluginID
 	s.applyOrdinal(ctx, mediaID, pluginID, &vars)
 	result, err := s.engine.Lookup(ctx, spec, candidateID, vars)
 	if err != nil {
-		return Candidate{}, err
+		return plugin.Bundle{}, plugin.ScraperSpec{}, scrape.Result{}, err
 	}
-	return candidateFromResult(result), nil
+	return bundle, spec, result, nil
 }
 
 // variables loads mediaID's content-identity values for the engine's
@@ -407,17 +460,7 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 	if strings.TrimSpace(candidateID) == "" {
 		return errors.New("identify: candidate ID is required")
 	}
-	bundle, spec, err := s.spec(pluginID, scraperID)
-	if err != nil {
-		return err
-	}
-	vars, err := s.variables(ctx, mediaID)
-	if err != nil {
-		return err
-	}
-	vars.PluginID = pluginID
-	s.applyOrdinal(ctx, mediaID, pluginID, &vars)
-	result, err := s.engine.Lookup(ctx, spec, candidateID, vars)
+	bundle, spec, result, err := s.lookup(ctx, pluginID, scraperID, candidateID, mediaID)
 	if err != nil {
 		return err
 	}
@@ -432,7 +475,7 @@ func (s *Service) Apply(ctx context.Context, mediaID store.MediaID, pluginID, sc
 		metadata.SortTitle = &none
 	}
 	if metadata.Title != nil {
-		title := s.AppliedTitle(ctx, mediaID, pluginID, *metadata.Title)
+		title := s.appliedTitle(ctx, mediaID, pluginID, *metadata.Title, identifiedFieldTexts(bundle, spec, result))
 		metadata.Title = &title
 	}
 	if err := s.applyLocal(ctx, mediaID, pluginID, scraperID, candidateID, metadata, bundle, spec, result); err != nil {
@@ -537,6 +580,36 @@ func (s *Service) applyMediaFields(ctx context.Context, mediaID store.MediaID, b
 		fields[i] = values[name]
 	}
 	return s.fields.UpsertMediaFieldsWithSource(ctx, mediaID, fields, store.MutationSourceOperator)
+}
+
+// identifiedFieldTexts is the text of the plugin-declared Media field values
+// an identification writes (applyMediaFields' two routes, document values over
+// implied constants) by bare field name, blanks and values that do not parse
+// to the declared type dropped like applyMediaFields drops them: what a parser
+// builds an identified per-file title from.
+func identifiedFieldTexts(bundle plugin.Bundle, spec plugin.ScraperSpec, result scrape.Result) map[string]string {
+	mediaFieldTypes := bundle.MediaFieldTypes()
+	texts := map[string]string{}
+	for key, constant := range spec.ImpliedMediaFields {
+		route, err := plugin.ClassifyMediaFieldKey(key, mediaFieldTypes)
+		if err != nil {
+			continue
+		}
+		if value := strings.TrimSpace(constant); value != "" {
+			texts[route.MediaField] = value
+		}
+	}
+	for key := range result.Fields {
+		route, err := plugin.ClassifyMediaFieldKey(key, mediaFieldTypes)
+		if err != nil || route.Builtin || route.CandidateSignal {
+			continue
+		}
+		raw := fieldString(result.Fields, key)
+		if _, ok := mediaFieldFromValue(route.MediaField, route.Type, raw); ok {
+			texts[route.MediaField] = strings.TrimSpace(raw)
+		}
+	}
+	return texts
 }
 
 // mediaFieldFromValue parses one scraped string into a typed MediaField for

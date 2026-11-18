@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/beamfall/core/internal/artwork"
@@ -1594,4 +1595,103 @@ func TestApplyMediaTitleSource(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeIdentifiedTitles is a fakeTitles that also builds a title from an
+// identification's field values, recording the values it was given.
+type fakeIdentifiedTitles struct {
+	fakeTitles
+	identified    string
+	identifiedErr error
+	gotFields     map[string]string
+	identifyCalls int
+}
+
+func (f *fakeIdentifiedTitles) IdentifiedMediaTitle(_ context.Context, _ store.MediaID, _ string, fields map[string]string) (string, error) {
+	f.identifyCalls++
+	f.gotFields = fields
+	return f.identified, f.identifiedErr
+}
+
+// TestApplyIdentifiedMediaTitleSource (CORE-2470): the lookup's plugin Media
+// field values reach the parser's identified-title hook, whose non-blank
+// title wins; a blank or failed one falls back to the parser's per-file
+// title, and a lookup with no plugin field values never asks the hook.
+func TestApplyIdentifiedMediaTitleSource(t *testing.T) {
+	withFields := map[string]any{"title": "Synthetic Group", "summary": "A summary.", "sequence": "3",
+		"media.code": "  Smells Like Mean Spirit ", "media.rating": 7.5}
+	// A value Apply does not store (not a number for the number field)
+	// never reaches the hook either.
+	unstored := map[string]any{"title": "Synthetic Group", "media.code": "Smells Like Mean Spirit", "media.rating": "not-a-number"}
+	cases := []struct {
+		name         string
+		fields       map[string]any
+		titles       *fakeIdentifiedTitles
+		wantTitle    string
+		wantFields   map[string]string
+		wantIdentify int
+		wantPerFile  int
+	}{
+		{name: "identified title wins", fields: withFields,
+			titles:    &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: " S03E01 · Smells Like Mean Spirit "},
+			wantTitle: "S03E01 · Smells Like Mean Spirit", wantIdentify: 1,
+			wantFields: map[string]string{"code": "Smells Like Mean Spirit", "phase": "flight", "rating": "7.5"}},
+		{name: "unstored value withheld", fields: unstored,
+			titles:    &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: "S03E01 · Smells Like Mean Spirit"},
+			wantTitle: "S03E01 · Smells Like Mean Spirit", wantIdentify: 1,
+			wantFields: map[string]string{"code": "Smells Like Mean Spirit", "phase": "flight"}},
+		{name: "blank identified title", fields: withFields,
+			titles:    &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: "  "},
+			wantTitle: "S03E01", wantIdentify: 1, wantPerFile: 1,
+			wantFields: map[string]string{"code": "Smells Like Mean Spirit", "phase": "flight", "rating": "7.5"}},
+		{name: "failed identified read", fields: withFields,
+			titles:    &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: "ignored", identifiedErr: errors.New("media file not found")},
+			wantTitle: "S03E01", wantIdentify: 1, wantPerFile: 1,
+			wantFields: map[string]string{"code": "Smells Like Mean Spirit", "phase": "flight", "rating": "7.5"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &fakeStore{}
+			spec := plugin.ScraperSpec{ID: "lookup", ImpliedMediaFields: map[string]string{"media.phase": "flight"}}
+			service := identify.NewService(&fakeEngine{lookupResult: scrape.Result{Fields: tc.fields}}, demoBundles(spec), st)
+			service.SetFields(&fakeFields{})
+			service.SetMediaTitles(tc.titles)
+			if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+				t.Fatal(err)
+			}
+			got := ""
+			if st.metadata.Title != nil {
+				got = *st.metadata.Title
+			}
+			if got != tc.wantTitle {
+				t.Errorf("title = %q, want %q", got, tc.wantTitle)
+			}
+			if tc.titles.identifyCalls != tc.wantIdentify || tc.titles.calls != tc.wantPerFile {
+				t.Errorf("hook calls = %d, per-file reads = %d; want %d, %d", tc.titles.identifyCalls, tc.titles.calls, tc.wantIdentify, tc.wantPerFile)
+			}
+			if !reflect.DeepEqual(tc.titles.gotFields, tc.wantFields) {
+				t.Errorf("hook fields = %#v, want %#v", tc.titles.gotFields, tc.wantFields)
+			}
+			_, previewTitle, err := service.PreviewLookup(context.Background(), "demo", "lookup", "42", "media-alpha")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if previewTitle != tc.wantTitle {
+				t.Errorf("preview title = %q, want the applied %q", previewTitle, tc.wantTitle)
+			}
+		})
+	}
+
+	t.Run("no plugin field values", func(t *testing.T) {
+		st := &fakeStore{}
+		titles := &fakeIdentifiedTitles{fakeTitles: fakeTitles{title: "S03E01"}, identified: "S03E01 · Unused"}
+		service := identify.NewService(&fakeEngine{lookupResult: scrape.Result{Fields: map[string]any{"title": "Synthetic Group"}}}, demoBundles(plugin.ScraperSpec{ID: "lookup"}), st)
+		service.SetMediaTitles(titles)
+		if err := service.Apply(context.Background(), "media-alpha", "demo", "lookup", "42"); err != nil {
+			t.Fatal(err)
+		}
+		if st.metadata.Title == nil || *st.metadata.Title != "S03E01" || titles.identifyCalls != 0 {
+			t.Errorf("title = %v after %d hook calls, want S03E01 and none", st.metadata.Title, titles.identifyCalls)
+		}
+	})
 }
