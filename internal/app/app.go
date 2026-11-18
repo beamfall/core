@@ -628,6 +628,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		embeddingProvider = hooks.EnrichmentProvider(enrichmentEnabled)
 	}
 	var encryptedBackupCipher func() store.EncryptedLibraryDBCipher
+	// CORE-2393: a live transcode preempts scans like generation.
+	scanHandler = scanYieldsToPlayback(resourceGovernor, logger, scanHandler)
 	jobRegistry.Register(scanpkg.JobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
 		start := time.Now()
 		result, err := scanHandler(ctx, job)
@@ -1634,8 +1636,29 @@ const generationRetryDelay = 30 * time.Second
 // with its checkpoint preserved — a durable, resumable yield, never a failure.
 // Any unrelated error or cancellation keeps its normal semantics.
 func governedGeneration(g *governor.Governor, handler jobs.Handler) jobs.Handler {
+	return yieldsToPlayback(g.BeginGeneration, nil, handler)
+}
+
+// scanYieldsToPlayback lets a realtime transcode preempt a library scan the
+// same way it preempts generation (CORE-2393). Scans read and probe whole
+// files from the same disks a live transcode reads its source from; on the
+// Tower three concurrent scans kept a 4K transcode from writing its first
+// segment inside the stall timeout. The scan checkpoints per file, so a
+// preempted scan resumes where it stopped once playback ends. It takes no
+// background-CPU budget slot (governor.BeginPreemptible), so on an idle server
+// scans and sweeps keep running side by side as before.
+func scanYieldsToPlayback(g *governor.Governor, logger *slog.Logger, handler jobs.Handler) jobs.Handler {
+	return yieldsToPlayback(g.BeginPreemptible, logger, handler)
+}
+
+// yieldsToPlayback is the shared preemption wrapper. begin admits the job
+// (false means a transcode is active or the budget is spent, so the job
+// re-queues without running); a transcode that begins mid-run cancels the
+// lease context with governor.ErrPreempted and the job yields with its latest
+// checkpoint. A non-nil logger records each mid-run yield.
+func yieldsToPlayback(begin func(context.Context) (*governor.GenerationLease, bool), logger *slog.Logger, handler jobs.Handler) jobs.Handler {
 	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
-		lease, ok := g.BeginGeneration(ctx)
+		lease, ok := begin(ctx)
 		if !ok {
 			return jobs.Result{Checkpoint: job.Checkpoint, RunAfter: time.Now().UTC().Add(generationRetryDelay)}, jobs.ErrYielded
 		}
@@ -1645,6 +1668,9 @@ func governedGeneration(g *governor.Governor, handler jobs.Handler) jobs.Handler
 			checkpoint := result.Checkpoint
 			if checkpoint == nil {
 				checkpoint = job.Checkpoint
+			}
+			if logger != nil {
+				logger.Info("background job yielded to live playback", "job", string(job.ID), "kind", string(job.Kind), "retryAfter", generationRetryDelay.String())
 			}
 			return jobs.Result{Checkpoint: checkpoint, RunAfter: time.Now().UTC().Add(generationRetryDelay)}, jobs.ErrYielded
 		}

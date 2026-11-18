@@ -182,6 +182,9 @@ type GenerationLease struct {
 	ctx     context.Context
 	cancel  context.CancelCauseFunc
 	release sync.Once
+	// budgeted is false for a BeginPreemptible lease: it yields to transcodes
+	// but never held a background-CPU budget slot, so Release returns none.
+	budgeted bool
 }
 
 // BeginGeneration admits one background generation against the transcode-
@@ -200,9 +203,30 @@ func (g *Governor) BeginGeneration(parent context.Context) (*GenerationLease, bo
 	g.nextGenID++
 	id := g.nextGenID
 	leaseCtx, cancel := context.WithCancelCause(parent)
-	lease := &GenerationLease{g: g, id: id, ctx: leaseCtx, cancel: cancel}
+	lease := &GenerationLease{g: g, id: id, ctx: leaseCtx, cancel: cancel, budgeted: true}
 	g.generations[id] = lease
 	g.activeGeneration++
+	return lease, true
+}
+
+// BeginPreemptible admits background work that must yield to realtime
+// transcodes but is not generation, so it takes no background-CPU budget slot:
+// library scans (CORE-2393). Scans already size their own worker pool from
+// GenerationWorkers, and sharing the generation budget would make a scan and a
+// sweep exclude each other on an idle server. It returns false while any
+// transcode is active; on success the lease's Context is cancelled with
+// ErrPreempted when a transcode begins, exactly like a generation lease.
+func (g *Governor) BeginPreemptible(parent context.Context) (*GenerationLease, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.activeTranscodes != 0 {
+		return nil, false
+	}
+	g.nextGenID++
+	id := g.nextGenID
+	leaseCtx, cancel := context.WithCancelCause(parent)
+	lease := &GenerationLease{g: g, id: id, ctx: leaseCtx, cancel: cancel}
+	g.generations[id] = lease
 	return lease, true
 }
 
@@ -224,8 +248,10 @@ func (l *GenerationLease) Release() {
 		l.g.mu.Lock()
 		if _, ok := l.g.generations[l.id]; ok {
 			delete(l.g.generations, l.id)
-			if l.g.activeGeneration--; l.g.activeGeneration < 0 {
-				l.g.activeGeneration = 0
+			if l.budgeted {
+				if l.g.activeGeneration--; l.g.activeGeneration < 0 {
+					l.g.activeGeneration = 0
+				}
 			}
 		}
 		l.g.mu.Unlock()
