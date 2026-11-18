@@ -1,6 +1,6 @@
-- [ ] `internal/store`: `LibraryEntities` sorts, filters and letter-indexes by reached Media
-- [ ] `internal/graph`: `libraryEntities` browse arguments and `letters`; schema arguments
-- [ ] Store and graph tests cover each sort and filter; wire goldens regenerated with `make regen-wire-goldens`
+- [x] `internal/store`: `LibraryEntities` sorts, filters and letter-indexes by reached Media
+- [x] `internal/graph`: `libraryEntities` browse arguments and `letters`; schema arguments
+- [x] Store and graph tests cover each sort and filter; wire goldens regenerated with `make regen-wire-goldens`
 - [ ] Web: Entity-kind view toolbar and letter rail, state in the URL
 - [ ] Wire contract published as a new version (lander)
 - [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
