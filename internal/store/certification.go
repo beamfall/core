@@ -114,7 +114,7 @@ func (s *Store) annotateLockedLocked(ctx context.Context, constraints []Certific
 					lockedIDs[id] = true
 				}
 				if err := rows.Err(); err != nil {
-					rows.Close()
+					_ = rows.Close()
 					return err
 				}
 				if err := rows.Close(); err != nil {
