@@ -115,17 +115,20 @@
   object-fit: cover;
 }
 
-/* A scrim under the label keeps the name legible on any backdrop. */
+/* A scrim under the label keeps the name legible on any backdrop: it is held
+ * opaque under both text lines and fades only across the top padding. */
 [data-register="viewer"] .bf-category-label {
+  --bf-category-fade: 32px;
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 2px;
   width: 100%;
-  padding: 32px 12px 12px;
+  padding: var(--bf-category-fade) 12px 12px;
   background: linear-gradient(
     to top,
-    color-mix(in oklab, var(--scrim) 88%, transparent),
+    color-mix(in oklab, var(--scrim) 88%, transparent) 0,
+    color-mix(in oklab, var(--scrim) 88%, transparent) calc(100% - var(--bf-category-fade)),
     color-mix(in oklab, var(--scrim) 0%, transparent)
   );
 }
@@ -206,7 +209,8 @@
   }
 
   [data-register="viewer"] .bf-category-label {
-    padding: 24px 8px 8px;
+    --bf-category-fade: 24px;
+    padding: var(--bf-category-fade) 8px 8px;
   }
 
   [data-register="viewer"] .bf-category-card .bf-category-name {
