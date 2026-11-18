@@ -203,3 +203,55 @@ func TestScanGroupsACopyAddedWhileItsAnchorIsReplaced(t *testing.T) {
 	assertVersions(t, mediaVersions(t, st, libraryID, scanReleaseLibrary(t, st, libraryID, root, prober)), want)
 	assertVersions(t, mediaVersions(t, st, libraryID, scanReleaseLibrary(t, st, libraryID, root, prober)), want)
 }
+
+// splitReleaseNameParser parses like releaseNameParser but keeps each file's
+// own name in its title, so no two copies group: the scans before CORE-2473
+// labelled Versions split such copies the same way.
+type splitReleaseNameParser struct{}
+
+func (splitReleaseNameParser) Parse(path string, probe ParseProbe) (ParsedMedia, bool) {
+	parsed, ok := releaseNameParser{}.Parse(path, probe)
+	if ok {
+		parsed.Title += " " + filepath.Base(path)
+	}
+	return parsed, ok
+}
+
+// TestScanMergesAnAlreadySplitUnlabelledCopy: copies an earlier scan imported
+// as two Media fold into the earlier imported Media on a rescan (CORE-2490), labelled
+// by resolution, and later scans keep them there.
+func TestScanMergesAnAlreadySplitUnlabelledCopy(t *testing.T) {
+	root := t.TempDir()
+	const remux = "Disclosure.Day.2026.REPACK.1080p.Blu-ray.Remux-CiNEPHiLES.mkv"
+	const web = "Disclosure.Day.2026.2160p.WEB-DL.H265-CUT.mkv"
+	writeScanFile(t, root, "Disclosure Day (2026)/"+remux, []byte("disclosure day remux"))
+	writeScanFile(t, root, "Disclosure Day (2026)/"+web, []byte("disclosure day web"))
+	prober := frameProber{remux: {1920, 800}, web: {3840, 1600}}
+	st := storetest.Open(t)
+	libraryID := createVersionLibrary(t, st)
+
+	split, err := Scan(context.Background(), st, prober, nil, map[string]FilenameParser{"titled": splitReleaseNameParser{}}, nil, nil, Request{
+		LibraryID: libraryID,
+		Root:      root,
+	})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	before := mediaVersions(t, st, libraryID, split)
+	if before[remux][0] == before[web][0] {
+		t.Fatalf("first scan = %v, want the copies split", before)
+	}
+	// The walk imported the 2160p copy first (its name sorts first), so its
+	// Media keeps the title.
+	survivor, merged := before[web][0], before[remux][0]
+
+	again := scanReleaseLibrary(t, st, libraryID, root, prober)
+	want := map[string][2]string{remux: {survivor, "1080p"}, web: {survivor, "2160p"}}
+	assertVersions(t, mediaVersions(t, st, libraryID, again), want)
+	if _, err := st.Media(context.Background(), store.MediaID(merged), store.LibraryFilter{Revealed: true, AllLibraries: true}); err == nil {
+		t.Fatal("the merged copy's Media is still live")
+	}
+
+	third := scanReleaseLibrary(t, st, libraryID, root, prober)
+	assertVersions(t, mediaVersions(t, st, libraryID, third), want)
+}

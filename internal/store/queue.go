@@ -337,6 +337,42 @@ func deleteMyQueueMedia(ctx context.Context, tx *sql.Tx, profileID ProfileID, me
 	return err
 }
 
+// queueProfilesHoldingOnly lists the Profiles whose queue holds from but not
+// to: the entries a version merge repoints (CORE-2490). It lives in queue.go
+// for the firewall reason above.
+func queueProfilesHoldingOnly(ctx context.Context, db *sql.DB, from, to MediaID) ([]ProfileID, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT profile_id FROM play_queue AS q
+		WHERE media_id = ?
+		  AND NOT EXISTS (SELECT 1 FROM play_queue WHERE profile_id = q.profile_id AND media_id = ?)
+		ORDER BY profile_id
+	`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var profiles []ProfileID
+	for rows.Next() {
+		var profile ProfileID
+		if err := rows.Scan(&profile); err != nil {
+			return nil, err
+		}
+		profiles = append(profiles, profile)
+	}
+	return profiles, rows.Err()
+}
+
+// repointQueueMediaTx points profileID's queue entry for from at to, keeping
+// its position, unless to is already queued for that Profile.
+func repointQueueMediaTx(ctx context.Context, tx *sql.Tx, profileID ProfileID, from, to MediaID) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE play_queue SET media_id = ?
+		WHERE profile_id = ? AND media_id = ?
+		  AND NOT EXISTS (SELECT 1 FROM play_queue WHERE profile_id = ? AND media_id = ?)
+	`, to, profileID, from, profileID, to)
+	return err
+}
+
 func queueEntries(ctx context.Context, tx *sql.Tx, profileID ProfileID) ([]queueEntry, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT media_id, added_at_ms
