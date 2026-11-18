@@ -153,6 +153,8 @@ export interface SourceItem {
   certification?: string;
   /** A Media item's audience score from 0 to 10; absent when it has none (CORE-2398). */
   audienceScore?: number;
+  /** The vote count behind that score; absent when unknown (CORE-2415). */
+  audienceScoreVotes?: number;
   /** Who made an audio Media item: its person-archetype Entities' titles (CORE-2362). */
   byline?: string[];
   /**
@@ -281,6 +283,16 @@ export interface GenericMediaInfo {
   credits?: MediaCredit[];
   /** The identifying scraper's declared credit; only the media(id) read fills it. */
   metadataAttribution?: MetadataAttribution;
+  /** The stored structural ordinals (CORE-2469); only the media(id) read fills them. */
+  sequence?: number;
+  index?: number;
+  /** The plugin's subtitle without its ordinal segments: the item's own title (CORE-2469). */
+  headline?: DisplayString;
+  /** The plugin's display name for the item's class (CORE-2469). */
+  classLabel?: DisplayString;
+  /** The stored video frame size in pixels (CORE-2469). */
+  videoWidth?: number;
+  videoHeight?: number;
 }
 
 /**

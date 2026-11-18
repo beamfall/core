@@ -13,6 +13,9 @@ export const mediaDetailStrings = {
     // Closing rows (CORE-2444); {name} is the first billed person.
     mediaDetailMoreWith: "More with {name}",
     mediaDetailRelated: "Related",
+    // Ordered item hero and container rail (CORE-2469); {label} is a plugin display name.
+    mediaDetailOrdinal: "{label} {number}",
+    mediaDetailMoreIn: "More in {title}",
     mediaDetailPeople: "People",
     mediaDetailLoadFailed: "This item couldn’t be loaded. Check your connection and try again.",
     // Media detail lockup (CORE-1785).
@@ -55,6 +58,8 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Éditions",
     mediaDetailMoreWith: "Aussi avec {name}",
     mediaDetailRelated: "Titres similaires",
+    mediaDetailOrdinal: "{label} {number}",
+    mediaDetailMoreIn: "Aussi dans {title}",
     mediaDetailPeople: "Personnes",
     mediaDetailLoadFailed:
       "Impossible de charger cet élément. Vérifiez votre connexion et réessayez.",
@@ -93,6 +98,8 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Fassungen",
     mediaDetailMoreWith: "Mehr mit {name}",
     mediaDetailRelated: "Ähnliche Titel",
+    mediaDetailOrdinal: "{label} {number}",
+    mediaDetailMoreIn: "Mehr aus {title}",
     mediaDetailPeople: "Personen",
     mediaDetailLoadFailed:
       "Dieses Element konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
@@ -133,6 +140,8 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Ediciones",
     mediaDetailMoreWith: "Más con {name}",
     mediaDetailRelated: "Títulos similares",
+    mediaDetailOrdinal: "{label} {number}",
+    mediaDetailMoreIn: "Más de {title}",
     mediaDetailPeople: "Personas",
     mediaDetailLoadFailed:
       "No se pudo cargar este elemento. Comprueba tu conexión e inténtalo de nuevo.",
@@ -171,6 +180,8 @@ export const mediaDetailStrings = {
     mediaDetailEditions: "Edições",
     mediaDetailMoreWith: "Mais com {name}",
     mediaDetailRelated: "Títulos semelhantes",
+    mediaDetailOrdinal: "{label} {number}",
+    mediaDetailMoreIn: "Mais de {title}",
     mediaDetailPeople: "Pessoas",
     mediaDetailLoadFailed:
       "Não foi possível carregar este item. Verifique sua conexão e tente novamente.",

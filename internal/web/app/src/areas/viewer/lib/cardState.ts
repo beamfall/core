@@ -71,8 +71,10 @@ export interface CardRating {
 export function cardRating(item: SourceItem, locale: string, t: Translate): CardRating | undefined {
   const text = item.certification?.trim() ?? "";
   const value = item.audienceScore;
+  // A 0 nobody voted for is a provider's placeholder, not a score (CORE-2472).
+  const voted = value !== 0 || (item.audienceScoreVotes ?? 0) > 0;
   const score =
-    typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10
+    typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10 && voted
       ? formatScore(value, locale)
       : "";
   if (!text && !score) return undefined;

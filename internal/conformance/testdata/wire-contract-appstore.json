@@ -2058,6 +2058,15 @@
           "optional": true
         },
         {
+          "name": "classLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -2176,8 +2185,23 @@
           "kind": "scalar"
         },
         {
+          "name": "headline",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
         },
         {
           "name": "libraryID",
@@ -2219,6 +2243,12 @@
           ]
         },
         {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "summary",
           "kind": "scalar",
           "optional": true
@@ -2226,6 +2256,16 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "videoHeight",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "videoWidth",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "year",
@@ -6157,6 +6197,15 @@
           "optional": true
         },
         {
+          "name": "classLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -6275,8 +6324,23 @@
           "kind": "scalar"
         },
         {
+          "name": "headline",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
         },
         {
           "name": "libraryID",
@@ -6318,6 +6382,12 @@
           ]
         },
         {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "summary",
           "kind": "scalar",
           "optional": true
@@ -6325,6 +6395,16 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "videoHeight",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "videoWidth",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "year",
@@ -8663,6 +8743,15 @@
               "optional": true
             },
             {
+              "name": "classLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "credits",
               "kind": "list",
               "optional": true,
@@ -8781,8 +8870,23 @@
               "kind": "scalar"
             },
             {
+              "name": "headline",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "id",
               "kind": "scalar"
+            },
+            {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
             },
             {
               "name": "libraryID",
@@ -8824,6 +8928,12 @@
               ]
             },
             {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
               "name": "summary",
               "kind": "scalar",
               "optional": true
@@ -8831,6 +8941,16 @@
             {
               "name": "title",
               "kind": "scalar"
+            },
+            {
+              "name": "videoHeight",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "videoWidth",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "year",
@@ -8973,6 +9093,15 @@
           "optional": true
         },
         {
+          "name": "classLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -9091,8 +9220,23 @@
           "kind": "scalar"
         },
         {
+          "name": "headline",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
         },
         {
           "name": "libraryID",
@@ -9134,6 +9278,12 @@
           ]
         },
         {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "summary",
           "kind": "scalar",
           "optional": true
@@ -9141,6 +9291,16 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "videoHeight",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "videoWidth",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "year",
@@ -9436,6 +9596,15 @@
           "optional": true
         },
         {
+          "name": "classLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -9554,8 +9723,23 @@
           "kind": "scalar"
         },
         {
+          "name": "headline",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
         },
         {
           "name": "libraryID",
@@ -9597,6 +9781,12 @@
           ]
         },
         {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "summary",
           "kind": "scalar",
           "optional": true
@@ -9604,6 +9794,16 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "videoHeight",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "videoWidth",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "year",
@@ -13353,6 +13553,15 @@
           "optional": true
         },
         {
+          "name": "classLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -13471,8 +13680,23 @@
           "kind": "scalar"
         },
         {
+          "name": "headline",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
         },
         {
           "name": "libraryID",
@@ -13514,6 +13738,12 @@
           ]
         },
         {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "summary",
           "kind": "scalar",
           "optional": true
@@ -13521,6 +13751,16 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "videoHeight",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "videoWidth",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "year",
@@ -13905,6 +14145,15 @@
               "optional": true
             },
             {
+              "name": "classLabel",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "credits",
               "kind": "list",
               "optional": true,
@@ -14023,8 +14272,23 @@
               "kind": "scalar"
             },
             {
+              "name": "headline",
+              "kind": "map",
+              "optional": true,
+              "nullable": true,
+              "elem": {
+                "kind": "scalar"
+              }
+            },
+            {
               "name": "id",
               "kind": "scalar"
+            },
+            {
+              "name": "index",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
             },
             {
               "name": "libraryID",
@@ -14066,6 +14330,12 @@
               ]
             },
             {
+              "name": "sequence",
+              "kind": "scalar",
+              "optional": true,
+              "nullable": true
+            },
+            {
               "name": "summary",
               "kind": "scalar",
               "optional": true
@@ -14073,6 +14343,16 @@
             {
               "name": "title",
               "kind": "scalar"
+            },
+            {
+              "name": "videoHeight",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "videoWidth",
+              "kind": "scalar",
+              "optional": true
             },
             {
               "name": "year",
@@ -25010,6 +25290,15 @@
           "optional": true
         },
         {
+          "name": "classLabel",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "credits",
           "kind": "list",
           "optional": true,
@@ -25128,8 +25417,23 @@
           "kind": "scalar"
         },
         {
+          "name": "headline",
+          "kind": "map",
+          "optional": true,
+          "nullable": true,
+          "elem": {
+            "kind": "scalar"
+          }
+        },
+        {
           "name": "id",
           "kind": "scalar"
+        },
+        {
+          "name": "index",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
         },
         {
           "name": "libraryID",
@@ -25171,6 +25475,12 @@
           ]
         },
         {
+          "name": "sequence",
+          "kind": "scalar",
+          "optional": true,
+          "nullable": true
+        },
+        {
           "name": "summary",
           "kind": "scalar",
           "optional": true
@@ -25178,6 +25488,16 @@
         {
           "name": "title",
           "kind": "scalar"
+        },
+        {
+          "name": "videoHeight",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "videoWidth",
+          "kind": "scalar",
+          "optional": true
         },
         {
           "name": "year",

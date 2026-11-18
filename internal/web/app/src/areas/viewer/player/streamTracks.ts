@@ -167,7 +167,11 @@ export function codecName(codec: string): string {
   return CODEC_NAMES[key] ?? codec.toUpperCase();
 }
 
-function channelLayout(channels: number | undefined, text: TrackLabelText): string {
+/** "Stereo", "5.1": a track's channel count as a viewer reads it; "" when unknown. */
+export function channelLayout(
+  channels: number | undefined,
+  text: Pick<TrackLabelText, "mono" | "stereo" | "channels">,
+): string {
   if (!channels) return "";
   if (channels === 1) return text.mono;
   if (channels === 2) return text.stereo;

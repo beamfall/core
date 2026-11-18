@@ -21,13 +21,17 @@ const NONE: SourceItem[] = [];
 // relatedMedia. Both reads are bounded on the server and leave out what the
 // Profile muted, like browse and Home. Each row leaves out the current item and
 // is hidden while empty, so a failed read shows nothing. Cards open the item's
-// page, like the rest of browse.
+// page, like the rest of browse. Items the page already lists in its More in
+// row (`exclude`, the nearest container's items) are left out of both rows
+// (CORE-2469).
 export function MediaMoreRows({
   mediaID,
   credits,
+  exclude = NONE,
 }: {
   mediaID: string;
   credits: readonly MediaCredit[] | undefined;
+  exclude?: readonly SourceItem[];
 }) {
   const t = useT();
   const identity = useViewerIdentity();
@@ -63,8 +67,8 @@ export function MediaMoreRows({
       setRows({
         key,
         lead: leadID ? leadTitle : "",
-        moreWith: byLead.filter((item) => item?.id && item.id !== mediaID).slice(0, RELATED_LIMIT),
-        related: ranked.filter((item) => item?.id && item.id !== mediaID).slice(0, RELATED_LIMIT),
+        moreWith: byLead.filter((item) => item?.id && item.id !== mediaID),
+        related: ranked.filter((item) => item?.id && item.id !== mediaID),
       });
     });
     return () => controller.abort();
@@ -72,19 +76,24 @@ export function MediaMoreRows({
 
   const current = rows?.key === key ? rows : null;
   if (!current) return null;
+  const listed = new Set(exclude.map((item) => item.id));
+  const fresh = (items: SourceItem[]) =>
+    items.filter((item) => !listed.has(item.id)).slice(0, RELATED_LIMIT);
+  const moreWith = fresh(current.moreWith);
+  const related = fresh(current.related);
   return (
     <>
-      {current.lead && current.moreWith.length > 0 && (
+      {current.lead && moreWith.length > 0 && (
         <SectionView
           section={shelf("more-with", t("mediaDetailMoreWith", { name: current.lead }))}
-          items={current.moreWith}
+          items={moreWith}
           navigationID={`media:${mediaID}`}
         />
       )}
-      {current.related.length > 0 && (
+      {related.length > 0 && (
         <SectionView
           section={shelf("related", t("mediaDetailRelated"))}
-          items={current.related}
+          items={related}
           navigationID={`media:${mediaID}`}
         />
       )}

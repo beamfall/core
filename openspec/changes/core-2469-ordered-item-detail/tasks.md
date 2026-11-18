@@ -1,0 +1,11 @@
+- [ ] Graph: `media(id)` sequence, index, headline, classLabel, videoWidth and videoHeight, with Go tests
+- [ ] Wire goldens regenerated with `make regen-wire-goldens`; the next client-core-wire minor is published by the landing owner
+- [ ] Store and graph: search rows grouped by ordered container root in sequence and index order, with a Go test
+- [ ] Web: ordered item hero (grouping link, position line, headline), wide still art, air date and stream badges
+- [ ] Web: "More in" container rail; More with and Related leave out the container's items
+- [ ] Web: grouping found without a reported item count
+- [ ] Web: no card score for 0 without votes
+- [ ] Web strings in every shipped locale; vitest coverage
+- [ ] Verified on tower at desktop and 375px widths (lander)
+- [ ] `make gate` (lander)
+- [ ] `openspec archive core-2469-ordered-item-detail` after landing

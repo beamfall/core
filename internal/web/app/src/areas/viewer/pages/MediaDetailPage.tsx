@@ -6,7 +6,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isAuthRejection } from "@/lib/api";
 import { displayString } from "@/lib/display";
-import type { EntityFieldInfo, SourceItem } from "@/lib/graphql/types";
+import type { EntityFieldInfo, GenericMediaInfo, SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import {
@@ -21,7 +21,7 @@ import { findCachedSectionItem } from "../components/HydratedSection";
 import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
 import { MediaMoreRows } from "../components/MediaMoreRows";
 import { MediaRelationRows } from "../components/MediaRelationRows";
-import { MediaTrackPickers } from "../components/MediaTrackPickers";
+import { MediaTrackPickers, useMediaTracks } from "../components/MediaTrackPickers";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
 import { SectionView } from "../components/SectionView";
@@ -29,7 +29,7 @@ import { ViewerActions } from "../components/ViewerActions";
 import { WatchTogetherButton } from "../components/WatchTogetherButton";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
-import { audioPeople, useContainerContext } from "../lib/containerContext";
+import { audioPeople, type ContainerLink, useContainerContext } from "../lib/containerContext";
 import { mediaIdFromAddress } from "../lib/mediaAddress";
 import {
   fetchMedia,
@@ -42,6 +42,7 @@ import {
   resumeProgress,
 } from "../lib/mediaDetail";
 import { castHasDetail } from "../lib/people";
+import { streamFacts } from "../lib/streamFacts";
 import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
   type DetailScore,
@@ -63,6 +64,8 @@ import "./media-detail.css";
 
 const POSTER_BUCKETS = ["w320", "w640"] as const;
 const POSTER_SIZES = "(max-width: 640px) 120px, 240px";
+/** A wide still (an ordered item's thumb) fills more of the lockup (CORE-2469). */
+const STILL_SIZES = "(max-width: 640px) 320px, 400px";
 const BACKDROP_BUCKETS = ["w640", "w1280"] as const;
 const TITLE_ID = "bf-media-detail-title";
 /** An overview longer than this is clamped with a More toggle. */
@@ -160,6 +163,8 @@ export function MediaDetailPage() {
   const people = castRow ? [] : audioPeople(media);
   // Version, audio and subtitle picks made here before playback (CORE-2442), for one Media.
   const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
+  // Read once for the pickers and the facts row's stream badges (CORE-2469).
+  const versions = useMediaTracks(mediaId);
 
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -232,8 +237,15 @@ export function MediaDetailPage() {
   }
 
   const art = { ...(card ?? {}), artworkSlots: { ...card?.artworkSlots, ...media?.artworkSlots } };
+  const ordered = orderedPosition(media, context.container, locale, t);
+  // An ordered item's own still frames it better than the poster it shares
+  // with its whole grouping (CORE-2469).
+  const still = ordered ? artworkSlotURL(art as SourceItem, "thumb") : "";
   const poster =
-    artworkSlotURL(art as SourceItem, "poster") || artworkSlotURL(art as SourceItem, "thumb");
+    still ||
+    artworkSlotURL(art as SourceItem, "poster") ||
+    artworkSlotURL(art as SourceItem, "thumb");
+  const heading = (ordered && displayString(media?.headline, locale)) || title;
   const backdrop = artworkSlotURL(art as SourceItem, "backdrop");
   const progress = resumeProgress(card);
   const summary = media?.summary || card?.summary || "";
@@ -251,16 +263,35 @@ export function MediaDetailPage() {
     title: media?.title || card?.title,
     year: facts.year,
     runtimeSeconds: facts.runtimeSeconds,
+    dateField: facts.date?.name,
   });
   const factItems: FactItem[] = [
-    { key: "year", text: facts.year ? String(facts.year) : "" },
+    {
+      key: "year",
+      text: facts.date
+        ? fieldDisplayValue(facts.date, locale)
+        : facts.year
+          ? String(facts.year)
+          : "",
+    },
     { key: "runtime", text: facts.runtimeSeconds ? formatRuntime(facts.runtimeSeconds, t) : "" },
+    ...streamFacts(media, versions, {
+      mono: t("trackChannelsMono"),
+      stereo: t("trackChannelsStereo"),
+      channels: (count) => t("trackChannelsCount", { count }),
+    }),
     { key: "rating", text: facts.rating ?? "", variant: "rating" as const },
     ...scoreFact(facts.score, locale, t),
     ...facts.categories.map((category) => ({ key: `category:${category}`, text: category })),
   ].filter((item) => item.text !== "");
   const progressText = progress ? t("mediaDetailProgress", { percent: progress.percent }) : "";
   const next = context.next;
+  // The grouping is linked above; the nearest container is in the position line.
+  const parents = ordered
+    ? context.parents.filter((parent) => parent.id !== ordered.container.id)
+    : context.parents;
+  // The nearest container's other items, in its order (CORE-2469).
+  const moreIn = context.items.filter((item) => item.id !== mediaId);
 
   return (
     <AppShell actions={<ViewerActions />}>
@@ -268,13 +299,13 @@ export function MediaDetailPage() {
         {back}
         <section className="bf-detail-stage" data-backdrop={backdrop ? "" : undefined}>
           {backdrop && <DetailBackdrop key={backdrop} url={backdrop} />}
-          <div className="bf-detail-lockup">
-            <DetailPoster key={poster} url={poster} mediaClass={card?.mediaClass} />
+          <div className="bf-detail-lockup" data-wide={still ? "" : undefined}>
+            <DetailPoster key={poster} url={poster} mediaClass={card?.mediaClass} wide={!!still} />
             <div className="bf-detail-copy">
-              {context.parents.length > 0 && (
+              {parents.length > 0 && (
                 <nav className="bf-detail-parents" aria-label={t("mediaDetailPartOf")}>
                   <ol>
-                    {context.parents.map((parent) => (
+                    {parents.map((parent) => (
                       <li key={parent.id}>
                         <Link to={`/entity/${encodeURIComponent(parent.id)}`}>{parent.title}</Link>
                       </li>
@@ -282,8 +313,16 @@ export function MediaDetailPage() {
                   </ol>
                 </nav>
               )}
+              {ordered && (
+                <p className="bf-detail-position">
+                  <Link to={`/entity/${encodeURIComponent(ordered.container.id)}`}>
+                    {ordered.containerText}
+                  </Link>
+                  {ordered.itemText && <span>{` · ${ordered.itemText}`}</span>}
+                </p>
+              )}
               <h1 id={TITLE_ID} className="bf-page-title">
-                {title}
+                {heading}
               </h1>
               {people.length > 0 && (
                 <p className="bf-detail-people">
@@ -384,7 +423,12 @@ export function MediaDetailPage() {
                 {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
               </div>
               {media && (
-                <MediaTrackPickers mediaID={mediaId} picks={trackPicks} onPick={setTrackPicks} />
+                <MediaTrackPickers
+                  mediaID={mediaId}
+                  versions={versions}
+                  picks={trackPicks}
+                  onPick={setTrackPicks}
+                />
               )}
               {/* The Profile's own state for this item (CORE-2436), keyed so a
                   route change to another item starts from that item's state. */}
@@ -437,10 +481,59 @@ export function MediaDetailPage() {
           />
         )}
 
-        {media && <MediaMoreRows mediaID={mediaId} credits={media.credits} />}
+        {context.container && moreIn.length > 0 && (
+          <SectionView
+            section={{
+              id: "media-more-in",
+              kind: "shelf",
+              title: t("mediaDetailMoreIn", { title: context.container.title }),
+              artworkSlot: "poster",
+              source: { kind: "more-in" },
+            }}
+            items={moreIn}
+            navigationID={`media:${mediaId}`}
+          />
+        )}
+
+        {media && (
+          <MediaMoreRows mediaID={mediaId} credits={media.credits} exclude={context.items} />
+        )}
       </article>
     </AppShell>
   );
+}
+
+/** The position line of an ordered item: "Part 2" (its container) and "Chapter 5" (itself). */
+interface OrderedPosition {
+  container: ContainerLink;
+  containerText: string;
+  itemText: string;
+}
+
+/**
+ * An item with a container and an index reads by its place (CORE-2469): the
+ * container's kind name and the item's sequence, then the item's class label
+ * and index, each from plugin display names. Without a kind name or sequence
+ * the container shows its title; without a class label the index stands alone.
+ */
+function orderedPosition(
+  media: GenericMediaInfo | undefined,
+  container: ContainerLink | null,
+  locale: string,
+  t: ReturnType<typeof useT>,
+): OrderedPosition | null {
+  if (!media || !container || media.index === undefined) return null;
+  const number = (value: number) => value.toLocaleString(locale);
+  const kind = displayString(container.kindLabel, locale);
+  const containerText =
+    kind && media.sequence !== undefined
+      ? t("mediaDetailOrdinal", { label: kind, number: number(media.sequence) })
+      : container.title;
+  const label = displayString(media.classLabel, locale);
+  const itemText = label
+    ? t("mediaDetailOrdinal", { label, number: number(media.index) })
+    : number(media.index);
+  return { container, containerText, itemText };
 }
 
 /** One chip of the facts row; `spoken` replaces `text` for assistive technology. */
@@ -533,17 +626,26 @@ function DetailOverview({ text }: { text: string }) {
   );
 }
 
-function DetailPoster({ url, mediaClass }: { url: string; mediaClass?: string }) {
+function DetailPoster({
+  url,
+  mediaClass,
+  wide = false,
+}: {
+  url: string;
+  mediaClass?: string;
+  wide?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
+  const frame = wide ? "bf-poster bf-poster-wide" : artFrameClass({ mediaClass });
   return (
-    <div className={`${artFrameClass({ mediaClass })} bf-detail-poster`}>
+    <div className={`${frame} bf-detail-poster`}>
       {url && !failed ? (
         <img
           alt=""
           decoding="async"
-          src={artworkBucketURL(url, "w320")}
+          src={artworkBucketURL(url, wide ? "w640" : "w320")}
           srcSet={artworkSrcSet(url, POSTER_BUCKETS)}
-          sizes={POSTER_SIZES}
+          sizes={wide ? STILL_SIZES : POSTER_SIZES}
           onError={() => setFailed(true)}
         />
       ) : (

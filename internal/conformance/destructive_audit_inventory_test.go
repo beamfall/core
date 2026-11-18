@@ -131,6 +131,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"MediaForEntity":                          {},
 	"MediaLibrary":                            {},
 	"MediaMetadataProvenance":                 {},
+	"MediaOrderedContainers":                  {},
 	"MediaRelationsOf":                        {},
 	"MediaSortTitle":                          {},
 	"MutedTargets":                            {},

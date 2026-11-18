@@ -893,6 +893,139 @@ describe("MediaDetailPage", () => {
     expect(screen.queryByRole("heading", { name: "Related" })).not.toBeInTheDocument();
   });
 
+  describe("an ordered item (CORE-2469)", () => {
+    const ordered: GenericMediaInfo = {
+      ...media,
+      title: "Server title",
+      sequence: 2,
+      index: 5,
+      classLabel: { en: "Chapter" },
+      headline: { en: "Arrival" },
+      artworkSlots: {
+        thumb: "/api/media/artwork/m1/thumb?v=1",
+        poster: "/api/media/artwork/m1/poster?v=1",
+      },
+      credits: [
+        {
+          entityID: "c-inner",
+          title: "Part Two",
+          kind: "inner",
+          kindDisplayName: { en: "Part" },
+          archetype: "container",
+          relation: "in",
+        },
+        person("p1", "Ada Lead"),
+      ],
+    };
+    const inner = [item("m0", "Before"), item("m1", "Server title"), item("m2", "After")];
+    // The grouping reports no count: the show's engagement totals are
+    // outgoing-only, so the single related container is the grouping.
+    const innerEntity = {
+      id: "c-inner",
+      kind: "inner",
+      title: "Part Two",
+      fields: [],
+      relatedEntities: [
+        {
+          kind: "outer",
+          archetype: "container",
+          items: [{ id: "c-outer", kind: "outer", title: "The Whole" }],
+        },
+      ],
+    };
+
+    it("links the grouping, names its place and heads with its own headline over the still", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(ordered);
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(inner);
+      vi.mocked(fetchEntity).mockResolvedValue(innerEntity as never);
+      const { container } = renderAt(["/media/m1"]);
+      await act(async () => {});
+
+      const nav = screen.getByRole("navigation", { name: "Part of" });
+      expect(Array.from(nav.querySelectorAll("a"), (a) => a.textContent)).toEqual(["The Whole"]);
+      const position = container.querySelector(".bf-detail-position");
+      expect(position).toHaveTextContent("Part 2 · Chapter 5");
+      expect(within(position as HTMLElement).getByRole("link", { name: "Part 2" })).toHaveAttribute(
+        "href",
+        "/entity/c-inner",
+      );
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Arrival");
+      expect(container.querySelector(".bf-detail-lockup")).toHaveAttribute("data-wide");
+      expect(container.querySelector(".bf-detail-poster img")?.getAttribute("src")).toContain(
+        "/thumb",
+      );
+    });
+
+    it("heads with the title without a headline, and with the poster without a still", async () => {
+      const { headline: _, artworkSlots: __, ...plain } = ordered;
+      vi.mocked(fetchMedia).mockResolvedValue({
+        ...plain,
+        artworkSlots: { poster: "/api/media/artwork/m1/poster?v=1" },
+      });
+      const { container } = renderAt(["/media/m1"]);
+      await act(async () => {});
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Server title");
+      expect(container.querySelector(".bf-detail-lockup")).not.toHaveAttribute("data-wide");
+      expect(container.querySelector(".bf-detail-poster img")?.getAttribute("src")).toContain(
+        "/poster",
+      );
+    });
+
+    it("shows the air date, resolution, HDR and audio in the facts row", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue({ ...ordered, videoWidth: 3840, videoHeight: 2160 });
+      vi.mocked(fetchMediaDetailFields).mockResolvedValue([
+        { name: "aired", type: "date", value: "2008-01-20", label: { en: "Aired" } },
+      ]);
+      vi.mocked(fetchMediaTracks).mockResolvedValue([
+        {
+          id: "va",
+          label: "",
+          videoCodec: "hevc",
+          hdr: "hdr10",
+          audioTracks: [
+            { streamIndex: 1, codec: "aac", language: "eng", channels: 2 },
+            { streamIndex: 2, codec: "eac3", language: "eng", channels: 6, default: true },
+          ],
+          captionTracks: [],
+        },
+      ]);
+      renderAt(["/media/m1"]);
+      await waitFor(() =>
+        expect(screen.getByRole("list", { name: "About this item" }).textContent).toContain(
+          "HDR10",
+        ),
+      );
+      const facts = Array.from(
+        screen.getByRole("list", { name: "About this item" }).querySelectorAll("li"),
+        (li) => li.textContent,
+      );
+      expect(facts).toEqual(expect.arrayContaining(["4K", "HDR10", "Dolby Digital Plus 5.1"]));
+      expect(facts[0]).toMatch(/2008/);
+      expect(facts).not.toContain("2001");
+    });
+
+    it("lists the rest of its container in a More in rail that the closing rows leave out", async () => {
+      vi.mocked(fetchMedia).mockResolvedValue(ordered);
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(inner);
+      vi.mocked(fetchEntity).mockResolvedValue(innerEntity as never);
+      vi.mocked(fetchSourceItems).mockResolvedValue([
+        item("m2", "After"),
+        item("a1", "Lead Again"),
+      ]);
+      renderAt(["/media/m1"]);
+
+      const moreIn = await screen.findByRole("list", { name: "More in Part Two" });
+      expect(
+        within(moreIn)
+          .getAllByRole("listitem")
+          .map((li) => li.textContent),
+      ).toEqual([expect.stringContaining("Before"), expect.stringContaining("After")]);
+      const moreWith = await screen.findByRole("list", { name: "More with Ada Lead" });
+      expect(within(moreWith).getAllByRole("listitem")).toHaveLength(1);
+      expect(within(moreWith).getByRole("button", { name: /^Lead Again/ })).toBeInTheDocument();
+    });
+  });
+
   describe("track pickers before playback (CORE-2442)", () => {
     const main: MediaTrackVersion = {
       id: "va",

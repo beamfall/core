@@ -113,3 +113,89 @@ func TestMediaCardsCarryThePluginSubtitleAndOrdinals(t *testing.T) {
 		t.Fatalf("search rows = %+v, want the full card with its subtitle", search.Items)
 	}
 }
+
+// TestMediaReadCarriesOrdinalsHeadlineAndClassLabel pins CORE-2469: the
+// media(id) read carries the stored ordinals, a headline from the plugin's
+// MediaSubtitle segments that name no ordinal, the plugin's label for the
+// item's class and the probed frame size; an item without the title field has
+// no headline.
+func TestMediaReadCarriesOrdinalsHeadlineAndClassLabel(t *testing.T) {
+	bundle := plugin.Bundle{
+		ID:               "volumekit",
+		Version:          "0.1.0",
+		DisplayName:      plugin.L("Volumekit"),
+		MediaLabel:       plugin.L("Part"),
+		MediaClassLabels: map[string]plugin.LocaleString{"chapter": {"en": "Chapter", "fr": "Chapitre"}},
+		MediaFields: []plugin.FieldSpec{
+			{Name: "part-title", Type: "text", Label: plugin.L("Part title")},
+			{Name: "class", Type: "text", Label: plugin.L("Class")},
+		},
+		MediaSubtitle: []plugin.LocaleString{
+			{"en": "Vol {sequence}", "fr": "Tome {sequence}"},
+			plugin.L("No {index}"),
+			plugin.L("{part-title}"),
+		},
+		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse", Sections: []plugin.SectionSpec{
+			{ID: "all", Kind: "grid", Title: plugin.L("All"), ArtworkSlot: "poster", Source: plugin.SourceSpec{Kind: "all-items"}},
+		}}},
+	}
+	st := storetest.Open(t)
+	registry, err := newTestPluginRegistry([]plugin.Bundle{bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(
+		manifest.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }, registry),
+		auth.NewService(st),
+		st,
+		registry,
+	)
+	ctx := context.Background()
+	library, err := st.CreateLibrary(ctx, "Volumes", false, "volumekit", "profile-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importItem := func(name string, values []store.MediaField) store.MediaID {
+		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: library.ID, Path: "/volumes/" + name + ".mkv", Title: "Code " + name,
+			Container: "mkv", Codec: "h264", ContentFingerprint: "fp-" + name, DurationSecondsHint: 1800,
+			VideoWidthHint: 3840, VideoHeightHint: 2160,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetMediaFields(ctx, item.ID, values); err != nil {
+			t.Fatal(err)
+		}
+		return item.ID
+	}
+	titled := importItem("titled", []store.MediaField{
+		{Name: "sequence", Type: store.EntityFieldNumber, Number: 2},
+		{Name: "index", Type: store.EntityFieldNumber, Number: 5},
+		{Name: "part-title", Type: store.EntityFieldText, Text: "Arrival"},
+		{Name: "class", Type: store.EntityFieldText, Text: "chapter"},
+	})
+	// Stored zero ordinals reach the client (Codex review of CORE-2469).
+	untitled := importItem("untitled", []store.MediaField{
+		{Name: "sequence", Type: store.EntityFieldNumber, Number: 0},
+		{Name: "index", Type: store.EntityFieldNumber, Number: 0},
+	})
+
+	const query = `query($id: String!) { media(id: $id) { id title sequence index headline classLabel videoWidth videoHeight } }`
+	var got MediaInfo
+	execGraph(t, handler, authorizeViewer, query, map[string]any{"id": string(titled)}, "media", &got)
+	if got.Sequence == nil || *got.Sequence != 2 || got.Index == nil || *got.Index != 5 || got.VideoWidth != 3840 || got.VideoHeight != 2160 {
+		t.Fatalf("titled media = %+v, want ordinals 2/5 and 3840x2160", got)
+	}
+	if got.Headline.Resolve("en") != "Arrival" || len(got.Headline) != 1 {
+		t.Fatalf("titled headline = %v, want only the ordinal-free segment", got.Headline)
+	}
+	if got.ClassLabel.Resolve("fr") != "Chapitre" || got.ClassLabel.Resolve("en") != "Chapter" {
+		t.Fatalf("class label = %v", got.ClassLabel)
+	}
+	var bare MediaInfo
+	execGraph(t, handler, authorizeViewer, query, map[string]any{"id": string(untitled)}, "media", &bare)
+	if len(bare.Headline) != 0 || bare.Sequence == nil || *bare.Sequence != 0 || bare.Index == nil || *bare.Index != 0 || bare.Title != "Code untitled" || bare.ClassLabel.Resolve("en") != "Part" {
+		t.Fatalf("untitled media = %+v, want no headline and the Media label", bare)
+	}
+}

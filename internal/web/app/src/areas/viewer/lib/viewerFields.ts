@@ -35,6 +35,8 @@ export interface ShownFacts {
   year?: number;
   /** The runtime chip: a bare number of minutes equal to it repeats it without a unit. */
   runtimeSeconds?: number;
+  /** The date chip's field name: that field is not listed again (CORE-2469). */
+  dateField?: string;
 }
 
 // A content address or provenance record ("sha256:9f2c…;cel;plan=…") is
@@ -64,6 +66,7 @@ function normalized(value: string): string {
 
 /** A field whose value the heading or a facts chip already shows. */
 function repeatsShownFact(field: EntityFieldInfo, shown: ShownFacts): boolean {
+  if (shown.dateField && field.name === shown.dateField) return true;
   const value = field.value.trim();
   if (shown.title && field.type === "text" && normalized(value) === normalized(shown.title)) {
     return true;
@@ -108,6 +111,8 @@ export function viewerFacingFields(
 /** The item's facts, in display order, before any are formatted. */
 export interface DetailFacts {
   year?: number;
+  /** The first declared date field with a real day (an air or release date), shown in place of the year. */
+  date?: EntityFieldInfo;
   runtimeSeconds?: number;
   rating?: string;
   score?: DetailScore;
@@ -122,9 +127,9 @@ export interface DetailScore {
 }
 
 /**
- * The facts chips' data: year, runtime (when the opening card knew the
- * duration), the rating, the community score when anyone voted, and the
- * first few category credits.
+ * The facts chips' data: year, or the first declared date with a real day,
+ * runtime (when the opening card knew the duration), the rating, the community
+ * score when anyone voted, and the first few category credits.
  */
 export function detailFacts(
   media: GenericMediaInfo | null | undefined,
@@ -133,6 +138,14 @@ export function detailFacts(
 ): DetailFacts {
   const facts: DetailFacts = { categories: [] };
   if (media?.year) facts.year = media.year;
+  const date = fields.find(
+    (field) =>
+      field.type === "date" &&
+      displayString(field.label).trim() !== "" &&
+      DATE_VALUE.test(field.value.trim()) &&
+      !isYearOnlyDate(field.value, media?.year),
+  );
+  if (date) facts.date = date;
   if (durationSeconds && Number.isFinite(durationSeconds) && durationSeconds >= 60) {
     facts.runtimeSeconds = durationSeconds;
   }

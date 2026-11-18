@@ -27,29 +27,12 @@ interface Listing {
   versions: MediaTrackVersion[];
 }
 
-// The Version, Audio and Subtitles pickers of a Media detail page (CORE-2442),
-// read from the stored inventory (mediaTracks) without starting a session.
-// Every pick is handed to the page and rides into playback in the watch
-// route's nav state, so blocked browser storage cannot split a Version from
-// the tracks picked with it; a Version pick is also remembered as the player
-// remembers it (versionChoice), best-effort. A pick names a track of the
-// Version on screen, so with two or more Versions it carries that Version:
-// otherwise the server could play another file whose stream numbers mean
-// other tracks. Version starts at Auto (the server's choice) unless one is
-// picked or remembered. Each picker shows only when there is a choice, and a
-// failed read shows none.
-export function MediaTrackPickers({
-  mediaID,
-  picks,
-  onPick,
-}: {
-  mediaID: string;
-  picks: StartTracks | null;
-  onPick: (picks: StartTracks) => void;
-}) {
-  const t = useT();
-  const locale = useDisplayLocale();
-  const profileID = useSession().session?.profileID;
+/**
+ * The item's Versions and tracks from the stored inventory, for one viewer:
+ * empty until read and when the read fails. The page reads them once for the
+ * pickers and the facts row's stream badges.
+ */
+export function useMediaTracks(mediaID: string): MediaTrackVersion[] {
   const identity = useViewerIdentity();
   const key = `${identity ?? ""}:${mediaID}`;
   const [listing, setListing] = useState<Listing | null>(null);
@@ -64,7 +47,36 @@ export function MediaTrackPickers({
     return () => controller.abort();
   }, [key, mediaID]);
 
-  const versions = listing?.key === key ? listing.versions : [];
+  return listing?.key === key ? listing.versions : NO_VERSIONS;
+}
+
+const NO_VERSIONS: MediaTrackVersion[] = [];
+
+// The Version, Audio and Subtitles pickers of a Media detail page (CORE-2442),
+// read from the stored inventory (mediaTracks) without starting a session.
+// Every pick is handed to the page and rides into playback in the watch
+// route's nav state, so blocked browser storage cannot split a Version from
+// the tracks picked with it; a Version pick is also remembered as the player
+// remembers it (versionChoice), best-effort. A pick names a track of the
+// Version on screen, so with two or more Versions it carries that Version:
+// otherwise the server could play another file whose stream numbers mean
+// other tracks. Version starts at Auto (the server's choice) unless one is
+// picked or remembered. Each picker shows only when there is a choice, and a
+// failed read shows none.
+export function MediaTrackPickers({
+  mediaID,
+  versions,
+  picks,
+  onPick,
+}: {
+  mediaID: string;
+  versions: MediaTrackVersion[];
+  picks: StartTracks | null;
+  onPick: (picks: StartTracks) => void;
+}) {
+  const t = useT();
+  const locale = useDisplayLocale();
+  const profileID = useSession().session?.profileID;
   if (versions.length === 0) return null;
   const current: StartTracks = picks?.mediaID === mediaID ? picks : { mediaID };
   const chosenID = current.versionID ?? readVersionChoice(profileID, mediaID);

@@ -70,6 +70,10 @@ func MediaSubtitleLocales(segments []LocaleString) []string {
 	return sdk.MediaSubtitleLocales(segments)
 }
 
+// MediaSubtitleOrdinals lists the structural ordinal placeholders a
+// MediaSubtitle may name without declaring them as fields.
+func MediaSubtitleOrdinals() []string { return sdk.MediaSubtitleOrdinals() }
+
 // MediaSubtitleFields lists the placeholder names a MediaSubtitle reads.
 func MediaSubtitleFields(segments []LocaleString) []string { return sdk.MediaSubtitleFields(segments) }
 
