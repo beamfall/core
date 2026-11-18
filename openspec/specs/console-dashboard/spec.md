@@ -125,7 +125,8 @@ progress within the last two minutes. `transcoding` SHALL be true exactly when `
 
 The session mutation `endPlayback(mediaId: ID!): Boolean!` SHALL end the calling device's live
 session for that item and return true. It SHALL return true when there is nothing to end. It
-SHALL NOT end another device's session.
+SHALL NOT end another device's session. It SHALL stop the calling session's transcode of that item
+and SHALL leave the session's other items' transcodes running.
 
 #### Scenario: Player closes
 
@@ -142,6 +143,12 @@ SHALL NOT end another device's session.
 
 - **WHEN** `mediaId` is empty
 - **THEN** the call fails with a client error
+
+#### Scenario: Transcoding player closes
+
+- **WHEN** a device that is transcoding an item calls `endPlayback` for it
+- **THEN** that transcode stops and frees its slot without waiting for the idle reap
+- **AND** the same device's transcode of another item keeps running
 
 ### Requirement: A play lasts long enough and finishes near the end
 
@@ -165,3 +172,17 @@ the play's length. When the item's length is unknown, the watched report alone S
 
 - **WHEN** a 60-minute item resumes at 40 minutes, plays for 20 minutes and is reported watched
 - **THEN** the play is finished
+
+### Requirement: Revoking a device aborts its transcodes
+
+`revokeDevice` and `revokeAllDevices` SHALL abort every in-flight transcode owned by any of the
+revoked device's sessions, and SHALL report the count in `transcodesAborted`. They SHALL find those
+sessions from the device's auth sessions as well as from the stream-token ledger, so a transcode
+whose ledger rows `endPlayback` or grant expiry already cleared is still aborted. Other devices'
+transcodes SHALL keep running.
+
+#### Scenario: Transcode outlived its ledger rows
+
+- **WHEN** a device's transcode is still running after `endPlayback` cleared its ledger rows
+- **AND** an operator revokes that device
+- **THEN** the transcode is aborted and `transcodesAborted` counts it

@@ -16,4 +16,4 @@
 
 ## 4. Landing
 
-- [ ] 4.1 Codex review, gate, land
+- [x] 4.1 Codex review, gate, land
