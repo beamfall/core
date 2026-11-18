@@ -13,12 +13,17 @@ const made = vi.hoisted(() => ({
     dispose: ReturnType<typeof vi.fn>;
   }[],
   fail: false,
+  // When set, the next create waits on it, as a create still compiling when the context goes.
+  gate: null as Promise<void> | null,
 }));
 
 vi.mock("./oscillux", () => ({ loadOscillux: () => Promise.resolve({}) }));
 vi.mock("./renderer", () => ({
   Renderer: {
     create: async () => {
+      const gate = made.gate;
+      made.gate = null;
+      if (gate) await gate;
       if (made.fail) return null;
       const r = {
         setImage: vi.fn(),
@@ -40,6 +45,7 @@ let nextFrame: number;
 beforeEach(() => {
   made.renderers.length = 0;
   made.fail = false;
+  made.gate = null;
   pending = new Set();
   nextFrame = 0;
   vi.stubGlobal("WebGL2RenderingContext", class {});
@@ -90,6 +96,21 @@ describe("Visualizer context loss (CORE-2482)", () => {
     made.fail = true;
     act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
     await waitFor(() => expect(container.querySelector("canvas")).toBeNull());
+  });
+
+  it("ignores a superseded create that fails when the context is lost mid-create", async () => {
+    let reject!: (err: Error) => void;
+    made.gate = new Promise((_, no) => {
+      reject = no;
+    });
+    const { canvas } = mount();
+    act(() => void canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true })));
+    await act(async () => reject(new Error("context lost")));
+    expect(canvas.isConnected).toBe(true);
+    act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
+    await waitFor(() => expect(pending.size).toBe(1));
+    expect(made.renderers).toHaveLength(1);
+    expect(canvas.isConnected).toBe(true);
   });
 
   it("removes its listeners on unmount", async () => {

@@ -49,6 +49,10 @@ describe("CadenceGate (CORE-2483)", () => {
     expect(levels(steady(48, 600, 6)).at(-1)).toBeLessThan(3);
   });
 
+  it("still demotes a steady render a little slower than the cap", () => {
+    expect(levels(steady(35, 1200, 0.3)).at(-1)).toBeLessThan(3);
+  });
+
   it("still demotes an unsteady cadence around the cap", () => {
     const rough = Array.from({ length: 600 }, (_, i) => (i % 3 === 0 ? 55 : 30));
     expect(levels(rough).at(-1)).toBeLessThan(3);

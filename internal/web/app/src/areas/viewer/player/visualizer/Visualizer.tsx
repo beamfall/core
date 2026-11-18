@@ -224,7 +224,9 @@ export function Visualizer({
     };
     // Builds the renderer and starts drawing. It runs again after a lost context is restored,
     // when every GL resource is new: the visual and artwork are applied afresh and the
-    // feedback and limiter start empty. A newer build supersedes an older one still loading.
+    // feedback and limiter start empty. A newer build supersedes an older one still loading, and a
+    // superseded build's failure is ignored: a context lost mid-create rejects it, and removing the
+    // canvas then would leave no context to restore.
     let build = 0;
     const start = () => {
       const mine = ++build;
@@ -234,7 +236,7 @@ export function Visualizer({
         .then((renderer) => {
           // No hardware WebGL2: the slot stays empty, as without WebGL2 at all.
           if (!renderer) {
-            if (alive) setFailed(true);
+            if (current()) setFailed(true);
             return;
           }
           if (!current()) return renderer.dispose();
@@ -250,7 +252,9 @@ export function Visualizer({
             queueUpcoming(renderer, rotateRef.current, first);
           });
         })
-        .catch(fail);
+        .catch((err: unknown) => {
+          if (current()) fail(err);
+        });
     };
     // A lost context (CORE-2482): preventDefault asks the browser to restore it, rendering
     // stops, and the dead renderer is dropped. Its resources went with the context.

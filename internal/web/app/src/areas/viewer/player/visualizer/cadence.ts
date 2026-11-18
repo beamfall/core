@@ -5,13 +5,18 @@
 // at that cap is scaled to the target, so only frames slower than the cap, or an unsteady
 // cadence, count against the render. WebGL timer queries would measure GPU time directly, but
 // EXT_disjoint_timer_query_webgl2 is not exposed by default in current browsers.
+//
+// The cap band is narrow (about ±1.2 ms) so a steady overload a little slower than the cap, 35 ms
+// on a variable-refresh or 120 Hz display, still counts. An overload that lands exactly on 30 Hz,
+// as a render missing every other 60 Hz vsync does, is indistinguishable from the cap by timing
+// alone and is not demoted; it already draws at the capped browser's rate.
 
 /** Intervals the gate watches before it passes any to the governor. */
 export const CADENCE_WINDOW = 30;
 /** The capped cadence browsers apply, in milliseconds. */
 const CAP_MS = 1000 / 30;
 /** A median within this fraction of CAP_MS is at the cap. */
-const CAP_TOLERANCE = 0.08;
+const CAP_TOLERANCE = 0.035;
 /** An interval within this fraction of the median is steady ... */
 const STEADY_TOLERANCE = 0.15;
 /** ... and the cadence is steady when this share of the window is. */
