@@ -89,6 +89,15 @@ async function gotoScreen(page: Page, screen: string): Promise<void> {
       await expect(page.getByRole("combobox", { name: "Sort by" })).toBeVisible();
       await expect(page).toHaveURL(/\/all$/);
       return;
+    case "/n/:nodeId/collections":
+    case "/n/:nodeId/categories": {
+      const pivot = screen.slice(screen.lastIndexOf("/"));
+      await page.goto(`${await libraryNodeHref(page)}${pivot}`);
+      // The page redirects away when the node has no library, so wait for the pivot URL to hold.
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`${pivot}$`));
+      return;
+    }
     case "/entity/:entityId":
       // The development seed has no Entities, so the detail page reads a stubbed one.
       await routeOperation(page, "Entity", { data: { entity: FIXTURE_ENTITY } });
