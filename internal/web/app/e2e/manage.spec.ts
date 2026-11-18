@@ -1,4 +1,10 @@
-import { ADMIN_PASSWORD } from "./lib/harness";
+import {
+  ADMIN_PASSWORD,
+  createSeedAdultProfile,
+  enrollRole,
+  storageStateFor,
+  switchEnrolledProfile,
+} from "./lib/harness";
 import {
   collectFatalErrors,
   expectReducedMotionActive,
@@ -439,38 +445,55 @@ test.describe("manage", () => {
 
   // CORE-2463: with no Restrictions PIN the page offers Set PIN instead of an
   // unlock field; the PIN then unlocks the session, and Change PIN replaces it.
-  // The harness Profile starts without a PIN; a server that already has one
-  // (an earlier run against the same data) skips, since its PIN is unknown.
-  test("restrictions sets a PIN, unlocks with it and changes it", async ({ page }) => {
-    const errors = collectFatalErrors(page);
-    await gotoManage(page, "restrictions");
-    const setPin = page.getByRole("button", { name: "Set PIN", exact: true });
-    const unlock = page.locator("#reveal-pin");
-    await expect(setPin.or(unlock)).toBeVisible();
-    test.skip(await unlock.isVisible(), "this server's Profile already has a Restrictions PIN");
+  // The development seed gives its adult Profiles a PIN, so this runs on a new
+  // adult Profile of its own (no Restrictions PIN) in a fresh manager browser,
+  // leaving the shared harness Profiles untouched.
+  test("restrictions sets a PIN, unlocks with it and changes it", async ({ browser, baseURL }) => {
+    if (!baseURL) throw new Error("baseURL is not set");
+    const entryPIN = "2463";
+    const profileID = await createSeedAdultProfile(
+      baseURL,
+      `Restrictions Setup ${Date.now()}`,
+      entryPIN,
+    );
+    const manager = await enrollRole(baseURL, "manager");
+    await switchEnrolledProfile(baseURL, manager, profileID, entryPIN);
+    const context = await browser.newContext({ storageState: storageStateFor(baseURL, manager) });
+    const page = await context.newPage();
+    try {
+      const errors = collectFatalErrors(page);
+      await gotoManage(page, "restrictions");
+      const setPin = page.getByRole("button", { name: "Set PIN", exact: true });
+      const unlock = page.locator("#reveal-pin");
+      await expect(page.getByText(/No Restrictions PIN is set yet/)).toBeVisible();
+      await expect(unlock).toHaveCount(0);
 
-    await expect(page.getByText(/No Restrictions PIN is set yet/)).toBeVisible();
-    await page.getByLabel("New PIN").fill("2463");
-    await page.getByLabel("Confirm PIN").fill("2463");
-    await setPin.click();
-    await expect(page.getByRole("status")).toHaveText("PIN saved.");
+      await page.getByLabel("New PIN").fill("2463");
+      await page.getByLabel("Confirm PIN").fill("2463");
+      await setPin.click();
+      await expect(page.getByText("PIN saved.", { exact: true })).toBeVisible();
 
-    await unlock.fill("2463");
-    await page.getByRole("button", { name: "Reveal", exact: true }).click();
-    await expect(page.locator('[data-slot="status-badge"][data-state="revealed"]')).toBeVisible();
+      await unlock.fill("2463");
+      await page.getByRole("button", { name: "Reveal", exact: true }).click();
+      await expect(page.locator('[data-slot="status-badge"][data-state="revealed"]')).toBeVisible();
 
-    await page.getByRole("button", { name: "Change PIN", exact: true }).click();
-    await page.getByLabel("New PIN").fill("2463");
-    await page.getByLabel("Confirm PIN").fill("2463");
-    await page.getByRole("button", { name: "Change PIN", exact: true }).click();
-    await expect(page.getByRole("status")).toHaveText("PIN saved.");
-    await expect(
-      page.getByRole("link", { name: "Choose restricted Libraries in Console › Libraries" }),
-    ).toBeVisible();
+      await page.getByRole("button", { name: "Change PIN", exact: true }).click();
+      await page.getByLabel("New PIN").fill("8642");
+      await page.getByLabel("Confirm PIN").fill("8642");
+      await page.getByRole("button", { name: "Change PIN", exact: true }).click();
+      await expect(page.getByText("PIN saved.", { exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "Choose restricted Libraries in Console › Libraries" }),
+      ).toBeVisible();
 
-    await page.getByRole("button", { name: "Relock", exact: true }).click();
-    await expect(unlock).toBeVisible();
-    expect(errors, errors.join("\n")).toEqual([]);
+      await page.getByRole("button", { name: "Relock", exact: true }).click();
+      await unlock.fill("8642");
+      await page.getByRole("button", { name: "Reveal", exact: true }).click();
+      await expect(page.locator('[data-slot="status-badge"][data-state="revealed"]')).toBeVisible();
+      expect(errors, errors.join("\n")).toEqual([]);
+    } finally {
+      await context.close();
+    }
   });
 
   test("profile screen renders", async ({ page }) => {

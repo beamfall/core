@@ -99,6 +99,12 @@ export interface SessionState {
   switchProfile: (profileID: string, pin?: string) => Promise<void>;
   /** Re-reads the roster in place (a renamed Profile, a new avatar). */
   refreshProfiles: () => Promise<void>;
+  /**
+   * Re-reads currentSession in place, inside the current identity epoch (a
+   * Restrictions PIN set or changed). Nothing is cleared, so open pages keep
+   * their state.
+   */
+  refreshSession: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionState | null>(null);
@@ -328,6 +334,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!signal?.aborted) setProfiles(next);
   }, []);
 
+  const refreshSession = useCallback(async () => {
+    const signal = controllerRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    const next = await fetchCurrentSession(signal);
+    // A load that cleared the session owns the next value; never resurrect it.
+    if (!signal.aborted) setSession((current) => (current ? next : current));
+  }, []);
+
   const value = useMemo<SessionState>(
     () => ({
       session,
@@ -347,6 +361,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       relock,
       switchProfile,
       refreshProfiles,
+      refreshSession,
     }),
     [
       session,
@@ -361,6 +376,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       relock,
       switchProfile,
       refreshProfiles,
+      refreshSession,
     ],
   );
 

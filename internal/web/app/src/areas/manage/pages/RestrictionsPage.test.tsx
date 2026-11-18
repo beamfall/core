@@ -14,7 +14,7 @@ vi.mock("@/lib/graphql", () => ({ setRevealPin: vi.fn() }));
 
 const reveal = vi.fn();
 const relock = vi.fn();
-const refresh = vi.fn();
+const refreshSession = vi.fn();
 
 function withSession(revealPinSet: boolean | undefined, revealed: boolean) {
   vi.mocked(useSession).mockReturnValue({
@@ -22,7 +22,7 @@ function withSession(revealPinSet: boolean | undefined, revealed: boolean) {
     revealed,
     reveal,
     relock,
-    refresh,
+    refreshSession,
   } as unknown as SessionState);
 }
 
@@ -39,7 +39,7 @@ function renderPage() {
 describe("Manage Restrictions setup (CORE-2463)", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    refresh.mockResolvedValue(undefined);
+    refreshSession.mockResolvedValue(undefined);
     reveal.mockResolvedValue(true);
   });
 
@@ -78,7 +78,7 @@ describe("Manage Restrictions setup (CORE-2463)", () => {
 
     await waitFor(() => expect(setRevealPin).toHaveBeenCalledWith("1234"));
     expect(await screen.findByRole("status")).toHaveTextContent("PIN saved.");
-    expect(refresh).toHaveBeenCalled();
+    expect(refreshSession).toHaveBeenCalled();
     expect(screen.getByLabelText("New PIN")).toHaveValue("");
   });
 

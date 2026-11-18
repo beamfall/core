@@ -20,7 +20,7 @@ import { useSession } from "@/lib/session";
 // PIN. Which Libraries are restricted is chosen in Console › Libraries.
 export function RestrictionsPage() {
   const t = useT();
-  const { session, revealed, reveal, relock, refresh } = useSession();
+  const { session, revealed, reveal, relock, refreshSession } = useSession();
   // A server that predates revealPinSet (CORE-2462) leaves it absent: assume a
   // PIN is set so the page keeps its unlock field.
   const pinSet = session?.revealPinSet !== false;
@@ -66,7 +66,9 @@ export function RestrictionsPage() {
   const onPinSaved = async () => {
     setChanging(false);
     setSaved(true);
-    await refresh();
+    // In place, not refresh(): a full reload unmounts this page and loses the
+    // confirmation. A failed re-read keeps the page as it is.
+    await refreshSession().catch(() => {});
   };
 
   const librariesLink = (
