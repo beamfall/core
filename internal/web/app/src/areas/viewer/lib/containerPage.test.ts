@@ -51,6 +51,17 @@ describe("ancestorOf (CORE-2510)", () => {
     expect(ancestorOf(part, 10)?.id).toBe("w1");
   });
 
+  it("never takes a container of the page's own kind as its ancestor", () => {
+    const peer = {
+      kind: "part",
+      archetype: "container",
+      items: [entityItem("p1", "Part 1", { engagement: { totalCount: 30 } })],
+    };
+    expect(
+      ancestorOf({ ...part, relatedEntities: [peer, ...(part.relatedEntities ?? [])] }, 10)?.id,
+    ).toBe("w1");
+  });
+
   it("finds none without own Media, for a non-container, or when no container is larger", () => {
     expect(ancestorOf(part, 0)).toBeNull();
     expect(ancestorOf({ ...part, archetype: "person" }, 10)).toBeNull();

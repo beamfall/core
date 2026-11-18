@@ -43,6 +43,13 @@ export function ContainerMediaRows({
     navigate(`/watch/${encodeURIComponent(item.id)}`, { state });
   }
 
+  // The detail page forwards the container's queue to its own Play.
+  function linkState(item: SourceItem) {
+    const link = mediaLinkState(item, identity);
+    if (!link || queue.length === 0) return link;
+    return { ...link, queue: queueWindow(queue, item.id), queueIdentity: identity };
+  }
+
   return (
     <ol className="bf-rows" aria-label={label}>
       {media.map((item, index) => {
@@ -58,7 +65,7 @@ export function ContainerMediaRows({
             <Link
               className="bf-row-link"
               to={`/media/${encodeURIComponent(item.id)}`}
-              state={mediaLinkState(item, identity)}
+              state={linkState(item)}
             >
               <span className="bf-row-thumb" aria-hidden>
                 {thumb && <img src={artworkBucketURL(thumb, "w320")} alt="" loading="lazy" />}
@@ -94,6 +101,11 @@ export function ContainerMediaRows({
                         {t("entityDetailWatched")}
                       </span>
                     )}
+                  </span>
+                )}
+                {progress && (
+                  <span className="sr-only">
+                    {t("mediaDetailProgress", { percent: progress.percent })}
                   </span>
                 )}
                 {summary && <span className="bf-row-summary">{summary}</span>}

@@ -37,7 +37,8 @@ export function ancestorOf(
 ): SourceItem | null {
   if (!entity || entity.archetype !== "container" || ownMediaCount <= 0) return null;
   const containers = (entity.relatedEntities ?? []).filter(
-    (group) => group.archetype === "container",
+    // A related item's own kind is the generic "entity"; its group names the Kind.
+    (group) => group.archetype === "container" && group.kind !== entity.kind,
   );
   return ancestorItems(containers, entity, ownMediaCount)[0] ?? null;
 }

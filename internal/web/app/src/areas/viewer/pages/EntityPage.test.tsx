@@ -16,6 +16,7 @@ import { EntityPage } from "./EntityPage";
 const mocks = vi.hoisted(() => ({
   identity: null as string | null,
   layouts: [] as Layout[],
+  revealed: false,
 }));
 
 vi.mock("@/lib/graphql", () => ({
@@ -24,7 +25,7 @@ vi.mock("@/lib/graphql", () => ({
 }));
 vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
 vi.mock("@/lib/session", () => ({
-  useSession: () => ({ manifest: { layouts: mocks.layouts } }),
+  useSession: () => ({ manifest: { layouts: mocks.layouts }, revealed: mocks.revealed }),
   useViewerIdentity: () => mocks.identity,
 }));
 vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
@@ -904,6 +905,45 @@ describe("EntityPage middle and top containers", () => {
     expect(links[0]).not.toHaveAttribute("aria-current");
     // A middle container is not offered similar ones.
     expect(screen.queryByRole("heading", { name: "Related" })).toBeNull();
+  });
+
+  it("links the parent and siblings by readable address, bare in a Revealed session", async () => {
+    const parentID = `entity-${"a".repeat(32)}`;
+    const siblingID = `entity-${"b".repeat(32)}`;
+    const readablePart: EntityInfo = {
+      ...part,
+      relatedEntities: [
+        {
+          ...part.relatedEntities![0],
+          items: [ref(parentID, "The Whole", { engagement: { totalCount: 20 } })],
+        },
+      ],
+    };
+    const readableWhole: EntityInfo = {
+      ...whole,
+      id: parentID,
+      relatedEntities: [
+        { ...whole.relatedEntities![0], items: [ref(siblingID, "Part 1"), ref("e1", "Part 2")] },
+      ],
+    };
+    serve([readablePart, readableWhole]);
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(episodes);
+    for (const revealed of [false, true]) {
+      mocks.revealed = revealed;
+      const { unmount } = renderEntity();
+      await act(async () => {});
+      await act(async () => {});
+      expect(screen.getByRole("link", { name: "The Whole" })).toHaveAttribute(
+        "href",
+        revealed ? `/entity/${parentID}` : `/entity/the-whole-${"a".repeat(32)}`,
+      );
+      expect(screen.getByRole("link", { name: "Part 1" })).toHaveAttribute(
+        "href",
+        revealed ? `/entity/${siblingID}` : `/entity/the-whole-part-1-${"b".repeat(32)}`,
+      );
+      unmount();
+    }
+    mocks.revealed = false;
   });
 
   it("clamps a long overview field with a More toggle instead of listing it", async () => {

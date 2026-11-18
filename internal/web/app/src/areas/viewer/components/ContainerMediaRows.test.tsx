@@ -83,7 +83,17 @@ describe("ContainerMediaRows (CORE-2510)", () => {
     const link = screen.getByRole("link", { name: /^Countdown/ });
     expect(link).toHaveAttribute("href", "/media/m1");
     fireEvent.click(link);
-    expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent(/^m1/);
+    const detail = screen.getByRole("status", { name: "detail" }).textContent ?? "";
+    expect(detail.startsWith("m1 ")).toBe(true);
+    const state = JSON.parse(detail.slice(3));
+    expect(state.mediaPreview.mediaID).toBe("m1");
+    expect(state.queue.map((item: { id: string }) => item.id)).toContain("m2");
+    expect(state.queueIdentity).toBe(identity);
+  });
+
+  it("names a partly played row's progress for assistive technology", () => {
+    renderRows(items);
+    expect(screen.getByRole("link", { name: /^Liftoff/ })).toHaveAccessibleName(/20%/);
   });
 
   it("plays from a separate button with the container's Media as the queue", () => {

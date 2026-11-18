@@ -103,7 +103,7 @@ export function EntityPage() {
   const { entityId: address = "" } = useParams();
   const entityId = entityIdFromAddress(address);
   const location = useLocation();
-  const { manifest } = useSession();
+  const { manifest, revealed } = useSession();
   const identity = useViewerIdentity();
   const displayLocale = useDisplayLocale();
   const t = useT();
@@ -489,7 +489,7 @@ export function EntityPage() {
                 {ancestor && (
                   <p className="bf-entity-parent">
                     <Link
-                      to={entityPath(ancestor.id, { title: ancestor.title })}
+                      to={entityPath(ancestor.id, revealed ? undefined : { title: ancestor.title })}
                       state={entityLinkState(ancestor, identity)}
                     >
                       {ancestor.title}
@@ -509,7 +509,10 @@ export function EntityPage() {
                       {siblings.items.map((item) => (
                         <li key={item.id}>
                           <Link
-                            to={entityPath(item.id, { title: item.title, parent: ancestor?.title })}
+                            to={entityPath(
+                              item.id,
+                              revealed ? undefined : { title: item.title, parent: ancestor?.title },
+                            )}
                             state={entityLinkState(item, identity)}
                             aria-current={item.id === entityId ? "page" : undefined}
                           >

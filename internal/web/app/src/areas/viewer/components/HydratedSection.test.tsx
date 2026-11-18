@@ -179,7 +179,7 @@ describe("HydratedSection identity-scoped cache", () => {
 
     await act(async () => resolve([fresh]));
     expect(screen.getByRole("link", { name: /^Fresh item/ })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /^Visible item/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
     expect(readViewerCache(identity, key)).toEqual([fresh]);
   });
 
@@ -191,7 +191,7 @@ describe("HydratedSection identity-scoped cache", () => {
     const { container } = renderSection();
 
     expect(container.querySelectorAll(".bf-shimmer")).toHaveLength(8);
-    expect(screen.queryByRole("button", { name: /^Visible item/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Visible item/ })).toBeNull();
   });
 
   it("aborts the in-flight fetch on unmount and neither renders nor caches its result", async () => {
