@@ -30,7 +30,8 @@ containers read in plain title order.
   router link instead of a button, so modifier and middle clicks open a new tab. Its More menu
   stays a sibling control. Container child rows were links already.
 - Entity pages get readable addresses (CORE-2511): `/entity/<words>-<token>`, with the ancestor's
-  words as a leading segment for a middle container (`/entity/3-body-problem/season-1-<token>`).
+  title leading a middle container's words (`/entity/3-body-problem-season-1-<token>`). One path
+  segment keeps the existing `/entity/:entityId` route and its UI-state inventory.
   The token is the 32-digit hex of the content-derived Entity ID, so the client resolves it with no
   server lookup. A bare `/entity/<id>` keeps working and is rewritten in place; a Revealed session
   keeps the bare form.

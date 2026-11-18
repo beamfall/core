@@ -9,7 +9,7 @@
 ## 2. Links and addresses (CORE-2511)
 
 - [ ] 2.1 `MediaItemCard` renders an anchor; the More menu stays a sibling
-- [ ] 2.2 `/entity/*` route resolves bare IDs and readable addresses; canonical rewrite skips Revealed sessions
+- [ ] 2.2 `/entity/:entityId` resolves bare IDs and readable addresses; canonical rewrite skips Revealed sessions
 - [ ] 2.3 Vitest for anchors and address resolution
 
 ## 3. Lower rails and shelf ranking (CORE-2512)

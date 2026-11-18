@@ -14,12 +14,12 @@ middle clicks open a new tab. Its More menu SHALL stay a separate control.
 
 An Entity page address SHALL read `/entity/<words>-<token>`, where the token is the hex digest of a
 content-derived Entity ID (`entity-` plus 32 hex digits) and the words are the folded title. A
-middle container SHALL lead with its ancestor's words as a segment.
+middle container's words SHALL lead with its ancestor's title, in the same single path segment.
 
 #### Scenario: Middle container address
 
 - **WHEN** a container titled "Season 1" under "3 Body Problem" is shown
-- **THEN** the address is `/entity/3-body-problem/season-1-<hex>`
+- **THEN** the address is `/entity/3-body-problem-season-1-<hex>`
 
 ### Requirement: Entity addresses resolve without a lookup
 
