@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MediaCredit, SourceItem } from "@/lib/graphql/types";
-import { castGroups, creditPart, filmographyOrder, nameInitial } from "./people";
+import { castGroups, castHasDetail, creditPart, filmographyOrder, nameInitial } from "./people";
 
 const person = (entityID: string, attributes?: Record<string, string>): MediaCredit => ({
   entityID,
@@ -40,6 +40,23 @@ describe("creditPart", () => {
     expect(creditPart(person("a", { character: " ", role: "Lead" }))).toBe("Lead");
     expect(creditPart(person("a", { job: "Director" }))).toBe("Director");
     expect(creditPart(person("a"))).toBe("");
+  });
+});
+
+describe("castHasDetail", () => {
+  it("is true when a person credit carries a headshot or a part", () => {
+    expect(castHasDetail([person("a"), { ...person("b"), artworkSlots: { thumb: "/t" } }])).toBe(
+      true,
+    );
+    expect(castHasDetail([person("a", { job: "Narrator" })])).toBe(true);
+  });
+
+  it("is false for names only, or detail on a credit that is not a person", () => {
+    expect(castHasDetail([person("a"), person("b", { department: "Sound" })])).toBe(false);
+    expect(
+      castHasDetail([{ ...person("g", { role: "x" }), archetype: "category" }, person("a")]),
+    ).toBe(false);
+    expect(castHasDetail(null)).toBe(false);
   });
 });
 

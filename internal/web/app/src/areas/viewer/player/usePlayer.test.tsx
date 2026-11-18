@@ -11,6 +11,7 @@ import {
 import { fetchPlaybackMarkers } from "@/lib/graphql";
 import type { PlaybackMarker } from "@/lib/graphql/types";
 import { ApiError, fetchPlaybackInfo } from "../lib/playback";
+import type { StartTracks } from "../lib/watchQueue";
 import { deliverPlayerCommand, resetAppliedControlEvents } from "../remote/remoteControl";
 import { DEFAULT_ADJUSTMENT, selectHlsLevel, selectHlsRendition, usePlayer } from "./usePlayer";
 
@@ -156,11 +157,15 @@ function Harness({
   startAtSeconds,
   nextMediaID,
   selectedVersion,
+  startTracks,
+  startID,
 }: {
   mediaID?: string;
   startAtSeconds?: number;
   nextMediaID?: string;
   selectedVersion?: string;
+  startTracks?: StartTracks;
+  startID?: string;
 }) {
   const { videoRef, state, retry, restart, switchToHls, adjust } = usePlayer(
     mediaID,
@@ -168,6 +173,8 @@ function Harness({
     startAtSeconds,
     nextMediaID,
     selectedVersion,
+    startTracks,
+    startID,
   );
   return (
     <>
@@ -1245,6 +1252,150 @@ describe("usePlayer", () => {
       });
       await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
       expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
+    });
+
+    // CORE-2442: picks made on the detail page before playback.
+    const textTracks = {
+      decision: "direct-play",
+      streams: [{ kind: "direct-play", url: "/api/media/direct/alpha" }],
+      captionTracks: [
+        { id: "muxed-main-3", format: "subrip", streamIndex: 3, language: "eng", url: "/s/3.vtt" },
+        { id: "sidecar-main-0", format: "srt", language: "deu", sdh: true, url: "/s/side.vtt" },
+      ],
+      selectedSubtitleTrack: {
+        track: { kind: "muxed", language: "eng" },
+        reason: "preferred-language subtitles",
+      },
+    };
+
+    it("starts with the audio and caption picked before playback, over the server's pick", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      render(
+        <Harness
+          startTracks={{ mediaID: "media-alpha", audioIndex: 2, captionID: "sidecar-main-0" }}
+        />,
+      );
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(shown(video)).toEqual(["sidecar-main-0"]));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[0][4]).toEqual({
+        selectedAudioIndex: 2,
+        selectedSubtitleIndex: undefined,
+      });
+    });
+
+    // Review finding P2-2: Start over while docked keeps the player for the
+    // same Media; the picks it carries still apply, and a reload keeps them.
+    it("applies new picks on a fresh start of the same Media, and a reload keeps the picks in force", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(textTracks);
+      const view = render(<Harness startTracks={{ mediaID: "media-alpha", audioIndex: 2 }} />);
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[0][4]).toEqual({
+        selectedAudioIndex: 2,
+        selectedSubtitleIndex: undefined,
+      });
+
+      view.rerender(
+        <Harness startAtSeconds={0} startTracks={{ mediaID: "media-alpha", audioIndex: 4 }} />,
+      );
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toEqual({
+        selectedAudioIndex: 4,
+        selectedSubtitleIndex: undefined,
+      });
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+      // A reload with other picks handed in is not a new start.
+      view.rerender(
+        <Harness startAtSeconds={0} startTracks={{ mediaID: "media-alpha", audioIndex: 7 }} />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "retry" }));
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(3));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[2][4]).toEqual({
+        selectedAudioIndex: 4,
+        selectedSubtitleIndex: undefined,
+      });
+    });
+
+    // Codex round 2, P2-1: Start over pressed again (same ?t=0) with new picks
+    // is a new start, told apart by its startID; the same startID is not.
+    it("starts afresh with new picks on a repeated Start over, keyed by its startID", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValue(textTracks);
+      const view = render(
+        <Harness
+          startAtSeconds={0}
+          startID="s1"
+          startTracks={{ mediaID: "media-alpha", audioIndex: 2 }}
+        />,
+      );
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+
+      view.rerender(
+        <Harness
+          startAtSeconds={0}
+          startID="s2"
+          startTracks={{ mediaID: "media-alpha", audioIndex: 4 }}
+        />,
+      );
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toEqual({
+        selectedAudioIndex: 4,
+        selectedSubtitleIndex: undefined,
+      });
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+
+      // The same start (the mini player expanded) does not reload.
+      view.rerender(
+        <Harness
+          startAtSeconds={0}
+          startID="s2"
+          startTracks={{ mediaID: "media-alpha", audioIndex: 4 }}
+        />,
+      );
+      await act(async () => {});
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2);
+    });
+
+    it("starts with subtitles off when Off was picked, and ignores picks for another Media", async () => {
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      const view = render(<Harness startTracks={{ mediaID: "media-alpha", captionID: null }} />);
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("playing"));
+      expect(shown(video)).toEqual([]);
+      view.unmount();
+
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      render(<Harness startTracks={{ mediaID: "media-beta", audioIndex: 2, captionID: null }} />);
+      const next = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(shown(next)).toEqual(["muxed-main-3"]));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toBeUndefined();
+    });
+
+    it("burns in a picked picture-based track, and falls back when the file lacks the pick", async () => {
+      const picture = {
+        decision: "direct-stream",
+        streams: [{ kind: "hls", url: "/api/media/hls/token.m3u8" }],
+        captionTracks: [
+          { id: "muxed-main-6", format: "hdmv_pgs_subtitle", streamIndex: 6, language: "fra" },
+        ],
+      };
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(picture).mockResolvedValueOnce(picture);
+      const view = render(
+        <Harness startTracks={{ mediaID: "media-alpha", captionID: "muxed-main-6" }} />,
+      );
+      await waitFor(() => expect(fetchPlaybackInfo).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetchPlaybackInfo).mock.calls[1][4]).toEqual({
+        selectedAudioIndex: undefined,
+        selectedSubtitleIndex: 6,
+      });
+      view.unmount();
+
+      vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce(textTracks);
+      render(<Harness startTracks={{ mediaID: "media-alpha", captionID: "muxed-main-9" }} />);
+      const video = screen.getByTestId("player") as HTMLVideoElement;
+      await waitFor(() => expect(shown(video)).toEqual(["muxed-main-3"]));
+      expect(fetchPlaybackInfo).toHaveBeenCalledTimes(3);
     });
   });
 

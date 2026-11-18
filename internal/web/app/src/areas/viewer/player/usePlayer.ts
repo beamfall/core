@@ -26,6 +26,7 @@ import {
   resumePositionFromInfo,
   type TrickplayManifest,
 } from "../lib/transport";
+import type { StartTracks } from "../lib/watchQueue";
 import { remoteHoldsAutoplay, remotePlayStateMark } from "../remote/remoteControl";
 import {
   freshRecoveryBudget,
@@ -125,17 +126,30 @@ interface TrackChoice {
   startCaptionAdopted?: boolean;
 }
 
+/** The picks a detail page made before playback (CORE-2442), as this Media's first choice. */
+function startChoice(mediaID: string, start: StartTracks | undefined): TrackChoice {
+  if (!start || start.mediaID !== mediaID) return { mediaID };
+  return { mediaID, audioIndex: start.audioIndex, captionID: start.captionID };
+}
+
 /**
- * Takes up the server's start-of-playback subtitle pick, once per Media and
- * only before the viewer picks: a text track is shown when the stream
+ * Takes up the start-of-playback subtitle, once per Media and only before the
+ * viewer picks in the player: the caption picked on the detail page when this
+ * file has it, else the server's pick. A text track is shown when the stream
  * attaches, and a picture-based one needs the stream asked for again with it
  * burned in, which the return value reports.
  */
 function adoptStartCaption(choice: TrackChoice, info: PlaybackInfo): boolean {
   if (choice.startCaptionAdopted) return false;
   choice.startCaptionAdopted = true;
-  if (choice.captionID !== undefined || choice.burnIndex !== undefined) return false;
-  const track = matchSelectedCaption(info.captionTracks, info.selectedSubtitleTrack);
+  if (choice.burnIndex !== undefined || choice.captionID === null) return false;
+  let track: PlaybackCaptionTrack | undefined;
+  if (choice.captionID !== undefined) {
+    track = info.captionTracks?.find((candidate) => candidate.id === choice.captionID);
+    // A pick this file does not hold (another Version played) falls back.
+    if (!track) choice.captionID = undefined;
+  }
+  track ??= matchSelectedCaption(info.captionTracks, info.selectedSubtitleTrack);
   if (!track) return false;
   choice.captionID = track.id;
   if (!isBurnInCaption(track)) return false;
@@ -433,6 +447,10 @@ export function usePlayer(
   nextMediaID?: string,
   /** The Version id the viewer picked for this Media (CORE-1676); "" lets the server choose. */
   selectedVersion = "",
+  /** Audio and caption picks made before playback (CORE-2442); used only for their Media. */
+  startTracks?: StartTracks,
+  /** One explicit start's identity (PlayerNavState.startID): a new one loads afresh. */
+  startID?: string,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -455,8 +473,15 @@ export function usePlayer(
   // The viewer's audio and caption picks: refs, since a pick that needs a new
   // stream reloads through retry() at the playhead. Another Media starts with
   // the server's choice.
-  const trackChoiceRef = useRef<TrackChoice>({ mediaID });
-  if (trackChoiceRef.current.mediaID !== mediaID) trackChoiceRef.current = { mediaID };
+  const trackChoiceRef = useRef<TrackChoice>(startChoice(mediaID, startTracks));
+  if (trackChoiceRef.current.mediaID !== mediaID) {
+    trackChoiceRef.current = startChoice(mediaID, startTracks);
+  }
+  // Read by the load effect: every explicit start (a new startID or ?t= for
+  // the same Media, as Start over while docked) begins from the picks it was
+  // handed.
+  const startTracksRef = useRef(startTracks);
+  startTracksRef.current = startTracks;
   const captionTracksRef = useRef<PlaybackCaptionTrack[]>([]);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -632,11 +657,18 @@ export function usePlayer(
     // reloads (recovery, a renewed token) included.
     let startMark = remotePlayStateMark();
     setState(emptyState());
-    const retryFrom = retryFromRef.current?.mediaID === mediaID ? retryFromRef.current.position : 0;
-    const retryPaused = retryFromRef.current?.mediaID === mediaID && !!retryFromRef.current.paused;
+    const reloading = retryFromRef.current?.mediaID === mediaID;
+    const retryFrom = reloading ? (retryFromRef.current?.position ?? 0) : 0;
+    const retryPaused = reloading && !!retryFromRef.current?.paused;
     retryFromRef.current = null;
     const restartFrom = restartRef.current?.mediaID === mediaID ? restartRef.current : null;
     restartRef.current = null;
+    // A reload (Try again, an in-player pick, a key or quality change) keeps
+    // the picks made since; an explicit start here takes the picks it was
+    // handed again. Another device's restart keeps them too.
+    if (!reloading && !restartFrom) {
+      trackChoiceRef.current = startChoice(mediaID, startTracksRef.current);
+    }
     const startAt = restartFrom ? restartFrom.at : startAtSeconds;
     lastPositionRef.current = retryFrom;
     presentedPositionRef.current = null;
@@ -1356,7 +1388,7 @@ export function usePlayer(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaID, startAtSeconds, retryKey]);
+  }, [mediaID, startAtSeconds, retryKey, startID]);
 
   // Report on pause / seek / end edges.
   useEffect(() => {

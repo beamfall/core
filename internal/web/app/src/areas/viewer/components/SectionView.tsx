@@ -31,12 +31,15 @@ export function SectionView({
   items,
   seeAll,
   navigationID,
+  playOnActivate,
 }: {
   section: Section;
   items: SourceItem[];
   /** When set (shelves), renders the See-All affordance to this target. */
   seeAll?: SeeAllTarget;
   navigationID?: string;
+  /** Cards start playback instead of opening a detail page; defaults to list Sections only. */
+  playOnActivate?: boolean;
 }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
@@ -105,7 +108,7 @@ export function SectionView({
               posInSet={index + 1}
               setSize={items.length}
               queue={queue}
-              playOnActivate={section.kind === "list"}
+              playOnActivate={playOnActivate ?? section.kind === "list"}
               showYear={showsYear(item, repeated)}
               focusAnchor={
                 navigationID

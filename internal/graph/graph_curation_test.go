@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 )
@@ -199,8 +200,8 @@ func TestRelationReadsBatchFavoriteFixtures(t *testing.T) {
 		t.Fatalf("media relations = %#v errors=%#v", mediaResp.Data.MediaRelations, mediaResp.Errors)
 	}
 	wantMediaRelations := []MediaRelationInfo{
-		{Relation: "extra-of", Media: MediaInfo{ID: string(favoriteExtra.ID), Title: "A Favorite Extra", Favorited: true}},
-		{Relation: "extra-of", Media: MediaInfo{ID: string(plainExtra.ID), Title: "B Plain Extra"}},
+		{Relation: "extra-of", Media: MediaInfo{ID: string(favoriteExtra.ID), Title: "A Favorite Extra", Favorited: true, MediaClass: "video"}},
+		{Relation: "extra-of", Media: MediaInfo{ID: string(plainExtra.ID), Title: "B Plain Extra", MediaClass: "video"}},
 	}
 	if !reflect.DeepEqual(mediaResp.Data.MediaRelations, wantMediaRelations) {
 		t.Fatalf("media relations = %#v, want %#v", mediaResp.Data.MediaRelations, wantMediaRelations)
@@ -284,5 +285,49 @@ func TestCurationRelationWritesAreManagerGatedAndRevealFiltered(t *testing.T) {
 	hiddenMutation := `{"query":"mutation($fromEntityID:String!,$relation:String!,$toMediaID:String!){ upsertEntityRelation(fromEntityID:$fromEntityID, relation:$relation, toMediaID:$toMediaID){ targetID } }","variables":{"fromEntityID":"entity-source","relation":"contains","toMediaID":"` + string(hidden.ID) + `"}}`
 	if got := graphPost(t, handler, authorizeManager, hiddenMutation); !bytes.Contains(got, []byte("unknown target media")) {
 		t.Fatalf("hidden target write = %s", got)
+	}
+}
+
+// TestMediaRelationsCarryCardFields covers the detail page's Extras row read
+// (CORE-2439): each related Media carries its artwork, duration and class, the
+// same values media(id) returns, so a client can draw a card.
+func TestMediaRelationsCarryCardFields(t *testing.T) {
+	st := storetest.Open(t)
+	ctx := context.Background()
+	handler := newTestHandlerWithStore(st)
+
+	importMedia := func(path, title, fingerprint string, duration int) store.Media {
+		t.Helper()
+		media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: "library-local", Path: path, Title: title,
+			Container: "mp4", Codec: "h264", ContentFingerprint: fingerprint,
+			Class: store.MediaClassVideo, DurationSecondsHint: duration,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return media
+	}
+	parent := importMedia("/media/parent.mp4", "Parent", "fp-parent", 0)
+	extra := importMedia("/media/extra.mp4", "Extra", "fp-extra", 95)
+	if err := st.LinkMediaRelation(ctx, extra.ID, store.MediaRelationExtraOf, parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	handler.SetArtwork(fakeArtworkLocator{media: map[store.MediaID]map[string]bool{
+		extra.ID: {artwork.SlotPoster: true},
+	}})
+
+	got := graphData[[]MediaRelationInfo](t, handler,
+		`query($mediaID:String!){ mediaRelations(mediaID:$mediaID, relation:"extra-of"){ relation media { id title artworkSlots durationSeconds mediaClass } } }`,
+		map[string]any{"mediaID": string(parent.ID)}, "mediaRelations")
+	if len(got) != 1 {
+		t.Fatalf("mediaRelations = %#v", got)
+	}
+	media := got[0].Media
+	if media.ID != string(extra.ID) || media.MediaClass != string(store.MediaClassVideo) || media.DurationSeconds != 95 {
+		t.Fatalf("media = %#v, want class %q duration 95 (stored %d)", media, store.MediaClassVideo, extra.DurationSeconds)
+	}
+	if poster := media.ArtworkSlots[artwork.SlotPoster]; poster != "/api/media/artwork/"+string(extra.ID)+"/poster?v="+fakeArtworkVersion {
+		t.Fatalf("artworkSlots = %#v", media.ArtworkSlots)
 	}
 }

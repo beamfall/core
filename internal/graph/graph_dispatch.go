@@ -515,6 +515,8 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"mediafields":                        newFieldHandler("mediaFields", "mediaFields", fieldRead, roleSession, 15),
 	"mediafiles":                         newFieldHandler("mediaFiles", "mediaFiles", fieldRead, roleSession, 9),
 	"mediaforentity":                     newFieldHandler("mediaForEntity", "mediaForEntity", fieldRead, roleSession, 8),
+	"mediatracks":                        newFieldHandler("mediaTracks", "mediaTracks", fieldRead, roleSession, 9),
+	"relatedmedia":                       newFieldHandler("relatedMedia", "relatedMedia", fieldRead, roleSession, 9),
 	"mediarelations":                     newFieldHandler("mediaRelations", "mediaRelations", fieldRead, roleSession, 10),
 	"mergeentities":                      newFieldHandler("mergeEntities", "mergeEntities", fieldMutation, roleSession|roleManager, 110),
 	"mergemedia":                         newFieldHandler("mergeMedia", "mergeMedia", fieldMutation, roleSession|roleManager, 110),
@@ -870,6 +872,18 @@ func dispatchFieldBlock009(dispatch *fieldDispatchContext) response {
 	if fields["mediafiles"] {
 		files, err := h.mediaFiles(ctx, scope, req)
 		if resp := resolveField(dispatch, "mediafiles", files, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["mediatracks"] {
+		tracks, err := h.mediaTracks(ctx, scope, req)
+		if resp := resolveField(dispatch, "mediatracks", tracks, err); len(resp.Errors) > 0 {
+			return resp
+		}
+	}
+	if fields["relatedmedia"] {
+		items, err := h.relatedMedia(ctx, scope, req)
+		if resp := resolveField(dispatch, "relatedmedia", items, err); len(resp.Errors) > 0 {
 			return resp
 		}
 	}

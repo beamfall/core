@@ -1,6 +1,7 @@
 import { ApiError, graphql } from "@/lib/api";
 import type { EntityFieldInfo, GenericMediaInfo, Section, SourceItem } from "@/lib/graphql/types";
 import { viewerCacheEntries } from "@/lib/viewerCache";
+import type { PlaybackAudioTrack, PlaybackCaptionTrack } from "./playback";
 
 // Data for the Media detail page (/media/:mediaId, CORE-1144).
 //
@@ -11,9 +12,15 @@ import { viewerCacheEntries } from "@/lib/viewerCache";
 // another identity's item.
 
 const MEDIA_QUERY =
-  "query Media($id: String!) { media(id: $id) { id title summary year durationSeconds mediaClass libraryID favorited artworkSlots credits { entityID title kind kindDisplayName archetype relation } } }";
+  "query Media($id: String!) { media(id: $id) { id title summary year durationSeconds mediaClass libraryID favorited artworkSlots credits { entityID title kind kindDisplayName archetype relation attributes artworkSlots } } }";
 const MEDIA_FIELDS_QUERY =
   "query MediaFields($mediaID: String!) { mediaFields(mediaID: $mediaID) { name type value label } }";
+
+const MEDIA_RELATIONS_QUERY =
+  "query MediaRelations($mediaID: String!, $relation: String!) { mediaRelations(mediaID: $mediaID, relation: $relation) { media { id title year durationSeconds mediaClass artworkSlots } } }";
+
+const MEDIA_TRACKS_QUERY =
+  "query MediaTracks($mediaID: String!) { mediaTracks(mediaID: $mediaID) { versions { id label videoCodec hdr audioTracks { streamIndex codec language channels default commentary visualImpaired } captionTracks { id format streamIndex language forced sdh visualImpaired commentary title } } } }";
 
 /** The server answer for an id that is missing or hidden from this Profile (no oracle). */
 const UNKNOWN_MEDIA = "unknown media";
@@ -51,6 +58,74 @@ export async function fetchMediaDetailFields(
     signal,
   );
   return data.mediaFields ?? [];
+}
+
+interface RelatedMedia {
+  id: string;
+  title: string;
+  year?: number;
+  durationSeconds?: number;
+  mediaClass?: string;
+  artworkSlots?: Record<string, string>;
+}
+
+/**
+ * The Media related to this item by a stored relation, as cards (CORE-2439):
+ * "extra-of" lists its Extras, "edition-of" its other Editions. The server
+ * filters by this Profile's reveal level and orders by title.
+ */
+export async function fetchMediaRelations(
+  mediaID: string,
+  relation: "extra-of" | "edition-of",
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ mediaRelations: { media: RelatedMedia }[] | null }>(
+    MEDIA_RELATIONS_QUERY,
+    { mediaID, relation },
+    signal,
+  );
+  return (data.mediaRelations ?? [])
+    .filter((row) => row.media?.id && row.media.id !== mediaID)
+    .map(({ media }) => ({
+      kind: "media",
+      id: media.id,
+      title: media.title,
+      year: media.year,
+      durationSeconds: media.durationSeconds,
+      mediaClass: media.mediaClass,
+      artworkSlots: media.artworkSlots,
+    }));
+}
+
+/**
+ * One Version of a Media with the tracks its primary file holds (CORE-2442).
+ * Ids are the ones playbackInfo reports for the same file, so a pick made from
+ * this list names the same Version and caption track at playback start.
+ */
+export interface MediaTrackVersion {
+  id: string;
+  label: string;
+  videoCodec?: string;
+  hdr?: string;
+  audioTracks: PlaybackAudioTrack[];
+  captionTracks: PlaybackCaptionTrack[];
+}
+
+/** The item's Versions and their tracks, read from stored inventory without a playback session. */
+export async function fetchMediaTracks(
+  mediaID: string,
+  signal?: AbortSignal,
+): Promise<MediaTrackVersion[]> {
+  const data = await graphql<{ mediaTracks: { versions: MediaTrackVersion[] | null } | null }>(
+    MEDIA_TRACKS_QUERY,
+    { mediaID },
+    signal,
+  );
+  return (data.mediaTracks?.versions ?? []).map((version) => ({
+    ...version,
+    audioTracks: version.audioTracks ?? [],
+    captionTracks: version.captionTracks ?? [],
+  }));
 }
 
 function isUnknownMedia(err: unknown): boolean {

@@ -1,0 +1,7 @@
+- [x] Web: `ItemActions` for the `{mediaID}` target on the detail page
+- [x] Web: More menu with Add to playlist and Copy link
+- [x] Web: Media read requests credit attributes and artwork
+- [x] Web strings in every shipped locale; vitest and axe coverage
+- [ ] Verified on tower at desktop and 375px widths (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2436-media-detail-actions` after landing

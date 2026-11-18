@@ -685,6 +685,11 @@
     "tier": "session"
   },
   {
+    "field": "mediatracks",
+    "effect": "read",
+    "tier": "session"
+  },
+  {
     "field": "mergeentities",
     "effect": "write",
     "tier": "session"
@@ -923,6 +928,11 @@
     "field": "rejectpendingaitag",
     "effect": "write",
     "tier": "admin"
+  },
+  {
+    "field": "relatedmedia",
+    "effect": "read",
+    "tier": "session"
   },
   {
     "field": "relock",

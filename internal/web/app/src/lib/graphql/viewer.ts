@@ -222,6 +222,26 @@ export async function fetchMediaForEntity(
   });
 }
 
+const RELATED_MEDIA_QUERY =
+  "query RelatedMedia($mediaID: String!, $limit: Int) { relatedMedia(mediaID: $mediaID, limit: $limit) { id kind title summary artwork { poster } artworkSlots mediaClass year certification audienceScore byline engagement { positionSeconds durationSeconds completed totalCount remainingCount } } }";
+
+/**
+ * RelatedMedia — Media sharing a Media item's credits, ranked and bounded on the
+ * server with the same Mute and visibility rules as browse (CORE-2444).
+ */
+export async function fetchRelatedMedia(
+  mediaID: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<SourceItem[]> {
+  const data = await graphql<{ relatedMedia: SourceItem[] | null }>(
+    RELATED_MEDIA_QUERY,
+    { mediaID, limit },
+    signal,
+  );
+  return data.relatedMedia ?? [];
+}
+
 // --- Search ---------------------------------------------------------------
 
 const SEARCH_QUERY =

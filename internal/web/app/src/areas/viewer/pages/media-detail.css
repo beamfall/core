@@ -225,6 +225,13 @@
   height: 16px;
 }
 
+/* The More menu trigger is an icon-only 44px square (CORE-2436). */
+[data-register="viewer"] .bf-detail-more {
+  width: 44px;
+  padding-inline: 0;
+  justify-content: center;
+}
+
 [data-register="viewer"] .bf-detail-actions .bf-detail-notice {
   flex-basis: 100%;
   margin: 0;
@@ -301,7 +308,7 @@
   [data-register="viewer"] .bf-detail-poster {
     width: 120px;
   }
-  [data-register="viewer"] .bf-detail-actions > * {
+  [data-register="viewer"] .bf-detail-actions > :not(.bf-detail-more) {
     flex: 1 1 auto;
   }
   [data-register="viewer"] .bf-detail-play {
@@ -407,4 +414,21 @@
   [data-register="viewer"] .bf-cast-card {
     width: 96px;
   }
+}
+
+/* Version, Audio and Subtitles pickers under the action row (CORE-2442). */
+[data-register="viewer"] .bf-detail-tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+[data-register="viewer"] .bf-detail-track {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 18px;
 }

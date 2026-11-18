@@ -850,7 +850,7 @@ func (s *Service) Info(ctx context.Context, scope auth.Scope, req InfoRequest) (
 		return InfoResponse{}, err
 	}
 	ov := s.quirks.Resolve(capability).withClientCeiling(req.CapabilityProfile.MaxStreamingBitrate).withPolicyCeiling(policyCap)
-	main, err := s.decide(ctx, scope, mediaID, "main", capability, policy, priority, req.SelectedSubtitleIndex, req.SelectedAudioIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
+	main, err := s.decide(ctx, scope, mediaID, mainSuffix, capability, policy, priority, req.SelectedSubtitleIndex, req.SelectedAudioIndex, strings.TrimSpace(req.SelectedVersion), ov, adjust)
 	if err != nil {
 		return InfoResponse{}, err
 	}
@@ -1083,7 +1083,7 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 		}
 	}()
 	// The operator's live-session dashboard reads the main item's decision.
-	if suffix == "main" {
+	if suffix == mainSuffix {
 		defer func() {
 			if err == nil {
 				s.observe(scope.SessionID, dec, file, streams, profile, selectedSubtitleIndex, ov)
@@ -2209,7 +2209,7 @@ func (s *Service) muxedCaptionTracksInfo(ctx context.Context, grant streamtoken.
 		}
 		index := stream.Index
 		tracks = append(tracks, CaptionTrack{
-			ID:             fmt.Sprintf("muxed-%s-%d", suffix, stream.Index),
+			ID:             muxedCaptionID(suffix, stream.Index),
 			Format:         stream.Codec,
 			StreamIndex:    &index,
 			Language:       stream.Language,
@@ -2283,7 +2283,7 @@ func (s *Service) captionTracksInfo(ctx context.Context, grant streamtoken.Grant
 			continue
 		}
 		tracks = append(tracks, CaptionTrack{
-			ID:       fmt.Sprintf("sidecar-%s-%d", suffix, i),
+			ID:       sidecarCaptionID(suffix, i),
 			URL:      fmt.Sprintf("%s%d.%s", base, i, sidecarDeliveryExt(sc.Format, grant.SidecarRawASS)),
 			Format:   sc.Format,
 			Language: sc.Language,

@@ -7,6 +7,12 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent}% complete",
     mediaDetailDetails: "Details",
     mediaDetailKeepBrowsing: "Keep browsing",
+    // Extras and Editions rows (CORE-2439).
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Editions",
+    // Closing rows (CORE-2444); {name} is the first billed person.
+    mediaDetailMoreWith: "More with {name}",
+    mediaDetailRelated: "Related",
     mediaDetailPeople: "People",
     mediaDetailLoadFailed: "This item couldn’t be loaded. Check your connection and try again.",
     // Media detail lockup (CORE-1785).
@@ -44,6 +50,10 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % terminé",
     mediaDetailDetails: "Détails",
     mediaDetailKeepBrowsing: "Continuer à parcourir",
+    mediaDetailExtras: "Bonus",
+    mediaDetailEditions: "Éditions",
+    mediaDetailMoreWith: "Aussi avec {name}",
+    mediaDetailRelated: "Titres similaires",
     mediaDetailPeople: "Personnes",
     mediaDetailLoadFailed:
       "Impossible de charger cet élément. Vérifiez votre connexion et réessayez.",
@@ -77,6 +87,10 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % abgeschlossen",
     mediaDetailDetails: "Details",
     mediaDetailKeepBrowsing: "Weiter stöbern",
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Fassungen",
+    mediaDetailMoreWith: "Mehr mit {name}",
+    mediaDetailRelated: "Ähnliche Titel",
     mediaDetailPeople: "Personen",
     mediaDetailLoadFailed:
       "Dieses Element konnte nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
@@ -112,6 +126,10 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent} % completado",
     mediaDetailDetails: "Detalles",
     mediaDetailKeepBrowsing: "Seguir explorando",
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Ediciones",
+    mediaDetailMoreWith: "Más con {name}",
+    mediaDetailRelated: "Títulos similares",
     mediaDetailPeople: "Personas",
     mediaDetailLoadFailed:
       "No se pudo cargar este elemento. Comprueba tu conexión e inténtalo de nuevo.",
@@ -145,6 +163,10 @@ export const mediaDetailStrings = {
     mediaDetailProgress: "{percent}% concluído",
     mediaDetailDetails: "Detalhes",
     mediaDetailKeepBrowsing: "Continuar explorando",
+    mediaDetailExtras: "Extras",
+    mediaDetailEditions: "Edições",
+    mediaDetailMoreWith: "Mais com {name}",
+    mediaDetailRelated: "Títulos semelhantes",
     mediaDetailPeople: "Pessoas",
     mediaDetailLoadFailed:
       "Não foi possível carregar este item. Verifique sua conexão e tente novamente.",

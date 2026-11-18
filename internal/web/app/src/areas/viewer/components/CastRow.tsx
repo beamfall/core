@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import type { MediaCredit } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { artworkBucketURL, artworkSrcSet } from "../lib/artwork";
-import { castGroups, creditPart, nameInitial } from "../lib/people";
+import { castGroups, creditPart, creditPhoto, nameInitial } from "../lib/people";
 
 // The cast row on a Media detail page (CORE-2406): the item's person-archetype
 // credits in credit order, each a headshot card (the person's poster, or the
@@ -19,9 +19,7 @@ export function CastRow({ credits }: { credits: readonly MediaCredit[] | null | 
       </h2>
       {groups.map((group) => (
         <div key={group.department} className="bf-cast-group">
-          {group.department && groups.length > 1 && (
-            <h3 className="bf-cast-group-title">{group.department}</h3>
-          )}
+          {group.department && <h3 className="bf-cast-group-title">{group.department}</h3>}
           <ul className="bf-shelf bf-cast" aria-label={group.department || t("mediaDetailPeople")}>
             {group.credits.map((credit) => (
               <CastCard key={credit.entityID} credit={credit} />
@@ -34,7 +32,7 @@ export function CastRow({ credits }: { credits: readonly MediaCredit[] | null | 
 }
 
 function CastCard({ credit }: { credit: MediaCredit }) {
-  const photo = credit.artworkSlots?.poster ?? credit.artworkSlots?.thumb ?? "";
+  const photo = creditPhoto(credit);
   const part = creditPart(credit);
   return (
     <li className="bf-cast-card">

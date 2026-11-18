@@ -15,8 +15,13 @@ import {
   readViewerCache,
   writeViewerCache,
 } from "@/lib/viewerCache";
+import { ItemActions } from "../actions";
 import { CastRow } from "../components/CastRow";
 import { findCachedSectionItem } from "../components/HydratedSection";
+import { MediaDetailMoreMenu } from "../components/MediaDetailMoreMenu";
+import { MediaMoreRows } from "../components/MediaMoreRows";
+import { MediaRelationRows } from "../components/MediaRelationRows";
+import { MediaTrackPickers } from "../components/MediaTrackPickers";
 import { NotAvailable } from "../components/NotAvailable";
 import { PosterGlyph } from "../components/PosterGlyph";
 import { SectionView } from "../components/SectionView";
@@ -36,6 +41,7 @@ import {
   readMediaPreview,
   resumeProgress,
 } from "../lib/mediaDetail";
+import { castHasDetail } from "../lib/people";
 import { useCanonicalMediaAddress } from "../lib/useCanonicalMediaAddress";
 import {
   type DetailScore,
@@ -45,7 +51,12 @@ import {
   runtimeParts,
   viewerFacingFields,
 } from "../lib/viewerFields";
-import { type PlayerNavState, readPlayerNavState } from "../lib/watchQueue";
+import {
+  newStartID,
+  type PlayerNavState,
+  readPlayerNavState,
+  type StartTracks,
+} from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
 import { PlayOnButton } from "../remote/PlayOnButton";
 import "./media-detail.css";
@@ -142,7 +153,13 @@ export function MediaDetailPage() {
   const media = current?.media;
   useCanonicalMediaAddress("media", media ?? null);
   const context = useContainerContext(media, mediaId);
-  const people = audioPeople(media);
+  // Audio names its people under the title, unless a credit carries a headshot
+  // or a part (an audio drama's cast): then the cast row shows them instead, so
+  // no one is named twice.
+  const castRow = !!media && (media.mediaClass !== "audio" || castHasDetail(media.credits));
+  const people = castRow ? [] : audioPeople(media);
+  // Version, audio and subtitle picks made here before playback (CORE-2442), for one Media.
+  const [trackPicks, setTrackPicks] = useState<StartTracks | null>(null);
 
   function goBack() {
     // "default" is the entry the app was loaded on: nothing in-app to return to.
@@ -156,10 +173,20 @@ export function MediaDetailPage() {
     // Forward the queue the opening card carried (CORE-1143), still bound to
     // the viewer identity it was listed for.
     const { queue } = readPlayerNavState(location.state, identity);
-    const state: PlayerNavState = { title };
+    // Every Play or Start over is its own start, so pressing one while the
+    // mini player already plays this Media starts it again with these picks.
+    const state: PlayerNavState = { title, startID: newStartID() };
     if (identity && queue) {
       state.queue = queue;
       state.queueIdentity = identity;
+    }
+    if (
+      trackPicks?.mediaID === mediaId &&
+      (trackPicks.versionID !== undefined ||
+        trackPicks.audioIndex !== undefined ||
+        trackPicks.captionID !== undefined)
+    ) {
+      state.tracks = trackPicks;
     }
     // ?t=0 is the player's "from the beginning" (it also skips pre-play).
     const suffix = fromStart ? "?t=0" : "";
@@ -354,7 +381,20 @@ export function MediaDetailPage() {
                     positionSeconds={progress?.positionSeconds}
                   />
                 )}
+                {mediaId && <MediaDetailMoreMenu mediaID={mediaId} title={title} />}
               </div>
+              {media && (
+                <MediaTrackPickers mediaID={mediaId} picks={trackPicks} onPick={setTrackPicks} />
+              )}
+              {/* The Profile's own state for this item (CORE-2436), keyed so a
+                  route change to another item starts from that item's state. */}
+              {mediaId && (
+                <ItemActions
+                  key={mediaId}
+                  target={{ mediaID: mediaId }}
+                  className="bf-detail-item-actions"
+                />
+              )}
               {summary && <DetailOverview key={summary} text={summary} />}
               {!media && status === "loading" && <Skeleton aria-hidden className="h-4 w-40" />}
               {status === "failed" && !media && retry}
@@ -362,8 +402,9 @@ export function MediaDetailPage() {
           </div>
         </section>
 
-        {/* Audio names its people under the title instead (audioPeople). */}
-        {media && media.mediaClass !== "audio" && <CastRow credits={media.credits} />}
+        {media && castRow && <CastRow credits={media.credits} />}
+
+        {media && <MediaRelationRows mediaID={mediaId} />}
 
         {fields.length > 0 && (
           <section className="bf-section flex flex-col gap-3" aria-labelledby="bf-media-fields">
@@ -395,6 +436,8 @@ export function MediaDetailPage() {
             navigationID={`media:${mediaId}`}
           />
         )}
+
+        {media && <MediaMoreRows mediaID={mediaId} credits={media.credits} />}
       </article>
     </AppShell>
   );

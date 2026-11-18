@@ -108,6 +108,7 @@ const SHIPPED = new Set(
 // orphaned libraryBrowseAll key.
 // merged with the CORE-2443 release-date, audience-score and plays sorts, year range and table
 // view labels.
+// updated for the CORE-2439 Extras and Editions row titles and the CORE-2444 More with and Related rows.
 const BASE_SERIALIZED_LENGTH = 787_228;
 const BASE_REGISTRY_SHA256 = "0ad8d9ac37fc2ff0457fbd707ed51397a364d9a254a6234d71ca752b4ef794bd";
 const BASE_KEY_ORDER_SHA256 = "a7decd9e45f8d9158d69960d00fa3377de46b51fada61588336dfd0fc1b0bc9b";

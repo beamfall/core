@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SourceItem } from "@/lib/graphql/types";
 import { unavailableReasonMessage } from "./playback";
 import {
+  newStartID,
   playQueueOf,
   queueNeighbours,
   queueOfClass,
@@ -75,6 +76,61 @@ describe("watchQueue (CORE-1143)", () => {
     ).toBeUndefined();
     expect(readPlayerNavState({ queue }, "v").queue).toBeUndefined();
     expect(readPlayerNavState({ queue, queueIdentity: "v" }, null).queue).toBeUndefined();
+  });
+});
+
+describe("start tracks in nav state (CORE-2442)", () => {
+  it("carries audio and caption picks for their Media, with Off as null", () => {
+    expect(
+      readPlayerNavState(
+        { tracks: { mediaID: "m1", audioIndex: 2, captionID: "muxed-main-3" } },
+        "v",
+      ).tracks,
+    ).toEqual({ mediaID: "m1", audioIndex: 2, captionID: "muxed-main-3" });
+    expect(readPlayerNavState({ tracks: { mediaID: "m1", captionID: null } }, null).tracks).toEqual(
+      { mediaID: "m1", captionID: null },
+    );
+  });
+
+  it("carries the Version picked with them, with Auto as an empty id (P2-3)", () => {
+    expect(readPlayerNavState({ tracks: { mediaID: "m1", versionID: "va" } }, "v").tracks).toEqual({
+      mediaID: "m1",
+      versionID: "va",
+    });
+    expect(
+      readPlayerNavState({ tracks: { mediaID: "m1", versionID: "", audioIndex: 2 } }, "v").tracks,
+    ).toEqual({ mediaID: "m1", versionID: "", audioIndex: 2 });
+    expect(
+      readPlayerNavState({ tracks: { mediaID: "m1", versionID: 7, audioIndex: 2 } }, "v").tracks,
+    ).toEqual({ mediaID: "m1", audioIndex: 2 });
+  });
+
+  it("drops malformed picks and picks with nothing in them", () => {
+    for (const tracks of [
+      null,
+      "m1",
+      { audioIndex: 2 },
+      { mediaID: "", audioIndex: 2 },
+      { mediaID: "m1" },
+      { mediaID: "m1", audioIndex: -1, captionID: "" },
+      { mediaID: "m1", audioIndex: 1.5, captionID: 4 },
+      { mediaID: "m1", versionID: null },
+    ]) {
+      expect(readPlayerNavState({ title: "T", tracks }, "v")).toEqual({
+        title: "T",
+        queue: undefined,
+      });
+    }
+  });
+});
+
+describe("playback start identity", () => {
+  it("carries a start's id, drops a malformed one, and mints a new id each time", () => {
+    expect(readPlayerNavState({ title: "T", startID: "s1" }, "v").startID).toBe("s1");
+    for (const startID of ["", 7, null]) {
+      expect(readPlayerNavState({ title: "T", startID }, "v")).not.toHaveProperty("startID");
+    }
+    expect(newStartID()).not.toBe(newStartID());
   });
 });
 

@@ -1784,6 +1784,14 @@
       ]
     },
     {
+      "field": "mediatracks",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "versions"
+      ]
+    },
+    {
       "field": "mergeentities",
       "effect": "write",
       "tier": "session",
@@ -2442,6 +2450,32 @@
         "proposedBy",
         "tagKind",
         "value"
+      ]
+    },
+    {
+      "field": "relatedmedia",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "artwork",
+        "artworkSlots",
+        "audienceScore",
+        "byline",
+        "certification",
+        "durationSeconds",
+        "engagement",
+        "id",
+        "index",
+        "kind",
+        "locked",
+        "mediaClass",
+        "muted",
+        "restricted",
+        "sequence",
+        "subtitle",
+        "summary",
+        "title",
+        "year"
       ]
     },
     {

@@ -1,0 +1,6 @@
+- [x] `internal/graph`: `mediaRelations` items carry artwork slots, duration and class; graph test
+- [x] Web: Extras and Editions rows on the detail page, hidden when empty, cards play their item
+- [x] Web strings in every shipped locale; vitest coverage with and without extras
+- [ ] Verified on tower at desktop and 375px widths (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2439-media-detail-extras` after landing
