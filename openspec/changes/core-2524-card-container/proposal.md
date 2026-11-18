@@ -21,6 +21,8 @@ the container, and items found under it neither name it nor sort within it (CORE
   breaks a rank tie by container title, the container before its items, then the item's sequence
   and index.
 - A zero audience score, or one whose stored vote count is zero, is no score.
+  This reverses part of CORE-2472, whose web rule still showed a 0 that carried votes: a 0 is
+  now hidden with or without votes, on the server and on web cards (web-card-ratings).
 - Web: a card held by a container is headed by the container's title with the item's subtitle (or
   title) as its one second line; the Recently Added shelf collapses items sharing a container into
   one container card with a count; search lists a container's items found only through its title under the
