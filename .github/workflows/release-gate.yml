@@ -192,7 +192,9 @@ jobs:
 
       # Build the container image's own ffmpeg stage from the same lock, so CI
       # exercises the identical FFmpeg the image ships, and run it from that
-      # stage's root filesystem through its own dynamic loader.
+      # stage's root filesystem through its own dynamic loader, named by its
+      # real path: Debian's /lib64 entry is an absolute symlink that would
+      # resolve to the runner's loader outside $root.
       - name: Build the locked ffmpeg
         run: |
           python3 script/check-release-workflow-pins.py
@@ -201,7 +203,7 @@ jobs:
           sudo mkdir -p "$root"
           docker export "$(docker create beamfall-ffmpeg-runtime)" | sudo tar -x -C "$root"
           for tool in ffmpeg ffprobe; do
-            printf '#!/bin/sh\nexec %s/lib64/ld-linux-x86-64.so.2 --library-path %s/usr/lib/jellyfin-ffmpeg/lib:%s/usr/lib/x86_64-linux-gnu:%s/lib/x86_64-linux-gnu %s/usr/lib/jellyfin-ffmpeg/%s "$@"\n' \
+            printf '#!/bin/sh\nexec %s/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 --library-path %s/usr/lib/jellyfin-ffmpeg/lib:%s/usr/lib/x86_64-linux-gnu:%s/lib/x86_64-linux-gnu %s/usr/lib/jellyfin-ffmpeg/%s "$@"\n' \
               "$root" "$root" "$root" "$root" "$root" "$tool" | sudo tee "/usr/local/bin/$tool" >/dev/null
             sudo chmod 0755 "/usr/local/bin/$tool"
           done

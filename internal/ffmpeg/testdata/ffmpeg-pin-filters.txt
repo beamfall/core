@@ -61,7 +61,7 @@
 # section is not a failure — it is that backend recorded as not certifiable on
 # that platform, and the release gate keeps it out of the GA claim.
 === HELP_PLATFORM_BEGIN linux/arm64
-=== HELP_PLATFORM_PIN sha256=9de240f98cc49db7ebc649c72c37d3ef154170d37ec2fbc68483cc84744804bb
+=== HELP_PLATFORM_PIN sha256=f471ea090312d2afa90c872b1c8632f98b0be1d0f58e5d3e08823d66f96b0adf
 === HELP_FILTER_BEGIN tonemapx
 Filter tonemapx
   SIMD optimized HDR to SDR tonemapping

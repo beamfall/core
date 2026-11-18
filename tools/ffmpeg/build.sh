@@ -193,13 +193,55 @@ while [ -s queue ]; do
 	printf '%s\n' "${found%% *}" >>pkgs
 	needed "${found#* }" >>queue
 done
-sort -u pkgs | xargs apt-cache depends --recurse --installed --no-recommends \
-	--no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances |
-	grep -v '^[[:space:]<]' >deps
-cat deps >>pkgs
-sort -u pkgs | while read -r p; do
-	dpkg-query -W -f '${Package}=${Version} ${source:Package}=${source:Version}\n' "$p"
-done | sort -u >packages.txt
+# The closure is resolved against dpkg rather than `apt-cache depends
+# --installed`, which drops a target-architecture package's dependency on an
+# Architecture: all package when cross compiling (that package is installed
+# under the build architecture): libfontconfig1:arm64 lost fontconfig-config.
+inst() { # dependency name -> installed package, target architecture first
+	for q in "${1%%:*}:$target_arch" "${1%%:*}"; do
+		if dpkg-query -W -f '${Status}\n' "$q" 2>/dev/null | grep -q ' installed$'; then
+			printf '%s\n' "$q"
+			return 0
+		fi
+	done
+	# A virtual name (libva-driver-abi-1.17) resolves to the installed package
+	# that Provides it, target architecture first.
+	dpkg-query -W -f '${db:Status-Status} ${Package}:${Architecture} ${Provides}\n' |
+		awk -v n="${1%%:*}" -v a="$target_arch" '
+			$1 != "installed" { next }
+			{ line = $0; sub(/^[^ ]* [^ ]* /, "", line); gsub(/\([^)]*\)/, "", line)
+			  k = split(line, v, /[ ,]+/)
+			  for (i = 1; i <= k; i++) if (v[i] == n) { if ($2 ~ (":" a "$")) { print $2; exit } else if (!o) o = $2 } }
+			END { if (o) print o }' | sed -n 1p | grep .
+}
+deps_of() { # installed package -> the installed package satisfying each Pre-Depends/Depends
+	dpkg-query -W -f '${Pre-Depends},${Depends}\n' "$1" | tr ',' '\n' | while read -r group; do
+		[ -n "$group" ] || continue
+		r=""
+		# shellcheck disable=SC2046
+		for alt in $(printf '%s\n' "$group" | sed 's/([^)]*)//g; s/|/ /g'); do
+			r="$(inst "$alt")" && break
+		done
+		if [ -z "$r" ]; then
+			echo "build.sh: $1 depends on '$group', which is not installed" >&2
+			return 1
+		fi
+		printf '%s\n' "$r"
+	done
+}
+sort -u pkgs >queue
+: >closed
+while [ -s queue ]; do
+	p="$(sed -n 1p queue)"
+	sed -i 1d queue
+	q="$(inst "$p")" || { echo "build.sh: $p is not installed" >&2; exit 1; }
+	grep -qxF "$q" closed && continue
+	printf '%s\n' "$q" >>closed
+	deps_of "$q" >>queue
+done
+while read -r q; do
+	dpkg-query -W -f '${Package}=${Version} ${source:Package}=${source:Version}\n' "$q"
+done <closed | sort -u >packages.txt
 cut -d' ' -f1 packages.txt >"$out/runtime-packages.txt"
 
 # Corresponding source of every Debian package above at its exact version, as

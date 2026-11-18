@@ -54,7 +54,9 @@ FAILURES = (
 # MEASURES. Orchestration that merely invokes it is excluded on purpose —
 # including `tools/gate/**` or `Makefile` would invalidate every row almost
 # continuously and force a two-host physical re-probe for unrelated work.
-SCOPE_DIR_PREFIXES = ("internal/ffmpeg/",)
+# tools/ffmpeg/ builds the image's ffmpeg (configure flags and the libraries it
+# links), so it moves what the probe measures as much as ffmpeg.lock does.
+SCOPE_DIR_PREFIXES = ("internal/ffmpeg/", "tools/ffmpeg/")
 SCOPE_EXACT_PATHS = (
     "internal/playback/playback.go",
     "tools/gate/ffmpeg-tonemap-conforming.sh",
