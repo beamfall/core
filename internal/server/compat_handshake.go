@@ -137,20 +137,16 @@ func (s *Server) logRefusedHandshake(ctx context.Context, scope auth.Scope, cont
 	if policy, err := s.deviceBuildPolicy(ctx, scope, s.compat.snapshot()); err == nil {
 		finding = string(capabilities.VerifyBuildProvenance(contract, enrollment, policy.Builds))
 	}
-	// The presented digest is logged only when provenance failed, so the
-	// operator can compare it with a catalog record. A verified digest is the
-	// bearer claim of a cataloged build and stays out of the log.
-	presentedHash := ""
-	if finding != string(capabilities.ProvenanceVerified) {
-		presentedHash = contract.ArtifactHash
-	}
+	// Only a prefix of the presented digest is logged: enough for the operator
+	// to compare it with a catalog record, never the whole value, which may be
+	// the valid claim of a cataloged build refused for another reason.
 	slog.WarnContext(ctx, "compatibility handshake refused",
 		"device", scope.DeviceID,
 		"role", string(enrollment.Role),
 		"distribution", string(enrollment.Distribution),
 		"surface", contract.Surface,
 		"build", contract.BuildID,
-		"artifactHash", presentedHash,
+		"artifactHash", artifactHashPrefix(contract.ArtifactHash),
 		"decision", string(result.Decision),
 		"reason", string(result.ReasonCode),
 		"finding", finding)

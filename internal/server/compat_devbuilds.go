@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/beamfall/core/internal/capabilities"
@@ -40,13 +42,13 @@ type devBuildsFile struct {
 	compat *compatState
 	now    func() time.Time
 
-	mu        sync.Mutex
-	checkedAt time.Time
-	modTime   time.Time
-	size      int64
-	present   bool
-	digest    [sha256.Size]byte
-	loaded    bool
+	// nextCheck is the unix-nano time of the next re-read, so the per-request
+	// fast path skips the lock between checks.
+	nextCheck atomic.Int64
+
+	mu      sync.Mutex
+	loaded  bool
+	outcome string // content digest, or the read/parse error, of the last install
 }
 
 func newDevBuildsFile(path string, compat *compatState) *devBuildsFile {
@@ -57,56 +59,47 @@ func newDevBuildsFile(path string, compat *compatState) *devBuildsFile {
 	return &devBuildsFile{path: path, compat: compat, now: time.Now}
 }
 
-// refresh reloads the file when it changed since the last check. It is cheap
-// to call on every handshake: it stats the file at most once per
-// devBuildsRecheckInterval and reparses only when the stat changes.
+// refresh re-reads the file at most once per devBuildsRecheckInterval and
+// reinstalls the dev catalog when its content or readability changed. It runs
+// on every compatibility authorization, handshake and enrollment, so adding,
+// changing, removing or making the file unreadable takes effect within the
+// interval for every request, not only at the next handshake.
 func (f *devBuildsFile) refresh() {
 	if f == nil {
+		return
+	}
+	if f.now().UnixNano() < f.nextCheck.Load() {
 		return
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	now := f.now()
-	if f.loaded && now.Sub(f.checkedAt) < devBuildsRecheckInterval {
+	if f.loaded && now.UnixNano() < f.nextCheck.Load() {
 		return
 	}
-	f.checkedAt = now
-	info, err := os.Stat(f.path)
-	if err != nil {
-		if f.loaded && !f.present {
-			return
-		}
-		f.present = false
-		f.modTime, f.size = time.Time{}, 0
-		f.install(nil, nil, err)
-		return
-	}
-	if f.loaded && f.present && info.ModTime().Equal(f.modTime) && info.Size() == f.size {
-		return
-	}
-	f.present, f.modTime, f.size = true, info.ModTime(), info.Size()
+	f.nextCheck.Store(now.Add(devBuildsRecheckInterval).UnixNano())
 	data, err := readBoundedFile(f.path, maxDevBuildsFileBytes)
+	var catalog capabilities.BuildCatalog
+	outcome := ""
+	if err == nil {
+		digest := sha256.Sum256(data)
+		outcome = "sha256:" + hex.EncodeToString(digest[:])
+		catalog, err = capabilities.ParseDevBuildManifest(data)
+	}
 	if err != nil {
-		f.install(nil, nil, err)
+		outcome = "error:" + err.Error()
+	}
+	if f.loaded && outcome == f.outcome {
 		return
 	}
-	digest := sha256.Sum256(data)
-	if f.loaded && digest == f.digest {
-		return
-	}
-	f.digest = digest
-	catalog, err := capabilities.ParseDevBuildManifest(data)
-	f.install(&catalog, data, err)
+	f.loaded, f.outcome = true, outcome
+	f.install(catalog, err)
 }
 
 // install hands the parsed catalog (or, on any error, an empty one) to the
 // compatibility policy and logs the outcome. Callers hold f.mu.
-func (f *devBuildsFile) install(catalog *capabilities.BuildCatalog, data []byte, err error) {
-	f.loaded = true
-	if err != nil || catalog == nil {
-		if data == nil {
-			f.digest = [sha256.Size]byte{}
-		}
+func (f *devBuildsFile) install(catalog capabilities.BuildCatalog, err error) {
+	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			slog.Warn("dev build catalog file not found; no dev builds admitted", "path", f.path)
 		} else {
@@ -117,10 +110,20 @@ func (f *devBuildsFile) install(catalog *capabilities.BuildCatalog, data []byte,
 	}
 	ids := make([]string, 0, len(catalog.Builds))
 	for _, record := range catalog.Builds {
-		ids = append(ids, record.BuildID+" "+string(record.Surface)+" "+record.ArtifactHash[:12])
+		ids = append(ids, record.BuildID+" "+string(record.Surface)+" "+artifactHashPrefix(record.ArtifactHash))
 	}
 	slog.Info("dev build catalog loaded", "path", f.path, "count", len(ids), "builds", ids)
-	f.compat.setDevBuilds(*catalog)
+	f.compat.setDevBuilds(catalog)
+}
+
+// artifactHashPrefix is the part of an artifact digest the logs carry: enough
+// to tell builds apart, never the whole value a client presents.
+func artifactHashPrefix(hash string) string {
+	const n = 12
+	if len(hash) <= n {
+		return hash
+	}
+	return hash[:n]
 }
 
 func readBoundedFile(path string, limit int64) ([]byte, error) {

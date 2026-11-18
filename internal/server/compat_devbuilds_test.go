@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,12 +221,80 @@ func TestRefusedHandshakeIsLogged(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("refusal log lines = %d, want 1:\n%s", len(lines), logs.String())
 	}
-	for _, want := range []string{"build=" + contract.BuildID, "finding=", "reason=unknown-build", "artifactHash=" + contract.ArtifactHash} {
+	if strings.Contains(lines[0], contract.ArtifactHash) {
+		t.Fatalf("refusal log carries the whole artifact hash: %q", lines[0])
+	}
+	for _, want := range []string{"build=" + contract.BuildID, "finding=unknown-build", "reason=unknown-build", "artifactHash=" + contract.ArtifactHash[:12]} {
 		if !strings.Contains(lines[0], want) {
 			t.Fatalf("refusal log %q lacks %q", lines[0], want)
 		}
 	}
-	if strings.Contains(lines[0], "finding=verified") {
-		t.Fatalf("refusal log reports a verified build: %q", lines[0])
+}
+
+// manifestStatus is the status of an authorized manifest read, which serves
+// only under a current compatibility decision.
+func manifestStatus(srv *Server, authorize func(*http.Request)) int {
+	req := newJSONRequest(http.MethodGet, "/api/manifest", nil)
+	authorize(req)
+	return compatServe(srv, req).Code
+}
+
+// TestRuntimeDevBuildRevocationNeedsNoHandshake covers revocation of an
+// admitted device that never handshakes again: its next request after the
+// file is removed, or made unreadable, is no longer served.
+func TestRuntimeDevBuildRevocationNeedsNoHandshake(t *testing.T) {
+	for name, revoke := range map[string]func(h *devBuildsHarness){
+		"removed": func(h *devBuildsHarness) { h.remove() },
+		"unreadable": func(h *devBuildsHarness) {
+			if err := os.Chmod(h.path, 0); err != nil {
+				h.t.Fatal(err)
+			}
+			if f, err := os.Open(h.path); err == nil {
+				_ = f.Close()
+				h.t.Skip("file permissions do not restrict this user")
+			}
+			h.advance()
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newDevBuildsHarness(t, shippedViewerBuild(2))
+			dev := devViewerBuild("c0ffee")
+			contract := dev.contract()
+			h.writeBuilds(dev)
+			device := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleViewer, &contract)
+			assertServable(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+			if code := manifestStatus(h.srv, device.authorize); code != http.StatusOK {
+				t.Fatalf("manifest while admitted = %d", code)
+			}
+
+			revoke(h)
+			if code := manifestStatus(h.srv, device.authorize); code == http.StatusOK {
+				t.Fatal("manifest still served after the dev record was revoked")
+			}
+			assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, contract, device.authorize))
+		})
+	}
+}
+
+// TestRefusedHandshakeLogsOnlyAHashPrefixForAValidBuild covers a cataloged
+// build refused for entitlement: its valid digest stays out of the log.
+func TestRefusedHandshakeLogsOnlyAHashPrefixForAValidBuild(t *testing.T) {
+	h := newDevBuildsHarness(t, shippedViewerBuild(2))
+	dev := devViewerBuild("c0ffee")
+	dev.Roles = []string{string(capabilities.EnrollmentRoleViewer)}
+	h.writeBuilds(dev)
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	contract := dev.contract()
+	manager := enrollFirstPartyDevice(t, h.srv, capabilities.EnrollmentRoleManager, &contract)
+	assertUnknownBuild(t, compatHandshakeRecord(t, h.srv, contract, manager.authorize))
+	if strings.Contains(logs.String(), contract.ArtifactHash) {
+		t.Fatalf("logs carry the whole valid artifact hash:\n%s", logs.String())
+	}
+	if !strings.Contains(logs.String(), "compatibility handshake refused") {
+		t.Fatalf("no refusal line:\n%s", logs.String())
 	}
 }

@@ -58,6 +58,7 @@ func (r compatStreamTokenResolver) Resolve(ctx context.Context, subject string, 
 	if compatSubject(scope) != subject || r.server.compat.isRefused(subject) {
 		return "", false, errCompatStreamTokenDecision
 	}
+	r.server.devBuilds.refresh()
 	policy := r.server.compat.snapshot()
 	record, err := r.server.compat.registry.Resolve(subject, capabilities.ResolveKey{
 		Subject:         subject,
