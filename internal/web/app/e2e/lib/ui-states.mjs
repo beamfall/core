@@ -36,6 +36,7 @@ export const VIEWER_ROUTES = Object.freeze([
   "/n/:nodeId/categories",
   "/entity/:entityId",
   "/media/*",
+  "/credits/*",
   "/seeall/:sourceId",
   "/collections",
   "/collections/:libraryId/:collectionId",
@@ -205,6 +206,11 @@ export const IN_PAGE_STATES = Object.freeze({
   ],
   "/media/*": [
     { kind: "loading", name: "page" },
+    { kind: "error", name: "not-found" },
+  ],
+  "/credits/*": [
+    { kind: "loading", name: "page" },
+    { kind: "error", name: "failed" },
     { kind: "error", name: "not-found" },
   ],
   "/seeall/:sourceId": [
@@ -754,6 +760,10 @@ export const UI_STATE_GAPS = Object.freeze({
   "/media/*#loading:page": NO_LOADING_FIXTURE,
   "/media/*#error:not-found": NO_ERROR_FIXTURE,
   "/media/*@mobile": VIEWER_HEADER_OVERFLOW,
+  "/credits/*#loading:page": NO_LOADING_FIXTURE,
+  "/credits/*#error:failed": NO_ERROR_FIXTURE,
+  "/credits/*#error:not-found": NO_ERROR_FIXTURE,
+  "/credits/*@mobile": VIEWER_HEADER_OVERFLOW,
   "/seeall/:sourceId#empty:no-context": NO_EMPTY_FIXTURE,
   "/seeall/:sourceId#loading:load-more": NO_LOADING_FIXTURE,
   "/seeall/:sourceId@mobile": VIEWER_HEADER_OVERFLOW,
