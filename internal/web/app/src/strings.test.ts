@@ -112,35 +112,35 @@ const SHIPPED = new Set(
 // merged with the CORE-2445 settings help, settings search and menu purpose copy, and its orphan-key removal.
 // updated for the CORE-2452 transcode help copy, dropping the retired transcodeCodecHevc label.
 // updated for the CORE-2505 Categories pivot jump, count, See all, A-Z filter and letter copy.
-const BASE_SERIALIZED_LENGTH = 880_333;
-const BASE_REGISTRY_SHA256 = "371bc1b628d81ab82ffb2c05da83baf935f74ea6cbd3e4cc51ee12c2c2f51021";
+const BASE_SERIALIZED_LENGTH = 880_373;
+const BASE_REGISTRY_SHA256 = "89789dc093a4e9c4f44100657ea7413cb72c9121e0048e6c891445f362b603fa";
 const BASE_KEY_ORDER_SHA256 = "358f91a5f22d2750b5271c856d5acf5aa6fb2995c2052ea6c87722c50ac481be";
-const BASE_PLACEHOLDER_SHA256 = "b4a733a8bcd4349284e5dc59e4bf7c82a8064d6fc71f64dd5252fded2f5f1918";
+const BASE_PLACEHOLDER_SHA256 = "4879e55b16aed331d64a3771dc475974d0bf99051c5de0174d360a325c66f724";
 const BASE_CATALOGS = {
   en: {
     partialCount: 2_858,
-    partialSha256: "4cef97ce42a602c15a9ad89aa4db6c730225b0e08e0cac7cd5135e9705555af0",
-    resolvedSha256: "556429d93096876eab305ff9b5ebda4b34ab3b2094837f44d27cb80fe6c98ece",
+    partialSha256: "a5e1371ff94d369b53740b2a90b63a3ce870861c7cfedf99b5754ff84be00415",
+    resolvedSha256: "3b8c36963958de646382e1a3631aaa8fed5d25cc83b43b99bf05f44b5182b108",
   },
   fr: {
     partialCount: 2_858,
-    partialSha256: "eb574df393eb2d2d90735bfe20f55747aee0f2e27b3d383a744aa9ae4432e40b",
-    resolvedSha256: "dc74c1e491bfb95bc0f991971b4a699c71f19c54ad2fc7bdacfe469692129851",
+    partialSha256: "42ddfa352fde581e0b95bf92de77ba2da941bb8bacd1452b5fcd46f2b3b5871e",
+    resolvedSha256: "33d974e723ec3bad2b902de0e2181f4c6f5837294a33cf45480be2505b6290f9",
   },
   de: {
     partialCount: 2_858,
-    partialSha256: "df600fa10066afd72492a91f836f6c0719d79cbe603c74fe81c916b7be082eab",
-    resolvedSha256: "740d2538695fd9d9e5af495b5d3fc21e64bd1593a6e3e3dd38674f415fd971c0",
+    partialSha256: "dc382fe9b4d37051c7abab399deb4574b4e3bef2ce6e1d57f603e7f60a2757cc",
+    resolvedSha256: "adf2d08bcd79a542d20e49ea395f4f9cd50e4511f87c4db1407703e8076284d6",
   },
   es: {
     partialCount: 2_858,
-    partialSha256: "9edcf8c677d0a89b3ee7f9997b9198f5341314e26c69fd71cbab004d7d2732fd",
-    resolvedSha256: "0f6fdfb5a08a9cb00a0c3e02d5a3eaf2b15d78517bd160bc917516cdb26c5de5",
+    partialSha256: "7a6e8329306923f8de65106a216809ee0ad327eb0232bd12a5d73fbcad280219",
+    resolvedSha256: "cb54ae997f8da543d723fa948f462d92012e6070bf6e2b3d5ada905282d13de2",
   },
   pt: {
     partialCount: 2_858,
-    partialSha256: "6821ae3d1b420969f3c578c3cff5568bee8c01e18bbd9fcdc26c3cee303c5677",
-    resolvedSha256: "ad1ed370c5b16b3d4aecfa3aa3be4a73c54fb3cb182652fd107f2b1dc5178f13",
+    partialSha256: "4a522df0a20b94bee62785c5508255207db388f7106dbdf9e1eff9e68e88e4fe",
+    resolvedSha256: "2aa1a0495ed462ef9cbe17e2b8e504df1681827198a3ae6bffcd2a927374a7fc",
   },
 } as const satisfies Record<
   Locale,

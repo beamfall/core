@@ -249,7 +249,7 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
     await expectNoAxeViolations(container);
     expectNoPositiveTabindex(container);
 
-    await userEvent.click(within(studio).getByRole("link", { name: "See all Studio" }));
+    await userEvent.click(within(studio).getByRole("link", { name: "See all 45: Studio" }));
     expect(screen.getByTestId("where")).toHaveTextContent(
       /^\/n\/library-films\/categories\?kind=studio$/,
     );
@@ -305,7 +305,7 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
 
     const studio = await screen.findByRole("region", { name: "Studio" });
     expect(within(studio).getAllByRole("link")).toHaveLength(1);
-    expect(within(studio).getByRole("link", { name: "See all Studio" })).toHaveTextContent(
+    expect(within(studio).getByRole("link", { name: "See all 45: Studio" })).toHaveTextContent(
       "See all 45",
     );
   });
