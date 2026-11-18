@@ -1144,7 +1144,8 @@ a.console-step:hover {
   background: var(--accent);
 }
 
-/* A device asking to join (CORE-2064): pinned above every Console screen. */
+/* A device asking to join (CORE-2064): pinned above every Console screen. It floats over the
+   page, so it is not a .console-card: the Manage register's glass card fill is see-through. */
 .console-pairing-prompt {
   position: fixed;
   right: 16px;
@@ -1152,6 +1153,8 @@ a.console-step:hover {
   z-index: 50;
   width: min(360px, calc(100vw - 32px));
   padding: 14px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-surface);
   background: var(--bg-raised);
   box-shadow: 0 8px 28px color-mix(in oklab, var(--shadow-color) 35%, transparent);
 }
