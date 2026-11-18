@@ -628,12 +628,16 @@ func (r *Runner) ScaleImage(ctx context.Context, src string, width int, dst stri
 // seeking — on one thread at the generation niceness. Only keyframes are
 // decoded (CORE-2570): the fps filter takes the keyframe nearest each interval,
 // so the sheet count and layout are those of trickplay:v1 while the decoder
-// skips every frame the filter would drop. When a VA-API or QSV device was
+// skips every frame the filter would drop. The final sampled frame is cloned
+// to fill frameCount, the count advertised by the manifest. When a VA-API or QSV device was
 // verified and the Console has not chosen software only, the keyframes decode
 // on it. A failed pass is retried in software, then decoding every frame, the
 // order Jellyfin uses. Sheets are written directly; the caller publishes a
 // manifest last, so readers never trust a directory without one.
-func (r *Runner) SpriteSheets(ctx context.Context, src string, intervalSeconds, tileWidth, columns, rows int, dstPattern string) error {
+func (r *Runner) SpriteSheets(ctx context.Context, src string, intervalSeconds, tileWidth, columns, rows, frameCount int, dstPattern string) error {
+	if frameCount <= 0 {
+		return errors.New("sprite sheets need a positive frame count")
+	}
 	if err := checkPath(src); err != nil {
 		return err
 	}
@@ -646,7 +650,7 @@ func (r *Runner) SpriteSheets(ctx context.Context, src string, intervalSeconds, 
 			spriteSheetDecodeArgs(pass)...)
 		args = append(args,
 			"-i", src,
-			"-vf", fmt.Sprintf("fps=1/%d,scale=%d:-2,tile=%dx%d", intervalSeconds, tileWidth, columns, rows),
+			"-vf", spriteSheetFilter(intervalSeconds, tileWidth, columns, rows, frameCount),
 			"-q:v", "5",
 			"-f", "image2",
 			"-y", "--", dstPattern,
@@ -663,6 +667,13 @@ func (r *Runner) SpriteSheets(ctx context.Context, src string, intervalSeconds, 
 		}
 	}
 	return err
+}
+
+// spriteSheetFilter pads at the sampling rate, so sparse keyframes still fill
+// exactly the manifest's frame count without decoding or cloning at source FPS.
+func spriteSheetFilter(intervalSeconds, tileWidth, columns, rows, frameCount int) string {
+	return fmt.Sprintf("fps=1/%d:eof_action=pass,tpad=stop_mode=clone:stop=-1,trim=end_frame=%d,scale=%d:-2,tile=%dx%d",
+		intervalSeconds, frameCount, tileWidth, columns, rows)
 }
 
 // spriteSheetPass is one way to decode a trickplay pass: on accel (none for

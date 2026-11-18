@@ -51,7 +51,7 @@ func TestSpriteSheetsDecodeKeyframesOnHardwareWithSoftwareFallback(t *testing.T)
 		runner.SetHardeningShim(shim)
 		runner.SetHardwareEncode(tc.encode)
 		runner.SetEncodePolicy(EncodePolicy{SoftwareOnly: tc.softwareOnly})
-		if err := runner.SpriteSheets(ctx, src, 10, 320, 10, 10, dst); err != nil {
+		if err := runner.SpriteSheets(ctx, src, 10, 320, 10, 10, 4, dst); err != nil {
 			t.Fatalf("%s: SpriteSheets: %v", tc.name, err)
 		}
 		calls := invocations()
@@ -75,7 +75,7 @@ func TestSpriteSheetsDecodeKeyframesOnHardwareWithSoftwareFallback(t *testing.T)
 			if flags.dri != hardware || flags.nvidia {
 				t.Errorf("%s run %d: grant dri=%v nvidia=%v, want dri=%v", tc.name, i, flags.dri, flags.nvidia, hardware)
 			}
-			if !slices.Contains(flags.target, "fps=1/10,scale=320:-2,tile=10x10") {
+			if !slices.Contains(flags.target, "fps=1/10:eof_action=pass,tpad=stop_mode=clone:stop=-1,trim=end_frame=4,scale=320:-2,tile=10x10") {
 				t.Errorf("%s run %d: sheet filter changed: %q", tc.name, i, flags.target)
 			}
 		}

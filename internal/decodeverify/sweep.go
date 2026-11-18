@@ -77,6 +77,9 @@ func SweepHandler(service *Service) jobs.Handler {
 				break
 			}
 			broken, ok, err := service.VerifyMedia(ctx, id, now)
+			if ctx.Err() != nil {
+				break // Retry the interrupted item.
+			}
 			switch {
 			case err != nil:
 				// Inability to run FFmpeg or read the store for this item — count
@@ -106,12 +109,12 @@ func SweepHandler(service *Service) jobs.Handler {
 			Unit:    "items",
 			Message: "Verifying decode integrity",
 		}
-		if err := service.store.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
-			return jobs.Result{}, err
+		if err := service.store.UpdateJobCheckpoint(context.WithoutCancel(ctx), job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
+			return jobs.Result{Checkpoint: data}, err
 		}
 		if len(ids) > processed || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
-		return jobs.Result{}, nil
+		return jobs.Result{Checkpoint: data}, nil
 	}
 }

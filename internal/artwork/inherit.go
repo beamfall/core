@@ -326,6 +326,9 @@ func (s *Service) inheritEntityPosters(ctx context.Context, checkpoint *sweepChe
 				return true, nil
 			}
 			wrote, err := s.inheritEntityPoster(ctx, ref, rule)
+			if ctx.Err() != nil {
+				return true, nil // Retry the interrupted Entity.
+			}
 			switch {
 			case err != nil:
 				checkpoint.Failed++

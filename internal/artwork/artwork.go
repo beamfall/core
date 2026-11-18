@@ -1024,11 +1024,13 @@ func SweepHandler(service *Service) jobs.Handler {
 			if ctx.Err() != nil {
 				break
 			}
+			generated := false
+			failed := false
 			if !service.HasPoster(id) {
 				if err := service.GeneratePoster(ctx, id); err != nil {
-					checkpoint.Failed++
+					failed = true
 				} else {
-					checkpoint.Generated++
+					generated = true
 				}
 			}
 			// Steady state matches ADR-0014: the sweep owns derivative
@@ -1039,6 +1041,14 @@ func SweepHandler(service *Service) jobs.Handler {
 				// bytes changed; a current record makes this a small read.
 				_, _ = service.DominantColor(id)
 			}
+			if ctx.Err() != nil {
+				break // Retry the interrupted item, including its derivatives.
+			}
+			if failed {
+				checkpoint.Failed++
+			} else if generated {
+				checkpoint.Generated++
+			}
 			checkpoint.LastID = string(id)
 			processed++
 			if processed >= sweepJobBatchSize {
@@ -1046,11 +1056,9 @@ func SweepHandler(service *Service) jobs.Handler {
 			}
 		}
 		more := (pagedAll && len(ids) > processed) || (!pagedAll && processed >= sweepJobBatchSize)
+		var sweepErr error
 		if pagedAll && !more && ctx.Err() == nil {
-			var err error
-			if more, err = service.inheritEntityPosters(ctx, &checkpoint); err != nil {
-				return jobs.Result{}, err
-			}
+			more, sweepErr = service.inheritEntityPosters(ctx, &checkpoint)
 		}
 		checkpoint.Version = 1
 		data, err := json.Marshal(checkpoint)
@@ -1062,13 +1070,16 @@ func SweepHandler(service *Service) jobs.Handler {
 			Unit:    "posters",
 			Message: "Generating artwork",
 		}
-		if err := service.store.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
-			return jobs.Result{}, err
+		if err := service.store.UpdateJobCheckpoint(context.WithoutCancel(ctx), job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
+			return jobs.Result{Checkpoint: data}, err
+		}
+		if sweepErr != nil {
+			return jobs.Result{Checkpoint: data}, sweepErr
 		}
 		if more || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
-		return jobs.Result{}, nil
+		return jobs.Result{Checkpoint: data}, nil
 	}
 }
 

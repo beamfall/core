@@ -84,7 +84,7 @@ type TrickplayManifest struct {
 // Generator is genassets' slice of the FFmpeg seam (interface at the
 // consumer; the real *ffmpeg.Runner implements it).
 type Generator interface {
-	SpriteSheets(ctx context.Context, src string, intervalSeconds, tileWidth, columns, rows int, dstPattern string) error
+	SpriteSheets(ctx context.Context, src string, intervalSeconds, tileWidth, columns, rows, frameCount int, dstPattern string) error
 	SampleClip(ctx context.Context, src string, offsets []float64, segmentSeconds float64, width, maxFPS int, dst string) error
 	FrameGrab(ctx context.Context, src string, atSeconds float64, width int, dst string) error
 	// WaveformAmplitudes returns one non-negative amplitude per analysis window
@@ -124,7 +124,7 @@ type EncryptedSource struct {
 // returns the asset's bytes or analysis; nothing is written to disk. The image
 // methods return whole JPEGs and SpriteSheets returns at most maxSheets of them.
 type EncryptedGenerator interface {
-	SpriteSheets(ctx context.Context, src EncryptedSource, intervalSeconds, tileWidth, columns, rows, maxSheets int) ([][]byte, error)
+	SpriteSheets(ctx context.Context, src EncryptedSource, intervalSeconds, tileWidth, columns, rows, frameCount, maxSheets int) ([][]byte, error)
 	SampleClip(ctx context.Context, src EncryptedSource, offsets []float64, segmentSeconds float64, width, maxFPS int) ([]byte, error)
 	FrameGrab(ctx context.Context, src EncryptedSource, atSeconds float64, width int) ([]byte, error)
 	WaveformAmplitudes(ctx context.Context, src EncryptedSource) ([]float64, error)
@@ -615,9 +615,9 @@ func (s *Service) GenerateTrickplay(ctx context.Context, id store.MediaID) error
 	if src, target, encrypted := s.encryptedPlane(media, file); encrypted {
 		publication.encrypted = target
 		_, _, sheetCount := trickplayPlan(media.DurationSeconds)
-		names, tileHeight, err = s.stageEncryptedSheets(ctx, publication, src, interval, sheetCount+1)
+		names, tileHeight, err = s.stageEncryptedSheets(ctx, publication, src, interval, frames, sheetCount+1)
 	} else {
-		names, tileHeight, err = s.stageSheets(ctx, publication, file.Path, interval)
+		names, tileHeight, err = s.stageSheets(ctx, publication, file.Path, interval, frames)
 	}
 	if err != nil {
 		return fmt.Errorf("sprite generation for %s: %w", id, err)
@@ -678,9 +678,9 @@ func (s *Service) removeOrphanTrickplaySheets(fingerprint string, expected []str
 
 // stageSheets has FFmpeg write a public Library's sprite sheets into the stage
 // directory and returns their names and the tile height.
-func (s *Service) stageSheets(ctx context.Context, publication *assetPublication, src string, interval int) ([]string, int, error) {
+func (s *Service) stageSheets(ctx context.Context, publication *assetPublication, src string, interval, frames int) ([]string, int, error) {
 	stagePath := filepath.Join(publication.root.Name(), publication.stageDir)
-	if err := s.gen.SpriteSheets(ctx, src, interval, TileWidth, SheetColumns, SheetRows, filepath.Join(stagePath, sheetPattern)); err != nil {
+	if err := s.gen.SpriteSheets(ctx, src, interval, TileWidth, SheetColumns, SheetRows, frames, filepath.Join(stagePath, sheetPattern)); err != nil {
 		return nil, 0, err
 	}
 	sheets, err := filepath.Glob(filepath.Join(stagePath, "sheet-*.jpg"))
@@ -706,8 +706,8 @@ func (s *Service) stageSheets(ctx context.Context, publication *assetPublication
 
 // stageEncryptedSheets derives an Encrypted Library's sprite sheets in memory
 // and stages each one as ciphertext.
-func (s *Service) stageEncryptedSheets(ctx context.Context, publication *assetPublication, src EncryptedSource, interval, maxSheets int) ([]string, int, error) {
-	sheets, err := s.encGen.SpriteSheets(ctx, src, interval, TileWidth, SheetColumns, SheetRows, maxSheets)
+func (s *Service) stageEncryptedSheets(ctx context.Context, publication *assetPublication, src EncryptedSource, interval, frames, maxSheets int) ([]string, int, error) {
+	sheets, err := s.encGen.SpriteSheets(ctx, src, interval, TileWidth, SheetColumns, SheetRows, frames, maxSheets)
 	if err != nil {
 		return nil, 0, err
 	}

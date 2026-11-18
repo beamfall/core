@@ -80,7 +80,7 @@ func assetTestJPEG(width, height int) []byte {
 	return buf.Bytes()
 }
 
-func (r *endpointAssetRunner) SpriteSheetsToPipe(ctx context.Context, in ffmpeg.PipeInput, _, _, _, _ int, stdout io.Writer) error {
+func (r *endpointAssetRunner) SpriteSheetsToPipe(ctx context.Context, in ffmpeg.PipeInput, _, _, _, _, _ int, stdout io.Writer) error {
 	if err := r.read(ctx, in); err != nil {
 		return err
 	}

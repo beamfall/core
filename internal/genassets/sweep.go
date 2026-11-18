@@ -103,7 +103,7 @@ func SweepHandler(service *Service) jobs.Handler {
 		if len(ids) > processed || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
-		return jobs.Result{}, nil
+		return jobs.Result{Checkpoint: data}, nil
 	}
 }
 
@@ -112,19 +112,22 @@ func SweepHandler(service *Service) jobs.Handler {
 const CatchUpJobKind store.JobKind = "asset-catch-up"
 
 type catchUpPayload struct {
+	Generation int64 `json:"generation,omitempty"`
 	Version    int   `json:"version"`
 	AfterRowID int64 `json:"after_rowid"`
 }
 
 type catchUpCheckpoint struct {
-	Version   int   `json:"version"`
-	LastRowID int64 `json:"last_rowid"`
-	Generated int   `json:"generated"`
-	Failed    int   `json:"failed"`
+	Generation int64  `json:"generation,omitempty"`
+	AfterRowID *int64 `json:"after_rowid,omitempty"`
+	Version    int    `json:"version"`
+	LastRowID  int64  `json:"last_rowid"`
+	Generated  int    `json:"generated"`
+	Failed     int    `json:"failed"`
 }
 
 // NewCatchUpJob builds a deduped, non-blocking catch-up for newly inserted Media.
-// An active catch-up keeps its earlier floor and can visit subsequent inserts.
+// Enqueue coalesces active catch-ups to the minimum floor, even during a claim.
 func NewCatchUpJob(createdAt time.Time, afterRowID int64) (store.Job, error) {
 	if afterRowID < 0 {
 		return store.Job{}, errors.New("catch-up rowid must be non-negative")
@@ -158,10 +161,17 @@ func CatchUpHandler(service *Service) jobs.Handler {
 			if err := json.Unmarshal(job.Checkpoint, &checkpoint); err != nil {
 				return jobs.Result{}, err
 			}
+			if checkpoint.AfterRowID == nil || *checkpoint.AfterRowID > payload.AfterRowID {
+				// This claim must revisit the lower floor, regardless of progress
+				// saved by a worker that started before the coalescing enqueue.
+				checkpoint.LastRowID = payload.AfterRowID
+			}
 			if checkpoint.Version != 1 || checkpoint.LastRowID < payload.AfterRowID {
 				return jobs.Result{}, errors.New("invalid asset catch-up checkpoint")
 			}
 		}
+		checkpoint.AfterRowID = &payload.AfterRowID
+		checkpoint.Generation = payload.Generation
 		refs, err := service.store.MediaIDsAfterRowID(ctx, checkpoint.LastRowID, sweepJobBatchSize+1)
 		if err != nil {
 			return jobs.Result{}, err
@@ -201,7 +211,7 @@ func CatchUpHandler(service *Service) jobs.Handler {
 		if len(refs) > processed || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
-		return jobs.Result{}, nil
+		return jobs.Result{Checkpoint: data}, nil
 	}
 }
 

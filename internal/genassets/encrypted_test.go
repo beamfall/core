@@ -90,7 +90,7 @@ func encJPEG(width, height int) []byte {
 	return buf.Bytes()
 }
 
-func (f *fakeEncGen) SpriteSheets(ctx context.Context, src EncryptedSource, _, _, _, _, maxSheets int) ([][]byte, error) {
+func (f *fakeEncGen) SpriteSheets(ctx context.Context, src EncryptedSource, _, _, _, _, _, maxSheets int) ([][]byte, error) {
 	if err := f.start(ctx, src); err != nil {
 		return nil, err
 	}
