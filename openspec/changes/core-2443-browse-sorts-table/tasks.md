@@ -1,0 +1,10 @@
+- [ ] `internal/store`: `release-date`, `audience-score` and `plays` sorts for Media and Entity browse
+- [ ] `internal/graph`: sort enum values; wire goldens regenerated with `make regen-wire-goldens`
+- [ ] Store tests cover each new sort and its missing-key order
+- [ ] Web: new sort options, year range control and chip, state in the URL
+- [ ] Web: table view mode
+- [ ] Follow-up ticket for codec, HDR, audio-format and language filters
+- [ ] Wire contract published as a new version (lander)
+- [ ] Verified on tower with screenshots at desktop and 375px widths (lander)
+- [ ] `make gate`
+- [ ] `openspec archive core-2443-browse-sorts-table` after landing
