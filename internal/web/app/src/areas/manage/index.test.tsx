@@ -333,6 +333,20 @@ describe("Manage navigation", () => {
     expect(screen.getByRole("link", { name: "Rename" })).toBeVisible();
   });
 
+  it("shows workflows again when a later capability read fails (CORE-2633)", async () => {
+    vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(true, false));
+    render(manageRouter("/manage/libraries", []));
+    expect(await screen.findByRole("link", { name: "Convert" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Rename" })).not.toBeInTheDocument();
+
+    vi.mocked(fetchCapabilityStates).mockRejectedValueOnce(
+      new ApiError("admin session required", 403),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+
+    expect(await screen.findByRole("link", { name: "Rename" })).toBeVisible();
+  });
+
   it("disables File tools Rename and sends no mutation when Rename is off", async () => {
     vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(true, false));
     vi.mocked(fetchLibraries).mockResolvedValueOnce([

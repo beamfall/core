@@ -29,7 +29,8 @@ export function useManageCapabilities(refreshKey = 0) {
           if (!request.signal.aborted) setCapabilities(states);
         },
         () => {
-          if (!request.signal.aborted) setCapabilities((previous) => previous ?? []);
+          // A failed read clears the snapshot: the server's checks decide.
+          if (!request.signal.aborted) setCapabilities([]);
         },
       );
     }
