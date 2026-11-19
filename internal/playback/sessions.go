@@ -179,16 +179,20 @@ type encoderRun struct {
 	// the stall watchdog only acts while it is non-zero.
 	waiting atomic.Int32
 	// Pacing state is guarded by Sessions.mu and belongs to this generation.
-	playhead      int
-	paced         bool
-	lastMedia     int // last fragment with media, read after outputDone closes
-	produced      int // fragments cleared for publication in this generation
-	paused        bool
-	resumedAt     time.Time
-	pacingChanged chan struct{}
-	processDone   chan struct{}
-	outputDone    chan struct{}
-	outputErr     error // publisher writes before closing outputDone
+	playhead       int
+	paced          bool
+	lastMedia      int // last fragment with media, read after outputDone closes
+	completed      int // muxer frontier, including the fragment being published
+	produced       int // publication frontier for this generation
+	producedAt     time.Time
+	paused         bool
+	resumedAt      time.Time
+	pacingChanged  chan struct{}
+	processDone    chan struct{}
+	processErr     error // reaper writes before closing processDone
+	outputCanceled chan struct{}
+	outputDone     chan struct{}
+	outputErr      error // publisher writes before closing outputDone
 	// stalled is set by the stall watchdog just before it kills the process.
 	stalled atomic.Bool
 	// live is the run's loopback endpoint on an encrypted session, revoked
@@ -898,6 +902,9 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	if session.run != nil {
 		teardown.liveRun = session.run.live
 		teardown.published = session.run.outputDone
+		if session.run.outputCanceled != nil {
+			close(session.run.outputCanceled)
+		}
 	}
 	if session.revokeDone != nil {
 		close(session.revokeDone)
@@ -1244,7 +1251,7 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 // end of input fails the request at once instead of letting it wait out its
 // budget; an encoder the server stopped (switch, seek, teardown) leaves the
 // request waiting for its replacement as before.
-func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, request *segmentRequest) error {
+func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, request *segmentRequest) (*encoderRun, error) {
 	restarts := 0
 	for {
 		if run != nil {
@@ -1261,7 +1268,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 			run.waiting.Add(-1)
 		}
 		if !errors.Is(err, errEncoderExited) {
-			return err
+			return run, err
 		}
 		switch run.outcome {
 		case exitStopped:
@@ -1270,21 +1277,21 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 			// to finish before using the successor's exit channel.
 			next, live := s.replacementRun(key, session, run, request)
 			if !live {
-				return ErrSessionEvicted
+				return run, ErrSessionEvicted
 			}
 			run = next
 		case exitEndOfInput:
 			if isSegment && s.beyondSourceEnd(session, rung, segment) {
-				return ErrSourceEnded
+				return run, ErrSourceEnded
 			}
-			return errEncoderEnded
+			return run, errEncoderEnded
 		default:
 			if restarts >= maxRequestEncoderRestarts {
-				return errEncoderFailing
+				return run, errEncoderFailing
 			}
 			restarts++
 			if run, err = s.ensureRung(ctx, key, session, rung, segment, path, request); err != nil {
-				return err
+				return run, err
 			}
 			slog.Warn("restarted live transcode at the requested segment",
 				"media", key.MediaID, "rung", rung.ID, "segment", segment, "attempt", restarts)
@@ -1309,28 +1316,35 @@ func (s *Sessions) replacementRun(key SessionKey, session *hlsSession, previous 
 // waitWhileEncoderProgresses runs waitForEncoder in budget-long windows. When
 // a window expires on a segment and the session is healthy but behind the
 // playhead, the request keeps waiting for the bytes instead of failing into a
-// retryable 503 (CORE-0044). Healthy means the session's encoder for rung was
-// this request's run for the whole window, that run started at or before the
-// requested segment, and it wrote a segment during the window. Anything else,
-// such as a stalled run, a run another request replaced or restarted, or a run
-// started past the segment, fails as before. A run writes its segments in
-// order from its base, and the request is at most seekLookaheadSegments past
-// the frontier when the wait starts, so the number of extra windows is bounded.
+// retryable 503 (CORE-0044). The run must still be current, able to reach the
+// segment, and have advanced during the window. For paced output, a request
+// can follow a same-rung replacement and use its own publication frontier.
 func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, budget time.Duration, request *segmentRequest) error {
 	for {
 		windowStart := time.Now()
 		current, _, tracked := s.rungEncoder(key, session, rung)
 		waitCtx, cancel := context.WithTimeout(ctx, budget)
-		err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run, request)
+		next, err := s.waitForEncoder(waitCtx, key, session, rung, segment, isSegment, path, run, request)
 		cancel()
 		if err == nil || !isSegment || ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
 			return err
 		}
 		after, base, stillTracked := s.rungEncoder(key, session, rung)
-		if !tracked || !stillTracked || current != run || after != run || base > segment ||
+		if !stillTracked || next == nil || after != next || base > segment {
+			return err
+		}
+		if next.paced {
+			s.mu.Lock()
+			advanced := !next.producedAt.Before(windowStart)
+			s.mu.Unlock()
+			if !advanced {
+				return err
+			}
+		} else if !tracked || current != run || next != run ||
 			!segmentWrittenSince(filepath.Join(session.dir, rung.ID), base, windowStart) {
 			return err
 		}
+		run = next
 	}
 }
 
@@ -1773,10 +1787,13 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	}
 	run := &encoderRun{
 		rungID: rung.ID, paced: s.pacesFiles(session),
-		playhead: requested, produced: segment - 1, lastMedia: segment - 1,
+		playhead: requested, completed: segment - 1, produced: segment - 1, lastMedia: segment - 1,
 	}
 	if run.paced {
 		run.pacingChanged = make(chan struct{})
+	}
+	if previous != nil && previous.outputCanceled != nil {
+		close(previous.outputCanceled)
 	}
 	session.run = run
 	if previous != nil && previous.rungID == rung.ID {
@@ -1861,6 +1878,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		run.exited = make(chan struct{})
 		if output != nil {
 			run.processDone = make(chan struct{})
+			run.outputCanceled = make(chan struct{})
 			run.outputDone = make(chan struct{})
 			go s.publishFileSegments(key, session, run, output, segment)
 			session.updatePacingLocked()
@@ -1891,6 +1909,9 @@ func (s *Sessions) startFileRung(ctx context.Context, session *hlsSession, rung 
 		output, err = starter.NewPacedHLSOutput(dir)
 		if err != nil {
 			return nil, nil, err
+		}
+		if err := output.Gate(base); err != nil {
+			return nil, nil, errors.Join(err, output.Close())
 		}
 		dir = output.Dir
 		if picture, ok := rendition.Picture(); ok && picture.TimedTextPath != "" {
@@ -2008,7 +2029,12 @@ func (session *hlsSession) updatePacingLocked() {
 	if !run.proc.Running() {
 		return
 	}
-	pause := run.produced >= session.publicationLimitLocked()
+	select {
+	case <-run.processDone:
+		return // a cleanly exited run can still have a tail to publish
+	default:
+	}
+	pause := run.completed >= session.publicationLimitLocked()
 	if pause && !run.paused {
 		run.paused = run.proc.Pause()
 	} else if !pause && run.paused && run.proc.Resume() {
@@ -2114,6 +2140,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		defer close(run.exited)
 		waitErr := run.proc.Wait()
 		if run.outputDone != nil {
+			run.processErr = waitErr
 			close(run.processDone)
 			<-run.outputDone
 			waitErr = errors.Join(waitErr, run.outputErr)

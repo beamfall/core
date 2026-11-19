@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,8 +15,8 @@ import (
 
 var errPacedOutputDiscarded = errors.New("live encoder output discarded after demand moved")
 
-// publishFileSegments follows FFmpeg's temp_file renames in segment order.
-// Poll the next name only, with no watch or descriptor per cached segment.
+// publishFileSegments receives one fragment at a time in muxer order. Each
+// next pipe stays closed to readers until the previous fragment is published.
 func (s *Sessions) publishFileSegments(key SessionKey, session *hlsSession, run *encoderRun, output *ffmpeg.PacedHLSOutput, base int) {
 	defer close(run.outputDone)
 	err := s.publishRun(key, session, run, output, base)
@@ -33,26 +34,49 @@ func (s *Sessions) publishRun(key SessionKey, session *hlsSession, run *encoderR
 	if linear {
 		playlist = "index.m3u8"
 	}
-	finished := false
+	processDone := run.processDone
+	received := false
 	for n := base; ; {
-		changed, published, err := s.publishNext(key, session, run, output, playlist, base, n, linear, finished)
+		select {
+		case <-processDone:
+			processDone = nil
+			if run.processErr != nil || run.proc.StopRequested() {
+				return nil // the reaper owns the exit error
+			}
+		default:
+		}
+		finished := processDone == nil
+		changed, published, err := s.publishNext(key, session, run, output, playlist, base, n, linear, received, finished)
 		if err != nil {
 			return err
 		}
 		if published {
 			n++
+			received = false
 			continue
 		}
-		if finished {
+		if finished && !received {
 			return nil
+		}
+		if changed == nil && !received {
+			err := output.Receive(n, run.processDone)
+			if errors.Is(err, io.EOF) {
+				continue // Wait finished without another fragment
+			}
+			if err != nil {
+				return err
+			}
+			received = true
+			continue
 		}
 		var poll <-chan time.Time
 		if changed == nil {
-			poll = ticker.C // the muxer still owes us this fragment
+			poll = ticker.C // the muxer still owes us the playlist update
 		}
 		select {
-		case <-run.processDone:
-			finished = true
+		case <-processDone:
+		case <-run.outputCanceled:
+			return ErrSessionEvicted
 		case <-changed: // already at the demand limit
 		case <-poll:
 		}
@@ -62,7 +86,7 @@ func (s *Sessions) publishRun(key SessionKey, session *hlsSession, run *encoderR
 // publishNext serializes the demand check and the cache update with requests
 // and encoder replacement for this session. The manager lock never covers
 // opening or copying output.
-func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoderRun, output *ffmpeg.PacedHLSOutput, playlist string, base, n int, linear, finished bool) (<-chan struct{}, bool, error) {
+func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoderRun, output *ffmpeg.PacedHLSOutput, playlist string, base, n int, linear, received, finished bool) (<-chan struct{}, bool, error) {
 	session.publicationMu.Lock()
 	defer session.publicationMu.Unlock()
 	s.mu.Lock()
@@ -74,27 +98,28 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 	allowed := n <= session.publicationLimitLocked()
 	rung := session.currentRung
 	s.mu.Unlock()
-	if !allowed && !finished {
+	if !received {
+		if finished {
+			return nil, false, finishPacedOutput(output, playlist, base, n, linear)
+		}
+		if !allowed {
+			return changed, false, nil
+		}
+		return nil, false, nil
+	}
+	if !allowed {
+		if finished && !linear {
+			return nil, false, errPacedOutputDiscarded
+		}
 		return changed, false, nil
 	}
 
 	name := fmt.Sprintf("seg%05d.m4s", n)
 	f, err := output.Open(name)
-	if errors.Is(err, os.ErrNotExist) {
-		if finished {
-			err = finishPacedOutput(output, playlist, base, n, linear)
-		} else {
-			err = nil
-		}
-		return nil, false, err
-	}
 	if err != nil {
 		return nil, false, err
 	}
 	defer f.Close()
-	if !allowed {
-		return nil, false, errPacedOutputDiscarded
-	}
 	info, err := f.Stat()
 	if err != nil {
 		return nil, false, err
@@ -115,6 +140,19 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 			return nil, false, errors.New("live encoder left a fragment outside its playlist")
 		}
 	}
+	s.mu.Lock()
+	if !s.liveLocked(key, session) || session.run != run {
+		s.mu.Unlock()
+		return nil, false, ErrSessionEvicted
+	}
+	run.completed = n
+	session.updatePacingLocked()
+	s.mu.Unlock()
+	// The open descriptor keeps the fragment available during copying.
+	// Remove its staging name before the cache rename exposes it.
+	if err := os.Remove(filepath.Join(output.Dir, name)); err != nil { // #nosec G703 -- generated fragment name in the server-created encoder directory
+		return nil, false, err
+	}
 	if n == base {
 		if err := publishPacedInit(output); err != nil {
 			return nil, false, err
@@ -134,15 +172,13 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 			return nil, false, err
 		}
 	}
-	if err := os.Remove(filepath.Join(output.Dir, name)); err != nil { // #nosec G703 -- generated fragment name in the server-created encoder directory
-		return nil, false, err
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.liveLocked(key, session) || session.run != run {
 		return nil, false, ErrSessionEvicted
 	}
 	run.produced = n
+	run.producedAt = time.Now()
 	if hasMedia {
 		run.lastMedia = n
 	}

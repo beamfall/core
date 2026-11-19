@@ -45,6 +45,7 @@ func TestPacingMacOSReceipt(t *testing.T) {
 	first := segment(0)
 	init := artifact("init.mp4")
 	dir := filepath.Dir(first)
+	session := registeredSession(t, s, key)
 	observe := func(playhead int, stopped bool) (string, int) {
 		t.Helper()
 		deadline := time.Now().Add(20 * time.Second)
@@ -61,7 +62,6 @@ func TestPacingMacOSReceipt(t *testing.T) {
 				if len(fields) < 3 || strings.HasPrefix(fields[1], "T") != stopped {
 					continue
 				}
-				frontier := scanFrontier(dir, 0)
 				// #nosec G204 -- PID read from ps for the session encoder.
 				status, err := exec.CommandContext(ctx, "/bin/ps", "-p", fields[0], "-o", "pid=,stat=,comm=").Output()
 				state := strings.Fields(string(status))
@@ -69,14 +69,26 @@ func TestPacingMacOSReceipt(t *testing.T) {
 					strings.HasPrefix(state[1], "T") != stopped {
 					continue
 				}
+				session.publicationMu.Lock()
+				frontier := scanFrontier(dir, 0)
 				staged, err := filepath.Glob(filepath.Join(filepath.Dir(dir), ".encoder-*", "seg*.m4s"))
+				completed := 0
+				for _, path := range staged {
+					if fileReady(path) {
+						completed++
+					}
+				}
+				session.publicationMu.Unlock()
 				if err != nil {
 					t.Fatal(err)
 				}
 				fmt.Printf("playhead=%ds segment=%d frontier=%d on_disk_ahead=%d unpublished_completed=%d\nps: %s\n",
-					playhead*4, playhead, frontier, frontier-playhead, len(staged), strings.TrimSpace(string(status)))
-				if stopped && frontier-playhead+len(staged) > encodeAheadSegments {
+					playhead*4, playhead, frontier, frontier-playhead, completed, strings.TrimSpace(string(status)))
+				if stopped && frontier-playhead+completed > encodeAheadSegments {
 					t.Fatalf("published and unpublished completed files exceed the lead")
+				}
+				if stopped && frontier-playhead < encodeAheadSegments {
+					continue // SIGSTOP precedes the last cache rename
 				}
 				return fields[0], frontier
 			}

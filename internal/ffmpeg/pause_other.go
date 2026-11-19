@@ -4,6 +4,7 @@ package ffmpeg
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 )
@@ -14,6 +15,10 @@ const SupportsHLSPause = false
 
 func openHLSStage(string) (*os.File, error)             { return nil, errors.ErrUnsupported }
 func openHLSSidecar(*os.File, string) (*os.File, error) { return nil, errors.ErrUnsupported }
+func makeHLSSegmentGate(string) error                   { return errors.ErrUnsupported }
+func readHLSSegmentGate(*os.File, string, io.Writer, <-chan struct{}) error {
+	return errors.ErrUnsupported
+}
 
 func pauseProcessGroup(_ *exec.Cmd) bool           { return false }
 func resumeProcessGroup(_ *exec.Cmd) bool          { return false }
