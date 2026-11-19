@@ -63,6 +63,14 @@ beforeEach(() => {
   nextFrame = 0;
   vi.stubGlobal("WebGL2RenderingContext", class {});
   vi.stubGlobal("OfflineAudioContext", class {});
+  // An observer that never reports: the loop measures the slot.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
     pending.add(++nextFrame);
     callbacks.set(nextFrame, cb);
@@ -363,6 +371,29 @@ describe("Visualizer resize before paint", () => {
     step(183);
     expect(renderer.draw.mock.lastCall?.[5]).toBe(183);
     expect(renderer.draw.mock.lastCall?.[7]).toBe(33);
+    clock.mockRestore();
+  });
+
+  // Codex round 19: a frame painted late and the next on time are shown one refresh apart.
+  it("never times the limiter past the shortest draw interval seen", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    step(0);
+    clock.mockReturnValue(16);
+    step(16);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(16);
+    clock.mockReturnValue(132);
+    step(132);
+    expect(renderer.draw.mock.lastCall?.[5]).toBe(116);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(16);
+    // A callback burst closer than any display refreshes does not shrink the floor below 4 ms.
+    clock.mockReturnValue(133);
+    step(133);
+    clock.mockReturnValue(149);
+    step(149);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(4);
     clock.mockRestore();
   });
 });

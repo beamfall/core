@@ -20,6 +20,9 @@ import {
 // does not jump its clock. The governor gets the raw interval instead, so it can tell a pause
 // (a stall, a throttled or occluded page) from a slow frame and ignore it.
 const MAX_DT = 0.1;
+// The shortest refresh period the limiter's shown time trusts (a 250 Hz display): two callbacks
+// closer than that are a browser catching up, not a display refreshing.
+const MIN_REFRESH_MS = 4;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
 
@@ -162,6 +165,10 @@ export function Visualizer({
     let frame = 0;
     let lastDrawn: number | null = null;
     let lastWall: number | null = null;
+    // The shortest interval between draws since the loop started: about the display's refresh
+    // period. A frame can be painted late and the next one on time, so the time a frame was shown
+    // can be as short as one refresh whatever the clocks between draws say (Codex round 19).
+    let refreshMs = Number.POSITIVE_INFINITY;
     // The backing size of the last draw while it is unpainted: a draw sets it, and the next
     // animation frame, which runs after the paint, clears it.
     let unpainted: string | null = null;
@@ -169,37 +176,34 @@ export function Visualizer({
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     // The slot's size from a ResizeObserver, in device pixels where the browser reports them,
-    // so the draw loop reads no layout. Until it reports, and without one, the loop measures. The
+    // so the draw loop reads no layout. Until it first reports, the loop measures. The
     // slot, not the canvas, is observed: the loop sizes the canvas to the frame it shows.
     const slot = canvas.parentElement ?? canvas;
     let device: { inlineSize: number; blockSize: number } | null = null;
     let css: { width: number; height: number } | null = null;
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver((entries) => {
-            const entry = entries[entries.length - 1];
-            if (!entry) return;
-            device = entry.devicePixelContentBoxSize?.[0] ?? null;
-            css = { width: entry.contentRect.width, height: entry.contentRect.height };
-            // Observers run after animation frames and before the paint: a slot resized since this
-            // frame's draw would show a frame judged against the old area limit, so it is withdrawn
-            // and the next draw judges at the new size (Codex round 18).
-            const drawn = unpainted;
-            if (drawn === null) return;
-            unpainted = null;
-            const key = backingSize(device, css.width, css.height, window.devicePixelRatio).join();
-            if (key === drawn) return;
-            try {
-              rendererRef.current?.withdraw();
-            } catch {
-              // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
-            }
-          });
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (!entry) return;
+      device = entry.devicePixelContentBoxSize?.[0] ?? null;
+      css = { width: entry.contentRect.width, height: entry.contentRect.height };
+      // Observers run after animation frames and before the paint: a slot resized since this
+      // frame's draw would show a frame judged against the old area limit, so it is withdrawn
+      // and the next draw judges at the new size (Codex round 18).
+      const drawn = unpainted;
+      if (drawn === null) return;
+      unpainted = null;
+      const key = backingSize(device, css.width, css.height, window.devicePixelRatio).join();
+      if (key === drawn) return;
+      try {
+        rendererRef.current?.withdraw();
+      } catch {
+        // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
+      }
+    });
     try {
-      observer?.observe(slot, { box: "device-pixel-content-box" });
+      observer.observe(slot, { box: "device-pixel-content-box" });
     } catch {
-      observer?.observe(slot);
+      observer.observe(slot);
     }
     // Fit and filter the frame the renderer shows. During a display-scale fade, both still
     // follow the old frame's texel size.
@@ -268,12 +272,19 @@ export function Visualizer({
         }
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
-        // The limiter ages its evidence by the shorter of the frame timestamps' interval and the
-        // time between draws: a late callback has a stale timestamp, and its frame is shown
-        // about the draw interval after the last (Codex round 18).
+        // The limiter ages its evidence by a lower bound on the time the last frame was shown:
+        // the shorter of the frame timestamps' interval and the time between draws (a late
+        // callback has a stale timestamp, Codex round 18), and no more than the refresh period,
+        // since the last frame's paint may have been late (Codex round 19). A device that draws
+        // slower than its display refreshes ages its evidence slower: held areas wait longer.
         const wall = performance.now();
-        const shownMs =
+        const interval =
           lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
+        if (lastWall !== null) refreshMs = Math.min(refreshMs, Math.max(MIN_REFRESH_MS, interval));
+        const shownMs = Math.min(
+          interval,
+          refreshMs === Number.POSITIVE_INFINITY ? interval : refreshMs,
+        );
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);
@@ -360,7 +371,7 @@ export function Visualizer({
     return () => {
       alive = false;
       cancelAnimationFrame(frame);
-      observer?.disconnect();
+      observer.disconnect();
       canvas.removeEventListener("webglcontextlost", lost);
       canvas.removeEventListener("webglcontextrestored", restored);
       rendererRef.current?.dispose();

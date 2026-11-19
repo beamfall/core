@@ -17,6 +17,13 @@ const direct = { kind: "direct-play", url: "/api/media/m1/stream" };
 function withWebGL2() {
   vi.stubGlobal("WebGL2RenderingContext", class {});
   vi.stubGlobal("OfflineAudioContext", class {});
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
 }
 
 afterEach(() => {
@@ -42,6 +49,17 @@ describe("Visualizer (CORE-1309)", () => {
   });
 
   it("leaves the slot empty without WebGL2", () => {
+    expect(canVisualize()).toBe(false);
+    const { container } = render(
+      <Visualizer videoRef={createRef<HTMLVideoElement>()} stream={direct} trackKey="m1" />,
+    );
+    expect(container.querySelector("canvas")).toBeNull();
+  });
+
+  // Codex round 19: without an observer a resize before the paint could show an over-limit frame.
+  it("leaves the slot empty without ResizeObserver", () => {
+    withWebGL2();
+    vi.stubGlobal("ResizeObserver", undefined);
     expect(canVisualize()).toBe(false);
     const { container } = render(
       <Visualizer videoRef={createRef<HTMLVideoElement>()} stream={direct} trackKey="m1" />,

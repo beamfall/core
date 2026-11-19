@@ -66,6 +66,7 @@ describe("visual choice and rotation (CORE-2368)", () => {
   it("shows a select with rotate, album and every visual by name", () => {
     vi.stubGlobal("WebGL2RenderingContext", class {});
     vi.stubGlobal("OfflineAudioContext", class {});
+    vi.stubGlobal("ResizeObserver", class {});
     render(
       <I18nProvider initialLocale="en">
         <VisualSettings />
