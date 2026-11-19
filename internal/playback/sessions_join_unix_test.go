@@ -4,8 +4,10 @@ package playback
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/beamfall/core/internal/encderiv"
+	"github.com/beamfall/core/internal/governor"
 )
 
 func TestSessionsCloseDrainsInProgressFragmentJoin(t *testing.T) {
@@ -195,6 +198,104 @@ func TestSessionsPreemptionDuringJoinPublication(t *testing.T) {
 	case <-session.teardownDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("victim directory removal did not finish")
+	}
+}
+
+func TestSessionsDetachedSpawnReapsDuringJoinPublication(t *testing.T) {
+	t.Parallel()
+	spawn := make(chan struct{})
+	returnSpawn := sync.OnceFunc(func() { close(spawn) })
+	launcher := &scriptedTranscoder{cmds: make(chan *exec.Cmd, 1)}
+	launcher.start = func(_ int, dir string, _ int) []string {
+		writeArtifact(t, dir, "seg00000.m4s", mediaSegment())
+		return []string{"sleep", "60"}
+	}
+	g := governor.New()
+	sessions := NewSessions(&pausedSpawn{scriptedTranscoder: launcher, release: spawn}, t.TempDir(), nil)
+	sessions.SetTranscodeCap(1)
+	sessions.SetGovernor(g)
+	t.Cleanup(sessions.Close)
+	defer returnSpawn()
+	key := SessionKey{SessionID: "spawn-join-victim", MediaID: "media-a"}
+	fetched := make(chan error, 1)
+	go func() {
+		_, err := filePath720(sessions, key, "720p/seg00000.m4s")
+		fetched <- err
+	}()
+	var child *exec.Cmd
+	select {
+	case child = <-launcher.cmds:
+	case err := <-fetched:
+		t.Fatalf("spawn did not start: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("spawn did not reach the latch")
+	}
+	session := registeredSession(t, sessions, key)
+	removing := make(chan struct{})
+	sessions.removeDir = func(dir string) error {
+		if dir == session.dir {
+			close(removing)
+		}
+		return os.RemoveAll(dir)
+	}
+	part := regularJoinPart(t)
+	entered, resume := make(chan struct{}), make(chan struct{})
+	releaseRename := sync.OnceFunc(func() { close(resume) })
+	defer releaseRename()
+	joined := make(chan error, 1)
+	go func() {
+		dst := filepath.Join(session.dir, "720p", "joined00000.m4s")
+		joined <- session.joinPlaylistFragments(dst, []string{part, part}, readJoinFragment, func(from, to string) error {
+			close(entered)
+			<-resume
+			return os.Rename(from, to)
+		})
+	}()
+	select {
+	case <-entered:
+	case err := <-joined:
+		t.Fatalf("join ended before rename: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("join did not reach rename")
+	}
+	finishesWhileBlocked(t, "termination during spawn", func() error {
+		if n := sessions.TerminateSession(key.SessionID); n != 1 {
+			return fmt.Errorf("TerminateSession = %d, want 1", n)
+		}
+		return nil
+	})
+	other := SessionKey{SessionID: "spawn-join-next", MediaID: "media-b"}
+	if sessions.CanAdmit(other) || g.ActiveTranscodes() != 1 {
+		t.Fatal("pending spawn lost its slot or lease before returning the child")
+	}
+	returnSpawn()
+	waitSessionCondition(t, "spawned child to release its slot and lease during rename", func() bool {
+		return sessions.CanAdmit(other) && g.ActiveTranscodes() == 0
+	})
+	if child.ProcessState == nil {
+		t.Fatal("slot released before the child was reaped")
+	}
+	finishesWhileBlocked(t, "start with the freed slot", func() error {
+		_, err := filePath720(sessions, other, "720p/seg00000.m4s")
+		return err
+	})
+	select {
+	case <-removing:
+		t.Fatal("directory removal started while the fragment rename was blocked")
+	default:
+	}
+	releaseRename()
+	assertJoinEvicted(t, joined)
+	select {
+	case err := <-fetched:
+		if !errors.Is(err, ErrSessionEvicted) {
+			t.Fatalf("fetch error = %v, want ErrSessionEvicted", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("detached fetch did not finish")
+	}
+	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("victim directory after teardown: %v", err)
 	}
 }
 

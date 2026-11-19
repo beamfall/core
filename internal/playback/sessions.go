@@ -240,7 +240,8 @@ type hlsSession struct {
 	// Lock order is startMu, then mu, then Sessions.mu. The manager's lock
 	// protects admission (startPending, priority, lastAccess) and
 	// playback observations (started, deliveredRung, resumeSeconds).
-	// mu protects encoder and source-end state and admission of fragment joins.
+	// mu protects playback state and admission of fragment joins. Encoder
+	// handoff, stop and capacity release do not take mu.
 	startMu  sync.Mutex
 	mu       sync.Mutex
 	detached atomic.Bool
@@ -292,8 +293,8 @@ type hlsSession struct {
 	// viewer is being served until the session ends.
 	deliveredRung string
 	proc          *ffmpeg.HLSProcess
-	// A pending starter owns teardown if the session is detached. Once its
-	// readers have been revoked, a stopped run can release its admission.
+	// A starter owns teardown until it hands off the run under Sessions.mu.
+	// Once readers have been revoked, a stopped run can release its admission.
 	startPending   bool
 	readersRevoked bool
 	baseSegment    int
@@ -1726,10 +1727,13 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	session.startMu.Lock()
 	defer session.startMu.Unlock()
 	session.mu.Lock()
+	sessionLocked := true
 	teardownAfterStart := false
 	var unstartedLive *encderiv.LiveRun
 	defer func() {
-		session.mu.Unlock()
+		if sessionLocked {
+			session.mu.Unlock()
+		}
 		if teardownAfterStart {
 			s.revokeSession(session)
 			s.stopAndQueueTeardown(session)
@@ -1845,6 +1849,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	session.run = run
 	s.mu.Unlock()
 	session.mu.Unlock()
+	sessionLocked = false
 	if victim != nil {
 		s.revokeSession(victim.session)
 		// Preemption only selects sessions with no start pending. Stop the
@@ -1878,36 +1883,28 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		s.stopRun(session, run)
 		drainRun(run)
 	}
-	session.mu.Lock()
 	s.mu.Lock()
 	if session.detached.Load() {
-		// removeLocked handed teardown to this start. It has exclusive
-		// responsibility for any encoder that launched before seeing detach.
-		// Keep startPending set until cleanup completes so termination callers
-		// continue to leave the teardown to the starter.
+		// Detach beat the handoff. The starter stops and reaps this child
+		// before draining fragment publication and removing the directory.
 		teardownAfterStart = true
 		s.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
-	session.startPending = false
-	if err != nil {
-		s.mu.Unlock()
-		return nil, err
-	}
-	session.proc = proc
-	session.currentRung = rung.ID
-	session.deliveredRung = rung.ID
-	session.baseSegment = segment
-	session.frontier = segment - 1 // new generation: nothing produced past base yet
-	session.lastAccess = s.now()
-	session.started = true
-	session.resumeSeconds = 0
-	if proc.Running() {
+	if err == nil && proc.Running() {
 		run.exited = make(chan struct{})
 	}
+	// Detach can now take ownership and stop the run without waiting for
+	// the starter to publish playback state under session.mu.
+	session.startPending = false
 	s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	if run.exited != nil {
-		s.reapProcess(key, session, run, rung, segment)
+		published := make(chan struct{})
+		defer close(published)
+		s.reapProcess(key, session, run, rung, segment, published)
 		if proc.ReportsProgress() {
 			go watchForStall(run, s.encoderStallTimeout())
 		}
@@ -1918,6 +1915,23 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		liveRun.SignalRevoke()
 		unstartedLive = liveRun // drain off the session lock
 	}
+
+	session.mu.Lock()
+	sessionLocked = true
+	s.mu.Lock()
+	if session.detached.Load() {
+		s.mu.Unlock()
+		return nil, ErrSessionEvicted
+	}
+	session.proc = proc
+	session.currentRung = rung.ID
+	session.deliveredRung = rung.ID
+	session.baseSegment = segment
+	session.frontier = segment - 1 // new generation: nothing produced past base yet
+	session.lastAccess = s.now()
+	session.started = true
+	session.resumeSeconds = 0
+	s.mu.Unlock()
 	return run, nil
 }
 
@@ -2006,7 +2020,7 @@ func watchForStall(run *encoderRun, stall time.Duration) {
 // run.exited so waiting requests react immediately. Server-initiated stops and
 // clean end-of-input exits log at debug; a crash logs at error with its exit
 // status and stderr tail.
-func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoderRun, rung Rung, base int) {
+func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoderRun, rung Rung, base int, published <-chan struct{}) {
 	started := time.Now() // before the goroutine, so no segment of this run predates it
 	go func() {
 		defer close(run.exited)
@@ -2017,6 +2031,9 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 			// to store the uploads it sent before exiting.
 			run.live.Finish()
 		}
+		// Exit bookkeeping needs the playback state from ensureRung. Waiting
+		// for publication here leaves process reaping and slot release independent.
+		<-published
 		outcome := exitCrashed
 		switch {
 		case run.proc.StopRequested():
