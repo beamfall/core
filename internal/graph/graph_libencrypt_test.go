@@ -310,6 +310,8 @@ func TestSealUnsealWrapsStoreLifecycle(t *testing.T) {
 	handler.SetLibEncrypt(mgr)
 	lifecycle := &recordingEncryptedDBLifecycle{}
 	handler.SetEncryptedLibraryDBLifecycle(lifecycle)
+	cleanup := &transcodeCleanupRecorder{}
+	handler.SetTranscodeTerminator(cleanup)
 	libID := newEncryptedLibrary(t, st)
 	openManagerAdminSession(t, st)
 
@@ -336,6 +338,12 @@ func TestSealUnsealWrapsStoreLifecycle(t *testing.T) {
 	}
 
 	sealMut := `mutation S($libraryID: ID!) { sealEncryptedLibrary(libraryID: $libraryID) { sealed } }`
+	cleanup.err = fs.ErrPermission
+	failedSeal := postGraphQL(t, handler, authorizeManager, sealMut, map[string]any{"libraryID": libID})
+	if !bytes.Contains(failedSeal.Body.Bytes(), []byte(`"errors"`)) || lifecycle.seals != 0 || mgr.Sealed(libID) {
+		t.Fatalf("seal proceeded despite failed transcode cleanup: %s", failedSeal.Body.String())
+	}
+	cleanup.err = nil
 	srec := postGraphQL(t, handler, authorizeManager, sealMut, map[string]any{"libraryID": libID})
 	if !sealedStatus(t, srec, "sealEncryptedLibrary") {
 		t.Fatalf("seal did not report sealed after DB lifecycle: %s", srec.Body.String())
@@ -345,6 +353,12 @@ func TestSealUnsealWrapsStoreLifecycle(t *testing.T) {
 	}
 
 	unsealMut := `mutation U($libraryID: ID!, $passphrase: String) { unsealEncryptedLibrary(libraryID: $libraryID, passphrase: $passphrase) { sealed } }`
+	cleanup.err = fs.ErrPermission
+	failedUnseal := postGraphQL(t, handler, authorizeManager, unsealMut, map[string]any{"libraryID": libID, "passphrase": passphrase})
+	if !bytes.Contains(failedUnseal.Body.Bytes(), []byte(`"errors"`)) || lifecycle.unseals != 1 || !mgr.Sealed(libID) {
+		t.Fatalf("unseal proceeded despite failed transcode cleanup: %s", failedUnseal.Body.String())
+	}
+	cleanup.err = nil
 	urec := postGraphQL(t, handler, authorizeManager, unsealMut, map[string]any{"libraryID": libID, "passphrase": passphrase})
 	if sealedStatus(t, urec, "unsealEncryptedLibrary") {
 		t.Fatalf("unseal did not register DB lifecycle: %s", urec.Body.String())
@@ -353,6 +367,13 @@ func TestSealUnsealWrapsStoreLifecycle(t *testing.T) {
 		t.Fatalf("unseal lifecycle = unseals %d registered %#v", lifecycle.unseals, lifecycle.registered)
 	}
 }
+
+type transcodeCleanupRecorder struct {
+	TranscodeTerminator
+	err error
+}
+
+func (r *transcodeCleanupRecorder) WaitForTeardowns(context.Context) error { return r.err }
 
 func TestRewrapEncryptedLibraryRotatesFilesAndRecoveryKey(t *testing.T) {
 	ctx := context.Background()

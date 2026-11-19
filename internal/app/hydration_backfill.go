@@ -110,16 +110,22 @@ type encryptedLibraryDBLifecycle interface {
 	AbortEncryptedLibraryDBProvision(ctx context.Context, libraryID store.LibraryID) error
 }
 
-// hydrationBackfillOnUnseal runs the hydration backfill check after an
-// encrypted Library's database is unsealed at runtime. A sealed Library's
-// Media are unreadable at start, so its check is deferred until an operator
-// unseals it.
-type hydrationBackfillOnUnseal struct {
+// runtimeEncryptedLibraryDB coordinates the runtime database lifecycle with
+// transcode cleanup and the hydration backfill deferred for sealed Libraries.
+type runtimeEncryptedLibraryDB struct {
 	encryptedLibraryDBLifecycle
-	backfill func(context.Context)
+	backfill              func(context.Context)
+	checkTranscodeCleanup func() error
 }
 
-func (l hydrationBackfillOnUnseal) UnsealEncryptedLibraryDB(ctx context.Context, libraryID store.LibraryID, cipher store.EncryptedLibraryDBCipher) error {
+func (l runtimeEncryptedLibraryDB) SealEncryptedLibraryDB(ctx context.Context, libraryID store.LibraryID, cipher store.EncryptedLibraryDBCipher) error {
+	if err := l.checkTranscodeCleanup(); err != nil {
+		return err
+	}
+	return l.encryptedLibraryDBLifecycle.SealEncryptedLibraryDB(ctx, libraryID, cipher)
+}
+
+func (l runtimeEncryptedLibraryDB) UnsealEncryptedLibraryDB(ctx context.Context, libraryID store.LibraryID, cipher store.EncryptedLibraryDBCipher) error {
 	if err := l.encryptedLibraryDBLifecycle.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
 		return err
 	}

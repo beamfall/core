@@ -274,9 +274,9 @@ func TestSourceCacheStatDiscardsEvictedObservation(t *testing.T) {
 	}
 	request()
 	old := registeredSession(t, sessions, key)
-	sessions.statSource = func(string) (os.FileInfo, error) {
-		info, err := os.Stat(src)
-		if err == nil && sameSourceFile(old.sourceInfo, info) {
+	sessions.statSource = func(path string) (os.FileInfo, error) {
+		info, err := os.Stat(path) // #nosec G703 -- fake source paths come from this test.
+		if path == src && err == nil && sameSourceFile(old.sourceInfo, info) {
 			latch.block() // hold the old stat result while the successor publishes
 		}
 		return info, err
@@ -337,9 +337,9 @@ func TestSourceCacheStatPreservesOtherDevicesReplacementEOF(t *testing.T) {
 		return registeredSession(t, sessions, key)
 	}
 	old := request(oldKey)
-	sessions.statSource = func(string) (os.FileInfo, error) {
-		info, err := os.Stat(src)
-		if err == nil && sameSourceFile(old.sourceInfo, info) {
+	sessions.statSource = func(path string) (os.FileInfo, error) {
+		info, err := os.Stat(path) // #nosec G703 -- fake source paths come from this test.
+		if path == src && err == nil && sameSourceFile(old.sourceInfo, info) {
 			latch.block()
 		}
 		return info, err

@@ -51,6 +51,15 @@ type EncryptedLibraryDBLifecycle interface {
 	EncryptedLibraryDBQuarantine(libraryID store.LibraryID) (string, bool)
 }
 
+// Run before taking the library key lease. A pending plaintext teardown can
+// itself be queued behind encrypted endpoint shutdown that needs the lease.
+func (h *Handler) waitForEncryptedLibraryTranscodeCleanup(ctx context.Context) error {
+	if waiter, ok := h.transcodeTerminator.(interface{ WaitForTeardowns(context.Context) error }); ok {
+		return waiter.WaitForTeardowns(ctx)
+	}
+	return nil
+}
+
 type EncryptedGeneratedAssetRewrapper interface {
 	RewrapEncryptedLibraryAssets(ctx context.Context, files []store.MediaFile, rewrap func(path, contentFingerprint, assetName string) error) error
 }
@@ -205,6 +214,9 @@ func (h *Handler) provisionEncryptedLibrary(ctx context.Context, scope auth.Scop
 	if h.encryptedLibraryDBLifecycle != nil && !h.encryptedLibraryDBLifecycle.EncryptedLibraryDBLifecycleAvailable() {
 		return ProvisionEncryptedLibraryInfo{}, clientError("encrypted-library DB lifecycle is unavailable on this server")
 	}
+	if err := h.waitForEncryptedLibraryTranscodeCleanup(ctx); err != nil {
+		return ProvisionEncryptedLibraryInfo{}, err
+	}
 
 	prepared, hasPrepared := h.libEncrypt.(preparedLibEncryptManager)
 	var preparedStatus EncryptedLibraryStatusInfo
@@ -308,6 +320,13 @@ func (h *Handler) unsealEncryptedLibrary(ctx context.Context, scope auth.Scope, 
 	if err := v.Err(); err != nil {
 		return EncryptedLibraryStatusInfo{}, err
 	}
+	useRecovery := hasRecovery && strings.TrimSpace(recoveryKey) != ""
+	if !useRecovery && !hasPassphrase {
+		return EncryptedLibraryStatusInfo{}, clientError("passphrase or recoveryKey is required to unseal")
+	}
+	if err := h.waitForEncryptedLibraryTranscodeCleanup(ctx); err != nil {
+		return EncryptedLibraryStatusInfo{}, err
+	}
 	prepared, isPrepared := h.libEncrypt.(preparedLibEncryptManager)
 	var err error
 	prepare := func(cipher libencrypt.OperationCipher) error {
@@ -319,20 +338,18 @@ func (h *Handler) unsealEncryptedLibrary(ctx context.Context, scope auth.Scope, 
 		return h.logActivity(ctx, scope, store.ActivityConfigUpdate, "encrypted-library-unseal", "", store.LibraryID(libraryID))
 	}
 	switch {
-	case hasRecovery && strings.TrimSpace(recoveryKey) != "":
+	case useRecovery:
 		if isPrepared {
 			err = prepared.RecoveryUnsealPrepared(libraryID, recoveryKey, prepare)
 		} else {
 			err = h.libEncrypt.RecoveryUnseal(libraryID, recoveryKey)
 		}
-	case hasPassphrase:
+	default:
 		if isPrepared {
 			err = prepared.PassphraseUnsealPrepared(libraryID, passphrase, prepare)
 		} else {
 			err = h.libEncrypt.PassphraseUnseal(libraryID, passphrase)
 		}
-	default:
-		return EncryptedLibraryStatusInfo{}, clientError("passphrase or recoveryKey is required to unseal")
 	}
 	if err != nil {
 		return EncryptedLibraryStatusInfo{}, unsealClientError(err)
@@ -365,6 +382,9 @@ func (h *Handler) sealEncryptedLibrary(ctx context.Context, scope auth.Scope, re
 		return EncryptedLibraryStatusInfo{}, err
 	} else if !ok {
 		return EncryptedLibraryStatusInfo{}, clientError("unknown library")
+	}
+	if err := h.waitForEncryptedLibraryTranscodeCleanup(ctx); err != nil {
+		return EncryptedLibraryStatusInfo{}, err
 	}
 	if prepared, ok := h.libEncrypt.(preparedLibEncryptManager); ok {
 		if err := prepared.SealPrepared(libraryID, func(cipher libencrypt.OperationCipher) error {
@@ -432,6 +452,9 @@ func (h *Handler) rewrapEncryptedLibrary(ctx context.Context, scope auth.Scope, 
 		if !h.encryptedLibraryDBLifecycle.EncryptedLibraryDBLifecycleAvailable() {
 			return ProvisionEncryptedLibraryInfo{}, clientError("encrypted-library DB lifecycle is unavailable on this server")
 		}
+	}
+	if err := h.waitForEncryptedLibraryTranscodeCleanup(ctx); err != nil {
+		return ProvisionEncryptedLibraryInfo{}, err
 	}
 	rewrite := func(cipher libencrypt.RewrapCipher) error {
 		// Every rewritten object carries its immutable, caller-derived identity

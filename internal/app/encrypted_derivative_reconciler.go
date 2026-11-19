@@ -39,11 +39,11 @@ import (
 //   - playback    — per-Media precomputed HLS renditions
 //     {playback-cache}/precompute:<mediaID>:…/
 //   - transcode   — orphaned live-transcode session dirs {dataDir}/transcode/
-//     session-<N>/ (plaintext HLS segments written during on-demand transcode).
+//     session-<bootNonce>-<N>/ (HLS segments written during on-demand transcode).
 //     Unlike the four classes above, session dirs carry no on-disk media/library
 //     attribution (they are keyed by an in-memory counter), so this class is swept
-//     as a set once per reconcile rather than per-Media — every dir not held by a
-//     live session is an orphan and is purged.
+//     as a set once per reconcile. The sweep purges prior boots' directories,
+//     and the active manager reports failures from its own teardowns.
 //
 // Ciphertext derivatives are the exception (ADR-0235): the Library's encrypted
 // subtitle cache {dataDir}/subtitles/encrypted/<library hash>/ and each live
@@ -89,18 +89,13 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 	for _, key := range live {
 		joined = errors.Join(joined, r.purgeMedia(libraryID, key))
 	}
-	// Transcode session dirs are not media-attributable (they are keyed by an
-	// in-memory counter, not by Media/Library), so the 5th class is swept once as
-	// a set: every session dir on disk that no live session holds is an orphaned
-	// plaintext leak. At boot the map is empty so all are purged; the live-session
-	// guard makes it safe on the runtime-unseal path too.
-	if r.sessions != nil {
-		joined = errors.Join(joined, r.sessions.PurgeOrphanedTranscodeDirs())
-	}
 	if r.subtitles != nil {
 		joined = errors.Join(joined, r.subtitles.ReconcileEncryptedSubtitles(libraryID, libencrypt.HasObjectHeader))
 	}
 	joined = errors.Join(joined, playback.ReconcileEncryptedPrecomputedRenditions(r.precomputeCache, libraryID, libencrypt.HasObjectHeader))
+	if r.sessions != nil {
+		joined = errors.Join(joined, r.sessions.PurgeOrphanedTranscodeDirs(), r.sessions.CheckTeardowns())
+	}
 	// Every live fingerprint is now attributed, so the Library's generated-asset
 	// ledger is complete and a purge may trust it (CORE-2193).
 	if joined == nil && r.assets != nil {

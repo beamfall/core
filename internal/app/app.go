@@ -1264,11 +1264,15 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		RemoteAccess:                 graphRemoteAccess,
 		PortMapping:                  graphPortMapping,
 		LibEncrypt:                   libEncryptManager,
-		EncryptedLibraryDBLifecycle:  hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: st, backfill: backfillHydration},
-		EncryptedGeneratedAssets:     assetService,
-		EncryptedDerivativePurgers:   []graph.EncryptedDerivativePurger{mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot}},
-		ExtensionPusher:              extensionPusher,
-		AccessRequestPusher:          accessRequestPusher,
+		EncryptedLibraryDBLifecycle: runtimeEncryptedLibraryDB{
+			encryptedLibraryDBLifecycle: st,
+			backfill:                    backfillHydration,
+			checkTranscodeCleanup:       hlsSessions.CheckTeardowns,
+		},
+		EncryptedGeneratedAssets:   assetService,
+		EncryptedDerivativePurgers: []graph.EncryptedDerivativePurger{mediaHTTP, encryptedPrecomputePurger{cacheRoot: precomputeCacheRoot}},
+		ExtensionPusher:            extensionPusher,
+		AccessRequestPusher:        accessRequestPusher,
 	}
 	// The ingestor is always non-nil now (inert until configured), so both the
 	// read adapter and the write-side configurer are

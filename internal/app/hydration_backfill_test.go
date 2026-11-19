@@ -35,7 +35,7 @@ func TestHydrationBackfillRunsAfterRuntimeUnseal(t *testing.T) {
 	ctx := context.Background()
 	inner := &unsealRecorder{}
 	runs := 0
-	lifecycle := hydrationBackfillOnUnseal{encryptedLibraryDBLifecycle: inner, backfill: func(context.Context) { runs++ }}
+	lifecycle := runtimeEncryptedLibraryDB{encryptedLibraryDBLifecycle: inner, backfill: func(context.Context) { runs++ }}
 	inner.err = errors.New("wrong passphrase")
 	if err := lifecycle.UnsealEncryptedLibraryDB(ctx, "lib-1", nil); err == nil || runs != 0 {
 		t.Fatalf("failed unseal: err %v, backfill runs %d; want the error and no run", err, runs)
@@ -54,11 +54,33 @@ func TestHydrationBackfillRunsAfterRuntimeUnseal(t *testing.T) {
 
 type unsealRecorder struct {
 	encryptedLibraryDBLifecycle
-	err error
+	err   error
+	seals int
 }
 
 func (r *unsealRecorder) UnsealEncryptedLibraryDB(context.Context, store.LibraryID, store.EncryptedLibraryDBCipher) error {
 	return r.err
+}
+
+func (r *unsealRecorder) SealEncryptedLibraryDB(context.Context, store.LibraryID, store.EncryptedLibraryDBCipher) error {
+	r.seals++
+	return nil
+}
+
+func TestEncryptedLibrarySealPropagatesTranscodeCleanupFailure(t *testing.T) {
+	inner := &unsealRecorder{}
+	removeErr := errors.New("teardown failed")
+	lifecycle := runtimeEncryptedLibraryDB{
+		encryptedLibraryDBLifecycle: inner,
+		checkTranscodeCleanup:       func() error { return removeErr },
+	}
+	if err := lifecycle.SealEncryptedLibraryDB(t.Context(), "lib-1", nil); !errors.Is(err, removeErr) || inner.seals != 0 {
+		t.Fatalf("seal with failed teardown: err=%v, DB seals=%d", err, inner.seals)
+	}
+	removeErr = nil
+	if err := lifecycle.SealEncryptedLibraryDB(t.Context(), "lib-1", nil); err != nil || inner.seals != 1 {
+		t.Fatalf("seal after clean teardown: err=%v, DB seals=%d", err, inner.seals)
+	}
 }
 
 // TestHydrationBackfillQueuesScanForMediaImportedBeforeTheMapper pins that a

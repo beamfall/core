@@ -195,6 +195,9 @@ var ErrTranscodeCapacity = errors.New("transcode capacity reached")
 // device must not keep streaming.
 var ErrSessionEvicted = errors.New("playback session evicted")
 
+// A conflicting or failed setup uses the existing transient stream response.
+var errSessionSetupRetry = errors.New("playback session setup changed")
+
 // Priority ranks a transcode session for admission (ADR-0010 §6: "higher-
 // priority preempts lower-priority"). Higher value wins. The default zero
 // value is PriorityNormal, so a caller that supplies no priority — including
@@ -222,10 +225,9 @@ const (
 )
 
 type sessionInitialization struct {
-	ready        chan struct{} // files are ready, or the session was removed
-	done         chan struct{} // the initializer has finished any required cleanup
-	err          error         // set under Sessions.mu before ready closes on setup failure
-	retryWaiters int           // different-shape requests waiting for this setup, guarded by Sessions.mu
+	ready     chan struct{} // files are ready, or the session was removed
+	done      chan struct{} // the initializer has finished any required cleanup
+	removeErr error         // published by closing done
 }
 
 type hlsSession struct {
@@ -506,10 +508,6 @@ type Sessions struct {
 	nextID   int
 	cap      int
 	governor *governor.Governor
-	// failedSetups holds retryable generations only while a different-shape
-	// waiter exists. Registering a successor or ending playback invalidates
-	// that generation even if the key is later vacant.
-	failedSetups map[SessionKey]*sessionInitialization
 	// composer resolves the picture of a composed-picture session (see
 	// SetPictureComposer); nil refuses such sessions.
 	composer GenerationComposer
@@ -547,13 +545,12 @@ type Sessions struct {
 	// waits for all off-lock setup and teardown to finish so no encoder,
 	// lease or directory outlives it.
 	detached int
-	// Directory names are owned from creation through their last cleanup.
-	// Overlapping sweep removals share a name claim until all finish.
-	dirOwners     map[string]sessionDirOwner
-	sweeps        int
-	sweepRemoving map[string]int
-	// offLockIdle, when non-nil, is closed when off-lock work finishes.
-	offLockIdle chan struct{}
+	sweeps   int
+	// The encrypted-library lifecycle waits for detached sessions. A failed
+	// removal stays recorded until restart can sweep the old boot.
+	teardownErr error
+	// offLockDone is shared by waiters for shutdown and teardown completion.
+	offLockDone chan struct{}
 	// closed is set by Close; once set no session is created.
 	closed bool
 
@@ -569,8 +566,9 @@ type Sessions struct {
 type sessionTeardown struct {
 	proc *ffmpeg.HLSProcess
 	dir  string
-	// setupDone is set when a detached initializer still owns the directory.
-	setupDone <-chan struct{}
+	// An in-flight initializer or encoder start owns its detached directory.
+	setup        *sessionInitialization
+	startPending bool
 	// lease is the session's transcode lease, released only once proc has
 	// stopped so the governor keeps background generation out until then.
 	lease *governor.TranscodeLease
@@ -582,51 +580,99 @@ type sessionTeardown struct {
 	live    *encderiv.LiveSession
 }
 
-type sessionDirOwner struct {
-	creating chan struct{} // closed after the exclusive mkdir, then cleared
-	users    int           // an evicted pending start and teardown may both clean up
-}
-
 // runTeardowns stops detached encoders and cleans up their artifacts before
 // waiting for detached initializers, whose writes may be blocked. Call it
 // without s.mu held.
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 	for _, t := range teardowns {
-		if t.setupDone != nil {
+		if t.setup != nil || t.startPending {
 			continue
 		}
 		if t.liveRun != nil {
 			t.liveRun.Revoke()
 		}
 		s.stop(t.proc)
-		if t.dir != "" {
-			_ = s.removeSessionDir(t.dir)
-		}
-		if t.live != nil {
-			t.live.Close()
-		}
+		removeErr := s.cleanSessionDir(t.dir, t.live)
 		if t.lease != nil {
 			t.lease.Release()
 		}
 		s.mu.Lock()
-		s.releaseSessionDirLocked(t.dir)
 		if t.counted {
 			s.stopping--
 		}
-		s.detached--
-		s.wakeCloseLocked()
+		s.finishTeardownLocked(removeErr)
 		s.mu.Unlock()
 	}
 	for _, t := range teardowns {
-		if t.setupDone == nil {
+		if t.setup == nil {
 			continue
 		}
-		<-t.setupDone
+		<-t.setup.done
 		s.mu.Lock()
-		s.detached--
-		s.wakeCloseLocked()
+		s.finishTeardownLocked(t.setup.removeErr)
 		s.mu.Unlock()
 	}
+}
+
+func (s *Sessions) cleanSessionDir(dir string, live *encderiv.LiveSession) error {
+	var err error
+	if dir != "" {
+		err = s.removeSessionDir(dir)
+		if err != nil {
+			slog.Error("removing transcode session directory failed", "session_dir", filepath.Base(dir), "error", err)
+		}
+	}
+	if live != nil {
+		live.Close()
+	}
+	return err
+}
+
+func (s *Sessions) finishTeardownLocked(removeErr error) {
+	if s.teardownErr == nil {
+		s.teardownErr = removeErr
+	}
+	s.detached--
+	s.notifyOffLockDoneLocked()
+}
+
+// WaitForTeardowns waits for detached sessions to finish
+// cleanup and reports a removal failure even after that teardown has completed.
+// Call before acquiring Store or library key locks: an encrypted endpoint
+// can need the key lease to shut down.
+func (s *Sessions) WaitForTeardowns(ctx context.Context) error {
+	for {
+		s.mu.Lock()
+		if s.detached == 0 {
+			err := s.teardownErr
+			s.mu.Unlock()
+			return err
+		}
+		if s.offLockDone == nil {
+			s.offLockDone = make(chan struct{})
+		}
+		done := s.offLockDone
+		s.mu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// CheckTeardowns checks that cleanup has succeeded without waiting.
+// The encrypted-library lifecycle revalidates with its locks already held.
+func (s *Sessions) CheckTeardowns() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.teardownErr != nil {
+		return s.teardownErr
+	}
+	if s.detached > 0 {
+		return errors.New("transcode teardown still pending")
+	}
+	return nil
 }
 
 func (s *Sessions) removeSessionDir(dir string) error {
@@ -636,12 +682,10 @@ func (s *Sessions) removeSessionDir(dir string) error {
 	return os.RemoveAll(dir)
 }
 
-// wakeCloseLocked wakes a waiting Close after all tracked off-lock work ends.
-// Callers hold mu.
-func (s *Sessions) wakeCloseLocked() {
-	if s.offLockIdleLocked() && s.offLockIdle != nil {
-		close(s.offLockIdle)
-		s.offLockIdle = nil
+func (s *Sessions) notifyOffLockDoneLocked() {
+	if s.offLockDone != nil {
+		close(s.offLockDone)
+		s.offLockDone = nil
 	}
 }
 
@@ -901,7 +945,7 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 		// Only the initializer can clean up after its writes have finished.
 		delete(s.sessions, key)
 		close(session.initializing.ready)
-		return &sessionTeardown{setupDone: session.initializing.done}
+		return &sessionTeardown{setup: session.initializing}
 	}
 	teardown := &sessionTeardown{proc: session.proc, dir: session.dir, live: session.live}
 	if session.run != nil {
@@ -921,14 +965,9 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 		s.stopping++
 	case session.startPending:
 		// An off-lock ensureRung start owns this session's lease and may be
-		// spawning a process. It sees the eviction when it relocks, stops what
-		// it spawned, removes the directory again, then releases the lease and
-		// this slot.
-		name := filepath.Base(session.dir)
-		if owner, ok := s.dirOwners[name]; ok {
-			owner.users++
-			s.dirOwners[name] = owner
-		}
+		// spawning a process. It stops the process and removes the directory
+		// once the start returns. Terminate need not wait for it.
+		teardown.startPending = true
 		s.stopping++
 	default:
 		// No process: nothing else will release the lease.
@@ -971,11 +1010,6 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // leaves running until idle reap.
 func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 	s.mu.Lock()
-	for key := range s.failedSetups {
-		if key.SessionID == sessionID {
-			delete(s.failedSetups, key)
-		}
-	}
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		if key.SessionID == sessionID {
@@ -996,11 +1030,6 @@ func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 // playback with no live transcode (direct play) is a zero-stop no-op.
 func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
 	s.mu.Lock()
-	for key := range s.failedSetups {
-		if key.SessionID == sessionID && key.MediaID == mediaID {
-			delete(s.failedSetups, key)
-		}
-	}
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		if key.SessionID == sessionID && key.MediaID == mediaID {
@@ -1018,28 +1047,19 @@ func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) *S
 }
 
 // NewSessionsInDir creates a transcode session manager rooted at scratchDir.
-// It purges every pre-existing session directory under scratchDir before
-// returning: the in-memory session map is always empty at construction, so
-// PurgeOrphanedTranscodeDirs' live-session confinement treats every
-// session-<nonce>-<N>/ entry already on disk as an orphan of a prior process
-// (a restart drops the map that would have removed them on normal end) and
-// removes it, closing the window where a reused-looking directory name could
-// serve a previous run's leftover segments to a new session.
+// It sweeps session directories left by prior runs before returning.
 func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time) *Sessions {
 	if now == nil {
 		now = time.Now
 	}
 	s := &Sessions{
-		transcoder:    transcoder,
-		dir:           scratchDir,
-		now:           now,
-		bootNonce:     newBootNonce(),
-		sessions:      map[SessionKey]*hlsSession{},
-		failedSetups:  map[SessionKey]*sessionInitialization{},
-		cap:           defaultTranscodeCap,
-		resumeHints:   map[SessionKey]resumeHint{},
-		dirOwners:     map[string]sessionDirOwner{},
-		sweepRemoving: map[string]int{},
+		transcoder:  transcoder,
+		dir:         scratchDir,
+		now:         now,
+		bootNonce:   newBootNonce(),
+		sessions:    map[SessionKey]*hlsSession{},
+		cap:         defaultTranscodeCap,
+		resumeHints: map[SessionKey]resumeHint{},
 	}
 	_ = s.PurgeOrphanedTranscodeDirs()
 	return s
@@ -1424,13 +1444,26 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
 func (s *Sessions) session(ctx context.Context, key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
-	// Capture the generation before encoding, outside the session lock.
-	var sourceInfo os.FileInfo
-	if secure == nil {
-		sourceInfo, _ = os.Stat(src)
+	// Bind this request to the instance present before inspecting the source.
+	// A stale stat must never reshape a successor installed during that I/O.
+	s.mu.Lock()
+	existing := s.sessions[key]
+	var pending *sessionInitialization
+	if existing != nil {
+		pending = existing.initializing
 	}
-	sourceGeneration := store.SourceFileGeneration(sourceInfo)
-	if secure != nil {
+	s.mu.Unlock()
+
+	var sourceInfo os.FileInfo
+	var sourceGeneration string
+	if secure == nil {
+		stat := os.Stat
+		if s.statSource != nil {
+			stat = s.statSource
+		}
+		sourceInfo, _ = stat(src)
+		sourceGeneration = store.SourceFileGeneration(sourceInfo)
+	} else {
 		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
 	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
@@ -1463,86 +1496,57 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		secure:            secure,
 	}
 
-	var predecessor *sessionTeardown
+	// The ladder and encoder use one policy snapshot (CORE-2452).
+	// A reshaped session inherits its predecessor's pinned policy.
+	policy, hevcAllowed := s.sessionEncodePolicy(existing)
+	session.encodePolicy = policy
+	if caps.HEVC && !hevcAllowed {
+		caps.HEVC = false
+		caps.HEVCMaxHeight = 0
+	}
+	switch {
+	case picture != nil:
+		rung, err := composedLiveRung(caps)
+		if err != nil {
+			return nil, err
+		}
+		session.rungs = []Rung{rung}
+	case audioOnly || !adjust.IsZero():
+		session.rungs = []Rung{audioOnlyRung(audioOnlyPeak)}
+	default:
+		session.rungs = rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
+	}
+	sameShape := existing != nil && existing.matchesSession(session)
+
+	if pending != nil {
+		select {
+		case <-pending.ready:
+		case <-ctx.Done():
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for {
-		if s.closed {
-			return nil, ErrSessionEvicted
-		}
-		existing := s.sessions[key]
-		// The ladder and encoder use one policy snapshot (CORE-2452).
-		// A reshaped session inherits its predecessor's pinned policy.
-		policy, hevcAllowed := s.sessionEncodePolicy(existing)
-		session.encodePolicy = policy
-		effectiveCaps := caps
-		if effectiveCaps.HEVC && !hevcAllowed {
-			effectiveCaps.HEVC = false
-			effectiveCaps.HEVCMaxHeight = 0
-		}
-		switch {
-		case picture != nil:
-			rung, err := composedLiveRung(effectiveCaps)
-			if err != nil {
-				return nil, err
+	if (pending != nil && !sameShape) || !s.liveLocked(key, existing) {
+		return nil, errSessionSetupRetry
+	}
+	if s.closed {
+		return nil, ErrSessionEvicted
+	}
+	var predecessor *sessionTeardown
+	if existing != nil {
+		if sameShape {
+			// A position noted while this session ran is only for a replacement.
+			delete(s.resumeHints, key)
+			existing.lastAccess = s.now()
+			if priority > existing.priority {
+				existing.priority = priority
 			}
-			session.rungs = []Rung{rung}
-		case audioOnly || !adjust.IsZero():
-			session.rungs = []Rung{audioOnlyRung(audioOnlyPeak)}
-		default:
-			session.rungs = rungsForSession(videoWidth, videoHeight, audioCopy, degraded, effectiveCaps)
+			return existing, nil
 		}
-		if existing == nil {
-			break
-		}
-
-		sameShape := existing.matchesSession(session)
-		if initializing := existing.initializing; initializing != nil {
-			if !sameShape {
-				initializing.retryWaiters++
-			}
-			s.mu.Unlock()
-			select {
-			case <-initializing.ready:
-			case <-ctx.Done():
-			}
-			s.mu.Lock()
-			canRetry := false
-			if !sameShape {
-				initializing.retryWaiters--
-				canRetry = s.failedSetups[key] == initializing
-				if canRetry && initializing.retryWaiters == 0 {
-					delete(s.failedSetups, key)
-				}
-			}
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if initializing.err != nil {
-				if sameShape {
-					return nil, initializing.err
-				}
-				if !canRetry {
-					return nil, ErrSessionEvicted
-				}
-				continue
-			}
-			if !s.liveLocked(key, existing) {
-				return nil, ErrSessionEvicted
-			}
-		}
-		if !sameShape {
-			predecessor = s.removeLocked(key)
-			break
-		}
-		// A position noted while this session ran was kept only for a
-		// reshaped replacement; the unchanged session ignores it.
-		delete(s.resumeHints, key)
-		existing.lastAccess = s.now()
-		if priority > existing.priority {
-			existing.priority = priority // raise-only: earned standing is kept
-		}
-		return existing, nil
+		predecessor = s.removeLocked(key)
 	}
 
 	session.lastAccess = s.now()
@@ -1555,7 +1559,6 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 			session.resumeSeconds = hint.seconds
 		}
 	}
-	delete(s.failedSetups, key)
 	s.sessions[key] = session
 	if predecessor != nil {
 		s.mu.Unlock()
@@ -1575,28 +1578,23 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	}
 
 	s.mu.Lock()
-	current := s.liveLocked(key, session)
-	if current {
-		setup.err = err
-		close(setup.ready)
-		session.initializing = nil
-		if err != nil && setup.retryWaiters > 0 {
-			s.failedSetups[key] = setup
-		}
+	if !s.liveLocked(key, session) {
+		s.mu.Unlock()
+		setup.removeErr = s.cleanSessionDir(dir, live)
+		s.mu.Lock()
+		return nil, ErrSessionEvicted
 	}
-	if !current || err != nil {
-		if current {
-			delete(s.sessions, key)
-		}
+	close(setup.ready)
+	session.initializing = nil
+	if err != nil {
+		delete(s.sessions, key)
 		s.detached++
 		s.mu.Unlock()
 		s.runTeardowns([]sessionTeardown{{dir: dir, live: live}})
 		s.mu.Lock()
-		if !current {
-			return nil, ErrSessionEvicted
-		}
 		return nil, err
 	}
+
 	session.dir = dir
 	session.live = live
 	session.picture = pictureInput
@@ -1608,7 +1606,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 }
 
 // createSessionDir exclusively creates a directory for the current initializer.
-// A colliding path belongs to someone else, so leave its contents to the sweep.
+// A colliding path is left untouched and allocation tries the next ID.
 func (s *Sessions) createSessionDir(key SessionKey, session *hlsSession) (string, error) {
 	if err := os.MkdirAll(filepath.Clean(s.dir), 0o700); err != nil {
 		return "", err
@@ -1623,34 +1621,18 @@ func (s *Sessions) createSessionDir(key SessionKey, session *hlsSession) (string
 			s.mu.Unlock()
 			return "", ErrSessionEvicted
 		}
-		var name string
-		for {
-			s.nextID++
-			name = fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID)
-			if s.sweepRemoving[name] == 0 {
-				break
-			}
-		}
-		creating := make(chan struct{})
-		s.dirOwners[name] = sessionDirOwner{creating: creating, users: 1}
+		s.nextID++
+		id := s.nextID
 		s.mu.Unlock()
 
-		dir := filepath.Join(s.dir, name)
+		dir := filepath.Join(s.dir, fmt.Sprintf("session-%s-%d", s.bootNonce, id))
 		err := mkdir(dir, 0o700)
-
-		s.mu.Lock()
-		current := s.liveLocked(key, session)
 		if err == nil {
-			s.dirOwners[name] = sessionDirOwner{users: 1}
-		} else {
-			delete(s.dirOwners, name)
-		}
-		close(creating)
-		s.mu.Unlock()
-		if err == nil {
+			s.mu.Lock()
+			current := s.liveLocked(key, session)
+			s.mu.Unlock()
 			if !current {
-				// The caller owns cleanup even when the session was detached.
-				return dir, ErrSessionEvicted
+				return dir, ErrSessionEvicted // caller owns cleanup
 			}
 			return dir, nil
 		}
@@ -1658,17 +1640,6 @@ func (s *Sessions) createSessionDir(key SessionKey, session *hlsSession) (string
 			return "", err
 		}
 	}
-}
-
-func (s *Sessions) releaseSessionDirLocked(dir string) {
-	name := filepath.Base(dir)
-	owner := s.dirOwners[name]
-	if owner.users <= 1 {
-		delete(s.dirOwners, name)
-		return
-	}
-	owner.users--
-	s.dirOwners[name] = owner
 }
 
 // matchesSession compares the source generation and all artifact-shaping inputs.
@@ -1691,7 +1662,7 @@ func (session *hlsSession) matchesSession(requested *hlsSession) bool {
 }
 
 // prepareSessionArtifacts runs before the session becomes available to requests,
-// with its directory reserved in Sessions but without Sessions.mu held.
+// with exclusive ownership of its directory and without Sessions.mu held.
 func (s *Sessions) prepareSessionArtifacts(session *hlsSession, dir string) (string, *encderiv.LiveSession, *ffmpeg.ComposedPicture, error) {
 	var live *encderiv.LiveSession
 	if session.secure != nil {
@@ -1936,11 +1907,8 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	s.mu.Lock()
 	session.startPending = false
 	if !s.liveLocked(key, session) {
-		// Torn down while the lock was released. removeLocked counted this
-		// start in s.stopping and scheduled the directory's removal, possibly
-		// before the replaced process exited or the new one wrote anything, so
-		// stop the new process and remove the directory again before releasing
-		// the lease and the slot.
+		// Detachment handed cleanup to this start. Remove the directory
+		// after the process and endpoint are stopped, so neither can write again.
 		s.mu.Unlock()
 		if err == nil {
 			if liveRun != nil {
@@ -1948,17 +1916,16 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			}
 			s.stop(proc)
 		}
-		_ = s.removeSessionDir(session.dir)
+		removeErr := s.cleanSessionDir(session.dir, session.live)
 		s.mu.Lock()
-		s.releaseSessionDirLocked(session.dir)
 		s.releaseTranscodeLease(session)
 		s.stopping--
 		s.starting--
-		s.wakeCloseLocked()
+		s.finishTeardownLocked(removeErr)
 		return nil, ErrSessionEvicted
 	}
 	s.starting--
-	s.wakeCloseLocked()
+	s.notifyOffLockDoneLocked()
 	if err != nil {
 		// Launch failed: this session holds no live process, so release its
 		// transcode lease. This is the rollback for a fresh start and the teardown
@@ -2351,27 +2318,10 @@ func (s *Sessions) reap() {
 // it to tell a session dir apart from any other entry under the root.
 var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 
-// PurgeOrphanedTranscodeDirs removes every transcode session directory under the
-// transcode root that no live session owns. It closes the crash-recovery leak of
-// the 5th derivative class (ADR-0045 §reconcile, ENCPRIV-10c): a live HLS
-// transcode of Encrypted-Library media writes PLAINTEXT segments to
-// dataDir/transcode/session-<bootNonce>-<N>/, and a crash mid-transcode orphans that dir on
-// disk — the in-memory session map that would have removed it on normal end is
-// gone after the restart. Those orphans are outside the four MediaID/fingerprint-
-// keyed derivative classes the reconciler otherwise sweeps (session dirs carry no
-// on-disk media/library attribution — they are keyed by an in-memory counter), so
-// they are purged here as a set.
-//
-// The sweep checks current directory ownership before claiming each removal,
-// so it skips in-flight sessions even after serving has begun (the runtime-unseal
-// path). At boot the in-memory map is empty, so every session dir
-// on disk is an orphan and is removed — which is also why NewSessionsInDir
-// calls this at construction, before any session is live, to purge whatever a
-// prior process on the same root left behind. Hard delete is correct: session
-// dirs are ephemeral, regenerable transcode caches, and invariant #5 forbids
-// leaked plaintext at rest. Any removal error is joined and returned so a
-// caller with a use for it — the encrypted-derivative reconciler fails the
-// unseal closed — can react; NewSessionsInDir has none, so it discards it.
+// PurgeOrphanedTranscodeDirs removes session directories left by previous
+// runs, including the legacy layout. The current boot's directories belong
+// exclusively to session teardown. Removal errors are returned to the
+// encrypted derivative reconciler (ADR-0045).
 func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	s.mu.Lock()
 	if s.closed {
@@ -2383,7 +2333,7 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	defer func() {
 		s.mu.Lock()
 		s.sweeps--
-		s.wakeCloseLocked()
+		s.notifyOffLockDoneLocked()
 		s.mu.Unlock()
 	}()
 	readDir := os.ReadDir
@@ -2398,41 +2348,14 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 		return err
 	}
 	var joined error
+	currentBoot := "session-" + s.bootNonce + "-"
 	for _, entry := range entries {
 		name := entry.Name()
-		if !entry.IsDir() || !sessionDirName.MatchString(name) {
-			continue
+		if entry.IsDir() && !strings.HasPrefix(name, currentBoot) && sessionDirName.MatchString(name) {
+			joined = errors.Join(joined, s.removeSessionDir(filepath.Join(s.dir, name)))
 		}
-		if !s.claimOrphanDir(name) {
-			continue
-		}
-		joined = errors.Join(joined, s.removeSessionDir(filepath.Join(s.dir, name)))
-		s.mu.Lock()
-		s.sweepRemoving[name]--
-		if s.sweepRemoving[name] == 0 {
-			delete(s.sweepRemoving, name)
-		}
-		s.mu.Unlock()
 	}
 	return joined
-}
-
-func (s *Sessions) claimOrphanDir(name string) bool {
-	for {
-		s.mu.Lock()
-		owner, owned := s.dirOwners[name]
-		if !owned {
-			// Allocation skips this name until the last removal finishes.
-			s.sweepRemoving[name]++
-		}
-		s.mu.Unlock()
-		if owner.creating == nil {
-			return !owned
-		}
-		// The existing entry may be an orphan that collided with mkdir.
-		// Wait for the attempt to resolve before deciding who owns it.
-		<-owner.creating
-	}
 }
 
 // Close stops every running transcode and removes its working directory. It
@@ -2444,7 +2367,6 @@ func (s *Sessions) claimOrphanDir(name string) bool {
 func (s *Sessions) Close() {
 	s.mu.Lock()
 	s.closed = true
-	clear(s.failedSetups)
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		teardowns = append(teardowns, *s.removeLocked(key))
@@ -2458,10 +2380,10 @@ func (s *Sessions) Close() {
 			s.mu.Unlock()
 			return
 		}
-		if s.offLockIdle == nil {
-			s.offLockIdle = make(chan struct{})
+		if s.offLockDone == nil {
+			s.offLockDone = make(chan struct{})
 		}
-		idle := s.offLockIdle
+		idle := s.offLockDone
 		s.mu.Unlock()
 		<-idle
 	}
