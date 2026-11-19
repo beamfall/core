@@ -1,3 +1,3 @@
 ## Implementation
-- [ ] Preserve existing undeclared media classes during rescans.
-- [ ] Test the current plugin pin and a class declaration change; run focused checks.
+- [x] Preserve existing undeclared media classes during rescans.
+- [x] Test the current plugin pin and a class declaration change; run focused checks.

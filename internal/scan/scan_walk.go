@@ -157,11 +157,30 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	}
 	state.countUnmatchedVersions()
 	state.applyDeferredArtwork()
-	if err := state.retireExcludedImages(); err != nil {
-		return Result{}, err
+	// A declaration controls admission, not ownership of existing Media. A
+	// missing class may be a plugin regression; neither trash nor the missing
+	// pass may infer that its already catalogued items should disappear.
+	canRetire := true
+	if state.libraryPluginID != "" {
+		var classes []store.MediaClass
+		if resolver, ok := identifier.(PluginMediaClassResolver); ok {
+			classes = resolver.PluginMediaClasses(state.libraryPluginID)
+		}
+		undeclared, err := st.LibraryHasUndeclaredMedia(ctx, req.LibraryID, classes)
+		if err != nil {
+			return Result{}, err
+		}
+		canRetire = !undeclared
 	}
-	if err := state.markMissingIfPlausible(scanStarted); err != nil {
-		return Result{}, err
+	if canRetire {
+		if err := state.retireExcludedImages(); err != nil {
+			return Result{}, err
+		}
+		if err := state.markMissingIfPlausible(scanStarted); err != nil {
+			return Result{}, err
+		}
+	} else {
+		slog.Warn("scan: preserving existing media outside plugin declaration", "library", string(req.LibraryID))
 	}
 	if err := linkExtraRelationsForLibrary(ctx, st, req.LibraryID, state.extrasRoot); err != nil {
 		return Result{}, err
