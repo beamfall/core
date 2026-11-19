@@ -205,6 +205,11 @@ func (s *Store) SealEncryptedLibraryDB(ctx context.Context, libraryID LibraryID,
 	if db.state == "failed-quarantined" {
 		return fmt.Errorf("%w: %s", ErrEncryptedLibraryDBQuarantined, db.quarantine)
 	}
+	// Retry observations while the writer is still open, before the encrypted
+	// snapshot and working-file cleanup. A failed retry leaves the DB usable.
+	if err := s.flushSourceEndsLocked(ctx, libraryID); err != nil {
+		return err
+	}
 	db.state = "sealing"
 	var err error
 	if db.reader != nil {

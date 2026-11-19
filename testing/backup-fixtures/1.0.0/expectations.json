@@ -1,5 +1,5 @@
 {
-  "schemaFingerprint": "93ac400eab2cdd324a3d0829da2ae080c1992174975dfc22bc3eedfda15c6b4f",
+  "schemaFingerprint": "09ed1654ebd92824ec51d14c0ec21a3acef45f0f9f2fb32d12ba367928818c40",
   "tables": {
     "catalog.access_grant": {
       "rows": 1,
@@ -342,8 +342,8 @@
       "checksum": "78db107c4d13509a4581394e44b0bacc109b78bcfb28331592e09f2030821dbd"
     },
     "catalog.schema_migrations": {
-      "rows": 119,
-      "checksum": "e75536834286d56812963134c100d539819e433faed4db664397d14569d2de5c"
+      "rows": 120,
+      "checksum": "5b52938628e1678de5558450d8dafdf17335a18839734eb7b5c592f821adbefa"
     },
     "catalog.scoped_api_key": {
       "rows": 1,
@@ -363,11 +363,15 @@
     },
     "catalog.server_config": {
       "rows": 1,
-      "checksum": "1550b7ac24952f5f9e855357b6a70aa6d51708b94b69f5272831090ef5d2d449"
+      "checksum": "68da94a1a25eb54d7bf12c33281c8c4720c6129defb14b0158844b1257c0d1b9"
     },
     "catalog.smart_collection": {
       "rows": 1,
       "checksum": "9773eca804141a80fbe3790e61eca3facebd80eb552bda26080ffdb4c163fa18"
+    },
+    "catalog.source_end_observation": {
+      "rows": 1,
+      "checksum": "1df23d25920e4fa1b90ed31d4c539d46b185e323e2921879719781cd1b94be29"
     },
     "catalog.subscription": {
       "rows": 1,
@@ -459,7 +463,7 @@
     },
     "encrypted:library-acc-archive.media_file": {
       "rows": 1,
-      "checksum": "d2aa04c1e5f16bf050c2e92aa965401ebf16f5e63479f1f403a0c29e426b3c64"
+      "checksum": "3716450991c50485a025ac61d14b004a3ed35f289af4e61ff398b3840d4f1fda"
     },
     "encrypted:library-acc-archive.media_file_font_attachment": {
       "rows": 1,
@@ -482,8 +486,12 @@
       "checksum": "75408736536e7dfbaf0c259862678e099f34667f3125f43a466f7e28c6c79740"
     },
     "encrypted:library-acc-archive.schema_migrations": {
-      "rows": 9,
-      "checksum": "0084b9105a3e9c5c6aa54d5c6da6cc0644569c6ff5ba7bbcb8110b965800c959"
+      "rows": 10,
+      "checksum": "81a9ae18472e9c545a4d33cb5b5362e29388109d435e486a3d0f9ff984400719"
+    },
+    "encrypted:library-acc-archive.source_end_observation": {
+      "rows": 1,
+      "checksum": "b1af0252b284699e1ad1dee0e4530f32ecd1f18fd5e29815c3f14789711c1ee3"
     },
     "events.activity_entry": {
       "rows": 1,
@@ -499,7 +507,7 @@
     },
     "events.engagement_event": {
       "rows": 3,
-      "checksum": "c9feb60a0124bbd8fc5606c12941171249c77ef5a5322e7e8b0f62932dcd19f3"
+      "checksum": "a8b374d8b13859adfb1c12b1a39fa3383d8fd5ff6964df7311e2587a367955d3"
     },
     "events.event_outbox": {
       "rows": 1,
@@ -555,7 +563,7 @@
     },
     "events.schema_migrations": {
       "rows": 23,
-      "checksum": "b5e2e3f16f0b9d9d4d784fcdbc2b72dd3b03d4ac905302e2ef6272ec511548a8"
+      "checksum": "7398c497197145bcf6660303648faa0b8afffea92a1bceff0b72d07aab9db935"
     },
     "events.stream_token_ledger": {
       "rows": 1,
@@ -567,8 +575,8 @@
     }
   },
   "schemaVersions": {
-    "catalog": 119,
-    "encrypted:library-acc-archive": 9,
+    "catalog": 120,
+    "encrypted:library-acc-archive": 10,
     "events": 23
   },
   "fixturePolicy": {

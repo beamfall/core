@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
@@ -294,5 +295,26 @@ func TestEncryptedSourceEndSurvivesSessionReplacement(t *testing.T) {
 	after, err := service.Info(ctx, scope, request)
 	if err != nil || after.Reason == "media-source-incomplete" {
 		t.Fatalf("encrypted replacement poisoned: %+v, %v", after, err)
+	}
+}
+
+func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
+	f := newEncryptedPrecomputeFixture(t)
+	sessions := NewSessions(&fakeEncryptedTranscoder{}, t.TempDir(), nil)
+	defer sessions.Close()
+	sessions.sourceStore = f.st
+	key := SessionKey{SessionID: "evicted", MediaID: f.mediaID}
+	session := &hlsSession{dir: t.TempDir(), secure: testEncryptedSource(nil)}
+	sessions.sessions[key] = session
+	if n := sessions.TerminateSession(key.SessionID); n != 1 {
+		t.Fatalf("terminated %d sessions", n)
+	}
+	inspected := false
+	_, observed, err := sessions.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+		inspected = true
+		return 0, true // removed output would look like EOF at zero
+	})
+	if err != nil || observed || inspected {
+		t.Fatalf("evicted output inspected=%v observed=%v err=%v", inspected, observed, err)
 	}
 }

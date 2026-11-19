@@ -1079,6 +1079,7 @@ type Store struct {
 	encryptedDBWorkingRoot     string
 	encryptedDBLifecycleEnable bool
 	encryptedDBs               map[LibraryID]*encryptedLibraryDB
+	pendingSourceEnds          map[pendingSourceEnd]float64
 	// encDerivativeReconciler is the app-injected seam (nil by default) invoked
 	// at the unseal→register flip with the just-enumerable media inventory so the
 	// app layer can purge/re-protect orphaned encrypted-Library derivatives
@@ -1738,12 +1739,19 @@ func (s *Store) RecordAuthAttempt(ctx context.Context, attempt AuthAttempt) erro
 	return s.insertAuthAttempt(ctx, attempt)
 }
 
-// Close releases the durable store handles; every later operation returns ErrClosed.
+// Close flushes pending source observations and releases the durable store
+// handles. A failed flush keeps the store open for retry; after a successful
+// close every later operation returns ErrClosed.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.flushSourceEndsLocked(ctx, ""); err != nil {
+		return err
 	}
 	s.closed = true
 	var err error

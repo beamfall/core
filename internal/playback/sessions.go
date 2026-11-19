@@ -1156,11 +1156,17 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, waitBudget); err != nil {
 		return "", err
 	}
-	if session.segmentLacksMedia(path) {
+	_, observed, observeErr := s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+		return session.segmentStart(rung, segment), session.segmentLacksMedia(path)
+	})
+	if observed {
 		// FFmpeg started past the real end of a truncated source writes a
 		// segment with no media; serving it as playable would stall the player.
 		s.noteSourceEnd(key, session, rung, segment, "")
 		return "", ErrSourceEnded
+	}
+	if observeErr != nil {
+		return "", observeErr
 	}
 	return path, nil
 }
@@ -1290,7 +1296,6 @@ func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, rung Rung,
 	lowered := s.liveLocked(key, session) && session.noteSourceEndLocked(session.segmentStart(rung, segment))
 	s.mu.Unlock()
 	if lowered {
-		s.rememberIncompleteSource(key, session, session.segmentStart(rung, segment))
 		logSourceEnd(key, session, rung, segment, stderr)
 	}
 }
@@ -1842,13 +1847,17 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		wroteSegment := segmentWrittenSince(rungDir, base, started)
 		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && session.durationSeconds > 0 {
-			last := frontier
-			for last >= base && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
-				last--
-			}
-			if end := last + 1; end < session.segmentCount(rung) {
-				sourceEnd = end
-			}
+			_, _, _ = s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+				last := frontier
+				for last >= base && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
+					last--
+				}
+				if end := last + 1; end < session.segmentCount(rung) {
+					sourceEnd = end
+					return session.segmentStart(rung, end), true
+				}
+				return 0, false
+			})
 		}
 
 		s.mu.Lock()
@@ -1897,7 +1906,6 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 			slog.Error("live transcode exited unexpectedly", append(attrs, "status", status, "stderr", stderr)...)
 		}
 		if lowered {
-			s.rememberIncompleteSource(key, session, session.segmentStart(rung, sourceEnd))
 			logSourceEnd(key, session, rung, sourceEnd, stderr)
 		}
 		if failedNow {

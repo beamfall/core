@@ -57,19 +57,43 @@ func (c *incompleteSourceCache) contains(path string) bool {
 	return false
 }
 
-func (s *Sessions) rememberIncompleteSource(key SessionKey, session *hlsSession, end time.Duration) {
-	if session.secure == nil {
-		s.incompleteSources.remember(session.src, session.sourceInfo)
+// Detect EOF under the store's seal lock, then publish the session/cache bound.
+// The store retains failed writes independently of this session and retries them
+// before a read or seal can expose/discard the catalog.
+func (s *Sessions) observeIncompleteSource(key SessionKey, session *hlsSession, observe func() (time.Duration, bool)) (time.Duration, bool, error) {
+	var end time.Duration
+	var observed bool
+	var err error
+	// Store -> Sessions matches unseal's derivative reconciliation lock order.
+	// Teardown cannot remove output halfway through inspection and turn a
+	// healthy encoder's removed files into a false premature-EOF observation.
+	inspect := func() (float64, bool) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if !s.liveLocked(key, session) {
+			return 0, false
+		}
+		end, observed = observe()
+		return end.Seconds(), observed
 	}
-	if s.sourceStore != nil {
+	// Sources without a stable generation use only the existing memory fallback.
+	// They cannot be durably identified, so do not require a catalog lookup.
+	if s.sourceStore == nil || session.sourceGeneration == "" {
+		_, _ = inspect()
+	} else {
 		fingerprint := ""
 		if session.secure != nil {
 			fingerprint = session.secure.Fingerprint
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := s.sourceStore.RecordSourceEnd(ctx, key.MediaID, session.src, fingerprint, session.sourceGeneration, end.Seconds()); err != nil {
-			slog.Error("persisting observed source end failed", "media", key.MediaID, "error", err)
+		err = s.sourceStore.ObserveSourceEnd(ctx, key.MediaID, session.src, fingerprint, session.sourceGeneration, inspect)
+		if err != nil {
+			slog.Error("observing source end failed", "media", key.MediaID, "error", err)
 		}
 	}
+	if observed && session.secure == nil {
+		s.incompleteSources.remember(session.src, session.sourceInfo)
+	}
+	return end, observed, err
 }

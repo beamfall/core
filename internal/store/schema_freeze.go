@@ -82,6 +82,7 @@ package store
 //     the shared inventory writer works on an Encrypted Library; the frozen
 //     0002 columns stay. Both tables are read per file, off the entity-query
 //     hot path.
+//
 //   - encrypted-library 0009 (CORE-2554) mirrors catalog 0123's
 //     media_field_provenance.parser_owned marker; it is read only by the scan
 //     write, off the entity-query hot path.
