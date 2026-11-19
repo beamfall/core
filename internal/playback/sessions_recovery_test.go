@@ -15,28 +15,8 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/governor"
 )
-
-// mp4Box encodes one ISO-BMFF box with a 32-bit size.
-func mp4Box(typ string, payload []byte) []byte {
-	out := make([]byte, 8, 8+len(payload))
-	binary.BigEndian.PutUint32(out, uint32(8+len(payload))) // #nosec G115 -- test payloads are a few bytes
-	copy(out[4:], typ)
-	return append(out, payload...)
-}
-
-// emptySegment is what ffmpeg's HLS muxer writes when it starts past the end
-// of a truncated input: a lone 24-byte styp box (#EXTINF:0.000000).
-func emptySegment() []byte {
-	return mp4Box("styp", []byte("msdh\x00\x00\x00\x00msdhmsix"))
-}
-
-// mediaSegment is a minimal playable-shaped segment: styp, moof, mdat.
-func mediaSegment() []byte {
-	out := emptySegment()
-	out = append(out, mp4Box("moof", make([]byte, 8))...)
-	return append(out, mp4Box("mdat", []byte("media-bytes"))...)
-}
 
 // scriptedTranscoder runs a real child process per start (so the reaper and
 // exit watch run exactly as for ffmpeg) and lets each test script what every
@@ -314,4 +294,141 @@ func TestSegmentLacksMedia(t *testing.T) {
 	if segmentLacksMedia(filepath.Join(dir, "missing.m4s")) {
 		t.Error("a missing file must not read as an empty segment")
 	}
+}
+
+func TestSessionsReplacementAtCapacityOneKeepsLease(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	transcoder := &scriptedTranscoder{start: func(_ int, dir string, segment int) []string {
+		writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", segment), mediaSegment())
+		return []string{"sleep", "60"}
+	}}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	sessions.SetTranscodeCap(1)
+	defer sessions.Close()
+	slow := newSlowStop(sessions)
+	defer slow.unblock()
+	sessions.stopEncoder = func(proc *ffmpeg.HLSProcess) {
+		slow.stop(proc)
+		proc.Stop()
+	}
+	key := SessionKey{SessionID: "session-c", MediaID: "media-c"}
+	if _, err := filePath720(sessions, key, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	session := registeredSession(t, sessions, key)
+	session.mu.Lock()
+	lease := session.transcodeLease
+	session.mu.Unlock()
+	slow.armed.Store(true)
+	replaced := make(chan error, 1)
+	go func() {
+		_, err := filePath720(sessions, key, "480p/seg00000.m4s")
+		replaced <- err
+	}()
+	slow.waitEntered(t)
+	other := SessionKey{SessionID: "session-other", MediaID: "media-other"}
+	if sessions.CanAdmit(other) || g.ActiveTranscodes() != 1 {
+		t.Fatal("replacement did not retain its slot and sole lease during Stop")
+	}
+	slow.unblock()
+	select {
+	case err := <-replaced:
+		if err != nil {
+			t.Fatalf("rendition replacement: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("replacement did not finish")
+	}
+	session.mu.Lock()
+	replacementLease := session.transcodeLease
+	session.mu.Unlock()
+	if lease == nil || lease != replacementLease || g.ActiveTranscodes() != 1 {
+		t.Fatal("replacement did not keep the original transcode lease")
+	}
+	sessions.Close()
+	if got := g.ActiveTranscodes(); got != 0 {
+		t.Fatalf("ActiveTranscodes after Close = %d, want 0", got)
+	}
+}
+
+func TestSessionsCloseDuringSpawn(t *testing.T) {
+	t.Parallel()
+	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	launcher := &scriptedTranscoder{cmds: make(chan *exec.Cmd, 1)}
+	launcher.start = func(_ int, dir string, _ int) []string {
+		writeArtifact(t, dir, "seg00000.m4s", mediaSegment())
+		return []string{"sleep", "60"}
+	}
+	g := governor.New()
+	sessions := NewSessions(&pausedSpawn{scriptedTranscoder: launcher, release: release}, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	defer sessions.Close()
+	defer unblock()
+	key := SessionKey{SessionID: "session-closing-mid-spawn", MediaID: "media-alpha"}
+
+	fetched := make(chan error, 1)
+	go func() {
+		_, err := filePath720(sessions, key, "720p/seg00000.m4s")
+		fetched <- err
+	}()
+	var cmd *exec.Cmd
+	select {
+	case cmd = <-launcher.cmds:
+	case err := <-fetched:
+		t.Fatalf("spawn did not start: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("spawn did not reach the latch")
+	}
+	session := registeredSession(t, sessions, key)
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	waitSessionCondition(t, "shutdown detached the spawning session", session.detached.Load)
+	select {
+	case <-closed:
+		t.Fatal("Close returned before the spawning encoder was handed back")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("ActiveTranscodes while spawn is held = %d, want 1", got)
+	}
+	if _, err := os.Stat(filepath.Join(session.dir, "720p", "seg00000.m4s")); err != nil {
+		t.Fatalf("spawn still owns its directory: %v", err)
+	}
+	unblock()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not drain the spawn")
+	}
+	if cmd.ProcessState == nil {
+		t.Fatal("Close left the spawned child unreaped")
+	}
+	if got := g.ActiveTranscodes(); got != 0 {
+		t.Fatalf("ActiveTranscodes after Close = %d, want 0", got)
+	}
+	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session dir after Close: %v", err)
+	}
+	if err := <-fetched; !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("fetch err = %v, want ErrSessionEvicted", err)
+	}
+}
+
+type pausedSpawn struct {
+	*scriptedTranscoder
+	release <-chan struct{}
+}
+
+func (p *pausedSpawn) StartHLSSegments(ctx context.Context, src, dir string, startSegment, segmentSeconds int, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	proc, err := p.scriptedTranscoder.StartHLSSegments(ctx, src, dir, startSegment, segmentSeconds, rendition)
+	if err == nil {
+		<-p.release
+	}
+	return proc, err
 }

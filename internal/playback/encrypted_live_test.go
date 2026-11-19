@@ -3,6 +3,7 @@ package playback
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -15,7 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/governor"
 )
 
 // fakeEncryptedTranscoder stands in for ffmpeg on an Encrypted Library: each
@@ -224,6 +227,152 @@ func TestEncryptedLiveSessionEndsWhenRevoked(t *testing.T) {
 	}
 }
 
+func TestTerminateSessionDrainsEncryptedReplacement(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	transcoder := &fakeEncryptedTranscoder{}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	defer sessions.Close()
+	slow := newSlowStop(sessions)
+	defer slow.unblock()
+	key := SessionKey{SessionID: "session-revoked-mid-replacement", MediaID: "media-alpha"}
+	secure := testEncryptedSource(nil)
+
+	path, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := registeredSession(t, sessions, key)
+	reader, err := sessions.OpenLiveArtifact(key, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	var buf [1]byte
+	if _, err := io.ReadFull(reader, buf[:]); err != nil {
+		t.Fatalf("read before revocation: %v", err)
+	}
+
+	slow.armed.Store(true)
+	seeked := make(chan error, 1)
+	go func() {
+		_, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00020.m4s")
+		seeked <- err
+	}()
+	slow.waitEntered(t)
+
+	terminated := make(chan int, 1)
+	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
+	waitSessionCondition(t, "revocation detached the replacing session", session.detached.Load)
+	alreadyDetached := make(chan int, 1)
+	go func() { alreadyDetached <- sessions.TerminateSession(key.SessionID) }()
+	select {
+	case n := <-terminated:
+		t.Fatalf("TerminateSession returned %d before the replacement finished", n)
+	case n := <-alreadyDetached:
+		t.Fatalf("TerminateSession returned %d while the detached session was still stopping", n)
+	case <-time.After(50 * time.Millisecond):
+	}
+	finishesWhileBlocked(t, "unrelated playlist", func() error {
+		_, err := filePath720(sessions, SessionKey{SessionID: "other-session", MediaID: "media-beta"}, masterPlaylistName)
+		return err
+	})
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("ActiveTranscodes while stopping = %d, want 1", got)
+	}
+
+	slow.unblock()
+	select {
+	case n := <-terminated:
+		if n != 1 {
+			t.Fatalf("TerminateSession = %d, want 1", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("TerminateSession did not return after the replacement stopped")
+	}
+	if n, err := reader.Read(buf[:]); n != 0 || !errors.Is(err, encderiv.ErrLiveSessionClosed) {
+		t.Fatalf("open reader after TerminateSession: read %d bytes, err = %v", n, err)
+	}
+	select {
+	case n := <-alreadyDetached:
+		if n != 0 {
+			t.Fatalf("second TerminateSession = %d, want 0", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("second TerminateSession did not return after teardown")
+	}
+	select {
+	case err := <-seeked:
+		if !errors.Is(err, ErrSessionEvicted) {
+			t.Fatalf("far seek err = %v, want ErrSessionEvicted", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("far seek did not return after teardown")
+	}
+	if got := transcoder.encryptedStarts(); got != 1 {
+		t.Fatalf("encrypted starts = %d, want 1", got)
+	}
+	if got := g.ActiveTranscodes(); got != 0 {
+		t.Fatalf("ActiveTranscodes after termination = %d, want 0", got)
+	}
+	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session directory after termination: %v", err)
+	}
+}
+
+func TestPurgeWithRelativeScratchRootPreservesEncryptedSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+	const root = "scratch"
+	sessions := NewSessionsInDir(&fakeEncryptedTranscoder{}, root, nil)
+	defer sessions.Close()
+	slow := newSlowStop(sessions)
+	defer slow.unblock()
+	key := SessionKey{SessionID: "session-relative-root", MediaID: "media-alpha"}
+	path, err := encryptedFilePath(sessions, key, testEncryptedSource(nil), 120, -1, false, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(path) {
+		t.Fatalf("encrypted artifact path = %q, want absolute path", path)
+	}
+	orphan := filepath.Join(root, "session-1")
+	if err := os.Mkdir(orphan, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	assertPurgePreservesArtifact := func() {
+		t.Helper()
+		if err := sessions.PurgeOrphanedTranscodeDirs(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("purge removed the owned artifact: %v", err)
+		}
+	}
+	assertPurgePreservesArtifact()
+	if _, err := os.Stat(orphan); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("orphan after purge: %v", err)
+	}
+
+	slow.armed.Store(true)
+	terminated := make(chan int, 1)
+	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
+	slow.waitEntered(t)
+	assertPurgePreservesArtifact()
+	slow.unblock()
+	select {
+	case n := <-terminated:
+		if n != 1 {
+			t.Fatalf("TerminateSession = %d, want 1", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("teardown did not finish")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("artifact after termination: %v", err)
+	}
+}
+
 // TestEncryptedLiveSessionRefusesUnsupportedShapes covers ADR-0236 D4.
 func TestEncryptedLiveSessionRefusesUnsupportedShapes(t *testing.T) {
 	t.Parallel()
@@ -295,4 +444,25 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+// mp4Box encodes one ISO-BMFF box with a 32-bit size.
+func mp4Box(typ string, payload []byte) []byte {
+	out := make([]byte, 8, 8+len(payload))
+	binary.BigEndian.PutUint32(out, uint32(8+len(payload))) // #nosec G115 -- test payloads are a few bytes
+	copy(out[4:], typ)
+	return append(out, payload...)
+}
+
+// emptySegment is what ffmpeg's HLS muxer writes when it starts past the end
+// of a truncated input: a lone 24-byte styp box (#EXTINF:0.000000).
+func emptySegment() []byte {
+	return mp4Box("styp", []byte("msdh\x00\x00\x00\x00msdhmsix"))
+}
+
+// mediaSegment is a minimal playable-shaped segment: styp, moof, mdat.
+func mediaSegment() []byte {
+	out := emptySegment()
+	out = append(out, mp4Box("moof", make([]byte, 8))...)
+	return append(out, mp4Box("mdat", []byte("media-bytes"))...)
 }

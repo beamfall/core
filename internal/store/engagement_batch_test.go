@@ -112,7 +112,7 @@ func TestProgressByMediaBatchesPerProfile(t *testing.T) {
 func TestAnnotateEngagementHidesAnotherProfilesProgress(t *testing.T) {
 	st := openDemoSeeded(t)
 	items := engagementFixture()
-	if err := st.AnnotateEngagement(context.Background(), "profile-demo-other", LibraryFilter{AllLibraries: true}, items); err != nil {
+	if err := st.AnnotateEngagement(context.Background(), "profile-demo-other", LibraryFilter{AllLibraries: true}, items, nil); err != nil {
 		t.Fatalf("AnnotateEngagement: %v", err)
 	}
 	for _, item := range items[:3] {

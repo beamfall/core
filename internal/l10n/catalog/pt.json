@@ -9,5 +9,6 @@
   "notification.watch_party_request.title": "Pedido de salto na Watch Party",
   "setup.lan_hint.finish_setup": "Abra o Beamfall pelo endereço IP para concluir a configuração sem o token de configuração.",
   "setup.lan_hint.sign_in": "Abra o Beamfall pelo endereço IP para entrar com a senha de administrador.",
-  "watch_party.participant_fallback": "Participante"
+  "watch_party.participant_fallback": "Participante",
+  "workflow.capability_disabled": "Esta ferramenta está desativada em Console → Recursos opcionais."
 }

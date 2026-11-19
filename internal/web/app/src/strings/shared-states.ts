@@ -44,9 +44,7 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Could not update the library.",
     subscriptionsUnavailable: "Subscriptions are unavailable right now.",
     libraryEmptyTitle: "Nothing to show in this library yet.",
-    libraryEmptyLead: "This library has no visible content for the current profile and filters.",
-    // Empty-as-activation (onboarding-funnel §6) — owner/manager only. Non-owner
-    // and no-access empties keep the inert copy above, byte-for-byte.
+    // Empty-as-activation (onboarding-funnel §6) is for owners and managers only.
     libraryEmptyOwnerTitle: "Your library is ready. Let's fill it.",
     libraryEmptyOwnerLead:
       "Start a scan to bring in your media, or migrate it from another server.",
@@ -100,8 +98,6 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Impossible de mettre à jour la bibliothèque.",
     subscriptionsUnavailable: "Les abonnements sont indisponibles pour le moment.",
     libraryEmptyTitle: "Rien à afficher dans cette bibliothèque pour le moment.",
-    libraryEmptyLead:
-      "Cette bibliothèque n’a aucun contenu visible pour le profil et les filtres actuels.",
     libraryEmptyOwnerTitle: "Votre bibliothèque est prête. Remplissons-la.",
     libraryEmptyOwnerLead:
       "Lancez une analyse pour importer vos médias, ou migrez-les depuis un autre serveur.",
@@ -158,8 +154,6 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Die Bibliothek konnte nicht aktualisiert werden.",
     subscriptionsUnavailable: "Abonnements sind derzeit nicht verfügbar.",
     libraryEmptyTitle: "In dieser Bibliothek gibt es noch nichts anzuzeigen.",
-    libraryEmptyLead:
-      "Diese Bibliothek hat für das aktuelle Profil und die aktuellen Filter keine sichtbaren Inhalte.",
     libraryEmptyOwnerTitle: "Deine Bibliothek ist bereit. Füllen wir sie.",
     libraryEmptyOwnerLead:
       "Starte einen Scan, um deine Medien zu importieren, oder migriere sie von einem anderen Server.",
@@ -213,8 +207,6 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "No se pudo actualizar la biblioteca.",
     subscriptionsUnavailable: "Las suscripciones no están disponibles en este momento.",
     libraryEmptyTitle: "Aún no hay nada que mostrar en esta biblioteca.",
-    libraryEmptyLead:
-      "Esta biblioteca no tiene contenido visible para el perfil y los filtros actuales.",
     libraryEmptyOwnerTitle: "Tu biblioteca está lista. Vamos a llenarla.",
     libraryEmptyOwnerLead: "Inicia un análisis para traer tus medios, o migra desde otro servidor.",
     libraryEmptyStartScan: "Iniciar el primer análisis",
@@ -268,7 +260,6 @@ export const sharedStateStrings = {
     couldNotUpdateLibrary: "Não foi possível atualizar a biblioteca.",
     subscriptionsUnavailable: "As assinaturas não estão disponíveis no momento.",
     libraryEmptyTitle: "Ainda não há nada para mostrar nesta biblioteca.",
-    libraryEmptyLead: "Esta biblioteca não tem conteúdo visível para o perfil e os filtros atuais.",
     libraryEmptyOwnerTitle: "Sua biblioteca está pronta. Vamos preenchê-la.",
     libraryEmptyOwnerLead:
       "Inicie uma varredura para trazer suas mídias ou migre-as de outro servidor.",

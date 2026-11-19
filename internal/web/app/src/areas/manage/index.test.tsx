@@ -5,7 +5,16 @@ import { type ReactNode, useEffect } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
-import { createLibrary, fetchLibraries, fetchPlugins } from "@/lib/graphql";
+import { ApiError } from "@/lib/api";
+import {
+  createLibrary,
+  fetchCapabilityStates,
+  fetchFolderTree,
+  fetchLibraries,
+  fetchPlugins,
+  renameManagedPath,
+} from "@/lib/graphql";
+import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { MENU_PAGES } from "@/lib/settingsIndex";
 import { MANAGE_NAV_GROUPS, ManageArea } from ".";
@@ -29,6 +38,7 @@ vi.mock("@/lib/graphql", () => ({
   createLibrary: vi.fn(),
   createManagedFolder: vi.fn(),
   deleteManagedPath: vi.fn(),
+  fetchCapabilityStates: vi.fn(),
   fetchFolderTree: vi.fn(),
   fetchLibraries: vi.fn(),
   fetchPlugins: vi.fn(),
@@ -44,7 +54,7 @@ vi.mock("./pages/ArtworkPage", () => ({ ArtworkPage: () => null }));
 vi.mock("./pages/BackupExportPage", () => ({ BackupExportPage: () => null }));
 vi.mock("./pages/BulkOpsPage", () => ({ BulkOpsPage: () => null }));
 vi.mock("./pages/CollectionsPage", () => ({ CollectionsPage: () => null }));
-vi.mock("./pages/ConvertPage", () => ({ ConvertPage: () => null }));
+vi.mock("./pages/ConvertPage", () => ({ ConvertPage: () => <p>Conversion workflow</p> }));
 vi.mock("./pages/CurationPage", () => ({ CurationPage: () => null }));
 vi.mock("./pages/EntityPage", () => ({ EntityPage: () => null }));
 vi.mock("./pages/FieldLocksPage", () => ({ FieldLocksPage: () => null }));
@@ -52,7 +62,7 @@ vi.mock("./pages/MarkersPage", () => ({ MarkersPage: () => null }));
 vi.mock("./pages/NavOverridePage", () => ({ NavOverridePage: () => null }));
 vi.mock("./pages/OperationsPage", () => ({ OperationsPage: () => null }));
 vi.mock("./pages/ProfilePage", () => ({ ProfilePage: () => null }));
-vi.mock("./pages/RenamePage", () => ({ RenamePage: () => null }));
+vi.mock("./pages/RenamePage", () => ({ RenamePage: () => <p>Rename workflow</p> }));
 vi.mock("./pages/RestrictionsPage", () => ({ RestrictionsPage: () => null }));
 vi.mock("./pages/SubscriptionsPage", () => ({ SubscriptionsPage: () => null }));
 vi.mock("./pages/TagsPage", () => ({ TagsPage: () => null }));
@@ -79,6 +89,17 @@ const MANAGE_NAV = [
   ["Show restricted content", "/manage/restrictions"],
   ["Switch profile", "/manage/profile"],
 ] as const;
+
+function workflowStates(conversion = true, rename = true): CapabilityStateInfo[] {
+  return [
+    { id: "conversion", kind: "workflow", enabled: conversion, flippable: true },
+    { id: "rename", kind: "workflow", enabled: rename, flippable: true },
+  ];
+}
+
+beforeEach(() => {
+  vi.mocked(fetchCapabilityStates).mockResolvedValue(workflowStates());
+});
 
 function LocationProbe({ paths }: { paths: string[] }) {
   const { pathname } = useLocation();
@@ -224,7 +245,7 @@ describe("Manage navigation", () => {
       const user = userEvent.setup();
       const view = render(manageRouter(startingPath, paths));
 
-      await user.click(screen.getByRole("link", { name: label }));
+      await user.click(await screen.findByRole("link", { name: label }));
       await waitFor(() => expect(paths.at(-1)).toBe(expectedPath));
 
       expect(paths.filter((path) => path === expectedPath)).toHaveLength(1);
@@ -239,6 +260,129 @@ describe("Manage navigation", () => {
     const headings = await screen.findAllByRole("heading", { level: 1 });
     expect(headings).toHaveLength(1);
     expect(headings[0]).toHaveTextContent("Trash");
+  });
+
+  it.each([
+    {
+      slug: "convert",
+      url: "/manage/%63onvert",
+      label: "Convert",
+      other: "Rename",
+      states: workflowStates(false, true),
+    },
+    {
+      slug: "rename",
+      url: "/manage/Rename",
+      label: "Rename",
+      other: "Convert",
+      states: workflowStates(true, false),
+    },
+  ])(
+    "hides disabled $label in Advanced navigation and search and redirects its URL",
+    async ({ slug, url, label, other, states }) => {
+      const pending = deferred<typeof states>();
+      vi.mocked(fetchCapabilityStates).mockReturnValueOnce(pending.promise);
+      const paths: string[] = [];
+      render(manageRouter(url, paths));
+
+      expect(screen.getByText("Loading...")).toBeVisible();
+      expect(screen.queryByText(/^(Conversion|Rename) workflow$/)).not.toBeInTheDocument();
+      await act(async () => pending.resolve(states));
+      await waitFor(() => expect(paths).toEqual([url, "/manage/libraries"]));
+      expect(screen.getByRole("link", { name: other })).toBeVisible();
+      expect(screen.queryByRole("link", { name: label })).not.toBeInTheDocument();
+
+      const search = screen.getByRole("searchbox");
+      await userEvent.type(search, label);
+      expect(
+        document.querySelector(`.settings-search-results a[href="/manage/${slug}"]`),
+      ).toBeNull();
+      expect(screen.queryByText(/^(Conversion|Rename) workflow$/)).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps workflow links and pages available without an Admin Session", async () => {
+    vi.mocked(fetchCapabilityStates).mockRejectedValueOnce(
+      new ApiError("admin session required", 403),
+    );
+    const paths: string[] = [];
+    render(manageRouter("/manage/rename", paths));
+
+    expect(await screen.findByText("Rename workflow")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Rename" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Convert" })).toBeVisible();
+    expect(fetchCapabilityStates).toHaveBeenCalledWith(expect.any(AbortSignal), {
+      adminUnlock: false,
+    });
+    expect(paths).toEqual(["/manage/rename"]);
+  });
+
+  it("refreshes visible workflows when returning to Manage", async () => {
+    render(manageRouter("/manage/libraries", []));
+    const search = screen.getByRole("searchbox");
+    expect(await screen.findByRole("link", { name: "Convert" })).toBeVisible();
+    await userEvent.type(search, "Convert");
+    const searchLink = '.settings-search-results a[href="/manage/convert"]';
+    expect(document.querySelector(searchLink)).toBeVisible();
+
+    vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(false, true));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+
+    expect(screen.queryByRole("link", { name: "Convert" })).not.toBeInTheDocument();
+    expect(document.querySelector(searchLink)).toBeNull();
+    expect(screen.getByRole("link", { name: "Rename" })).toBeVisible();
+  });
+
+  it("shows workflows again when a later capability read fails (CORE-2633)", async () => {
+    vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(true, false));
+    render(manageRouter("/manage/libraries", []));
+    expect(await screen.findByRole("link", { name: "Convert" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Rename" })).not.toBeInTheDocument();
+
+    vi.mocked(fetchCapabilityStates).mockRejectedValueOnce(
+      new ApiError("admin session required", 403),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+
+    expect(await screen.findByRole("link", { name: "Rename" })).toBeVisible();
+  });
+
+  it("disables File tools Rename and sends no mutation when Rename is off", async () => {
+    vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(true, false));
+    vi.mocked(fetchLibraries).mockResolvedValueOnce([
+      {
+        id: "lib",
+        title: "Library",
+        pluginID: null,
+        roots: ["/media"],
+        previewClips: true,
+        restricted: false,
+      },
+    ]);
+    vi.mocked(fetchPlugins).mockResolvedValueOnce([]);
+    vi.mocked(fetchFolderTree).mockResolvedValueOnce({
+      name: "media",
+      path: "/media",
+      kind: "folder",
+      size: 0,
+      modifiedAt: "",
+      children: [
+        { name: "Clip.mkv", path: "/media/Clip.mkv", kind: "file", size: 10, modifiedAt: "" },
+      ],
+    });
+    const user = userEvent.setup();
+    render(manageRouter("/manage/libraries", []));
+
+    await user.click(await screen.findByText("Manage files on disk"));
+    const file = await screen.findByRole("treeitem", { name: /Clip\.mkv/ });
+    await user.click(file);
+    expect(file).toHaveAttribute("aria-selected", "true");
+    await user.type(screen.getByRole("textbox", { name: "Rename to" }), "Renamed.mkv");
+    const rename = screen.getByRole("button", { name: "Rename" });
+    expect.soft(rename).toBeDisabled();
+    await user.click(rename);
+
+    expect(renameManagedPath).not.toHaveBeenCalled();
   });
 
   it.each([

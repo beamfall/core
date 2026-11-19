@@ -74,9 +74,9 @@ func countHashesAtomic(t *testing.T) *atomic.Int64 {
 	t.Helper()
 	calls := &atomic.Int64{}
 	original := hashFileContent
-	hashFileContent = func(path string) (string, error) {
+	hashFileContent = func(ctx context.Context, path string) (string, error) {
 		calls.Add(1)
-		return original(path)
+		return original(ctx, path)
 	}
 	t.Cleanup(func() { hashFileContent = original })
 	return calls
@@ -160,11 +160,16 @@ func TestScanWorkerPoolMatchesSequentialResults(t *testing.T) {
 	}
 }
 
+type poolProbeFunc func(context.Context, string) (ffmpeg.Probe, error)
+
+func (f poolProbeFunc) Probe(ctx context.Context, path string) (ffmpeg.Probe, error) {
+	return f(ctx, path)
+}
+
 func TestScanWorkerPoolConcurrencyBoundedByGovernor(t *testing.T) {
 	// feature:scan-pipeline
-	// REVSWEEP-PERF-2 acceptance: in-flight expensive work is bounded by the
-	// governor's worker budget — never more than GenerationWorkers hashes in
-	// flight — and the pool genuinely reaches that bound (two hashes overlap).
+	// Probes still reach the governor's worker budget with whole-file hashes
+	// serialized across scans.
 	const workers = 2
 	root := t.TempDir()
 	for i := 0; i < 8; i++ {
@@ -174,8 +179,7 @@ func TestScanWorkerPoolConcurrencyBoundedByGovernor(t *testing.T) {
 	var inFlight, peak atomic.Int64
 	overlap := make(chan struct{})
 	var overlapOnce sync.Once
-	original := hashFileContent
-	hashFileContent = func(path string) (string, error) {
+	prober := poolProbeFunc(func(ctx context.Context, _ string) (ffmpeg.Probe, error) {
 		n := inFlight.Add(1)
 		defer inFlight.Add(-1)
 		for {
@@ -193,13 +197,13 @@ func TestScanWorkerPoolConcurrencyBoundedByGovernor(t *testing.T) {
 		select {
 		case <-overlap:
 		case <-time.After(2 * time.Second):
+		case <-ctx.Done():
 		}
-		return original(path)
-	}
-	t.Cleanup(func() { hashFileContent = original })
+		return ffmpeg.Probe{}, nil
+	})
 
 	st := storetest.Open(t)
-	result, err := ScanWithWorkerGovernor(context.Background(), st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(workers), Request{
+	result, err := ScanWithWorkerGovernor(context.Background(), st, prober, nil, nil, nil, nil, nil, nil, fixedGovernor(workers), Request{
 		LibraryID: "library-local",
 		Root:      root,
 	})
@@ -210,12 +214,12 @@ func TestScanWorkerPoolConcurrencyBoundedByGovernor(t *testing.T) {
 		t.Fatalf("FilesSeen = %d, want 8", result.FilesSeen)
 	}
 	if got := peak.Load(); got > workers {
-		t.Fatalf("peak concurrent hashes = %d, want <= governor budget %d", got, workers)
+		t.Fatalf("peak concurrent probes = %d, want <= governor budget %d", got, workers)
 	}
 	select {
 	case <-overlap:
 	default:
-		t.Fatalf("hashing never reached %d concurrent workers; the pool did not parallelize", workers)
+		t.Fatalf("probing never reached %d concurrent workers; the pool did not parallelize", workers)
 	}
 }
 
@@ -365,9 +369,9 @@ func TestPhotoScanSharesGovernorBudgetAcrossFillAndDerivation(t *testing.T) {
 	}
 	tracker := &combinedWorkTracker{}
 	originalHash := hashFileContent
-	hashFileContent = func(path string) (string, error) {
+	hashFileContent = func(ctx context.Context, path string) (string, error) {
 		tracker.run("hash")
-		return originalHash(path)
+		return originalHash(ctx, path)
 	}
 	t.Cleanup(func() { hashFileContent = originalHash })
 	st := storetest.Open(t)

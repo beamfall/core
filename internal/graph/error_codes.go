@@ -219,6 +219,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"an item in this batch was later merged into another item as a Version; undo that merge first": ErrorCodeConflict,
 	"job is not terminal":                                                                          ErrorCodeConflict,
 	"job is terminal":                                                                              ErrorCodeConflict,
+	"This workflow is disabled in Console → Optional features.":                                    ErrorCodeConflict,
 	"no identification to refresh; use Fix Match first":                                            ErrorCodeConflict,
 	"extension request already resolved":                                                           ErrorCodeConflict,
 	"library is already provisioned":                                                               ErrorCodeConflict,

@@ -9,5 +9,6 @@
   "notification.watch_party_request.title": "Watch Party seek request",
   "setup.lan_hint.finish_setup": "Open Beamfall by its IP address to finish setup without the setup token.",
   "setup.lan_hint.sign_in": "Open Beamfall by its IP address to sign in with the admin password.",
-  "watch_party.participant_fallback": "Participant"
+  "watch_party.participant_fallback": "Participant",
+  "workflow.capability_disabled": "This workflow is disabled in Console → Optional features."
 }

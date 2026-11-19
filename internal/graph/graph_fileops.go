@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -325,7 +326,26 @@ func (h *Handler) createManagedFolder(ctx context.Context, scope auth.Scope, req
 	return managedPathInfo(created), nil
 }
 
+// Check the durable override at admission so a newly disabled workflow is
+// refused even if the client still has its tools open.
+func (h *Handler) requireWorkflowCapability(ctx context.Context, id string) error {
+	states, err := h.store.CapabilityStates(ctx)
+	if err != nil {
+		return err
+	}
+	if enabled, configured := states[id]; configured && !enabled {
+		return &l10n.Error{
+			Key: l10n.WorkflowCapabilityDisabled,
+			Err: clientError("This workflow is disabled in Console → Optional features."),
+		}
+	}
+	return nil
+}
+
 func (h *Handler) renameManagedPath(ctx context.Context, scope auth.Scope, req request) (ManagedPathInfo, error) {
+	if err := h.requireWorkflowCapability(ctx, "rename"); err != nil {
+		return ManagedPathInfo{}, err
+	}
 	libraryID := trimmedVariable(req, "libraryID")
 	path := stringVar(req, "path")
 	name := trimmedVariable(req, "name")
@@ -343,6 +363,9 @@ func (h *Handler) renameManagedPath(ctx context.Context, scope auth.Scope, req r
 }
 
 func (h *Handler) batchRenameManagedPaths(ctx context.Context, scope auth.Scope, req request) (BatchResultInfo, error) {
+	if err := h.requireWorkflowCapability(ctx, "rename"); err != nil {
+		return BatchResultInfo{}, err
+	}
 	libraryID := trimmedVariable(req, "libraryID")
 	if libraryID == "" {
 		return BatchResultInfo{}, clientError("libraryID is required")

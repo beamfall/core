@@ -230,6 +230,8 @@ type hlsSession struct {
 	mu       sync.Mutex
 	detached atomic.Bool
 	joins    sync.WaitGroup
+	// teardownDone is set on detach under Sessions.mu and closed after cleanup.
+	teardownDone chan struct{}
 
 	dir               string
 	src               string
@@ -519,10 +521,10 @@ type Sessions struct {
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
 	// Detached sessions keep their directories and any occupied slots until
-	// teardown finishes. Close waits for detachedDirs to empty.
-	stopping     int
-	detachedDirs map[string]struct{}
-	offLockIdle  chan struct{}
+	// teardown finishes. Their keys let explicit termination find teardowns
+	// another caller or an in-progress start already owns.
+	stopping         int
+	detachedSessions map[*hlsSession]SessionKey
 	// closed is set by Close; once set no session is created.
 	closed bool
 
@@ -558,13 +560,13 @@ func (s *Sessions) teardown(session *hlsSession) {
 
 	s.stopRun(proc, run)
 	session.joins.Wait()
+	if session.live != nil {
+		session.live.Close()
+	}
 	if s.removeDir != nil {
 		_ = s.removeDir(session.dir)
 	} else {
 		_ = os.RemoveAll(session.dir)
-	}
-	if session.live != nil {
-		session.live.Close()
 	}
 	if lease != nil {
 		lease.Release()
@@ -575,11 +577,8 @@ func (s *Sessions) teardown(session *hlsSession) {
 		session.hasSlot = false
 		s.stopping--
 	}
-	delete(s.detachedDirs, session.dir)
-	if len(s.detachedDirs) == 0 && s.offLockIdle != nil {
-		close(s.offLockIdle)
-		s.offLockIdle = nil
-	}
+	delete(s.detachedSessions, session)
+	close(session.teardownDone)
 	s.mu.Unlock()
 }
 
@@ -831,13 +830,19 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	if !ok {
 		return nil
 	}
-	session.detached.Store(true)
 	delete(s.sessions, key)
-	s.detachedDirs[session.dir] = struct{}{}
+	teardown := s.detachLocked(key, session)
+	return &teardown
+}
+
+func (s *Sessions) detachLocked(key SessionKey, session *hlsSession) sessionTeardown {
+	session.detached.Store(true)
+	session.teardownDone = make(chan struct{})
+	s.detachedSessions[session] = key
 	if session.hasSlot {
 		s.stopping++
 	}
-	return &sessionTeardown{session: session, pending: session.startPending}
+	return sessionTeardown{session: session, pending: session.startPending}
 }
 
 // liveLocked verifies map identity for callers already holding Sessions.mu.
@@ -849,45 +854,47 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // and returns how many it stopped (ADR-0012 §7: a revoked device's in-flight
 // transcodes die, not just its future requests). Sessions are keyed by
 // (SessionID, MediaID) — one Session may hold several live transcodes — so this
-// stops all of them at once. It uses removeLocked and runTeardowns (stop the
-// FFmpeg process, delete the artifacts, then release the transcode slot), the
-// same teardown idle reaping and preemption already use, so it introduces no
-// new shutdown path. The teardowns run after the lock is released.
+// detaches all of them at once and waits for their teardown, including any
+// already in progress, after releasing the manager lock. The return value
+// counts sessions detached by this call.
 // Calling it for a Session with no live transcode is a zero-stop no-op — a
 // direct-play session has nothing to abort. The caller (the audited
 // device-revocation mutation) invokes this after RevokeDevice has already
 // blocked future auth; this closes the live transport that revocation alone
 // leaves running until idle reap.
 func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
-	s.mu.Lock()
-	var teardowns []sessionTeardown
-	for key := range s.sessions {
-		if key.SessionID == sessionID {
-			teardowns = append(teardowns, *s.removeLocked(key))
-		}
-	}
-	s.mu.Unlock()
-	s.runTeardowns(teardowns)
-	return len(teardowns)
+	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID })
 }
 
 // TerminatePlayback aborts the in-flight transcodes one auth Session holds for
 // one Media and returns how many it stopped (CORE-2345). A player that closes
 // calls endPlayback, and without this its FFmpeg process kept running until
 // idle reap. It stops every profile-capability variant of that (SessionID,
-// MediaID) pair through the same removeLocked/runTeardowns path as
-// TerminateSession, and leaves the Session's other Media alone. Ending a
-// playback with no live transcode (direct play) is a zero-stop no-op.
+// MediaID) pair and returns how many it detached, leaving the Session's other
+// Media alone. Ending a playback with no live transcode is a zero-stop no-op.
 func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
+	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID && key.MediaID == mediaID })
+}
+
+func (s *Sessions) terminate(match func(SessionKey) bool) int {
 	s.mu.Lock()
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
-		if key.SessionID == sessionID && key.MediaID == mediaID {
+		if match(key) {
 			teardowns = append(teardowns, *s.removeLocked(key))
+		}
+	}
+	var done []<-chan struct{}
+	for session, key := range s.detachedSessions {
+		if match(key) {
+			done = append(done, session.teardownDone)
 		}
 	}
 	s.mu.Unlock()
 	s.runTeardowns(teardowns)
+	for _, completed := range done {
+		<-completed
+	}
 	return len(teardowns)
 }
 
@@ -909,14 +916,14 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		now = time.Now
 	}
 	s := &Sessions{
-		transcoder:   transcoder,
-		dir:          scratchDir,
-		now:          now,
-		bootNonce:    newBootNonce(),
-		sessions:     map[SessionKey]*hlsSession{},
-		detachedDirs: make(map[string]struct{}),
-		cap:          defaultTranscodeCap,
-		resumeHints:  map[SessionKey]resumeHint{},
+		transcoder:       transcoder,
+		dir:              scratchDir,
+		now:              now,
+		bootNonce:        newBootNonce(),
+		sessions:         map[SessionKey]*hlsSession{},
+		detachedSessions: make(map[*hlsSession]SessionKey),
+		cap:              defaultTranscodeCap,
+		resumeHints:      map[SessionKey]resumeHint{},
 	}
 	_ = s.PurgeOrphanedTranscodeDirs()
 	return s
@@ -1413,8 +1420,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		session.picture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
 	}
 	if err != nil {
-		teardowns = append(teardowns, sessionTeardown{session: session})
-		s.detachedDirs[dir] = struct{}{}
+		teardowns = append(teardowns, s.detachLocked(key, session))
 		return nil, err
 	}
 	s.sessions[key] = session
@@ -2055,12 +2061,14 @@ var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	live := make(map[string]struct{}, len(s.sessions)+len(s.detachedDirs))
-	for dir := range s.detachedDirs {
-		live[dir] = struct{}{}
+	// All session directories are direct children of the scratch root.
+	// Compare their names because encrypted sessions store absolute paths.
+	live := make(map[string]struct{}, len(s.sessions)+len(s.detachedSessions))
+	for session := range s.detachedSessions {
+		live[filepath.Base(session.dir)] = struct{}{}
 	}
 	for _, session := range s.sessions {
-		live[session.dir] = struct{}{}
+		live[filepath.Base(session.dir)] = struct{}{}
 	}
 	entries, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -2074,11 +2082,10 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 		if !entry.IsDir() || !sessionDirName.MatchString(entry.Name()) {
 			continue
 		}
-		dir := filepath.Join(s.dir, entry.Name())
-		if _, held := live[dir]; held {
-			continue // in-flight session: never delete a live plaintext working dir
+		if _, held := live[entry.Name()]; held {
+			continue
 		}
-		joined = errors.Join(joined, os.RemoveAll(dir))
+		joined = errors.Join(joined, os.RemoveAll(filepath.Join(s.dir, entry.Name())))
 	}
 	return joined
 }
@@ -2095,21 +2102,15 @@ func (s *Sessions) Close() {
 	for key := range s.sessions {
 		teardowns = append(teardowns, *s.removeLocked(key))
 	}
+	done := make([]<-chan struct{}, 0, len(s.detachedSessions))
+	for session := range s.detachedSessions {
+		done = append(done, session.teardownDone)
+	}
 	s.mu.Unlock()
 	s.keyframes.close()
 	s.runTeardowns(teardowns)
-	for {
-		s.mu.Lock()
-		if len(s.detachedDirs) == 0 {
-			s.mu.Unlock()
-			return
-		}
-		if s.offLockIdle == nil {
-			s.offLockIdle = make(chan struct{})
-		}
-		idle := s.offLockIdle
-		s.mu.Unlock()
-		<-idle
+	for _, completed := range done {
+		<-completed
 	}
 }
 
