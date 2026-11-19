@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,8 +37,8 @@ func TestKeyframeSegmentArgsStartCopyAtTheSeek(t *testing.T) {
 // media starting at that keyframe and its init.mp4 is readable. Before
 // CORE-2618 FFmpeg wrote an init without its dec3 box and a first segment
 // with no media, and the server read the empty segment as the source's end.
-// The MP4 case puts the keyframe between two microseconds (24000/1001 fps in a
-// 1/10000000 timescale), so its rounded-up index time lies just after it.
+// It restarts at the keyframe's index time and expects that playlist time back,
+// for sources starting below, at and above zero (CORE-2657).
 func TestKeyframeRestartFirstSegmentCarriesItsGOP(t *testing.T) {
 	for _, tool := range []string{"ffmpeg", "ffprobe"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -45,27 +46,28 @@ func TestKeyframeRestartFirstSegmentCarriesItsGOP(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		name      string
-		file      string
-		rate      string
-		gop       int
-		extra     []string
-		keyframe  time.Duration // the restart keyframe's exact time
-		indexTime time.Duration // that time as the keyframe index holds it
+		name  string
+		file  string
+		rate  string
+		gop   int
+		extra []string
 	}{
-		// keyframes every 2 s: 0, 2, 4, 6, 8 s.
-		{name: "mkv whole-millisecond keyframes", file: "src.mkv", rate: "24", gop: 48, keyframe: 4 * time.Second, indexTime: 4 * time.Second},
-		// keyframe 2 is frame 100: 100*1001/24000 s = 4.1708333... s.
-		{name: "mp4 fractional keyframe", file: "src.mp4", rate: "24000/1001", gop: 50, extra: []string{"-video_track_timescale", "10000000"},
-			keyframe: 4170833333 * time.Nanosecond, indexTime: 4170834 * time.Microsecond},
+		// Keyframes every 2 s; AAC priming can give the file a negative
+		// start_time (FFmpeg 7 and 8 do), so the index holds them shifted by it.
+		{name: "mkv whole-millisecond keyframes", file: "src.mkv", rate: "24", gop: 48},
+		// Keyframe 2 is frame 100: 100*1001/24000 s = 4.1708333... s, so its
+		// rounded-up index time lies just after it.
+		{name: "mp4 fractional keyframe", file: "src.mp4", rate: "24000/1001", gop: 50, extra: []string{"-video_track_timescale", "10000000"}},
+		// MPEG-TS starts at a positive time.
+		{name: "mpegts positive start", file: "src.ts", rate: "24", gop: 48},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			requireRestartFirstSegment(t, tc.file, tc.rate, tc.gop, tc.extra, tc.keyframe, tc.indexTime)
+			requireRestartFirstSegment(t, tc.file, tc.rate, tc.gop, tc.extra)
 		})
 	}
 }
 
-func requireRestartFirstSegment(t *testing.T, file, rate string, gop int, extra []string, keyframe, indexTime time.Duration) {
+func requireRestartFirstSegment(t *testing.T, file, rate string, gop int, extra []string) {
 	t.Helper()
 	dir := t.TempDir()
 	src := filepath.Join(dir, file)
@@ -80,6 +82,16 @@ func requireRestartFirstSegment(t *testing.T, file, rate string, gop int, extra 
 	if out, err := exec.Command("ffmpeg", encode...).CombinedOutput(); err != nil { // #nosec G204 -- test-owned encoder and temp paths
 		t.Skipf("libx264 fixture unavailable: %v: %s", err, out)
 	}
+	// Restart at the third keyframe as the server does: at its index time,
+	// which is relative to the container's start.
+	index, err := New().ProbeKeyframes(context.Background(), src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(index.Keyframes) < 3 {
+		t.Fatalf("keyframe index %v, want at least 3 keyframes", index.Keyframes)
+	}
+	indexTime := index.Keyframes[2]
 	out := filepath.Join(dir, "audio-copy")
 	if err := os.Mkdir(out, 0o750); err != nil {
 		t.Fatal(err)
@@ -134,7 +146,9 @@ func requireRestartFirstSegment(t *testing.T, file, rate string, gop int, extra 
 	if _, ok := firstPTS["1"]; !ok {
 		t.Fatalf("first restart segment carries no audio packets: %s", packets)
 	}
-	if diff := video - keyframe.Seconds(); diff < -0.001 || diff > 0.001 {
-		t.Fatalf("first restart segment starts at %.6fs, want the restart keyframe at %.6fs", video, keyframe.Seconds())
+	// The playlist places the restart at the keyframe's index time, so its
+	// first segment must start there (within the index's rounding).
+	if diff := video - indexTime.Seconds(); diff < -0.001 || diff > 0.001 {
+		t.Fatalf("first restart segment starts at %.6fs, want the restart keyframe's playlist time %.6fs", video, indexTime.Seconds())
 	}
 }
