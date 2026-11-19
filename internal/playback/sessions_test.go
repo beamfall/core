@@ -1,6 +1,7 @@
 package playback
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -2836,14 +2837,15 @@ func TestTerminatePlaybackStopsOnlyThatMediasTranscode(t *testing.T) {
 // playlist, matching the production muxer's publication protocol.
 type pacedTranscoder struct {
 	fakeTranscoder
-	root        string
-	pid         int
-	last        int // optional final fragment, with a gate before the playlist commit
-	emptyLast   bool
-	exitCode    int
-	zeroSegment int
-	failAt      int
-	launchErr   error
+	root          string
+	pid           int
+	last          int // optional final fragment, with a gate before the playlist commit
+	emptyLast     bool
+	malformedLast bool
+	exitCode      int
+	zeroSegment   int
+	failAt        int
+	launchErr     error
 }
 
 func (p *pacedTranscoder) NewPacedHLSOutput(dir string) (*ffmpeg.PacedHLSOutput, error) {
@@ -2881,8 +2883,10 @@ while :; do
       : > "$file.tmp" || exit 1
     elif [ "$n" -eq "$last" ] && [ "$empty_last" = true ]; then
       printf '\000\000\000\010styp' > "$file.tmp" || exit 1
-    else
+    elif [ "$n" -eq "$last" ] && [ "$9" = true ]; then
       printf m4s > "$file.tmp" || exit 1
+    else
+      printf '\000\000\000\011mdatx' > "$file.tmp" || exit 1
     fi
     if [ "$last" -gt 0 ] && [ "$n" -eq "$last" ]; then
       printf written > "$root/written" || exit 1
@@ -2903,7 +2907,7 @@ while :; do
 done
 `
 	// #nosec G204 G702 -- fixed script and test-owned arguments.
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script, "paced-transcoder", dir, strconv.Itoa(start), p.root, strconv.Itoa(p.last), strconv.FormatBool(p.emptyLast), playlist, strconv.Itoa(p.exitCode), strconv.Itoa(p.zeroSegment))
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script, "paced-transcoder", dir, strconv.Itoa(start), p.root, strconv.Itoa(p.last), strconv.FormatBool(p.emptyLast), playlist, strconv.Itoa(p.exitCode), strconv.Itoa(p.zeroSegment), strconv.FormatBool(p.malformedLast))
 	proc, err := ffmpeg.StartHLSCommand(cmd)
 	if err == nil {
 		p.mu.Lock()
@@ -3176,6 +3180,114 @@ func TestSessionsPacingUncachedRewindReattachesPendingFetch(t *testing.T) {
 	}
 }
 
+func TestSessionsPacingTwoSeeksReattachAndWakePendingFetch(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := pacedRequest(ctx, sessions, 12); err != nil {
+		t.Fatal(err)
+	}
+	session := registeredSession(t, sessions, pacingTestKey)
+	rung := Rung{ID: "720p"}
+	initial, _, _ := sessions.rungEncoder(pacingTestKey, session, rung)
+	request13 := make(chan error, 1)
+	go func() {
+		_, err := pacedRequest(ctx, sessions, 13)
+		request13 <- err
+	}()
+	waitPacing(t, ctx, func() bool { return initial.waiting.Load() == 1 })
+	if _, err := pacedRequest(ctx, sessions, 100); err != nil {
+		t.Fatal(err)
+	}
+	// Let the segment 13 waiter see the first replacement and fall back to
+	// waiting for the file. The run at 100 cannot produce segment 13.
+	select {
+	case <-initial.exited:
+	case <-ctx.Done():
+		t.Fatal("original run did not exit")
+	}
+	waitPacing(t, ctx, func() bool { return initial.waiting.Load() == 0 })
+	select {
+	case err := <-request13:
+		t.Fatalf("pending request returned before the rewind: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	path, err := pacedRequest(ctx, sessions, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewind, _, _ := sessions.rungEncoder(pacingTestKey, session, rung)
+	waitPacing(t, ctx, func() bool { return rewind.waiting.Load() == 1 })
+	transcoder.permit(t, 3, 13)
+	if err := <-request13; err != nil {
+		t.Fatalf("rewind did not deliver the outstanding segment 13: %v", err)
+	}
+	waitPacing(t, ctx, func() bool {
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		return rewind.paused && rewind.produced == 13
+	})
+	if dir := filepath.Dir(path); !fileReady(filepath.Join(dir, "seg00013.m4s")) || fileReady(filepath.Join(dir, "seg00014.m4s")) {
+		t.Fatal("rewind did not stop at its pending demand")
+	}
+	if starts := transcoder.segmentStartsSnapshot(); !slices.Equal(starts, []int{12, 100, 2}) {
+		t.Fatalf("encoder starts = %v, want [12 100 2]", starts)
+	}
+}
+
+func TestSessionsPacingRepublishesEvictedInitWithoutResuming(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root}
+	sessions := NewSessions(transcoder, root, nil)
+	sessions.waitWindow = 500 * time.Millisecond
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	transcoder.permit(t, 3, 10)
+	path, err := pacedRequest(ctx, sessions, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(path)
+	assertPacedFrontier(t, ctx, sessions, dir, 10)
+	session := registeredSession(t, sessions, pacingTestKey)
+	rung := Rung{ID: "720p"}
+	initial, _, _ := sessions.rungEncoder(pacingTestKey, session, rung)
+	pid := transcoder.pid
+	initPath := filepath.Join(dir, initSegmentName)
+	if !fileReady(initPath) {
+		t.Fatal("fixture did not publish init.mp4")
+	}
+	if err := os.Remove(initPath); err != nil {
+		t.Fatal(err)
+	}
+	got, err := sessions.FilePath(ctx, pacingTestKey, "source", 600, 1280, 720, false, "720p/init.mp4")
+	if err != nil || got != initPath || !fileReady(got) {
+		t.Fatalf("evicted init recovery = %q, %v", got, err)
+	}
+	after, _, _ := sessions.rungEncoder(pacingTestKey, session, rung)
+	if after != initial || transcoder.pid != pid || pid <= 0 {
+		t.Fatalf("init recovery changed encoder process, PID before=%d after=%d", pid, transcoder.pid)
+	}
+	assertPacedFrontier(t, ctx, sessions, dir, 10)
+	sessions.mu.Lock()
+	resumed := !after.resumedAt.IsZero()
+	sessions.mu.Unlock()
+	if resumed {
+		t.Fatal("init recovery resumed the paused encoder")
+	}
+}
+
 func TestSessionsPacingRewindRegeneratesEvictedFragment(t *testing.T) {
 	if !ffmpeg.SupportsHLSPause {
 		t.Skip("requires process-group suspension")
@@ -3315,6 +3427,177 @@ func TestSessionsPacingBlockedPublicationLockIsPerSession(t *testing.T) {
 	}
 }
 
+func TestSessionsCloseDrainsInProgressFragmentJoin(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires a named pipe to block the join's read")
+	}
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	key := pacingTestKey
+	master, err := sessions.FilePath(ctx, key, "source", 60, 1280, 720, false, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := registeredSession(t, sessions, key)
+	rung := audioCopyRung()
+	session.timeline = &keyframeTimeline{starts: []time.Duration{0, time.Second}, groups: []int{0}, end: 2 * time.Second}
+	dir := filepath.Join(filepath.Dir(master), rung.ID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fragment := []byte("\x00\x00\x00\x09mdatx")
+	for _, name := range []string{"seg00000.m4s", "seg00001.m4s"} {
+		if err := os.WriteFile(filepath.Join(dir, name), fragment, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pipe := filepath.Join(t.TempDir(), "part")
+	makeTestPipe(t, pipe)
+	sessions.joinSegment = func(dst string, parts []string) error {
+		// Use the real join and block its second read after it has opened
+		// the temporary output and copied the first fragment.
+		return joinFragments(dst, []string{parts[0], pipe})
+	}
+	joined := make(chan error, 1)
+	go func() {
+		_, err := sessions.playlistSegment(ctx, key, session, rung, 0)
+		joined <- err
+	}()
+	release := sync.OnceFunc(func() {
+		// #nosec G204 G702 -- fixed command and test-owned FIFO.
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", `cat > "$1"`, "join-test", pipe)
+		cmd.Stdin = bytes.NewReader(fragment)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("release blocked fragment read: %v, %s", err, out)
+		}
+	})
+	defer release()
+	waitPacing(t, ctx, func() bool {
+		entries, _ := filepath.Glob(filepath.Join(dir, ".join-*"))
+		return len(entries) == 1
+	})
+
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	waitPacing(t, ctx, func() bool {
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		return sessions.closed
+	})
+	select {
+	case <-closed:
+		t.Error("Close returned while the fragment join still held a descriptor")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	if err := <-joined; err != nil && !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("blocked fragment join failed: %v", err)
+	}
+	select {
+	case <-closed:
+	case <-ctx.Done():
+		t.Fatal("Close did not return after the join finished")
+	}
+	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Close left the session directory: %v", err)
+	}
+}
+
+func makeTestPipe(t *testing.T, path string) {
+	t.Helper()
+	// #nosec G204 G702 -- fixture path inside the test's private directory.
+	if out, err := exec.Command("mkfifo", path).CombinedOutput(); err != nil {
+		t.Fatalf("create test pipe: %v, %s", err, out)
+	}
+}
+
+func TestSessionsSlowInitializationAllowsUnrelatedResumeAndDrainsOnClose(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension and a named pipe")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	transcoder.permit(t, 3, 11)
+	path, err := pacedRequest(ctx, sessions, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPacedFrontier(t, ctx, sessions, filepath.Dir(path), 10)
+
+	slow := SessionKey{SessionID: "slow", MediaID: "slow"}
+	dir := filepath.Join(sessions.dir, fmt.Sprintf("session-%s-2", sessions.bootNonce))
+	rungDir := filepath.Join(dir, "720p")
+	if err := os.MkdirAll(rungDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pipe := filepath.Join(rungDir, "index.m3u8")
+	makeTestPipe(t, pipe)
+	initialized := make(chan error, 1)
+	go func() {
+		_, err := sessions.FilePath(ctx, slow, "source", 60, 1280, 720, false, masterPlaylistName)
+		initialized <- err
+	}()
+	release := sync.OnceFunc(func() {
+		// #nosec G204 G702 -- fixed command and test-owned FIFO.
+		if out, err := exec.CommandContext(ctx, "cat", pipe).CombinedOutput(); err != nil {
+			t.Errorf("release blocked playlist write: %v, %s", err, out)
+		}
+	})
+	defer release()
+	waitPacing(t, ctx, func() bool { return fileReady(filepath.Join(dir, masterPlaylistName)) })
+
+	resumed := make(chan error, 1)
+	go func() {
+		_, err := pacedRequest(ctx, sessions, 3)
+		resumed <- err
+	}()
+	select {
+	case err := <-resumed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked playlist write stalled demand for another session")
+	}
+	assertPacedFrontier(t, ctx, sessions, filepath.Dir(path), 11)
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	waitPacing(t, ctx, func() bool {
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		return sessions.closed
+	})
+	select {
+	case <-closed:
+		t.Error("Close returned before initialization drained")
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+	if err := <-initialized; !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("initialization after Close = %v, want session evicted", err)
+	}
+	select {
+	case <-closed:
+	case <-ctx.Done():
+		t.Fatal("Close did not return after initialization drained")
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Close left the initialization directory: %v", err)
+	}
+}
+
 func TestSessionsPacingSeekIgnoresPreviousFrontier(t *testing.T) {
 	if !ffmpeg.SupportsHLSPause {
 		t.Skip("requires process-group suspension")
@@ -3434,10 +3717,13 @@ func TestSessionsPacingSourceEndRequiresCleanPublishedOutput(t *testing.T) {
 	if !ffmpeg.SupportsHLSPause {
 		t.Skip("requires process-group suspension")
 	}
-	for _, outcome := range []string{"clean", "rewind", "kill", "publish failure"} {
+	for _, outcome := range []string{"clean", "rewind", "kill", "publish failure", "malformed fragment"} {
 		t.Run(outcome, func(t *testing.T) {
 			root := t.TempDir()
-			transcoder := &pacedTranscoder{root: root, last: 101, emptyLast: outcome != "publish failure"}
+			transcoder := &pacedTranscoder{
+				root: root, last: 101, emptyLast: outcome != "publish failure" && outcome != "malformed fragment",
+				malformedLast: outcome == "malformed fragment",
+			}
 			sessions := NewSessions(transcoder, root, nil)
 			t.Cleanup(sessions.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -3491,6 +3777,8 @@ func TestSessionsPacingSourceEndRequiresCleanPublishedOutput(t *testing.T) {
 			case "kill":
 				run.proc.Kill()
 				wantExit = exitCrashed
+			case "malformed fragment":
+				wantExit = exitCrashed
 			case "publish failure":
 				// The fake has initialized and written its final temporary
 				// file. Force the cache rename to fail after a clean exit.
@@ -3520,6 +3808,17 @@ func TestSessionsPacingSourceEndRequiresCleanPublishedOutput(t *testing.T) {
 			case <-run.exited:
 			case <-ctx.Done():
 				t.Fatal("encoder did not reap")
+			}
+			if outcome == "malformed fragment" {
+				if fileReady(filepath.Join(filepath.Dir(path), "seg00101.m4s")) {
+					t.Error("malformed fragment reached the cache")
+				}
+				if incomplete, err := catalog.MediaFileSourceIncomplete(ctx, files[0]); err != nil || incomplete {
+					t.Errorf("malformed fragment recorded durable source end: %v, %v", incomplete, err)
+				}
+				if run.lastMedia != 100 || sessions.beyondSourceEnd(session, rung, 101) {
+					t.Error("malformed fragment advanced the media frontier or recorded session source end")
+				}
 			}
 			if run.outcome != wantExit {
 				t.Fatalf("exit = %v, want %v, output error = %v", run.outcome, wantExit, run.outputErr)
@@ -3734,7 +4033,7 @@ func TestSessionsPacingKeepsDarwinDescriptorsBounded(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
-	transcoder.permit(t, 1, 110)
+	transcoder.permit(t, 1, 100)
 	baseline := countFDs()
 	for n := 0; n <= 100; n++ {
 		if _, err := pacedRequest(ctx, sessions, n); err != nil {
@@ -3743,6 +4042,37 @@ func TestSessionsPacingKeepsDarwinDescriptorsBounded(t *testing.T) {
 		if used := countFDs() - baseline; used > 12 {
 			t.Fatalf("request %d left %d extra descriptors", n, used)
 		}
+	}
+	session := registeredSession(t, sessions, pacingTestKey)
+	run, _, _ := sessions.rungEncoder(pacingTestKey, session, Rung{ID: "720p"})
+	pending := make(chan error, 1)
+	go func() {
+		_, err := pacedRequest(ctx, sessions, 101)
+		pending <- err
+	}()
+	waitPacing(t, ctx, func() bool { return run.waiting.Load() == 1 })
+	// Keep publication gated while the wait path has time to arm its
+	// watcher, if any. The populated cache would pin a descriptor per file.
+	deadline := time.NewTimer(200 * time.Millisecond)
+	defer deadline.Stop()
+	sample := time.NewTicker(10 * time.Millisecond)
+	defer sample.Stop()
+samplePending:
+	for {
+		select {
+		case err := <-pending:
+			t.Fatalf("uncached request returned before publication: %v", err)
+		case <-sample.C:
+			if used := countFDs() - baseline; used > 12 {
+				t.Fatalf("pending request held %d extra descriptors", used)
+			}
+		case <-deadline.C:
+			break samplePending
+		}
+	}
+	transcoder.permit(t, 101, 101)
+	if err := <-pending; err != nil {
+		t.Fatalf("pending request did not finish after publication: %v", err)
 	}
 	sessions.Close()
 	if used := countFDs() - baseline; used > 0 {

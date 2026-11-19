@@ -3,6 +3,7 @@ package playback
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -23,7 +24,10 @@ func (s *Sessions) publishFileSegments(key SessionKey, session *hlsSession, run 
 	if err != nil && !errors.Is(err, ErrSessionEvicted) && !errors.Is(err, errPacedOutputDiscarded) {
 		run.proc.Kill()
 	}
+	session.publicationMu.Lock()
 	run.outputErr = errors.Join(err, output.Close())
+	run.output = nil
+	session.publicationMu.Unlock()
 }
 
 func (s *Sessions) publishRun(key SessionKey, session *hlsSession, run *encoderRun, output *ffmpeg.PacedHLSOutput, base int) error {
@@ -124,8 +128,9 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 	if err != nil {
 		return nil, false, err
 	}
-	if info.Size() == 0 {
-		return nil, false, fmt.Errorf("live encoder wrote an empty file %s", name)
+	hasMedia, err := fragmentHasMedia(f, info.Size())
+	if err != nil {
+		return nil, false, fmt.Errorf("validate live encoder fragment %s: %w", name, err)
 	}
 	var index []byte
 	if linear {
@@ -158,11 +163,9 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 			return nil, false, err
 		}
 	}
-	// FFmpeg can emit a well-formed, media-free fragment after a truncated
-	// input. Consume that placeholder without making it playable. A request
-	// waiting for it observes the reaper's outcome.
-	hasMedia := linear || !readerLacksMedia(f, info.Size())
-	if hasMedia && !fileReady(filepath.Join(session.dir, rung, name)) {
+	// For a truncated VOD input, consume a well-formed empty tail without
+	// making it playable. A waiting request observes the reaper's outcome.
+	if (linear || hasMedia) && !fileReady(filepath.Join(session.dir, rung, name)) {
 		if err := output.Publish(name, f); err != nil {
 			return nil, false, err
 		}
@@ -179,12 +182,58 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 	}
 	run.produced = n
 	run.producedAt = time.Now()
-	if hasMedia {
+	if linear || hasMedia {
 		run.lastMedia = n
 	}
 	session.frontier = n
 	session.updatePacingLocked()
 	return changed, true, nil
+}
+
+// fragmentHasMedia validates the full top-level MP4 box sequence before
+// reporting whether any mdat box has a payload. Only headers are read.
+func fragmentHasMedia(r io.ReaderAt, size int64) (bool, error) {
+	if size <= 0 {
+		return false, io.ErrUnexpectedEOF
+	}
+	var hasMedia bool
+	var header [16]byte
+	for off := int64(0); off < size; {
+		if size-off < 8 {
+			return false, io.ErrUnexpectedEOF
+		}
+		if _, err := r.ReadAt(header[:8], off); err != nil {
+			return false, err
+		}
+		boxSize := int64(binary.BigEndian.Uint32(header[:4]))
+		headerSize := int64(8)
+		switch boxSize {
+		case 0: // box extends to end of file
+			boxSize = size - off
+		case 1: // 64-bit largesize follows the type
+			if size-off < 16 {
+				return false, io.ErrUnexpectedEOF
+			}
+			if _, err := r.ReadAt(header[8:16], off+8); err != nil {
+				return false, err
+			}
+			large := binary.BigEndian.Uint64(header[8:16])
+			// #nosec G115 -- size-off is positive (loop guard), so it fits in uint64.
+			if large > uint64(size-off) {
+				return false, io.ErrUnexpectedEOF
+			}
+			boxSize = int64(large) // #nosec G115 -- large <= size-off, an int64, so it fits.
+			headerSize = 16
+		}
+		if boxSize < headerSize || boxSize > size-off {
+			return false, errors.New("invalid MP4 box size")
+		}
+		if string(header[4:8]) == "mdat" && boxSize > headerSize {
+			hasMedia = true
+		}
+		off += boxSize
+	}
+	return hasMedia, nil
 }
 
 func publishPacedInit(output *ffmpeg.PacedHLSOutput) error {
