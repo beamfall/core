@@ -90,8 +90,13 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	defer reader.Close()
 	defer writer.Close()
 	const descendantFile = "descendant.pid"
-	cmd := exec.CommandContext(context.Background(), "sh", "-c", `read -r line <&3 & echo $! > "$1"; wait`, "sh", descendantFile)
+	// The descendant inherits ignored SIGHUP before its PID is published.
+	// Keep the pipe writer open through the assertion so orphaning the group
+	// cannot end the descendant via SIGHUP or EOF.
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", `trap '' HUP; read -r line <&3 & echo $! > "$1"; wait`, "sh", descendantFile)
 	cmd.ExtraFiles = []*os.File{reader}
+	// Let the descendant assertion run even if only the leader is killed.
+	cmd.Stderr = os.Stderr
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		t.Fatal(err)

@@ -2586,7 +2586,7 @@ func (p *HLSProcess) killTree() {
 		return
 	}
 	p.killed = true
-	p.killGroup()
+	killProcessGroup(p.cmd)
 }
 
 // Running reports whether this process wraps a started OS child.

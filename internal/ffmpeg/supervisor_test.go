@@ -19,9 +19,6 @@ import (
 )
 
 func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
-	if !supportsHLSGroupKill {
-		t.Skip("HLS group signalling unavailable")
-	}
 	pidPath := filepath.Join(t.TempDir(), "descendant.pid")
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "sh", "-c", "sleep 30 & echo $! > \"$1\"; wait", "sh", pidPath) // #nosec G204 -- test-owned path
@@ -75,9 +72,6 @@ func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
 }
 
 func TestHLSProcessNaturalLeaderExitReapsDescendant(t *testing.T) {
-	if !supportsHLSGroupKill {
-		t.Skip("HLS group signalling unavailable")
-	}
 	pidPath := filepath.Join(t.TempDir(), "natural-descendant.pid")
 	cmd := exec.CommandContext(context.Background(), "sh", "-c", "sleep 30 & echo $! > \"$1\"; exit 0", "sh", pidPath) // #nosec G204 -- test-owned path
 	process, err := startHLSProcess(cmd)

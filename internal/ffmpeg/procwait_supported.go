@@ -1,12 +1,8 @@
-//go:build linux || darwin || dragonfly || freebsd || netbsd || openbsd
+//go:build unix
 
 package ffmpeg
 
 import "fmt"
-
-const supportsHLSGroupKill = true
-
-func (p *HLSProcess) killGroup() { killProcessGroup(p.cmd) }
 
 // waitForExit observes the leader's exit without reaping it. killTree kills
 // residual group members while the leader PID is still reserved. The OS init
