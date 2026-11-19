@@ -18,17 +18,6 @@ type compatBinding struct {
 	subject    string
 }
 
-// artworkImmutableCacheControl is the unbound long-cache directive. It applies
-// only to a request that carries no compatibility binding at all; a
-// decision-bound response can outlive its decision under it, so a bound
-// response never uses it.
-const artworkImmutableCacheControl = "private, max-age=31536000, immutable"
-
-// artworkBoundCacheControl keeps a decision-bound response storable but forces
-// revalidation, so the bound validator below decides every reuse instead of a
-// wall-clock freshness window.
-const artworkBoundCacheControl = "private, no-cache"
-
 // WithCompatBinding records the compatibility decision a request is bound to.
 // The compatibility middleware attaches it before the byte routes run, so a
 // route that hands the client a reusable cache entry can key that entry on the
@@ -50,27 +39,35 @@ func CompatBindingFromContext(ctx context.Context) (generation, subject string, 
 	return binding.generation, binding.subject, true
 }
 
-// artworkCacheUnestablished reports a request that is compatibility-bound but
-// whose decision cannot be named in full. Such a response is uncacheable.
-func artworkCacheUnestablished(r *http.Request) bool {
+// VersionedResponseNotModified sets the cache policy for a versioned byte
+// response and writes 304 if its validator matches. Pass an empty version to
+// skip validation. An unnamed compatibility binding always forces no-store.
+// Only an unbound request can use the immutable cache, when the caller allows it.
+func VersionedResponseNotModified(w http.ResponseWriter, r *http.Request, version string, allowImmutable bool) bool {
 	generation, subject, bound := CompatBindingFromContext(r.Context())
-	if !bound {
+	if bound && (generation == "" || subject == "") {
+		w.Header().Set("Cache-Control", "no-store")
 		return false
 	}
-	return generation == "" || subject == ""
-}
-
-// artworkCacheDirectives derives the cache validator and Cache-Control for an
-// artwork response whose bytes are at content version `version`. An unbound
-// request keeps the content-addressed long cache. A bound request gets a
-// validator that also covers the decision generation and the subject, under a
-// revalidating directive. Callers reject the unestablished case first.
-func artworkCacheDirectives(r *http.Request, version string) (validator, cacheControl string) {
-	generation, subject, bound := CompatBindingFromContext(r.Context())
-	if !bound {
-		return version, artworkImmutableCacheControl
+	if version == "" {
+		return false
 	}
-	return version + "-" + compatCacheTag(generation, subject), artworkBoundCacheControl
+
+	validator := version
+	cacheControl := "private, no-cache"
+	if bound {
+		validator += "-" + compatCacheTag(generation, subject)
+	} else if allowImmutable {
+		cacheControl = "private, max-age=31536000, immutable"
+	}
+	etag := `"` + validator + `"`
+	w.Header().Set("Cache-Control", cacheControl)
+	w.Header().Set("ETag", etag)
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return true
+	}
+	return false
 }
 
 // compatCacheTag folds the decision generation and subject into an opaque tag.

@@ -1422,23 +1422,10 @@ func (h *Handler) artworkCandidatePreviewPath(ctx context.Context, candidate sto
 // request made under another. A bound request whose decision cannot be
 // established fails closed to no-store instead of the immutable default.
 func artworkNotModified(w http.ResponseWriter, r *http.Request, currentVersion string, ok bool) bool {
-	if artworkCacheUnestablished(r) {
-		w.Header().Set("Cache-Control", "no-store")
-		return false
+	if !ok || r.URL.Query().Get("v") != currentVersion {
+		currentVersion = ""
 	}
-	v := r.URL.Query().Get("v")
-	if v == "" || !ok || v != currentVersion {
-		return false
-	}
-	validator, cacheControl := artworkCacheDirectives(r, v)
-	etag := `"` + validator + `"`
-	w.Header().Set("Cache-Control", cacheControl)
-	w.Header().Set("ETag", etag)
-	if match := r.Header.Get("If-None-Match"); match == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return true
-	}
-	return false
+	return VersionedResponseNotModified(w, r, currentVersion, true)
 }
 
 // serveArtworkFile serves one artwork derivative with the shared 404/500

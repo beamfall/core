@@ -111,8 +111,53 @@ func TestProfilePictureRoundTripAndClear(t *testing.T) {
 	if _, _, err := st.ProfilePicture(ctx, "profile-default"); !errors.Is(err, ErrNoProfilePicture) {
 		t.Fatalf("ProfilePicture after clear error = %v, want ErrNoProfilePicture", err)
 	}
+	if versions, err := st.ProfilePictureVersions(ctx); err != nil || len(versions) != 0 {
+		t.Fatalf("ProfilePictureVersions after clear = %v, %v; want no pictures", versions, err)
+	}
 	if err := st.ClearProfilePicture(ctx, "profile-default"); err != nil {
 		t.Fatalf("clearing an absent picture returned error: %v", err)
+	}
+}
+
+func TestProfilePictureVersionSurvivesClearAndReopen(t *testing.T) {
+	ctx := context.Background()
+	dir := migratedDataDir(t)
+	st, err := Open(ctx, dir, Options{SeedDevelopmentData: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	const id = "profile-default"
+	now := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	first, err := st.SetProfilePicture(ctx, id, []byte{1}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ClearProfilePicture(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(ctx, dir, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	if _, _, err := reopened.ProfilePicture(ctx, id); !errors.Is(err, ErrNoProfilePicture) {
+		t.Fatalf("ProfilePicture after reopen error = %v, want ErrNoProfilePicture", err)
+	}
+	second, err := reopened.SetProfilePicture(ctx, id, []byte{2}, now)
+	if err != nil || second != first+1 {
+		t.Fatalf("version after clear and reopen = %d, %v; want %d", second, err, first+1)
+	}
+	if err := reopened.ClearProfilePicture(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	third, err := reopened.SetProfilePicture(ctx, id, []byte{3}, now.Add(-time.Second))
+	if err != nil || third != second+1 {
+		t.Fatalf("version after clock moves backward = %d, %v; want %d", third, err, second+1)
 	}
 }
 

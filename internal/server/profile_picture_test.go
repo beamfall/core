@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"image"
@@ -13,8 +14,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -75,7 +78,7 @@ func TestProfilePictureUploadNormalizesStoresAndServes(t *testing.T) {
 	}
 
 	get := httptest.NewRequest(http.MethodGet, resp.PictureURL, nil)
-	authorizeViewer(get)
+	authorizeViewerCookies(get)
 	got := servePicture(srv, get)
 	if got.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, want 200: %s", got.Code, got.Body.String())
@@ -83,8 +86,8 @@ func TestProfilePictureUploadNormalizesStoresAndServes(t *testing.T) {
 	if ct := got.Header().Get("Content-Type"); ct != "image/jpeg" {
 		t.Fatalf("Content-Type = %q, want image/jpeg", ct)
 	}
-	if cc := got.Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
-		t.Fatalf("Cache-Control = %q, want immutable for the versioned URL", cc)
+	if cc := got.Header().Get("Cache-Control"); cc != "private, no-cache" {
+		t.Fatalf("Cache-Control = %q, want private, no-cache for the web session", cc)
 	}
 	img, err := jpeg.Decode(bytes.NewReader(got.Body.Bytes()))
 	if err != nil {
@@ -100,10 +103,77 @@ func TestProfilePictureUploadNormalizesStoresAndServes(t *testing.T) {
 
 	etag := got.Header().Get("ETag")
 	revalidate := httptest.NewRequest(http.MethodGet, "/api/profiles/picture/profile-default", nil)
-	authorizeManager(revalidate)
+	authorizeViewerCookies(revalidate)
 	revalidate.Header.Set("If-None-Match", etag)
 	if rec := servePicture(srv, revalidate); rec.Code != http.StatusNotModified {
 		t.Fatalf("revalidate status = %d, want 304", rec.Code)
+	}
+}
+
+func TestProfilePictureCacheFollowsCompatBinding(t *testing.T) {
+	srv, st := newArtworkUploadTestServer(t)
+	const id = "profile-default"
+	picture := []byte{0xff, 0xd8, 0xff, 0xd9}
+	version, err := st.SetProfilePicture(context.Background(), id, picture, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := profilePictureURL(id, version)
+	serve := func(path, generation, subject, match string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.SetPathValue("id", id)
+		authorizeViewer(req)
+		req.Header.Set("If-None-Match", match)
+		req = req.WithContext(mediahttp.WithCompatBinding(req.Context(), generation, subject))
+		rec := httptest.NewRecorder()
+		srv.profilePicture(rec, req)
+		return rec
+	}
+	const subject = "session:session-default"
+	first := serve(path, "7", subject, "")
+	etag := first.Header().Get("ETag")
+	if first.Code != http.StatusOK || etag == "" || strings.Contains(etag, subject) {
+		t.Fatalf("initial response status = %d, ETag = %q, want 200 and an opaque ETag", first.Code, etag)
+	}
+	if cc := first.Header().Get("Cache-Control"); cc != "private, no-cache" {
+		t.Errorf("initial Cache-Control = %q, want private, no-cache", cc)
+	}
+	for _, tc := range []struct {
+		name, path, generation, subject string
+		status                          int
+		cacheControl                    string
+	}{
+		{"same decision", path, "7", subject, http.StatusNotModified, "private, no-cache"},
+		{"different generation", path, "8", subject, http.StatusOK, "private, no-cache"},
+		{"different subject", path, "7", "session:session-other", http.StatusOK, "private, no-cache"},
+		{"no generation", path, "", subject, http.StatusOK, "no-store"},
+		{"no subject", path, "7", "", http.StatusOK, "no-store"},
+		{"unversioned URL", "/api/profiles/picture/" + id, "7", subject, http.StatusNotModified, "private, no-cache"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := serve(tc.path, tc.generation, tc.subject, etag)
+			if rec.Code != tc.status || rec.Header().Get("Cache-Control") != tc.cacheControl {
+				t.Fatalf("status = %d, Cache-Control = %q; want %d, %q", rec.Code, rec.Header().Get("Cache-Control"), tc.status, tc.cacheControl)
+			}
+			gotETag := rec.Header().Get("ETag")
+			switch {
+			case tc.status == http.StatusNotModified:
+				if gotETag != etag || rec.Body.Len() != 0 {
+					t.Fatalf("304 returned ETag %q and %d body bytes, want %q and no body", gotETag, rec.Body.Len(), etag)
+				}
+			case tc.cacheControl == "no-store":
+				if gotETag != "" {
+					t.Fatalf("ETag = %q, want no validator for an unnamed decision", gotETag)
+				}
+			default:
+				if gotETag == "" || gotETag == etag {
+					t.Fatalf("ETag = %q, want a new validator for the changed decision", gotETag)
+				}
+			}
+			if tc.status == http.StatusOK && !bytes.Equal(rec.Body.Bytes(), picture) {
+				t.Fatalf("body = %x, want %x", rec.Body.Bytes(), picture)
+			}
+		})
 	}
 }
 
@@ -242,8 +312,12 @@ func TestProfilePictureDeleteClearsIt(t *testing.T) {
 	}
 	get := httptest.NewRequest(http.MethodGet, "/api/profiles/picture/profile-default", nil)
 	authorizeViewer(get)
-	if rec := servePicture(srv, get); rec.Code != http.StatusNotFound {
+	rec := servePicture(srv, get)
+	if rec.Code != http.StatusNotFound {
 		t.Fatalf("GET after delete status = %d, want 404", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("GET after delete Cache-Control = %q, want no-store", cc)
 	}
 }
 

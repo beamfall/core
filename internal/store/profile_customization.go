@@ -121,8 +121,8 @@ func (s *Store) SetProfilePicture(ctx context.Context, id ProfileID, image []byt
 	return version, nil
 }
 
-// ClearProfilePicture removes the Profile's picture. Removing a picture the
-// Profile does not have is not an error.
+// ClearProfilePicture removes the image bytes and keeps the last issued version
+// so a later upload cannot reuse it. An absent picture is already clear.
 func (s *Store) ClearProfilePicture(ctx context.Context, id ProfileID) error {
 	if id == "" {
 		return ValidationError("profile ID is required")
@@ -137,7 +137,7 @@ func (s *Store) ClearProfilePicture(ctx context.Context, id ProfileID) error {
 	} else if !exists {
 		return ValidationError("unknown profile")
 	}
-	_, err := s.catalogW.ExecContext(ctx, `DELETE FROM profile_picture WHERE profile_id = ?`, id)
+	_, err := s.catalogW.ExecContext(ctx, `UPDATE profile_picture SET image = X'' WHERE profile_id = ?`, id)
 	return err
 }
 
@@ -155,7 +155,7 @@ func (s *Store) ProfilePicture(ctx context.Context, id ProfileID) ([]byte, int64
 	var image []byte
 	var version int64
 	err := s.catalogR.QueryRowContext(ctx,
-		`SELECT image, updated_at_ms FROM profile_picture WHERE profile_id = ?`, id).Scan(&image, &version)
+		`SELECT image, updated_at_ms FROM profile_picture WHERE profile_id = ? AND length(image) > 0`, id).Scan(&image, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, 0, ErrNoProfilePicture
 	}
@@ -173,7 +173,7 @@ func (s *Store) ProfilePictureVersions(ctx context.Context) (map[ProfileID]int64
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
-	rows, err := s.catalogR.QueryContext(ctx, `SELECT profile_id, updated_at_ms FROM profile_picture`)
+	rows, err := s.catalogR.QueryContext(ctx, `SELECT profile_id, updated_at_ms FROM profile_picture WHERE length(image) > 0`)
 	if err != nil {
 		return nil, err
 	}
