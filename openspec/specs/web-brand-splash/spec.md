@@ -1,7 +1,7 @@
 # web-brand-splash Specification
 
 ## Purpose
-TBD - created by archiving change web-brand-splash. Update Purpose after archive.
+Open the web app with the design system's Cut Beam logo intro on each document load, fitted to the viewport's orientation and replaced by the static lockup under reduced motion, then hand off to the first screen.
 
 ## Requirements
 
