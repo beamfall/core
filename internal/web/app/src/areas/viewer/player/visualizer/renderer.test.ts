@@ -309,7 +309,9 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(renderer.settled(640, 360, 1)).toBe(true);
   });
 
-  it("keeps a paused restore drawing until the grant admits every direction", () => {
+  // Codex round 18: bits 4 to 7 of the grant are the directions held. A grant that admits one
+  // direction and holds none is settled, though the other admission bits are clear.
+  it("keeps a paused restore drawing until the grant holds no direction", () => {
     const { renderer, resize, draw, grant, reads, blocks } = make(true);
     draw(640, 360, SCALE_BLACK_S);
     expect(renderer.settled(640, 360, 1)).toBe(false);
@@ -323,7 +325,7 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(reads).toEqual([L.fG[L.cur]]);
     expect(blocks.at(-1)?.[3]).toBe(0);
 
-    grant[0] = 0x1f;
+    grant[0] = 0x01;
     draw(640, 360);
     expect(reads).toHaveLength(1);
     expect(renderer.settled(640, 360, 1)).toBe(true);
@@ -413,6 +415,60 @@ describe("Renderer resize (CORE-2516)", () => {
     const after = spent.slice(before);
     expect(after.some(([f, v]) => fG.includes(f) && v[1] === 65025)).toBe(true);
     expect(blocks.at(-1)?.[3]).toBe(0);
+  });
+
+  // Codex round 18: a slot resized between a draw and its paint withdraws the frame, so nothing
+  // judged against the old area limit is shown in the new one.
+  it("withdraws the last frame to the limiter's previous output and state", () => {
+    const { r, renderer, draw, blits, blocks } = make();
+    draw(64, 36);
+    draw(64, 36, 1 / 60, 50);
+    const L = (r.size as { limiter: { cur: number } }).limiter;
+    const cur = L.cur;
+    const clock = r.clockMs;
+    const carry = r.refillCarry;
+    draw(64, 36, 1 / 60, 40);
+    const shown = blits.length;
+    renderer.withdraw();
+    expect(L.cur).toBe(cur);
+    expect(r.clockMs).toBe(clock);
+    expect(r.refillCarry).toBe(carry);
+    expect(blits).toHaveLength(shown + 1);
+    expect(blits.at(-1)).toEqual([0, 0, 64, 36, 0, 0, 64, 36]);
+    renderer.withdraw();
+    expect(blits).toHaveLength(shown + 1);
+    draw(64, 36, 1 / 60, 30);
+    expect(blocks.at(-1)?.[5]).toBe(30);
+    expect(L.cur).toBe(cur ^ 1);
+  });
+
+  it("withdraws nothing after a draw that presented black", () => {
+    const { r, renderer, draw, blits } = make(true);
+    draw(640, 360, SCALE_BLACK_S / 2);
+    const L = (r.size as { limiter: { cur: number } }).limiter;
+    const cur = L.cur;
+    renderer.withdraw();
+    expect(L.cur).toBe(cur);
+    expect(blits).toEqual([]);
+  });
+
+  // Codex round 18: the limiter ages evidence by the time frames are shown apart, which a late
+  // callback's timestamp overstates, while the governor keeps the raw interval.
+  it("times the limiter by the shown interval", () => {
+    const { renderer, draw, blocks } = make();
+    draw(64, 36);
+    renderer.draw(64, 36, 0.1, silentFrame(), false, 183, 1, 33);
+    expect(blocks.at(-1)?.[5]).toBe(33);
+  });
+
+  // Codex round 18: the scale fade runs on elapsed time, not the clamped step.
+  it("fades a display-scale change on elapsed time", () => {
+    const { r, renderer, draw } = make();
+    draw(64, 36);
+    renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2);
+    expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S);
+    renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2);
+    expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S - 0.2);
   });
 
   // Codex round 17: the first draw earned a frame of credit before any budget write it could repay.

@@ -161,6 +161,10 @@ export function Visualizer({
     let alive = true;
     let frame = 0;
     let lastDrawn: number | null = null;
+    let lastWall: number | null = null;
+    // The backing size of the last draw while it is unpainted: a draw sets it, and the next
+    // animation frame, which runs after the paint, clears it.
+    let unpainted: string | null = null;
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -178,6 +182,19 @@ export function Visualizer({
             if (!entry) return;
             device = entry.devicePixelContentBoxSize?.[0] ?? null;
             css = { width: entry.contentRect.width, height: entry.contentRect.height };
+            // Observers run after animation frames and before the paint: a slot resized since this
+            // frame's draw would show a frame judged against the old area limit, so it is withdrawn
+            // and the next draw judges at the new size (Codex round 18).
+            const drawn = unpainted;
+            if (drawn === null) return;
+            unpainted = null;
+            const key = backingSize(device, css.width, css.height, window.devicePixelRatio).join();
+            if (key === drawn) return;
+            try {
+              rendererRef.current?.withdraw();
+            } catch {
+              // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
+            }
           });
     try {
       observer?.observe(slot, { box: "device-pixel-content-box" });
@@ -226,6 +243,7 @@ export function Visualizer({
     };
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
+      unpainted = null;
       const renderer = rendererRef.current;
       const video = videoRef.current;
       if (!renderer || !video || document.hidden) return;
@@ -250,6 +268,12 @@ export function Visualizer({
         }
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
+        // The limiter ages its evidence by the shorter of the frame timestamps' interval and the
+        // time between draws: a late callback has a stale timestamp, and its frame is shown
+        // about the draw interval after the last (Codex round 18).
+        const wall = performance.now();
+        const shownMs =
+          lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);
@@ -258,8 +282,10 @@ export function Visualizer({
         if (target === silent) tau = SETTLE_TAU;
         else if (current && now - current.since < ARRIVE_SECONDS * 1000) tau = ARRIVE_TAU;
         easeFrame(shown, target, tau ? 1 - Math.exp(-dt / tau) : 1);
-        renderer.draw(width, height, dt, shown, !!reduced?.matches, frameMs, texel);
+        renderer.draw(width, height, dt, shown, !!reduced?.matches, frameMs, texel, shownMs);
         lastDrawn = now;
+        lastWall = wall;
+        unpainted = [width, height, texel].join();
         fitCanvas(renderer);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {
@@ -303,6 +329,7 @@ export function Visualizer({
           return renderer.use(first).then(() => {
             if (!current()) return;
             lastDrawn = null;
+            lastWall = null;
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(tick);
             queueUpcoming(renderer, rotateRef.current, first);

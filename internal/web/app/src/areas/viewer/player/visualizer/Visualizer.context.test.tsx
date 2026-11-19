@@ -10,6 +10,7 @@ const made = vi.hoisted(() => ({
     prepare: ReturnType<typeof vi.fn>;
     draw: ReturnType<typeof vi.fn>;
     settled: ReturnType<typeof vi.fn>;
+    withdraw: ReturnType<typeof vi.fn>;
     shown: { width: number; height: number; texel: number } | null;
     dispose: ReturnType<typeof vi.fn>;
     contextLost: boolean;
@@ -36,6 +37,7 @@ vi.mock("./renderer", () => ({
         prepare: vi.fn(() => Promise.resolve()),
         draw: vi.fn(),
         settled: vi.fn(() => false),
+        withdraw: vi.fn(),
         shown: null,
         dispose: vi.fn(),
         contextLost: false,
@@ -290,5 +292,77 @@ describe("Visualizer canvas fitting", () => {
     renderer.settled.mockReturnValue(true);
     step(48);
     expect(renderer.draw).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Codex round 18: an observer runs after the frame's draw and before its paint.
+describe("Visualizer resize before paint", () => {
+  type Observed = (entries: unknown[]) => void;
+  let observed: Observed | null;
+  const report = (width: number, height: number) =>
+    act(() =>
+      observed?.([
+        {
+          contentRect: { width, height },
+          devicePixelContentBoxSize: [{ inlineSize: width, blockSize: height }],
+        },
+      ]),
+    );
+  beforeEach(() => {
+    observed = null;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: Observed) {
+          observed = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.stubGlobal("devicePixelRatio", 1);
+  });
+
+  it("withdraws a drawn frame when the slot changes size before the paint", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    report(640, 360);
+    step(16);
+    expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([640, 360]);
+    report(640, 360);
+    expect(renderer.withdraw).not.toHaveBeenCalled();
+
+    step(32);
+    report(320, 360);
+    expect(renderer.withdraw).toHaveBeenCalledOnce();
+    report(300, 360);
+    expect(renderer.withdraw).toHaveBeenCalledOnce();
+  });
+
+  it("withdraws nothing once the next frame has run", async () => {
+    const { videoRef } = mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    report(640, 360);
+    step(16);
+    Object.defineProperty(videoRef.current, "readyState", { value: 3 });
+    renderer.settled.mockReturnValue(true);
+    step(32);
+    report(320, 360);
+    expect(renderer.withdraw).not.toHaveBeenCalled();
+  });
+
+  it("times the limiter by the shorter of the frame and draw intervals", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    const clock = vi.spyOn(performance, "now").mockReturnValue(150);
+    step(0);
+    clock.mockReturnValue(183);
+    step(183);
+    expect(renderer.draw.mock.lastCall?.[5]).toBe(183);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(33);
+    clock.mockRestore();
   });
 });

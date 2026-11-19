@@ -286,6 +286,8 @@ export class Renderer {
   private readonly grantWord = new Uint32Array(4);
   private grantSettled = true;
   private limiterSpent = false;
+  // The limiter's state before the last frame drawn, until the next draw (withdraw).
+  private undo: { cur: number; clockMs: number; carry: number; spent: boolean } | null = null;
   // The fraction of a refill unit earned and not yet granted (limiter README, Codex round 15).
   private refillCarry = 0;
   private readonly visualVertex: string;
@@ -601,13 +603,17 @@ export class Renderer {
     reducedMotion: boolean,
     frameMs = dt * 1000,
     texel = 1,
+    shownMs = frameMs,
   ): void {
     if (!this.visual) return;
     const gl = this.gl;
     this.reducedMotion = reducedMotion;
+    this.undo = null;
     // A display-scale change first fades the output to black at the old size (fading), then
     // switches with the limiter's state tracked black and its budgets spent (resize).
-    const fading = this.fading(texel, dt);
+    // The fade and the black interval run on the time elapsed, not the clamped step: a slow page
+    // ends them on time (Codex round 18).
+    const fading = this.fading(texel, frameMs / 1000);
     const size = fading && this.size ? this.size : this.resize(...frameSize(width, height), texel);
     const { width: W, height: H } = size;
     // The slot clips a minimum-sized backing or an old surface still fading at its own scale.
@@ -670,7 +676,7 @@ export class Renderer {
     // Show black for SCALE_BLACK_S from the first black frame after a scale change or restore.
     // The visual and its history keep running; the limiter starts from black with every budget
     // spent (resize). Run the limiter again once the interval ends, even if playback is paused.
-    if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - dt);
+    if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - shownMs / 1000);
     if (this.black > 0) {
       this.blackShown = true;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -679,15 +685,38 @@ export class Renderer {
       return;
     }
 
-    // 3. The frame flash limiter.
-    this.limit(size, frameMs);
+    // 3. The frame flash limiter, on the time the frames are shown apart (shownMs).
+    this.limit(size, shownMs);
 
-    // 4. The limited frame to the canvas: its visible part only, the rest black. A slot that grows
-    // before the next draw then reveals black, never pixels the limiter has not judged in view
-    // (Codex round 17). GL rows run bottom-up, so the top-left anchored visible rows are the top
-    // ones.
+    // 4. The limited frame to the canvas.
+    this.showLimited(size);
+  }
+
+  /** Withdraws the last frame drawn, before it is painted: the canvas shows the limiter's previous
+   * output again and the limiter's state goes back to before the frame, so the next draw judges
+   * afresh. A host calls it when the slot's size changes between a draw and its paint, so a frame
+   * judged against the old area limit is never shown in the new one (Codex round 18). */
+  withdraw(): void {
+    const u = this.undo;
+    const size = this.size;
+    this.undo = null;
+    if (!u || !size) return;
+    size.limiter.cur = u.cur;
+    this.clockMs = u.clockMs;
+    this.refillCarry = u.carry;
+    this.limiterSpent = u.spent;
+    this.grantSettled = false;
+    this.showLimited(size);
+  }
+
+  // The limited frame to the canvas: its visible part only, the rest black. A slot that grows
+  // before the next draw then reveals black, never pixels the limiter has not judged in view
+  // (Codex round 17). GL rows run bottom-up, so the top-left anchored visible rows are the top
+  // ones.
+  private showLimited(size: Size): void {
+    const gl = this.gl;
     const L = size.limiter;
-    const { visibleWidth: vw, visibleHeight: vh } = size;
+    const { height: H, visibleWidth: vw, visibleHeight: vh } = size;
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -726,7 +755,9 @@ export class Renderer {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.fG[L.cur]);
     gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, this.grantWord);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-    this.grantSettled = (this.grantWord[0] & 15) === 15;
+    // Bits 4 to 7 are the directions some pixel fires in that the grant did not admit (Oscillux
+    // v0.2.9): clear, the output shows the input exactly (Codex round 18).
+    this.grantSettled = (this.grantWord[0] & 0xf0) === 0;
     return this.grantSettled;
   }
 
@@ -915,6 +946,12 @@ export class Renderer {
   private limit(size: Size, frameMs: number): void {
     const gl = this.gl;
     const L = size.limiter;
+    this.undo = {
+      cur: L.cur,
+      clockMs: this.clockMs,
+      carry: this.refillCarry,
+      spent: this.limiterSpent,
+    };
     this.clockMs += frameMs;
     // The interval up to a resize may age copied trackers, but cannot refill its new deficit.
     // The fraction of a unit carries to the next frame, so the refill keeps the exact rate. A
