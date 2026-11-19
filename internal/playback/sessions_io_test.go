@@ -170,12 +170,16 @@ func TestPlaylistSetupDiscardsEvictedResult(t *testing.T) {
 }
 
 func TestPlaylistSetupWaiterCancellationAndFailure(t *testing.T) {
-	for _, cancelWaiter := range []bool{true, false} {
-		name := "write failure"
-		if cancelWaiter {
-			name = "canceled waiter"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		cancelWaiter      bool
+		replaceSourceFile bool
+	}{
+		{name: "write failure"},
+		{name: "canceled waiter", cancelWaiter: true},
+		{name: "different source generation", replaceSourceFile: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
 				defer sessions.Close()
@@ -189,7 +193,7 @@ func TestPlaylistSetupWaiterCancellationAndFailure(t *testing.T) {
 						write = func(rel string, data []byte) error {
 							if rel == masterPlaylistName {
 								latch.block()
-								if !cancelWaiter {
+								if !tc.cancelWaiter {
 									return writeErr
 								}
 							}
@@ -199,17 +203,30 @@ func TestPlaylistSetupWaiterCancellationAndFailure(t *testing.T) {
 					return writeSessionPlaylists(dir, rungs, duration, timeline, primed, write)
 				}
 				key := SessionKey{SessionID: "same-device", MediaID: "same-media"}
+				src := filepath.Join(t.TempDir(), "source.mkv")
+				if err := os.WriteFile(src, []byte("source"), 0o600); err != nil {
+					t.Fatal(err)
+				}
 				creator := make(chan error, 1)
 				go func() {
-					_, err := filePath720(sessions, key, masterPlaylistName)
+					_, err := sessions.FilePath(t.Context(), key, src, 120, 1280, 720, false, masterPlaylistName)
 					creator <- err
 				}()
 				latch.wait(t)
+				if tc.replaceSourceFile {
+					next := src + ".replacement"
+					if err := os.WriteFile(next, []byte("new source"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Rename(next, src); err != nil {
+						t.Fatal(err)
+					}
+				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				waiter := make(chan error, 1)
 				go func() {
-					_, err := sessions.FilePath(ctx, key, "/src/movie.mkv", 120, 1280, 720, false, masterPlaylistName)
+					_, err := sessions.FilePath(ctx, key, src, 120, 1280, 720, false, masterPlaylistName)
 					waiter <- err
 				}()
 				synctest.Wait()
@@ -218,7 +235,7 @@ func TestPlaylistSetupWaiterCancellationAndFailure(t *testing.T) {
 					t.Fatalf("same-key request returned before setup finished: %v", err)
 				default:
 				}
-				if cancelWaiter {
+				if tc.cancelWaiter {
 					cancel()
 					if err := awaitSessionOperation(t, waiter); !errors.Is(err, context.Canceled) {
 						t.Fatalf("canceled waiter returned %v, want context.Canceled", err)
@@ -233,17 +250,73 @@ func TestPlaylistSetupWaiterCancellationAndFailure(t *testing.T) {
 				if err := awaitSessionOperation(t, creator); !errors.Is(err, writeErr) {
 					t.Fatalf("creator returned %v, want %v", err, writeErr)
 				}
+				if tc.replaceSourceFile {
+					if err := awaitSessionOperation(t, waiter); err != nil {
+						t.Fatalf("waiter for the replacement source inherited setup failure: %v", err)
+					}
+					if writes.Load() != 2 {
+						t.Fatalf("playlist writes = %d, want separate setups for two generations", writes.Load())
+					}
+					return
+				}
 				if err := awaitSessionOperation(t, waiter); !errors.Is(err, writeErr) {
 					t.Fatalf("waiter returned %v, want %v", err, writeErr)
 				}
 				if writes.Load() != 1 {
 					t.Fatal("same-key requests performed separate playlist writes")
 				}
-				if _, err := filePath720(sessions, key, masterPlaylistName); err != nil {
+				if _, err := sessions.FilePath(t.Context(), key, src, 120, 1280, 720, false, masterPlaylistName); err != nil {
 					t.Fatalf("retry after failed setup: %v", err)
 				}
 			})
 		})
+	}
+}
+
+func TestReshapeStopsPredecessorBeforeWritingReplacement(t *testing.T) {
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	latch := newSessionIOLatch(t)
+	sessions.SetTranscodeCap(1)
+	key := SessionKey{SessionID: "reshaped", MediaID: "media"}
+	stopped := make(chan *ffmpeg.HLSProcess, 2)
+	sessions.stopEncoder = func(proc *ffmpeg.HLSProcess) { stopped <- proc }
+	var blocked atomic.Bool
+	sessions.writePlaylists = func(dir string, rungs []Rung, duration int, timeline *keyframeTimeline, primed primedGrid, write func(string, []byte) error) error {
+		if duration == 121 && blocked.CompareAndSwap(false, true) {
+			latch.block()
+		}
+		return writeSessionPlaylists(dir, rungs, duration, timeline, primed, write)
+	}
+	if _, err := filePath720(sessions, key, "720p/init.mp4"); err != nil {
+		t.Fatal(err)
+	}
+	old := registeredSession(t, sessions, key)
+	proc := old.proc
+	if proc == nil || sessions.CanAdmit(SessionKey{SessionID: "unrelated", MediaID: "media"}) {
+		t.Fatal("fixture did not start an encoder at capacity")
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := sessions.FilePath(t.Context(), key, old.src, 121, 1280, 720, false, masterPlaylistName)
+		done <- err
+	}()
+	latch.wait(t)
+	select {
+	case got := <-stopped:
+		if got != proc {
+			t.Fatal("reshape stopped the wrong encoder")
+		}
+	default:
+		t.Fatal("predecessor was still running when replacement entered its playlist write")
+	}
+	finishesWhileBlocked(t, "admission into the predecessor's slot", func() error {
+		_, err := filePath720(sessions, SessionKey{SessionID: "unrelated", MediaID: "media"}, "720p/init.mp4")
+		return err
+	})
+	latch.unblock()
+	if err := awaitSessionOperation(t, done); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -334,6 +407,83 @@ func TestComposedPictureWriteRunsOutsideSessionsLock(t *testing.T) {
 	}
 	if _, err := os.Stat(registeredSession(t, sessions, key).picture.TimedTextPath); err != nil {
 		t.Fatalf("timed text was not written: %v", err)
+	}
+}
+
+func TestOverlappingComposedSetupReusesResolution(t *testing.T) {
+	for _, writeFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("write fails %t", writeFails), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+				defer sessions.Close()
+				latch := newSessionIOLatch(t)
+				defer latch.unblock()
+				resolveErr := errors.New("picture sidecar no longer readable")
+				writeErr := errors.New("picture write failed")
+				var resolves atomic.Int32
+				sessions.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
+					if resolves.Add(1) != 1 {
+						return ComposedPicture{}, false, resolveErr
+					}
+					return ComposedPicture{TimedText: composedTestText}, true, nil
+				})
+				sessions.writePicture = func(dir string, picture ComposedPicture) (*ffmpeg.ComposedPicture, error) {
+					latch.block()
+					if writeFails {
+						return nil, writeErr
+					}
+					return writeLivePicture(dir, picture)
+				}
+				key := SessionKey{SessionID: "device", MediaID: "media"}
+				request := func(composed bool) <-chan error {
+					done := make(chan error, 1)
+					go func() {
+						_, err := sessions.FilePathShaped(t.Context(), key, "/src/audio", 30, 0, 0, false, false,
+							ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil,
+							StreamShape{ComposedPicture: composed, AudioOnly: true}, PriorityNormal, masterPlaylistName)
+						done <- err
+					}()
+					return done
+				}
+				creator := request(true)
+				latch.wait(t)
+				overlap := request(true)
+				var plain <-chan error
+				if writeFails {
+					plain = request(false)
+				}
+				synctest.Wait()
+				if got := resolves.Load(); got != 1 {
+					t.Fatalf("picture resolutions = %d while first write blocked, want 1", got)
+				}
+				latch.unblock()
+				var want error
+				if writeFails {
+					want = writeErr
+				}
+				for _, done := range []<-chan error{creator, overlap} {
+					if err := awaitSessionOperation(t, done); !errors.Is(err, want) {
+						t.Fatalf("composed setup returned %v, want %v", err, want)
+					}
+				}
+				if writeFails {
+					if err := awaitSessionOperation(t, plain); err != nil {
+						t.Fatalf("plain setup inherited composed write failure: %v", err)
+					}
+					if registeredSession(t, sessions, key).picture != nil {
+						t.Fatal("plain setup has a composed encoder input")
+					}
+				} else {
+					picture := registeredSession(t, sessions, key).picture
+					if picture == nil {
+						t.Fatal("composed encoder input was not published")
+					}
+					if _, err := os.Stat(picture.TimedTextPath); err != nil {
+						t.Fatalf("composed encoder input was not prepared: %v", err)
+					}
+				}
+			})
+		})
 	}
 }
 

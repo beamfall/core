@@ -524,6 +524,7 @@ type Sessions struct {
 	removeDir      func(string) error
 	readOrphanDirs func(string) ([]os.DirEntry, error)
 	statArtifact   func(string) (os.FileInfo, error)
+	statSource     func(string) (os.FileInfo, error)
 	writePlaylists func(string, []Rung, int, *keyframeTimeline, primedGrid, func(string, []byte) error) error
 	writePicture   func(string, ComposedPicture) (*ffmpeg.ComposedPicture, error)
 	inspectSegment func(*hlsSession, string) bool
@@ -1399,57 +1400,6 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	if secure != nil {
 		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
 	}
-	var teardowns []sessionTeardown
-	var setup *sessionInitialization
-	s.mu.Lock()
-	defer func() {
-		s.mu.Unlock()
-		s.runTeardowns(teardowns)
-		if setup != nil {
-			close(setup.done)
-		}
-	}()
-	if pending := s.sessions[key]; pending != nil && pending.initializing != nil {
-		initializing := pending.initializing
-		s.mu.Unlock()
-		select {
-		case <-initializing.ready:
-		case <-ctx.Done():
-		}
-		s.mu.Lock()
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if initializing.err != nil {
-			return nil, initializing.err
-		}
-		if !s.liveLocked(key, pending) {
-			return nil, ErrSessionEvicted
-		}
-	}
-	if s.closed {
-		return nil, ErrSessionEvicted
-	}
-	// One encode policy decides both the ladder and the encoder (CORE-2452):
-	// an existing session's pinned snapshot, which a reshaped replacement
-	// inherits, so a Console save in either direction never changes the rungs
-	// of a session already playing; otherwise the current policy, read once.
-	existing, hasExisting := s.sessions[key]
-	policy, hevcAllowed := s.sessionEncodePolicy(existing)
-	if caps.HEVC && !hevcAllowed {
-		caps.HEVC = false
-		caps.HEVCMaxHeight = 0
-	}
-	requestedRungs := rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
-	if picture != nil {
-		rung, err := composedLiveRung(caps)
-		if err != nil {
-			return nil, err
-		}
-		requestedRungs = []Rung{rung}
-	} else if audioOnly || !adjust.IsZero() {
-		requestedRungs = []Rung{audioOnlyRung(audioOnlyPeak)}
-	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	audioSource := videoWidth <= 0 && videoHeight <= 0 && picture == nil
 	var primed primedGrid
@@ -1461,45 +1411,100 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 			return nil, err
 		}
 	}
-	if hasExisting {
-		if existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
-			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
-		} else {
-			// A position noted while this session ran was kept only for a
-			// reshaped replacement; the unchanged session ignores it.
-			delete(s.resumeHints, key)
-			existing.lastAccess = s.now()
-			if priority > existing.priority {
-				existing.priority = priority // raise-only: earned standing is kept
-			}
-			return existing, nil
-		}
-	}
-	s.nextID++
-	dir := filepath.Join(s.dir, fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID))
-	setup = &sessionInitialization{ready: make(chan struct{}), done: make(chan struct{})}
 	session := &hlsSession{
-		initializing:      setup,
-		dir:               dir,
 		src:               src,
 		sourceInfo:        sourceInfo,
 		sourceGeneration:  sourceGeneration,
 		durationSeconds:   durationSeconds,
 		timeline:          timeline,
-		rungs:             requestedRungs,
 		audioProfile:      audioProfile,
 		audioStreamIndex:  audioStreamIndex,
 		sourceVideo:       sourceVideo,
 		burnSubtitleIndex: burnSubtitleIndex,
 		audioSource:       audioSource,
 		primed:            primed,
-		lastAccess:        s.now(),
 		priority:          priority,
 		degraded:          degraded,
+		composed:          picture,
 		adjust:            adjust,
 		secure:            secure,
-		encodePolicy:      policy,
 	}
+
+	var predecessor *sessionTeardown
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for {
+		if s.closed {
+			return nil, ErrSessionEvicted
+		}
+		existing := s.sessions[key]
+		// The ladder and encoder use one policy snapshot (CORE-2452).
+		// A reshaped session inherits its predecessor's pinned policy.
+		policy, hevcAllowed := s.sessionEncodePolicy(existing)
+		session.encodePolicy = policy
+		effectiveCaps := caps
+		if effectiveCaps.HEVC && !hevcAllowed {
+			effectiveCaps.HEVC = false
+			effectiveCaps.HEVCMaxHeight = 0
+		}
+		switch {
+		case picture != nil:
+			rung, err := composedLiveRung(effectiveCaps)
+			if err != nil {
+				return nil, err
+			}
+			session.rungs = []Rung{rung}
+		case audioOnly || !adjust.IsZero():
+			session.rungs = []Rung{audioOnlyRung(audioOnlyPeak)}
+		default:
+			session.rungs = rungsForSession(videoWidth, videoHeight, audioCopy, degraded, effectiveCaps)
+		}
+		if existing == nil {
+			break
+		}
+
+		sameShape := existing.matchesSession(session)
+		if initializing := existing.initializing; initializing != nil {
+			s.mu.Unlock()
+			select {
+			case <-initializing.ready:
+			case <-ctx.Done():
+			}
+			s.mu.Lock()
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if initializing.err != nil {
+				if sameShape {
+					return nil, initializing.err
+				}
+				// This request needs different artifacts. Try its own setup.
+				continue
+			}
+			if !s.liveLocked(key, existing) {
+				return nil, ErrSessionEvicted
+			}
+		}
+		if !sameShape {
+			predecessor = s.removeLocked(key)
+			break
+		}
+		// A position noted while this session ran was kept only for a
+		// reshaped replacement; the unchanged session ignores it.
+		delete(s.resumeHints, key)
+		existing.lastAccess = s.now()
+		if priority > existing.priority {
+			existing.priority = priority // raise-only: earned standing is kept
+		}
+		return existing, nil
+	}
+
+	s.nextID++
+	session.dir = filepath.Join(s.dir, fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID))
+	session.lastAccess = s.now()
+	setup := &sessionInitialization{ready: make(chan struct{}), done: make(chan struct{})}
+	session.initializing = setup
+	defer close(setup.done)
 	if hint, ok := s.resumeHints[key]; ok {
 		delete(s.resumeHints, key)
 		if s.now().Sub(hint.at) < sessionIdleTimeout {
@@ -1507,9 +1512,17 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		}
 	}
 	s.sessions[key] = session
+	if predecessor != nil {
+		s.mu.Unlock()
+		s.runTeardowns([]sessionTeardown{*predecessor})
+		s.mu.Lock()
+		if !s.liveLocked(key, session) {
+			return nil, ErrSessionEvicted
+		}
+	}
 	s.mu.Unlock()
 
-	dir, live, pictureInput, err := s.prepareSessionArtifacts(session, picture)
+	dir, live, pictureInput, err := s.prepareSessionArtifacts(session)
 
 	s.mu.Lock()
 	current := s.liveLocked(key, session)
@@ -1522,8 +1535,10 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		if current {
 			delete(s.sessions, key)
 		}
-		teardowns = append(teardowns, sessionTeardown{dir: dir, live: live})
 		s.detached++
+		s.mu.Unlock()
+		s.runTeardowns([]sessionTeardown{{dir: dir, live: live}})
+		s.mu.Lock()
 		if !current {
 			return nil, ErrSessionEvicted
 		}
@@ -1531,7 +1546,6 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	}
 	session.dir = dir
 	session.live = live
-	session.composed = picture
 	session.picture = pictureInput
 	if live != nil && secure.Revoked != nil {
 		session.revokeDone = make(chan struct{})
@@ -1540,9 +1554,28 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	return session, nil
 }
 
+// matchesSession compares the source generation and all artifact-shaping inputs.
+func (session *hlsSession) matchesSession(requested *hlsSession) bool {
+	return session.sourceGeneration == requested.sourceGeneration &&
+		(session.sourceInfo == nil || sameSourceFile(session.sourceInfo, requested.sourceInfo)) &&
+		session.src == requested.src &&
+		session.durationSeconds == requested.durationSeconds &&
+		session.primed == requested.primed &&
+		session.timeline == requested.timeline &&
+		session.degraded == requested.degraded &&
+		rungsEqual(session.rungs, requested.rungs) &&
+		session.sourceVideo == requested.sourceVideo &&
+		session.burnSubtitleIndex == requested.burnSubtitleIndex &&
+		audioProfilesEqual(session.audioProfile, requested.audioProfile) &&
+		equalOptionalInt(session.audioStreamIndex, requested.audioStreamIndex) &&
+		(session.composed != nil) == (requested.composed != nil) &&
+		session.adjust == requested.adjust &&
+		(session.secure != nil) == (requested.secure != nil)
+}
+
 // prepareSessionArtifacts runs before the session becomes available to requests,
 // with its directory reserved in Sessions but without Sessions.mu held.
-func (s *Sessions) prepareSessionArtifacts(session *hlsSession, picture *ComposedPicture) (string, *encderiv.LiveSession, *ffmpeg.ComposedPicture, error) {
+func (s *Sessions) prepareSessionArtifacts(session *hlsSession) (string, *encderiv.LiveSession, *ffmpeg.ComposedPicture, error) {
 	dir := session.dir
 	var live *encderiv.LiveSession
 	if session.secure != nil {
@@ -1565,12 +1598,12 @@ func (s *Sessions) prepareSessionArtifacts(session *hlsSession, picture *Compose
 	}
 	err := writePlaylists(dir, session.rungs, session.durationSeconds, session.timeline, session.primed, write)
 	var pictureInput *ffmpeg.ComposedPicture
-	if err == nil && picture != nil {
+	if err == nil && session.composed != nil {
 		writePicture := writeLivePicture
 		if s.writePicture != nil {
 			writePicture = s.writePicture
 		}
-		pictureInput, err = writePicture(filepath.Join(dir, ComposedRungID), *picture)
+		pictureInput, err = writePicture(filepath.Join(dir, ComposedRungID), *session.composed)
 	}
 	return dir, live, pictureInput, err
 }

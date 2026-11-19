@@ -218,10 +218,20 @@ func TestIncompleteSourceObservationTracksOnlyTheObservedFileGeneration(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			var cache incompleteSourceCache
+			key := SessionKey{SessionID: "device", MediaID: "download"}
+			session := &hlsSession{src: source, sourceInfo: observed}
+			sessions := &Sessions{sessions: map[SessionKey]*hlsSession{key: session}}
+			observe := func() {
+				t.Helper()
+				if _, found, err := sessions.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+					return 10 * time.Second, true
+				}); !found || err != nil {
+					t.Fatalf("source EOF: found=%v, err=%v", found, err)
+				}
+			}
 			if !changeBeforeObservation {
-				cache.remember(source, observed)
-				if !cache.contains(source) {
+				observe()
+				if !sessions.incompleteSources.contains(source) {
 					t.Fatal("unchanged truncated source not remembered")
 				}
 			}
@@ -238,12 +248,74 @@ func TestIncompleteSourceObservationTracksOnlyTheObservedFileGeneration(t *testi
 				t.Fatal(err)
 			}
 			if changeBeforeObservation {
-				cache.remember(source, observed)
+				observe()
 			}
-			if cache.contains(source) {
+			if sessions.incompleteSources.contains(source) {
 				t.Fatal("replacement poisoned by old source's EOF")
 			}
 		})
+	}
+}
+
+func TestSourceCacheStatDiscardsEvictedObservation(t *testing.T) {
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	latch := newSessionIOLatch(t)
+	src := filepath.Join(t.TempDir(), "source.mkv")
+	if err := os.WriteFile(src, []byte("old generation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key := SessionKey{SessionID: "observing", MediaID: "media"}
+	request := func() {
+		t.Helper()
+		if _, err := sessions.FilePath(t.Context(), key, src, 120, 1280, 720, false, masterPlaylistName); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request()
+	old := registeredSession(t, sessions, key)
+	sessions.statSource = func(string) (os.FileInfo, error) {
+		info, err := os.Stat(src)
+		if err == nil && sameSourceFile(old.sourceInfo, info) {
+			latch.block() // hold the old stat result while the successor publishes
+		}
+		return info, err
+	}
+	seedUnrelatedSessions(t, sessions)
+	observe := func() (time.Duration, bool) { return 10 * time.Second, true }
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := sessions.observeIncompleteSource(key, old, observe)
+		done <- err
+	}()
+	latch.wait(t)
+	assertUnrelatedSessionsProgress(t, sessions)
+
+	next := src + ".replacement"
+	if err := os.WriteFile(next, []byte("new generation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(next, src); err != nil {
+		t.Fatal(err)
+	}
+	request()
+	replacement := registeredSession(t, sessions, key)
+	if replacement == old || replacement.sourceGeneration == old.sourceGeneration {
+		t.Fatal("fixture did not replace the session with a newer source generation")
+	}
+	if _, found, err := sessions.observeIncompleteSource(key, replacement, observe); !found || err != nil {
+		t.Fatalf("replacement EOF: found=%v, err=%v", found, err)
+	}
+	if !sessions.incompleteSources.contains(src) {
+		t.Fatal("replacement EOF was not cached")
+	}
+
+	latch.unblock()
+	if err := awaitSessionOperation(t, done); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("old observer returned %v, want ErrSessionEvicted", err)
+	}
+	if !sessions.incompleteSources.contains(src) {
+		t.Fatal("evicted observer overwrote replacement's cached EOF")
 	}
 }
 

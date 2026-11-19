@@ -22,13 +22,6 @@ func sameSourceFile(a, b os.FileInfo) bool {
 }
 
 func (c *incompleteSourceCache) remember(path string, observed os.FileInfo) {
-	if observed == nil {
-		return
-	}
-	current, err := os.Stat(path)
-	if err != nil || !sameSourceFile(observed, current) {
-		return
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.files == nil || len(c.files) >= durationProbeCacheLimit {
@@ -99,14 +92,24 @@ func (s *Sessions) observeIncompleteSource(key SessionKey, session *hlsSession, 
 			slog.Error("observing source end failed", "media", key.MediaID, "error", err)
 		}
 	}
-	if observed && session.secure == nil {
-		s.incompleteSources.remember(session.src, session.sourceInfo)
+	var sameGeneration bool
+	if observed && session.secure == nil && session.sourceInfo != nil {
+		stat := os.Stat
+		if s.statSource != nil {
+			stat = s.statSource
+		}
+		current, err := stat(session.src)
+		sameGeneration = err == nil && sameSourceFile(session.sourceInfo, current)
 	}
 	s.mu.Lock()
-	current := s.liveLocked(key, session)
-	s.mu.Unlock()
-	if !current {
+	defer s.mu.Unlock()
+	if !s.liveLocked(key, session) {
 		return 0, false, ErrSessionEvicted
+	}
+	if sameGeneration {
+		// Publish only while this instance is live. A successor may already
+		// have cached EOF for a newer generation of this path.
+		s.incompleteSources.remember(session.src, session.sourceInfo)
 	}
 	return end, observed, err
 }
