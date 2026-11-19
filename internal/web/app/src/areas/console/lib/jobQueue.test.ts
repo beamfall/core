@@ -117,11 +117,13 @@ describe("arrangeJobQueue (CORE-2308)", () => {
 });
 
 describe("jobRunSeconds", () => {
-  it("measures start to finish, or start to now while running", () => {
+  it.each([1, 2, 3])("measures elapsed time since first start across %i attempts", (attempts) => {
     const startedAt = "2026-11-17T10:00:00Z";
     const now = Date.parse("2026-11-17T10:02:30Z");
-    expect(jobRunSeconds(job({ startedAt, finishedAt: "2026-11-17T10:01:00Z" }), now)).toBe(60);
-    expect(jobRunSeconds(job({ status: "running", startedAt }), now)).toBe(150);
+    expect(
+      jobRunSeconds(job({ startedAt, attempts, finishedAt: "2026-11-17T10:01:00Z" }), now),
+    ).toBe(60);
+    expect(jobRunSeconds(job({ status: "running", startedAt, attempts }), now)).toBe(150);
     expect(jobRunSeconds(job({}), now)).toBeNull();
   });
 });

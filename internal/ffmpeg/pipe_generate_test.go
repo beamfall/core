@@ -20,7 +20,7 @@ func TestPipeGenerateArgsScopeInputAndWriteNoFile(t *testing.T) {
 		args   []string
 		suffix string
 	}{
-		"sprite sheets": {pipeSpriteSheetArgs(testPipeURL, timeout, 10, 160, 10, 10), "-c:v mjpeg -f image2pipe pipe:1"},
+		"sprite sheets": {pipeSpriteSheetArgs(testPipeURL, timeout, 10, 160, 10, 10, 4), "-c:v mjpeg -f image2pipe pipe:1"},
 		"frame grab":    {pipeFrameGrabArgs(testPipeURL, timeout, 12.5, 320), "-c:v mjpeg -f image2pipe pipe:1"},
 		"sample clip":   {pipeSampleClipArgs(testPipeURL, timeout, []float64{1, 5}, 2, 320, 15), "-movflags frag_keyframe+empty_moov+default_base_moof -f mp4 pipe:1"},
 		"audio analysis": {
@@ -66,8 +66,8 @@ func TestPipeGenerateRefusesBadArguments(t *testing.T) {
 	remote := PipeInput{URL: "http://192.168.1.10:8080/token/source"}
 	local := PipeInput{URL: testPipeURL}
 	for name, call := range map[string]func() error{
-		"sheets remote":   func() error { return New().SpriteSheetsToPipe(ctx, remote, 10, 160, 10, 10, &out) },
-		"sheets nil":      func() error { return New().SpriteSheetsToPipe(ctx, local, 10, 160, 10, 10, nil) },
+		"sheets remote":   func() error { return New().SpriteSheetsToPipe(ctx, remote, 10, 160, 10, 10, 4, &out) },
+		"sheets nil":      func() error { return New().SpriteSheetsToPipe(ctx, local, 10, 160, 10, 10, 4, nil) },
 		"grab file":       func() error { return New().FrameGrabToPipe(ctx, PipeInput{URL: "file:///etc/hosts"}, 1, 320, &out) },
 		"grab nil":        func() error { return New().FrameGrabToPipe(ctx, local, 1, 320, nil) },
 		"clip no offsets": func() error { return New().SampleClipToPipe(ctx, local, nil, 2, 320, 15, &out) },

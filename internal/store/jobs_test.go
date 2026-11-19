@@ -59,7 +59,7 @@ func TestJobDedupeReturnsActiveAndAllowsAfterTerminal(t *testing.T) {
 	}
 	defer st.Close()
 	now := time.Unix(100, 0).UTC()
-	first, err := st.EnqueueJob(ctx, Job{ID: "job-first", Kind: "scan", DedupeKey: "library-local", CreatedAt: now})
+	first, err := st.EnqueueJob(ctx, Job{ID: "job-first", Kind: "scan", Priority: 5, DedupeKey: "library-local", CreatedAt: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +69,9 @@ func TestJobDedupeReturnsActiveAndAllowsAfterTerminal(t *testing.T) {
 	}
 	if duplicate.ID != first.ID {
 		t.Fatalf("duplicate ID = %q, want %q", duplicate.ID, first.ID)
+	}
+	if duplicate.Priority != first.Priority {
+		t.Fatalf("duplicate priority = %d, want preserved priority %d", duplicate.Priority, first.Priority)
 	}
 	claimed, err := st.ClaimNextJob(ctx, "worker", nil, now)
 	if err != nil {
@@ -773,4 +776,48 @@ func TestJobProgressEventsCoalesceAndPage(t *testing.T) {
 	if len(unbounded) != len(all) {
 		t.Fatalf("over-limit page = %d events, want the whole short log (%d)", len(unbounded), len(all))
 	}
+}
+
+func TestHasRunnableJob(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, migratedDataDir(t), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Unix(100, 0).UTC()
+	check := func(kind JobKind, at time.Time, want bool) {
+		t.Helper()
+		got, err := st.HasRunnableJob(ctx, kind, at)
+		if err != nil || got != want {
+			t.Fatalf("HasRunnableJob(%q, %v) = (%v, %v), want %v", kind, at, got, err, want)
+		}
+	}
+	check("scan", now, false)
+	if _, err := st.EnqueueJob(ctx, Job{ID: "runnable-scan", Kind: "scan", CreatedAt: now, RunAfter: now.Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	check("scan", now, false)
+	now = now.Add(time.Second)
+	check("scan", now, true) // available_at == now is runnable.
+	check("artwork-sweep", now, false)
+	claimed, err := st.ClaimNextJob(ctx, "worker", nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("scan", now, false) // Running jobs are not runnable again.
+	if err := st.YieldJob(ctx, claimed.ID, claimed.LeaseOwner, nil, now.Add(time.Second), now); err != nil {
+		t.Fatal(err)
+	}
+	check("scan", now, false)
+	now = now.Add(time.Second)
+	check("scan", now, true)
+	claimed, err = st.ClaimNextJob(ctx, "worker", nil, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CompleteJob(ctx, claimed.ID, claimed.LeaseOwner, now); err != nil {
+		t.Fatal(err)
+	}
+	check("scan", now, false)
 }

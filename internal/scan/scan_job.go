@@ -12,6 +12,10 @@ import (
 	"github.com/beamfall/core/internal/store"
 )
 
+// JobPriority places library scans above background sweeps (0) and below
+// foreground/playback demand (10), so scans get a worker first (CORE-2571).
+const JobPriority = 5
+
 // NewJob builds the durable store.Job for req, deriving a dedupe key from its
 // Library and root (backfills get a distinct key so they never suppress, or
 // are suppressed by, a queued normal scan of the same root).
@@ -46,6 +50,7 @@ func NewJob(req JobRequest) (store.Job, error) {
 		ID:        req.ID,
 		Kind:      JobKind,
 		Class:     store.JobClassBackground,
+		Priority:  JobPriority,
 		DedupeKey: dedupeKey,
 		Payload:   payload,
 		CreatedAt: req.CreatedAt,

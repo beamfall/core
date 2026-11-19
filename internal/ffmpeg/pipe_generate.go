@@ -30,10 +30,13 @@ func pipeHead(inputURL string, timeout time.Duration, pre ...string) []string {
 	return append(args, "-i", inputURL)
 }
 
-func pipeSpriteSheetArgs(inputURL string, timeout time.Duration, intervalSeconds, tileWidth, columns, rows int) []string {
-	args := pipeHead(inputURL, timeout)
+func pipeSpriteSheetArgs(inputURL string, timeout time.Duration, intervalSeconds, tileWidth, columns, rows, frameCount int) []string {
+	// Keyframes only on one thread, as SpriteSheets (CORE-2570). The pipe path
+	// has no GPU grant, so it always decodes in software, and it does not retry
+	// decoding every frame: a failed pass may already have written to stdout.
+	args := pipeHead(inputURL, timeout, spriteSheetDecodeArgs(spriteSheetPass{keyframesOnly: true})...)
 	args = append(args,
-		"-vf", fmt.Sprintf("fps=1/%d,scale=%d:-2,tile=%dx%d", intervalSeconds, tileWidth, columns, rows),
+		"-vf", spriteSheetFilter(intervalSeconds, tileWidth, columns, rows, frameCount),
 		"-q:v", "5")
 	return append(args, pipeImageArgs...)
 }
@@ -70,7 +73,7 @@ func pipeAudioAnalysisArgs(inputURL string, timeout time.Duration, logArgs []str
 
 // SpriteSheetsToPipe is SpriteSheets for a loopback source: the sheets are
 // written to stdout as concatenated JPEGs, in order.
-func (r *Runner) SpriteSheetsToPipe(ctx context.Context, in PipeInput, intervalSeconds, tileWidth, columns, rows int, stdout io.Writer) error {
+func (r *Runner) SpriteSheetsToPipe(ctx context.Context, in PipeInput, intervalSeconds, tileWidth, columns, rows, frameCount int, stdout io.Writer) error {
 	port, err := loopbackPort(in.URL)
 	if err != nil {
 		return err
@@ -78,7 +81,10 @@ func (r *Runner) SpriteSheetsToPipe(ctx context.Context, in PipeInput, intervalS
 	if stdout == nil {
 		return errors.New("ffmpeg pipe sprite sheets: no output writer")
 	}
-	args := pipeSpriteSheetArgs(in.URL, pipeReadTimeout(in), intervalSeconds, tileWidth, columns, rows)
+	if frameCount <= 0 {
+		return errors.New("sprite sheets need a positive frame count")
+	}
+	args := pipeSpriteSheetArgs(in.URL, pipeReadTimeout(in), intervalSeconds, tileWidth, columns, rows, frameCount)
 	return r.runPipeTool(ctx, port, in, "ffmpeg", "ffmpeg pipe sprite sheets", args, stdout)
 }
 

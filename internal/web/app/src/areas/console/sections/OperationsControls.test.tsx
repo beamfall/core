@@ -82,6 +82,7 @@ function job(overrides: Partial<Record<string, unknown>> = {}) {
     id: "job-1",
     kind: "scan",
     status: "running",
+    attempts: 1,
     progress: { current: 620, total: 1000, unit: "files", message: "Scanning" },
     ...overrides,
   };
@@ -401,7 +402,7 @@ describe("OperationsControls", () => {
         error: "provider timed out",
         finishedAt: at(5),
       }),
-      job({ id: "run-1", status: "running", startedAt: at(3) }),
+      job({ id: "run-1", status: "running", attempts: 3, startedAt: at(3) }),
     ]);
     const { container } = renderPanel();
     await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(4));
@@ -413,7 +414,9 @@ describe("OperationsControls", () => {
     );
     expect(front).toHaveLength(3);
     expect(front[0]).toHaveTextContent("Running");
-    expect(front[0]).toHaveTextContent("Started 3 minutes ago · running for 3 min 0 s");
+    expect(front[0]).toHaveTextContent(
+      "Started 3 minutes ago · 3 min 0 s since first start · attempt 3",
+    );
     expect(front[1]).toHaveTextContent("Queued 1 minute ago");
     expect(front[2]).toHaveTextContent("Failed");
     expect(front[2].querySelector(".console-job-error")).toHaveTextContent("provider timed out");
@@ -425,6 +428,22 @@ describe("OperationsControls", () => {
     expect(folded).toHaveLength(1);
     expect(folded[0]).toHaveTextContent("3 runs");
     expect(folded[0]).toHaveTextContent("Finished 10 minutes ago");
+  });
+
+  it.each([
+    [1, "took 2 min 0 s"],
+    [2, "took 2 min 0 s over 2 attempts"],
+  ])("labels a completed job with %i attempts (CORE-2572)", async (attempts, label) => {
+    const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job({ status: "completed", attempts, startedAt: at(5), finishedAt: at(3) }),
+    ]);
+    const { container } = renderPanel();
+    await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(1));
+    const when = container.querySelector(".console-job-when");
+    expect(when).toHaveTextContent(`Finished 3 minutes ago · ${label}`);
+    expect(when?.textContent).not.toContain("since first start");
+    if (attempts === 1) expect(when?.textContent).not.toContain("attempt");
   });
 
   it("names the progress bar for job progress and draws it only for live work with a total (CORE-2352)", async () => {
@@ -563,7 +582,7 @@ describe("OperationsControls", () => {
   it("calls a yielded job paused and never counts its wall-clock time as running (CORE-2352)", async () => {
     const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
     vi.mocked(fetchConsoleJobs).mockResolvedValue([
-      job({ status: "yielded", startedAt: at(3 * 24 * 60), updatedAt: at(1) }),
+      job({ status: "yielded", attempts: 3, startedAt: at(3 * 24 * 60), updatedAt: at(1) }),
     ]);
     const { container } = renderPanel();
     await waitFor(() => expect(container.querySelectorAll(".console-job-row").length).toBe(1));
@@ -571,9 +590,9 @@ describe("OperationsControls", () => {
     const row = container.querySelector(".console-job-row") as HTMLElement;
     expect(within(row).getByText("Paused")).toBeVisible();
     expect(row.querySelector(".console-job-when")).toHaveTextContent(
-      "Started 3 days ago · paused, resumes automatically",
+      "Started 3 days ago · paused, resumes automatically · attempt 3",
     );
-    expect(row.textContent).not.toContain("running for");
+    expect(row.textContent).not.toContain("since first start");
     expect(row.textContent).not.toContain("Yielded");
   });
 

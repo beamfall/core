@@ -1,14 +1,9 @@
+import { consoleOperationsJobKindsStrings } from "./console-operations-job-kinds";
+
 // CORE-2109 — Console job queue: what each job does, where it runs, and Scan now.
 export const consoleOperationsJobsStrings = {
   en: {
-    jobKindPlaybackPrecompute: "Playback precompute",
-    jobKindPlaybackPrecomputeEvict: "Playback cache eviction",
-    jobKindPlaybackComposedSweep: "Composed rendition sweep",
-    jobKindOfflinePackBuild: "Offline Pack build",
-    jobKindOfflinePackExpire: "Offline Pack expiry",
-    jobKindPhotoExport: "Photo export",
-    jobKindConvertManagedFile: "Managed file conversion",
-    jobKindSubtitleOffsetPrune: "Subtitle offset cleanup",
+    ...consoleOperationsJobKindsStrings.en,
     jobKindDescScan: "Walks a library folder and imports new or changed media files.",
     jobKindDescScanBackfill:
       "Walks a library folder and refreshes metadata for media already imported.",
@@ -47,8 +42,10 @@ export const consoleOperationsJobsStrings = {
     jobWhenQueued: "Queued {when}",
     jobWhenStarted: "Started {when}",
     jobWhenFinished: "Finished {when}",
-    jobRunningFor: "running for {duration}",
+    jobSinceFirstStart: "{duration} since first start",
     jobTook: "took {duration}",
+    jobTookOverAttempts: "took {duration} over {attempts} attempts",
+    jobAttempt: "attempt {attempts}",
     jobDurationSeconds: "{seconds} s",
     jobDurationMinutes: "{minutes} min {seconds} s",
     jobDurationHours: "{hours} h {minutes} min",
@@ -59,14 +56,7 @@ export const consoleOperationsJobsStrings = {
     jobNothingActive: "Nothing is running or waiting, and nothing has failed.",
   },
   fr: {
-    jobKindPlaybackPrecompute: "Précalcul de lecture",
-    jobKindPlaybackPrecomputeEvict: "Éviction du cache de lecture",
-    jobKindPlaybackComposedSweep: "Recherche de versions composées",
-    jobKindOfflinePackBuild: "Création de pack hors ligne",
-    jobKindOfflinePackExpire: "Expiration des packs hors ligne",
-    jobKindPhotoExport: "Export de photos",
-    jobKindConvertManagedFile: "Conversion de fichier géré",
-    jobKindSubtitleOffsetPrune: "Nettoyage des décalages de sous-titres",
+    ...consoleOperationsJobKindsStrings.fr,
     jobKindDescScan:
       "Parcourt un dossier de bibliothèque et importe les fichiers multimédias nouveaux ou modifiés.",
     jobKindDescScanBackfill:
@@ -111,8 +101,10 @@ export const consoleOperationsJobsStrings = {
     jobWhenQueued: "En file {when}",
     jobWhenStarted: "Démarré {when}",
     jobWhenFinished: "Terminé {when}",
-    jobRunningFor: "en cours depuis {duration}",
+    jobSinceFirstStart: "{duration} depuis le premier démarrage",
     jobTook: "durée {duration}",
+    jobTookOverAttempts: "durée {duration} sur {attempts} tentatives",
+    jobAttempt: "tentative {attempts}",
     jobDurationSeconds: "{seconds} s",
     jobDurationMinutes: "{minutes} min {seconds} s",
     jobDurationHours: "{hours} h {minutes} min",
@@ -123,14 +115,7 @@ export const consoleOperationsJobsStrings = {
     jobNothingActive: "Rien n’est en cours ni en attente, et rien n’a échoué.",
   },
   de: {
-    jobKindPlaybackPrecompute: "Wiedergabe-Vorberechnung",
-    jobKindPlaybackPrecomputeEvict: "Wiedergabe-Cache bereinigen",
-    jobKindPlaybackComposedSweep: "Zusammengesetzte Versionen prüfen",
-    jobKindOfflinePackBuild: "Offline-Paket erstellen",
-    jobKindOfflinePackExpire: "Offline-Pakete ablaufen lassen",
-    jobKindPhotoExport: "Fotoexport",
-    jobKindConvertManagedFile: "Verwaltete Datei konvertieren",
-    jobKindSubtitleOffsetPrune: "Untertitelversätze bereinigen",
+    ...consoleOperationsJobKindsStrings.de,
     jobKindDescScan:
       "Durchläuft einen Bibliotheksordner und importiert neue oder geänderte Mediendateien.",
     jobKindDescScanBackfill:
@@ -173,8 +158,10 @@ export const consoleOperationsJobsStrings = {
     jobWhenQueued: "Eingereiht {when}",
     jobWhenStarted: "Gestartet {when}",
     jobWhenFinished: "Beendet {when}",
-    jobRunningFor: "läuft seit {duration}",
+    jobSinceFirstStart: "{duration} seit dem ersten Start",
     jobTook: "Dauer {duration}",
+    jobTookOverAttempts: "Dauer {duration} über {attempts} Versuche",
+    jobAttempt: "Versuch {attempts}",
     jobDurationSeconds: "{seconds} s",
     jobDurationMinutes: "{minutes} Min. {seconds} s",
     jobDurationHours: "{hours} Std. {minutes} Min.",
@@ -185,14 +172,7 @@ export const consoleOperationsJobsStrings = {
     jobNothingActive: "Nichts läuft oder wartet, und nichts ist fehlgeschlagen.",
   },
   es: {
-    jobKindPlaybackPrecompute: "Precálculo de reproducción",
-    jobKindPlaybackPrecomputeEvict: "Expulsión de la caché de reproducción",
-    jobKindPlaybackComposedSweep: "Barrido de versiones compuestas",
-    jobKindOfflinePackBuild: "Creación de paquete sin conexión",
-    jobKindOfflinePackExpire: "Caducidad de paquetes sin conexión",
-    jobKindPhotoExport: "Exportación de fotos",
-    jobKindConvertManagedFile: "Conversión de archivo gestionado",
-    jobKindSubtitleOffsetPrune: "Limpieza de desfases de subtítulos",
+    ...consoleOperationsJobKindsStrings.es,
     jobKindDescScan:
       "Recorre una carpeta de la biblioteca e importa los archivos multimedia nuevos o modificados.",
     jobKindDescScanBackfill:
@@ -237,8 +217,10 @@ export const consoleOperationsJobsStrings = {
     jobWhenQueued: "En cola {when}",
     jobWhenStarted: "Iniciado {when}",
     jobWhenFinished: "Terminado {when}",
-    jobRunningFor: "en curso desde hace {duration}",
+    jobSinceFirstStart: "{duration} desde el primer inicio",
     jobTook: "duró {duration}",
+    jobTookOverAttempts: "duró {duration} en {attempts} intentos",
+    jobAttempt: "intento {attempts}",
     jobDurationSeconds: "{seconds} s",
     jobDurationMinutes: "{minutes} min {seconds} s",
     jobDurationHours: "{hours} h {minutes} min",
@@ -249,14 +231,7 @@ export const consoleOperationsJobsStrings = {
     jobNothingActive: "Nada está en curso ni en espera, y nada ha fallado.",
   },
   pt: {
-    jobKindPlaybackPrecompute: "Pré-cálculo de reprodução",
-    jobKindPlaybackPrecomputeEvict: "Remoção do cache de reprodução",
-    jobKindPlaybackComposedSweep: "Varredura de versões compostas",
-    jobKindOfflinePackBuild: "Criação de pacote offline",
-    jobKindOfflinePackExpire: "Expiração de pacotes offline",
-    jobKindPhotoExport: "Exportação de fotos",
-    jobKindConvertManagedFile: "Conversão de arquivo gerenciado",
-    jobKindSubtitleOffsetPrune: "Limpeza de deslocamentos de legendas",
+    ...consoleOperationsJobKindsStrings.pt,
     jobKindDescScan:
       "Percorre uma pasta da biblioteca e importa arquivos de mídia novos ou alterados.",
     jobKindDescScanBackfill:
@@ -298,8 +273,10 @@ export const consoleOperationsJobsStrings = {
     jobWhenQueued: "Na fila {when}",
     jobWhenStarted: "Iniciado {when}",
     jobWhenFinished: "Concluído {when}",
-    jobRunningFor: "em execução há {duration}",
+    jobSinceFirstStart: "{duration} desde o primeiro início",
     jobTook: "levou {duration}",
+    jobTookOverAttempts: "levou {duration} ao longo de {attempts} tentativas",
+    jobAttempt: "tentativa {attempts}",
     jobDurationSeconds: "{seconds} s",
     jobDurationMinutes: "{minutes} min {seconds} s",
     jobDurationHours: "{hours} h {minutes} min",

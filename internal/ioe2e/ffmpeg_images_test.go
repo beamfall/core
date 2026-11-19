@@ -53,7 +53,7 @@ func TestSpriteSheetsJourney(t *testing.T) {
 	dir := t.TempDir()
 	pattern := filepath.Join(dir, "sprite_%03d.jpg")
 
-	if err := r.SpriteSheets(ctx(t), src, 1, 80, 2, 1, pattern); err != nil {
+	if err := r.SpriteSheets(ctx(t), src, 1, 80, 2, 1, 2, pattern); err != nil {
 		t.Fatalf("SpriteSheets(%s): %v", src, err)
 	}
 	sprites, err := filepath.Glob(filepath.Join(dir, "sprite_*.jpg"))
