@@ -16,7 +16,7 @@ const SupportsHLSPause = false
 func openHLSStage(string) (*os.File, error)             { return nil, errors.ErrUnsupported }
 func openHLSSidecar(*os.File, string) (*os.File, error) { return nil, errors.ErrUnsupported }
 func makeHLSSegmentGate(string) error                   { return errors.ErrUnsupported }
-func readHLSSegmentGate(*os.File, string, io.Writer, <-chan struct{}) error {
+func readHLSSegmentGate(*os.File, string, io.Writer, <-chan struct{}, int64, func() (bool, error)) error {
 	return errors.ErrUnsupported
 }
 

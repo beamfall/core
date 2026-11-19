@@ -63,8 +63,8 @@ func makeHLSSegmentGate(path string) error {
 	return unix.Mkfifo(path, 0o600)
 }
 
-func readHLSSegmentGate(stage *os.File, name string, dst io.Writer, exited <-chan struct{}) error {
-	fd, err := openHLSStageEntry(stage, name+".tmp", unix.S_IFIFO)
+func readHLSSegmentGate(stage *os.File, name string, dst io.Writer, exited <-chan struct{}, limit int64, segmentCommitted func() (bool, error)) error {
+	fd, err := openHLSStageEntry(stage, name, unix.S_IFIFO)
 	if err != nil {
 		return err
 	}
@@ -73,15 +73,20 @@ func readHLSSegmentGate(stage *os.File, name string, dst io.Writer, exited <-cha
 	poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}} // #nosec G115 -- a kernel file descriptor fits in a pollfd
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
-	var wrote, committed bool
+	var size int64
+	var committed bool
 	for {
 		n, err := unix.Read(fd, buf[:])
 		switch {
 		case n > 0:
+			// The encoder's RLIMIT_FSIZE does not apply to pipe writes.
+			if int64(n) > limit-size {
+				return fmt.Errorf("ffmpeg: HLS segment %q exceeds the %d byte file limit", name, limit)
+			}
 			if _, err := dst.Write(buf[:n]); err != nil {
 				return err
 			}
-			wrote = true
+			size += int64(n)
 		case errors.Is(err, unix.EINTR):
 			continue
 		case errors.Is(err, unix.EAGAIN):
@@ -91,31 +96,34 @@ func readHLSSegmentGate(stage *os.File, name string, dst io.Writer, exited <-cha
 			}
 		case err != nil:
 			return err
-		case wrote: // the writer closed the fragment
-			return nil
 		case committed:
-			return fmt.Errorf("ffmpeg: empty HLS segment commit %q", name)
+			if size == 0 {
+				return fmt.Errorf("ffmpeg: empty HLS segment commit %q", name)
+			}
+			return nil
 		default:
 			// With no bytes read, EOF cannot distinguish an unopened
-			// gate from an empty fragment. The rename commits it.
+			// gate from an empty fragment. The playlist confirms the write.
 			finished := false
 			select {
 			case <-exited:
 				finished = true
 			default:
 			}
-			var stat unix.Stat_t
-			err := unix.Fstatat(int(stage.Fd()), name, &stat, unix.AT_SYMLINK_NOFOLLOW)
-			switch {
-			case err == nil:
-				// The writer could have opened, written and renamed
-				// since the read above. Drain once past the rename.
-				committed = true
-				continue
-			case !errors.Is(err, unix.ENOENT):
+			committed, err = segmentCommitted()
+			if err != nil {
 				return err
-			case finished:
-				return io.EOF
+			}
+			if committed {
+				// The writer could have opened, written and committed
+				// between the read above and the playlist check.
+				continue
+			}
+			if finished {
+				if size == 0 {
+					return io.EOF
+				}
+				return fmt.Errorf("ffmpeg: missing HLS segment commit %q: %w", name, io.ErrUnexpectedEOF)
 			}
 			select {
 			case <-exited:

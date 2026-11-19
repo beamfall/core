@@ -2880,19 +2880,20 @@ while :; do
     file=$(printf '%s/seg%05d.m4s' "$staging" "$n")
     printf attempted > "$root/attempt$n" || exit 1
     if [ "$8" -gt 0 ] && [ "$n" -eq "$8" ]; then
-      : > "$file.tmp" || exit 1
+      : > "$file" || exit 1
     elif [ "$n" -eq "$last" ] && [ "$empty_last" = true ]; then
-      printf '\000\000\000\010styp' > "$file.tmp" || exit 1
+      printf '\000\000\000\010styp' > "$file" || exit 1
     elif [ "$n" -eq "$last" ] && [ "$9" = true ]; then
-      printf m4s > "$file.tmp" || exit 1
+      printf m4s > "$file" || exit 1
+    elif [ -f "$root/oversized$n" ]; then
+      printf '\000\000\000\012mdatxy' > "$file" || exit 1
     else
-      printf '\000\000\000\011mdatx' > "$file.tmp" || exit 1
+      printf '\000\000\000\011mdatx' > "$file" || exit 1
     fi
     if [ "$last" -gt 0 ] && [ "$n" -eq "$last" ]; then
       printf written > "$root/written" || exit 1
       while [ ! -f "$root/finish" ]; do sleep 0.01; done
     fi
-    mv "$file.tmp" "$file" || exit 1
     printf '#EXTINF:4,\n%s\n' "${file##*/}" >> "$entries" || exit 1
     if [ "$last" -gt 0 ] && [ "$n" -eq "$last" ]; then
       printf '#EXT-X-ENDLIST\n' >> "$entries" || exit 1
@@ -3238,6 +3239,137 @@ func TestSessionsPacingTwoSeeksReattachAndWakePendingFetch(t *testing.T) {
 	}
 	if starts := transcoder.segmentStartsSnapshot(); !slices.Equal(starts, []int{12, 100, 2}) {
 		t.Fatalf("encoder starts = %v, want [12 100 2]", starts)
+	}
+}
+
+func TestSessionsPacingCloseEvictsPendingFetchSkippedBySeek(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	sessions := NewSessions(&pacedTranscoder{root: root}, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if _, err := pacedRequest(ctx, sessions, 12); err != nil {
+		t.Fatal(err)
+	}
+	session := registeredSession(t, sessions, pacingTestKey)
+	old, _, _ := sessions.rungEncoder(pacingTestKey, session, Rung{ID: "720p"})
+	request13 := make(chan error, 1)
+	go func() {
+		_, err := pacedRequest(ctx, sessions, 13)
+		request13 <- err
+	}()
+	waitPacing(t, ctx, func() bool { return old.waiting.Load() == 1 })
+	if _, err := pacedRequest(ctx, sessions, 100); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-old.exited:
+	case <-ctx.Done():
+		t.Fatal("replaced encoder did not exit")
+	}
+	waitPacing(t, ctx, func() bool { return old.waiting.Load() == 0 })
+	select {
+	case err := <-request13:
+		t.Fatalf("pending request returned before eviction: %v", err)
+	default:
+	}
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not drain the pending fetch")
+	}
+	select {
+	case err := <-request13:
+		if !errors.Is(err, ErrSessionEvicted) {
+			t.Fatalf("pending segment 13: %v, want session eviction", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("segment 13 is still waiting after Close")
+	}
+	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session scratch after Close: %v", err)
+	}
+	// An init request can also reach its artifact wait without a run when
+	// ensureRung saw a cached file just before teardown removed it.
+	initCtx, cancelInit := context.WithTimeout(ctx, time.Second)
+	defer cancelInit()
+	_, err := sessions.waitForEncoder(initCtx, pacingTestKey, session, Rung{ID: "720p"}, initRequest, false,
+		filepath.Join(session.dir, "720p", initSegmentName), nil, nil)
+	if !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("late init wait: %v, want session eviction", err)
+	}
+}
+
+func TestSessionsPacingResumesDuringOrphanRemoval(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	path, err := pacedRequest(ctx, sessions, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcoder.permit(t, 3, 11)
+	dir := filepath.Dir(path)
+	assertPacedFrontier(t, ctx, sessions, dir, 10)
+	orphan := filepath.Join(sessions.dir, "session-1")
+	if err := os.Mkdir(orphan, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	sessions.removeDir = func(path string) error {
+		if path == orphan {
+			close(entered)
+			<-release
+		}
+		return os.RemoveAll(path)
+	}
+	swept := make(chan error, 1)
+	go func() { swept <- sessions.PurgeOrphanedTranscodeDirs() }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("orphan removal did not start")
+	}
+	resumed := make(chan error, 1)
+	go func() {
+		_, err := pacedRequest(ctx, sessions, 3)
+		resumed <- err
+	}()
+	select {
+	case err := <-resumed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("orphan removal blocked demand for the live session")
+	}
+	assertPacedFrontier(t, ctx, sessions, dir, 11)
+	if starts := transcoder.segmentStartsSnapshot(); !slices.Equal(starts, []int{2}) {
+		t.Fatalf("encoder starts during orphan removal = %v, want [2]", starts)
+	}
+	unblock()
+	if err := <-swept; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(orphan); !errors.Is(err, os.ErrNotExist) || !fileReady(path) {
+		t.Fatalf("orphan stat = %v, live fragment present = %v", err, fileReady(path))
 	}
 }
 
@@ -3891,6 +4023,57 @@ func TestSessionsPacingCommittedZeroByteFragmentReapsWithoutSourceEnd(t *testing
 	}
 }
 
+func TestSessionsPacingOversizedFragmentCleansStagingWithoutSourceEnd(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root, last: 101}
+	sessions := NewSessions(transcoder, root, nil)
+	sessions.segmentFileLimit = 9 // ordinary fake fragments are exactly nine bytes
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	const duration = 440
+	catalog, source, key := pacingCatalogSource(t, ctx, root, duration)
+	sessions.sourceStore = catalog
+	files, err := catalog.MediaFilesForMedia(ctx, key.MediaID, store.LibraryFilter{AllLibraries: true})
+	if err != nil || len(files) != 1 {
+		t.Fatalf("source fixture files = %v, %v", files, err)
+	}
+	first, err := sessions.FilePath(ctx, key, source, duration, 1280, 720, false, "720p/seg00100.m4s")
+	if err != nil || !fileReady(first) {
+		t.Fatalf("fixture first playable segment = %q, %v", first, err)
+	}
+	session := registeredSession(t, sessions, key)
+	rung := Rung{ID: "720p"}
+	run, _, _ := sessions.rungEncoder(key, session, rung)
+	// Let the fake finish normally if the receiver accepts this fragment.
+	for _, marker := range []string{"oversized101", "finish"} {
+		if err := os.WriteFile(filepath.Join(root, marker), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	transcoder.permit(t, 101, 101)
+	select {
+	case <-run.exited:
+	case <-ctx.Done():
+		t.Fatal("oversized fragment did not reap")
+	}
+	if run.outcome != exitCrashed || run.outputErr == nil || !strings.Contains(run.outputErr.Error(), "seg00101.m4s\" exceeds the 9 byte file limit") {
+		t.Errorf("outcome = %v, output error = %v, want size failure", run.outcome, run.outputErr)
+	}
+	if fileReady(filepath.Join(filepath.Dir(first), "seg00101.m4s")) || sessions.beyondSourceEnd(session, rung, 102) {
+		t.Error("oversized fragment became playable or marked session source end")
+	}
+	if incomplete, err := catalog.MediaFileSourceIncomplete(ctx, files[0]); err != nil || incomplete {
+		t.Errorf("durable source incomplete = %v, %v, want false", incomplete, err)
+	}
+	if scratch, err := filepath.Glob(filepath.Join(session.dir, ".encoder-*")); err != nil || len(scratch) != 0 {
+		t.Errorf("scratch after receiver failure = %v, %v", scratch, err)
+	}
+}
+
 func pacingCatalogSource(t *testing.T, ctx context.Context, root string, duration int) (catalog *store.Store, source string, key SessionKey) {
 	t.Helper()
 	catalog = storetest.OpenAt(t, storetest.MigratedDataDir(t))
@@ -3921,6 +4104,67 @@ func TestSessionsPacingEventPlaylistTracksPublishedSegments(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			testPacedEventPlaylist(t, tc.exitCode, tc.rewind)
 		})
+	}
+}
+
+func TestSessionsPacingEventRegenerationPreservesPublishedPrefix(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	request := func(name string) string {
+		t.Helper()
+		path, err := sessions.FilePath(ctx, pacingTestKey, "source", 0, 1280, 720, false, "720p/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	index := request("index.m3u8")
+	readPlaylist := func() []byte {
+		t.Helper()
+		data, err := os.ReadFile(index) // #nosec G304 -- test-owned event playlist
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	transcoder.permit(t, 1, 12)
+	request("seg00003.m4s")
+	dir := filepath.Dir(index)
+	assertPacedFrontier(t, ctx, sessions, dir, 11)
+	prefix := readPlaylist()
+	if !bytes.HasSuffix(prefix, []byte("\nseg00011.m4s\n")) {
+		t.Fatalf("fixture did not advertise eleven: %s", prefix)
+	}
+	first := request("seg00000.m4s")
+	if err := os.Remove(first); err != nil {
+		t.Fatal(err)
+	}
+	if got := request("seg00000.m4s"); got != first || !fileReady(got) {
+		t.Fatalf("regenerated segment = %s, want playable %s", got, first)
+	}
+	if starts := transcoder.segmentStartsSnapshot(); !slices.Equal(starts, []int{0, 0}) {
+		t.Fatalf("encoder starts = %v, want regeneration at zero", starts)
+	}
+	waitPacing(t, ctx, func() bool {
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		run := sessions.sessions[pacingTestKey].run
+		return run.paused && run.produced == 8
+	})
+	if regenerated := readPlaylist(); !bytes.Equal(regenerated, prefix) {
+		t.Fatalf("regeneration rewrote the advertised prefix:\n%s", regenerated)
+	}
+	request("seg00004.m4s")
+	assertPacedFrontier(t, ctx, sessions, dir, 12)
+	if extended := readPlaylist(); !bytes.HasPrefix(extended, prefix) || !bytes.HasSuffix(extended, []byte("\nseg00012.m4s\n")) {
+		t.Fatalf("regenerated prefix did not extend in place:\n%s", extended)
 	}
 }
 

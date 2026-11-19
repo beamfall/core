@@ -31,8 +31,6 @@ func (s *Sessions) publishFileSegments(key SessionKey, session *hlsSession, run 
 }
 
 func (s *Sessions) publishRun(key SessionKey, session *hlsSession, run *encoderRun, output *ffmpeg.PacedHLSOutput, base int) error {
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
 	linear := session.durationSeconds == 0
 	playlist := "live.m3u8"
 	if linear {
@@ -63,7 +61,7 @@ func (s *Sessions) publishRun(key SessionKey, session *hlsSession, run *encoderR
 			return nil
 		}
 		if changed == nil && !received {
-			err := output.Receive(n, run.processDone)
+			err := output.Receive(n, playlist, run.processDone, s.segmentFileLimit)
 			if errors.Is(err, io.EOF) {
 				continue // Wait finished without another fragment
 			}
@@ -73,16 +71,11 @@ func (s *Sessions) publishRun(key SessionKey, session *hlsSession, run *encoderR
 			received = true
 			continue
 		}
-		var poll <-chan time.Time
-		if changed == nil {
-			poll = ticker.C // the muxer still owes us the playlist update
-		}
 		select {
 		case <-processDone:
 		case <-run.outputCanceled:
 			return ErrSessionEvicted
 		case <-changed: // already at the demand limit
-		case <-poll:
 		}
 	}
 }
@@ -102,9 +95,10 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 	allowed := n <= session.publicationLimitLocked()
 	rung := session.currentRung
 	s.mu.Unlock()
+	playlistPath := filepath.Join(session.dir, rung, playlist)
 	if !received {
 		if finished {
-			return nil, false, finishPacedOutput(output, playlist, base, n, linear)
+			return nil, false, finishPacedOutput(output, playlistPath, base, n, linear, run.preserveEvent)
 		}
 		if !allowed {
 			return changed, false, nil
@@ -135,9 +129,6 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 	var index []byte
 	if linear {
 		index, _, _, err = pacedPlaylist(output, playlist, base, n)
-		if !finished && (errors.Is(err, os.ErrNotExist) || (err == nil && index == nil)) {
-			return nil, false, nil // playlist rename follows the segment rename
-		}
 		if err != nil {
 			return nil, false, err
 		}
@@ -162,6 +153,7 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 		if err := publishPacedInit(output); err != nil {
 			return nil, false, err
 		}
+		run.preserveEvent = linear && fileReady(playlistPath)
 	}
 	// For a truncated VOD input, consume a well-formed empty tail without
 	// making it playable. A waiting request observes the reaper's outcome.
@@ -171,7 +163,7 @@ func (s *Sessions) publishNext(key SessionKey, session *hlsSession, run *encoder
 		}
 	}
 	if linear {
-		if err := output.Publish(playlist, bytes.NewReader(index)); err != nil {
+		if err := publishPacedEventPlaylist(output, playlistPath, index, n, false, run.preserveEvent); err != nil {
 			return nil, false, err
 		}
 	}
@@ -252,12 +244,12 @@ func publishPacedInit(output *ffmpeg.PacedHLSOutput) error {
 	return output.Publish(initSegmentName, f)
 }
 
-func finishPacedOutput(output *ffmpeg.PacedHLSOutput, playlist string, base, next int, linear bool) error {
+func finishPacedOutput(output *ffmpeg.PacedHLSOutput, playlistPath string, base, next int, linear, preserveEvent bool) error {
 	through := -1
 	if linear {
 		through = next - 1
 	}
-	data, last, ended, err := pacedPlaylist(output, playlist, base, through)
+	data, last, ended, err := pacedPlaylist(output, filepath.Base(playlistPath), base, through)
 	if err != nil {
 		return err
 	}
@@ -265,9 +257,51 @@ func finishPacedOutput(output *ffmpeg.PacedHLSOutput, playlist string, base, nex
 		return errors.New("live encoder playlist did not finish with all output published")
 	}
 	if linear {
-		return output.Publish(playlist, bytes.NewReader(append(data, "#EXT-X-ENDLIST\n"...)))
+		return publishPacedEventPlaylist(output, playlistPath, data, last, true, preserveEvent)
 	}
 	return nil
+}
+
+// An EVENT playlist only grows. Recovery can regenerate a fragment already
+// advertised by an earlier run, then eventually extend the same playlist.
+func publishPacedEventPlaylist(output *ffmpeg.PacedHLSOutput, path string, index []byte, last int, ended, preserve bool) error {
+	end := []byte("#EXT-X-ENDLIST\n")
+	var previous []byte
+	if preserve {
+		var err error
+		previous, err = os.ReadFile(path) // #nosec G304 G703 -- fixed playlist name in the private session cache
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	if len(previous) > 0 {
+		body := bytes.TrimSuffix(previous, end)
+		lines := bytes.TrimSuffix(body, []byte("\n"))
+		uri := lines[bytes.LastIndexByte(lines, '\n')+1:]
+		prior, ok := encoderSegmentNumber(string(uri))
+		if !ok {
+			return errors.New("invalid published event playlist")
+		}
+		if prior > last && ended {
+			return errors.New("live encoder ended before the published event playlist")
+		}
+		if prior > last || len(body) != len(previous) || (prior == last && !ended) {
+			return nil
+		}
+		if prior < last {
+			marker := fmt.Appendf(nil, "\nseg%05d.m4s\n", prior)
+			offset := bytes.Index(index, marker)
+			if offset < 0 {
+				return errors.New("live encoder playlist does not extend the published prefix")
+			}
+			previous = append(previous, index[offset+len(marker):]...)
+		}
+		index = previous
+	}
+	if ended {
+		index = append(index, end...)
+	}
+	return output.Publish(filepath.Base(path), bytes.NewReader(index))
 }
 
 // pacedPlaylist checks segment order and optionally snapshots an event

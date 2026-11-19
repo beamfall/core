@@ -1562,6 +1562,14 @@ type Rendition struct {
 	// adjust is the pitch shift and tempo change applied to the audio (see
 	// WithAudioAdjust). The zero value changes nothing.
 	adjust AudioAdjust
+	// pacedHLS writes segments into the server's pre-created FIFO gates.
+	pacedHLS bool
+}
+
+// WithPacedHLS returns a rendition that writes into a PacedHLSOutput.
+func (r Rendition) WithPacedHLS() Rendition {
+	r.pacedHLS = true
+	return r
 }
 
 // WithAudioAdjust returns a copy whose audio is pitch shifted and tempo
@@ -2784,7 +2792,7 @@ func hlsArgs(src, dir string, rendition Rendition) []string {
 	if rendition.AudioOnly {
 		args = append(args, "-map", audioOnlyMap(rendition))
 		args = append(args, rendition.audioArgs()...)
-		return append(args, hlsMuxArgs(dir)...)
+		return append(args, hlsMuxArgs(dir, rendition.pacedHLS)...)
 	}
 	args = append(args, rendition.videoArgs()...)
 	args = append(args, rendition.selectedStreamMapArgs()...)
@@ -2793,7 +2801,7 @@ func hlsArgs(src, dir string, rendition Rendition) []string {
 	}
 	args = append(args, rendition.args()...)
 	args = append(args, rendition.audioArgs()...)
-	return append(args, hlsMuxArgs(dir)...)
+	return append(args, hlsMuxArgs(dir, rendition.pacedHLS)...)
 }
 
 // selectedStreamMapArgs maps the first video stream and the selected audio
@@ -2819,17 +2827,14 @@ func audioOnlyMap(rendition Rendition) string {
 // hlsMuxArgs is the CMAF fMP4 HLS muxer tail every file-to-HLS encode shares:
 // 4-second segments, an event playlist written through temp files, and the
 // init/segment/playlist names the HLS serving path expects in dir.
-func hlsMuxArgs(dir string) []string {
-	return []string{
+func hlsMuxArgs(dir string, paced bool) []string {
+	return append([]string{
 		"-f", "hls",
 		"-hls_time", "4",
 		"-hls_playlist_type", "event",
-		"-hls_flags", "temp_file",
 		"-hls_segment_type", "fmp4",
 		"-hls_fmp4_init_filename", "init.mp4",
-		"-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"),
-		"--", filepath.Join(dir, "index.m3u8"),
-	}
+	}, hlsFileOutputArgs(dir, "index.m3u8", paced)...)
 }
 
 // StartHLSSegments transcodes src into numbered fMP4 segments (init.mp4 +
@@ -2931,7 +2936,7 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 // which an adjusted tempo scales; the output timestamps stay on the output
 // timeline.
 func hlsSegmentArgs(src, dir string, startSegment, segmentSeconds int, rendition Rendition) []string {
-	return segmentArgsFor(fileSegmentIO(src, dir), startSegment, segmentSeconds, rendition)
+	return segmentArgsFor(fileSegmentIO(src, dir, rendition.pacedHLS), startSegment, segmentSeconds, rendition)
 }
 
 // segmentArgsFor is hlsSegmentArgs over any segment input and output.
@@ -2991,7 +2996,7 @@ func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration,
 	if start == 0 && rendition.KeepPriming {
 		seek = ""
 	}
-	return segmentArgs(fileSegmentIO(src, dir), startSegment, seek, offset, keyframeSegmentHLSTime, streamMaps, []string{"-copypriorss", "0"}, rendition)
+	return segmentArgs(fileSegmentIO(src, dir, rendition.pacedHLS), startSegment, seek, offset, keyframeSegmentHLSTime, streamMaps, []string{"-copypriorss", "0"}, rendition)
 }
 
 // segmentArgs assembles a segmenting command line: seek is the input position
@@ -3036,17 +3041,23 @@ type segmentIO struct {
 }
 
 // fileSegmentIO reads src under the file-only protocol allowlist and writes
-// the segments into dir, each renamed into place when complete.
-func fileSegmentIO(src, dir string) segmentIO {
+// the segments into dir.
+func fileSegmentIO(src, dir string, paced bool) segmentIO {
 	return segmentIO{
 		input:        src,
 		inputOptions: inputProtocolArgs(),
-		outputArgs: []string{
-			"-hls_flags", "temp_file",
-			"-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"),
-			"--", filepath.Join(dir, "live.m3u8"),
-		},
+		outputArgs:   hlsFileOutputArgs(dir, "live.m3u8", paced),
 	}
+}
+
+func hlsFileOutputArgs(dir, playlist string, paced bool) []string {
+	var args []string
+	if !paced {
+		args = append(args, "-hls_flags", "temp_file")
+	}
+	// Both the live and EVENT playlists are atomically replaced by FFmpeg
+	// even without temp_file, so they can commit writes to the segment gates.
+	return append(args, "-hls_segment_filename", filepath.Join(dir, "seg%05d.m4s"), "--", filepath.Join(dir, playlist))
 }
 
 // segmentMuxBase is the muxer configuration every segmenting encode shares.
@@ -3065,8 +3076,8 @@ func segmentMuxBase(startSegment int, outputOffset, hlsTime string) []string {
 // segmentMuxArgs is the numbered-segment muxer tail StartHLSSegments
 // documents: timestamps offset to outputOffset, fMP4 segments numbered from
 // startSegment, and an unserved live.m3u8.
-func segmentMuxArgs(dir string, startSegment int, outputOffset, hlsTime string) []string {
-	return append(segmentMuxBase(startSegment, outputOffset, hlsTime), fileSegmentIO("", dir).outputArgs...)
+func segmentMuxArgs(dir string, startSegment int, outputOffset, hlsTime string, paced bool) []string {
+	return append(segmentMuxBase(startSegment, outputOffset, hlsTime), hlsFileOutputArgs(dir, "live.m3u8", paced)...)
 }
 
 // probeDurationSeconds is the container duration, or — when the container

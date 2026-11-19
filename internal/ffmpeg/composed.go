@@ -137,7 +137,7 @@ func checkComposedInputs(audioSrc, dir string, picture ComposedPicture) error {
 // into the event-playlist layout StartBackgroundHLS writes.
 func composedHLSArgs(audioSrc, dir string, picture ComposedPicture, rendition Rendition) []string {
 	args := append([]string{"-v", "error"}, composedEncodeArgs(audioSrc, picture, rendition, 0, 4)...)
-	return append(args, hlsMuxArgs(dir)...)
+	return append(args, hlsMuxArgs(dir, false)...)
 }
 
 // composedSegmentArgs builds the live composed encode from startSegment, with
@@ -145,7 +145,7 @@ func composedHLSArgs(audioSrc, dir string, picture ComposedPicture, rendition Re
 func composedSegmentArgs(audioSrc, dir string, picture ComposedPicture, startSegment, segmentSeconds int, rendition Rendition) []string {
 	args := append([]string{"-v", "error"}, hlsProgressArgs()...)
 	args = append(args, composedEncodeArgs(audioSrc, picture, rendition, startSegment*segmentSeconds, segmentSeconds)...)
-	return append(args, segmentMuxArgs(dir, startSegment, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds))...)
+	return append(args, segmentMuxArgs(dir, startSegment, strconv.Itoa(startSegment*segmentSeconds), strconv.Itoa(segmentSeconds), rendition.pacedHLS)...)
 }
 
 // composedEncodeArgs is the composition recipe the precomputed and live

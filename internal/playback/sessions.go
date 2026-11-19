@@ -190,6 +190,7 @@ type encoderRun struct {
 	resumedAt      time.Time
 	pacingChanged  chan struct{}
 	output         *ffmpeg.PacedHLSOutput // guarded by publicationMu
+	preserveEvent  bool                   // set by the publisher on regeneration
 	processDone    chan struct{}
 	processErr     error // reaper writes before closing processDone
 	outputCanceled chan struct{}
@@ -332,7 +333,11 @@ type hlsSession struct {
 	playheadRung  Rung
 	playheadFetch segmentFetch
 	demand        map[string]map[*segmentRequest]struct{}
-	lastAccess    time.Time
+	// Paced artifact waits register under Sessions.mu while live. Init and
+	// playlist waits have no segment request, so they share an eviction signal.
+	artifactWaits   sync.WaitGroup
+	artifactEvicted chan struct{}
+	lastAccess      time.Time
 	// priority is this session's admission rank. It is set the
 	// first time the session is admitted and raised, never lowered, if a later
 	// request asks for a higher rank — a session that has earned foreground
@@ -553,14 +558,17 @@ type Sessions struct {
 	waitWindow time.Duration
 	// stallTimeout, when positive, replaces encoderStallTimeout. Tests set it.
 	stallTimeout time.Duration
+	// segmentFileLimit lets tests exercise the inherited per-file ceiling
+	// with small fragments. Zero leaves it at the FFmpeg default.
+	segmentFileLimit int64
 	// resumeHints holds resume positions noted for sessions that do not exist
 	// yet; session creation consumes them. Entries expire with the idle timeout.
 	resumeHints map[SessionKey]resumeHint
 	// stopEncoder, when set, replaces (*ffmpeg.HLSProcess).Stop. Tests set it
 	// to a slow Stop.
 	stopEncoder func(*ffmpeg.HLSProcess)
-	// removeDir, when set, replaces os.RemoveAll in runTeardowns. Tests set it
-	// to a slow removal.
+	// removeDir, when set, replaces os.RemoveAll for transcode directory
+	// removal. Tests set it to a slow removal.
 	removeDir func(string) error
 	// joinSegment, when set, replaces joinFragments in tests.
 	joinSegment func(string, []string) error
@@ -625,14 +633,11 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 		if t.published != nil {
 			<-t.published
 		}
+		t.session.artifactWaits.Wait()
 		// The session is already detached. Drain any publication or join
 		// that was in flight before deleting its cache.
 		t.session.publicationMu.Lock()
-		if s.removeDir != nil {
-			_ = s.removeDir(t.session.dir)
-		} else {
-			_ = os.RemoveAll(t.session.dir)
-		}
+		_ = s.removeTranscodeDir(t.session.dir)
 		t.session.publicationMu.Unlock()
 		if t.session.live != nil {
 			t.session.live.Close()
@@ -648,6 +653,13 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 		s.wakeCloseLocked()
 		s.mu.Unlock()
 	}
+}
+
+func (s *Sessions) removeTranscodeDir(dir string) error {
+	if s.removeDir != nil {
+		return s.removeDir(dir)
+	}
+	return os.RemoveAll(dir)
 }
 
 // wakeCloseLocked wakes a waiting Close once no start or teardown is running
@@ -922,6 +934,14 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	if session.revokeDone != nil {
 		close(session.revokeDone)
 		session.revokeDone = nil
+	}
+	if session.artifactEvicted != nil {
+		close(session.artifactEvicted)
+	}
+	for _, demand := range session.demand {
+		for request := range demand {
+			close(request.reassigned)
+		}
 	}
 	s.detached++
 	switch {
@@ -1302,12 +1322,28 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 // request waiting for its replacement as before.
 func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, isSegment bool, path string, run *encoderRun, request *segmentRequest) (*encoderRun, error) {
 	restarts := 0
+	paced := s.pacesFiles(session)
 	for {
 		var reassigned <-chan struct{}
-		if request != nil {
+		if paced {
 			s.mu.Lock()
-			reassigned = request.reassigned
-			moved := request.run != run && request.run == session.run
+			if !s.liveLocked(key, session) {
+				s.mu.Unlock()
+				return run, ErrSessionEvicted
+			}
+			moved := false
+			if request != nil {
+				reassigned = request.reassigned
+				moved = request.run != nil && request.run != run && request.run == session.run
+			} else {
+				if session.artifactEvicted == nil {
+					session.artifactEvicted = make(chan struct{})
+				}
+				reassigned = session.artifactEvicted
+			}
+			if !moved {
+				session.artifactWaits.Add(1)
+			}
 			s.mu.Unlock()
 			if moved {
 				// Wait for the start before reading the successor's exit
@@ -1318,8 +1354,8 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 				}
 				if next != nil {
 					run = next
-					continue
 				}
+				continue
 			}
 		}
 		if run != nil {
@@ -1328,12 +1364,15 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 		// kqueue directory watches open every existing child. Live encoder
 		// waits use a bounded stat check even when the cache grows.
 		wait := waitForArtifact
-		if runtime.GOOS == "darwin" && s.pacesFiles(session) {
+		if runtime.GOOS == "darwin" && paced {
 			wait = pollForArtifact
 		}
 		err := wait(ctx, path, run.exitedChan(), reassigned)
 		if run != nil {
 			run.waiting.Add(-1)
+		}
+		if paced {
+			session.artifactWaits.Done()
 		}
 		if errors.Is(err, errEncoderReassigned) {
 			continue
@@ -2060,6 +2099,7 @@ func (s *Sessions) startFileRung(ctx context.Context, session *hlsSession, rung 
 		if err := output.Gate(base); err != nil {
 			return nil, nil, errors.Join(err, output.Close())
 		}
+		rendition = rendition.WithPacedHLS()
 		dir = output.Dir
 		if picture, ok := rendition.Picture(); ok && picture.TimedTextPath != "" {
 			// The composed encoder validates this input against its own
@@ -2590,8 +2630,8 @@ var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 // on-disk media/library attribution — they are keyed by an in-memory counter), so
 // they are purged here as a set.
 //
-// The sweep runs under the session lock and skips any dir a live session still
-// holds, so it never deletes an in-flight session's working dir even if it runs
+// The sweep skips any dir a live or initializing session holds, so it never
+// deletes an in-flight session's working dir even if it runs
 // after serving has begun (the runtime-unseal path). At boot the in-memory map is
 // empty — a restart drops all session state before serving — so every session dir
 // on disk is an orphan and is removed — which is also why NewSessionsInDir
@@ -2602,15 +2642,6 @@ var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 // caller with a use for it — the encrypted-derivative reconciler fails the
 // unseal closed — can react; NewSessionsInDir has none, so it discards it.
 func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	live := make(map[string]struct{}, len(s.sessions)+len(s.initializing))
-	for _, init := range s.initializing {
-		live[filepath.Base(init.dir)] = struct{}{}
-	}
-	for _, session := range s.sessions {
-		live[filepath.Base(session.dir)] = struct{}{}
-	}
 	entries, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -2618,6 +2649,17 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	if err != nil {
 		return err
 	}
+	// Names are reserved before directory creation and never reused. Once
+	// an enumerated directory has no owner, a future session cannot claim it.
+	s.mu.Lock()
+	live := make(map[string]struct{}, len(s.sessions)+len(s.initializing))
+	for _, init := range s.initializing {
+		live[filepath.Base(init.dir)] = struct{}{}
+	}
+	for _, session := range s.sessions {
+		live[filepath.Base(session.dir)] = struct{}{}
+	}
+	s.mu.Unlock()
 	var joined error
 	for _, entry := range entries {
 		if !entry.IsDir() || !sessionDirName.MatchString(entry.Name()) {
@@ -2626,7 +2668,7 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 		if _, held := live[entry.Name()]; held {
 			continue // in-flight session: never delete its working directory
 		}
-		joined = errors.Join(joined, os.RemoveAll(filepath.Join(s.dir, entry.Name())))
+		joined = errors.Join(joined, s.removeTranscodeDir(filepath.Join(s.dir, entry.Name())))
 	}
 	return joined
 }
@@ -2684,7 +2726,7 @@ func waitForFile(ctx context.Context, path string) error {
 // waitForArtifact is waitForFile that also watches the producing encoder:
 // when exited closes before path is ready it returns errEncoderExited, so a
 // dead encoder is noticed in milliseconds rather than at the deadline.
-// reassigned wakes a media request moved to another encoder.
+// reassigned wakes a media request moved to another encoder or evicted.
 func waitForArtifact(ctx context.Context, path string, exited, reassigned <-chan struct{}) error {
 	if fileReady(path) {
 		return nil // fast path: already produced, no watch needed
