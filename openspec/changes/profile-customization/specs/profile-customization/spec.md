@@ -40,8 +40,24 @@ is set.
 
 - **WHEN** a Profile uploads a PNG for itself
 - **THEN** `pictureURL` becomes `/api/profiles/picture/<id>?v=<version>`
-- **AND** fetching it returns a square JPEG with an immutable cache header
+- **AND** fetching it returns a square JPEG
 - **AND** an Activity entry `profile.picture` is recorded
+
+#### Scenario: Revalidating a picture under a compatibility decision
+
+- **WHEN** a picture request carries a named compatibility decision
+- **THEN** the response uses `private, no-cache` and an ETag bound to the picture version, policy generation and subject
+- **AND** an ETag from a different generation or subject cannot return 304
+
+#### Scenario: Fetching a picture with an unnamed compatibility decision
+
+- **WHEN** a compatibility-bound picture request lacks a generation or subject
+- **THEN** the response uses `no-store` without an ETag
+
+#### Scenario: Fetching a picture without compatibility binding
+
+- **WHEN** an unbound picture request supplies the current version in its URL
+- **THEN** the response can be cached privately as immutable
 
 #### Scenario: Who may change a picture
 
@@ -58,3 +74,4 @@ is set.
 
 - **WHEN** the picture is deleted
 - **THEN** `pictureURL` is empty and devices show the avatar again
+- **AND** a subsequent upload receives a greater version even if its timestamp is the same or earlier
