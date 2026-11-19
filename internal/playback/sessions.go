@@ -315,12 +315,10 @@ type hlsSession struct {
 	// least once. It remains true after process exit/reap so later misses use the
 	// post-seek budget rather than being misclassified as first start.
 	started bool
-	// transcodeLease is the governor realtime-transcode lease this session holds
-	// while it has a live FFmpeg process. It is acquired before the
-	// process launches (so generation is preempted the moment the session commits
-	// to spawning), carried across in-place process replacements, and released
-	// exactly once on launch-failure rollback, process reap, or teardown. nil
-	// means the session holds no live process (or the governor is unwired).
+	// transcodeLease is acquired before an FFmpeg launch so generation yields
+	// when the session commits to spawning. It is carried across in-place
+	// replacements and released on launch-failure rollback, process reap, or
+	// removal of a detached session's directory.
 	transcodeLease *governor.TranscodeLease
 	// run is the generation of the current or most recent process (proc).
 	run *encoderRun
@@ -529,12 +527,11 @@ type Sessions struct {
 	stopEncoder     func(*ffmpeg.HLSProcess)
 	dirRemovalSlots chan struct{}
 	// cleanupMu guards the directory work queue, its workers, and failed
-	// removals. Each failed path's value is nil until a retry claims it
-	// and installs a completion channel.
+	// removals, including their leases and any in-progress retries.
 	cleanupMu         sync.Mutex
 	dirCleanupQueue   []*hlsSession
 	dirCleanupWorkers int
-	pendingDirs       map[string]chan struct{}
+	pendingDirs       map[string]pendingSessionDir
 	// removeDir, when set, replaces os.RemoveAll during teardown and retry.
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
@@ -555,6 +552,11 @@ type Sessions struct {
 type sessionTeardown struct {
 	session *hlsSession
 	pending bool // its off-lock starter will finish teardown
+}
+
+type pendingSessionDir struct {
+	lease     *governor.TranscodeLease
+	retryDone chan struct{}
 }
 
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
@@ -623,8 +625,6 @@ func (s *Sessions) stopSession(session *hlsSession) {
 	proc, run := session.proc, session.run
 	session.proc = nil
 	session.currentRung = ""
-	lease := session.transcodeLease
-	session.transcodeLease = nil
 	session.mu.Unlock()
 
 	s.stopRun(proc, run)
@@ -632,10 +632,6 @@ func (s *Sessions) stopSession(session *hlsSession) {
 	if session.live != nil {
 		session.live.Close()
 	}
-	if lease != nil {
-		lease.Release()
-	}
-
 	s.mu.Lock()
 	if session.hasSlot {
 		session.hasSlot = false
@@ -644,15 +640,23 @@ func (s *Sessions) stopSession(session *hlsSession) {
 	s.mu.Unlock()
 }
 
-// finishTeardown keeps the detached session visible to Close and explicit
-// termination until its directory removal attempt completes.
+// finishTeardown keeps the lease through directory removal, even though the
+// stopped session has released its slot. A failed removal hands the lease to
+// the directory retry.
 func (s *Sessions) finishTeardown(session *hlsSession) {
+	session.mu.Lock()
+	lease := session.transcodeLease
+	session.transcodeLease = nil
+	session.mu.Unlock()
 	if !s.removeSessionDir(session.dir) {
 		s.cleanupMu.Lock()
-		s.pendingDirs[session.dir] = nil
+		s.pendingDirs[session.dir] = pendingSessionDir{lease: lease}
 		s.cleanupMu.Unlock()
+	} else if lease != nil {
+		lease.Release()
 	}
 	s.mu.Lock()
+	session.startPending = false
 	delete(s.detachedSessions, session)
 	close(session.teardownDone)
 	s.mu.Unlock()
@@ -687,28 +691,32 @@ func (s *Sessions) retrySessionDirs() {
 
 func (s *Sessions) retrySessionDir(dir string) {
 	s.cleanupMu.Lock()
-	for running := s.pendingDirs[dir]; running != nil; running = s.pendingDirs[dir] {
+	for running := s.pendingDirs[dir].retryDone; running != nil; running = s.pendingDirs[dir].retryDone {
 		s.cleanupMu.Unlock()
 		<-running
 		s.cleanupMu.Lock()
 	}
-	if _, pending := s.pendingDirs[dir]; !pending {
+	entry, pending := s.pendingDirs[dir]
+	if !pending {
 		s.cleanupMu.Unlock()
 		return
 	}
-	done := make(chan struct{})
-	s.pendingDirs[dir] = done
+	entry.retryDone = make(chan struct{})
+	s.pendingDirs[dir] = entry
 	s.cleanupMu.Unlock()
 
 	removed := s.removeSessionDir(dir)
+	if removed && entry.lease != nil {
+		entry.lease.Release()
+	}
 
 	s.cleanupMu.Lock()
 	if removed {
 		delete(s.pendingDirs, dir)
 	} else {
-		s.pendingDirs[dir] = nil
+		s.pendingDirs[dir] = pendingSessionDir{lease: entry.lease}
 	}
-	close(done)
+	close(entry.retryDone)
 	s.cleanupMu.Unlock()
 }
 
@@ -987,9 +995,10 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // and returns how many it stopped (ADR-0012 §7: a revoked device's in-flight
 // transcodes die, not just its future requests). Sessions are keyed by
 // (SessionID, MediaID) — one Session may hold several live transcodes — so this
-// detaches all of them at once and waits for their teardown, including any
-// already in progress, after releasing the manager lock. The return value
-// counts sessions detached by this call.
+// detaches all of them at once and waits for teardown after releasing the
+// manager lock. A pending encoder start or replacement owns its teardown
+// and finishes independently. The return value counts sessions detached by
+// this call.
 // Calling it for a Session with no live transcode is a zero-stop no-op — a
 // direct-play session has nothing to abort. The caller (the audited
 // device-revocation mutation) invokes this after RevokeDevice has already
@@ -1006,8 +1015,8 @@ func (s *Sessions) TerminateSessions(sessionIDs []store.SessionID) int {
 }
 
 // RevokeSessions immediately invalidates playback readers and encoder tokens.
-// The returned function waits for teardown and reports the number detached by
-// this call, allowing callers to signal more revocations before waiting.
+// The returned function waits for teardown except when the pending starter
+// owns it, and reports the number detached by this call.
 func (s *Sessions) RevokeSessions(sessionIDs []store.SessionID) func() int {
 	ids := make(map[store.SessionID]bool, len(sessionIDs))
 	for _, id := range sessionIDs {
@@ -1031,6 +1040,12 @@ func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.Me
 func (s *Sessions) beginTermination(match func(SessionKey) bool) func() int {
 	s.mu.Lock()
 	teardowns, detached := s.detachMatchingLocked(match)
+	var waitFor []<-chan struct{}
+	for _, session := range detached {
+		if !session.startPending {
+			waitFor = append(waitFor, session.teardownDone)
+		}
+	}
 	s.mu.Unlock()
 	for _, session := range detached {
 		revokeSession(session)
@@ -1039,8 +1054,8 @@ func (s *Sessions) beginTermination(match func(SessionKey) bool) func() int {
 		go s.drainTeardowns(teardowns)
 	}
 	return func() int {
-		for _, session := range detached {
-			<-session.teardownDone
+		for _, done := range waitFor {
+			<-done
 		}
 		return len(teardowns)
 	}
@@ -1088,7 +1103,7 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		sessions:         map[SessionKey]*hlsSession{},
 		detachedSessions: make(map[*hlsSession]SessionKey),
 		dirRemovalSlots:  make(chan struct{}, maxConcurrentSessionDirRemovals),
-		pendingDirs:      make(map[string]chan struct{}),
+		pendingDirs:      make(map[string]pendingSessionDir),
 		cap:              defaultTranscodeCap,
 		resumeHints:      map[SessionKey]resumeHint{},
 	}
@@ -1819,15 +1834,17 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	run := &encoderRun{proc: proc, live: liveRun}
 	session.mu.Lock()
 	s.mu.Lock()
-	session.startPending = false
 	if session.detached.Load() {
 		// removeLocked handed teardown to this start. It has exclusive
 		// responsibility for any encoder that launched before seeing detach.
+		// Keep startPending set until cleanup completes so termination callers
+		// continue to leave the teardown to the starter.
 		session.proc, session.run = proc, run
 		teardownAfterStart = true
 		s.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
+	session.startPending = false
 	if err != nil {
 		session.hasSlot = false
 		s.releaseTranscodeLease(session)

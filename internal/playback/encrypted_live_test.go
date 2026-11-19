@@ -227,7 +227,7 @@ func TestEncryptedLiveSessionEndsWhenRevoked(t *testing.T) {
 	}
 }
 
-func TestTerminateSessionDrainsEncryptedReplacement(t *testing.T) {
+func TestTerminateSessionRevokesReadersDuringEncryptedReplacement(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
 	transcoder := &fakeEncryptedTranscoder{}
@@ -262,22 +262,24 @@ func TestTerminateSessionDrainsEncryptedReplacement(t *testing.T) {
 	}()
 	slow.waitEntered(t)
 
-	terminated := make(chan int, 1)
-	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
-	waitSessionCondition(t, "revocation detached the replacing session", session.detached.Load)
-	waitSessionCondition(t, "revocation closed the open reader while the old encoder was stopping", func() bool {
-		n, err := reader.ReadAt(buf[:], 0)
-		return n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed)
+	finishesWhileBlocked(t, "TerminateSession", func() error {
+		if n := sessions.TerminateSession(key.SessionID); n != 1 {
+			return fmt.Errorf("TerminateSession = %d, want 1", n)
+		}
+		return nil
 	})
-	alreadyDetached := make(chan int, 1)
-	go func() { alreadyDetached <- sessions.TerminateSession(key.SessionID) }()
-	select {
-	case n := <-terminated:
-		t.Fatalf("TerminateSession returned %d before the replacement finished", n)
-	case n := <-alreadyDetached:
-		t.Fatalf("TerminateSession returned %d while the detached session was still stopping", n)
-	case <-time.After(50 * time.Millisecond):
+	if !session.detached.Load() {
+		t.Fatal("TerminateSession returned before detaching the session")
 	}
+	if n, err := reader.ReadAt(buf[:], 0); n != 0 || !errors.Is(err, encderiv.ErrLiveSessionClosed) {
+		t.Fatalf("open reader after TerminateSession: read %d bytes, err = %v", n, err)
+	}
+	finishesWhileBlocked(t, "repeated TerminateSession", func() error {
+		if n := sessions.TerminateSession(key.SessionID); n != 0 {
+			return fmt.Errorf("repeated TerminateSession = %d, want 0", n)
+		}
+		return nil
+	})
 	finishesWhileBlocked(t, "unrelated playlist", func() error {
 		_, err := filePath720(sessions, SessionKey{SessionID: "other-session", MediaID: "media-beta"}, masterPlaylistName)
 		return err
@@ -288,31 +290,15 @@ func TestTerminateSessionDrainsEncryptedReplacement(t *testing.T) {
 
 	slow.unblock()
 	select {
-	case n := <-terminated:
-		if n != 1 {
-			t.Fatalf("TerminateSession = %d, want 1", n)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("TerminateSession did not return after the replacement stopped")
-	}
-	if n, err := reader.Read(buf[:]); n != 0 || !errors.Is(err, encderiv.ErrLiveSessionClosed) {
-		t.Fatalf("open reader after TerminateSession: read %d bytes, err = %v", n, err)
-	}
-	select {
-	case n := <-alreadyDetached:
-		if n != 0 {
-			t.Fatalf("second TerminateSession = %d, want 0", n)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("second TerminateSession did not return after teardown")
-	}
-	select {
 	case err := <-seeked:
 		if !errors.Is(err, ErrSessionEvicted) {
 			t.Fatalf("far seek err = %v, want ErrSessionEvicted", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("far seek did not return after teardown")
+	}
+	if n, err := reader.Read(buf[:]); n != 0 || !errors.Is(err, encderiv.ErrLiveSessionClosed) {
+		t.Fatalf("open reader after teardown: read %d bytes, err = %v", n, err)
 	}
 	if got := transcoder.encryptedStarts(); got != 1 {
 		t.Fatalf("encrypted starts = %d, want 1", got)

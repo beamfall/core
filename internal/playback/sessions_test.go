@@ -2352,6 +2352,65 @@ func TestEncoderReplacementStopsOutsideTheGlobalLock(t *testing.T) {
 	}
 }
 
+func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	transcoder := &fakeTranscoder{}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	t.Cleanup(sessions.Close)
+	slow := newSlowStop(sessions)
+	defer slow.unblock()
+	key := SessionKey{SessionID: "session-evicted-mid-replace", MediaID: "media-alpha"}
+	path, err := filePath720(sessions, key, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	session := registeredSession(t, sessions, key)
+	slow.armed.Store(true)
+	seeked := make(chan error, 1)
+	go func() {
+		_, err := filePath720(sessions, key, "720p/seg00020.m4s")
+		seeked <- err
+	}()
+	slow.waitEntered(t)
+
+	finishesWhileBlocked(t, "TerminateSession", func() error {
+		if n := sessions.TerminateSession(key.SessionID); n != 1 {
+			return fmt.Errorf("TerminateSession = %d, want 1", n)
+		}
+		if n := sessions.TerminateSession(key.SessionID); n != 0 {
+			return fmt.Errorf("repeated TerminateSession = %d, want 0", n)
+		}
+		return nil
+	})
+	if !session.detached.Load() || g.ActiveTranscodes() != 1 {
+		t.Fatal("termination must detach the session and leave the blocked replacement's lease held")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("replacement still owns the session directory: %v", err)
+	}
+
+	slow.unblock()
+	select {
+	case err := <-seeked:
+		if !errors.Is(err, ErrSessionEvicted) {
+			t.Fatalf("far seek err = %v, want ErrSessionEvicted", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the far seek did not finish after the Stop was released")
+	}
+	if got := transcoder.startCount(); got != 1 {
+		t.Fatalf("encoder starts = %d, want 1", got)
+	}
+	if got := g.ActiveTranscodes(); got != 0 {
+		t.Fatalf("ActiveTranscodes after the replacement gave up = %d, want 0", got)
+	}
+	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session directory after teardown: %v", err)
+	}
+}
+
 // TestTeardownKeepsTheSlotUntilTheEncoderStops covers the cap half of
 // CORE-1348: a torn-down session's encoder still runs until its Stop returns,
 // so its transcode slot and governor lease stay held until then.
@@ -2597,6 +2656,71 @@ func TestSessionsPreemptionDuringDirectoryRemoval(t *testing.T) {
 	}
 }
 
+func TestSessionsReleaseSlotBeforeDirectoryLease(t *testing.T) {
+	t.Parallel()
+	g := governor.New()
+	transcoder := &fakeTranscoder{}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.SetGovernor(g)
+	sessions.SetTranscodeCap(1)
+	t.Cleanup(sessions.Close)
+	victimKey := SessionKey{SessionID: "preempted", MediaID: "media-alpha"}
+	foreground := SessionKey{SessionID: "foreground", MediaID: "media-beta"}
+	const segment = "720p/seg00000.m4s"
+	path, err := filePath720(sessions, victimKey, segment)
+	if err != nil {
+		t.Fatalf("start victim: %v", err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Size() == 0 {
+		t.Fatalf("victim segment is missing or empty: %v", err)
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("ActiveTranscodes before preemption = %d, want 1", got)
+	}
+	victim := registeredSession(t, sessions, victimKey)
+	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	sessions.removeDir = func(dir string) error {
+		if dir == victim.dir {
+			close(entered)
+			<-release
+		}
+		return os.RemoveAll(dir)
+	}
+
+	finishesWhileBlocked(t, "foreground preemption", func() error {
+		_, err := filePath720Priority(sessions, foreground, PriorityForeground, segment)
+		return err
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("victim directory removal did not start")
+	}
+	if starts := transcoder.startCount(); starts != 2 {
+		t.Fatalf("encoder starts during removal = %d, want 2", starts)
+	}
+	if got := g.ActiveTranscodes(); got != 2 {
+		t.Fatalf("leases during removal = %d, want one for each session", got)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("victim segment during removal: %v", err)
+	}
+	unblock()
+	select {
+	case <-victim.teardownDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("victim teardown did not finish")
+	}
+	if _, err := os.Stat(victim.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("victim directory after teardown: %v", err)
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("leases after removal = %d, want one for the foreground session", got)
+	}
+}
+
 func TestSessionsBatchTeardownBoundsDirectoryRemoval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
@@ -2683,15 +2807,20 @@ func TestSessionsBatchTeardownBoundsDirectoryRemoval(t *testing.T) {
 
 func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 	t.Parallel()
+	g := governor.New()
 	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions.SetGovernor(g)
 	t.Cleanup(sessions.Close)
 	key := SessionKey{SessionID: "session-removal-retry", MediaID: "media-alpha"}
-	path, err := filePath720(sessions, key, masterPlaylistName)
+	path, err := filePath720(sessions, key, "720p/seg00000.m4s")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info, err := os.Stat(path); err != nil || info.Size() == 0 {
-		t.Fatalf("playlist fixture is missing or empty: %v", err)
+		t.Fatalf("segment fixture is missing or empty: %v", err)
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("leases before termination = %d, want 1", got)
 	}
 	dir := registeredSession(t, sessions, key).dir
 	var attempts atomic.Int32
@@ -2714,6 +2843,9 @@ func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 	}
 	if got := sessions.TerminateSession(key.SessionID); got != 1 || attempts.Load() != 1 {
 		t.Fatalf("termination detached %d sessions and attempted %d removals", got, attempts.Load())
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Errorf("leases after failed removal = %d, want 1", got)
 	}
 
 	reaped := make(chan struct{})
@@ -2753,6 +2885,9 @@ func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) || attempts.Load() != 3 {
 		t.Fatalf("shutdown retry: stat %v, attempts %d", err, attempts.Load())
+	}
+	if got := g.ActiveTranscodes(); got != 0 {
+		t.Fatalf("leases after successful retry = %d, want 0", got)
 	}
 	sessions.reap()
 	if attempts.Load() != 3 {
