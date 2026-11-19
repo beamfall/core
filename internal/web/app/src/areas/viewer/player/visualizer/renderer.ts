@@ -614,6 +614,7 @@ export class Renderer {
     const visibleWidth = Math.min(W, Math.floor((width * texel) / this.displayScale));
     const visibleHeight = Math.min(H, Math.floor((height * texel) / this.displayScale));
     if (visibleWidth !== size.visibleWidth || visibleHeight !== size.visibleHeight) {
+      this.expose(size, visibleWidth, visibleHeight);
       size.visibleWidth = visibleWidth;
       size.visibleHeight = visibleHeight;
       size.limiter.window = limiterWindow(W, H, this.displayScale, visibleWidth, visibleHeight);
@@ -910,11 +911,14 @@ export class Renderer {
     const L = size.limiter;
     this.clockMs += frameMs;
     // The interval up to a resize may age copied trackers, but cannot refill its new deficit.
-    // The fraction of a unit carries to the next frame, so the refill keeps the exact rate.
+    // The fraction of a unit carries to the next frame, so the refill keeps the exact rate. A
+    // token is TOKEN - 1 units of credit, so a carried fraction cannot finish one early (Codex
+    // round 16).
     if (this.limiterSpent) this.refillCarry = 0;
     const refillMs = this.limiterSpent ? 0 : frameMs;
     const earned =
-      this.refillCarry + Math.min(1, Math.max(0, (2 * MAX_FLASH_HZ * refillMs) / 1000)) * TOKEN;
+      this.refillCarry +
+      Math.min(1, Math.max(0, (2 * MAX_FLASH_HZ * refillMs) / 1000)) * (TOKEN - 1);
     const refill = Math.min(TOKEN, Math.floor(earned));
     this.refillCarry = Math.min(1, earned - refill);
     const tick = Math.floor(this.clockMs / TICK_MS) % TICKS;
@@ -1042,6 +1046,31 @@ export class Renderer {
       limiter,
     };
     return this.size;
+  }
+
+  // A slot that grows within an unchanged backing shows pixels the limiter last saw while they
+  // were hidden. They start black and tracked black, as newly exposed area does on a resize, and
+  // the budgets are spent, so revealing hidden content is rationed like any rise (Oscillux
+  // shaders/limiter/README.md, Codex round 16).
+  private expose(size: Size, visibleWidth: number, visibleHeight: number): void {
+    const { height: H, visibleWidth: oldWidth, visibleHeight: oldHeight } = size;
+    if (visibleWidth <= oldWidth && visibleHeight <= oldHeight) return;
+    const gl = this.gl;
+    const L = size.limiter;
+    // GL rows run bottom-up, so the top-left anchored visible rows are the top ones.
+    const regions: [number, number, number, number][] = [];
+    if (visibleWidth > oldWidth)
+      regions.push([oldWidth, H - visibleHeight, visibleWidth - oldWidth, visibleHeight]);
+    if (visibleHeight > oldHeight)
+      regions.push([0, H - visibleHeight, visibleWidth, visibleHeight - oldHeight]);
+    gl.enable(gl.SCISSOR_TEST);
+    for (const [x, y, w, h] of regions) {
+      gl.scissor(x, y, w, h);
+      for (const f of L.fOut) this.clearOutput(f);
+    }
+    gl.disable(gl.SCISSOR_TEST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.spend(L);
   }
 
   // Marks every limiter budget just spent, in the grant state the next frame reads.

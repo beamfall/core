@@ -139,6 +139,7 @@ function recordingGl() {
   const blocks: number[][] = [];
   const grant = new Uint32Array([15, 0, 0, 0]);
   const reads: unknown[] = [];
+  const scissors: number[][] = [];
   const canvas = { width: 0, height: 0, clientWidth: 0 };
   const gl = new Proxy({} as Record<string | symbol, unknown>, {
     get(_, key) {
@@ -154,6 +155,7 @@ function recordingGl() {
       if (key === "clearBufferuiv")
         return (_: unknown, __: unknown, v: Uint32Array) => spent.push([bound.f, [...v]]);
       if (key === "clear") return () => clears.push(bound.f);
+      if (key === "scissor") return (...a: number[]) => scissors.push(a);
       if (key === "bufferSubData")
         return (_: unknown, __: unknown, values: Float32Array) => blocks.push([...values]);
       if (key === "readPixels")
@@ -164,7 +166,7 @@ function recordingGl() {
       return () => undefined;
     },
   });
-  return { gl, deleted, blits, canvas, spent, clears, blocks, grant, reads };
+  return { gl, deleted, blits, canvas, spent, clears, blocks, grant, reads, scissors };
 }
 
 describe("Renderer resize (CORE-2516)", () => {
@@ -348,6 +350,27 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(renderer.settled(64, 36, 1)).toBe(false);
   });
 
+  // Codex round 16: alternating a slot between 32 and 64 columns of one 64x36 backing hid and
+  // revealed steady red with the trackers still holding it. Revealed pixels start tracked black,
+  // top-left anchored (GL rows bottom-up), with every budget spent.
+  it("tracks pixels a clipped slot reveals black and spends the budgets", () => {
+    const { r, draw, spent, scissors, blocks } = make();
+    draw(64, 36);
+    draw(32, 30);
+    const before = spent.length;
+    expect(scissors).toEqual([]);
+    draw(64, 36);
+    expect(scissors).toEqual([
+      [32, 0, 32, 36],
+      [0, 0, 64, 6],
+    ]);
+    const { fOut, fG } = (r.size as { limiter: { fOut: unknown[]; fG: unknown[] } }).limiter;
+    const after = spent.slice(before);
+    for (const f of fOut) expect(after.map(([f]) => f)).toContain(f);
+    expect(after.some(([f, v]) => fG.includes(f) && v[1] === 65025)).toBe(true);
+    expect(blocks.at(-1)?.[3]).toBe(0);
+  });
+
   it("starts refill at zero on a same-scale resize and uses only subsequent draw intervals", () => {
     const { draw, blocks } = make();
     draw(640, 360);
@@ -357,7 +380,7 @@ describe("Renderer resize (CORE-2516)", () => {
     draw(800, 450, 0.05);
     expect(blocks.at(-1)?.[3]).toBe(19507);
     draw(800, 450, 0.1, 300);
-    expect(blocks.at(-1)?.[3]).toBe(65025);
+    expect(blocks.at(-1)?.[3]).toBe(65024);
     expect(blocks.at(-1)?.[5]).toBe(300);
   });
 
