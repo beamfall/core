@@ -29,7 +29,7 @@ func TestHLSProcessPauseResumeKeepsPID(t *testing.T) {
 	cmd.Stdin = reader
 	cmd.Stdout = &output
 	process := startHLSPauseTestProcess(t, cmd)
-	pid := cmd.Process.Pid
+	pid := hlsEncoderPID(process)
 	if !process.Pause() {
 		t.Fatal("Pause refused a running process")
 	}
@@ -79,9 +79,6 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	if os.Getenv(hlsStopHelperEnv) != "1" {
 		return
 	}
-	if err := EnableHLSDescendantReaping(); err != nil {
-		t.Fatalf("enable HLS descendant reaping: %v", err)
-	}
 	// The fixture can also exit on EOF if the helper dies before pausing it.
 	reader, writer, err := os.Pipe()
 	if err != nil {
@@ -96,7 +93,7 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leader := cmd.Process.Pid
+	leader := hlsEncoderPID(process)
 	descendant := waitForPidFile(t, descendantFile)
 	if !process.Pause() {
 		t.Fatal("Pause refused a running group")
@@ -151,8 +148,8 @@ func TestHLSProcessPauseRacesNaturalExit(t *testing.T) {
 		if err := raceHLSPauseWithExit(t, process); err != nil {
 			t.Fatalf("natural exit failed: %v", err)
 		}
-		if processAlive(cmd.Process.Pid) {
-			t.Fatalf("leader %d survived Wait", cmd.Process.Pid)
+		if pid := hlsEncoderPID(process); processAlive(pid) {
+			t.Fatalf("leader %d survived Wait", pid)
 		}
 		assertHLSPauseRefused(t, process)
 	}

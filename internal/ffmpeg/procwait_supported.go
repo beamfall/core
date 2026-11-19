@@ -1,21 +1,16 @@
-//go:build linux || darwin
+//go:build darwin
 
 package ffmpeg
 
-import (
-	"fmt"
-	"os/exec"
-)
+import "fmt"
 
-// waitHLSProcess observes the leader's exit without reaping it. killTree
+// waitForExit observes the leader's exit without reaping it. killTree
 // disarms further signals and kills the group while the leader PID is still
 // reserved, even if the exit observer fails.
-func waitHLSProcess(cmd *exec.Cmd, killTree func() func()) error {
-	exitErr := waitForProcessExit(cmd.Process.Pid)
-	if reapDescendants := killTree(); reapDescendants != nil {
-		reapDescendants()
-	}
-	waitErr := cmd.Wait()
+func (p *HLSProcess) waitForExit() error {
+	exitErr := waitForProcessExit(p.cmd.Process.Pid)
+	p.killTree()
+	waitErr := p.cmd.Wait()
 	if exitErr != nil {
 		return fmt.Errorf("ffmpeg: wait for process exit: %w", exitErr)
 	}

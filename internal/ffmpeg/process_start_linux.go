@@ -10,30 +10,18 @@ import (
 )
 
 func ownerProcessStart(pid int) (string, error) {
-	fields, err := linuxProcessStatFields(pid)
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat") // #nosec G304 -- pid is an internally parsed positive integer, not a path fragment from input
 	if err != nil {
 		return "", fmt.Errorf("reading process %d start time: %w", pid, err)
 	}
-	return fields[linuxProcessStartTimeIndex], nil
-}
-
-const linuxProcessStartTimeIndex = 19
-
-// linuxProcessStatFields returns /proc stat fields starting at the process
-// state. The command name can itself contain spaces and closing parentheses.
-func linuxProcessStatFields(pid int) ([]string, error) {
-	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat") // #nosec G304 -- pid is an internally parsed positive integer, not a path fragment from input
-	if err != nil {
-		return nil, err
-	}
-	line := string(stat)
-	commandEnd := strings.LastIndexByte(line, ')')
+	commandEnd := strings.LastIndexByte(string(stat), ')')
 	if commandEnd < 0 {
-		return nil, fmt.Errorf("malformed stat")
+		return "", fmt.Errorf("reading process %d start time: malformed stat", pid)
 	}
-	fields := strings.Fields(line[commandEnd+1:])
-	if len(fields) <= linuxProcessStartTimeIndex {
-		return nil, fmt.Errorf("malformed stat")
+	fields := strings.Fields(string(stat[commandEnd+1:]))
+	const startTimeIndex = 19
+	if len(fields) <= startTimeIndex {
+		return "", fmt.Errorf("reading process %d start time: malformed stat", pid)
 	}
-	return fields, nil
+	return fields[startTimeIndex], nil
 }

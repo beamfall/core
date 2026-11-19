@@ -2441,12 +2441,11 @@ type HLSProcess struct {
 	cmd     *exec.Cmd
 	wait    sync.Once
 	waitErr error
-	// signalMu guards pause and resume against group termination. The reaper
-	// sets stopping before it releases the leader PID.
-	signalMu        sync.Mutex
-	paused          bool
-	stopping        bool
-	reapDescendants func()
+	// signalMu serializes pause, resume and teardown requests.
+	signalMu sync.Mutex
+	paused   bool
+	stopping bool
+	reaper   hlsReaper
 	// stopRequested records that the owner asked for this exit (Stop or context
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
@@ -2551,8 +2550,6 @@ func newHLSProcess(cmd *exec.Cmd) *HLSProcess {
 // concurrent Wait calls share exactly one exec.Cmd.Wait call. Unless the
 // caller already routed stderr, its bounded tail is kept for StderrTail.
 func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
-	applySysProcAttr(cmd)
-	configureProcessGroup(cmd)
 	p := newHLSProcess(cmd)
 	cmd.Cancel = func() error {
 		p.stopRequested.Store(true)
@@ -2570,10 +2567,10 @@ func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 		cmd.WaitDelay = hlsStderrWaitDelay
 	}
 	p.started = time.Now()
-	if err := cmd.Start(); err != nil {
+	p.reportsProgress = reportsProgress
+	if err := p.start(); err != nil {
 		return nil, err
 	}
-	p.reportsProgress = reportsProgress
 	return p, nil
 }
 
@@ -2586,17 +2583,16 @@ func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
 	return startHLSProcess(cmd)
 }
 
-func (p *HLSProcess) killTree() func() {
+func (p *HLSProcess) killTree() {
 	if p == nil || p.cmd == nil {
-		return nil
+		return
 	}
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
 	if !p.stopping {
 		p.stopping = true
-		p.reapDescendants = killHLSProcessGroup(p.cmd)
+		p.terminateGroup()
 	}
-	return p.reapDescendants
 }
 
 // Running reports whether this process wraps a started OS child.
@@ -2616,7 +2612,7 @@ func (p *HLSProcess) Pause() bool {
 		return false
 	}
 	if !p.paused {
-		p.paused = pauseProcessGroup(p.cmd)
+		p.paused = p.pauseGroup()
 	}
 	return p.paused
 }
@@ -2632,36 +2628,36 @@ func (p *HLSProcess) Resume() bool {
 	if p.stopping {
 		return false
 	}
-	if p.paused && resumeProcessGroup(p.cmd) {
+	if p.paused && p.resumeGroup() {
 		p.paused = false
 	}
 	return !p.paused
 }
 
-// Wait blocks until the transcode exits.
+// Wait blocks until the transcode exits and its reaper finishes.
 func (p *HLSProcess) Wait() error {
 	if p == nil || p.cmd == nil {
 		return nil
 	}
 	p.wait.Do(func() {
-		p.waitErr = waitHLSProcess(p.cmd, p.killTree)
+		p.waitErr = p.waitForExit()
 	})
 	return p.waitErr
 }
 
-// Stop terminates the transcode process and reaps it.
+// Stop terminates the transcode group and waits for reaping up to the platform's
+// stop bound. Wait joins the reaper if a Linux descendant takes longer to exit.
 func (p *HLSProcess) Stop() {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
 	p.stopRequested.Store(true)
 	p.killTree()
-	_ = p.Wait()
+	p.waitAfterStop()
 }
 
 // Kill terminates the process tree without marking the exit as requested, so
-// a supervisor that kills a wedged encoder still sees a failed run. It does not
-// reap; the owner's Wait does.
+// a supervisor that kills a wedged encoder still sees a failed run.
 func (p *HLSProcess) Kill() {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return

@@ -2,13 +2,18 @@
 
 package ffmpeg
 
-import "os/exec"
+type hlsReaper struct{}
 
-// EnableHLSDescendantReaping is a no-op outside Linux. On Darwin, launchd
-// adopts and reaps orphaned descendants after the process group is killed.
-func EnableHLSDescendantReaping() error { return nil }
+func (p *HLSProcess) start() error {
+	applySysProcAttr(p.cmd)
+	configureProcessGroup(p.cmd)
+	return p.cmd.Start()
+}
 
-func killHLSProcessGroup(cmd *exec.Cmd) func() {
-	killProcessGroup(cmd)
-	return nil
+func (p *HLSProcess) terminateGroup() {
+	killProcessGroup(p.cmd)
+}
+
+func (p *HLSProcess) waitAfterStop() {
+	_ = p.Wait()
 }

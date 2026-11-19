@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -23,9 +22,6 @@ func serve(ctx context.Context, args []string) error {
 			return nil
 		}
 		return err
-	}
-	if err := ffmpeg.EnableHLSDescendantReaping(); err != nil {
-		return fmt.Errorf("enable HLS descendant reaping: %w", err)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
