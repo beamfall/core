@@ -87,7 +87,10 @@ package store
 //     media_field_provenance.parser_owned marker; it is read only by the scan
 //     write, off the entity-query hot path.
 //
-//   - encrypted-library 0010 (CORE-2380) adds source_end_observation in the
+//   - encrypted-library 0010 (CORE-2583) mirrors catalog 0124's durable
+//     Media insertion sequence and insert/delete triggers.
+//
+//   - encrypted-library 0011 (CORE-2380) adds source_end_observation in the
 //     owning Library plane. The same 2026-11-18 benchmark recorded beside the
 //     catalog marker passed; source fingerprints never enter the shared DB.
 //
@@ -99,5 +102,5 @@ package store
 //   - mute/retention/podcast predicates
 const (
 	schemaFreezeEventsMigrations           = 23
-	schemaFreezeEncryptedLibraryMigrations = 10
+	schemaFreezeEncryptedLibraryMigrations = 11
 )

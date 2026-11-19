@@ -106,85 +106,36 @@ func TestScanSkipsStrayImageInVideoLibrary(t *testing.T) {
 	}
 }
 
-// TestRescanRetiresPreviouslyCataloguedImagesInVideoLibrary is the CORE-2361
-// retirement acceptance: image Media an earlier scan catalogued in a video
-// Library, a recognised sidecar and an unrecognised image alike, go to the
-// recoverable trash with an audit entry on the next rescan. An image row
-// outside the scanned root is left alone.
-func TestRescanRetiresPreviouslyCataloguedImagesInVideoLibrary(t *testing.T) {
-	// feature:scan-pipeline
-	ctx := context.Background()
-	root := t.TempDir()
-	elsewhere := t.TempDir()
-	episode := writeScanFile(t, root, "Show/Season 1/Show.S01E03.mkv", []byte("episode bytes"))
-	banner := writeScanFile(t, root, "Show/Season 1/season01-banner.jpg", jpegBytes("banner"))
-	stray := writeScanFile(t, root, "Show/unknown.jpg", jpegBytes("stray"))
-	outside := writeScanFile(t, elsewhere, "other.jpg", jpegBytes("outside"))
-	st := storetest.Open(t)
-	libraryID, identifier := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassVideo})
-	retired := map[store.MediaID]string{
-		seedImageRow(t, st, libraryID, banner): banner,
-		seedImageRow(t, st, libraryID, stray):  stray,
-	}
-	outsideID := seedImageRow(t, st, libraryID, outside)
-	time.Sleep(2 * time.Millisecond)
-
-	scanImageRuleLibrary(t, st, identifier, libraryID, root, 1)
-
-	if got, want := libraryFilePaths(t, st, libraryID), []string{episode, outside}; !slices.Equal(got, want) {
-		t.Fatalf("live files after rescan = %q, want %q", got, want)
-	}
-	filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{libraryID}}
-	trashed, err := st.TrashedMediaList(ctx, filter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inTrash := map[store.MediaID]bool{}
-	for _, item := range trashed {
-		inTrash[item.ID] = true
-	}
-	for id, path := range retired {
-		if !inTrash[id] {
-			t.Fatalf("%s is not in the trash after the rescan (trash %v)", path, trashed)
-		}
-	}
-	if inTrash[outsideID] || len(trashed) != len(retired) {
-		t.Fatalf("trash = %v, want only the %d images under the root", trashed, len(retired))
-	}
-	if _, err := st.Media(ctx, outsideID, filter); err != nil {
-		t.Fatalf("image outside the root was retired: %v", err)
-	}
-	items, err := st.SourceItems(ctx, filter, store.SourceQuery{Kind: "all-items", LibraryID: libraryID, Limit: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, item := range items {
-		if _, gone := retired[item.ID]; gone {
-			t.Fatalf("the grid still lists retired %s", retired[item.ID])
-		}
-	}
-	if len(items) != 2 {
-		t.Fatalf("grid lists %d items, want the episode and the image outside the root", len(items))
-	}
-	entries, err := st.ActivityEntries(ctx, store.ActivityQuery{Filter: filter, Limit: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	audited := map[string]bool{}
-	for _, entry := range entries {
-		if entry.Action == store.ActivityMediaTrash && entry.TargetType == "media" {
-			audited[entry.TargetID] = true
-		}
-	}
-	for id, path := range retired {
-		if !audited[string(id)] {
-			t.Fatalf("no media.trash activity entry for %s (entries %v)", path, entries)
-		}
-	}
-	// Restore proves the retirement is the recoverable soft delete.
-	for id := range retired {
-		if err := st.RestoreMedia(ctx, id, filter); err != nil {
-			t.Fatalf("restoring %s: %v", id, err)
+// CORE-2364: dropping a declared class is not permission to retire its Media.
+func TestRescanPreservesPreviouslyCataloguedUndeclaredClasses(t *testing.T) {
+	for _, class := range []store.MediaClass{store.MediaClassImage, store.MediaClassAudio} {
+		for _, workers := range []int{1, 4} {
+			ctx := context.Background()
+			root := t.TempDir()
+			st := storetest.Open(t)
+			libraryID, identifier := imageRuleLibrary(t, st, []store.MediaClass{store.MediaClassVideo, class})
+			path := writeScanFile(t, root, "existing.jpg", jpegBytes("existing"))
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{LibraryID: libraryID, Path: path, Title: "Existing", Container: "jpg", Codec: "fixture", Class: class, ContentFingerprint: "existing"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Make the missing pass eligible even though this file is skipped.
+			for _, name := range []string{"one.mp4", "two.mp4", "three.mp4"} {
+				writeScanFile(t, root, name, []byte(name))
+			}
+			identifier.classes[imageRuleFixturePlugin] = []store.MediaClass{store.MediaClassVideo}
+			time.Sleep(2 * time.Millisecond)
+			for range 2 {
+				scanImageRuleLibrary(t, st, identifier, libraryID, root, workers)
+			}
+			files, err := st.MediaFilesForMedia(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
+			if err != nil || len(files) != 1 || !files[0].MissingAt.IsZero() {
+				t.Fatalf("class %s was retired: %+v, %v", class, files, err)
+			}
+			trashed, err := st.TrashedMediaList(ctx, store.LibraryFilter{AllLibraries: true})
+			if err != nil || len(trashed) != 0 {
+				t.Fatalf("undeclared Media trashed: %+v, %v", trashed, err)
+			}
 		}
 	}
 }

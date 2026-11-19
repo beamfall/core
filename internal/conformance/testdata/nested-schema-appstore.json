@@ -17253,6 +17253,10 @@
         ]
       },
       {
+        "name": "entryPinSet",
+        "kind": "scalar"
+      },
+      {
         "name": "id",
         "kind": "scalar"
       },
@@ -19250,6 +19254,10 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "entryPinSet",
+        "kind": "scalar"
       },
       {
         "name": "id",
@@ -21685,6 +21693,11 @@
     "kind": "object",
     "arguments": [
       {
+        "name": "limit",
+        "kind": "int",
+        "optional": true
+      },
+      {
         "name": "mode",
         "kind": "string",
         "optional": true,
@@ -21696,12 +21709,21 @@
         ]
       },
       {
+        "name": "offset",
+        "kind": "int",
+        "optional": true
+      },
+      {
         "name": "query",
         "kind": "string",
         "optional": true
       }
     ],
     "children": [
+      {
+        "name": "hasMore",
+        "kind": "scalar"
+      },
       {
         "name": "items",
         "kind": "list",
@@ -29054,6 +29076,10 @@
             "kind": "scalar"
           }
         ]
+      },
+      {
+        "name": "entryPinSet",
+        "kind": "scalar"
       },
       {
         "name": "id",

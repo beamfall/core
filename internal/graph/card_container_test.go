@@ -322,3 +322,32 @@ func TestKeywordSearchKeepsAnExactTitleMatchPastTheCut(t *testing.T) {
 		t.Fatalf("container entity-vol-a at %d, want it kept ahead of its item at %d", container, at)
 	}
 }
+
+// CORE-2321: pages are disjoint and reach matches beyond the old fifty-row cap.
+func TestKeywordSearchPagesBeyondFifty(t *testing.T) {
+	h, library, _ := newContainerLibrary(t)
+	ctx := context.Background()
+	for i := 0; i < 65; i++ {
+		_, _, err := h.store.ImportMediaFile(ctx, store.ImportMediaFile{LibraryID: library, Path: fmt.Sprintf("/volumes/page-%02d.mkv", i), Title: fmt.Sprintf("Paging %02d", i), Container: "mkv", Codec: "h264", ContentFingerprint: fmt.Sprintf("paging-%02d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	const query = `query($query:String!,$offset:Int,$limit:Int) { searchResult(query:$query,mode:keyword,offset:$offset,limit:$limit) { hasMore items { id title } } }`
+	var first, second struct {
+		HasMore bool
+		Items   []SearchResultItem
+	}
+	execGraph(t, h, authorizeViewer, query, map[string]any{"query": "Paging", "limit": 50, "offset": 0}, "searchResult", &first)
+	execGraph(t, h, authorizeViewer, query, map[string]any{"query": "Paging", "limit": 50, "offset": 50}, "searchResult", &second)
+	if len(first.Items) != 50 || !first.HasMore || len(second.Items) != 15 || second.HasMore {
+		t.Fatalf("pages: first %d more=%v, second %d more=%v", len(first.Items), first.HasMore, len(second.Items), second.HasMore)
+	}
+	seen := map[string]bool{}
+	for _, item := range append(first.Items, second.Items...) {
+		if seen[item.ID] {
+			t.Fatalf("duplicate across pages: %s", item.ID)
+		}
+		seen[item.ID] = true
+	}
+}

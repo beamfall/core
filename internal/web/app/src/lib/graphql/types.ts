@@ -615,6 +615,8 @@ export interface SearchResultItem extends SourceItem {
  * or count of hidden content (ADR-0083 §32).
  */
 export interface SearchResultResponse {
+  /** Keyword paging; absent from older servers. */
+  hasMore?: boolean;
   mode: SearchMode;
   items: SearchResultItem[];
   restrictedResultsPresent: boolean;

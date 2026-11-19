@@ -2191,6 +2191,10 @@ type ProfileSummary struct {
 	PictureURL            string                     `json:"pictureURL"`
 	CertificationCeilings []CertificationCeilingInfo `json:"certificationCeilings"`
 	RemoteMaxBitrate      int                        `json:"remoteMaxBitrate"`
+	// EntryPinSet is true when switching into this Profile needs its entry
+	// PIN. An adult Profile without one opens freely and a managed Profile
+	// never needs one (owner decision 2026-11-18, CORE-2581).
+	EntryPinSet bool `json:"entryPinSet"`
 }
 
 // profilePictureURL is the versioned path a client fetches a Profile's
@@ -2226,6 +2230,10 @@ func (h *Handler) profileSummaries(ctx context.Context, include func(store.Profi
 	if err != nil {
 		return nil, err
 	}
+	entryPINs, err := h.store.ProfileEntryPINsSet(ctx)
+	if err != nil {
+		return nil, err
+	}
 	summaries := make([]ProfileSummary, 0, len(all))
 	for _, profile := range all {
 		if !include(profile) {
@@ -2247,6 +2255,7 @@ func (h *Handler) profileSummaries(ctx context.Context, include func(store.Profi
 			PictureURL:            profilePictureURL(profile.ID, pictures[profile.ID]),
 			CertificationCeilings: ceilings,
 			RemoteMaxBitrate:      profile.RemoteMaxBitrate,
+			EntryPinSet:           entryPINs[profile.ID],
 		})
 	}
 	return summaries, nil

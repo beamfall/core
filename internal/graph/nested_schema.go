@@ -411,7 +411,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"searchentities":    {{Name: "query", Kind: "string", Optional: true}},
 	"searchfeeds":       {{Name: "query", Kind: "string"}},
 	"preplayqueue":      {{Name: "mediaID", Kind: "string"}},
-	"searchresult":      {searchModeArgument(), {Name: "query", Kind: "string", Optional: true}},
+	"searchresult":      {{Name: "limit", Kind: "int", Optional: true}, searchModeArgument(), {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}},
 	"sourceitems":       sourceArguments(),
 }
 

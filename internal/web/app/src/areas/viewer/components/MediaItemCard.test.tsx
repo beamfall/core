@@ -554,6 +554,15 @@ describe("MediaItemCard display options (CORE-2386)", () => {
     expect(container.querySelector("img")?.getAttribute("src")).toContain("/art/poster-alpha.jpg");
   });
 
+  it.each(["poster", "thumbnail"] as const)(
+    "shows known runtime on a %s shelf card (CORE-2320)",
+    (display) => {
+      const { container } = renderDisplay(display, episode);
+      expect(container.querySelector(".bf-card-runtime")).toHaveTextContent("30:30");
+      expect(container.querySelector(".bf-card-sub")).toHaveTextContent("S5 · E3 · Reunion");
+    },
+  );
+
   it("draws a list row with the ordinal and runtime", () => {
     const { container } = renderDisplay("list", episode);
     expect(container.querySelector(".bf-card-ordinal")).toHaveTextContent("3");

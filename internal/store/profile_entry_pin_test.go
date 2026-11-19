@@ -80,7 +80,7 @@ func TestProfileEntryPINIsSaltedAndIndependentFromReveal(t *testing.T) {
 	}
 }
 
-func TestProfileEntryPINFailsClosedWithoutVerifier(t *testing.T) {
+func TestProfileEntryPINVerifyFailsClosedWithoutVerifier(t *testing.T) {
 	st := openSeeded(t)
 	ctx := context.Background()
 	adult, err := st.CreateProfile(ctx, "No Entry PIN", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
@@ -94,21 +94,78 @@ func TestProfileEntryPINFailsClosedWithoutVerifier(t *testing.T) {
 	if err := st.VerifyProfileEntryPIN(ctx, "profile-default", developmentProfileEntryPIN); err != nil {
 		t.Fatalf("independent seed entry PIN failed: %v", err)
 	}
+	// Integration sign-in verifies through VerifyProfileEntryPIN, so it must
+	// keep refusing an adult Profile with no entry PIN (CORE-2581).
+	for _, pin := range []string{"", "1234"} {
+		if err := st.VerifyProfileEntryPIN(ctx, adult.ID, pin); !errors.Is(err, ErrNoProfileEntryPIN) {
+			t.Fatalf("adult without verifier, pin %q = %v, want ErrNoProfileEntryPIN", pin, err)
+		}
+	}
 	if err := st.VerifyProfileEntryPIN(ctx, "profile-managed", "anything"); !errors.Is(err, ErrNoProfileEntryPIN) {
 		t.Fatalf("managed entry verification = %v, want ErrNoProfileEntryPIN", err)
 	}
 	if err := st.SetProfileEntryPIN(ctx, "profile-managed", "2222"); !errors.Is(err, ErrNoProfileEntryPIN) {
 		t.Fatalf("managed entry PIN set = %v, want ErrNoProfileEntryPIN", err)
 	}
-	if err := st.SetSessionProfileWithEntryPIN(ctx, "session-managed", adult.ID, "1234"); !errors.Is(err, ErrNoProfileEntryPIN) {
-		t.Fatalf("adult without entry verifier switch = %v", err)
-	}
-	session, err := st.Session(ctx, "session-managed")
+}
+
+// TestSetSessionProfileWithEntryPINOpensAdultWithoutPIN pins the owner
+// decision of 2026-11-18 (CORE-2581): an adult Profile with no entry PIN opens
+// without one, from any Profile, ignoring a supplied PIN, and still relocks.
+func TestSetSessionProfileWithEntryPINOpensAdultWithoutPIN(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	adult, err := st.CreateProfile(ctx, "No Entry PIN", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
 	if err != nil {
-		t.Fatalf("Session after rejected no-verifier switch: %v", err)
+		t.Fatal(err)
 	}
-	if session.ProfileID != "profile-managed" {
-		t.Fatalf("no-verifier switch mutated session: %+v", session)
+	if _, err := st.catalogW.ExecContext(ctx,
+		`UPDATE auth_session SET admin_until_ms = ? WHERE id = ?`, time.Now().Add(time.Hour).UnixMilli(), SessionID("session-revealed")); err != nil {
+		t.Fatalf("seed admin session: %v", err)
+	}
+
+	if err := st.SetSessionProfileWithEntryPIN(ctx, "session-revealed", adult.ID, ""); err != nil {
+		t.Fatalf("PIN-less adult switch: %v", err)
+	}
+	after, err := st.Session(ctx, "session-revealed")
+	if err != nil {
+		t.Fatalf("Session after switch: %v", err)
+	}
+	if after.ProfileID != adult.ID || after.Revealed || !after.AdminUntil.IsZero() {
+		t.Fatalf("PIN-less switch did not rebind and relock: %+v", after)
+	}
+
+	if err := st.SetSessionProfileWithEntryPIN(ctx, "session-managed", adult.ID, "9999"); err != nil {
+		t.Fatalf("PIN-less adult switch with a stray PIN: %v", err)
+	}
+	if session, err := st.Session(ctx, "session-managed"); err != nil || session.ProfileID != adult.ID {
+		t.Fatalf("Session after stray-PIN switch = %+v, %v", session, err)
+	}
+}
+
+func TestProfileEntryPINsSetReportsOnlyAdultsWithAPIN(t *testing.T) {
+	st := openSeeded(t)
+	ctx := context.Background()
+	open, err := st.CreateProfile(ctx, "Open Adult", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked, err := st.CreateProfile(ctx, "Locked Adult", ProfileAdult, LibraryFilter{Revealed: true, AllLibraries: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetProfileEntryPIN(ctx, locked.ID, "4242"); err != nil {
+		t.Fatal(err)
+	}
+	set, err := st.ProfileEntryPINsSet(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set[locked.ID] || !set["profile-default"] {
+		t.Fatalf("PIN set map %v misses an adult with a PIN", set)
+	}
+	if set[open.ID] || set["profile-managed"] {
+		t.Fatalf("PIN set map %v reports a Profile without a PIN", set)
 	}
 }
 

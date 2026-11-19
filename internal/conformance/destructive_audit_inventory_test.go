@@ -162,6 +162,7 @@ var knownNonSeamGraphStoreMethods = map[string]struct{}{
 	"Profile":                                 {},
 	"ProfileAccessWindows":                    {},
 	"ProfileAvatars":                          {},
+	"ProfileEntryPINsSet":                     {},
 	"ProfileRevealPINSet":                     {},
 	"Profiles":                                {},
 	"ProfilePictureVersions":                  {},

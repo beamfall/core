@@ -317,6 +317,11 @@ export function MediaItemCard({
         <div className="bf-card-copy">
           <span className="bf-card-title">{heading}</span>
           {subline && <span className="bf-card-sub">{subline}</span>}
+          {!isRow && isMedia && (item.durationSeconds ?? 0) > 0 && (
+            <span aria-hidden="true" className="bf-card-sub bf-card-runtime">
+              {formatDuration(item.durationSeconds ?? 0)}
+            </span>
+          )}
           {rating && (
             <span aria-hidden="true" className="bf-card-rating">
               {rating.text && <span className="bf-card-cert">{rating.text}</span>}

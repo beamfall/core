@@ -131,7 +131,7 @@ const (
 // not fit keeps its container and its best-matching items, still read in
 // ordinal order, so an exact title match is never cut for a sibling that only
 // matched through the container (CORE-2547).
-func (h *Handler) orderKeywordResults(ctx context.Context, text string, results []store.SourceItem, limit int) ([]store.SourceItem, error) {
+func (h *Handler) orderKeywordResults(ctx context.Context, text string, results []store.SourceItem, limit, offset int) ([]store.SourceItem, error) {
 	if err := h.annotateContainers(ctx, results); err != nil {
 		return nil, err
 	}
@@ -222,9 +222,10 @@ func (h *Handler) orderKeywordResults(ctx context.Context, text string, results 
 			return l.ID < r.ID
 		})
 	}
-	if len(indexes) > limit {
+	if len(indexes) > limit || offset > 0 {
 		order(true)
-		indexes = indexes[:limit]
+		start := min(offset, len(indexes))
+		indexes = indexes[start:min(start+limit, len(indexes))]
 	}
 	order(false)
 	sorted := make([]store.SourceItem, len(indexes))
