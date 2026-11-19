@@ -68,7 +68,7 @@ func (s *Server) compatHandshake(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.devBuilds.refresh()
-	record, result, accepted, err := s.acceptCompatHandshake(r.Context(), scope, contract, derivedSurface, credentialClass == compatCredentialWeb, bindNativeSurface)
+	record, result, accepted, catalogedDevDigest, err := s.acceptCompatHandshake(r.Context(), scope, contract, derivedSurface, credentialClass == compatCredentialWeb, bindNativeSurface)
 	if err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "compatibility policy changed; retry")
 		return
@@ -82,6 +82,7 @@ func (s *Server) compatHandshake(w http.ResponseWriter, r *http.Request) {
 	if accepted {
 		s.compat.clearRefused(subject)
 		response.DecisionID = record.DecisionID
+		s.logDevRebuildHandshake(r.Context(), scope, contract, catalogedDevDigest)
 	} else {
 		s.compat.markRefused(subject)
 		s.logRefusedHandshake(r.Context(), scope, contract, derivedSurface, credentialClass == compatCredentialWeb, result)
@@ -89,7 +90,12 @@ func (s *Server) compatHandshake(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (s *Server) acceptCompatHandshake(ctx context.Context, scope auth.Scope, contract capabilities.ClientContract, derivedSurface capabilities.Surface, embeddedUI bool, bindNativeSurface bool) (capabilities.Record, capabilities.Result, bool, error) {
+// acceptCompatHandshake evaluates and records one handshake. When it admits a
+// dev build through the CORE-2573 rebuild exception, it also returns the
+// digest the admitting catalog named for that record, taken from the same
+// policy snapshot, so the audit line cannot be skipped or misattributed by a
+// catalog reload after acceptance. Otherwise that digest is empty.
+func (s *Server) acceptCompatHandshake(ctx context.Context, scope auth.Scope, contract capabilities.ClientContract, derivedSurface capabilities.Surface, embeddedUI bool, bindNativeSurface bool) (capabilities.Record, capabilities.Result, bool, string, error) {
 	enrollment := compatEnrollment(scope)
 	enrollment.EmbeddedUI = embeddedUI
 	enrollment.Surface = derivedSurface
@@ -101,12 +107,12 @@ func (s *Server) acceptCompatHandshake(ctx context.Context, scope auth.Scope, co
 		}
 		evaluated, err := s.deviceBuildPolicy(ctx, scope, policy)
 		if err != nil {
-			return capabilities.Record{}, capabilities.Result{}, false, err
+			return capabilities.Record{}, capabilities.Result{}, false, "", err
 		}
 		result := capabilities.Evaluate(contract, enrollment, evaluated)
 		if result.Servable() && bindNativeSurface {
 			if err := s.deviceSurfaces.BindDeviceSurface(ctx, scope.DeviceID, store.DeviceSurface(contract.Surface)); err != nil {
-				return capabilities.Record{}, capabilities.Result{}, false, err
+				return capabilities.Record{}, capabilities.Result{}, false, "", err
 			}
 			enrollment.Surface = capabilities.Surface(contract.Surface)
 			result = capabilities.Evaluate(contract, enrollment, evaluated)
@@ -119,10 +125,14 @@ func (s *Server) acceptCompatHandshake(ctx context.Context, scope auth.Scope, co
 			Generation:      policy.Generation,
 		}, contract, result, s.compat.now(), compatDecisionTTL)
 		if !errors.Is(err, capabilities.ErrStaleGeneration) {
-			return record, result, accepted, err
+			catalogedDevDigest := ""
+			if err == nil && accepted && result.Servable() {
+				catalogedDevDigest, _ = evaluated.Builds.DevRebuildDigest(contract)
+			}
+			return record, result, accepted, catalogedDevDigest, err
 		}
 	}
-	return capabilities.Record{}, capabilities.Result{}, false, capabilities.ErrStaleGeneration
+	return capabilities.Record{}, capabilities.Result{}, false, "", capabilities.ErrStaleGeneration
 }
 
 // logRefusedHandshake writes one line per refused handshake naming the build
@@ -150,6 +160,24 @@ func (s *Server) logRefusedHandshake(ctx context.Context, scope auth.Scope, cont
 		"decision", string(result.Decision),
 		"reason", string(result.ReasonCode),
 		"finding", finding)
+}
+
+// logDevRebuildHandshake records a handshake admitted through the CORE-2573
+// dev-rebuild exception: a device already mapped to an operator dev build
+// presenting a digest the dev-build file does not name. It keeps the
+// mismatch in the operator's audit trail (ADR-0063 compatibility evidence).
+// cataloged is the digest acceptCompatHandshake took from the admitting
+// snapshot; an empty one means the exception did not admit this handshake.
+func (s *Server) logDevRebuildHandshake(ctx context.Context, scope auth.Scope, contract capabilities.ClientContract, cataloged string) {
+	if cataloged == "" {
+		return
+	}
+	slog.InfoContext(ctx, "compatibility handshake admitted a rebuilt dev build",
+		"device", scope.DeviceID,
+		"surface", contract.Surface,
+		"build", contract.BuildID,
+		"artifactHash", artifactHashPrefix(contract.ArtifactHash),
+		"catalogedArtifactHash", artifactHashPrefix(cataloged))
 }
 
 func compatHasCredential(r *http.Request) bool {

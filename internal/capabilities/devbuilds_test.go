@@ -45,6 +45,9 @@ func TestParseDevBuildManifestAcceptsADevRecord(t *testing.T) {
 	if len(catalog.MinimumSequence) != 0 {
 		t.Fatalf("dev catalog carries floors: %v", catalog.MinimumSequence)
 	}
+	if !catalog.Builds[0].Dev {
+		t.Fatal("dev manifest record is not marked Dev")
+	}
 	empty, err := ParseDevBuildManifest([]byte(`{"schema":"` + FirstPartyBuildManifestSchema + `","builds":[]}`))
 	if err != nil || len(empty.Builds) != 0 {
 		t.Fatalf("empty dev manifest = %+v, %v; want empty, nil", empty, err)
