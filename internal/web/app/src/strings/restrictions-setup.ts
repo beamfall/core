@@ -3,6 +3,7 @@
 // (CORE-2463).
 export const restrictionsSetupStrings = {
   en: {
+    restrictionsSetupSubtitle: "Set a Restrictions PIN to control who can show restricted content.",
     restrictionsSetupLead:
       "No Restrictions PIN is set yet, so nothing is hidden. To hide a Library:",
     restrictionsSetupStepPin: "Set a PIN below. Anyone who knows it can show restricted content.",
@@ -26,6 +27,8 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNotSaved: "The change was not saved. Try again.",
   },
   fr: {
+    restrictionsSetupSubtitle:
+      "Définissez un code PIN de restriction pour contrôler qui peut afficher le contenu restreint.",
     restrictionsSetupLead:
       "Aucun PIN de restriction n’est défini, donc rien n’est masqué. Pour masquer une bibliothèque :",
     restrictionsSetupStepPin:
@@ -50,6 +53,8 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNotSaved: "La modification n’a pas été enregistrée. Réessayez.",
   },
   de: {
+    restrictionsSetupSubtitle:
+      "Legen Sie eine Einschränkungs-PIN fest, um zu bestimmen, wer eingeschränkte Inhalte anzeigen kann.",
     restrictionsSetupLead:
       "Es ist noch keine Einschränkungs-PIN festgelegt, daher ist nichts ausgeblendet. So blenden Sie eine Mediathek aus:",
     restrictionsSetupStepPin:
@@ -74,6 +79,8 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNotSaved: "Die Änderung wurde nicht gespeichert. Versuchen Sie es erneut.",
   },
   es: {
+    restrictionsSetupSubtitle:
+      "Configura un PIN de restricción para controlar quién puede mostrar el contenido restringido.",
     restrictionsSetupLead:
       "Aún no hay un PIN de restricción, así que no se oculta nada. Para ocultar una biblioteca:",
     restrictionsSetupStepPin:
@@ -98,6 +105,8 @@ export const restrictionsSetupStrings = {
     libraryRestrictedNotSaved: "No se guardó el cambio. Inténtalo de nuevo.",
   },
   pt: {
+    restrictionsSetupSubtitle:
+      "Defina um PIN de restrição para controlar quem pode mostrar conteúdo restrito.",
     restrictionsSetupLead:
       "Ainda não há um PIN de restrição, por isso nada fica oculto. Para ocultar uma biblioteca:",
     restrictionsSetupStepPin:
