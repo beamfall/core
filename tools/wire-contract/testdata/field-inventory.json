@@ -3256,6 +3256,7 @@
       "effect": "read",
       "tier": "session",
       "children": [
+        "hasMore",
         "items",
         "mode",
         "restrictedResultsPresent"
