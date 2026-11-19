@@ -79,7 +79,9 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	if os.Getenv(hlsStopHelperEnv) != "1" {
 		return
 	}
-	becomeHLSStopTestSubreaper(t)
+	if err := EnableHLSDescendantReaping(); err != nil {
+		t.Fatalf("enable HLS descendant reaping: %v", err)
+	}
 	// The fixture can also exit on EOF if the helper dies before pausing it.
 	reader, writer, err := os.Pipe()
 	if err != nil {
@@ -120,13 +122,9 @@ func TestHLSProcessStopHelper(t *testing.T) {
 		t.Fatal("Stop returned before reaping the leader")
 	}
 	signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
-	descendantReaped := false
 	for {
-		if !descendantReaped {
-			descendantReaped = reapHLSStopTestDescendant(t, descendant)
-		}
-		// Signal zero also sees zombies. Require both PIDs to disappear.
-		// CORE-2650 tracks production reaping of adopted descendants when Beamfall runs as PID 1.
+		// Signal zero also sees zombies. Only the production Stop path (or
+		// launchd on Darwin) can make the descendant disappear.
 		leaderErr := syscall.Kill(leader, 0)
 		descendantErr := syscall.Kill(descendant, 0)
 		if leaderErr == syscall.ESRCH && descendantErr == syscall.ESRCH {

@@ -2443,9 +2443,10 @@ type HLSProcess struct {
 	waitErr error
 	// signalMu guards pause and resume against group termination. The reaper
 	// sets stopping before it releases the leader PID.
-	signalMu sync.Mutex
-	paused   bool
-	stopping bool
+	signalMu        sync.Mutex
+	paused          bool
+	stopping        bool
+	reapDescendants func()
 	// stopRequested records that the owner asked for this exit (Stop or context
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
@@ -2585,17 +2586,17 @@ func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
 	return startHLSProcess(cmd)
 }
 
-func (p *HLSProcess) killTree() {
+func (p *HLSProcess) killTree() func() {
 	if p == nil || p.cmd == nil {
-		return
+		return nil
 	}
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
-	if p.stopping {
-		return
+	if !p.stopping {
+		p.stopping = true
+		p.reapDescendants = killHLSProcessGroup(p.cmd)
 	}
-	p.stopping = true
-	killProcessGroup(p.cmd)
+	return p.reapDescendants
 }
 
 // Running reports whether this process wraps a started OS child.

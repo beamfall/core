@@ -6,6 +6,6 @@ import "os/exec"
 
 // Platforms without a pre-reap exit observer skip residual-group signalling;
 // signalling after Wait would risk targeting a recycled process identifier.
-func waitHLSProcess(cmd *exec.Cmd, _ func()) error {
+func waitHLSProcess(cmd *exec.Cmd, _ func() func()) error {
 	return cmd.Wait()
 }
