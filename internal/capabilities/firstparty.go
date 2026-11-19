@@ -121,7 +121,14 @@ func AssembleFirstPartyBuildManifest(files []FirstPartyBuildRecordFile) ([]byte,
 				return nil, fmt.Errorf("%s: duplicate buildID %q (already recorded by %s)", file.Name, record.BuildID, owner)
 			}
 			buildOwner[record.BuildID] = file.Name
-			merged.Builds = append(merged.Builds, firstPartyBuild(record))
+			merged.Builds = append(merged.Builds, firstPartyBuild{
+				BuildID:       record.BuildID,
+				Surface:       record.Surface,
+				ArtifactHash:  record.ArtifactHash,
+				Sequence:      record.Sequence,
+				Distributions: record.Distributions,
+				Roles:         record.Roles,
+			})
 		}
 		for surface, floor := range catalog.MinimumSequence {
 			if owner, dup := floorOwner[surface]; dup {
@@ -216,8 +223,9 @@ func validateFirstPartyBuild(record BuildRecord) error {
 }
 
 // EnrollmentBindingFor returns the exact enrollment-to-build mapping an
-// enrollment may record for contract. It runs the unchanged
-// VerifyBuildProvenance against the catalog plus that one candidate mapping, so
+// enrollment may record for contract. It runs provenance verification, without
+// the CORE-2573 dev-rebuild exception, against the catalog plus that one
+// candidate mapping, so
 // every other check (known usable record, surface, digest, rollback floor, role
 // and distribution) must already pass; the only thing supplied is the mapping
 // this enrollment is creating. It never grants a mapping to another enrollment.
@@ -234,7 +242,9 @@ func EnrollmentBindingFor(contract ClientContract, enrollment Enrollment, catalo
 	}
 	candidate := catalog.Clone()
 	candidate.EnrollmentBindings = append(candidate.EnrollmentBindings, binding)
-	finding := VerifyBuildProvenance(contract, enrollment, candidate)
+	// The candidate mapping is the one being created, so it must not also
+	// satisfy the dev-rebuild exception: a mapping needs the exact digest.
+	finding := verifyBuildProvenance(contract, enrollment, candidate, false)
 	if finding != ProvenanceVerified {
 		return EnrollmentBuildBinding{}, finding
 	}
