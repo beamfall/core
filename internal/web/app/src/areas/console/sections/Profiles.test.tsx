@@ -343,6 +343,28 @@ describe("Console Profiles lane", () => {
     expect(reorderProfiles).toHaveBeenLastCalledWith(["p2", "p1"], undefined);
   });
 
+  it("keeps moves held until a recovery read succeeds after the save and reload both fail", async () => {
+    const user = userEvent.setup();
+    vi.mocked(reorderProfiles).mockRejectedValueOnce(new Error("nope"));
+    renderSection();
+    await screen.findByDisplayValue("Kid");
+    vi.mocked(fetchProfilesAdmin).mockRejectedValueOnce(new Error("temporary read failure"));
+    await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+    await screen.findByText("Profiles are unavailable right now.");
+    expect(screen.getByRole("button", { name: "Move Kid down" })).toBeDisabled();
+
+    const retry = deferred<ProfileAdminInfo[]>();
+    vi.mocked(fetchProfilesAdmin).mockReturnValueOnce(retry.promise);
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.getByRole("button", { name: "Move Kid down" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move Owner up" })).toBeDisabled();
+
+    await act(async () => retry.resolve(rows));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Move Kid up" })).toBeEnabled());
+    expect(rowOrder()).toEqual(["Owner", "Kid"]);
+    expect(reorderProfiles).toHaveBeenCalledTimes(1);
+  });
+
   it("restores the server order and says so when saving the order fails", async () => {
     const user = userEvent.setup();
     vi.mocked(reorderProfiles).mockRejectedValue(new Error("nope"));

@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
-import { type FormEvent, type KeyboardEvent, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { AvatarChooser, ProfileAvatar, ProfilePhotoEditor } from "@/components/beamfall/profile";
 import { EmptyState, ErrorState, HelpTip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -63,10 +63,12 @@ export function Profiles() {
   const [reorderFailed, setReorderFailed] = useState(false);
   const saving = useRef(false);
   const pendingOrder = useRef<string[] | null>(null);
-  // After a failed save the list reloads from the server; moves wait for it so
-  // none is queued against an order that is about to be replaced.
+  // After a failed save the list reloads from the server; moves wait until a
+  // reload succeeds so none is queued against an order that is about to be
+  // replaced, or saved on top of the rejected one.
   const [recovering, setRecovering] = useState(false);
   const recovery = useRef<Promise<void> | null>(null);
+  const [recoverySettled, setRecoverySettled] = useState(0);
 
   async function refreshRecovery() {
     const refresh = profiles.refresh();
@@ -74,9 +76,15 @@ export function Profiles() {
     await refresh;
     if (recovery.current === refresh) {
       recovery.current = null;
-      setRecovering(false);
+      setRecoverySettled((n) => n + 1);
     }
   }
+
+  useEffect(() => {
+    if (recovering && !recovery.current && !profiles.loading && !profiles.failed) {
+      setRecovering(false);
+    }
+  }, [recovering, recoverySettled, profiles.loading, profiles.failed]);
 
   function refreshAfterChange() {
     // The reorder's final refresh also picks up changes made during the save.
