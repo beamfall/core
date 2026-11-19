@@ -144,8 +144,8 @@ describe("EntityMediaBrowse", () => {
   it("lists an audio container's tracks in server order with runtime and differing credits", async () => {
     renderBrowse(album, tracks);
     const list = await screen.findByRole("list", { name: "Tracks" });
-    const buttons = within(list).getAllByRole("button", { name: /^Play / });
-    expect(buttons.map((button) => button.textContent)).toEqual([
+    const links = within(list).getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual([
       "1Track One3:21",
       "2Track TwoTest Artist, Guest Artist1:35",
       "3Track Three",
@@ -180,15 +180,11 @@ describe("EntityMediaBrowse", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Disc 1" })).toBeInTheDocument();
     expect(
       within(first)
-        .getAllByRole("button", { name: /^Play / })
-        .map((button) => button.textContent),
+        .getAllByRole("link")
+        .map((link) => link.textContent),
     ).toEqual(["1Track Three", "2Track TwoTest Artist, Guest Artist1:35"]);
     const second = screen.getByRole("list", { name: "Disc 2" });
-    expect(
-      within(second)
-        .getAllByRole("button", { name: /^Play / })
-        .map((button) => button.textContent),
-    ).toEqual(["1Track One3:21"]);
+    expect(within(second).getByRole("link").textContent).toBe("1Track One3:21");
     expect(screen.queryByRole("list", { name: "Tracks" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Play Track One" }));
     expect(screen.getByTestId("watch")).toHaveTextContent("/watch/t1|t3:audio,t2:audio,t1:audio");
@@ -212,6 +208,29 @@ describe("EntityMediaBrowse", () => {
     expect(screen.queryByRole("list", { name: "All tracks" })).not.toBeInTheDocument();
   });
 
+  it("displays a person's top tracks in the same ranked order as the play queue", async () => {
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      t1: { ...rows.t1, sequence: 1, index: 1 },
+      t2: { ...rows.t2, sequence: 1, index: 2 },
+      t3: { ...rows.t3, sequence: 1, index: 8 },
+    });
+    vi.mocked(fetchSourceItems).mockResolvedValue([tracks[2], tracks[0]]);
+    renderBrowse(artist, tracks);
+    const top = within(await screen.findByRole("list", { name: "Top tracks" }));
+    await vi.waitFor(() =>
+      expect(top.getAllByRole("link").map((link) => link.textContent)).toEqual([
+        "1Track Three",
+        "2Track One3:21",
+        "3Track TwoTest Artist, Guest Artist1:35",
+      ]),
+    );
+
+    const first = top.getAllByRole("button", { name: /^Play / })[0];
+    expect(first).toHaveAccessibleName("Play Track Three");
+    fireEvent.click(first);
+    expect(screen.getByTestId("watch")).toHaveTextContent("/watch/t3|t3:audio,t1:audio,t2:audio");
+  });
+
   it("lists every track under the top tracks when the top list leaves some out (CORE-2362)", async () => {
     const many: SourceItem[] = Array.from({ length: 12 }, (_, index) => ({
       id: `m${index + 1}`,
@@ -220,13 +239,15 @@ describe("EntityMediaBrowse", () => {
     }));
     vi.mocked(fetchMediaRows).mockResolvedValue(
       Object.fromEntries(
-        many.map((item) => [
+        many.map((item, index) => [
           item.id,
           {
             id: item.id,
             title: item.title,
             favorited: false,
             mediaClass: "audio",
+            sequence: 1,
+            index: many.length - index,
             credits: [credit("person-a", "Test Artist", "person")],
           } as GenericMediaInfo,
         ]),
@@ -234,6 +255,11 @@ describe("EntityMediaBrowse", () => {
     );
     renderBrowse(artist, many);
     const all = await screen.findByRole("list", { name: "All tracks" });
+    expect(
+      within(all)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(many.map((item, index) => `${index + 1}${item.title}`));
     const plays = within(all).getAllByRole("button", { name: /^Play / });
     expect(plays).toHaveLength(12);
     expect(plays[11]).toHaveAccessibleName("Play Song 12");

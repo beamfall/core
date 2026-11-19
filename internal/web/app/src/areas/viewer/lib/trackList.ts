@@ -35,11 +35,11 @@ type ClassedItem = SourceItem & { mediaClass?: string };
 /** One row of a track list. */
 export interface TrackRow {
   item: SourceItem;
-  /** The stored index, else the 1-based position within its group. */
+  /** The stored index for an album when usable, else the 1-based display position. */
   number: number;
   /** The stored sequence this row groups under; set only when the list is grouped. */
   group?: number;
-  /** Credited people, shown only when they differ from the container's own. */
+  /** Credited people, shown only when they differ from the listing's own. */
   artist?: string;
   durationSeconds?: number;
 }
@@ -116,11 +116,36 @@ function numberGroup(
     .sort((a, b) => a.number - b.number);
 }
 
+function trackRow(
+  item: SourceItem,
+  row: MediaRow | undefined,
+  owners: ReadonlySet<string>,
+  number: number,
+  group?: number,
+): TrackRow {
+  const people = personCredits(row);
+  const differs = people.some((credit) => !owners.has(credit.entityID));
+  const track: TrackRow = { item, number };
+  if (group !== undefined) track.group = group;
+  if (differs) track.artist = people.map((credit) => credit.title).join(", ");
+  if (row?.durationSeconds) track.durationSeconds = row.durationSeconds;
+  return track;
+}
+
+/** Person listings use their supplied ranking or server order for display and playback. */
+export function listedTrackRows(
+  items: readonly SourceItem[],
+  rows: Readonly<Record<string, MediaRow>>,
+  owners: ReadonlySet<string>,
+): TrackRow[] {
+  return items.map((item, position) => trackRow(item, rows[item.id], owners, position + 1));
+}
+
 /**
  * The track rows of an audio container in display order: grouped by stored
  * sequence when the list groups, numbered by stored index or by position.
  */
-export function trackRows(
+export function albumTrackRows(
   items: readonly SourceItem[],
   rows: Readonly<Record<string, MediaRow>>,
   owners: ReadonlySet<string>,
@@ -139,16 +164,9 @@ export function trackRows(
     groups.push({ media });
   }
   return groups.flatMap(({ group, media: members }) =>
-    numberGroup(members, rows).map(({ item, number }) => {
-      const row = rows[item.id];
-      const people = personCredits(row);
-      const differs = people.some((credit) => !owners.has(credit.entityID));
-      const track: TrackRow = { item, number };
-      if (group !== undefined) track.group = group;
-      if (differs) track.artist = people.map((credit) => credit.title).join(", ");
-      if (row?.durationSeconds) track.durationSeconds = row.durationSeconds;
-      return track;
-    }),
+    numberGroup(members, rows).map(({ item, number }) =>
+      trackRow(item, rows[item.id], owners, number, group),
+    ),
   );
 }
 
@@ -164,7 +182,7 @@ export function containerTrackRows(
 ): TrackRow[] | null {
   if (!entity || !rows || entity.archetype !== "container") return null;
   if (!isAudioListing(items, rows)) return null;
-  return trackRows(items, rows, ownerPeople(entity.relatedEntities, items, rows));
+  return albumTrackRows(items, rows, ownerPeople(entity.relatedEntities, items, rows));
 }
 
 /** A play queue of rows the page verified as audio, so the player knows their class. */

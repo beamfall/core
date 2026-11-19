@@ -10,10 +10,10 @@ import {
   audioQueue,
   containerTrackRows,
   isAudioListing,
+  listedTrackRows,
   type TrackRow,
   topTracks,
   trackGroups,
-  trackRows,
 } from "../lib/trackList";
 import { ContainerChildren } from "./ContainerChildren";
 import { MediaItemCard } from "./MediaItemCard";
@@ -148,11 +148,12 @@ function PersonListening({
   }, []);
 
   const top = topTracks(items, profileTop);
+  const owners = new Set([entity.id]);
   // Numbered by rank; the person's own credit is never repeated on its rows.
-  const topRows = trackRows(top, rows, new Set([entity.id]));
+  const topRows = listedTrackRows(top, rows, owners);
   // Every track in server order, when the top list leaves some out.
   const all = items.filter((item) => item.kind === "media");
-  const allRows = all.length > top.length ? trackRows(all, rows, new Set([entity.id])) : null;
+  const allRows = all.length > top.length ? listedTrackRows(all, rows, owners) : null;
   const elsewhere = appearsOn(entity.relatedEntities, items, rows);
   return (
     <>
