@@ -10906,6 +10906,11 @@
     "kind": "object",
     "arguments": [
       {
+        "name": "categoryCounts",
+        "kind": "boolean",
+        "optional": true
+      },
+      {
         "name": "direction",
         "kind": "string",
         "optional": true,
@@ -11021,6 +11026,25 @@
               "kind": "object",
               "children": [
                 {
+                  "name": "browseCounts",
+                  "kind": "list",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                },
+                {
+                  "name": "browseLabels",
+                  "kind": "list",
+                  "nullable": true,
+                  "elem": {
+                    "kind": "map",
+                    "elem": {
+                      "kind": "scalar"
+                    }
+                  }
+                },
+                {
                   "name": "counts",
                   "kind": "list",
                   "nullable": true,
@@ -11052,6 +11076,25 @@
               ]
             },
             "children": [
+              {
+                "name": "browseCounts",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "scalar"
+                }
+              },
+              {
+                "name": "browseLabels",
+                "kind": "list",
+                "nullable": true,
+                "elem": {
+                  "kind": "map",
+                  "elem": {
+                    "kind": "scalar"
+                  }
+                }
+              },
               {
                 "name": "counts",
                 "kind": "list",

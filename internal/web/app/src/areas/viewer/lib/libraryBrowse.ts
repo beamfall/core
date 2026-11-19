@@ -183,6 +183,8 @@ export interface LibraryItemsGrouping {
   values: string[];
   /** Items per value, parallel to values (CORE-2505); absent from an older server. */
   counts?: number[];
+  browseCounts?: number[];
+  browseLabels?: (DisplayString | null)[];
 }
 
 export interface LibraryItemsFacets {
@@ -208,6 +210,8 @@ export interface LibraryItemsPage {
 
 /** One libraryItems request: the browse state plus the order and page. */
 export interface LibraryItemsRequest {
+  /** Resolve category browse units only for the Categories pivot. */
+  categoryCounts?: boolean;
   libraryID: string;
   state: LibraryBrowseState;
   /** "random" replaces the state's sort for Shuffle; seed keeps paging stable. */
@@ -217,7 +221,7 @@ export interface LibraryItemsRequest {
 }
 
 const LIBRARY_ITEMS_QUERY =
-  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $query: String, $limit: Int, $offset: Int) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, query: $query, limit: $limit, offset: $offset) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values counts } decades qualities } letters { letter offset count } } }";
+  "query LibraryItems($libraryID: String!, $sort: String, $direction: String, $seed: String, $watch: String, $quality: String, $minRating: Int, $yearFrom: Int, $yearTo: Int, $groupFilters: Map, $query: String, $limit: Int, $offset: Int, $categoryCounts: Boolean) { libraryItems(libraryID: $libraryID, sort: $sort, direction: $direction, seed: $seed, watch: $watch, quality: $quality, minRating: $minRating, yearFrom: $yearFrom, yearTo: $yearTo, groupFilters: $groupFilters, query: $query, limit: $limit, offset: $offset, categoryCounts: $categoryCounts) { total items { id kind title summary artwork { poster } artworkSlots locked mediaClass year certification audienceScore audienceScoreVotes byline subtitle sequence index durationSeconds container { id title artwork { poster } } engagement { positionSeconds durationSeconds completed totalCount remainingCount } } facets { groupings { kind title values counts browseCounts browseLabels } decades qualities } letters { letter offset count } } }";
 
 export function libraryItemsVariables(request: LibraryItemsRequest): Record<string, unknown> {
   const { state } = request;
@@ -228,6 +232,7 @@ export function libraryItemsVariables(request: LibraryItemsRequest): Record<stri
     limit: request.limit,
     offset: request.offset,
   };
+  if (request.categoryCounts) vars.categoryCounts = true;
   if (request.shuffleSeed) vars.seed = request.shuffleSeed;
   if (state.watch) vars.watch = state.watch;
   if (state.quality) vars.quality = state.quality;

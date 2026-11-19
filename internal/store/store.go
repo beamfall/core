@@ -924,6 +924,7 @@ type SourceItem struct {
 	// container relations (CORE-2524); empty when none holds it.
 	ContainerID    EntityID
 	ContainerTitle string
+	ContainerKind  string
 }
 
 // PairingCode is a short-lived enrollment grant.

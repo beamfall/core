@@ -92,6 +92,7 @@ func (h *Handler) annotateContainers(ctx context.Context, items []store.SourceIt
 	for i, link := range current {
 		items[i].ContainerID = link.EntityID
 		items[i].ContainerTitle = link.Title
+		items[i].ContainerKind = link.Kind
 	}
 	return nil
 }
