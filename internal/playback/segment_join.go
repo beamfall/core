@@ -11,7 +11,7 @@ import (
 
 // joinPlaylistFragments registers the join before opening any descriptors so
 // teardown can drain it before removing the working directory.
-func (h *hlsSession) joinPlaylistFragments(dst string, parts []string, readPart func(string) ([]byte, error)) error {
+func (h *hlsSession) joinPlaylistFragments(dst string, parts []string, readPart func(string) ([]byte, error), rename func(string, string) error) error {
 	h.mu.Lock()
 	if h.detached.Load() {
 		h.mu.Unlock()
@@ -27,7 +27,14 @@ func (h *hlsSession) joinPlaylistFragments(dst string, parts []string, readPart 
 		if h.detached.Load() {
 			return ErrSessionEvicted
 		}
-		return os.Rename(tmp, dst)
+		if err := rename(tmp, dst); err != nil {
+			return err
+		}
+		// Detach can run without h.mu while rename is in progress.
+		if h.detached.Load() {
+			return ErrSessionEvicted
+		}
+		return nil
 	})
 }
 

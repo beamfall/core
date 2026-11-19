@@ -62,6 +62,7 @@ type LiveSession struct {
 	// publish serialises the exists check and .part creation, so two uploads
 	// of one name cannot both proceed.
 	publish sync.Mutex
+	rename  func(string, string) error
 }
 
 // NewLiveSession draws a fresh session key for the files under dir, which must
@@ -77,7 +78,7 @@ func NewLiveSession(dir, libraryID string) (*LiveSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LiveSession{dir: filepath.Clean(dir), libraryID: libraryID, key: key}, nil
+	return &LiveSession{dir: filepath.Clean(dir), libraryID: libraryID, key: key, rename: os.Rename}, nil
 }
 
 // Dir is the session directory.
@@ -173,6 +174,24 @@ func (s *LiveSession) encrypt(f *os.File, src io.Reader, rel string) error {
 	return libencrypt.EncryptStreamV2(f, src, key, s.object(rel))
 }
 
+func (s *LiveSession) publishFile(part, path string) error {
+	if s.revoked.Load() {
+		return ErrLiveSessionClosed
+	}
+	if err := s.rename(part, path); err != nil {
+		return err
+	}
+	if !s.revoked.Load() {
+		return nil
+	}
+	// Revoke can run during rename. Roll back before Close finishes draining
+	// this write, including when it replaced an older playlist.
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return errors.Join(ErrLiveSessionClosed, err)
+	}
+	return ErrLiveSessionClosed
+}
+
 // WriteFile replaces the file at rel with data, encrypted. Core uses it for
 // the playlists it serves itself.
 func (s *LiveSession) WriteFile(rel string, data []byte) error {
@@ -193,11 +212,8 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
-	if err == nil && s.revoked.Load() {
-		err = ErrLiveSessionClosed
-	}
 	if err == nil {
-		err = os.Rename(tmp, path)
+		err = s.publishFile(tmp, path)
 	}
 	if err != nil {
 		_ = os.Remove(tmp)
@@ -238,11 +254,8 @@ func (s *LiveSession) put(rel string, body io.Reader) error {
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
-	if err == nil && s.revoked.Load() {
-		err = ErrLiveSessionClosed
-	}
 	if err == nil {
-		err = os.Rename(part, path)
+		err = s.publishFile(part, path)
 	}
 	if err != nil {
 		_ = os.Remove(part)
@@ -266,7 +279,7 @@ func (s *LiveSession) open(rel string, decrypt func(io.ReaderAt, int64, []byte, 
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(path) // #nosec G304 -- path is a validated name inside the session's own directory
+	f, err := openLiveFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -274,6 +287,10 @@ func (s *LiveSession) open(rel string, decrypt func(io.ReaderAt, int64, []byte, 
 	if err != nil {
 		_ = f.Close()
 		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, os.ErrInvalid
 	}
 	key, err := s.copyKey()
 	if err != nil {

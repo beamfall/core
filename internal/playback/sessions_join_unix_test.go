@@ -116,6 +116,58 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 	}
 }
 
+func TestSessionsPreemptionDuringJoinPublication(t *testing.T) {
+	t.Parallel()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions.SetTranscodeCap(1)
+	t.Cleanup(sessions.Close)
+	victim := SessionKey{SessionID: "join-publish-victim", MediaID: "media-a"}
+	if _, err := filePath720(sessions, victim, "720p/seg00000.m4s"); err != nil {
+		t.Fatal(err)
+	}
+	session := registeredSession(t, sessions, victim)
+	part := regularJoinPart(t)
+	dst := filepath.Join(session.dir, "720p", "joined00000.m4s")
+	entered, resume := make(chan string, 1), make(chan struct{})
+	release := sync.OnceFunc(func() { close(resume) })
+	defer release()
+	joined := make(chan error, 1)
+	go func() {
+		joined <- session.joinPlaylistFragments(dst, []string{part, part}, readJoinFragment, func(from, to string) error {
+			entered <- from
+			<-resume
+			return os.Rename(from, to)
+		})
+	}()
+	select {
+	case tmp := <-entered:
+		if info, err := os.Stat(tmp); err != nil || info.Size() == 0 {
+			t.Fatalf("rename reached without assembled fragments: %v, %v", info, err)
+		}
+	case err := <-joined:
+		t.Fatalf("join ended before rename: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("join did not reach rename")
+	}
+	foreground := SessionKey{SessionID: "join-publish-preemptor", MediaID: "media-b"}
+	started := make(chan error, 1)
+	go func() {
+		_, err := filePath720Priority(sessions, foreground, PriorityForeground, "720p/seg00000.m4s")
+		started <- err
+	}()
+	waitSessionCondition(t, "preemption detached the session during rename", session.detached.Load)
+	release()
+	assertJoinEvicted(t, joined)
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("foreground start: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("foreground start did not finish after the join drained")
+	}
+}
+
 func TestTerminateSessionRevokesAllReadersWhileJoinsDrain(t *testing.T) {
 	t.Parallel()
 	sessions := NewSessions(&fakeEncryptedTranscoder{}, t.TempDir(), nil)
@@ -247,7 +299,7 @@ func blockFragmentJoin(t *testing.T, session *hlsSession, part string) (<-chan e
 			}
 			return readJoinFragment(path)
 		}
-		joined <- session.joinPlaylistFragments(filepath.Join(output, "joined00000.m4s"), []string{first, part}, readPart)
+		joined <- session.joinPlaylistFragments(filepath.Join(output, "joined00000.m4s"), []string{first, part}, readPart, os.Rename)
 	}()
 	select {
 	case <-entered:

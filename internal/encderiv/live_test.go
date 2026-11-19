@@ -583,6 +583,81 @@ func TestLiveSessionCloseDrainsEncryptingUpload(t *testing.T) {
 	}
 }
 
+func TestLiveSessionCloseDuringPublication(t *testing.T) {
+	const rel = testLiveRung + "/seg00000.m4s"
+	for name, write := range map[string]func(*LiveSession) error{
+		"upload": func(s *LiveSession) error { return s.put(rel, strings.NewReader("payload")) },
+		"write":  func(s *LiveSession) error { return s.WriteFile(rel, []byte("payload")) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			session := newTestLiveSession(t)
+			if name == "write" {
+				if err := session.WriteFile(rel, []byte("previous payload")); err != nil {
+					t.Fatalf("seed existing file: %v", err)
+				}
+			}
+			entered, release := make(chan string, 1), make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			defer unblock()
+			session.rename = func(from, to string) error {
+				entered <- from
+				<-release
+				err := os.Rename(from, to)
+				if err != nil {
+					t.Errorf("resumed rename: %v", err)
+				}
+				return err
+			}
+			written := make(chan error, 1)
+			go func() { written <- write(session) }()
+			select {
+			case part := <-entered:
+				if info, err := os.Stat(part); err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+					t.Fatalf("publication reached without staged ciphertext: %v, %v", info, err)
+				}
+			case err := <-written:
+				t.Fatalf("write ended before rename: %v", err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("write did not reach rename")
+			}
+
+			closed := make(chan struct{})
+			go func() {
+				session.Close()
+				close(closed)
+			}()
+			for deadline := time.Now().Add(5 * time.Second); !session.revoked.Load(); {
+				if time.Now().After(deadline) {
+					t.Fatal("Close did not revoke while rename was blocked")
+				}
+				time.Sleep(time.Millisecond)
+			}
+			select {
+			case <-closed:
+				t.Fatal("Close returned while rename was blocked")
+			case <-time.After(50 * time.Millisecond):
+			}
+			unblock()
+			select {
+			case <-closed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Close did not return after rename completed")
+			}
+			if names := sessionFiles(t, session.Dir()); len(names) != 0 {
+				t.Errorf("Close left files from the revoked write: %v", names)
+			}
+			select {
+			case err := <-written:
+				if !errors.Is(err, ErrLiveSessionClosed) {
+					t.Errorf("write after revocation: %v, want ErrLiveSessionClosed", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("write did not return")
+			}
+		})
+	}
+}
+
 func TestLiveRunRevokeMidUploadLeavesNoFile(t *testing.T) {
 	session := newTestLiveSession(t)
 	sink := &signalSink{uploadSink: liveSink{session: session, rung: testLiveRung}, reading: make(chan struct{})}

@@ -1229,7 +1229,7 @@ func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session 
 	if len(parts) == 1 {
 		return parts[0], nil
 	}
-	if err := session.joinPlaylistFragments(joined, parts, readJoinFragment); err != nil {
+	if err := session.joinPlaylistFragments(joined, parts, readJoinFragment, os.Rename); err != nil {
 		return "", err
 	}
 	return joined, nil
