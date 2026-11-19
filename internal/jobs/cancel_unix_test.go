@@ -73,8 +73,20 @@ func TestCancelRunningStopsHandlerAndItsChildProcessGroup(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("handler still running 5 s after the job was cancelled")
 			}
-			if err := syscall.Kill(-pgid, 0); !errors.Is(err, syscall.ESRCH) {
-				t.Fatalf("child process group %d after cancel: kill(0) = %v, want ESRCH", pgid, err)
+			// SIGKILL reaches the group at once, but its members are reaped
+			// asynchronously (the orphaned sleep by init), so under load the
+			// group can still answer kill(0), or EPERM on macOS while its last
+			// member is a zombie. Hold it to the same 5 s bound as the handler.
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				err := syscall.Kill(-pgid, 0)
+				if errors.Is(err, syscall.ESRCH) {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("child process group %d still present 5 s after cancel: kill(0) = %v, want ESRCH", pgid, err)
+				}
+				time.Sleep(20 * time.Millisecond)
 			}
 			job, err := st.Job(ctx, "job-cancel")
 			if err != nil {
