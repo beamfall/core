@@ -50,87 +50,239 @@ func (s *blockedLiveSource) Read(p []byte) (int, error) {
 	return s.nopReadSeekCloser.Read(p)
 }
 
-func TestTerminateSessionRevokesReaderWhileLiveSourceDrains(t *testing.T) {
+func TestSessionsEncoderCapacityReleasesBeforeSourceDrain(t *testing.T) {
 	t.Parallel()
-	transcoder := &sourceReadingTranscoder{sourceURL: make(chan string, 1)}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
-	g := governor.New()
-	sessions.SetGovernor(g)
-	sessions.SetTranscodeCap(1)
-	t.Cleanup(sessions.Close)
-	entered, release := make(chan struct{}), make(chan struct{})
-	unblock := sync.OnceFunc(func() { close(release) })
-	t.Cleanup(unblock)
-	secure := testEncryptedSource(nil)
-	secure.Size = 1
-	secure.Open = func() (io.ReadSeekCloser, error) {
-		return &blockedLiveSource{nopReadSeekCloser{bytes.NewReader([]byte{1})}, entered, release}, nil
-	}
-	key := SessionKey{SessionID: "source-drain", MediaID: "media-a"}
-	path, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00000.m4s")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := g.ActiveTranscodes(); got != 1 {
-		t.Fatalf("ActiveTranscodes after first start = %d, want 1", got)
-	}
-	reader, err := sessions.OpenLiveArtifact(key, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reader.Close()
-	var buf [1]byte
-	if _, err := io.ReadFull(reader, buf[:]); err != nil {
-		t.Fatalf("read before revocation: %v", err)
-	}
-	clientDone := make(chan struct{})
-	go func() {
-		defer close(clientDone)
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Get(<-transcoder.sourceURL)
-		if err == nil {
-			_ = resp.Body.Close()
-		}
-	}()
-	select {
-	case <-entered:
-	case <-clientDone:
-		t.Fatal("source request ended before reaching the blocked Read")
-	case <-time.After(5 * time.Second):
-		t.Fatal("source request never reached Read")
-	}
+	for _, tc := range []struct {
+		name        string
+		stop        string
+		replacement bool
+		duringStop  bool
+	}{
+		{name: "terminate", stop: "terminate"},
+		{name: "preempt", stop: "preempt"},
+		{name: "idle reap", stop: "idle reap"},
+		{name: "close", stop: "close"},
+		{name: "process wait", stop: "process wait"},
+		{name: "terminate replacement while stopping", stop: "terminate", replacement: true, duringStop: true},
+		{name: "terminate replacement after stop", stop: "terminate", replacement: true},
+		{name: "close replacement after stop", stop: "close", replacement: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			transcoder := &sourceReadingTranscoder{sourceURL: make(chan string, 1)}
+			sessions := NewSessions(transcoder, t.TempDir(), nil)
+			g := governor.New()
+			sessions.SetGovernor(g)
+			sessions.SetTranscodeCap(1)
+			t.Cleanup(sessions.Close)
+			entered, release := make(chan struct{}), make(chan struct{})
+			unblock := sync.OnceFunc(func() { close(release) })
+			t.Cleanup(unblock)
+			stopEntered, stopRelease := make(chan struct{}), make(chan struct{})
+			unblockStop := sync.OnceFunc(func() { close(stopRelease) })
+			t.Cleanup(unblockStop)
+			var stoppedProc *ffmpeg.HLSProcess
+			if tc.duringStop {
+				sessions.stopEncoder = func(proc *ffmpeg.HLSProcess) {
+					if proc == stoppedProc {
+						close(stopEntered)
+						<-stopRelease
+					}
+					proc.Stop()
+				}
+			}
 
-	terminated := make(chan int, 1)
-	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
-	waitSessionCondition(t, "artifact reader to close while the source is blocked", func() bool {
-		n, err := reader.ReadAt(buf[:], 0)
-		return n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed)
-	})
-	other := SessionKey{SessionID: "source-drain-other", MediaID: "media-b"}
-	waitSessionCondition(t, "encoder slot and lease to release while the source is blocked", func() bool {
-		return sessions.CanAdmit(other) && g.ActiveTranscodes() == 0
-	})
-	if _, err := encryptedFilePath(sessions, other, testEncryptedSource(nil), 120, -1, false, "720p/seg00000.m4s"); err != nil {
-		t.Fatalf("start second encoder while the first source is blocked: %v", err)
+			secure := testEncryptedSource(nil)
+			secure.Size = 1
+			secure.Open = func() (io.ReadSeekCloser, error) {
+				return &blockedLiveSource{nopReadSeekCloser{bytes.NewReader([]byte{1})}, entered, release}, nil
+			}
+			key := SessionKey{SessionID: "source-drain", MediaID: "media-a"}
+			other := SessionKey{SessionID: "source-drain-other", MediaID: "media-b"}
+			path, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00000.m4s")
+			if err != nil {
+				t.Fatal(err)
+			}
+			session := registeredSession(t, sessions, key)
+			session.mu.Lock()
+			run := session.run
+			stoppedProc = run.proc
+			session.mu.Unlock()
+			if got := g.ActiveTranscodes(); got != 1 || !run.proc.Running() {
+				t.Fatalf("first start: ActiveTranscodes = %d, process started = %v", got, run.proc.Running())
+			}
+
+			reader, err := sessions.OpenLiveArtifact(key, path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+			var buf [1]byte
+			if _, err := io.ReadFull(reader, buf[:]); err != nil {
+				t.Fatalf("read before revocation: %v", err)
+			}
+			clientDone := make(chan struct{})
+			go func() {
+				defer close(clientDone)
+				client := &http.Client{Timeout: 5 * time.Second}
+				resp, err := client.Get(<-transcoder.sourceURL)
+				if err == nil {
+					_ = resp.Body.Close()
+				}
+			}()
+			select {
+			case <-entered:
+			case <-clientDone:
+				t.Fatal("source request ended before reaching the blocked Read")
+			case <-time.After(5 * time.Second):
+				t.Fatal("source request never reached Read")
+			}
+
+			var replacementDone chan error
+			if tc.replacement {
+				replacementDone = make(chan error, 1)
+				go func() {
+					_, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "480p/seg00000.m4s")
+					replacementDone <- err
+				}()
+				if tc.duringStop {
+					select {
+					case <-stopEntered:
+					case <-time.After(5 * time.Second):
+						t.Fatal("replacement never reached Stop")
+					}
+				} else {
+					waitSessionCondition(t, "replacement to stop the encoder", func() bool {
+						sessions.mu.Lock()
+						defer sessions.mu.Unlock()
+						return run.stopped
+					})
+				}
+				if sessions.CanAdmit(other) || g.ActiveTranscodes() != 1 {
+					t.Fatal("attached replacement lost its admission")
+				}
+			}
+
+			stopDone := make(chan error, 1)
+			terminate := func() error {
+				if n := sessions.TerminateSession(key.SessionID); n != 1 {
+					return fmt.Errorf("TerminateSession = %d, want 1", n)
+				}
+				return nil
+			}
+			startOther := func(target *Sessions, priority Priority) error {
+				_, err := target.FilePathShaped(context.Background(), other, "", 120, 1280, 720, false, false,
+					ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, nil,
+					StreamShape{Encrypted: testEncryptedSource(nil)}, priority, "720p/seg00000.m4s")
+				return err
+			}
+			target := sessions
+			switch tc.stop {
+			case "terminate":
+				if tc.replacement {
+					finishesWhileBlocked(t, "TerminateSession during replacement", terminate)
+				} else {
+					go func() { stopDone <- terminate() }()
+				}
+			case "preempt":
+				finishesWhileBlocked(t, "foreground start that preempts the first encoder", func() error {
+					return startOther(sessions, PriorityForeground)
+				})
+			case "idle reap":
+				sessions.mu.Lock()
+				session.lastAccess = sessions.now().Add(-2 * sessionIdleTimeout)
+				sessions.mu.Unlock()
+				go func() {
+					sessions.reap()
+					stopDone <- nil
+				}()
+			case "close":
+				go func() {
+					sessions.Close()
+					stopDone <- nil
+				}()
+				// Shutdown seals this manager. Check its released slot below
+				// and start the next session under the same governor.
+				target = NewSessions(transcoder, t.TempDir(), nil)
+				target.SetGovernor(g)
+				target.SetTranscodeCap(1)
+				t.Cleanup(target.Close)
+			case "process wait":
+				run.proc.Kill()
+			}
+
+			if tc.stop != "process wait" {
+				waitSessionCondition(t, "artifact reader to revoke while the source is blocked", func() bool {
+					n, err := reader.ReadAt(buf[:], 0)
+					return n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed)
+				})
+			}
+			if tc.duringStop {
+				if sessions.CanAdmit(other) || g.ActiveTranscodes() != 1 {
+					t.Fatal("detached run released admission before encoder exit")
+				}
+				unblockStop()
+			}
+			if tc.stop != "preempt" {
+				waitSessionCondition(t, "encoder slot and lease to release while the source is blocked", func() bool {
+					sessions.mu.Lock()
+					defer sessions.mu.Unlock()
+					return sessions.liveCount() == 0 && g.ActiveTranscodes() == 0
+				})
+				finishesWhileBlocked(t, "second encoder start", func() error {
+					return startOther(target, PriorityNormal)
+				})
+			}
+			if got := g.ActiveTranscodes(); got != 1 {
+				t.Fatalf("ActiveTranscodes after second start = %d, want 1", got)
+			}
+			if got := transcoder.encryptedStarts(); got != 2 {
+				t.Fatalf("encrypted launches before the source drained = %d, want 2", got)
+			}
+			if _, err := os.Stat(session.dir); err != nil {
+				t.Fatalf("first directory removed before the source drained: %v", err)
+			}
+			select {
+			case err := <-stopDone:
+				t.Fatalf("teardown returned before the source drained: %v", err)
+			case err := <-replacementDone:
+				t.Fatalf("replacement returned before the source drained: %v", err)
+			default:
+			}
+
+			unblock()
+			switch {
+			case tc.replacement:
+				select {
+				case err := <-replacementDone:
+					if !errors.Is(err, ErrSessionEvicted) {
+						t.Fatalf("replacement: got %v, want ErrSessionEvicted", err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("replacement did not finish after the source drained")
+				}
+			case tc.stop == "process wait":
+				if err := terminate(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.stop == "close" || tc.stop == "idle reap" || tc.stop == "terminate" && !tc.replacement {
+				select {
+				case err := <-stopDone:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("teardown did not finish after the source drained")
+				}
+			}
+			waitSessionCondition(t, "directory removal after the source drained", func() bool {
+				_, err := os.Stat(session.dir)
+				return errors.Is(err, os.ErrNotExist)
+			})
+			<-clientDone
+		})
 	}
-	if got := g.ActiveTranscodes(); got != 1 {
-		t.Fatalf("ActiveTranscodes after second start = %d, want 1", got)
-	}
-	select {
-	case n := <-terminated:
-		t.Fatalf("TerminateSession returned %d before the endpoint drained", n)
-	default:
-	}
-	unblock()
-	select {
-	case n := <-terminated:
-		if n != 1 {
-			t.Fatalf("TerminateSession = %d, want 1", n)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("TerminateSession did not return after the source drained")
-	}
-	<-clientDone
 }
 
 // scriptedTranscoder runs a real child process per start (so the reaper and
@@ -433,9 +585,9 @@ func TestSessionsReplacementAtCapacityOneKeepsLease(t *testing.T) {
 		t.Fatalf("first start: %v", err)
 	}
 	session := registeredSession(t, sessions, key)
-	session.mu.Lock()
-	lease := session.transcodeLease
-	session.mu.Unlock()
+	sessions.mu.Lock()
+	lease := session.run.lease
+	sessions.mu.Unlock()
 	slow.armed.Store(true)
 	replaced := make(chan error, 1)
 	go func() {
@@ -456,9 +608,9 @@ func TestSessionsReplacementAtCapacityOneKeepsLease(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("replacement did not finish")
 	}
-	session.mu.Lock()
-	replacementLease := session.transcodeLease
-	session.mu.Unlock()
+	sessions.mu.Lock()
+	replacementLease := session.run.lease
+	sessions.mu.Unlock()
 	if lease == nil || lease != replacementLease || g.ActiveTranscodes() != 1 {
 		t.Fatal("replacement did not keep the original transcode lease")
 	}

@@ -2,11 +2,21 @@
 
 ### Requirement: Encoder admission is independent of directory cleanup
 
-For a detached session, the server SHALL release its CPU transcode slot and
-governor transcode lease once the encoder has stopped and its readers have been
-revoked. The server SHALL drain in-progress fragment joins before removing the
-directory and SHALL retain directory ownership and any disk-space reservations
-until directory removal succeeds, including across failed attempts.
+Each encoder run SHALL own its CPU slot and governor lease. An attached
+replacement SHALL transfer both to the next run. On detach, the server SHALL
+release both as soon as encoder exit and reader revocation have both occurred.
+The server SHALL drain endpoint work and fragment joins before removing the
+directory and SHALL retain directory ownership and any disk reservations
+until removal succeeds.
+
+#### Scenario: Termination during replacement with a blocked source read
+
+- **WHEN** a session is detached during a rendition replacement and the old
+  encoder has exited and its readers have been revoked while an encrypted
+  source read remains blocked
+- **THEN** at capacity one an unrelated session can start before the read
+  completes, termination returns while the starter owns teardown, and
+  directory removal waits for the read to drain
 
 #### Scenario: Fragment join is delayed at the transcode cap
 

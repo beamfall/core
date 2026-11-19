@@ -170,6 +170,12 @@ type encoderRun struct {
 	proc    *ffmpeg.HLSProcess
 	exited  chan struct{}
 	outcome encoderExit // published by closing exited
+	// Sessions.mu protects the run's admission and process-exit state. During
+	// a replacement the stopped run can hand its admission to the next run.
+	slot      bool
+	lease     *governor.TranscodeLease
+	stopped   bool
+	replacing bool
 	// waiting counts the requests currently waiting on this run's artifacts;
 	// the stall watchdog only acts while it is non-zero.
 	waiting atomic.Int32
@@ -232,7 +238,7 @@ const (
 
 type hlsSession struct {
 	// Lock order is startMu, then mu, then Sessions.mu. The manager's lock
-	// protects admission (hasSlot, startPending, priority, lastAccess) and
+	// protects admission (startPending, priority, lastAccess) and
 	// playback observations (started, deliveredRung, resumeSeconds).
 	// mu protects encoder and source-end state and admission of fragment joins.
 	startMu  sync.Mutex
@@ -286,11 +292,11 @@ type hlsSession struct {
 	// viewer is being served until the session ends.
 	deliveredRung string
 	proc          *ffmpeg.HLSProcess
-	// A start reserves its slot and lease through spawn or replacement. If it
-	// gets detached while pending, the starter owns the final teardown.
-	hasSlot      bool
-	startPending bool
-	baseSegment  int
+	// A pending starter owns teardown if the session is detached. Once its
+	// readers have been revoked, a stopped run can release its admission.
+	startPending   bool
+	readersRevoked bool
+	baseSegment    int
 	// frontier caches the highest produced segment for the current
 	// (proc, baseSegment) generation so the common seek-lookahead check needs no
 	// syscall under the lock. It only ever advances forward within a generation
@@ -315,12 +321,8 @@ type hlsSession struct {
 	// least once. It remains true after process exit/reap so later misses use the
 	// post-seek budget rather than being misclassified as first start.
 	started bool
-	// transcodeLease is acquired before an FFmpeg launch so generation yields
-	// when the session commits to spawning. It is carried across in-place
-	// replacements and released on launch-failure rollback, process reap, or
-	// encoder teardown.
-	transcodeLease *governor.TranscodeLease
-	// run is the generation of the current or most recent process (proc).
+	// run is the pending, current, or most recent encoder generation. Writes
+	// hold both mu and Sessions.mu so either lock can protect readers.
 	run *encoderRun
 	// lastCrashed records that the most recent process exit was a crash, so
 	// the next start is a crash restart and draws on crashRestarts.
@@ -538,10 +540,9 @@ type Sessions struct {
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
-	// Detached sessions keep their slots until their encoders stop, and
-	// remain tracked until directory cleanup finishes. Their keys let explicit
-	// termination find teardowns another caller or an in-progress start owns.
-	stopping         int
+	// encoderSlots counts reserved runs, including encoders still stopping.
+	// Detached sessions remain tracked separately until directory cleanup.
+	encoderSlots     int
 	detachedSessions map[*hlsSession]SessionKey
 	// closed is set by Close; once set no session is created.
 	closed bool
@@ -558,18 +559,22 @@ type sessionTeardown struct {
 
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 	for _, t := range teardowns {
-		revokeSession(t.session)
+		s.revokeSession(t.session)
 	}
 	s.drainTeardowns(teardowns)
 }
 
-func revokeSession(session *hlsSession) {
+func (s *Sessions) revokeSession(session *hlsSession) {
 	if session.live != nil {
 		session.live.Revoke()
 	}
 	if liveRun := session.liveRun.Load(); liveRun != nil {
 		liveRun.SignalRevoke()
 	}
+	s.mu.Lock()
+	session.readersRevoked = true
+	s.releaseStoppedRunLocked(session, session.run)
+	s.mu.Unlock()
 }
 
 func (s *Sessions) drainTeardowns(teardowns []sessionTeardown) {
@@ -625,25 +630,16 @@ func (s *Sessions) drainSessionDirs() {
 	}
 }
 
-// stopSession releases the revoked session's CPU slot and governor lease once
-// its encoder has stopped. The caller drains the returned run before cleanup.
+// stopSession withdraws the run and stops its process before the caller drains
+// the remaining work. The detached session still owns its directory.
 func (s *Sessions) stopSession(session *hlsSession) *encoderRun {
 	session.mu.Lock()
-	proc, run := session.proc, session.run
+	run := session.run
 	session.proc = nil
 	session.currentRung = ""
 	session.mu.Unlock()
 
-	s.stop(proc)
-	session.mu.Lock()
-	s.mu.Lock()
-	s.releaseTranscodeLease(session)
-	if session.hasSlot {
-		session.hasSlot = false
-		s.stopping--
-	}
-	s.mu.Unlock()
-	session.mu.Unlock()
+	s.stopRun(session, run)
 	return run
 }
 
@@ -725,6 +721,51 @@ func drainRun(run *encoderRun) {
 	}
 }
 
+func (s *Sessions) stopRun(session *hlsSession, run *encoderRun) {
+	if run == nil {
+		return
+	}
+	run.signalRevoke()
+	s.mu.Lock()
+	stopped := run.stopped
+	s.mu.Unlock()
+	if !stopped {
+		s.stop(run.proc)
+		s.observeRunStop(session, run)
+	}
+}
+
+// observeRunStop can run from either Stop or Wait. A failed launch also
+// reaches it through stopRun, with no process to stop.
+func (s *Sessions) observeRunStop(session *hlsSession, run *encoderRun) {
+	s.mu.Lock()
+	run.stopped = true
+	s.releaseStoppedRunLocked(session, run)
+	s.mu.Unlock()
+}
+
+// releaseStoppedRunLocked is the only path that returns encoder capacity.
+// A live replacement can inherit its predecessor's slot and lease, but a
+// detached replacement loses that hold as soon as revocation and stop meet.
+func (s *Sessions) releaseStoppedRunLocked(session *hlsSession, run *encoderRun) {
+	if run == nil || !run.slot || !run.stopped {
+		return
+	}
+	if session.detached.Load() {
+		if !session.readersRevoked {
+			return
+		}
+	} else if run.replacing {
+		return
+	}
+	run.slot = false
+	s.encoderSlots--
+	if run.lease != nil {
+		run.lease.Release()
+		run.lease = nil
+	}
+}
+
 // stop stops proc and waits for it to exit. Call it without s.mu held.
 func (s *Sessions) stop(proc *ffmpeg.HLSProcess) {
 	if proc == nil {
@@ -796,17 +837,6 @@ func (s *Sessions) beginTranscode() *governor.TranscodeLease {
 	return s.governor.BeginTranscode()
 }
 
-// releaseTranscodeLease releases and clears a session's transcode lease if it
-// holds one. Idempotent per session — the lease's own Release is a sync.Once and
-// the field is cleared — so a launch-failure rollback, a process reaper, and a
-// teardown can each call it without double-counting.
-func (s *Sessions) releaseTranscodeLease(session *hlsSession) {
-	if session.transcodeLease != nil {
-		session.transcodeLease.Release()
-		session.transcodeLease = nil
-	}
-}
-
 // segmentName matches a media segment as FFmpeg and the playlists spell it
 // (seg%05d.m4s): five digits, or more past seg99999 without a leading zero.
 // Capping the digits keeps the number within int, and rejecting padded aliases
@@ -830,7 +860,7 @@ func (s *Sessions) ActiveKeys() []SessionKey {
 	defer s.mu.Unlock()
 	keys := make([]SessionKey, 0, len(s.sessions))
 	for key, session := range s.sessions {
-		if session.hasSlot {
+		if session.run != nil && session.run.slot {
 			keys = append(keys, key)
 		}
 	}
@@ -866,7 +896,7 @@ func (s *Sessions) CanAdmitSession(sessionID store.SessionID, mediaID store.Medi
 func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if session, ok := s.sessions[key]; ok && session.hasSlot {
+	if session := s.sessions[key]; session != nil && session.run != nil && session.run.slot {
 		return true
 	}
 	if s.liveCount() < s.cap {
@@ -875,16 +905,10 @@ func (s *Sessions) CanAdmitPriority(key SessionKey, priority Priority) bool {
 	return s.preemptableLocked(key, priority) != nil
 }
 
-// liveCount counts sessions holding a live FFmpeg process, plus removed
-// sessions whose encoder has not stopped yet. Callers hold mu.
+// liveCount includes reserved starts and detached runs still stopping.
+// Callers hold mu.
 func (s *Sessions) liveCount() int {
-	count := s.stopping
-	for _, session := range s.sessions {
-		if session.hasSlot {
-			count++
-		}
-	}
-	return count
+	return s.encoderSlots
 }
 
 // preemptableLocked picks the session a newcomer at rank priority may evict to
@@ -906,7 +930,7 @@ func (s *Sessions) preemptableLocked(key SessionKey, priority Priority) *Session
 	var victim *SessionKey
 	var oldest time.Time
 	for other, session := range s.sessions {
-		if other == key || !session.hasSlot {
+		if other == key || session.run == nil || !session.run.slot {
 			continue
 		}
 		if session.startPending {
@@ -973,9 +997,6 @@ func (s *Sessions) detachLocked(key SessionKey, session *hlsSession) sessionTear
 	}
 	session.teardownDone = make(chan struct{})
 	s.detachedSessions[session] = key
-	if session.hasSlot {
-		s.stopping++
-	}
 	return sessionTeardown{session: session, pending: session.startPending}
 }
 
@@ -1041,7 +1062,7 @@ func (s *Sessions) beginTermination(match func(SessionKey) bool) func() int {
 	}
 	s.mu.Unlock()
 	for _, session := range detached {
-		revokeSession(session)
+		s.revokeSession(session)
 	}
 	if len(teardowns) != 0 {
 		go s.drainTeardowns(teardowns)
@@ -1713,7 +1734,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	defer func() {
 		session.mu.Unlock()
 		if teardownAfterStart {
-			revokeSession(session)
+			s.revokeSession(session)
 			s.stopAndQueueTeardown(session)
 			<-session.teardownDone
 		}
@@ -1722,24 +1743,24 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		}
 	}()
 
-	s.mu.Lock()
 	if session.detached.Load() {
-		s.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
 	if _, err := os.Stat(path); err == nil {
-		s.mu.Unlock()
+		if session.detached.Load() {
+			return nil, ErrSessionEvicted
+		}
 		return nil, nil
 	}
 	rungDir := filepath.Join(session.dir, rung.ID)
 	if segment == initRequest {
 		if session.proc != nil && session.currentRung == rung.ID {
-			s.mu.Unlock()
 			return session.run, nil // every encoder writes init.mp4 when it starts
 		}
+		s.mu.Lock()
 		segment = session.resumeSegmentLocked(rung)
+		s.mu.Unlock()
 	}
-	s.mu.Unlock()
 	if session.proc != nil && session.currentRung == rung.ID {
 		if session.durationSeconds == 0 {
 			return session.run, nil // linear mode: the running process will reach it
@@ -1769,42 +1790,71 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		s.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
+	previous := session.run
+	replacing := previous != nil && previous.slot
+	if replacing {
+		previous.replacing = true
+		// Withdraw the old process identity before asking it to stop.
+		session.proc = nil
+		session.currentRung = ""
+	}
+	session.startPending = true
+	s.mu.Unlock()
+	session.mu.Unlock()
+	if replacing {
+		s.stopRun(session, previous)
+		drainRun(previous)
+	} else if exited := previous.exitedChan(); exited != nil {
+		// A natural exit can still be finishing its final upload. Let the
+		// reaper drain it gracefully and record the previous run's outcome.
+		<-exited
+	}
+
+	session.mu.Lock()
+	s.mu.Lock()
+	if session.detached.Load() {
+		teardownAfterStart = true
+		s.mu.Unlock()
+		return nil, ErrSessionEvicted
+	}
+	run := &encoderRun{slot: true}
 	var victim *sessionTeardown
-	replaced, previous := session.proc, session.run
-	if replaced == nil {
+	if replacing {
+		// Move the admission without letting a competing start or background
+		// generation take it between runs. Detach is serialized by s.mu.
+		run.lease = previous.lease
+		previous.slot = false
+		previous.lease = nil
+	} else {
 		if session.transcodeFailed {
+			session.startPending = false
 			s.mu.Unlock()
 			return nil, ErrTranscodeFailed
 		}
 		if session.lastCrashed && !session.takeRestartLocked(s.now()) {
+			session.startPending = false
 			s.mu.Unlock()
 			return nil, errEncoderFailing
 		}
 		var err error
 		if victim, err = s.admitLocked(key, session.priority, session.degraded); err != nil {
+			session.startPending = false
 			s.mu.Unlock()
 			return nil, err
 		}
-		session.hasSlot = true
-		session.transcodeLease = s.beginTranscode()
+		s.encoderSlots++
+		run.lease = s.beginTranscode()
 	}
-	// Withdraw the old encoder's identity before stopping it. Its reaper
-	// cannot release the slot or lease that now belongs to the replacement.
-	session.proc = nil
-	session.currentRung = ""
-	session.startPending = true
+	session.run = run
 	s.mu.Unlock()
 	session.mu.Unlock()
-	previous.signalRevoke()
 	if victim != nil {
-		revokeSession(victim.session)
+		s.revokeSession(victim.session)
 		// Wait for the revoked victim's encoder to stop before launching.
 		// Its run and directory drain independently of the new encoder.
 		run := s.stopSession(victim.session)
 		go s.drainAndQueueSessionDir(victim.session, run)
 	}
-	s.stop(replaced)
-	drainRun(previous)
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
 	var liveRun *encderiv.LiveRun
@@ -1826,7 +1876,11 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	} else {
 		proc, err = s.transcoder.StartHLS(procCtx, session.src, rungDir, session.rendition(rung))
 	}
-	run := &encoderRun{proc: proc, live: liveRun}
+	run.proc, run.live = proc, liveRun
+	if err != nil {
+		s.stopRun(session, run)
+		drainRun(run)
+	}
 	session.mu.Lock()
 	s.mu.Lock()
 	if session.detached.Load() {
@@ -1834,20 +1888,16 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		// responsibility for any encoder that launched before seeing detach.
 		// Keep startPending set until cleanup completes so termination callers
 		// continue to leave the teardown to the starter.
-		session.proc, session.run = proc, run
 		teardownAfterStart = true
 		s.mu.Unlock()
 		return nil, ErrSessionEvicted
 	}
 	session.startPending = false
 	if err != nil {
-		session.hasSlot = false
-		s.releaseTranscodeLease(session)
 		s.mu.Unlock()
 		return nil, err
 	}
 	session.proc = proc
-	session.run = run
 	session.currentRung = rung.ID
 	session.deliveredRung = rung.ID
 	session.baseSegment = segment
@@ -1964,6 +2014,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 	go func() {
 		defer close(run.exited)
 		waitErr := run.proc.Wait()
+		s.observeRunStop(session, run)
 		if run.live != nil {
 			// The token lives exactly as long as the process, plus the time
 			// to store the uploads it sent before exiting.
@@ -2005,9 +2056,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		if live && session.proc == run.proc {
 			session.proc = nil
 			session.currentRung = ""
-			session.hasSlot = false
 			session.lastCrashed = outcome == exitCrashed || outcome == exitStalled
-			s.releaseTranscodeLease(session)
 			switch {
 			case wroteSegment:
 				session.failedRuns = 0
@@ -2304,7 +2353,7 @@ func (s *Sessions) Close() {
 	teardowns, detached := s.detachMatchingLocked(func(SessionKey) bool { return true })
 	s.mu.Unlock()
 	for _, session := range detached {
-		revokeSession(session)
+		s.revokeSession(session)
 	}
 	s.keyframes.close()
 	s.drainTeardowns(teardowns)

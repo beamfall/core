@@ -5,3 +5,5 @@
 - [x] Verify foreground admission during a blocked join and background
   generation during directory cleanup. Preserve retry-owned directories
   during an orphan purge.
+- [x] Verify run-owned admission across stop paths that drain a blocked
+  encrypted source read, including detach during replacement.
