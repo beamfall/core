@@ -13,10 +13,10 @@ export const settingsHelp2Strings = {
       "Extra tools you can switch on or off for the whole server. Features marked as detected are found automatically and cannot be switched.",
     capabilityConversion: "File conversion",
     capabilityConversionTip:
-      "Lets you convert media files to other formats. Turning this off hides Manage → Convert and blocks new conversion requests.",
+      "Turning this off blocks retries of conversion jobs. While this is off, Manage hides Convert during an Admin Session.",
     capabilityRename: "Rename files",
     capabilityRenameTip:
-      "Lets you rename files on disk, individually or with a naming pattern. Turning this off hides Manage → Rename and blocks new file rename requests.",
+      "Turning this off blocks single and batch renames. While this is off, Manage hides Rename during an Admin Session.",
     capabilityShareMount: "Network shares",
     capabilityShareMountTip:
       "Whether this server can mount network shares (SMB or NFS) for libraries. It is detected from the operating system automatically, so there is nothing to switch.",
@@ -56,10 +56,10 @@ export const settingsHelp2Strings = {
       "Des outils supplémentaires à activer ou désactiver pour tout le serveur. Les fonctions marquées comme détectées sont trouvées automatiquement et ne peuvent pas être modifiées.",
     capabilityConversion: "Conversion de fichiers",
     capabilityConversionTip:
-      "Permet de convertir les fichiers multimédias dans d’autres formats. Désactiver cette option masque Gérer → Convertir et bloque les nouvelles demandes de conversion.",
+      "Désactiver cette option empêche de relancer les tâches de conversion. Lorsque cette option est désactivée, Gérer masque Convertir pendant une session administrateur.",
     capabilityRename: "Renommer les fichiers",
     capabilityRenameTip:
-      "Permet de renommer les fichiers sur le disque, un par un ou selon un modèle. Désactiver cette option masque Gérer → Renommer et bloque les nouvelles demandes de renommage.",
+      "Désactiver cette option bloque le renommage individuel et par lot. Lorsque cette option est désactivée, Gérer masque Renommer pendant une session administrateur.",
     capabilityShareMount: "Partages réseau",
     capabilityShareMountTip:
       "Indique si ce serveur peut monter des partages réseau (SMB ou NFS) pour les bibliothèques. C’est détecté automatiquement depuis le système, il n’y a donc rien à modifier.",
@@ -98,10 +98,10 @@ export const settingsHelp2Strings = {
       "Zusätzliche Werkzeuge, die Sie für den ganzen Server ein- oder ausschalten können. Als erkannt markierte Funktionen werden automatisch gefunden und lassen sich nicht umschalten.",
     capabilityConversion: "Dateiumwandlung",
     capabilityConversionTip:
-      "Wandelt Mediendateien in andere Formate um. Das Ausschalten blendet Verwalten → Umwandeln aus und blockiert neue Umwandlungsaufträge.",
+      "Das Ausschalten verhindert, dass Umwandlungsaufträge erneut gestartet werden. Solange die Option ausgeschaltet ist, blendet Verwalten den Eintrag Umwandeln in einer Admin-Sitzung aus.",
     capabilityRename: "Dateien umbenennen",
     capabilityRenameTip:
-      "Benennt Dateien auf dem Datenträger einzeln oder nach einem Muster um. Das Ausschalten blendet Verwalten → Umbenennen aus und blockiert neue Anfragen zum Umbenennen.",
+      "Das Ausschalten blockiert das einzelne und stapelweise Umbenennen. Solange die Option ausgeschaltet ist, blendet Verwalten den Eintrag Umbenennen in einer Admin-Sitzung aus.",
     capabilityShareMount: "Netzwerkfreigaben",
     capabilityShareMountTip:
       "Ob dieser Server Netzwerkfreigaben (SMB oder NFS) für Bibliotheken einbinden kann. Das wird automatisch am Betriebssystem erkannt, es gibt also nichts umzuschalten.",
@@ -140,10 +140,10 @@ export const settingsHelp2Strings = {
       "Herramientas adicionales que puedes activar o desactivar para todo el servidor. Las funciones marcadas como detectadas se encuentran automáticamente y no se pueden cambiar.",
     capabilityConversion: "Conversión de archivos",
     capabilityConversionTip:
-      "Permite convertir archivos multimedia a otros formatos. Al desactivar esta opción se oculta Gestionar → Convertir y se bloquean las nuevas solicitudes de conversión.",
+      "Al desactivar esta opción se impide reintentar las tareas de conversión. Mientras esta opción esté desactivada, Gestionar oculta Convertir durante una sesión de administrador.",
     capabilityRename: "Renombrar archivos",
     capabilityRenameTip:
-      "Permite renombrar archivos en el disco, uno a uno o con un patrón. Al desactivar esta opción se oculta Gestionar → Renombrar y se bloquean las nuevas solicitudes de cambio de nombre.",
+      "Al desactivar esta opción se bloquea el cambio de nombre individual y por lotes. Mientras esta opción esté desactivada, Gestionar oculta Renombrar durante una sesión de administrador.",
     capabilityShareMount: "Recursos compartidos de red",
     capabilityShareMountTip:
       "Si este servidor puede montar recursos compartidos de red (SMB o NFS) para las bibliotecas. Se detecta automáticamente desde el sistema operativo, así que no hay nada que cambiar.",
@@ -181,10 +181,10 @@ export const settingsHelp2Strings = {
       "Ferramentas extras que você pode ativar ou desativar para todo o servidor. Recursos marcados como detectados são encontrados automaticamente e não podem ser alterados.",
     capabilityConversion: "Conversão de arquivos",
     capabilityConversionTip:
-      "Permite converter arquivos de mídia para outros formatos. Desativar esta opção oculta Gerenciar → Converter e bloqueia novas solicitações de conversão.",
+      "Desativar esta opção impede novas tentativas de tarefas de conversão. Enquanto a opção estiver desativada, Gerenciar oculta Converter durante uma sessão de administrador.",
     capabilityRename: "Renomear arquivos",
     capabilityRenameTip:
-      "Permite renomear arquivos no disco, um por vez ou seguindo um padrão. Desativar esta opção oculta Gerenciar → Renomear e bloqueia novas solicitações de renomeação.",
+      "Desativar esta opção bloqueia a renomeação individual e em lote. Enquanto a opção estiver desativada, Gerenciar oculta Renomear durante uma sessão de administrador.",
     capabilityShareMount: "Compartilhamentos de rede",
     capabilityShareMountTip:
       "Se este servidor pode montar compartilhamentos de rede (SMB ou NFS) para bibliotecas. É detectado automaticamente pelo sistema operacional, então não há nada para alterar.",

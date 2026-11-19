@@ -8,7 +8,6 @@ import (
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
-	"github.com/beamfall/core/internal/workflow/convert"
 )
 
 // File-operation resolvers (ADR-0009 §5–6): preview-first organize, move, and
@@ -337,45 +336,10 @@ func (h *Handler) requireWorkflowCapability(ctx context.Context, id string) erro
 	if enabled, configured := states[id]; configured && !enabled {
 		return &l10n.Error{
 			Key: l10n.WorkflowCapabilityDisabled,
-			Err: reasonedClientError{
-				message: clientError("This workflow is disabled in Console → Optional features."),
-				reason:  ErrorReasonCapabilityDisabled,
-			},
+			Err: clientError("This workflow is disabled in Console → Optional features."),
 		}
 	}
 	return nil
-}
-
-func (h *Handler) enqueueConvertJob(ctx context.Context, scope auth.Scope, req request) (JobInfo, error) {
-	if err := h.requireWorkflowCapability(ctx, "conversion"); err != nil {
-		return JobInfo{}, err
-	}
-	libraryID := store.LibraryID(trimmedVariable(req, "libraryID"))
-	path := stringVar(req, "srcPath")
-	profile := trimmedVariable(req, "profile")
-	filter := scope.LibraryFilter()
-	// Check the source before queueing. The worker validates it again under
-	// the caller's saved LibraryFilter and owns all file changes.
-	path, _, _, err := h.store.ResolveManagedMediaFile(ctx, libraryID, path, filter)
-	if err != nil {
-		return JobInfo{}, err
-	}
-	encrypted, err := h.store.LibraryEncrypted(ctx, libraryID)
-	if err != nil {
-		return JobInfo{}, err
-	}
-	if encrypted {
-		return JobInfo{}, store.ValidationError("managed conversion is unavailable for encrypted libraries")
-	}
-	job, err := convert.NewConvertJob(libraryID, path, profile, filter, time.Now().UTC())
-	if err != nil {
-		return JobInfo{}, err
-	}
-	created, err := h.store.EnqueueJob(ctx, job)
-	if err != nil {
-		return JobInfo{}, err
-	}
-	return h.jobInfo(ctx, scope, created), nil
 }
 
 func (h *Handler) renameManagedPath(ctx context.Context, scope auth.Scope, req request) (ManagedPathInfo, error) {

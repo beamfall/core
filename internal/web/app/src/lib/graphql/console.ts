@@ -6,7 +6,7 @@
 // Every query/mutation string is copied VERBATIM from internal/web/static/app.js
 // (contract-tested server-side).
 
-import { graphql } from "@/lib/api";
+import { type GraphQLOptions, graphql } from "@/lib/api";
 import type {
   AccessScheduleInfo,
   AccessWindowInput,
@@ -602,26 +602,17 @@ const CAPABILITY_STATES_QUERY =
  * operator's Workflow toggles applied. Probe-derived capabilities report
  * `enabled:false, reason:probe-absent` and `flippable:false` (auto-detected,
  * never operator-flipped). Suppressed entirely on App Store binaries. */
-export async function fetchCapabilityStates(signal?: AbortSignal): Promise<CapabilityStateInfo[]> {
+export async function fetchCapabilityStates(
+  signal?: AbortSignal,
+  options?: GraphQLOptions,
+): Promise<CapabilityStateInfo[]> {
   const data = await graphql<{ capabilityStates: CapabilityStateInfo[] }>(
     CAPABILITY_STATES_QUERY,
     {},
     signal,
+    options,
   );
   return data.capabilityStates;
-}
-
-/** Manager view of the same persisted workflow state used by the Console. */
-export async function fetchWorkflowCapabilityStates(
-  signal?: AbortSignal,
-): Promise<CapabilityStateInfo[]> {
-  const data = await graphql<{ workflowCapabilityStates: CapabilityStateInfo[] }>(
-    "query WorkflowCapabilityStates { workflowCapabilityStates { id kind enabled flippable } }",
-    {},
-    signal,
-    { adminUnlock: false },
-  );
-  return data.workflowCapabilityStates;
 }
 
 const SET_CAPABILITY_ENABLED_MUTATION =

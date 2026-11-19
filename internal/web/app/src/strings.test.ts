@@ -124,7 +124,41 @@ const SHIPPED = new Set(
 // updated for the CORE-2503 director and writer labels as plural messages (CORE-2545).
 // merged with the CORE-2568 browse toolbar search, Filters and Sort copy.
 // updated for CORE-2572 first-start duration and attempt labels.
-// Re-record after intentional catalog changes with npm run strings:record.
+// updated for the CORE-2453 workflow capability tips.
+const BASE_SERIALIZED_LENGTH = 902_465;
+const BASE_REGISTRY_SHA256 = "1d2706ea8c44330d60616e2341553437fb95bd6d93fd7ef8937d3331142f181e";
+const BASE_KEY_ORDER_SHA256 = "934a6d0c206bb0d6b3cae306f6e33e8fb5c286b9635c4e228261576143ea6a8b";
+const BASE_PLACEHOLDER_SHA256 = "73a4d6194739567d242eec19fcc22077371687450c42d50e07b2f82c8138466e";
+const BASE_CATALOGS = {
+  en: {
+    partialCount: 2_932,
+    partialSha256: "7899273130934fe45157bd837388cded67ce68e29a69465d1000929b258e81df",
+    resolvedSha256: "dda912531f6f53b4d0c39316ff3a21abfb5020f3b037b40a694c888d7a8e2dd2",
+  },
+  fr: {
+    partialCount: 2_932,
+    partialSha256: "3882a4163a788a1ec300016dac855fe1d8eabf68a160d1917dcfc2b154e7f2ce",
+    resolvedSha256: "78e6ad2906a9b1db1d65e73d7b18fee3802d77c5270cc35490098cb52ddc6157",
+  },
+  de: {
+    partialCount: 2_932,
+    partialSha256: "caa878e928ab4b51df909cec3c913dd65cba9dfece24f0298e76a71731601286",
+    resolvedSha256: "5e97494a5556511dfb6451f58e742201f1af46a2320db2cff50f258f0bca37ef",
+  },
+  es: {
+    partialCount: 2_932,
+    partialSha256: "af678107f967bd31dbd60a7101adaed39140fddf124e6e7cc4b68ec6db68016d",
+    resolvedSha256: "c951bfb10b4ee96efad386750db62306c80f5a9de950d39e2540c465d4fbe824",
+  },
+  pt: {
+    partialCount: 2_932,
+    partialSha256: "8694df0650dfae3ac74f406faae535f4b25f12540261deabf3f4c765e1bc7b76",
+    resolvedSha256: "8396f8fc6b2a80ddd04cb1835d24d23a49750a320d73b958a0f5e1c504fc4f38",
+  },
+} as const satisfies Record<
+  Locale,
+  { partialCount: number; partialSha256: string; resolvedSha256: string }
+>;
 
 function sha256(serialized: string): string {
   return createHash("sha256").update(serialized).digest("hex");
@@ -208,72 +242,27 @@ function placeholderInventory(table: StringTable): Record<string, string[]> {
 }
 
 describe("localized string assembly", () => {
-  it("preserves the catalog baselines", () => {
+  it("matches the pre-split JSON serialization exactly", () => {
     const serialized = JSON.stringify(STRINGS);
-    const englishKeys = Object.keys(en);
-    const catalogBaselines = LOCALES.map((locale) => {
-      const partial = PARTIAL_CATALOGS[locale];
-      return {
-        locale,
-        partialCount: Object.keys(partial).length,
-        partialSha256: sha256(sortedSerialization(partial)),
-        resolvedSha256: sha256(JSON.stringify(STRINGS[locale])),
-      };
-    });
 
-    expect({
-      serializedLength: serialized.length,
-      registrySha256: sha256(serialized),
-      keyOrderSha256: sha256(JSON.stringify(englishKeys)),
-      placeholderSha256: sha256(JSON.stringify(placeholderInventory(STRINGS.en))),
-      catalogBaselines,
-    }).toMatchInlineSnapshot(`
-      {
-        "catalogBaselines": [
-          {
-            "locale": "en",
-            "partialCount": 2932,
-            "partialSha256": "3a9800846ed3576a3e26bd015720c8b39fc3d56f2a1f3a7095b5f878225a06c5",
-            "resolvedSha256": "4502af8c91b3d68a26dc8ddb9547586b91af7ee47c02185776075b77c48c0e8d",
-          },
-          {
-            "locale": "fr",
-            "partialCount": 2932,
-            "partialSha256": "d2584ffb91a1c4fe88f9a0c7fe0d20d3318c242e1ea287cc0abea07727424f3e",
-            "resolvedSha256": "fbb4879229cfe4ced73ccc81b5a8dbf68f60f019b9cb6cd8c034fc2adb44053c",
-          },
-          {
-            "locale": "de",
-            "partialCount": 2932,
-            "partialSha256": "1b33bcd94bc35bd18888be3cecb97d9acb23c8aa11a7b54ce07ad8aa7c0e84c8",
-            "resolvedSha256": "2937fafe3320dcb5e50c629ec13cf53d60e89367d59921679a48f851d36fb535",
-          },
-          {
-            "locale": "es",
-            "partialCount": 2932,
-            "partialSha256": "d93ec648b0d205ccadf2e53e1601768b42948b2e5e2c6383c8c4387313956876",
-            "resolvedSha256": "60c9b68e58e73bcdb537ba4508071cc8b7210c5343ab5ae047e92e9660a106a8",
-          },
-          {
-            "locale": "pt",
-            "partialCount": 2932,
-            "partialSha256": "4ac62bfff16615f7377938e7602dba8759c740fe1edcdfa873b51623c839f6a7",
-            "resolvedSha256": "b22de26696225ef371411677579f87c6d6c4c495375192e349aaf52cb7614bd7",
-          },
-        ],
-        "keyOrderSha256": "934a6d0c206bb0d6b3cae306f6e33e8fb5c286b9635c4e228261576143ea6a8b",
-        "placeholderSha256": "73a4d6194739567d242eec19fcc22077371687450c42d50e07b2f82c8138466e",
-        "registrySha256": "e2e24fc4c344552ec49962b7b6d92530425197f23b99155f541bf09de5866592",
-        "serializedLength": 902423,
-      }
-    `);
+    expect(serialized).toHaveLength(BASE_SERIALIZED_LENGTH);
+    expect(sha256(serialized)).toBe(BASE_REGISTRY_SHA256);
   });
 
-  it("preserves locale membership and key insertion order", () => {
-    const englishKeys = Object.keys(en);
+  it("preserves locale membership, key insertion order, and catalog values", () => {
+    const englishKeys = Object.keys(en) as StringKey[];
+
     expect(Object.keys(STRINGS)).toEqual(LOCALES);
+    expect(sha256(JSON.stringify(englishKeys))).toBe(BASE_KEY_ORDER_SHA256);
+
     for (const locale of LOCALES) {
+      const baseline = BASE_CATALOGS[locale];
+      const partial = PARTIAL_CATALOGS[locale];
+
+      expect(Object.keys(partial)).toHaveLength(baseline.partialCount);
+      expect(sha256(sortedSerialization(partial))).toBe(baseline.partialSha256);
       expect(Object.keys(STRINGS[locale])).toEqual(englishKeys);
+      expect(sha256(JSON.stringify(STRINGS[locale]))).toBe(baseline.resolvedSha256);
     }
   });
 
@@ -307,6 +296,7 @@ describe("localized string assembly", () => {
   it("preserves placeholder names and order in every resolved catalog", () => {
     const englishInventory = placeholderInventory(STRINGS.en);
 
+    expect(sha256(JSON.stringify(englishInventory))).toBe(BASE_PLACEHOLDER_SHA256);
     for (const locale of LOCALES) {
       expect(placeholderInventory(STRINGS[locale])).toEqual(englishInventory);
     }

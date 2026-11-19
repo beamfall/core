@@ -469,7 +469,6 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"endadminsession":                    newFieldHandler("endAdminSession", "endAdminSession", fieldMutation, roleSession, 71),
 	"engagementcounter":                  newFieldHandler("engagementCounter", "engagementCounter", fieldRead, roleSession, 126),
 	"entitiesformedia":                   newFieldHandler("entitiesForMedia", "entitiesForMedia", fieldRead, roleSession, 6),
-	"enqueueconvertjob":                  newFieldHandler("enqueueConvertJob", "enqueueConvertJob", fieldMutation, roleSession|roleManager, 110),
 	"entity":                             newFieldHandler("entity", "entity", fieldRead, roleSession, 11),
 	"entityrelations":                    newFieldHandler("entityRelations", "entityRelations", fieldRead, roleSession, 7),
 	"evictplaybackrenditioncache":        newFieldHandler("evictPlaybackRenditionCache", "evictPlaybackRenditionCache", fieldMutation, roleSession|roleAdmin, 75),
@@ -708,7 +707,6 @@ var fieldHandlerRegistry = map[string]fieldHandler{
 	"watcherstatus":                      newFieldHandler("watcherStatus", "watcherStatus", fieldRead, roleSession|roleAdmin, 105),
 	"watchpartyautoskip":                 newFieldHandler("watchPartyAutoSkip", "watchPartyAutoSkip", fieldMutation, roleSession, 141),
 	"watchpartytransport":                newFieldHandler("watchPartyTransport", "watchPartyTransport", fieldMutation, roleSession, 139),
-	"workflowcapabilitystates":           newFieldHandler("workflowCapabilityStates", "workflowCapabilityStates", fieldRead, roleSession|roleManager, 67),
 	"webhooks":                           newFieldHandler("webhooks", "webhooks", fieldRead, roleSession|roleAdmin, 150),
 	"webhookdeliveries":                  newFieldHandler("webhookDeliveries", "webhookDeliveries", fieldRead, roleSession|roleAdmin, 150),
 	"webhooksettings":                    newFieldHandler("webhookSettings", "webhookSettings", fieldRead, roleSession|roleAdmin, 150),
@@ -2383,14 +2381,15 @@ func dispatchFieldBlock066(dispatch *fieldDispatchContext) response {
 func dispatchFieldBlock067(dispatch *fieldDispatchContext) response {
 	h := dispatch.handler
 	fields := dispatch.fields
-	// Capability runtime state for Manage and the Console, plus the
-	// Admin-Session-gated, audited toggle. The resolvers live in graph_capability.go and are
+	// Capability runtime-gating control surface: the Admin-Session-
+	// gated read of capability runtime state + the audited, attributed Workflow-
+	// capability toggle. The actual resolvers live in graph_capability.go and are
 	// compiled OUT on an App Store binary (graph_capability_appstore.go), where
 	// the fields are also never registered — so they are rejected as unknown top-
 	// level fields before reaching execute() (not advertised, not reachable —
 	// invariant 8). The literal fields[...] indexes below keep the dispatch
 	// visible to the action-registry conformance gate.
-	if fields["capabilitystates"] || fields["workflowcapabilitystates"] || fields["setcapabilityenabled"] {
+	if fields["capabilitystates"] || fields["setcapabilityenabled"] {
 		if resp, handled := h.dispatchCapabilityControl(dispatch); handled {
 			if len(resp.Errors) > 0 {
 				return resp
@@ -3369,7 +3368,6 @@ func dispatchFieldBlock110(dispatch *fieldDispatchContext) response {
 	// batch-undo envelope where writes apply. Manager-role gated like the other
 	// Console curation controls. Self-contained group.
 	if fields["foldertree"] || fields["createmanagedfolder"] || fields["renamemanagedpath"] || fields["batchrenamemanagedpaths"] ||
-		fields["enqueueconvertjob"] ||
 		fields["movemanagedpath"] || fields["deletemanagedpath"] || fields["restoremanagedpath"] ||
 		fields["bulkeditpreview"] || fields["bulkeditapply"] ||
 		fields["organizepreview"] || fields["organizeapply"] ||
@@ -3396,12 +3394,6 @@ func dispatchFieldBlock110(dispatch *fieldDispatchContext) response {
 		if fields["batchrenamemanagedpaths"] {
 			result, err := h.batchRenameManagedPaths(ctx, scope, req)
 			if resp := resolveField(dispatch, "batchrenamemanagedpaths", result, err); len(resp.Errors) > 0 {
-				return resp
-			}
-		}
-		if fields["enqueueconvertjob"] {
-			job, err := h.enqueueConvertJob(ctx, scope, req)
-			if resp := resolveField(dispatch, "enqueueconvertjob", job, err); len(resp.Errors) > 0 {
 				return resp
 			}
 		}

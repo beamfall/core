@@ -2,28 +2,38 @@
 
 ### Requirement: File workflows honor their persisted capability setting
 
-The server SHALL check the persisted File conversion and Rename files settings
-before admitting or retrying a conversion or applying a single or batch rename.
-Disabling a workflow SHALL take effect on subsequent requests without a restart.
+The server SHALL check the persisted File conversion setting before retrying a
+conversion with `jobRetry`. It SHALL check the persisted Rename files setting
+before applying `renameManagedPath` or `batchRenameManagedPaths`. Disabling a
+workflow SHALL take effect on subsequent requests without a restart. These
+operations SHALL use the client-core-wire 2.37.0 schema and error vocabulary.
 
-#### Scenario: Disabled workflow refuses a new operation
+#### Scenario: A disabled workflow refuses a request
 
-- **WHEN** a manager submits a conversion or rename request after the corresponding setting is disabled
-- **THEN** the server returns a GraphQL `CONFLICT` with reason `CAPABILITY_DISABLED` before adding a job or mutating files
+- **WHEN** an authorized caller retries a conversion or submits a single or batch rename while the corresponding workflow is disabled
+- **THEN** the server returns the existing GraphQL `CONFLICT` code with a localized message before adding a job or mutating files
+- **AND** Console Operations displays the localized message when a conversion retry is refused
 
-#### Scenario: Enabled workflow accepts new requests
+#### Scenario: A reenabled workflow accepts requests
 
-- **WHEN** a manager reenables a workflow and submits a valid request
-- **THEN** the server admits the request through the conversion queue or managed rename operation
+- **WHEN** an authorized caller submits a valid request after the workflow is reenabled
+- **THEN** the existing retry or rename operation proceeds
 
-### Requirement: Manage shows available workflow pages
+### Requirement: Manage uses the existing admin capability read
 
-Manage SHALL use the same workflow states as the Console to decide if Convert
-and Rename are available. Authorized manager sessions SHALL be able to read
-those workflow states. Changing a setting SHALL require an Admin Session.
+Manage SHALL use `capabilityStates` to determine workflow visibility when the
+current viewer can read it. The background read SHALL leave the current Admin
+Session as it is. If the read is unavailable, Manage SHALL preserve the workflow
+navigation for managers and present the server's refusal when a mutation fails.
 
-#### Scenario: Manage opens with a disabled workflow
+#### Scenario: A manager can read a disabled workflow state
 
-- **WHEN** a manager opens Manage with a workflow disabled
-- **THEN** its page is absent from navigation, including in Advanced view
+- **WHEN** the existing admin read reports a workflow is disabled
+- **THEN** its page is absent from navigation and search, including in Advanced view
 - **AND** a direct visit to the disabled page leads to Libraries
+
+#### Scenario: A manager lacks an Admin Session
+
+- **WHEN** the manager opens Manage without an Admin Session
+- **THEN** Manage leaves the workflow pages and links available without prompting for an unlock to check their status
+- **AND** a refused rename shows the localized server message in the page

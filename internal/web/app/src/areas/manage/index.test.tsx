@@ -5,12 +5,8 @@ import { type ReactNode, useEffect } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
-import {
-  createLibrary,
-  fetchLibraries,
-  fetchPlugins,
-  fetchWorkflowCapabilityStates,
-} from "@/lib/graphql";
+import { ApiError } from "@/lib/api";
+import { createLibrary, fetchCapabilityStates, fetchLibraries, fetchPlugins } from "@/lib/graphql";
 import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { MENU_PAGES } from "@/lib/settingsIndex";
@@ -35,7 +31,7 @@ vi.mock("@/lib/graphql", () => ({
   createLibrary: vi.fn(),
   createManagedFolder: vi.fn(),
   deleteManagedPath: vi.fn(),
-  fetchWorkflowCapabilityStates: vi.fn(),
+  fetchCapabilityStates: vi.fn(),
   fetchFolderTree: vi.fn(),
   fetchLibraries: vi.fn(),
   fetchPlugins: vi.fn(),
@@ -95,7 +91,7 @@ function workflowStates(conversion = true, rename = true): CapabilityStateInfo[]
 }
 
 beforeEach(() => {
-  vi.mocked(fetchWorkflowCapabilityStates).mockResolvedValue(workflowStates());
+  vi.mocked(fetchCapabilityStates).mockResolvedValue(workflowStates());
 });
 
 function LocationProbe({ paths }: { paths: string[] }) {
@@ -278,7 +274,7 @@ describe("Manage navigation", () => {
     "hides disabled $label in Advanced navigation and search and redirects its URL",
     async ({ slug, url, label, other, states }) => {
       const pending = deferred<typeof states>();
-      vi.mocked(fetchWorkflowCapabilityStates).mockReturnValueOnce(pending.promise);
+      vi.mocked(fetchCapabilityStates).mockReturnValueOnce(pending.promise);
       const paths: string[] = [];
       render(manageRouter(url, paths));
 
@@ -298,6 +294,22 @@ describe("Manage navigation", () => {
     },
   );
 
+  it("keeps workflow links and pages available without an Admin Session", async () => {
+    vi.mocked(fetchCapabilityStates).mockRejectedValueOnce(
+      new ApiError("admin session required", 403),
+    );
+    const paths: string[] = [];
+    render(manageRouter("/manage/rename", paths));
+
+    expect(await screen.findByText("Rename workflow")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Rename" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Convert" })).toBeVisible();
+    expect(fetchCapabilityStates).toHaveBeenCalledWith(expect.any(AbortSignal), {
+      adminUnlock: false,
+    });
+    expect(paths).toEqual(["/manage/rename"]);
+  });
+
   it("refreshes visible workflows when returning to Manage", async () => {
     render(manageRouter("/manage/libraries", []));
     const search = screen.getByRole("searchbox");
@@ -306,7 +318,7 @@ describe("Manage navigation", () => {
     const searchLink = '.settings-search-results a[href="/manage/convert"]';
     expect(document.querySelector(searchLink)).toBeVisible();
 
-    vi.mocked(fetchWorkflowCapabilityStates).mockResolvedValueOnce(workflowStates(false, true));
+    vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(false, true));
     await act(async () => window.dispatchEvent(new Event("focus")));
 
     expect(screen.queryByRole("link", { name: "Convert" })).not.toBeInTheDocument();

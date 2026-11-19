@@ -37,7 +37,7 @@ import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { RevealSetting, SettingsMenuIntro } from "@/components/chrome/SettingsMenuIntro";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { setAdminUnlockHandler } from "@/lib/api";
-import { fetchWorkflowCapabilityStates } from "@/lib/graphql";
+import { fetchCapabilityStates } from "@/lib/graphql";
 import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
@@ -251,12 +251,14 @@ const MANAGE_LOCK_COPY: AdminGateCopy = {
 // finishes the action the manager asked for, in place and with whatever they
 // had entered still there. Pages that never need an Admin Session are never
 // gated, and each page gets its own lock so leaving one abandons its prompt.
-function ManageAdminLock({ children }: { children: ReactNode }) {
+type ManageAdminLockProps = { children: ReactNode; onUnlock: () => void };
+
+function ManageAdminLock(props: ManageAdminLockProps) {
   const { pathname } = useLocation();
-  return <PageAdminLock key={pathname}>{children}</PageAdminLock>;
+  return <PageAdminLock key={pathname} {...props} />;
 }
 
-function PageAdminLock({ children }: { children: ReactNode }) {
+function PageAdminLock({ children, onUnlock }: ManageAdminLockProps) {
   // null until a request is refused. A refusal that arrives while the gate
   // believes it is open (the session was ended elsewhere) changes the number,
   // which mounts the gate afresh so it reads the session again.
@@ -294,9 +296,12 @@ function PageAdminLock({ children }: { children: ReactNode }) {
     (now: boolean) => {
       prompting.current = !now;
       setUnlocked(now);
-      if (now) settle(true);
+      if (now) {
+        settle(true);
+        onUnlock();
+      }
     },
-    [settle],
+    [onUnlock, settle],
   );
 
   const locked = gate !== null && !unlocked;
@@ -352,13 +357,15 @@ function ManageWorkspace() {
   const t = useT();
   const [advanced] = useAdvancedSettings();
   const [capabilities, setCapabilities] = useState<CapabilityStateInfo[] | null>(null);
+  const [unlockCount, setUnlockCount] = useState(0);
+  const onUnlock = useCallback(() => setUnlockCount((count) => count + 1), []);
   useEffect(() => {
     let active: AbortController | undefined;
     function refresh() {
       active?.abort();
       const request = new AbortController();
       active = request;
-      void fetchWorkflowCapabilityStates(request.signal).then(
+      void fetchCapabilityStates(request.signal, { adminUnlock: false }).then(
         (states) => {
           if (!request.signal.aborted) setCapabilities(states);
         },
@@ -373,22 +380,22 @@ function ManageWorkspace() {
       window.removeEventListener("focus", refresh);
       active?.abort();
     };
-  }, []);
+  }, [unlockCount]);
 
+  // Managers without an Admin Session can still open the pages. Mutations
+  // enforce the persisted setting even if this read is unavailable or stale.
   const enabled = (id: NavItem["capability"]) =>
-    id === undefined || capabilities?.some((state) => state.id === id && state.enabled) === true;
+    !capabilities?.some((state) => state.id === id && !state.enabled);
   const route = currentRoute(pathname);
   const routeTitle = route.text ?? t(route.label);
-  if (route.capability) {
-    if (capabilities === null) {
-      return (
-        <AppShell>
-          <p className="text-sm text-muted-foreground">{t("loading")}</p>
-        </AppShell>
-      );
-    }
-    if (!enabled(route.capability)) return <Navigate to="/manage/libraries" replace />;
+  if (route.capability && capabilities === null) {
+    return (
+      <AppShell>
+        <p className="text-sm text-muted-foreground">{t("loading")}</p>
+      </AppShell>
+    );
   }
+  if (!enabled(route.capability)) return <Navigate to="/manage/libraries" replace />;
 
   return (
     <AppShell>
@@ -423,7 +430,7 @@ function ManageWorkspace() {
         <div className="min-w-0 grow">
           {/* The route's one h1 and its lead; each ManageSection card title below is an h2. */}
           <IconHeading icon={route.icon} title={routeTitle} lead={t(route.lead)} />
-          <ManageAdminLock>
+          <ManageAdminLock onUnlock={onUnlock}>
             <RevealSetting />
             <Routes>
               <Route index element={<Navigate to="/manage/libraries" replace />} />

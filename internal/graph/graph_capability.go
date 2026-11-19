@@ -30,31 +30,25 @@ type CapabilityStateInfo struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
-// registerCapabilityControlFields adds the optional workflow fields to the
+// registerCapabilityControlFields adds the capability-control fields to the
 // dispatcher registries so they participate in the auth gate and schema manifest.
 // On an App Store binary the build-tag sibling makes this a no-op, so the fields
 // are never advertised or reachable.
 func registerCapabilityControlFields() {
 	queryFields["capabilitystates"] = true
-	queryFields["workflowcapabilitystates"] = true
 	mutationFields["setcapabilityenabled"] = true
 	adminFields["capabilitystates"] = true
 	adminFields["setcapabilityenabled"] = true
-	// These fields resolve to the runtime capability-state list, so the nested
+	// Both fields resolve to the runtime capability-state list, so the nested
 	// schema can project them. Registered here (not as a literal) so the App Store
 	// sibling leaves resultTypes free of fields scopedFields does not carry.
 	resultTypes["capabilitystates"] = []CapabilityStateInfo{}
-	resultTypes["workflowcapabilitystates"] = []CapabilityStateInfo{}
 	resultTypes["setcapabilityenabled"] = []CapabilityStateInfo{}
-	if isFlippableWorkflowCapability("conversion") {
-		mutationFields["enqueueconvertjob"] = true
-		resultTypes["enqueueconvertjob"] = JobInfo{}
-	}
 }
 
 // dispatchCapabilityControl resolves the capability-control fields. It returns
 // handled=true when it ran (so execute() routes errors), and a response carrying
-// any error. The caller enforces the access tier for each field.
+// any error. Admin-gating is enforced by the caller.
 func (h *Handler) dispatchCapabilityControl(dispatch *fieldDispatchContext) (response, bool) {
 	handled := false
 	ctx := dispatch.ctx
@@ -70,27 +64,20 @@ func (h *Handler) dispatchCapabilityControl(dispatch *fieldDispatchContext) (res
 	}
 	if fields["capabilitystates"] {
 		handled = true
-		states, err := h.capabilityStates(ctx, true)
+		states, err := h.capabilityStates(ctx)
 		if resp := resolveField(dispatch, "capabilitystates", states, err); len(resp.Errors) > 0 {
-			return resp, true
-		}
-	}
-	if fields["workflowcapabilitystates"] {
-		handled = true
-		states, err := h.capabilityStates(ctx, false)
-		if resp := resolveField(dispatch, "workflowcapabilitystates", states, err); len(resp.Errors) > 0 {
 			return resp, true
 		}
 	}
 	return response{}, handled
 }
 
-// capabilityStates reads the runtime state of compiled-in capabilities,
+// capabilityStates reads the runtime state of every compiled-in capability,
 // applying the operator's persisted Workflow toggles. Probe
 // capabilities are auto-detected and report `enabled:false, reason:probe-absent`
 // when their host probe fails; the Console omits a toggle for them (flippable
 // false).
-func (h *Handler) capabilityStates(ctx context.Context, includeAutomatic bool) ([]CapabilityStateInfo, error) {
+func (h *Handler) capabilityStates(ctx context.Context) ([]CapabilityStateInfo, error) {
 	overrides, err := h.store.CapabilityStates(ctx)
 	if err != nil {
 		return nil, err
@@ -98,9 +85,6 @@ func (h *Handler) capabilityStates(ctx context.Context, includeAutomatic bool) (
 	resolved := capabilities.Resolve(overrides)
 	out := make([]CapabilityStateInfo, 0, len(resolved))
 	for _, s := range resolved {
-		if !includeAutomatic && s.Kind != capabilities.KindWorkflow {
-			continue
-		}
 		out = append(out, CapabilityStateInfo{
 			ID:        s.ID,
 			Kind:      s.Kind,
@@ -140,7 +124,7 @@ func (h *Handler) setCapabilityEnabled(ctx context.Context, scope auth.Scope, re
 	if err := h.logActivity(ctx, scope, store.ActivityCapabilityToggle, "capability", id, ""); err != nil {
 		return nil, err
 	}
-	return h.capabilityStates(ctx, true)
+	return h.capabilityStates(ctx)
 }
 
 // isFlippableWorkflowCapability reports whether id names a compiled-in,

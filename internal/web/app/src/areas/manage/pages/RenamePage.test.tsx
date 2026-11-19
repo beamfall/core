@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import { fetchFolderTree, fetchLibraries } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
 import { batchRenameManagedPaths, undoBatchRename } from "../lib/powertools";
@@ -88,6 +89,22 @@ describe("RenamePage", () => {
     await waitFor(() => expect(screen.getByText("uno.mp4")).toBeInTheDocument());
     // Apply button reflects the single changed file.
     expect(screen.getByRole("button", { name: /^Apply \(1\)$/ })).toBeEnabled();
+  });
+
+  it("shows the server's refusal when renaming is disabled", async () => {
+    const refusal = "This workflow is disabled in Console → Optional features.";
+    vi.mocked(batchRenameManagedPaths).mockRejectedValueOnce(new ApiError(refusal, 200));
+    const user = userEvent.setup();
+    renderPage();
+    await loadFiles(user);
+    await user.type(screen.getByLabelText("Find"), "one");
+    await user.type(screen.getByLabelText("Replace"), "uno");
+    await user.click(screen.getByRole("button", { name: /^Apply \(1\)$/ }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /^Apply \(1\)$/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(refusal);
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
   });
 
   it("applies a journaled batch then undoes it", async () => {

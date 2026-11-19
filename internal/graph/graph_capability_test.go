@@ -17,80 +17,45 @@ import (
 	"github.com/beamfall/core/internal/workflow/convert"
 )
 
-func TestManagerReadsOnlyWorkflowCapabilityStatesWithoutAdminSession(t *testing.T) {
-	handler := newConsoleHandler(t, storetest.Open(t))
-	const body = `{"query":"{ workflowCapabilityStates { id kind enabled } }"}`
-	_, errs := post(t, handler, body, authorizeViewer)
-	if len(errs) != 1 || errs[0].Extensions.Code != ErrorCodeForbidden {
-		t.Fatalf("viewer errors = %#v, want FORBIDDEN", errs)
-	}
-	data, errs := post(t, handler, body, authorizeManager)
-	if len(errs) != 0 {
-		t.Fatalf("manager errors = %#v", errs)
-	}
-	var states []CapabilityStateInfo
-	mustUnmarshal(t, data["workflowCapabilityStates"], &states)
-	if len(states) != 2 || !enabledOf(states, "conversion") || !enabledOf(states, "rename") {
-		t.Fatalf("manager states = %#v, want both default-enabled workflows only", states)
-	}
-	_, errs = post(t, handler, `{"query":"{ capabilityStates { id } }"}`, authorizeManager)
-	if len(errs) != 1 || errs[0].Message != "admin session required" {
-		t.Fatalf("Console capabilityStates errors = %#v, want Admin Session gate", errs)
-	}
-}
-
-func TestConversionCapabilityBlocksEnqueueAndRetry(t *testing.T) {
+func TestConversionCapabilityBlocksRetry(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newConsoleHandler(t, st)
-	root, err := filepath.EvalSymlinks(t.TempDir())
+	openManagerAdminSession(t, st)
+
+	now := time.Now().UTC()
+	job, err := convert.NewConvertJob("library-local", filepath.Join(t.TempDir(), "source.mp4"), "h264-mp4", store.LibraryFilter{AllLibraries: true}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const libraryID = "library-local"
-	if err := st.SetLibraryRoots(t.Context(), libraryID, []string{root}); err != nil {
+	job, err = st.EnqueueJob(t.Context(), job)
+	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "source.mp4")
-	importGraphFile(t, st, libraryID, path, "Source", "0000000045000001")
-	enqueue := workflowMutation(t, `mutation($libraryID:String!,$srcPath:String!,$profile:String!) {
-		enqueueConvertJob(libraryID:$libraryID,srcPath:$srcPath,profile:$profile) { id kind status }
-	}`, map[string]any{"libraryID": libraryID, "srcPath": path, "profile": "h264-mp4"})
-	openManagerAdminSession(t, st)
-	setWorkflowCapability(t, handler, "conversion", false)
+	if err := st.CancelJob(t.Context(), job.ID, now); err != nil {
+		t.Fatal(err)
+	}
 
-	_, errs := post(t, handler, enqueue, func(req *http.Request) {
+	setWorkflowCapability(t, handler, "conversion", false)
+	retry := workflowMutation(t, `mutation($id:String!) { jobRetry(id:$id) { id kind status } }`,
+		map[string]any{"id": job.ID})
+	_, errs := post(t, handler, retry, func(req *http.Request) {
 		*req = *req.WithContext(l10n.WithLocale(req.Context(), "de"))
 		authorizeManager(req)
 	})
-	assertCapabilityDisabled(t, errs)
-	if got, want := errs[0].Message, "Dieses Werkzeug ist unter Konsole → Optionale Funktionen deaktiviert."; got != want {
-		t.Errorf("localized refusal = %q, want %q", got, want)
-	}
-	if jobs, err := st.ListJobs(t.Context()); err != nil || len(jobs) != 0 {
-		t.Fatalf("jobs after disabled request = %v, %v", jobs, err)
+	assertCapabilityDisabled(t, errs, "Dieses Werkzeug ist unter Konsole → Optionale Funktionen deaktiviert.")
+	if jobs, err := st.ListJobs(t.Context()); err != nil || len(jobs) != 1 || jobs[0].ID != job.ID || jobs[0].Status != store.JobStatusCanceled {
+		t.Fatalf("jobs after disabled retry = %v, %v", jobs, err)
 	}
 
 	setWorkflowCapability(t, handler, "conversion", true)
-	data, errs := post(t, handler, enqueue, authorizeManager)
+	data, errs := post(t, handler, retry, authorizeManager)
 	if len(errs) != 0 {
-		t.Fatalf("enqueue after enabling: %#v", errs)
+		t.Fatalf("retry after enabling: %#v", errs)
 	}
-	var job JobInfo
-	mustUnmarshal(t, data["enqueueConvertJob"], &job)
-	if job.ID == "" || job.Kind != string(convert.JobKind) || job.Status != string(store.JobStatusQueued) {
-		t.Fatalf("enqueued job = %#v", job)
-	}
-	if err := st.CancelJob(t.Context(), store.JobID(job.ID), time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
-	setWorkflowCapability(t, handler, "conversion", false)
-	retry := workflowMutation(t, `mutation($id:String!) { jobRetry(id:$id) { id status } }`,
-		map[string]any{"id": job.ID})
-	_, errs = post(t, handler, retry, authorizeManager)
-	assertCapabilityDisabled(t, errs)
-	cancelled, err := st.Job(t.Context(), store.JobID(job.ID))
-	if err != nil || cancelled.Status != store.JobStatusCanceled {
-		t.Fatalf("job after disabled retry = %v, %v", cancelled.Status, err)
+	var retried JobInfo
+	mustUnmarshal(t, data["jobRetry"], &retried)
+	if retried.ID == "" || retried.ID == string(job.ID) || retried.Kind != string(convert.JobKind) || retried.Status != string(store.JobStatusQueued) {
+		t.Fatalf("retried job = %#v", retried)
 	}
 }
 
@@ -120,9 +85,12 @@ func TestRenameCapabilityBlocksSingleAndBatchMutations(t *testing.T) {
 	}})
 	openManagerAdminSession(t, st)
 	setWorkflowCapability(t, handler, "rename", false)
+	if err := st.SetSessionAdminUntil(t.Context(), "session-manager", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
 	for _, mutation := range []string{single, batch} {
 		_, errs := post(t, handler, mutation, authorizeManager)
-		assertCapabilityDisabled(t, errs)
+		assertCapabilityDisabled(t, errs, "This workflow is disabled in Console → Optional features.")
 	}
 	for _, path := range []string{singlePath, batchPath} {
 		if _, err := os.Stat(path); err != nil {
@@ -130,6 +98,7 @@ func TestRenameCapabilityBlocksSingleAndBatchMutations(t *testing.T) {
 		}
 	}
 
+	openManagerAdminSession(t, st)
 	setWorkflowCapability(t, handler, "rename", true)
 	for _, mutation := range []string{single, batch} {
 		if _, errs := post(t, handler, mutation, authorizeManager); len(errs) != 0 {
@@ -162,11 +131,11 @@ func setWorkflowCapability(t *testing.T, handler *Handler, id string, enabled bo
 	}
 }
 
-func assertCapabilityDisabled(t *testing.T, errs []graphError) {
+func assertCapabilityDisabled(t *testing.T, errs []graphError, message string) {
 	t.Helper()
 	if len(errs) != 1 || errs[0].Extensions.Code != ErrorCodeConflict ||
-		errs[0].Extensions.Reason != ErrorReasonCapabilityDisabled {
-		t.Fatalf("errors = %#v, want CONFLICT/CAPABILITY_DISABLED", errs)
+		errs[0].Extensions.Reason != "" || errs[0].Message != message {
+		t.Fatalf("errors = %#v, want CONFLICT with message %q", errs, message)
 	}
 }
 

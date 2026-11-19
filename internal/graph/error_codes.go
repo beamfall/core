@@ -80,8 +80,6 @@ const (
 	// Profile the session is no longer bound to (CORE-2177). Nothing was
 	// written; the client drops the write instead of retrying it.
 	ErrorReasonProfileMismatch ErrorReason = "PROFILE_MISMATCH"
-	// ErrorReasonCapabilityDisabled: the operator disabled the requested workflow.
-	ErrorReasonCapabilityDisabled ErrorReason = "CAPABILITY_DISABLED"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -91,7 +89,6 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINRequired,
 		ErrorReasonRevealPINIncorrect,
 		ErrorReasonProfileMismatch,
-		ErrorReasonCapabilityDisabled,
 	}
 }
 
