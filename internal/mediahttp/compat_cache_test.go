@@ -1,6 +1,7 @@
 package mediahttp
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -93,6 +94,79 @@ func TestArtworkCacheEntryIsBoundToDecisionAndSubject(t *testing.T) {
 	handler.Artwork(matchRec, matching)
 	if matchRec.Code != http.StatusNotModified {
 		t.Fatalf("same-decision conditional request = %d, want 304", matchRec.Code)
+	}
+}
+
+func TestDecisionBoundArtworkIgnoresFileDates(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		entity    bool
+		encrypted bool
+	}{
+		{name: "media"},
+		{name: "entity", entity: true},
+		{name: "encrypted media", encrypted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler, svc := newArtworkTestHandler(t)
+			serve := handler.Artwork
+			request := func(slot string) *http.Request { return artworkRequest("media-alpha", slot) }
+			body := "jpeg bytes"
+			var version string
+			var ok bool
+			if tc.entity {
+				upsertTestEntity(t, handler, "library-local", "entity-maker")
+				writeTestEntityPoster(t, svc, "entity-maker")
+				serve = handler.EntityArtwork
+				request = func(slot string) *http.Request { return entityArtworkRequest("entity-maker", slot) }
+				version, ok = svc.EntityArtworkVersion("entity-maker", artwork.SlotPoster)
+				body = "entity jpeg bytes"
+			} else {
+				writeTestPoster(t, svc, "media-alpha")
+				version, ok = svc.ArtworkVersion("media-alpha", artwork.SlotPoster)
+			}
+			if !ok {
+				t.Fatal("poster version is absent")
+			}
+			if tc.encrypted {
+				if err := handler.store.SetLibraryBacking(context.Background(), "library-local", false, true); err != nil {
+					t.Fatalf("SetLibraryBacking: %v", err)
+				}
+				body = "decrypted artwork"
+				handler.SetEncryptedBytes(&fakeEncryptedByteDecryptor{body: []byte(body)})
+			}
+
+			// Capture the file date a client could have cached before this fix.
+			slot := "poster?v=" + version
+			previous := httptest.NewRecorder()
+			serve(previous, request(slot))
+			lastModified := previous.Header().Get("Last-Modified")
+			if previous.Code != http.StatusOK || previous.Body.String() != body || lastModified == "" {
+				t.Fatalf("unbound response = %d %q with Last-Modified %q, want 200, %q and a date", previous.Code, previous.Body.String(), lastModified, body)
+			}
+
+			req := request(slot)
+			req = req.WithContext(WithCompatBinding(req.Context(), "7", "session:session-default", "decision-2"))
+			req.Header.Set("If-Modified-Since", lastModified)
+			rec := httptest.NewRecorder()
+			serve(rec, req)
+			if rec.Code != http.StatusOK || rec.Body.String() != body {
+				t.Fatalf("date-only revalidation = %d %q, want 200 with %q", rec.Code, rec.Body.String(), body)
+			}
+			if got := rec.Header().Get("Last-Modified"); got != "" {
+				t.Fatalf("Last-Modified = %q, want no date validator", got)
+			}
+			etag := rec.Header().Get("ETag")
+			if etag == "" {
+				t.Fatal("bound response is missing its ETag")
+			}
+			req.Header.Set("If-None-Match", etag)
+			matching := httptest.NewRecorder()
+			serve(matching, req)
+			if matching.Code != http.StatusNotModified {
+				t.Fatalf("matching ETag status = %d, want 304", matching.Code)
+			}
+		})
 	}
 }
 

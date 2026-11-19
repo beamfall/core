@@ -363,7 +363,7 @@ func (h *Handler) Assets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.serveLibraryFile(w, r, library, path, name, contentType, "unknown asset",
-		encryptedClassGeneratedAsset, file.ContentFingerprint+"/"+name)
+		encryptedClassGeneratedAsset, file.ContentFingerprint+"/"+name, false)
 }
 
 // Subtitles serves a WebVTT subtitle sidecar for a signed token URL (ADR-0010
@@ -1162,7 +1162,7 @@ func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, gr
 		// The rendition file's immutable identity is the persisted rendition row
 		// id plus the member name within it — never the file path.
 		h.serveLibraryFile(w, r, library, member.String(), filepath.Base(member.rel), w.Header().Get("Content-Type"), "stream unavailable",
-			encryptedClassGeneratedAsset, playback.PrecomputeMemberObjectID(rendition.ID, name))
+			encryptedClassGeneratedAsset, playback.PrecomputeMemberObjectID(rendition.ID, name), false)
 		return
 	}
 	if h.hotSegments != nil && !strings.HasSuffix(name, ".m3u8") {
@@ -1439,7 +1439,8 @@ func (h *Handler) serveArtworkFile(w http.ResponseWriter, r *http.Request, libra
 	if filepath.Ext(path) == ".png" {
 		contentType = "image/png"
 	}
-	h.serveLibraryFile(w, r, library, path, filepath.Base(path), contentType, "unknown artwork", encryptedClassGeneratedAsset, immutableObjectID)
+	_, _, _, bound := CompatBindingFromContext(r.Context())
+	h.serveLibraryFile(w, r, library, path, filepath.Base(path), contentType, "unknown artwork", encryptedClassGeneratedAsset, immutableObjectID, bound)
 }
 
 // serveLibraryFile serves one server-derived library/asset member. The member is
@@ -1448,7 +1449,7 @@ func (h *Handler) serveArtworkFile(w http.ResponseWriter, r *http.Request, libra
 // go out are bound to the same inode. A member whose final component is a symlink
 // is refused here rather than followed — a generated-asset or artwork directory is
 // a server-owned tree, and a link appearing in one is a swap, not a layout.
-func (h *Handler) serveLibraryFile(w http.ResponseWriter, r *http.Request, library store.Library, path, name, contentType, notFoundMessage, objectClass, immutableObjectID string) {
+func (h *Handler) serveLibraryFile(w http.ResponseWriter, r *http.Request, library store.Library, path, name, contentType, notFoundMessage, objectClass, immutableObjectID string, omitModTime bool) {
 	member := rootedFile(path)
 	info, err := statRooted(member)
 	if err != nil {
@@ -1457,6 +1458,13 @@ func (h *Handler) serveLibraryFile(w http.ResponseWriter, r *http.Request, libra
 	}
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
+	}
+	modTime := info.ModTime()
+	if omitModTime {
+		// File dates cannot distinguish compatibility decisions. ServeContent
+		// treats the Unix epoch as unspecified, while serveRooted only falls
+		// back to the file's date for a zero time.
+		modTime = time.Unix(0, 0)
 	}
 	if library.Encrypted {
 		if h.encryptedBytes == nil {
@@ -1468,10 +1476,10 @@ func (h *Handler) serveLibraryFile(w http.ResponseWriter, r *http.Request, libra
 			http.Error(w, notFoundMessage, http.StatusNotFound)
 			return
 		}
-		http.ServeContent(w, r, name, info.ModTime(), bytes.NewReader(plain))
+		http.ServeContent(w, r, name, modTime, bytes.NewReader(plain))
 		return
 	}
-	if err := serveRooted(w, r, name, member, info.ModTime()); err != nil {
+	if err := serveRooted(w, r, name, member, modTime); err != nil {
 		http.Error(w, notFoundMessage, http.StatusNotFound)
 		return
 	}

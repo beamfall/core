@@ -125,21 +125,22 @@ export function Profiles() {
     await refreshRecovery();
   }
 
-  if (profiles.failed) {
-    return (
-      <Section heading="consoleProfilesHeading" lead="accessHelpProfilesLead">
-        <ErrorState message="consoleProfilesUnavailable" />
-      </Section>
-    );
-  }
-
+  const unavailable = profiles.failed && profiles.data === null;
   return (
     <Section heading="consoleProfilesHeading" lead="accessHelpProfilesLead">
       <div className="space-y-6">
-        <CreateProfileForm onCreated={refreshAfterChange} />
+        {profiles.failed && (
+          <div className="space-y-2">
+            <ErrorState message="consoleProfilesUnavailable" />
+            <Button variant="outline" size="sm" onClick={refreshAfterChange}>
+              {t("tryAgain")}
+            </Button>
+          </div>
+        )}
+        {!unavailable && <CreateProfileForm onCreated={refreshAfterChange} />}
 
         {rows.length === 0 ? (
-          <EmptyState message="consoleProfilesEmpty" />
+          !unavailable && <EmptyState message="consoleProfilesEmpty" />
         ) : (
           <div className="space-y-2">
             {rows.length > 1 && (

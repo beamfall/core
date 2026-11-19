@@ -200,6 +200,32 @@ describe("Console Profiles lane", () => {
     expect(rowOrder()).toEqual(["Kid", "Owner", "Salon"]);
   });
 
+  it("preserves an unsaved name through a failed reorder refresh and retry (CORE-2628)", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchProfilesAdmin)
+      .mockResolvedValueOnce(rows)
+      .mockRejectedValueOnce(new Error("temporary read failure"))
+      .mockResolvedValueOnce([rows[1], rows[0], salon]);
+    renderSection();
+    const ownerName = await screen.findByDisplayValue("Owner");
+    await user.type(ownerName, " draft");
+    await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+
+    expect(reorderProfiles).toHaveBeenCalledWith(["p2", "p1"], undefined);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Profiles are unavailable right now.",
+    );
+    expect(rowOrder()).toEqual(["Kid", "Owner draft"]);
+    expect(screen.getByDisplayValue("Owner draft")).toBe(ownerName);
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByDisplayValue("Salon");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(rowOrder()).toEqual(["Kid", "Owner draft", "Salon"]);
+    expect(screen.getByDisplayValue("Owner draft")).toBe(ownerName);
+    expect(reorderProfiles).toHaveBeenCalledTimes(1);
+  });
+
   it("saves one order at a time, ending on the newest one", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchProfilesAdmin)
