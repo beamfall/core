@@ -1,329 +1,33 @@
-CORE-0022 HLS-ENCODE-AHEAD-PACING-1
-Repair round 3 verification PASS on macOS, 2026-11-19
-
-The production Sessions and Runner transcoded real 1080p HEVC to 1080p H.264
-with VideoToolbox. A headless FFmpeg decoder consumed the fragments through
-Sessions.FilePath at playback speed for 60.239 seconds. At the 60-second
-playhead the encoder was in state T with eight published segments ahead.
-The +20-second seek resumed PID 43076, which stopped again with eight ahead.
-
-Commands run on the host in the detached worktree
-
-  export GOCACHE=/tmp/codex-gocache GOWORK=off
-  export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
-  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
-    --arg content /tmp/core0022-r3-manual-retry_test.go \
-    '{Replace:{($test):$content}}' > /tmp/core0022-r3-manual-retry-overlay.json
-  sw_vers
-  uname -m
-  ffmpeg -version | head -1
-  go test -overlay /tmp/core0022-r3-manual-retry-overlay.json ./internal/playback \
-    -run '^TestPacingMacOSReceipt$' -count=1 -v
-
-The playback harness uses /bin/ps -axww -o pid=,stat=,command= to find the
-encoder and /bin/ps -p "$encoder_pid" -o pid=,stat=,comm= to verify its state.
-The host run provides the process inspection and VideoToolbox access denied
-by the worktree sandbox.
-
-Raw output
-
-ProductName:		macOS
-ProductVersion:		27.2.1
-BuildVersion:		26B131
-arm64
-ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers
-=== RUN   TestPacingMacOSReceipt
-source probe:
-codec_name=hevc
-width=1920
-height=1080
-r_frame_rate=60000/1001
-duration=264.767000
-transcode probe: h264,1920,1080
-playhead=0s segment=0 frontier=8 on_disk_ahead=8
-ps: 43076 T    /opt/homebrew/bin/ffmpeg
-wall-clock playback: 60.239s
-playhead=60s segment=15 frontier=23 on_disk_ahead=8
-ps: 43076 T    /opt/homebrew/bin/ffmpeg
-seek: 60s -> 80s (+20s)
-playhead=80s segment=20 frontier=23 on_disk_ahead=3
-ps: 43076 R    /opt/homebrew/bin/ffmpeg
-playhead=80s segment=20 frontier=28 on_disk_ahead=8
-ps: 43076 T    /opt/homebrew/bin/ffmpeg
-decoder final progress:
-frame=4076
-fps=56.07
-stream_0_0_q=-0.0
-bitrate=N/A
-total_size=N/A
-out_time_us=84017267
-out_time_ms=84017267
-out_time=00:01:24.017267
-dup_frames=0
-drop_frames=0
-speed=1.16x
-progress=end
---- PASS: TestPacingMacOSReceipt (102.83s)
-PASS
-ok  	github.com/beamfall/core/internal/playback	103.029s
-
-CORE-0022 HLS-ENCODE-AHEAD-PACING-1
-Repair round 2 follow-up verification PASS on macOS, 2026-11-19
-
-The production Sessions and Runner transcoded real 1080p HEVC to 1080p H.264
-with VideoToolbox. A headless FFmpeg decoder consumed init and media from
-Sessions.FilePath at playback speed for 60.185 seconds. At segment 15 the
-encoder was stopped with eight published segments ahead. A +20-second seek
-to segment 20 resumed the same PID, which stopped again with eight ahead.
-
-The sandbox denied ps. This run used the host and the same detached
-worktree. The test retained the previous playback harness and updated its
-process selector to match the instance-owned FIFO staging directory.
-A concurrent attempt with the Go race suites timed out during encoder
-startup after producing seven segments. The isolated retry increased the
-startup observation window from 20 to 45 seconds.
-
-Commands run
-
-  export GOCACHE=/tmp/codex-gocache GOWORK=off
-  export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
-  sed 's@strings.Contains(row, "/tmp/.encoder-")@strings.Contains(row, "/.beamfall-hls-") || !strings.Contains(row, "/.encoder-")@' \
-    /tmp/core0022-r2-manual_test.go > /tmp/core0022-r3-manual_test.go
-  sed -e 's/120\*time.Second/180*time.Second/' -e 's/20\*time.Second/45*time.Second/' \
-    /tmp/core0022-r3-manual_test.go > /tmp/core0022-r3-manual-retry_test.go
-  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
-    --arg content /tmp/core0022-r3-manual-retry_test.go \
-    '{Replace:{($test):$content}}' > /tmp/core0022-r3-manual-retry-overlay.json
-  sw_vers
-  uname -m
-  ffmpeg -version | head -1
-  go test -overlay /tmp/core0022-r3-manual-retry-overlay.json ./internal/playback \
-    -run '^TestPacingMacOSReceipt$' -count=1 -v
-
-Raw output
-
-ProductName:		macOS
-ProductVersion:		27.2.1
-BuildVersion:		26B131
-arm64
-ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers
-=== RUN   TestPacingMacOSReceipt
-source probe:
-codec_name=hevc
-width=1920
-height=1080
-r_frame_rate=60000/1001
-duration=264.767000
-transcode probe: h264,1920,1080
-playhead=0s segment=0 frontier=8 on_disk_ahead=8
-ps: 85623 T    /opt/homebrew/bin/ffmpeg
-wall-clock playback: 60.185s
-playhead=60s segment=15 frontier=23 on_disk_ahead=8
-ps: 85623 T    /opt/homebrew/bin/ffmpeg
-seek: 60s -> 80s (+20s)
-playhead=80s segment=20 frontier=23 on_disk_ahead=3
-ps: 85623 R    /opt/homebrew/bin/ffmpeg
-playhead=80s segment=20 frontier=28 on_disk_ahead=8
-ps: 85623 T    /opt/homebrew/bin/ffmpeg
-decoder final progress:
-frame=4076
-fps=56.23
-stream_0_0_q=-0.0
-bitrate=N/A
-total_size=N/A
-out_time_us=84017267
-out_time_ms=84017267
-out_time=00:01:24.017267
-dup_frames=0
-drop_frames=0
-speed=1.16x
-progress=end
---- PASS: TestPacingMacOSReceipt (90.95s)
-PASS
-ok  	github.com/beamfall/core/internal/playback	91.151s
-
-CORE-0022 HLS-ENCODE-AHEAD-PACING-1
-Second repair verification PASS on macOS, 2026-11-19
-
-The production Sessions and Runner transcoded a real 1080p HEVC source to
-1080p H.264 with VideoToolbox. A headless FFmpeg decoder consumed the init
-and segments fetched at playback speed for 60 seconds. The encoder stopped
-with eight segments ahead, resumed on a +20-second seek, and stopped again
-at the same lead. All observations used PID 71821.
-
-The managed sandbox denied ps and FFmpeg's nested macOS confinement. The
-host run used this detached worktree and a temporary Go test overlay. The
-overlay uses the prior receipt harness and identifies the encoder in ps by
-its source path and /tmp/.encoder-*/live.m3u8 output. It counts published
-segments in the configured session scratch directory.
-
-Commands run
-
-  export GOCACHE=/tmp/codex-gocache GOWORK=off
-  export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
-  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
-    --arg content /tmp/core0022-r2-manual_test.go \
-    '{Replace:{($test):$content}}' > /tmp/core0022-r2-manual-overlay.json
-  sw_vers
-  uname -m
-  ffmpeg -version | head -1
-  go test -overlay /tmp/core0022-r2-manual-overlay.json ./internal/playback \
-    -run '^TestPacingMacOSReceipt$' -count=1 -v
-
-Raw output
-
-ProductName:		macOS
-ProductVersion:		27.2.1
-BuildVersion:		26B131
-arm64
-ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers
-=== RUN   TestPacingMacOSReceipt
-source probe:
-codec_name=hevc
-width=1920
-height=1080
-r_frame_rate=60000/1001
-duration=264.767000
-transcode probe: h264,1920,1080
-playhead=0s segment=0 frontier=8 on_disk_ahead=8
-ps: 71821 T    /opt/homebrew/bin/ffmpeg
-wall-clock playback: 60.245s
-playhead=60s segment=15 frontier=23 on_disk_ahead=8
-ps: 71821 T    /opt/homebrew/bin/ffmpeg
-seek: 60s -> 80s (+20s)
-playhead=80s segment=20 frontier=23 on_disk_ahead=3
-ps: 71821 R    /opt/homebrew/bin/ffmpeg
-playhead=80s segment=20 frontier=28 on_disk_ahead=8
-ps: 71821 T    /opt/homebrew/bin/ffmpeg
-decoder final progress:
-frame=4076
-fps=56.17
-stream_0_0_q=-0.0
-bitrate=N/A
-total_size=N/A
-out_time_us=84017267
-out_time_ms=84017267
-out_time=00:01:24.017267
-dup_frames=0
-drop_frames=0
-speed=1.16x
-progress=end
---- PASS: TestPacingMacOSReceipt (90.44s)
-PASS
-ok  	github.com/beamfall/core/internal/playback	90.650s
-
-CORE-0022 HLS-ENCODE-AHEAD-PACING-1
-Repair verification PASS on macOS, 2026-11-19
-
-The test decoded a real 1080p HEVC source re-encoded as 1080p H.264 with
-VideoToolbox. It fed the production Sessions and Runner output to an FFmpeg
-decoder at the four-second segment rate for 60 seconds. At 60 seconds the
-client requested segment 15 and observed eight segments ahead on disk.
-Seeking to segment 20 (+20s) resumed PID 27574. The same process stopped
-again with eight segments ahead.
-
-The worktree sandbox blocked ps and VideoToolbox, so the successful run used
-the host with the same detached worktree and temporary overlay. The overlay
-matched the FFmpeg process by its per-generation .encoder-* output directory
-and counted completed segment files in the public rung directory.
-
-Commands run
-
-  export GOCACHE=/tmp/codex-gocache GOWORK=off
-  export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
-  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
-    --arg content /tmp/core0022-repair-manual_test.go \
-    '{Replace:{($test):$content}}' > /tmp/core0022-repair-manual-overlay.json
-  sw_vers
-  uname -m
-  ffmpeg -version | head -1
-  go test -overlay /tmp/core0022-repair-manual-overlay.json ./internal/playback \
-    -run '^TestPacingMacOSReceipt$' -count=1 -v
-
-Raw output
-
-ProductName:		macOS
-ProductVersion:		27.2.1
-BuildVersion:		26B131
-arm64
-ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers
-=== RUN   TestPacingMacOSReceipt
-source probe:
-codec_name=hevc
-width=1920
-height=1080
-r_frame_rate=60000/1001
-duration=264.767000
-transcode probe: h264,1920,1080
-playhead=0s segment=0 frontier=8 on_disk_ahead=8
-ps: 27574 T    /opt/homebrew/bin/ffmpeg
-wall-clock playback: 63.897s
-playhead=60s segment=15 frontier=23 on_disk_ahead=8
-ps: 27574 T    /opt/homebrew/bin/ffmpeg
-seek: 60s -> 80s (+20s)
-playhead=80s segment=20 frontier=23 on_disk_ahead=3
-ps: 27574 R    /opt/homebrew/bin/ffmpeg
-playhead=80s segment=20 frontier=28 on_disk_ahead=8
-ps: 27574 T    /opt/homebrew/bin/ffmpeg
-decoder final progress:
-frame=4076
-fps=42.26
-stream_0_0_q=-0.0
-bitrate=N/A
-total_size=N/A
-out_time_us=84017267
-out_time_ms=84017267
-out_time=00:01:24.017267
-dup_frames=0
-drop_frames=0
-speed=0.871x
-progress=end
---- PASS: TestPacingMacOSReceipt (116.38s)
-PASS
-ok  	github.com/beamfall/core/internal/playback	116.640s
-
+CORE-0022 / HLS-ENCODE-AHEAD-PACING-1
 macOS real-media verification, 2026-11-19
-Result on 46050ea1: PASS
 
-The scratch Go test used the production playback Sessions and ffmpeg.Runner.
-The source was a real 1080p HEVC file. The runner used VideoToolbox to
-transcode it to 1080p H.264. A headless FFmpeg decoder consumed init.mp4 and
-the CMAF fragments from Sessions.FilePath on the wall clock, one request
-per four-second segment. At 60 seconds the client requested segment 15,
-then sought forward 20 seconds by requesting segment 20. The frontier is
-the highest completed segment on disk in the active rendition directory.
+The opt-in playback test uses the production Sessions manager and FFmpeg
+runner. It transcodes a local 1080p HEVC source through VideoToolbox to
+1080p H.264. A headless FFmpeg decoder plays the initialization segment
+and numbered CMAF fragments. It requests one fragment every four seconds
+for 60 seconds, then seeks by requesting the fragment at 80 seconds.
 
-Commands (the overlay maps the scratch Go test into internal/playback):
+At each stopped observation, the test checks the number of completed
+fragments beyond the playhead in both the published cache and the encoder
+directory. It observes the encoder with ps and requires the same PID at
+the initial stop, after 60 seconds, during the seek, and at the next stop.
+
+Commands from the repository worktree:
 
   export GOCACHE=/tmp/codex-gocache GOWORK=off
   export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
-  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
-    --arg content /tmp/core-0022-manual_test.go \
-    '{Replace:{($test):$content}}' > /tmp/core-0022-manual-overlay.json
   sw_vers
   uname -m
   ffmpeg -version | head -1
-  go test -overlay /tmp/core-0022-manual-overlay.json ./internal/playback \
-    -run '^TestPacingMacOSReceipt$' -count=1 -v
+  go test ./internal/playback -run '^TestPacingMacOSReceipt$' -count=1 -v
 
-The scratch test used these subprocess commands:
+To reproduce with another file, set CORE0022_MEDIA to a local landscape
+1920x1080 source at least 120 seconds long and CORE0022_DURATION to its
+whole-second duration. Run from a macOS shell that permits FFmpeg's
+sandbox-exec confinement. The test identifies the active encoder using:
 
-  ffprobe -v error -select_streams v:0 \
-    -show_entries stream=codec_name,width,height,r_frame_rate:format=duration \
-    -of default=nw=1 "$CORE0022_MEDIA"
-  # Pipe init.mp4 followed by segment 0 to confirm the output codec and size.
-  ffprobe -v error -select_streams v:0 \
-    -show_entries stream=codec_name,width,height -of csv=p=0 -i pipe:0
-  # Feed the init and each requested media segment to this decoder.
-  ffmpeg -hide_banner -nostdin -v error -progress pipe:1 -nostats \
-    -f mp4 -i pipe:0 -map 0:v:0 -f null -
-  # Select the command whose output operand is this session's live.m3u8.
   /bin/ps -axww -o pid=,stat=,command=
   /bin/ps -p "$encoder_pid" -o pid=,stat=,comm=
-
-The first attempt's five-second startup observation expired before the
-encoder reached the initial stopped state. The passing run allowed twenty
-seconds for the first eight segments and widened the ps command column.
 
 Raw output follows.
 
@@ -340,19 +44,19 @@ height=1080
 r_frame_rate=60000/1001
 duration=264.767000
 transcode probe: h264,1920,1080
-playhead=0s segment=0 frontier=8 on_disk_ahead=8
-ps: 77488 T    /opt/homebrew/bin/ffmpeg
-wall-clock playback: 60.229s
-playhead=60s segment=15 frontier=23 on_disk_ahead=8
-ps: 77488 T    /opt/homebrew/bin/ffmpeg
+playhead=0s segment=0 frontier=8 on_disk_ahead=8 unpublished_completed=0
+ps: 13437 T    /opt/homebrew/bin/ffmpeg
+wall-clock playback: 60.154s
+playhead=60s segment=15 frontier=23 on_disk_ahead=8 unpublished_completed=0
+ps: 13437 T    /opt/homebrew/bin/ffmpeg
 seek: 60s -> 80s (+20s)
-playhead=80s segment=20 frontier=23 on_disk_ahead=3
-ps: 77488 R    /opt/homebrew/bin/ffmpeg
-playhead=80s segment=20 frontier=28 on_disk_ahead=8
-ps: 77488 T    /opt/homebrew/bin/ffmpeg
+playhead=80s segment=20 frontier=23 on_disk_ahead=3 unpublished_completed=0
+ps: 13437 R    /opt/homebrew/bin/ffmpeg
+playhead=80s segment=20 frontier=28 on_disk_ahead=8 unpublished_completed=0
+ps: 13437 T    /opt/homebrew/bin/ffmpeg
 decoder final progress:
 frame=4076
-fps=57.43
+fps=58.97
 stream_0_0_q=-0.0
 bitrate=N/A
 total_size=N/A
@@ -361,8 +65,8 @@ out_time_ms=84017267
 out_time=00:01:24.017267
 dup_frames=0
 drop_frames=0
-speed=1.18x
+speed=1.22x
 progress=end
---- PASS: TestPacingMacOSReceipt (88.06s)
+--- PASS: TestPacingMacOSReceipt (83.25s)
 PASS
-ok  	github.com/beamfall/core/internal/playback	88.267s
+ok  	github.com/beamfall/core/internal/playback	83.480s

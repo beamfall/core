@@ -2,7 +2,6 @@ package encderiv
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -180,7 +179,7 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 // put stores one upload at rel: encrypted into rel.part, then renamed into
 // place. A name already published, or one another upload is writing, is
 // refused with errUploadExists before body is read (first writer wins).
-func (s *LiveSession) put(rel string, body io.Reader, publish func(open func() (*LiveFile, error), commit func() error) error) error {
+func (s *LiveSession) put(rel string, body io.Reader) error {
 	path, err := s.resolve(rel)
 	if err != nil {
 		return err
@@ -207,8 +206,7 @@ func (s *LiveSession) put(rel string, body io.Reader, publish func(open func() (
 		err = closeErr
 	}
 	if err == nil {
-		err = publish(func() (*LiveFile, error) { return s.open(part, rel) },
-			func() error { return os.Rename(part, path) })
+		err = os.Rename(part, path)
 	}
 	if err != nil {
 		_ = os.Remove(part)
@@ -223,11 +221,7 @@ func (s *LiveSession) Open(rel string) (*LiveFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.open(path, rel)
-}
-
-func (s *LiveSession) open(path, rel string) (*LiveFile, error) {
-	f, err := os.Open(path) // #nosec G304,G703 -- resolve validated the session path before adding the fixed staging suffix
+	f, err := os.Open(path) // #nosec G304 -- path is a validated name inside the session's own directory
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +352,6 @@ func (f *LiveFile) endLocked() error {
 type liveSink struct {
 	session *LiveSession
 	rung    string
-	publish func(context.Context, string, func() (*LiveFile, error), func() error) error
 }
 
 func (k liveSink) uploadLimit(name string) (int64, bool) {
@@ -373,38 +366,13 @@ func (k liveSink) uploadLimit(name string) (int64, bool) {
 	return 0, false
 }
 
-func (k liveSink) upload(ctx context.Context, name string, body io.Reader, check func() error) error {
+func (k liveSink) upload(name string, body io.Reader) error {
 	if name == livePlaylistName {
 		// Core writes the playlists it serves; the muxer's own is discarded.
 		_, err := io.Copy(io.Discard, body)
 		return err
 	}
-	rel := k.rung + "/" + name
-	finish := func(open func() (*LiveFile, error), commit func() error) error {
-		checkedCommit := func() error {
-			if err := check(); err != nil {
-				return err
-			}
-			return commit()
-		}
-		if k.publish != nil && liveSegmentName.MatchString(name) {
-			return k.publish(ctx, name, open, checkedCommit)
-		}
-		return checkedCommit()
-	}
-	err := k.session.put(rel, body, finish)
-	if !errors.Is(err, errUploadExists) {
-		return err
-	}
-	// A restarted muxer writes cached names again. Once the full body is
-	// consumed, it has completed this segment even though the cache wins.
-	if _, err := io.Copy(io.Discard, body); err != nil {
-		return err
-	}
-	if err := finish(func() (*LiveFile, error) { return k.session.Open(rel) }, func() error { return nil }); err != nil {
-		return err
-	}
-	return errUploadExists
+	return k.session.put(k.rung+"/"+name, body)
 }
 
 // LiveRunConfig describes one encoder run of a live session.
@@ -420,12 +388,6 @@ type LiveRunConfig struct {
 	// counts encoder activity only (ADR-0236 D3).
 	TTL         time.Duration
 	IdleTimeout time.Duration
-	// PublishSegment runs after a segment body is fully consumed. It must
-	// call commit to publish (or keep the existing file for a duplicate)
-	// and stop waiting when ctx is cancelled. open allows inspecting the
-	// encrypted staging file before commit, using the session's key.
-	// When nil, uploads publish immediately.
-	PublishSegment func(ctx context.Context, name string, open func() (*LiveFile, error), commit func() error) error
 
 	now  func() time.Time
 	peer peerChecker
@@ -466,7 +428,7 @@ func StartLiveRun(cfg LiveRunConfig) (*LiveRun, error) {
 		idle:     cfg.IdleTimeout,
 		now:      cfg.now,
 		peer:     cfg.peer,
-		sink:     liveSink{session: cfg.Session, rung: cfg.Rung, publish: cfg.PublishSegment},
+		sink:     liveSink{session: cfg.Session, rung: cfg.Rung},
 		rung:     cfg.Rung,
 	})
 	if err != nil {
@@ -486,10 +448,6 @@ func (r *LiveRun) Port() int { return r.ep.Port() }
 
 // Secret is the token, for redacting the URLs from diagnostics.
 func (r *LiveRun) Secret() string { return r.ep.token }
-
-// SetIdleSuspended suspends the endpoint's idle timeout while the encoder is
-// intentionally stopped and restarts the idle window when it resumes.
-func (r *LiveRun) SetIdleSuspended(suspended bool) { r.ep.setIdleSuspended(suspended) }
 
 // Revoke ends the token and waits for requests in flight; an upload cut off
 // leaves no file behind.
