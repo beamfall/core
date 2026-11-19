@@ -200,6 +200,25 @@ describe("Visualizer context loss (CORE-2482)", () => {
   });
 });
 
+it("passes the time since the last draw after a playback pause", async () => {
+  const { videoRef } = mount();
+  await waitFor(() => expect(pending.size).toBe(1));
+  const renderer = made.renderers[0];
+  Object.defineProperty(videoRef.current, "readyState", { value: 3 });
+  const paused = vi.spyOn(videoRef.current, "paused", "get").mockReturnValue(false);
+  step(16);
+
+  paused.mockReturnValue(true);
+  renderer.settled.mockReturnValue(true);
+  for (let now = 32; now < 316; now += 16) step(now);
+  expect(renderer.draw).toHaveBeenCalledTimes(1);
+
+  paused.mockReturnValue(false);
+  step(316);
+  expect(renderer.draw).toHaveBeenCalledTimes(2);
+  expect(renderer.draw.mock.lastCall?.[5]).toBe(300);
+});
+
 describe("Visualizer canvas fitting", () => {
   function slotSize(canvas: HTMLCanvasElement, width: number, height: number) {
     return vi.spyOn(canvas.parentElement!, "getBoundingClientRect").mockReturnValue({

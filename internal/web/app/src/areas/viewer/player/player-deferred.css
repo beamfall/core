@@ -875,11 +875,11 @@
 }
 
 .bf-audio-visualizer:has(> .bf-audio-visualizer-canvas) {
-  background: #000;
+  background: var(--scrim);
 }
 
-/* The draw loop sizes the canvas to whole texels of whole device pixels, letterboxed in the
-   slot. Keep its origin fixed so a change in the letterbox cannot move the displayed texels. */
+/* The draw loop sizes the canvas to whole texels of whole device pixels. The slot clips a
+   minimum-sized canvas that overflows. Keep the origin fixed so a resize preserves texel positions. */
 .bf-audio-visualizer-canvas {
   position: absolute;
   top: 0;

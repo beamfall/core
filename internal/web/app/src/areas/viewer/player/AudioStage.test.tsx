@@ -65,7 +65,8 @@ describe("AudioStage visualizer layout", () => {
     const css = readFileSync(join(__dirname, "player-deferred.css"), "utf8");
     const rules = css.match(/^\.bf-audio-visualizer[^\n]*\{[^}]*\}/gm) ?? [];
     style = document.createElement("style");
-    style.textContent = rules.join("\n");
+    // jsdom resolves no var(): the slot backdrop is the scrim role, dark root #070c10 (tokens.css).
+    style.textContent = rules.map((r) => r.replaceAll("var(--scrim)", "rgb(7, 12, 16)")).join("\n");
     document.head.append(style);
   });
 
@@ -99,7 +100,7 @@ describe("AudioStage visualizer layout", () => {
     expect(container.querySelector(".bf-audio-backdrop img")?.getAttribute("src")).toBe("/art.jpg");
     expect(background()).toBe("rgba(0, 0, 0, 0)");
     slot.append(canvas);
-    expect(background()).toBe("rgb(0, 0, 0)");
+    expect(background()).toBe("rgb(7, 12, 16)");
     canvas.remove();
     expect(background()).toBe("rgba(0, 0, 0, 0)");
   });

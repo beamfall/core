@@ -160,7 +160,7 @@ export function Visualizer({
     if (!enabled || !canvas) return;
     let alive = true;
     let frame = 0;
-    let last = 0;
+    let lastDrawn: number | null = null;
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -228,9 +228,6 @@ export function Visualizer({
       frame = requestAnimationFrame(tick);
       const renderer = rendererRef.current;
       const video = videoRef.current;
-      const frameMs = last ? now - last : 1000 / 60;
-      const dt = Math.min(MAX_DT, frameMs / 1000);
-      last = now;
       if (!renderer || !video || document.hidden) return;
       const box = css ?? slot.getBoundingClientRect();
       const [width, height, texel] = backingSize(
@@ -239,18 +236,20 @@ export function Visualizer({
         box.height,
         window.devicePixelRatio,
       );
-      // Paused by the listener: hold still. Paused while a new source loads: keep moving. A size
-      // or display-scale change still draws while paused until the renderer settles. Refitting
-      // the held frame accounts for a DPR change even when the physical frame stays the same.
-      if (
-        video.paused &&
-        video.readyState >= HAVE_FUTURE_DATA &&
-        renderer.settled(width, height, texel)
-      ) {
-        fitCanvas(renderer);
-        return;
-      }
       try {
+        // Paused by the listener: hold still. Paused while a new source loads: keep moving. A size
+        // or display-scale change still draws while paused until the renderer settles. Refitting
+        // the held frame accounts for a DPR change even when the physical frame stays the same.
+        if (
+          video.paused &&
+          video.readyState >= HAVE_FUTURE_DATA &&
+          renderer.settled(width, height, texel)
+        ) {
+          fitCanvas(renderer);
+          return;
+        }
+        const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
+        const dt = Math.min(MAX_DT, frameMs / 1000);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);
@@ -260,6 +259,7 @@ export function Visualizer({
         else if (current && now - current.since < ARRIVE_SECONDS * 1000) tau = ARRIVE_TAU;
         easeFrame(shown, target, tau ? 1 - Math.exp(-dt / tau) : 1);
         renderer.draw(width, height, dt, shown, !!reduced?.matches, frameMs, texel);
+        lastDrawn = now;
         fitCanvas(renderer);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {
@@ -302,7 +302,7 @@ export function Visualizer({
           visualRef.current = first;
           return renderer.use(first).then(() => {
             if (!current()) return;
-            last = 0;
+            lastDrawn = null;
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(tick);
             queueUpcoming(renderer, rotateRef.current, first);

@@ -136,6 +136,9 @@ function recordingGl() {
   const bound: { f: unknown } = { f: null };
   const spent: [unknown, number[]][] = [];
   const clears: unknown[] = [];
+  const blocks: number[][] = [];
+  const grant = new Uint32Array([15, 0, 0, 0]);
+  const reads: unknown[] = [];
   const canvas = { width: 0, height: 0, clientWidth: 0 };
   const gl = new Proxy({} as Record<string | symbol, unknown>, {
     get(_, key) {
@@ -151,10 +154,17 @@ function recordingGl() {
       if (key === "clearBufferuiv")
         return (_: unknown, __: unknown, v: Uint32Array) => spent.push([bound.f, [...v]]);
       if (key === "clear") return () => clears.push(bound.f);
+      if (key === "bufferSubData")
+        return (_: unknown, __: unknown, values: Float32Array) => blocks.push([...values]);
+      if (key === "readPixels")
+        return (...args: [number, number, number, number, number, number, Uint32Array]) => {
+          reads.push(bound.f);
+          args[6].set(grant);
+        };
       return () => undefined;
     },
   });
-  return { gl, deleted, blits, canvas, spent, clears };
+  return { gl, deleted, blits, canvas, spent, clears, blocks, grant, reads };
 }
 
 describe("Renderer resize (CORE-2516)", () => {
@@ -169,10 +179,24 @@ describe("Renderer resize (CORE-2516)", () => {
     };
   };
   const make = (restored = false) => {
-    const { gl, deleted, blits, canvas, spent, clears } = recordingGl();
+    const { gl, ...recorded } = recordingGl();
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
     Object.assign(r, {
       gl,
+      visual: {},
+      time: 0,
+      clockMs: 0,
+      switchProgress: () => null,
+      cadence: { sample: () => null },
+      governor: { level: QUALITY_LADDER.length - 1 },
+      drawVisual: (_: unknown, feedback: unknown[]) => feedback[1],
+      packPresent: () => undefined,
+      presentBlock: new Float32Array(92),
+      limiterBlock: new Float32Array(8),
+      grantWord: new Uint32Array(4),
+      grantSettled: true,
+      refillCarry: 0,
+      limiter: new Array(6),
       level: QUALITY_LADDER.length - 1,
       size: null,
       feedbackFormat: { internal: 0, type: 0, label: "float" },
@@ -186,7 +210,9 @@ describe("Renderer resize (CORE-2516)", () => {
     const resize = (w: number, h: number, texel = 1) =>
       (r.resize as (w: number, h: number, texel: number) => Sized).call(r, w, h, texel);
     const renderer = r as unknown as Renderer;
-    return { r, renderer, resize, deleted, blits, canvas, spent, clears };
+    const draw = (width: number, height: number, dt = 1 / 60, frameMs = dt * 1000) =>
+      renderer.draw(width, height, dt, silentFrame(), false, frameMs);
+    return { r, renderer, resize, draw, ...recorded };
   };
 
   // Codex round 12: the display scale is the texel's side in physical pixels. A change switches
@@ -252,23 +278,12 @@ describe("Renderer resize (CORE-2516)", () => {
   });
 
   it("restores with tracked black and spent grants, timing black from the first shown frame", () => {
-    const { r, renderer, resize, blits, spent, clears } = make(true);
+    const { r, renderer, resize, draw, blits, spent, clears } = make(true);
     const limit = vi.fn();
-    Object.assign(r, {
-      visual: {},
-      time: 0,
-      switchProgress: () => null,
-      cadence: { sample: () => null },
-      governor: { level: r.level },
-      drawVisual: (_: unknown, feedback: unknown[]) => feedback[1],
-      packPresent: () => undefined,
-      limit,
-    });
-    const audio = silentFrame();
-    const draw = (dt: number) => renderer.draw(640, 360, dt, audio, false);
+    r.limit = limit;
 
     // This interval preceded the first displayed black frame and cannot count toward the hold.
-    draw(SCALE_BLACK_S);
+    draw(640, 360, SCALE_BLACK_S);
     const L = resize(640, 360).limiter as unknown as {
       fG: unknown[];
       fOut: unknown[];
@@ -279,25 +294,85 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(clears).toEqual([null]);
     expect(renderer.settled(640, 360, 1)).toBe(false);
 
-    draw(SCALE_BLACK_S / 2);
+    draw(640, 360, SCALE_BLACK_S / 2);
     expect(clears).toEqual([null, null]);
     expect(blits).toEqual([]);
     expect(limit).not.toHaveBeenCalled();
     expect(renderer.settled(640, 360, 1)).toBe(false);
 
-    draw(SCALE_BLACK_S / 2);
+    draw(640, 360, SCALE_BLACK_S / 2);
     expect(clears).toHaveLength(2);
     expect(limit).toHaveBeenCalledOnce();
     expect(blits).toEqual([[0, 0, 640, 360, 0, 0, 640, 360]]);
     expect(renderer.settled(640, 360, 1)).toBe(true);
   });
 
+  it("keeps a paused restore drawing until the grant admits every direction", () => {
+    const { renderer, resize, draw, grant, reads, blocks } = make(true);
+    draw(640, 360, SCALE_BLACK_S);
+    expect(renderer.settled(640, 360, 1)).toBe(false);
+    expect(reads).toHaveLength(0);
+
+    grant.set([0x1e, 65025, 0, 0]);
+    draw(640, 360, SCALE_BLACK_S);
+    const L = resize(640, 360).limiter as unknown as { fG: unknown[]; cur: number };
+    expect(reads).toHaveLength(0);
+    expect(renderer.settled(640, 360, 1)).toBe(false);
+    expect(reads).toEqual([L.fG[L.cur]]);
+    expect(blocks.at(-1)?.[3]).toBe(0);
+
+    grant[0] = 0x1f;
+    draw(640, 360);
+    expect(reads).toHaveLength(1);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
+    expect(reads.at(-1)).toBe(L.fG[L.cur]);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
+    expect(reads).toHaveLength(2);
+  });
+
   it("settles at the minimum backing for an undersized slot", () => {
-    const { renderer, resize } = make();
-    resize(64, 36);
+    const { renderer, draw } = make();
+    draw(60, 36);
     expect(renderer.settled(60, 36, 1)).toBe(true);
     expect(renderer.settled(65, 36, 1)).toBe(false);
     expect(renderer.settled(60, 36, 2)).toBe(false);
+  });
+
+  it("limits a clipped 60x36 slot by its visible field at the minimum backing size", () => {
+    const { renderer, draw, canvas, blocks } = make();
+    draw(64, 36);
+    expect(blocks.at(-1)?.[2]).toBe(63);
+    draw(60, 36);
+    expect([canvas.width, canvas.height]).toEqual([64, 36]);
+    expect(blocks.at(-1)?.[2]).toBe(60);
+    expect(renderer.settled(64, 36, 1)).toBe(false);
+  });
+
+  it("starts refill at zero on a same-scale resize and uses only subsequent draw intervals", () => {
+    const { draw, blocks } = make();
+    draw(640, 360);
+    draw(800, 450, 0.1);
+    expect(blocks.at(-1)?.[3]).toBe(0);
+
+    draw(800, 450, 0.05);
+    expect(blocks.at(-1)?.[3]).toBe(19507);
+    draw(800, 450, 0.1, 300);
+    expect(blocks.at(-1)?.[3]).toBe(65025);
+    expect(blocks.at(-1)?.[5]).toBe(300);
+  });
+
+  // Codex round 15: flooring each frame's refill lost its fraction, so at 60 Hz ten frames refilled
+  // 65020 of a 65025 token and a tiny maxFlashHz at a high frame rate never refilled at all.
+  it("carries the fraction of a refill unit to the next frame", () => {
+    const { draw, blocks } = make();
+    draw(640, 360);
+    const refills: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      draw(640, 360, 1 / 60, 1000 / 60);
+      refills.push(blocks.at(-1)?.[3] ?? -1);
+    }
+    expect(new Set(refills)).toEqual(new Set([6502, 6503]));
+    expect(refills.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(65024);
   });
 
   it("keeps the limiter's budget, carries its trackers and rebuilds its size-dependent targets", () => {
@@ -345,7 +420,13 @@ describe("limiterWindow", () => {
 describe("Renderer display-scale fade (Codex round 13)", () => {
   const make = () => {
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
-    Object.assign(r, { size: { width: 640, height: 360 }, displayScale: 1, fadeLeft: -1 });
+    Object.assign(r, {
+      size: { width: 640, height: 360, visibleWidth: 640, visibleHeight: 360 },
+      displayScale: 1,
+      fadeLeft: -1,
+      grantSettled: true,
+      refillCarry: 0,
+    });
     return {
       r,
       fading: (texel: number, dt: number) =>

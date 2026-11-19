@@ -75,16 +75,22 @@ function span(len: number, n: number, cells: number): number {
 }
 
 /** windowOf("wcag", W, H) from tools/shader/limiter-geometry.mjs for a W x H frame whose texels
- * are `texel` physical pixels on a side: the field is a third of the physical display each way,
+ * are `texel` physical pixels on a side: the field is a third of the visible frame each way,
  * the window the fewest whole cells that contain every texel the field touches wherever it sits,
  * and the area limit a quarter of the field's physical pixels over the texel's area, so a patch
  * over the physical limit is over it in texels (Codex round 13). */
-export function limiterWindow(W: number, H: number, texel = 1): LimiterWindow {
-  const fieldPx = (n: number) => Math.max(1, Math.min(n * texel, Math.round((n * texel) / 3)));
+export function limiterWindow(
+  W: number,
+  H: number,
+  texel = 1,
+  visibleWidth = W,
+  visibleHeight = H,
+): LimiterWindow {
+  const fieldPx = (n: number) => Math.min(n * texel, Math.max(1, Math.round((n * texel) / 3)));
   const touched = (px: number, n: number) =>
     Math.min(n, texel === 1 ? px : Math.ceil((px - 1) / texel) + 1);
-  const fwPx = fieldPx(W);
-  const fhPx = fieldPx(H);
+  const fwPx = fieldPx(visibleWidth);
+  const fhPx = fieldPx(visibleHeight);
   return {
     cols: span(touched(fwPx, W), W, GRID_X),
     rows: span(touched(fhPx, H), H, GRID_Y),
@@ -197,6 +203,8 @@ interface Limiter {
 interface Size {
   width: number;
   height: number;
+  visibleWidth: number;
+  visibleHeight: number;
   /** The visual's render size at the governor's level: its feedback, and a switch's targets. */
   renderWidth: number;
   renderHeight: number;
@@ -275,6 +283,11 @@ export class Renderer {
   // Oscillux's vivid colour mode: present-pass saturation and vibrance (CORE-2369).
   private readonly vivid: Float64Array;
   private readonly limiterBlock = new Float32Array(8);
+  private readonly grantWord = new Uint32Array(4);
+  private grantSettled = true;
+  private limiterSpent = false;
+  // The fraction of a refill unit earned and not yet granted (limiter README, Codex round 15).
+  private refillCarry = 0;
   private readonly visualVertex: string;
   private present: WebGLProgram;
   private switchPass: WebGLProgram;
@@ -597,6 +610,14 @@ export class Renderer {
     const fading = this.fading(texel, dt);
     const size = fading && this.size ? this.size : this.resize(...frameSize(width, height), texel);
     const { width: W, height: H } = size;
+    // The slot clips a minimum-sized backing or an old surface still fading at its own scale.
+    const visibleWidth = Math.min(W, Math.floor((width * texel) / this.displayScale));
+    const visibleHeight = Math.min(H, Math.floor((height * texel) / this.displayScale));
+    if (visibleWidth !== size.visibleWidth || visibleHeight !== size.visibleHeight) {
+      size.visibleWidth = visibleWidth;
+      size.visibleHeight = visibleHeight;
+      size.limiter.window = limiterWindow(W, H, this.displayScale, visibleWidth, visibleHeight);
+    }
     this.time += dt;
     const p = this.switchProgress(reducedMotion);
     // The governor times frames outside a switch only, and its level changes between switches,
@@ -647,7 +668,7 @@ export class Renderer {
 
     // Show black for SCALE_BLACK_S from the first black frame after a scale change or restore.
     // The visual and its history keep running; the limiter starts from black with every budget
-    // spent (resize). Present content as soon as the interval ends, even if playback is paused.
+    // spent (resize). Run the limiter again once the interval ends, even if playback is paused.
     if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - dt);
     if (this.black > 0) {
       this.blackShown = true;
@@ -658,7 +679,7 @@ export class Renderer {
     }
 
     // 3. The frame flash limiter.
-    this.limit(size, dt);
+    this.limit(size, frameMs);
 
     // 4. The limited frame to the canvas.
     const L = size.limiter;
@@ -679,10 +700,27 @@ export class Renderer {
 
   /** Whether the shown frame can be held for this request while playback is paused. */
   settled(width: number, height: number, texel: number): boolean {
-    if (!this.size || this.fadeLeft > 0 || this.black > 0 || texel !== this.displayScale)
-      return false;
+    const size = this.size;
+    if (!size || this.fadeLeft > 0 || this.black > 0 || texel !== this.displayScale) return false;
     const [W, H] = frameSize(width, height);
-    return this.size.width === W && this.size.height === H;
+    if (
+      size.width !== W ||
+      size.height !== H ||
+      size.visibleWidth !== Math.min(width, W) ||
+      size.visibleHeight !== Math.min(height, H)
+    )
+      return false;
+    if (this.grantSettled) return true;
+    // A denied direction can leave a steady input held. Read the last grant only when
+    // deciding whether to stop drawing, and reuse an all-admitted result until the next draw.
+    const gl = this.gl;
+    const L = size.limiter;
+    this.grantWord[0] = 0;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.fG[L.cur]);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, this.grantWord);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    this.grantSettled = (this.grantWord[0] & 15) === 15;
+    return this.grantSettled;
   }
 
   // Whether this frame fades to black before a display-scale change to `texel`: for SCALE_FADE_S
@@ -867,11 +905,18 @@ export class Renderer {
     block.set([0, 0, 0, 1, this.presented++ % 16777216, 0, 0, 0], POST_FLOAT);
   }
 
-  private limit(size: Size, dt: number): void {
+  private limit(size: Size, frameMs: number): void {
     const gl = this.gl;
     const L = size.limiter;
-    this.clockMs += dt * 1000;
-    const refill = Math.floor(Math.min(1, Math.max(0, 2 * MAX_FLASH_HZ * dt)) * TOKEN);
+    this.clockMs += frameMs;
+    // The interval up to a resize may age copied trackers, but cannot refill its new deficit.
+    // The fraction of a unit carries to the next frame, so the refill keeps the exact rate.
+    if (this.limiterSpent) this.refillCarry = 0;
+    const refillMs = this.limiterSpent ? 0 : frameMs;
+    const earned =
+      this.refillCarry + Math.min(1, Math.max(0, (2 * MAX_FLASH_HZ * refillMs) / 1000)) * TOKEN;
+    const refill = Math.min(TOKEN, Math.floor(earned));
+    this.refillCarry = Math.min(1, earned - refill);
     const tick = Math.floor(this.clockMs / TICK_MS) % TICKS;
     this.limiterBlock.set([
       L.window.cols,
@@ -879,7 +924,7 @@ export class Renderer {
       L.window.limit,
       refill,
       tick,
-      Math.fround(dt * 1000),
+      frameMs,
       0,
       0,
     ]);
@@ -898,6 +943,8 @@ export class Renderer {
     this.pass(grant, L.fG[b], 1, 1, [L.c, L.w, L.g[a]]);
     this.pass(output, L.fOut[b], W, H, [size.frame, L.out[a], L.track[a], L.g[b]]);
     L.cur = b;
+    this.limiterSpent = false;
+    this.grantSettled = false;
   }
 
   private pass(
@@ -983,6 +1030,8 @@ export class Renderer {
     this.size = {
       width: W,
       height: H,
+      visibleWidth: W,
+      visibleHeight: H,
       renderWidth: render.width,
       renderHeight: render.height,
       feedback,
@@ -1001,6 +1050,7 @@ export class Renderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, L.fG[L.cur]);
     gl.clearBufferuiv(gl.COLOR, 0, SPENT);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.limiterSpent = true;
   }
 
   // Moves the visual to a governor level between switches: only its feedback pair is rebuilt,
