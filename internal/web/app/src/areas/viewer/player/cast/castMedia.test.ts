@@ -30,6 +30,10 @@ describe("CAST_RECEIVER_PROFILE", () => {
     expect(CAST_RECEIVER_PROFILE.audioCodecs).toEqual([{ codec: "aac", maxChannels: 2 }]);
     expect(CAST_RECEIVER_PROFILE.subtitleFormats).toEqual(["webvtt"]);
   });
+
+  it("asks for no more than the 720-line floor the core quirks baseline enforces", () => {
+    expect(CAST_RECEIVER_PROFILE.videoCodecs.map((cap) => cap.maxHeight)).toEqual([720]);
+  });
 });
 
 describe("buildCastLoad", () => {
