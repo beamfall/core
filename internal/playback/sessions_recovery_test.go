@@ -261,11 +261,12 @@ func TestShortLastSegmentStillServes(t *testing.T) {
 	}
 	// Let the clean exit be reaped, then the short last segment must still serve.
 	deadline := time.Now().Add(2 * time.Second)
+	session := registeredSession(t, sessions, key)
 	for {
-		sessions.mu.Lock()
-		reaped := sessions.sessions[key].proc == nil
-		known := sessions.sessions[key].sourceEndKnown
-		sessions.mu.Unlock()
+		session.mu.Lock()
+		reaped := session.proc == nil
+		known := session.sourceEndKnown
+		session.mu.Unlock()
 		if known {
 			t.Fatal("a complete encode recorded a premature source end")
 		}

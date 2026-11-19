@@ -8,13 +8,35 @@ import (
 	"path/filepath"
 )
 
+// joinPlaylistFragments registers the join before opening any descriptors so
+// teardown can drain it before removing the working directory.
+func (h *hlsSession) joinPlaylistFragments(dst string, parts []string) error {
+	h.mu.Lock()
+	if h.detached.Load() {
+		h.mu.Unlock()
+		return ErrSessionEvicted
+	}
+	h.joins.Add(1)
+	h.mu.Unlock()
+	defer h.joins.Done()
+
+	return joinFragments(dst, parts, func(tmp, dst string) error {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.detached.Load() {
+			return ErrSessionEvicted
+		}
+		return os.Rename(tmp, dst)
+	})
+}
+
 // joinFragments writes the fMP4 media segments parts, in order, to dst as one
 // media segment (CORE-1843). The first part's styp box opens it and every part
 // contributes its fragments (moof and mdat, whose sample offsets are relative
 // to their own moof, so they move unchanged). sidx boxes are dropped: each
 // indexes only the part it came from. The segment is written to a temporary
 // file and renamed into place, so a reader never sees it half written.
-func joinFragments(dst string, parts []string) (err error) {
+func joinFragments(dst string, parts []string, publish func(string, string) error) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(dst), ".join-*")
 	if err != nil {
 		return err
@@ -46,7 +68,7 @@ func joinFragments(dst string, parts []string) (err error) {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), dst)
+	return publish(tmp.Name(), dst)
 }
 
 // isoBox is one top-level ISO-BMFF box: its four-character type and its bytes,
