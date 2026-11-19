@@ -98,6 +98,20 @@ export function slotPixels(
   const h = device ? device.blockSize : cssHeight * r;
   return [Math.floor(w + 1e-6), Math.floor(h + 1e-6)];
 }
+
+/** The canvas's clip-path for a frame of which the limiter has judged viewWidth x viewHeight
+ * physical pixels in view, from the top left: nothing past them shows, so a slot that grows
+ * before the next draw, or past a texel it cut, reveals the slot's background and never a pixel
+ * the limiter has not judged (Codex round 24). Empty when the whole frame is in view. */
+export function viewClip(
+  shown: { width: number; height: number; texel: number; viewWidth: number; viewHeight: number },
+  ratio: number,
+): string {
+  const r = ratio > 0 ? ratio : 1;
+  const right = Math.max(0, shown.width * shown.texel - shown.viewWidth) / r;
+  const bottom = Math.max(0, shown.height * shown.texel - shown.viewHeight) / r;
+  return right > 0 || bottom > 0 ? `inset(0 ${right}px ${bottom}px 0)` : "";
+}
 // How the audio values glide across a track change (CORE-2218): toward rest while the next
 // track's analysis is not ready, and up into it once it is, for this long.
 const SETTLE_TAU = 0.5;
@@ -263,9 +277,10 @@ export function Visualizer({
     } catch {
       observer.observe(slot);
     }
-    // Fit and filter the frame the renderer shows. During a display-scale fade, both still
-    // follow the old frame's texel size.
+    // Fit, filter and clip the frame the renderer shows. During a display-scale fade, all three
+    // still follow the old frame's texel size.
     let cssSize = "";
+    let clipped = "";
     const fitCanvas = (renderer: Renderer) => {
       const shown = renderer.shown;
       if (!shown) return;
@@ -273,6 +288,11 @@ export function Visualizer({
       const texel = shown.texel;
       const rendering = texel > 1 ? "pixelated" : "";
       if (canvas.style.imageRendering !== rendering) canvas.style.imageRendering = rendering;
+      const clip = viewClip(shown, r);
+      if (clip !== clipped) {
+        clipped = clip;
+        canvas.style.clipPath = clip;
+      }
       const next = `${(shown.width * texel) / r}px ${(shown.height * texel) / r}px`;
       if (next === cssSize) return;
       cssSize = next;

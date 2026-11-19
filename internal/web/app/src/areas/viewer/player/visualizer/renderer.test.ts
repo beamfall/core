@@ -214,7 +214,10 @@ describe("Renderer resize (CORE-2516)", () => {
     const renderer = r as unknown as Renderer;
     const draw = (width: number, height: number, dt = 1 / 60, frameMs = dt * 1000) =>
       renderer.draw(width, height, dt, silentFrame(), false, frameMs);
-    return { r, renderer, resize, draw, ...recorded };
+    // The physical pixels a draw judged in view, for a test that resizes without drawing.
+    const view = (visiblePxWidth: number, visiblePxHeight: number) =>
+      Object.assign(r.size as object, { visiblePxWidth, visiblePxHeight });
+    return { r, renderer, resize, draw, view, ...recorded };
   };
 
   // Codex round 12: the display scale is the texel's side in physical pixels. A change switches
@@ -248,8 +251,9 @@ describe("Renderer resize (CORE-2516)", () => {
   // Codex round 22: a slot narrower than its texel drops to a divisor of the scale. Each texel and
   // its tracker are copied k x k times, so the screen does not change and nothing goes black.
   it("keeps the screen on a drop to a divisor of the display scale", () => {
-    const { r, resize, blits, spent } = make();
+    const { r, resize, view, blits, spent } = make();
     resize(600, 450, 2);
+    view(1200, 900);
     r.black = 0;
     blits.length = 0;
     spent.length = 0;
@@ -260,15 +264,18 @@ describe("Renderer resize (CORE-2516)", () => {
     ]);
     expect(spent.at(-1)).toEqual([L.fG[L.cur], [256, 65025, 65025, 0]]);
     expect(r.black).toBe(0);
-    const s = r.size as { visibleWidth: number; visibleHeight: number };
+    const s = r.size as Record<string, number>;
     expect([s.visibleWidth, s.visibleHeight]).toEqual([1200, 900]);
+    expect([s.visiblePxWidth, s.visiblePxHeight]).toEqual([1200, 900]);
   });
 
   // Codex round 23: a drop to a divisor into a target that cuts the last old texel keeps the
-  // texel's visible part, and the first draw sets the area limit from the pixels in view.
+  // texel's visible part, and the area limit comes from the pixels in view, which carry over
+  // (Codex round 24).
   it("keeps a cut texel on a drop to a divisor of the display scale", () => {
-    const { r, resize, blits } = make();
+    const { r, resize, view, blits } = make();
     resize(600, 38, 2);
+    view(1200, 75);
     r.black = 0;
     blits.length = 0;
     resize(1200, 75, 1);
@@ -278,7 +285,8 @@ describe("Renderer resize (CORE-2516)", () => {
     ]);
     const s = r.size as Record<string, number>;
     expect([s.visibleWidth, s.visibleHeight]).toEqual([1200, 75]);
-    expect([s.visiblePxWidth, s.visiblePxHeight]).toEqual([-1, -1]);
+    expect([s.visiblePxWidth, s.visiblePxHeight]).toEqual([1200, 75]);
+    expect((r.size as Sized).limiter.window).toEqual(limiterWindow(1200, 75));
   });
 
   it("presents no black for a resize at one display scale", () => {
@@ -308,16 +316,24 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(spent.slice(0, -1).every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
   });
 
-  it("starts the output black and the trackers tracked black", () => {
-    const { resize, spent } = make();
-    resize(640, 360);
-    expect(spent.length).toBeGreaterThan(0);
-    expect(spent.every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
+  // Codex round 24: the host cannot know what the canvas replaced on screen, so the first size
+  // starts with every budget spent, like any other.
+  it("starts the output black, the trackers tracked black and every budget spent", () => {
+    const { r, resize, spent } = make();
+    const L = resize(640, 360).limiter as unknown as { fG: unknown[]; cur: number };
+    expect(spent.at(-1)).toEqual([L.fG[L.cur], [256, 65025, 65025, 0]]);
+    expect(spent.length).toBeGreaterThan(1);
+    expect(spent.slice(0, -1).every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
+    expect(r.limiterSpent).toBe(true);
+    expect(r.black).toBe(0);
   });
 
   it("restores with tracked black and spent grants, timing black from the first shown frame", () => {
     const { r, renderer, resize, draw, blits, spent, clears } = make(true);
-    const limit = vi.fn();
+    // A judged frame replaces the grant state the host wrote spent.
+    const limit = vi.fn(() => {
+      r.limiterSpent = false;
+    });
     r.limit = limit;
 
     // This interval preceded the first displayed black frame and cannot count toward the hold.
@@ -560,8 +576,9 @@ describe("Renderer resize (CORE-2516)", () => {
   });
 
   it("keeps the limiter's budget, carries its trackers and rebuilds its size-dependent targets", () => {
-    const { resize, deleted } = make();
+    const { resize, view, deleted } = make();
     const before = resize(640, 360).limiter;
+    view(640, 360);
     const after = resize(800, 450).limiter;
     for (const key of ["s", "c", "w", "g", "fG"]) {
       expect(before[key]).toBeDefined();
@@ -574,7 +591,71 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(before.out.every((t) => deleted.has(t))).toBe(true);
     expect((before.track as unknown[]).every((t) => deleted.has(t))).toBe(true);
     expect(before.g.some((t) => deleted.has(t))).toBe(false);
-    expect(after.window).toEqual(limiterWindow(800, 450));
+    // The view carries over; the next draw exposes the rest of the slot.
+    expect(after.window).toEqual(limiterWindow(800, 450, 1, 640, 360));
+  });
+
+  // Codex round 24: a withdrawn first draw left the grant word the host wrote spent. Its held
+  // bits are clear because it has judged no frame, so a paused player held black.
+  it("does not settle on a grant the host wrote spent", () => {
+    const { renderer, draw, reads } = make();
+    draw(64, 36);
+    renderer.withdraw();
+    expect(renderer.settled(64, 36, 1)).toBe(false);
+    expect(reads).toHaveLength(0);
+    draw(64, 36);
+    expect(renderer.settled(64, 36, 1)).toBe(true);
+  });
+
+  // Codex round 24: a slot resized during the scale fade spent the red token again while the
+  // fade ran on, so the switch at its end cleared a red frame the limiter still held.
+  it("starts the scale fade again when a resize spends its grant", () => {
+    const { r, renderer, draw } = make();
+    draw(64, 36);
+    const fade = (slotWidth: number) =>
+      renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2, 500, slotWidth, 36);
+    fade(64);
+    fade(64);
+    expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S - 0.5);
+    fade(63);
+    expect(r.fadeLeft).toBe(SCALE_FADE_S);
+    // The spend outlives a withdrawn frame, so the restart does too.
+    renderer.withdraw();
+    expect(r.fadeLeft).toBe(SCALE_FADE_S);
+    fade(63);
+    expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S - 0.5);
+  });
+
+  // Codex round 24: at two physical pixels per texel, a slot widened from 3 to 4 pixels covers the
+  // same two texel columns, so nothing was exposed and the fourth pixel column appeared in its
+  // texel's colour with no tracker event. The view is held through a fade, then starts again.
+  it("holds the view when a slot grows past a texel it cut, then fades and starts again", () => {
+    const { r, renderer, scissors } = make();
+    const draw = (slotWidth: number, shownMs = 33) =>
+      renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2, shownMs, slotWidth, 72);
+    draw(4);
+    draw(3);
+    draw(3);
+    const cut = r.size as Record<string, number>;
+    expect([cut.visibleWidth, cut.visiblePxWidth]).toEqual([2, 3]);
+    expect(renderer.settled(64, 36, 2, 3, 72)).toBe(true);
+    expect(renderer.settled(64, 36, 2, 4, 72)).toBe(false);
+
+    draw(4);
+    expect(r.size).toBe(cut);
+    expect([cut.visibleWidth, cut.visiblePxWidth]).toEqual([2, 3]);
+    expect(renderer.shown).toMatchObject({ width: 64, texel: 2, viewWidth: 3, viewHeight: 72 });
+    expect(r.fadeLeft).toBe(SCALE_FADE_S);
+    expect(scissors).toEqual([]);
+
+    draw(4, 1000);
+    expect(r.size).toBe(cut);
+    draw(4, 1000);
+    // Nothing in view carries over: the whole frame starts black behind the black interval.
+    expect(r.size).not.toBe(cut);
+    expect(r.black).toBe(SCALE_BLACK_S);
+    expect(renderer.shown).toMatchObject({ viewWidth: 4, viewHeight: 72 });
+    expect(r.limiterSpent).toBe(true);
   });
 });
 
@@ -604,21 +685,53 @@ describe("limiterWindow", () => {
 // Codex round 23: a slot that cuts an old texel during a fade still shows it, so it is judged in
 // full, against an area limit from the physical pixels in view.
 describe("Renderer view of a cut texel", () => {
-  const inView = (scale: number, W: number, H: number, sw: number, sh: number) => {
+  // The view of a W x H frame of which seenW x seenH physical pixels were in view.
+  const inView = (
+    scale: number,
+    [W, H]: [number, number],
+    [sw, sh]: [number, number],
+    [seenW, seenH]: [number, number] = [0, 0],
+  ) => {
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
     r.displayScale = scale;
-    return (r.inView as (...a: number[]) => unknown).call(r, W, H, sw, sh);
+    const size = { width: W, height: H, visiblePxWidth: seenW, visiblePxHeight: seenH };
+    return (r.inView as (...a: unknown[]) => unknown).call(r, size, sw, sh);
   };
+  const view = (
+    width: number,
+    height: number,
+    pxWidth: number,
+    pxHeight: number,
+    held = false,
+  ) => ({
+    width,
+    height,
+    pxWidth,
+    pxHeight,
+    held,
+  });
 
-  it("counts a cut texel in view and the pixels shown", () => {
-    expect(inView(3, 64, 40, 2, 120)).toEqual({ width: 1, height: 40, pxWidth: 2, pxHeight: 120 });
-    expect(inView(3, 64, 40, 7, 119)).toEqual({ width: 3, height: 40, pxWidth: 7, pxHeight: 119 });
-    expect(inView(1, 64, 100, 1, 100)).toEqual({
-      width: 1,
-      height: 100,
-      pxWidth: 1,
-      pxHeight: 100,
-    });
+  it("counts a cut texel in view and the pixels shown when the slot shrinks", () => {
+    expect(inView(3, [64, 40], [7, 119], [192, 120])).toEqual(view(3, 40, 7, 119));
+    expect(inView(2, [64, 60], [3, 120], [4, 120])).toEqual(view(2, 60, 3, 120));
+    expect(inView(1, [64, 100], [1, 100], [64, 100])).toEqual(view(1, 100, 1, 100));
+  });
+
+  // Codex round 24: new texels are exposed black, so they come into view whole. With nothing in
+  // view, a slot under one texel shows that texel cut.
+  it("brings whole texels into view when the slot grows", () => {
+    expect(inView(3, [64, 40], [7, 119])).toEqual(view(2, 39, 6, 117));
+    expect(inView(2, [64, 60], [5, 120], [2, 120])).toEqual(view(2, 60, 4, 120));
+    expect(inView(3, [64, 40], [2, 120])).toEqual(view(1, 40, 2, 120));
+    expect(inView(1, [64, 100], [1, 100])).toEqual(view(1, 100, 1, 100));
+  });
+
+  // Codex round 24: the hidden pixels of a cut texel would appear in its colour unjudged.
+  it("holds the view when the slot grows past a texel it cut", () => {
+    expect(inView(2, [64, 60], [4, 120], [3, 120])).toEqual(view(2, 60, 3, 120, true));
+    expect(inView(2, [64, 60], [9, 120], [3, 120])).toEqual(view(2, 60, 3, 120, true));
+    expect(inView(3, [64, 40], [192, 120], [192, 119])).toEqual(view(64, 40, 192, 119, true));
+    expect(inView(2, [64, 60], [2, 120], [3, 120])).toEqual(view(1, 60, 2, 120));
   });
 
   it("takes the area limit from the pixels shown", () => {

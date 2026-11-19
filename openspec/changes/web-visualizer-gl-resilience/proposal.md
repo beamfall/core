@@ -22,9 +22,15 @@ visual off until the component remounts, although browsers restore contexts rout
   textures, framebuffers), re-applies the selected visual and artwork, and resumes with fresh
   feedback and limiter state. Its listeners are removed on unmount.
 
-- Resizing keeps the flash limiter's budgets and history: only the size-dependent `rows` and
-  output textures are rebuilt, and the last output is scaled into the new one, so a resize cannot
-  reset the token budget and admit a burst of flashes (CORE-2516).
+- A resize never hands the flash limiter a fresh budget (CORE-2516). At the same display scale
+  the size-dependent textures are rebuilt, the texels that were in view are copied one to one from
+  the top left, everything else starts black and tracked black, and the grant state is written
+  with every budget spent, as it is at the first size. A paused player draws a frame through a
+  grant state the host wrote before it holds the picture, and a spend during the fade of a
+  display-scale change starts the fade again.
+- Pixels come into view only as whole texels that start black. A slot grown past a texel it cut
+  holds the view, fades to black and starts again, and the canvas is clipped to the pixels the
+  limiter has judged in view (CORE-2516).
 - The canvas backing size comes from a `ResizeObserver` with `device-pixel-content-box` (exact
   device pixels, DPR capped at 2), falling back to the CSS box, instead of a per-frame
   `getBoundingClientRect()` (CORE-2516).
@@ -34,7 +40,7 @@ visual off until the component remounts, although browsers restore contexts rout
   a 30 Hz browser cap is seen, intervals are scaled to the 60 Hz target, so power-saving caps no
   longer halve the render resolution; slower or unsteady frames still reach the governor raw
   (CORE-2483). WebGL timer queries are not exposed by default in current browsers.
-- The limiter's `rows` pass binds the previous output as `uHist` (Oscillux v0.2.9, CORE-2515).
+- The limiter's `rows` pass binds the previous integer tracker state as `uTrack` (CORE-2515).
 
 ## Non-goals
 
@@ -48,9 +54,9 @@ visual off until the component remounts, although browsers restore contexts rout
 
 ## Acceptance evidence
 
-- vitest: `renderer.test.ts` (fallback order, probe cleanup, limiter state kept over a resize),
+- vitest: `renderer.test.ts` (fallback order, probe cleanup, budgets spent and the view held over a resize),
   `Visualizer.context.test.tsx` (loss, restore, failed restore, listener removal),
-  `Visualizer.test.tsx` (`backingSize`, `chosenVisual`), `cadence.test.ts` (synthetic 30 Hz
+  `Visualizer.test.tsx` (`backingSize`, `chosenVisual`, `viewClip`), `cadence.test.ts` (synthetic 30 Hz
   clock through the vendored Oscillux governor).
 
 ## Rollback

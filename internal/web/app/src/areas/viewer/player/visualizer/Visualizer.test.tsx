@@ -11,6 +11,7 @@ import {
   slotPixels,
   takeUpcoming,
   Visualizer,
+  viewClip,
 } from "./Visualizer";
 import { chosenVisual, VISUALS, visualFor } from "./visuals";
 
@@ -206,6 +207,21 @@ describe("backingSize", () => {
   it("falls back to the CSS box, and to DPR 1 for a bad ratio", () => {
     expect(backingSize(null, 400.4, 300.6, 1.5)).toEqual([600, 450, 1]);
     expect(backingSize(null, 400, 300, 0)).toEqual([400, 300, 1]);
+  });
+});
+
+// Codex round 24: the canvas shows no pixel past the ones the limiter has judged in view.
+describe("viewClip", () => {
+  const shown = { width: 64, height: 36, texel: 2, viewWidth: 128, viewHeight: 72 };
+
+  it("clips nothing when the whole frame is in view", () => {
+    expect(viewClip(shown, 4)).toBe("");
+  });
+
+  it("clips the hidden pixels of a cut texel and everything past it", () => {
+    expect(viewClip({ ...shown, viewWidth: 3 }, 4)).toBe("inset(0 31.25px 0px 0)");
+    expect(viewClip({ ...shown, viewWidth: 3, viewHeight: 71 }, 1)).toBe("inset(0 125px 1px 0)");
+    expect(viewClip({ ...shown, viewWidth: 0, viewHeight: 0 }, 2)).toBe("inset(0 64px 36px 0)");
   });
 });
 

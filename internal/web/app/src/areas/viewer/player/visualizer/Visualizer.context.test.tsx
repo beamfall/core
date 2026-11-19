@@ -267,6 +267,23 @@ describe("Visualizer canvas fitting", () => {
     expect(canvas.style.width).toBe("960px");
   });
 
+  // Codex round 24: a slot grown past a texel it cut would show the texel's hidden pixels before
+  // the limiter judged them, so the canvas is clipped to the view the renderer reports.
+  it("clips the canvas to the pixels the limiter has judged in view", async () => {
+    const { canvas } = mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    vi.stubGlobal("devicePixelRatio", 4);
+    slotSize(canvas, 1, 30);
+    renderer.shown = { width: 64, height: 36, texel: 2, viewWidth: 3, viewHeight: 72 };
+    step(16);
+    expect(canvas.style.clipPath).toBe("inset(0 31.25px 0px 0)");
+
+    renderer.shown = { width: 64, height: 36, texel: 2, viewWidth: 128, viewHeight: 72 };
+    step(32);
+    expect(canvas.style.clipPath).toBe("");
+  });
+
   it("refits a paused frame when DPR changes at the same physical size", async () => {
     const { canvas, videoRef } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
