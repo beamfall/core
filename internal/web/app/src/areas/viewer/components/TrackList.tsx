@@ -1,16 +1,19 @@
-import { useNavigate } from "react-router";
+import { Play } from "lucide-react";
+import { Link, useNavigate } from "react-router";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
+import { activateLink } from "../lib/activateLink";
+import { mediaLinkState } from "../lib/mediaDetail";
 import { formatDuration, playState, type TrackRow } from "../lib/trackList";
 import type { PlayQueueItem } from "../lib/watchQueue";
+import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 import "./listening.css";
 
 // A numbered list of audio Media rows (CORE-1635): number, title, the credited
-// people when they differ from the container's own, and runtime. Activating a
-// row plays it with the whole list as the player's queue; the row's More menu
-// is the card menu in its audio wording.
+// people when they differ from the container's own, and runtime. The row links
+// to Media detail, and its Play button starts playback with the full queue.
 export function TrackList({
   rows,
   queue,
@@ -26,42 +29,59 @@ export function TrackList({
   const navigate = useNavigate();
   const identity = useViewerIdentity();
 
-  function play(row: TrackRow) {
-    navigate(`/watch/${encodeURIComponent(row.item.id)}`, {
-      state: playState(identity, queue, row.item),
-    });
-  }
-
   return (
     <ol className="bf-track-list" aria-label={label}>
       {rows.map((row) => {
+        const { item } = row;
         const duration = formatDuration(row.durationSeconds);
-        const path = `watch/${encodeURIComponent(row.item.id)}`;
+        const id = encodeURIComponent(item.id);
+        const path = `/media/${id}`;
+        const openDetails = () =>
+          navigate(path, {
+            state: { ...mediaLinkState(item, identity), ...playState(identity, queue, item) },
+          });
+        const play = () => navigate(`/watch/${id}`, { state: playState(identity, queue, item) });
         return (
-          <li key={row.item.id} className="bf-card-shell bf-track">
-            <button
-              type="button"
+          <li key={item.id} className="bf-card-shell bf-track">
+            <Link
               className="bf-track-row"
-              aria-label={t("trackPlay", { title: row.item.title })}
-              disabled={row.item.locked}
-              onClick={() => play(row)}
+              to={path}
+              onClick={(event) => activateLink(event, openDetails)}
             >
               <span className="bf-track-number">{row.number}</span>
               <span className="bf-track-copy">
-                <span className="bf-track-title">{row.item.title}</span>
+                <span className="bf-track-title">{item.title}</span>
                 {row.artist && <span className="bf-track-artist">{row.artist}</span>}
               </span>
               <span className="bf-track-duration">{duration}</span>
-            </button>
-            <MediaItemCardMenu
-              title={row.item.title}
-              primaryLabel={t("play")}
-              isMedia
-              isAudio
-              href={new URL(`${import.meta.env.BASE_URL}${path}`, window.location.origin).href}
-              target={itemTargetFor(row.item)}
-              onPrimary={() => play(row)}
-            />
+            </Link>
+            {!item.locked && (
+              <div className="bf-child-actions">
+                <button
+                  type="button"
+                  className="bf-row-play"
+                  aria-label={t("trackPlay", { title: item.title })}
+                  onClick={play}
+                  onPointerEnter={preloadPlayer}
+                  onFocus={preloadPlayer}
+                >
+                  <Play aria-hidden />
+                </button>
+                <MediaItemCardMenu
+                  title={item.title}
+                  primaryLabel={t("play")}
+                  isMedia
+                  isAudio
+                  href={
+                    new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)
+                      .href
+                  }
+                  target={itemTargetFor(item)}
+                  onPrimary={play}
+                  onDetails={openDetails}
+                />
+              </div>
+            )}
           </li>
         );
       })}

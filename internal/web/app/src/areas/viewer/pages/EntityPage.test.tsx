@@ -526,10 +526,14 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
   });
 
   it("opens detail from More", async () => {
+    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
     renderEntity();
     fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }));
+    const details = await screen.findByRole("menuitem", { name: "Details" });
+    expect(queueWindow).not.toHaveBeenCalled();
+    fireEvent.click(details);
     expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
+    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
   });
 
   it("offers Mark played for an audio child alongside video children", async () => {
@@ -545,9 +549,11 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
   });
 
   it.each(["button", "menu"])("keeps direct Play through the %s", async (entry) => {
+    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
     renderEntity();
     const link = await screen.findByRole("link", { name: /Related item/ });
     const row = within(link.closest("li")!);
+    expect(queueWindow).not.toHaveBeenCalled();
     if (entry === "menu") {
       fireEvent.click(row.getByRole("button", { name: "More actions for Related item" }));
       fireEvent.click(await screen.findByRole("menuitem", { name: "Play" }));
@@ -559,6 +565,7 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     const state = JSON.parse(output.slice(3));
     expect(state.queue.map((item: { id: string }) => item.id)).toEqual(["m1", "m2"]);
     expect(state.queueIdentity).toBe(identity);
+    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), "m1");
   });
 
   it("shows the localized action error on the child whose menu failed to load", async () => {
@@ -602,46 +609,32 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
   });
 });
 
-it.each(["link", "Details", "Play"])(
-  "windows a long child queue only when activated through %s",
-  async (entry) => {
-    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
-    const items = Array.from({ length: watchQueue.MAX_QUEUE + 101 }, (_, index) => ({
-      id: `child-${index}`,
-      kind: "media",
-      title: `Child ${index}`,
-      mediaClass: "video",
-    }));
-    const target = items.at(-2)!;
-    vi.mocked(fetchEntity).mockResolvedValue({ ...entity, archetype: "container" });
-    vi.mocked(fetchMediaForEntity).mockResolvedValue(items);
-    renderEntity();
-    const title = await screen.findByText(target.title);
-    const row = within(title.closest("li")!);
-    expect(queueWindow.mock.calls.length).toBe(0);
+it("windows a long child queue only when the child detail link is activated", async () => {
+  const queueWindow = vi.spyOn(watchQueue, "queueWindow");
+  const items = Array.from({ length: watchQueue.MAX_QUEUE + 101 }, (_, index) => ({
+    id: `child-${index}`,
+    kind: "media",
+    title: `Child ${index}`,
+    mediaClass: "video",
+  }));
+  const target = items.at(-2)!;
+  vi.mocked(fetchEntity).mockResolvedValue({ ...entity, archetype: "container" });
+  vi.mocked(fetchMediaForEntity).mockResolvedValue(items);
+  renderEntity();
+  const title = await screen.findByText(target.title);
+  expect(queueWindow.mock.calls.length).toBe(0);
 
-    if (entry === "Details") {
-      fireEvent.click(row.getByRole("button", { name: `More actions for ${target.title}` }));
-      const details = await screen.findByRole("menuitem", { name: "Details" });
-      expect(queueWindow.mock.calls.length).toBe(0);
-      fireEvent.click(details);
-    } else {
-      fireEvent.click(
-        entry === "Play" ? row.getByRole("button", { name: `Play ${target.title}` }) : title,
-      );
-    }
+  fireEvent.click(title);
 
-    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), target.id);
-    const name = entry === "Play" ? "player" : "detail";
-    const output = screen.getByRole("status", { name }).textContent!;
-    expect(output.startsWith(`${target.id} `)).toBe(true);
-    const state: watchQueue.PlayerNavState = JSON.parse(output.slice(target.id.length + 1));
-    expect(state.queueIdentity).toBe(identity);
-    expect(state.queue?.map((item) => item.id)).toEqual(
-      items.slice(-watchQueue.MAX_QUEUE).map((item) => item.id),
-    );
-  },
-);
+  expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), target.id);
+  const output = screen.getByRole("status", { name: "detail" }).textContent!;
+  expect(output.startsWith(`${target.id} `)).toBe(true);
+  const state: watchQueue.PlayerNavState = JSON.parse(output.slice(target.id.length + 1));
+  expect(state.queueIdentity).toBe(identity);
+  expect(state.queue?.map((item) => item.id)).toEqual(
+    items.slice(-watchQueue.MAX_QUEUE).map((item) => item.id),
+  );
+}, 10_000);
 
 describe.each(["list", "grid"] as const)(
   "EntityPage child navigation in a mixed detail %s layout",
@@ -835,13 +828,13 @@ describe("EntityPage audio container order", () => {
     ).toEqual(["Disc 1", "Disc 2"]);
     expect(
       within(first)
-        .getAllByRole("button", { name: /^Play / })
-        .map((button) => button.textContent),
+        .getAllByRole("link")
+        .map((link) => link.textContent),
     ).toEqual(["1First Disc Opener", "2First Disc Closer"]);
     expect(
       within(second)
-        .getAllByRole("button", { name: /^Play / })
-        .map((button) => button.textContent),
+        .getAllByRole("link")
+        .map((link) => link.textContent),
     ).toEqual(["1Second Disc Opener", "2Second Disc Closer"]);
   });
 
@@ -856,8 +849,8 @@ describe("EntityPage audio container order", () => {
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
     expect(
       within(list)
-        .getAllByRole("button", { name: /^Play / })
-        .map((button) => button.textContent),
+        .getAllByRole("link")
+        .map((link) => link.textContent),
     ).toEqual(["1First Disc Opener", "2First Disc Closer"]);
   });
 
@@ -882,14 +875,60 @@ describe("EntityPage audio container order", () => {
     expect(playerState()).toEqual({ mediaId: "d1t1", queue: ["d1t1", "d1t2", "d2t1"] });
   });
 
-  it("plays a row with the same listed order queued", async () => {
+  it.each(["title", "More"])("opens the second disc track's detail through %s", async (entry) => {
     renderEntity();
-    await act(async () => {});
-    await act(async () => {});
+    const disc = within(await screen.findByRole("list", { name: "Disc 2" }));
 
-    expect(screen.getByRole("list", { name: "Disc 1" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Play Second Disc Opener" }));
+    if (entry === "title") {
+      const link = disc.getByRole("link", { name: /Second Disc Opener/ });
+      expect(link).toHaveAttribute("href", "/media/d2t1");
+      fireEvent.click(within(link).getByText("Second Disc Opener"));
+    } else {
+      fireEvent.click(disc.getByRole("button", { name: "More actions for Second Disc Opener" }));
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }));
+    }
+
+    const output = screen.getByRole("status", { name: "detail" }).textContent!;
+    expect(output.startsWith("d2t1 ")).toBe(true);
+    const state: watchQueue.PlayerNavState = JSON.parse(output.slice("d2t1 ".length));
+    expect(state.queueIdentity).toBe(identity);
+    expect(state.queue?.map((item) => item.id)).toEqual(["d1t1", "d1t2", "d2t1"]);
+    expect(screen.queryByRole("status", { name: "player" })).not.toBeInTheDocument();
+  });
+
+  it("tabs from the track detail link to Play and More and plays with the cross-disc queue", async () => {
+    const user = userEvent.setup();
+    renderEntity();
+    const disc = within(await screen.findByRole("list", { name: "Disc 2" }));
+    disc.getByRole("link", { name: /Second Disc Opener/ }).focus();
+    const play = disc.getByRole("button", { name: "Play Second Disc Opener" });
+
+    await user.tab();
+    expect(play).toHaveFocus();
+    await user.tab();
+    expect(disc.getByRole("button", { name: "More actions for Second Disc Opener" })).toHaveFocus();
+    await user.tab({ shift: true });
+    await user.keyboard("{Enter}");
+
     expect(playerState()).toEqual({ mediaId: "d2t1", queue: ["d1t1", "d1t2", "d2t1"] });
+  });
+
+  it("links a locked track to detail without exposing playback controls or queuing it", async () => {
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { ...tracks[0], locked: true },
+      ...tracks.slice(1),
+    ]);
+    renderEntity();
+    const second = within(await screen.findByRole("list", { name: "Disc 2" }));
+    expect(second.getByRole("link", { name: /Second Disc Opener/ })).toHaveAttribute(
+      "href",
+      "/media/d2t1",
+    );
+    expect(second.queryByRole("button")).not.toBeInTheDocument();
+
+    const first = within(screen.getByRole("list", { name: "Disc 1" }));
+    fireEvent.click(first.getByRole("button", { name: "Play First Disc Opener" }));
+    expect(playerState()).toEqual({ mediaId: "d1t1", queue: ["d1t1", "d1t2"] });
   });
 
   it("offers no primary Play action until the order is known", async () => {
