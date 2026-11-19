@@ -128,6 +128,14 @@ func TestSessionsPreemptionDuringJoinPublication(t *testing.T) {
 	session := registeredSession(t, sessions, victim)
 	part := regularJoinPart(t)
 	dst := filepath.Join(session.dir, "720p", "joined00000.m4s")
+	sessions.removeDir = func(dir string) error {
+		if dir == session.dir {
+			if _, err := os.Lstat(dst); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("joined artifact before directory removal: %v, want absent", err)
+			}
+		}
+		return os.RemoveAll(dir)
+	}
 	entered, resume := make(chan string, 1), make(chan struct{})
 	release := sync.OnceFunc(func() { close(resume) })
 	defer release()
@@ -165,6 +173,11 @@ func TestSessionsPreemptionDuringJoinPublication(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("foreground start did not finish after the join drained")
+	}
+	select {
+	case <-session.teardownDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("victim directory removal did not finish")
 	}
 }
 

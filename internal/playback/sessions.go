@@ -528,10 +528,13 @@ type Sessions struct {
 	// to a slow Stop.
 	stopEncoder     func(*ffmpeg.HLSProcess)
 	dirRemovalSlots chan struct{}
-	// cleanupMu guards failed removals. Each pending path's value is nil
-	// until a retry claims it and installs a completion channel.
-	cleanupMu   sync.Mutex
-	pendingDirs map[string]chan struct{}
+	// cleanupMu guards the directory work queue, its workers, and failed
+	// removals. Each failed path's value is nil until a retry claims it
+	// and installs a completion channel.
+	cleanupMu         sync.Mutex
+	dirCleanupQueue   []*hlsSession
+	dirCleanupWorkers int
+	pendingDirs       map[string]chan struct{}
 	// removeDir, when set, replaces os.RemoveAll during teardown and retry.
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
@@ -571,18 +574,48 @@ func revokeSession(session *hlsSession) {
 }
 
 func (s *Sessions) drainTeardowns(teardowns []sessionTeardown) {
-	var draining sync.WaitGroup
+	// Drain session work independently so a blocked join or encoder stop
+	// cannot hold up the other stops.
 	for _, t := range teardowns {
 		if !t.pending {
-			draining.Go(func() { s.teardown(t.session) })
+			go s.stopAndQueueTeardown(t.session)
 		}
 	}
-	draining.Wait()
+	for _, t := range teardowns {
+		if !t.pending {
+			<-t.session.teardownDone
+		}
+	}
 }
 
-func (s *Sessions) teardown(session *hlsSession) {
+func (s *Sessions) stopAndQueueTeardown(session *hlsSession) {
 	s.stopSession(session)
-	s.finishTeardown(session)
+
+	s.cleanupMu.Lock()
+	s.dirCleanupQueue = append(s.dirCleanupQueue, session)
+	if s.dirCleanupWorkers < maxConcurrentSessionDirRemovals {
+		s.dirCleanupWorkers++
+		go s.drainSessionDirs()
+	}
+	s.cleanupMu.Unlock()
+}
+
+func (s *Sessions) drainSessionDirs() {
+	for {
+		s.cleanupMu.Lock()
+		if len(s.dirCleanupQueue) == 0 {
+			s.dirCleanupQueue = nil
+			s.dirCleanupWorkers--
+			s.cleanupMu.Unlock()
+			return
+		}
+		session := s.dirCleanupQueue[0]
+		s.dirCleanupQueue[0] = nil
+		s.dirCleanupQueue = s.dirCleanupQueue[1:]
+		s.cleanupMu.Unlock()
+
+		s.finishTeardown(session)
+	}
 }
 
 func (s *Sessions) stopSession(session *hlsSession) {
@@ -1673,7 +1706,8 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		session.mu.Unlock()
 		if teardownAfterStart {
 			revokeSession(session)
-			s.teardown(session)
+			s.stopAndQueueTeardown(session)
+			<-session.teardownDone
 		}
 		if unstartedLive != nil {
 			unstartedLive.WaitRevoked()
@@ -1756,10 +1790,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	previous.signalRevoke()
 	if victim != nil {
 		revokeSession(victim.session)
-		s.stopSession(victim.session)
 		// Only the encoder and readers compete with this start for capacity.
 		// The detached session's directory can wait for a removal slot.
-		go s.finishTeardown(victim.session)
+		s.stopAndQueueTeardown(victim.session)
 	}
 	s.stopRun(replaced, previous)
 	procCtx := context.WithoutCancel(ctx)

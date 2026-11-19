@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
@@ -2596,60 +2598,87 @@ func TestSessionsPreemptionDuringDirectoryRemoval(t *testing.T) {
 }
 
 func TestSessionsBatchTeardownBoundsDirectoryRemoval(t *testing.T) {
-	t.Parallel()
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
-	const count = 12
-	const id = "session-playlist-only"
-	var dirs []string
-	for i := range count {
-		key := SessionKey{SessionID: id, MediaID: store.MediaID(fmt.Sprintf("media-%d", i))}
-		if _, err := filePath720(sessions, key, masterPlaylistName); err != nil {
+	synctest.Test(t, func(t *testing.T) {
+		sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+		t.Cleanup(sessions.Close)
+		const count = 12
+		const id = "session-playlist-only"
+		var batch []*hlsSession
+		for i := range count {
+			key := SessionKey{SessionID: id, MediaID: store.MediaID(fmt.Sprintf("media-%d", i))}
+			if _, err := filePath720(sessions, key, masterPlaylistName); err != nil {
+				t.Fatal(err)
+			}
+			session := registeredSession(t, sessions, key)
+			if session.proc != nil {
+				t.Fatal("playlist-only session started an encoder")
+			}
+			batch = append(batch, session)
+		}
+
+		entered, release := make(chan string, count), make(chan struct{})
+		unblock := sync.OnceFunc(func() { close(release) })
+		defer unblock()
+		sessions.removeDir = func(dir string) error {
+			entered <- dir
+			<-release
+			return os.RemoveAll(dir)
+		}
+		done := make(chan int, 1)
+		go func() { done <- sessions.TerminateSession(id) }()
+		for range maxConcurrentSessionDirRemovals {
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("batch teardown did not fill both directory removal slots")
+			}
+		}
+		synctest.Wait()
+		select {
+		case dir := <-entered:
+			t.Fatalf("an extra directory removal entered while both slots were blocked: %s", dir)
+		default:
+		}
+
+		// Count callers parked either in removal or waiting for a slot. This
+		// test runs outside t.Parallel so the profile contains only this batch.
+		var stacks strings.Builder
+		if err := pprof.Lookup("goroutine").WriteTo(&stacks, 2); err != nil {
 			t.Fatal(err)
 		}
-		session := registeredSession(t, sessions, key)
-		if session.proc != nil {
-			t.Fatal("playlist-only session started an encoder")
+		if got := strings.Count(stacks.String(), "(*Sessions).removeSessionDir("); got != maxConcurrentSessionDirRemovals {
+			t.Errorf("%d goroutines in directory removal, want %d", got, maxConcurrentSessionDirRemovals)
 		}
-		dirs = append(dirs, session.dir)
-	}
-
-	entered, release := make(chan string, count), make(chan struct{})
-	unblock := sync.OnceFunc(func() { close(release) })
-	defer unblock()
-	sessions.removeDir = func(dir string) error {
-		entered <- dir
-		<-release
-		return os.RemoveAll(dir)
-	}
-	done := make(chan int, 1)
-	go func() { done <- sessions.TerminateSession(id) }()
-	for range 2 {
+		for _, session := range batch {
+			if session.teardownDone == nil {
+				t.Fatalf("session %s has no teardown notification", session.dir)
+			}
+			select {
+			case <-session.teardownDone:
+				t.Fatalf("teardown completed before removal of %s", session.dir)
+			default:
+			}
+		}
+		unblock()
 		select {
-		case <-entered:
+		case got := <-done:
+			if got != count {
+				t.Fatalf("detached %d sessions, want %d", got, count)
+			}
 		case <-time.After(5 * time.Second):
-			t.Fatal("batch teardown did not start two concurrent removals")
+			t.Fatal("batch teardown did not finish")
 		}
-	}
-	select {
-	case dir := <-entered:
-		t.Fatalf("a third directory removal entered while two were blocked: %s", dir)
-	case <-time.After(50 * time.Millisecond):
-	}
-	unblock()
-	select {
-	case got := <-done:
-		if got != count {
-			t.Fatalf("detached %d sessions, want %d", got, count)
+		for _, session := range batch {
+			select {
+			case <-session.teardownDone:
+			default:
+				t.Fatalf("teardown notification still open for %s", session.dir)
+			}
+			if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("directory %s after teardown: %v", session.dir, err)
+			}
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("batch teardown did not finish")
-	}
-	for _, dir := range dirs {
-		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("directory %s after teardown: %v", dir, err)
-		}
-	}
+	})
 }
 
 func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {

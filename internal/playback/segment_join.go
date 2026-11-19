@@ -32,6 +32,7 @@ func (h *hlsSession) joinPlaylistFragments(dst string, parts []string, readPart 
 		}
 		// Detach can run without h.mu while rename is in progress.
 		if h.detached.Load() {
+			_ = os.Remove(dst)
 			return ErrSessionEvicted
 		}
 		return nil
