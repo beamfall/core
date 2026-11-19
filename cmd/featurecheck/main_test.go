@@ -254,6 +254,31 @@ func TestParseRegistryReadsSurfaceDecisions(t *testing.T) {
 	}
 }
 
+func TestParseRegistryStripsDecisionComments(t *testing.T) {
+	withScanJobs(t, decisionScanJobs)
+	registry := strings.NewReplacer(
+		"fullParity: [androidtv]", "fullParity: [androidtv] # owner rule",
+		"    tickets:\n", "    tickets: # work\n",
+		"      tvos: CORE-2700", "      tvos: CORE-2700 # implementation",
+		`      tvos: "1.1"`, `      tvos: "1.1" # after launch`,
+		"      iphone: Covered by the iPad layout.", "      iphone: \"Covered by #2 layout.\" # note",
+	).Replace(decisionRegistry)
+	_, features, err := parseRegistry(writeRegistry(t, registry))
+	if err != nil {
+		t.Fatalf("parseRegistry() error = %v", err)
+	}
+	f := features[0]
+	if got := f.tickets["tvos"]; got != "CORE-2700" {
+		t.Errorf("tickets[tvos] = %q", got)
+	}
+	if got := f.release["tvos"]; got != "1.1" {
+		t.Errorf("release[tvos] = %q", got)
+	}
+	if got := f.unsupported["iphone"]; got != "Covered by #2 layout." {
+		t.Errorf("unsupported[iphone] = %q", got)
+	}
+}
+
 func TestParseRegistryRejectsInvalidSurfaceDecisions(t *testing.T) {
 	tests := []struct {
 		name string
@@ -277,6 +302,12 @@ func TestParseRegistryRejectsInvalidSurfaceDecisions(t *testing.T) {
 		{name: "full-parity exclusion without owner decision", from: "(owner 2026-11-18)", to: "(team call)", want: `"androidtv" is a full-parity surface`},
 		{name: "fullParity names server", from: "fullParity: [androidtv]", to: "fullParity: [server]", want: `fullParity names "server"`},
 		{name: "fullParity duplicate", from: "fullParity: [androidtv]", to: "fullParity: [androidtv, androidtv]", want: `duplicate fullParity surface "androidtv"`},
+		{name: "fullParity block list", from: "fullParity: [androidtv]", to: "fullParity:\n  - androidtv", want: "fullParity must be a one-line flow list"},
+		{name: "fullParity bare value", from: "fullParity: [androidtv]", to: "fullParity: androidtv", want: "fullParity must be a one-line flow list"},
+		{name: "fullParity repeated", from: "fullParity: [androidtv]", to: "fullParity: [androidtv]\nfullParity: [tvos]", want: "more than one fullParity list"},
+		{name: "comment is not a reason", from: "      iphone: Covered by the iPad layout.", to: "      iphone: # TODO decide", want: `unsupported "iphone" has no reason`},
+		{name: "comment is not an owner decision", from: "Remote-only input: joins by phone handoff. (owner 2026-11-18)", to: "# TODO ask (owner 2026-11-18)", want: `unsupported "androidtv" has no reason`},
+		{name: "comment after owner text does not approve", from: "Remote-only input: joins by phone handoff. (owner 2026-11-18)", to: "Remote-only input. # (owner 2026-11-18)", want: `"androidtv" is a full-parity surface`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

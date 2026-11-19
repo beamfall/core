@@ -643,7 +643,7 @@ func parseRegistry(path string) (targets []string, features []feature, err error
 				if !ok {
 					return nil, nil, fmt.Errorf("feature %q %s entry %q is not `surface: value`", cur.id, block, trimmed)
 				}
-				key, value = strings.TrimSpace(key), unquote(strings.TrimSpace(value))
+				key, value = strings.TrimSpace(key), unquote(stripComment(value))
 				entries := *cur.block(block)
 				if _, dup := entries[key]; dup {
 					return nil, nil, fmt.Errorf("feature %q has duplicate %s surface %q", cur.id, block, key)
@@ -667,9 +667,15 @@ func parseRegistry(path string) (targets []string, features []feature, err error
 				continue
 			}
 		}
-		if fullParity == nil && indent == 0 && strings.HasPrefix(trimmed, "fullParity:") {
-			fullParity = parseFlowList(trimmed[len("fullParity:"):])
-			if fullParity == nil {
+		if indent == 0 && strings.HasPrefix(trimmed, "fullParity:") {
+			if fullParity != nil {
+				return nil, nil, fmt.Errorf("registry has more than one fullParity list")
+			}
+			value := stripComment(trimmed[len("fullParity:"):])
+			if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
+				return nil, nil, fmt.Errorf("registry fullParity must be a one-line flow list `[surface, ...]`, got %q", value)
+			}
+			if fullParity = parseFlowList(value); fullParity == nil {
 				fullParity = []string{}
 			}
 			continue
@@ -757,7 +763,7 @@ func parseRegistry(path string) (targets []string, features []feature, err error
 func blockStart(trimmed string) (name string, inline, ok bool) {
 	for _, name := range decisionBlocks {
 		if rest, found := strings.CutPrefix(trimmed, name+":"); found {
-			return name, strings.TrimSpace(rest) != "", true
+			return name, stripComment(rest) != "", true
 		}
 	}
 	return "", false, false
@@ -824,6 +830,24 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// stripComment trims value and drops a trailing YAML comment: a `#` at the
+// start or after whitespace, outside a leading quoted scalar.
+func stripComment(value string) string {
+	value = strings.TrimSpace(value)
+	start := 0
+	if len(value) > 0 && (value[0] == '"' || value[0] == '\'') {
+		if end := strings.IndexByte(value[1:], value[0]); end >= 0 {
+			start = end + 2
+		}
+	}
+	for i := start; i < len(value); i++ {
+		if value[i] == '#' && (i == 0 || value[i-1] == ' ' || value[i-1] == '\t') {
+			return strings.TrimSpace(value[:i])
+		}
+	}
+	return value
 }
 
 // unquote strips one pair of matching surrounding quotes.
