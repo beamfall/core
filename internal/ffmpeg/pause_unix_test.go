@@ -4,11 +4,11 @@ package ffmpeg
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,6 +17,8 @@ import (
 )
 
 const hlsPauseTestBound = 3 * time.Second
+const hlsStopHelperEnv = "BEAMFALL_FFMPEG_HLS_STOP_HELPER"
+const hlsStopLeaderFile = "leader.pid"
 
 func TestHLSProcessPauseResumeKeepsPID(t *testing.T) {
 	reader, writer, err := os.Pipe()
@@ -55,14 +57,50 @@ func TestHLSProcessPauseResumeKeepsPID(t *testing.T) {
 }
 
 func TestHLSProcessStopReapsStoppedLeaderAndDescendant(t *testing.T) {
-	pidPath := filepath.Join(t.TempDir(), "descendant.pid")
-	cmd := exec.CommandContext(t.Context(), "sh", "-c", `sleep 30 & echo $! > "$1"; wait`, "sh", pidPath) // #nosec G204 -- test-owned path
-	process := startHLSPauseTestProcess(t, cmd)
-	descendant := waitForPidFile(t, pidPath)
+	dir := t.TempDir()
+	// Allow time for fixture setup and race-detector shutdown around the reap
+	// bound. The parent can still kill and Wait for a wedged helper.
+	ctx, cancel := context.WithTimeout(t.Context(), 4*hlsPauseTestBound)
+	defer cancel()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestHLSProcessStopHelper$") // #nosec G204 -- this test binary
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), hlsStopHelperEnv+"=1")
+	cmd.WaitDelay = time.Second
+	cmd.Cancel = func() error {
+		killHLSStopFixture(filepath.Join(dir, hlsStopLeaderFile))
+		return cmd.Process.Kill()
+	}
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bounded Stop helper: %v (watchdog: %v)\n%s", err, ctx.Err(), output)
+	}
+}
+
+func TestHLSProcessStopHelper(t *testing.T) {
+	if os.Getenv(hlsStopHelperEnv) != "1" {
+		return
+	}
+	becomeHLSStopTestSubreaper(t)
+	const descendantFile = "descendant.pid"
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", `echo $$ > "$1"; sleep 30 & echo $! > "$2"; wait`, "sh", hlsStopLeaderFile, descendantFile)
+	process, err := startHLSProcess(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		killHLSStopFixture(hlsStopLeaderFile)
+	})
+	leader := cmd.Process.Pid
+	descendant := waitForPidFile(t, descendantFile)
+	if reported := waitForPidFile(t, hlsStopLeaderFile); reported != leader {
+		t.Fatalf("fixture reported leader %d, want %d", reported, leader)
+	}
 	if !process.Pause() {
 		t.Fatal("Pause refused a running group")
 	}
-	leader := cmd.Process.Pid
 	waitForStoppedHLSProcess(t, leader)
 	waitForStoppedHLSProcess(t, descendant)
 
@@ -77,25 +115,52 @@ func TestHLSProcessStopReapsStoppedLeaderAndDescendant(t *testing.T) {
 	case <-time.After(time.Until(deadline)):
 		t.Fatal("Stop did not finish within the reap bound")
 	}
+	if !time.Now().Before(deadline) {
+		t.Fatal("Stop did not finish within the reap bound")
+	}
 	if cmd.ProcessState == nil {
 		t.Fatal("Stop returned before reaping the leader")
 	}
-	if signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal(); signal != syscall.SIGKILL {
-		t.Errorf("Stop ended the leader with %s, want SIGKILL", signal)
-	}
+	signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
+	descendantReaped := false
 	for {
-		// Signal zero also sees a zombie. Require ESRCH for both PIDs, so the
-		// test covers adoption and reaping when run under the container init.
+		if !descendantReaped {
+			descendantReaped = reapHLSStopTestDescendant(t, descendant)
+		}
+		// Signal zero also sees zombies. Require both PIDs to disappear.
 		leaderErr := syscall.Kill(leader, 0)
 		descendantErr := syscall.Kill(descendant, 0)
 		if leaderErr == syscall.ESRCH && descendantErr == syscall.ESRCH {
-			return
+			reapedAt := time.Now()
+			if err := os.Remove(hlsStopLeaderFile); err != nil {
+				t.Fatal(err)
+			}
+			if !reapedAt.Before(deadline) {
+				t.Fatal("group reaped after the reap bound")
+			}
+			break
 		}
 		if !time.Now().Before(deadline) {
 			t.Fatalf("group not reaped within %s: leader %d: %v, descendant %d: %v",
 				hlsPauseTestBound, leader, leaderErr, descendant, descendantErr)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if signal != syscall.SIGKILL {
+		t.Errorf("Stop ended the leader with %s, want SIGKILL", signal)
+	}
+}
+
+// The watchdog and the helper's failure path can kill the fixture even if
+// Stop holds the process locks. The fixture publishes its group ID before
+// starting the descendant.
+func killHLSStopFixture(leaderPath string) {
+	data, err := os.ReadFile(leaderPath) // #nosec G304 -- test-owned path
+	if err != nil {
+		return
+	}
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid > 1 {
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 }
 
@@ -146,7 +211,7 @@ func startHLSPauseTestProcess(t *testing.T, cmd *exec.Cmd) *HLSProcess {
 func waitForStoppedHLSProcess(t *testing.T, pid int) {
 	t.Helper()
 	for deadline := time.Now().Add(hlsPauseTestBound); time.Now().Before(deadline); {
-		stopped, err := hlsProcessStopped(t, pid)
+		stopped, err := hlsProcessStopped(pid)
 		if err != nil {
 			t.Fatalf("query process %d state: %v", pid, err)
 		}
@@ -156,17 +221,6 @@ func waitForStoppedHLSProcess(t *testing.T, pid int) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("process %d did not stop", pid)
-}
-
-func hlsProcessStopped(t *testing.T, pid int) (bool, error) {
-	pidArg := strconv.Itoa(pid)
-	if runtime.GOOS == "linux" {
-		// The slim runtime image does not install ps.
-		status, err := os.ReadFile("/proc/" + pidArg + "/status") // #nosec G304 -- test-owned PID
-		return bytes.Contains(status, []byte("\nState:\tT ")), err
-	}
-	state, err := exec.CommandContext(t.Context(), "ps", "-o", "stat=", "-p", pidArg).Output() // #nosec G204 -- test-owned PID
-	return strings.HasPrefix(strings.TrimSpace(string(state)), "T"), err
 }
 
 func waitForHLSPauseTestExit(process *HLSProcess) <-chan error {

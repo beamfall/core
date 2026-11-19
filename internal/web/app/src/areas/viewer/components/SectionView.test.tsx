@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Section, SourceItem } from "@/lib/graphql/types";
@@ -113,4 +113,47 @@ describe("SectionView shelf ranking", () => {
   it("keeps the server's order in a grid", () => {
     expect(hrefs(grid)).toEqual(["/entity/a", "/entity/b", "/entity/c"]);
   });
+
+  it.each([{ kind: "entity-items", entityKind: "container" }, { kind: "all-items" }])(
+    "renders newer unstarted containers first on a Browse $kind shelf",
+    (source) => {
+      const section: Section = {
+        id: "browse-containers",
+        kind: "shelf",
+        title: { en: "Containers" },
+        artworkSlot: "poster",
+        source,
+      };
+      const served: SourceItem[] = [
+        {
+          id: "entity-amber",
+          kind: "entity",
+          title: "Amber",
+          year: 2005,
+          mediaClass: "video",
+          engagement: { totalCount: 6, remainingCount: 6 },
+        },
+        {
+          id: "entity-cobalt",
+          kind: "entity",
+          title: "Cobalt",
+          year: 2022,
+          mediaClass: "video",
+          engagement: { totalCount: 4, remainingCount: 4 },
+        },
+      ];
+      render(
+        <I18nProvider>
+          <MemoryRouter>
+            <SectionView section={section} items={served} navigationID="library-library-a" />
+          </MemoryRouter>
+        </I18nProvider>,
+      );
+      const shelf = within(screen.getByRole("list", { name: "Containers" }));
+      expect(shelf.getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+        "/entity/entity-cobalt",
+        "/entity/entity-amber",
+      ]);
+    },
+  );
 });

@@ -35,6 +35,7 @@ import (
 	schedulepkg "github.com/beamfall/core/internal/schedule"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/streamtoken"
+	"github.com/beamfall/core/internal/workflow/convert"
 )
 
 // ServerInfo describes the connected Beamfall server.
@@ -144,8 +145,8 @@ type SourceItem struct {
 	// share, so a container of audio frames its art like its tracks
 	// (CORE-2362). Absent for unknown or mixed classes.
 	MediaClass string `json:"mediaClass,omitempty"`
-	// Year is a media-kind item's stored year, so a card can state it without
-	// a detail read (CORE-2269). Absent for entities and for Media with no year.
+	// Year is a media-kind item's stored year or a Section Source Entity's
+	// earliest visible linked Media year. Absent when no year is known.
 	Year int `json:"year,omitempty"`
 	// DurationSeconds is a Media item's stored runtime, so a list row can
 	// state it without a detail read (CORE-2386). Absent for entities and for
@@ -467,6 +468,10 @@ type Handler struct {
 	scanObserver    ScanObserver
 	libraryObserver LibraryMutationObserver
 	hardwareAccel   config.HardwareAccelReport
+
+	// Immutable after construction, keyed by plugin ID and container kind.
+	engagementContainers map[store.EngagementContainerKey]store.EngagementContainerRelations
+
 	// transcodeRuntime is the live transcoder wiring the transcode-config
 	// resolver reads and applies; liveTranscodeCap is the cap now in force.
 	transcodeRuntime TranscodeRuntime
@@ -790,6 +795,16 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 		plugins:  plugins,
 		audit:    observability.NewAuditLogger(nil),
 	}
+	h.engagementContainers = make(map[store.EngagementContainerKey]store.EngagementContainerRelations)
+	for _, id := range plugins.IDs() {
+		bundle, _ := plugins.Bundle(id)
+		relations := identify.ContainerRelations(bundle)
+		for _, kind := range bundle.EntityKinds {
+			if kind.Archetype == containerArchetype {
+				h.engagementContainers[store.EngagementContainerKey{PluginID: string(id), Kind: kind.Name}] = relations
+			}
+		}
+	}
 	if len(options) == 0 {
 		return h
 	}
@@ -1094,7 +1109,7 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 		return err
 	}
 	h.annotateScoreLabels(ctx, items)
-	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items, h.engagementContainers)
 }
 
 // cardBylineArchetype is the Entity archetype whose linked titles an audio
@@ -2028,7 +2043,19 @@ func (h *Handler) jobRetry(ctx context.Context, scope auth.Scope, req request) (
 	if id == "" {
 		return JobInfo{}, clientError(store.ErrJobNotFound.Error())
 	}
-	job, err := h.store.RetryJob(ctx, store.JobID(id), time.Now().UTC())
+	job, err := h.store.Job(ctx, store.JobID(id))
+	if errors.Is(err, store.ErrJobNotFound) {
+		return JobInfo{}, clientError(err.Error())
+	}
+	if err != nil {
+		return JobInfo{}, err
+	}
+	if job.Kind == convert.JobKind {
+		if err := h.requireWorkflowCapability(ctx, "conversion"); err != nil {
+			return JobInfo{}, err
+		}
+	}
+	job, err = h.store.RetryJob(ctx, job.ID, time.Now().UTC())
 	if err != nil {
 		if errors.Is(err, store.ErrJobNotTerminal) || errors.Is(err, store.ErrJobNotFound) {
 			return JobInfo{}, clientError(err.Error())

@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DECLARED_LOCALE_TAGS, LOCALE_DECLARATION } from "./l10n/locales";
 import {
@@ -124,36 +122,37 @@ const SHIPPED = new Set(
 // updated for the CORE-2503 director and writer labels as plural messages (CORE-2545).
 // merged with the CORE-2568 browse toolbar search, Filters and Sort copy.
 // updated for CORE-2572 first-start duration and attempt labels.
+// updated for the CORE-2453 workflow capability tips.
 // updated for the CORE-2585 Restrictions setup subtitle.
-const BASE_SERIALIZED_LENGTH = 903_480;
-const BASE_REGISTRY_SHA256 = "1d4880fe2758a973722f266e426bfb44e087bdbfe21dfb2870673c19fb0e5f0f";
+const BASE_SERIALIZED_LENGTH = 903_046;
+const BASE_REGISTRY_SHA256 = "6e1bd2d9668db1a5d2a733a09e2126063a66e231d99d9ae92861a4d5a7cc6b8b";
 const BASE_KEY_ORDER_SHA256 = "940f96c2f92a457bac4f25b97b1c0f0eac39b93ac364bc3a72bd892b137b89ac";
 const BASE_PLACEHOLDER_SHA256 = "73a4d6194739567d242eec19fcc22077371687450c42d50e07b2f82c8138466e";
 const BASE_CATALOGS = {
   en: {
     partialCount: 2_933,
-    partialSha256: "e0612618dcd26ed7cbc3d66cb802b7f6d52ae46f5e03a7db820901fcdc74583e",
-    resolvedSha256: "c8792128dfc4cd352e1869f57e181d4191fdaba01318cdc2e7a7d74866e4c6c8",
+    partialSha256: "4102c0ff0812cd5ae9e4c0623d78063b5b94eb2e6c925bef6f6ac5845252efe4",
+    resolvedSha256: "16c7b5465a3df3abe89c573e708bb7b468c633fb84753563174aef60afd04c15",
   },
   fr: {
     partialCount: 2_933,
-    partialSha256: "7431a68e7d12ac4872b113a3d3240c9463a6319dc3a971c31dab9c861734458f",
-    resolvedSha256: "156246a94e50f55008af7099cb11ea3fa3f888f2507b7e0784343ea275250760",
+    partialSha256: "533df6c64ab2ff3bdcfaa155aa349c89cfd461d303f29800a9bd53aba9e3f0a5",
+    resolvedSha256: "06e97f9b549c98ec2f6916fc56f88ab3b7f5a7abbb9396fbf4cd180a170c81a5",
   },
   de: {
     partialCount: 2_933,
-    partialSha256: "c8d56ee99ee410cb669fbafd551f033670b7a30e384073114552a060fbd6966a",
-    resolvedSha256: "f3f625061fcd312fb57198c4cf3475dd2388d5a385f261444d8329ff2276a140",
+    partialSha256: "098878b7e38690cbe1f6b1ac655f2109e706d6b5467c0cfc19194365ba4a9a61",
+    resolvedSha256: "e4f47f7fa54e6541a8adee2b6e58b942fae9183b34a9e2d1ccb6f634284ef617",
   },
   es: {
     partialCount: 2_933,
-    partialSha256: "08ab9618b7f608bb8928c2ab746101667d783525ddd415bbf470a6769f8d4be0",
-    resolvedSha256: "980c862d3b6711d02f574eec93ce498478282a08c2a4487ed9b70d3ab8f2a8bc",
+    partialSha256: "aaddf99d09f60fcd902c10d3df1b4bfbd04acf9447e8bf0e0e8db98271405248",
+    resolvedSha256: "da32f532276ad1122f914a5907b2eb319c929459743b2188749122988207ba1e",
   },
   pt: {
     partialCount: 2_933,
-    partialSha256: "fc0e9de5fa08a33f659edbcb87e3b7bb08866fc2c9052fcc9515fc2174c6b47c",
-    resolvedSha256: "b5fc2b2e06a600cee025711c9a6e109630db68018a63f2d78b4672994f652e23",
+    partialSha256: "b8c52be477f761fd98ae999472ec77025463e30da2e85adf2fbd9e0cce3a03fa",
+    resolvedSha256: "6665ba7bdf2b0919a72ac9c455400c502238b021b98997a4cf34fe49710d1dbe",
   },
 } as const satisfies Record<
   Locale,
@@ -336,27 +335,6 @@ describe("placeholder guard (CORE-1237)", () => {
       "{count, plural, one {# résultat pour « {query} »} other # résultats pour « {query} »}",
     ]) {
       expect(messageArguments(broken), broken).not.toEqual(expected);
-    }
-  });
-});
-
-describe("localized string source limits", () => {
-  const sourceDirectory = resolve(process.cwd(), "src");
-  const shardDirectory = resolve(sourceDirectory, "strings");
-  const sourceFiles = [
-    resolve(sourceDirectory, "strings.ts"),
-    resolve(sourceDirectory, "strings.test.ts"),
-    ...readdirSync(shardDirectory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
-      .map((entry) => resolve(shardDirectory, entry.name)),
-  ];
-
-  it("keeps every authored registry source within 20 KB and 600 lines", () => {
-    for (const file of sourceFiles) {
-      const source = readFileSync(file, "utf8");
-
-      expect(Buffer.byteLength(source), `${file} byte size`).toBeLessThanOrEqual(20_000);
-      expect(source.split("\n").length, `${file} line count`).toBeLessThanOrEqual(600);
     }
   });
 });

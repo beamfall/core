@@ -28,7 +28,7 @@ func engagementFixture() []SourceItem {
 func TestAnnotateEngagementReportsProgressCompletionAndContainerCounts(t *testing.T) {
 	st := openDemoSeeded(t)
 	items := engagementFixture()
-	if err := st.AnnotateEngagement(context.Background(), "profile-demo-default", LibraryFilter{AllLibraries: true}, items); err != nil {
+	if err := st.AnnotateEngagement(context.Background(), "profile-demo-default", LibraryFilter{AllLibraries: true}, items, nil); err != nil {
 		t.Fatalf("AnnotateEngagement: %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestAnnotateEngagementReportsProgressCompletionAndContainerCounts(t *testin
 func TestAnnotateEngagementWithoutProfileIsNoOp(t *testing.T) {
 	st := openDemoSeeded(t)
 	items := engagementFixture()
-	if err := st.AnnotateEngagement(context.Background(), "", LibraryFilter{AllLibraries: true}, items); err != nil {
+	if err := st.AnnotateEngagement(context.Background(), "", LibraryFilter{AllLibraries: true}, items, nil); err != nil {
 		t.Fatalf("AnnotateEngagement: %v", err)
 	}
 	for _, item := range items {
@@ -68,7 +68,7 @@ func TestAnnotateEngagementContainerCountsRespectVisibility(t *testing.T) {
 	st := openDemoSeeded(t)
 	items := []SourceItem{{ID: "entity-demo-sequence", Kind: "entity"}}
 	hidden := LibraryFilter{AllowedIDs: []LibraryID{"library-no-such"}}
-	if err := st.AnnotateEngagement(context.Background(), "profile-demo-default", hidden, items); err != nil {
+	if err := st.AnnotateEngagement(context.Background(), "profile-demo-default", hidden, items, nil); err != nil {
 		t.Fatalf("AnnotateEngagement: %v", err)
 	}
 	if items[0].Engagement != nil {
@@ -118,7 +118,7 @@ func TestAnnotateEngagementCountsAnEncryptedLibrarysChildren(t *testing.T) {
 	}
 
 	items := []SourceItem{{ID: MediaID(entity.ID), Kind: "entity"}}
-	if err := st.AnnotateEngagement(ctx, "profile-default", filter, items); err != nil {
+	if err := st.AnnotateEngagement(ctx, "profile-default", filter, items, nil); err != nil {
 		t.Fatalf("AnnotateEngagement: %v", err)
 	}
 	got := items[0].Engagement
@@ -130,7 +130,7 @@ func TestAnnotateEngagementCountsAnEncryptedLibrarysChildren(t *testing.T) {
 		t.Fatal(err)
 	}
 	sealed := []SourceItem{{ID: MediaID(entity.ID), Kind: "entity"}}
-	if err := st.AnnotateEngagement(ctx, "profile-default", filter, sealed); err != nil {
+	if err := st.AnnotateEngagement(ctx, "profile-default", filter, sealed, nil); err != nil {
 		t.Fatalf("AnnotateEngagement sealed: %v", err)
 	}
 	if sealed[0].Engagement != nil {
@@ -174,7 +174,7 @@ func TestAnnotateEngagementSkipsHiddenAndTrashedSubContainers(t *testing.T) {
 	counts := func(filter LibraryFilter) *SourceEngagement {
 		t.Helper()
 		items := []SourceItem{{ID: "entity-annotate-parent", Kind: "entity"}}
-		if err := st.AnnotateEngagement(ctx, "profile-demo-default", filter, items); err != nil {
+		if err := st.AnnotateEngagement(ctx, "profile-demo-default", filter, items, nil); err != nil {
 			t.Fatalf("AnnotateEngagement: %v", err)
 		}
 		return items[0].Engagement
@@ -216,7 +216,7 @@ func TestAnnotateEngagementIgnoresPartialChannelPlays(t *testing.T) {
 		}
 	}
 	items := []SourceItem{{ID: media[0], Kind: "media"}, {ID: media[1], Kind: "media"}}
-	if err := st.AnnotateEngagement(ctx, "profile-default", LibraryFilter{AllLibraries: true, Revealed: true}, items); err != nil {
+	if err := st.AnnotateEngagement(ctx, "profile-default", LibraryFilter{AllLibraries: true, Revealed: true}, items, nil); err != nil {
 		t.Fatalf("AnnotateEngagement: %v", err)
 	}
 	if items[0].Engagement != nil {

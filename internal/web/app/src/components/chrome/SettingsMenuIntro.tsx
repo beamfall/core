@@ -36,7 +36,13 @@ function resultTarget(result: SettingsSearchResult): { to: string; state?: Revea
   };
 }
 
-export function SettingsMenuIntro({ area }: { area: SettingsArea }) {
+export function SettingsMenuIntro({
+  area,
+  visibleManagePage,
+}: {
+  area: SettingsArea;
+  visibleManagePage?: (path: string) => boolean;
+}) {
   const t = useT();
   const navigate = useNavigate();
   const { isManager } = useSession();
@@ -44,10 +50,12 @@ export function SettingsMenuIntro({ area }: { area: SettingsArea }) {
   const listID = useId();
 
   const results = useMemo(() => {
-    const all = searchSettings(query, t, { appStoreHost: isBeamfallAppStoreHost() });
-    // Manage needs manager rights; a Console admin without them is sent home.
-    return isManager ? all : all.filter((r) => r.area !== "manage");
-  }, [query, t, isManager]);
+    return searchSettings(query, t, {
+      appStoreHost: isBeamfallAppStoreHost(),
+      visiblePage: (area, path) =>
+        area !== "manage" || (isManager && visibleManagePage?.(path) !== false),
+    });
+  }, [query, t, isManager, visibleManagePage]);
 
   const other = OTHER_AREA[area];
   const searching = query.trim() !== "";

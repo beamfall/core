@@ -81,6 +81,15 @@ function installServer(adminPassword: string) {
           data: { libraries: [{ id: "lib-1", title: "Feature Films", previewClips: false }] },
         });
       }
+      if (operation === "CapabilityStates") {
+        return jsonResponse({
+          data: {
+            capabilityStates: [
+              { id: "conversion", kind: "workflow", enabled: false, flippable: true },
+            ],
+          },
+        });
+      }
       if (operation === "Plugins") return jsonResponse({ data: { plugins: [] } });
       if (operation === "Backup") return jsonResponse({ data: { backup: { manifest: "m" } } });
       if (operation === "BackupHistory") return jsonResponse({ data: { backupHistory: [] } });
@@ -142,6 +151,27 @@ describe("Manage without an Admin Session", () => {
     expect(requests.filter((operation) => operation === "Libraries")).toHaveLength(2);
   });
 
+  it("hides a disabled workflow after unlocking without leaving Manage", async () => {
+    const user = userEvent.setup();
+    const { requests } = installServer("correct horse");
+    renderManage("/manage/libraries");
+
+    const advanced = screen.getByRole("switch", { name: "Show advanced settings" });
+    await user.click(advanced);
+    expect(screen.getByRole("link", { name: "Convert" })).toBeVisible();
+
+    await user.type(await screen.findByLabelText("Admin password"), "correct horse");
+    await user.click(screen.getByRole("button", { name: "Unlock" }));
+
+    await waitFor(() => expect(requests.filter((op) => op === "CapabilityStates")).toHaveLength(2));
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: "Convert" })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("link", { name: "Rename" })).toBeVisible();
+    expect(await screen.findByText("Feature Films")).toBeVisible();
+    await user.click(advanced);
+  });
+
   it("does not gate a page the server serves to a manager", async () => {
     const { requests } = installServer("correct horse");
     renderManage("/manage/tags");
@@ -154,6 +184,7 @@ describe("Manage without an Admin Session", () => {
   it("does not gate the page when a background read opts out of the unlock", async () => {
     const { requests } = installServer("correct horse");
     renderManage("/manage/tags");
+    await waitFor(() => expect(requests).toContain("CapabilityStates"));
     await waitFor(() => expect(requests).toContain("Tags"));
 
     // The header's job count (CORE-1131) polls a read that needs an Admin Session.

@@ -4,7 +4,7 @@ export const managedFileOptionsStrings = {
     showOnHomeHelp:
       "Include this library's rows on Home. It stays in the menu and in search either way.",
     skipDetectionHelp: "Find intros and credits so viewers can skip them.",
-    libraryEmptyLead: "Add your first library to start building your collection.",
+    libraryEmptyLead: "This library has no visible content for the current profile and filters.",
     serverActivity: "Activity",
     serverActivityRunning: "{count, plural, one {# job running} other {# jobs running}}",
     newFolderName: "New folder name",
@@ -67,7 +67,7 @@ export const managedFileOptionsStrings = {
     skipDetectionHelp:
       "Détecte les génériques de début et de fin pour que les spectateurs puissent les passer.",
     libraryEmptyLead:
-      "Ajoutez votre première bibliothèque pour commencer à construire votre collection.",
+      "Cette bibliothèque n’a aucun contenu visible pour le profil et les filtres actuels.",
     serverActivity: "Activité",
     serverActivityRunning: "{count, plural, one {# tâche en cours} other {# tâches en cours}}",
     newFolderName: "Nom du nouveau dossier",
@@ -129,7 +129,8 @@ export const managedFileOptionsStrings = {
     showOnHomeHelp:
       "Zeigt die Reihen dieser Bibliothek auf der Startseite. Im Menü und in der Suche bleibt sie in jedem Fall.",
     skipDetectionHelp: "Erkennt Intros und Abspänne, damit Zuschauer sie überspringen können.",
-    libraryEmptyLead: "Füge deine erste Bibliothek hinzu, um deine Sammlung aufzubauen.",
+    libraryEmptyLead:
+      "Diese Bibliothek hat für das aktuelle Profil und die aktuellen Filter keine sichtbaren Inhalte.",
     serverActivity: "Aktivität",
     serverActivityRunning: "{count, plural, one {# Aufgabe läuft} other {# Aufgaben laufen}}",
     newFolderName: "Name des neuen Ordners",
@@ -190,7 +191,8 @@ export const managedFileOptionsStrings = {
     showOnHomeHelp:
       "Incluye las filas de esta biblioteca en Inicio. Sigue en el menú y en la búsqueda en cualquier caso.",
     skipDetectionHelp: "Detecta intros y créditos para que los espectadores puedan saltarlos.",
-    libraryEmptyLead: "Añade tu primera biblioteca para empezar a crear tu colección.",
+    libraryEmptyLead:
+      "Esta biblioteca no tiene contenido visible para el perfil y los filtros actuales.",
     serverActivity: "Actividad",
     serverActivityRunning: "{count, plural, one {# tarea en curso} other {# tareas en curso}}",
     newFolderName: "Nombre de la carpeta nueva",
@@ -251,7 +253,7 @@ export const managedFileOptionsStrings = {
     showOnHomeHelp:
       "Inclui as linhas desta biblioteca no Início. Ela continua no menu e na busca em qualquer caso.",
     skipDetectionHelp: "Detecta aberturas e créditos para que os espectadores possam pulá-los.",
-    libraryEmptyLead: "Adicione sua primeira biblioteca para começar a montar sua coleção.",
+    libraryEmptyLead: "Esta biblioteca não tem conteúdo visível para o perfil e os filtros atuais.",
     serverActivity: "Atividade",
     serverActivityRunning:
       "{count, plural, one {# tarefa em andamento} other {# tarefas em andamento}}",

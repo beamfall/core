@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { fetchCapabilityStates, setCapabilityEnabled } from "@/lib/graphql";
 import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { publishManageCapabilities } from "@/lib/manageCapabilities";
 import type { StringKey } from "@/strings";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
@@ -46,6 +47,7 @@ export function Capabilities() {
     try {
       const next = await setCapabilityEnabled(id, enabled);
       setData(next);
+      publishManageCapabilities(next);
     } finally {
       setBusy(null);
     }

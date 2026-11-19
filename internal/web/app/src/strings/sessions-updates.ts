@@ -13,7 +13,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaveFailed: "Could not save transcoding settings: {reason}",
     transcodeConfigSaved: "Transcoding settings saved",
     transcodeMaxConcurrent: "Maximum simultaneous transcodes",
-    transcodeAutomatic: "Automatic",
     transcodeMaxConcurrentEffective: "In effect: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP sets the cap in effect. A value saved here applies once that variable is removed.",
@@ -53,7 +52,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaveFailed: "Impossible d’enregistrer les réglages de transcodage : {reason}",
     transcodeConfigSaved: "Réglages de transcodage enregistrés",
     transcodeMaxConcurrent: "Nombre maximal de transcodages simultanés",
-    transcodeAutomatic: "Automatique",
     transcodeMaxConcurrentEffective: "En vigueur : {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP définit la limite en vigueur. Une valeur enregistrée ici s’applique une fois cette variable supprimée.",
@@ -94,7 +92,6 @@ export const sessionUpdateStrings = {
       "Transcodierungseinstellungen konnten nicht gespeichert werden: {reason}",
     transcodeConfigSaved: "Transcodierungseinstellungen gespeichert",
     transcodeMaxConcurrent: "Maximale gleichzeitige Transcodierungen",
-    transcodeAutomatic: "Automatisch",
     transcodeMaxConcurrentEffective: "Aktuell gültig: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP legt das aktuell gültige Limit fest. Ein hier gespeicherter Wert gilt, sobald diese Variable entfernt wird.",
@@ -134,7 +131,6 @@ export const sessionUpdateStrings = {
     transcodeConfigSaveFailed: "No se pudieron guardar los ajustes de transcodificación: {reason}",
     transcodeConfigSaved: "Ajustes de transcodificación guardados",
     transcodeMaxConcurrent: "Máximo de transcodificaciones simultáneas",
-    transcodeAutomatic: "Automático",
     transcodeMaxConcurrentEffective: "En vigor: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP define el límite en vigor. Un valor guardado aquí se aplica cuando se elimina esa variable.",
@@ -175,7 +171,6 @@ export const sessionUpdateStrings = {
       "Não foi possível salvar as configurações de transcodificação: {reason}",
     transcodeConfigSaved: "Configurações de transcodificação salvas",
     transcodeMaxConcurrent: "Máximo de transcodificações simultâneas",
-    transcodeAutomatic: "Automático",
     transcodeMaxConcurrentEffective: "Em vigor: {count}",
     transcodeMaxConcurrentEnvOverride:
       "BEAMFALL_TRANSCODE_CAP define o limite em vigor. Um valor salvo aqui passa a valer quando essa variável for removida.",

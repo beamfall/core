@@ -872,8 +872,8 @@ type SourceItem struct {
 	// set by AnnotateMediaClass; an entity item carries the class its linked
 	// Media share (CORE-2362). Empty for unknown or mixed classes.
 	MediaClass MediaClass
-	// Year is a media-kind item's stored year, set by AnnotateMediaClass in
-	// the same read; 0 for entities and for Media with no year (CORE-2269).
+	// Year is a media-kind item's stored year or a Section Source Entity's
+	// earliest visible linked Media year. Zero means no known year.
 	Year int
 	// DurationSeconds is a media-kind item's stored runtime, set by
 	// AnnotateMediaClass in the same read so a list row can state it
@@ -3418,6 +3418,9 @@ func (s *Store) SourceItems(ctx context.Context, filter LibraryFilter, query Sou
 			return nil, err
 		}
 	}
+	if err := s.annotateEntityYearsLocked(ctx, filter, items); err != nil {
+		return nil, err
+	}
 	return items, nil
 }
 
@@ -3860,16 +3863,44 @@ func HashMediaFilePath(path string) string {
 
 // HashMediaFileContent returns the content fingerprint used for Media identity.
 func HashMediaFileContent(path string) (string, error) {
+	return HashMediaFileContentContext(context.Background(), path)
+}
+
+// HashMediaFileContentContext returns the same fingerprint, checking ctx between
+// reads so cancellation stops hashing after the current file read returns.
+func HashMediaFileContentContext(ctx context.Context, path string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
+	return hashMediaFileContent(ctx, file)
+}
+
+func hashMediaFileContent(ctx context.Context, file io.ReadCloser) (string, error) {
 	defer file.Close()
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
+	buffer := make([]byte, 128*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		n, err := file.Read(buffer)
+		if n > 0 {
+			_, _ = hash.Write(buffer[:n])
+		}
+		if err == io.EOF {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+		}
+		if err != nil {
+			return "", err
+		}
 	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // SearchMedia returns Media whose titles match the FTS query, reveal-filtered

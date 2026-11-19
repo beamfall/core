@@ -4,6 +4,7 @@ import { RescanAllButton, useRescanState } from "@/components/beamfall/LibraryRe
 import {
   ControlRow,
   EmptyState,
+  ErrorLine,
   ErrorState,
   PresetSelect,
   StatusChip,
@@ -14,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { formatRelativeTime, formatUtcTime } from "@/lib/activityDisplay";
 import { Advanced } from "@/lib/advancedSettings";
+import { ApiError } from "@/lib/api";
 import {
   cancelJob,
   fetchConsoleConfig,
@@ -434,6 +436,17 @@ function JobRow({
 }) {
   const t = useT();
   const locale = useDisplayLocale();
+  const [retryError, setRetryError] = useState("");
+
+  async function retry() {
+    setRetryError("");
+    try {
+      await onRetry(job.id);
+    } catch (err) {
+      setRetryError(err instanceof ApiError && err.message ? err.message : t("jobsUnavailable"));
+    }
+  }
+
   const { current, total } = job.progress;
   const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
   const tone = statusTone(job.status);
@@ -467,7 +480,7 @@ function JobRow({
               onConfirm={() => onCancel(job.id)}
             />
           ) : (
-            <Button variant="outline" size="sm" onClick={() => void onRetry(job.id)}>
+            <Button variant="outline" size="sm" onClick={() => void retry()}>
               {t("jobRetryAction")}
             </Button>
           )}
@@ -504,6 +517,7 @@ function JobRow({
       {job.status === "failed" && job.error && (
         <p className="console-job-error">{redactJobLogPayload(job.error)}</p>
       )}
+      <ErrorLine message={retryError} />
       {description && <p className="console-job-about">{description}</p>}
       {logOpen && (
         <div className="console-job-log">

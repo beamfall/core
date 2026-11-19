@@ -8,10 +8,13 @@ import { setAdvancedSettings } from "@/lib/advancedSettings";
 import {
   browseServerFolders,
   fetchBackupKeyStatus,
+  fetchCapabilityStates,
   fetchLibraries,
   fetchLibraryHealth,
   fetchSetupState,
+  setCapabilityEnabled,
 } from "@/lib/graphql";
+import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
@@ -25,6 +28,8 @@ vi.mock("@/components/chrome/AppShell", () => ({
 vi.mock("@/lib/register", () => ({ useRegister: vi.fn() }));
 vi.mock("@/lib/session", () => ({ useSession: vi.fn() }));
 vi.mock("@/lib/graphql", () => ({
+  fetchCapabilityStates: vi.fn(),
+  setCapabilityEnabled: vi.fn(),
   fetchSetupState: vi.fn(),
   fetchJobs: vi.fn().mockResolvedValue([]),
   fetchLibraries: vi.fn().mockResolvedValue([]),
@@ -53,9 +58,6 @@ vi.mock("./sections/SetupChecklist", async (importOriginal) => ({
 vi.mock("./sections/Libraries", () => ({ Libraries: () => <div>libraries-panel</div> }));
 vi.mock("./sections/Plugins", () => ({ Plugins: () => <div>plugins-panel</div> }));
 vi.mock("./sections/Config", () => ({ Config: () => <div>config-panel</div> }));
-vi.mock("./sections/Capabilities", () => ({
-  Capabilities: () => <div>capabilities-panel</div>,
-}));
 vi.mock("./sections/AccessAdmin", () => ({
   AccessAdmin: () => <div>access-panel</div>,
   ScheduleAdmin: () => <div>schedule-panel</div>,
@@ -122,6 +124,7 @@ function renderConsole(path: string) {
 }
 
 beforeEach(() => {
+  vi.mocked(fetchCapabilityStates).mockReset().mockResolvedValue([]);
   vi.mocked(useRegister).mockReturnValue({
     register: "manage",
     theme: "dark",
@@ -164,6 +167,7 @@ describe("ConsoleArea App Store host firewall", () => {
 
     expect(screen.getByText("remote-status")).toBeVisible();
     expect(screen.queryByRole("link", { name: "Optional features" })).toBeNull();
+    expect(fetchCapabilityStates).not.toHaveBeenCalled();
     expect(screen.queryByText("qbittorrent-panel")).toBeNull();
     expect(screen.queryByRole("link", { name: "Migration" })).toBeNull();
   });
@@ -192,7 +196,7 @@ describe("ConsoleArea App Store host firewall", () => {
     const { container } = renderConsole("/console/capabilities");
 
     await screen.findByRole("heading", { name: "Common tasks" });
-    expect(screen.queryByText("capabilities-panel")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Optional features" })).toBeNull();
     expect(container.textContent).not.toMatch(/qBittorrent|Capabilities/i);
   });
 });
@@ -221,6 +225,36 @@ const ADVANCED_RAIL = [
 ];
 
 describe("Console IA conformance", () => {
+  it("hides the Manage Rename result after disabling Rename in Console", async () => {
+    vi.mocked(useSession).mockReturnValue({
+      loading: false,
+      needsEnroll: false,
+      isManager: true,
+    } as unknown as ReturnType<typeof useSession>);
+    let states: CapabilityStateInfo[] = [
+      { id: "rename", kind: "workflow", enabled: true, flippable: true },
+    ];
+    vi.mocked(fetchCapabilityStates).mockImplementation(async () => states);
+    vi.mocked(setCapabilityEnabled).mockImplementationOnce(async () => {
+      states = [{ id: "rename", kind: "workflow", enabled: false, flippable: true }];
+      return states;
+    });
+    const { container } = renderConsole("/console/identification");
+    const user = userEvent.setup();
+    const toggle = await screen.findByRole("switch", { name: /rename/i });
+    const search = screen.getByRole("searchbox", { name: "Search settings" });
+    const renameResult = () =>
+      container.querySelector('.settings-search-results a[href="/manage/rename"]');
+
+    await user.type(search, "Rename");
+    expect(renameResult()).toBeVisible();
+
+    await user.click(toggle);
+    expect(setCapabilityEnabled).toHaveBeenCalledWith("rename", false);
+    expect(toggle).not.toBeChecked();
+    expect(renameResult()).toBeNull();
+  });
+
   it("renders the fixed grouped rail with expert destinations left to Advanced", async () => {
     renderConsole("/console");
 
