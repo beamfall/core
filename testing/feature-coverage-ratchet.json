@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "targets": {
     "server": { "minProven": 50 },
-    "web": { "minProven": 59 },
-    "tvos": { "minProven": 37 },
-    "androidtv": { "minProven": 15 },
-    "iphone": { "minProven": 40 },
-    "ipad": { "minProven": 64 },
-    "androidmobile": { "minProven": 16 },
-    "macos": { "minProven": 31 },
-    "windows": { "minProven": 0 }
+    "web": { "minProven": 59, "maxUndecided": 62, "maxUnticketed": 72 },
+    "tvos": { "minProven": 37, "maxUndecided": 133, "maxUnticketed": 23 },
+    "androidtv": { "minProven": 15, "maxUndecided": 128, "maxUnticketed": 50 },
+    "iphone": { "minProven": 40, "maxUndecided": 114, "maxUnticketed": 39 },
+    "ipad": { "minProven": 64, "maxUndecided": 83, "maxUnticketed": 46 },
+    "androidmobile": { "minProven": 16, "maxUndecided": 115, "maxUnticketed": 62 },
+    "macos": { "minProven": 31, "maxUndecided": 121, "maxUnticketed": 41 },
+    "windows": { "minProven": 0, "maxUndecided": 148, "maxUnticketed": 45 }
   }
 }
