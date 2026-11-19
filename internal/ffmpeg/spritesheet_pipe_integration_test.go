@@ -21,6 +21,13 @@ func TestPipeSpriteSheetsPadLongGOP(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
+	// The production pipe argv sets the HTTP protocol's -max_redirects, which
+	// older FFmpeg builds (8.0.1 on wsl-lanes) reject as an unknown option.
+	// #nosec G204 -- resolved FFmpeg with fixed help arguments.
+	help, err := exec.CommandContext(ctx, binary, "-hide_banner", "-h", "protocol=http").CombinedOutput()
+	if err != nil || !bytes.Contains(help, []byte("max_redirects")) {
+		t.Skip("ffmpeg http protocol lacks -max_redirects; skipping real-binary sprite pipe test")
+	}
 	path := filepath.Join(t.TempDir(), "long.mp4")
 	// #nosec G204 -- resolved FFmpeg with fixed lavfi arguments and a test-owned output path.
 	cmd := exec.CommandContext(ctx, binary, "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=10:duration=40",
