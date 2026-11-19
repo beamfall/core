@@ -500,7 +500,7 @@ func (s *Store) inProgressItemsSQL(ctx context.Context, profileID ProfileID, fil
 		FROM playback_progress
 		WHERE profile_id = ? AND watched = 0 AND position_seconds >= ? AND channel_context = 0
 		ORDER BY updated_at_ms DESC, media_id
-	`, []any{profileID, resumeFloorSeconds}, filter, limit, offset,
+	`, []any{profileID, resumeFloorSeconds}, filter, limit, offset, true,
 		func(rows *sql.Rows) (MediaID, func(Media) SourceItem, error) {
 			var row progressRow
 			if err := rows.Scan(&row.mediaID, &row.positionSeconds, &row.durationSeconds); err != nil {
@@ -542,7 +542,7 @@ const engagementFilterBatch = 256
 //
 // query must select media_id first; scan reads one row and returns its Media ID
 // with a builder that renders the SourceItem from the visible Media.
-func (s *Store) filteredEngagementPage(ctx context.Context, query string, args []any, filter LibraryFilter, limit, offset int, scan func(*sql.Rows) (MediaID, func(Media) SourceItem, error)) ([]SourceItem, error) {
+func (s *Store) filteredEngagementPage(ctx context.Context, query string, args []any, filter LibraryFilter, limit, offset int, excludeIncomplete bool, scan func(*sql.Rows) (MediaID, func(Media) SourceItem, error)) ([]SourceItem, error) {
 	items := []SourceItem{}
 	if limit == 0 {
 		return items, nil
@@ -577,9 +577,16 @@ func (s *Store) filteredEngagementPage(ctx context.Context, query string, args [
 		if err != nil {
 			return false, err
 		}
+		incomplete := map[MediaID]bool{}
+		if excludeIncomplete {
+			incomplete, err = s.incompleteMediaIDsSQL(ctx, ids)
+			if err != nil {
+				return false, err
+			}
+		}
 		for _, c := range batch {
 			media, ok := visible[c.id]
-			if !ok || extras[c.id] {
+			if !ok || extras[c.id] || incomplete[c.id] {
 				// Hidden, deleted or out-of-scope Media never reaches the wire;
 				// Extras are excluded from engagement shelves by default (ADR-0009 §3).
 				continue
@@ -946,7 +953,7 @@ func (s *Store) playedItemsSQL(ctx context.Context, profileID ProfileID, filter 
 		SELECT media_id, play_count
 		FROM playback_progress
 		WHERE profile_id = ? AND play_count > 0
-		ORDER BY `+orderBy, []any{profileID}, filter, limit, offset,
+		ORDER BY `+orderBy, []any{profileID}, filter, limit, offset, false,
 		func(rows *sql.Rows) (MediaID, func(Media) SourceItem, error) {
 			var mediaID MediaID
 			var playCount int

@@ -225,6 +225,7 @@ type hlsSession struct {
 	dir               string
 	src               string
 	sourceInfo        os.FileInfo
+	sourceGeneration  string
 	durationSeconds   int
 	rungs             []Rung
 	audioProfile      ffmpeg.AudioProfile
@@ -482,6 +483,7 @@ type Sessions struct {
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
 	durationProbes    durationProbeCache
 	incompleteSources incompleteSourceCache
+	sourceStore       *store.Store
 	// bootNonce tags every session directory this instance mints (see
 	// newBootNonce): nextID resets to zero each process lifetime, so without it
 	// a fresh instance's first session would mint the exact directory name a
@@ -1288,7 +1290,7 @@ func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, rung Rung,
 	lowered := s.liveLocked(key, session) && session.noteSourceEndLocked(session.segmentStart(rung, segment))
 	s.mu.Unlock()
 	if lowered {
-		s.rememberIncompleteSource(session)
+		s.rememberIncompleteSource(key, session, session.segmentStart(rung, segment))
 		logSourceEnd(key, session, rung, segment, stderr)
 	}
 }
@@ -1349,6 +1351,10 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	if secure == nil {
 		sourceInfo, _ = os.Stat(src)
 	}
+	sourceGeneration := store.SourceFileGeneration(sourceInfo)
+	if secure != nil {
+		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
+	}
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1390,7 +1396,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		}
 	}
 	if hasExisting {
-		if (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
+		if existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
@@ -1420,6 +1426,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		dir:               dir,
 		src:               src,
 		sourceInfo:        sourceInfo,
+		sourceGeneration:  sourceGeneration,
 		durationSeconds:   durationSeconds,
 		timeline:          timeline,
 		rungs:             requestedRungs,
@@ -1890,7 +1897,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 			slog.Error("live transcode exited unexpectedly", append(attrs, "status", status, "stderr", stderr)...)
 		}
 		if lowered {
-			s.rememberIncompleteSource(session)
+			s.rememberIncompleteSource(key, session, session.segmentStart(rung, sourceEnd))
 			logSourceEnd(key, session, rung, sourceEnd, stderr)
 		}
 		if failedNow {

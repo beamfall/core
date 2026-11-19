@@ -1668,7 +1668,7 @@ func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFil
 	if sealed := h.sealed; sealed != nil {
 		revoked = func() bool { return sealed(libraryID) }
 	}
-	return &playback.EncryptedSource{LibraryID: string(libraryID), Open: open, Size: size, Revoked: revoked}, true
+	return &playback.EncryptedSource{LibraryID: string(libraryID), Fingerprint: fingerprint, Open: open, Size: size, Revoked: revoked}, true
 }
 
 // serveLiveArtifact serves one file of an encrypted live session decrypted.

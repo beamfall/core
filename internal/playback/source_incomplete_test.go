@@ -10,13 +10,22 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 // CORE-2380 extends CORE-1343's no-segments-past-EOF rule to playbackInfo.
 func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
-	service, st, scope := capabilityTestService(t)
 	ctx := context.Background()
+	dataDir := storetest.MigratedDataDir(t)
+	st := storetest.OpenAt(t, dataDir)
+	scope, err := auth.NewService(st).Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(st, streamtoken.NewService([]byte("test-token-key"), nil), nil)
 	source := filepath.Join(t.TempDir(), "truncated.mkv")
 	if err := os.WriteFile(source, []byte("incomplete download"), 0o600); err != nil {
 		t.Fatal(err)
@@ -56,6 +65,25 @@ func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
 	if _, err := sessions.FilePath(ctx, key, source, 6906, 1280, 720, false, "720p/seg00038.m4s"); !errors.Is(err, ErrSourceEnded) {
 		t.Fatalf("truncated fixture did not reach EOF detection: %v", err)
 	}
+	shelf := func(want bool) {
+		t.Helper()
+		for _, kind := range []string{"continue-watching", "resume-progress"} {
+			query := store.SourceQuery{Kind: kind, ProfileID: scope.ProfileID, Limit: 100, Value: "in-progress"}
+			items, err := st.SourceItems(ctx, scope.LibraryFilter(), query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, item := range items {
+				if item.ID == media.ID {
+					found = true
+				}
+			}
+			if found != want {
+				t.Fatalf("%s contains truncated source = %v, want %v", kind, found, want)
+			}
+		}
+	}
 	check := func() {
 		t.Helper()
 		info, err := service.Info(ctx, scope, request)
@@ -67,11 +95,30 @@ func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
 		}
 	}
 	check()
+	shelf(false)
 	sessions.TerminatePlayback(scope.SessionID, media.ID)
 	check() // A new player/session must not forget the same file's observed EOF.
+	// Evict the old bounded observation cache without evicting the player.
+	sessions.incompleteSources.mu.Lock()
+	sessions.incompleteSources.files = nil
+	sessions.incompleteSources.mu.Unlock()
+	check()
+	shelf(false)
+	sessions.Close()
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st = storetest.OpenAt(t, dataDir)
+	service = NewService(st, streamtoken.NewService([]byte("test-token-key"), nil), nil)
+	sessions = NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	service.SetSessions(sessions)
+	check()
+	shelf(false)
 	if err := os.WriteFile(source, []byte("completed download with more media bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	shelf(true)
 	after, err := service.Info(ctx, scope, request)
 	if err != nil || after.Decision == "unavailable" || after.Timeline.PositionSeconds != 163 {
 		t.Fatalf("completed download remains blocked: %+v, %v", after, err)
@@ -116,5 +163,82 @@ func TestIncompleteSourceObservationTracksOnlyTheObservedFileGeneration(t *testi
 				t.Fatal("replacement poisoned by old source's EOF")
 			}
 		})
+	}
+}
+
+// The encrypted engine has no filesystem source path. The immutable object
+// fingerprint, scoped to its Library's catalog, must carry the observation.
+func TestEncryptedSourceEndSurvivesSessionReplacement(t *testing.T) {
+	ctx := context.Background()
+	f := newEncryptedPrecomputeFixture(t)
+	scope, err := auth.NewService(f.st).Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope.Revealed = true
+	service := NewService(f.st, streamtoken.NewService([]byte("test-token-key"), nil), nil)
+	transcoder := &fakeEncryptedTranscoder{segment: func(int) []byte { return emptySegment() }}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	service.SetSessions(sessions)
+	if err := f.st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{ProfileID: scope.ProfileID, MediaID: f.mediaID, PositionSeconds: 63, DurationSeconds: 120}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
+		t.Fatal(err)
+	}
+	files, err := f.st.MediaFilesForMedia(ctx, f.mediaID, scope.LibraryFilter())
+	if err != nil || len(files) != 1 {
+		t.Fatalf("encrypted fixture files = %v, %v", files, err)
+	}
+	request := InfoRequest{MediaID: string(f.mediaID), CapabilityProfile: CapabilityProfile{Client: "web-h264", Containers: []string{"mp4"}, VideoCodecs: []VideoCodecCap{{Codec: "h264", MaxHeight: 1080}}, AudioCodecs: []AudioCodecCap{{Codec: "aac", MaxChannels: 2}}}}
+	before, err := service.Info(ctx, scope, request)
+	if err != nil || before.Decision == "unavailable" || before.Timeline.PositionSeconds != 63 {
+		t.Fatalf("encrypted baseline = %+v, %v", before, err)
+	}
+	shelf := func(want bool) {
+		t.Helper()
+		items, err := f.st.SourceItems(ctx, scope.LibraryFilter(), store.SourceQuery{Kind: "continue-watching", ProfileID: scope.ProfileID, Limit: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, item := range items {
+			if item.ID == f.mediaID {
+				found = true
+			}
+		}
+		if found != want {
+			t.Fatalf("encrypted shelf contains item = %v, want %v", found, want)
+		}
+	}
+	shelf(true)
+	secure := testEncryptedSource(nil)
+	secure.LibraryID = "library-local"
+	secure.Fingerprint = files[0].ContentFingerprint
+	key := SessionKey{SessionID: scope.SessionID, MediaID: f.mediaID}
+	if _, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00010.m4s"); !errors.Is(err, ErrSourceEnded) {
+		t.Fatalf("encrypted fixture did not observe EOF: %v", err)
+	}
+	check := func() {
+		t.Helper()
+		info, err := service.Info(ctx, scope, request)
+		if err != nil || info.Decision != "unavailable" || info.Reason != "media-source-incomplete" || info.Timeline.PositionSeconds != 0 {
+			t.Fatalf("encrypted incomplete source advertised: %+v, %v", info, err)
+		}
+		shelf(false)
+	}
+	check()
+	sessions.Close()
+	sessions = NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	service.SetSessions(sessions)
+	check()
+	// A different content-addressed object must not inherit the old EOF.
+	replacement, _, err := f.st.ImportMediaFile(ctx, store.ImportMediaFile{LibraryID: "library-local", Path: files[0].Path, Title: "Repaired", Container: "mkv", Codec: "hevc", Class: store.MediaClassVideo, ContentFingerprint: "fp-repaired-encrypted", DurationSecondsHint: 120, VideoWidthHint: 1280, VideoHeightHint: 720})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.MediaID = string(replacement.ID)
+	after, err := service.Info(ctx, scope, request)
+	if err != nil || after.Reason == "media-source-incomplete" {
+		t.Fatalf("encrypted replacement poisoned: %+v, %v", after, err)
 	}
 }

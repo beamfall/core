@@ -667,6 +667,7 @@ func (s *Service) SetAssets(assets AssetsLocator) {
 func (s *Service) SetSessions(sessions *Sessions) {
 	s.sessions = sessions
 	if sessions != nil && s.store != nil {
+		sessions.sourceStore = s.store
 		sessions.SetKeyframeStore(s.store) // probe each audio-copy source once (CORE-0021)
 	}
 }
@@ -1068,8 +1069,12 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	}
 	// CORE-2380: an encoder already proved this file ends early. Do not
 	// mint a new stream or advertise a saved resume into data we cannot serve.
-	// The cache is generation-bound, so a completed download can play again.
-	if s.sessions != nil && s.sessions.incompleteSources.contains(file.Path) {
+	// Persistent observations are generation-bound, so a completed download can play again.
+	incomplete, err := s.store.MediaFileSourceIncomplete(ctx, file)
+	if err != nil {
+		return decision{}, err
+	}
+	if incomplete || (s.sessions != nil && s.sessions.incompleteSources.contains(file.Path)) {
 		return decision{media: media, verdict: "unavailable", reason: "media-source-incomplete", streams: []StreamChoice{}}, nil
 	}
 	// alternate marks a negotiated file other than the one the Media row's
