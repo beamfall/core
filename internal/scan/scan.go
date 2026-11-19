@@ -109,6 +109,12 @@ type LocalEntity struct {
 type MetadataHydrationCapability struct {
 	MediaClasses []store.MediaClass
 	MarkerField  string
+	// MediaFieldsBounded is true when MediaFields names every text, number
+	// or date Media field the hydrator writes (at the scan tier); otherwise
+	// it may write any. The scan uses it to tell which older scan-tier values
+	// the filename parser alone wrote (CORE-2554).
+	MediaFieldsBounded bool
+	MediaFields        []string
 }
 
 // Supports reports whether this capability accepts class.
@@ -394,7 +400,7 @@ type parsedPartImport struct {
 	key           string
 	imported      store.ImportMediaFile
 	parsed        ParsedMedia
-	fields        []store.MediaField
+	refresh       store.ParserFieldRefresh
 	markerTitle   string
 	probeChapters []ffmpeg.ProbeChapter
 	probed        bool

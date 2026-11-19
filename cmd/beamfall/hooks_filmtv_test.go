@@ -218,3 +218,15 @@ func TestFilmTVHydrationNamesShowFromItsFolder(t *testing.T) {
 		t.Fatalf("unsorted plan = %+v, want a season-of relation", plan.Relations)
 	}
 }
+
+// Film & TV hydration writes no Media fields, so its adapter tells the scan
+// every older scan-tier value is the parser's own to reconcile (CORE-2554).
+func TestFilmTVHydrationNamesNoMediaFields(t *testing.T) {
+	mapper, ok := firstPartyHooks().HydrationMappers[filmtv.PluginID].(app.HydrationMediaFieldsMapper)
+	if !ok {
+		t.Fatal("Film/TV hydration mapper does not name its Media fields")
+	}
+	if fields := mapper.HydratedMediaFields(); len(fields) != 0 {
+		t.Fatalf("Film/TV hydrated Media fields = %v, want none", fields)
+	}
+}
