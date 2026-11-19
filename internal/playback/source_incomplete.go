@@ -65,15 +65,22 @@ func (s *Sessions) observeIncompleteSource(key SessionKey, session *hlsSession, 
 	var observed bool
 	var err error
 	// Store -> Sessions matches unseal's derivative reconciliation lock order.
-	// Teardown cannot remove output halfway through inspection and turn a
-	// healthy encoder's removed files into a false premature-EOF observation.
+	// Keep the probe inside ObserveSourceEnd so sealing still serializes with
+	// detection and persistence. If teardown removed the session during the
+	// probe, the files may have disappeared and the result must be discarded.
 	inspect := func() (float64, bool) {
 		s.mu.Lock()
-		defer s.mu.Unlock()
-		if !s.liveLocked(key, session) {
+		current := s.liveLocked(key, session)
+		s.mu.Unlock()
+		if !current {
 			return 0, false
 		}
-		end, observed = observe()
+		probedEnd, found := observe()
+		s.mu.Lock()
+		if s.liveLocked(key, session) {
+			end, observed = probedEnd, found
+		}
+		s.mu.Unlock()
 		return end.Seconds(), observed
 	}
 	// Sources without a stable generation use only the existing memory fallback.

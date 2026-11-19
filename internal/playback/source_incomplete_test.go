@@ -344,3 +344,93 @@ func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
 		t.Fatalf("evicted output inspected=%v observed=%v err=%v", inspected, observed, err)
 	}
 }
+
+func TestSourceInspectionDiscardsEvictedResult(t *testing.T) {
+	for _, caller := range []string{"segment request", "process reaper"} {
+		t.Run(caller, func(t *testing.T) {
+			ctx := t.Context()
+			st := storetest.OpenAt(t, storetest.MigratedDataDir(t))
+			source := filepath.Join(t.TempDir(), "source.mkv")
+			if err := os.WriteFile(source, []byte("source"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			const fingerprint = "source-inspection-generation"
+			media, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+				LibraryID: "library-local", Path: source, Title: "Source", ContentFingerprint: fingerprint,
+				Container: "mkv", Codec: "h264", Class: store.MediaClassVideo,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var transcoder Transcoder = &fakeTranscoder{}
+			name := "720p/seg00000.m4s"
+			if caller == "process reaper" {
+				name = "720p/init.mp4"
+				transcoder = &scriptedTranscoder{start: func(_ int, dir string, segment int) []string {
+					writeArtifact(t, dir, initSegmentName, []byte("init"))
+					writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", segment), mediaSegment())
+					return []string{"sh", "-c", "exit 0"}
+				}}
+			}
+			sessions := NewSessions(transcoder, t.TempDir(), nil)
+			t.Cleanup(sessions.Close)
+			latch := newSessionIOLatch(t)
+			sessions.sourceStore = st
+			sessions.inspectSegment = func(h *hlsSession, path string) bool {
+				if h.src == source {
+					latch.block()
+					return true // teardown made the old output untrustworthy
+				}
+				return segmentLacksMedia(path)
+			}
+			seedUnrelatedSessions(t, sessions)
+			key := SessionKey{SessionID: "inspecting", MediaID: media.ID}
+			done := make(chan error, 1)
+			go func() {
+				_, err := sessions.FilePath(ctx, key, source, 120, 1280, 720, false, name)
+				done <- err
+			}()
+			latch.wait(t)
+			assertUnrelatedSessionsProgress(t, sessions)
+			original := registeredSession(t, sessions, key)
+			var exited <-chan struct{}
+			if caller == "process reaper" {
+				run, _, tracked := sessions.rungEncoder(key, original, Rung{ID: "720p"})
+				if !tracked || run.exited == nil {
+					t.Fatal("fixture did not start a tracked encoder")
+				}
+				exited = run.exited
+			}
+			if n := sessions.TerminateSession(key.SessionID); n != 1 {
+				t.Fatalf("terminated %d sessions, want 1", n)
+			}
+			if _, err := sessions.FilePath(ctx, key, source, 120, 1280, 720, false, masterPlaylistName); err != nil {
+				t.Fatal(err)
+			}
+			replacement := registeredSession(t, sessions, key)
+			if replacement == original || replacement.sourceGeneration == "" {
+				t.Fatal("fixture did not replace the session for the same durable source generation")
+			}
+			latch.unblock()
+			if err := awaitSessionOperation(t, done); err != nil {
+				t.Fatalf("request accepted stale EOF or failed: %v", err)
+			}
+			if exited != nil {
+				select {
+				case <-exited:
+				case <-time.After(5 * time.Second):
+					t.Fatal("reaper did not finish")
+				}
+			}
+			if sessions.beyondSourceEnd(replacement, Rung{ID: "720p"}, 0) || sessions.incompleteSources.contains(source) {
+				t.Fatal("stale EOF was published in memory")
+			}
+			incomplete, err := st.MediaFileSourceIncomplete(ctx, store.MediaFile{
+				MediaID: media.ID, Path: source, ContentFingerprint: fingerprint,
+			})
+			if err != nil || incomplete {
+				t.Fatalf("stale EOF was published to the catalog: incomplete=%v, err=%v", incomplete, err)
+			}
+		})
+	}
+}

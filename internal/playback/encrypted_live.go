@@ -119,9 +119,12 @@ func (s *Sessions) watchLiveRevocation(key SessionKey, session *hlsSession, done
 	}
 }
 
-// segmentLacksMedia is the package's segmentLacksMedia for one of the
-// session's segments, decrypting it first on an encrypted session.
-func (h *hlsSession) segmentLacksMedia(path string) bool {
+// segmentLacksMedia checks one of the session's segments, decrypting it first
+// on an encrypted session.
+func (s *Sessions) segmentLacksMedia(h *hlsSession, path string) bool {
+	if s.inspectSegment != nil {
+		return s.inspectSegment(h, path)
+	}
 	if h.live == nil {
 		return segmentLacksMedia(path)
 	}
@@ -165,14 +168,14 @@ func (s *Sessions) OpenLiveArtifact(key SessionKey, path string) (*encderiv.Live
 	return f, err
 }
 
-// writePlaylist stores one of the playlists the session serves itself, under
+// writeSessionPlaylist stores one of the playlists the session serves itself, under
 // its slash-separated name relative to the session directory: encrypted on an
 // encrypted session, plain otherwise.
-func (h *hlsSession) writePlaylist(rel string, data []byte) error {
-	if h.live != nil {
-		return h.live.WriteFile(rel, data)
+func writeSessionPlaylist(dir string, live *encderiv.LiveSession, rel string, data []byte) error {
+	if live != nil {
+		return live.WriteFile(rel, data)
 	}
-	return os.WriteFile(filepath.Join(h.dir, filepath.FromSlash(rel)), data, 0o600)
+	return os.WriteFile(filepath.Join(dir, filepath.FromSlash(rel)), data, 0o600)
 }
 
 func (s *Sessions) liveRevocationInterval() time.Duration {

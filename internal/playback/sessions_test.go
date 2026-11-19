@@ -2266,7 +2266,7 @@ func finishesWhileBlocked(t *testing.T, what string, request func() error) {
 			t.Fatalf("%s: %v", what, err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatalf("%s blocked behind another session's encoder Stop", what)
+		t.Fatalf("%s did not finish while another session's I/O was blocked", what)
 	}
 }
 

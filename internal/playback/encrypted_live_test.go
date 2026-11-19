@@ -65,6 +65,71 @@ func (f *fakeEncryptedTranscoder) encryptedStarts() int {
 	return len(f.encStarts)
 }
 
+type revokeWaitTranscoder struct {
+	fakeEncryptedTranscoder
+	sourceEntered <-chan struct{}
+	clientClosed  chan<- bool
+}
+
+func (f *revokeWaitTranscoder) StartEncryptedHLSSegments(ctx context.Context, ep ffmpeg.EncryptedLiveEndpoint, segment, segmentSeconds int, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	proc, err := f.fakeEncryptedTranscoder.StartEncryptedHLSSegments(ctx, ep, segment, segmentSeconds, rendition)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Get(ep.Source)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		f.clientClosed <- err != nil
+	}()
+	select {
+	case <-f.sourceEntered:
+		return proc, nil // no OS child, so ensureRung revokes the endpoint
+	case <-time.After(5 * time.Second):
+		return nil, errors.New("encrypted source handler did not start")
+	}
+}
+
+func TestEncoderEndpointRevokeRunsOutsideSessionsLock(t *testing.T) {
+	clientClosed := make(chan bool, 1)
+	transcoder := &revokeWaitTranscoder{clientClosed: clientClosed}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	latch := newSessionIOLatch(t)
+	transcoder.sourceEntered = latch.entered
+	seedUnrelatedSessions(t, sessions)
+	source := testEncryptedSource(nil)
+	open := source.Open
+	source.Open = func() (io.ReadSeekCloser, error) {
+		latch.block()
+		return open()
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := encryptedFilePath(sessions, SessionKey{SessionID: "encrypted", MediaID: "media"},
+			source, 120, -1, false, "720p/init.mp4")
+		done <- err
+	}()
+	latch.wait(t)
+	// Revoke closes the client connection before waiting for the latched
+	// handler, proving the start is blocked inside Revoke.
+	select {
+	case closed := <-clientClosed:
+		if !closed {
+			t.Fatal("endpoint served the source while the open was blocked")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("endpoint was not revoked")
+	}
+	assertUnrelatedSessionsProgress(t, sessions)
+	latch.unblock()
+	if err := awaitSessionOperation(t, done); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func putLive(url string, body []byte) error {
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
 	if err != nil {
