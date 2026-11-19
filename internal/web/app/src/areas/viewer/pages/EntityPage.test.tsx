@@ -755,6 +755,44 @@ describe("EntityPage audio container order", () => {
     },
   );
 
+  it("uses the listed disc and track numbers when a track lookup is missing", async () => {
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      {
+        id: "d2t2",
+        kind: "media",
+        title: "Second Disc Closer",
+        mediaClass: "audio",
+        sequence: 2,
+        index: 2,
+      },
+      { ...tracks[2], mediaClass: "audio", sequence: 1, index: 2 },
+      { ...tracks[0], mediaClass: "audio", sequence: 2, index: 1 },
+      { ...tracks[1], mediaClass: "audio", sequence: 1, index: 1 },
+    ]);
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      d1t2: row("d1t2", "First Disc Closer", 2, 3),
+      d2t1: row("d2t1", "Second Disc Opener", 2, 1),
+      d1t1: row("d1t1", "First Disc Opener", 1, 1),
+    });
+    renderEntity();
+
+    const first = await screen.findByRole("list", { name: "Disc 1" });
+    const second = screen.getByRole("list", { name: "Disc 2" });
+    expect(
+      screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent),
+    ).toEqual(["Disc 1", "Disc 2"]);
+    expect(
+      within(first)
+        .getAllByRole("button", { name: /^Play / })
+        .map((button) => button.textContent),
+    ).toEqual(["1First Disc Opener", "2First Disc Closer"]);
+    expect(
+      within(second)
+        .getAllByRole("button", { name: /^Play / })
+        .map((button) => button.textContent),
+    ).toEqual(["1Second Disc Opener", "2Second Disc Closer"]);
+  });
+
   it.each([1, 2])("keeps a single-disc album flat when its stored disc is %s", async (sequence) => {
     vi.mocked(fetchMediaForEntity).mockResolvedValue([tracks[2], tracks[1]]);
     vi.mocked(fetchMediaRows).mockResolvedValue({

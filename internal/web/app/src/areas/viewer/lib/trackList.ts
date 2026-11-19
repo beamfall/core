@@ -92,12 +92,12 @@ export function ownerPeople(
   return new Set([...credited[0]].filter((id) => credited.every((ids) => ids.has(id))));
 }
 
-/** The stored sequence of every item, or null when the list does not group. */
+/** The sequence of every listed item, with a per-Media fallback, or null when the list does not group. */
 function groupSequences(
   media: readonly SourceItem[],
   rows: Readonly<Record<string, MediaRow>>,
 ): number[] | null {
-  const sequences = media.map((item) => rows[item.id]?.sequence);
+  const sequences = media.map((item) => item.sequence ?? rows[item.id]?.sequence);
   if (sequences.some((sequence) => sequence === undefined)) return null;
   return new Set(sequences).size > 1 ? (sequences as number[]) : null;
 }
@@ -107,7 +107,7 @@ function numberGroup(
   media: readonly SourceItem[],
   rows: Readonly<Record<string, MediaRow>>,
 ): { item: SourceItem; number: number }[] {
-  const indexes = media.map((item) => rows[item.id]?.index);
+  const indexes = media.map((item) => item.index ?? rows[item.id]?.index);
   const stored =
     indexes.every((index) => index !== undefined) && new Set(indexes).size === indexes.length;
   if (!stored) return media.map((item, position) => ({ item, number: position + 1 }));
