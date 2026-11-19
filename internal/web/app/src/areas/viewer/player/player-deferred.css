@@ -863,6 +863,9 @@
 .bf-audio-backdrop {
   position: absolute;
   inset: -64px;
+  /* The blur's spill is cut at the stage's box here, not by the stage's overflow, which the
+     visualizer turns off (below). A clip-path applies after the filter. */
+  clip-path: inset(64px);
   filter: blur(64px) saturate(1.2);
   opacity: 0.35;
 }
@@ -873,11 +876,14 @@
 .bf-audio-visualizer {
   position: absolute;
   inset: 0;
-  overflow: hidden;
 }
 
-/* The draw loop sizes the canvas to whole texels of whole device pixels. The slot clips a
-   minimum-sized canvas that overflows. Keep the origin fixed so a resize preserves texel positions. */
+/* The draw loop gives the canvas its size, whole texels of whole device pixels, and its clip
+   (Visualizer.tsx fitCanvas); the size here holds only until the first frame. Neither the slot
+   nor the stage clips the canvas: a box that shrank for one paint would crop lit pixels and
+   bring them back with no flash-limited draw between (Codex round 29). A frame started before
+   the slot shrank can so lie over the slot's neighbours until it has faded to black. Keep the
+   origin fixed so a resize preserves texel positions. */
 .bf-audio-visualizer-canvas {
   position: absolute;
   top: 0;
@@ -885,6 +891,10 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) {
+  overflow: visible;
 }
 
 .bf-audio-card {

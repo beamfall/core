@@ -30,9 +30,11 @@ visual off until the component remounts, although browsers restore contexts rout
   for then, black and tracked black with every budget spent, as the first frame does. A change during
   the fade or the black only moves that target, so a slot dragged to a new size costs one fade
   and one start. No texel is carried from one geometry to the next: the copy paths are gone.
-- A frame presents only the whole texels its slot shows. Until the next frame starts the canvas
-  keeps its size and position, clipped to the smallest slot seen, so a shrinking slot takes pixels
-  out of view by the page's clip and never drops them to the backdrop. A paused player draws a
+- A frame presents only the whole texels its slot shows when it starts. Only the draw loop
+  changes which canvas pixels are in view: it sizes and clips the canvas from the frame on
+  screen (its size and its texels in view at its start), and neither the slot nor the audio
+  stage clips the canvas, so a slot that shrinks crops nothing and one that grows back shows
+  nothing again, observed or not. With no frame the canvas has no size. A paused player draws a
   frame through a grant state the host wrote before it holds the picture. The slot behind the
   canvas is black, not the theme's scrim, so a pixel with no judged frame shows the level its
   tracker starts at (CORE-2516).
@@ -58,28 +60,36 @@ visual off until the component remounts, although browsers restore contexts rout
   as for any other visualizer failure; playback is never interrupted.
 - A geometry change costs the picture: the frame is held until the limiter grants its fall, the
   visual is black until the start, and the new frame rises through the grant as a first frame
-  does. A drag that outlasts the black stays black: a frame starts once two draws running ask
-  for one geometry, and a started frame withdrawn before its paint costs another 0.1 s of
-  black, so a moving slot allocates the full-resolution targets once in that time at most and
-  not at every frame. Framebuffer completeness is checked at the first start only: later starts
-  use the formats it checked, and a target incomplete all the same shows black.
+  does. A drag that outlasts the black stays black: a frame, the first after a mount included,
+  starts once two draws running ask for one geometry, and a started frame withdrawn before its
+  paint costs another 0.1 s of black, so a moving slot allocates the full-resolution targets
+  once in that time at most and not at every frame. Framebuffer completeness is checked at
+  every start: a target can be incomplete at one size and not another, and a limiter that reads
+  an incomplete target's zeros passes anything. An incomplete target frees the frame, presents
+  black and turns the visualizer off, as any other GL failure does.
   This is the price of one rule with no pixel carried over.
 - The fade and the black are counted in the time the limiter is credited with, not on the clock.
   The page cannot read the display's refresh period or when a frame was painted, and its
   animation-frame cadence does not give it: Safari runs animation frames at 60 a second on a
   120 Hz display, where a frame painted a refresh late and followed on time is shown half the
-  interval. So a steady cadence credits half of each interval (`shownMs`), bounded by the
-  shortest draw interval since the visualizer mounted, and credited time takes about twice as
-  long on the clock at 60 frames a second. The bound is never forgotten: one taken over recent
-  draws rises when the page slows on the same display (120 to 30 draws a second at 120 Hz) and
-  then credits two refreshes to a frame shown one. The cost is that a display that slows (a
-  window moved from a 240 Hz monitor to a 60 Hz one) or one burst of callbacks closer than a
-  refresh leaves the credit low, a quarter of each interval at worst, until the visualizer is
-  mounted again. The residual: a page that has never drawn faster than every third refresh of
-  its display can still be credited more than a late frame was shown; only presentation times
-  close that. Measuring the cadence cannot safely shorten this, since the
-  credit must stay a lower bound: crediting more needs the limiter to take a correction for a
-  frame after its successor is drawn, or the platform to report presentation times. Modelled there at the default 3 Hz: a dark frame is black at once and starts
+  interval. So a steady cadence credits half of each interval (`shownMs`), and no interval more
+  than B, the shortest draw interval since the visualizer mounted (4 ms at least, 1/24 s at
+  most): `min(B, max(interval / 2, interval - B))`. Credited time takes about twice as long on
+  the clock at 60 frames a second. B is never forgotten: one taken over recent draws rises when
+  the page slows on the same display (120 to 30 draws a second at 120 Hz) and then credits two
+  refreshes to a frame shown one.
+  The credit is not a lower bound on the time shown in every case. It is one where B is no
+  longer than the display's refresh period, which takes two draws one refresh apart since the
+  mount. It over-credits where the page has only drawn slower than its display: steady 30 draws
+  a second since the mount on a 120 Hz display credits 16.7 ms, and a frame painted three
+  refreshes late was shown 8.3 ms; the excess is at most B less one refresh. Only presentation
+  times close that. It under-credits where B is shorter than the cadence, with no floor but
+  B's own 4 ms: after one 1/240 s interval (a 240 Hz monitor the window left, or a burst of
+  callbacks) 60 draws a second earn 4.17 ms of each 16.7 ms, a quarter, and 30 draws a second
+  4.17 ms of each 33.3 ms, an eighth, so the 2 s cap on the fade is 16 s on the clock there,
+  until the visualizer is mounted again. Measuring the cadence cannot safely raise the credit:
+  that needs the limiter to take a correction for a frame after its successor is drawn, or the
+  platform to report presentation times. Modelled at half of each interval and the default 3 Hz: a dark frame is black at once and starts
   about 0.25 s after the change; a frame with luma to drop is held about 0.7 s (two luma tokens,
   0.33 s credited), is black about 0.25 s and rises about 0.7 s after the start; a full-frame
   saturated red is held about 2.7 s (the red token, 1.33 s credited) and rises about 2.7 s after
@@ -101,11 +111,13 @@ visual off until the component remounts, although browsers restore contexts rout
   cap on a GPU that runs more than a frame behind. The residual: `getBufferSubData` is still a
   round trip to the browser's GPU process, so commands issued between frames (an artwork
   upload, a visual's compile) or by other contexts can delay that one call.
-- The canvas is clipped to a narrowed slot in the observation that reports it, not at the next
-  draw, so a slot narrowed and widened again by another observer before the paint shows
-  nothing back.
-- A slot that shrinks and grows back between two draws costs a fade: the half it hid cannot come
-  back into a frame whose view only shrinks.
+- A frame whose slot shrank keeps its size until it has faded, up to the fade's cap, and lies
+  over whatever the slot's neighbours show there; the audio stage no longer clips its children
+  while the visualizer is on, so the page can gain scrollable overflow for that long. This is
+  accepted: the alternative crops lit pixels with no judged draw. The window's own edge still
+  crops the canvas, which no page can prevent.
+- A slot that shrinks and grows back between two draws costs nothing: no draw asked for another
+  geometry, and the frame's pixels never left view.
 
 ## Acceptance evidence
 

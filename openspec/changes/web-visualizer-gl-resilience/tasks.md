@@ -39,6 +39,10 @@
 - [x] 3.24 Start a frame only once two draws running ask for one geometry; a withdrawn start costs the black again; check framebuffers at the first start only
 - [x] 3.25 Read each fade frame's grant after its last command and take the word at the next frame only if the fence has passed
 - [x] 3.26 Keep the drawn geometry as numbers; build a geometry key only for an observation that follows a draw
+- [x] 3.27 Size and clip the canvas from the started frame alone; the slot and the audio stage do not clip it; no size with no frame (supersedes the smallest-slot clip of 3.9 and `narrow` of 3.17 and 3.22)
+- [x] 3.28 Check framebuffer completeness at every start; an incomplete target frees the frame, presents black and fails the visualizer (supersedes the first-start-only check of 3.24)
+- [x] 3.29 The first request after a mount also needs two draws running; compare the geometry asked for in two kept objects and measure the slot in place, with no allocation at a draw
+- [x] 3.30 State the refresh credit as it is: at most B, over-credit where the page never drew at the display's rate, under-credit where B is shorter than the cadence
 
 ## 4. Gate and archive
 

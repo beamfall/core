@@ -43,6 +43,40 @@ export function backingSize(
   cssHeight: number,
   ratio: number,
 ): [number, number, number] {
+  const [width, height, texel] = measure([0, 0, 0, 0, 0], device, cssWidth, cssHeight, ratio);
+  return [width, height, texel];
+}
+
+/** The slot's size in whole physical pixels, which can cut the last texel in each dimension. */
+export function slotPixels(
+  device: { inlineSize: number; blockSize: number } | null,
+  cssWidth: number,
+  cssHeight: number,
+  ratio: number,
+): [number, number] {
+  const m = measure([0, 0, 0, 0, 0], device, cssWidth, cssHeight, ratio);
+  return [m[3], m[4]];
+}
+
+/** A draw request, as the renderer's draw takes it: the backing size in texels, the texel's side
+ * and the slot's size in physical pixels. */
+export type Request = [
+  width: number,
+  height: number,
+  texel: number,
+  slotWidth: number,
+  slotHeight: number,
+];
+
+/** Writes backingSize and slotPixels for a slot into `into`, so a frame allocates neither
+ * (Codex round 29). */
+export function measure(
+  into: Request,
+  device: { inlineSize: number; blockSize: number } | null,
+  cssWidth: number,
+  cssHeight: number,
+  ratio: number,
+): Request {
   const r = ratio > 0 ? ratio : 1;
   const w = device ? device.inlineSize : cssWidth * r;
   const h = device ? device.blockSize : cssHeight * r;
@@ -55,35 +89,22 @@ export function backingSize(
     Math.ceil(w / MAX_SIDE),
     Math.ceil(h / MAX_SIDE),
   );
-  const fit = (n: number) => Math.max(1, Math.floor(n / texel + 1e-6));
-  return [fit(w), fit(h), texel];
+  into[0] = Math.max(1, Math.floor(w / texel + 1e-6));
+  into[1] = Math.max(1, Math.floor(h / texel + 1e-6));
+  into[2] = texel;
+  into[3] = Math.floor(w + 1e-6);
+  into[4] = Math.floor(h + 1e-6);
+  return into;
 }
 
-/** The slot's size in whole physical pixels, which can cut the last texel in each dimension. */
-export function slotPixels(
-  device: { inlineSize: number; blockSize: number } | null,
-  cssWidth: number,
-  cssHeight: number,
-  ratio: number,
-): [number, number] {
+/** The canvas's clip-path for a frame: its whole texels in view, from the top left, as the frame
+ * started with them. Nothing past them shows, and only a start changes them: the clip follows
+ * what a draw judged, never the slot's size (Codex rounds 24, 29). Empty when the whole frame is
+ * in view. */
+export function viewClip(shown: NonNullable<Renderer["shown"]>, ratio: number): string {
   const r = ratio > 0 ? ratio : 1;
-  const w = device ? device.inlineSize : cssWidth * r;
-  const h = device ? device.blockSize : cssHeight * r;
-  return [Math.floor(w + 1e-6), Math.floor(h + 1e-6)];
-}
-
-/** The canvas's clip-path for a frame the host may show viewWidth x viewHeight physical pixels
- * of, from the top left: the smallest the slot has been since the frame started. Nothing past
- * them shows, so a slot that shrinks and grows before the frame's fade ends reveals the slot's
- * black (TRACKED_BLACK), never a pixel that was out of view (Codex round 24). Empty when the
- * whole frame is in view. */
-export function viewClip(
-  shown: { width: number; height: number; texel: number; viewWidth: number; viewHeight: number },
-  ratio: number,
-): string {
-  const r = ratio > 0 ? ratio : 1;
-  const right = Math.max(0, shown.width * shown.texel - shown.viewWidth) / r;
-  const bottom = Math.max(0, shown.height * shown.texel - shown.viewHeight) / r;
+  const right = (Math.max(0, shown.width - shown.visibleWidth) * shown.texel) / r;
+  const bottom = (Math.max(0, shown.height - shown.visibleHeight) * shown.texel) / r;
   return right > 0 || bottom > 0 ? `inset(0 ${right}px ${bottom}px 0)` : "";
 }
 // How the audio values glide across a track change (CORE-2218): toward rest while the next
@@ -190,7 +211,7 @@ export function Visualizer({
   const enabled = !!url && !failed && canVisualize();
 
   // The slot shows wherever the canvas shows no judged pixel: past its edge, through its clip
-  // (viewClip) and before its first frame. There the limiter's trackers hold black, so the slot
+  // (viewClip) and with no frame on screen. There the limiter's trackers hold black, so the slot
   // is that black from before the canvas first paints, and never a themed colour: a strip that
   // came into view from the theme's scrim rose from a level its tracker did not hold (Codex
   // round 25). An empty slot keeps no background, so the artwork backdrop shows through.
@@ -213,11 +234,11 @@ export function Visualizer({
     let lastWall: number | null = null;
     // The time each frame is credited to the limiter with, from the shortest draw interval seen.
     const refresh = new RefreshBound();
-    // Whether the last draw is unpainted, and what it asked for: a draw sets them, and the next
-    // animation frame, which runs after the paint, clears the flag. Numbers, so a frame
-    // allocates no key (Codex round 28).
+    // Whether the last draw is unpainted, and the request of the last frame: a draw sets the
+    // flag, and the next animation frame, which runs after the paint, clears it. The request is
+    // measured in place, so a frame allocates neither it nor a key (Codex rounds 28, 29).
     let unpainted = false;
-    const drawn: [number, number, number, number, number] = [0, 0, 0, 0, 0];
+    const drawn: Request = [0, 0, 0, 0, 0];
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -234,27 +255,35 @@ export function Visualizer({
     let reportedAt = 0;
     let askedAt = 0;
     let waited = 0;
-    // Fit, filter and clip the frame the renderer shows. Through a fade all three follow the
-    // frame that is fading, and through the black after it the canvas stays as that frame left it.
-    let cssSize = "";
-    let clipped = "";
+    // Size, filter and clip the canvas to the frame the renderer shows, and size it to nothing
+    // while it shows none. This is the only thing that changes which canvas pixels are visible: the
+    // canvas has its own size, the slot does not clip it (player-deferred.css), and a frame
+    // keeps its size and its texels in view from its start until it is black. A slot that
+    // shrinks therefore crops nothing, and one that grows again brings nothing back, whether or
+    // not an observer ever saw the smaller size (Codex round 29): the frame fades where it
+    // stands, over the slot's neighbours if the slot is now smaller, and the next one starts at
+    // the slot's size. The frame is one object from its start to its end, so a frame that
+    // changes nothing writes no style.
+    let fitted: Renderer["shown"] | undefined;
+    let fittedAt = 0;
     const fitCanvas = (renderer: Renderer) => {
       const shown = renderer.shown;
-      if (!shown) return;
       const r = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
-      const texel = shown.texel;
-      const rendering = texel > 1 ? "pixelated" : "";
-      if (canvas.style.imageRendering !== rendering) canvas.style.imageRendering = rendering;
-      const clip = viewClip(shown, r);
-      if (clip !== clipped) {
-        clipped = clip;
-        canvas.style.clipPath = clip;
+      if (shown === fitted && r === fittedAt) return;
+      fitted = shown;
+      fittedAt = r;
+      if (!shown) {
+        // No frame: the canvas is black, as the slot behind it is, and takes no room, so the
+        // last frame's size overflows nothing while the next one waits.
+        canvas.style.width = "0px";
+        canvas.style.height = "0px";
+        return;
       }
-      const next = `${(shown.width * texel) / r}px ${(shown.height * texel) / r}px`;
-      if (next === cssSize) return;
-      cssSize = next;
+      const texel = shown.texel;
+      canvas.style.imageRendering = texel > 1 ? "pixelated" : "";
       canvas.style.width = `${(shown.width * texel) / r}px`;
       canvas.style.height = `${(shown.height * texel) / r}px`;
+      canvas.style.clipPath = viewClip(shown, r);
     };
     const observer = new ResizeObserver((entries) => {
       const entry = entries[entries.length - 1];
@@ -263,17 +292,6 @@ export function Visualizer({
       css = { width: entry.contentRect.width, height: entry.contentRect.height };
       reportedAt = window.devicePixelRatio;
       askedAt = 0;
-      // The frame on screen never shows more than the smallest slot observed since it started,
-      // whether or not a draw follows: a draw can be held back (a device pixel ratio awaiting
-      // its report, a hidden page), and the slot can have grown again by the next one (Codex
-      // round 27). The canvas is clipped here, before this paint, not at the next draw: a slot
-      // narrowed after one frame's observations is reported in the next frame's, and another
-      // observer can widen it again before that frame paints (Codex round 28).
-      const renderer = rendererRef.current;
-      if (renderer) {
-        renderer.narrow(...slotPixels(device, css.width, css.height, window.devicePixelRatio));
-        fitCanvas(renderer);
-      }
       // Observers run after animation frames and before the paint: a slot resized since this
       // frame's draw would show a frame judged against the old area limit, so it is withdrawn
       // and the next draw starts the fade from the frame on screen (Codex round 18).
@@ -283,12 +301,15 @@ export function Visualizer({
       // that gains or loses a pixel no whole texel fills is the same frame, and withdrawing for
       // it would stop the limiter's clock for as long as the slot jitters (Codex round 26).
       const key = geometryKey(
-        ...backingSize(device, css.width, css.height, window.devicePixelRatio),
-        ...slotPixels(device, css.width, css.height, window.devicePixelRatio),
+        ...measure([0, 0, 0, 0, 0], device, css.width, css.height, window.devicePixelRatio),
       );
       if (key === geometryKey(...drawn)) return;
+      const renderer = rendererRef.current;
+      if (!renderer) return;
       try {
-        renderer?.withdraw();
+        renderer.withdraw();
+        // A withdrawn start leaves no frame: the canvas it was sized for shows nothing.
+        fitCanvas(renderer);
       } catch {
         // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
       }
@@ -365,18 +386,12 @@ export function Visualizer({
         askedAt = 0;
       }
       const box = css ?? slot.getBoundingClientRect();
-      const [width, height, texel] = backingSize(
-        device,
-        box.width,
-        box.height,
-        window.devicePixelRatio,
-      );
-      const [slotWidth, slotHeight] = slotPixels(
-        device,
-        box.width,
-        box.height,
-        window.devicePixelRatio,
-      );
+      measure(drawn, device, box.width, box.height, window.devicePixelRatio);
+      const width = drawn[0];
+      const height = drawn[1];
+      const texel = drawn[2];
+      const slotWidth = drawn[3];
+      const slotHeight = drawn[4];
       try {
         // Paused by the listener: hold still. Paused while a new source loads: keep moving. A
         // geometry change still draws while paused, through its fade and black, until the
@@ -392,8 +407,9 @@ export function Visualizer({
         }
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
-        // The limiter ages its evidence by a lower bound on the time the last frame was shown
-        // (refresh.ts), from the shorter of the frame timestamps' interval and the time between
+        // The limiter ages its evidence by the credit of refresh.ts, a lower bound on the time
+        // the last frame was shown once the page has drawn at its display's rate and not
+        // before, from the shorter of the frame timestamps' interval and the time between
         // draws (a late callback has a stale timestamp, Codex round 18). A device that draws
         // slower than its display refreshes ages its evidence slower: held areas wait longer. A
         // display that speeds up its refresh rate between two paints is over-credited one
@@ -426,11 +442,6 @@ export function Visualizer({
         lastDrawn = now;
         lastWall = wall;
         unpainted = true;
-        drawn[0] = width;
-        drawn[1] = height;
-        drawn[2] = texel;
-        drawn[3] = slotWidth;
-        drawn[4] = slotHeight;
         fitCanvas(renderer);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {

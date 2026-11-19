@@ -38,8 +38,7 @@ to the failed state. It SHALL remove its listeners on unmount.
 ### Requirement: One path for every geometry change
 
 When a frame is on screen and the geometry asked for differs from it (the backing size in texels,
-the physical pixels per texel, or the whole texels the slot shows), or the frame's view was
-narrowed below the texels the slot shows now, the web visualizer SHALL fade
+the physical pixels per texel, or the whole texels the slot shows), the web visualizer SHALL fade
 that frame to black through the flash limiter, then present black for 0.1 s, then start a frame
 at the geometry asked for then. No output or tracker texel SHALL be carried from one
 geometry to another.
@@ -58,10 +57,10 @@ geometry to another.
 
 #### Scenario: Slot shrank and grew back between two draws
 
-- **WHEN** the slot is observed 400 pixels wide and then 800 again between two draws of an
-  800-pixel frame
-- **THEN** the view stays 400 pixels wide and the next draw starts the fade, so the hidden half
-  comes back with the frame that starts
+- **WHEN** the slot is 400 pixels wide and then 800 again between two draws of an 800-pixel
+  frame
+- **THEN** the frame keeps its 800 pixels in view and no fade starts: no draw asked for another
+  geometry
 
 #### Scenario: Slot with no whole texel
 
@@ -148,23 +147,18 @@ passed, and SHALL otherwise drop that read for its own.
 - **WHEN** no read of a grant finishes during the fade
 - **THEN** black is presented once the fade has counted 2 s
 
-### Requirement: A frame is credited no more than it was shown
+### Requirement: A frame's credit is bounded by the shortest draw interval
 
-The time the web visualizer credits the limiter for a frame SHALL be a lower bound on the time
-the frame was on screen. With B the shortest draw interval since the visualizer mounted, clamped
-to 4 ms and 1/24 s, the credit for an interval SHALL be `min(B, max(interval / 2, interval - B))`.
-B SHALL NOT rise while the visualizer is mounted. A steady cadence SHALL NOT raise the credit
-above half the interval: the animation-frame cadence is not the display's refresh period.
+With B the shortest draw interval since the visualizer mounted, clamped to 4 ms and 1/24 s, the
+time the web visualizer credits the limiter for an interval SHALL be
+`min(B, max(interval / 2, interval - B))`. B SHALL NOT rise while the visualizer is mounted. A
+steady cadence SHALL NOT raise the credit above half the interval: the animation-frame cadence
+is not the display's refresh period.
 
 #### Scenario: Animation frames at 60 a second on a 120 Hz display
 
 - **WHEN** frames arrive every 16.7 ms and one is painted a refresh late and the next on time
 - **THEN** the frame was shown 8.3 ms and is credited 8.3 ms
-
-#### Scenario: Cadence slows from 240 to 60 frames a second
-
-- **WHEN** frames arrived every 1/240 s and then arrive every 1/60 s
-- **THEN** each frame is credited 1/240 s for as long as the visualizer is mounted
 
 #### Scenario: Page slows to 30 draws a second on a 120 Hz display
 
@@ -177,13 +171,30 @@ above half the interval: the animation-frame cadence is not the display's refres
 - **WHEN** an interval of 2 s follows steady 59.94 Hz frames
 - **THEN** it is credited 1/59.94 s, one refresh
 
+### Requirement: The credit is a lower bound only at the display's rate
+
+The credit SHALL be no more than B. It is a lower bound on the time the frame was on screen only
+where B is no longer than the display's refresh period, which holds once two draws have come one
+refresh apart. Where the page has only drawn slower than its display, a frame painted late can
+be credited more than it was shown, by up to B less one refresh. Where B is shorter than the
+cadence, the credit is B an interval, less than the frame was shown.
+
+#### Scenario: Cadence slows from 240 to 60 or 30 frames a second
+
+- **WHEN** frames arrived every 1/240 s and then arrive every 1/60 s or every 1/30 s
+- **THEN** each frame is credited 1/240 s, a quarter or an eighth of its interval, for as long as
+  the visualizer is mounted
+
+#### Scenario: Never faster than 30 draws a second on a 120 Hz display
+
+- **WHEN** frames have arrived every 1/30 s since the visualizer mounted, and one is painted
+  three refreshes late and the next on time
+- **THEN** the frame was shown 8.3 ms and is credited 16.7 ms, more than it was shown
+
 ### Requirement: A change during the fade only moves the target
 
 A geometry change during the fade or the black SHALL change only the geometry the next frame
-starts at. It SHALL NOT reallocate, write the grant state or restart either clock. A frame SHALL
-start only once two draws running ask for one geometry, and a started frame withdrawn before
-its paint SHALL be followed by the black again, so a slot that keeps changing allocates the
-targets once in the black's length at most.
+starts at. It SHALL NOT reallocate, write the grant state or restart either clock.
 
 #### Scenario: Slot dragged through the fade
 
@@ -191,11 +202,25 @@ targets once in the black's length at most.
 - **THEN** the fade keeps its geometry and its clock, the grant state is not written again, and
   one frame starts at the last size asked for
 
+### Requirement: A frame starts at a geometry asked for twice running
+
+A frame (the first after a mount or a restored context included) SHALL start only once two
+draws running ask for one geometry, and a started frame withdrawn before its paint SHALL be
+followed by the black again, so a slot that keeps changing allocates the targets once in the
+black's length at most. The geometry asked for SHALL be compared without allocating at a draw.
+
 #### Scenario: Slot dragged past the black
 
 - **WHEN** the slot's size changes on every frame after the black has run
 - **THEN** the canvas stays black and no target is allocated until two draws running ask for one
   size
+
+#### Scenario: Slot moving at the mount
+
+- **WHEN** the first three draws after a mount ask for three sizes and the fourth repeats the
+  third
+- **THEN** black is presented with no target allocated for three draws, and the frame starts at
+  the fourth
 
 ### Requirement: A frame starts black with every budget spent
 
@@ -207,6 +232,18 @@ with every budget spent.
 
 - **WHEN** the renderer draws its first frame
 - **THEN** the grant state it reads has every budget spent
+
+### Requirement: Every start checks its framebuffers
+
+The web visualizer SHALL check the completeness of every framebuffer a start allocates, at the
+first start and at every later one. If any is incomplete it SHALL free the targets, present
+black, draw nothing through them and fail as for any other GL failure, which turns the
+visualizer off.
+
+#### Scenario: Target incomplete after a resize
+
+- **WHEN** the frame that starts after a fade allocates a limiter target that is incomplete
+- **THEN** no frame is drawn, the canvas shows black and the visualizer is turned off
 
 ### Requirement: A spent grant state is judged before it is trusted
 
@@ -236,32 +273,50 @@ slot cuts SHALL NOT be presented.
 - **WHEN** a frame starts at two physical pixels per texel in a slot 3 pixels wide
 - **THEN** one texel column is presented and the third pixel column shows black
 
-### Requirement: The view of a frame only shrinks
+### Requirement: Only a frame's start sets the canvas pixels in view
 
-Until the next frame starts, the web visualizer SHALL keep the canvas at the frame's size and
-position, clipped to the smallest slot seen since the frame started, so a pixel leaves view only
-by that clip and a pixel the slot hid does not come back.
+The web visualizer SHALL set the canvas's size and clip from the frame on screen and from
+nothing else: the size the frame started at and the whole texels in view at its start. They
+SHALL NOT change from the frame's start until black is presented after its fade. With no frame
+on screen the canvas SHALL have no size.
 
 #### Scenario: Slot shrinks, then the device pixel ratio changes
 
-- **WHEN** a frame with 800 pixels in view at ratio 1 has its slot observed 400 pixels wide, and
-  the ratio then goes to 2 before the next draw
-- **THEN** the view is 400 pixels wide from the observation on, while the frame is held and after
-  the slot is observed 800 physical pixels wide at the new ratio
+- **WHEN** a frame of 800 by 600 physical pixels at ratio 1 has its slot observed 400 pixels
+  wide, and the ratio then goes to 2 before the next draw
+- **THEN** the canvas is 400 by 300 CSS pixels, the same 800 by 600 physical pixels, unclipped
 
-#### Scenario: Slot shrinks and grows back during the fade
+#### Scenario: Texel cut at the start
 
-- **WHEN** a slot at two physical pixels per texel shrinks from 4 to 3 pixels wide and grows back
-  to 4
-- **THEN** the fourth pixel column stays clipped through the fade and comes back black with the
+- **WHEN** a frame starts at two physical pixels per texel in a slot 3 pixels wide and the slot
+  grows to 4
+- **THEN** the second texel column stays clipped through the fade and comes back black with the
   frame that starts
+
+#### Scenario: No frame
+
+- **WHEN** black is presented after a fade, or a frame that started is withdrawn
+- **THEN** the canvas has no size and the slot's black shows
+
+### Requirement: The slot does not clip the canvas
+
+Neither the slot nor the audio stage around it SHALL clip the canvas, so the slot's layout takes
+no pixel of a frame out of view and brings none back, whether or not an observer reports the
+size. A frame whose slot shrank lies over the slot's neighbours until it has faded.
+
+#### Scenario: Slot shrinks and grows back
+
+- **WHEN** the slot of a frame 800 pixels wide is laid out 400 pixels wide for a paint and 800
+  again, observed or not
+- **THEN** the canvas keeps its 800 pixels in view at every paint
 
 ### Requirement: A frame judged for a changed slot is withdrawn
 
 A frame judged for a slot that changed before the frame was painted SHALL be withdrawn: the
 previous output is presented again and the limiter's state goes back to before the frame. Black
 and the frames of a fade SHALL stand. A withdrawn frame that started at a new geometry SHALL
-leave black and no frame, so the next draw starts at the geometry asked for then.
+leave black and no frame, with no second fade; the black then runs again, and a frame starts as
+after any black.
 
 #### Scenario: Slot changed before paint
 
@@ -278,8 +333,9 @@ leave black and no frame, so the next draw starts at the geometry asked for then
 
 - **WHEN** the slot's size changes between the draw and the paint of the frame that started
   after the black
-- **THEN** that frame is withdrawn, black is presented with no frame, and the next draw starts
-  at the new geometry with no second fade
+- **THEN** that frame is withdrawn and black is presented with no frame and no second fade; the
+  black runs another 0.1 s of credited time, and a frame then starts once two draws running ask
+  for one geometry
 
 ### Requirement: A slot has changed when its geometry has
 
@@ -296,17 +352,16 @@ slot's pixels that leaves that geometry as it was SHALL NOT withdraw a frame.
 ### Requirement: A slot measured at another device pixel ratio is not drawn for
 
 When the device pixel ratio differs from the one the slot was last observed at, the web
-visualizer SHALL NOT draw, start a fade or move the clip from the cached CSS size. It SHALL leave
-the frame on screen as it is, observe the slot afresh, and draw from the next observation. An
-observation SHALL narrow the view of the frame on screen when it is made, whatever the ratio, and
-nothing on this path SHALL widen it.
+visualizer SHALL NOT draw or start a fade from the cached CSS size. It SHALL leave the frame on
+screen as it is, at the same physical pixels, observe the slot afresh, and draw from the next
+observation.
 
 #### Scenario: Zoom with the slot's pixels unchanged
 
 - **WHEN** a slot of 800 by 600 physical pixels at ratio 2 is zoomed to ratio 1 and the next
   animation frame runs before the slot is observed
-- **THEN** nothing is drawn, no fade starts and the clip does not shrink; after the observation
-  reports 800 by 600 the frame goes on with no fade
+- **THEN** nothing is drawn, no fade starts and the canvas keeps its physical pixels; after the
+  observation reports 800 by 600 the frame goes on with no fade
 
 ### Requirement: A ratio change is observed afresh
 
@@ -329,8 +384,8 @@ still the slot's, and it SHALL draw from that box and the CSS size read from lay
 
 ### Requirement: Unjudged pixels show black
 
-Wherever the slot shows no judged pixel (past the canvas, through its clip, before its first
-frame, between a fade and the frame that starts) the web visualizer SHALL show black, the level
+Wherever the slot shows no judged pixel (past the canvas, through its clip, with no frame on
+screen: before the first and between a fade and the frame that starts) the web visualizer SHALL show black, the level
 those pixels' trackers start at, whatever the theme.
 
 #### Scenario: Strip not yet drawn

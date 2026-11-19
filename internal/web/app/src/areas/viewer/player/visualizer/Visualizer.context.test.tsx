@@ -11,13 +11,12 @@ const made = vi.hoisted(() => ({
     draw: ReturnType<typeof vi.fn>;
     settled: ReturnType<typeof vi.fn>;
     withdraw: ReturnType<typeof vi.fn>;
-    narrow: ReturnType<typeof vi.fn>;
     shown: {
       width: number;
       height: number;
       texel: number;
-      viewWidth: number;
-      viewHeight: number;
+      visibleWidth: number;
+      visibleHeight: number;
     } | null;
     dispose: ReturnType<typeof vi.fn>;
     contextLost: boolean;
@@ -54,13 +53,6 @@ vi.mock("./renderer", async (importOriginal) => {
           draw: vi.fn(),
           settled: vi.fn(() => false),
           withdraw: vi.fn(),
-          // As the renderer does: the view of the frame on screen only shrinks.
-          narrow: vi.fn((slotWidth: number, slotHeight: number) => {
-            const shown = r.shown;
-            if (!shown) return;
-            shown.viewWidth = Math.min(shown.viewWidth, slotWidth);
-            shown.viewHeight = Math.min(shown.viewHeight, slotHeight);
-          }),
           shown: null as (typeof made.renderers)[number]["shown"],
           dispose: vi.fn(),
           contextLost: false,
@@ -274,7 +266,7 @@ describe("Visualizer canvas fitting", () => {
     const renderer = made.renderers[0];
     vi.stubGlobal("devicePixelRatio", 3);
     const box = slotSize(canvas, 640, 360);
-    renderer.shown = { width: 960, height: 540, texel: 2, viewWidth: 1920, viewHeight: 1080 };
+    renderer.shown = { width: 960, height: 540, texel: 2, visibleWidth: 960, visibleHeight: 540 };
     step(16);
     expect(canvas.style.imageRendering).toBe("pixelated");
 
@@ -285,25 +277,31 @@ describe("Visualizer canvas fitting", () => {
     expect(canvas.style.imageRendering).toBe("pixelated");
     expect(canvas.style.width).toBe("960px");
 
-    renderer.shown = { width: 1920, height: 1080, texel: 1, viewWidth: 1920, viewHeight: 1080 };
+    renderer.shown = {
+      width: 1920,
+      height: 1080,
+      texel: 1,
+      visibleWidth: 1920,
+      visibleHeight: 1080,
+    };
     step(48);
     expect(canvas.style.imageRendering).toBe("");
     expect(canvas.style.width).toBe("960px");
   });
 
-  // Codex round 24: a slot that shrank and grew again would show pixels that had left view, so
-  // the canvas is clipped to the view the renderer reports for its frame.
-  it("clips the canvas to the view of the frame on screen", async () => {
+  // The texels the slot cut when the frame started were never in view: the canvas is clipped to
+  // the rest for as long as that frame is on screen.
+  it("clips the canvas to the texels its frame started with", async () => {
     const { canvas } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
     vi.stubGlobal("devicePixelRatio", 4);
     slotSize(canvas, 1, 30);
-    renderer.shown = { width: 64, height: 36, texel: 2, viewWidth: 3, viewHeight: 72 };
+    renderer.shown = { width: 64, height: 36, texel: 2, visibleWidth: 1, visibleHeight: 36 };
     step(16);
-    expect(canvas.style.clipPath).toBe("inset(0 31.25px 0px 0)");
+    expect(canvas.style.clipPath).toBe("inset(0 31.5px 0px 0)");
 
-    renderer.shown = { width: 64, height: 36, texel: 2, viewWidth: 128, viewHeight: 72 };
+    renderer.shown = { width: 64, height: 36, texel: 2, visibleWidth: 64, visibleHeight: 36 };
     step(32);
     expect(canvas.style.clipPath).toBe("");
   });
@@ -315,7 +313,7 @@ describe("Visualizer canvas fitting", () => {
     vi.stubGlobal("devicePixelRatio", 1);
     const box = slotSize(canvas, 640, 360);
     const renderer = made.renderers[0];
-    renderer.shown = { width: 640, height: 360, texel: 1, viewWidth: 640, viewHeight: 360 };
+    renderer.shown = { width: 640, height: 360, texel: 1, visibleWidth: 640, visibleHeight: 360 };
     step(16);
     expect(canvas.style.width).toBe("640px");
 
@@ -336,10 +334,10 @@ describe("Visualizer canvas fitting", () => {
     vi.stubGlobal("devicePixelRatio", 1);
     slotSize(canvas, 640, 360);
     const renderer = made.renderers[0];
-    renderer.shown = { width: 320, height: 180, texel: 2, viewWidth: 640, viewHeight: 360 };
+    renderer.shown = { width: 320, height: 180, texel: 2, visibleWidth: 320, visibleHeight: 180 };
     // The frame starts at the new geometry, black, and has not been judged yet.
     renderer.draw.mockImplementationOnce(() => {
-      renderer.shown = { width: 640, height: 360, texel: 1, viewWidth: 640, viewHeight: 360 };
+      renderer.shown = { width: 640, height: 360, texel: 1, visibleWidth: 640, visibleHeight: 360 };
     });
     step(16);
     step(32);
@@ -449,7 +447,7 @@ describe("Visualizer resize before paint", () => {
       step(16);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
-      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
+      renderer.shown = { width: 800, height: 600, texel: 1, visibleWidth: 800, visibleHeight: 600 };
       const asked = observes;
 
       setRatio(1);
@@ -520,7 +518,7 @@ describe("Visualizer resize before paint", () => {
       const renderer = made.renderers[0];
       reportBox([400, 300], [800, 600]);
       step(16);
-      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
+      renderer.shown = { width: 800, height: 600, texel: 1, visibleWidth: 800, visibleHeight: 600 };
 
       setRatio(1);
       vi.spyOn(canvas.parentElement!, "getBoundingClientRect").mockReturnValue({
@@ -543,12 +541,11 @@ describe("Visualizer resize before paint", () => {
     }
   });
 
-  // Codex round 27: a red frame fading at DPR 1 with 800 pixels in view; the slot shrinks to 400
-  // before the paint, so 400 are painted; then the ratio goes to 2 with the slot still 400 CSS
-  // pixels wide, 800 physical. The held frame was fitted with the 800-pixel view it had at its
-  // last draw, and the right half came back with no grant. The observed 400 narrows the view at
-  // once, and nothing widens it.
-  it("keeps a held frame clipped to the smallest slot observed", async () => {
+  // Codex rounds 24, 27, 28 and 29: the slot clipped the canvas, so a slot that shrank and grew
+  // hid lit pixels and showed them again, at a painted size no observation need report. The
+  // canvas takes its size and clip from the frame the renderer shows and from nothing else: a
+  // slot of any size, at any ratio, leaves the frame's physical pixels where they are.
+  it("leaves the canvas of a frame alone whatever the slot does", async () => {
     const ratio = window.devicePixelRatio;
     setRatio(1);
     try {
@@ -557,57 +554,51 @@ describe("Visualizer resize before paint", () => {
       const renderer = made.renderers[0];
       reportBox([800, 600], [800, 600]);
       step(16);
-      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
+      renderer.shown = { width: 800, height: 600, texel: 1, visibleWidth: 800, visibleHeight: 600 };
       step(32);
-      reportBox([400, 600], [400, 600]);
-      expect(renderer.narrow).toHaveBeenLastCalledWith(400, 600);
+      const fit = () => [canvas.style.width, canvas.style.height, canvas.style.clipPath];
+      expect(fit()).toEqual(["800px", "600px", ""]);
 
-      setRatio(2);
       step(48);
-      expect(renderer.draw).toHaveBeenCalledTimes(2);
-      expect(canvas.style.width).toBe("400px");
-      expect(canvas.style.clipPath).toBe("inset(0 200px 0px 0)");
-
-      // The slot observed at the new ratio is 800 physical pixels wide again.
-      reportBox([400, 300], [800, 600]);
+      reportBox([400, 600], [400, 600]);
+      expect(fit()).toEqual(["800px", "600px", ""]);
+      reportBox([800, 600], [800, 600]);
+      expect(fit()).toEqual(["800px", "600px", ""]);
       step(64);
-      expect(renderer.draw).toHaveBeenCalledTimes(3);
-      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
-      expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 600 });
-      expect(canvas.style.clipPath).toBe("inset(0 200px 0px 0)");
+      reportBox([1, 1], [1, 1]);
+      step(80);
+      expect(fit()).toEqual(["800px", "600px", ""]);
+
+      // The same 800 x 600 physical pixels at twice the ratio, with the slot not yet observed.
+      setRatio(2);
+      step(96);
+      expect(fit()).toEqual(["400px", "300px", ""]);
     } finally {
       setRatio(ratio);
     }
   });
 
-  // Codex round 28: a red frame fading in an 800-pixel slot. After the visualizer's observer has
-  // run, another observer narrows the slot to 400, which is reported in the next frame's
-  // observations, after that frame's draw; the other observer then widens the slot again before
-  // the paint. The canvas was clipped at the next draw only, so the right half came back, lit,
-  // for a paint. The observation itself clips the canvas.
-  it("clips the canvas to a narrowed slot at the observation, before the paint", async () => {
-    const ratio = window.devicePixelRatio;
-    setRatio(1);
-    try {
-      const { canvas } = mount();
-      await waitFor(() => expect(pending.size).toBe(1));
-      const renderer = made.renderers[0];
-      reportBox([800, 600], [800, 600]);
-      step(16);
-      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
-      step(32);
-      expect(canvas.style.clipPath).toBe("");
-      step(48);
-      reportBox([400, 600], [400, 600]);
-      expect(canvas.style.clipPath).toBe("inset(0 400px 0px 0)");
-      // The slot is 800 wide again before the paint: nothing comes back.
-      reportBox([800, 600], [800, 600]);
-      expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 600 });
-      expect(canvas.style.clipPath).toBe("inset(0 400px 0px 0)");
-      expect(canvas.style.width).toBe("800px");
-    } finally {
-      setRatio(ratio);
-    }
+  // With no frame the canvas has no size: the black it holds is under no neighbour, and it
+  // makes no scrollable overflow. A frame withdrawn at an observation goes at that observation.
+  it("gives the canvas no size while the renderer shows no frame", async () => {
+    const { canvas } = mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    report(800, 600);
+    step(16);
+    expect([canvas.style.width, canvas.style.height]).toEqual(["0px", "0px"]);
+
+    renderer.draw.mockImplementationOnce(() => {
+      renderer.shown = { width: 800, height: 600, texel: 1, visibleWidth: 800, visibleHeight: 600 };
+    });
+    renderer.withdraw.mockImplementationOnce(() => {
+      renderer.shown = null;
+    });
+    step(32);
+    expect([canvas.style.width, canvas.style.height]).toEqual(["800px", "600px"]);
+    report(400, 600);
+    expect(renderer.withdraw).toHaveBeenCalledOnce();
+    expect([canvas.style.width, canvas.style.height]).toEqual(["0px", "0px"]);
   });
 
   // Codex round 28: a request for a report at DPR 2 timed out on an empty slot and stayed on

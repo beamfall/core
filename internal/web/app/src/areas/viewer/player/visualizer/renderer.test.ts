@@ -128,8 +128,8 @@ describe("pickFeedbackFormat (CORE-2481)", () => {
   });
 });
 
-// A WebGL2 stand-in that hands out numbered objects, reports every framebuffer complete and
-// records deletions, blits, clears and uniform blocks; enough to drive the renderer's frames.
+// A WebGL2 stand-in that hands out numbered objects, reports every framebuffer complete (but the
+// status check numbered `count.incompleteAt`) and records deletions, blits, clears and uniform blocks; enough to drive the renderer's frames.
 function recordingGl() {
   let next = 0;
   const deleted = new Set<unknown>();
@@ -152,7 +152,7 @@ function recordingGl() {
   // The order of the frames' blits to the canvas, the fences and the pack buffer reads; the
   // framebuffer status checks; and the textures created.
   const order: string[] = [];
-  const count = { checks: 0, textures: 0 };
+  const count = { checks: 0, textures: 0, incompleteAt: 0 };
   const TIMEOUT_EXPIRED = 0x911b;
   const CONDITION_SATISFIED = 0x911c;
   const canvas = { width: 0, height: 0, clientWidth: 0 };
@@ -163,10 +163,7 @@ function recordingGl() {
       if (key === "TIMEOUT_EXPIRED") return TIMEOUT_EXPIRED;
       if (key === "WAIT_FAILED") return 0x911d;
       if (key === "checkFramebufferStatus")
-        return () => {
-          count.checks++;
-          return 1;
-        };
+        return () => (++count.checks === count.incompleteAt ? 0 : 1);
       if (typeof key === "string" && /^[A-Z0-9_]+$/.test(key)) return 0;
       if (key === "createTexture")
         return () => {
@@ -243,7 +240,10 @@ describe("Renderer geometry (CORE-2516)", () => {
   type Limiter = { fG: unknown[]; fOut: unknown[]; cur: number };
   type Texels = [width: number, height: number, texel: number];
   const SPENT = [256, 65025, 65025, 0];
-  const make = (restored = false) => {
+  // A frame starts only at a geometry asked for twice running. The first draw of a test is
+  // therefore preceded by the same request, which presents black and starts nothing, unless the
+  // renderer is `fresh`: a restored one, whose black comes first anyway, or a mount under test.
+  const make = (restored = false, fresh = restored) => {
     const { gl, ...recorded } = recordingGl();
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
     Object.assign(r, {
@@ -273,22 +273,33 @@ describe("Renderer geometry (CORE-2516)", () => {
       fadeLeft: 0,
       black: restored ? BLACK_S : 0,
       blackShown: false,
-      asked: null,
-      verified: false,
+      want: { width: 0, height: 0, texel: 0, visibleWidth: 0, visibleHeight: 0 },
+      asked: { width: 0, height: 0, texel: 0, visibleWidth: 0, visibleHeight: 0 },
+      incomplete: false,
     });
     const renderer = r as unknown as Renderer;
     // The grant of a frame of a fade holds a direction, as while a lit frame waits for its fall,
     // until a test clears fadeGrant: the fade then runs to FADE_S.
     const fadeGrant = new Uint32Array([0x1f, 0, 0, 0]);
     recorded.pick.word = () => ((r.fadeLeft as number) > 0 ? fadeGrant : recorded.grant);
-    const draw = (width: number, height: number, dt = 1 / 60, frameMs = dt * 1000) =>
+    let asked = fresh;
+    const ask = (width: number, height: number, texel: number, slot: [number, number]) => {
+      if (asked) return;
+      asked = true;
+      renderer.draw(width, height, 0, silentFrame(), false, 0, texel, 0, ...slot);
+      recorded.clears.length = 0;
+    };
+    const draw = (width: number, height: number, dt = 1 / 60, frameMs = dt * 1000) => {
+      ask(width, height, 1, [width, height]);
       renderer.draw(width, height, dt, silentFrame(), false, frameMs);
+    };
     // A frame of texels in a slot of slotWidth x slotHeight physical pixels, shown for shownMs.
     const drawIn = (
       [width, height, texel]: Texels,
       [slotWidth, slotHeight]: [number, number],
       shownMs = 1000 / 60,
-    ) =>
+    ) => {
+      ask(width, height, texel, [slotWidth, slotHeight]);
       renderer.draw(
         width,
         height,
@@ -301,6 +312,7 @@ describe("Renderer geometry (CORE-2516)", () => {
         slotWidth,
         slotHeight,
       );
+    };
     // Draws of a changed geometry an eighth of a second apart: one starts the fade, sixteen run
     // it for FADE_S and end in black, and one more, the black shown for BLACK_S, starts the frame.
     const through = (frame: (shownMs: number) => void) => {
@@ -443,12 +455,12 @@ describe("Renderer geometry (CORE-2516)", () => {
     drawIn([64, 36, 2], [5, 71]);
     expect(blits.at(-1)).toEqual([0, 1, 2, 36, 0, 1, 2, 36]);
     expect(blocks.at(-1)?.[2]).toBe(limiterWindow(64, 36, 2, 2, 35).limit);
-    expect(renderer.shown).toEqual({
+    expect(renderer.shown).toMatchObject({
       width: 64,
       height: 36,
       texel: 2,
-      viewWidth: 5,
-      viewHeight: 71,
+      visibleWidth: 2,
+      visibleHeight: 35,
     });
     // A slot that moves within the texel it cut has the same texels in view.
     expect(renderer.settled(64, 36, 2, 4, 70)).toBe(true);
@@ -597,10 +609,10 @@ describe("Renderer geometry (CORE-2516)", () => {
     };
     const odd = drop([1, 40, 3], [3, 120], [1, 60, 2], [2, 120]);
     expect(odd.blits).toEqual([[0, 0, 1, 40, 0, 0, 1, 40]]);
-    expect(odd.shown).toMatchObject({ texel: 3, viewWidth: 2, viewHeight: 120 });
+    expect(odd.shown).toMatchObject({ texel: 3, visibleWidth: 1, visibleHeight: 40 });
     const divisor = drop([1, 38, 2], [2, 76], [1, 75, 1], [1, 75]);
     expect(divisor.blits).toEqual([[0, 0, 1, 38, 0, 0, 1, 38]]);
-    expect(divisor.shown).toMatchObject({ texel: 2, viewWidth: 1, viewHeight: 75 });
+    expect(divisor.shown).toMatchObject({ texel: 2, visibleWidth: 1, visibleHeight: 38 });
   });
 
   // Codex round 22: a 1 x 8192 slot grown to 8193 needs 2-pixel texels and has no whole one in
@@ -647,25 +659,31 @@ describe("Renderer geometry (CORE-2516)", () => {
 
   // Codex round 24: at two physical pixels per texel, a slot narrowed from 4 to 3 pixels and
   // widened again showed the fourth pixel column in its texel's colour with no tracker event.
-  // The view of a frame only shrinks: the column comes back with the frame that starts, black.
-  it("keeps a pixel the slot hid out of view until a frame starts", () => {
+  // Codex round 29: the slot's layout could do the same with no size ever observed. The frame
+  // on screen keeps the texels it started with, whatever the slot does, for the host to show
+  // (shown): it fades whole, and the frame that starts takes the slot's size then.
+  it("keeps the view a frame started with until it is black", () => {
     const { r, renderer, drawIn, limiter, spent } = make();
     const at = (slotWidth: number, shownMs?: number) =>
       drawIn([64, 36, 2], [slotWidth, 72], shownMs);
     at(4);
     const size = r.size;
-    expect(renderer.shown).toMatchObject({ width: 64, texel: 2, viewWidth: 4, viewHeight: 72 });
+    const shown = renderer.shown;
+    expect(shown).toMatchObject({ width: 64, texel: 2, visibleWidth: 2, visibleHeight: 36 });
     at(3);
     expect(r.fadeLeft).toBe(FADE_S);
-    expect(renderer.shown).toMatchObject({ viewWidth: 3, viewHeight: 72 });
-    for (let i = 0; i < 15; i++) at(4, 125);
+    // The same object, unchanged: reading it allocates nothing, and the host refits nothing.
+    expect(renderer.shown).toBe(shown);
+    for (let i = 0; i < 15; i++) at(i % 2 ? 4 : 1, 125);
     expect(r.size).toBe(size);
-    expect(renderer.shown).toMatchObject({ viewWidth: 3, viewHeight: 72 });
-    at(4, 125);
+    expect(renderer.shown).toBe(shown);
+    expect(shown).toMatchObject({ visibleWidth: 2, visibleHeight: 36 });
+    at(3, 125);
     expect(renderer.shown).toBe(null);
-    at(4, BLACK_S * 1000);
+    at(3, BLACK_S * 1000);
+    expect(r.size).not.toBe(null);
     expect(r.size).not.toBe(size);
-    expect(renderer.shown).toMatchObject({ viewWidth: 4, viewHeight: 72 });
+    expect(renderer.shown).toMatchObject({ visibleWidth: 1, visibleHeight: 36 });
     const L = limiter();
     expect(spent.at(-1)).toEqual([L.fG[L.cur ^ 1], SPENT]);
   });
@@ -818,36 +836,33 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.fadeLeft).toBeCloseTo(FADE_S - 1 / 60);
   });
 
-  // Codex round 27: a slot observed narrower between two draws narrows the view at once, drawn
-  // for or not, and a slot wider again by the next draw does not bring the hidden pixels back:
-  // the frame fades, and the frame that starts shows them.
-  it("narrows the view to a slot observed between draws and fades the frame it cut", () => {
-    const { r, renderer, drawIn } = make();
-    drawIn([800, 450, 1], [800, 450]);
-    drawIn([800, 450, 1], [800, 450]);
-    const size = r.size;
-    renderer.narrow(400, 450);
-    expect(renderer.shown).toMatchObject({ width: 800, viewWidth: 400, viewHeight: 450 });
-    // The view never widens.
-    renderer.narrow(800, 600);
-    expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 450 });
-    expect(renderer.settled(800, 450, 1, 800, 450)).toBe(false);
-    drawIn([800, 450, 1], [800, 450]);
-    expect(r.size).toBe(size);
-    expect(r.fadeLeft).toBe(FADE_S);
-    expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 450 });
+  // Codex round 29: a mount's first request counted as asked for twice, so a slot already
+  // moving allocated every target for a size it left at the next draw.
+  it("starts a mounted frame only at a geometry asked for twice running", () => {
+    const { r, draw, count, clears, canvas } = make(false, true);
+    draw(800, 450);
+    draw(801, 450);
+    draw(802, 450);
+    expect(r.size).toBe(null);
+    expect(count.textures).toBe(0);
+    expect(clears).toEqual([null, null, null]);
+    draw(802, 450);
+    expect(r.size).not.toBe(null);
+    expect([canvas.width, canvas.height]).toEqual([802, 450]);
   });
 
-  it("narrows nothing with no frame on screen, and fades nothing for an unfilled pixel", () => {
-    const { r, renderer, drawIn } = make();
-    renderer.narrow(10, 10);
-    expect(renderer.shown).toBe(null);
-    drawIn([64, 36, 2], [129, 72]);
-    // 128 pixels still show all 64 texels: the view narrows by a pixel no texel fills.
-    renderer.narrow(128, 72);
-    drawIn([64, 36, 2], [129, 72]);
-    expect(r.fadeLeft).toBe(0);
-    expect(renderer.shown).toMatchObject({ viewWidth: 128, viewHeight: 72 });
+  // Codex round 29: the comparison built a geometry at every draw. The request is written into
+  // one of two objects the renderer keeps.
+  it("compares the geometry asked for without allocating", () => {
+    const { r, renderer, draw } = make();
+    draw(640, 360);
+    const kept = new Set([r.asked, r.want]);
+    expect(kept.size).toBe(2);
+    for (let i = 0; i < 6; i++) {
+      draw(640 + (i % 3), 360);
+      renderer.settled(640, 360, 1);
+      expect(kept.has(r.asked) && kept.has(r.want) && r.asked !== r.want).toBe(true);
+    }
   });
 
   // Codex round 26: the slot changed after the last black frame was painted, so the frame that
@@ -975,9 +990,10 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(count.textures).toBe(started);
   });
 
-  // Codex round 28: checkFramebufferStatus waits for the GPU process. The first start checks
-  // the formats every later start uses.
-  it("checks the framebuffers of the first start only", () => {
+  // Codex round 29: only the first start checked its framebuffers, so a target whose storage
+  // failed at a later size was drawn into anyway. The limiter read its zeros, counted nothing
+  // over the area limit and passed a full-screen red frame on a spent grant.
+  it("checks the framebuffers of every start", () => {
     const { r, draw, through, count, canvas } = make();
     draw(640, 360);
     const checks = count.checks;
@@ -985,7 +1001,35 @@ describe("Renderer geometry (CORE-2516)", () => {
     through((ms) => draw(800, 450, ms / 1000));
     expect([canvas.width, canvas.height]).toEqual([800, 450]);
     expect(r.size).not.toBe(null);
-    expect(count.checks).toBe(checks);
+    expect(count.checks).toBe(2 * checks);
+  });
+
+  it("presents black and fails when a later start's framebuffer is incomplete", () => {
+    const { r, renderer, draw, count, clears, blits, blocks, deleted } = make();
+    draw(640, 360);
+    const checks = count.checks;
+    const first = (r.size as { limiter: Limiter }).limiter;
+    // The fade and the black of a resize, up to the draw that starts the second frame.
+    draw(800, 450);
+    for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
+    expect(r.size).toBe(null);
+    const textures = count.textures;
+    blits.length = 0;
+    blocks.length = 0;
+    clears.length = 0;
+    // The limiter's row-count target, the first framebuffer after the frame's own.
+    count.incompleteAt = checks + 5;
+    expect(() => draw(800, 450, 0.125)).toThrow("incomplete framebuffer");
+    expect(count.checks).toBe(2 * checks);
+    // No frame, nothing drawn through the limiter, black on the canvas, every target freed.
+    expect(r.size).toBe(null);
+    expect(renderer.shown).toBe(null);
+    expect(blits).toEqual([]);
+    expect(blocks).toEqual([]);
+    expect(clears.at(-1)).toBe(null);
+    expect(count.textures).toBeGreaterThan(textures);
+    expect(first.fOut.every((f) => deleted.has(f))).toBe(true);
+    expect(deleted.size).toBeGreaterThanOrEqual(2 * (count.textures - textures));
   });
 
   // Codex round 18: the limiter ages evidence by the time frames are shown apart, which a late

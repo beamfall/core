@@ -239,16 +239,20 @@ describe("backingSize", () => {
 
 // Codex round 24: the canvas shows no pixel past the view the renderer reports for its frame.
 describe("viewClip", () => {
-  const shown = { width: 64, height: 36, texel: 2, viewWidth: 128, viewHeight: 72 };
+  const shown = { width: 64, height: 36, texel: 2, visibleWidth: 64, visibleHeight: 36 };
 
   it("clips nothing when the whole frame is in view", () => {
     expect(viewClip(shown, 4)).toBe("");
   });
 
-  it("clips every pixel past the view", () => {
-    expect(viewClip({ ...shown, viewWidth: 3 }, 4)).toBe("inset(0 31.25px 0px 0)");
-    expect(viewClip({ ...shown, viewWidth: 3, viewHeight: 71 }, 1)).toBe("inset(0 125px 1px 0)");
-    expect(viewClip({ ...shown, viewWidth: 0, viewHeight: 0 }, 2)).toBe("inset(0 64px 36px 0)");
+  it("clips every texel the slot cut when the frame started", () => {
+    expect(viewClip({ ...shown, visibleWidth: 1 }, 4)).toBe("inset(0 31.5px 0px 0)");
+    expect(viewClip({ ...shown, visibleWidth: 1, visibleHeight: 35 }, 1)).toBe(
+      "inset(0 126px 2px 0)",
+    );
+    expect(viewClip({ ...shown, visibleWidth: 0, visibleHeight: 0 }, 2)).toBe(
+      "inset(0 64px 36px 0)",
+    );
   });
 });
 

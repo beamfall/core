@@ -1,5 +1,14 @@
 // The time the flash limiter is credited with for each frame (limiter README, `limiter1`
-// deltaMs): a lower bound on the time the last frame was on screen, never more.
+// deltaMs). It is meant as a lower bound on the time the last frame was on screen, and is one
+// wherever the bound below is no longer than the display's refresh period (Codex round 29):
+//
+//   - It can be more than the frame was shown where the page has only ever drawn slower than its
+//     display, so the bound is several refreshes: at a steady 30 draws a second since the mount
+//     on a 120 Hz display it is 16.7 ms, and a frame painted three refreshes late was shown
+//     8.3 ms. The excess is at most the bound less one refresh.
+//   - It is less than the frame was shown where the bound is shorter than the cadence, with no
+//     floor but MIN_REFRESH_MS: after one 1/240 s interval, 30 draws a second earn 4.17 ms of
+//     each 33.3 ms.
 //
 // A page cannot read paint times or the display's refresh period R. The last frame may have been
 // painted one refresh late and this one on time, so it was shown for max(R, interval - R). The

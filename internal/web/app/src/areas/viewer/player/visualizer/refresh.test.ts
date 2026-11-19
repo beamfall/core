@@ -60,6 +60,17 @@ describe("RefreshBound", () => {
     expect(run(refresh, 1000 / 60, 1000)).toBeCloseTo(5);
   });
 
+  // Codex round 29: the credit as it is where it is not a lower bound, and where it is low.
+  it("credits half the interval of a page never faster, and the bound of one that slowed", () => {
+    // 30 draws a second since the mount. On a 120 Hz display a frame painted three refreshes
+    // late was shown 8.33 ms: no interval has shown the page its display.
+    expect(run(new RefreshBound(), 1000 / 30, 100)).toBeCloseTo(500 / 30);
+    // One 1/240 s interval, then 30 draws a second: an eighth of each interval.
+    const refresh = new RefreshBound();
+    run(refresh, 1000 / 240, 1);
+    expect(run(refresh, 1000 / 30, 100)).toBeCloseTo(1000 / 240);
+  });
+
   it("keeps the bound between 4 ms and a 24 Hz refresh", () => {
     const refresh = new RefreshBound();
     // A throttled page: one frame a second is credited one 24 Hz refresh.
