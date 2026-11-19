@@ -37,6 +37,7 @@ import { isBeamfallAppStoreHost } from "@/lib/beamfallHost";
 import { fetchBackupKeyStatus, fetchLibraryHealth, fetchSetupState } from "@/lib/graphql";
 import { useT } from "@/lib/i18n";
 import { jobKindLabel, jobTargetDetail } from "@/lib/jobDisplay";
+import { useManageCapabilities } from "@/lib/manageCapabilities";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import { APP_STORE_FIREWALL_PATHS } from "@/lib/settingsIndex";
@@ -540,6 +541,11 @@ function ConsoleNav({ groups }: { groups: NavGroup[] }) {
   );
 }
 
+function ConsoleSettingsMenuIntro() {
+  const { visibleManagePage } = useManageCapabilities();
+  return <SettingsMenuIntro area="console" visibleManagePage={visibleManagePage} />;
+}
+
 // CONSOLE (Admin, ADR-0007 §4): the operator surface — onboarding wizard,
 // Libraries, Plugins, server/transcode config, Profiles & access, Operations
 // (jobs + live sessions), Library Health, remote access/ingest/migration, API
@@ -553,7 +559,8 @@ export function ConsoleArea() {
   const { loading, needsEnroll } = useSession();
   const t = useT();
   const location = useLocation();
-  const groups = groupsForHost(isBeamfallAppStoreHost());
+  const appStoreHost = isBeamfallAppStoreHost();
+  const groups = groupsForHost(appStoreHost);
   const allItems = groups.flatMap((g) => g.items);
   const routeTitle = allItems.find((item) =>
     item.path === ""
@@ -594,7 +601,11 @@ export function ConsoleArea() {
                   current={t(routeTitle ?? "consoleHeading")}
                   footer={<SessionBar onLock={lock} />}
                 >
-                  <SettingsMenuIntro area="console" />
+                  {appStoreHost ? (
+                    <SettingsMenuIntro area="console" />
+                  ) : (
+                    <ConsoleSettingsMenuIntro />
+                  )}
                   <ConsoleNav groups={groups} />
                 </SectionMenu>
                 <div className="console-content">

@@ -469,8 +469,8 @@ type Handler struct {
 	libraryObserver LibraryMutationObserver
 	hardwareAccel   config.HardwareAccelReport
 
-	// Immutable after construction, keyed by plugin-declared container kind.
-	engagementContainers map[string]store.EngagementContainerRelations
+	// Immutable after construction, keyed by plugin ID and container kind.
+	engagementContainers map[store.EngagementContainerKey]store.EngagementContainerRelations
 
 	// transcodeRuntime is the live transcoder wiring the transcode-config
 	// resolver reads and applies; liveTranscodeCap is the cap now in force.
@@ -795,13 +795,13 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 		plugins:  plugins,
 		audit:    observability.NewAuditLogger(nil),
 	}
-	h.engagementContainers = make(map[string]store.EngagementContainerRelations)
+	h.engagementContainers = make(map[store.EngagementContainerKey]store.EngagementContainerRelations)
 	for _, id := range plugins.IDs() {
 		bundle, _ := plugins.Bundle(id)
 		relations := identify.ContainerRelations(bundle)
 		for _, kind := range bundle.EntityKinds {
 			if kind.Archetype == containerArchetype {
-				h.engagementContainers[kind.Name] = relations
+				h.engagementContainers[store.EngagementContainerKey{PluginID: string(id), Kind: kind.Name}] = relations
 			}
 		}
 	}

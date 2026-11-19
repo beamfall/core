@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"maps"
-	"slices"
 	"strings"
 )
 
@@ -30,6 +28,12 @@ type SourceEngagement struct {
 
 const engagementChunkSize = 500
 
+// EngagementContainerKey identifies a container kind within its owning plugin.
+type EngagementContainerKey struct {
+	PluginID string
+	Kind     string
+}
+
 // EngagementContainerRelations identifies the declared links from a nested
 // container to its parent and to the Media it holds.
 type EngagementContainerRelations interface {
@@ -42,8 +46,8 @@ type EngagementContainerRelations interface {
 // has no playback state). Container counts only ever include children the
 // filter lets this scope see, so a restricted or certification-hidden child
 // never moves a count (ADR-0004). containers supplies plugin-declared
-// membership rules keyed by container kind.
-func (s *Store) AnnotateEngagement(ctx context.Context, profileID ProfileID, filter LibraryFilter, items []SourceItem, containers map[string]EngagementContainerRelations) error {
+// membership rules keyed by plugin and container kind.
+func (s *Store) AnnotateEngagement(ctx context.Context, profileID ProfileID, filter LibraryFilter, items []SourceItem, containers map[EngagementContainerKey]EngagementContainerRelations) error {
 	if profileID == "" || len(items) == 0 {
 		return nil
 	}
@@ -107,7 +111,7 @@ func (s *Store) AnnotateEngagement(ctx context.Context, profileID ProfileID, fil
 // direct ordered Media and the ordered Media of its immediate parts in the
 // same Library, using declared child-to-parent relations. Other kinds retain
 // their outgoing ordered relation semantics. Each open catalog plane is read.
-func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string, filter LibraryFilter, containers map[string]EngagementContainerRelations) (map[string][]MediaID, error) {
+func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string, filter LibraryFilter, containers map[EngagementContainerKey]EngagementContainerRelations) (map[string][]MediaID, error) {
 	if len(containerIDs) == 0 {
 		return nil, nil
 	}
@@ -115,35 +119,27 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 	seen := map[[2]string]struct{}{}
 	var all []MediaID
 	planes := s.openCatalogReadersLocked()
-	kinds := slices.Sorted(maps.Keys(containers))
-	kindPlaceholders := sqlPlaceholders(len(kinds))
-	// Whether a sub-container's Library is in scope, loaded on first need.
+	// The main catalog owns Library metadata even for encrypted catalog planes.
 	var libraries map[LibraryID]Library
-	visibleVia := func(id LibraryID) (bool, error) {
+	libraryFor := func(id LibraryID) (Library, error) {
 		if libraries == nil {
 			loaded, err := loadLibraries(ctx, s.catalogR)
 			if err != nil {
-				return false, err
+				return Library{}, err
 			}
 			libraries = make(map[LibraryID]Library, len(loaded))
 			for _, library := range loaded {
 				libraries[library.ID] = library
 			}
 		}
-		library, ok := libraries[id]
-		return ok && libraryVisible(library, filter), nil
+		return libraries[id], nil
 	}
 	for start := 0; start < len(containerIDs); start += engagementChunkSize {
 		chunk := containerIDs[start:min(start+engagementChunkSize, len(containerIDs))]
 		placeholders := sqlPlaceholders(len(chunk))
-		args := make([]any, 0, len(chunk)+2*len(kinds))
+		args := make([]any, 0, len(chunk))
 		for _, id := range chunk {
 			args = append(args, id)
-		}
-		for range 2 {
-			for _, kind := range kinds {
-				args = append(args, kind)
-			}
 		}
 		for _, db := range planes {
 			// #nosec G202 -- only generated placeholders are interpolated; IDs are bound args.
@@ -151,27 +147,27 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 				WITH roots AS (
 					SELECT id, kind, library_id FROM entity
 					WHERE id IN (`+placeholders+`) AND trashed_at_ms IS NULL
-				), parts(root_id, root_kind, id, kind, library_id, parent_relation) AS (
-					SELECT root.id, root.kind, sub.id, sub.kind, sub.library_id, ''
+				), parts(root_id, root_kind, root_library_id, id, kind, library_id, parent_relation) AS (
+					SELECT root.id, root.kind, root.library_id, sub.id, sub.kind, sub.library_id, ''
 					FROM roots root
 					JOIN entity_relation link ON link.from_entity_id = root.id
 					JOIN entity sub ON sub.id = link.to_entity_id AND sub.trashed_at_ms IS NULL
-					WHERE link.sort_order IS NOT NULL AND root.kind NOT IN (`+kindPlaceholders+`)
+					WHERE link.sort_order IS NOT NULL
 					UNION ALL
-					SELECT root.id, root.kind, sub.id, sub.kind, sub.library_id, link.relation
+					SELECT root.id, root.kind, root.library_id, sub.id, sub.kind, sub.library_id, link.relation
 					FROM roots root
 					JOIN entity_relation link ON link.to_entity_id = root.id
 					JOIN entity sub ON sub.id = link.from_entity_id AND sub.trashed_at_ms IS NULL
-					WHERE root.kind IN (`+kindPlaceholders+`) AND sub.library_id = root.library_id
+					WHERE sub.library_id = root.library_id
 				)
-				SELECT root.id, r.to_media_id, '', '', '', '', ''
+				SELECT root.id, r.to_media_id, '', '', '', '', '', ''
 				FROM roots root
 				JOIN entity_relation r ON r.from_entity_id = root.id
-				JOIN media m ON m.id = r.to_media_id AND m.extra = 0
+				JOIN media m ON m.id = r.to_media_id AND m.extra = 0 AND m.library_id = root.library_id
 				WHERE r.sort_order IS NOT NULL
 				UNION ALL
 				SELECT part.root_id, child.to_media_id, part.library_id,
-				       part.root_kind, part.kind, part.parent_relation, child.relation
+				       part.root_library_id, part.root_kind, part.kind, part.parent_relation, child.relation
 				FROM parts part
 				JOIN entity_relation child ON child.from_entity_id = part.id
 				JOIN media m ON m.id = child.to_media_id AND m.extra = 0
@@ -186,18 +182,31 @@ func (s *Store) orderedChildrenLocked(ctx context.Context, containerIDs []string
 				return nil, err
 			}
 			for _, row := range found {
-				if row.parentRelation != "" {
-					relations := containers[row.partKind]
-					if relations == nil || !relations.Nests(row.partKind, row.parentRelation, row.rootKind) || !relations.Holds(row.partKind, row.mediaRelation) {
-						continue
-					}
-				}
 				if row.viaLibrary != "" {
-					ok, err := visibleVia(row.viaLibrary)
+					rootLibrary, err := libraryFor(row.rootLibrary)
 					if err != nil {
 						return nil, err
 					}
-					if !ok {
+					var pluginID string
+					if rootLibrary.PluginID != nil {
+						pluginID = *rootLibrary.PluginID
+					}
+					declaredContainer := containers[EngagementContainerKey{PluginID: pluginID, Kind: row.rootKind}] != nil
+					incoming := row.parentRelation != ""
+					if declaredContainer != incoming {
+						continue
+					}
+					if declaredContainer {
+						relations := containers[EngagementContainerKey{PluginID: pluginID, Kind: row.partKind}]
+						if relations == nil || !relations.Nests(row.partKind, row.parentRelation, row.rootKind) || !relations.Holds(row.partKind, row.mediaRelation) {
+							continue
+						}
+					}
+					viaLibrary, err := libraryFor(row.viaLibrary)
+					if err != nil {
+						return nil, err
+					}
+					if viaLibrary.ID == "" || !libraryVisible(viaLibrary, filter) {
 						continue
 					}
 				}
@@ -248,6 +257,7 @@ type childRow struct {
 	containerID    string
 	mediaID        MediaID
 	viaLibrary     LibraryID
+	rootLibrary    LibraryID
 	rootKind       string
 	partKind       string
 	parentRelation string
@@ -260,7 +270,7 @@ func scanChildRows(rows *sql.Rows) ([]childRow, error) {
 	for rows.Next() {
 		var row childRow
 		if err := rows.Scan(&row.containerID, &row.mediaID, &row.viaLibrary,
-			&row.rootKind, &row.partKind, &row.parentRelation, &row.mediaRelation); err != nil {
+			&row.rootLibrary, &row.rootKind, &row.partKind, &row.parentRelation, &row.mediaRelation); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

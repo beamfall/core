@@ -70,7 +70,7 @@ function formatNodeSize(bytes: number): string {
 // an optional plugin binding. Ported from app.js refreshManagerLibraries +
 // renderManageLibraries + loadPluginOptions + create-library-form. Server is the
 // authority; every toggle echoes the confirmed state and reverts on failure.
-export function LibrariesPage() {
+export function LibrariesPage({ renameEnabled }: { renameEnabled: boolean }) {
   const t = useT();
   const displayLocale = useDisplayLocale();
   const [libraries, setLibraries] = useState<LibraryInfo[]>([]);
@@ -154,6 +154,7 @@ export function LibrariesPage() {
                   <LibraryRow
                     key={lib.id}
                     library={lib}
+                    renameEnabled={renameEnabled}
                     onTogglePreview={onTogglePreview}
                     onRootsSaved={onRootsSaved}
                     onDeleted={() => void load()}
@@ -204,12 +205,14 @@ export function LibrariesPage() {
 
 function LibraryRow({
   library,
+  renameEnabled,
   onTogglePreview,
   onRootsSaved,
   onDeleted,
   onError,
 }: {
   library: LibraryInfo;
+  renameEnabled: boolean;
   onTogglePreview: (lib: LibraryInfo, enabled: boolean) => Promise<void>;
   onRootsSaved: (libraryID: string, roots: string[]) => void;
   onDeleted: () => void;
@@ -324,7 +327,7 @@ function LibraryRow({
 
   const onRename = async () => {
     const name = renameTo.trim();
-    if (!selectedPath || !name) return;
+    if (!renameEnabled || !selectedPath || !name) return;
     setBusy(true);
     onError("");
     try {
@@ -560,7 +563,7 @@ function LibraryRow({
                   variant="outline"
                   size="sm"
                   className="w-28 shrink-0"
-                  disabled={busy || !selectedPath || !renameTo.trim()}
+                  disabled={!renameEnabled || busy || !selectedPath || !renameTo.trim()}
                   onClick={onRename}
                 >
                   {t("rename")}

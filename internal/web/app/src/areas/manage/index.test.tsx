@@ -6,7 +6,14 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
 import { ApiError } from "@/lib/api";
-import { createLibrary, fetchCapabilityStates, fetchLibraries, fetchPlugins } from "@/lib/graphql";
+import {
+  createLibrary,
+  fetchCapabilityStates,
+  fetchFolderTree,
+  fetchLibraries,
+  fetchPlugins,
+  renameManagedPath,
+} from "@/lib/graphql";
 import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { MENU_PAGES } from "@/lib/settingsIndex";
@@ -324,6 +331,44 @@ describe("Manage navigation", () => {
     expect(screen.queryByRole("link", { name: "Convert" })).not.toBeInTheDocument();
     expect(document.querySelector(searchLink)).toBeNull();
     expect(screen.getByRole("link", { name: "Rename" })).toBeVisible();
+  });
+
+  it("disables File tools Rename and sends no mutation when Rename is off", async () => {
+    vi.mocked(fetchCapabilityStates).mockResolvedValueOnce(workflowStates(true, false));
+    vi.mocked(fetchLibraries).mockResolvedValueOnce([
+      {
+        id: "lib",
+        title: "Library",
+        pluginID: null,
+        roots: ["/media"],
+        previewClips: true,
+        restricted: false,
+      },
+    ]);
+    vi.mocked(fetchPlugins).mockResolvedValueOnce([]);
+    vi.mocked(fetchFolderTree).mockResolvedValueOnce({
+      name: "media",
+      path: "/media",
+      kind: "folder",
+      size: 0,
+      modifiedAt: "",
+      children: [
+        { name: "Clip.mkv", path: "/media/Clip.mkv", kind: "file", size: 10, modifiedAt: "" },
+      ],
+    });
+    const user = userEvent.setup();
+    render(manageRouter("/manage/libraries", []));
+
+    await user.click(await screen.findByText("Manage files on disk"));
+    const file = await screen.findByRole("treeitem", { name: /Clip\.mkv/ });
+    await user.click(file);
+    expect(file).toHaveAttribute("aria-selected", "true");
+    await user.type(screen.getByRole("textbox", { name: "Rename to" }), "Renamed.mkv");
+    const rename = screen.getByRole("button", { name: "Rename" });
+    expect.soft(rename).toBeDisabled();
+    await user.click(rename);
+
+    expect(renameManagedPath).not.toHaveBeenCalled();
   });
 
   it.each([

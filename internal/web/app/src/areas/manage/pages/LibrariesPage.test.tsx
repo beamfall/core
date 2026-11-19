@@ -97,7 +97,7 @@ describe("LibrariesPage folder tree", () => {
     render(
       <I18nProvider>
         <MemoryRouter>
-          <LibrariesPage />
+          <LibrariesPage renameEnabled />
         </MemoryRouter>
       </I18nProvider>,
     );
@@ -115,7 +115,7 @@ describe("LibrariesPage folder tree", () => {
     render(
       <I18nProvider>
         <MemoryRouter>
-          <LibrariesPage />
+          <LibrariesPage renameEnabled />
         </MemoryRouter>
       </I18nProvider>,
     );
@@ -141,7 +141,7 @@ describe("LibrariesPage folder tree", () => {
     const { container } = render(
       <I18nProvider>
         <MemoryRouter>
-          <LibrariesPage />
+          <LibrariesPage renameEnabled />
         </MemoryRouter>
       </I18nProvider>,
     );
@@ -183,7 +183,7 @@ describe("LibrariesPage folder tree", () => {
     render(
       <I18nProvider>
         <MemoryRouter>
-          <LibrariesPage />
+          <LibrariesPage renameEnabled />
         </MemoryRouter>
       </I18nProvider>,
     );
@@ -207,7 +207,7 @@ describe("LibrariesPage folder tree", () => {
     render(
       <I18nProvider>
         <MemoryRouter>
-          <LibrariesPage />
+          <LibrariesPage renameEnabled />
         </MemoryRouter>
       </I18nProvider>,
     );
@@ -233,7 +233,7 @@ describe("LibrariesPage folder tree", () => {
     render(
       <I18nProvider>
         <MemoryRouter>
-          <LibrariesPage />
+          <LibrariesPage renameEnabled />
         </MemoryRouter>
       </I18nProvider>,
     );

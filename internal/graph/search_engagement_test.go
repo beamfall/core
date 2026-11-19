@@ -13,6 +13,16 @@ import (
 )
 
 func TestSearchContainerEngagementCountsOnlyItsMedia(t *testing.T) {
+	t.Run("shared kinds across plugins", func(t *testing.T) {
+		testContainerEngagement(t, true, false)
+	})
+	t.Run("direct child in another visible library", func(t *testing.T) {
+		testContainerEngagement(t, false, true)
+	})
+}
+
+func testContainerEngagement(t *testing.T, sharedKinds, crossLibrary bool) {
+	t.Helper()
 	ctx := context.Background()
 	st := storetest.Open(t)
 	bundle := plugin.Bundle{
@@ -31,7 +41,22 @@ func TestSearchContainerEngagementCountsOnlyItsMedia(t *testing.T) {
 			{ID: "boxes", Kind: "grid", Title: plugin.L("Boxes"), ArtworkSlot: "poster", Source: plugin.SourceSpec{Kind: "entity-items", EntityKind: "box"}},
 		}}},
 	}
-	registry, err := newTestPluginRegistry([]plugin.Bundle{bundle})
+	bundles := []plugin.Bundle{bundle}
+	if sharedKinds {
+		bundles = append(bundles, plugin.Bundle{
+			ID: "crates", Version: "0.1.0", DisplayName: plugin.L("Crates"), MediaLabel: plugin.L("Piece"),
+			Layouts: bundle.Layouts,
+			EntityKinds: []plugin.EntityKind{
+				{Name: "box", Archetype: "container", OrderedChildren: true, Relations: []plugin.RelationSpec{
+					{Name: "contains", ToKind: plugin.MediaKindName},
+				}},
+				{Name: "tray", Archetype: "container", OrderedChildren: true, Relations: []plugin.RelationSpec{
+					{Name: "part-of", ToKind: "box"}, {Name: "carries", ToKind: plugin.MediaKindName, Cardinality: "one"},
+				}},
+			},
+		})
+	}
+	registry, err := newTestPluginRegistry(bundles)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,10 +147,10 @@ func TestSearchContainerEngagementCountsOnlyItsMedia(t *testing.T) {
 		"box-c":    {TotalCount: 1, Completed: true},
 		"category": {TotalCount: 2, RemainingCount: 2},
 	}
-	check := func(item SourceItem) {
+	check := func(surface string, item SourceItem) {
 		t.Helper()
 		if expected, ok := want[item.ID]; !ok || item.Kind != "entity" || item.Engagement == nil || *item.Engagement != expected {
-			t.Errorf("entity %q engagement = %+v, want %+v", item.ID, item.Engagement, expected)
+			t.Errorf("%s entity %q engagement = %+v, want %+v", surface, item.ID, item.Engagement, expected)
 		}
 	}
 	seen := map[string]bool{}
@@ -135,7 +160,7 @@ func TestSearchContainerEngagementCountsOnlyItsMedia(t *testing.T) {
 			`query($offset: Int!) { searchResult(query: "Atlas", mode: keyword, limit: 2, offset: $offset) { items { id kind engagement { totalCount remainingCount completed } } } }`,
 			map[string]any{"offset": offset}, "searchResult", &search)
 		for _, item := range search.Items {
-			check(item.SourceItem)
+			check("search", item.SourceItem)
 			seen[item.ID] = true
 		}
 	}
@@ -143,6 +168,21 @@ func TestSearchContainerEngagementCountsOnlyItsMedia(t *testing.T) {
 		if !seen[id] {
 			t.Errorf("entity %q missing from search results", id)
 		}
+	}
+
+	if crossLibrary {
+		otherLibrary, err := st.CreateLibrary(ctx, "Other boxes", false, string(bundle.ID), "profile-default")
+		if err != nil {
+			t.Fatal(err)
+		}
+		item, _, err := st.ImportMediaFile(ctx, store.ImportMediaFile{
+			LibraryID: otherLibrary.ID, Path: "/other-boxes/indigo.mkv", Title: "Indigo",
+			Container: "mkv", Codec: "h264", ContentFingerprint: "fp-Indigo",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		link("box-b", "holds", "", item.ID)
 	}
 
 	var cards []SourceItem
@@ -153,6 +193,6 @@ func TestSearchContainerEngagementCountsOnlyItsMedia(t *testing.T) {
 		t.Fatalf("sourceItems returned %d cards, want 3", len(cards))
 	}
 	for _, item := range cards {
-		check(item)
+		check("source", item)
 	}
 }

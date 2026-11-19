@@ -37,9 +37,8 @@ import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { RevealSetting, SettingsMenuIntro } from "@/components/chrome/SettingsMenuIntro";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { setAdminUnlockHandler } from "@/lib/api";
-import { fetchCapabilityStates } from "@/lib/graphql";
-import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { manageWorkflow, useManageCapabilities } from "@/lib/manageCapabilities";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
 import type { StringKey } from "@/strings";
@@ -88,7 +87,6 @@ type NavItem = {
   lead: StringKey;
   advanced?: true;
   hidden?: true;
-  capability?: "conversion" | "rename";
 } & ({ label: StringKey; text?: undefined } | { text: string; label?: undefined });
 // Exported so the test can check the settings search's MENU_PAGES against it.
 export const MANAGE_NAV_GROUPS: NavItem[][] = [
@@ -101,7 +99,6 @@ export const MANAGE_NAV_GROUPS: NavItem[][] = [
       label: "convert",
       lead: "convertLead",
       advanced: true,
-      capability: "conversion",
     },
     {
       to: "/manage/rename",
@@ -109,7 +106,6 @@ export const MANAGE_NAV_GROUPS: NavItem[][] = [
       label: "rename",
       lead: "renameLead",
       advanced: true,
-      capability: "rename",
     },
     { to: "/manage/trash", icon: Trash2, label: "navTrash", lead: "manageTrashLead" },
     {
@@ -224,13 +220,13 @@ function currentRoute(pathname: string): NavItem {
 function visibleNavGroups(
   advanced: boolean,
   current: NavItem,
-  enabled: (id: NavItem["capability"]) => boolean,
+  enabled: (id: string | undefined) => boolean,
 ): NavItem[][] {
   return MANAGE_NAV_GROUPS.map((group) =>
     group.filter(
       (item) =>
         !item.hidden &&
-        enabled(item.capability) &&
+        enabled(manageWorkflow(item.to)) &&
         (advanced || !item.advanced || current === item),
     ),
   ).filter((group) => group.length > 0);
@@ -357,50 +353,28 @@ function ManageWorkspace() {
   const { session } = useSession();
   const t = useT();
   const [advanced] = useAdvancedSettings();
-  const [capabilities, setCapabilities] = useState<CapabilityStateInfo[] | null>(null);
   const [unlockCount, setUnlockCount] = useState(0);
   const onUnlock = useCallback(() => setUnlockCount((count) => count + 1), []);
-  useEffect(() => {
-    let active: AbortController | undefined;
-    function refresh() {
-      active?.abort();
-      const request = new AbortController();
-      active = request;
-      void fetchCapabilityStates(request.signal, { adminUnlock: false }).then(
-        (states) => {
-          if (!request.signal.aborted) setCapabilities(states);
-        },
-        () => {
-          if (!request.signal.aborted) setCapabilities([]);
-        },
-      );
-    }
-    refresh();
-    window.addEventListener("focus", refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      active?.abort();
-    };
-  }, [unlockCount]);
-
-  // Managers without an Admin Session can still open the pages. Mutations
-  // enforce the persisted setting even if this read is unavailable or stale.
-  const enabled = (id: NavItem["capability"]) =>
-    !capabilities?.some((state) => state.id === id && !state.enabled);
+  const {
+    loading: capabilitiesLoading,
+    enabled,
+    visibleManagePage,
+  } = useManageCapabilities(unlockCount);
   const route = currentRoute(pathname);
+  const capability = manageWorkflow(route.to);
   const routeTitle = route.text ?? t(route.label);
   const routeLead =
     route.to === "/manage/restrictions" && session?.revealPinSet === false
       ? "restrictionsSetupSubtitle"
       : route.lead;
-  if (route.capability && capabilities === null) {
+  if (capability && capabilitiesLoading) {
     return (
       <AppShell>
         <p className="text-sm text-muted-foreground">{t("loading")}</p>
       </AppShell>
     );
   }
-  if (!enabled(route.capability)) return <Navigate to="/manage/libraries" replace />;
+  if (!enabled(capability)) return <Navigate to="/manage/libraries" replace />;
 
   return (
     <AppShell>
@@ -411,10 +385,7 @@ function ManageWorkspace() {
           current={routeTitle}
           footer={<AdvancedSettingsSwitch className="manage-advanced-switch" />}
         >
-          <SettingsMenuIntro
-            area="manage"
-            visibleManagePage={(path) => enabled(currentRoute(`/manage/${path}`).capability)}
-          />
+          <SettingsMenuIntro area="manage" visibleManagePage={visibleManagePage} />
           <div className="manage-nav">
             {visibleNavGroups(advanced, route, enabled).map((group, i) => (
               <div key={i} className="manage-nav-group">
@@ -439,7 +410,12 @@ function ManageWorkspace() {
             <RevealSetting />
             <Routes>
               <Route index element={<Navigate to="/manage/libraries" replace />} />
-              <Route path="libraries" element={<LibrariesPage />} />
+              <Route
+                path="libraries"
+                element={
+                  <LibrariesPage renameEnabled={!capabilitiesLoading && enabled("rename")} />
+                }
+              />
               <Route path="operations" element={<OperationsPage />} />
               <Route path="convert" element={<ConvertPage />} />
               <Route path="rename" element={<RenamePage />} />
