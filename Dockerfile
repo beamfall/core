@@ -84,10 +84,12 @@ FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2
 # in NOTICE.
 COPY internal/ffmpeg/ffmpeg.pin internal/ffmpeg/ffmpeg.lock tools/ffmpeg/apt-snapshot.sh /tmp/
 COPY --from=ffmpeg /out/runtime-packages.txt /tmp/
+# Tini is a runtime utility. It reaps the descendants adopted after an encoder
+# process group is killed, including when its leader was stopped.
 RUN set -eux; \
 	sh /tmp/apt-snapshot.sh /tmp/ffmpeg.lock; \
 	apt-get update; \
-	apt-get install -y --no-install-recommends ca-certificates curl; \
+	apt-get install -y --no-install-recommends ca-certificates curl tini; \
 	dpkg-query -W -f '${Package}=${Version}\n' | sort >/tmp/before; \
 	apt-get install -y --no-install-recommends $(cat /tmp/runtime-packages.txt); \
 	dpkg-query -W -f '${Package}=${Version}\n' | sort >/tmp/after; \
@@ -137,5 +139,5 @@ USER beamfall:beamfall
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 	CMD curl -fsS http://127.0.0.1:8800/health >/dev/null || exit 1
 
-ENTRYPOINT ["/usr/local/bin/beamfall"]
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/beamfall"]
 CMD ["serve"]

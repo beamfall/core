@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -82,14 +83,20 @@ func TestHLSProcessStopReapsStoppedLeaderAndDescendant(t *testing.T) {
 	if signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal(); signal != syscall.SIGKILL {
 		t.Errorf("Stop ended the leader with %s, want SIGKILL", signal)
 	}
-	for time.Now().Before(deadline) {
-		if !processAlive(leader) && !processAlive(descendant) {
+	for {
+		// Signal zero also sees a zombie. Require ESRCH for both PIDs, so the
+		// test covers adoption and reaping when run under the container init.
+		leaderErr := syscall.Kill(leader, 0)
+		descendantErr := syscall.Kill(descendant, 0)
+		if leaderErr == syscall.ESRCH && descendantErr == syscall.ESRCH {
 			return
+		}
+		if !time.Now().Before(deadline) {
+			t.Fatalf("group not reaped within %s: leader %d: %v, descendant %d: %v",
+				hlsPauseTestBound, leader, leaderErr, descendant, descendantErr)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("group not reaped within %s: leader alive=%t, descendant alive=%t",
-		hlsPauseTestBound, processAlive(leader), processAlive(descendant))
 }
 
 func TestHLSProcessPauseRacesNaturalExit(t *testing.T) {
@@ -139,16 +146,27 @@ func startHLSPauseTestProcess(t *testing.T, cmd *exec.Cmd) *HLSProcess {
 func waitForStoppedHLSProcess(t *testing.T, pid int) {
 	t.Helper()
 	for deadline := time.Now().Add(hlsPauseTestBound); time.Now().Before(deadline); {
-		state, err := exec.CommandContext(t.Context(), "ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- test-owned PID
+		stopped, err := hlsProcessStopped(t, pid)
 		if err != nil {
 			t.Fatalf("query process %d state: %v", pid, err)
 		}
-		if strings.HasPrefix(strings.TrimSpace(string(state)), "T") {
+		if stopped {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("process %d did not stop", pid)
+}
+
+func hlsProcessStopped(t *testing.T, pid int) (bool, error) {
+	pidArg := strconv.Itoa(pid)
+	if runtime.GOOS == "linux" {
+		// The slim runtime image does not install ps.
+		status, err := os.ReadFile("/proc/" + pidArg + "/status") // #nosec G304 -- test-owned PID
+		return bytes.Contains(status, []byte("\nState:\tT ")), err
+	}
+	state, err := exec.CommandContext(t.Context(), "ps", "-o", "stat=", "-p", pidArg).Output() // #nosec G204 -- test-owned PID
+	return strings.HasPrefix(strings.TrimSpace(string(state)), "T"), err
 }
 
 func waitForHLSPauseTestExit(process *HLSProcess) <-chan error {
