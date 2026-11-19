@@ -247,3 +247,110 @@ describe("SearchPage mode exposure", () => {
     expect(vi.mocked(searchResult).mock.calls.at(-1)?.slice(0, 2)).toEqual(["hello", "keyword"]);
   });
 });
+
+describe("keyword pagination (CORE-2321)", () => {
+  it("loads beyond fifty, retains earlier rows, and stops after the last page", async () => {
+    const user = userEvent.setup();
+    const rows = Array.from({ length: 65 }, (_, i) => ({
+      id: `page-${i}`,
+      kind: "media" as const,
+      title: `Page ${i}`,
+      mode: "keyword" as const,
+      score: 0,
+    }));
+    vi.mocked(searchResult).mockResolvedValueOnce({
+      mode: "keyword",
+      restrictedResultsPresent: false,
+      items: rows.slice(0, 50),
+      hasMore: true,
+    });
+    vi.mocked(searchResult).mockResolvedValueOnce({
+      mode: "keyword",
+      restrictedResultsPresent: false,
+      items: rows.slice(50),
+      hasMore: false,
+    });
+    renderPage("/search?q=Page");
+    expect(await screen.findByText("Page 49")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByText("Page 64")).toBeInTheDocument();
+    expect(screen.getByText("Page 0")).toBeInTheDocument();
+    expect(searchResult).toHaveBeenLastCalledWith("Page", "keyword", expect.any(AbortSignal), {
+      offset: 50,
+    });
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("65 results for “Page”");
+  });
+});
+
+it("keeps results after a page failure and retries the same offset", async () => {
+  const user = userEvent.setup();
+  vi.mocked(searchResult).mockResolvedValueOnce({
+    mode: "keyword",
+    items: [{ id: "old", kind: "media", title: "Old result", mode: "keyword", score: 0 }],
+    restrictedResultsPresent: false,
+    hasMore: true,
+  });
+  vi.mocked(searchResult).mockRejectedValueOnce(new Error("offline"));
+  vi.mocked(searchResult).mockResolvedValueOnce({
+    mode: "keyword",
+    items: [{ id: "next", kind: "media", title: "Next result", mode: "keyword", score: 0 }],
+    restrictedResultsPresent: false,
+    hasMore: false,
+  });
+  renderPage("/search?q=word");
+  await screen.findByText("Old result");
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(screen.getByText("Old result")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  expect(await screen.findByText("Next result")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(
+    vi
+      .mocked(searchResult)
+      .mock.calls.slice(1)
+      .map((call) => call[3]),
+  ).toEqual([{ offset: 1 }, { offset: 1 }]);
+});
+
+it("aborts an additional page when the query changes and ignores its late response", async () => {
+  const user = userEvent.setup();
+  let finish: (value: Awaited<ReturnType<typeof searchResult>>) => void = () => {};
+  let signal: AbortSignal | undefined;
+  vi.mocked(searchResult).mockResolvedValueOnce({
+    mode: "keyword",
+    items: [{ id: "old", kind: "media", title: "Old result", mode: "keyword", score: 0 }],
+    restrictedResultsPresent: false,
+    hasMore: true,
+  });
+  vi.mocked(searchResult).mockImplementationOnce((_term, _mode, pendingSignal) => {
+    signal = pendingSignal;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  vi.mocked(searchResult).mockResolvedValue({
+    mode: "keyword",
+    items: [{ id: "new", kind: "media", title: "New result", mode: "keyword", score: 0 }],
+    restrictedResultsPresent: false,
+    hasMore: false,
+  });
+  renderPage("/search?q=old");
+  await screen.findByText("Old result");
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  await user.clear(screen.getByLabelText("Search"));
+  await user.type(screen.getByLabelText("Search"), "new");
+  expect(await screen.findByText("New result")).toBeInTheDocument();
+  expect(signal?.aborted).toBe(true);
+  await act(async () =>
+    finish({
+      mode: "keyword",
+      restrictedResultsPresent: false,
+      items: [{ id: "late", kind: "media", title: "Late result", mode: "keyword", score: 0 }],
+      hasMore: false,
+    }),
+  );
+  expect(screen.queryByText("Late result")).toBeNull();
+  expect(screen.queryByText("Old result")).toBeNull();
+});

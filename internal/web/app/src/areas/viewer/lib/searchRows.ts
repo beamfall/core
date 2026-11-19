@@ -135,9 +135,8 @@ export function searchPagePath(term: string): string {
 }
 
 /**
- * The most rows a keyword search returns. The server has no paging yet, so a
- * full page says it shows the first matches rather than claiming that is all
- * of them (CORE-2321).
+ * Legacy servers do not report hasMore. Keep their fifty-row count honest;
+ * current servers explicitly say when the final page has arrived (CORE-2321).
  */
 export const SEARCH_RESULT_CAP = 50;
 
@@ -145,9 +144,35 @@ export function searchCountLabel(
   t: (key: StringKey, values?: Record<string, string | number>) => string,
   count: number,
   query: string,
+  hasMore?: boolean,
 ): string {
-  return t(count >= SEARCH_RESULT_CAP ? "searchResultCountCapped" : "searchResultCount", {
-    count,
-    query,
-  });
+  return t(
+    (hasMore ?? count >= SEARCH_RESULT_CAP) ? "searchResultCountCapped" : "searchResultCount",
+    {
+      count,
+      query,
+    },
+  );
+}
+
+/** Keep loaded pages distinct and container children in ordinal order. */
+export function mergeSearchPages(
+  previous: SearchResultItem[],
+  page: SearchResultItem[],
+): SearchResultItem[] {
+  const distinct = new Map(previous.map((item) => [`${item.kind}:${item.id}`, item]));
+  for (const item of page) distinct.set(`${item.kind}:${item.id}`, item);
+  const groups = new Map<string, SearchResultItem[]>();
+  for (const item of distinct.values()) {
+    const key = item.container?.id ? `entity:${item.container.id}` : `${item.kind}:${item.id}`;
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return [...groups.values()].flatMap((group) =>
+    group.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === "entity" ? -1 : 1;
+      return (a.sequence ?? 0) - (b.sequence ?? 0) || (a.index ?? 0) - (b.index ?? 0);
+    }),
+  );
 }

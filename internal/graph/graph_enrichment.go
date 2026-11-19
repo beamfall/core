@@ -104,6 +104,7 @@ type SearchResultItem struct {
 // hidden content.
 type SearchResultResponse struct {
 	Mode                     SearchMode         `json:"mode"`
+	HasMore                  bool               `json:"hasMore"`
 	Items                    []SearchResultItem `json:"items"`
 	RestrictedResultsPresent bool               `json:"restrictedResultsPresent"`
 }
@@ -403,6 +404,15 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 		}
 	}
 
+	// Keyword pages select from visible hits only; the default keeps the
+	// original fifty-row response for clients that do not request paging.
+	limit, offset := intVar(req, "limit"), intVar(req, "offset")
+	if limit < 0 || limit > 200 || offset < 0 {
+		return SearchResultResponse{}, clientError("limit must be between 1 and 200 and offset must not be negative")
+	}
+	if limit == 0 {
+		limit = keywordResultLimit
+	}
 	// keyword path (also the fallback for auto).
 	results, err := h.store.SearchMedia(ctx, filter, text, keywordCandidateLimit)
 	if err != nil {
@@ -413,7 +423,8 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 		return SearchResultResponse{}, err
 	}
 	results = append(results, entities...)
-	results, err = h.orderKeywordResults(ctx, text, results, keywordResultLimit)
+	hasMore := offset < len(results) && len(results)-offset > limit
+	results, err = h.orderKeywordResults(ctx, text, results, limit, offset)
 	if err != nil {
 		return SearchResultResponse{}, err
 	}
@@ -431,6 +442,7 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 	}
 	return SearchResultResponse{
 		Mode:                     SearchModeKeyword,
+		HasMore:                  hasMore,
 		Items:                    items,
 		RestrictedResultsPresent: restricted,
 	}, nil
