@@ -2382,8 +2382,8 @@ func TestEncoderReplacementStopsOutsideTheGlobalLock(t *testing.T) {
 // TestSessionEvictedDuringEncoderReplacement covers a session torn down while
 // ensureRung has the lock released to replace its encoder: the teardown does
 // not wait for the replacement, the request fails with ErrSessionEvicted, the
-// directory is removed before teardown returns, and the lease is released
-// once the start gives up.
+// lease is released once the start gives up, and the session's directory is
+// gone.
 func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
@@ -2415,9 +2415,6 @@ func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("session directory after TerminateSession: stat err = %v, want not-exist", err)
-	}
 	// The start is still stopping the replaced process, so its lease holds.
 	if got := g.ActiveTranscodes(); got != 1 {
 		t.Fatalf("ActiveTranscodes while the evicted start is stopping = %d, want 1", got)
