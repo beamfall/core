@@ -15,8 +15,12 @@ const SupportsHLSPause = false
 
 func ownsHLSStaging(os.FileInfo) bool { return false }
 
-func makeHLSOutputPipe(string) error                             { return errors.ErrUnsupported }
-func readHLSOutputPipe(string, io.Writer, <-chan struct{}) error { return errors.ErrUnsupported }
+func makeHLSOutputPipe(string) error                    { return errors.ErrUnsupported }
+func openHLSStage(string) (*os.File, error)             { return nil, errors.ErrUnsupported }
+func openHLSSidecar(*os.File, string) (*os.File, error) { return nil, errors.ErrUnsupported }
+func readHLSOutputPipe(*os.File, string, io.Writer, <-chan struct{}) error {
+	return errors.ErrUnsupported
+}
 
 func pauseProcessGroup(_ *exec.Cmd) bool           { return false }
 func resumeProcessGroup(_ *exec.Cmd) bool          { return false }

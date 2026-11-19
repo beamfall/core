@@ -4,6 +4,7 @@ package ffmpeg
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -23,8 +24,41 @@ func ownsHLSStaging(info os.FileInfo) bool {
 
 func makeHLSOutputPipe(path string) error { return unix.Mkfifo(path, 0o600) }
 
-func readHLSOutputPipe(path string, dst io.Writer, exited <-chan struct{}) error {
-	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+func openHLSStage(path string) (*os.File, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), path), nil
+}
+
+func openHLSStageEntry(stage *os.File, name string, kind uint32) (int, error) {
+	fd, err := unix.Openat(int(stage.Fd()), name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, fmt.Errorf("ffmpeg: open HLS staging entry %q: %w", name, err)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		_ = unix.Close(fd)
+		return -1, err
+	}
+	if uint32(stat.Mode)&unix.S_IFMT != kind {
+		_ = unix.Close(fd)
+		return -1, fmt.Errorf("ffmpeg: unexpected file type for HLS staging entry %q", name)
+	}
+	return fd, nil
+}
+
+func openHLSSidecar(stage *os.File, name string) (*os.File, error) {
+	fd, err := openHLSStageEntry(stage, name, unix.S_IFREG)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), name), nil
+}
+
+func readHLSOutputPipe(stage *os.File, name string, dst io.Writer, exited <-chan struct{}) error {
+	fd, err := openHLSStageEntry(stage, name, unix.S_IFIFO)
 	if err != nil {
 		return err
 	}

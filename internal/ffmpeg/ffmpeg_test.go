@@ -86,6 +86,83 @@ func TestPacedHLSOutputSeparatesPipesFromPublication(t *testing.T) {
 	}
 }
 
+func TestPacedHLSOutputRejectsUnsafeSidecars(t *testing.T) {
+	if !SupportsHLSPause {
+		t.Skip("requires named pipes")
+	}
+	for _, name := range []string{"init.mp4", "index.m3u8"} {
+		t.Run(name, func(t *testing.T) {
+			dst := t.TempDir()
+			out, err := New().NewPacedHLSOutput(t.TempDir(), dst, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(out.Close)
+			private := filepath.Join(t.TempDir(), "private")
+			if err := os.WriteFile(private, []byte("server-readable"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(private, filepath.Join(out.Dir, name)); err != nil {
+				t.Fatal(err)
+			}
+			if err := out.StageSidecars(name == "index.m3u8"); err == nil {
+				t.Fatal("staging followed a muxer sidecar symlink")
+			}
+			for _, dir := range []string{out.ready, dst} {
+				if _, err := os.Stat(filepath.Join(dir, name)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("unsafe sidecar reached %s: %v", dir, err)
+				}
+			}
+		})
+	}
+	t.Run("fifo", func(t *testing.T) {
+		out, err := New().NewPacedHLSOutput(t.TempDir(), t.TempDir(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(out.Close)
+		if err := makeHLSOutputPipe(filepath.Join(out.Dir, "init.mp4")); err != nil {
+			t.Fatal(err)
+		}
+		if err := out.StageSidecars(false); err == nil {
+			t.Fatal("staging accepted a FIFO as a sidecar")
+		}
+	})
+}
+
+func TestPacedHLSOutputReadsSidecarsFromPinnedDirectory(t *testing.T) {
+	if !SupportsHLSPause {
+		t.Skip("requires named pipes")
+	}
+	scratch, dst := t.TempDir(), t.TempDir()
+	t.Cleanup(func() { _ = PurgePacedHLSOutput(scratch) })
+	out, err := New().NewPacedHLSOutput(scratch, dst, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(out.Close)
+	name := filepath.Join(out.Dir, "init.mp4")
+	if err := os.WriteFile(name, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(out.Dir, out.Dir+"-moved"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(out.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte("substitute"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := out.StageSidecars(false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(out.ready, "init.mp4")) // #nosec G304 -- test-owned publication directory
+	if err != nil || string(got) != "original" {
+		t.Fatalf("staged init = %q, %v; want original", got, err)
+	}
+}
+
 const sampleProbeJSON = `{
     "streams": [
         {"codec_type": "video", "codec_name": "h264", "width": 1280, "height": 720},

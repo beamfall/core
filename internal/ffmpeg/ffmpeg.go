@@ -2595,8 +2595,9 @@ func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
 // muxer. The muxer cannot write the next fragment until its pipe has a reader.
 // The muxer's atomic playlist update confirms it finished the fragment.
 type PacedHLSOutput struct {
-	Dir string
-	dst string
+	Dir   string
+	dst   string
+	stage *os.File // pinned before the encoder can write into Dir
 	// ready is on the destination volume, where completed regular files
 	// can be made visible by rename even when that volume has no FIFOs.
 	ready string
@@ -2655,6 +2656,11 @@ func (*Runner) NewPacedHLSOutput(scratch, dir string, base int) (*PacedHLSOutput
 		return nil, err
 	}
 	out := &PacedHLSOutput{Dir: stage, dst: dir}
+	out.stage, err = openHLSStage(stage)
+	if err != nil {
+		out.Close()
+		return nil, err
+	}
 	if err := makeHLSOutputPipe(out.segment(base)); err != nil {
 		out.Close()
 		return nil, err
@@ -2715,7 +2721,7 @@ func (o *PacedHLSOutput) Receive(n int, linear bool, exited <-chan struct{}) err
 	if err != nil {
 		return err
 	}
-	err = readHLSOutputPipe(path, f, exited)
+	err = readHLSOutputPipe(o.stage, filepath.Base(path), f, exited)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -2729,26 +2735,39 @@ func (o *PacedHLSOutput) Receive(n int, linear bool, exited <-chan struct{}) err
 		playlist = "index.m3u8"
 	}
 	entry := "\n" + filepath.Base(path) + "\n"
-	return waitHLSOutput(exited, func() bool {
-		return hlsPlaylistHasTailEntry(filepath.Join(o.Dir, playlist), entry)
+	var playlistErr error
+	err = waitHLSOutput(exited, func() bool {
+		var found bool
+		found, playlistErr = o.hlsPlaylistHasTailEntry(playlist, entry)
+		return found || playlistErr != nil
 	})
+	if playlistErr != nil {
+		return playlistErr
+	}
+	return err
 }
 
-func hlsPlaylistHasTailEntry(path, entry string) bool {
-	f, err := os.Open(path) // #nosec G304 -- the fixed muxer playlist in the private staging directory
+func (o *PacedHLSOutput) hlsPlaylistHasTailEntry(name, entry string) (bool, error) {
+	f, err := openHLSSidecar(o.stage, name)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer f.Close()
 	size, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
-		return false
+		return false, err
 	}
 	// The next pipe blocks the muxer, so the new fragment is the last
 	// entry. Check only the tail even for a long event playlist.
 	var tail [256]byte
 	n, err := f.ReadAt(tail[:], max(0, size-int64(len(tail))))
-	return (err == nil || errors.Is(err, io.EOF)) && strings.Contains(string(tail[:n]), entry)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	return strings.Contains(string(tail[:n]), entry), nil
 }
 
 // StagedSegment is the private regular file containing the received fragment.
@@ -2758,7 +2777,7 @@ func (o *PacedHLSOutput) StagedSegment(n int) string {
 
 // StageSidecars copies the muxer's sidecars to the destination filesystem.
 // A linear event playlist grows with the stream, so this runs before taking
-// the playback lock that guards publication.
+// the session lock that guards publication.
 func (o *PacedHLSOutput) StageSidecars(linear bool) error {
 	if err := o.copyArtifact("init.mp4"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -2798,7 +2817,7 @@ func (o *PacedHLSOutput) publishArtifact(name string) error {
 }
 
 func (o *PacedHLSOutput) copyArtifact(name string) error {
-	src, err := os.Open(filepath.Join(o.Dir, name)) // #nosec G304 -- fixed muxer sidecar in private staging
+	src, err := openHLSSidecar(o.stage, name)
 	if err != nil {
 		return err
 	}
@@ -2816,6 +2835,9 @@ func (o *PacedHLSOutput) copyArtifact(name string) error {
 }
 
 func (o *PacedHLSOutput) Close() {
+	if o.stage != nil {
+		_ = o.stage.Close()
+	}
 	_ = os.RemoveAll(o.Dir)
 	_ = os.RemoveAll(o.ready)
 
