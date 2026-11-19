@@ -21,19 +21,33 @@ func sameSourceFile(a, b os.FileInfo) bool {
 	return a != nil && b != nil && os.SameFile(a, b) && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime())
 }
 
-func (c *incompleteSourceCache) remember(path string, observed os.FileInfo) {
+func (c *incompleteSourceCache) lookup(path string) os.FileInfo {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.files == nil || len(c.files) >= durationProbeCacheLimit {
+	return c.files[path]
+}
+
+// remember publishes only if the entry still matches the snapshot taken
+// before stat. A competing generation requires a fresh stat before replacing it.
+func (c *incompleteSourceCache) remember(path string, before, observed os.FileInfo) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	current := c.files[path]
+	if sameSourceFile(current, observed) {
+		return true
+	}
+	if current != before {
+		return false
+	}
+	if c.files == nil || (current == nil && len(c.files) >= durationProbeCacheLimit) {
 		c.files = make(map[string]os.FileInfo)
 	}
 	c.files[path] = observed
+	return true
 }
 
 func (c *incompleteSourceCache) contains(path string) bool {
-	c.mu.Lock()
-	observed := c.files[path]
-	c.mu.Unlock()
+	observed := c.lookup(path)
 	if observed == nil {
 		return false
 	}
@@ -92,24 +106,27 @@ func (s *Sessions) observeIncompleteSource(key SessionKey, session *hlsSession, 
 			slog.Error("observing source end failed", "media", key.MediaID, "error", err)
 		}
 	}
-	var sameGeneration bool
-	if observed && session.secure == nil && session.sourceInfo != nil {
-		stat := os.Stat
-		if s.statSource != nil {
-			stat = s.statSource
+	stat := os.Stat
+	if s.statSource != nil {
+		stat = s.statSource
+	}
+	for {
+		var before os.FileInfo
+		var sameGeneration bool
+		if observed && session.secure == nil && session.sourceInfo != nil {
+			before = s.incompleteSources.lookup(session.src)
+			current, statErr := stat(session.src)
+			sameGeneration = statErr == nil && sameSourceFile(session.sourceInfo, current)
 		}
-		current, err := stat(session.src)
-		sameGeneration = err == nil && sameSourceFile(session.sourceInfo, current)
+		s.mu.Lock()
+		live := s.liveLocked(key, session)
+		retry := live && sameGeneration && !s.incompleteSources.remember(session.src, before, session.sourceInfo)
+		s.mu.Unlock()
+		if !live {
+			return 0, false, ErrSessionEvicted
+		}
+		if !retry {
+			return end, observed, err
+		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.liveLocked(key, session) {
-		return 0, false, ErrSessionEvicted
-	}
-	if sameGeneration {
-		// Publish only while this instance is live. A successor may already
-		// have cached EOF for a newer generation of this path.
-		s.incompleteSources.remember(session.src, session.sourceInfo)
-	}
-	return end, observed, err
 }

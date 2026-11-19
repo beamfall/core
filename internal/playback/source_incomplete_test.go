@@ -319,6 +319,66 @@ func TestSourceCacheStatDiscardsEvictedObservation(t *testing.T) {
 	}
 }
 
+func TestSourceCacheStatPreservesOtherDevicesReplacementEOF(t *testing.T) {
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	latch := newSessionIOLatch(t)
+	src := filepath.Join(t.TempDir(), "source.mkv")
+	if err := os.WriteFile(src, []byte("old generation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldKey := SessionKey{SessionID: "first-device", MediaID: "media"}
+	newKey := SessionKey{SessionID: "second-device", MediaID: oldKey.MediaID}
+	request := func(key SessionKey) *hlsSession {
+		t.Helper()
+		if _, err := sessions.FilePath(t.Context(), key, src, 120, 1280, 720, false, masterPlaylistName); err != nil {
+			t.Fatal(err)
+		}
+		return registeredSession(t, sessions, key)
+	}
+	old := request(oldKey)
+	sessions.statSource = func(string) (os.FileInfo, error) {
+		info, err := os.Stat(src)
+		if err == nil && sameSourceFile(old.sourceInfo, info) {
+			latch.block()
+		}
+		return info, err
+	}
+	observe := func() (time.Duration, bool) { return 10 * time.Second, true }
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := sessions.observeIncompleteSource(oldKey, old, observe)
+		done <- err
+	}()
+	latch.wait(t)
+
+	next := src + ".replacement"
+	if err := os.WriteFile(next, []byte("new generation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(next, src); err != nil {
+		t.Fatal(err)
+	}
+	replacement := request(newKey)
+	if sameSourceFile(old.sourceInfo, replacement.sourceInfo) {
+		t.Fatal("fixture did not replace the source generation")
+	}
+	if _, found, err := sessions.observeIncompleteSource(newKey, replacement, observe); !found || err != nil {
+		t.Fatalf("replacement EOF: found=%v, err=%v", found, err)
+	}
+	if !sessions.incompleteSources.contains(src) {
+		t.Fatal("replacement EOF was not cached")
+	}
+
+	latch.unblock()
+	if err := awaitSessionOperation(t, done); err != nil {
+		t.Fatalf("old observer's session is still live: %v", err)
+	}
+	if !sessions.incompleteSources.contains(src) {
+		t.Fatal("old generation overwrote the second device's cached EOF")
+	}
+}
+
 // The encrypted engine has no filesystem source path. The immutable object
 // fingerprint, scoped to its Library's catalog, must carry the observation.
 func TestEncryptedSourceEndSurvivesSessionReplacement(t *testing.T) {

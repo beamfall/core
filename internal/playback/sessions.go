@@ -541,8 +541,10 @@ type Sessions struct {
 	// waits for all off-lock setup and teardown to finish so no encoder,
 	// lease or directory outlives it.
 	detached int
-	// sweeping counts orphan sweeps admitted before Close began.
-	sweeping int
+	// Each sweep tracks exact reservations from its own start. Overlapping
+	// removals share a name claim so allocation skips it until all finish.
+	sweeps        map[*orphanSweep]struct{}
+	sweepRemoving map[string]int
 	// offLockIdle, when non-nil, is closed when off-lock work finishes.
 	offLockIdle chan struct{}
 	// closed is set by Close; once set no session is created.
@@ -571,6 +573,10 @@ type sessionTeardown struct {
 	// after dir is gone, on an encrypted session (ADR-0236 D2).
 	liveRun *encderiv.LiveRun
 	live    *encderiv.LiveSession
+}
+
+type orphanSweep struct {
+	reserved map[string]struct{}
 }
 
 // runTeardowns stops detached encoders and cleans up their artifacts before
@@ -633,7 +639,7 @@ func (s *Sessions) wakeCloseLocked() {
 // offLockIdleLocked reports whether all tracked off-lock work has ended.
 // Callers hold mu.
 func (s *Sessions) offLockIdleLocked() bool {
-	return s.starting == 0 && s.stopping == 0 && s.detached == 0 && s.sweeping == 0
+	return s.starting == 0 && s.stopping == 0 && s.detached == 0 && len(s.sweeps) == 0
 }
 
 // stop stops proc and waits for it to exit. Call it without s.mu held.
@@ -1478,7 +1484,10 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 				if sameShape {
 					return nil, initializing.err
 				}
-				// This request needs different artifacts. Try its own setup.
+				// Retry different artifacts only if no successor claimed the key.
+				if s.sessions[key] != nil {
+					return nil, ErrSessionEvicted
+				}
 				continue
 			}
 			if !s.liveLocked(key, existing) {
@@ -1499,8 +1508,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		return existing, nil
 	}
 
-	s.nextID++
-	session.dir = filepath.Join(s.dir, fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID))
+	session.dir = s.reserveSessionDirLocked()
 	session.lastAccess = s.now()
 	setup := &sessionInitialization{ready: make(chan struct{}), done: make(chan struct{})}
 	session.initializing = setup
@@ -1552,6 +1560,20 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		go s.watchLiveRevocation(key, session, session.revokeDone, secure.Revoked, s.liveRevocationInterval())
 	}
 	return session, nil
+}
+
+func (s *Sessions) reserveSessionDirLocked() string {
+	for {
+		s.nextID++
+		name := fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID)
+		if s.sweepRemoving[name] != 0 {
+			continue
+		}
+		for sweep := range s.sweeps {
+			sweep.reserved[name] = struct{}{}
+		}
+		return filepath.Join(s.dir, name)
+	}
 }
 
 // matchesSession compares the source generation and all artifact-shaping inputs.
@@ -2265,16 +2287,19 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 		s.mu.Unlock()
 		return os.ErrClosed
 	}
-	s.sweeping++
-	lastID := s.nextID
-	live := make(map[string]struct{}, len(s.sessions))
-	for _, session := range s.sessions {
-		live[filepath.Base(session.dir)] = struct{}{}
+	if s.sweeps == nil {
+		s.sweeps = make(map[*orphanSweep]struct{})
+		s.sweepRemoving = make(map[string]int)
 	}
+	sweep := &orphanSweep{reserved: make(map[string]struct{}, len(s.sessions))}
+	for _, session := range s.sessions {
+		sweep.reserved[filepath.Base(session.dir)] = struct{}{}
+	}
+	s.sweeps[sweep] = struct{}{}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
-		s.sweeping--
+		delete(s.sweeps, sweep)
 		s.wakeCloseLocked()
 		s.mu.Unlock()
 	}()
@@ -2290,21 +2315,26 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 		return err
 	}
 	var joined error
-	prefix := "session-" + s.bootNonce + "-"
 	for _, entry := range entries {
 		name := entry.Name()
 		if !entry.IsDir() || !sessionDirName.MatchString(name) {
 			continue
 		}
-		if _, held := live[name]; held {
-			continue // in-flight session: never delete a live plaintext working dir
+		s.mu.Lock()
+		if _, reserved := sweep.reserved[name]; reserved {
+			s.mu.Unlock()
+			continue
 		}
-		if suffix, ok := strings.CutPrefix(name, prefix); ok {
-			if id, err := strconv.Atoi(suffix); err == nil && id > lastID {
-				continue // this directory may have been allocated after the snapshot
-			}
-		}
+		// Claim the exact name before unlocking so allocation cannot race removal.
+		s.sweepRemoving[name]++
+		s.mu.Unlock()
 		joined = errors.Join(joined, s.removeSessionDir(filepath.Join(s.dir, name)))
+		s.mu.Lock()
+		s.sweepRemoving[name]--
+		if s.sweepRemoving[name] == 0 {
+			delete(s.sweepRemoving, name)
+		}
+		s.mu.Unlock()
 	}
 	return joined
 }

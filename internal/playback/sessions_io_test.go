@@ -273,6 +273,73 @@ func TestPlaylistSetupWaiterCancellationAndFailure(t *testing.T) {
 	}
 }
 
+type setupWaitContext struct {
+	context.Context
+	latch *sessionIOLatch
+}
+
+func (ctx setupWaitContext) Done() <-chan struct{} {
+	ctx.latch.block()
+	return ctx.Context.Done()
+}
+
+func TestFailedPlaylistSetupWaiterLeavesNewEncoderRunning(t *testing.T) {
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	writeLatch := newSessionIOLatch(t)
+	waiterLatch := newSessionIOLatch(t)
+	writeErr := errors.New("playlist write failed")
+	var writes atomic.Int32
+	sessions.writePlaylists = func(dir string, rungs []Rung, duration int, timeline *keyframeTimeline, primed primedGrid, write func(string, []byte) error) error {
+		if writes.Add(1) == 1 {
+			writeLatch.block()
+			return writeErr
+		}
+		return writeSessionPlaylists(dir, rungs, duration, timeline, primed, write)
+	}
+	stopped := make(chan *ffmpeg.HLSProcess, 2)
+	sessions.stopEncoder = func(proc *ffmpeg.HLSProcess) { stopped <- proc }
+	key := SessionKey{SessionID: "device", MediaID: "media"}
+	request := func(ctx context.Context, duration int, name string) error {
+		_, err := sessions.FilePath(ctx, key, "source.mkv", duration, 1280, 720, false, name)
+		return err
+	}
+	creator := make(chan error, 1)
+	go func() { creator <- request(t.Context(), 120, masterPlaylistName) }()
+	writeLatch.wait(t)
+	first := registeredSession(t, sessions, key)
+	waiter := make(chan error, 1)
+	go func() {
+		waiter <- request(setupWaitContext{Context: t.Context(), latch: waiterLatch}, 90, masterPlaylistName)
+	}()
+	waiterLatch.wait(t)
+	writeLatch.unblock()
+	if err := awaitSessionOperation(t, creator); !errors.Is(err, writeErr) {
+		t.Fatalf("creator returned %v, want %v", err, writeErr)
+	}
+	if err := request(t.Context(), 120, "720p/init.mp4"); err != nil {
+		t.Fatalf("start successor: %v", err)
+	}
+	successor := registeredSession(t, sessions, key)
+	encoder := successor.proc
+	if successor == first || encoder == nil {
+		t.Fatal("fixture did not install a successor with an encoder")
+	}
+	waiterLatch.unblock()
+	err := awaitSessionOperation(t, waiter)
+	select {
+	case proc := <-stopped:
+		t.Fatalf("waiter stopped encoder %p, successor encoder %p", proc, encoder)
+	default:
+	}
+	if !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("stale waiter returned %v, want ErrSessionEvicted", err)
+	}
+	if current := registeredSession(t, sessions, key); current != successor || current.proc != encoder {
+		t.Fatal("stale waiter replaced the successor's encoder")
+	}
+}
+
 func TestReshapeStopsPredecessorBeforeWritingReplacement(t *testing.T) {
 	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
 	t.Cleanup(sessions.Close)
@@ -524,7 +591,13 @@ func TestOrphanSweepRunsOutsideSessionsLock(t *testing.T) {
 			t.Cleanup(sessions.Close)
 			latch := newSessionIOLatch(t)
 			seedUnrelatedSessions(t, sessions)
-			orphan := filepath.Join(sessions.dir, "session-42")
+			futureID := sessions.nextID + 42
+			var overlapping *sessionIOLatch
+			if operation == "remove directory" {
+				futureID = sessions.nextID + 1 // collide with admission during deletion
+				overlapping = newSessionIOLatch(t)
+			}
+			orphan := filepath.Join(sessions.dir, fmt.Sprintf("session-%s-%d", sessions.bootNonce, futureID))
 			if err := os.Mkdir(orphan, 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -534,9 +607,14 @@ func TestOrphanSweepRunsOutsideSessionsLock(t *testing.T) {
 					return os.ReadDir(dir)
 				}
 			} else {
+				var removals atomic.Int32
 				sessions.removeDir = func(path string) error {
 					if path == orphan {
-						latch.block()
+						if removals.Add(1) == 1 {
+							latch.block()
+						} else {
+							overlapping.block()
+						}
 					}
 					return os.RemoveAll(path)
 				}
@@ -544,8 +622,20 @@ func TestOrphanSweepRunsOutsideSessionsLock(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- sessions.PurgeOrphanedTranscodeDirs() }()
 			latch.wait(t)
+			blocked := latch
+			if overlapping != nil {
+				second := make(chan error, 1)
+				go func() { second <- sessions.PurgeOrphanedTranscodeDirs() }()
+				overlapping.wait(t)
+				latch.unblock()
+				if err := awaitSessionOperation(t, done); err != nil {
+					t.Fatal(err)
+				}
+				// The second removal still owns the name after the first returns.
+				done, blocked = second, overlapping
+			}
 			assertUnrelatedSessionsProgress(t, sessions)
-			latch.unblock()
+			blocked.unblock()
 			if err := awaitSessionOperation(t, done); err != nil {
 				t.Fatal(err)
 			}
