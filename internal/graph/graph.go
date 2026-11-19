@@ -467,6 +467,10 @@ type Handler struct {
 	scanObserver    ScanObserver
 	libraryObserver LibraryMutationObserver
 	hardwareAccel   config.HardwareAccelReport
+
+	// Immutable after construction, keyed by plugin-declared container kind.
+	engagementContainers map[string]store.EngagementContainerRelations
+
 	// transcodeRuntime is the live transcoder wiring the transcode-config
 	// resolver reads and applies; liveTranscodeCap is the cap now in force.
 	transcodeRuntime TranscodeRuntime
@@ -790,6 +794,16 @@ func NewHandler(manifests *manifest.Service, authService *auth.Service, st *stor
 		plugins:  plugins,
 		audit:    observability.NewAuditLogger(nil),
 	}
+	h.engagementContainers = make(map[string]store.EngagementContainerRelations)
+	for _, id := range plugins.IDs() {
+		bundle, _ := plugins.Bundle(id)
+		relations := identify.ContainerRelations(bundle)
+		for _, kind := range bundle.EntityKinds {
+			if kind.Archetype == containerArchetype {
+				h.engagementContainers[kind.Name] = relations
+			}
+		}
+	}
 	if len(options) == 0 {
 		return h
 	}
@@ -1094,7 +1108,7 @@ func (h *Handler) annotateCards(ctx context.Context, scope auth.Scope, items []s
 		return err
 	}
 	h.annotateScoreLabels(ctx, items)
-	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items)
+	return h.store.AnnotateEngagement(ctx, scope.ProfileID, scope.LibraryFilter(), items, h.engagementContainers)
 }
 
 // cardBylineArchetype is the Entity archetype whose linked titles an audio

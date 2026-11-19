@@ -433,7 +433,7 @@ func (h *Handler) searchResultRows(ctx context.Context, scope auth.Scope, req re
 	if err := h.store.AnnotateMuted(ctx, scope.ProfileID, filter, results); err != nil {
 		return SearchResultResponse{}, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, filter, results); err != nil {
+	if err := h.store.AnnotateEngagement(ctx, scope.ProfileID, filter, results, h.engagementContainers); err != nil {
 		return SearchResultResponse{}, err
 	}
 	items := make([]SearchResultItem, len(results))
@@ -544,7 +544,7 @@ func (h *Handler) semanticItems(ctx context.Context, profileID store.ProfileID, 
 	if err := h.store.AnnotateMuted(ctx, profileID, filter, sources); err != nil {
 		return nil, err
 	}
-	if err := h.store.AnnotateEngagement(ctx, profileID, filter, sources); err != nil {
+	if err := h.store.AnnotateEngagement(ctx, profileID, filter, sources, nil); err != nil {
 		return nil, err
 	}
 	items := make([]SearchResultItem, len(sources))
