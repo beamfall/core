@@ -13,7 +13,7 @@ import type { CapabilityProfile } from "../../lib/capabilityProfile";
 import type { PlaybackCaptionTrack, PlaybackInfo, PlaybackStream } from "../../lib/playback";
 import type { CastLoadRequestLike, ChromeCastLike } from "./castSdk";
 
-/** The Default Media Receiver: 1080p H.264 up to High 4.1, stereo AAC, WebVTT. */
+/** The Default Media Receiver floor every Cast device plays (CORE-2563 quirks baseline): 720p H.264 up to High 4.1, stereo AAC, WebVTT. */
 export const CAST_RECEIVER_PROFILE: CapabilityProfile = {
   client: "chromecast-default-receiver",
   containers: ["mp4"],
@@ -22,7 +22,7 @@ export const CAST_RECEIVER_PROFILE: CapabilityProfile = {
     {
       codec: "h264",
       profiles: ["Constrained Baseline", "Baseline", "Main", "High"],
-      maxHeight: 1080,
+      maxHeight: 720,
       maxLevel: 41,
     },
   ],
