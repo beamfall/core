@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
-import { type FormEvent, type KeyboardEvent, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { AvatarChooser, ProfileAvatar, ProfilePhotoEditor } from "@/components/beamfall/profile";
 import { EmptyState, ErrorState, HelpTip } from "@/components/beamfall/workbench";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import {
 } from "@/lib/graphql";
 import type { ProfileAdminInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
+import { getAdminEpochSignal } from "../adminEpoch";
 import { ConfirmButton } from "../ConfirmButton";
 import { Section } from "../Section";
 import { useAsync } from "../useAsync";
@@ -62,16 +63,42 @@ export function Profiles() {
   const [reorderFailed, setReorderFailed] = useState(false);
   const saving = useRef(false);
   const pendingOrder = useRef<string[] | null>(null);
-  // After a failed save the list reloads from the server; moves wait for it so
-  // none is queued against an order that is about to be replaced.
+  // After a failed save the list reloads from the server; moves wait until a
+  // reload succeeds so none is queued against an order that is about to be
+  // replaced, or saved on top of the rejected one.
   const [recovering, setRecovering] = useState(false);
+  const recovery = useRef<Promise<void> | null>(null);
+  const [recoverySettled, setRecoverySettled] = useState(0);
+
+  async function refreshRecovery() {
+    const refresh = profiles.refresh();
+    recovery.current = refresh;
+    await refresh;
+    if (recovery.current === refresh) {
+      recovery.current = null;
+      setRecoverySettled((n) => n + 1);
+    }
+  }
+
+  useEffect(() => {
+    if (recovering && !recovery.current && !profiles.loading && !profiles.failed) {
+      setRecovering(false);
+    }
+  }, [recovering, recoverySettled, profiles.loading, profiles.failed]);
+
+  function refreshAfterChange() {
+    // The reorder's final refresh also picks up changes made during the save.
+    if (saving.current) return;
+    if (recovery.current) void refreshRecovery();
+    else void profiles.refresh();
+  }
 
   async function move(from: number, to: number) {
     if (recovering || from === to || from < 0 || to < 0 || to >= rows.length) return;
     const next = rows.slice();
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
-    profiles.setData(next);
+    profiles.mutate(next);
     setReorderFailed(false);
     setAnnouncement(
       t("consoleProfilesMoved", { name: moved.name, position: to + 1, total: next.length }),
@@ -79,43 +106,49 @@ export function Profiles() {
     pendingOrder.current = next.map((p) => p.id);
     if (saving.current) return;
     saving.current = true;
+    const session = getAdminEpochSignal();
+    let saved = false;
     try {
       // One save at a time, always of the newest order: concurrent requests
       // could commit out of order and leave the server on an older one.
-      while (pendingOrder.current) {
+      while (pendingOrder.current && !session?.aborted) {
         const order = pendingOrder.current;
         pendingOrder.current = null;
-        await reorderProfiles(order);
+        await reorderProfiles(order, session);
       }
+      saved = true;
     } catch {
       pendingOrder.current = null;
-      setReorderFailed(true);
-      setRecovering(true);
-      try {
-        await profiles.refresh();
-      } finally {
-        setRecovering(false);
-      }
     } finally {
       saving.current = false;
     }
+    if (session?.aborted) return;
+    if (saved) {
+      void profiles.refresh();
+      return;
+    }
+
+    setReorderFailed(true);
+    setRecovering(true);
+    await refreshRecovery();
   }
 
-  if (profiles.failed) {
-    return (
-      <Section heading="consoleProfilesHeading" lead="accessHelpProfilesLead">
-        <ErrorState message="consoleProfilesUnavailable" />
-      </Section>
-    );
-  }
-
+  const unavailable = profiles.failed && profiles.data === null;
   return (
     <Section heading="consoleProfilesHeading" lead="accessHelpProfilesLead">
       <div className="space-y-6">
-        <CreateProfileForm onCreated={() => void profiles.refresh()} />
+        {profiles.failed && (
+          <div className="space-y-2">
+            <ErrorState message="consoleProfilesUnavailable" />
+            <Button variant="outline" size="sm" onClick={refreshAfterChange}>
+              {t("tryAgain")}
+            </Button>
+          </div>
+        )}
+        {!unavailable && <CreateProfileForm onCreated={refreshAfterChange} />}
 
         {rows.length === 0 ? (
-          <EmptyState message="consoleProfilesEmpty" />
+          !unavailable && <EmptyState message="consoleProfilesEmpty" />
         ) : (
           <div className="space-y-2">
             {rows.length > 1 && (
@@ -142,7 +175,7 @@ export function Profiles() {
                     setDragging(null);
                     void move(from, index);
                   }}
-                  onChanged={() => void profiles.refresh()}
+                  onChanged={refreshAfterChange}
                 />
               ))}
             </ul>

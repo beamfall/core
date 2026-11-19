@@ -326,6 +326,17 @@ describe("Manage navigation", () => {
     expect(screen.getByRole("link", { name: "Rename" })).toBeVisible();
   });
 
+  it.each([
+    [false, "Set a Restrictions PIN to control who can show restricted content."],
+    [true, "Enter this profile's PIN to show restricted content for this session."],
+    [undefined, "Enter this profile's PIN to show restricted content for this session."],
+  ])("shows the Restrictions subtitle for revealPinSet=%s (CORE-2585)", (revealPinSet, lead) => {
+    Object.assign(sessionState.current.session, { revealPinSet });
+    render(manageRouter("/manage/restrictions", []));
+
+    expect(screen.getByText(lead)).toBeVisible();
+  });
+
   it("redirects an unknown Manage path to Libraries in one bounded hop", async () => {
     const paths: string[] = [];
     render(manageRouter("/manage/not-a-route", paths));

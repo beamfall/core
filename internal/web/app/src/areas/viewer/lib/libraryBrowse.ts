@@ -106,12 +106,14 @@ function oneOf<T extends string>(values: readonly T[], value: string | null): T 
   return (values as readonly string[]).includes(value ?? "") ? (value as T) : "";
 }
 
+/** Cap a browse search at the server's Unicode code-point limit. */
+export function limitBrowseQuery(text: string): string {
+  return Array.from(text).slice(0, LIBRARY_MAX_QUERY).join("");
+}
+
 /** A title search as the server takes it: trimmed and cut to its length limit. */
 export function browseQuery(raw: string | null | undefined): string {
-  return Array.from((raw ?? "").trim())
-    .slice(0, LIBRARY_MAX_QUERY)
-    .join("")
-    .trim();
+  return limitBrowseQuery((raw ?? "").trim()).trim();
 }
 
 /**

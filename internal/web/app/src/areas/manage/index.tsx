@@ -354,6 +354,7 @@ export function ManageArea() {
 
 function ManageWorkspace() {
   const { pathname } = useLocation();
+  const { session } = useSession();
   const t = useT();
   const [advanced] = useAdvancedSettings();
   const [capabilities, setCapabilities] = useState<CapabilityStateInfo[] | null>(null);
@@ -388,6 +389,10 @@ function ManageWorkspace() {
     !capabilities?.some((state) => state.id === id && !state.enabled);
   const route = currentRoute(pathname);
   const routeTitle = route.text ?? t(route.label);
+  const routeLead =
+    route.to === "/manage/restrictions" && session?.revealPinSet === false
+      ? "restrictionsSetupSubtitle"
+      : route.lead;
   if (route.capability && capabilities === null) {
     return (
       <AppShell>
@@ -429,7 +434,7 @@ function ManageWorkspace() {
 
         <div className="min-w-0 grow">
           {/* The route's one h1 and its lead; each ManageSection card title below is an h2. */}
-          <IconHeading icon={route.icon} title={routeTitle} lead={t(route.lead)} />
+          <IconHeading icon={route.icon} title={routeTitle} lead={t(routeLead)} />
           <ManageAdminLock onUnlock={onUnlock}>
             <RevealSetting />
             <Routes>

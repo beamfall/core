@@ -204,6 +204,55 @@ describe("Library browse", () => {
     expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/);
   });
 
+  it("accepts up to 200 Unicode code points in the browse search (CORE-2582)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all");
+
+    await screen.findByRole("link", { name: "Item 0" });
+    const search = screen.getByRole("searchbox", { name: "Search Films" });
+    const character = "\u{20000}";
+    await user.click(search);
+    await user.paste(character.repeat(150));
+    expect(search).toHaveValue(character.repeat(150));
+
+    await user.paste(character.repeat(51));
+    expect(search).toHaveValue(character.repeat(200));
+    await user.keyboard("{Enter}");
+    expect(vi.mocked(fetchLibraryItems).mock.calls.at(-1)?.[0].state.query).toBe(
+      character.repeat(200),
+    );
+  });
+
+  it.each([
+    { name: "middle insertion", selected: 0, pasted: "y", kept: "", rest: "x" },
+    {
+      name: "selected-text replacement",
+      selected: 1,
+      pasted: "\u{20000}y",
+      kept: "\u{20000}",
+      rest: "",
+    },
+  ])(
+    "preserves the search suffix after $name at capacity",
+    async ({ selected, pasted, kept, rest }) => {
+      vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+      const user = userEvent.setup();
+      const prefix = "a".repeat(99);
+      const suffix = "z".repeat(100);
+      renderBrowse(`/n/films/all?q=${prefix}x${suffix}`);
+
+      const search = await screen.findByRole<HTMLInputElement>("searchbox", {
+        name: "Search Films",
+      });
+      await user.click(search);
+      search.setSelectionRange(prefix.length, prefix.length + selected);
+      await user.paste(pasted);
+      expect(search).toHaveValue(`${prefix}${kept}${rest}${suffix}`);
+      expect(search.selectionStart).toBe(prefix.length + kept.length);
+    },
+  );
+
   it("opens the filters from one button that counts them and returns focus on Escape (CORE-2568)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const user = userEvent.setup();

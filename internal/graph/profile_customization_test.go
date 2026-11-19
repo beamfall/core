@@ -97,7 +97,7 @@ func TestSetProfileAvatarAndPictureURL(t *testing.T) {
 	mustUnmarshal(t, resp.Data["profiles"], &profiles)
 	for _, p := range profiles {
 		if p.ID == "profile-default" {
-			want := "/api/profiles/picture/profile-default?v=" + strconv.FormatInt(version, 10)
+			want := "/api/profiles/picture/profile-default?v=2-" + strconv.FormatInt(version, 10)
 			if p.PictureURL != want || p.Avatar != "star.3" {
 				t.Fatalf("profile-default = %+v, want avatar star.3 and pictureURL %s", p, want)
 			}

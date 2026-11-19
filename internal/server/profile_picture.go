@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -36,11 +37,12 @@ type profilePictureResponse struct {
 
 // profilePictureURL matches the URL the GraphQL ProfileSummary.pictureURL
 // field reports, so a client can swap it in without refetching Profiles.
+// The version prefix bypasses entries cached before compatibility revalidation.
 func profilePictureURL(id store.ProfileID, version int64) string {
 	if version == 0 {
 		return ""
 	}
-	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=" + strconv.FormatInt(version, 10)
+	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=2-" + strconv.FormatInt(version, 10)
 }
 
 // profilePictureWriteSession authenticates a picture change before any body
@@ -137,6 +139,8 @@ func (s *Server) deleteProfilePicture(w http.ResponseWriter, r *http.Request) {
 // key with unrelated grants read every Profile's picture. The bytes are the
 // server's own normalized JPEG, never the upload.
 func (s *Server) profilePicture(w http.ResponseWriter, r *http.Request) {
+	// Errors such as a missing picture should not be cached.
+	w.Header().Set("Cache-Control", "no-store")
 	scope, err := s.auth.ScopeFromRequest(r.Context(), r)
 	if err != nil || scope.SessionID == "" || scope.APIKeyID != "" || scope.APITokenID != "" ||
 		scope.SessionKind == store.SessionKindIntegration {
@@ -157,16 +161,8 @@ func (s *Server) profilePicture(w http.ResponseWriter, r *http.Request) {
 		writeErrorCause(w, r, http.StatusInternalServerError, "profile picture unavailable", err)
 		return
 	}
-	etag := `"` + strconv.FormatInt(version, 10) + `"`
-	w.Header().Set("ETag", etag)
-	// A versioned URL never changes content; an unversioned one revalidates.
-	if r.URL.Query().Get("v") == strconv.FormatInt(version, 10) {
-		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
-	} else {
-		w.Header().Set("Cache-Control", "private, no-cache")
-	}
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
+	versionTag := strconv.FormatInt(version, 10)
+	if mediahttp.VersionedResponseNotModified(w, r, versionTag, r.URL.Query().Get("v") == "2-"+versionTag) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")

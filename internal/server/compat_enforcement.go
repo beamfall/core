@@ -205,27 +205,29 @@ func (s *Server) requireCompatDecision(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		bound, result, generation := s.compatAuthorize(r, scope)
-		if !bound {
+		allowed, result, record := s.compatAuthorize(r, scope)
+		if !allowed {
 			writeCompatRefusal(w, result)
 			return
 		}
-		if generation != "" {
+		generation := ""
+		if record.DecisionID != "" {
+			generation = strconv.Itoa(record.Key.Generation)
 			w.Header().Set("Cache-Control", "no-store")
 		}
 		// Hand the decision identity downstream so a route that returns a
 		// reusable cache entry keys it on the decision, not just the content
 		// version. An empty generation means no decision record
 		// could be named, and the route falls back to uncacheable.
-		next(w, r.WithContext(mediahttp.WithCompatBinding(r.Context(), generation, subject)))
+		next(w, r.WithContext(mediahttp.WithCompatBinding(r.Context(), generation, subject, record.DecisionID)))
 	}
 }
 
-func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capabilities.Result, string) {
+func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capabilities.Result, capabilities.Record) {
 	s.devBuilds.refresh()
 	subject := compatSubject(scope)
 	if s.compat.isRefused(subject) {
-		return false, compatDecisionRequired(), ""
+		return false, compatDecisionRequired(), capabilities.Record{}
 	}
 	policy := s.compat.snapshot()
 	credentialClass := compatCredentialClass(r, scope)
@@ -235,7 +237,7 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 	} else if credentialClass == compatCredentialNative && scope.DeviceID != "" {
 		surface, err := s.persistedCompatSurface(r.Context(), scope)
 		if err != nil {
-			return false, compatDecisionRequired(), ""
+			return false, compatDecisionRequired(), capabilities.Record{}
 		}
 		derivedSurface = string(surface)
 	}
@@ -249,13 +251,13 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 	now := s.compat.now()
 	record, err := s.compat.registry.Resolve(subject, key, now)
 	if err == nil {
-		return compatServable(record.Result), record.Result, strconv.Itoa(record.Key.Generation)
+		return compatServable(record.Result), record.Result, record
 	}
 	if credentialClass == compatCredentialNative && !capabilities.IsNativeSurface(capabilities.Surface(derivedSurface)) && errors.Is(err, capabilities.ErrNoDecision) {
-		return true, capabilities.Result{}, ""
+		return true, capabilities.Result{}, capabilities.Record{}
 	}
 	if credentialClass != compatCredentialWeb {
-		return false, compatDecisionRequired(), ""
+		return false, compatDecisionRequired(), capabilities.Record{}
 	}
 	if errors.Is(err, capabilities.ErrNoDecision) {
 		return s.acceptEmbeddedDecision(scope, policy)
@@ -278,9 +280,9 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 		return s.acceptEmbeddedDecision(scope, policy)
 	}
 	if record.Result.Decision != "" && !compatServable(record.Result) {
-		return false, record.Result, ""
+		return false, record.Result, capabilities.Record{}
 	}
-	return false, compatDecisionRequired(), ""
+	return false, compatDecisionRequired(), capabilities.Record{}
 }
 
 // rebindEmbeddedDecision moves a web session's valid decision to its current
@@ -288,21 +290,21 @@ func (s *Server) compatAuthorize(r *http.Request, scope auth.Scope) (bool, capab
 // applies the change only to the exact record that was resolved, so a
 // concurrent refusal, handshake or generation change is never overwritten;
 // the request is then refused and the client resubmits.
-func (s *Server) rebindEmbeddedDecision(scope auth.Scope, policy capabilities.Policy, prior capabilities.Record) (bool, capabilities.Result, string) {
+func (s *Server) rebindEmbeddedDecision(scope auth.Scope, policy capabilities.Policy, prior capabilities.Record) (bool, capabilities.Result, capabilities.Record) {
 	enrollment := compatEnrollment(scope)
 	enrollment.EmbeddedUI = true
 	result := capabilities.Evaluate(capabilities.EmbeddedUIContract(), enrollment, policy)
 	if !compatServable(result) {
-		return false, result, ""
+		return false, result, capabilities.Record{}
 	}
 	record, err := s.compat.registry.RebindAuth(prior, compatAuthFingerprint(scope), s.compat.now())
 	if err != nil {
-		return false, compatDecisionRequired(), ""
+		return false, compatDecisionRequired(), capabilities.Record{}
 	}
-	return true, result, strconv.Itoa(record.Key.Generation)
+	return true, result, record
 }
 
-func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Policy) (bool, capabilities.Result, string) {
+func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Policy) (bool, capabilities.Result, capabilities.Record) {
 	contract := capabilities.EmbeddedUIContract()
 	enrollment := compatEnrollment(scope)
 	enrollment.EmbeddedUI = true
@@ -310,7 +312,7 @@ func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Po
 	for range 3 {
 		result := capabilities.Evaluate(contract, enrollment, policy)
 		if !compatServable(result) {
-			return false, result, ""
+			return false, result, capabilities.Record{}
 		}
 		record, accepted, err := s.compat.registry.AcceptDerived(capabilities.BindingKey{
 			Subject:         compatSubject(scope),
@@ -320,14 +322,14 @@ func (s *Server) acceptEmbeddedDecision(scope auth.Scope, policy capabilities.Po
 			Generation:      policy.Generation,
 		}, contract, result, s.compat.now(), compatProvisionalTTL)
 		if err == nil {
-			return accepted, result, strconv.Itoa(record.Key.Generation)
+			return accepted, result, record
 		}
 		if !errors.Is(err, capabilities.ErrStaleGeneration) {
-			return false, compatDecisionRequired(), ""
+			return false, compatDecisionRequired(), capabilities.Record{}
 		}
 		policy = s.compat.snapshot()
 	}
-	return false, compatDecisionRequired(), ""
+	return false, compatDecisionRequired(), capabilities.Record{}
 }
 
 func compatServable(result capabilities.Result) bool {

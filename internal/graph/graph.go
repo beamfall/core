@@ -2226,12 +2226,12 @@ type ProfileSummary struct {
 
 // profilePictureURL is the versioned path a client fetches a Profile's
 // picture from, empty when the Profile has none (CORE-1240). The version
-// changes on every upload, so clients may cache the response indefinitely.
+// prefix bypasses entries cached before compatibility revalidation.
 func profilePictureURL(id store.ProfileID, version int64) string {
 	if version == 0 {
 		return ""
 	}
-	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=" + strconv.FormatInt(version, 10)
+	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=2-" + strconv.FormatInt(version, 10)
 }
 
 // profiles lists the Profiles a picker may offer to any session: Profiles

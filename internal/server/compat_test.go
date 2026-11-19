@@ -850,28 +850,27 @@ func TestCompatEmbeddedArtifactIsServerSupplied(t *testing.T) {
 }
 
 // The compatibility middleware must hand every bound route the decision
-// identity (generation + subject) so downstream cache entries can be keyed on
-// it.
+// identity so downstream cache entries can be keyed on it.
 func TestCompatDecisionBindingReachesByteRoutes(t *testing.T) {
 	srv := newTestServer(t)
-	capture := func(req *http.Request) (generation, subject string, bound bool) {
+	capture := func(req *http.Request) (generation, subject, decisionID string, bound bool) {
 		next := func(_ http.ResponseWriter, r *http.Request) {
-			generation, subject, bound = mediahttp.CompatBindingFromContext(r.Context())
+			generation, subject, decisionID, bound = mediahttp.CompatBindingFromContext(r.Context())
 		}
 		rec := httptest.NewRecorder()
 		srv.requireCompatDecision(next)(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("bound request = %d: %s", rec.Code, rec.Body.String())
 		}
-		return generation, subject, bound
+		return generation, subject, decisionID, bound
 	}
 
-	generation, subject, bound := capture(cookieManifestRequest())
+	generation, subject, decisionID, bound := capture(cookieManifestRequest())
 	if !bound {
 		t.Fatal("web-credential request carried no compatibility binding")
 	}
-	if generation == "" {
-		t.Fatal("decided request carried no decision generation")
+	if generation == "" || decisionID == "" {
+		t.Fatalf("decided request carried generation %q and decision ID %q, want both", generation, decisionID)
 	}
 	if subject != "session:session-default" {
 		t.Fatalf("binding subject = %q, want the decision's subject", subject)
@@ -879,14 +878,14 @@ func TestCompatDecisionBindingReachesByteRoutes(t *testing.T) {
 
 	policy := srv.compat.snapshot()
 	srv.SetCompatPolicy(policy, "next-build", 1)
-	renewedGeneration, _, _ := capture(cookieManifestRequest())
+	renewedGeneration, _, _, _ := capture(cookieManifestRequest())
 	if renewedGeneration == generation {
 		t.Fatalf("generation after policy bump = %q, want a value distinct from %q", renewedGeneration, generation)
 	}
 
 	managerRequest := httptest.NewRequest(http.MethodGet, "/api/manifest", nil)
 	authorizeManagerCookies(managerRequest)
-	_, managerSubject, _ := capture(managerRequest)
+	_, managerSubject, _, _ := capture(managerRequest)
 	if managerSubject == subject {
 		t.Fatalf("second subject binding = %q, want a value distinct from %q", managerSubject, subject)
 	}
@@ -896,17 +895,17 @@ func TestCompatDecisionBindingReachesByteRoutes(t *testing.T) {
 	undecided := newTestServer(t)
 	nativeRequest := httptest.NewRequest(http.MethodGet, "/api/manifest", nil)
 	authorizeViewer(nativeRequest)
-	var nativeGeneration, nativeSubject string
+	var nativeGeneration, nativeSubject, nativeDecisionID string
 	var nativeBound bool
 	nativeRec := httptest.NewRecorder()
 	undecided.requireCompatDecision(func(_ http.ResponseWriter, r *http.Request) {
-		nativeGeneration, nativeSubject, nativeBound = mediahttp.CompatBindingFromContext(r.Context())
+		nativeGeneration, nativeSubject, nativeDecisionID, nativeBound = mediahttp.CompatBindingFromContext(r.Context())
 	})(nativeRec, nativeRequest)
 	if !nativeBound {
 		t.Fatal("native request carried no compatibility binding")
 	}
-	if nativeGeneration != "" {
-		t.Fatalf("undecided native generation = %q, want an unestablished decision", nativeGeneration)
+	if nativeGeneration != "" || nativeDecisionID != "" {
+		t.Fatalf("undecided native generation = %q, decision ID = %q, want an unestablished decision", nativeGeneration, nativeDecisionID)
 	}
 	if nativeSubject == "" {
 		t.Fatal("native request binding carried no subject")
