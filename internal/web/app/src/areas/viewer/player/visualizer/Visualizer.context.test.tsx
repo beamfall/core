@@ -774,6 +774,35 @@ describe("Visualizer resize before paint", () => {
     expect([canvas.style.width, canvas.style.height]).toEqual(["0px", "0px"]);
   });
 
+  // Codex round 31: a slot collapsed to no width while still displayed lets its canvas
+  // overflow and show the frame, which a drop would turn black in one paint without a grant.
+  // Only a canvas that is not rendered has its frame dropped; a rendered one fades it.
+  it("fades, not drops, the frame of an empty slot whose canvas is still rendered", async () => {
+    const { canvas } = mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    report(640, 360);
+    renderer.draw.mockImplementation(() => {
+      renderer.shown = { width: 640, height: 360, texel: 1, visibleWidth: 640, visibleHeight: 360 };
+    });
+    step(16);
+    expect(renderer.draw).toHaveBeenCalledOnce();
+    const rects = vi
+      .spyOn(canvas, "getClientRects")
+      .mockReturnValue([new DOMRect(0, 0, 640, 360)] as unknown as DOMRectList);
+    try {
+      report(0, 360);
+      expect(renderer.drop).not.toHaveBeenCalled();
+      expect(renderer.withdraw).toHaveBeenCalledOnce();
+      step(32);
+      expect(renderer.drop).not.toHaveBeenCalled();
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
+      expect(canvas.style.width).toBe("640px");
+    } finally {
+      rects.mockRestore();
+    }
+  });
+
   // Codex rounds 21 and 22: at DPR 4 a texel is two device pixels. A one-pixel slot would cut
   // it and show nothing, so it takes one-pixel texels.
   it("gives a slot narrower than one texel smaller texels", async () => {

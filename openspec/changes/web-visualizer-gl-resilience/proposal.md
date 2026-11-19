@@ -65,9 +65,10 @@ visual off until the component remounts, although browsers restore contexts rout
   paint costs another 0.1 s of black, so a moving slot allocates the full-resolution targets
   once in that time at most and not at every frame. Framebuffer completeness is checked at
   every start: a target can be incomplete at one size and not another, and a limiter that reads
-  an incomplete target's zeros passes anything. The check is one framebuffer of each format and
-  size (eight at the renderer's first start, four at later ones, the limiter's fixed-size
-  targets not being allocated anew), and no frame starts while a visual's program compiles in
+  an incomplete target's zeros passes anything. Every target a start allocates is checked,
+  both of each pair, since either can fail alone and the frames alternate between them (twelve
+  checks at the renderer's first start, seven at later ones, the limiter's fixed-size targets
+  not being allocated anew), and no frame starts while a visual's program compiles in
   parallel: a completeness check waits on the GPU process behind the compile and would block
   the page, so the visual stays black until the compile is done. An incomplete target frees the
   frame, presents black and turns the visualizer off, as any other GL failure does.
@@ -119,7 +120,9 @@ visual off until the component remounts, although browsers restore contexts rout
   cap on a GPU that runs more than a frame behind. The residual: `getBufferSubData` is still a
   round trip to the browser's GPU process, so commands issued between frames (an artwork
   upload, a visual's compile) or by other contexts can delay that one call.
-- A slot with no pixels (the player docked or hidden) drops the frame at once, with no fade:
+- A slot with no pixels whose canvas is not rendered (the player docked or hidden) drops the
+  frame at once, with no fade (a collapsed slot whose canvas is still displayed and overflows
+  it fades the frame instead, since a drop would turn what it shows black in one paint):
   black is presented, the targets are freed, the canvas has no size and nothing is drawn while
   the slot is empty. A frame held for its fade would come back with the clip it started at when
   the player is reopened, lit, with no granted rise. The next frame starts as a first frame

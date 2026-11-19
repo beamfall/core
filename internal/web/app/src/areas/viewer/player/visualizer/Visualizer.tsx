@@ -291,13 +291,16 @@ export function Visualizer({
       canvas.style.height = `${(shown.height * texel) / r}px`;
       canvas.style.clipPath = viewClip(shown, r);
     };
-    // A slot with no pixels (the player hidden or docked, a collapsed layout) shows nothing of
-    // the frame, so the frame is dropped, not faded: a fade would hold it, with the clip it
-    // started with, and show it again when the slot has pixels before the limiter granted the
-    // fall (Codex round 30). The renderer then starts as at a mount: black, two draws asking
-    // for one geometry, every budget spent. Returns whether the slot is empty.
+    // A slot with no pixels whose canvas is not rendered (the player hidden or docked) shows
+    // nothing of the frame, so the frame is dropped, not faded: a fade would hold it, with the
+    // clip it started with, and show it again when the slot has pixels before the limiter
+    // granted the fall (Codex round 30). The renderer then starts as at a mount: black, two
+    // draws asking for one geometry, every budget spent. A canvas still rendered can overflow
+    // a collapsed slot and show its frame, which a drop would turn black in one paint, so that
+    // frame fades like any other (Codex round 31). Returns whether the frame was dropped.
     const dropEmpty = (request: Request) => {
       if (request[3] >= 1 && request[4] >= 1) return false;
+      if (canvas.getClientRects().length > 0) return false;
       const renderer = rendererRef.current;
       if (!renderer) return true;
       try {
@@ -323,8 +326,8 @@ export function Visualizer({
       reportedAt = window.devicePixelRatio;
       askedAt = 0;
       measure(seen, device, css.width, css.height, window.devicePixelRatio);
-      // A slot with no pixels shows nothing of the frame: it goes now, before the slot can
-      // have pixels again (dropEmpty).
+      // A hidden slot shows nothing of the frame: it goes now, before the slot can have pixels
+      // again (dropEmpty).
       if (dropEmpty(seen)) {
         unpainted = false;
         return;
@@ -423,8 +426,8 @@ export function Visualizer({
       }
       const box = measured ? css : slot.getBoundingClientRect();
       measure(drawn, device, box.width, box.height, window.devicePixelRatio);
-      // Nothing is drawn for a slot with no pixels, and the time it has none is no frame
-      // interval: the next draw is timed as a first one.
+      // Nothing is drawn for a hidden slot, and the time it is hidden is no frame interval: the
+      // next draw is timed as a first one.
       if (dropEmpty(drawn)) {
         lastDrawn = null;
         lastWall = null;

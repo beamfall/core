@@ -255,8 +255,8 @@ with every budget spent.
 ### Requirement: Every start checks its framebuffers
 
 The web visualizer SHALL check framebuffer completeness at the first start and at every later
-one: one framebuffer of each format and size the start allocates, and the limiter's targets of
-fixed size at the renderer's first start only. If any is incomplete it SHALL free the targets,
+one: every framebuffer the start allocates at its size, both targets of each pair, and the
+limiter's targets of fixed size at the renderer's first start only. If any is incomplete it SHALL free the targets,
 present black, draw nothing through them and fail as for any other GL failure, which turns the
 visualizer off.
 
@@ -280,8 +280,8 @@ compile. It SHALL present black until the compile is done.
 
 ### Requirement: A slot with no pixels drops the frame
 
-When the slot measures no physical pixel in width or in height (the player docked or hidden),
-the web visualizer SHALL drop the frame at the observation or the draw that finds it, without a
+When the slot measures no physical pixel in width or in height and the canvas is not rendered
+(the player docked or hidden), the web visualizer SHALL drop the frame at the observation or the draw that finds it, without a
 fade: present black, free the targets and give the canvas no size. It SHALL draw nothing while
 the slot is empty, and the next frame SHALL start as a first frame does. No pixel of the
 dropped frame SHALL be shown again.
@@ -292,6 +292,12 @@ dropped frame SHALL be shown again.
   limiter would have granted the frame's fall
 - **THEN** the frame was dropped at the observation, the canvas has no size, and the next frame
   starts from black with every budget spent
+
+#### Scenario: Collapsed slot whose canvas is still rendered
+
+- **WHEN** the slot measures no pixels in width while it and the canvas are still displayed, so
+  the canvas overflows it and shows the frame
+- **THEN** the frame is not dropped: it fades as for any other geometry change
 
 #### Scenario: Slot empty while a frame fades
 

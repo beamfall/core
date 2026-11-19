@@ -1275,7 +1275,7 @@ export class Renderer {
   // first frame is rationed like any change after a host write, and a resize never hands a strobe
   // a fresh flash budget (CORE-2516, Oscillux shaders/limiter/README.md, "Ping-pong and reset").
   //
-  // Its framebuffers are checked complete at every start, one of each format and size
+  // Its framebuffers are checked complete at every start, every one it allocates
   // (framebuffer): a target whose storage failed is not written, and a limiter that reads its
   // zeros counts nothing over the area limit and passes the frame whole (Codex round 29). With
   // one incomplete the targets are freed, the canvas is black and the start throws: the host
@@ -1291,16 +1291,16 @@ export class Renderer {
     const render = renderQuality(W, H, this.level);
     const feedback = this.feedbackPair(render.width, render.height, internal, type);
     const frame = this.storage(W, H, gl.RGBA8);
-    const history = [0, 1].map((i) => {
+    const history = [0, 1].map(() => {
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.NEAREST);
-      const fbo = this.framebuffer([frame, tex], i === 0);
+      const fbo = this.framebuffer([frame, tex]);
       gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
       return { tex, fbo };
     });
     const rows = this.storage(64, H, gl.RGBA32UI);
     const out = [0, 1].map(() => this.storage(W, H, gl.RGBA8));
     const track = [0, 1].map(() => this.storage(W, H, gl.RGBA16UI));
-    const fOut = out.map((x, i) => this.framebuffer([x, track[i]], i === 0));
+    const fOut = out.map((x, i) => this.framebuffer([x, track[i]]));
     for (const f of fOut) this.clearOutput(f);
     const window = limiterWindow(W, H, g.texel, g.visibleWidth, g.visibleHeight);
     const limiter = this.newLimiterState(rows, out, track, fOut, window, !this.fixedChecked);
@@ -1391,9 +1391,9 @@ export class Renderer {
     verify = true,
   ): Target[] {
     const gl = this.gl;
-    return [0, 1].map((i) => {
+    return [0, 1].map(() => {
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
-      const fbo = this.framebuffer([tex], verify && i === 0);
+      const fbo = this.framebuffer([tex], verify);
       gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
       return { tex, fbo };
     });
@@ -1426,7 +1426,7 @@ export class Renderer {
       fS: this.framebuffer([s], fixed),
       fC: this.framebuffer([c], fixed),
       fW: this.framebuffer([w], fixed),
-      fG: g.map((x, i) => this.framebuffer([x], fixed && i === 0)),
+      fG: g.map((x) => this.framebuffer([x], fixed)),
       fOut,
       window,
       cur: 0,
@@ -1480,12 +1480,12 @@ export class Renderer {
   // checkFramebufferStatus waits on the GPU process, including any shader still compiling in
   // parallel (over 500 ms seen on a switch), so the targets a switch or a governor level adds
   // skip it: they hold the visual's picture, which the limiter judges whatever it is, in the
-  // feedback format start checked. A start checks one target of each format and size it builds,
-  // at every start: an allocation that fails at one size can succeed at another (Codex round
-  // 29). The second target of a pair is the first one's twin, and the limiter's fixed-size
-  // targets are the same at every start, so those are checked at the renderer's first start
-  // only: four checks a later start, and none while a visual compiles (draw, Codex round 30).
-  // start reads the result.
+  // feedback format start checked. A start checks every target it builds at its size: an
+  // allocation that fails at one size can succeed at another (Codex round 29), and either
+  // target of a pair can fail alone, which alternating between them would show as a flash
+  // (Codex round 31). The limiter's fixed-size targets are the same at every start, so those
+  // are checked at the renderer's first start only, and nothing is checked while a visual
+  // compiles (draw, Codex round 30). start reads the result.
   private framebuffer(attachments: WebGLTexture[], verify = true): WebGLFramebuffer {
     const gl = this.gl;
     const f = must(gl.createFramebuffer());

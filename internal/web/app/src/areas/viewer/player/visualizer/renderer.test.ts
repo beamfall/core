@@ -995,17 +995,18 @@ describe("Renderer geometry (CORE-2516)", () => {
   // Codex round 29: only the first start checked its framebuffers, so a target whose storage
   // failed at a later size was drawn into anyway. The limiter read its zeros, counted nothing
   // over the area limit and passed a full-screen red frame on a spent grant.
-  // Codex round 30: twelve checks a start, each a wait on the GPU process. One of each format
-  // and size is enough: the feedback, the history, the output and the row counts at every
-  // start, and the limiter's four fixed-size targets at the first.
-  it("checks the framebuffers of every start, one of each format and size", () => {
+  // Codex round 30: each check is a wait on the GPU process, and the limiter's fixed-size
+  // targets are the same at every start, so they are checked at the first only. Codex round
+  // 31: either target of a pair can fail alone, so the feedback, history and output pairs and
+  // the row counts, seven targets, are all checked at every start.
+  it("checks every target of every start, and the fixed-size ones at the first", () => {
     const { r, draw, through, count, canvas } = make();
     draw(640, 360);
-    expect(count.checks).toBe(8);
+    expect(count.checks).toBe(12);
     through((ms) => draw(800, 450, ms / 1000));
     expect([canvas.width, canvas.height]).toEqual([800, 450]);
     expect(r.size).not.toBe(null);
-    expect(count.checks).toBe(12);
+    expect(count.checks).toBe(19);
   });
 
   // Codex round 30: a framebuffer check waits for a shader compiling in parallel, on the page's
@@ -1079,9 +1080,9 @@ describe("Renderer geometry (CORE-2516)", () => {
     blocks.length = 0;
     clears.length = 0;
     // The limiter's row-count target, the last framebuffer a later start checks.
-    count.incompleteAt = checks + 4;
+    count.incompleteAt = checks + 7;
     expect(() => draw(800, 450, 0.125)).toThrow("incomplete framebuffer");
-    expect(count.checks).toBe(checks + 4);
+    expect(count.checks).toBe(checks + 7);
     // No frame, nothing drawn through the limiter, black on the canvas, every target freed.
     expect(r.size).toBe(null);
     expect(renderer.shown).toBe(null);
@@ -1091,6 +1092,24 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(count.textures).toBeGreaterThan(textures);
     expect(first.fOut.every((f) => deleted.has(f))).toBe(true);
     expect(deleted.size).toBeGreaterThanOrEqual(2 * (count.textures - textures));
+  });
+
+  // Codex round 31: a start checked only the first of each pair of targets, and the frames
+  // alternate between the two outputs, so an incomplete second one cleared every other frame to
+  // black and the next blit brought the picture back. Every target a start builds is checked.
+  it("fails a start whose second output framebuffer is incomplete", () => {
+    const { r, draw, count, blits } = make();
+    draw(640, 360);
+    const checks = count.checks;
+    draw(800, 450);
+    for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
+    expect(r.size).toBe(null);
+    blits.length = 0;
+    // Feedback, history and output targets come in pairs; the second output is the sixth.
+    count.incompleteAt = checks + 6;
+    expect(() => draw(800, 450, 0.125)).toThrow("incomplete framebuffer");
+    expect(r.size).toBe(null);
+    expect(blits).toEqual([]);
   });
 
   // Codex round 18: the limiter ages evidence by the time frames are shown apart, which a late
