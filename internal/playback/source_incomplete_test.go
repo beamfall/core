@@ -340,7 +340,7 @@ func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
 		inspected = true
 		return 0, true // removed output would look like EOF at zero
 	})
-	if err != nil || observed || inspected {
+	if !errors.Is(err, ErrSessionEvicted) || observed || inspected {
 		t.Fatalf("evicted output inspected=%v observed=%v err=%v", inspected, observed, err)
 	}
 }
@@ -386,8 +386,10 @@ func TestSourceInspectionDiscardsEvictedResult(t *testing.T) {
 			seedUnrelatedSessions(t, sessions)
 			key := SessionKey{SessionID: "inspecting", MediaID: media.ID}
 			done := make(chan error, 1)
+			var path string
 			go func() {
-				_, err := sessions.FilePath(ctx, key, source, 120, 1280, 720, false, name)
+				var err error
+				path, err = sessions.FilePath(ctx, key, source, 120, 1280, 720, false, name)
 				done <- err
 			}()
 			latch.wait(t)
@@ -412,8 +414,13 @@ func TestSourceInspectionDiscardsEvictedResult(t *testing.T) {
 				t.Fatal("fixture did not replace the session for the same durable source generation")
 			}
 			latch.unblock()
-			if err := awaitSessionOperation(t, done); err != nil {
-				t.Fatalf("request accepted stale EOF or failed: %v", err)
+			requestErr := awaitSessionOperation(t, done)
+			if caller == "segment request" {
+				if !errors.Is(requestErr, ErrSessionEvicted) || path != "" {
+					t.Fatalf("evicted segment returned path=%q, err=%v, want no path and ErrSessionEvicted", path, requestErr)
+				}
+			} else if requestErr != nil {
+				t.Fatalf("init request failed: %v", requestErr)
 			}
 			if exited != nil {
 				select {

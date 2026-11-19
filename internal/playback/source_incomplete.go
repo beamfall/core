@@ -102,5 +102,11 @@ func (s *Sessions) observeIncompleteSource(key SessionKey, session *hlsSession, 
 	if observed && session.secure == nil {
 		s.incompleteSources.remember(session.src, session.sourceInfo)
 	}
+	s.mu.Lock()
+	current := s.liveLocked(key, session)
+	s.mu.Unlock()
+	if !current {
+		return 0, false, ErrSessionEvicted
+	}
 	return end, observed, err
 }

@@ -224,6 +224,7 @@ const (
 type sessionInitialization struct {
 	ready chan struct{} // files are ready, or the session was removed
 	done  chan struct{} // the initializer has finished any required cleanup
+	err   error         // set under Sessions.mu before ready closes on setup failure
 }
 
 type hlsSession struct {
@@ -539,6 +540,8 @@ type Sessions struct {
 	// waits for all off-lock setup and teardown to finish so no encoder,
 	// lease or directory outlives it.
 	detached int
+	// sweeping counts orphan sweeps admitted before Close began.
+	sweeping int
 	// offLockIdle, when non-nil, is closed when off-lock work finishes.
 	offLockIdle chan struct{}
 	// closed is set by Close; once set no session is created.
@@ -569,12 +572,13 @@ type sessionTeardown struct {
 	live    *encderiv.LiveSession
 }
 
-// runTeardowns stops each process, removes each directory, then releases each
-// lease and transcode slot. Call it without s.mu held.
+// runTeardowns stops detached encoders and cleans up their artifacts before
+// waiting for detached initializers, whose writes may be blocked. Call it
+// without s.mu held.
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 	for _, t := range teardowns {
 		if t.setupDone != nil {
-			<-t.setupDone
+			continue
 		}
 		if t.liveRun != nil {
 			t.liveRun.Revoke()
@@ -597,6 +601,16 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 		s.wakeCloseLocked()
 		s.mu.Unlock()
 	}
+	for _, t := range teardowns {
+		if t.setupDone == nil {
+			continue
+		}
+		<-t.setupDone
+		s.mu.Lock()
+		s.detached--
+		s.wakeCloseLocked()
+		s.mu.Unlock()
+	}
 }
 
 func (s *Sessions) removeSessionDir(dir string) error {
@@ -606,8 +620,8 @@ func (s *Sessions) removeSessionDir(dir string) error {
 	return os.RemoveAll(dir)
 }
 
-// wakeCloseLocked wakes a waiting Close once no setup or teardown is running
-// with mu released. Callers hold mu.
+// wakeCloseLocked wakes a waiting Close after all tracked off-lock work ends.
+// Callers hold mu.
 func (s *Sessions) wakeCloseLocked() {
 	if s.offLockIdleLocked() && s.offLockIdle != nil {
 		close(s.offLockIdle)
@@ -615,10 +629,10 @@ func (s *Sessions) wakeCloseLocked() {
 	}
 }
 
-// offLockIdleLocked reports whether no session setup or teardown is running
-// with mu released. Callers hold mu.
+// offLockIdleLocked reports whether all tracked off-lock work has ended.
+// Callers hold mu.
 func (s *Sessions) offLockIdleLocked() bool {
-	return s.starting == 0 && s.stopping == 0 && s.detached == 0
+	return s.starting == 0 && s.stopping == 0 && s.detached == 0 && s.sweeping == 0
 }
 
 // stop stops proc and waits for it to exit. Call it without s.mu held.
@@ -1076,7 +1090,7 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 		}
 	}
 	audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, priority)
+	session, err := s.session(ctx, key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1375,7 +1389,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(ctx context.Context, key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
 	// Capture the generation before encoding, outside the session lock.
 	var sourceInfo os.FileInfo
 	if secure == nil {
@@ -1396,10 +1410,19 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		}
 	}()
 	if pending := s.sessions[key]; pending != nil && pending.initializing != nil {
-		ready := pending.initializing.ready
+		initializing := pending.initializing
 		s.mu.Unlock()
-		<-ready
+		select {
+		case <-initializing.ready:
+		case <-ctx.Done():
+		}
 		s.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if initializing.err != nil {
+			return nil, initializing.err
+		}
 		if !s.liveLocked(key, pending) {
 			return nil, ErrSessionEvicted
 		}
@@ -1491,6 +1514,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	s.mu.Lock()
 	current := s.liveLocked(key, session)
 	if current {
+		setup.err = err
 		close(setup.ready)
 		session.initializing = nil
 	}
@@ -2204,12 +2228,23 @@ var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 // unseal closed — can react; NewSessionsInDir has none, so it discards it.
 func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return os.ErrClosed
+	}
+	s.sweeping++
 	lastID := s.nextID
 	live := make(map[string]struct{}, len(s.sessions))
 	for _, session := range s.sessions {
 		live[filepath.Base(session.dir)] = struct{}{}
 	}
 	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.sweeping--
+		s.wakeCloseLocked()
+		s.mu.Unlock()
+	}()
 	readDir := os.ReadDir
 	if s.readOrphanDirs != nil {
 		readDir = s.readOrphanDirs
@@ -2242,8 +2277,9 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 }
 
 // Close stops every running transcode and removes its working directory. It
-// also waits for setup, encoder starts and teardowns running with the lock
-// released. Setup and starts clean up their own work if their session is gone.
+// also waits for setup, encoder starts, teardowns and orphan sweeps running
+// with the lock released. Setup and starts clean up their own work if their
+// session is gone.
 // Keyframe probes still running are cancelled and waited for, and no session
 // is created once Close has begun.
 func (s *Sessions) Close() {
