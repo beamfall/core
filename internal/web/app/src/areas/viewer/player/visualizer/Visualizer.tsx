@@ -5,7 +5,7 @@ import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
-import { Renderer } from "./renderer";
+import { MAX_SIDE, Renderer } from "./renderer";
 import { canVisualize, type VisualChoice } from "./visualChoice";
 import {
   chosenVisual,
@@ -24,23 +24,32 @@ const MAX_DT = 0.1;
 const MAX_DPR = 2;
 
 /**
- * The canvas's backing size in device pixels, with the pixel ratio capped at MAX_DPR. The
- * observer's device-pixel box is exact, so the blit lands one texel per pixel at a fractional
- * ratio; without it the CSS size times the ratio is rounded (CORE-2516).
+ * The canvas's backing size in texels and the texel's side in physical pixels: a whole number,
+ * the fewest that keep the ratio of texels to CSS pixels at most MAX_DPR and each side at most
+ * MAX_SIDE. The canvas is drawn pixelated when a texel spans several physical pixels, so each
+ * shows its texel's colour: interpolated pixels between texels would make changes of their own
+ * that the flash limiter never saw (Codex round 12). The observer's device-pixel box is exact;
+ * without it the CSS size times the ratio is used (CORE-2516). The texels fit inside the box,
+ * rounded down, and the canvas is sized to exactly texels times texel device pixels, letterboxed,
+ * so no texel is stretched across a fractional pixel (Codex round 13).
  */
 export function backingSize(
   device: { inlineSize: number; blockSize: number } | null,
   cssWidth: number,
   cssHeight: number,
   ratio: number,
-): [number, number] {
+): [number, number, number] {
   const r = ratio > 0 ? ratio : 1;
-  const dpr = Math.min(MAX_DPR, r);
-  if (device) {
-    const k = dpr / r;
-    return [Math.round(device.inlineSize * k), Math.round(device.blockSize * k)];
-  }
-  return [Math.round(cssWidth * dpr), Math.round(cssHeight * dpr)];
+  const w = device ? device.inlineSize : cssWidth * r;
+  const h = device ? device.blockSize : cssHeight * r;
+  const texel = Math.max(
+    1,
+    Math.ceil(r / MAX_DPR - 1e-9),
+    Math.ceil(w / MAX_SIDE),
+    Math.ceil(h / MAX_SIDE),
+  );
+  const fit = (n: number) => Math.max(1, Math.floor(n / texel + 1e-6));
+  return [fit(w), fit(h), texel];
 }
 // How the audio values glide across a track change (CORE-2218): toward rest while the next
 // track's analysis is not ready, and up into it once it is, for this long.
@@ -155,8 +164,10 @@ export function Visualizer({
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    // The canvas's size from a ResizeObserver, in device pixels where the browser reports them,
-    // so the draw loop reads no layout. Until it reports, and without one, the loop measures.
+    // The slot's size from a ResizeObserver, in device pixels where the browser reports them,
+    // so the draw loop reads no layout. Until it reports, and without one, the loop measures. The
+    // slot, not the canvas, is observed: the loop sizes the canvas to the frame it shows.
+    const slot = canvas.parentElement ?? canvas;
     let device: { inlineSize: number; blockSize: number } | null = null;
     let css: { width: number; height: number } | null = null;
     const observer =
@@ -169,10 +180,24 @@ export function Visualizer({
             css = { width: entry.contentRect.width, height: entry.contentRect.height };
           });
     try {
-      observer?.observe(canvas, { box: "device-pixel-content-box" });
+      observer?.observe(slot, { box: "device-pixel-content-box" });
     } catch {
-      observer?.observe(canvas);
+      observer?.observe(slot);
     }
+    // The canvas's CSS size: the frame the renderer shows, texels times texel device pixels. It
+    // keeps the old size while a display-scale change fades out (Codex round 13).
+    let cssSize = "";
+    const fitCanvas = (renderer: Renderer) => {
+      const shown = renderer.shown;
+      if (!shown) return;
+      const r = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+      const texel = shown.texel || 1;
+      const next = `${(shown.width * texel) / r}px ${(shown.height * texel) / r}px`;
+      if (next === cssSize) return;
+      cssSize = next;
+      canvas.style.width = `${(shown.width * texel) / r}px`;
+      canvas.style.height = `${(shown.height * texel) / r}px`;
+    };
     const fail = (err: unknown) => {
       if (!alive) return;
       console.warn("visualizer: off", err);
@@ -205,10 +230,28 @@ export function Visualizer({
       const dt = Math.min(MAX_DT, frameMs / 1000);
       last = now;
       if (!renderer || !video || document.hidden) return;
-      // Paused by the listener: hold still. Paused while a new source loads: keep moving.
-      if (video.paused && video.readyState >= HAVE_FUTURE_DATA) return;
-      const box = css ?? canvas.getBoundingClientRect();
-      const [width, height] = backingSize(device, box.width, box.height, window.devicePixelRatio);
+      const box = css ?? slot.getBoundingClientRect();
+      const [width, height, texel] = backingSize(
+        device,
+        box.width,
+        box.height,
+        window.devicePixelRatio,
+      );
+      // Paused by the listener: hold still. Paused while a new source loads: keep moving. A size
+      // or display-scale change still draws while paused until the shown frame matches it, so a
+      // stale frame is never stretched (Codex round 13).
+      const held = renderer.shown;
+      if (
+        video.paused &&
+        video.readyState >= HAVE_FUTURE_DATA &&
+        held &&
+        held.width === width &&
+        held.height === height &&
+        held.texel === texel
+      )
+        return;
+      const rendering = texel > 1 ? "pixelated" : "";
+      if (canvas.style.imageRendering !== rendering) canvas.style.imageRendering = rendering;
       try {
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
@@ -218,7 +261,8 @@ export function Visualizer({
         if (target === silent) tau = SETTLE_TAU;
         else if (current && now - current.since < ARRIVE_SECONDS * 1000) tau = ARRIVE_TAU;
         easeFrame(shown, target, tau ? 1 - Math.exp(-dt / tau) : 1);
-        renderer.draw(width, height, dt, shown, !!reduced?.matches, frameMs);
+        renderer.draw(width, height, dt, shown, !!reduced?.matches, frameMs, texel);
+        fitCanvas(renderer);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {
         cancelAnimationFrame(frame);

@@ -140,17 +140,36 @@ describe("rotation (CORE-2368)", () => {
 });
 
 describe("backingSize", () => {
-  it("uses the device-pixel box at DPR up to 2", () => {
-    expect(backingSize({ inlineSize: 781, blockSize: 439 }, 390.5, 219.5, 2)).toEqual([781, 439]);
+  it("uses the device-pixel box, one physical pixel a texel, at DPR up to 2", () => {
+    expect(backingSize({ inlineSize: 781, blockSize: 439 }, 390.5, 219.5, 2)).toEqual([
+      781, 439, 1,
+    ]);
   });
 
-  it("scales the device-pixel box down to DPR 2", () => {
-    expect(backingSize({ inlineSize: 1200, blockSize: 900 }, 400, 300, 3)).toEqual([800, 600]);
+  // Codex round 12: a fractional texel interpolates between texels on the display, and the
+  // texel size, not the CSS ratio, is the display scale.
+  it("covers whole physical pixels with each texel above DPR 2", () => {
+    expect(backingSize({ inlineSize: 1200, blockSize: 900 }, 400, 300, 3)).toEqual([600, 450, 2]);
+    expect(backingSize({ inlineSize: 1600, blockSize: 1200 }, 400, 300, 4)).toEqual([800, 600, 2]);
+    expect(backingSize({ inlineSize: 1200, blockSize: 900 }, 600, 450, 2)).toEqual([1200, 900, 1]);
+  });
+
+  it("keeps each side within the limiter's largest frame", () => {
+    expect(backingSize({ inlineSize: 10000, blockSize: 5000 }, 10000, 5000, 1)).toEqual([
+      5000, 2500, 2,
+    ]);
+  });
+
+  // Codex round 13: the texels fit inside the box, so a texel never spans a fractional pixel.
+  it("rounds the texels down to fit the device box", () => {
+    expect(backingSize({ inlineSize: 1201, blockSize: 901 }, 400.3, 300.3, 3)).toEqual([
+      600, 450, 2,
+    ]);
   });
 
   it("falls back to the CSS box, and to DPR 1 for a bad ratio", () => {
-    expect(backingSize(null, 400.4, 300.6, 1.5)).toEqual([601, 451]);
-    expect(backingSize(null, 400, 300, 0)).toEqual([400, 300]);
+    expect(backingSize(null, 400.4, 300.6, 1.5)).toEqual([600, 450, 1]);
+    expect(backingSize(null, 400, 300, 0)).toEqual([400, 300, 1]);
   });
 });
 

@@ -871,10 +871,18 @@
 .bf-audio-visualizer {
   position: absolute;
   inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
 }
 
+/* The draw loop sizes the canvas to whole texels of whole device pixels, letterboxed in the
+   slot, so no texel is resampled (Codex round 13). */
 .bf-audio-visualizer-canvas {
   display: block;
+  flex: none;
   width: 100%;
   height: 100%;
 }

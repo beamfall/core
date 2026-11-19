@@ -20,6 +20,7 @@ const made = vi.hoisted(() => ({
 
 vi.mock("./oscillux", () => ({ loadOscillux: () => Promise.resolve({}) }));
 vi.mock("./renderer", () => ({
+  MAX_SIDE: 8192,
   Renderer: {
     create: async () => {
       const gate = made.gate;

@@ -1,7 +1,7 @@
 // Draws one Oscillux visual on a WebGL2 canvas. A frame is, in order: the visual's pass into a
 // feedback target (during a switch, the outgoing visual's pass too and Oscillux's switch pass
 // blending the two), Oscillux's present pass (its overlay block packed by the wasm core) into an
-// RGBA8 frame, the seven passes of Oscillux's frame flash limiter, and a blit of the limited
+// RGBA8 frame, the six passes of Oscillux's frame flash limiter, and a blit of the limited
 // frame to the canvas. The pass order, bindings and limiter clock follow the release's own
 // reference hosts (hosts/web/host.js and tools/shader/limiter-check.mjs at the pinned rev).
 // Every shader is Oscillux's, unchanged; this file only binds and schedules them.
@@ -13,28 +13,84 @@ import type { Oscillux } from "./oscillux";
 import { shaderSource } from "./oscillux";
 import type { Visual } from "./visuals";
 
-// The frame flash limiter: the WCAG 2.x reference window (5 x 3 cells, 64 sub-blocks) and its
-// clock (tools/shader/limiter-model.mjs, limiter-geometry.mjs).
-const LIMIT_COLS = 5;
-const LIMIT_ROWS = 3;
-const LIMIT_SUBBLOCKS = 64;
+// The frame flash limiter's clock (tools/shader/limiter-model.mjs) and its WCAG 2.x reference
+// field, a third of the frame each way (tools/shader/limiter-geometry.mjs).
 const TICK_MS = 1000 / 15 / 64;
+const TICKS = 240;
+const GRID_X = 16;
+const GRID_Y = 9;
+const SUB = 4;
 const TOKEN = 65025;
 const MAX_FLASH_HZ = 3;
+/** The limiter's grant state with every budget just spent: two luma tokens of deficit (bit 8 of x
+ * carries one), a red token and no credit (Oscillux shaders/limiter/grant.glsl). */
+const SPENT = new Uint32Array([256, TOKEN, TOKEN, 0]);
+/** How long a display-scale change presents black: longer than the limiter's coverage interval,
+ * 1 / (5 maxFlashHz) s (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). */
+export const SCALE_BLACK_S = 0.1;
+/** How long a display-scale change first fades the output to black through the limiter at the old
+ * size: longer than the slowest grant of a fall, the red token's refill of 8 / (2 maxFlashHz) s
+ * (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). */
+export const SCALE_FADE_S = 2;
 /** The limiter's smallest frame: one pixel per sub-block. */
 export const MIN_WIDTH = 64;
 export const MIN_HEIGHT = 36;
+/** The largest frame side the limiter supports: its sub-block counts are 16-bit (Oscillux
+ * shaders/limiter/README.md, "Frame size"). Larger canvases render scaled down, keeping aspect. */
+export const MAX_SIDE = 8192;
 
-const LIMITER = ["rows", "reduce", "cells", "windows", "grant", "state", "output"] as const;
+/** The render size for a canvas of `width` x `height`: at least the minimum on each side and at
+ * most MAX_SIDE on the longer one, scaled down uniformly so the frame keeps its aspect. */
+export function frameSize(width: number, height: number): [number, number] {
+  const k = Math.min(1, MAX_SIDE / Math.max(width, height));
+  return [
+    Math.min(MAX_SIDE, Math.max(MIN_WIDTH, Math.round(width * k))),
+    Math.min(MAX_SIDE, Math.max(MIN_HEIGHT, Math.round(height * k))),
+  ];
+}
+
+const LIMITER = ["rows", "reduce", "cells", "windows", "grant", "output"] as const;
 const LIMITER_SAMPLERS: Record<(typeof LIMITER)[number], readonly string[]> = {
-  rows: ["uFrame", "uHist"],
-  reduce: ["uRows", "uT0", "uT1"],
-  cells: ["uS", "uT2"],
+  rows: ["uFrame", "uTrack"],
+  reduce: ["uRows"],
+  cells: ["uS"],
   windows: ["uC"],
   grant: ["uC", "uW", "uG"],
-  state: ["uS", "uG", "uT0", "uT1", "uT2"],
-  output: ["uFrame", "uHist", "uT1"],
+  output: ["uFrame", "uHist", "uTrack", "uG"],
 };
+
+export interface LimiterWindow {
+  cols: number;
+  rows: number;
+  limit: number;
+}
+
+// The most cells a run of `len` pixels touches along an axis of `n` pixels split into `cells`
+// cells of SUB sub-blocks each.
+function span(len: number, n: number, cells: number): number {
+  const cellOf = (x: number) => Math.floor(Math.floor((cells * SUB * (x + 1) - 1) / n) / SUB);
+  let most = 1;
+  for (let s = 0; s + len <= n; s++) most = Math.max(most, cellOf(s + len - 1) - cellOf(s) + 1);
+  return most;
+}
+
+/** windowOf("wcag", W, H) from tools/shader/limiter-geometry.mjs for a W x H frame whose texels
+ * are `texel` physical pixels on a side: the field is a third of the physical display each way,
+ * the window the fewest whole cells that contain every texel the field touches wherever it sits,
+ * and the area limit a quarter of the field's physical pixels over the texel's area, so a patch
+ * over the physical limit is over it in texels (Codex round 13). */
+export function limiterWindow(W: number, H: number, texel = 1): LimiterWindow {
+  const fieldPx = (n: number) => Math.max(1, Math.min(n * texel, Math.round((n * texel) / 3)));
+  const touched = (px: number, n: number) =>
+    Math.min(n, texel === 1 ? px : Math.ceil((px - 1) / texel) + 1);
+  const fwPx = fieldPx(W);
+  const fhPx = fieldPx(H);
+  return {
+    cols: span(touched(fwPx, W), W, GRID_X),
+    rows: span(touched(fhPx, H), H, GRID_Y),
+    limit: Math.floor((fwPx * fhPx) / 4 / (texel * texel)),
+  };
+}
 const LIMITER_VERTEX =
   "#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }";
 
@@ -124,17 +180,17 @@ interface Limiter {
   c: WebGLTexture;
   w: WebGLTexture;
   g: WebGLTexture[];
-  t0: WebGLTexture[];
-  t1: WebGLTexture[];
-  t2: WebGLTexture[];
+  /** Per-pixel tracker state, RGBA16UI at the frame size. */
+  track: WebGLTexture[];
   out: WebGLTexture[];
   fRows: WebGLFramebuffer;
   fS: WebGLFramebuffer;
   fC: WebGLFramebuffer;
   fW: WebGLFramebuffer;
   fG: WebGLFramebuffer[];
-  fState: WebGLFramebuffer[];
+  /** The output pass's targets: out[i] and track[i]. */
   fOut: WebGLFramebuffer[];
+  window: LimiterWindow;
   cur: number;
 }
 
@@ -241,6 +297,13 @@ export class Renderer {
   private wanted: Visual | null = null;
   private reducedMotion = false;
   private size: Size | null = null;
+  // Physical pixels per frame texel at the last resize (0 before the first).
+  private displayScale = 0;
+  // Seconds of black left to present after a display-scale change, counted once black is shown.
+  private black = 0;
+  private blackShown = false;
+  // Seconds left of the fade to black before a display-scale change, or -1 outside one.
+  private fadeLeft = -1;
   private time = 0;
   private clockMs = 0;
   private presented = 0;
@@ -510,7 +573,8 @@ export class Renderer {
     return program;
   }
 
-  /** Draws one frame at width x height device pixels, dt seconds after the last. */
+  /** Draws one frame at width x height texels, each `texel` physical pixels on a side, dt seconds
+   * after the last. */
   draw(
     width: number,
     height: number,
@@ -518,11 +582,15 @@ export class Renderer {
     audio: AudioFrame,
     reducedMotion: boolean,
     frameMs = dt * 1000,
+    texel = 1,
   ): void {
     if (!this.visual) return;
     const gl = this.gl;
     this.reducedMotion = reducedMotion;
-    const size = this.resize(Math.max(MIN_WIDTH, width), Math.max(MIN_HEIGHT, height));
+    // A display-scale change first fades the output to black at the old size (fading), then
+    // switches with the limiter's state tracked black and its budgets spent (resize).
+    const fading = this.fading(texel, dt);
+    const size = fading && this.size ? this.size : this.resize(...frameSize(width, height), texel);
     const { width: W, height: H } = size;
     this.time += dt;
     const p = this.switchProgress(reducedMotion);
@@ -568,7 +636,23 @@ export class Renderer {
     bind(gl, 4, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, histNext.fbo);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // While fading, the limiter is fed black, so the output falls to black through its grant.
+    if (fading) gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
     size.history = [histNext, histPrev];
+
+    // After a display-scale change the canvas shows black, not the limiter, for SCALE_BLACK_S
+    // counted from the first black frame shown, so no tracker stamp from before it is recent when
+    // content returns (Codex round 13). The output had faded to black first, so showing black is
+    // no transition. The visual and its history keep running; the limiter starts from black with
+    // every budget spent (resize).
+    if (this.black > 0) {
+      if (this.blackShown) this.black -= dt;
+      this.blackShown = true;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      return;
+    }
 
     // 3. The frame flash limiter.
     this.limit(size, dt);
@@ -579,6 +663,27 @@ export class Renderer {
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+  }
+
+  /** The frame shown: its size in texels and the texel's side in physical pixels. During a
+   * display-scale change's fade it is the old one, which the host keeps presenting at its old
+   * size. */
+  get shown(): { width: number; height: number; texel: number } | null {
+    return this.size
+      ? { width: this.size.width, height: this.size.height, texel: this.displayScale }
+      : null;
+  }
+
+  // Whether this frame fades to black before a display-scale change to `texel`: for SCALE_FADE_S
+  // after the change is first asked for. A change asked for before the first frame, or back to
+  // the current scale, needs none.
+  private fading(texel: number, dt: number): boolean {
+    if (!this.size || this.displayScale === 0 || texel === this.displayScale) {
+      this.fadeLeft = -1;
+      return false;
+    }
+    this.fadeLeft = this.fadeLeft < 0 ? SCALE_FADE_S : this.fadeLeft - dt;
+    return this.fadeLeft > 0;
   }
 
   // Draws a visual from feedback[0] into feedback[1] and returns that target.
@@ -756,11 +861,11 @@ export class Renderer {
     const L = size.limiter;
     this.clockMs += dt * 1000;
     const refill = Math.floor(Math.min(1, Math.max(0, 2 * MAX_FLASH_HZ * dt)) * TOKEN);
-    const tick = Math.floor(this.clockMs / TICK_MS) % 255;
+    const tick = Math.floor(this.clockMs / TICK_MS) % TICKS;
     this.limiterBlock.set([
-      LIMIT_COLS,
-      LIMIT_ROWS,
-      LIMIT_SUBBLOCKS,
+      L.window.cols,
+      L.window.rows,
+      L.window.limit,
       refill,
       tick,
       Math.fround(dt * 1000),
@@ -772,16 +877,15 @@ export class Renderer {
     gl.bindBufferBase(gl.UNIFORM_BUFFER, 0, this.limiterUbo);
     const a = L.cur;
     const b = a ^ 1;
-    const [rows, reduce, cells, windows, grant, state, output] = this.limiter;
+    const [rows, reduce, cells, windows, grant, output] = this.limiter;
     const W = size.width;
     const H = size.height;
-    this.pass(rows, L.fRows, 64, H, [size.frame, L.out[a]]);
-    this.pass(reduce, L.fS, 64, 36, [L.rows, L.t0[a], L.t1[a]]);
-    this.pass(cells, L.fC, 16, 9, [L.s, L.t2[a]]);
+    this.pass(rows, L.fRows, 64, H, [size.frame, L.track[a]]);
+    this.pass(reduce, L.fS, 64, 36, [L.rows]);
+    this.pass(cells, L.fC, 16, 9, [L.s]);
     this.pass(windows, L.fW, 16, 9, [L.c]);
     this.pass(grant, L.fG[b], 1, 1, [L.c, L.w, L.g[a]]);
-    this.pass(state, L.fState[b], 64, 36, [L.s, L.g[b], L.t0[a], L.t1[a], L.t2[a]]);
-    this.pass(output, L.fOut[b], W, H, [size.frame, L.out[a], L.t1[b]]);
+    this.pass(output, L.fOut[b], W, H, [size.frame, L.out[a], L.track[a], L.g[b]]);
     L.cur = b;
   }
 
@@ -800,12 +904,18 @@ export class Renderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  // The targets for a W x H canvas, rebuilt when the size changes. The flash limiter's
-  // temporal state (trackers, hold field and tokens) lives on the fixed 64 x 36 sub-block grid,
-  // so it carries over a resize, and the last output is scaled into the new history: resizing
-  // never hands a strobe a fresh flash budget (CORE-2516).
-  private resize(W: number, H: number): Size {
-    if (this.size && this.size.width === W && this.size.height === H) return this.size;
+  // The targets for a W x H canvas, rebuilt when the size changes. The flash limiter's state is
+  // never cleared after the start and every resize spends its budgets, so resizing never hands a
+  // strobe a fresh flash budget (CORE-2516).
+  private resize(W: number, H: number, texel: number): Size {
+    if (
+      this.size &&
+      this.size.width === W &&
+      this.size.height === H &&
+      texel === this.displayScale
+    ) {
+      return this.size;
+    }
     // A size change ends a switch, as in the reference host.
     this.endSwitch();
     const old = this.size;
@@ -815,6 +925,9 @@ export class Renderer {
     const canvas = gl.canvas as HTMLCanvasElement;
     canvas.width = W;
     canvas.height = H;
+    // Physical pixels per texel: a resize at the same scale keeps every on-screen position.
+    const sameScale = texel === this.displayScale;
+    this.displayScale = texel;
     const { internal, type } = this.feedbackFormat;
     const render = renderQuality(W, H, this.level);
     const feedback = this.feedbackPair(render.width, render.height, internal, type);
@@ -827,22 +940,32 @@ export class Renderer {
     });
     const rows = this.storage(64, H, gl.RGBA32UI);
     const out = [0, 1].map(() => this.storage(W, H, gl.RGBA8));
-    const fOut = out.map((x) => this.framebuffer([x]));
+    const track = [0, 1].map(() => this.storage(W, H, gl.RGBA16UI));
+    const fOut = out.map((x, i) => this.framebuffer([x, track[i]]));
+    for (const f of fOut) this.clearOutput(f);
+    const window = limiterWindow(W, H, texel);
     const limiter: Limiter = kept
-      ? { ...kept, rows, out, fRows: this.framebuffer([rows]), fOut }
-      : this.newLimiterState(rows, out, fOut);
+      ? { ...kept, rows, out, track, fRows: this.framebuffer([rows]), fOut, window }
+      : this.newLimiterState(rows, out, track, fOut, window);
     if (kept && old) {
-      this.copy(
-        { tex: kept.out[kept.cur], fbo: kept.fOut[kept.cur] },
-        old.width,
-        old.height,
-        { tex: out[kept.cur], fbo: fOut[kept.cur] },
-        W,
-        H,
-      );
+      const i = kept.cur;
+      // The limiter's history follows what is on screen (Oscillux shaders/limiter/README.md,
+      // "Ping-pong and reset"): at the same scale the overlap is copied 1:1 from the top-left,
+      // where the canvas is anchored, and new area starts tracked black; after a scale change
+      // the whole output and tracker state start tracked black, never resampled or stretched,
+      // and the canvas presents black for SCALE_BLACK_S (draw). Either way the budgets are
+      // written spent.
+      if (sameScale) {
+        this.copyAnchored(kept.out[i], old.width, old.height, out[i], W, H);
+        this.copyAnchored(kept.track[i], old.width, old.height, track[i], W, H);
+      } else {
+        this.black = SCALE_BLACK_S;
+        this.blackShown = false;
+      }
+      this.spend(limiter);
       gl.deleteTexture(kept.rows);
       gl.deleteFramebuffer(kept.fRows);
-      kept.out.forEach((t) => gl.deleteTexture(t));
+      [...kept.out, ...kept.track].forEach((t) => gl.deleteTexture(t));
       kept.fOut.forEach((f) => gl.deleteFramebuffer(f));
     }
     this.size = {
@@ -858,6 +981,14 @@ export class Renderer {
       limiter,
     };
     return this.size;
+  }
+
+  // Marks every limiter budget just spent, in the grant state the next frame reads.
+  private spend(L: Limiter): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, L.fG[L.cur]);
+    gl.clearBufferuiv(gl.COLOR, 0, SPENT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
   // Moves the visual to a governor level between switches: only its feedback pair is rebuilt,
@@ -885,6 +1016,32 @@ export class Renderer {
     size.feedback = feedback;
     size.renderWidth = render.width;
     size.renderHeight = render.height;
+  }
+
+  // Copies the overlap of one texture into another of the same format 1:1 from the top-left,
+  // through framebuffers of one attachment each (an integer blit must be NEAREST and match every
+  // draw buffer).
+  private copyAnchored(
+    from: WebGLTexture,
+    fw: number,
+    fh: number,
+    to: WebGLTexture,
+    tw: number,
+    th: number,
+  ): void {
+    const gl = this.gl;
+    const read = this.framebuffer([from], false);
+    const draw = this.framebuffer([to], false);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw);
+    // GL rows run bottom-up, so the top-left anchor is the top rows of each.
+    const w = Math.min(fw, tw);
+    const h = Math.min(fh, th);
+    gl.blitFramebuffer(0, fh - h, w, fh, 0, th - h, w, th, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.deleteFramebuffer(read);
+    gl.deleteFramebuffer(draw);
   }
 
   // Copies one target into another, scaling with linear filtering when the sizes differ.
@@ -925,43 +1082,37 @@ export class Renderer {
     });
   }
 
-  // A fresh limiter on the fixed sub-block grid, with no sub-block tracked.
+  // A fresh limiter: no token deficit, and its output targets arrive black and tracked black.
   private newLimiterState(
     rows: WebGLTexture,
     out: WebGLTexture[],
+    track: WebGLTexture[],
     fOut: WebGLFramebuffer[],
+    window: LimiterWindow,
   ): Limiter {
     const gl = this.gl;
-    const u16 = (w: number, h: number) => this.storage(w, h, gl.RGBA16UI);
-    const two = <T>(make: () => T) => [make(), make()];
-    const s = u16(64, 36);
-    const c = u16(16, 9);
-    const w = u16(16, 9);
-    const g = two(() => u16(1, 1));
-    const t0 = two(() => u16(64, 36));
-    const t1 = two(() => u16(64, 36));
-    const t2 = two(() => u16(64, 36));
+    const s = this.storage(64, 36, gl.RGBA32UI);
+    const c = this.storage(16, 9, gl.RGBA32UI);
+    const w = this.storage(16, 9, gl.RGBA16UI);
+    const g = [0, 1].map(() => this.storage(1, 1, gl.RGBA16UI));
     const limiter: Limiter = {
       rows,
       s,
       c,
       w,
       g,
-      t0,
-      t1,
-      t2,
+      track,
       out,
       fRows: this.framebuffer([rows]),
       fS: this.framebuffer([s]),
       fC: this.framebuffer([c]),
       fW: this.framebuffer([w]),
       fG: g.map((x) => this.framebuffer([x])),
-      fState: [0, 1].map((i) => this.framebuffer([t0[i], t1[i], t2[i]])),
       fOut,
+      window,
       cur: 0,
     };
     for (const f of limiter.fG) this.clearUint(f, 1);
-    for (const f of limiter.fState) this.clearUint(f, 3);
     return limiter;
   }
 
@@ -978,11 +1129,10 @@ export class Renderer {
     }
     gl.deleteTexture(s.frame);
     if (!keepLimiter) {
-      for (const t of [L.rows, L.s, L.c, L.w, ...L.g, ...L.t0, ...L.t1, ...L.t2, ...L.out]) {
+      for (const t of [L.rows, L.s, L.c, L.w, ...L.g, ...L.track, ...L.out]) {
         gl.deleteTexture(t);
       }
-      for (const f of [L.fRows, L.fS, L.fC, L.fW, ...L.fG, ...L.fState, ...L.fOut])
-        gl.deleteFramebuffer(f);
+      for (const f of [L.fRows, L.fS, L.fC, L.fW, ...L.fG, ...L.fOut]) gl.deleteFramebuffer(f);
     }
     this.size = null;
   }
@@ -1033,6 +1183,15 @@ export class Renderer {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     for (let i = 0; i < attachments; i++) gl.clearBufferuiv(gl.COLOR, i, new Uint32Array(4));
+  }
+
+  // An output target: the frame black and the trackers tracked black (zero), so the limiter
+  // counts the first frame's rises from black (Oscillux shaders/limiter/README.md).
+  private clearOutput(fbo: WebGLFramebuffer): void {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.clearBufferfv(gl.COLOR, 0, new Float32Array(4));
+    gl.clearBufferuiv(gl.COLOR, 1, new Uint32Array(4));
   }
 
   private link(vertex: string, fragment: string): WebGLProgram {
