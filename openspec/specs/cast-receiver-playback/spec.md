@@ -1,7 +1,7 @@
 # cast-receiver-playback Specification
 
 ## Purpose
-TBD - created by archiving change core-2563-cast-receiver. Update Purpose after archive.
+Let the core web app cast to a Chromecast's Default Media Receiver, with that receiver's playback limits resolved from the shipped quirks baseline so cast streams stay within what it can decode.
 
 ## Requirements
 
