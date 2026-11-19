@@ -13,6 +13,7 @@ import type { Locale } from "@/strings";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { sectionCacheKey } from "../components/HydratedSection";
 import { entityLinkState } from "../lib/entityPreview";
+import * as watchQueue from "../lib/watchQueue";
 import { EntityPage } from "./EntityPage";
 
 const mocks = vi.hoisted(() => ({
@@ -91,7 +92,13 @@ function renderEntity(state?: unknown, locale: Locale = "en") {
 }
 
 function DetailProbe() {
-  return <output aria-label="detail">{useParams().mediaId}</output>;
+  const { mediaId } = useParams();
+  const { state } = useLocation();
+  return (
+    <output aria-label="detail">
+      {mediaId} {JSON.stringify(state)}
+    </output>
+  );
 }
 
 function pending<T>() {
@@ -121,6 +128,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   clearViewerCache();
+  vi.restoreAllMocks();
 });
 
 describe("EntityPage instant paint", () => {
@@ -594,6 +602,47 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
   });
 });
 
+it.each(["link", "Details", "Play"])(
+  "windows a long child queue only when activated through %s",
+  async (entry) => {
+    const queueWindow = vi.spyOn(watchQueue, "queueWindow");
+    const items = Array.from({ length: watchQueue.MAX_QUEUE + 101 }, (_, index) => ({
+      id: `child-${index}`,
+      kind: "media",
+      title: `Child ${index}`,
+      mediaClass: "video",
+    }));
+    const target = items.at(-2)!;
+    vi.mocked(fetchEntity).mockResolvedValue({ ...entity, archetype: "container" });
+    vi.mocked(fetchMediaForEntity).mockResolvedValue(items);
+    renderEntity();
+    const title = await screen.findByText(target.title);
+    const row = within(title.closest("li")!);
+    expect(queueWindow.mock.calls.length).toBe(0);
+
+    if (entry === "Details") {
+      fireEvent.click(row.getByRole("button", { name: `More actions for ${target.title}` }));
+      const details = await screen.findByRole("menuitem", { name: "Details" });
+      expect(queueWindow.mock.calls.length).toBe(0);
+      fireEvent.click(details);
+    } else {
+      fireEvent.click(
+        entry === "Play" ? row.getByRole("button", { name: `Play ${target.title}` }) : title,
+      );
+    }
+
+    expect(queueWindow).toHaveBeenCalledExactlyOnceWith(expect.any(Array), target.id);
+    const name = entry === "Play" ? "player" : "detail";
+    const output = screen.getByRole("status", { name }).textContent!;
+    expect(output.startsWith(`${target.id} `)).toBe(true);
+    const state: watchQueue.PlayerNavState = JSON.parse(output.slice(target.id.length + 1));
+    expect(state.queueIdentity).toBe(identity);
+    expect(state.queue?.map((item) => item.id)).toEqual(
+      items.slice(-watchQueue.MAX_QUEUE).map((item) => item.id),
+    );
+  },
+);
+
 describe.each(["list", "grid"] as const)(
   "EntityPage child navigation in a mixed detail %s layout",
   (kind) => {
@@ -627,6 +676,7 @@ describe.each(["list", "grid"] as const)(
     it.each(["title", "thumbnail", "Details", "Play"])(
       "activates the child through its %s",
       async (entry) => {
+        const queueWindow = vi.spyOn(watchQueue, "queueWindow");
         renderEntity();
         const children = await screen.findByRole("list", { name: "Children" });
         const link = within(children).getByRole("link", { name: /Related item/ });
@@ -634,6 +684,7 @@ describe.each(["list", "grid"] as const)(
           "href",
           "/watch/recent-item",
         );
+        expect(queueWindow).not.toHaveBeenCalledWith(expect.any(Array), "m1");
 
         if (entry === "title") {
           fireEvent.click(within(link).getByText("Related item"));
@@ -648,6 +699,7 @@ describe.each(["list", "grid"] as const)(
 
         const destination = entry === "Play" ? "player" : "detail";
         expect(screen.getByRole("status", { name: destination })).toHaveTextContent(/^m1\b/);
+        expect(queueWindow.mock.calls.filter(([, id]) => id === "m1")).toHaveLength(1);
       },
     );
 

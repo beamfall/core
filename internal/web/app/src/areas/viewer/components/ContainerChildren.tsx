@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
+import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL } from "../lib/artwork";
 import { childThumbURL, groupChildrenByKind } from "../lib/containerChildren";
 import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
@@ -12,8 +13,8 @@ import { preloadPlayer } from "../player/preload";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
 // A container Entity's children (CORE-1786), grouped by kind in the server's
-// order. Each child is one link in document order, so keyboard focus follows
-// the visual order; CSS lays them out as a grid on wide screens and as list
+// order. Each child's detail link comes before its actions, so keyboard focus
+// follows the visual order. CSS lays them out as a grid on wide screens and as list
 // rows (thumbnail, number, title, runtime, progress) on a phone. Motion is
 // limited to the token hover and focus states.
 export function ContainerChildren({
@@ -71,14 +72,17 @@ function ChildRow({
   const identity = useViewerIdentity();
   const navigate = useNavigate();
   const path = `/media/${encodeURIComponent(item.id)}`;
-  const queueState =
-    identity && queue.length > 0
+  function queueState() {
+    return identity && queue.length > 0
       ? { queue: queueWindow(queue, item.id), queueIdentity: identity }
       : {};
-  const linkState = { ...mediaLinkState(item, identity), ...queueState };
+  }
+  function openDetails() {
+    navigate(path, { state: { ...mediaLinkState(item, identity), ...queueState() } });
+  }
   function play() {
     navigate(`/watch/${encodeURIComponent(item.id)}`, {
-      state: { title: item.title, ...queueState },
+      state: { title: item.title, ...queueState() },
     });
   }
   const thumb = childThumbURL(item);
@@ -89,7 +93,11 @@ function ChildRow({
 
   return (
     <li className="bf-child">
-      <Link className="bf-child-link" to={path} state={linkState}>
+      <Link
+        className="bf-child-link"
+        to={path}
+        onClick={(event) => activateLink(event, openDetails)}
+      >
         <span className="bf-child-thumb" aria-hidden>
           {thumb && <img src={artworkBucketURL(thumb, "w320")} alt="" loading="lazy" />}
         </span>
@@ -148,7 +156,7 @@ function ChildRow({
             }
             target={{ mediaID: item.id }}
             onPrimary={play}
-            onDetails={() => navigate(path, { state: linkState })}
+            onDetails={openDetails}
           />
         </div>
       )}

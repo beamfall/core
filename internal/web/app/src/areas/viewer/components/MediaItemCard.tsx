@@ -7,6 +7,7 @@ import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
 import { itemTargetFor } from "../actions";
+import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL, artworkSlotURL, artworkSrcSet } from "../lib/artwork";
 import { artFrameClass } from "../lib/cardArt";
 import { cardAccessibleName, cardRating, cardState } from "../lib/cardState";
@@ -281,7 +282,8 @@ export function MediaItemCard({
     >
       <Link
         to={path}
-        state={linkState()}
+        state={showPlayButton ? undefined : linkState()}
+        onClick={showPlayButton ? (event) => activateLink(event, open) : undefined}
         aria-label={cardAccessibleName(
           { ...item, title: cardLabelTitle(item, heading, showYear, lead) },
           state,
