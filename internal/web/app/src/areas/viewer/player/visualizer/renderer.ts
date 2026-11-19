@@ -41,6 +41,12 @@ export const MAX_SIDE = 8192;
 
 /** The render size for a canvas of `width` x `height`: at least the minimum on each side and at
  * most MAX_SIDE on the longer one, scaled down uniformly so the frame keeps its aspect. */
+/** Whether a display-scale change from `from` to `to` physical pixels per texel keeps every pixel
+ * on screen: `to` is a smaller divisor of `from`. */
+export function exactDrop(from: number, to: number): boolean {
+  return from > 0 && to > 0 && to < from && from % to === 0;
+}
+
 export function frameSize(width: number, height: number): [number, number] {
   const k = Math.min(1, MAX_SIDE / Math.max(width, height));
   return [
@@ -611,9 +617,9 @@ export class Renderer {
     this.undo = null;
     // A display-scale change first fades the output to black at the old size (fading), then
     // switches with the limiter's state tracked black and its budgets spent (resize).
-    // The fade and the black interval run on the time elapsed, not the clamped step: a slow page
-    // ends them on time (Codex round 18).
-    const fading = this.fading(texel, frameMs / 1000);
+    // The fade runs on the time the limiter is credited with, so its grant has come by its end;
+    // the black interval on the same time (Codex rounds 18 and 22).
+    const fading = this.fading(texel, shownMs / 1000);
     const size = fading && this.size ? this.size : this.resize(...frameSize(width, height), texel);
     const { width: W, height: H } = size;
     // The slot clips a minimum-sized backing or an old surface still fading at its own scale.
@@ -776,14 +782,21 @@ export class Renderer {
   }
 
   // Whether this frame fades to black before a display-scale change to `texel`: for SCALE_FADE_S
-  // after the change is first asked for. A change asked for before the first frame, or back to
-  // the current scale, needs none.
-  private fading(texel: number, dt: number): boolean {
-    if (!this.size || this.displayScale === 0 || texel === this.displayScale) {
+  // of the time the limiter is credited with (shownMs), after the change is first asked for, so
+  // the fall's grant has come whatever the frame rate (Codex round 22). A change asked for before
+  // the first frame, back to the current scale, or down to a divisor of it needs none: the
+  // divisor keeps every pixel on screen (resize).
+  private fading(texel: number, shownS: number): boolean {
+    if (
+      !this.size ||
+      this.displayScale === 0 ||
+      texel === this.displayScale ||
+      exactDrop(this.displayScale, texel)
+    ) {
       this.fadeLeft = -1;
       return false;
     }
-    this.fadeLeft = this.fadeLeft < 0 ? SCALE_FADE_S : this.fadeLeft - dt;
+    this.fadeLeft = this.fadeLeft < 0 ? SCALE_FADE_S : this.fadeLeft - shownS;
     return this.fadeLeft > 0;
   }
 
@@ -1044,8 +1057,10 @@ export class Renderer {
     const canvas = gl.canvas as HTMLCanvasElement;
     canvas.width = W;
     canvas.height = H;
-    // Physical pixels per texel: a resize at the same scale keeps every on-screen position.
-    const sameScale = texel === this.displayScale;
+    // Physical pixels per texel: a resize at the same scale keeps every on-screen position, and
+    // so does a drop to a divisor of the scale, each old texel becoming k x k new ones.
+    const k = exactDrop(this.displayScale, texel) ? this.displayScale / texel : 1;
+    const sameScale = texel === this.displayScale || k > 1;
     this.displayScale = texel;
     const { internal, type } = this.feedbackFormat;
     const render = renderQuality(W, H, this.level);
@@ -1071,7 +1086,9 @@ export class Renderer {
     if (kept || this.restored) {
       // The limiter's history follows what is on screen (Oscillux shaders/limiter/README.md,
       // "Ping-pong and reset"): at the same scale the overlap is copied 1:1 from the top-left,
-      // where the canvas is anchored, and new area starts tracked black. After a scale change
+      // where the canvas is anchored, and new area starts tracked black. A drop to a divisor of
+      // the scale copies each texel and its tracker k x k times, so the screen does not change
+      // (Codex round 22). After a scale change
       // or context restore, the whole frame starts tracked black and the canvas presents black
       // for SCALE_BLACK_S (draw). Either way the budgets are written spent.
       // Only the old visible region is copied: pixels hidden by a clipped slot were never judged
@@ -1080,9 +1097,9 @@ export class Renderer {
         const i = kept.cur;
         const vw = old.visibleWidth;
         const vh = old.visibleHeight;
-        this.copyAnchored(kept.out[i], old.width, old.height, out[i], W, H, vw, vh);
-        this.copyAnchored(kept.track[i], old.width, old.height, track[i], W, H, vw, vh);
-        visible = [Math.min(vw, W), Math.min(vh, H)];
+        this.copyAnchored(kept.out[i], old.width, old.height, out[i], W, H, vw, vh, k);
+        this.copyAnchored(kept.track[i], old.width, old.height, track[i], W, H, vw, vh, k);
+        visible = [Math.min(vw, Math.floor(W / k)) * k, Math.min(vh, Math.floor(H / k)) * k];
       } else {
         this.black = SCALE_BLACK_S;
         this.blackShown = false;
@@ -1174,9 +1191,9 @@ export class Renderer {
     size.renderHeight = render.height;
   }
 
-  // Copies the overlap of one texture's top-left vw x vh into another of the same format 1:1,
-  // through framebuffers of one attachment each (an integer blit must be NEAREST and match every
-  // draw buffer).
+  // Copies the overlap of one texture's top-left vw x vh into another of the same format, each
+  // texel k x k times, through framebuffers of one attachment each (an integer blit must be
+  // NEAREST and match every draw buffer).
   private copyAnchored(
     from: WebGLTexture,
     fw: number,
@@ -1186,6 +1203,7 @@ export class Renderer {
     th: number,
     vw = fw,
     vh = fh,
+    k = 1,
   ): void {
     const gl = this.gl;
     const read = this.framebuffer([from], false);
@@ -1193,10 +1211,10 @@ export class Renderer {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw);
     // GL rows run bottom-up, so the top-left anchor is the top rows of each. Only the source's
-    // top-left vw x vh is copied.
-    const w = Math.min(vw, tw);
-    const h = Math.min(vh, th);
-    gl.blitFramebuffer(0, fh - h, w, fh, 0, th - h, w, th, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    // top-left vw x vh is copied, in whole texels.
+    const w = Math.min(vw, Math.floor(tw / k));
+    const h = Math.min(vh, Math.floor(th / k));
+    gl.blitFramebuffer(0, fh - h, w, fh, 0, th - h * k, w * k, th, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
     gl.deleteFramebuffer(read);

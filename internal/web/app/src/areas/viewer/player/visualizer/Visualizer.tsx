@@ -50,9 +50,10 @@ export function backingSize(
   return [Math.max(1, width), Math.max(1, height), texel];
 }
 /**
- * True when the slot cannot hold one whole texel in either dimension. A canvas wider than its slot
- * is clipped, and a slot that then grows within the same texel count shows physical pixels the
- * limiter never exposed, so such a slot shows nothing (Codex rounds 20 and 21).
+ * True when the slot cannot hold one whole texel in either dimension: under one physical pixel,
+ * or under the texel a side over MAX_SIDE needs. A canvas wider than its slot is clipped, and a
+ * slot that then grows within the same texel count shows physical pixels the limiter never
+ * exposed, so such a slot shows nothing (Codex rounds 20 and 21).
  */
 export function collapsed(
   device: { inlineSize: number; blockSize: number } | null,
@@ -72,9 +73,12 @@ function texels(
   const r = ratio > 0 ? ratio : 1;
   const w = device ? device.inlineSize : cssWidth * r;
   const h = device ? device.blockSize : cssHeight * r;
+  // A slot narrower than the display-scale texel takes a smaller one rather than clip a texel:
+  // a clipped texel is partly on screen, and neither showing nor clearing it is safe when the
+  // slot changes (Codex rounds 21 and 22). Only a side over MAX_SIDE keeps a larger texel.
   const texel = Math.max(
     1,
-    Math.ceil(r / MAX_DPR - 1e-9),
+    Math.min(Math.ceil(r / MAX_DPR - 1e-9), Math.floor(w + 1e-6), Math.floor(h + 1e-6)),
     Math.ceil(w / MAX_SIDE),
     Math.ceil(h / MAX_SIDE),
   );
@@ -331,7 +335,8 @@ export function Visualizer({
         // frames at every other refresh (a 120 Hz display at 60 Hz, a throttled one at 30 Hz), so
         // the refresh can be as short as half the interval. A frame painted one refresh late was
         // shown for max(refresh, interval - refresh), which is least at half the interval when
-        // the refresh is unknown (Codex round 21).
+        // the refresh is unknown (Codex round 21). A display that changes its refresh rate
+        // between two paints is over-credited one interval (Codex round 22, OSC-0046).
         const shownMs = Math.min(refreshMs, Math.max(interval / 2, interval - refreshMs));
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.

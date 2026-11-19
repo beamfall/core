@@ -245,6 +245,25 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(r.black).toBe(SCALE_BLACK_S);
   });
 
+  // Codex round 22: a slot narrower than its texel drops to a divisor of the scale. Each texel and
+  // its tracker are copied k x k times, so the screen does not change and nothing goes black.
+  it("keeps the screen on a drop to a divisor of the display scale", () => {
+    const { r, resize, blits, spent } = make();
+    resize(600, 450, 2);
+    r.black = 0;
+    blits.length = 0;
+    spent.length = 0;
+    const L = resize(1200, 900, 1).limiter as unknown as { fG: unknown[]; cur: number };
+    expect(blits).toEqual([
+      [0, 0, 600, 450, 0, 0, 1200, 900],
+      [0, 0, 600, 450, 0, 0, 1200, 900],
+    ]);
+    expect(spent.at(-1)).toEqual([L.fG[L.cur], [256, 65025, 65025, 0]]);
+    expect(r.black).toBe(0);
+    const s = r.size as { visibleWidth: number; visibleHeight: number };
+    expect([s.visibleWidth, s.visibleHeight]).toEqual([1200, 900]);
+  });
+
   it("presents no black for a resize at one display scale", () => {
     const { r, resize } = make();
     resize(640, 360);
@@ -478,14 +497,15 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(blocks.at(-1)?.[5]).toBe(33);
   });
 
-  // Codex round 18: the scale fade runs on elapsed time, not the clamped step.
-  it("fades a display-scale change on elapsed time", () => {
+  // Codex rounds 18 and 22: the scale fade runs on the time the limiter is credited with, not
+  // the clamped step or the frame interval, so the fall's grant has come by its end.
+  it("fades a display-scale change on the credited time", () => {
     const { r, renderer, draw } = make();
     draw(64, 36);
-    renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2);
+    renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2, 33);
     expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S);
-    renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2);
-    expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S - 0.2);
+    renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2, 33);
+    expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S - 0.033);
   });
 
   // Codex round 17: the first draw earned a frame of credit before any budget write it could repay.
@@ -601,6 +621,14 @@ describe("Renderer display-scale fade (Codex round 13)", () => {
     expect(r.fadeLeft).toBe(-1);
     r.displayScale = 0;
     expect(fading(2, 1 / 60)).toBe(false);
+  });
+
+  it("needs no fade down to a divisor of the scale", () => {
+    const { r, fading } = make();
+    r.displayScale = 4;
+    expect(fading(2, 1 / 60)).toBe(false);
+    expect(fading(1, 1 / 60)).toBe(false);
+    expect(fading(3, 1 / 60)).toBe(true);
   });
 });
 

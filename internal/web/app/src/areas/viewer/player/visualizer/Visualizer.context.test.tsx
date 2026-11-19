@@ -384,23 +384,29 @@ describe("Visualizer resize before paint", () => {
     expect(renderer.withdraw).not.toHaveBeenCalled();
   });
 
-  // Codex round 21: at DPR 4 a texel is two device pixels; a one-pixel slot would clip it, and
-  // widening the slot would then show its hidden column without a grant.
-  it("collapses a slot narrower than one texel", async () => {
+  // Codex rounds 21 and 22: at DPR 4 a texel is two device pixels. A one-pixel slot would clip
+  // it, and both showing and clearing a clipped texel are unsafe when the slot changes, so it
+  // takes one-pixel texels; only a slot with no pixels collapses.
+  it("gives a slot narrower than one texel smaller texels", async () => {
     const ratio = window.devicePixelRatio;
     Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 4 });
     try {
       mount();
       await waitFor(() => expect(pending.size).toBe(1));
       const renderer = made.renderers[0];
-      report(1, 120);
-      step(16);
-      expect(renderer.collapse).toHaveBeenCalled();
-      expect(renderer.draw).not.toHaveBeenCalled();
       report(2, 120);
-      step(32);
-      expect(renderer.draw).toHaveBeenCalledOnce();
+      step(16);
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 60]);
+      expect(renderer.draw.mock.lastCall?.[6]).toBe(2);
+      report(1, 120);
+      step(32);
+      expect(renderer.collapse).not.toHaveBeenCalled();
+      expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 120]);
+      expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
+      report(0, 120);
+      step(48);
+      expect(renderer.collapse).toHaveBeenCalled();
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio });
     }
