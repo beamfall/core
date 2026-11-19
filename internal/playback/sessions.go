@@ -588,11 +588,12 @@ func (s *Sessions) drainTeardowns(teardowns []sessionTeardown) {
 }
 
 func (s *Sessions) stopAndQueueTeardown(session *hlsSession) {
-	s.stopSession(session)
-	s.drainAndQueueSessionDir(session)
+	run := s.stopSession(session)
+	s.drainAndQueueSessionDir(session, run)
 }
 
-func (s *Sessions) drainAndQueueSessionDir(session *hlsSession) {
+func (s *Sessions) drainAndQueueSessionDir(session *hlsSession, run *encoderRun) {
+	drainRun(run)
 	session.joins.Wait()
 	if session.live != nil {
 		session.live.Close()
@@ -624,16 +625,16 @@ func (s *Sessions) drainSessionDirs() {
 	}
 }
 
-// stopSession releases the CPU slot and governor lease after the revoked
-// session's encoder and its run have stopped. Directory work drains separately.
-func (s *Sessions) stopSession(session *hlsSession) {
+// stopSession releases the revoked session's CPU slot and governor lease once
+// its encoder has stopped. The caller drains the returned run before cleanup.
+func (s *Sessions) stopSession(session *hlsSession) *encoderRun {
 	session.mu.Lock()
 	proc, run := session.proc, session.run
 	session.proc = nil
 	session.currentRung = ""
 	session.mu.Unlock()
 
-	s.stopRun(proc, run)
+	s.stop(proc)
 	session.mu.Lock()
 	s.mu.Lock()
 	s.releaseTranscodeLease(session)
@@ -643,6 +644,7 @@ func (s *Sessions) stopSession(session *hlsSession) {
 	}
 	s.mu.Unlock()
 	session.mu.Unlock()
+	return run
 }
 
 func (s *Sessions) finishTeardown(session *hlsSession) {
@@ -713,10 +715,8 @@ func (s *Sessions) retrySessionDir(dir string) {
 	s.cleanupMu.Unlock()
 }
 
-// stopRun drains a run after its endpoint has been signaled. The process,
-// endpoint and reaper must all exit before the directory is reused.
-func (s *Sessions) stopRun(proc *ffmpeg.HLSProcess, run *encoderRun) {
-	s.stop(proc)
+// drainRun waits for the revoked endpoint and reaper after the process stops.
+func drainRun(run *encoderRun) {
 	if run != nil && run.live != nil {
 		run.live.WaitRevoked()
 	}
@@ -1798,12 +1798,13 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	previous.signalRevoke()
 	if victim != nil {
 		revokeSession(victim.session)
-		// Only the encoder and readers compete with this start for capacity.
-		// The detached session can drain its joins and clean up independently.
-		s.stopSession(victim.session)
-		go s.drainAndQueueSessionDir(victim.session)
+		// Wait for the revoked victim's encoder to stop before launching.
+		// Its run and directory drain independently of the new encoder.
+		run := s.stopSession(victim.session)
+		go s.drainAndQueueSessionDir(victim.session, run)
 	}
-	s.stopRun(replaced, previous)
+	s.stop(replaced)
+	drainRun(previous)
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
 	var liveRun *encderiv.LiveRun

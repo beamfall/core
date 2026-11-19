@@ -54,6 +54,9 @@ func TestTerminateSessionRevokesReaderWhileLiveSourceDrains(t *testing.T) {
 	t.Parallel()
 	transcoder := &sourceReadingTranscoder{sourceURL: make(chan string, 1)}
 	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	g := governor.New()
+	sessions.SetGovernor(g)
+	sessions.SetTranscodeCap(1)
 	t.Cleanup(sessions.Close)
 	entered, release := make(chan struct{}), make(chan struct{})
 	unblock := sync.OnceFunc(func() { close(release) })
@@ -67,6 +70,9 @@ func TestTerminateSessionRevokesReaderWhileLiveSourceDrains(t *testing.T) {
 	path, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00000.m4s")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("ActiveTranscodes after first start = %d, want 1", got)
 	}
 	reader, err := sessions.OpenLiveArtifact(key, path)
 	if err != nil {
@@ -100,6 +106,16 @@ func TestTerminateSessionRevokesReaderWhileLiveSourceDrains(t *testing.T) {
 		n, err := reader.ReadAt(buf[:], 0)
 		return n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed)
 	})
+	other := SessionKey{SessionID: "source-drain-other", MediaID: "media-b"}
+	waitSessionCondition(t, "encoder slot and lease to release while the source is blocked", func() bool {
+		return sessions.CanAdmit(other) && g.ActiveTranscodes() == 0
+	})
+	if _, err := encryptedFilePath(sessions, other, testEncryptedSource(nil), 120, -1, false, "720p/seg00000.m4s"); err != nil {
+		t.Fatalf("start second encoder while the first source is blocked: %v", err)
+	}
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("ActiveTranscodes after second start = %d, want 1", got)
+	}
 	select {
 	case n := <-terminated:
 		t.Fatalf("TerminateSession returned %d before the endpoint drained", n)
