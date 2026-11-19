@@ -869,29 +869,70 @@ done
 [ "$(smoke_dispatch no "" release)" = $'RUN\t'"$smoke_step" ] \
   || fail "release mode must run the web smoke off macOS"
 
-# The early precondition fails only when the tail step would run without Docker.
-tonemap_precondition() {  # tonemap_precondition <docker:yes|no> <changed path|""> [GATE_MODE]
+# Exercise the real daemon and Buildx probes with a stub Docker CLI.
+mkdir -p "$TMP/docker-bin"
+cat >"$TMP/docker-bin/docker" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"$MOCK_DOCKER_LOG"
+case "$*" in
+  info) [ "$MOCK_DOCKER" != no-daemon ] ;;
+  "buildx version") [ "$MOCK_DOCKER" != no-buildx ] ;;
+  "version --format {{.Server.Arch}}") printf 'arm64\n' ;;
+  *) exit 97 ;;
+esac
+EOF
+chmod +x "$TMP/docker-bin/docker"
+
+tonemap_precondition() {  # tonemap_precondition <yes|no-daemon|no-buildx> <changed path|""> [GATE_MODE]
   local docker="$1" candidate="$2" mode="${3:-normal}"
+  : >"$TMP/tonemap-docker.log"
   (
     cd "$REPO"
     . "$FUNCS"
     export GATE_MODE="$mode"
     changed_paths() { [ -z "$candidate" ] || printf '%s\n' "$candidate"; }
-    docker_daemon_available() { [ "$docker" = yes ]; }
-    tonemap_docker_precondition
+    PATH="$TMP/docker-bin:$PATH" MOCK_DOCKER="$docker" MOCK_DOCKER_LOG="$TMP/tonemap-docker.log" \
+      tonemap_docker_precondition
   ) >"$TMP/tonemap-precondition.log" 2>&1
 }
-tonemap_precondition yes internal/ffmpeg/tonemap.go || fail "precondition failed with a Docker daemon"
-tonemap_precondition no docs/note.md || fail "precondition failed for a change the tone-map step skips"
-tonemap_precondition no "" || fail "precondition failed on a clean tree without Docker"
-if tonemap_precondition no internal/ffmpeg/tonemap.go; then
+if tonemap_precondition no-buildx docs/note.md; then
+  fail "precondition passed with reachable Docker but no Buildx"
+fi
+if ! grep -Fq 'brew install docker-buildx' "$TMP/tonemap-precondition.log" \
+  || ! grep -Fq 'into ~/.docker/cli-plugins' "$TMP/tonemap-precondition.log"; then
+  fail "missing Buildx diagnostic does not explain how to install the plugin"
+fi
+tonemap_precondition yes internal/ffmpeg/tonemap.go || fail "precondition failed with Docker and Buildx"
+grep -Fxq 'buildx version' "$TMP/tonemap-docker.log" || fail "precondition did not probe the Buildx plugin"
+tonemap_precondition no-daemon docs/note.md || fail "precondition failed for a change the tone-map step skips"
+grep -Fxq 'info' "$TMP/tonemap-docker.log" || fail "precondition did not probe the Docker daemon"
+if grep -Fxq 'buildx version' "$TMP/tonemap-docker.log"; then
+  fail "precondition checked Buildx for a Docker skip"
+fi
+tonemap_precondition no-daemon "" || fail "precondition failed on a clean tree without Docker"
+if tonemap_precondition no-daemon internal/ffmpeg/tonemap.go; then
   fail "precondition passed for a tone-map input without Docker"
 fi
 grep -q 'Fix: start a Docker daemon' "$TMP/tonemap-precondition.log" \
   || fail "precondition failure does not name the fix"
-if tonemap_precondition no "" release; then
+if tonemap_precondition no-daemon "" release; then
   fail "precondition passed a release gate without Docker"
 fi
+
+: >"$TMP/tonemap-docker.log"
+if PATH="$TMP/docker-bin:$PATH" MOCK_DOCKER=no-buildx MOCK_DOCKER_LOG="$TMP/tonemap-docker.log" \
+  "$ROOT/tools/gate/ffmpeg-tonemap-conforming.sh" >"$TMP/tonemap-standalone.log" 2>&1; then
+  fail "standalone tone-map script passed without Buildx"
+fi
+if ! grep -Fq 'brew install docker-buildx' "$TMP/tonemap-standalone.log" \
+  || ! grep -Fq 'into ~/.docker/cli-plugins' "$TMP/tonemap-standalone.log"; then
+  fail "standalone script did not explain how to install Buildx"
+fi
+if grep -Eq '^build(x build)? ' "$TMP/tonemap-docker.log"; then
+  fail "standalone script attempted a Docker build without Buildx"
+fi
+
 # The scope above is sound only while the conformance binary is built from
 # internal/ffmpeg alone: any other in-module package in its closure must be
 # added to the tonemap scope.

@@ -1464,9 +1464,18 @@ docker_daemon_available() {
 
 # CORE-0947: fail within seconds, at the start of the gate and in preflight,
 # when the tail tone-map step would need a Docker daemon that is not there.
+# CORE-2546: the ffmpeg-runtime stage also needs Buildx for BUILDPLATFORM.
 tonemap_docker_precondition() {
   if docker_daemon_available; then
-    echo "tone-map Docker precondition: daemon reachable; the pinned FFmpeg tone-map step will run"
+    if ! docker buildx version >/dev/null 2>&1; then
+      cat >&2 <<'MSG'
+tone-map Docker precondition: Docker Buildx is required (docker buildx version failed).
+Install the Buildx CLI plugin (for example, brew install docker-buildx) and link
+docker-buildx into ~/.docker/cli-plugins.
+MSG
+      return 1
+    fi
+    echo "tone-map Docker precondition: daemon reachable and Buildx available; the pinned FFmpeg tone-map step will run"
     return 0
   fi
   if ! scope_matches tonemap; then
