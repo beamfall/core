@@ -7,8 +7,8 @@ items in progress first, then unstarted, then finished, newer year first within 
 the server's order. Grids and See All SHALL keep the server's order.
 
 For an Entity card returned by a Section Source, the server SHALL populate the existing year
-field with the earliest positive year among directly linked Media visible to the Source request.
-The field SHALL be absent when no such year exists.
+field with the earliest positive year among directly linked, untrashed Media allowed by the
+request's Library and certification policy. The field SHALL be absent when no such year exists.
 
 #### Scenario: An in-progress container leads the shelf
 

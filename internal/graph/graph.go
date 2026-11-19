@@ -144,8 +144,8 @@ type SourceItem struct {
 	// share, so a container of audio frames its art like its tracks
 	// (CORE-2362). Absent for unknown or mixed classes.
 	MediaClass string `json:"mediaClass,omitempty"`
-	// Year is a media-kind item's stored year, so a card can state it without
-	// a detail read (CORE-2269). Absent for entities and for Media with no year.
+	// Year is a media-kind item's stored year or a Section Source Entity's
+	// earliest visible linked Media year. Absent when no year is known.
 	Year int `json:"year,omitempty"`
 	// DurationSeconds is a Media item's stored runtime, so a list row can
 	// state it without a detail read (CORE-2386). Absent for entities and for
