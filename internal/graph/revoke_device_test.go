@@ -275,147 +275,62 @@ func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
 	}
 }
 
-func TestRevokeAllDevicesSignalsPlaybackBeforeWritingAudit(t *testing.T) {
+type observedDeviceDrain struct {
+	fakeTerminator
+	beforeDrain func([]store.SessionID)
+}
+
+func (f *observedDeviceDrain) RevokeSessions(ids []store.SessionID) func() int {
+	wait := f.fakeTerminator.RevokeSessions(ids)
+	return func() int {
+		f.beforeDrain(ids)
+		return wait()
+	}
+}
+
+func TestRevokeAllDevicesDrainsBeforeAuditingAndAdvancing(t *testing.T) {
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
 	ctx := t.Context()
 	const firstDevice, secondDevice = "device-tv", "device-second"
-	const secondSession = "session-second"
+	const firstSession, secondSession = "session-default", "session-second"
 	if err := st.EnrollDevice(ctx, store.Device{
 		ID: secondDevice, Name: "ZZZ second viewer", Role: store.DeviceRoleViewer,
 		SecretHash: store.HashDeviceSecret("second-secret"),
 	}, store.Session{ID: secondSession, DeviceID: secondDevice, ProfileID: "profile-default"}); err != nil {
 		t.Fatal(err)
 	}
-	entered, release := make(chan struct{}, 1), make(chan struct{})
-	sessions := playback.NewSessions(blockedEncryptedSpawn{entered: entered, release: release}, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
-	unblock := sync.OnceFunc(func() { close(release) })
-	t.Cleanup(unblock)
-	handler.SetTranscodeTerminator(sessions)
-	shape := encryptedDeviceTestShape()
-	filePath := func(id store.SessionID, name string) (string, error) {
-		return sessions.FilePathShaped(ctx, playback.SessionKey{SessionID: id, MediaID: "media-alpha"}, "", 120, 1280, 720, false, false,
-			playback.LadderCapsFromGrant(streamtoken.Grant{}), playback.VideoSignal{}, -1,
-			ffmpeg.AudioProfile{}, nil, shape, playback.PriorityNormal, name)
-	}
-	openReader := func(id store.SessionID) *encderiv.LiveFile {
-		t.Helper()
-		path, err := filePath(id, "master.m3u8")
-		if err != nil {
-			t.Fatal(err)
-		}
-		reader, err := sessions.OpenLiveArtifact(playback.SessionKey{SessionID: id, MediaID: "media-alpha"}, path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = reader.Close() })
-		var buf [1]byte
-		if _, err := io.ReadFull(reader, buf[:]); err != nil {
-			t.Fatalf("read %s before revocation: %v", id, err)
-		}
-		return reader
-	}
-	first := openReader("session-default")
-	second := openReader(secondSession)
-	started := make(chan error, 1)
-	go func() {
-		_, err := filePath("session-default", "720p/seg00000.m4s")
-		started <- err
-	}()
-	select {
-	case <-entered:
-	case err := <-started:
-		t.Fatalf("start failed before the drain could block: %v", err)
-	case <-time.After(5 * time.Second):
-		t.Fatal("start never reached the blocked spawn")
-	}
-	auditEntered, auditRelease := make(chan struct{}), make(chan struct{})
-	releaseAudit := sync.OnceFunc(func() { close(auditRelease) })
-	handler.mutationAuditAppend = func(ctx context.Context, entry store.ActivityEntry) error {
-		if entry.Action == store.ActivityDeviceRevoke && entry.TargetID == firstDevice {
-			close(auditEntered)
-			<-auditRelease
-		}
-		return st.AppendActivity(ctx, entry)
-	}
-	finished := make(chan struct{})
-	var result RevokeAllDevicesResult
-	var revokeErr error
-	go func() {
-		defer close(finished)
-		result, revokeErr = handler.revokeAllDevices(ctx, auth.Scope{DeviceID: "device-mac"})
-	}()
-	defer func() {
-		releaseAudit()
-		unblock()
-		select {
-		case <-finished:
-		case <-time.After(5 * time.Second):
-			t.Error("bulk revocation did not exit during cleanup")
-		}
-	}()
-	select {
-	case <-auditEntered:
-	case <-finished:
-		t.Fatalf("bulk revocation returned before the blocked audit: %+v, %v", result, revokeErr)
-	case <-time.After(5 * time.Second):
-		t.Fatal("bulk revocation did not reach the first detail audit")
-	}
-	assertDurablyRevoked := func(deviceID store.DeviceID) {
-		t.Helper()
-		device, err := st.Device(ctx, deviceID)
-		if err != nil || !device.Revoked {
-			t.Fatalf("%s playback was signaled before durable revocation: %v", deviceID, err)
-		}
-	}
-	assertDurablyRevoked(firstDevice)
-	var buf [1]byte
-	if n, err := first.ReadAt(buf[:], 0); n != 0 || !errors.Is(err, encderiv.ErrLiveSessionClosed) {
-		t.Fatalf("first device reader during blocked audit: read %d, err %v", n, err)
-	}
-	device, err := st.Device(ctx, secondDevice)
-	if err != nil || device.Revoked {
-		t.Fatalf("the first detail audit did not hold the bulk loop: second device revoked=%v, err=%v", device.Revoked, err)
-	}
-	if n, err := second.ReadAt(buf[:], 0); n != 1 || err != nil {
-		t.Fatalf("second device reader before durable revocation: read %d, err %v", n, err)
-	}
 
-	releaseAudit()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		n, err := second.ReadAt(buf[:], 0)
-		if n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("second reader while the first spawn was blocked: read %d, err %v", n, err)
-		}
-		time.Sleep(time.Millisecond)
+	firstDrainReached := false
+	handler.SetTranscodeTerminator(&observedDeviceDrain{
+		fakeTerminator: fakeTerminator{live: map[store.SessionID]int{firstSession: 1, secondSession: 1}},
+		beforeDrain: func(ids []store.SessionID) {
+			if !slices.Contains(ids, firstSession) {
+				return
+			}
+			firstDrainReached = true
+			first, err := st.Device(ctx, firstDevice)
+			if err != nil || !first.Revoked {
+				t.Fatalf("first device at playback drain: revoked = %v, err = %v", first.Revoked, err)
+			}
+			second, err := st.Device(ctx, secondDevice)
+			if err != nil || second.Revoked {
+				t.Errorf("second device before first playback drain finishes: revoked = %v, err = %v", second.Revoked, err)
+			}
+			for _, entry := range allActivity(t, st) {
+				if entry.Action == store.ActivityDeviceRevoke && entry.TargetID == firstDevice {
+					t.Error("first device was audited before its playback drain finished")
+				}
+			}
+		},
+	})
+
+	result, err := handler.revokeAllDevices(ctx, auth.Scope{DeviceID: "device-mac"})
+	if err != nil || result.RevokedCount != 2 || result.TranscodesAborted != 2 {
+		t.Fatalf("bulk revocation: %+v, %v", result, err)
 	}
-	assertDurablyRevoked(secondDevice)
-	select {
-	case <-finished:
-		t.Fatal("bulk revocation returned before the first device drained")
-	default:
-	}
-	unblock()
-	select {
-	case err := <-started:
-		if !errors.Is(err, playback.ErrSessionEvicted) {
-			t.Fatalf("start after bulk revocation: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("start did not finish after release")
-	}
-	select {
-	case <-finished:
-		if revokeErr != nil || result.RevokedCount != 2 || result.TranscodesAborted != 2 {
-			t.Fatalf("bulk revocation: %+v, %v", result, revokeErr)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("bulk revocation did not finish after both drains")
+	if !firstDrainReached {
+		t.Fatal("bulk revocation did not drain the first session")
 	}
 }
 

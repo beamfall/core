@@ -2511,7 +2511,69 @@ func TestCloseWaitsForADirectoryOnlyTeardown(t *testing.T) {
 	}
 }
 
-func TestSessionsBatchTeardownSerializesDirectoryRemoval(t *testing.T) {
+func TestSessionsPreemptionDuringDirectoryRemoval(t *testing.T) {
+	t.Parallel()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions.SetTranscodeCap(2)
+	t.Cleanup(sessions.Close)
+	keyA := SessionKey{SessionID: "deleting", MediaID: "media-alpha"}
+	keyVictim := SessionKey{SessionID: "preempted", MediaID: "media-beta"}
+	keyB := SessionKey{SessionID: "foreground", MediaID: "media-gamma"}
+	const segment = "720p/seg00000.m4s"
+	for _, key := range []SessionKey{keyA, keyVictim} {
+		if _, err := filePath720(sessions, key, segment); err != nil {
+			t.Fatalf("start %s: %v", key.SessionID, err)
+		}
+	}
+	dirA := registeredSession(t, sessions, keyA).dir
+	dirVictim := registeredSession(t, sessions, keyVictim).dir
+	entered, release := make(chan struct{}), make(chan struct{})
+	markEntered := sync.OnceFunc(func() { close(entered) })
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	sessions.removeDir = func(dir string) error {
+		if dir == dirA {
+			markEntered()
+			<-release
+		}
+		return os.RemoveAll(dir)
+	}
+
+	terminated := make(chan int, 1)
+	go func() { terminated <- sessions.TerminateSession(keyA.SessionID) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("session A never reached directory removal")
+	}
+	preempted := make(chan error, 1)
+	go func() {
+		_, err := filePath720Priority(sessions, keyB, PriorityForeground, segment)
+		preempted <- err
+	}()
+	select {
+	case err := <-preempted:
+		if err != nil {
+			t.Fatalf("session B could not preempt: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("session B's preemption blocked behind session A's deletion")
+	}
+	if _, err := os.Stat(dirVictim); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("preempted session's directory: stat err = %v, want not-exist", err)
+	}
+	unblock()
+	select {
+	case got := <-terminated:
+		if got != 1 {
+			t.Fatalf("detached %d sessions, want 1", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("session A's teardown did not finish after deletion was released")
+	}
+}
+
+func TestSessionsBatchTeardownBoundsDirectoryRemoval(t *testing.T) {
 	t.Parallel()
 	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
 	t.Cleanup(sessions.Close)
@@ -2540,14 +2602,16 @@ func TestSessionsBatchTeardownSerializesDirectoryRemoval(t *testing.T) {
 	}
 	done := make(chan int, 1)
 	go func() { done <- sessions.TerminateSession(id) }()
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("batch teardown never reached directory removal")
+	for range 2 {
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("batch teardown did not start two concurrent removals")
+		}
 	}
 	select {
 	case dir := <-entered:
-		t.Fatalf("a second directory removal entered while the first was blocked: %s", dir)
+		t.Fatalf("a third directory removal entered while two were blocked: %s", dir)
 	case <-time.After(50 * time.Millisecond):
 	}
 	unblock()
@@ -2579,31 +2643,69 @@ func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 		t.Fatalf("playlist fixture is missing or empty: %v", err)
 	}
 	dir := registeredSession(t, sessions, key).dir
-	attempts := 0
+	var attempts atomic.Int32
+	retryEntered, retryRelease := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(retryRelease) })
+	defer unblock()
 	sessions.removeDir = func(got string) error {
 		if got != dir {
 			t.Errorf("remove %s, want %s", got, dir)
 		}
-		attempts++
-		if attempts <= 2 {
+		switch attempts.Add(1) {
+		case 1:
+			return os.ErrPermission
+		case 2:
+			close(retryEntered)
+			<-retryRelease
 			return os.ErrPermission
 		}
 		return os.RemoveAll(got)
 	}
-	if got := sessions.TerminateSession(key.SessionID); got != 1 || attempts != 1 {
-		t.Fatalf("termination detached %d sessions and attempted %d removals", got, attempts)
+	if got := sessions.TerminateSession(key.SessionID); got != 1 || attempts.Load() != 1 {
+		t.Fatalf("termination detached %d sessions and attempted %d removals", got, attempts.Load())
+	}
+
+	reaped := make(chan struct{})
+	go func() {
+		sessions.reap()
+		close(reaped)
+	}()
+	select {
+	case <-retryEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reap did not retry the failed removal")
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("directory while reap retry is blocked: %v", err)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatal("Close returned while reap was still retrying the removal")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not finish after reap's retry failed")
+	}
+	select {
+	case <-reaped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reap did not finish after its retry was released")
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) || attempts.Load() != 3 {
+		t.Fatalf("shutdown retry: stat %v, attempts %d", err, attempts.Load())
 	}
 	sessions.reap()
-	if _, err := os.Stat(dir); err != nil || attempts != 2 {
-		t.Fatalf("failed reap retry: stat %v, attempts %d", err, attempts)
-	}
-	sessions.Close()
-	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) || attempts != 3 {
-		t.Fatalf("shutdown retry: stat %v, attempts %d", err, attempts)
-	}
-	sessions.reap()
-	if attempts != 3 {
-		t.Fatalf("successful removal was retried: %d attempts", attempts)
+	if attempts.Load() != 3 {
+		t.Fatalf("successful removal was retried: %d attempts", attempts.Load())
 	}
 }
 

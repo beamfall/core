@@ -95,6 +95,9 @@ const (
 	// defaultTranscodeCap is the per-server concurrent-transcode cap
 	// (ADR-0010 §6 admission control), overridable via SetTranscodeCap.
 	defaultTranscodeCap = 4
+	// Allow another teardown to proceed past one blocked directory removal
+	// while limiting disk work from batches of playlist-only sessions.
+	maxConcurrentSessionDirRemovals = 2
 	// preemptIdleAfter is how long a session must sit without a fetch before
 	// admission control may preempt it for a new session. Keepalive is the
 	// segment/playlist fetch stream, so an actively-streaming
@@ -523,11 +526,12 @@ type Sessions struct {
 	resumeHints map[SessionKey]resumeHint
 	// stopEncoder, when set, replaces (*ffmpeg.HLSProcess).Stop. Tests set it
 	// to a slow Stop.
-	stopEncoder func(*ffmpeg.HLSProcess)
-	// cleanupMu serializes teardown removals and guards failed paths awaiting
-	// retry. It is acquired without Sessions.mu or session.mu held.
+	stopEncoder     func(*ffmpeg.HLSProcess)
+	dirRemovalSlots chan struct{}
+	// cleanupMu guards failed removals. Each pending path's value is nil
+	// until a retry claims it and installs a completion channel.
 	cleanupMu   sync.Mutex
-	pendingDirs map[string]struct{}
+	pendingDirs map[string]chan struct{}
 	// removeDir, when set, replaces os.RemoveAll during teardown and retry.
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
@@ -590,9 +594,11 @@ func (s *Sessions) teardown(session *hlsSession) {
 	if session.live != nil {
 		session.live.Close()
 	}
-	s.cleanupMu.Lock()
-	s.removeSessionDirLocked(session.dir)
-	s.cleanupMu.Unlock()
+	if !s.removeSessionDir(session.dir) {
+		s.cleanupMu.Lock()
+		s.pendingDirs[session.dir] = nil
+		s.cleanupMu.Unlock()
+	}
 	if lease != nil {
 		lease.Release()
 	}
@@ -607,25 +613,58 @@ func (s *Sessions) teardown(session *hlsSession) {
 	s.mu.Unlock()
 }
 
-func (s *Sessions) removeSessionDirLocked(dir string) {
+func (s *Sessions) removeSessionDir(dir string) bool {
 	remove := s.removeDir
 	if remove == nil {
 		remove = os.RemoveAll
 	}
-	if err := remove(dir); err != nil {
-		s.pendingDirs[dir] = struct{}{}
+	s.dirRemovalSlots <- struct{}{}
+	err := remove(dir)
+	<-s.dirRemovalSlots
+	if err != nil {
 		slog.Warn("transcode session directory removal failed", "error", err)
-		return
+		return false
 	}
-	delete(s.pendingDirs, dir)
+	return true
 }
 
 func (s *Sessions) retrySessionDirs() {
 	s.cleanupMu.Lock()
-	defer s.cleanupMu.Unlock()
+	dirs := make([]string, 0, len(s.pendingDirs))
 	for dir := range s.pendingDirs {
-		s.removeSessionDirLocked(dir)
+		dirs = append(dirs, dir)
 	}
+	s.cleanupMu.Unlock()
+	for _, dir := range dirs {
+		s.retrySessionDir(dir)
+	}
+}
+
+func (s *Sessions) retrySessionDir(dir string) {
+	s.cleanupMu.Lock()
+	for running := s.pendingDirs[dir]; running != nil; running = s.pendingDirs[dir] {
+		s.cleanupMu.Unlock()
+		<-running
+		s.cleanupMu.Lock()
+	}
+	if _, pending := s.pendingDirs[dir]; !pending {
+		s.cleanupMu.Unlock()
+		return
+	}
+	done := make(chan struct{})
+	s.pendingDirs[dir] = done
+	s.cleanupMu.Unlock()
+
+	removed := s.removeSessionDir(dir)
+
+	s.cleanupMu.Lock()
+	if removed {
+		delete(s.pendingDirs, dir)
+	} else {
+		s.pendingDirs[dir] = nil
+	}
+	close(done)
+	s.cleanupMu.Unlock()
 }
 
 // stopRun drains a run after its endpoint has been signaled. The process,
@@ -1003,7 +1042,8 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		bootNonce:        newBootNonce(),
 		sessions:         map[SessionKey]*hlsSession{},
 		detachedSessions: make(map[*hlsSession]SessionKey),
-		pendingDirs:      make(map[string]struct{}),
+		dirRemovalSlots:  make(chan struct{}, maxConcurrentSessionDirRemovals),
+		pendingDirs:      make(map[string]chan struct{}),
 		cap:              defaultTranscodeCap,
 		resumeHints:      map[SessionKey]resumeHint{},
 	}
