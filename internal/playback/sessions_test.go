@@ -2656,7 +2656,7 @@ func TestSessionsPreemptionDuringDirectoryRemoval(t *testing.T) {
 	}
 }
 
-func TestSessionsReleaseSlotBeforeDirectoryLease(t *testing.T) {
+func TestSessionsPreemptionReleasesTranscodeLeaseBeforeDirectoryRemoval(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
 	transcoder := &fakeTranscoder{}
@@ -2701,8 +2701,8 @@ func TestSessionsReleaseSlotBeforeDirectoryLease(t *testing.T) {
 	if starts := transcoder.startCount(); starts != 2 {
 		t.Fatalf("encoder starts during removal = %d, want 2", starts)
 	}
-	if got := g.ActiveTranscodes(); got != 2 {
-		t.Fatalf("leases during removal = %d, want one for each session", got)
+	if got := g.ActiveTranscodes(); got != 1 {
+		t.Fatalf("leases during removal = %d, want one for the foreground session", got)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("victim segment during removal: %v", err)
@@ -2824,15 +2824,20 @@ func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 	}
 	dir := registeredSession(t, sessions, key).dir
 	var attempts atomic.Int32
+	removeEntered, removeRelease := make(chan struct{}), make(chan struct{})
 	retryEntered, retryRelease := make(chan struct{}), make(chan struct{})
-	unblock := sync.OnceFunc(func() { close(retryRelease) })
-	defer unblock()
+	unblockRemove := sync.OnceFunc(func() { close(removeRelease) })
+	unblockRetry := sync.OnceFunc(func() { close(retryRelease) })
+	defer unblockRemove()
+	defer unblockRetry()
 	sessions.removeDir = func(got string) error {
 		if got != dir {
 			t.Errorf("remove %s, want %s", got, dir)
 		}
 		switch attempts.Add(1) {
 		case 1:
+			close(removeEntered)
+			<-removeRelease
 			return os.ErrPermission
 		case 2:
 			close(retryEntered)
@@ -2841,12 +2846,51 @@ func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 		}
 		return os.RemoveAll(got)
 	}
-	if got := sessions.TerminateSession(key.SessionID); got != 1 || attempts.Load() != 1 {
-		t.Fatalf("termination detached %d sessions and attempted %d removals", got, attempts.Load())
+	assertGenerationAdmitted := func(stage string) {
+		t.Helper()
+		lease, ok := g.BeginGeneration(t.Context())
+		if !ok {
+			t.Errorf("BeginGeneration refused %s after the last encoder stopped", stage)
+			return
+		}
+		lease.Release()
 	}
-	if got := g.ActiveTranscodes(); got != 1 {
-		t.Errorf("leases after failed removal = %d, want 1", got)
+	assertPurgePreservesOwnedDir := func(stage string) {
+		t.Helper()
+		orphan := filepath.Join(sessions.dir, "session-100")
+		if err := os.Mkdir(orphan, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := sessions.PurgeOrphanedTranscodeDirs(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(orphan); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("unowned directory %s: %v, want removed", stage, err)
+		}
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("retry-owned directory %s: %v, want preserved", stage, err)
+		}
 	}
+
+	terminated := make(chan int, 1)
+	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
+	select {
+	case <-removeEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("termination did not reach directory removal")
+	}
+	assertGenerationAdmitted("while removal was blocked")
+	unblockRemove()
+	select {
+	case got := <-terminated:
+		if got != 1 || attempts.Load() != 1 {
+			t.Fatalf("termination detached %d sessions and attempted %d removals", got, attempts.Load())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("termination did not finish after removal failed")
+	}
+	assertGenerationAdmitted("after removal failed")
+	assertPurgePreservesOwnedDir("while pending retry")
 
 	reaped := make(chan struct{})
 	go func() {
@@ -2858,9 +2902,8 @@ func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("reap did not retry the failed removal")
 	}
-	if _, err := os.Stat(dir); err != nil {
-		t.Fatalf("directory while reap retry is blocked: %v", err)
-	}
+	assertGenerationAdmitted("while the retry was blocked")
+	assertPurgePreservesOwnedDir("while retrying")
 
 	closed := make(chan struct{})
 	go func() {
@@ -2872,7 +2915,7 @@ func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
 		t.Fatal("Close returned while reap was still retrying the removal")
 	case <-time.After(50 * time.Millisecond):
 	}
-	unblock()
+	unblockRetry()
 	select {
 	case <-closed:
 	case <-time.After(5 * time.Second):

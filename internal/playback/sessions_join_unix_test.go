@@ -69,6 +69,13 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 	}
 	session := registeredSession(t, sessions, victim)
 	joined, release := blockFragmentJoin(t, session, regularJoinPart(t))
+	removing := make(chan struct{})
+	sessions.removeDir = func(dir string) error {
+		if dir == session.dir {
+			close(removing)
+		}
+		return os.RemoveAll(dir)
+	}
 	// Hold the victim's state lock as publication would. Preemption must
 	// detach from the map before it waits for either the lock or the join.
 	session.mu.Lock()
@@ -86,9 +93,25 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 		_, err := filePath720(sessions, other, masterPlaylistName)
 		return err
 	})
-	unlock()
 	if got := transcoder.startCount(); got != 1 {
-		t.Fatalf("encoder starts while the victim is draining = %d, want 1", got)
+		t.Fatalf("encoder starts before the victim can stop = %d, want 1", got)
+	}
+	unlock()
+	select {
+	case err := <-started:
+		if err != nil {
+			t.Fatalf("foreground start: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("foreground start waited for the blocked fragment join")
+	}
+	if got := transcoder.startCount(); got != 2 {
+		t.Fatalf("encoder starts with the join blocked = %d, want 2", got)
+	}
+	select {
+	case <-removing:
+		t.Fatal("directory removal started while the join was blocked")
+	default:
 	}
 	if err := sessions.PurgeOrphanedTranscodeDirs(); err != nil {
 		t.Fatal(err)
@@ -98,14 +121,6 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 	}
 	release()
 	assertJoinEvicted(t, joined)
-	select {
-	case err := <-started:
-		if err != nil {
-			t.Fatalf("foreground start: %v", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("foreground start did not finish after the join drained")
-	}
 	select {
 	case <-session.teardownDone:
 	case <-time.After(5 * time.Second):

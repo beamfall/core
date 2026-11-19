@@ -1,6 +1,7 @@
 ## 1. Playback teardown
 
-- [x] Release the transcode slot after encoder and reader teardown and keep the
-  detached session's lease through directory cleanup.
-- [x] Verify that a blocked removal keeps the lease while a new encoder takes
-  the slot, and that a failed removal retains the lease through retry.
+- [x] Release the transcode slot and governor lease after encoder stop and
+  reader revocation. Drain fragment joins before removing the directory.
+- [x] Verify foreground admission during a blocked join and background
+  generation during directory cleanup. Preserve retry-owned directories
+  during an orphan purge.

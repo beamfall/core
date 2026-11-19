@@ -7,10 +7,10 @@ directory. A slow directory removal can outlast the encoder and its readers.
 
 ## What Changes
 
-- Release the transcode slot once the encoder has stopped and the session's
-  readers and in-progress joins have drained.
-- Hold the detached session's lease until its directory has been removed.
-  A failed removal carries the lease into the existing cleanup retry.
+- Release the transcode slot and governor lease once the encoder has stopped
+  and the session's readers have been revoked.
+- Drain in-progress work before directory removal. Keep the directory owned
+  by teardown or its cleanup retry until removal succeeds.
 
 ## Impact
 

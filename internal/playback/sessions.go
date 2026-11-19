@@ -318,7 +318,7 @@ type hlsSession struct {
 	// transcodeLease is acquired before an FFmpeg launch so generation yields
 	// when the session commits to spawning. It is carried across in-place
 	// replacements and released on launch-failure rollback, process reap, or
-	// removal of a detached session's directory.
+	// encoder teardown.
 	transcodeLease *governor.TranscodeLease
 	// run is the generation of the current or most recent process (proc).
 	run *encoderRun
@@ -527,16 +527,18 @@ type Sessions struct {
 	stopEncoder     func(*ffmpeg.HLSProcess)
 	dirRemovalSlots chan struct{}
 	// cleanupMu guards the directory work queue, its workers, and failed
-	// removals, including their leases and any in-progress retries.
+	// removals. If both locks are needed, take mu before cleanupMu.
 	cleanupMu         sync.Mutex
 	dirCleanupQueue   []*hlsSession
 	dirCleanupWorkers int
-	pendingDirs       map[string]pendingSessionDir
+	// pendingDirs tracks directories that still need removal. A non-nil
+	// channel signals completion of the current retry.
+	pendingDirs map[string]chan struct{}
 	// removeDir, when set, replaces os.RemoveAll during teardown and retry.
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
-	// Detached sessions keep their slots until session work drains, and
+	// Detached sessions keep their slots until their encoders stop, and
 	// remain tracked until directory cleanup finishes. Their keys let explicit
 	// termination find teardowns another caller or an in-progress start owns.
 	stopping         int
@@ -552,11 +554,6 @@ type Sessions struct {
 type sessionTeardown struct {
 	session *hlsSession
 	pending bool // its off-lock starter will finish teardown
-}
-
-type pendingSessionDir struct {
-	lease     *governor.TranscodeLease
-	retryDone chan struct{}
 }
 
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
@@ -592,7 +589,14 @@ func (s *Sessions) drainTeardowns(teardowns []sessionTeardown) {
 
 func (s *Sessions) stopAndQueueTeardown(session *hlsSession) {
 	s.stopSession(session)
+	s.drainAndQueueSessionDir(session)
+}
 
+func (s *Sessions) drainAndQueueSessionDir(session *hlsSession) {
+	session.joins.Wait()
+	if session.live != nil {
+		session.live.Close()
+	}
 	s.cleanupMu.Lock()
 	s.dirCleanupQueue = append(s.dirCleanupQueue, session)
 	if s.dirCleanupWorkers < maxConcurrentSessionDirRemovals {
@@ -620,6 +624,8 @@ func (s *Sessions) drainSessionDirs() {
 	}
 }
 
+// stopSession releases the CPU slot and governor lease after the revoked
+// session's encoder and its run have stopped. Directory work drains separately.
 func (s *Sessions) stopSession(session *hlsSession) {
 	session.mu.Lock()
 	proc, run := session.proc, session.run
@@ -628,32 +634,23 @@ func (s *Sessions) stopSession(session *hlsSession) {
 	session.mu.Unlock()
 
 	s.stopRun(proc, run)
-	session.joins.Wait()
-	if session.live != nil {
-		session.live.Close()
-	}
+	session.mu.Lock()
 	s.mu.Lock()
+	s.releaseTranscodeLease(session)
 	if session.hasSlot {
 		session.hasSlot = false
 		s.stopping--
 	}
 	s.mu.Unlock()
+	session.mu.Unlock()
 }
 
-// finishTeardown keeps the lease through directory removal, even though the
-// stopped session has released its slot. A failed removal hands the lease to
-// the directory retry.
 func (s *Sessions) finishTeardown(session *hlsSession) {
-	session.mu.Lock()
-	lease := session.transcodeLease
-	session.transcodeLease = nil
-	session.mu.Unlock()
 	if !s.removeSessionDir(session.dir) {
+		// Keep the directory owned across the handoff from detached to pending.
 		s.cleanupMu.Lock()
-		s.pendingDirs[session.dir] = pendingSessionDir{lease: lease}
+		s.pendingDirs[session.dir] = nil
 		s.cleanupMu.Unlock()
-	} else if lease != nil {
-		lease.Release()
 	}
 	s.mu.Lock()
 	session.startPending = false
@@ -691,32 +688,28 @@ func (s *Sessions) retrySessionDirs() {
 
 func (s *Sessions) retrySessionDir(dir string) {
 	s.cleanupMu.Lock()
-	for running := s.pendingDirs[dir].retryDone; running != nil; running = s.pendingDirs[dir].retryDone {
+	for running := s.pendingDirs[dir]; running != nil; running = s.pendingDirs[dir] {
 		s.cleanupMu.Unlock()
 		<-running
 		s.cleanupMu.Lock()
 	}
-	entry, pending := s.pendingDirs[dir]
-	if !pending {
+	if _, pending := s.pendingDirs[dir]; !pending {
 		s.cleanupMu.Unlock()
 		return
 	}
-	entry.retryDone = make(chan struct{})
-	s.pendingDirs[dir] = entry
+	retryDone := make(chan struct{})
+	s.pendingDirs[dir] = retryDone
 	s.cleanupMu.Unlock()
 
 	removed := s.removeSessionDir(dir)
-	if removed && entry.lease != nil {
-		entry.lease.Release()
-	}
 
 	s.cleanupMu.Lock()
 	if removed {
 		delete(s.pendingDirs, dir)
 	} else {
-		s.pendingDirs[dir] = pendingSessionDir{lease: entry.lease}
+		s.pendingDirs[dir] = nil
 	}
-	close(entry.retryDone)
+	close(retryDone)
 	s.cleanupMu.Unlock()
 }
 
@@ -962,7 +955,7 @@ func (s *Sessions) admitLocked(key SessionKey, priority Priority, degraded bool)
 }
 
 // removeLocked detaches a session under Sessions.mu and reserves its occupied
-// slot until session work drains. It never acquires session.mu or touches disk.
+// slot until its encoder stops. It never acquires session.mu or touches disk.
 func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	session, ok := s.sessions[key]
 	if !ok {
@@ -1103,7 +1096,7 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		sessions:         map[SessionKey]*hlsSession{},
 		detachedSessions: make(map[*hlsSession]SessionKey),
 		dirRemovalSlots:  make(chan struct{}, maxConcurrentSessionDirRemovals),
-		pendingDirs:      make(map[string]pendingSessionDir),
+		pendingDirs:      make(map[string]chan struct{}),
 		cap:              defaultTranscodeCap,
 		resumeHints:      map[SessionKey]resumeHint{},
 	}
@@ -1806,8 +1799,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	if victim != nil {
 		revokeSession(victim.session)
 		// Only the encoder and readers compete with this start for capacity.
-		// The detached session's directory can wait for a removal slot.
-		s.stopAndQueueTeardown(victim.session)
+		// The detached session can drain its joins and clean up independently.
+		s.stopSession(victim.session)
+		go s.drainAndQueueSessionDir(victim.session)
 	}
 	s.stopRun(replaced, previous)
 	procCtx := context.WithoutCancel(ctx)
@@ -2242,8 +2236,9 @@ func (s *Sessions) reap() {
 var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 
 // PurgeOrphanedTranscodeDirs removes every transcode session directory under the
-// transcode root that no live session owns. It closes the crash-recovery leak of
-// the 5th derivative class (ADR-0045 §reconcile, ENCPRIV-10c): a live HLS
+// transcode root that no session or cleanup retry owns. It closes the
+// crash-recovery leak of the 5th derivative class (ADR-0045 §reconcile,
+// ENCPRIV-10c): a live HLS
 // transcode of Encrypted-Library media writes PLAINTEXT segments to
 // dataDir/transcode/session-<bootNonce>-<N>/, and a crash mid-transcode orphans that dir on
 // disk — the in-memory session map that would have removed it on normal end is
@@ -2252,10 +2247,9 @@ var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 // on-disk media/library attribution — they are keyed by an in-memory counter), so
 // they are purged here as a set.
 //
-// The sweep runs under the session lock and skips any dir a live session still
-// holds, so it never deletes an in-flight session's working dir even if it runs
-// after serving has begun (the runtime-unseal path). At boot the in-memory map is
-// empty — a restart drops all session state before serving — so every session dir
+// The sweep runs under the session lock and skips directories owned by live or
+// detached sessions and by pending or running removal retries. At boot the
+// in-memory state is empty, so every session dir
 // on disk is an orphan and is removed — which is also why NewSessionsInDir
 // calls this at construction, before any session is live, to purge whatever a
 // prior process on the same root left behind. Hard delete is correct: session
@@ -2268,13 +2262,18 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	defer s.mu.Unlock()
 	// All session directories are direct children of the scratch root.
 	// Compare their names because encrypted sessions store absolute paths.
-	live := make(map[string]struct{}, len(s.sessions)+len(s.detachedSessions))
+	owned := make(map[string]struct{}, len(s.sessions)+len(s.detachedSessions))
 	for session := range s.detachedSessions {
-		live[filepath.Base(session.dir)] = struct{}{}
+		owned[filepath.Base(session.dir)] = struct{}{}
 	}
 	for _, session := range s.sessions {
-		live[filepath.Base(session.dir)] = struct{}{}
+		owned[filepath.Base(session.dir)] = struct{}{}
 	}
+	s.cleanupMu.Lock()
+	for dir := range s.pendingDirs {
+		owned[filepath.Base(dir)] = struct{}{}
+	}
+	s.cleanupMu.Unlock()
 	entries, err := os.ReadDir(s.dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -2287,7 +2286,7 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 		if !entry.IsDir() || !sessionDirName.MatchString(entry.Name()) {
 			continue
 		}
-		if _, held := live[entry.Name()]; held {
+		if _, held := owned[entry.Name()]; held {
 			continue
 		}
 		joined = errors.Join(joined, os.RemoveAll(filepath.Join(s.dir, entry.Name())))
