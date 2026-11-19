@@ -24,9 +24,10 @@ visual off until the component remounts, although browsers restore contexts rout
 
 - Every change to what the viewer sees takes one path (CORE-2516), whether the backing size, the
   display scale or the texels in view changed: the frame on screen fades to black through the
-  flash limiter (grant state written spent, area limit zero, limiter fed black, for 2 s of
-  credited time), black is presented for 0.1 s, and a frame starts at the geometry asked for
-  then, black and tracked black with every budget spent, as the first frame does. A change during
+  flash limiter (grant state written spent, area limit zero, limiter fed black, until a frame of
+  the fade held no fall back, which the grant word reports, and for 2 s of credited time at
+  most), black is presented for 0.1 s of credited time, and a frame starts at the geometry asked
+  for then, black and tracked black with every budget spent, as the first frame does. A change during
   the fade or the black only moves that target, so a slot dragged to a new size costs one fade
   and one start. No texel is carried from one geometry to the next: the copy paths are gone.
 - A frame presents only the whole texels its slot shows. Until the next frame starts the canvas
@@ -55,9 +56,23 @@ visual off until the component remounts, although browsers restore contexts rout
 
 - A restore that cannot create a renderer, or fails to apply the visual, leaves the slot empty
   as for any other visualizer failure; playback is never interrupted.
-- A geometry change costs the picture: the visual is black from the end of the fall the limiter
-  grants until about 2.1 s after the change, and a drag longer than that repeats the cycle. This
-  is the price of one rule with no pixel carried over.
+- A geometry change costs the picture: the frame is held until the limiter grants its fall, the
+  visual is black until the start, and the new frame rises through the grant as a first frame
+  does. A drag that outlasts the black starts and withdraws a frame until the slot is still.
+  This is the price of one rule with no pixel carried over.
+- The fade and the black are counted in the time the limiter is credited with, not on the clock.
+  The page cannot read the display's refresh period, so at a steady cadence it credits half of
+  each interval (`shownMs`), and credited time takes about twice as long on the clock at 60
+  frames a second. Modelled there at the default 3 Hz: a dark frame is black at once and starts
+  about 0.25 s after the change; a frame with luma to drop is held about 0.7 s (two luma tokens,
+  0.33 s credited), is black about 0.25 s and rises about 0.7 s after the start; a full-frame
+  saturated red is held about 2.7 s (the red token, 1.33 s credited) and rises about 2.7 s after
+  the start. The 2 s cap on the fade is about 4 s and is reached only if the grant word never
+  clears.
+- After a change of device pixel ratio the cached CSS box says nothing about the slot's physical
+  pixels. Until the slot is observed at the new ratio the frame on screen is held undrawn: a
+  zoom freezes the visual for a frame or two, and a slot with no size stays frozen until it has
+  one.
 
 ## Acceptance evidence
 

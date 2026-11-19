@@ -4,6 +4,7 @@ import {
   BLACK_S,
   FADE_S,
   frameSize,
+  geometryKey,
   limiterWindow,
   pickFeedbackFormat,
   QUALITY_LADDER,
@@ -139,6 +140,8 @@ function recordingGl() {
   const fills: [unknown, number, number[]][] = [];
   const blocks: number[][] = [];
   const grant = new Uint32Array([15, 0, 0, 0]);
+  // The grant word readPixels returns: `grant` unless a harness picks another.
+  const pick = { word: () => grant };
   const reads: unknown[] = [];
   const canvas = { width: 0, height: 0, clientWidth: 0 };
   const gl = new Proxy({} as Record<string | symbol, unknown>, {
@@ -163,12 +166,12 @@ function recordingGl() {
       if (key === "readPixels")
         return (...args: [number, number, number, number, number, number, Uint32Array]) => {
           reads.push(bound.f);
-          args[6].set(grant);
+          args[6].set(pick.word());
         };
       return () => undefined;
     },
   });
-  return { gl, deleted, blits, canvas, spent, clears, fills, blocks, grant, reads };
+  return { gl, deleted, blits, canvas, spent, clears, fills, blocks, grant, pick, reads };
 }
 
 // One rule covers every change to what the viewer sees (CORE-2516): the frame on screen fades to
@@ -208,6 +211,10 @@ describe("Renderer geometry (CORE-2516)", () => {
       blackShown: false,
     });
     const renderer = r as unknown as Renderer;
+    // The grant of a frame of a fade holds a direction, as while a lit frame waits for its fall,
+    // until a test clears fadeGrant: the fade then runs to FADE_S.
+    const fadeGrant = new Uint32Array([0x1f, 0, 0, 0]);
+    recorded.pick.word = () => ((r.fadeLeft as number) > 0 ? fadeGrant : recorded.grant);
     const draw = (width: number, height: number, dt = 1 / 60, frameMs = dt * 1000) =>
       renderer.draw(width, height, dt, silentFrame(), false, frameMs);
     // A frame of texels in a slot of slotWidth x slotHeight physical pixels, shown for shownMs.
@@ -234,7 +241,7 @@ describe("Renderer geometry (CORE-2516)", () => {
       for (let i = 0; i < 18; i++) frame(125);
     };
     const limiter = () => (r.size as { limiter: Limiter }).limiter;
-    return { r, renderer, draw, drawIn, through, limiter, ...recorded };
+    return { r, renderer, draw, drawIn, through, limiter, fadeGrant, ...recorded };
   };
 
   // Codex round 24: the host cannot know what the canvas replaced on screen, so the first frame
@@ -598,6 +605,110 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.clockMs).toBe(clock);
     expect(r.fadeLeft).toBe(FADE_S - 0.125);
     expect(blits).toHaveLength(shown);
+  });
+
+  // The owner's round 26 requirement: the fade lasts as long as the fall takes to be granted, not
+  // FADE_S. The first frame of the fade reads a grant the host wrote, so it decides nothing.
+  it("ends the fade at the first frame after one whose grant held nothing", () => {
+    const { r, renderer, draw, limiter, fadeGrant, reads, clears, deleted } = make();
+    draw(640, 360);
+    draw(640, 360);
+    const old = limiter();
+    fadeGrant[0] = 0x02;
+    draw(800, 450);
+    expect(r.fadeLeft).toBe(FADE_S);
+    expect(reads).toHaveLength(0);
+    const judged = old.fG[old.cur];
+    clears.length = 0;
+    draw(800, 450);
+    expect(reads).toEqual([judged]);
+    expect(r.fadeLeft).toBe(0);
+    expect(r.size).toBe(null);
+    expect(renderer.shown).toBe(null);
+    expect(r.black).toBe(BLACK_S);
+    expect(clears).toEqual([null]);
+    expect([...old.fOut, ...old.fG].every((f) => deleted.has(f))).toBe(true);
+  });
+
+  it("keeps fading while the grant holds a direction, then goes to black", () => {
+    const { r, draw, fadeGrant, reads } = make();
+    draw(640, 360);
+    draw(800, 450);
+    const size = r.size;
+    for (let i = 0; i < 5; i++) draw(800, 450);
+    expect(r.size).toBe(size);
+    expect(r.fadeLeft).toBeCloseTo(FADE_S - 5 / 60);
+    expect(reads).toHaveLength(5);
+    // The red token is back and the fall is granted: the frame on screen is black.
+    fadeGrant[0] = 0x08;
+    draw(800, 450);
+    expect(r.size).toBe(null);
+    expect(r.black).toBe(BLACK_S);
+  });
+
+  // Codex round 26: the slot changed after the last black frame was painted, so the frame that
+  // started was withdrawn. It was never on screen: the black is, and the next draw starts at the
+  // new geometry with no second fade.
+  it("starts at the new geometry when the frame that ended the black is withdrawn", () => {
+    const { r, renderer, draw, limiter, spent, clears, blits, canvas, deleted } = make();
+    draw(640, 360);
+    draw(800, 450);
+    for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
+    expect(r.size).toBe(null);
+    draw(800, 450, 0.125);
+    const started = limiter();
+    expect([canvas.width, canvas.height]).toEqual([800, 450]);
+    const clock = r.clockMs;
+    clears.length = 0;
+    blits.length = 0;
+
+    renderer.withdraw();
+    expect(r.size).toBe(null);
+    expect(renderer.shown).toBe(null);
+    expect(r.fadeLeft).toBe(0);
+    expect(r.black).toBe(0);
+    expect(r.clockMs).toBe((clock as number) - 125);
+    expect(clears).toEqual([null]);
+    expect(blits).toEqual([]);
+    expect([...started.fOut, ...started.fG].every((f) => deleted.has(f))).toBe(true);
+    expect(renderer.settled(900, 500, 1)).toBe(false);
+
+    draw(900, 500);
+    const L = limiter();
+    expect([canvas.width, canvas.height]).toEqual([900, 500]);
+    expect(r.fadeLeft).toBe(0);
+    expect(spent.at(-1)).toEqual([L.fG[L.cur ^ 1], SPENT]);
+    expect(blits).toEqual([[0, 0, 900, 500, 0, 0, 900, 500]]);
+    // A second withdrawal of the same frame does nothing more.
+    renderer.withdraw();
+    renderer.withdraw();
+    expect(r.size).toBe(null);
+  });
+
+  // Codex round 26: at DPR 4 a slot alternating between 128 and 129 physical pixels shows the
+  // same 64 two-pixel texels. The host compares geometry keys, so it withdraws no frame and the
+  // limiter's clock runs.
+  it("advances the limiter's clock while the slot gains and loses an unfilled pixel", () => {
+    const { r, renderer, drawIn } = make();
+    const slots: [number, number][] = [
+      [128, 72],
+      [129, 72],
+    ];
+    drawIn([64, 36, 2], slots[0]);
+    const size = r.size;
+    const clock = r.clockMs as number;
+    for (let i = 1; i <= 120; i++) {
+      const drawn = geometryKey(64, 36, 2, ...slots[(i - 1) % 2]);
+      drawIn([64, 36, 2], slots[(i - 1) % 2]);
+      // The observer's callback: the slot it reports against the frame just drawn.
+      if (geometryKey(64, 36, 2, ...slots[i % 2]) !== drawn) renderer.withdraw();
+    }
+    expect(r.size).toBe(size);
+    expect(r.fadeLeft).toBe(0);
+    expect((r.clockMs as number) - clock).toBeCloseTo(120 * (1000 / 60));
+    // A slot that cuts a texel it showed is another geometry.
+    expect(geometryKey(64, 36, 2, 127, 72)).not.toBe(geometryKey(64, 36, 2, 128, 72));
+    expect(geometryKey(64, 36, 2, 129, 72)).toBe(geometryKey(64, 36, 2, 128, 72));
   });
 
   it("withdraws nothing after a draw that presented black", () => {

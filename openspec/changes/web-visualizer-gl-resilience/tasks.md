@@ -25,6 +25,10 @@
 - [x] 3.10 Paint the slot behind the canvas black (`TRACKED_BLACK`), not the theme's scrim
 - [x] 3.11 Withdraw only a judged frame outside a fade; fade and black frames stand
 - [x] 3.12 Delete the copy paths (divisor, overlap, partial expose), the cut-texel hold and `collapse`
+- [x] 3.13 End the fade at the frame after one whose grant held no direction; 2 s is the cap
+- [x] 3.14 Compare the slot by the geometry a frame is drawn at (`geometryKey`), not by its pixels
+- [x] 3.15 A withdrawn frame that started leaves black and no frame, so the next draw starts
+- [x] 3.16 Hold the frame after a device-pixel-ratio change until the slot is observed again
 
 ## 4. Gate and archive
 

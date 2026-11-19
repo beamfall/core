@@ -5,7 +5,7 @@ import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
-import { MAX_SIDE, Renderer, TRACKED_BLACK } from "./renderer";
+import { geometryKey, MAX_SIDE, Renderer, TRACKED_BLACK } from "./renderer";
 import { canVisualize, type VisualChoice } from "./visualChoice";
 import {
   chosenVisual,
@@ -231,21 +231,29 @@ export function Visualizer({
     const slot = canvas.parentElement ?? canvas;
     let device: { inlineSize: number; blockSize: number } | null = null;
     let css: { width: number; height: number } | null = null;
+    // The device pixel ratio the slot was last reported at, and the one a fresh report was last
+    // asked for at (tick).
+    let reportedAt = 0;
+    let askedAt = 0;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[entries.length - 1];
       if (!entry) return;
       device = entry.devicePixelContentBoxSize?.[0] ?? null;
       css = { width: entry.contentRect.width, height: entry.contentRect.height };
+      reportedAt = window.devicePixelRatio;
       // Observers run after animation frames and before the paint: a slot resized since this
       // frame's draw would show a frame judged against the old area limit, so it is withdrawn
       // and the next draw starts the fade from the frame on screen (Codex round 18).
       const drawn = unpainted;
       if (drawn === null) return;
       unpainted = null;
-      const key = [
+      // The comparison is of the geometry the renderer shows, not of the slot's pixels: a slot
+      // that gains or loses a pixel no whole texel fills is the same frame, and withdrawing for
+      // it would stop the limiter's clock for as long as the slot jitters (Codex round 26).
+      const key = geometryKey(
         ...backingSize(device, css.width, css.height, window.devicePixelRatio),
         ...slotPixels(device, css.width, css.height, window.devicePixelRatio),
-      ].join();
+      );
       if (key === drawn) return;
       try {
         rendererRef.current?.withdraw();
@@ -253,11 +261,15 @@ export function Visualizer({
         // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
       }
     });
-    try {
-      observer.observe(slot, { box: "device-pixel-content-box" });
-    } catch {
-      observer.observe(slot);
-    }
+    // Observing a slot already observed reports it again before the next paint.
+    const watch = () => {
+      try {
+        observer.observe(slot, { box: "device-pixel-content-box" });
+      } catch {
+        observer.observe(slot);
+      }
+    };
+    watch();
     // Fit, filter and clip the frame the renderer shows. Through a fade all three follow the
     // frame that is fading, and through the black after it the canvas stays as that frame left it.
     let cssSize = "";
@@ -310,6 +322,20 @@ export function Visualizer({
       const renderer = rendererRef.current;
       const video = videoRef.current;
       if (!renderer || !video || document.hidden) return;
+      // A report made at another device pixel ratio does not measure the slot at this one: CSS
+      // pixels times the new ratio is a guess, and a fade or a clip from a guessed slot can cut a
+      // lit frame with no grant. The frame on screen is held as it is, refitted to the same
+      // physical pixels, and the slot is observed afresh; the report comes before the paint, so
+      // the next frame draws from a measurement (Codex round 26).
+      const ratio = window.devicePixelRatio;
+      if (css && ratio !== reportedAt) {
+        if (ratio !== askedAt) {
+          askedAt = ratio;
+          watch();
+        }
+        fitCanvas(renderer);
+        return;
+      }
       const box = css ?? slot.getBoundingClientRect();
       const [width, height, texel] = backingSize(
         device,
@@ -376,7 +402,7 @@ export function Visualizer({
         );
         lastDrawn = now;
         lastWall = wall;
-        unpainted = [width, height, texel, slotWidth, slotHeight].join();
+        unpainted = geometryKey(width, height, texel, slotWidth, slotHeight);
         fitCanvas(renderer);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {

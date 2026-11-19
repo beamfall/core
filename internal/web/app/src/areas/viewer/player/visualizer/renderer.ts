@@ -27,10 +27,11 @@ const CREDIT_MS = 1000 / (2 * MAX_FLASH_HZ);
 /** The limiter's grant state with every budget just spent: two luma tokens of deficit (bit 8 of x
  * carries one), a red token and no credit (Oscillux shaders/limiter/grant.glsl). */
 const SPENT = new Uint32Array([256, TOKEN, TOKEN, 0]);
-/** How long a geometry change fades the frame on screen to black through the limiter, in time the
- * limiter is credited with: longer than the slowest grant of a fall, the red token's refill of
+/** The longest a geometry change fades the frame on screen to black through the limiter, in time
+ * the limiter is credited with: longer than the slowest grant of a fall, the red token's refill of
  * 8 / (2 maxFlashHz) s, by more than the one frame's credit the fade's last frame is not judged
- * with (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). */
+ * with (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). The fade ends sooner, at the
+ * first frame after one whose grant held nothing (draw): this is the backstop. */
 export const FADE_S = 2;
 /** How long black is presented before a frame starts after a fade or a restored context: longer
  * than the limiter's coverage interval, 1 / (5 maxFlashHz) s (same section). */
@@ -145,6 +146,21 @@ function sameGeometry(a: Geometry, b: Geometry): boolean {
     a.visibleWidth === b.visibleWidth &&
     a.visibleHeight === b.visibleHeight
   );
+}
+
+/** The geometry a draw request would show, as a key: two requests with one key are the same frame
+ * to the renderer, whatever the slot's pixels past its last whole texel. A host compares the key
+ * of the frame it drew with the key of the slot it then observes, so a slot that only gained or
+ * lost a pixel no texel fills withdraws nothing (Codex round 26). */
+export function geometryKey(
+  width: number,
+  height: number,
+  texel: number,
+  slotWidth: number,
+  slotHeight: number,
+): string {
+  const g = geometry(width, height, texel, slotWidth, slotHeight);
+  return [g.width, g.height, g.texel, g.visibleWidth, g.visibleHeight].join();
 }
 const LIMITER_VERTEX =
   "#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }";
@@ -336,8 +352,15 @@ export class Renderer {
   private grantSettled = true;
   private limiterSpent = false;
   // The limiter's state before the last frame drawn, until the next draw, when that frame was
-  // judged outside a fade (withdraw).
-  private undo: { cur: number; clockMs: number; carry: number; spent: boolean } | null = null;
+  // judged outside a fade (withdraw). `started` marks the frame that started: before it there
+  // was no frame, only black.
+  private undo: {
+    cur: number;
+    clockMs: number;
+    carry: number;
+    spent: boolean;
+    started: boolean;
+  } | null = null;
   // The fraction of a refill unit earned and not yet granted (limiter README, Codex round 15).
   private refillCarry = 0;
   private readonly visualVertex: string;
@@ -649,8 +672,9 @@ export class Renderer {
    * after the last, in a slot slotWidth x slotHeight physical pixels.
    *
    * One rule covers every change to what the viewer sees, whether the backing size, the texel size
-   * or the texels in view: the frame on screen fades to black through the limiter (FADE_S), black
-   * is presented (BLACK_S), and a frame starts at the geometry asked for then, black with every
+   * or the texels in view: the frame on screen fades to black through the limiter (until a frame
+   * of the fade showed its black input exactly, FADE_S at most), black is presented (BLACK_S),
+   * and a frame starts at the geometry asked for then, black with every
    * budget spent (start). A change during the fade or the black only moves that target: nothing
    * is reallocated, spent or restarted, so a slot dragged to a new size costs one fade and one
    * start. No pixel is carried from one geometry to the next (CORE-2516).
@@ -677,9 +701,15 @@ export class Renderer {
     // frame rate (Codex rounds 18, 22).
     const shownS = Math.min(shownMs, CREDIT_MS) / 1000;
     let size = this.size;
+    let started = false;
     if (size && this.fadeLeft > 0) {
       this.fadeLeft = Math.max(0, this.fadeLeft - shownS);
-      if (this.fadeLeft === 0) {
+      // The fade is over once its last frame showed its input, black, at every pixel: the grant
+      // held no direction, so every fall has been granted. A dark frame gets there in one frame, a
+      // frame with luma to drop when the luma tokens are back, and one with saturated red when the
+      // red token is. FADE_S, by when the slowest grant has come, is the backstop.
+      if (this.fadeLeft === 0 || this.exact(size)) {
+        this.fadeLeft = 0;
         // The frame is black by now. A size change ends a switch, as in the reference host.
         this.endSwitch();
         this.freeSize();
@@ -707,6 +737,7 @@ export class Renderer {
         return;
       }
       size = this.start(want);
+      started = true;
     }
     // The part of the canvas the host may show only shrinks (shown): a pixel the slot hid would
     // come back unjudged, so it stays hidden until the start.
@@ -771,6 +802,7 @@ export class Renderer {
         clockMs: this.clockMs,
         carry: this.refillCarry,
         spent: this.limiterSpent,
+        started,
       };
     }
     this.limit(size, shownMs);
@@ -783,17 +815,28 @@ export class Renderer {
    * output again and the limiter's state goes back to before the frame. A host calls it when the
    * slot's size changes between a draw and its paint, so a frame judged against the old area limit
    * is never shown in the new slot (Codex round 18); the next draw starts the fade from the frame
-   * that was on screen. Black and the frames of a fade stand. */
+   * that was on screen. Black and the frames of a fade stand. Before the frame that started there
+   * was no frame, only black, so withdrawing it leaves black and no frame: the next draw starts
+   * at the geometry asked for then, with no fade of a frame nobody saw (Codex round 26). */
   withdraw(): void {
     const u = this.undo;
     const size = this.size;
     this.undo = null;
     if (!u || !size) return;
-    size.limiter.cur = u.cur;
     this.clockMs = u.clockMs;
     this.refillCarry = u.carry;
     this.limiterSpent = u.spent;
     this.grantSettled = false;
+    if (u.started) {
+      const gl = this.gl;
+      this.endSwitch();
+      this.freeSize();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      return;
+    }
+    size.limiter.cur = u.cur;
     this.showLimited(size);
   }
 
@@ -849,12 +892,18 @@ export class Renderer {
     // With no frame the canvas is black: all a slot with no whole texel in view ever shows.
     if (!size) return this.black <= 0 && (want.visibleWidth < 1 || want.visibleHeight < 1);
     if (this.fadeLeft > 0 || !sameGeometry(size, want)) return false;
+    return this.exact(size);
+  }
+
+  // Whether the last frame judged showed its input exactly, at every pixel.
+  private exact(size: Size): boolean {
     // A grant state the host wrote spent has judged no frame, so its clear held bits say nothing
     // about the input: a withdrawn first draw would otherwise hold black (Codex round 24).
     if (this.limiterSpent) return false;
     if (this.grantSettled) return true;
-    // A denied direction can leave a steady input held. Read the last grant only when
-    // deciding whether to stop drawing, and reuse an all-admitted result until the next draw.
+    // A denied direction can leave a steady input held. Read the last grant only when deciding
+    // whether to stop drawing or to end a fade, and reuse an all-admitted result until the next
+    // draw.
     const gl = this.gl;
     const L = size.limiter;
     this.grantWord[0] = 0;

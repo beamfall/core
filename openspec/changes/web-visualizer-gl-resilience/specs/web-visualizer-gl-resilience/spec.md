@@ -39,8 +39,8 @@ to the failed state. It SHALL remove its listeners on unmount.
 
 When a frame is on screen and the geometry asked for differs from it (the backing size in texels,
 the physical pixels per texel, or the whole texels the slot shows), the web visualizer SHALL fade
-that frame to black through the flash limiter for 2 s, then present black for 0.1 s, then start a
-frame at the geometry asked for then. No output or tracker texel SHALL be carried from one
+that frame to black through the flash limiter, then present black for 0.1 s, then start a frame
+at the geometry asked for then. No output or tracker texel SHALL be carried from one
 geometry to another.
 
 #### Scenario: Window resized during a strobe
@@ -65,8 +65,10 @@ geometry to another.
 
 For the fade the web visualizer SHALL keep the frame's geometry, write the grant state with every
 budget spent once, set the area limit to zero and feed the limiter black, so every fall to black
-waits for a grant. It SHALL count the fade and the black in the time the limiter is credited
-with, at most 1/6 s a frame, and the black from the first black frame shown.
+waits for a grant. It SHALL end the fade at the first frame after one of the fade's frames whose
+grant held no direction, and after 2 s at most. It SHALL count the fade and the black in the time
+the limiter is credited with, at most 1/6 s a frame, and the black from the first black frame
+shown.
 
 #### Scenario: Fade starts
 
@@ -78,6 +80,28 @@ with, at most 1/6 s a frame, and the black from the first black frame shown.
 
 - **WHEN** a frame of the fade was shown for one second
 - **THEN** the fade counts 1/6 s for it, as the limiter's refill does
+
+#### Scenario: Dark frame
+
+- **WHEN** the fade starts on a frame with no pixel a step above black
+- **THEN** the fade's first frame holds no direction and the next frame presents black
+
+#### Scenario: Frame with a fall to grant
+
+- **WHEN** the fade's frames hold the fall to black
+- **THEN** the fade goes on until the frame after the one that granted it, and the grant state
+  the fade wrote is not read as a grant
+
+#### Scenario: Grant that never clears
+
+- **WHEN** every frame of the fade holds a direction
+- **THEN** black is presented once the fade has counted 2 s
+
+#### Scenario: Steady 60 frames a second
+
+- **WHEN** frames arrive every 1/60 s and the refresh period is unknown
+- **THEN** each frame is credited half its interval, so the 0.1 s of black lasts about 0.2 s on
+  the clock and the 2 s cap about 4 s
 
 ### Requirement: A change during the fade only moves the target
 
@@ -144,7 +168,8 @@ by that clip and a pixel the slot hid does not come back.
 
 A frame judged for a slot that changed before the frame was painted SHALL be withdrawn: the
 previous output is presented again and the limiter's state goes back to before the frame. Black
-and the frames of a fade SHALL stand.
+and the frames of a fade SHALL stand. A withdrawn frame that started at a new geometry SHALL
+leave black and no frame, so the next draw starts at the geometry asked for then.
 
 #### Scenario: Slot changed before paint
 
@@ -156,6 +181,38 @@ and the frames of a fade SHALL stand.
 
 - **WHEN** the slot's size changes between the draw and the paint of a frame of the fade
 - **THEN** that frame stands and the fade's clock is not put back
+
+#### Scenario: Slot changed as the black ended
+
+- **WHEN** the slot's size changes between the draw and the paint of the frame that started
+  after the black
+- **THEN** that frame is withdrawn, black is presented with no frame, and the next draw starts
+  at the new geometry with no second fade
+
+### Requirement: A slot has changed when its geometry has
+
+The slot SHALL count as changed for a withdrawal when the geometry a frame would be drawn at
+differs: the backing size, the pixels per texel or the whole texels in view. A change of the
+slot's pixels that leaves that geometry as it was SHALL NOT withdraw a frame.
+
+#### Scenario: Slot gains and loses a pixel no texel fills
+
+- **WHEN** at 2 physical pixels per texel the slot alternates between 128 and 129 pixels wide
+  before each paint, 64 texels either way
+- **THEN** no frame is withdrawn and the limiter's clock advances with every frame
+
+### Requirement: A slot measured at another device pixel ratio is not drawn for
+
+When the device pixel ratio differs from the one the slot was last observed at, the web
+visualizer SHALL NOT draw, start a fade or move the clip from the cached size. It SHALL leave the
+frame on screen as it is, observe the slot again, and draw from the next observation.
+
+#### Scenario: Zoom with the slot's pixels unchanged
+
+- **WHEN** a slot of 800 by 600 physical pixels at ratio 2 is zoomed to ratio 1 and the next
+  animation frame runs before the slot is observed
+- **THEN** nothing is drawn, no fade starts and the clip does not shrink; after the observation
+  reports 800 by 600 the frame goes on with no fade
 
 ### Requirement: Unjudged pixels show black
 

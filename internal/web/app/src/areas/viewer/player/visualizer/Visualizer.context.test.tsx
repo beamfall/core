@@ -28,9 +28,10 @@ const made = vi.hoisted(() => ({
 }));
 
 vi.mock("./oscillux", () => ({ loadOscillux: () => Promise.resolve({}) }));
-vi.mock("./renderer", () => ({
+vi.mock("./renderer", async (importOriginal) => ({
   MAX_SIDE: 8192,
   TRACKED_BLACK: "#000",
+  geometryKey: (await importOriginal<typeof import("./renderer")>()).geometryKey,
   Renderer: {
     create: async (_canvas: HTMLCanvasElement, _osc: unknown, restored: boolean) => {
       made.restores.push(restored);
@@ -336,6 +337,7 @@ describe("Visualizer canvas fitting", () => {
 describe("Visualizer resize before paint", () => {
   type Observed = (entries: unknown[]) => void;
   let observed: Observed | null;
+  let observes: number;
   const report = (width: number, height: number) =>
     act(() =>
       observed?.([
@@ -345,15 +347,23 @@ describe("Visualizer resize before paint", () => {
         },
       ]),
     );
+  // A browser without device-pixel-content-box reports CSS pixels only.
+  const reportCss = (width: number, height: number) =>
+    act(() => observed?.([{ contentRect: { width, height } }]));
+  const setRatio = (value: number) =>
+    Object.defineProperty(window, "devicePixelRatio", { configurable: true, value });
   beforeEach(() => {
     observed = null;
+    observes = 0;
     vi.stubGlobal(
       "ResizeObserver",
       class {
         constructor(cb: Observed) {
           observed = cb;
         }
-        observe() {}
+        observe() {
+          observes += 1;
+        }
         disconnect() {}
       },
     );
@@ -375,6 +385,73 @@ describe("Visualizer resize before paint", () => {
     expect(renderer.withdraw).toHaveBeenCalledOnce();
     report(300, 360);
     expect(renderer.withdraw).toHaveBeenCalledOnce();
+  });
+
+  // Codex round 26: red in an 800 x 600 slot at DPR 2, then a zoom to DPR 1 that keeps the
+  // slot's physical pixels. The CSS box cached from DPR 2 times the new ratio is a 400 x 300 slot
+  // that never existed; drawing for it faded and clipped a lit frame with no grant.
+  it("holds the frame after a ratio change until the slot is observed at the new ratio", async () => {
+    const ratio = window.devicePixelRatio;
+    setRatio(2);
+    try {
+      const { canvas } = mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[0];
+      reportCss(400, 300);
+      step(16);
+      expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
+      const asked = observes;
+
+      setRatio(1);
+      step(32);
+      step(48);
+      // No frame is drawn for the guessed slot; the one on screen keeps its physical pixels,
+      // unclipped, and the slot is observed afresh, once.
+      expect(renderer.draw).toHaveBeenCalledOnce();
+      expect(renderer.settled).not.toHaveBeenCalled();
+      expect(observes).toBe(asked + 1);
+      expect(canvas.style.width).toBe("800px");
+      expect(canvas.style.height).toBe("600px");
+      expect(canvas.style.clipPath).toBe("");
+
+      reportCss(800, 600);
+      expect(renderer.withdraw).not.toHaveBeenCalled();
+      step(64);
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
+      expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+    } finally {
+      setRatio(ratio);
+    }
+  });
+
+  // Codex round 26: at DPR 4 a slot alternating between 128 and 129 physical pixels shows the
+  // same 64 x 36 two-pixel texels. The observer compared slot pixels and withdrew every frame,
+  // which stopped the limiter's clock for as long as the slot jittered.
+  it("withdraws nothing while the slot gains and loses a pixel no texel fills", async () => {
+    const ratio = window.devicePixelRatio;
+    setRatio(4);
+    try {
+      mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[0];
+      report(128, 72);
+      for (let i = 1; i <= 120; i++) {
+        step(16 * i);
+        report(i % 2 ? 129 : 128, 72);
+      }
+      expect(renderer.draw).toHaveBeenCalledTimes(120);
+      expect(renderer.withdraw).not.toHaveBeenCalled();
+      // A slot that cuts a texel it showed is another frame.
+      step(16 * 121);
+      report(127, 72);
+      expect(renderer.withdraw).toHaveBeenCalledOnce();
+    } finally {
+      setRatio(ratio);
+    }
   });
 
   it("withdraws nothing once the next frame has run", async () => {
