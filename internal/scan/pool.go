@@ -116,7 +116,7 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 	if t.fastPath {
 		return
 	}
-	fingerprint, err := hashFileContent(t.path)
+	fingerprint, err := hashScanFile(ctx, t.path)
 	if err != nil {
 		t.err = err
 		return
@@ -139,6 +139,23 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 			slog.Debug("scan: perceptual hash failed", "path", t.path, "error", phashErr.Error())
 		}
 	}
+}
+
+// Whole-file reads compete for storage bandwidth across all scan runs. Keep the
+// slot until the reader closes, and leave probes and other work outside it.
+var scanHashSlot = make(chan struct{}, 1)
+
+func hashScanFile(ctx context.Context, path string) (string, error) {
+	select {
+	case scanHashSlot <- struct{}{}:
+		defer func() { <-scanHashSlot }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return hashFileContent(ctx, path)
 }
 
 // probeFile probes a non-image file, leaving t.probe unset when there is no
@@ -169,7 +186,8 @@ func (t *workerTask) probeFile(ctx context.Context, prober Prober) {
 // the checkpoint-batch yield) stop the pipeline: the shared pipeline context
 // is cancelled, the walk unwinds, the remaining ordered tasks are drained
 // (their fills are side-effect-free, so discarding them is safe — resume
-// re-does them from the checkpoint), and the control error is returned.
+// re-does them from the checkpoint), and all workers are joined before the
+// control error is returned.
 // Per-file errors are handled by skipOrPropagate exactly like the sequential
 // walk: logged and skipped.
 func runScanPipeline(

@@ -262,8 +262,8 @@ func imageClassForPath(path string) bool {
 
 // hashFileContent is the whole-file content hash (a package-level seam so a
 // counting test can assert the fast-path performs zero hashes on an unchanged
-// library). Production always points it at store.HashMediaFileContent.
-var hashFileContent = store.HashMediaFileContent
+// library). Production always points it at store.HashMediaFileContentContext.
+var hashFileContent = store.HashMediaFileContentContext
 
 // stabilityWindow is the file-stability quiet period: a file
 // whose mtime is newer than now-stabilityWindow is still being written (a rip
