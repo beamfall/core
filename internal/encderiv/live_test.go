@@ -553,9 +553,24 @@ func TestLiveRunPublishesCompletedUploadAfterClientDisconnect(t *testing.T) {
 	staged := make(chan struct{})
 	release := make(chan struct{})
 	published := make(chan error, 1)
+	body := []byte("complete fragment")
 	run, err := StartLiveRun(LiveRunConfig{
 		Session: session, Rung: testLiveRung, Open: source.open, Size: 10, peer: acceptPeer,
-		PublishSegment: func(uploadCtx context.Context, _ string, commit func() error) error {
+		PublishSegment: func(uploadCtx context.Context, _ string, open func() (*LiveFile, error), commit func() error) error {
+			file, err := open()
+			if err != nil {
+				published <- err
+				return err
+			}
+			got, err := io.ReadAll(file)
+			_ = file.Close()
+			if err == nil && !bytes.Equal(got, body) {
+				err = fmt.Errorf("could not read staged fragment: got %d bytes", len(got))
+			}
+			if err != nil {
+				published <- err
+				return err
+			}
 			close(staged)
 			select {
 			case <-release:
@@ -564,7 +579,7 @@ func TestLiveRunPublishesCompletedUploadAfterClientDisconnect(t *testing.T) {
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-			err := commit()
+			err = commit()
 			published <- err
 			return err
 		},
@@ -576,7 +591,6 @@ func TestLiveRunPublishesCompletedUploadAfterClientDisconnect(t *testing.T) {
 	clientCtx, disconnect := context.WithCancel(ctx)
 	defer disconnect()
 	const name = "seg00002.m4s"
-	body := []byte("complete fragment")
 	req, err := http.NewRequestWithContext(clientCtx, http.MethodPut, run.OutputURL()+"/"+name, bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -590,6 +604,8 @@ func TestLiveRunPublishesCompletedUploadAfterClientDisconnect(t *testing.T) {
 	}()
 	select {
 	case <-staged:
+	case err := <-published:
+		t.Fatalf("could not inspect the staged upload: %v", err)
 	case <-ctx.Done():
 		t.Fatal("upload did not reach the publication hook")
 	}
@@ -700,6 +716,53 @@ func TestLiveRunPauseSuspendsInFlightUploadRead(t *testing.T) {
 	}
 	if status := <-done; status != http.StatusCreated {
 		t.Fatalf("resumed upload status = %d, want 201", status)
+	}
+}
+
+func TestLiveRunPausedPartialUploadExpiresAtAbsoluteDeadline(t *testing.T) {
+	session := newTestLiveSession(t)
+	sink := &signalSink{uploadSink: liveSink{session: session, rung: testLiveRung}, reading: make(chan struct{})}
+	source := &countingOpener{data: testPayload(10)}
+	ep, err := startEndpoint(endpointConfig{
+		open: source.open, size: 10, sink: sink, rung: testLiveRung,
+		idle: 10 * time.Second, deadline: time.Now().Add(400 * time.Millisecond),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ep.Revoke)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", ep.host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := fmt.Fprintf(conn, "PUT /%s/out/%s/seg00000.m4s HTTP/1.1\r\nHost: %s\r\nContent-Length: 131072\r\n\r\n", ep.token, testLiveRung, ep.host); err != nil {
+		t.Fatal("could not write upload headers")
+	}
+	if _, err := conn.Write(testPayload(64 << 10)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sink.reading:
+	case <-ctx.Done():
+		t.Fatal("upload did not reach the sink")
+	}
+	if parts := sessionFiles(t, session.Dir()); len(parts) != 1 || !strings.HasSuffix(parts[0], livePartSuffix) {
+		t.Fatalf("mid-upload files %v, want one .part", parts)
+	}
+	ep.setIdleSuspended(true)
+	select {
+	case <-ep.failed:
+	case <-ctx.Done():
+		t.Fatal("paused upload remained in flight past absolute expiry")
+	}
+	if err := ep.Err(); !errors.Is(err, ErrExpired) {
+		t.Fatalf("endpoint error = %v, want expired", err)
+	}
+	if files := sessionFiles(t, session.Dir()); len(files) != 0 {
+		t.Fatalf("expired upload left %v", files)
 	}
 }
 

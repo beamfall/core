@@ -453,18 +453,18 @@ func (e *endpoint) setIdleSuspended(suspended bool) {
 }
 
 func (e *endpoint) uploadReadDeadlineLocked() time.Time {
-	if e.idleSuspended {
-		return time.Time{}
+	// Translate the token clock to the real clock used by the connection.
+	now := time.Now()
+	deadline := now.Add(e.deadline.Sub(e.now()))
+	if idleDeadline := now.Add(e.idle); e.idle > 0 && !e.idleSuspended && idleDeadline.Before(deadline) {
+		return idleDeadline
 	}
-	return time.Now().Add(e.idle)
+	return deadline
 }
 
 func (e *endpoint) beginUploadRead(rc *http.ResponseController) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.idle <= 0 {
-		return nil
-	}
 	if e.uploadReads == nil {
 		e.uploadReads = make(map[*http.ResponseController]struct{})
 	}

@@ -180,7 +180,7 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 // put stores one upload at rel: encrypted into rel.part, then renamed into
 // place. A name already published, or one another upload is writing, is
 // refused with errUploadExists before body is read (first writer wins).
-func (s *LiveSession) put(rel string, body io.Reader, publish func(commit func() error) error) error {
+func (s *LiveSession) put(rel string, body io.Reader, publish func(open func() (*LiveFile, error), commit func() error) error) error {
 	path, err := s.resolve(rel)
 	if err != nil {
 		return err
@@ -207,7 +207,8 @@ func (s *LiveSession) put(rel string, body io.Reader, publish func(commit func()
 		err = closeErr
 	}
 	if err == nil {
-		err = publish(func() error { return os.Rename(part, path) })
+		err = publish(func() (*LiveFile, error) { return s.open(part, rel) },
+			func() error { return os.Rename(part, path) })
 	}
 	if err != nil {
 		_ = os.Remove(part)
@@ -222,7 +223,11 @@ func (s *LiveSession) Open(rel string) (*LiveFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(path) // #nosec G304 -- path is a validated name inside the session's own directory
+	return s.open(path, rel)
+}
+
+func (s *LiveSession) open(path, rel string) (*LiveFile, error) {
+	f, err := os.Open(path) // #nosec G304,G703 -- resolve validated the session path before adding the fixed staging suffix
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +358,7 @@ func (f *LiveFile) endLocked() error {
 type liveSink struct {
 	session *LiveSession
 	rung    string
-	publish func(context.Context, string, func() error) error
+	publish func(context.Context, string, func() (*LiveFile, error), func() error) error
 }
 
 func (k liveSink) uploadLimit(name string) (int64, bool) {
@@ -374,7 +379,8 @@ func (k liveSink) upload(ctx context.Context, name string, body io.Reader, check
 		_, err := io.Copy(io.Discard, body)
 		return err
 	}
-	finish := func(commit func() error) error {
+	rel := k.rung + "/" + name
+	finish := func(open func() (*LiveFile, error), commit func() error) error {
 		checkedCommit := func() error {
 			if err := check(); err != nil {
 				return err
@@ -382,11 +388,11 @@ func (k liveSink) upload(ctx context.Context, name string, body io.Reader, check
 			return commit()
 		}
 		if k.publish != nil && liveSegmentName.MatchString(name) {
-			return k.publish(ctx, name, checkedCommit)
+			return k.publish(ctx, name, open, checkedCommit)
 		}
 		return checkedCommit()
 	}
-	err := k.session.put(k.rung+"/"+name, body, finish)
+	err := k.session.put(rel, body, finish)
 	if !errors.Is(err, errUploadExists) {
 		return err
 	}
@@ -395,7 +401,7 @@ func (k liveSink) upload(ctx context.Context, name string, body io.Reader, check
 	if _, err := io.Copy(io.Discard, body); err != nil {
 		return err
 	}
-	if err := finish(func() error { return nil }); err != nil {
+	if err := finish(func() (*LiveFile, error) { return k.session.Open(rel) }, func() error { return nil }); err != nil {
 		return err
 	}
 	return errUploadExists
@@ -416,9 +422,10 @@ type LiveRunConfig struct {
 	IdleTimeout time.Duration
 	// PublishSegment runs after a segment body is fully consumed. It must
 	// call commit to publish (or keep the existing file for a duplicate)
-	// and stop waiting when ctx is cancelled. When nil, uploads publish
-	// immediately.
-	PublishSegment func(ctx context.Context, name string, commit func() error) error
+	// and stop waiting when ctx is cancelled. open allows inspecting the
+	// encrypted staging file before commit, using the session's key.
+	// When nil, uploads publish immediately.
+	PublishSegment func(ctx context.Context, name string, open func() (*LiveFile, error), commit func() error) error
 
 	now  func() time.Time
 	peer peerChecker

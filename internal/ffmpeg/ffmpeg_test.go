@@ -17,7 +17,9 @@ func TestPacedHLSOutputSeparatesPipesFromPublication(t *testing.T) {
 		t.Skip("requires named pipes")
 	}
 	dst := t.TempDir()
-	out, err := New().NewPacedHLSOutput(dst, 0)
+	scratch := t.TempDir()
+	t.Cleanup(func() { _ = PurgePacedHLSOutput(scratch) })
+	out, err := New().NewPacedHLSOutput(scratch, dst, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +48,18 @@ func TestPacedHLSOutputSeparatesPipesFromPublication(t *testing.T) {
 			t.Fatalf("%s became visible before publication: %v", name, err)
 		}
 	}
+	if err := out.StageSidecars(true); err != nil {
+		t.Fatal(err)
+	}
+	// Publication must succeed with only the destination-volume copies.
+	for _, name := range []string{"init.mp4", "index.m3u8"} {
+		if _, err := os.Stat(filepath.Join(dst, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s became visible during staging: %v", name, err)
+		}
+	}
+	if err := os.Remove(filepath.Join(out.Dir, "index.m3u8")); err != nil {
+		t.Fatal(err)
+	}
 	if err := out.Publish(0, true); err != nil {
 		t.Fatal(err)
 	}
@@ -55,8 +69,17 @@ func TestPacedHLSOutputSeparatesPipesFromPublication(t *testing.T) {
 			t.Fatalf("published %s = %q, %v; want %q", name, got, err, want)
 		}
 	}
+	other, err := New().NewPacedHLSOutput(scratch, dst, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(other.Close)
 	out.Close()
-	for _, dir := range []string{out.Dir, out.ready} {
+	if _, err := os.Stat(other.Dir); err != nil {
+		t.Fatalf("closing the first encoder affected the other stage: %v", err)
+	}
+	other.Close()
+	for _, dir := range []string{out.Dir, out.ready, other.Dir, other.ready, filepath.Dir(out.Dir)} {
 		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("staging %s survived cleanup: %v", dir, err)
 		}

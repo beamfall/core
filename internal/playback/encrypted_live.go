@@ -69,9 +69,14 @@ func (s *Sessions) startEncryptedRung(ctx context.Context, key SessionKey, sessi
 		Rung:    rung.ID,
 		Open:    session.secure.Open,
 		Size:    session.secure.Size,
-		PublishSegment: func(ctx context.Context, name string, commit func() error) error {
+		PublishSegment: func(ctx context.Context, name string, open func() (*encderiv.LiveFile, error), commit func() error) error {
 			n, _ := encoderSegmentNumber(name) // validated by the upload endpoint
-			return s.withPublicationSlot(ctx, key, session, run, n, commit)
+			hasMedia := true
+			if file, err := open(); err == nil {
+				hasMedia = !readerLacksMedia(file, file.Size())
+				_ = file.Close()
+			}
+			return s.withPublicationSlot(ctx, key, session, run, n, hasMedia, commit)
 		},
 	})
 	if err != nil {

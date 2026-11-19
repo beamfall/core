@@ -5,6 +5,7 @@ package ffmpeg
 import (
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"syscall"
 
@@ -14,6 +15,11 @@ import (
 // SupportsHLSPause reports whether a process group can be suspended while
 // keeping its identity reserved until the group is cleaned up at reap.
 const SupportsHLSPause = true
+
+func ownsHLSStaging(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && int(stat.Uid) == os.Geteuid()
+}
 
 func makeHLSOutputPipe(path string) error { return unix.Mkfifo(path, 0o600) }
 

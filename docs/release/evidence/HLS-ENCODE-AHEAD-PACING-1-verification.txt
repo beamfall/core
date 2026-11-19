@@ -1,4 +1,79 @@
 CORE-0022 HLS-ENCODE-AHEAD-PACING-1
+Repair round 2 follow-up verification PASS on macOS, 2026-11-19
+
+The production Sessions and Runner transcoded real 1080p HEVC to 1080p H.264
+with VideoToolbox. A headless FFmpeg decoder consumed init and media from
+Sessions.FilePath at playback speed for 60.185 seconds. At segment 15 the
+encoder was stopped with eight published segments ahead. A +20-second seek
+to segment 20 resumed the same PID, which stopped again with eight ahead.
+
+The sandbox denied ps. This run used the host and the same detached
+worktree. The test retained the previous playback harness and updated its
+process selector to match the instance-owned FIFO staging directory.
+A concurrent attempt with the Go race suites timed out during encoder
+startup after producing seven segments. The isolated retry increased the
+startup observation window from 20 to 45 seconds.
+
+Commands run
+
+  export GOCACHE=/tmp/codex-gocache GOWORK=off
+  export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
+  sed 's@strings.Contains(row, "/tmp/.encoder-")@strings.Contains(row, "/.beamfall-hls-") || !strings.Contains(row, "/.encoder-")@' \
+    /tmp/core0022-r2-manual_test.go > /tmp/core0022-r3-manual_test.go
+  sed -e 's/120\*time.Second/180*time.Second/' -e 's/20\*time.Second/45*time.Second/' \
+    /tmp/core0022-r3-manual_test.go > /tmp/core0022-r3-manual-retry_test.go
+  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
+    --arg content /tmp/core0022-r3-manual-retry_test.go \
+    '{Replace:{($test):$content}}' > /tmp/core0022-r3-manual-retry-overlay.json
+  sw_vers
+  uname -m
+  ffmpeg -version | head -1
+  go test -overlay /tmp/core0022-r3-manual-retry-overlay.json ./internal/playback \
+    -run '^TestPacingMacOSReceipt$' -count=1 -v
+
+Raw output
+
+ProductName:		macOS
+ProductVersion:		27.2.1
+BuildVersion:		26B131
+arm64
+ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers
+=== RUN   TestPacingMacOSReceipt
+source probe:
+codec_name=hevc
+width=1920
+height=1080
+r_frame_rate=60000/1001
+duration=264.767000
+transcode probe: h264,1920,1080
+playhead=0s segment=0 frontier=8 on_disk_ahead=8
+ps: 85623 T    /opt/homebrew/bin/ffmpeg
+wall-clock playback: 60.185s
+playhead=60s segment=15 frontier=23 on_disk_ahead=8
+ps: 85623 T    /opt/homebrew/bin/ffmpeg
+seek: 60s -> 80s (+20s)
+playhead=80s segment=20 frontier=23 on_disk_ahead=3
+ps: 85623 R    /opt/homebrew/bin/ffmpeg
+playhead=80s segment=20 frontier=28 on_disk_ahead=8
+ps: 85623 T    /opt/homebrew/bin/ffmpeg
+decoder final progress:
+frame=4076
+fps=56.23
+stream_0_0_q=-0.0
+bitrate=N/A
+total_size=N/A
+out_time_us=84017267
+out_time_ms=84017267
+out_time=00:01:24.017267
+dup_frames=0
+drop_frames=0
+speed=1.16x
+progress=end
+--- PASS: TestPacingMacOSReceipt (90.95s)
+PASS
+ok  	github.com/beamfall/core/internal/playback	91.151s
+
+CORE-0022 HLS-ENCODE-AHEAD-PACING-1
 Second repair verification PASS on macOS, 2026-11-19
 
 The production Sessions and Runner transcoded a real 1080p HEVC source to

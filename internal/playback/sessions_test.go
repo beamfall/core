@@ -727,7 +727,7 @@ func TestReplacedEncoderDoesNotExtendTheWait(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*window)
 	defer cancel()
 	started := time.Now()
-	err = sessions.waitWhileEncoderProgresses(ctx, key, session, rung, 3, true, filepath.Join(dir, "seg00003.m4s"), replaced, window)
+	err = sessions.waitWhileEncoderProgresses(ctx, key, session, rung, 3, true, filepath.Join(dir, "seg00003.m4s"), replaced, window, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
 	}
@@ -1931,7 +1931,7 @@ func TestEnsureRungRefusesEvictedSession(t *testing.T) {
 			t.Fatalf("recreate rung dir: %v", err)
 		}
 
-		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 0, filepath.Join(rungDir, "seg00000.m4s"))
+		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 0, filepath.Join(rungDir, "seg00000.m4s"), nil)
 		if !errors.Is(err, ErrSessionEvicted) {
 			t.Fatalf("ensureRung err = %v, want ErrSessionEvicted", err)
 		}
@@ -1975,7 +1975,7 @@ func TestEnsureRungRefusesEvictedSession(t *testing.T) {
 
 		// Segment 12 is past the frontier plus lookahead, so this is the far-seek
 		// request that drops the lock to rescan the frontier.
-		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 12, filepath.Join(rungDir, "seg00012.m4s"))
+		_, err := sessions.ensureRung(context.Background(), key, stale, rung, 12, filepath.Join(rungDir, "seg00012.m4s"), nil)
 		if !errors.Is(err, ErrSessionEvicted) {
 			t.Fatalf("ensureRung err = %v, want ErrSessionEvicted", err)
 		}
@@ -2138,6 +2138,54 @@ func TestNewSessionsInDirPurgesLeftoverSessionDir(t *testing.T) {
 	for _, dir := range []string{leftoverDir, legacyDir} {
 		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("leftover session dir %q still present after restart construction: %v", dir, err)
+		}
+	}
+}
+
+func TestNewSessionsInDirPurgesInterruptedHLSStaging(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires named pipes")
+	}
+	scratch := t.TempDir()
+	otherScratch := t.TempDir()
+	t.Cleanup(func() {
+		_ = ffmpeg.PurgePacedHLSOutput(scratch)
+		_ = ffmpeg.PurgePacedHLSOutput(otherScratch)
+	})
+	makeStage := func(root string) (*ffmpeg.PacedHLSOutput, string) {
+		t.Helper()
+		dir := filepath.Join(root, "session-1234567890123456-1", "720p")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		output, err := ffmpeg.New().NewPacedHLSOutput(root, dir, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(output.Close)
+		for _, name := range []string{"live.m3u8", composedTimedTextFile} {
+			if err := os.WriteFile(filepath.Join(output.Dir, name), []byte("left by encoder"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return output, filepath.Dir(dir)
+	}
+	leftover, sessionDir := makeStage(scratch)
+	other, otherSessionDir := makeStage(otherScratch)
+	if info, err := os.Stat(filepath.Join(leftover.Dir, "seg00000.m4s")); err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		t.Fatalf("interrupted run fixture did not create the FIFO: %v", err)
+	}
+	// Simulate a server restart without the interrupted run's Close.
+	restarted := NewSessionsInDir(ffmpeg.New(), scratch, nil)
+	defer restarted.Close()
+	for _, path := range []string{leftover.Dir, sessionDir} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("restart left %q behind: %v", path, err)
+		}
+	}
+	for _, path := range []string{other.Dir, otherSessionDir} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("restart touched another instance's staging or cache %q: %v", path, err)
 		}
 	}
 }
@@ -2794,32 +2842,58 @@ func TestTerminatePlaybackStopsOnlyThatMediasTranscode(t *testing.T) {
 // playlist, matching the production muxer's publication protocol.
 type pacedTranscoder struct {
 	fakeTranscoder
-	root string
-	pid  int
-	last int // optional final fragment, with a gate before the playlist commit
+	root      string
+	pid       int
+	last      int // optional final fragment, with a gate before the playlist commit
+	emptyLast bool
+	blockInit bool
 }
 
-func (p *pacedTranscoder) NewPacedHLSOutput(dir string, base int) (*ffmpeg.PacedHLSOutput, error) {
-	return ffmpeg.New().NewPacedHLSOutput(dir, base)
+func (p *pacedTranscoder) NewPacedHLSOutput(scratch, dir string, base int) (*ffmpeg.PacedHLSOutput, error) {
+	return ffmpeg.New().NewPacedHLSOutput(scratch, dir, base)
+}
+
+func (p *pacedTranscoder) StartHLS(ctx context.Context, _, dir string, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	return p.start(ctx, dir, 0, "index.m3u8")
 }
 
 func (p *pacedTranscoder) StartHLSSegments(ctx context.Context, _, dir string, start, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	return p.start(ctx, dir, start, "live.m3u8")
+}
+
+func (p *pacedTranscoder) start(ctx context.Context, dir string, start int, playlist string) (*ffmpeg.HLSProcess, error) {
 	const script = `
 staging=$1
 n=$2
 root=$3
 last=$4
+empty_last=$5
+playlist=$6
+block_init=$7
 trap 'printf stopped > "$root/stopped"; exit 0' TERM
+if [ "$block_init" = true ]; then mkfifo "$staging/init.mp4" || exit 1; fi
 while :; do
   if [ "$n" -eq "$2" ] || [ -f "$root/produce$n" ]; then
     file=$(printf '%s/seg%05d.m4s' "$staging" "$n")
-    printf m4s > "$file" || exit 1
+    if [ "$n" -eq "$last" ] && [ "$empty_last" = true ]; then
+      printf '\000\000\000\010styp' > "$file" || exit 1
+    else
+      printf m4s > "$file" || exit 1
+    fi
     if [ "$last" -gt 0 ] && [ "$n" -eq "$last" ]; then
       printf written > "$root/written" || exit 1
       while [ ! -f "$root/finish" ]; do sleep 0.01; done
     fi
-    printf '#EXTM3U\n%s\n' "${file##*/}" > "$staging/live.m3u8.tmp" || exit 1
-    mv "$staging/live.m3u8.tmp" "$staging/live.m3u8" || exit 1
+    printf '#EXTM3U\n%s\n' "${file##*/}" > "$staging/$playlist.tmp" || exit 1
+    mv "$staging/$playlist.tmp" "$staging/$playlist" || exit 1
+    if [ "$block_init" = true ]; then
+      (
+        printf ready > "$root/sidecar-reading"
+        while [ ! -f "$root/finish-sidecar" ]; do sleep 0.01; done
+        printf init
+      ) > "$staging/init.mp4" || exit 1
+      block_init=false
+    fi
     if [ "$last" -gt 0 ] && [ "$n" -eq "$last" ]; then exit 0; fi
     n=$((n+1))
   else
@@ -2828,7 +2902,7 @@ while :; do
 done
 `
 	// #nosec G204 -- fixed script and test-owned arguments.
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script, "paced-transcoder", dir, strconv.Itoa(start), p.root, strconv.Itoa(p.last))
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script, "paced-transcoder", dir, strconv.Itoa(start), p.root, strconv.Itoa(p.last), strconv.FormatBool(p.emptyLast), playlist, strconv.FormatBool(p.blockInit))
 	proc, err := ffmpeg.StartHLSCommand(cmd)
 	if err == nil {
 		p.mu.Lock()
@@ -2983,7 +3057,13 @@ func TestSessionsPacingRewindPreservesPendingFetch(t *testing.T) {
 	waitPacing(t, ctx, func() bool {
 		sessions.mu.Lock()
 		defer sessions.mu.Unlock()
-		return sessions.sessions[pacingTestKey].demand["720p"][segmentFetch{first: 12, last: 12}] == 1
+		session := sessions.sessions[pacingTestKey]
+		for request := range session.demand["720p"] {
+			if request.first == 12 && request.run == session.run {
+				return true
+			}
+		}
+		return false
 	})
 	if _, err := pacedRequest(ctx, sessions, 2); err != nil {
 		t.Fatal(err)
@@ -3011,7 +3091,12 @@ func TestSessionsPacingRewindPreservesPendingFetch(t *testing.T) {
 		waitPacing(t, ctx, func() bool {
 			sessions.mu.Lock()
 			defer sessions.mu.Unlock()
-			return session.demand["720p"][segmentFetch{first: 100, last: 100}] == 1
+			for request := range session.demand["720p"] {
+				if request.first == 100 && request.run == nil {
+					return true
+				}
+			}
+			return false
 		})
 		assertPacedFrontier(t, ctx, sessions, dir, 12)
 	}()
@@ -3033,6 +3118,94 @@ func TestSessionsPacingRewindPreservesPendingFetch(t *testing.T) {
 	assertPacedFrontier(t, ctx, sessions, dir, 100)
 	if starts := transcoder.segmentStartsSnapshot(); len(starts) != 2 || starts[1] != 100 {
 		t.Fatalf("encoder starts = %v, want [2 100]", starts)
+	}
+}
+
+func TestSessionsPacingStagesSidecarsWithoutBlockingOtherSessions(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires named pipes")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root, blockInit: true}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	release := func() error {
+		return os.WriteFile(filepath.Join(root, "finish-sidecar"), nil, 0o600)
+	}
+	defer func() { _ = release() }()
+	playlist := make(chan error, 1)
+	go func() {
+		_, err := sessions.FilePath(ctx, pacingTestKey, "source", 0, 1280, 720, false, "720p/index.m3u8")
+		playlist <- err
+	}()
+	// The fake's init writer can only announce this once the receiver has
+	// opened the sidecar and is about to block on the read.
+	waitPacing(t, ctx, func() bool { return fileReady(filepath.Join(root, "sidecar-reading")) })
+	select {
+	case err := <-playlist:
+		t.Fatalf("linear playlist served before staging completed: %v", err)
+	default:
+	}
+	if !sessions.mu.TryLock() {
+		t.Fatal("sidecar copy held the session manager lock")
+	}
+	sessions.mu.Unlock()
+	other := SessionKey{SessionID: "other", MediaID: "other-media"}
+	if _, err := sessions.FilePath(ctx, other, "source", 60, 1280, 720, false, "master.m3u8"); err != nil {
+		t.Fatalf("unrelated session request failed: %v", err)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-playlist; err != nil {
+		t.Fatalf("linear playlist did not publish after the sidecar completed: %v", err)
+	}
+}
+
+func TestSessionsPacingRewindPreservesPrimedAACTail(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	audio := store.MediaFileStream{Type: "audio", SampleRate: 44100, DecodedSamples: 2_644_993}
+	profile := ffmpeg.AudioProfile{Codec: "aac"}
+	grid := primedAACGrid(audio, profile, segmentSeconds)
+	if grid.segments != 16 || grid.restartSegment(15) != 0 {
+		t.Fatalf("primed grid = %+v, tail starts from %d", grid, grid.restartSegment(15))
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	request := func(n int) (string, error) {
+		return sessions.FilePathShaped(ctx, pacingTestKey, "source", 60, 0, 0, false, false, ladderCaps{}, VideoSignal{}, -1, profile, nil,
+			StreamShape{AudioOnly: true, AudioSource: audio}, PriorityNormal, fmt.Sprintf("%s/seg%05d.m4s", audioOnlyRungID, n))
+	}
+	tail := make(chan error, 1)
+	go func() {
+		_, err := request(15)
+		tail <- err
+	}()
+	waitPacing(t, ctx, func() bool {
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		session := sessions.sessions[pacingTestKey]
+		return session != nil && session.run != nil && session.run.produced == 0
+	})
+	rewind, err := request(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcoder.permit(t, 1, 16)
+	if err := <-tail; err != nil {
+		t.Fatalf("cached rewind stranded the primed tail: %v", err)
+	}
+	assertPacedFrontier(t, ctx, sessions, filepath.Dir(rewind), 15)
+	if starts := transcoder.segmentStartsSnapshot(); len(starts) != 1 || starts[0] != 0 {
+		t.Fatalf("encoder starts = %v, want [0]", starts)
 	}
 }
 
@@ -3080,11 +3253,16 @@ func TestSessionsPacingRewindsAcrossCachedRungs(t *testing.T) {
 }
 
 func TestSessionsPacingCleanExitCountsHeldFragment(t *testing.T) {
+	t.Run("media", func(t *testing.T) { testPacingCleanExitWithHeldFragment(t, false) })
+	t.Run("empty", func(t *testing.T) { testPacingCleanExitWithHeldFragment(t, true) })
+}
+
+func testPacingCleanExitWithHeldFragment(t *testing.T, empty bool) {
 	if !ffmpeg.SupportsHLSPause {
 		t.Skip("requires process-group suspension")
 	}
 	root := t.TempDir()
-	transcoder := &pacedTranscoder{root: root, last: 101}
+	transcoder := &pacedTranscoder{root: root, last: 101, emptyLast: empty}
 	sessions := NewSessions(transcoder, root, nil)
 	t.Cleanup(sessions.Close)
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -3152,10 +3330,14 @@ func TestSessionsPacingCleanExitCountsHeldFragment(t *testing.T) {
 	if err != nil || len(files) != 1 {
 		t.Fatalf("source fixture files = %v, %v", files, err)
 	}
-	if incomplete, err := catalog.MediaFileSourceIncomplete(ctx, files[0]); err != nil || incomplete {
-		t.Fatalf("completed source was marked incomplete: %v, %v", incomplete, err)
+	if incomplete, err := catalog.MediaFileSourceIncomplete(ctx, files[0]); err != nil || incomplete != empty {
+		t.Fatalf("source incomplete = %v, %v, want %v", incomplete, err, empty)
 	}
-	if _, err := request(101); err != nil {
+	_, err = request(101)
+	if empty && !errors.Is(err, ErrSourceEnded) {
+		t.Fatalf("empty tail request = %v, want source ended", err)
+	}
+	if !empty && err != nil {
 		t.Fatalf("held fragment could not be encoded after restart: %v", err)
 	}
 }
