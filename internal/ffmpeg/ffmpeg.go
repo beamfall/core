@@ -2440,8 +2440,12 @@ const hlsStderrWaitDelay = time.Second
 type HLSProcess struct {
 	cmd     *exec.Cmd
 	wait    sync.Once
-	kill    sync.Once
 	waitErr error
+	// signalMu guards pause and resume against group termination. The reaper
+	// sets stopping before it releases the leader PID.
+	signalMu sync.Mutex
+	paused   bool
+	stopping bool
 	// stopRequested records that the owner asked for this exit (Stop or context
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
@@ -2585,12 +2589,52 @@ func (p *HLSProcess) killTree() {
 	if p == nil || p.cmd == nil {
 		return
 	}
-	p.kill.Do(func() { killProcessGroup(p.cmd) })
+	p.signalMu.Lock()
+	defer p.signalMu.Unlock()
+	if p.stopping {
+		return
+	}
+	p.stopping = true
+	killProcessGroup(p.cmd)
 }
 
 // Running reports whether this process wraps a started OS child.
 func (p *HLSProcess) Running() bool {
 	return p != nil && p.cmd != nil && p.cmd.Process != nil
+}
+
+// Pause suspends the encoder's process group. It reports whether the group
+// is paused, and returns false on unsupported platforms or during teardown.
+func (p *HLSProcess) Pause() bool {
+	if !SupportsHLSPause || !p.Running() {
+		return false
+	}
+	p.signalMu.Lock()
+	defer p.signalMu.Unlock()
+	if p.stopping {
+		return false
+	}
+	if !p.paused {
+		p.paused = pauseProcessGroup(p.cmd)
+	}
+	return p.paused
+}
+
+// Resume continues the encoder's process group. It returns false on
+// unsupported platforms, during teardown, or if a paused group cannot resume.
+func (p *HLSProcess) Resume() bool {
+	if !SupportsHLSPause || !p.Running() {
+		return false
+	}
+	p.signalMu.Lock()
+	defer p.signalMu.Unlock()
+	if p.stopping {
+		return false
+	}
+	if p.paused && resumeProcessGroup(p.cmd) {
+		p.paused = false
+	}
+	return !p.paused
 }
 
 // Wait blocks until the transcode exits.
