@@ -169,8 +169,15 @@ function LibraryCategories({ libraryID, nodeID }: { libraryID: string; nodeID: s
   const read = useCallback(
     async (): Promise<CategoryPlan[]> =>
       planCategories(
-        (await fetchLibraryItems({ libraryID, state: DEFAULT_BROWSE_STATE, limit: 1, offset: 0 }))
-          .facets.groupings,
+        (
+          await fetchLibraryItems({
+            libraryID,
+            state: DEFAULT_BROWSE_STATE,
+            limit: 1,
+            offset: 0,
+            categoryCounts: true,
+          })
+        ).facets.groupings,
       ),
     [libraryID],
   );
@@ -363,7 +370,7 @@ function CategoryOverview({
                         {entry.value}
                         {entry.count !== undefined && (
                           <span className="bf-category-count">
-                            {t("libraryCategoriesItemCount", { count: entry.count })}
+                            <CategoryCount entry={entry} />
                           </span>
                         )}
                       </Link>
@@ -388,7 +395,6 @@ function CategoryCard({
   entry: CategoryValue;
   art: string;
 }) {
-  const t = useT();
   const [broken, setBroken] = useState("");
   const shown = art && art !== broken ? art : "";
   return (
@@ -409,7 +415,7 @@ function CategoryCard({
         <span className="bf-category-name">{entry.value}</span>
         {entry.count !== undefined && (
           <span className="bf-category-count">
-            {t("libraryCategoriesItemCount", { count: entry.count })}
+            <CategoryCount entry={entry} />
           </span>
         )}
       </span>
@@ -496,7 +502,7 @@ function CategoryIndex({ plan, nodeID }: { plan: CategoryPlan; nodeID: string })
                     <span className="bf-category-name">{entry.value}</span>
                     {entry.count !== undefined && (
                       <span className="bf-category-count">
-                        {t("libraryCategoriesItemCount", { count: entry.count })}
+                        <CategoryCount entry={entry} />
                       </span>
                     )}
                   </Link>
@@ -507,5 +513,18 @@ function CategoryIndex({ plan, nodeID }: { plan: CategoryPlan; nodeID: string })
         );
       })}
     </section>
+  );
+}
+
+function CategoryCount({ entry }: { entry: CategoryValue }) {
+  const t = useT();
+  const locale = useDisplayLocale();
+  const label = displayString(entry.label, locale);
+  return label ? (
+    <>
+      {new Intl.NumberFormat(locale).format(entry.count ?? 0)} {label}
+    </>
+  ) : (
+    <>{t("libraryCategoriesItemCount", { count: entry.count ?? 0 })}</>
   );
 }

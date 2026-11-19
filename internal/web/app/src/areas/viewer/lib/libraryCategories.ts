@@ -1,4 +1,4 @@
-import type { SourceItem } from "@/lib/graphql/types";
+import type { DisplayString, SourceItem } from "@/lib/graphql/types";
 import { artworkSlotURL } from "./artwork";
 import type { LibraryItemsGrouping } from "./libraryBrowse";
 
@@ -17,6 +17,7 @@ export interface CategoryValue {
   value: string;
   /** The items that carry the value, when the server reports counts. */
   count?: number;
+  label?: DisplayString;
 }
 
 export interface CategoryPlan {
@@ -31,7 +32,16 @@ export interface CategoryPlan {
 /** Pairs each value with its count; counts that do not line up are dropped. */
 export function categoryValues(grouping: LibraryItemsGrouping): CategoryValue[] {
   const counts = grouping.counts?.length === grouping.values.length ? grouping.counts : undefined;
-  return grouping.values.map((value, i) => (counts ? { value, count: counts[i] } : { value }));
+  const browse =
+    grouping.browseCounts?.length === grouping.values.length &&
+    grouping.browseLabels?.length === grouping.values.length;
+  return grouping.values.map((value, i) => {
+    const label = browse ? grouping.browseLabels?.[i] : undefined;
+    if (label && Object.values(label).some(Boolean)) {
+      return { value, count: grouping.browseCounts?.[i], label };
+    }
+    return counts ? { value, count: counts[i] } : { value };
+  });
 }
 
 /** Featured groupings lead, each kind keeping the server's order; empty kinds are left out. */

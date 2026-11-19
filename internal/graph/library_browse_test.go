@@ -272,3 +272,57 @@ func TestLibraryItemsReportWhereEachTitleInitialStarts(t *testing.T) {
 		t.Fatalf("year sort letters = %+v, want an empty list", byYear.Letters)
 	}
 }
+
+// CORE-2552: the facet count follows the same outermost containers as cards.
+func TestLibraryCategoryCountsBrowseContainers(t *testing.T) {
+	h, library, media := newContainerLibrary(t)
+	ctx := context.Background()
+	// Same-titled containers remain distinct browse units.
+	if err := h.store.UpsertEntity(ctx, store.Entity{ID: "entity-vol-b", LibraryID: library, Kind: "volume", Title: "Harbour"}); err != nil {
+		t.Fatal(err)
+	}
+	for title, members := range map[string][]string{
+		"Contained": {"a1", "a2", "a3", "b1"},
+		"Loose":     {"loose", "mentioned"},
+		"Mixed":     {"a1", "a2", "loose"},
+	} {
+		id := store.EntityID("topic-" + title)
+		if err := h.store.UpsertEntity(ctx, store.Entity{ID: id, LibraryID: library, Kind: "topic", Title: title}); err != nil {
+			t.Fatal(err)
+		}
+		for _, member := range members {
+			if err := h.store.UpsertEntityRelation(ctx, store.EntityRelation{FromEntityID: id, Name: "includes", ToMediaID: media[member]}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var response struct {
+		Facets struct {
+			Groupings []struct {
+				Values       []string
+				Counts       []int
+				BrowseCounts []int
+				BrowseLabels []plugin.LocaleString
+			}
+		}
+	}
+	execGraph(t, h, authorizeViewer, `query($libraryID: String!, $categoryCounts: Boolean) { libraryItems(libraryID: $libraryID, limit: 1, categoryCounts: $categoryCounts) { facets { groupings { values counts browseCounts browseLabels } } } }`, map[string]any{"libraryID": string(library), "categoryCounts": true}, "libraryItems", &response)
+	if len(response.Facets.Groupings) != 1 {
+		t.Fatalf("groupings = %+v", response)
+	}
+	g := response.Facets.Groupings[0]
+	if !slices.Equal(g.Values, []string{"Contained", "Loose", "Mixed"}) || !slices.Equal(g.Counts, []int{4, 2, 3}) || !slices.Equal(g.BrowseCounts, []int{2, 2, 3}) {
+		t.Fatalf("counts = %+v, want raw [4 2 3] and browse [2 2 3]", g)
+	}
+	if len(g.BrowseLabels) != 3 || g.BrowseLabels[0].Resolve("en") != "Volumes" || len(g.BrowseLabels[1]) != 0 || len(g.BrowseLabels[2]) != 0 {
+		t.Fatalf("browse labels = %+v", g.BrowseLabels)
+	}
+	// Hiding the only member of the second container must remove its count.
+	if err := h.store.SetMute(ctx, "profile-default", store.MuteKindEntity, "entity-part-b1", false, true); err != nil {
+		t.Fatal(err)
+	}
+	execGraph(t, h, authorizeViewer, `query($libraryID: String!, $categoryCounts: Boolean) { libraryItems(libraryID: $libraryID, limit: 1, categoryCounts: $categoryCounts) { facets { groupings { values counts browseCounts browseLabels } } } }`, map[string]any{"libraryID": string(library), "categoryCounts": true}, "libraryItems", &response)
+	if response.Facets.Groupings[0].BrowseCounts[0] != 1 {
+		t.Fatalf("muted member contributed to count: %+v", response)
+	}
+}

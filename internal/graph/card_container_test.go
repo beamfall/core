@@ -32,8 +32,10 @@ func newContainerLibrary(t *testing.T) (*Handler, store.LibraryID, map[string]st
 				{Name: "part-of", ToKind: "volume"},
 			}},
 			{Name: "volume", Archetype: "container"},
+			{Name: "topic", Archetype: "category", DisplayName: plugin.L("Topic")},
 		},
 		Layouts: []plugin.LayoutSpec{{ID: "home", Role: "browse", Sections: []plugin.SectionSpec{
+			{ID: "volumes", Kind: "shelf", Title: plugin.L("Volumes"), Source: plugin.SourceSpec{Kind: "entity-items", EntityKind: "volume"}},
 			{ID: "all", Kind: "grid", Title: plugin.L("All"), ArtworkSlot: "poster", Source: plugin.SourceSpec{Kind: "all-items"}},
 		}}},
 	}

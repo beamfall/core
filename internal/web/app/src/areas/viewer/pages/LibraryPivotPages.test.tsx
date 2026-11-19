@@ -150,7 +150,14 @@ describe("Library Collections pivot (CORE-2437)", () => {
   });
 });
 
-type Grouping = { kind: string; title?: { en: string }; values: string[]; counts?: number[] };
+type Grouping = {
+  kind: string;
+  title?: { en: string };
+  values: string[];
+  counts?: number[];
+  browseCounts?: number[];
+  browseLabels?: { en: string }[];
+};
 
 const studioValues = Array.from({ length: 45 }, (_, i) => `Studio ${String(i).padStart(2, "0")}`);
 const studioCounts = studioValues.map((_, i) => (i === 44 ? 1 : i % 5));
@@ -173,6 +180,21 @@ function withArt(id: string, backdrop: string): SourceItem {
 }
 
 describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
+  it("counts outermost containers with the plugin label, keeping loose item counts (CORE-2552)", async () => {
+    serveCategories([
+      {
+        kind: "genre",
+        values: ["Drama", "Loose"],
+        counts: [12, 3],
+        browseCounts: [2, 3],
+        browseLabels: [{ en: "Shows" }, { en: "" }],
+      },
+    ]);
+    renderAt("/n/library-films/categories");
+    expect(await screen.findByRole("link", { name: "Drama 2 Shows" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Loose 3 items" })).toBeInTheDocument();
+  });
+
   it("tiles a featured grouping's values with counts and opens the filtered Media view", async () => {
     serveCategories([
       { kind: "genre", title: { en: "Genre" }, values: ["Drama", "Sci-Fi"], counts: [12, 1] },

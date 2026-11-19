@@ -71,8 +71,10 @@ type LibraryBrowseQuery struct {
 	// FacetEntityKinds names the Entity Kinds whose titles are reported as
 	// facet values, in this order. Empty reports none.
 	FacetEntityKinds []string
-	Limit            int
-	Offset           int
+	// FacetMembers retains membership only for category browse-unit counts.
+	FacetMembers bool
+	Limit        int
+	Offset       int
 }
 
 // LibraryBrowseFacets are the filter values present in the Library's visible
@@ -90,6 +92,8 @@ type LibraryBrowseEntityFacet struct {
 	Kind   string
 	Titles []string
 	Counts []int
+	// Members retains visible membership for browse-unit counting at the graph boundary.
+	Members [][]MediaID
 }
 
 // LibraryBrowseResult is one page of a Library browse plus the size of the
@@ -193,7 +197,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 	result := LibraryBrowseResult{Items: []SourceItem{}, Letters: []LibraryBrowseLetter{}}
 	result.Facets = libraryBrowseFacets(candidates)
 	for _, kind := range query.FacetEntityKinds {
-		facet, err := libraryBrowseEntityTitles(ctx, reader, kind, visible, candidates)
+		facet, err := libraryBrowseEntityTitles(ctx, reader, kind, visible, candidates, query.FacetMembers)
 		if err != nil {
 			return empty, err
 		}
@@ -526,7 +530,7 @@ func (s *Store) libraryBrowseRatingsLocked(ctx context.Context, profileID Profil
 // (certification, Mute) is not offered as a filter and never counted. Past the
 // cap it keeps the most used titles (ties by title), then answers in title
 // order.
-func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string, visible []LibraryID, candidates []libraryBrowseCandidate) (LibraryBrowseEntityFacet, error) {
+func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string, visible []LibraryID, candidates []libraryBrowseCandidate, includeMembers bool) (LibraryBrowseEntityFacet, error) {
 	facet := LibraryBrowseEntityFacet{Kind: kind, Titles: []string{}, Counts: []int{}}
 	placeholders := make([]string, len(visible))
 	args := make([]any, 0, len(visible)+1)
@@ -576,8 +580,16 @@ func libraryBrowseEntityTitles(ctx context.Context, reader *sql.DB, kind string,
 	}
 	facet.Titles = topEntityTitles(counts, libraryBrowseEntityFacetCap)
 	facet.Counts = make([]int, len(facet.Titles))
+	if includeMembers {
+		facet.Members = make([][]MediaID, len(facet.Titles))
+	}
 	for i, title := range facet.Titles {
 		facet.Counts[i] = counts[title]
+		if includeMembers {
+			for id := range reached[title] {
+				facet.Members[i] = append(facet.Members[i], id)
+			}
+		}
 	}
 	return facet, nil
 }

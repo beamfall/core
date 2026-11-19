@@ -24,10 +24,12 @@ const maxLibraryGroupFilters = 8
 // calling Profile can actually reach, in title order, and parallel to them how
 // many distinct visible Media reach each value (CORE-2505).
 type LibraryItemsGrouping struct {
-	Kind   string              `json:"kind"`
-	Title  plugin.LocaleString `json:"title,omitempty"`
-	Values []string            `json:"values"`
-	Counts []int               `json:"counts"`
+	Kind         string                `json:"kind"`
+	Title        plugin.LocaleString   `json:"title,omitempty"`
+	Values       []string              `json:"values"`
+	Counts       []int                 `json:"counts"`
+	BrowseCounts []int                 `json:"browseCounts"`
+	BrowseLabels []plugin.LocaleString `json:"browseLabels"`
 }
 
 // LibraryItemsFacets lists the filter values that actually occur in the
@@ -81,6 +83,7 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return LibraryItemsResponse{}, err
 	}
+	query.FacetMembers = boolVar(req, "categoryCounts")
 	kinds := h.libraryGroupingKinds(ctx, query.LibraryID)
 	for _, kind := range kinds {
 		query.FacetEntityKinds = append(query.FacetEntityKinds, kind.Name)
@@ -98,17 +101,34 @@ func (h *Handler) libraryItems(ctx context.Context, scope auth.Scope, req reques
 	for i, item := range result.Items {
 		resp.Items[i] = h.sourceItem(item, scope.Revealed)
 	}
+	var units map[store.MediaID]store.SourceItem
+	var labels map[string]plugin.LocaleString
+	if query.FacetMembers {
+		units, err = h.categoryBrowseUnits(ctx, result.Facets.Entities)
+		if err != nil {
+			return LibraryItemsResponse{}, err
+		}
+		bundle, _ := h.libraryBundle(ctx, query.LibraryID)
+		labels = libraryBrowsePlanFor(bundle).labels
+	}
 	// A grouping with no reachable value is left out: it could filter
 	// nothing, and naming it would describe a Library the caller cannot see.
 	for i, facet := range result.Facets.Entities {
 		if len(facet.Titles) == 0 {
 			continue
 		}
+		var counts []int
+		var names []plugin.LocaleString
+		if query.FacetMembers {
+			counts, names = categoryBrowseCounts(facet, units, labels)
+		}
 		resp.Facets.Groupings = append(resp.Facets.Groupings, LibraryItemsGrouping{
-			Kind:   facet.Kind,
-			Title:  kinds[i].DisplayName,
-			Values: facet.Titles,
-			Counts: facet.Counts,
+			Kind:         facet.Kind,
+			Title:        kinds[i].DisplayName,
+			Values:       facet.Titles,
+			Counts:       facet.Counts,
+			BrowseCounts: counts,
+			BrowseLabels: names,
 		})
 	}
 	if result.Facets.Decades != nil {
@@ -209,4 +229,53 @@ func libraryItemsQuery(scope auth.Scope, req request) (store.LibraryBrowseQuery,
 		Limit:         boundedIntVar(req, "limit", 50, 200),
 		Offset:        nonNegativeIntVar(req, "offset"),
 	}, nil
+}
+
+// Resolve each visible member once across all category values. The store's
+// facet membership already excludes hidden, trashed and muted Media.
+func (h *Handler) categoryBrowseUnits(ctx context.Context, facets []store.LibraryBrowseEntityFacet) (map[store.MediaID]store.SourceItem, error) {
+	positions := map[store.MediaID]bool{}
+	var items []store.SourceItem
+	for _, facet := range facets {
+		for _, members := range facet.Members {
+			for _, id := range members {
+				if !positions[id] {
+					positions[id] = true
+					items = append(items, store.SourceItem{ID: id})
+				}
+			}
+		}
+	}
+	if err := h.annotateContainers(ctx, items); err != nil {
+		return nil, err
+	}
+	units := make(map[store.MediaID]store.SourceItem, len(items))
+	for _, item := range items {
+		units[item.ID] = item
+	}
+	return units, nil
+}
+
+func categoryBrowseCounts(facet store.LibraryBrowseEntityFacet, units map[store.MediaID]store.SourceItem, labels map[string]plugin.LocaleString) ([]int, []plugin.LocaleString) {
+	counts := slices.Clone(facet.Counts)
+	names := make([]plugin.LocaleString, len(counts))
+	for i, members := range facet.Members {
+		kind := ""
+		containers := map[store.EntityID]bool{}
+		homogeneous := len(members) > 0
+		for _, id := range members {
+			unit := units[id]
+			if unit.ContainerID == "" || (kind != "" && kind != unit.ContainerKind) {
+				homogeneous = false
+				break
+			}
+			kind = unit.ContainerKind
+			containers[unit.ContainerID] = true
+		}
+		if homogeneous && len(labels[kind]) > 0 {
+			counts[i] = len(containers)
+			names[i] = labels[kind]
+		}
+	}
+	return counts, names
 }

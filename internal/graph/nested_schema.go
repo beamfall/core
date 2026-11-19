@@ -398,7 +398,7 @@ var fieldArguments = map[string][]NestedArgument{
 	"importstatus":      {{Name: "jobID", Kind: "string"}},
 	"itemstate":         {{Name: "entityID", Kind: "string", Optional: true}, {Name: "mediaID", Kind: "string", Optional: true}},
 	"libraryentities":   libraryEntitiesArguments(),
-	"libraryitems":      libraryItemsArguments(),
+	"libraryitems":      append([]NestedArgument{{Name: "categoryCounts", Kind: "boolean", Optional: true}}, libraryItemsArguments()...),
 	"media":             {{Name: "id", Kind: "string"}},
 	"mediafields":       {{Name: "mediaID", Kind: "string"}},
 	"mediafiles":        {{Name: "mediaID", Kind: "string"}},
