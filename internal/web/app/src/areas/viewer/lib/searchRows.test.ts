@@ -3,6 +3,7 @@ import type { SearchResultItem } from "@/lib/graphql/types";
 import type { StringKey } from "@/strings";
 import {
   groupSearchRows,
+  mergeSearchPages,
   nestUnderContainers,
   SEARCH_RESULT_CAP,
   searchCountLabel,
@@ -83,4 +84,25 @@ describe("nestUnderContainers (CORE-2525)", () => {
     expect(rows.map((row) => row.id)).toEqual(["show", "e2", "x1", "f1"]);
     expect(nested.get("show")?.map((row) => row.id)).toEqual(["e1", "e3"]);
   });
+});
+
+it("merges pages without repeating rows and orders a container's children (CORE-2321)", () => {
+  const row = (id: string, index: number): SearchResultItem => ({
+    id,
+    kind: "media",
+    title: id,
+    mode: "keyword",
+    score: 0,
+    container: { id: "volume", title: "Volume" },
+    sequence: 1,
+    index,
+  });
+  const merged = mergeSearchPages(
+    [row("late", 60), row("first", 1)],
+    [row("middle", 30), row("first", 1)],
+  );
+  expect(merged.map((item) => item.id)).toEqual(["first", "middle", "late"]);
+});
+it("announces the final exact count even beyond fifty", () => {
+  expect(searchCountLabel((key) => key, 65, "query", false)).toBe("searchResultCount");
 });

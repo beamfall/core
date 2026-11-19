@@ -2,6 +2,7 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 import { searchResult } from "@/lib/graphql";
 import type { SearchMode, SearchResultItem } from "@/lib/graphql/types";
 import { useEngagementEpoch } from "../actions/engagementSync";
+import { mergeSearchPages } from "./searchRows";
 
 /** Pause after the last keystroke before asking the server. */
 export const SEARCH_DEBOUNCE_MS = 120;
@@ -18,16 +19,28 @@ export interface LiveSearch {
   /** The mode the server actually served for `items`. */
   servedMode: SearchMode | null;
   failed: boolean;
+  hasMore?: boolean;
+  loadingMore: boolean;
+  moreFailed: boolean;
+  loadMore: () => void;
 }
 
 interface Settled {
+  hasMore?: boolean;
+  nextOffset: number;
   items: SearchResultItem[] | null;
   resultTerm: string;
   servedMode: SearchMode | null;
   failed: boolean;
 }
 
-const NOTHING: Settled = { items: null, resultTerm: "", servedMode: null, failed: false };
+const NOTHING: Settled = {
+  nextOffset: 0,
+  items: null,
+  resultTerm: "",
+  servedMode: null,
+  failed: false,
+};
 
 // Search as the user types. Each change waits out a short debounce, and both the
 // timer and any in-flight request are cancelled when the query moves on, so an
@@ -36,8 +49,15 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
   const term = query.trim();
   const [settled, setSettled] = useState<Settled>(NOTHING);
   const [pending, setPending] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const moreController = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    moreController.current?.abort();
+    moreController.current = null;
+    setLoadingMore(false);
+    setMoreFailed(false);
     if (!term) {
       setSettled(NOTHING);
       setPending("");
@@ -54,13 +74,21 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
     const timer = setTimeout(() => {
       searchResult(term, mode, controller.signal).then(
         (res) =>
-          settle({ items: res.items, resultTerm: term, servedMode: res.mode, failed: false }),
-        () => settle({ items: [], resultTerm: term, servedMode: null, failed: true }),
+          settle({
+            items: res.items,
+            resultTerm: term,
+            servedMode: res.mode,
+            failed: false,
+            hasMore: res.hasMore,
+            nextOffset: res.items.length,
+          }),
+        () => settle({ ...NOTHING, items: [], resultTerm: term, failed: true }),
       );
     }, SEARCH_DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
       controller.abort();
+      moreController.current?.abort();
     };
   }, [term, mode]);
 
@@ -69,27 +97,74 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
   // what was shown and the next change tries again.
   const epoch = useEngagementEpoch();
   const seenEpoch = useRef(epoch);
+  const loadedOffset = useRef(0);
+  useEffect(() => {
+    loadedOffset.current = settled.nextOffset;
+  }, [settled.nextOffset]);
   useEffect(() => {
     if (seenEpoch.current === epoch) return;
     seenEpoch.current = epoch;
     if (!term) return;
     const controller = new AbortController();
-    searchResult(term, mode, controller.signal).then(
-      (res) => {
+    const loaded = loadedOffset.current;
+    async function refreshLoadedPages() {
+      const fresh = new Map<string, SearchResultItem>();
+      let offset = 0;
+      let requestMode = mode;
+      do {
+        const res = await searchResult(term, requestMode, controller.signal, { offset, limit: 50 });
         if (controller.signal.aborted) return;
-        const fresh = new Map(res.items.map((item) => [rowKey(item), item]));
-        setSettled((prev) =>
-          prev.items && prev.resultTerm === term
-            ? { ...prev, items: prev.items.map((item) => fresh.get(rowKey(item)) ?? item) }
-            : prev,
-        );
-      },
-      () => {},
-    );
+        for (const item of res.items) fresh.set(rowKey(item), item);
+        offset += res.items.length;
+        if (res.mode !== "keyword" || !res.hasMore || res.items.length === 0) break;
+        requestMode = "keyword";
+      } while (offset < loaded);
+      setSettled((prev) =>
+        prev.items && prev.resultTerm === term
+          ? { ...prev, items: prev.items.map((item) => fresh.get(rowKey(item)) ?? item) }
+          : prev,
+      );
+    }
+    void refreshLoadedPages().catch(() => {});
     return () => controller.abort();
   }, [epoch, term, mode]);
 
-  return { term, loading: pending !== "", ...settled };
+  function loadMore() {
+    if (
+      pending ||
+      loadingMore ||
+      !settled.hasMore ||
+      settled.resultTerm !== term ||
+      settled.servedMode !== "keyword"
+    )
+      return;
+    const controller = new AbortController();
+    moreController.current?.abort();
+    moreController.current = controller;
+    setLoadingMore(true);
+    setMoreFailed(false);
+    const offset = settled.nextOffset;
+    searchResult(term, "keyword", controller.signal, { offset })
+      .then(
+        (res) => {
+          if (controller.signal.aborted) return;
+          setSettled((prev) => ({
+            ...prev,
+            items: mergeSearchPages(prev.items ?? [], res.items),
+            nextOffset: offset + res.items.length,
+            hasMore: res.mode === "keyword" && res.hasMore === true && res.items.length > 0,
+          }));
+        },
+        () => {
+          if (!controller.signal.aborted) setMoreFailed(true);
+        },
+      )
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingMore(false);
+      });
+  }
+
+  return { term, loading: pending !== "", ...settled, loadingMore, moreFailed, loadMore };
 }
 
 function rowKey(item: SearchResultItem): string {

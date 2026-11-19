@@ -122,7 +122,7 @@ func TestNestedSchemaSourceItemsArguments(t *testing.T) {
 		t.Fatalf("media arguments = %#v, want %#v", media.Arguments, want)
 	}
 	searchResult := topLevel(t, "searchresult")
-	want := []NestedArgument{{Name: "mode", Kind: "string", Optional: true, Enum: []string{"auto", "keyword", "recommend", "semantic"}}, {Name: "query", Kind: "string", Optional: true}}
+	want := []NestedArgument{{Name: "limit", Kind: "int", Optional: true}, {Name: "mode", Kind: "string", Optional: true, Enum: []string{"auto", "keyword", "recommend", "semantic"}}, {Name: "offset", Kind: "int", Optional: true}, {Name: "query", Kind: "string", Optional: true}}
 	if !reflect.DeepEqual(searchResult.Arguments, want) {
 		t.Fatalf("searchResult arguments = %#v, want %#v", searchResult.Arguments, want)
 	}

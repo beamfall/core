@@ -175,9 +175,10 @@ export function SearchPage() {
                 {t("searchResults")}
               </h2>
               <p className="text-sm text-[var(--text-secondary)]" role="status">
-                {searchCountLabel(t, total, live.resultTerm)}
+                {searchCountLabel(t, total, live.resultTerm, live.hasMore)}
               </p>
             </div>
+            {live.moreFailed && <p role="alert">{t("searchUnavailable")}</p>}
             {groups.map((group) => (
               <section key={group.key} aria-label={group.label} className="flex flex-col gap-2">
                 <h3 className="text-base font-semibold text-[var(--text-primary)]">
@@ -230,6 +231,16 @@ export function SearchPage() {
                 })}
               </section>
             ))}
+            {live.hasMore && answered && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={live.loadMore}
+                disabled={live.loading || live.loadingMore}
+              >
+                {live.loadingMore ? t("loading") : t("loadMore")}
+              </Button>
+            )}
           </section>
         )}
       </div>
