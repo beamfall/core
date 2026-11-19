@@ -3,8 +3,16 @@ import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioStage } from "../AudioStage";
 import { easeFrame, silentFrame } from "./analysis";
-import { canVisualize, type Rotation, takeUpcoming, Visualizer } from "./Visualizer";
-import { VISUALS, visualFor } from "./visuals";
+import {
+  backingSize,
+  canVisualize,
+  type Rotation,
+  slotPixels,
+  takeUpcoming,
+  Visualizer,
+  viewClip,
+} from "./Visualizer";
+import { chosenVisual, VISUALS, visualFor } from "./visuals";
 
 // The Oscillux core never loads in jsdom: a pending load keeps the visualizer mounted and idle.
 vi.mock("./oscillux", () => ({
@@ -17,6 +25,14 @@ const direct = { kind: "direct-play", url: "/api/media/m1/stream" };
 function withWebGL2() {
   vi.stubGlobal("WebGL2RenderingContext", class {});
   vi.stubGlobal("OfflineAudioContext", class {});
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
 }
 
 afterEach(() => {
@@ -41,7 +57,41 @@ describe("Visualizer (CORE-1309)", () => {
     expect(slot?.querySelector("canvas.bf-audio-visualizer-canvas")).toBeTruthy();
   });
 
+  // Codex round 25: the slot showed the theme's scrim behind the canvas, so a strip that came
+  // into view rose from a level its tracker, which starts at black, did not hold.
+  it("paints the slot black behind the canvas, and not once the canvas is gone", () => {
+    withWebGL2();
+    const stage = (stream: typeof direct) => (
+      <AudioStage
+        title="Song"
+        artworkURL=""
+        credits={[]}
+        videoRef={createRef<HTMLVideoElement>()}
+        stream={stream}
+        trackKey="m1"
+      />
+    );
+    const { container, rerender } = render(stage(direct));
+    const slot = container.querySelector<HTMLElement>("[data-visualizer-slot]");
+    expect(slot?.querySelector("canvas")).toBeTruthy();
+    expect(slot?.style.backgroundColor).toBe("rgb(0, 0, 0)");
+    rerender(stage({ kind: "transcode", url: "/api/media/m1/master.m3u8" }));
+    expect(slot?.querySelector("canvas")).toBeNull();
+    expect(slot?.style.backgroundColor).toBe("");
+  });
+
   it("leaves the slot empty without WebGL2", () => {
+    expect(canVisualize()).toBe(false);
+    const { container } = render(
+      <Visualizer videoRef={createRef<HTMLVideoElement>()} stream={direct} trackKey="m1" />,
+    );
+    expect(container.querySelector("canvas")).toBeNull();
+  });
+
+  // Codex round 19: without an observer a resize before the paint could show an over-limit frame.
+  it("leaves the slot empty without ResizeObserver", () => {
+    withWebGL2();
+    vi.stubGlobal("ResizeObserver", undefined);
     expect(canVisualize()).toBe(false);
     const { container } = render(
       <Visualizer videoRef={createRef<HTMLVideoElement>()} stream={direct} trackKey="m1" />,
@@ -136,5 +186,91 @@ describe("rotation (CORE-2368)", () => {
     expect(takeUpcoming(rotation(VISUALS[0]), VISUALS[0], false)).not.toBe(VISUALS[0]);
     if (!calm || !lively) throw new Error("the release has calm and lively visuals");
     expect(takeUpcoming(rotation(lively), calm, true).calm).toBe(true);
+  });
+});
+
+describe("backingSize", () => {
+  it("uses the device-pixel box, one physical pixel a texel, at DPR up to 2", () => {
+    expect(backingSize({ inlineSize: 781, blockSize: 439 }, 390.5, 219.5, 2)).toEqual([
+      781, 439, 1,
+    ]);
+  });
+
+  // Codex round 12: a fractional texel interpolates between texels on the display, and the
+  // texel size, not the CSS ratio, is the display scale.
+  it("covers whole physical pixels with each texel above DPR 2", () => {
+    expect(backingSize({ inlineSize: 1200, blockSize: 900 }, 400, 300, 3)).toEqual([600, 450, 2]);
+    expect(backingSize({ inlineSize: 1600, blockSize: 1200 }, 400, 300, 4)).toEqual([800, 600, 2]);
+    expect(backingSize({ inlineSize: 1200, blockSize: 900 }, 600, 450, 2)).toEqual([1200, 900, 1]);
+  });
+
+  it("keeps each side within the limiter's largest frame", () => {
+    expect(backingSize({ inlineSize: 10000, blockSize: 5000 }, 10000, 5000, 1)).toEqual([
+      5000, 2500, 2,
+    ]);
+  });
+
+  // Codex round 13: the texels fit inside the box, so a texel never spans a fractional pixel.
+  it("rounds the texels down to fit the device box", () => {
+    expect(backingSize({ inlineSize: 1201, blockSize: 901 }, 400.3, 300.3, 3)).toEqual([
+      600, 450, 2,
+    ]);
+  });
+
+  // Codex rounds 22 and 23: a slot one pixel wide that grows past MAX_SIDE needs a texel wider
+  // than the slot. The renderer shows whole texels only, so it fades that slot to black.
+  it("keeps the larger texel a side over MAX_SIDE needs, though the slot cuts it", () => {
+    const device = { inlineSize: 1, blockSize: 8193 };
+    expect(backingSize(device, 1, 8193, 1)).toEqual([1, 4096, 2]);
+    expect(slotPixels(device, 1, 8193, 1)).toEqual([1, 8193]);
+  });
+
+  it("asks for one texel of a slot with no pixels, which shows none", () => {
+    const device = { inlineSize: 0, blockSize: 360 };
+    expect(backingSize(device, 0, 360, 1)).toEqual([1, 360, 1]);
+    expect(slotPixels(device, 0, 360, 1)).toEqual([0, 360]);
+  });
+
+  it("falls back to the CSS box, and to DPR 1 for a bad ratio", () => {
+    expect(backingSize(null, 400.4, 300.6, 1.5)).toEqual([600, 450, 1]);
+    expect(backingSize(null, 400, 300, 0)).toEqual([400, 300, 1]);
+  });
+});
+
+// Codex round 24: the canvas shows no pixel past the view the renderer reports for its frame.
+describe("viewClip", () => {
+  const shown = { width: 64, height: 36, texel: 2, visibleWidth: 64, visibleHeight: 36 };
+
+  it("clips nothing when the whole frame is in view", () => {
+    expect(viewClip(shown, 4)).toBe("");
+  });
+
+  it("clips every texel the slot cut when the frame started", () => {
+    expect(viewClip({ ...shown, visibleWidth: 1 }, 4)).toBe("inset(0 31.5px 0px 0)");
+    expect(viewClip({ ...shown, visibleWidth: 1, visibleHeight: 35 }, 1)).toBe(
+      "inset(0 126px 2px 0)",
+    );
+    expect(viewClip({ ...shown, visibleWidth: 0, visibleHeight: 0 }, 2)).toBe(
+      "inset(0 64px 36px 0)",
+    );
+  });
+});
+
+describe("chosenVisual", () => {
+  const calm = VISUALS.find((v) => v.calm);
+  const lively = VISUALS.find((v) => !v.calm);
+
+  it("keeps a pinned visual unless it is lively under reduced motion", () => {
+    if (!calm || !lively) throw new Error("the release has calm and lively visuals");
+    expect(chosenVisual(lively.id, "k", false)).toBe(lively);
+    expect(chosenVisual(calm.id, "k", true)).toBe(calm);
+    expect(chosenVisual(lively.id, "k", true).calm).toBe(true);
+  });
+
+  it("draws a per-key visual from the calm set under reduced motion, stably", () => {
+    for (const key of ["a", "album-1", "track-42", "zz"]) {
+      expect(chosenVisual("album", key, true).calm).toBe(true);
+      expect(chosenVisual("album", key, true)).toBe(visualFor(key, true));
+    }
   });
 });

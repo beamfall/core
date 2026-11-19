@@ -61,9 +61,15 @@ export function resetVisualChoiceForTest(): void {
   choice = null;
 }
 
-/** True where this browser can draw an Oscillux visual. */
+/**
+ * True where this browser can draw an Oscillux visual. A ResizeObserver is required: it withdraws
+ * a frame drawn at a size the slot left before the paint, which the flash limiter relies on
+ * (Codex round 19). Every browser with WebGL2 has one.
+ */
 export function canVisualize(): boolean {
   return (
-    typeof WebGL2RenderingContext !== "undefined" && typeof OfflineAudioContext !== "undefined"
+    typeof WebGL2RenderingContext !== "undefined" &&
+    typeof OfflineAudioContext !== "undefined" &&
+    typeof ResizeObserver !== "undefined"
   );
 }

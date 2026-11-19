@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -560,14 +590,18 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     vec3 col = vec3(0.0);
 
+    // beat count that surges after each beat and never jumps back at the wrap
+    // (beatPhase alone snapped every ring and ember back once a beat)
+    float beatSurge = floor(u.beatCount) + 1.0 - pow(1.0 - u.beatPhase, 3.0);
+
     // radius window: keep the action in a ring band, fade to black elsewhere
     float band01 = smoothstep(0.12, 0.22, r) * (1.0 - smoothstep(0.9, 1.3, r));
 
     // ---- flythrough concentric rings ----
-    float depth = 1.0 / max(r, 0.05) + u.time * speed + u.beatPhase * 0.6;
+    float depth = 1.0 / max(r, 0.05) + u.time * speed + beatSurge * 0.12;
     float ringLine = aaLineCyclic(depth, 0.08) * band01;
     vec3 ringCol = palVisual(fract(depth * 0.12 + ang01 * 0.1 + 0.03 * u.time), u);
-    col += ringCol * ringLine * (0.4 + 1.2 * u.amplitude);
+    col += ringCol * ringLine * (0.2 + 0.4 * u.amplitude);
 
     // ---- circular spectrum equalizer around a base radius ----
     float baseR = 0.40;
@@ -587,14 +621,15 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // ---- bass radial spikes ----
     float spikeCell = fract(ang01 * 24.0);
     float spike = smoothstep(0.10, 0.0, abs(spikeCell - 0.5)) * step(baseR, r);
-    col += palVisual(ang01 + 0.25, u) * spike * (1.0 - smoothstep(baseR, 1.5, r)) * u.bassImpact * 6.2;
+    // kept as accents: at full strength the 24 spikes lit a third of the frame per kick
+    col += palVisual(ang01 + 0.25, u) * spike * (1.0 - smoothstep(baseR, 1.5, r)) * u.bassImpact * 1.2;
 
     // ---- ember sparks streaming outward ----
     for (int i = 0; i < 44; i++) {
         float fi = float(i);
         vec2 h = hash22(vec2(fi, 7.0));
         float sa = h.x * 6.2831853 + 0.3 * sin(u.time * 0.2 + fi);
-        float life = fract(h.y + u.time * (0.15 + 0.45 * h.x) + u.beatCount * 0.07);
+        float life = fract(h.y + u.time * (0.15 + 0.45 * h.x) + beatSurge * 0.07);
         float sr = mix(baseR, 1.7, life);
         vec2 sp = vec2(cos(sa), sin(sa)) * sr;
         float d = length(p - sp);
@@ -610,7 +645,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- stable feedback warp trails (subtle zoom -> content flies outward) ----
     col = feedbackTrail(col, uv,
-                        min(u.trailDecay, 0.88), 0.005 + 0.012 * u.bassImpact, 0.003 * twist + 0.008 * u.beat);
+                        min(u.trailDecay, 0.88), 0.003 + 0.002 * u.bassImpact, 0.003 * twist + 0.002 * u.beat);
 
     return col; // LINEAR HDR — post chain tonemaps
 }

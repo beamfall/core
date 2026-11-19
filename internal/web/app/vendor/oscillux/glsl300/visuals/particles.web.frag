@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -544,7 +574,7 @@ vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
 // (deterministic per frame) — no state stored across frames except via feedbackTrail.
 //
 // param0 Density      → particle count (maps to 56..80)
-// param1 Burst        → outward explosion radius on bassImpact (0.06..0.15 scale)
+// param1 Burst        → outward explosion radius on bassImpact (0.03..0.075 scale)
 // param2 Trail Length → feedbackTrail zoom factor (trail persistence)
 
 vec3 visual(vec2 uv, VisualUniforms u) {
@@ -552,7 +582,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- param interpretation ----
     int   K          = int(mix(56.0, 80.0, clamp(u.param0, 0.0, 1.0)));   // Density
-    float burstScale = mix(0.06, 0.15, clamp(u.param1, 0.0, 1.0));        // Burst
+    float burstScale = mix(0.03, 0.075, clamp(u.param1, 0.0, 1.0));        // Burst
     float trailZoom  = mix(0.003, 0.018, clamp(u.param2, 0.0, 1.0));      // Trail Length
 
     // ---- attractor ring radii: 3 spectral bands (bass/mid/treble) ----
@@ -561,6 +591,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float trebleRing = 0.76 + 0.08 * bandRange(u, 44, 64);
 
     // ---- bassImpact burst: burst pushes all particles radially outward ----
+    // Half the old range, with narrower size and brightness swings below: per-band energy pulsing
+    // whole embers held a fifth of the frame in the per-pixel limiter.
     float burstAmt = u.bassImpact * burstScale;
 
     vec3 col = vec3(0.0);
@@ -629,9 +661,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         // ---- per-particle size: energy + tier ----
         float sizeBase = (tierFrac < 0.1)
-                          ? mix(0.015, 0.060, energy)           // bass: fat embers
+                          ? mix(0.028, 0.040, energy)           // bass: fat embers
                           : ((tierFrac < 0.6)
-                             ? mix(0.008, 0.035, energy)        // mid: medium
+                             ? mix(0.014, 0.026, energy)        // mid: medium
                              : mix(0.003, 0.012, energy));      // treble: pin-sparks
         float pSize = sizeBase * (1.0 + h4 * 0.4);
         float visibilityFade = smoothstep(0.003, 0.010, pSize) * smoothstep(1.4, 0.9, length(pos));
@@ -656,9 +688,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float streakGlow = perpG * alongG * 0.42 * (1.0 - smoothstep(-pSize, 0.0, along));
 
         // ---- brightness ----
-        float bassBeat    = (tierFrac < 0.1) ? (1.0 + u.beat * 0.6 + u.bassImpact * 0.4) : (1.0 + u.beat * 0.3);
-        float trebleFlash = (tierFrac > 0.9) ? (1.0 + u.onset * 0.6 + u.treble * 0.5) : 1.0;
-        float brightness  = (0.4 + 1.6 * energy) * bassBeat * trebleFlash * visibilityFade;
+        // Half the beat and onset swings of v0.2.8: with one area count across channels the
+        // limiter held over 18% of the frame on loud audio (Codex round 13, CORE-2409).
+        float bassBeat    = (tierFrac < 0.1) ? (1.0 + u.beat * 0.15 + u.bassImpact * 0.1) : (1.0 + u.beat * 0.08);
+        float trebleFlash = (tierFrac > 0.9) ? (1.0 + u.onset * 0.15 + u.treble * 0.3) : 1.0;
+        float brightness  = (0.8 + 0.6 * energy) * bassBeat * trebleFlash * visibilityFade;
         float hdrCap = (tierFrac < 0.1) ? 6.0 : 3.5;
         brightness = min(brightness, hdrCap);
 

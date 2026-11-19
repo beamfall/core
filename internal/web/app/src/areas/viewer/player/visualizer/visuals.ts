@@ -36,11 +36,27 @@ export function visualById(id: string): Visual | undefined {
   return BY_ID.get(id);
 }
 
-/** The visual for a key: stable per key, so returning to it shows the same visual. */
-export function visualFor(key: string): Visual {
+const CALM = VISUALS.filter((v) => v.calm);
+
+/**
+ * The visual for a key: stable per key, so returning to it shows the same visual. With reduced
+ * motion it is drawn from the calm visuals (CORE-2517).
+ */
+export function visualFor(key: string, reducedMotion = false): Visual {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
-  return VISUALS[(h >>> 0) % VISUALS.length];
+  const pool = reducedMotion && CALM.length > 0 ? CALM : VISUALS;
+  return pool[(h >>> 0) % pool.length];
+}
+
+/**
+ * The visual to show for a pinned or per-key pick. A pinned visual that is not calm gives way to
+ * a calm one when the viewer prefers reduced motion (CORE-2517).
+ */
+export function chosenVisual(choice: string, key: string, reducedMotion: boolean): Visual {
+  const pinned = visualById(choice);
+  if (pinned && (!reducedMotion || pinned.calm)) return pinned;
+  return visualFor(key, reducedMotion);
 }
 
 /** Seconds of drawn time a rotating visual holds before the next one, at a downbeat. */

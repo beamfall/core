@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -570,7 +600,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float rippleEnv = exp(-abs(r - rippleR) * 6.5) * u.bassImpact;
     float ripple = sin((r - rippleR) * 30.0) * rippleEnv;
     vec2 rdir = p / max(r, 1e-3);
-    vec2 n = vec2(gx, gy) * (1.0 + 0.6 * u.mid) + rdir * ripple * 3.0;
+    vec2 nWave = vec2(gx, gy) * (1.0 + 0.6 * u.mid);
+    vec2 n = nWave + rdir * ripple * 3.0;
 
     // ---- refracted artwork with chromatic split ----
     vec2 off = n * refr * (1.0 + 0.9 * u.bassImpact);
@@ -588,15 +619,19 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec3 col = art * art * deepTint * depthShade * (0.60 + 0.70 * u.level);
 
     // ---- HDR caustic web: thin bright filaments, black between ----
-    float ca = fbmRidged(w * 0.9 + n * 0.35 + vec2(0.0, t * 0.25));
+    // the web follows the slow waves only: bent by the ripple ring it
+    // reshuffled every filament under the ring, a broad shimmer each beat
+    float ca = fbmRidged(w * 0.9 + nWave * 0.35 + vec2(0.0, t * 0.25));
     float web = pow(saturate(ca * 1.12 - 0.12) / 1.0, 6.0);
     float hue = h0 * 0.35 + 0.08 * u.spectralCentroid + 0.02 * u.time;
     vec3 causticCol = palVisual(hue, u);
     causticCol = accentize(causticCol, u.accent, 0.18);
-    col += causticCol * web * causticAmt * (0.5 + 1.1 * u.mid + 1.6 * u.bassImpact);
+    // a gentle pump: the web covers much of the pool, so a strong mid or
+    // bass swing brightened it all at once
+    col += causticCol * web * causticAmt * (0.7 + 0.35 * u.mid + 0.30 * u.bassImpact);
 
     // secondary coarser web, counter-drifting (depth parallax)
-    float ca2 = fbmRidged(w * 0.55 - n * 0.22 + vec2(t * 0.19, 4.7));
+    float ca2 = fbmRidged(w * 0.55 - nWave * 0.22 + vec2(t * 0.19, 4.7));
     float web2 = pow(saturate(ca2 * 1.10 - 0.10), 6.0);
     col += palVisual(hue + 0.18, u) * web2 * causticAmt * (0.20 + 0.55 * u.mid);
 

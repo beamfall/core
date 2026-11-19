@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -591,13 +621,13 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         if (i >= layers) break;
         float fi = (float(i) + 0.5) * invLayers;
         float depth = 1.0 - fi;
-        float sliceAngle = t * 0.55 + swirlAmt * fi * 1.65 + impact * fi * 2.0 + sin(beatRadians(u, fi * 0.23)) * 0.16;
+        float sliceAngle = t * 0.55 + swirlAmt * fi * 1.65 + impact * fi * 0.6 + sin(beatRadians(u, fi * 0.23)) * 0.16;
         float shell = mix(1.28, 0.72, fi) * (1.0 + (phaseBreath - 0.5) * 0.045 * (1.0 - fi));
         vec2 sp = rot2(sliceAngle) * (p0 * shell);
 
         vec2 warp = vec2(
-            fbm(sp * 1.05 + vec2(1.7, 9.2) + t * 0.9 + midBand * 0.7 + vec2(u.beatPhase * 0.18, 0.0)),
-            fbm(sp * 1.05 + vec2(8.3, 2.8) - t * 0.7 + midBand * 0.7 + vec2(0.0, u.beatPhase * 0.16))
+            fbm(sp * 1.05 + vec2(1.7, 9.2) + t * 0.9 + midBand * 0.7 + vec2(sin(beatRadians(u, 0.0)) * 0.03, 0.0)),
+            fbm(sp * 1.05 + vec2(8.3, 2.8) - t * 0.7 + midBand * 0.7 + vec2(0.0, cos(beatRadians(u, 0.0)) * 0.03))
         ) - 0.5;
         sp += warp * (0.28 + midE * 0.36 + depth * 0.10);
 
@@ -616,7 +646,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         vec3 smokeCol = accentize(palVisual(fi * 0.55 + specCentroid * 0.22 + t * 0.04 + u.beatPhase * 0.05, u), u.accent, 0.10);
         vec3 litCol = peakWhite(palVisual(0.75 + specCentroid * 0.2 - fi * 0.15, u),
                                 saturate(lightning * 0.20));
-        float beatFlash = impact * depth * 1.3;
+        float beatFlash = impact * depth * 0.45; // kick tints the smoke; a bigger push flashes it
         vec3 beatCol = palVisual(0.08 + specCentroid * 0.1, u);
 
         float alpha = min(dens * 0.16, 0.075) * layerWeight;
@@ -662,8 +692,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- feedback trails (curl-ish UV offset to simulate smoke advection) --
     {
-        float swirlFeedback = 0.004 + swirlAmt * 0.003 + impact * 0.008;
-        float zoomFeedback  = 0.003 + impact * 0.010;
+        float swirlFeedback = 0.004 + swirlAmt * 0.003 + impact * 0.004;
+        float zoomFeedback  = 0.003 + impact * 0.004;
         col = feedbackTrail(col, uv, u.trailDecay, zoomFeedback, swirlFeedback);
     }
 

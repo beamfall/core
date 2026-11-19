@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -572,13 +602,15 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             float shuttleZ = 1.18;
 
             // bass ripple traveling back through the woven history
-            float ripple = sin(z * 2.6 - u.time * 7.5)
+            float ripple = sin(z * 2.6 - u.time * 4.0)
                          * u.bassImpact * rippleAmt * exp(-max(z - shuttleZ, 0.0) * 0.55);
 
             // ---- history: reproject where this cloth point was last frame ----
             float dtc = clamp(u.dt, 0.008, 0.05);
             float zp = max(z - scroll * dtc * 60.0 * 0.045, 0.30);
-            float xs = x + ripple * 0.05;
+            // a small sideways sway: at 0.05 a bass hit slid the history a whole
+            // strand pitch, flipping every thread on screen
+            float xs = x + ripple * 0.006;
             float pxp = xs / (zp * f);
             float syp = (tilt - camH / zp) / f;
             vec2 uvPrev = vec2((pxp / aspect + 1.0) * 0.5, (1.0 - syp) * 0.5);
@@ -600,9 +632,10 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             float thick = bandE * bandE;
 
             // thin warp filaments, black gaps between threads
-            float warpLine = pow(abs(sin(strand * 3.14159265)), 9.0);
+            // band energy fattens the thread rather than pumping its brightness
+            float warpLine = pow(abs(sin(strand * 3.14159265)), mix(12.0, 7.0, thick));
             // weft rows laid two per beat, marching back with the cloth
-            float rowPhase = (u.beatCount + u.beatPhase) * 2.0 - z * 3.2;
+            float rowPhase = (u.beatCount + u.beatPhase) * 1.0 - z * 3.2;
             float rid = floor(rowPhase);
             float weftLine = pow(abs(sin(rowPhase * 3.14159265)), 14.0);
             float knot = warpLine * weftLine;
@@ -612,22 +645,26 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             warpCol = accentize(warpCol, u.accent, 0.12);
             vec3 weftCol = palRoleBass(0.06 + fract(rid * 0.171) * 0.28, u);
 
-            vec3 fresh = warpCol * warpLine * (0.22 + 4.0 * thick + 0.7 * u.onset);
-            fresh += weftCol * weftLine * (0.08 + 1.0 * u.bass * u.bass);
+            // Swings stay modest: every row marches past each pixel several times a
+            // second, so a bright weft or onset pump reads as a cloth-wide flicker.
+            vec3 fresh = warpCol * warpLine * (0.45 + 0.9 * thick + 0.12 * u.onset);
+            fresh += weftCol * weftLine * (0.04 + 0.12 * u.bass * u.bass);
             // crossing knots spark on the beat (HDR cores)
             fresh += peakWhite(warpCol, 0.45) * knot
-                   * (0.8 + 2.6 * phasePulse(u, 0.0, 0.10)) * (0.3 + thick);
+                   * (0.45 + 0.30 * phasePulse(u, 0.0, 0.22)) * (0.3 + thick);
 
             // metallic chorus thread: every other 16-beat section gleams
-            float sect = mod(floor(u.beatCount / 16.0), 2.0);
-            fresh += vec3(1.6, 1.25, 0.62) * weftLine * sect * thick * 0.9;
+            // eased over a beat: a hard section switch lit the whole cloth at once
+            float sx = mod((u.beatCount + u.beatPhase) / 16.0, 2.0);
+            float sect = smoothstep(0.94, 1.0, sx) - smoothstep(1.94, 2.0, sx);
+            fresh += vec3(1.6, 1.25, 0.62) * weftLine * sect * thick * 0.45;
 
             // lay fresh cloth in the shuttle band, history beyond it
             float freshMask = 1.0 - smoothstep(shuttleZ, shuttleZ + 0.35, z);
             col = mix(history, fresh, freshMask);
 
             // ripple sheen glints on displaced rows
-            col += palRoleRim(0.45, u) * abs(ripple) * 0.28;
+            col += palRoleRim(0.45, u) * abs(ripple) * 0.04;
 
             // depth haze: the tapestry recedes into darkness
             col *= 1.0 - smoothstep(4.0, 14.0, z) * 0.06;
@@ -635,7 +672,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             // the shuttle: bright line where thread is being laid
             float sh = exp(-abs(z - shuttleZ) * 45.0);
             vec3 shuttleCol = palRolePeak(0.30 + 0.20 * u.spectralCentroid, u);
-            col += shuttleCol * sh * (0.9 + u.onset * 3.0 + u.beat * 1.5) * (0.25 + bandE);
+            col += shuttleCol * sh * (1.0 + u.onset * 0.3 + u.beat * 0.2) * (0.25 + bandE);
         }
 
         // fabric edges fall off into darkness

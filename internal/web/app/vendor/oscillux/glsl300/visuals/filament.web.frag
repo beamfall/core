@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -550,7 +580,7 @@ float filamentY(float x01, VisualUniforms u, float tension, float pluck) {
     for (int n = 1; n <= 8; ++n) {
         float fn = float(n);
         float w = bandAt(u, (fn - 1.0) / 7.0) * (1.25 - 0.09 * fn); // physical rolloff
-        float om = tension * (2.0 + 1.35 * fn);
+        float om = tension * (1.2 + 0.7 * fn);
         float shape = sin(fn * 3.14159265 * x01);
         float osc = cos(om * u.time + fn * 1.7);
         float amp = w * pluck * (0.52 / fn) * (0.35 + 0.95 * u.amplitude);
@@ -561,9 +591,21 @@ float filamentY(float x01, VisualUniforms u, float tension, float pluck) {
     return y;
 }
 
+// Pluck envelope over one beat: a short eased rise, then a decay that ends at
+// the value it starts from, so the string never snaps on the beat wrap. A
+// step from 0.09 to 1 in one frame swept the whole bright string (and its halo)
+// across the frame at once: a large-area flash every beat.
+float pluckEnv(float bp) {
+    float rise = smoothstep(0.0, 0.40, bp);
+    return mix(0.0907, 1.0, rise) * exp(-4.0 * max(bp - 0.40, 0.0));
+}
+
 vec3 visual(vec2 uv, VisualUniforms u) {
     vec2 p = motionCentered(uv, u);
     float aspect = u.resolution.x / max(u.resolution.y, 1.0);
+    // motionCentered scales p by the short-side fit, so the screen's edges sit at
+    // x = +-aspect * fit: beads and anchors measure x in that same space.
+    float fit = shortSideFit(aspect);
     float x01 = saturate(uv.x);
 
     float tension = mix(0.7, 2.0, u.param0);
@@ -571,13 +613,13 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float beadAmt = mix(0.3, 1.7, u.param2);
 
     // pluck envelope: excitation decays between beats, re-armed on each beat
-    float pluck = exp(-2.4 * u.beatPhase) * (0.40 + 0.60 * saturate(u.onset)) + 0.16;
+    float pluck = pluckEnv(u.beatPhase) * 0.25 + 0.22;
 
     float y = filamentY(x01, u, tension, pluck);
     float d = p.y - y;
 
     // temporal echo: the string a moment ago, as a dim ghost (depth cue)
-    float yGhost = filamentY(x01, u, tension, exp(-2.4 * fract(u.beatPhase + 0.22)) * 0.5 + 0.16);
+    float yGhost = filamentY(x01, u, tension, pluckEnv(fract(u.beatPhase - 0.22)) * 0.5 + 0.16);
     float dGhost = p.y - mix(yGhost, y, 0.35);
 
     // string velocity proxy (finite difference in x -> local slope energy)
@@ -611,7 +653,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float fk = float(k);
         float xk = fk / 8.0;
         float yk = filamentY(xk, u, tension, pluck);
-        vec2 db = vec2((uv.x - xk) * aspect * 2.0, p.y - yk);
+        vec2 db = vec2((uv.x - xk) * aspect * fit * 2.0, p.y - yk);
         float r2 = dot(db, db);
         float wk = bandAt(u, (fk - 1.0) / 7.0);
         float bead = exp(-r2 / (0.00010 + 0.00030 * wk + 1e-6));
@@ -621,8 +663,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     }
 
     // anchors: dim endpoints ground the string physically
-    float endL = exp(-dot(vec2(p.x + aspect, p.y), vec2(p.x + aspect, p.y)) / 0.004);
-    float endR = exp(-dot(vec2(p.x - aspect, p.y), vec2(p.x - aspect, p.y)) / 0.004);
+    float edge = aspect * fit;
+    float endL = exp(-dot(vec2(p.x + edge, p.y), vec2(p.x + edge, p.y)) / 0.004);
+    float endR = exp(-dot(vec2(p.x - edge, p.y), vec2(p.x - edge, p.y)) / 0.004);
     col += palRoleFog(0.3, u) * (endL + endR) * 0.5;
 
     // faint ambient fog so calm mode isn't a void

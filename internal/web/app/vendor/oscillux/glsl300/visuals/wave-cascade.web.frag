@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -575,20 +605,22 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // ---- luminous pool at the bottom of the falls ----
     float poolMist = fbm(vec2(uv.x * 5.0, uv.y * 9.0 - u.time * 0.7));
     float pool = exp(-((uv.y - floorY) * 9.0)*((uv.y - floorY) * 9.0));
-    col += palRoleBass(0.12, u) * pool * (0.10 + 0.45 * u.amplitude + 0.5 * u.bassImpact)
+    col += palRoleBass(0.12, u) * pool * (0.12 + 0.22 * u.amplitude + 0.12 * u.bassImpact)
          * (0.55 + 0.6 * poolMist);
 
     // ---- falling sheets (one detaches per beat) ----
-    float seedBase = u.beatCount - u.beatPhase;
+    // each sheet keeps one seed for its whole fall, so nothing reshapes
+    // when the beat clock wraps; the master morphs continuously into it
+    float seedBase = u.beatCount + u.beatPhase;
     for (int j = 0; j < 7; ++j) {
         float fj = float(j);
         float age = u.beatPhase + fj;
-        float seed = seedBase - fj;
+        float seed = u.beatCount - fj;
         // gravity fall, easing into the stack near the pool
         float yFall = topY + 0.5 * g * age * age * 0.30;
         float yStack = floorY - 0.020 - fj * 0.007;
         float yj = min(yFall, yStack);
-        float settled = step(yStack, yFall);
+        float settled = smoothstep(yStack - 0.03, yStack, yFall);
         // slight shear: sheet skews sideways as it falls
         float xq = uv.x + age * 0.030 * (uv.x - 0.5) + age * 0.012;
 
@@ -596,14 +628,17 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float ys = yj + cascadeShape(xq, seed, 0.0, u) * shapeAmp;
         float d = uv.y - ys;
         float fade = exp(-age * life) * (1.0 - 0.60 * settled);
-        float halfW = 0.0022 + 0.0024 * age;
-        float line = aaLine(d, halfW);
+        float halfW = 0.0022 + 0.0010 * age;
+        // motion blur: a fast-falling sheet spreads its light, so a thin
+        // bright line never sweeps the frame as a strobe edge
+        float vel = 0.3 * g * age * (1.0 - settled);
+        float line = aaLine(d, halfW + 0.010 * vel) / (1.0 + 25.0 * vel);
         // thin translucent skirt trailing back up toward where it came from
         float veil = exp(-abs(d) * 70.0) * 0.09;
         float above = step(d, 0.0);
         vec3 sc = palVisual(fract(0.30 + seed * 0.043), u);
         sc = accentize(sc, u.accent, 0.08);
-        col += sc * (line * 2.2 + veil * above) * fade * (0.45 + 0.55 * cb);
+        col += sc * (line * 1.0 + veil * above) * fade * (0.45 + 0.55 * cb);
     }
 
     // ---- live master trace on top (drawn last: hottest layer) ----
@@ -613,7 +648,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float dM = uv.y - yM;
     vec3 mc = palRoleTrace(fract(uv.x * 0.7 + 0.10 * u.spectralCentroid), u);
     col += mc * aaLine(dM, 0.0035) * (2.0 + 2.6 * bandAt(u, uv.x));
-    col += mc * exp(-abs(dM) * 45.0) * (0.30 + 0.5 * u.amplitude);
+    col += mc * exp(-abs(dM) * 45.0) * (0.25 + 0.25 * u.amplitude);
     // white-hot crest pulse sliding along with the beat
     float crest = exp(-(uv.x - u.beatPhase)*(uv.x - u.beatPhase) * 70.0);
     col += palRolePeak(0.10, u) * crest * aaLine(dM, 0.010) * u.bassImpact * 2.6;
@@ -621,7 +656,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // ---- onset spray: droplets flung off the newest detachment ----
     for (int i = 0; i < 24; ++i) {
         float fi = float(i);
-        vec2 h = hash22(vec2(fi * 1.91, floor(seedBase + 0.5) * 3.7));
+        vec2 h = hash22(vec2(fi * 1.91, u.beatCount * 3.7));
         float sAge = u.beatPhase;
         float sx = h.x + (h.y - 0.5) * 0.35 * sAge;
         // flung up first (decreasing y), then falling back (increasing y)
@@ -639,8 +674,8 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     col *= 1.0 - dot(c, c) * 0.6;
 
     // afterglow: the waterfall's smoke
-    col = feedbackTrail(col, uv, min(u.trailDecay, 0.85),
-                        0.004 + 0.006 * u.bassImpact, 0.0);
+    col = feedbackTrail(col, uv, min(u.trailDecay, 0.72),
+                        0.004 + 0.002 * u.bassImpact, 0.0);
     return col; // LINEAR HDR
 }
 

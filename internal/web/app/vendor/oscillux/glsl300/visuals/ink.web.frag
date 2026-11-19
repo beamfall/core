@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -560,6 +590,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float flow   = mix(0.45, 1.70, u.param0);
     float budget = mix(0.55, 1.90, u.param1);
     float buoy   = mix(0.25, 1.30, u.param2);
+    // Advection, bleed and injection are authored per 60 Hz frame; n = dt*60
+    // keeps them the same per second at 30/60/120 Hz (one step without a clock).
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
 
     // ---- advection: curl-noise velocity field in uv space (y-down screen) ----
     vec2 q = uv * vec2(aspect, 1.0) * 3.1 + vec2(0.0, u.time * 0.045);
@@ -573,24 +606,31 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // buoyancy: sample from below => dye rises (uv.y grows downward)
     float rise = (0.0022 + 0.0060 * u.bassImpact + 0.0018 * u.bass) * buoy;
 
-    vec2 sampleUV = uv + vel * 0.0045 * flow + vec2(0.0, rise);
-    vec3 prev = PREV(sampleUV).rgb;
+    vec2 sampleUV = uv + (vel * 0.0045 * flow + vec2(0.0, rise)) * n;
+    // Water outside the frame is empty: fade history sampled past the edge
+    // instead of repeating the edge texel, which advection drags inward.
+    vec2 outside = max(-sampleUV, sampleUV - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(outside.x, outside.y), 0.0), 0.0, 1.0);
+    vec3 prev = PREV(sampleUV).rgb * inside;
 
     // energy must decay: base bleed + whiteout guard. The guard must bite
     // inside the tonemapped range (ACES is ~white by luma 2), or dye stacks
     // into flat white blobs and the color is lost.
     float pl = luma(prev);
     float keep = 0.978 - 0.12 * smoothstep(0.9, 2.6, pl);
-    prev = max(prev * keep - 0.0016, vec3(0.0));
+    prev = max(prev * pow(keep, n) - 0.0016 * n, vec3(0.0));
 
     // ---- dye injection ----
+    // Splats are sized against the frame's short side, so on a portrait frame
+    // they cover the same share of it as at 16:9 instead of stacking into white.
+    vec2 splatScale = vec2(aspect, 1.0) / min(aspect, 1.0);
     vec3 dye = vec3(0.0);
     float k = u.beatCount * 2.0 + step(0.5, u.beatPhase); // splat site key
     for (int j = 0; j < 3; ++j) {
         float fj = float(j);
         vec2 h = hash22(vec2(k * 0.371 + fj * 13.7, fj * 5.13 + 2.7));
         vec2 c = vec2(0.16 + 0.68 * h.x, 0.22 + 0.48 * h.y);
-        vec2 d = (uv - c) * vec2(aspect, 1.0);
+        vec2 d = (uv - c) * splatScale;
         float g = exp(-dot(d, d) / (0.0016 + 0.0045 * u.flux + 1e-5));
         vec3 dcol = palVisual(u.spectralCentroid * 0.85 + fj * 0.14 + h.y * 0.10, u);
         dcol = peakWhite(dcol, u.onset * u.treble * 0.10);
@@ -598,19 +638,19 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     }
 
     // kick plume: hot charge near the floor, buoyancy carries it up
-    vec2 db = (uv - vec2(0.5 + 0.12 * sin(u.time * 0.7), 0.90)) * vec2(aspect, 1.0);
+    vec2 db = (uv - vec2(0.5 + 0.12 * sin(u.time * 0.7), 0.90)) * splatScale;
     vec3 bassCol = palRoleBass(0.06 + 0.05 * u.spectralCentroid, u);
     dye += bassCol * exp(-dot(db, db) / 0.0045) * u.bassImpact * budget * 2.6;
 
-    vec3 col = prev + dye;
+    vec3 col = prev + dye * n;
 
     // faint caustic floor light in the empty water (self-limiting)
     float caustic = fbm(uv * vec2(aspect, 1.0) * 6.0 + u.time * 0.03);
-    col += palRoleFog(0.62, u) * caustic * 0.006 * (1.0 - saturate(pl * 1.5)) * (0.4 + u.amplitude);
+    col += palRoleFog(0.62, u) * caustic * 0.006 * (1.0 - saturate(pl * 1.5)) * (0.4 + u.amplitude) * n;
 
     // subtle chroma shear at plume fronts: brighten dye edges
     float dl = luma(dye);
-    col += dye * dl * 0.35;
+    col += dye * dl * 0.35 * n;
 
     return col; // LINEAR HDR — this exact value is next frame's fluid state
 }

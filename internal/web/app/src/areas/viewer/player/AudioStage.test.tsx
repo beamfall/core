@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaCredit } from "@/lib/graphql/types";
@@ -52,6 +54,54 @@ describe("AudioStage (CORE-1143)", () => {
     expect(slot?.getAttribute("aria-hidden")).toBe("true");
     expect(slot?.childElementCount).toBe(0);
     expect(container.querySelector("canvas")).toBeNull();
+  });
+});
+
+describe("AudioStage visualizer layout", () => {
+  let style: HTMLStyleElement;
+
+  beforeEach(() => {
+    // jsdom cannot parse the full sheet. Use the shipped slot and canvas rules.
+    const css = readFileSync(join(__dirname, "player-deferred.css"), "utf8");
+    const rules = css.match(/^\.bf-audio-visualizer[^\n]*\{[^}]*\}/gm) ?? [];
+    style = document.createElement("style");
+    style.textContent = rules.join("\n");
+    document.head.append(style);
+  });
+
+  afterEach(() => style.remove());
+
+  function stage() {
+    const { container } = render(<AudioStage title="Song" artworkURL="/art.jpg" credits={[]} />);
+    const slot = container.querySelector<HTMLElement>("[data-visualizer-slot]")!;
+    const canvas = document.createElement("canvas");
+    canvas.className = "bf-audio-visualizer-canvas";
+    return { container, slot, canvas };
+  }
+
+  it("anchors the canvas at the slot's top-left as the letterbox changes", () => {
+    const { slot, canvas } = stage();
+    slot.append(canvas);
+    canvas.style.width = "1920px";
+    for (const width of ["1920px", "1922px"]) {
+      slot.style.width = width;
+      const origin = getComputedStyle(canvas);
+      expect(getComputedStyle(slot).position).toBe("absolute");
+      expect(origin.position).toBe("absolute");
+      expect(origin.top).toBe("0px");
+      expect(origin.left).toBe("0px");
+    }
+  });
+
+  // The sheet gives the slot no background, least of all a themed one: the visualizer paints it
+  // the flash limiter's black behind its canvas (Visualizer.test.tsx, Codex round 25).
+  it("leaves the artwork backdrop visible through the slot", () => {
+    const { container, slot, canvas } = stage();
+    const background = () => getComputedStyle(slot).backgroundColor;
+    expect(container.querySelector(".bf-audio-backdrop img")?.getAttribute("src")).toBe("/art.jpg");
+    expect(background()).toBe("rgba(0, 0, 0, 0)");
+    slot.append(canvas);
+    expect(background()).toBe("rgba(0, 0, 0, 0)");
   });
 });
 

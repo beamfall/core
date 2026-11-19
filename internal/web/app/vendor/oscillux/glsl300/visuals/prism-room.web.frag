@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -550,7 +580,10 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float edgeGlow = mix(0.9, 3.4, u.param2);
 
     float r = length(p);
-    float a = atan2_(p.y, p.x) + u.time * 0.045 + u.beatPhase * 0.08;
+    // eased beat clock, continuous across beats: the raw beatPhase saw
+    // snapped the whole room on every beat
+    float beatT = u.beatCount + 1.0 - pow(1.0 - saturate(u.beatPhase), 3.0);
+    float a = atan2_(p.y, p.x) + u.time * 0.045 + beatT * 0.08;
 
     // ---- kaleidoscopic wedge fold ----
     float sector = 6.2831853 / facetsF;
@@ -572,7 +605,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     vec3 col = vec3(0.0);
 
     // ---- glass pane fill ----
-    float hue = cid * 0.55 + row * 0.055 + 0.10 * u.spectralCentroid + 0.04 * u.beatPhase;
+    float hue = cid * 0.55 + row * 0.055 + 0.10 * u.spectralCentroid + 0.04 * beatT;
     vec3 pane = palVisual(hue, u);
     // push the glass toward pure spectral color: darker but far more saturated
     pane = clamp(mix(vec3(luma(pane)), pane, 1.55), vec3(0.0), vec3(4.0));
@@ -587,18 +620,19 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // the light source is the room's heart, so outer rows fall darker
     float lit = smoothstep(0.28, 0.80, bandE);
     float heart = mix(1.0, 0.30, smoothstep(0.40, 1.10, r));
-    col += pane * grad * roomWin * heart * (0.025 + 1.5 * lit * bandE + 0.35 * bandE + 0.06 * u.level + 0.7 * u.onset + 0.5 * u.beat);
+    col += pane * grad * roomWin * heart * (0.025 + 1.5 * lit * bandE + 0.35 * bandE + 0.06 * u.level);
 
-    // beat flash on random facets
+    // beat glint on random facets: a tint, not a white flash, since many
+    // panes lighting at once read as a whole-room strobe
     float flashGate = step(0.80, hash21(vec2(row + floor(u.beatCount), aid)));
-    col += peakWhite(pane, 0.35) * flashGate * u.onset * u.onset * roomWin * 1.6;
+    col += pane * flashGate * u.onset * u.onset * roomWin * 0.08;
 
     // ---- caustic sweep washing outward through the rows ----
-    float sweepR = fract(u.time * sweepSpd + u.beatPhase * 0.25) * 1.5;
+    float sweepR = fract(u.time * sweepSpd + beatT * 0.25) * 1.5;
     float sweep = exp(-((rr - sweepR) * 16.0)*((rr - sweepR) * 16.0));
     vec3 sweepCol = palVisual(hue + 0.25, u);
     sweepCol = sweepCol * sweepCol * 1.6;
-    col += sweepCol * sweep * roomWin * heart * (0.12 + 0.5 * u.mid + 1.1 * u.bassImpact);
+    col += sweepCol * sweep * roomWin * heart * (0.12 + 0.4 * u.mid + 0.15 * u.bassImpact);
 
     // ---- HDR edge filaments ----
     // wedge seams (arc-length distance so lines stay thin)
@@ -608,7 +642,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float edgeR = aaLine(dRow, 0.0030);
     vec3 rim = palVisual(hue + 0.12, u);
     rim = clamp(mix(vec3(luma(rim)), rim, 1.4), vec3(0.0), vec3(4.0));
-    float edgeE = edgeGlow * (0.4 + 1.2 * u.bassImpact + 1.4 * bandE);
+    float edgeE = edgeGlow * (0.4 + 0.8 * u.bassImpact + 1.4 * bandE);
     col += rim * (edgeA + edgeR) * roomWin * heart * edgeE * 0.30;
 
     // vertex glints where seams cross — sparks ride the caustic sweep
@@ -618,11 +652,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     // ---- dark heart of the room + falloff ----
     col *= smoothstep(0.05, 0.16, r);
-    col += palVisual(hue, u) * exp(-r * r * 2.6) * smoothstep(0.05, 0.22, r) * (0.05 + 0.35 * u.bass);
+    col += palVisual(hue, u) * exp(-r * r * 2.6) * smoothstep(0.05, 0.22, r) * (0.08 + 0.12 * u.bass);
     // walls beyond the glass fall to black
     col *= 1.0 - smoothstep(1.05, 1.5, r) * 0.95;
 
-    col = feedbackTrail(col, uv, min(u.trailDecay + 0.20 * u.bassImpact, 0.55), 0.002, 0.0006 + 0.0012 * u.beat);
+    col = feedbackTrail(col, uv, min(u.trailDecay + 0.05 * u.bassImpact, 0.55), 0.002, 0.0006 + 0.0012 * u.beat);
     return col; // LINEAR HDR
 }
 
