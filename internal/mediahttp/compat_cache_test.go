@@ -10,10 +10,10 @@ import (
 )
 
 // boundArtworkRequest builds a versioned artwork request carrying the
-// compatibility binding (generation, subject) the middleware would attach.
+// compatibility binding the middleware would attach.
 func boundArtworkRequest(mediaID, slot, version, generation, subject string) *http.Request {
 	req := artworkRequest(mediaID, slot+"?v="+version)
-	return req.WithContext(WithCompatBinding(req.Context(), generation, subject))
+	return req.WithContext(WithCompatBinding(req.Context(), generation, subject, "decision-1"))
 }
 
 func artworkCacheHeaders(t *testing.T, handler *Handler, req *http.Request) (int, string, string) {
@@ -106,15 +106,16 @@ func TestArtworkWithUnestablishedDecisionIsUncacheable(t *testing.T) {
 		t.Fatal("ArtworkVersion = absent, want poster version")
 	}
 
-	partial := map[string][2]string{
-		"no generation": {"", "session:session-default"},
-		"no subject":    {"7", ""},
-		"neither":       {"", ""},
+	partial := map[string][3]string{
+		"no generation":  {"", "session:session-default", "decision-1"},
+		"no subject":     {"7", "", "decision-1"},
+		"no decision ID": {"7", "session:session-default", ""},
 	}
 	for name, binding := range partial {
 		t.Run(name, func(t *testing.T) {
-			code, cacheControl, etag := artworkCacheHeaders(t, handler,
-				boundArtworkRequest("media-alpha", "poster", version, binding[0], binding[1]))
+			req := artworkRequest("media-alpha", "poster?v="+version)
+			req = req.WithContext(WithCompatBinding(req.Context(), binding[0], binding[1], binding[2]))
+			code, cacheControl, etag := artworkCacheHeaders(t, handler, req)
 			if code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", code)
 			}

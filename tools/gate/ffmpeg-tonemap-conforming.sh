@@ -40,7 +40,7 @@ trap 'exit 129' HUP
 
 # The image's own ffmpeg stage, built from ffmpeg.lock by tools/ffmpeg/build.sh
 # (CORE-2497); the layer cache makes reruns on an unchanged lock cheap.
-docker build --quiet --platform "linux/$arch" --target ffmpeg-runtime \
+docker buildx build --load --quiet --platform "linux/$arch" --target ffmpeg-runtime \
   --tag "$image" --file "$root/Dockerfile" "$root" >/dev/null
 
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \

@@ -25,6 +25,7 @@ import type { StringKey } from "@/strings";
 import {
   browseQuery,
   browseYear,
+  LIBRARY_MAX_QUERY,
   LIBRARY_MAX_YEAR,
   LIBRARY_MIN_RATINGS,
   LIBRARY_MIN_YEAR,
@@ -35,7 +36,6 @@ import {
   type LibraryDirection,
   type LibraryItemsFacets,
   type LibrarySort,
-  limitBrowseQuery,
 } from "../lib/libraryBrowse";
 
 const ALL = "all";
@@ -436,7 +436,27 @@ function BrowseSearch({
         spellCheck={false}
         placeholder={label}
         value={text}
-        onChange={(event) => setText(limitBrowseQuery(event.target.value))}
+        onChange={(event) => {
+          const input = event.currentTarget;
+          const points = Array.from(input.value);
+          const excess = points.length - LIBRARY_MAX_QUERY;
+          if (excess <= 0) {
+            setText(input.value);
+            return;
+          }
+          // The caret follows the inserted text. Clip its overflow there so
+          // edits in the middle leave the existing suffix in place.
+          const end = Array.from(
+            input.value.slice(0, input.selectionEnd ?? input.value.length),
+          ).length;
+          const start = end - excess;
+          points.splice(start, excess);
+          const next = points.join("");
+          const caret = points.slice(0, start).join("").length;
+          input.value = next;
+          input.setSelectionRange(caret, caret);
+          setText(next);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter") commitRef.current(browseQuery(text));
         }}

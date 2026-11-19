@@ -37,11 +37,12 @@ type profilePictureResponse struct {
 
 // profilePictureURL matches the URL the GraphQL ProfileSummary.pictureURL
 // field reports, so a client can swap it in without refetching Profiles.
+// The version prefix bypasses entries cached before compatibility revalidation.
 func profilePictureURL(id store.ProfileID, version int64) string {
 	if version == 0 {
 		return ""
 	}
-	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=" + strconv.FormatInt(version, 10)
+	return "/api/profiles/picture/" + url.PathEscape(string(id)) + "?v=2-" + strconv.FormatInt(version, 10)
 }
 
 // profilePictureWriteSession authenticates a picture change before any body
@@ -161,7 +162,7 @@ func (s *Server) profilePicture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	versionTag := strconv.FormatInt(version, 10)
-	if mediahttp.VersionedResponseNotModified(w, r, versionTag, r.URL.Query().Get("v") == versionTag) {
+	if mediahttp.VersionedResponseNotModified(w, r, versionTag, r.URL.Query().Get("v") == "2-"+versionTag) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")

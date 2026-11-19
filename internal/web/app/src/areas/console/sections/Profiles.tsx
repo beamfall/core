@@ -66,10 +66,23 @@ export function Profiles() {
   // After a failed save the list reloads from the server; moves wait for it so
   // none is queued against an order that is about to be replaced.
   const [recovering, setRecovering] = useState(false);
+  const recovery = useRef<Promise<void> | null>(null);
+
+  async function refreshRecovery() {
+    const refresh = profiles.refresh();
+    recovery.current = refresh;
+    await refresh;
+    if (recovery.current === refresh) {
+      recovery.current = null;
+      setRecovering(false);
+    }
+  }
 
   function refreshAfterChange() {
     // The reorder's final refresh also picks up changes made during the save.
-    if (!saving.current) void profiles.refresh();
+    if (saving.current) return;
+    if (recovery.current) void refreshRecovery();
+    else void profiles.refresh();
   }
 
   async function move(from: number, to: number) {
@@ -93,7 +106,7 @@ export function Profiles() {
       while (pendingOrder.current && !session?.aborted) {
         const order = pendingOrder.current;
         pendingOrder.current = null;
-        await reorderProfiles(order);
+        await reorderProfiles(order, session);
       }
       saved = true;
     } catch {
@@ -109,11 +122,7 @@ export function Profiles() {
 
     setReorderFailed(true);
     setRecovering(true);
-    try {
-      await profiles.refresh();
-    } finally {
-      setRecovering(false);
-    }
+    await refreshRecovery();
   }
 
   if (profiles.failed) {

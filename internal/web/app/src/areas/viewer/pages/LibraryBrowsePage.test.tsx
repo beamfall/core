@@ -224,6 +224,35 @@ describe("Library browse", () => {
     );
   });
 
+  it.each([
+    { name: "middle insertion", selected: 0, pasted: "y", kept: "", rest: "x" },
+    {
+      name: "selected-text replacement",
+      selected: 1,
+      pasted: "\u{20000}y",
+      kept: "\u{20000}",
+      rest: "",
+    },
+  ])(
+    "preserves the search suffix after $name at capacity",
+    async ({ selected, pasted, kept, rest }) => {
+      vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+      const user = userEvent.setup();
+      const prefix = "a".repeat(99);
+      const suffix = "z".repeat(100);
+      renderBrowse(`/n/films/all?q=${prefix}x${suffix}`);
+
+      const search = await screen.findByRole<HTMLInputElement>("searchbox", {
+        name: "Search Films",
+      });
+      await user.click(search);
+      search.setSelectionRange(prefix.length, prefix.length + selected);
+      await user.paste(pasted);
+      expect(search).toHaveValue(`${prefix}${kept}${rest}${suffix}`);
+      expect(search.selectionStart).toBe(prefix.length + kept.length);
+    },
+  );
+
   it("opens the filters from one button that counts them and returns focus on Escape (CORE-2568)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const user = userEvent.setup();

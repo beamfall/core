@@ -147,7 +147,7 @@ describe("Console Profiles lane", () => {
     expect(screen.getByRole("button", { name: "Move Owner up" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Move Kid down" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Move Kid up" }));
-    expect(reorderProfiles).toHaveBeenCalledWith(["p2", "p1"]);
+    expect(reorderProfiles).toHaveBeenCalledWith(["p2", "p1"], undefined);
     expect(rowOrder()).toEqual(["Kid", "Owner"]);
     expect(screen.getByText("Kid moved to position 1 of 2.")).toBeInTheDocument();
   });
@@ -163,7 +163,7 @@ describe("Console Profiles lane", () => {
     await waitFor(() => expect(rowOrder()).toEqual(["Kid", "Owner"]));
     screen.getByRole("button", { name: "Move Kid down" }).focus();
     await user.keyboard("{Alt>}{ArrowDown}{/Alt}");
-    expect(reorderProfiles).toHaveBeenLastCalledWith(["p1", "p2"]);
+    expect(reorderProfiles).toHaveBeenLastCalledWith(["p1", "p2"], undefined);
   });
 
   it("keeps a saved reorder when an older create refresh returns and reconciles with the server", async () => {
@@ -185,7 +185,7 @@ describe("Console Profiles lane", () => {
     const olderSignal = vi.mocked(fetchProfilesAdmin).mock.calls[1]?.[0];
 
     await user.click(screen.getByRole("button", { name: "Move Kid up" }));
-    expect(reorderProfiles).toHaveBeenCalledWith(["p2", "p1"]);
+    expect(reorderProfiles).toHaveBeenCalledWith(["p2", "p1"], undefined);
     expect(rowOrder()).toEqual(["Kid", "Owner"]);
     const olderWasAbortedBeforeSave = olderSignal?.aborted;
     await act(async () => saved.resolve(["p2", "p1", "p3"]));
@@ -222,27 +222,76 @@ describe("Console Profiles lane", () => {
     expect(fetchProfilesAdmin).toHaveBeenCalledTimes(1);
     release();
     await waitFor(() => expect(reorderProfiles).toHaveBeenCalledTimes(2));
-    expect(reorderProfiles).toHaveBeenLastCalledWith(["p2", "p1"]);
+    expect(reorderProfiles).toHaveBeenLastCalledWith(["p2", "p1"], undefined);
     expect(fetchProfilesAdmin).toHaveBeenCalledTimes(2);
     expect(rowOrder()).toEqual(["Kid", "Owner"]);
   });
 
-  it("does not start a reconciliation after the Admin Session ends", async () => {
+  it("aborts the active reorder and discards queued moves when the Console locks", async () => {
     const user = userEvent.setup();
     const session = new AbortController();
     setAdminEpochSignal(session.signal);
-    const saved = deferred<string[]>();
-    vi.mocked(reorderProfiles).mockReturnValueOnce(saved.promise);
+    const aborted = vi.fn();
+    vi.mocked(reorderProfiles).mockImplementationOnce(
+      (_ids, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            aborted();
+            reject(signal.reason);
+          });
+        }),
+    );
     const view = renderSection();
     await screen.findByDisplayValue("Kid");
     await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+    await user.click(screen.getByRole("button", { name: "Move Kid down" }));
+    expect(reorderProfiles).toHaveBeenCalledTimes(1);
 
-    session.abort();
-    setAdminEpochSignal();
+    await act(async () => {
+      session.abort();
+      setAdminEpochSignal();
+    });
     view.unmount();
-    await act(async () => saved.resolve(["p2", "p1"]));
 
+    expect(aborted).toHaveBeenCalledOnce();
+    expect(reorderProfiles).toHaveBeenCalledTimes(1);
     expect(fetchProfilesAdmin).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds moves until a create refresh that replaces reorder recovery settles", async () => {
+    const user = userEvent.setup();
+    const replacement = deferred<ProfileAdminInfo[]>();
+    const aborted = vi.fn();
+    vi.mocked(fetchProfilesAdmin)
+      .mockResolvedValueOnce(rows)
+      .mockImplementationOnce(
+        (signal) =>
+          new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => {
+              aborted();
+              reject(signal.reason);
+            });
+          }),
+      )
+      .mockReturnValueOnce(replacement.promise);
+    vi.mocked(reorderProfiles).mockRejectedValueOnce(new Error("nope"));
+    renderSection();
+    await screen.findByDisplayValue("Kid");
+
+    await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+    await screen.findByText("Could not save the new order.");
+    expect(screen.getByRole("button", { name: "Move Kid down" })).toBeDisabled();
+
+    await user.type(screen.getAllByLabelText("Profile name")[0], "Salon");
+    await user.click(screen.getByRole("button", { name: "Create profile" }));
+    expect(fetchProfilesAdmin).toHaveBeenCalledTimes(3);
+    expect(aborted).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "Move Kid down" })).toBeDisabled();
+
+    await act(async () => replacement.resolve([...rows, salon]));
+    expect(rowOrder()).toEqual(["Owner", "Kid", "Salon"]);
+    expect(screen.getByRole("button", { name: "Move Kid up" })).toBeEnabled();
+    expect(reorderProfiles).toHaveBeenCalledTimes(1);
   });
 
   it("holds moves while the list reloads after a failed save", async () => {
@@ -265,7 +314,7 @@ describe("Console Profiles lane", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Move Kid up" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Move Kid up" }));
     expect(reorderProfiles).toHaveBeenCalledTimes(2);
-    expect(reorderProfiles).toHaveBeenLastCalledWith(["p2", "p1"]);
+    expect(reorderProfiles).toHaveBeenLastCalledWith(["p2", "p1"], undefined);
   });
 
   it("restores the server order and says so when saving the order fails", async () => {

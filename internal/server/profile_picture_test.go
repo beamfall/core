@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/capabilities"
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/store"
 )
@@ -73,7 +74,7 @@ func TestProfilePictureUploadNormalizesStoresAndServes(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode upload response: %v", err)
 	}
-	if !strings.HasPrefix(resp.PictureURL, "/api/profiles/picture/profile-default?v=") {
+	if !strings.HasPrefix(resp.PictureURL, "/api/profiles/picture/profile-default?v=2-") {
 		t.Fatalf("pictureURL = %q, want the versioned picture route", resp.PictureURL)
 	}
 
@@ -110,6 +111,46 @@ func TestProfilePictureUploadNormalizesStoresAndServes(t *testing.T) {
 	}
 }
 
+func TestProfilePictureETagChangesAfterAnotherHandshake(t *testing.T) {
+	srv, st := newArtworkUploadTestServer(t)
+	const id = "profile-default"
+	picture := []byte{0xff, 0xd8, 0xff, 0xd9}
+	version, err := st.SetProfilePicture(context.Background(), id, picture, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	getPicture := func(etag string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, profilePictureURL(id, version), nil)
+		authorizeViewerCookies(req)
+		req.Header.Set("If-None-Match", etag)
+		return servePicture(srv, req)
+	}
+
+	generation := srv.compat.snapshot().Generation
+	contract := capabilities.EmbeddedUIContract()
+	first := compatHandshakeRecord(t, srv, contract, authorizeViewerCookies)
+	if first.DecisionID == "" {
+		t.Fatalf("first handshake = %+v, want an accepted decision", first)
+	}
+	initial := getPicture("")
+	etag := initial.Header().Get("ETag")
+	if initial.Code != http.StatusOK || etag == "" {
+		t.Fatalf("initial picture status = %d, ETag = %q, want 200 and a validator", initial.Code, etag)
+	}
+	if rec := getPicture(etag); rec.Code != http.StatusNotModified {
+		t.Fatalf("same decision returned %d, want 304", rec.Code)
+	}
+
+	second := compatHandshakeRecord(t, srv, contract, authorizeViewerCookies)
+	if second.DecisionID == "" || second.DecisionID == first.DecisionID || srv.compat.snapshot().Generation != generation {
+		t.Fatalf("second handshake = %+v, want a new decision in generation %d", second, generation)
+	}
+	rec := getPicture(etag)
+	if got := rec.Header().Get("ETag"); rec.Code != http.StatusOK || got == "" || got == etag || !bytes.Equal(rec.Body.Bytes(), picture) {
+		t.Fatalf("old decision's validator returned status %d, ETag %q, body %x, want 200 with a new ETag and picture", rec.Code, got, rec.Body.Bytes())
+	}
+}
+
 func TestProfilePictureCacheFollowsCompatBinding(t *testing.T) {
 	srv, st := newArtworkUploadTestServer(t)
 	const id = "profile-default"
@@ -124,7 +165,7 @@ func TestProfilePictureCacheFollowsCompatBinding(t *testing.T) {
 		req.SetPathValue("id", id)
 		authorizeViewer(req)
 		req.Header.Set("If-None-Match", match)
-		req = req.WithContext(mediahttp.WithCompatBinding(req.Context(), generation, subject))
+		req = req.WithContext(mediahttp.WithCompatBinding(req.Context(), generation, subject, "decision-1"))
 		rec := httptest.NewRecorder()
 		srv.profilePicture(rec, req)
 		return rec

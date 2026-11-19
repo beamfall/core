@@ -11,32 +11,28 @@ import (
 type compatBindingKey struct{}
 
 // compatBinding names the compatibility decision a request was authorised
-// under: the policy generation that decided it, and the subject it was decided
-// for. Either field empty means the decision could not be established.
+// under, including its policy generation and the subject it was decided for.
 type compatBinding struct {
 	generation string
 	subject    string
+	decisionID string
 }
 
 // WithCompatBinding records the compatibility decision a request is bound to.
 // The compatibility middleware attaches it before the byte routes run, so a
 // route that hands the client a reusable cache entry can key that entry on the
-// decision generation and the subject as well as the content version. A
+// decision ID, generation and subject as well as the content version. A
 // response authorised under one decision then never satisfies a request made
-// under another. An empty generation or subject means the decision could not be
-// established, and the response fails closed to uncacheable.
-func WithCompatBinding(ctx context.Context, generation, subject string) context.Context {
-	return context.WithValue(ctx, compatBindingKey{}, compatBinding{generation: generation, subject: subject})
+// under another. An incomplete binding makes the response uncacheable.
+func WithCompatBinding(ctx context.Context, generation, subject, decisionID string) context.Context {
+	return context.WithValue(ctx, compatBindingKey{}, compatBinding{generation, subject, decisionID})
 }
 
 // CompatBindingFromContext reports the compatibility binding attached to ctx.
 // bound is false when the request is not compatibility-bound at all.
-func CompatBindingFromContext(ctx context.Context) (generation, subject string, bound bool) {
-	binding, ok := ctx.Value(compatBindingKey{}).(compatBinding)
-	if !ok {
-		return "", "", false
-	}
-	return binding.generation, binding.subject, true
+func CompatBindingFromContext(ctx context.Context) (generation, subject, decisionID string, bound bool) {
+	binding, bound := ctx.Value(compatBindingKey{}).(compatBinding)
+	return binding.generation, binding.subject, binding.decisionID, bound
 }
 
 // VersionedResponseNotModified sets the cache policy for a versioned byte
@@ -44,8 +40,8 @@ func CompatBindingFromContext(ctx context.Context) (generation, subject string, 
 // skip validation. An unnamed compatibility binding always forces no-store.
 // Only an unbound request can use the immutable cache, when the caller allows it.
 func VersionedResponseNotModified(w http.ResponseWriter, r *http.Request, version string, allowImmutable bool) bool {
-	generation, subject, bound := CompatBindingFromContext(r.Context())
-	if bound && (generation == "" || subject == "") {
+	generation, subject, decisionID, bound := CompatBindingFromContext(r.Context())
+	if bound && (generation == "" || subject == "" || decisionID == "") {
 		w.Header().Set("Cache-Control", "no-store")
 		return false
 	}
@@ -56,7 +52,7 @@ func VersionedResponseNotModified(w http.ResponseWriter, r *http.Request, versio
 	validator := version
 	cacheControl := "private, no-cache"
 	if bound {
-		validator += "-" + compatCacheTag(generation, subject)
+		validator += "-" + compatCacheTag(generation, subject, decisionID)
 	} else if allowImmutable {
 		cacheControl = "private, max-age=31536000, immutable"
 	}
@@ -70,10 +66,10 @@ func VersionedResponseNotModified(w http.ResponseWriter, r *http.Request, versio
 	return false
 }
 
-// compatCacheTag folds the decision generation and subject into an opaque tag.
+// compatCacheTag folds the compatibility binding into an opaque tag.
 // The subject identifies a credential, so it is hashed rather than echoed in a
 // response header.
-func compatCacheTag(generation, subject string) string {
-	sum := sha256.Sum256([]byte(generation + "\x00" + subject))
+func compatCacheTag(generation, subject, decisionID string) string {
+	sum := sha256.Sum256([]byte(generation + "\x00" + subject + "\x00" + decisionID))
 	return hex.EncodeToString(sum[:])[:32]
 }

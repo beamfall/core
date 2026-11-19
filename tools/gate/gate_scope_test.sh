@@ -879,6 +879,7 @@ case "$*" in
   info) [ "$MOCK_DOCKER" != no-daemon ] ;;
   "buildx version") [ "$MOCK_DOCKER" != no-buildx ] ;;
   "version --format {{.Server.Arch}}") printf 'arm64\n' ;;
+  "buildx build --load "* | "run --rm "* | "rm -f "* | "image rm -f "*) ;;
   *) exit 97 ;;
 esac
 EOF
@@ -932,6 +933,22 @@ fi
 if grep -Eq '^build(x build)? ' "$TMP/tonemap-docker.log"; then
   fail "standalone script attempted a Docker build without Buildx"
 fi
+
+cat >"$TMP/docker-bin/go" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" == 5 && "$1 $2 $3 $4" == 'test -c ./internal/ffmpeg -o' ]]
+: >"$5"
+EOF
+chmod +x "$TMP/docker-bin/go"
+: >"$TMP/tonemap-docker.log"
+PATH="$TMP/docker-bin:$PATH" MOCK_DOCKER=yes MOCK_DOCKER_LOG="$TMP/tonemap-docker.log" DOCKER_BUILDKIT=0 \
+  "$ROOT/tools/gate/ffmpeg-tonemap-conforming.sh" >"$TMP/tonemap-standalone.log" 2>&1 \
+  || fail "standalone tone-map script did not use Buildx with DOCKER_BUILDKIT=0"
+grep -Eq '^buildx build --load .*--target ffmpeg-runtime ' "$TMP/tonemap-docker.log" \
+  || fail "standalone script did not load the Buildx image"
+grep -Eq '^run --rm .*beamfall-ffmpeg-runtime:tonemap-' "$TMP/tonemap-docker.log" \
+  || fail "standalone script did not run the loaded image"
 
 # The scope above is sound only while the conformance binary is built from
 # internal/ffmpeg alone: any other in-module package in its closure must be
