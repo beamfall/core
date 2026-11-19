@@ -145,6 +145,15 @@ type HydrationTitleFoldMapper interface {
 	TitleFoldKinds() []string
 }
 
+// HydrationMediaFieldsMapper is implemented by a HydrationMapper that names
+// every Media field its HydrationPlan may carry; a plan with any other Media
+// field is rejected. The scan then knows which older scan-tier values the
+// hydrator cannot have written, so the filename parser may reconcile them
+// (CORE-2554). A mapper without it may write any declared Media field.
+type HydrationMediaFieldsMapper interface {
+	HydratedMediaFields() []string
+}
+
 // HydrationRelation targets the current Media when ToEntity is nil.
 type HydrationRelation struct {
 	From             HydrationEntity

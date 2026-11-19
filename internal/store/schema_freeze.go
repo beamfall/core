@@ -72,7 +72,10 @@ package store
 //     the shared inventory writer works on an Encrypted Library; the frozen
 //     0002 columns stay. Both tables are read per file, off the entity-query
 //     hot path.
-//   - encrypted-library 0009 (CORE-2583) mirrors catalog 0123's durable
+//   - encrypted-library 0009 (CORE-2554) mirrors catalog 0123's
+//     media_field_provenance.parser_owned marker; it is read only by the scan
+//     write, off the entity-query hot path.
+//   - encrypted-library 0010 (CORE-2583) mirrors catalog 0124's durable
 //     Media insertion sequence and insert/delete triggers.
 //
 // Every entry above rode the `make bench` gate at the migration that introduced
@@ -83,5 +86,5 @@ package store
 //   - mute/retention/podcast predicates
 const (
 	schemaFreezeEventsMigrations           = 23
-	schemaFreezeEncryptedLibraryMigrations = 9
+	schemaFreezeEncryptedLibraryMigrations = 10
 )

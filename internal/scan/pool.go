@@ -128,19 +128,7 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 		return
 	}
 	t.oshash = oshash
-	if prober != nil && !imageClassForPath(t.path) {
-		probeCtx, probeCancel := context.WithTimeout(ctx, probeTimeout)
-		probe, probeErr := prober.Probe(probeCtx, t.path)
-		probeCancel()
-		if probeErr == nil {
-			t.probe = probeOutcome{
-				succeeded: true,
-				hasVideo:  probe.HasVideo,
-				hasAudio:  probe.AudioCodec != "",
-				value:     probe,
-			}
-		}
-	}
+	t.probeFile(ctx, prober)
 	if grabber != nil && t.probe.hasVideo {
 		// Best-effort, like the probe fallback: a failed grab (no FFmpeg,
 		// corrupt frame) leaves phash empty for a later scan — the store never
@@ -149,6 +137,25 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 			t.phash = phash
 		} else {
 			slog.Debug("scan: perceptual hash failed", "path", t.path, "error", phashErr.Error())
+		}
+	}
+}
+
+// probeFile probes a non-image file, leaving t.probe unset when there is no
+// prober or the probe fails.
+func (t *workerTask) probeFile(ctx context.Context, prober Prober) {
+	if prober == nil || imageClassForPath(t.path) {
+		return
+	}
+	probeCtx, probeCancel := context.WithTimeout(ctx, probeTimeout)
+	probe, probeErr := prober.Probe(probeCtx, t.path)
+	probeCancel()
+	if probeErr == nil {
+		t.probe = probeOutcome{
+			succeeded: true,
+			hasVideo:  probe.HasVideo,
+			hasAudio:  probe.AudioCodec != "",
+			value:     probe,
 		}
 	}
 }

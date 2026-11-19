@@ -214,12 +214,8 @@ func (s *scanWalkState) flushPendingParts() error {
 	}
 	s.unreportedParts = paths
 	first := parts[0]
-	fields := append([]store.MediaField(nil), first.fields...)
-	fields = appendParsedStructuralMediaFields(fields, first.parsed)
-	if len(fields) > 0 {
-		if err := s.st.InsertMediaFieldsIfAbsent(s.ctx, media.ID, fields); err != nil {
-			return err
-		}
+	if err := s.refreshParserFields(media.ID, first.refresh); err != nil {
+		return err
 	}
 	if err := ensurePartBoundaryMarkers(s.ctx, s.st, s.prober, parts, media.ID, now()); err != nil {
 		return err
@@ -299,7 +295,7 @@ func appendParsedStructuralMediaFields(fields []store.MediaField, parsed ParsedM
 	return fields
 }
 
-func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed ParsedMedia, fields []store.MediaField, markerTitle string, probeChapters []ffmpeg.ProbeChapter, probed bool) error {
+func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed ParsedMedia, refresh store.ParserFieldRefresh, markerTitle string, probeChapters []ffmpeg.ProbeChapter, probed bool) error {
 	key := s.parsedPartKey(parsed)
 	if len(s.pendingParts) > 0 && s.pendingParts[len(s.pendingParts)-1].key != key {
 		if err := s.flushPendingParts(); err != nil {
@@ -310,7 +306,7 @@ func (s *scanWalkState) queueParsedPart(imported store.ImportMediaFile, parsed P
 		key:           key,
 		imported:      imported,
 		parsed:        parsed,
-		fields:        fields,
+		refresh:       refresh,
 		markerTitle:   markerTitle,
 		probeChapters: append([]ffmpeg.ProbeChapter(nil), probeChapters...),
 		probed:        probed,
@@ -352,4 +348,101 @@ func (s *scanWalkState) queueContextRefusal(path string, parsed ParsedMedia) err
 		})
 	}
 	return nil
+}
+
+// vouchForLegacyScanValues says which older scan-tier values the parser alone
+// wrote. Hydration and image local metadata write at the scan tier too: an
+// image's are never vouched for, nor any under a hydrator that may write any
+// field; a hydrator naming its fields leaves only those out (CORE-2554).
+func (s *scanWalkState) vouchForLegacyScanValues(refresh *store.ParserFieldRefresh, path string) {
+	if imageClassForPath(path) {
+		return
+	}
+	if s.metadataHydrator == nil {
+		refresh.LegacyScanOwned = true
+		return
+	}
+	if !s.metadataCapability.MediaFieldsBounded {
+		return
+	}
+	refresh.LegacyScanOwned = true
+	for _, name := range s.metadataCapability.MediaFields {
+		if refresh.LegacyScanShared == nil {
+			refresh.LegacyScanShared = map[string]bool{}
+		}
+		refresh.LegacyScanShared[name] = true
+	}
+}
+
+// parserFieldRefresh is the parser's whole Media field output for one file:
+// its declared fields plus the structural ones. When the parse saw a probe,
+// the file is parsed again without it: each field that differs is marked
+// probe-dependent, and each field only that parse emits probe-absent, so a
+// later parse without a probe leaves both alone (CORE-2554).
+func (s *scanWalkState) parserFieldRefresh(path string, probe ParseProbe, parsed ParsedMedia, parsedOK bool, fields []store.MediaField, authoritative bool) store.ParserFieldRefresh {
+	out := append([]store.MediaField(nil), fields...)
+	if parsedOK {
+		out = appendParsedStructuralMediaFields(out, parsed)
+	}
+	refresh := store.ParserFieldRefresh{Fields: out, Authoritative: authoritative}
+	s.vouchForLegacyScanValues(&refresh, path)
+	if parseProbeEmpty(probe) {
+		return refresh
+	}
+	var unprobed ParsedMedia
+	var unprobedOK bool
+	if contextual, ok := s.parser.(ContextFilenameParser); ok {
+		unprobed, unprobedOK = contextual.ParseWithContext(path, ParseProbe{}, s.directoryContext(path))
+	} else {
+		unprobed, unprobedOK = s.parser.Parse(path, ParseProbe{})
+	}
+	baseline := parserMediaFields(s.parser, path, ParseProbe{})
+	if unprobedOK {
+		baseline = appendParsedStructuralMediaFields(baseline, unprobed)
+	}
+	byName := make(map[string]store.MediaField, len(baseline))
+	for _, field := range baseline {
+		byName[field.Name] = field
+	}
+	absent := make(map[string]bool, len(byName))
+	for name := range byName {
+		absent[name] = true
+	}
+	for _, field := range out {
+		delete(absent, field.Name)
+		if base, ok := byName[field.Name]; ok && sameMediaFieldValue(base, field) {
+			continue
+		}
+		if refresh.ProbeDependent == nil {
+			refresh.ProbeDependent = map[string]bool{}
+		}
+		refresh.ProbeDependent[field.Name] = true
+	}
+	// What is left the parse without the probe emits and this one does not:
+	// the probe decided its absence.
+	for name := range absent {
+		if refresh.ProbeAbsent == nil {
+			refresh.ProbeAbsent = map[string]bool{}
+		}
+		refresh.ProbeAbsent[name] = true
+	}
+	return refresh
+}
+
+// refreshParserFields applies one parse to the Media's parser-owned fields:
+// changed values are replaced and fields the parser no longer emits are
+// removed, while fields any other writer holds stay (CORE-2554).
+func (s *scanWalkState) refreshParserFields(mediaID store.MediaID, refresh store.ParserFieldRefresh) error {
+	if s.parser == nil {
+		return nil
+	}
+	return s.st.RefreshParserMediaFields(s.ctx, mediaID, refresh)
+}
+
+func parseProbeEmpty(probe ParseProbe) bool {
+	return !probe.HasVideo && !probe.HasAudio && probe.DurationSeconds == 0 && len(probe.Tags) == 0
+}
+
+func sameMediaFieldValue(a, b store.MediaField) bool {
+	return a.Type == b.Type && a.Text == b.Text && a.Number == b.Number && a.Flag == b.Flag && a.Date.Equal(b.Date)
 }

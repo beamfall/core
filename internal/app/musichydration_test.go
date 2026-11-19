@@ -1635,3 +1635,30 @@ func TestScanRehydratesManagedMoveBetweenDiscFolders(t *testing.T) {
 		t.Fatalf("managed-moved file re-hydrated again with nothing changed: %d writes, want 0", r.counted.writes-writes)
 	}
 }
+
+type boundedTestHydrationMapper struct{ testHydrationMapper }
+
+func (boundedTestHydrationMapper) HydratedMediaFields() []string { return []string{"title", "album"} }
+
+// A mapper that names its Media fields bounds what the scan treats as shared
+// with hydration, and a plan writing any other field is refused, so the bound
+// the scan relies on to reconcile older parser values holds (CORE-2554).
+func TestHydrationMapperNamingItsMediaFieldsBoundsCapability(t *testing.T) {
+	if capability := newTestAdapter(newFakeHydrationStore()).Capability(); capability.MediaFieldsBounded {
+		t.Fatalf("unnamed mapper capability = %+v, want unbounded", capability)
+	}
+	adapter := newTestAdapterWithMapper(newFakeHydrationStore(), boundedTestHydrationMapper{})
+	capability := adapter.Capability()
+	if !capability.MediaFieldsBounded || len(capability.MediaFields) != 2 ||
+		capability.MediaFields[0] != "title" || capability.MediaFields[1] != "album" {
+		t.Fatalf("bounded capability = %+v, want title and album", capability)
+	}
+	plan := boundedTestHydrationMapper{}.MapHydration(map[string]string{"title": "x"}, "")
+	if _, err := adapter.validatePlan(plan, testHydrationMarkerField); err == nil || !strings.Contains(err.Error(), "not one the mapper names") {
+		t.Fatalf("validatePlan error = %v, want unnamed field refused", err)
+	}
+	plan.MediaFields = plan.MediaFields[:2]
+	if _, err := adapter.validatePlan(plan, testHydrationMarkerField); err != nil {
+		t.Fatalf("validatePlan named fields: %v", err)
+	}
+}

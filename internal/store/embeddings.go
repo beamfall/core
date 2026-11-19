@@ -1028,6 +1028,13 @@ func (s *Store) promotePendingAITag(ctx context.Context, tagID, runID string, fi
 	if err := insertMediaFields(ctx, tx, MediaID(mediaID), []MediaField{field}); err != nil {
 		return err
 	}
+	// The approved value is not the parser's: drop any probe-decided absence
+	// the parser kept for this field so a rescan cannot overwrite it.
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM media_field_provenance WHERE media_id = ? AND field = ? AND parser_owned = ?",
+		mediaID, tagKind, parserOwnedProbeAbsent); err != nil {
+		return err
+	}
 	// Stamp AI provenance on the Media so the value is attributable.
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE media SET mutated_by = ? WHERE id = ?`, string(MutationSourceAI), mediaID); err != nil {

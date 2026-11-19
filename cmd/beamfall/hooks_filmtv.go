@@ -38,6 +38,11 @@ func (filmtvHydrationMapper) MarkerField() string { return filmtv.HydratedField 
 
 func (filmtvHydrationMapper) ExternalIDSchemes() []string { return nil }
 
+// HydratedMediaFields is empty: the plan carries Entities, relations and the
+// completion flag but no Media field, so older scan-tier Media values are the
+// filename parser's to reconcile (CORE-2554).
+func (filmtvHydrationMapper) HydratedMediaFields() []string { return []string{} }
+
 // EntityScopes scopes a group Entity by its parent: two parents can each hold
 // a group with the same title.
 func (m filmtvHydrationMapper) EntityScopes() []app.HydrationEntityScope {

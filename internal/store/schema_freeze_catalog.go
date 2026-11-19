@@ -91,7 +91,12 @@ package store
 //     normalized picture (CORE-1240). Both are read only by the small
 //     Profile list and the picture route; no index and no entity-query
 //     table changes.
-//   - 0123 adds media_insert_seq and Media insert/delete triggers (CORE-2583)
+//   - 0123 adds media_field_provenance.parser_owned, which marks the fields a
+//     rescan parse refreshes (CORE-2554). It is read per Media by the scan
+//     write and once per Library scan by a media(library_id) lookup with a
+//     provenance primary-key probe; no index and no entity-query table
+//     changes.
+//   - 0124 adds media_insert_seq and Media insert/delete triggers (CORE-2583)
 //     for durable post-scan catch-up cursors. The sequence is read only by
 //     scan watermarks and catch-up paging, off the entity-query hot path.
 //
@@ -110,4 +115,4 @@ package store
 // query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
 // loaded shared host. 0113 adds no index or column on any benched table: the
 // provenance table is read only by the media(id) detail read.
-const schemaFreezeCatalogMigrations = 119
+const schemaFreezeCatalogMigrations = 120
