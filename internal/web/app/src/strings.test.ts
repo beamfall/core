@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { DECLARED_LOCALE_TAGS, LOCALE_DECLARATION } from "./l10n/locales";
 import {
@@ -339,16 +340,53 @@ describe("placeholder guard (CORE-1237)", () => {
   });
 });
 
-describe("localized string source limits", () => {
+describe("localized string sources", () => {
   const sourceDirectory = resolve(process.cwd(), "src");
   const shardDirectory = resolve(sourceDirectory, "strings");
+  const shardFiles = readdirSync(shardDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && entry.name !== "catalog.ts")
+    .map((entry) => resolve(shardDirectory, entry.name));
   const sourceFiles = [
     resolve(sourceDirectory, "strings.ts"),
     resolve(sourceDirectory, "strings.test.ts"),
-    ...readdirSync(shardDirectory, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
-      .map((entry) => resolve(shardDirectory, entry.name)),
+    resolve(shardDirectory, "catalog.ts"),
+    ...shardFiles,
   ];
+
+  it("defines each string key in only one shard", () => {
+    const owners = new Map<string, string>();
+    const duplicates: string[] = [];
+
+    for (const file of shardFiles) {
+      const text = readFileSync(file, "utf8");
+      const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+      const keys = new Set<string>();
+      // A locale object can spread another shard. Only its explicit properties define keys.
+      function visit(node: ts.Node) {
+        if (
+          ts.isPropertyAssignment(node) &&
+          ts.isPropertyAssignment(node.parent.parent) &&
+          (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))
+        ) {
+          keys.add(node.name.text);
+        }
+        ts.forEachChild(node, visit);
+      }
+      visit(source);
+
+      const shard = basename(file);
+      for (const key of keys) {
+        const owner = owners.get(key);
+        if (owner) {
+          duplicates.push(`${key}: ${owner} and ${shard}`);
+        } else {
+          owners.set(key, shard);
+        }
+      }
+    }
+
+    expect(duplicates).toEqual([]);
+  });
 
   it("keeps every authored registry source within 20 KB and 600 lines", () => {
     for (const file of sourceFiles) {
