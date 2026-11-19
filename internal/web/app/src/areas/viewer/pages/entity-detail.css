@@ -53,11 +53,67 @@
   list-style: none;
 }
 
+[data-register="viewer"] .bf-child {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Link, Play, More stay in the same visual and keyboard order at every width. */
+[data-register="viewer"] .bf-child-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+[data-register="viewer"] .bf-child-actions .bf-card-more {
+  position: static;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  opacity: 1;
+  transform: none;
+}
+
+[data-register="viewer"] .bf-child-actions .bf-card-more::after {
+  display: none;
+}
+
+/* Hydrated child cards put actions beneath the poster or beside the list row. */
+[data-register="viewer"] .bf-card-shell-with-play .bf-child-actions {
+  gap: 4px;
+  padding: 0;
+}
+
+[data-register="viewer"] .bf-card-shell-with-play .bf-child-actions > button {
+  max-width: calc(50% - 2px);
+}
+
+[data-register="viewer"] .bf-stack .bf-card-shell-with-play {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding-right: 8px;
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+[data-register="viewer"] .bf-stack .bf-card-shell-with-play .bf-card {
+  padding-right: 8px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-shell-with-play .bf-card-more {
+  transform: none;
+}
+
 [data-register="viewer"] .bf-child-link {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  height: 100%;
+  flex: 1 1 auto;
   padding: 8px;
   border-radius: var(--radius-card);
   color: var(--text-primary);
@@ -287,6 +343,7 @@
 }
 
 [data-register="viewer"] .bf-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -394,7 +451,12 @@
 }
 
 @media (max-width: 640px) {
+  [data-register="viewer"] .bf-row {
+    flex-wrap: wrap;
+    gap: 0;
+  }
   [data-register="viewer"] .bf-row-link {
+    flex-basis: 100%;
     gap: 12px;
   }
   [data-register="viewer"] .bf-row-thumb {

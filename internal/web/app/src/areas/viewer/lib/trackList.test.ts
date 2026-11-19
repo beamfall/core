@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MediaRow } from "@/lib/graphql/browse";
 import type { GenericMediaInfo, RelatedEntityGroup, SourceItem } from "@/lib/graphql/types";
 import {
+  albumTrackRows,
   appearsOn,
   formatDuration,
   hasKnownNonAudio,
@@ -10,7 +11,6 @@ import {
   playState,
   topTracks,
   trackGroups,
-  trackRows,
 } from "./trackList";
 
 const media = (id: string, title: string, extra: Partial<SourceItem> = {}): SourceItem => ({
@@ -54,7 +54,7 @@ describe("track list rules", () => {
   };
 
   it("numbers tracks in server order with runtime, naming only credits that differ", () => {
-    const tracks = trackRows(items, rows, ownerPeople(people, items, rows));
+    const tracks = albumTrackRows(items, rows, ownerPeople(people, items, rows));
     expect(
       tracks.map((track) => [track.number, track.item.title, track.artist, track.durationSeconds]),
     ).toEqual([
@@ -77,7 +77,7 @@ describe("track list rules", () => {
       d2a: row("d2a", "Track Four", ["person-a"], { sequence: 2, index: 1 }),
       d2b: row("d2b", "Track Five", ["person-a"], { sequence: 2, index: 2 }),
     };
-    const tracks = trackRows(discs, positioned, new Set(["person-a"]));
+    const tracks = albumTrackRows(discs, positioned, new Set(["person-a"]));
     expect(tracks.map((track) => [track.group, track.number, track.item.title])).toEqual([
       [1, 1, "Track One"],
       [1, 2, "Track Two"],
@@ -99,7 +99,7 @@ describe("track list rules", () => {
       t3: row("t3", "Track Three", ["person-a"], { sequence: 2 }),
     };
     expect(
-      trackRows(items, repeated, new Set(["person-a"])).map((t) => [t.group, t.number]),
+      albumTrackRows(items, repeated, new Set(["person-a"])).map((t) => [t.group, t.number]),
     ).toEqual([
       [1, 1],
       [1, 2],
@@ -113,7 +113,7 @@ describe("track list rules", () => {
       t2: row("t2", "Track Two", ["person-a"], { sequence: 2, index: 1 }),
       t3: row("t3", "Track Three", ["person-a"], { index: 2 }),
     };
-    const ungrouped = trackRows(items, partial, new Set(["person-a"]));
+    const ungrouped = albumTrackRows(items, partial, new Set(["person-a"]));
     expect(ungrouped.map((t) => [t.group, t.number, t.item.id])).toEqual([
       [undefined, 1, "t2"],
       [undefined, 2, "t3"],
@@ -125,12 +125,14 @@ describe("track list rules", () => {
       t2: row("t2", "Track Two", ["person-a"], { sequence: 1 }),
       t3: row("t3", "Track Three", ["person-a"], { sequence: 1 }),
     };
-    expect(trackRows(items, single, new Set()).every((t) => t.group === undefined)).toBe(true);
+    expect(albumTrackRows(items, single, new Set()).every((t) => t.group === undefined)).toBe(true);
   });
 
   it("skips non-Media items when numbering", () => {
     const mixed = [{ id: "e1", kind: "entity", title: "Other" }, ...items];
-    expect(trackRows(mixed, rows, new Set(["person-a"])).map((t) => t.number)).toEqual([1, 2, 3]);
+    expect(albumTrackRows(mixed, rows, new Set(["person-a"])).map((t) => t.number)).toEqual([
+      1, 2, 3,
+    ]);
   });
 
   it("falls back to the people credited on every track when the container relates none", () => {

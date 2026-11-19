@@ -167,6 +167,7 @@ export function HydratedSection({
       items={shown}
       seeAll={seeAll}
       navigationID={navigationID}
+      showPlayButton={Boolean(entityID) && section.source?.kind === "entity-media"}
       nameContainer={!entityID}
     />
   );

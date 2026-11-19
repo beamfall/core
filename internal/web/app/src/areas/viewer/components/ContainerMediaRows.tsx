@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router";
 import type { SourceItem } from "@/lib/graphql/types";
 import { useDisplayLocale, useT } from "@/lib/i18n";
 import { useViewerIdentity } from "@/lib/session";
+import { activateLink } from "../lib/activateLink";
 import { artworkBucketURL } from "../lib/artwork";
 import { childThumbURL } from "../lib/containerChildren";
 import { itemRuntimeSeconds, rowOrdinals } from "../lib/containerPage";
@@ -11,6 +12,7 @@ import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import { runtimeParts } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
+import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
 // A container's own video Media as detail rows (CORE-2510): the still, the
 // ordinal its siblings do not share with the runtime, the title once and a
@@ -53,6 +55,8 @@ export function ContainerMediaRows({
   return (
     <ol className="bf-rows" aria-label={label}>
       {media.map((item, index) => {
+        const path = `/media/${encodeURIComponent(item.id)}`;
+        const openDetails = () => navigate(path, { state: linkState(item) });
         const thumb = childThumbURL(item);
         const seconds = itemRuntimeSeconds(item);
         const runtime = seconds ? runtimeParts(seconds) : null;
@@ -64,8 +68,8 @@ export function ContainerMediaRows({
           <li key={`${item.id}-${index}`} className="bf-row">
             <Link
               className="bf-row-link"
-              to={`/media/${encodeURIComponent(item.id)}`}
-              state={linkState(item)}
+              to={path}
+              onClick={(event) => activateLink(event, openDetails)}
             >
               <span className="bf-row-thumb" aria-hidden>
                 {thumb && <img src={artworkBucketURL(thumb, "w320")} alt="" loading="lazy" />}
@@ -112,16 +116,31 @@ export function ContainerMediaRows({
               </span>
             </Link>
             {!item.locked && (
-              <button
-                type="button"
-                className="bf-row-play"
-                aria-label={t("mediaDetailPlayLabel", { title: item.title })}
-                onClick={() => play(item)}
-                onPointerEnter={preloadPlayer}
-                onFocus={preloadPlayer}
-              >
-                <Play aria-hidden />
-              </button>
+              <div className="bf-child-actions">
+                <button
+                  type="button"
+                  className="bf-row-play"
+                  aria-label={t("mediaDetailPlayLabel", { title: item.title })}
+                  onClick={() => play(item)}
+                  onPointerEnter={preloadPlayer}
+                  onFocus={preloadPlayer}
+                >
+                  <Play aria-hidden />
+                </button>
+                <MediaItemCardMenu
+                  title={item.title}
+                  primaryLabel={t("play")}
+                  isMedia
+                  isAudio={item.mediaClass === "audio"}
+                  href={
+                    new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin)
+                      .href
+                  }
+                  target={{ mediaID: item.id }}
+                  onPrimary={() => play(item)}
+                  onDetails={openDetails}
+                />
+              </div>
             )}
           </li>
         );

@@ -53,6 +53,12 @@
   background: color-mix(in oklab, var(--text-primary) 6%, transparent);
 }
 
+[data-register="viewer"] a.bf-track-row {
+  min-width: 0;
+  padding-right: 8px;
+  text-decoration: none;
+}
+
 [data-register="viewer"] .bf-track-number,
 [data-register="viewer"] .bf-track-duration {
   color: var(--text-secondary);
@@ -78,9 +84,8 @@
   font-size: 13px;
 }
 
-[data-register="viewer"] .bf-track .bf-card-more {
-  top: 50%;
-  transform: translateY(-50%);
+[data-register="viewer"] .bf-track .bf-child-actions {
+  padding: 0 8px 0 0;
 }
 
 [data-register="viewer"] .bf-track-tools {
