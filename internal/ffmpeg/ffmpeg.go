@@ -2436,21 +2436,16 @@ const hlsStderrTailBytes = 4 << 10
 // stderr pipe delay the reap once the leader has exited.
 const hlsStderrWaitDelay = time.Second
 
-const hlsStopBound = time.Second
-
 // HLSProcess is a running HLS transcode owned by its caller.
 type HLSProcess struct {
 	cmd     *exec.Cmd
 	wait    sync.Once
-	done    chan struct{}
 	waitErr error
 	// signalMu serializes signals through the final group kill, before Wait
 	// releases the leader PID for reuse.
-	signalMu   sync.Mutex
-	paused     bool
-	stopping   bool
-	killed     bool
-	escalation *time.Timer
+	signalMu sync.Mutex
+	paused   bool
+	killed   bool
 	// stopRequested records that the owner asked for this exit (Stop or context
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
@@ -2550,7 +2545,7 @@ func (l *lockedTail) String() string {
 func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 	applySysProcAttr(cmd)
 	configureProcessGroup(cmd)
-	p := &HLSProcess{cmd: cmd, done: make(chan struct{})}
+	p := &HLSProcess{cmd: cmd}
 	p.stderr.tail.limit = hlsStderrTailBytes
 	cmd.Cancel = func() error {
 		p.stopRequested.Store(true)
@@ -2587,20 +2582,10 @@ func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
 func (p *HLSProcess) killTree() {
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
-	p.killTreeLocked()
-}
-
-// killTreeLocked disarms any pending escalation before releasing the leader PID.
-func (p *HLSProcess) killTreeLocked() {
 	if p.killed {
 		return
 	}
-	p.stopping = true
 	p.killed = true
-	if p.escalation != nil {
-		p.escalation.Stop()
-		p.escalation = nil
-	}
 	p.killGroup()
 }
 
@@ -2617,7 +2602,7 @@ func (p *HLSProcess) Pause() bool {
 	}
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
-	if p.stopping {
+	if p.killed {
 		return false
 	}
 	if !p.paused {
@@ -2634,7 +2619,7 @@ func (p *HLSProcess) Resume() bool {
 	}
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
-	if p.stopping {
+	if p.killed {
 		return false
 	}
 	if p.paused && p.resumeGroup() {
@@ -2648,49 +2633,27 @@ func (p *HLSProcess) Wait() error {
 	if !p.Running() {
 		return nil
 	}
-	p.startWait()
-	<-p.done
+	p.wait.Do(func() {
+		p.waitErr = p.waitForExit()
+	})
 	return p.waitErr
 }
 
-func (p *HLSProcess) startWait() {
-	p.wait.Do(func() {
-		go func() {
-			p.waitErr = p.waitForExit()
-			close(p.done)
-		}()
-	})
-}
-
-// Stop requests termination and joins the leader. If the join times out, the
-// caller must keep resources the process could still use until Wait completes.
-func (p *HLSProcess) Stop() error {
+// Stop kills the encoder and joins the leader through Wait.
+func (p *HLSProcess) Stop() {
 	if !p.Running() {
-		return nil
+		return
 	}
 	p.stopRequested.Store(true)
-	p.signalMu.Lock()
-	if !p.stopping {
-		p.stopping = true
-		p.terminateGroupLocked()
-	}
-	p.signalMu.Unlock()
-
-	p.startWait()
-	timer := time.NewTimer(hlsStopBound)
-	defer timer.Stop()
-	select {
-	case <-p.done:
-		return nil
-	case <-timer.C:
-		return fmt.Errorf("ffmpeg: encoder stop did not join within %s", hlsStopBound)
-	}
+	p.killTree()
+	_ = p.Wait()
 }
 
 // Kill terminates the process tree without marking the exit as requested, so
-// a supervisor that kills a wedged encoder still sees a failed run.
+// a supervisor that kills a wedged encoder still sees a failed run. The owner
+// joins the encoder with Wait.
 func (p *HLSProcess) Kill() {
-	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+	if !p.Running() {
 		return
 	}
 	p.killTree()

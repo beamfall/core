@@ -19,7 +19,7 @@ import (
 )
 
 func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
-	if !SupportsHLSPause {
+	if !supportsHLSGroupKill {
 		t.Skip("HLS group signalling unavailable")
 	}
 	pidPath := filepath.Join(t.TempDir(), "descendant.pid")
@@ -62,9 +62,7 @@ func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
 		wg.Add(1)
 		go func() { defer wg.Done(); _ = process.Wait() }()
 	}
-	if err := process.Stop(); err != nil {
-		t.Fatal(err)
-	}
+	process.Stop()
 	wg.Wait()
 
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
@@ -77,7 +75,7 @@ func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
 }
 
 func TestHLSProcessNaturalLeaderExitReapsDescendant(t *testing.T) {
-	if !SupportsHLSPause {
+	if !supportsHLSGroupKill {
 		t.Skip("HLS group signalling unavailable")
 	}
 	pidPath := filepath.Join(t.TempDir(), "natural-descendant.pid")
@@ -111,7 +109,7 @@ func hlsDescendantExited(pid int) bool {
 		return true
 	}
 	if runtime.GOOS != "linux" {
-		return false // launchd should reap the descendant on Darwin
+		return false // init should reap the descendant
 	}
 	status, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status") // #nosec G304 -- test-owned PID
 	if errors.Is(err, os.ErrNotExist) {

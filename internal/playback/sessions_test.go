@@ -2382,8 +2382,8 @@ func TestEncoderReplacementStopsOutsideTheGlobalLock(t *testing.T) {
 // TestSessionEvictedDuringEncoderReplacement covers a session torn down while
 // ensureRung has the lock released to replace its encoder: the teardown does
 // not wait for the replacement, the request fails with ErrSessionEvicted, the
-// lease is released once the start gives up, and the session's directory is
-// gone.
+// directory is removed before teardown returns, and the lease is released
+// once the start gives up.
 func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 	t.Parallel()
 	g := governor.New()
@@ -2415,15 +2415,12 @@ func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 		}
 		return nil
 	})
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session directory after TerminateSession: stat err = %v, want not-exist", err)
+	}
 	// The start is still stopping the replaced process, so its lease holds.
 	if got := g.ActiveTranscodes(); got != 1 {
 		t.Fatalf("ActiveTranscodes while the evicted start is stopping = %d, want 1", got)
-	}
-	if err := sessions.PurgeOrphanedTranscodeDirs(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(dir); err != nil {
-		t.Fatalf("session directory while the evicted start is stopping: %v", err)
 	}
 
 	slow.unblock()
@@ -2545,7 +2542,8 @@ func TestCloseWaitsForAnInFlightEncoderStart(t *testing.T) {
 
 // dirlessSpawn is a fakeTranscoder whose starts, once dirless is set, succeed
 // without writing to the session directory, like an FFmpeg process that has
-// launched but not written anything yet.
+// launched but not written anything yet. Close removes the directory while the
+// start runs, so a start that writes there would fail instead.
 type dirlessSpawn struct {
 	*fakeTranscoder
 	dirless atomic.Bool

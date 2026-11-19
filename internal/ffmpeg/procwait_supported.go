@@ -1,12 +1,16 @@
-//go:build linux || darwin
+//go:build linux || darwin || dragonfly || freebsd || netbsd || openbsd
 
 package ffmpeg
 
 import "fmt"
 
-// waitForExit observes the leader's exit without reaping it. killTree disarms
-// the escalation timer and kills residual group members while the leader PID
-// is still reserved. The OS init reaps orphaned descendants.
+const supportsHLSGroupKill = true
+
+func (p *HLSProcess) killGroup() { killProcessGroup(p.cmd) }
+
+// waitForExit observes the leader's exit without reaping it. killTree kills
+// residual group members while the leader PID is still reserved. The OS init
+// reaps orphaned descendants.
 func (p *HLSProcess) waitForExit() error {
 	exitErr := waitForProcessExit(p.cmd.Process.Pid)
 	p.killTree()
