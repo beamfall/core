@@ -1,15 +1,143 @@
-//go:build !beamfall_appstore
+//go:build !beamfall_appstore && !beamfall_no_powertools
 
 package graph
 
 import (
 	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
+	"github.com/beamfall/core/internal/workflow/convert"
 )
+
+func TestConversionCapabilityBlocksRetry(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newConsoleHandler(t, st)
+	openManagerAdminSession(t, st)
+
+	now := time.Now().UTC()
+	job, err := convert.NewConvertJob("library-local", filepath.Join(t.TempDir(), "source.mp4"), "h264-mp4", store.LibraryFilter{AllLibraries: true}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err = st.EnqueueJob(t.Context(), job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CancelJob(t.Context(), job.ID, now); err != nil {
+		t.Fatal(err)
+	}
+
+	setWorkflowCapability(t, handler, "conversion", false)
+	retry := workflowMutation(t, `mutation($id:String!) { jobRetry(id:$id) { id kind status } }`,
+		map[string]any{"id": job.ID})
+	_, errs := post(t, handler, retry, func(req *http.Request) {
+		*req = *req.WithContext(l10n.WithLocale(req.Context(), "de"))
+		authorizeManager(req)
+	})
+	assertCapabilityDisabled(t, errs, "Dieses Werkzeug ist unter Konsole → Optionale Funktionen deaktiviert.")
+	if jobs, err := st.ListJobs(t.Context()); err != nil || len(jobs) != 1 || jobs[0].ID != job.ID || jobs[0].Status != store.JobStatusCanceled {
+		t.Fatalf("jobs after disabled retry = %v, %v", jobs, err)
+	}
+
+	setWorkflowCapability(t, handler, "conversion", true)
+	data, errs := post(t, handler, retry, authorizeManager)
+	if len(errs) != 0 {
+		t.Fatalf("retry after enabling: %#v", errs)
+	}
+	var retried JobInfo
+	mustUnmarshal(t, data["jobRetry"], &retried)
+	if retried.ID == "" || retried.ID == string(job.ID) || retried.Kind != string(convert.JobKind) || retried.Status != string(store.JobStatusQueued) {
+		t.Fatalf("retried job = %#v", retried)
+	}
+}
+
+func TestRenameCapabilityBlocksSingleAndBatchMutations(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newConsoleHandler(t, st)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const libraryID = "library-local"
+	if err := st.SetLibraryRoots(t.Context(), libraryID, []string{root}); err != nil {
+		t.Fatal(err)
+	}
+	singlePath := filepath.Join(root, "single.mp4")
+	batchPath := filepath.Join(root, "batch.mp4")
+	importGraphFile(t, st, libraryID, singlePath, "Single", "0000000045000002")
+	importGraphFile(t, st, libraryID, batchPath, "Batch", "0000000045000003")
+
+	single := workflowMutation(t, `mutation($libraryID:String!,$path:String!,$name:String!) {
+		renameManagedPath(libraryID:$libraryID,path:$path,name:$name) { path }
+	}`, map[string]any{"libraryID": libraryID, "path": singlePath, "name": "single-renamed.mp4"})
+	batch := workflowMutation(t, `mutation($libraryID:String!,$renames:[ManagedPathRenameInput!]!) {
+		batchRenameManagedPaths(libraryID:$libraryID,renames:$renames) { affected }
+	}`, map[string]any{"libraryID": libraryID, "renames": []map[string]string{
+		{"path": batchPath, "name": "batch-renamed.mp4"},
+	}})
+	openManagerAdminSession(t, st)
+	setWorkflowCapability(t, handler, "rename", false)
+	if err := st.SetSessionAdminUntil(t.Context(), "session-manager", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutation := range []string{single, batch} {
+		_, errs := post(t, handler, mutation, authorizeManager)
+		assertCapabilityDisabled(t, errs, "This workflow is disabled in Console → Optional features.")
+	}
+	for _, path := range []string{singlePath, batchPath} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("disabled rename altered %s: %v", path, err)
+		}
+	}
+
+	openManagerAdminSession(t, st)
+	setWorkflowCapability(t, handler, "rename", true)
+	for _, mutation := range []string{single, batch} {
+		if _, errs := post(t, handler, mutation, authorizeManager); len(errs) != 0 {
+			t.Fatalf("rename after enabling: %#v", errs)
+		}
+	}
+	for _, name := range []string{"single-renamed.mp4", "batch-renamed.mp4"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
+			t.Fatalf("enabled rename did not create %s: %v", name, err)
+		}
+	}
+}
+
+func workflowMutation(t *testing.T, query string, variables map[string]any) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"query": query, "variables": variables})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+func setWorkflowCapability(t *testing.T, handler *Handler, id string, enabled bool) {
+	t.Helper()
+	body := workflowMutation(t, `mutation($capability:String!,$enabled:Boolean!) {
+		setCapabilityEnabled(capability:$capability,enabled:$enabled) { id enabled }
+	}`, map[string]any{"capability": id, "enabled": enabled})
+	if _, errs := post(t, handler, body, authorizeManager); len(errs) != 0 {
+		t.Fatalf("set %s to %t: %#v", id, enabled, errs)
+	}
+}
+
+func assertCapabilityDisabled(t *testing.T, errs []graphError, message string) {
+	t.Helper()
+	if len(errs) != 1 || errs[0].Extensions.Code != ErrorCodeConflict ||
+		errs[0].Extensions.Reason != "" || errs[0].Message != message {
+		t.Fatalf("errors = %#v, want CONFLICT with message %q", errs, message)
+	}
+}
 
 // TestSetCapabilityEnabledTogglesAndAudits is the POWERTOOLS-9 vertical slice:
 // the Workflow-capability toggle is Admin-Session-gated, audited

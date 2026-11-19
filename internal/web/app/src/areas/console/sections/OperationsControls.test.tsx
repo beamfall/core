@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRescansForTest } from "@/components/beamfall/LibraryRescan";
 import { setAdvancedSettings } from "@/lib/advancedSettings";
+import { ApiError } from "@/lib/api";
 import {
   cancelJob,
   fetchConsoleConfig,
@@ -309,6 +310,19 @@ describe("OperationsControls", () => {
     await user.click(screen.getByRole("button", { name: "Retry" }));
 
     await waitFor(() => expect(retryJob).toHaveBeenCalledWith("job-1"));
+  });
+
+  it("shows the server's refusal when conversion is disabled", async () => {
+    const refusal = "This workflow is disabled in Console → Optional features.";
+    vi.mocked(fetchConsoleJobs).mockResolvedValue([
+      job({ kind: "convert-managed-file", status: "failed" }),
+    ]);
+    vi.mocked(retryJob).mockRejectedValueOnce(new ApiError(refusal, 200));
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(refusal);
   });
 
   it("opens the durable job log on demand", async () => {

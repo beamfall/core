@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ApiError } from "@/lib/api";
 import { fetchFolderTree, fetchLibraries } from "@/lib/graphql";
 import type { FolderEntryInfo, LibraryInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
@@ -120,8 +121,8 @@ export function RenamePage() {
       setLastBatchID(result.batchID);
       setNotice(t("renameApplied").replace("{count}", String(result.affected)));
       await onReloadAfterChange();
-    } catch {
-      setError(t("renameApplyFailed"));
+    } catch (err) {
+      setError(err instanceof ApiError && err.message ? err.message : t("renameApplyFailed"));
     } finally {
       setBusy(false);
     }

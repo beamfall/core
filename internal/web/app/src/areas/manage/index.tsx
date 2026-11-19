@@ -30,13 +30,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router";
+import { matchRoutes, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { IconHeading } from "@/components/beamfall/workbench";
 import { AppShell } from "@/components/chrome/AppShell";
 import { SectionMenu } from "@/components/chrome/SectionMenu";
 import { RevealSetting, SettingsMenuIntro } from "@/components/chrome/SettingsMenuIntro";
 import { AdvancedSettingsSwitch, useAdvancedSettings } from "@/lib/advancedSettings";
 import { setAdminUnlockHandler } from "@/lib/api";
+import { fetchCapabilityStates } from "@/lib/graphql";
+import type { CapabilityStateInfo } from "@/lib/graphql/types";
 import { useT } from "@/lib/i18n";
 import { useRegister } from "@/lib/register";
 import { useSession } from "@/lib/session";
@@ -86,14 +88,29 @@ type NavItem = {
   lead: StringKey;
   advanced?: true;
   hidden?: true;
+  capability?: "conversion" | "rename";
 } & ({ label: StringKey; text?: undefined } | { text: string; label?: undefined });
 // Exported so the test can check the settings search's MENU_PAGES against it.
 export const MANAGE_NAV_GROUPS: NavItem[][] = [
   [
     { to: "/manage/libraries", icon: LibraryBig, label: "libraries", lead: "manageLibrariesLead" },
     { to: "/manage/operations", icon: ListChecks, label: "jobs", lead: "manageJobsLead" },
-    { to: "/manage/convert", icon: FileCog, label: "convert", lead: "convertLead", advanced: true },
-    { to: "/manage/rename", icon: PencilLine, label: "rename", lead: "renameLead", advanced: true },
+    {
+      to: "/manage/convert",
+      icon: FileCog,
+      label: "convert",
+      lead: "convertLead",
+      advanced: true,
+      capability: "conversion",
+    },
+    {
+      to: "/manage/rename",
+      icon: PencilLine,
+      label: "rename",
+      lead: "renameLead",
+      advanced: true,
+      capability: "rename",
+    },
     { to: "/manage/trash", icon: Trash2, label: "navTrash", lead: "manageTrashLead" },
     {
       to: "/manage/backups",
@@ -191,22 +208,30 @@ const AREA_ROUTE: NavItem = {
   label: "manageTitle",
   lead: "manageLead",
 };
+const MANAGE_NAV_ROUTES = MANAGE_NAV_GROUPS.flat().map((item) => ({
+  path: `${item.to}/*`,
+  item,
+}));
+
 function currentRoute(pathname: string): NavItem {
-  const item = MANAGE_NAV_GROUPS.flat().find(
-    (entry) => pathname === entry.to || pathname.startsWith(`${entry.to}/`),
-  );
-  return item ?? AREA_ROUTE;
+  // Use the same path decoding and case matching as the rendered Routes.
+  return matchRoutes(MANAGE_NAV_ROUTES, pathname)?.[0]?.route.item ?? AREA_ROUTE;
 }
 
 // The Normal nav drops Advanced items, except the page being viewed, so a deep
 // link never lands on a page missing from its own nav, and drops any group left
 // empty. Advanced shows every group whole, less the hidden items.
-function visibleNavGroups(advanced: boolean, pathname: string): NavItem[][] {
+function visibleNavGroups(
+  advanced: boolean,
+  current: NavItem,
+  enabled: (id: NavItem["capability"]) => boolean,
+): NavItem[][] {
   return MANAGE_NAV_GROUPS.map((group) =>
     group.filter(
       (item) =>
         !item.hidden &&
-        (advanced || !item.advanced || pathname === item.to || pathname.startsWith(`${item.to}/`)),
+        enabled(item.capability) &&
+        (advanced || !item.advanced || current === item),
     ),
   ).filter((group) => group.length > 0);
 }
@@ -226,12 +251,14 @@ const MANAGE_LOCK_COPY: AdminGateCopy = {
 // finishes the action the manager asked for, in place and with whatever they
 // had entered still there. Pages that never need an Admin Session are never
 // gated, and each page gets its own lock so leaving one abandons its prompt.
-function ManageAdminLock({ children }: { children: ReactNode }) {
+type ManageAdminLockProps = { children: ReactNode; onUnlock: () => void };
+
+function ManageAdminLock(props: ManageAdminLockProps) {
   const { pathname } = useLocation();
-  return <PageAdminLock key={pathname}>{children}</PageAdminLock>;
+  return <PageAdminLock key={pathname} {...props} />;
 }
 
-function PageAdminLock({ children }: { children: ReactNode }) {
+function PageAdminLock({ children, onUnlock }: ManageAdminLockProps) {
   // null until a request is refused. A refusal that arrives while the gate
   // believes it is open (the session was ended elsewhere) changes the number,
   // which mounts the gate afresh so it reads the session again.
@@ -269,9 +296,12 @@ function PageAdminLock({ children }: { children: ReactNode }) {
     (now: boolean) => {
       prompting.current = !now;
       setUnlocked(now);
-      if (now) settle(true);
+      if (now) {
+        settle(true);
+        onUnlock();
+      }
     },
-    [settle],
+    [onUnlock, settle],
   );
 
   const locked = gate !== null && !unlocked;
@@ -303,13 +333,9 @@ function AdminUnlocked({ onChange }: { onChange: (unlocked: boolean) => void }) 
 
 export function ManageArea() {
   const { setRegister } = useRegister();
-  const location = useLocation();
   const { isManager, loading, needsEnroll, session } = useSession();
   const t = useT();
-  const [advanced] = useAdvancedSettings();
   useEffect(() => setRegister("manage"), [setRegister]);
-  const route = currentRoute(location.pathname);
-  const routeTitle = route.text ?? t(route.label);
 
   if (loading) {
     return (
@@ -323,6 +349,54 @@ export function ManageArea() {
     return <Navigate to="/" replace />;
   }
 
+  return <ManageWorkspace key={session.profileID} />;
+}
+
+function ManageWorkspace() {
+  const { pathname } = useLocation();
+  const t = useT();
+  const [advanced] = useAdvancedSettings();
+  const [capabilities, setCapabilities] = useState<CapabilityStateInfo[] | null>(null);
+  const [unlockCount, setUnlockCount] = useState(0);
+  const onUnlock = useCallback(() => setUnlockCount((count) => count + 1), []);
+  useEffect(() => {
+    let active: AbortController | undefined;
+    function refresh() {
+      active?.abort();
+      const request = new AbortController();
+      active = request;
+      void fetchCapabilityStates(request.signal, { adminUnlock: false }).then(
+        (states) => {
+          if (!request.signal.aborted) setCapabilities(states);
+        },
+        () => {
+          if (!request.signal.aborted) setCapabilities([]);
+        },
+      );
+    }
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      active?.abort();
+    };
+  }, [unlockCount]);
+
+  // Managers without an Admin Session can still open the pages. Mutations
+  // enforce the persisted setting even if this read is unavailable or stale.
+  const enabled = (id: NavItem["capability"]) =>
+    !capabilities?.some((state) => state.id === id && !state.enabled);
+  const route = currentRoute(pathname);
+  const routeTitle = route.text ?? t(route.label);
+  if (route.capability && capabilities === null) {
+    return (
+      <AppShell>
+        <p className="text-sm text-muted-foreground">{t("loading")}</p>
+      </AppShell>
+    );
+  }
+  if (!enabled(route.capability)) return <Navigate to="/manage/libraries" replace />;
+
   return (
     <AppShell>
       <div className="manage-area flex flex-col gap-5 md:flex-row md:gap-6">
@@ -332,9 +406,12 @@ export function ManageArea() {
           current={routeTitle}
           footer={<AdvancedSettingsSwitch className="manage-advanced-switch" />}
         >
-          <SettingsMenuIntro area="manage" />
+          <SettingsMenuIntro
+            area="manage"
+            visibleManagePage={(path) => enabled(currentRoute(`/manage/${path}`).capability)}
+          />
           <div className="manage-nav">
-            {visibleNavGroups(advanced, location.pathname).map((group, i) => (
+            {visibleNavGroups(advanced, route, enabled).map((group, i) => (
               <div key={i} className="manage-nav-group">
                 {group.map((item) => (
                   // NavLink sets aria-current="page" on the active <a>; the
@@ -353,7 +430,7 @@ export function ManageArea() {
         <div className="min-w-0 grow">
           {/* The route's one h1 and its lead; each ManageSection card title below is an h2. */}
           <IconHeading icon={route.icon} title={routeTitle} lead={t(route.lead)} />
-          <ManageAdminLock>
+          <ManageAdminLock onUnlock={onUnlock}>
             <RevealSetting />
             <Routes>
               <Route index element={<Navigate to="/manage/libraries" replace />} />

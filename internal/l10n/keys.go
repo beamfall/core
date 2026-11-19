@@ -5,6 +5,8 @@ package l10n
 // entry has a Key here; TestCatalogKeysMatchDeclaredKeys enforces both.
 type Key string
 
+const WorkflowCapabilityDisabled Key = "workflow.capability_disabled"
+
 // Notification inbox titles, rendered per request from the notification kind.
 const (
 	NotificationAccessRequestTitle    Key = "notification.access_request.title"
