@@ -1,6 +1,75 @@
 CORE-0022 HLS-ENCODE-AHEAD-PACING-1
+Repair verification PASS on macOS, 2026-11-19
+
+The test decoded a real 1080p HEVC source re-encoded as 1080p H.264 with
+VideoToolbox. It fed the production Sessions and Runner output to an FFmpeg
+decoder at the four-second segment rate for 60 seconds. At 60 seconds the
+client requested segment 15 and observed eight segments ahead on disk.
+Seeking to segment 20 (+20s) resumed PID 27574. The same process stopped
+again with eight segments ahead.
+
+The worktree sandbox blocked ps and VideoToolbox, so the successful run used
+the host with the same detached worktree and temporary overlay. The overlay
+matched the FFmpeg process by its per-generation .encoder-* output directory
+and counted completed segment files in the public rung directory.
+
+Commands run
+
+  export GOCACHE=/tmp/codex-gocache GOWORK=off
+  export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
+  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
+    --arg content /tmp/core0022-repair-manual_test.go \
+    '{Replace:{($test):$content}}' > /tmp/core0022-repair-manual-overlay.json
+  sw_vers
+  uname -m
+  ffmpeg -version | head -1
+  go test -overlay /tmp/core0022-repair-manual-overlay.json ./internal/playback \
+    -run '^TestPacingMacOSReceipt$' -count=1 -v
+
+Raw output
+
+ProductName:		macOS
+ProductVersion:		27.2.1
+BuildVersion:		26B131
+arm64
+ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers
+=== RUN   TestPacingMacOSReceipt
+source probe:
+codec_name=hevc
+width=1920
+height=1080
+r_frame_rate=60000/1001
+duration=264.767000
+transcode probe: h264,1920,1080
+playhead=0s segment=0 frontier=8 on_disk_ahead=8
+ps: 27574 T    /opt/homebrew/bin/ffmpeg
+wall-clock playback: 63.897s
+playhead=60s segment=15 frontier=23 on_disk_ahead=8
+ps: 27574 T    /opt/homebrew/bin/ffmpeg
+seek: 60s -> 80s (+20s)
+playhead=80s segment=20 frontier=23 on_disk_ahead=3
+ps: 27574 R    /opt/homebrew/bin/ffmpeg
+playhead=80s segment=20 frontier=28 on_disk_ahead=8
+ps: 27574 T    /opt/homebrew/bin/ffmpeg
+decoder final progress:
+frame=4076
+fps=42.26
+stream_0_0_q=-0.0
+bitrate=N/A
+total_size=N/A
+out_time_us=84017267
+out_time_ms=84017267
+out_time=00:01:24.017267
+dup_frames=0
+drop_frames=0
+speed=0.871x
+progress=end
+--- PASS: TestPacingMacOSReceipt (116.38s)
+PASS
+ok  	github.com/beamfall/core/internal/playback	116.640s
+
 macOS real-media verification, 2026-11-19
-Result: PASS
+Result on 46050ea1: PASS
 
 The scratch Go test used the production playback Sessions and ffmpeg.Runner.
 The source was a real 1080p HEVC file. The runner used VideoToolbox to

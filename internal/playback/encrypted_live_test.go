@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -295,4 +296,119 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+type runningEncryptedTranscoder struct {
+	fakeTranscoder
+	output chan string
+	starts atomic.Int32
+}
+
+func (f *runningEncryptedTranscoder) StartEncryptedHLSSegments(ctx context.Context, ep ffmpeg.EncryptedLiveEndpoint, _, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	proc, err := ffmpeg.StartHLSCommand(exec.CommandContext(ctx, "/bin/sh", "-c", "while :; do sleep 0.05; done"))
+	if err == nil {
+		f.starts.Add(1)
+		f.output <- ep.Output
+	}
+	return proc, err
+}
+
+func TestEncryptedLiveSessionPacesCompletedUploads(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	transcoder := &runningEncryptedTranscoder{output: make(chan string, 1)}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	secure := testEncryptedSource(nil)
+	request := func(n int) (string, error) {
+		return sessions.FilePathShaped(ctx, pacingTestKey, "", 120, 1280, 720, false, false,
+			ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{Encrypted: secure},
+			PriorityNormal, fmt.Sprintf("720p/seg%05d.m4s", n))
+	}
+	type result struct {
+		path string
+		err  error
+	}
+	first := make(chan result, 1)
+	go func() {
+		path, err := request(2)
+		first <- result{path, err}
+	}()
+	var output string
+	select {
+	case output = <-transcoder.output:
+	case <-ctx.Done():
+		t.Fatal("encoder did not start")
+	}
+	upload := func(n int) error {
+		return putLive(output+"/"+fmt.Sprintf("seg%05d.m4s", n), mediaSegment())
+	}
+	if err := upload(2); err != nil {
+		t.Fatal(err)
+	}
+	r := <-first
+	if r.err != nil {
+		t.Fatal(r.err)
+	}
+	dir := filepath.Dir(r.path)
+	for i := 3; i <= 10; i++ {
+		if err := upload(i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertPacedFrontier(t, ctx, sessions, dir, 10)
+	session := registeredSession(t, sessions, pacingTestKey)
+	rung := Rung{ID: "720p"}
+	initial, _, _ := sessions.rungEncoder(pacingTestKey, session, rung)
+	over := make(chan error, 1)
+	go func() { over <- upload(11) }()
+	waitPacing(t, ctx, func() bool { return fileReady(filepath.Join(dir, "seg00011.m4s.part")) })
+	select {
+	case err := <-over:
+		t.Fatalf("ahead-of-demand upload completed early: %v", err)
+	default:
+	}
+	if got := scanFrontier(dir, 0); got != 10 {
+		t.Fatalf("encrypted file reached frontier %d, want 10", got)
+	}
+	if _, err := request(3); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-over:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("encrypted upload did not resume")
+	}
+	assertPacedFrontier(t, ctx, sessions, dir, 11)
+	after, _, _ := sessions.rungEncoder(pacingTestKey, session, rung)
+	if after != initial || transcoder.starts.Load() != 1 {
+		t.Fatal("encrypted session replaced the paused process")
+	}
+
+	// An upload waiting for a later publication slot must be cancelled
+	// during eviction without leaving either its staged file or a process.
+	go func() { over <- upload(12) }()
+	waitPacing(t, ctx, func() bool { return fileReady(filepath.Join(dir, "seg00012.m4s.part")) })
+	done := make(chan struct{})
+	go func() {
+		sessions.TerminateSession(pacingTestKey.SessionID)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("evicting a paused encrypted session exceeded the reap bound")
+	}
+	if err := <-over; err == nil {
+		t.Fatal("eviction let a staged upload succeed")
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("encrypted session retained on eviction: %v", err)
+	}
 }

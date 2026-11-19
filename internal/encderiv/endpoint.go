@@ -52,7 +52,7 @@ type uploadSink interface {
 	uploadLimit(name string) (limit int64, ok bool)
 	// upload consumes body and stores it under name. errUploadExists means the
 	// name is already published and nothing was read.
-	upload(name string, body io.Reader) error
+	upload(ctx context.Context, name string, body io.Reader, check func() error) error
 }
 
 var (
@@ -83,20 +83,24 @@ type endpoint struct {
 	sink uploadSink
 	rung string
 
-	srv       *http.Server
-	serveDone chan struct{}
+	srv           *http.Server
+	serveDone     chan struct{}
+	uploadCtx     context.Context
+	cancelUploads context.CancelFunc
 	// failed is closed by the first failure, so a live run's owner can kill the
 	// encoder at once instead of waiting for it to exit.
 	failed chan struct{}
 
-	mu       sync.Mutex
-	open     Opener
-	revoked  bool
-	expired  bool
-	active   int
-	lastSeen time.Time
-	failErr  error
-	inflight sync.WaitGroup
+	mu            sync.Mutex
+	open          Opener
+	revoked       bool
+	expired       bool
+	active        int
+	lastSeen      time.Time
+	idleSuspended bool
+	uploadReads   map[*http.ResponseController]struct{}
+	failErr       error
+	inflight      sync.WaitGroup
 
 	revokeOnce sync.Once
 }
@@ -134,21 +138,24 @@ func startEndpoint(cfg endpointConfig) (*endpoint, error) {
 	if now == nil {
 		now = time.Now
 	}
+	uploadCtx, cancelUploads := context.WithCancel(context.Background())
 	e := &endpoint{
-		token:     hex.EncodeToString(raw),
-		host:      server.String(),
-		server:    server,
-		size:      cfg.size,
-		idle:      cfg.idle,
-		deadline:  cfg.deadline,
-		now:       now,
-		peer:      cfg.peer,
-		open:      cfg.open,
-		sink:      cfg.sink,
-		rung:      cfg.rung,
-		lastSeen:  now(),
-		serveDone: make(chan struct{}),
-		failed:    make(chan struct{}),
+		uploadCtx:     uploadCtx,
+		cancelUploads: cancelUploads,
+		token:         hex.EncodeToString(raw),
+		host:          server.String(),
+		server:        server,
+		size:          cfg.size,
+		idle:          cfg.idle,
+		deadline:      cfg.deadline,
+		now:           now,
+		peer:          cfg.peer,
+		open:          cfg.open,
+		sink:          cfg.sink,
+		rung:          cfg.rung,
+		lastSeen:      now(),
+		serveDone:     make(chan struct{}),
+		failed:        make(chan struct{}),
 	}
 	clear(raw)
 	e.srv = &http.Server{
@@ -199,6 +206,7 @@ func (e *endpoint) Revoke() {
 		e.mu.Lock()
 		e.revoked = true
 		e.mu.Unlock()
+		e.cancelUploads()
 		_ = e.srv.Close()
 		e.inflight.Wait()
 		<-e.serveDone
@@ -254,7 +262,7 @@ func (e *endpoint) enter() (Opener, error) {
 		return nil, ErrRevoked
 	}
 	now := e.now()
-	if e.expired || !now.Before(e.deadline) || (e.active == 0 && now.Sub(e.lastSeen) > e.idle) {
+	if e.expired || !now.Before(e.deadline) || (!e.idleSuspended && e.active == 0 && now.Sub(e.lastSeen) > e.idle) {
 		e.expired = true
 		return nil, ErrExpired
 	}
@@ -386,9 +394,12 @@ func (e *endpoint) receive(w http.ResponseWriter, r *http.Request, name string, 
 		return
 	}
 	rc := http.NewResponseController(w)
-	defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+	defer e.endUploadRead(rc)
 	body := &uploadBody{e: e, src: r.Body, rc: rc, remaining: limit}
-	err := e.sink.upload(name, body)
+	// FFmpeg can close its connection after sending the complete body,
+	// before encryption finishes. Only revoking the endpoint cancels a
+	// completed upload that is still waiting to publish.
+	err := e.sink.upload(e.uploadCtx, name, body, e.live)
 	switch {
 	case err == nil && body.err == nil:
 		w.WriteHeader(http.StatusCreated)
@@ -402,7 +413,10 @@ func (e *endpoint) receive(w http.ResponseWriter, r *http.Request, name string, 
 		}
 		http.Error(w, "exists", http.StatusConflict)
 	default:
-		e.failUpload(w, body.err)
+		if body.err != nil {
+			err = body.err
+		}
+		e.failUpload(w, err)
 	}
 }
 
@@ -433,6 +447,45 @@ func isTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
+// setIdleSuspended suspends idle expiry, including read deadlines already
+// armed on in-flight uploads. The token's absolute lifetime still applies.
+func (e *endpoint) setIdleSuspended(suspended bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.idleSuspended = suspended
+	e.lastSeen = e.now()
+	for rc := range e.uploadReads {
+		_ = rc.SetReadDeadline(e.uploadReadDeadlineLocked())
+	}
+}
+
+func (e *endpoint) uploadReadDeadlineLocked() time.Time {
+	if e.idleSuspended {
+		return time.Time{}
+	}
+	return time.Now().Add(e.idle)
+}
+
+func (e *endpoint) beginUploadRead(rc *http.ResponseController) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.idle <= 0 {
+		return nil
+	}
+	if e.uploadReads == nil {
+		e.uploadReads = make(map[*http.ResponseController]struct{})
+	}
+	e.uploadReads[rc] = struct{}{}
+	return rc.SetReadDeadline(e.uploadReadDeadlineLocked())
+}
+
+func (e *endpoint) endUploadRead(rc *http.ResponseController) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.uploadReads, rc)
+	_ = rc.SetReadDeadline(time.Time{})
+}
+
 // uploadBody is one upload's request body as the sink reads it: each read is
 // admitted only while the token is live, may block at most the idle timeout,
 // and may not take the body past its limit. err keeps the first failure so
@@ -453,11 +506,9 @@ func (b *uploadBody) Read(p []byte) (int, error) {
 		b.err = err
 		return 0, err
 	}
-	if b.e.idle > 0 {
-		if err := b.rc.SetReadDeadline(time.Now().Add(b.e.idle)); err != nil {
-			b.err = err
-			return 0, err
-		}
+	if err := b.e.beginUploadRead(b.rc); err != nil {
+		b.err = err
+		return 0, err
 	}
 	// One byte past the limit is enough to tell an oversized body.
 	if int64(len(p)) > b.remaining+1 {

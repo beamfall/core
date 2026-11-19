@@ -419,14 +419,14 @@ type signalSink struct {
 	reading chan struct{}
 }
 
-func (s *signalSink) upload(name string, body io.Reader) error {
-	return s.uploadSink.upload(name, readerFunc(func(p []byte) (int, error) {
+func (s *signalSink) upload(ctx context.Context, name string, body io.Reader, check func() error) error {
+	return s.uploadSink.upload(ctx, name, readerFunc(func(p []byte) (int, error) {
 		n, err := body.Read(p)
 		if n > 0 {
 			s.once.Do(func() { close(s.reading) })
 		}
 		return n, err
-	}))
+	}), check)
 }
 
 type readerFunc func([]byte) (int, error)
@@ -542,6 +542,164 @@ func TestLiveRunFinishStoresTheUploadInFlight(t *testing.T) {
 	got, err := io.ReadAll(f)
 	if err != nil || !bytes.Equal(got, body) {
 		t.Fatalf("stored %d bytes (err %v), want the %d uploaded", len(got), err, len(body))
+	}
+}
+
+func TestLiveRunPublishesCompletedUploadAfterClientDisconnect(t *testing.T) {
+	session := newTestLiveSession(t)
+	source := &countingOpener{data: testPayload(10)}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	staged := make(chan struct{})
+	release := make(chan struct{})
+	published := make(chan error, 1)
+	run, err := StartLiveRun(LiveRunConfig{
+		Session: session, Rung: testLiveRung, Open: source.open, Size: 10, peer: acceptPeer,
+		PublishSegment: func(uploadCtx context.Context, _ string, commit func() error) error {
+			close(staged)
+			select {
+			case <-release:
+			case <-uploadCtx.Done():
+				return uploadCtx.Err()
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			err := commit()
+			published <- err
+			return err
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(run.Revoke)
+	clientCtx, disconnect := context.WithCancel(ctx)
+	defer disconnect()
+	const name = "seg00002.m4s"
+	body := []byte("complete fragment")
+	req, err := http.NewRequestWithContext(clientCtx, http.MethodPut, run.OutputURL()+"/"+name, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientDone := make(chan struct{})
+	go func() {
+		defer close(clientDone)
+		if resp, err := testClient().Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	select {
+	case <-staged:
+	case <-ctx.Done():
+		t.Fatal("upload did not reach the publication hook")
+	}
+	disconnect()
+	<-clientDone
+	close(release)
+	select {
+	case err := <-published:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("the complete upload was lost after disconnect")
+	}
+	f, err := session.Open(testLiveRung + "/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if got, err := io.ReadAll(f); err != nil || !bytes.Equal(got, body) {
+		t.Fatalf("published fragment = %q, %v", got, err)
+	}
+}
+
+func TestLiveRunPauseSuspendsIdleAndKeepsAbsoluteExpiry(t *testing.T) {
+	session := newTestLiveSession(t)
+	source := &countingOpener{data: testPayload(1000)}
+	clock := newFakeClock()
+	run, err := StartLiveRun(LiveRunConfig{
+		Session: session, Rung: testLiveRung, Open: source.open, Size: 1000,
+		IdleTimeout: time.Minute, TTL: 10 * time.Minute, now: clock.Now, peer: acceptPeer,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(run.Revoke)
+	f := &liveRunFixture{run: run, session: session}
+	run.SetIdleSuspended(true)
+	clock.Advance(2 * time.Minute)
+	run.SetIdleSuspended(false)
+	if got := f.put(t, "seg00002.m4s", []byte("segment 2"), nil); got.status != http.StatusCreated {
+		t.Fatalf("resumed upload status = %d, want 201", got.status)
+	}
+	run.SetIdleSuspended(true)
+	clock.Advance(9 * time.Minute)
+	if got := f.put(t, "seg00003.m4s", []byte("segment 3"), nil); got.status != http.StatusGone {
+		t.Fatalf("after absolute expiry status = %d, want 410", got.status)
+	}
+	run.SetIdleSuspended(false)
+	if got := f.put(t, "seg00004.m4s", []byte("segment 4"), nil); got.status != http.StatusGone {
+		t.Fatalf("resuming revived an expired token: %d", got.status)
+	}
+}
+
+func TestLiveRunPauseSuspendsInFlightUploadRead(t *testing.T) {
+	session := newTestLiveSession(t)
+	sink := &signalSink{uploadSink: liveSink{session: session, rung: testLiveRung}, reading: make(chan struct{})}
+	source := &countingOpener{data: testPayload(10)}
+	const idle = 250 * time.Millisecond
+	ep, err := startEndpoint(endpointConfig{
+		open: source.open, size: 10, sink: sink, rung: testLiveRung, idle: idle,
+		deadline: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(ep.Revoke)
+	f := &liveRunFixture{session: session, run: &LiveRun{ep: ep}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, ep.OutputURL()+"/seg00000.m4s", pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := testPayload(128 << 10)
+	req.ContentLength = int64(len(body))
+	done := make(chan int, 1)
+	go func() {
+		result, err := f.do(req)
+		if err != nil {
+			done <- 0
+			return
+		}
+		done <- result.status
+	}()
+	if _, err := pw.Write(body[:64<<10]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-sink.reading:
+	case <-ctx.Done():
+		t.Fatal("the upload did not reach the sink")
+	}
+	f.run.SetIdleSuspended(true)
+	select {
+	case status := <-done:
+		t.Fatalf("paused upload returned prematurely: %d", status)
+	case <-time.After(2 * idle):
+	}
+	f.run.SetIdleSuspended(false)
+	if _, err := pw.Write(body[64<<10:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := pw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if status := <-done; status != http.StatusCreated {
+		t.Fatalf("resumed upload status = %d, want 201", status)
 	}
 }
 

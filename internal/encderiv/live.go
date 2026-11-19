@@ -2,6 +2,7 @@ package encderiv
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -179,7 +180,7 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 // put stores one upload at rel: encrypted into rel.part, then renamed into
 // place. A name already published, or one another upload is writing, is
 // refused with errUploadExists before body is read (first writer wins).
-func (s *LiveSession) put(rel string, body io.Reader) error {
+func (s *LiveSession) put(rel string, body io.Reader, publish func(commit func() error) error) error {
 	path, err := s.resolve(rel)
 	if err != nil {
 		return err
@@ -206,7 +207,7 @@ func (s *LiveSession) put(rel string, body io.Reader) error {
 		err = closeErr
 	}
 	if err == nil {
-		err = os.Rename(part, path)
+		err = publish(func() error { return os.Rename(part, path) })
 	}
 	if err != nil {
 		_ = os.Remove(part)
@@ -352,6 +353,7 @@ func (f *LiveFile) endLocked() error {
 type liveSink struct {
 	session *LiveSession
 	rung    string
+	publish func(context.Context, string, func() error) error
 }
 
 func (k liveSink) uploadLimit(name string) (int64, bool) {
@@ -366,13 +368,24 @@ func (k liveSink) uploadLimit(name string) (int64, bool) {
 	return 0, false
 }
 
-func (k liveSink) upload(name string, body io.Reader) error {
+func (k liveSink) upload(ctx context.Context, name string, body io.Reader, check func() error) error {
 	if name == livePlaylistName {
 		// Core writes the playlists it serves; the muxer's own is discarded.
 		_, err := io.Copy(io.Discard, body)
 		return err
 	}
-	return k.session.put(k.rung+"/"+name, body)
+	return k.session.put(k.rung+"/"+name, body, func(commit func() error) error {
+		publish := func() error {
+			if err := check(); err != nil {
+				return err
+			}
+			return commit()
+		}
+		if k.publish != nil && liveSegmentName.MatchString(name) {
+			return k.publish(ctx, name, publish)
+		}
+		return publish()
+	})
 }
 
 // LiveRunConfig describes one encoder run of a live session.
@@ -388,6 +401,10 @@ type LiveRunConfig struct {
 	// counts encoder activity only (ADR-0236 D3).
 	TTL         time.Duration
 	IdleTimeout time.Duration
+	// PublishSegment runs after an upload is fully encrypted and before it is
+	// made visible. It must call commit to publish and stop waiting when ctx
+	// is cancelled. When nil, completed uploads publish immediately.
+	PublishSegment func(ctx context.Context, name string, commit func() error) error
 
 	now  func() time.Time
 	peer peerChecker
@@ -428,7 +445,7 @@ func StartLiveRun(cfg LiveRunConfig) (*LiveRun, error) {
 		idle:     cfg.IdleTimeout,
 		now:      cfg.now,
 		peer:     cfg.peer,
-		sink:     liveSink{session: cfg.Session, rung: cfg.Rung},
+		sink:     liveSink{session: cfg.Session, rung: cfg.Rung, publish: cfg.PublishSegment},
 		rung:     cfg.Rung,
 	})
 	if err != nil {
@@ -448,6 +465,10 @@ func (r *LiveRun) Port() int { return r.ep.Port() }
 
 // Secret is the token, for redacting the URLs from diagnostics.
 func (r *LiveRun) Secret() string { return r.ep.token }
+
+// SetIdleSuspended suspends the endpoint's idle timeout while the encoder is
+// intentionally stopped and restarts the idle window when it resumes.
+func (r *LiveRun) SetIdleSuspended(suspended bool) { r.ep.setIdleSuspended(suspended) }
 
 // Revoke ends the token and waits for requests in flight; an upload cut off
 // leaves no file behind.

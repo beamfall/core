@@ -59,7 +59,7 @@ func encryptedSessionRefusal(secure *EncryptedSource, durationSeconds int, burnS
 // startEncryptedRung opens a loopback endpoint for one encoder run and starts
 // FFmpeg against it. The run's token lives exactly as long as the process: the
 // reaper revokes it on exit, and an endpoint failure kills the process.
-func (s *Sessions) startEncryptedRung(ctx context.Context, session *hlsSession, rung Rung, segment int) (*ffmpeg.HLSProcess, *encderiv.LiveRun, error) {
+func (s *Sessions) startEncryptedRung(ctx context.Context, key SessionKey, session *hlsSession, run *encoderRun, rung Rung, segment int) (*ffmpeg.HLSProcess, *encderiv.LiveRun, error) {
 	starter, ok := s.transcoder.(encryptedTranscoder)
 	if !ok {
 		return nil, nil, ErrEncryptedLiveUnavailable
@@ -69,6 +69,10 @@ func (s *Sessions) startEncryptedRung(ctx context.Context, session *hlsSession, 
 		Rung:    rung.ID,
 		Open:    session.secure.Open,
 		Size:    session.secure.Size,
+		PublishSegment: func(ctx context.Context, name string, commit func() error) error {
+			n, _ := encoderSegmentNumber(name) // validated by the upload endpoint
+			return s.withPublicationSlot(ctx, key, session, run, n, commit)
+		},
 	})
 	if err != nil {
 		return nil, nil, err

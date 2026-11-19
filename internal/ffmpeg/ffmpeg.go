@@ -2590,6 +2590,144 @@ func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
 	return startHLSProcess(cmd)
 }
 
+// PacedHLSOutput receives one complete fragment at a time from the file HLS
+// muxer. The muxer cannot write the next fragment until its pipe has a reader.
+// The muxer's atomic playlist update confirms it finished the fragment.
+type PacedHLSOutput struct {
+	Dir string
+	dst string
+}
+
+// NewPacedHLSOutput prepares private staging before the FFmpeg process starts.
+func (*Runner) NewPacedHLSOutput(dir string, base int) (*PacedHLSOutput, error) {
+	stage, err := os.MkdirTemp(dir, ".encoder-")
+	if err != nil {
+		return nil, err
+	}
+	out := &PacedHLSOutput{Dir: stage, dst: dir}
+	if err := makeHLSOutputPipe(out.segment(base)); err != nil {
+		out.Close()
+		return nil, err
+	}
+	return out, nil
+}
+
+type pacedHLSOutputKey struct{}
+
+// Context configures a file HLS starter to write directly to the segment
+// pipes. The muxer still renames its event or live playlist atomically.
+func (o *PacedHLSOutput) Context(ctx context.Context) context.Context {
+	return context.WithValue(ctx, pacedHLSOutputKey{}, o)
+}
+
+func pacedHLSArgs(ctx context.Context, args []string) []string {
+	if ctx.Value(pacedHLSOutputKey{}) != nil {
+		for i := len(args) - 2; i >= 0; i-- {
+			if args[i] == "-hls_flags" {
+				args[i+1] = "-temp_file"
+				break
+			}
+		}
+	}
+	return args
+}
+
+func (o *PacedHLSOutput) segment(n int) string {
+	return filepath.Join(o.Dir, fmt.Sprintf("seg%05d.m4s", n))
+}
+
+// Receive stages the fragment without making it visible to playback. Create
+// the next pipe before reading this one, so even a fast muxer is backpressured.
+func (o *PacedHLSOutput) Receive(n int, linear bool, exited <-chan struct{}) error {
+	if err := makeHLSOutputPipe(o.segment(n + 1)); err != nil {
+		return err
+	}
+	path := o.segment(n)
+	f, err := os.OpenFile(path+".ready", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- numbered fragment in the private encoder staging directory
+	if err != nil {
+		return err
+	}
+	err = readHLSOutputPipe(path, f, exited)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	// The encoder's atomic playlist update is the commit marker. It
+	// distinguishes a completed fragment from a pipe closed by a crash.
+	playlist := "live.m3u8"
+	if linear {
+		playlist = "index.m3u8"
+	}
+	entry := "\n" + filepath.Base(path) + "\n"
+	return waitHLSOutput(exited, func() bool {
+		return hlsPlaylistHasTailEntry(filepath.Join(o.Dir, playlist), entry)
+	})
+}
+
+func hlsPlaylistHasTailEntry(path, entry string) bool {
+	f, err := os.Open(path) // #nosec G304 -- the fixed muxer playlist in the private staging directory
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	size, err := f.Seek(0, io.SeekEnd)
+	if err != nil {
+		return false
+	}
+	// The next pipe blocks the muxer, so the new fragment is the last
+	// entry. Check only the tail even for a long event playlist.
+	var tail [256]byte
+	n, err := f.ReadAt(tail[:], max(0, size-int64(len(tail))))
+	return (err == nil || errors.Is(err, io.EOF)) && strings.Contains(string(tail[:n]), entry)
+}
+
+// Publish commits the completed segment and any new init or linear playlist.
+func (o *PacedHLSOutput) Publish(n int, linear bool) error {
+	init := filepath.Join(o.Dir, "init.mp4")
+	if err := os.Rename(init, filepath.Join(o.dst, "init.mp4")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	path := o.segment(n)
+	dst := filepath.Join(o.dst, filepath.Base(path))
+	if _, err := os.Stat(dst); err == nil {
+		_ = os.Remove(path + ".ready")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	} else if err := os.Rename(path+".ready", dst); err != nil {
+		return err
+	}
+	_ = os.Remove(path) // retire the pipe once the regular file is published
+	if linear {
+		return os.Rename(filepath.Join(o.Dir, "index.m3u8"), filepath.Join(o.dst, "index.m3u8"))
+	}
+	return nil
+}
+
+func (o *PacedHLSOutput) Close() { _ = os.RemoveAll(o.Dir) }
+
+func waitHLSOutput(exited <-chan struct{}, ready func() bool) error {
+	if ready() {
+		return nil
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if ready() {
+				return nil
+			}
+		case <-exited:
+			if ready() {
+				return nil
+			}
+			return io.EOF
+		}
+	}
+}
+
 func (p *HLSProcess) killTree() {
 	if p == nil || p.cmd == nil {
 		return
@@ -2747,7 +2885,7 @@ func (r *Runner) startHLS(ctx context.Context, src, dir string, rendition Rendit
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	args := hlsArgs(src, dir, rendition)
+	args := pacedHLSArgs(ctx, hlsArgs(src, dir, rendition))
 	// Confine to the source file's directory (read-only) and the segment output
 	// directory (read-write), plus the GPU when the rendition runs on one.
 	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
@@ -2856,7 +2994,14 @@ func (r *Runner) StartHLSSegments(ctx context.Context, src, dir string, startSeg
 		if err := checkPath(dir); err != nil {
 			return nil, err
 		}
-		return r.startComposedHLSSegments(ctx, src, dir, picture, startSegment, segmentSeconds, rendition)
+		if ctx.Value(pacedHLSOutputKey{}) == nil {
+			return r.startComposedHLSSegments(ctx, src, dir, picture, startSegment, segmentSeconds, rendition)
+		}
+		if err := checkComposedInputs(src, dir, picture); err != nil {
+			return nil, err
+		}
+		args := composedSegmentArgs(src, dir, picture, startSegment, segmentSeconds, r.withQuality(rendition))
+		return r.startFileHLSSegmentProcess(ctx, dirConfinement(src, dir), args)
 	}
 	return r.startHLSSegmentProcess(ctx, src, dir, rendition, func(rendition Rendition) []string {
 		return hlsSegmentArgs(src, dir, startSegment, segmentSeconds, rendition)
@@ -2912,13 +3057,16 @@ func (r *Runner) startHLSSegmentProcess(ctx context.Context, src, dir string, re
 	if !rendition.AudioOnly {
 		rendition = r.launchRendition(rendition)
 	}
+	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
+	return r.startFileHLSSegmentProcess(ctx, conf, buildArgs(rendition))
+}
+
+func (r *Runner) startFileHLSSegmentProcess(ctx context.Context, conf confinement, args []string) (*HLSProcess, error) {
 	ffmpegPath, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
-	args := buildArgs(rendition)
-	conf := dirConfinement(src, dir).withGPU(rendition.hwAccel, rendition.toneMapAccel)
-	cmd := r.confinedCommand(ctx, ffmpegPath, conf, args)
+	cmd := r.confinedCommand(ctx, ffmpegPath, conf, pacedHLSArgs(ctx, args))
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("starting ffmpeg transcode: %w", err)
