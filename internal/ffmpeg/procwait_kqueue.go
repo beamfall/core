@@ -9,6 +9,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var hlsExitObserver = waitForProcessExit
+
 // waitForProcessExit blocks until pid, an unreaped child of this process, has
 // exited. kqueue may report ESRCH once the child is already a zombie. An
 // unreaped child's pid cannot be reused, so ESRCH means it has already exited.

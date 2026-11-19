@@ -180,6 +180,58 @@ func TestHLSProcessPauseRacesNaturalExit(t *testing.T) {
 	}
 }
 
+func TestHLSProcessWaitObserverErrorLeavesEncoderRunning(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), hlsPauseTestBound)
+	defer cancel()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	var output bytes.Buffer
+	cmd := exec.CommandContext(ctx, "sh", "-c", `read -r line && printf '%s\n' "$line"`)
+	cmd.Stdin = reader
+	cmd.Stdout = &output
+	process := startHLSPauseTestProcess(t, cmd)
+	observerCalled := make(chan struct{})
+	process.observeExit = func(int) error {
+		close(observerCalled)
+		return syscall.ENOSYS
+	}
+	done := waitForHLSPauseTestExit(process)
+	select {
+	case <-observerCalled:
+	case <-ctx.Done():
+		t.Fatal("Wait did not call the exit observer")
+	}
+
+	// Keep the encoder blocked on input until Wait has disabled group signaling.
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for process.Resume() {
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			t.Fatal("Wait did not switch to leader-only signaling")
+		}
+	}
+	if _, err := io.WriteString(writer, "continued\n"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Wait interrupted a healthy encoder after observer failure: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("encoder did not finish after Wait fell back")
+	}
+	if got := output.String(); got != "continued\n" {
+		t.Fatalf("encoder output = %q, want continued", got)
+	}
+}
+
 func TestHLSProcessPauseRefusedAfterStop(t *testing.T) {
 	for _, tt := range []struct {
 		name      string

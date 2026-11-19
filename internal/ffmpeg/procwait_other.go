@@ -1,8 +1,6 @@
-//go:build !unix
+//go:build !(linux || zos || darwin || dragonfly || freebsd || netbsd || openbsd)
 
 package ffmpeg
 
-// Platforms without process groups wait for the direct child.
-func (p *HLSProcess) waitForExit() error {
-	return p.cmd.Wait()
-}
+// Without a non-reaping observer, HLS waits for and signals only the leader.
+var hlsExitObserver func(int) error

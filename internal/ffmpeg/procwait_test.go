@@ -1,4 +1,4 @@
-//go:build unix
+//go:build linux || zos || darwin || dragonfly || freebsd || netbsd || openbsd
 
 package ffmpeg
 
