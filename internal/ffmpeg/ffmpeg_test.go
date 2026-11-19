@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -10,6 +11,57 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestPacedHLSOutputSeparatesPipesFromPublication(t *testing.T) {
+	if !SupportsHLSPause {
+		t.Skip("requires named pipes")
+	}
+	dst := t.TempDir()
+	out, err := New().NewPacedHLSOutput(dst, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(out.Close)
+	if filepath.Dir(out.Dir) == dst || filepath.Dir(out.ready) != dst {
+		t.Fatalf("pipe and publication staging must be independent: pipe=%s ready=%s", out.Dir, out.ready)
+	}
+	pipe := out.segment(0)
+	if info, err := os.Stat(pipe); err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		t.Fatalf("expected a pipe in local staging: %v", err)
+	}
+	files := map[string]string{
+		"init.mp4":     "init",
+		"seg00000.m4s": "fragment",
+		"index.m3u8":   "#EXTM3U\nseg00000.m4s\n",
+	}
+	for name, data := range files {
+		dir := out.Dir
+		if name == filepath.Base(pipe) {
+			dir = out.ready
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(dst, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s became visible before publication: %v", name, err)
+		}
+	}
+	if err := out.Publish(0, true); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range files {
+		got, err := os.ReadFile(filepath.Join(dst, name)) // #nosec G304 -- test-owned publication directory
+		if err != nil || string(got) != want {
+			t.Fatalf("published %s = %q, %v; want %q", name, got, err, want)
+		}
+	}
+	out.Close()
+	for _, dir := range []string{out.Dir, out.ready} {
+		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("staging %s survived cleanup: %v", dir, err)
+		}
+	}
+}
 
 const sampleProbeJSON = `{
     "streams": [

@@ -180,7 +180,8 @@ type encoderRun struct {
 	// Pacing state is guarded by Sessions.mu and belongs to this generation.
 	playhead      int
 	paced         bool
-	produced      int
+	completed     int // muxer output consumed, including fragments still held back
+	produced      int // fragments cleared for publication in this generation
 	paused        bool
 	resumedAt     time.Time
 	pacingChanged chan struct{}
@@ -191,13 +192,6 @@ type encoderRun struct {
 	// live is the run's loopback endpoint on an encrypted session, revoked
 	// when the process exits or is stopped (ADR-0236 D3); nil otherwise.
 	live *encderiv.LiveRun
-}
-
-// segmentDemand tracks the most recent playhead and concurrent requests
-// independently. Guarded by Sessions.mu.
-type segmentDemand struct {
-	latest  segmentFetch
-	pending map[segmentFetch]int
 }
 
 // segmentFetch describes the encoder segments needed by one playlist request.
@@ -312,9 +306,13 @@ type hlsSession struct {
 	// baseSegment-1 whenever a new process starts. A cache miss (a request beyond
 	// the cached frontier) refreshes it off-lock via refreshFrontier, never under
 	// s.mu, so a directory ReadDir never blocks the session lock.
-	frontier   int
-	demand     map[string]*segmentDemand
-	lastAccess time.Time
+	frontier int
+	// The latest request sets the playhead even when it hits another rung's
+	// cache. Outstanding requests only create demand for their own rung.
+	playheadRung  Rung
+	playheadFetch segmentFetch
+	demand        map[string]map[segmentFetch]int
+	lastAccess    time.Time
 	// priority is this session's admission rank. It is set the
 	// first time the session is admitted and raised, never lowered, if a later
 	// request asks for a higher rank — a session that has earned foreground
@@ -1705,6 +1703,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	run := &encoderRun{
 		playhead:      requested,
 		paced:         ffmpeg.SupportsHLSPause && (canStage || session.secure != nil),
+		completed:     segment - 1,
 		produced:      segment - 1,
 		pacingChanged: make(chan struct{}),
 		processDone:   make(chan struct{}),
@@ -1810,12 +1809,16 @@ func (s *Sessions) startFileRung(ctx context.Context, session *hlsSession, rung 
 		if picture, ok := rendition.Picture(); ok && picture.TimedTextPath != "" {
 			// The composed encoder validates this input against its own
 			// output directory. Keep the original for other generations.
-			link := filepath.Join(dir, filepath.Base(picture.TimedTextPath))
-			if err := os.Link(picture.TimedTextPath, link); err != nil {
+			path := filepath.Join(dir, composedTimedTextFile)
+			text, err := os.ReadFile(picture.TimedTextPath) // #nosec G304 -- generated text in private playback scratch
+			if err == nil {
+				err = os.WriteFile(path, text, 0o600) // #nosec G703 -- fixed filename in the private directory created by NewPacedHLSOutput
+			}
+			if err != nil {
 				output.Close()
 				return nil, nil, err
 			}
-			picture.TimedTextPath = link
+			picture.TimedTextPath = path
 			rendition = rendition.WithComposedPicture(picture)
 		}
 	}
@@ -1848,25 +1851,25 @@ func (s *Sessions) beginSegmentRequest(key SessionKey, session *hlsSession, rung
 		return nil, ErrSourceEnded
 	}
 	if session.demand == nil {
-		session.demand = make(map[string]*segmentDemand)
+		session.demand = make(map[string]map[segmentFetch]int)
 	}
 	demand := session.demand[rung.ID]
 	if demand == nil {
-		demand = &segmentDemand{pending: make(map[segmentFetch]int)}
+		demand = make(map[segmentFetch]int)
 		session.demand[rung.ID] = demand
 	}
-	demand.latest = fetch
-	demand.pending[fetch]++
-	if session.currentRung == rung.ID {
+	session.playheadRung, session.playheadFetch = rung, fetch
+	demand[fetch]++
+	if session.currentRung != "" {
 		session.updatePacingLocked()
 	}
 	s.mu.Unlock()
 	return func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		demand.pending[fetch]--
-		if demand.pending[fetch] == 0 {
-			delete(demand.pending, fetch)
+		demand[fetch]--
+		if demand[fetch] == 0 {
+			delete(demand, fetch)
 		}
 		if s.liveLocked(key, session) && session.currentRung == rung.ID {
 			session.updatePacingLocked()
@@ -1876,23 +1879,36 @@ func (s *Sessions) beginSegmentRequest(key SessionKey, session *hlsSession, rung
 
 func (session *hlsSession) publicationLimitLocked() int {
 	run := session.run
-	demand := session.demand[session.currentRung]
-	if demand == nil {
-		return run.playhead + encodeAheadSegments
-	}
 	// A far seek must first go through ensureRung's restart decision. It
 	// cannot wake the old encoder while ensureRung is waiting to make it.
 	lookahead := session.frontier + seekLookaheadSegments
-	if session.durationSeconds == 0 || demand.latest.first <= lookahead {
-		run.playhead = demand.latest.last
+	if session.playheadRung.ID != "" {
+		fetch := session.playheadFetch
+		if session.playheadRung.ID != session.currentRung {
+			rung, _ := session.rung(session.currentRung)
+			fetch = segmentFetch{
+				first: session.segmentAt(rung, session.segmentStart(session.playheadRung, fetch.first)),
+				last:  session.segmentAt(rung, session.segmentStart(session.playheadRung, fetch.last)),
+			}
+		}
+		if session.durationSeconds == 0 || fetch.first <= lookahead {
+			run.playhead = fetch.last
+		}
 	}
 	limit := run.playhead + encodeAheadSegments
-	for fetch := range demand.pending {
+	for fetch := range session.demand[session.currentRung] {
 		if session.durationSeconds == 0 || fetch.first <= lookahead {
 			limit = max(limit, fetch.last)
 		}
 	}
 	return limit
+}
+
+func (session *hlsSession) segmentAt(rung Rung, position time.Duration) int {
+	if t := session.keyframeTimeline(rung); t != nil {
+		return t.segmentAt(position)
+	}
+	return int(position / (time.Duration(rungSegmentSeconds(rung)) * time.Second))
 }
 
 func (session *hlsSession) updatePacingLocked() {
@@ -1928,6 +1944,9 @@ func (s *Sessions) withPublicationSlot(ctx context.Context, key SessionKey, sess
 		if !s.liveLocked(key, session) || session.run != run {
 			s.mu.Unlock()
 			return ErrSessionEvicted
+		}
+		if publish != nil {
+			run.completed = max(run.completed, segment)
 		}
 		if !run.paced || segment <= session.publicationLimitLocked() {
 			var err error
@@ -2098,11 +2117,20 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		rungDir := filepath.Join(session.dir, rung.ID)
 		frontier := scanFrontier(rungDir, base)
 		wroteSegment := segmentWrittenSince(rungDir, base, started)
+		// File receiving and encrypted uploads are both drained. A rewind
+		// can keep their last completed fragments private, so the public
+		// cache alone cannot tell us where the source ended.
+		s.mu.Lock()
+		completed := run.completed
+		s.mu.Unlock()
 		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && session.durationSeconds > 0 {
 			_, _, _ = s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
-				last := frontier
-				for last >= base && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
+				if session.run != run {
+					return 0, false
+				}
+				last := max(frontier, completed)
+				for last >= base && last <= frontier && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
 					last--
 				}
 				if end := last + 1; end < session.segmentCount(rung) {

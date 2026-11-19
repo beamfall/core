@@ -51,7 +51,7 @@ type uploadSink interface {
 	// most bytes its body may carry.
 	uploadLimit(name string) (limit int64, ok bool)
 	// upload consumes body and stores it under name. errUploadExists means the
-	// name is already published and nothing was read.
+	// duplicate body was consumed and the first copy stays.
 	upload(ctx context.Context, name string, body io.Reader, check func() error) error
 }
 
@@ -404,13 +404,6 @@ func (e *endpoint) receive(w http.ResponseWriter, r *http.Request, name string, 
 	case err == nil && body.err == nil:
 		w.WriteHeader(http.StatusCreated)
 	case errors.Is(err, errUploadExists) && body.err == nil:
-		// A restarted encoder sends names an earlier run of the same session
-		// already published (init.mp4 every time). The first copy stays; the
-		// body is drained so the encoder's write completes, and the run goes on.
-		if _, err := io.Copy(io.Discard, body); err != nil {
-			e.failUpload(w, body.err)
-			return
-		}
 		http.Error(w, "exists", http.StatusConflict)
 	default:
 		if body.err != nil {

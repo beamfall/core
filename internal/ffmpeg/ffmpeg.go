@@ -2596,16 +2596,26 @@ func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
 type PacedHLSOutput struct {
 	Dir string
 	dst string
+	// ready is on the destination volume, where completed regular files
+	// can be made visible by rename even when that volume has no FIFOs.
+	ready string
 }
 
 // NewPacedHLSOutput prepares private staging before the FFmpeg process starts.
 func (*Runner) NewPacedHLSOutput(dir string, base int) (*PacedHLSOutput, error) {
-	stage, err := os.MkdirTemp(dir, ".encoder-")
+	// The configured scratch volume may support regular files only. Use
+	// the system temporary filesystem for the muxer's pipes and playlist.
+	stage, err := os.MkdirTemp("/tmp", ".encoder-")
 	if err != nil {
 		return nil, err
 	}
 	out := &PacedHLSOutput{Dir: stage, dst: dir}
 	if err := makeHLSOutputPipe(out.segment(base)); err != nil {
+		out.Close()
+		return nil, err
+	}
+	out.ready, err = os.MkdirTemp(dir, ".publish-")
+	if err != nil {
 		out.Close()
 		return nil, err
 	}
@@ -2643,7 +2653,8 @@ func (o *PacedHLSOutput) Receive(n int, linear bool, exited <-chan struct{}) err
 		return err
 	}
 	path := o.segment(n)
-	f, err := os.OpenFile(path+".ready", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- numbered fragment in the private encoder staging directory
+	ready := filepath.Join(o.ready, filepath.Base(path))
+	f, err := os.OpenFile(ready, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- numbered fragment in private destination staging
 	if err != nil {
 		return err
 	}
@@ -2685,27 +2696,54 @@ func hlsPlaylistHasTailEntry(path, entry string) bool {
 
 // Publish commits the completed segment and any new init or linear playlist.
 func (o *PacedHLSOutput) Publish(n int, linear bool) error {
-	init := filepath.Join(o.Dir, "init.mp4")
-	if err := os.Rename(init, filepath.Join(o.dst, "init.mp4")); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := o.copyArtifact("init.mp4"); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	_ = os.Remove(filepath.Join(o.Dir, "init.mp4"))
 	path := o.segment(n)
-	dst := filepath.Join(o.dst, filepath.Base(path))
+	name := filepath.Base(path)
+	dst, ready := filepath.Join(o.dst, name), filepath.Join(o.ready, name)
 	if _, err := os.Stat(dst); err == nil {
-		_ = os.Remove(path + ".ready")
+		_ = os.Remove(ready)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
-	} else if err := os.Rename(path+".ready", dst); err != nil {
+	} else if err := os.Rename(ready, dst); err != nil {
 		return err
 	}
 	_ = os.Remove(path) // retire the pipe once the regular file is published
 	if linear {
-		return os.Rename(filepath.Join(o.Dir, "index.m3u8"), filepath.Join(o.dst, "index.m3u8"))
+		return o.copyArtifact("index.m3u8")
 	}
 	return nil
 }
 
-func (o *PacedHLSOutput) Close() { _ = os.RemoveAll(o.Dir) }
+// copyArtifact stages a small muxer sidecar on the destination filesystem
+// before replacing the public copy.
+func (o *PacedHLSOutput) copyArtifact(name string) error {
+	src, err := os.Open(filepath.Join(o.Dir, name)) // #nosec G304 -- fixed muxer sidecar in private staging
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	part := filepath.Join(o.ready, name)
+	f, err := os.OpenFile(part, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- fixed sidecar in private destination staging
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, src)
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(part, filepath.Join(o.dst, name))
+}
+
+func (o *PacedHLSOutput) Close() {
+	_ = os.RemoveAll(o.Dir)
+	_ = os.RemoveAll(o.ready)
+}
 
 func waitHLSOutput(exited <-chan struct{}, ready func() bool) error {
 	if ready() {

@@ -374,18 +374,31 @@ func (k liveSink) upload(ctx context.Context, name string, body io.Reader, check
 		_, err := io.Copy(io.Discard, body)
 		return err
 	}
-	return k.session.put(k.rung+"/"+name, body, func(commit func() error) error {
-		publish := func() error {
+	finish := func(commit func() error) error {
+		checkedCommit := func() error {
 			if err := check(); err != nil {
 				return err
 			}
 			return commit()
 		}
 		if k.publish != nil && liveSegmentName.MatchString(name) {
-			return k.publish(ctx, name, publish)
+			return k.publish(ctx, name, checkedCommit)
 		}
-		return publish()
-	})
+		return checkedCommit()
+	}
+	err := k.session.put(k.rung+"/"+name, body, finish)
+	if !errors.Is(err, errUploadExists) {
+		return err
+	}
+	// A restarted muxer writes cached names again. Once the full body is
+	// consumed, it has completed this segment even though the cache wins.
+	if _, err := io.Copy(io.Discard, body); err != nil {
+		return err
+	}
+	if err := finish(func() error { return nil }); err != nil {
+		return err
+	}
+	return errUploadExists
 }
 
 // LiveRunConfig describes one encoder run of a live session.
@@ -401,9 +414,10 @@ type LiveRunConfig struct {
 	// counts encoder activity only (ADR-0236 D3).
 	TTL         time.Duration
 	IdleTimeout time.Duration
-	// PublishSegment runs after an upload is fully encrypted and before it is
-	// made visible. It must call commit to publish and stop waiting when ctx
-	// is cancelled. When nil, completed uploads publish immediately.
+	// PublishSegment runs after a segment body is fully consumed. It must
+	// call commit to publish (or keep the existing file for a duplicate)
+	// and stop waiting when ctx is cancelled. When nil, uploads publish
+	// immediately.
 	PublishSegment func(ctx context.Context, name string, commit func() error) error
 
 	now  func() time.Time

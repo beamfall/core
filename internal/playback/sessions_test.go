@@ -21,6 +21,7 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg/ffmpegtest"
 	"github.com/beamfall/core/internal/governor"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/store/storetest"
 )
 
 type fakeTranscoder struct {
@@ -2795,6 +2796,7 @@ type pacedTranscoder struct {
 	fakeTranscoder
 	root string
 	pid  int
+	last int // optional final fragment, with a gate before the playlist commit
 }
 
 func (p *pacedTranscoder) NewPacedHLSOutput(dir string, base int) (*ffmpeg.PacedHLSOutput, error) {
@@ -2806,13 +2808,19 @@ func (p *pacedTranscoder) StartHLSSegments(ctx context.Context, _, dir string, s
 staging=$1
 n=$2
 root=$3
+last=$4
 trap 'printf stopped > "$root/stopped"; exit 0' TERM
 while :; do
   if [ "$n" -eq "$2" ] || [ -f "$root/produce$n" ]; then
     file=$(printf '%s/seg%05d.m4s' "$staging" "$n")
     printf m4s > "$file" || exit 1
+    if [ "$last" -gt 0 ] && [ "$n" -eq "$last" ]; then
+      printf written > "$root/written" || exit 1
+      while [ ! -f "$root/finish" ]; do sleep 0.01; done
+    fi
     printf '#EXTM3U\n%s\n' "${file##*/}" > "$staging/live.m3u8.tmp" || exit 1
     mv "$staging/live.m3u8.tmp" "$staging/live.m3u8" || exit 1
+    if [ "$last" -gt 0 ] && [ "$n" -eq "$last" ]; then exit 0; fi
     n=$((n+1))
   else
     sleep 0.01
@@ -2820,7 +2828,7 @@ while :; do
 done
 `
 	// #nosec G204 -- fixed script and test-owned arguments.
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script, "paced-transcoder", dir, strconv.Itoa(start), p.root)
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script, "paced-transcoder", dir, strconv.Itoa(start), p.root, strconv.Itoa(p.last))
 	proc, err := ffmpeg.StartHLSCommand(cmd)
 	if err == nil {
 		p.mu.Lock()
@@ -2975,7 +2983,7 @@ func TestSessionsPacingRewindPreservesPendingFetch(t *testing.T) {
 	waitPacing(t, ctx, func() bool {
 		sessions.mu.Lock()
 		defer sessions.mu.Unlock()
-		return sessions.sessions[pacingTestKey].demand["720p"].pending[segmentFetch{first: 12, last: 12}] == 1
+		return sessions.sessions[pacingTestKey].demand["720p"][segmentFetch{first: 12, last: 12}] == 1
 	})
 	if _, err := pacedRequest(ctx, sessions, 2); err != nil {
 		t.Fatal(err)
@@ -3003,7 +3011,7 @@ func TestSessionsPacingRewindPreservesPendingFetch(t *testing.T) {
 		waitPacing(t, ctx, func() bool {
 			sessions.mu.Lock()
 			defer sessions.mu.Unlock()
-			return session.demand["720p"].pending[segmentFetch{first: 100, last: 100}] == 1
+			return session.demand["720p"][segmentFetch{first: 100, last: 100}] == 1
 		})
 		assertPacedFrontier(t, ctx, sessions, dir, 12)
 	}()
@@ -3025,6 +3033,130 @@ func TestSessionsPacingRewindPreservesPendingFetch(t *testing.T) {
 	assertPacedFrontier(t, ctx, sessions, dir, 100)
 	if starts := transcoder.segmentStartsSnapshot(); len(starts) != 2 || starts[1] != 100 {
 		t.Fatalf("encoder starts = %v, want [2 100]", starts)
+	}
+}
+
+func TestSessionsPacingRewindsAcrossCachedRungs(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	path, err := pacedRequest(ctx, sessions, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := registeredSession(t, sessions, pacingTestKey)
+	for _, n := range []int{2, 94} {
+		cached := filepath.Join(session.dir, "480p", fmt.Sprintf("seg%05d.m4s", n))
+		if err := os.WriteFile(cached, mediaSegment(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cachedRequest := func(n int) {
+		t.Helper()
+		_, err := sessions.FilePath(ctx, pacingTestKey, "source", 600, 1280, 720, false, fmt.Sprintf("480p/seg%05d.m4s", n))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cachedRequest(2)
+	transcoder.permit(t, 101, 103)
+	assertPacedFrontier(t, ctx, sessions, filepath.Dir(path), 100)
+
+	// Advancing on the cached rendition moves the same running encoder's
+	// lookahead to segment 102 on its own rendition.
+	cachedRequest(94)
+	assertPacedFrontier(t, ctx, sessions, filepath.Dir(path), 102)
+	if starts := transcoder.segmentStartsSnapshot(); len(starts) != 1 {
+		t.Fatalf("cached rung switch replaced the encoder: %v", starts)
+	}
+}
+
+func TestSessionsPacingCleanExitCountsHeldFragment(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension")
+	}
+	root := t.TempDir()
+	transcoder := &pacedTranscoder{root: root, last: 101}
+	sessions := NewSessions(transcoder, root, nil)
+	t.Cleanup(sessions.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	const duration = 408
+	catalog := storetest.OpenAt(t, storetest.MigratedDataDir(t))
+	sessions.sourceStore = catalog
+	source := filepath.Join(root, "source.mp4")
+	if err := os.WriteFile(source, []byte("fake encoder input"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := catalog.ImportMediaFile(ctx, store.ImportMediaFile{
+		LibraryID: "library-local", Path: source, Title: "Pacing fixture", Container: "mp4",
+		Codec: "h264", Class: store.MediaClassVideo, ContentFingerprint: "paced-source", DurationSecondsHint: duration,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := SessionKey{SessionID: pacingTestKey.SessionID, MediaID: media.ID}
+	request := func(n int) (string, error) {
+		return sessions.FilePath(ctx, key, source, duration, 1280, 720, false, fmt.Sprintf("720p/seg%05d.m4s", n))
+	}
+
+	if _, err := request(2); err != nil {
+		t.Fatal(err)
+	}
+	path, err := request(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := registeredSession(t, sessions, key)
+	rung, _ := session.rung("720p")
+	run, _, _ := sessions.rungEncoder(key, session, rung)
+	transcoder.permit(t, 101, 101)
+	waitPacing(t, ctx, func() bool { return fileReady(filepath.Join(root, "written")) })
+	if _, err := request(2); err != nil {
+		t.Fatal(err)
+	}
+	waitPacing(t, ctx, func() bool {
+		sessions.mu.Lock()
+		defer sessions.mu.Unlock()
+		return run.paused && run.produced == 100
+	})
+	// Let the fake finish its last playlist write and exit, as a muxer
+	// can do when it finishes just before the stop signal is delivered.
+	if !run.proc.Resume() {
+		t.Fatal("could not let the fake encoder finish")
+	}
+	if err := os.WriteFile(filepath.Join(root, "finish"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-run.exited:
+	case <-ctx.Done():
+		t.Fatal("encoder did not reap after clean exit")
+	}
+	if run.outcome != exitEndOfInput || run.completed != 101 || run.produced != 100 {
+		t.Fatalf("outcome=%v completed=%d published=%d", run.outcome, run.completed, run.produced)
+	}
+	if fileReady(filepath.Join(filepath.Dir(path), "seg00101.m4s")) {
+		t.Fatal("reaper published a segment beyond the rewind limit")
+	}
+	files, err := catalog.MediaFilesForMedia(ctx, media.ID, store.LibraryFilter{AllLibraries: true})
+	if err != nil || len(files) != 1 {
+		t.Fatalf("source fixture files = %v, %v", files, err)
+	}
+	if incomplete, err := catalog.MediaFileSourceIncomplete(ctx, files[0]); err != nil || incomplete {
+		t.Fatalf("completed source was marked incomplete: %v, %v", incomplete, err)
+	}
+	if _, err := request(101); err != nil {
+		t.Fatalf("held fragment could not be encoded after restart: %v", err)
 	}
 }
 

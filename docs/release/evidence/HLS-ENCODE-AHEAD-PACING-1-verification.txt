@@ -1,4 +1,74 @@
 CORE-0022 HLS-ENCODE-AHEAD-PACING-1
+Second repair verification PASS on macOS, 2026-11-19
+
+The production Sessions and Runner transcoded a real 1080p HEVC source to
+1080p H.264 with VideoToolbox. A headless FFmpeg decoder consumed the init
+and segments fetched at playback speed for 60 seconds. The encoder stopped
+with eight segments ahead, resumed on a +20-second seek, and stopped again
+at the same lead. All observations used PID 71821.
+
+The managed sandbox denied ps and FFmpeg's nested macOS confinement. The
+host run used this detached worktree and a temporary Go test overlay. The
+overlay uses the prior receipt harness and identifies the encoder in ps by
+its source path and /tmp/.encoder-*/live.m3u8 output. It counts published
+segments in the configured session scratch directory.
+
+Commands run
+
+  export GOCACHE=/tmp/codex-gocache GOWORK=off
+  export CORE0022_MEDIA="$HOME/Movies/C0037.mp4" CORE0022_DURATION=264
+  jq -n --arg test "$PWD/internal/playback/core_0022_manual_test.go" \
+    --arg content /tmp/core0022-r2-manual_test.go \
+    '{Replace:{($test):$content}}' > /tmp/core0022-r2-manual-overlay.json
+  sw_vers
+  uname -m
+  ffmpeg -version | head -1
+  go test -overlay /tmp/core0022-r2-manual-overlay.json ./internal/playback \
+    -run '^TestPacingMacOSReceipt$' -count=1 -v
+
+Raw output
+
+ProductName:		macOS
+ProductVersion:		27.2.1
+BuildVersion:		26B131
+arm64
+ffmpeg version 9.0.2 Copyright (c) 2000-2026 the FFmpeg developers
+=== RUN   TestPacingMacOSReceipt
+source probe:
+codec_name=hevc
+width=1920
+height=1080
+r_frame_rate=60000/1001
+duration=264.767000
+transcode probe: h264,1920,1080
+playhead=0s segment=0 frontier=8 on_disk_ahead=8
+ps: 71821 T    /opt/homebrew/bin/ffmpeg
+wall-clock playback: 60.245s
+playhead=60s segment=15 frontier=23 on_disk_ahead=8
+ps: 71821 T    /opt/homebrew/bin/ffmpeg
+seek: 60s -> 80s (+20s)
+playhead=80s segment=20 frontier=23 on_disk_ahead=3
+ps: 71821 R    /opt/homebrew/bin/ffmpeg
+playhead=80s segment=20 frontier=28 on_disk_ahead=8
+ps: 71821 T    /opt/homebrew/bin/ffmpeg
+decoder final progress:
+frame=4076
+fps=56.17
+stream_0_0_q=-0.0
+bitrate=N/A
+total_size=N/A
+out_time_us=84017267
+out_time_ms=84017267
+out_time=00:01:24.017267
+dup_frames=0
+drop_frames=0
+speed=1.16x
+progress=end
+--- PASS: TestPacingMacOSReceipt (90.44s)
+PASS
+ok  	github.com/beamfall/core/internal/playback	90.650s
+
+CORE-0022 HLS-ENCODE-AHEAD-PACING-1
 Repair verification PASS on macOS, 2026-11-19
 
 The test decoded a real 1080p HEVC source re-encoded as 1080p H.264 with
