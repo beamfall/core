@@ -70,7 +70,7 @@ func (s *Sessions) observeIncompleteSource(key SessionKey, session *hlsSession, 
 	inspect := func() (float64, bool) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if !s.liveLocked(key, session) {
+		if session.state != sessionRunning {
 			return 0, false
 		}
 		end, observed = observe()
