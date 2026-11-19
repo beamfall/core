@@ -8,9 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -18,7 +16,6 @@ import (
 
 const hlsPauseTestBound = 3 * time.Second
 const hlsStopHelperEnv = "BEAMFALL_FFMPEG_HLS_STOP_HELPER"
-const hlsStopLeaderFile = "leader.pid"
 
 func TestHLSProcessPauseResumeKeepsPID(t *testing.T) {
 	reader, writer, err := os.Pipe()
@@ -69,11 +66,10 @@ func TestHLSProcessStopReapsStoppedLeaderAndDescendant(t *testing.T) {
 	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestHLSProcessStopHelper$") // #nosec G204 -- this test binary
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), hlsStopHelperEnv+"=1")
+	// The watchdog targets only its own child. A private session lets the
+	// kernel send SIGHUP and SIGCONT if the stopped fixture group is orphaned.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.WaitDelay = time.Second
-	cmd.Cancel = func() error {
-		killHLSStopFixture(filepath.Join(dir, hlsStopLeaderFile))
-		return cmd.Process.Kill()
-	}
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("bounded Stop helper: %v (watchdog: %v)\n%s", err, ctx.Err(), output)
 	}
@@ -84,20 +80,22 @@ func TestHLSProcessStopHelper(t *testing.T) {
 		return
 	}
 	becomeHLSStopTestSubreaper(t)
+	// The fixture can also exit on EOF if the helper dies before pausing it.
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
 	const descendantFile = "descendant.pid"
-	cmd := exec.CommandContext(context.Background(), "sh", "-c", `echo $$ > "$1"; sleep 30 & echo $! > "$2"; wait`, "sh", hlsStopLeaderFile, descendantFile)
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", `read -r line <&3 & echo $! > "$1"; wait`, "sh", descendantFile)
+	cmd.ExtraFiles = []*os.File{reader}
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		killHLSStopFixture(hlsStopLeaderFile)
-	})
 	leader := cmd.Process.Pid
 	descendant := waitForPidFile(t, descendantFile)
-	if reported := waitForPidFile(t, hlsStopLeaderFile); reported != leader {
-		t.Fatalf("fixture reported leader %d, want %d", reported, leader)
-	}
 	if !process.Pause() {
 		t.Fatal("Pause refused a running group")
 	}
@@ -128,14 +126,11 @@ func TestHLSProcessStopHelper(t *testing.T) {
 			descendantReaped = reapHLSStopTestDescendant(t, descendant)
 		}
 		// Signal zero also sees zombies. Require both PIDs to disappear.
+		// CORE-2650 tracks production reaping of adopted descendants when Beamfall runs as PID 1.
 		leaderErr := syscall.Kill(leader, 0)
 		descendantErr := syscall.Kill(descendant, 0)
 		if leaderErr == syscall.ESRCH && descendantErr == syscall.ESRCH {
-			reapedAt := time.Now()
-			if err := os.Remove(hlsStopLeaderFile); err != nil {
-				t.Fatal(err)
-			}
-			if !reapedAt.Before(deadline) {
+			if !time.Now().Before(deadline) {
 				t.Fatal("group reaped after the reap bound")
 			}
 			break
@@ -148,19 +143,6 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	}
 	if signal != syscall.SIGKILL {
 		t.Errorf("Stop ended the leader with %s, want SIGKILL", signal)
-	}
-}
-
-// The watchdog and the helper's failure path can kill the fixture even if
-// Stop holds the process locks. The fixture publishes its group ID before
-// starting the descendant.
-func killHLSStopFixture(leaderPath string) {
-	data, err := os.ReadFile(leaderPath) // #nosec G304 -- test-owned path
-	if err != nil {
-		return
-	}
-	if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid > 1 {
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
 	}
 }
 
