@@ -4,13 +4,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 )
 
 // FFmpeg 8.0.1's http protocol help (Alpine 3.23): no max_redirects.
+//
+// #nosec G101 -- FFmpeg option listing, not a credential.
 const httpHelpWithoutMaxRedirects = `http AVOptions:
   -seekable          <boolean>    .D......... control seekability of connection (default auto)
   -reconnect_streamed <boolean>    .D......... auto reconnect streamed / non seekable streams (default false)
@@ -122,4 +126,30 @@ func hasPair(args []string, key, value string) bool {
 		}
 	}
 	return false
+}
+
+func TestPipeArgsReprobeWhenToolReplacedInPlace(t *testing.T) {
+	tool := filepath.Join(t.TempDir(), "ffprobe")
+	if err := os.WriteFile(tool, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	help := httpHelpWithMaxRedirects
+	calls := withHTTPProtocolHelp(t, func(context.Context, string) ([]byte, error) {
+		return []byte(help), nil
+	})
+	args := pipeInputOptions(time.Second)
+	if got := pipeArgsForTool(tool, args); !hasPair(got, maxRedirectsOption, "0") {
+		t.Fatalf("supported build lost the guard: %v", got)
+	}
+	// Replace the binary at the same path with a build that lacks the option.
+	help = httpHelpWithoutMaxRedirects
+	if err := os.WriteFile(tool, []byte("new build"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := pipeArgsForTool(tool, args); slices.Contains(got, maxRedirectsOption) {
+		t.Fatalf("replaced unsupported build kept the guard: %v", got)
+	}
+	if *calls != 2 {
+		t.Fatalf("probes = %d, want 2 (one per binary identity)", *calls)
+	}
 }

@@ -3,7 +3,9 @@ package ffmpeg
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -62,11 +64,11 @@ var (
 )
 
 // toolHasMaxRedirects reports whether toolPath's http protocol takes
-// -max_redirects, asking the binary once per path and FFmpeg identity. A
+// -max_redirects, asking the binary once per path and file identity. A
 // listing that fails counts as supported: the run then fails exactly as it did
 // before this check, rather than silently dropping the guard.
 func toolHasMaxRedirects(toolPath string) bool {
-	key := toolPath + "\x00" + currentFFmpegIdentityKey()
+	key := toolIdentityKey(toolPath)
 	maxRedirectsMu.Lock()
 	entry, ok := maxRedirectsByTool[key]
 	if !ok {
@@ -80,6 +82,17 @@ func toolHasMaxRedirects(toolPath string) bool {
 		entry.supported = err != nil || bytes.Contains(help, []byte(maxRedirectsOption+" "))
 	})
 	return entry.supported
+}
+
+// toolIdentityKey keys the capability cache by the probed binary itself, so
+// replacing ffmpeg or ffprobe in place (an image upgrade) re-asks that tool. A
+// path that cannot be stat'd keys by path alone.
+func toolIdentityKey(toolPath string) string {
+	info, err := os.Stat(toolPath)
+	if err != nil {
+		return toolPath
+	}
+	return fmt.Sprintf("%s\x00%d\x00%d", toolPath, info.Size(), info.ModTime().UnixNano())
 }
 
 // pipeArgsForTool adapts a pipe argv built with pipeInputOptions to the tool
