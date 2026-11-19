@@ -64,6 +64,11 @@ type BuildRecord struct {
 	Sequence      int
 	Distributions []Distribution
 	Roles         []EnrollmentRole
+	// Dev marks a record loaded from the operator's runtime dev-build catalog
+	// (ParseDevBuildManifest). Only a dev record admits a rebuilt artifact, and
+	// only for an enrollment that already holds its exact mapping
+	// (CORE-2573). A linked release record never carries it.
+	Dev bool
 }
 
 // EnrollmentBuildBinding is a server-held permission for one enrolled subject
@@ -114,7 +119,21 @@ const (
 // an enrollment the build is not entitled to, and an enrollment without an
 // exact mapping to the build each return a non-verified finding. Only the final
 // path returns ProvenanceVerified.
+//
+// A dev record (BuildRecord.Dev) is the one exception to the digest check: an
+// enrollment that already holds the exact mapping to that dev build may present
+// a different digest, because a debug artifact's digest changes with every
+// rebuild (CORE-2573). The digest is a bearer claim (ADR-0063), so for an
+// enrollment that could already present the cataloged digest it grants nothing
+// beyond the credential the operator paired. Every other check still applies.
 func VerifyBuildProvenance(contract ClientContract, enrollment Enrollment, catalog BuildCatalog) ProvenanceFinding {
+	return verifyBuildProvenance(contract, enrollment, catalog, true)
+}
+
+// verifyBuildProvenance is VerifyBuildProvenance with the dev-rebuild exception
+// switchable: a caller creating a mapping turns it off, so a rebuilt digest can
+// never create the mapping that would then admit it.
+func verifyBuildProvenance(contract ClientContract, enrollment Enrollment, catalog BuildCatalog, admitDevRebuild bool) ProvenanceFinding {
 	if !enrollmentVerified(enrollment) {
 		return ProvenanceUnverifiedEnrollment
 	}
@@ -135,7 +154,7 @@ func VerifyBuildProvenance(contract ClientContract, enrollment Enrollment, catal
 	if record.Surface != Surface(strings.TrimSpace(contract.Surface)) {
 		return ProvenanceSurfaceMismatch
 	}
-	if !artifactHashMatches(contract.ArtifactHash, record.ArtifactHash) {
+	if !artifactHashMatches(contract.ArtifactHash, record.ArtifactHash) && !devRebuildAdmitted(contract, enrollment, record, catalog, admitDevRebuild) {
 		return ProvenanceArtifactMismatch
 	}
 	if record.Sequence < catalog.MinimumSequence[record.Surface] {
@@ -148,6 +167,19 @@ func VerifyBuildProvenance(contract ClientContract, enrollment Enrollment, catal
 		return ProvenanceEnrollmentMismatch
 	}
 	return ProvenanceVerified
+}
+
+// devRebuildAdmitted reports whether a dev record admits a presented digest it
+// does not carry: the presented digest must still be well formed, and the
+// enrollment must already hold the exact mapping to this dev build.
+func devRebuildAdmitted(contract ClientContract, enrollment Enrollment, record BuildRecord, catalog BuildCatalog, allowed bool) bool {
+	if !allowed || !record.Dev {
+		return false
+	}
+	if !validArtifactHash(contract.ArtifactHash) {
+		return false
+	}
+	return catalog.boundToEnrollment(record, enrollment)
 }
 
 // match returns every record carrying buildID. More than one match is an
@@ -163,6 +195,18 @@ func (c BuildCatalog) match(buildID string) []BuildRecord {
 		}
 	}
 	return matched
+}
+
+// DevRebuildDigest returns the cataloged digest of the dev record contract
+// names when the presented digest differs from it, so a caller can audit a
+// handshake admitted through the CORE-2573 dev-rebuild exception. It reports
+// false for release records, unknown or ambiguous builds, and exact matches.
+func (c BuildCatalog) DevRebuildDigest(contract ClientContract) (string, bool) {
+	matched := c.match(strings.TrimSpace(contract.BuildID))
+	if len(matched) != 1 || !matched[0].Dev || artifactHashMatches(contract.ArtifactHash, matched[0].ArtifactHash) {
+		return "", false
+	}
+	return matched[0].ArtifactHash, true
 }
 
 // Clone returns a deep copy so an installed catalog cannot be mutated through
@@ -228,6 +272,7 @@ func (c BuildCatalog) Digest() string {
 		writeDigestPart(sum, strconv.Itoa(record.Sequence))
 		writeDigestPart(sum, strings.Join(sortedDistributions(record.Distributions), ","))
 		writeDigestPart(sum, strings.Join(sortedRoles(record.Roles), ","))
+		writeDigestPart(sum, strconv.FormatBool(record.Dev))
 	}
 	writeDigestPart(sum, "enrollment-bindings")
 	writeDigestPart(sum, strconv.Itoa(len(c.EnrollmentBindings)))
