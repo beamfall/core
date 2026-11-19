@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 layout(std140) uniform PresentBlock {
     vec4 present0;
     vec4 overlay0;

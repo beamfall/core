@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -553,25 +583,28 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float density = mix(0.50, 1.45, u.param2);
         float phase = beatRadians(u, ft * 0.22);
         float phaseLift = beatWave(u, ft * 0.18);
+        // continuous beat clock: an eased lurch per beat, never the raw
+        // beatPhase saw, whose reset snapped the whole grid on every beat
+        float beatT = u.beatCount + 1.0 - pow(1.0 - saturate(u.beatPhase), 3.0);
 
         float wx = (uv.x - 0.5) * depth * 1.55;
-        float wz = depth + u.time * speed + u.beatPhase * (0.38 + u.bass * 0.28);
+        float wz = depth + u.time * speed + beatT * 0.38;
         float surface = sin(wx * 1.7 + wz * 0.45 + phase * 0.18) * 0.18;
         surface += sin(wx * 3.3 - wz * 0.32 + u.mid * 2.0 - phase * 0.22) * 0.08;
         surface += (fbm(vec2(wx * 0.22 + cos(phase) * 0.10, wz * 0.18 + sin(phase) * 0.08)) - 0.5) * 0.22;
-        surface *= height * (0.8 + u.bassImpact * 0.45);
+        surface *= height * (0.8 + u.bassImpact * 0.30);
 
-        float rows = (wz + surface * 3.0 + u.beatPhase * 0.70) * density;
+        float rows = (wz + surface * 3.0) * density;
         float cols = (wx + surface + sin(phase) * 0.035) * density * 0.72;
         float rowLine = aaLineCyclic(rows, 0.010 / max(depth * 0.25, 0.7));
         float colLine = aaLineCyclic(cols, 0.006 / max(depth * 0.25, 0.7)) * 0.45;
         float fade = exp(-ft * 2.2) * smoothstep(0.02, 0.18, ft);
-        float hue = uv.x + 0.16 * u.spectralCentroid + surface + u.beatPhase * 0.08;
-        glow += palNeon(hue) * max(rowLine, colLine) * fade * (0.55 + 1.4 * bandAt(u, fract(uv.x + u.beatPhase * 0.08)));
+        float hue = uv.x + 0.16 * u.spectralCentroid + surface + beatT * 0.08;
+        glow += palNeon(hue) * max(rowLine, colLine) * fade * (0.55 + 0.9 * bandAt(u, fract(uv.x + beatT * 0.08)));
 
         float crest = smoothstep(0.22, 0.38, surface + phaseLift * 0.05) * rowLine;
-        glow += palHeatIce(0.08 + uv.x * 0.3) * crest * u.bassImpact * 3.0;
-        glow += palVisual(0.15 + uv.x * 0.25 + u.beatPhase * 0.16, u) * rowLine * fade * phasePulse(u, ft * 0.35, 0.16) * (0.10 + u.level * 0.18);
+        glow += palHeatIce(0.08 + uv.x * 0.3) * crest * u.bassImpact * 1.2;
+        glow += palVisual(0.15 + uv.x * 0.25 + beatT * 0.16, u) * rowLine * fade * phasePulse(u, ft * 0.35, 0.16) * (0.10 + u.level * 0.18);
     }
 
     float horizonLine = aaLine(uv.y - horizon, 0.0016);
@@ -579,7 +612,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     vec3 col = feedbackTrail(glow, uv,
                              min(u.trailDecay, 0.86),
-                             0.002 + 0.004 * u.bassImpact,
+                             0.002 + 0.002 * u.bassImpact,
                              0.0);
     return col; // LINEAR HDR — post chain tonemaps
 }

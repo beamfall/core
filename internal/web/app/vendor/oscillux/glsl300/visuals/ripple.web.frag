@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -571,7 +601,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // feature scale per unit angle is preserved — it just no longer tears.
     vec2 fbmDomain = vec2(cos(ang01 * 6.2831853), sin(ang01 * 6.2831853))
                      * (3.2 / 6.2831853)
-                   + vec2(u.time * 0.07, u.beatCount * 0.17);
+                   + vec2(u.time * 0.07, (u.beatCount + u.beatPhase) * 0.17);
     float fbmAngle = fbm(fbmDomain);
     warp += (fbmAngle - 0.5) * 0.06 * (0.3 + u.mid * 0.7);
 
@@ -579,14 +609,16 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     const int NRINGS = 7;
     vec3 col = vec3(0.0);
 
+    // One continuous beat clock. The rings used to ride beatPhase (which wraps
+    // every beat), a per-beat beatCount reseed and time * an audio-driven speed,
+    // so every beat teleported the whole ring train and each pixel flickered:
+    // a large-area flash. Now the beat only eases the train outward.
+    float beatClock = u.beatCount + smoothstep(0.0, 1.0, u.beatPhase);
+
     for (int k = 0; k < NRINGS; ++k) {
         float fk = float(k);
 
-        float phaseOffset = fract(fk / float(NRINGS) +
-                                  u.beatCount * (0.13 + fk * 0.019));
-        float speed = 0.12 * (1.0 + u.amplitude * 0.5)
-                    * (0.65 + 0.35 * u.bassImpact + 0.15 * u.beat);
-        float phase = fract(u.beatPhase * 0.5 + phaseOffset + u.time * speed);
+        float phase = fract(fk / float(NRINGS) + beatClock * 0.10 + u.time * 0.04);
 
         float ringR   = phase * expansion;
         float ringRW  = ringR + warp * ringR;
@@ -599,23 +631,25 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float age   = clamp(phase, 0.0, 1.0);
         float ageFade = pow(1.0 - age, 1.6 + u.param2 * 0.8);
 
+        // Kick heat stays on the newborn ring near the centre (small area),
+        // with a gentle boost instead of a 5x HDR slam.
         float birthAge    = smoothstep(0.18, 0.0, phase);
-        float beatBoost   = 1.0 + birthAge * (u.bassImpact * 5.0 + u.beat * 2.5);
+        float beatBoost   = 1.0 + birthAge * (u.bassImpact * 1.2 + u.beat * 0.5);
 
         float brightness = lineMask * ageFade * beatBoost *
-                           (0.6 + u.amplitude * 1.4);
+                           (0.45 + u.amplitude * 0.55);
 
         float palT   = fract(phase * 0.55 + fk * 0.13 + u.spectralCentroid * 0.12
                              + u.time * 0.04);
         vec3 ringCol = palVisual(palT, u);
 
         vec3 hotBirth = vec3(1.7, 0.28, 0.03);
-        ringCol = mix(ringCol, hotBirth, birthAge * saturate(u.bassImpact + u.beat));
+        ringCol = mix(ringCol, hotBirth, birthAge * 0.6 * saturate(u.bassImpact + u.beat));
         ringCol = peakWhite(ringCol, birthAge * u.bassImpact * 0.32);
 
         ringCol = accentize(ringCol, u.accent, 0.10);
 
-        float hdrScale = mix(1.8, 5.0, birthAge * saturate(u.bassImpact + u.beat * 0.6));
+        float hdrScale = mix(1.4, 2.2, birthAge * saturate(u.bassImpact + u.beat * 0.6));
         col += ringCol * brightness * hdrScale;
     }
 
@@ -631,14 +665,15 @@ vec3 visual(vec2 uv, VisualUniforms u) {
                                            + u.time * 1.8);
             vec3 shardCol = palVisual(ang01 + float(s) * 0.22, u);
             shardCol = peakWhite(shardCol, saturate(u.treble * u.onset * 0.35));
+            // thin accents: kept well below the rings so onsets glint, not strobe
             col += shardCol * shardMask * angMod
-                   * (u.onset * 3.5 + u.treble * 1.2)
-                   * 2.5;
+                   * (u.onset * 0.6 + u.treble * 0.5);
         }
     }
 
     // Feedback trails: small outward zoom → persistent expanding rings.
-    float zoom    = 0.004 + 0.010 * u.bassImpact * u.param1;
+    // steady zoom: a bass-pumped zoom smeared the whole trail field each kick
+    float zoom    = 0.004 + 0.002 * u.bassImpact * u.param1;
     float rotAmt  = 0.0015 * u.mid;
     float effDecay = u.trailDecay * (0.75 + 0.25 * persistence);
     col = feedbackTrail(col, uv, effDecay, zoom, rotAmt);

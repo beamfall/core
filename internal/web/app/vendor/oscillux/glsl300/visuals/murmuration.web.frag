@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -571,6 +601,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
     vec3 col = vec3(0.0);
     float wing = u.beatPhase * 6.2831853;
+    // soft-attack kick: 0 at the hit, peaks ~100 ms later. bassImpact's
+    // instant attack made every bird jump and brighten in one frame.
+    float kickSoft = 4.0 * u.bassImpact * (1.0 - u.bassImpact);
 
     for (int f = 0; f < 3; ++f) {
         vec2 cf = f == 0 ? c0 : (f == 1 ? c1 : c2);
@@ -590,7 +623,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             // birds drift between shells instead of tracing clean rings
             float radN = vnoise(vec2(fi * 0.73 + ff * 9.1, t * 0.16));
             float rad = spread * (0.30 + 1.35 * h.x) * (0.55 + 0.9 * radN) * (1.0 + bandE * 0.9);
-            float sp  = (0.5 + h.y * 1.4) * wind;
+            float sp  = (0.35 + h.y * 0.8) * wind;
             float dir = h.x > 0.5 ? 1.0 : -1.0;
             float ang = h.y * 6.2831853 + t * sp * dir + radN * 2.4;
             vec2 bp = cf + vec2(cos(ang), sin(ang) * 0.62) * rad;
@@ -605,11 +638,12 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             // predator rupture: displace along (bird - center), exp falloff
             vec2 rv = bp - rupC;
             float rl = length(rv) + 1e-3;
-            bp += (rv / rl) * u.bassImpact * rupAmt * (0.4 + 0.8 * h.x) * exp(-rl * 1.7);
+            bp += (rv / rl) * kickSoft * rupAmt * 0.7 * (0.4 + 0.8 * h.x) * exp(-rl * 1.7);
             bp.y = max(bp.y, floorY + 0.015);
 
-            float bright = 0.40 + bandE * 1.5 + u.bassImpact * 1.8 + u.beat * 0.4;
-            float flick = 0.75 + 0.25 * sin(t * 9.0 + fi * 2.7 + ff * 5.0);
+            // the beat lives in the rupture motion; brightness only leans on it
+            float bright = 0.55 + bandE * 0.8 + kickSoft * 0.25;
+            float flick = 0.85 + 0.15 * sin(t * 3.0 + fi * 2.7 + ff * 5.0);
 
             // main sprite (soft HDR point). The Lorentzian core keeps the bird
             // soft, but its 1/d^2 tail never reaches zero and 120 tails summed
@@ -618,7 +652,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             vec2 d = p - bp;
             float d2 = dot(d, d);
             float tailCut = exp(-d2 * 60.0);
-            col += flockCol * (8.5e-5 / (d2 + 5.0e-5)) * tailCut * bright * flick;
+            col += flockCol * (3.5e-5 / (d2 + 2.2e-5)) * tailCut * bright * flick;
 
             // reflection under the floor, dimmed + softened
             vec2 dm = p - vec2(bp.x, 2.0 * floorY - bp.y);
@@ -634,15 +668,9 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float below = smoothstep(floorY, floorY - 0.5, p.y);
     col *= 1.0 - below * 0.45;
 
-    // rupture flash lifts the flock toward white, briefly. Gate on the pixel's
-    // own luminance: peakWhite is a mix toward HDR white, and applied to the
-    // empty room it lifted the whole frame to grey on every kick.
-    float flash = u.bassImpact * u.bassImpact * 0.10 * saturate(luma(col) * 3.0);
-    col = peakWhite(col, flash);
-
     // strong trails = the murmuration's smoky body
     float decay = min(0.90, u.trailDecay + 0.07);
-    float zoom = 0.010 + 0.020 * u.bassImpact;
+    float zoom = 0.0015 + 0.002 * kickSoft;
     col = feedbackTrail(col, uv, decay, zoom, 0.0025 * sin(t * 0.21));
 
     return col; // LINEAR HDR

@@ -2,9 +2,9 @@
   "source": {
     "repo": "oscillux",
     "path": "shaders/manifest.json",
-    "rev": "2602d6ed6754a8126997c811054ce3430dd811e3",
-    "release": "v0.2.8",
-    "sha256": "8c01327c34768cbcd4f10c4a256385bf070b5b04f133e06b830754961f47f718",
+    "rev": "971d56649f7c4dc097891275183e591a79be97cb",
+    "release": "v0.2.9",
+    "sha256": "a28504d75d2f08fddbad64afc1577bf638555744b53828e24b712c7c5415b34c",
     "license": "AGPL-3.0-only",
     "note": "The listed fields of every visual, in the manifest catalogOrder, copied unchanged from the manifest at the pinned rev. Data only: the shader bytes are in glsl300/."
   },
@@ -197,9 +197,9 @@
       "calm": false,
       "imageInput": false,
       "palette": [
-        1,
+        16,
         0,
-        1,
+        16,
         0
       ],
       "trailDecay": 0.88,
@@ -2103,9 +2103,9 @@
       "calm": false,
       "imageInput": false,
       "palette": [
-        1,
+        25,
         0,
-        1,
+        25,
         0
       ],
       "trailDecay": 0.94,
@@ -2938,7 +2938,7 @@
     {
       "id": "wave-tunnel",
       "name": "Wave Tunnel",
-      "header": "// Wave Tunnel: Fly down a tunnel extruded from the trace history: every depth ring is a past waveform slice, beats lurch the camera forward, onsets flash the nearest ring, timbre tilts the flight path.",
+      "header": "// Wave Tunnel: Fly down a tunnel extruded from the trace history: every depth ring is a past waveform slice, beats lurch the camera forward, timbre tilts the flight path.",
       "tier": "flagship",
       "calm": false,
       "imageInput": false,

@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,18 +555,22 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
 // Wave Tunnel — flying down a tunnel extruded from trace history.
 // The wall cross-section IS the waveform: every depth ring is a past
 // synthesized trace slice, wiggling the ring radius. beatPhase drives forward
-// velocity lurches, onsets flash the nearest ring, spectralCentroid tilts the
+// velocity lurches, spectralCentroid tilts the
 // flight path. Depth fog, HDR ring cores, feedbackTrail speed streaks.
 // param0 = Velocity ; param1 = Ring Density ; param2 = Wall Turbulence
 
@@ -571,14 +601,16 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float a = atan2_(p.y, p.x);
     float t01 = a / 6.2831853 + 0.5;
 
-    float speed = mix(0.45, 1.9, u.param0);
+    // ring passes per second set how often the near wall flips brightness;
+    // kept low enough that the tube flies without strobing
+    float speed = mix(0.25, 1.0, u.param0);
     float density = mix(3.5, 8.0, u.param1);
     float turb = mix(0.10, 0.42, u.param2);
 
     // Forward travel: cruise + a lurch each beat (beatCount + eased beatPhase
     // is continuous, so the tunnel surges without snapping).
     float lurch = 1.0 - pow(1.0 - saturate(u.beatPhase), 3.0);
-    float travel = u.time * speed + (u.beatCount + lurch) * 0.55;
+    float travel = u.time * speed + (u.beatCount + lurch) * 0.35;
 
     float z = 1.0 / rS;            // depth down the throat
     float q = z * density * 0.30 + travel; // ring coordinate
@@ -599,7 +631,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float d = ff - 0.5 + slice;
         // gaussian profile (not aaLine): spectrum-bin kinks in the slice make
         // fwidth spike, which dotted the rings at the near wall.
-        float coreW = 0.030 + 0.020 * u.bassImpact;
+        float coreW = 0.030 + 0.006 * u.bassImpact;
         float core = exp(-d * d / max(coreW * coreW, 1e-5));
         float haloW = coreW * 4.5;
         float halo = exp(-d * d / max(haloW * haloW, 1e-5)) * 0.16;
@@ -611,11 +643,12 @@ vec3 visual(vec2 uv, VisualUniforms u) {
 
         float bandE = bandAtWrapped(u, t01 + age);
         float energy = (0.55 + 2.2 * bandE) * fog;
-        col += rc * (core * (0.8 + 1.1 * near) + halo) * energy;
+        // near rings sweep most of the frame, so they stay dim; the hot
+        // cores live down the throat where they cover little area
+        col += rc * (core * (0.8 - 0.55 * near) + halo * (1.0 - 0.6 * near)) * energy;
 
-        // Onset: the nearest ring flashes white-hot.
-        float nearest = smoothstep(0.60, 0.98, rS);
-        col += peakWhite(rc, 0.45) * core * nearest * u.onset * 2.2;
+        // (No onset flash on the nearest ring: it spans most of the frame,
+        // so even a short white-hot pulse strobed. The lurch carries the beat.)
     }
 
     // ---- wall body: dim spectrum wash between rings so the tube reads ----
@@ -636,7 +669,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     // ---- speed streaks: zooming feedback smears rings into motion lines ----
     vec3 outc = feedbackTrail(col, uv,
                               min(u.trailDecay, 0.86),
-                              0.010 + 0.018 * u.bassImpact + 0.006 * speed,
+                              0.008 + 0.004 * u.bassImpact + 0.006 * speed,
                               0.0015);
     return outc; // LINEAR HDR
 }

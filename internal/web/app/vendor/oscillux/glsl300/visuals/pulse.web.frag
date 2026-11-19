@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -549,8 +579,17 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float impactAmt = mix(0.06, 0.26, u.param1);
     int   numCorona = int(mix(3.0, 5.0, u.param2) + 0.5);
 
+    // soft-attack kick: 0 at the hit, peaks ~100 ms later, so the core swells
+    // instead of snapping (bassImpact's one-frame attack flashed the core)
+    float kickSoft = 4.0 * u.bassImpact * (1.0 - u.bassImpact);
+    // beat count that surges after each beat and never jumps back at the wrap
+    float beatSurge = floor(u.beatCount) + 1.0 - pow(1.0 - u.beatPhase, 3.0);
+
     float breathe = 0.007 * sin(u.time * 1.1) + 0.005 * sin(u.time * 2.3 + 0.8);
-    float coreR   = 0.12 + 0.06 * u.amplitude + breathe + impactAmt * u.bassImpact;
+    // only the core swells on the kick: the corona rings hold their radii, as
+    // their feedback copies fill a disc that flickered whole when they moved
+    float ringBase = 0.12 + 0.06 * u.amplitude + breathe;
+    float coreR    = ringBase + impactAmt * 0.15 * kickSoft;
 
     vec3 col = vec3(0.0);
     {
@@ -562,11 +601,11 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         vec3 coreCol = mix(vec3(1.00, 0.20, 0.02), vec3(1.00, 0.05, 0.68),
                            smoothstep(0.2, 1.0, inner));
         coreCol = mix(coreCol, vec3(0.00, 0.78, 1.00), rim * 0.35);
-        coreCol = peakWhite(coreCol, u.bassImpact * inner * 0.08);
-        float exposure = 0.85 + 1.25 * u.level + 0.80 * u.bassImpact;
+        coreCol = peakWhite(coreCol, kickSoft * inner * 0.05);
+        float exposure = 0.85 + 1.25 * u.level + 0.10 * kickSoft;
         col += coreCol * (inner * 2.1 + rim * 3.4) * exposure;
 
-        float onsetFlash = u.onset * 5.0 * aaLine(rSafe - (coreR + 0.018), 0.008);
+        float onsetFlash = u.onset * 1.5 * aaLine(rSafe - (coreR + 0.018), 0.008);
         col += vec3(1.8, 0.48, 0.08) * onsetFlash;
     }
 
@@ -577,8 +616,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         for (int i = 0; i < 5; ++i) {
             if (i >= numCorona) break;
             float fi    = float(i);
-            float ringR = coreR + (fi + 1.0) * spacing
-                        + impactAmt * u.bassImpact * (1.0 - fi * 0.18);
+            float ringR = ringBase + (fi + 1.0) * spacing;
 
             float noiseT  = a * (0.8 + fi * 0.15);
             float noiseR  = r + fi * 0.07;
@@ -590,13 +628,13 @@ vec3 visual(vec2 uv, VisualUniforms u) {
             halfW       = max(halfW, 0.002);
             float mask  = aaLine(d, halfW);
 
-            float hue = fi * 0.20 + u.beatPhase * 0.35
+            float hue = fi * 0.20 + 0.05 * beatWave(u, 0.0)
                       + a / 6.2831853 * 0.12 + 0.08 * u.spectralCentroid;
             vec3 ringCol = palVisual(hue, u);
             ringCol      = accentize(ringCol, u.accent, 0.12);
 
             float bright = glowAmt * (1.5 - fi * 0.22) * (0.9 + u.amplitude * 0.5)
-                         + 0.8 * u.bassImpact;
+                         + 0.08 * kickSoft;
             bright = max(bright, 0.0);
 
             col += ringCol * mask * bright;
@@ -608,24 +646,24 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         for (int i = 0; i < 32; ++i) {
             float fi = float(i);
             vec2  h  = hash22(vec2(fi, 3.7));
-            float bandOuter = coreR + float(numCorona) * (0.065 + 0.020 * u.amplitude) + 0.06;
-            float sr = mix(coreR + 0.03, bandOuter, h.x);
-            float sa = h.y * 6.2831853 + u.time * (0.4 + 0.6 * h.x) + u.beatPhase * 1.8;
+            float bandOuter = ringBase + float(numCorona) * (0.065 + 0.020 * u.amplitude) + 0.06;
+            float sr = mix(ringBase + 0.03, bandOuter, h.x);
+            float sa = h.y * 6.2831853 + u.time * (0.4 + 0.6 * h.x) + beatSurge * 0.6;
             vec2  sp = vec2(cos(sa), sin(sa)) * sr;
             float dd = length(p - sp);
             float spark = 5e-5 / (dd * dd + 5e-5);
             spark = min(spark, 3.0);
-            float flicker = hash11(fi + floor(u.time * 18.0)) * 0.5 + 0.5;
+            float flicker = 0.75 + 0.25 * sin(u.time * 5.0 + fi * 2.3);
             vec3 scol = palVisual(h.x + 0.05 * u.spectralCentroid, u);
             scol = peakWhite(scol, u.onset * trebleE * 0.18);
             col += scol * spark * trebleE * flicker * 4.5;
         }
     }
 
-    float outerFade = coreR + float(numCorona) * 0.09 + 0.12;
+    float outerFade = ringBase + float(numCorona) * 0.09 + 0.12;
     col *= 1.0 - smoothstep(outerFade, outerFade + 0.18, r);
 
-    float trailZoom = 0.008 + 0.014 * u.bassImpact;
+    float trailZoom = 0.003 + 0.003 * kickSoft;
     float trailRot  = 0.004 * u.beat + 0.001 * u.time * 0.01;
     col = feedbackTrail(col, uv, u.trailDecay, trailZoom, trailRot);
 

@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -549,11 +579,13 @@ vec2 emitterPos(float fi, float driftAmt, VisualUniforms u) {
     float bc = floor(u.beatCount);
     vec2 aNow = (hash22(vec2(fi * 7.31 + 11.0, bc + 23.0)) - 0.5) * vec2(1.30, 0.95);
     vec2 aPrev = (hash22(vec2(fi * 7.31 + 11.0, bc - 1.0 + 23.0)) - 0.5) * vec2(1.30, 0.95);
-    vec2 anchor = mix(aPrev, aNow, smoothstep(0.0, 0.30, u.beatPhase));
+    // ease across the whole beat: a fast re-anchor slid the whole fringe
+    // field at once, flipping every pixel's brightness on each beat
+    vec2 anchor = mix(aPrev, aNow, smoothstep(0.0, 1.0, u.beatPhase));
     vec2 drift = vec2(sin(u.time * 0.21 + fi * 2.09), cos(u.time * 0.165 + fi * 1.37));
     // fixed triangulated homes keep the three sources spread apart
     vec2 home = vec2(cos(fi * 2.0944 + 0.65), sin(fi * 2.0944 + 0.65)) * 0.48;
-    return home + anchor * 0.45 * driftAmt + drift * 0.18 * driftAmt;
+    return home + anchor * 0.22 * driftAmt + drift * 0.18 * driftAmt;
 }
 
 // Band trace as a radial ring profile: crest value in ~[-1, 1] at ring coord q.
@@ -585,7 +617,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         float fi = float(i);
         vec2 pos = emitterPos(fi, driftAmt, u);
         float r = length(p - pos) + 1e-4;
-        float speedI = 0.55 + 0.25 * fi + 0.35 * u.level;
+        float speedI = 0.28 + 0.12 * fi + 0.15 * u.level;
         float q = r * freq - u.time * speedI - fi * 0.7;
 
         float s = traceProfile(q, fi, u);
@@ -599,17 +631,17 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         vec3 tint = (i == 0) ? palRoleBass(0.10, u)
                   : ((i == 1) ? palRoleTrace(0.45 + 0.08 * u.spectralCentroid, u)
                               : palRoleTreble(0.75, u));
-        col += tint * crest * 0.85;
+        col += tint * crest * 0.25;
 
         // Emitter core: a small breathing coal.
         float coreGlow = exp(-r * r * 90.0) * (0.6 + 1.8 * e * 0.4);
         col += tint * coreGlow * 1.4;
 
         // Beat shockwave: soft expanding ring from the fresh anchor.
-        float swR = u.beatPhase * 1.25;
+        float swR = u.beatPhase * 0.60;
         float sw = aaLine(r - swR, 0.020 + 0.015 * u.beatPhase)
                  * exp(-u.beatPhase * 3.2) * (0.4 + 1.2 * u.bassImpact);
-        col += palRolePeak(0.2 + fi * 0.1, u) * sw * 1.6;
+        col += palRolePeak(0.2 + fi * 0.1, u) * sw * 0.30;
     }
 
     // ---- constructive interference: hot zones where crests align ----
@@ -617,7 +649,7 @@ vec3 visual(vec2 uv, VisualUniforms u) {
     float hot = pow(constructive * 0.75, heat);
 
     // moiré shimmer inside the hot zones
-    float shim = 0.78 + 0.22 * sin(sum * 9.0 + u.time * 2.6);
+    float shim = 0.92 + 0.08 * sin(sum * 3.0 + u.time * 1.2);
 
     float hue = fract(0.06 + constructive * 0.28 + 0.10 * u.spectralCentroid);
     vec3 zoneCol = palVisual(hue, u);

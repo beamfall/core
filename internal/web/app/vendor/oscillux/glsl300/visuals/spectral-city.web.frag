@@ -1,6 +1,7 @@
 #version 300 es
 precision highp float;
 precision highp int;
+precision highp sampler2D;
 uniform sampler2D uImage;
 uniform sampler2D uPrev;
 #define IMG(x) texture(uImage,(x))
@@ -391,6 +392,21 @@ float phasePulse(VisualUniforms u, float offset, float width) {
     return exp(-d * d / max(width * width, 1e-4));
 }
 
+// ---- frame fit ----
+// Column layouts are authored for a 16:9 frame. columnFit is the share of the authored columns
+// that fits this frame at their authored width measured against the frame's height: 1 at 16:9 or
+// wider, about 0.26 on a portrait phone. fitColumns turns it into a count, at least `minimum` and
+// never more than one column per 4 px. A visual draws its x widths divided by
+// fitColumns / authored, so a narrow frame gets fewer, wider columns instead of the same count
+// squeezed together.
+float columnFit(VisualUniforms u) {
+    return clamp(u.resolution.x / max(u.resolution.y, 1.0) * (9.0 / 16.0), 0.0, 1.0);
+}
+int fitColumns(VisualUniforms u, int authored, int minimum) {
+    float n = min(float(authored) * columnFit(u), u.resolution.x / 4.0);
+    return clamp(int(floor(n + 0.5)), min(minimum, authored), authored);
+}
+
 // ---- presentation hooks ----
 float presentationMode(VisualUniforms u) { return u.presentation0.x; }
 float presentationChrome(VisualUniforms u) { return u.presentation0.y; }
@@ -413,10 +429,20 @@ mat2 rot2(float a) {
     return mat2(c, -s, s, c);
 }
 
+// Centered coordinates lean toward the frame's short side: y spans -1..1 on a
+// landscape frame; on a portrait one the scene zooms out by aspect^-0.7, so x spans
+// about -0.8..0.8 on a phone held upright (-0.46..0.46 without it) and a subject
+// authored within radius 1 keeps most of its width without shrinking to a dot.
+// Unchanged at aspect >= 1.
+float shortSideFit(float aspect) {
+    return pow(clamp(aspect, 0.05, 1.0), -0.7);
+}
+
 vec2 centered(vec2 uv, vec2 res) {
     vec2 p = uv * 2.0 - 1.0;
-    p.x *= res.x / max(res.y, 1.0);
-    return p;
+    float aspect = res.x / max(res.y, 1.0);
+    p.x *= aspect;
+    return p * shortSideFit(aspect);
 }
 
 vec2 motionCentered(vec2 uv, VisualUniforms u) {
@@ -442,7 +468,7 @@ vec2 motionCentered(vec2 uv, VisualUniforms u) {
         p.x += tx * aspect * 0.10;
     }
 
-    return p;
+    return p * shortSideFit(aspect);
 }
 
 float aaFill(float d) {
@@ -529,11 +555,15 @@ vec3 tonemap(vec3 x) {
 
 uniform VisualUniforms u;
 vec3 feedbackTrail(vec3 col, vec2 uv, float decay, float zoom, float rotAmt) {
+    float n = u.dt > 0.0 ? min(u.dt * 60.0, 4.0) : 1.0;
     vec2 q = uv - 0.5;
-    q = rot2(rotAmt) * q;
-    q *= (1.0 - zoom);
-    vec3 p = suppressGreenCast(PREV(q + 0.5).rgb);
-    float k = pow(clamp(decay, 0.0, 0.90), u.dt > 0.0 ? u.dt * 60.0 : 1.0);
+    q = rot2(rotAmt * n) * q;
+    q *= pow(max(1.0 - zoom, 1e-4), n);
+    vec2 s = q + 0.5;
+    vec2 out2 = max(-s, s - 1.0);
+    float inside = clamp(1.0 - 32.0 * max(max(out2.x, out2.y), 0.0), 0.0, 1.0);
+    vec3 p = suppressGreenCast(PREV(s).rgb) * inside;
+    float k = pow(clamp(decay, 0.0, 0.90), n);
     return suppressGreenCast(max(suppressGreenCast(col), p * k));
 }
 // SPDX-License-Identifier: AGPL-3.0-only
@@ -573,38 +603,48 @@ vec3 visual(vec2 uv, VisualUniforms u) {
         col += palVisual(fract(lane * 0.04 + z * 0.02), u) * grid * road * 0.26 * smoothstep(13.0, 1.2, z);
     }
 
-    // Towers sit on a fixed 72-cell grid with half-width <= 0.014 (~1 cell),
+    // Towers sit on a 72-cell grid with half-width <= 0.014 (~1 cell),
     // so only the cells within +-2 of this pixel can touch it: visit those 5
     // instead of all 72 (identical output, 14x fewer iterations).
-    vec2 px = fwidth(uv);
-    int i0 = int(floor(uv.x * 72.0));
+    // On a narrow frame the grid has fewer, wider cells (frame fit): x distances
+    // and widths are measured in authored-grid units, scaled by sx.
+    int ncells = fitColumns(u, 72, 16);
+    float sx = float(ncells) / 72.0;
+    vec2 px = fwidth(uv) * vec2(sx, 1.0);
+    int i0 = int(floor(uv.x * float(ncells)));
     for (int j = 0; j < 5; j++) {
         int i = i0 - 2 + j;
-        if (i < 0 || i >= 72) continue;
+        if (i < 0 || i >= ncells) continue;
         float fi = float(i);
-        float x = (fi + 0.5) / 72.0;
+        float x = (fi + 0.5) / float(ncells);
         float perspective = mix(0.50, 1.0, hash11(fi * 2.3));
         float bandv = bandAt(u, x);
         float w = mix(0.004, 0.014, perspective);
-        float h = 0.07 + bandv * mix(0.28, 0.62, perspective) + hash11(fi * 5.1) * 0.12;
+        // most of the skyline stands on its own; the band only lifts the
+        // roofline, since the kick jumps every low band at once and a full
+        // band-driven height relit half the sky each beat
+        float h = 0.07 + 0.17 * perspective + bandv * mix(0.07, 0.16, perspective) + hash11(fi * 5.1) * 0.12;
         float base = floorY - 0.01 * perspective;
-        vec2 bp = vec2(uv.x - x, uv.y - (base - h * 0.5));
+        vec2 bp = vec2((uv.x - x) * sx, uv.y - (base - h * 0.5));
         float tower = boxFillW(bp, vec2(w, h * 0.5), px);
         float edge = aaLineW(abs(bp.x) - w, 0.0014, px.x) * step(abs(bp.y), h * 0.52);
         float rows = aaLineCyclicW((uv.y - base + h) * 42.0, 0.03, px.y * 42.0) * tower;
         vec3 c = palVisual(x + u.time * 0.018, u);
         col += c * tower * (0.12 + bandv * 0.65);
         col += peakWhite(c, rows * u.treble * 0.08) * rows * (0.7 + bandv * 3.0);
-        col += c * edge * (0.9 + u.onset * 2.0);
+        // edges glint with the kick rather than flare: 72 lit outlines at once
+        // add up to a large area
+        col += c * edge * (0.9 + u.bassImpact * 0.5);
 
         float reflY = floorY + (base - h * 0.5 - uv.y) * 0.34;
-        float refl = boxFillW(vec2(uv.x - x, uv.y - reflY), vec2(w, h * 0.18), px * vec2(1.0, 1.34))
+        float refl = boxFillW(vec2((uv.x - x) * sx, uv.y - reflY), vec2(w, h * 0.18), px * vec2(1.0, 1.34))
                    * smoothstep(floorY, 1.0, uv.y) * (1.0 - smoothstep(floorY, 1.0, uv.y));
         col += c * refl * bandv * 0.45;
     }
 
     col += palVisual(0.55, u) * aaLine(uv.y - floorY, 0.0015) * 0.65;
-    col = feedbackTrail(col, uv, min(u.trailDecay, 0.82), 0.002 + 0.004 * u.bassImpact, 0.0);
+    // steady zoom: a kick-pumped zoom smeared the lit skyline over the sky
+    col = feedbackTrail(col, uv, min(u.trailDecay, 0.82), 0.002 + 0.001 * u.bassImpact, 0.0);
     return col; // LINEAR HDR — post chain tonemaps
 }
 
