@@ -21,6 +21,9 @@ var ErrComposedPictureUnavailable = errors.New("composed picture is unavailable"
 // ladder, decided at mint and carried by the byte layer. The zero value shapes
 // nothing.
 type StreamShape struct {
+	// LibraryID attributes plaintext scratch cleanup to the source Library.
+	// The byte layer gets it from the catalog.
+	LibraryID store.LibraryID
 	// ComposedPicture replaces the session's ladder with one composed rung
 	// that draws the Media's composed picture over its audio: the live form
 	// of a precomputed composed rendition (ADR-0057).
@@ -68,20 +71,16 @@ func (s *Sessions) SetPictureComposer(composer GenerationComposer) {
 // outside the sessions lock (resolving reads plugin sidecars) and is skipped
 // when the key already has a composed session for src, so only the request
 // that creates a session pays for it.
-func (s *Sessions) livePicture(ctx context.Context, key SessionKey, src string, shape StreamShape) (*ComposedPicture, error) {
+func (s *Sessions) livePicture(ctx context.Context, key SessionKey, existing *hlsSession, src string, shape StreamShape) (*ComposedPicture, error) {
 	if !shape.ComposedPicture {
 		return nil, nil
 	}
+	if existing != nil && existing.src == src && existing.composed != nil {
+		return existing.composed, nil
+	}
 	s.mu.Lock()
 	composer := s.composer
-	var resolved *ComposedPicture
-	if existing, ok := s.sessions[key]; ok && existing.src == src && existing.composed != nil {
-		resolved = existing.composed
-	}
 	s.mu.Unlock()
-	if resolved != nil {
-		return resolved, nil
-	}
 	if composer == nil {
 		return nil, ErrComposedPictureUnavailable
 	}

@@ -355,6 +355,135 @@ func TestStaleSourceStatCannotStopSuccessorEncoder(t *testing.T) {
 	}
 }
 
+func TestFirstSourceStatCannotResurrectRevokedSession(t *testing.T) {
+	transcoder := &fakeTranscoder{}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	latch := newSessionIOLatch(t)
+	seedUnrelatedSessions(t, sessions)
+	src := filepath.Join(t.TempDir(), "source.mkv")
+	if err := os.WriteFile(src, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sourceStats atomic.Int32
+	sessions.statSource = func(path string) (os.FileInfo, error) {
+		if path != src {
+			return nil, os.ErrNotExist
+		}
+		if sourceStats.Add(1) == 1 {
+			latch.block()
+		}
+		return info, nil
+	}
+	key := SessionKey{SessionID: "device", MediaID: "media"}
+	request := func() error {
+		_, err := sessions.FilePath(t.Context(), key, src, 120, 1280, 720, false, "720p/init.mp4")
+		return err
+	}
+	stale := make(chan error, 1)
+	go func() { stale <- request() }()
+	latch.wait(t)
+	assertUnrelatedSessionsProgress(t, sessions)
+	finishesWhileBlocked(t, "create the session found absent by the first request", request)
+	if count := sessions.TerminateSession(key.SessionID); count != 1 {
+		t.Fatalf("terminated %d sessions, want 1", count)
+	}
+	starts := transcoder.startCount()
+	latch.unblock()
+	if err := awaitSessionOperation(t, stale); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("stale request returned %v, want ErrSessionEvicted", err)
+	}
+	sessions.mu.Lock()
+	current := sessions.sessions[key]
+	sessions.mu.Unlock()
+	if current != nil || transcoder.startCount() != starts {
+		t.Fatal("stale request recreated the revoked session or started an encoder")
+	}
+}
+
+func TestStalePictureResolutionCannotStopSuccessorEncoder(t *testing.T) {
+	transcoder := &scriptedTranscoder{start: func(_ int, dir string, _ int) []string {
+		writeArtifact(t, dir, initSegmentName, []byte("init"))
+		return []string{"sleep", "60"}
+	}}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	latch := newSessionIOLatch(t)
+	seedUnrelatedSessions(t, sessions)
+	key := SessionKey{SessionID: "device", MediaID: "media"}
+	const src = "/src/movie"
+	if _, err := sessions.FilePath(t.Context(), key, src, 120, 1280, 720, false, masterPlaylistName); err != nil {
+		t.Fatal(err)
+	}
+	old := registeredSession(t, sessions, key)
+	sessions.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
+		latch.block()
+		return ComposedPicture{TimedText: composedTestText}, true, nil
+	})
+	stale := make(chan error, 1)
+	go func() {
+		_, err := sessions.FilePathShaped(t.Context(), key, src, 120, 1280, 720, false, false,
+			ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil,
+			StreamShape{ComposedPicture: true}, PriorityNormal, masterPlaylistName)
+		stale <- err
+	}()
+	latch.wait(t)
+	assertUnrelatedSessionsProgress(t, sessions)
+	finishesWhileBlocked(t, "start successor while resolving the picture", func() error {
+		_, err := sessions.FilePath(t.Context(), key, src, 180, 1280, 720, false, "720p/init.mp4")
+		return err
+	})
+	successor := registeredSession(t, sessions, key)
+	run := successor.run
+	if successor == old || run == nil || !run.proc.Running() {
+		t.Fatal("fixture did not start the successor encoder")
+	}
+	latch.unblock()
+	if err := awaitSessionOperation(t, stale); !errors.Is(err, errSessionSetupRetry) {
+		t.Fatalf("stale picture request returned %v, want a transient setup error", err)
+	}
+	if run.proc.StopRequested() || registeredSession(t, sessions, key) != successor {
+		t.Fatal("stale picture resolution stopped the successor encoder")
+	}
+}
+
+func TestStaleKeyframeProbeCannotReplaceSuccessor(t *testing.T) {
+	latch := newSessionIOLatch(t)
+	transcoder := &blockingProbeTranscoder{started: latch.entered, release: latch.release}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	sessions.keyframes.firstPlayWait = 15 * time.Second
+	seedUnrelatedSessions(t, sessions)
+	src := filepath.Join(t.TempDir(), "source.mkv")
+	if err := os.WriteFile(src, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key := SessionKey{SessionID: "device", MediaID: "media"}
+	stale := make(chan error, 1)
+	go func() {
+		_, err := sessions.FilePath(t.Context(), key, src, 8, 1280, 720, true, masterPlaylistName)
+		stale <- err
+	}()
+	latch.wait(t)
+	assertUnrelatedSessionsProgress(t, sessions)
+	finishesWhileBlocked(t, "start successor during the keyframe probe", func() error {
+		_, err := sessions.FilePath(t.Context(), key, src, 8, 1280, 720, false, "720p/init.mp4")
+		return err
+	})
+	successor := registeredSession(t, sessions, key)
+	latch.unblock()
+	if err := awaitSessionOperation(t, stale); !errors.Is(err, errSessionSetupRetry) {
+		t.Fatalf("stale audio-copy request returned %v, want a transient setup error", err)
+	}
+	if registeredSession(t, sessions, key) != successor {
+		t.Fatal("stale keyframe probe replaced the successor session")
+	}
+}
+
 func testFailedPlaylistSetupWaiter(t *testing.T, revokeSuccessor bool) {
 	t.Helper()
 	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
@@ -767,17 +896,40 @@ func TestTranscodeReconcileFailsClosedOnTeardownFailure(t *testing.T) {
 		defer latch.unblock()
 		seedUnrelatedSessions(t, sessions)
 		key := SessionKey{SessionID: "ending", MediaID: "media"}
-		if _, err := filePath720(sessions, key, masterPlaylistName); err != nil {
-			t.Fatal(err)
+		other := SessionKey{SessionID: key.SessionID, MediaID: "other-media"}
+		for _, item := range []struct {
+			key       SessionKey
+			libraryID store.LibraryID
+		}{{key, "target-library"}, {other, "other-library"}} {
+			if _, err := sessions.FilePathShaped(t.Context(), item.key, "/src", 120, 1280, 720, false, false,
+				ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil,
+				StreamShape{LibraryID: item.libraryID}, PriorityNormal, masterPlaylistName); err != nil {
+				t.Fatal(err)
+			}
 		}
 		dir := registeredSession(t, sessions, key).dir
+		otherDir := registeredSession(t, sessions, other).dir
+		otherLatch := newSessionIOLatch(t)
+		defer otherLatch.unblock()
+		retryLatch := newSessionIOLatch(t)
+		defer retryLatch.unblock()
 		var removals, reads atomic.Int32
+		var failRemoval atomic.Bool
+		failRemoval.Store(true)
 		sessions.removeDir = func(path string) error {
-			if path == dir {
-				if removals.Add(1) == 1 {
+			switch path {
+			case dir:
+				switch removals.Add(1) {
+				case 1:
 					latch.block()
+				case 3:
+					retryLatch.block()
 				}
-				return os.ErrPermission
+				if failRemoval.Load() {
+					return os.ErrPermission
+				}
+			case otherDir:
+				otherLatch.block()
 			}
 			return os.RemoveAll(path)
 		}
@@ -787,16 +939,17 @@ func TestTranscodeReconcileFailsClosedOnTeardownFailure(t *testing.T) {
 		}
 
 		detached := make(chan int, 1)
-		go func() { detached <- sessions.TerminatePlayback(key.SessionID, key.MediaID) }()
+		go func() { detached <- sessions.TerminateSession(key.SessionID) }()
 		latch.wait(t)
+		otherLatch.wait(t)
 		reconciled := make(chan error, 1)
-		go func() { reconciled <- sessions.WaitForTeardowns(t.Context()) }()
+		go func() { reconciled <- sessions.WaitForTeardowns(t.Context(), "target-library") }()
 		synctest.Wait()
 		finishesWhileBlocked(t, "sweep during detached cleanup", sessions.PurgeOrphanedTranscodeDirs)
 		if reads.Load() != 1 || removals.Load() != 1 {
 			t.Fatal("the sweep did not finish independently of current-boot removal")
 		}
-		if err := sessions.CheckTeardowns(); err == nil {
+		if err := sessions.CheckTeardowns("target-library"); err == nil {
 			t.Fatal("the locked lifecycle check accepted an unfinished teardown")
 		}
 		select {
@@ -804,19 +957,39 @@ func TestTranscodeReconcileFailsClosedOnTeardownFailure(t *testing.T) {
 			t.Fatalf("reconcile returned before current-boot teardown finished: %v", err)
 		default:
 		}
-		assertUnrelatedSessionsProgress(t, sessions)
 		latch.unblock()
-		if count := <-detached; count != 1 {
-			t.Fatalf("detached %d sessions, want 1", count)
-		}
 		if err := awaitSessionOperation(t, reconciled); !errors.Is(err, os.ErrPermission) {
 			t.Fatalf("reconcile returned %v, want teardown failure", err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, masterPlaylistName)); err != nil {
 			t.Fatalf("fixture did not leave plaintext behind: %v", err)
 		}
-		if err := sessions.CheckTeardowns(); !errors.Is(err, os.ErrPermission) {
+		if err := sessions.CheckTeardowns("target-library"); !errors.Is(err, os.ErrPermission) {
 			t.Fatalf("completed cleanup returned %v, want recorded removal failure", err)
+		}
+		if got := removals.Load(); got != 2 {
+			t.Fatalf("target removal attempts = %d, want teardown and failed retry", got)
+		}
+		failRemoval.Store(false)
+		go func() { reconciled <- sessions.WaitForTeardowns(t.Context(), "target-library") }()
+		retryLatch.wait(t)
+		assertUnrelatedSessionsProgress(t, sessions)
+		retryLatch.unblock()
+		if err := awaitSessionOperation(t, reconciled); err != nil {
+			t.Fatalf("retry could not finish during unrelated cleanup: %v", err)
+		}
+		if err := sessions.CheckTeardowns("target-library"); err != nil {
+			t.Fatalf("target still blocks seal after successful retry: %v", err)
+		}
+		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("retried cleanup left the directory: %v", err)
+		}
+		if err := sessions.CheckTeardowns("other-library"); err == nil {
+			t.Fatal("target cleanup cleared the other library's pending removal")
+		}
+		otherLatch.unblock()
+		if count := <-detached; count != 2 {
+			t.Fatalf("detached %d sessions, want 2", count)
 		}
 	})
 }

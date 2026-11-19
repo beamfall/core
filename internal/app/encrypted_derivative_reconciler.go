@@ -94,7 +94,7 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 	}
 	joined = errors.Join(joined, playback.ReconcileEncryptedPrecomputedRenditions(r.precomputeCache, libraryID, libencrypt.HasObjectHeader))
 	if r.sessions != nil {
-		joined = errors.Join(joined, r.sessions.PurgeOrphanedTranscodeDirs(), r.sessions.CheckTeardowns())
+		joined = errors.Join(joined, r.sessions.PurgeOrphanedTranscodeDirs(), r.sessions.CheckTeardowns(libraryID))
 	}
 	// Every live fingerprint is now attributed, so the Library's generated-asset
 	// ledger is complete and a purge may trust it (CORE-2193).

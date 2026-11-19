@@ -227,7 +227,20 @@ const (
 type sessionInitialization struct {
 	ready     chan struct{} // files are ready, or the session was removed
 	done      chan struct{} // the initializer has finished any required cleanup
+	removeDir string        // published by closing done
 	removeErr error         // published by closing done
+}
+
+// An absentSession tracks overlapping requests that found the same empty slot.
+// Publishing a session or terminating playback invalidates the slot.
+type absentSession struct {
+	requests int
+}
+
+type sessionSnapshot struct {
+	existing *hlsSession
+	setup    *sessionInitialization
+	absent   *absentSession
 }
 
 type hlsSession struct {
@@ -235,6 +248,7 @@ type hlsSession struct {
 	// creator owns the directory until then, even if the session is detached.
 	// Callers read or change initializing under Sessions.mu.
 	initializing      *sessionInitialization
+	libraryID         store.LibraryID
 	dir               string
 	src               string
 	sourceInfo        os.FileInfo
@@ -505,6 +519,7 @@ type Sessions struct {
 
 	mu       sync.Mutex
 	sessions map[SessionKey]*hlsSession
+	absent   map[SessionKey]*absentSession
 	nextID   int
 	cap      int
 	governor *governor.Governor
@@ -546,9 +561,9 @@ type Sessions struct {
 	// lease or directory outlives it.
 	detached int
 	sweeps   int
-	// The encrypted-library lifecycle waits for detached sessions. A failed
-	// removal stays recorded until restart can sweep the old boot.
-	teardownErr error
+	// The encrypted-library lifecycle checks its own pending cleanup and retries
+	// failed directory removals before acquiring the library key lock.
+	libraryTeardowns map[store.LibraryID]*libraryTeardowns
 	// offLockDone is shared by waiters for shutdown and teardown completion.
 	offLockDone chan struct{}
 	// closed is set by Close; once set no session is created.
@@ -564,8 +579,9 @@ type Sessions struct {
 // slow teardown never stalls requests for every other session. Whoever builds
 // one under mu adds it to s.detached; runTeardowns takes it back out.
 type sessionTeardown struct {
-	proc *ffmpeg.HLSProcess
-	dir  string
+	proc      *ffmpeg.HLSProcess
+	dir       string
+	libraryID store.LibraryID
 	// An in-flight initializer or encoder start owns its detached directory.
 	setup        *sessionInitialization
 	startPending bool
@@ -581,11 +597,36 @@ type sessionTeardown struct {
 }
 
 // runTeardowns stops detached encoders and cleans up their artifacts before
-// waiting for detached initializers, whose writes may be blocked. Call it
-// without s.mu held.
+// waiting for detached initializers, whose writes may be blocked. Libraries
+// clean up independently so a batched detach cannot delay an unrelated seal.
+// Call it without s.mu held.
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
+	if len(teardowns) <= 1 {
+		s.runLibraryTeardowns(teardowns)
+		return
+	}
+	byLibrary := make(map[store.LibraryID][]sessionTeardown)
 	for _, t := range teardowns {
-		if t.setup != nil || t.startPending {
+		byLibrary[t.libraryID] = append(byLibrary[t.libraryID], t)
+	}
+	var workers sync.WaitGroup
+	for _, batch := range byLibrary {
+		workers.Go(func() { s.runLibraryTeardowns(batch) })
+	}
+	workers.Wait()
+}
+
+func (s *Sessions) runLibraryTeardowns(teardowns []sessionTeardown) {
+	for _, t := range teardowns {
+		if t.setup != nil {
+			continue
+		}
+		if t.startPending {
+			// The starter owns the encoder and directory. Readers must lose
+			// access even if the starter is still blocked.
+			if t.live != nil {
+				t.live.Close()
+			}
 			continue
 		}
 		if t.liveRun != nil {
@@ -600,7 +641,7 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 		if t.counted {
 			s.stopping--
 		}
-		s.finishTeardownLocked(removeErr)
+		s.finishTeardownLocked(t.libraryID, t.dir, removeErr)
 		s.mu.Unlock()
 	}
 	for _, t := range teardowns {
@@ -609,7 +650,7 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 		}
 		<-t.setup.done
 		s.mu.Lock()
-		s.finishTeardownLocked(t.setup.removeErr)
+		s.finishTeardownLocked(t.libraryID, t.setup.removeDir, t.setup.removeErr)
 		s.mu.Unlock()
 	}
 }
@@ -628,25 +669,90 @@ func (s *Sessions) cleanSessionDir(dir string, live *encderiv.LiveSession) error
 	return err
 }
 
-func (s *Sessions) finishTeardownLocked(removeErr error) {
-	if s.teardownErr == nil {
-		s.teardownErr = removeErr
+type libraryTeardowns struct {
+	pending int
+	failed  map[string]error
+}
+
+func (s *Sessions) beginTeardownLocked(libraryID store.LibraryID) {
+	if s.libraryTeardowns == nil {
+		s.libraryTeardowns = make(map[store.LibraryID]*libraryTeardowns)
+	}
+	state := s.libraryTeardowns[libraryID]
+	if state == nil {
+		state = &libraryTeardowns{}
+		s.libraryTeardowns[libraryID] = state
+	}
+	state.pending++
+	s.detached++
+}
+
+func (s *Sessions) finishTeardownLocked(libraryID store.LibraryID, dir string, removeErr error) {
+	state := s.libraryTeardowns[libraryID]
+	if removeErr != nil {
+		if state.failed == nil {
+			state.failed = make(map[string]error)
+		}
+		state.failed[dir] = removeErr
+	}
+	state.pending--
+	if state.pending == 0 && len(state.failed) == 0 {
+		delete(s.libraryTeardowns, libraryID)
 	}
 	s.detached--
 	s.notifyOffLockDoneLocked()
 }
 
-// WaitForTeardowns waits for detached sessions to finish
-// cleanup and reports a removal failure even after that teardown has completed.
+// WaitForTeardowns waits for this Library's detached sessions and retries
+// their failed directory removals. A successful RemoveAll verifies that the
+// retired path is gone, including when an operator has already cleaned it up.
 // Call before acquiring Store or library key locks: an encrypted endpoint
 // can need the key lease to shut down.
-func (s *Sessions) WaitForTeardowns(ctx context.Context) error {
+func (s *Sessions) WaitForTeardowns(ctx context.Context, libraryID store.LibraryID) error {
 	for {
-		s.mu.Lock()
-		if s.detached == 0 {
-			err := s.teardownErr
-			s.mu.Unlock()
+		if err := ctx.Err(); err != nil {
 			return err
+		}
+		s.mu.Lock()
+		state := s.libraryTeardowns[libraryID]
+		if state == nil {
+			s.mu.Unlock()
+			return nil
+		}
+		if state.pending == 0 {
+			if s.closed {
+				s.mu.Unlock()
+				return os.ErrClosed
+			}
+			dirs := make([]string, 0, len(state.failed))
+			for dir := range state.failed {
+				dirs = append(dirs, dir)
+			}
+			// Claim the retry so other lifecycle calls wait and Close counts it.
+			s.beginTeardownLocked(libraryID)
+			s.mu.Unlock()
+			var retryErr error
+			for _, dir := range dirs {
+				err := ctx.Err()
+				if err == nil {
+					err = s.removeSessionDir(dir)
+					s.mu.Lock()
+					if err == nil {
+						delete(state.failed, dir)
+					} else {
+						state.failed[dir] = err
+					}
+					s.mu.Unlock()
+				}
+				retryErr = errors.Join(retryErr, err)
+			}
+			s.mu.Lock()
+			s.finishTeardownLocked(libraryID, "", nil)
+			s.mu.Unlock()
+			if retryErr != nil {
+				return retryErr
+			}
+			continue
 		}
 		if s.offLockDone == nil {
 			s.offLockDone = make(chan struct{})
@@ -663,14 +769,16 @@ func (s *Sessions) WaitForTeardowns(ctx context.Context) error {
 
 // CheckTeardowns checks that cleanup has succeeded without waiting.
 // The encrypted-library lifecycle revalidates with its locks already held.
-func (s *Sessions) CheckTeardowns() error {
+func (s *Sessions) CheckTeardowns(libraryID store.LibraryID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.teardownErr != nil {
-		return s.teardownErr
-	}
-	if s.detached > 0 {
-		return errors.New("transcode teardown still pending")
+	if state := s.libraryTeardowns[libraryID]; state != nil {
+		for _, err := range state.failed {
+			return err
+		}
+		if state.pending > 0 {
+			return errors.New("transcode teardown still pending")
+		}
 	}
 	return nil
 }
@@ -940,14 +1048,14 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	if !ok {
 		return nil
 	}
-	s.detached++
+	s.beginTeardownLocked(session.libraryID)
 	if session.initializing != nil {
 		// Only the initializer can clean up after its writes have finished.
 		delete(s.sessions, key)
 		close(session.initializing.ready)
-		return &sessionTeardown{setup: session.initializing}
+		return &sessionTeardown{setup: session.initializing, libraryID: session.libraryID}
 	}
-	teardown := &sessionTeardown{proc: session.proc, dir: session.dir, live: session.live}
+	teardown := &sessionTeardown{proc: session.proc, dir: session.dir, live: session.live, libraryID: session.libraryID}
 	if session.run != nil {
 		teardown.liveRun = session.run.live
 	}
@@ -995,6 +1103,36 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 	return s.sessions[key] == session
 }
 
+// snapshotSession binds a request before it resolves pictures, probes keyframes
+// or stats the source. An empty slot also needs an identity: a session may be
+// created and removed while those operations run.
+func (s *Sessions) snapshotSession(key SessionKey) sessionSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if session := s.sessions[key]; session != nil {
+		return sessionSnapshot{existing: session, setup: session.initializing}
+	}
+	if s.absent == nil {
+		s.absent = make(map[SessionKey]*absentSession)
+	}
+	absent := s.absent[key]
+	if absent == nil {
+		absent = &absentSession{}
+		s.absent[key] = absent
+	}
+	absent.requests++
+	return sessionSnapshot{absent: absent}
+}
+
+func (s *Sessions) releaseAbsentSession(key SessionKey, absent *absentSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	absent.requests--
+	if absent.requests == 0 && s.absent[key] == absent {
+		delete(s.absent, key)
+	}
+}
+
 // TerminateSession aborts every in-flight transcode owned by one auth Session
 // and returns how many it stopped (ADR-0012 §7: a revoked device's in-flight
 // transcodes die, not just its future requests). Sessions are keyed by
@@ -1010,6 +1148,11 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // leaves running until idle reap.
 func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 	s.mu.Lock()
+	for key := range s.absent {
+		if key.SessionID == sessionID {
+			delete(s.absent, key)
+		}
+	}
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		if key.SessionID == sessionID {
@@ -1030,6 +1173,11 @@ func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 // playback with no live transcode (direct play) is a zero-stop no-op.
 func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
 	s.mu.Lock()
+	for key := range s.absent {
+		if key.SessionID == sessionID && key.MediaID == mediaID {
+			delete(s.absent, key)
+		}
+	}
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		if key.SessionID == sessionID && key.MediaID == mediaID {
@@ -1126,7 +1274,11 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	if shape.Encrypted != nil && shape.ComposedPicture {
 		return "", ErrEncryptedLiveUnavailable // ADR-0236 D4
 	}
-	picture, err := s.livePicture(ctx, key, src, shape)
+	before := s.snapshotSession(key)
+	if before.absent != nil {
+		defer s.releaseAbsentSession(key, before.absent)
+	}
+	picture, err := s.livePicture(ctx, key, before.existing, src, shape)
 	if err != nil {
 		return "", err
 	}
@@ -1139,12 +1291,11 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	}
 	var timeline *keyframeTimeline
 	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() && shape.Encrypted == nil {
-		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
+		if timeline, err = s.copyVideoTimeline(ctx, key, before.existing, src); err != nil {
 			return "", err
 		}
 	}
-	audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
-	session, err := s.session(ctx, key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, priority)
+	session, err := s.session(ctx, key, before, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape, priority)
 	if err != nil {
 		return "", err
 	}
@@ -1443,17 +1594,10 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(ctx context.Context, key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
-	// Bind this request to the instance present before inspecting the source.
-	// A stale stat must never reshape a successor installed during that I/O.
-	s.mu.Lock()
-	existing := s.sessions[key]
-	var pending *sessionInitialization
-	if existing != nil {
-		pending = existing.initializing
-	}
-	s.mu.Unlock()
-
+func (s *Sessions) session(ctx context.Context, key SessionKey, before sessionSnapshot, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, shape StreamShape, priority Priority) (*hlsSession, error) {
+	existing, pending := before.existing, before.setup
+	secure, adjust, audioOnly := shape.Encrypted, shape.Adjust, shape.AudioOnly
+	libraryID := shape.LibraryID
 	var sourceInfo os.FileInfo
 	var sourceGeneration string
 	if secure == nil {
@@ -1464,13 +1608,14 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		sourceInfo, _ = stat(src)
 		sourceGeneration = store.SourceFileGeneration(sourceInfo)
 	} else {
+		libraryID = store.LibraryID(secure.LibraryID)
 		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
 	}
 	durationSeconds = adjust.OutputSeconds(durationSeconds)
 	audioSource := videoWidth <= 0 && videoHeight <= 0 && picture == nil
 	var primed primedGrid
 	if audioOnly && audioSource && adjust.IsZero() && durationSeconds > 0 {
-		primed = primedAACGrid(audioSourceStream, audioProfile, segmentSeconds)
+		primed = primedAACGrid(shape.AudioSource, audioProfile, segmentSeconds)
 	}
 	if secure != nil {
 		if err := encryptedSessionRefusal(secure, durationSeconds, burnSubtitleIndex, picture); err != nil {
@@ -1478,6 +1623,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		}
 	}
 	session := &hlsSession{
+		libraryID:         libraryID,
 		src:               src,
 		sourceInfo:        sourceInfo,
 		sourceGeneration:  sourceGeneration,
@@ -1512,6 +1658,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		}
 		session.rungs = []Rung{rung}
 	case audioOnly || !adjust.IsZero():
+		audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !adjust.IsZero())
 		session.rungs = []Rung{audioOnlyRung(audioOnlyPeak)}
 	default:
 		session.rungs = rungsForSession(videoWidth, videoHeight, audioCopy, degraded, caps)
@@ -1531,6 +1678,9 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	defer s.mu.Unlock()
 	if (pending != nil && !sameShape) || !s.liveLocked(key, existing) {
 		return nil, errSessionSetupRetry
+	}
+	if before.absent != nil && s.absent[key] != before.absent {
+		return nil, ErrSessionEvicted
 	}
 	if s.closed {
 		return nil, ErrSessionEvicted
@@ -1559,6 +1709,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 			session.resumeSeconds = hint.seconds
 		}
 	}
+	delete(s.absent, key)
 	s.sessions[key] = session
 	if predecessor != nil {
 		s.mu.Unlock()
@@ -1580,6 +1731,7 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	s.mu.Lock()
 	if !s.liveLocked(key, session) {
 		s.mu.Unlock()
+		setup.removeDir = dir
 		setup.removeErr = s.cleanSessionDir(dir, live)
 		s.mu.Lock()
 		return nil, ErrSessionEvicted
@@ -1588,9 +1740,9 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	session.initializing = nil
 	if err != nil {
 		delete(s.sessions, key)
-		s.detached++
+		s.beginTeardownLocked(libraryID)
 		s.mu.Unlock()
-		s.runTeardowns([]sessionTeardown{{dir: dir, live: live}})
+		s.runTeardowns([]sessionTeardown{{dir: dir, live: live, libraryID: libraryID}})
 		s.mu.Lock()
 		return nil, err
 	}
@@ -1644,7 +1796,8 @@ func (s *Sessions) createSessionDir(key SessionKey, session *hlsSession) (string
 
 // matchesSession compares the source generation and all artifact-shaping inputs.
 func (session *hlsSession) matchesSession(requested *hlsSession) bool {
-	return session.sourceGeneration == requested.sourceGeneration &&
+	return session.libraryID == requested.libraryID &&
+		session.sourceGeneration == requested.sourceGeneration &&
 		(session.sourceInfo == nil || sameSourceFile(session.sourceInfo, requested.sourceInfo)) &&
 		session.src == requested.src &&
 		session.durationSeconds == requested.durationSeconds &&
@@ -1921,7 +2074,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		s.releaseTranscodeLease(session)
 		s.stopping--
 		s.starting--
-		s.finishTeardownLocked(removeErr)
+		s.finishTeardownLocked(session.libraryID, session.dir, removeErr)
 		return nil, ErrSessionEvicted
 	}
 	s.starting--

@@ -115,11 +115,11 @@ type encryptedLibraryDBLifecycle interface {
 type runtimeEncryptedLibraryDB struct {
 	encryptedLibraryDBLifecycle
 	backfill              func(context.Context)
-	checkTranscodeCleanup func() error
+	checkTranscodeCleanup func(store.LibraryID) error
 }
 
 func (l runtimeEncryptedLibraryDB) SealEncryptedLibraryDB(ctx context.Context, libraryID store.LibraryID, cipher store.EncryptedLibraryDBCipher) error {
-	if err := l.checkTranscodeCleanup(); err != nil {
+	if err := l.checkTranscodeCleanup(libraryID); err != nil {
 		return err
 	}
 	return l.encryptedLibraryDBLifecycle.SealEncryptedLibraryDB(ctx, libraryID, cipher)

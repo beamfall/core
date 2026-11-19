@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
 )
 
@@ -127,6 +128,72 @@ func TestEncoderEndpointRevokeRunsOutsideSessionsLock(t *testing.T) {
 	latch.unblock()
 	if err := awaitSessionOperation(t, done); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type latchedEncryptedStarter struct {
+	fakeEncryptedTranscoder
+	latch *sessionIOLatch
+}
+
+func (f *latchedEncryptedStarter) StartEncryptedHLSSegments(ctx context.Context, ep ffmpeg.EncryptedLiveEndpoint, segment, segmentSeconds int, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	proc, err := f.fakeEncryptedTranscoder.StartEncryptedHLSSegments(ctx, ep, segment, segmentSeconds, rendition)
+	if err == nil {
+		f.latch.block()
+	}
+	return proc, err
+}
+
+func TestTerminateSessionClosesLiveReaderWhileEncoderStartBlocked(t *testing.T) {
+	transcoder := &latchedEncryptedStarter{}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	latch := newSessionIOLatch(t)
+	transcoder.latch = latch
+	seedUnrelatedSessions(t, sessions)
+	key := SessionKey{SessionID: "encrypted", MediaID: "media"}
+	source := testEncryptedSource(nil)
+	path, err := encryptedFilePath(sessions, key, source, 120, -1, false, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := sessions.OpenLiveArtifact(key, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	var b [1]byte
+	if n, err := reader.Read(b[:]); n != 1 || err != nil || b[0] != '#' {
+		t.Fatalf("fixture could not read the live playlist: bytes=%d, err=%v", n, err)
+	}
+
+	start := make(chan error, 1)
+	go func() {
+		_, err := encryptedFilePath(sessions, key, source, 120, -1, false, "720p/init.mp4")
+		start <- err
+	}()
+	latch.wait(t)
+	assertUnrelatedSessionsProgress(t, sessions)
+	finishesWhileBlocked(t, "terminate the encrypted session with a pending start", func() error {
+		if count := sessions.TerminateSession(key.SessionID); count != 1 {
+			return fmt.Errorf("terminated %d sessions, want 1", count)
+		}
+		return nil
+	})
+	if n, err := reader.Read(b[:]); n != 0 || !errors.Is(err, encderiv.ErrLiveSessionClosed) {
+		t.Fatalf("terminated reader returned %d bytes, err=%v", n, err)
+	}
+	dir := filepath.Dir(path)
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("termination removed the starter's directory: %v", err)
+	}
+
+	latch.unblock()
+	if err := awaitSessionOperation(t, start); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("detached start returned %v, want ErrSessionEvicted", err)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("starter left the detached directory: %v", err)
 	}
 }
 

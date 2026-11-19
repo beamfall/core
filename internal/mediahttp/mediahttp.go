@@ -1070,6 +1070,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// Ready at mint) is likewise decided at mint and carried by the grant.
 	shape := playback.StreamShapeFromGrant(grant, media)
 	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
+	shape.LibraryID = library.ID
 	shape.Encrypted = secure
 	// A Media stored without a runtime is probed on demand so a new session
 	// writes a VOD playlist covering the whole file (CORE-2314). An Encrypted

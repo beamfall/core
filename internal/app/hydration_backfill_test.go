@@ -72,7 +72,12 @@ func TestEncryptedLibrarySealPropagatesTranscodeCleanupFailure(t *testing.T) {
 	removeErr := errors.New("teardown failed")
 	lifecycle := runtimeEncryptedLibraryDB{
 		encryptedLibraryDBLifecycle: inner,
-		checkTranscodeCleanup:       func() error { return removeErr },
+		checkTranscodeCleanup: func(libraryID store.LibraryID) error {
+			if libraryID != "lib-1" {
+				t.Fatalf("cleanup checked for %q, want lib-1", libraryID)
+			}
+			return removeErr
+		},
 	}
 	if err := lifecycle.SealEncryptedLibraryDB(t.Context(), "lib-1", nil); !errors.Is(err, removeErr) || inner.seals != 0 {
 		t.Fatalf("seal with failed teardown: err=%v, DB seals=%d", err, inner.seals)

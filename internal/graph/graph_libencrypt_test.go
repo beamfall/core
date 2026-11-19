@@ -313,6 +313,7 @@ func TestSealUnsealWrapsStoreLifecycle(t *testing.T) {
 	cleanup := &transcodeCleanupRecorder{}
 	handler.SetTranscodeTerminator(cleanup)
 	libID := newEncryptedLibrary(t, st)
+	cleanup.libraryID = store.LibraryID(libID)
 	openManagerAdminSession(t, st)
 
 	const passphrase = "operator unlock passphrase"
@@ -370,10 +371,16 @@ func TestSealUnsealWrapsStoreLifecycle(t *testing.T) {
 
 type transcodeCleanupRecorder struct {
 	TranscodeTerminator
-	err error
+	libraryID store.LibraryID
+	err       error
 }
 
-func (r *transcodeCleanupRecorder) WaitForTeardowns(context.Context) error { return r.err }
+func (r *transcodeCleanupRecorder) WaitForTeardowns(_ context.Context, libraryID store.LibraryID) error {
+	if libraryID != r.libraryID {
+		return errors.New("cleanup requested for the wrong library")
+	}
+	return r.err
+}
 
 func TestRewrapEncryptedLibraryRotatesFilesAndRecoveryKey(t *testing.T) {
 	ctx := context.Background()

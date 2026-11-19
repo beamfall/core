@@ -232,18 +232,14 @@ func (s *Sessions) SetKeyframeStore(keyframes KeyframeStore) {
 // (and tears down) a session that is playing. Otherwise the file's current
 // generation is looked up in memory, then in the store, and probed only when
 // neither has it.
-func (s *Sessions) copyVideoTimeline(ctx context.Context, key SessionKey, src string) (*keyframeTimeline, error) {
+func (s *Sessions) copyVideoTimeline(ctx context.Context, key SessionKey, existing *hlsSession, src string) (*keyframeTimeline, error) {
 	prober, ok := s.transcoder.(keyframeTranscoder)
 	if !ok {
 		return nil, nil
 	}
-	s.mu.Lock()
-	if existing, ok := s.sessions[key]; ok && existing.src == src && slices.ContainsFunc(existing.rungs, func(r Rung) bool { return r.CopyVideo }) {
-		timeline := existing.timeline
-		s.mu.Unlock()
-		return timeline, nil
+	if existing != nil && existing.src == src && slices.ContainsFunc(existing.rungs, func(r Rung) bool { return r.CopyVideo }) {
+		return existing.timeline, nil
 	}
-	s.mu.Unlock()
 	info, err := os.Stat(src)
 	if err != nil {
 		return nil, err
