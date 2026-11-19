@@ -33,32 +33,41 @@ package store
 // is presentational — TestSchemaFreeze reads the same three constants.
 //
 // Non-catalog reservation audit:
+//
 //   - events 0014 added the engagement event log.
+//
 //   - events 0015 added scoped API-key activity attribution (ADR-0040 §2.2 /
 //     ADR-0012 §11); events 0016 (MUSIC-6, ADR-0098 area 6) added
 //     pack_token_ledger.
+//
 //   - events 0017 added run-scoped import provenance;
 //     events 0018 added the materialized-read
 //     projection; events 0019 added nullable engagement
 //     columns; events 0020 added
 //     playback_progress.channel_context.
+//
 //   - events 0021 (AUDITFIX-SCHEDULER-DURABILITY) added the schedule
 //     occurrence journal (schedule_occurrence, schedule_occurrence_member) so
 //     partial-enqueue progress survives restart and recovers exactly once; it
 //     lives beside the job table (member publication commits atomically with
 //     the job insert) and sits entirely off the entity-query hot path.
+//
 //   - events 0022 (CORE-1194) added the per-Profile watchlist_item and
 //     item_rating tables; both are keyed by Profile and read only by their own
 //     Sources, off the entity-query hot path.
+//
 //   - events 0023 (CORE-2305) added stream_token_ledger.last_active_ms so the
 //     live-sessions read can drop playbacks with no recent activity; it is
 //     written on grant issue and progress reports and read only by the
 //     active-session reads, off the entity-query hot path.
+//
 //   - encrypted-library 0001-0005 (ENC-1/ENC-4/ENC-ENTITY-RELATION-UPSERT-1,
 //     ADR-0045) mirror the typed Media-field, provenance, and entity-relation
 //     upsert surface into the encrypted library.
+//
 //   - encrypted-library 0006 (CORE-1626) mirrors catalog 0115's gapless
 //     media_file_stream columns into the encrypted library.
+//
 //   - encrypted-library 0007 (CORE-1963) mirrors catalog 0070's
 //     playback_rendition table into the encrypted library so precomputed
 //     rendition rows for an Encrypted Library never reach the shared catalog;
@@ -66,17 +75,24 @@ package store
 //     The latency bench passed for the 0007 bump on 2026-11-15; the worst
 //     measured query was search/fts/revealed at 28.48125 ms against a 60 ms
 //     budget, at a host load average near 30.
+//
 //   - encrypted-library 0008 (CORE-2055) additively mirrors catalog 0050's
 //     media_file_stream columns (stream_type and the codec/disposition/HDR
 //     facts) and its (content_fingerprint, filename) font-attachment key, so
 //     the shared inventory writer works on an Encrypted Library; the frozen
 //     0002 columns stay. Both tables are read per file, off the entity-query
 //     hot path.
+//
 //   - encrypted-library 0009 (CORE-2554) mirrors catalog 0123's
 //     media_field_provenance.parser_owned marker; it is read only by the scan
 //     write, off the entity-query hot path.
+//
 //   - encrypted-library 0010 (CORE-2583) mirrors catalog 0124's durable
 //     Media insertion sequence and insert/delete triggers.
+//
+//   - encrypted-library 0011 (CORE-2380) adds source_end_observation in the
+//     owning Library plane. The same 2026-11-18 benchmark recorded beside the
+//     catalog marker passed; source fingerprints never enter the shared DB.
 //
 // Every entry above rode the `make bench` gate at the migration that introduced
 // it, and each sits off the entity-query hot path.
@@ -86,5 +102,5 @@ package store
 //   - mute/retention/podcast predicates
 const (
 	schemaFreezeEventsMigrations           = 23
-	schemaFreezeEncryptedLibraryMigrations = 10
+	schemaFreezeEncryptedLibraryMigrations = 11
 )

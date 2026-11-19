@@ -115,4 +115,8 @@ package store
 // query was search/fts/revealed at 50.56275 ms against a 60 ms budget, on a
 // loaded shared host. 0113 adds no index or column on any benched table: the
 // provenance table is read only by the media(id) detail read.
-const schemaFreezeCatalogMigrations = 120
+// CORE-2380 adds 0125_source_end_observation, keyed by file fingerprint and
+// generation. It is consulted by playback and the in-progress shelf only.
+// `GOWORK=off make bench` passed on 2026-11-18 for this bump: worst P95 was
+// search/fts/revealed at 39.970167 ms against 60 ms; performance-scale passed.
+const schemaFreezeCatalogMigrations = 121

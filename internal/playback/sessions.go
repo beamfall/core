@@ -224,6 +224,8 @@ const (
 type hlsSession struct {
 	dir               string
 	src               string
+	sourceInfo        os.FileInfo
+	sourceGeneration  string
 	durationSeconds   int
 	rungs             []Rung
 	audioProfile      ffmpeg.AudioProfile
@@ -479,7 +481,9 @@ type Sessions struct {
 	dir        string
 	now        func() time.Time
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
-	durationProbes durationProbeCache
+	durationProbes    durationProbeCache
+	incompleteSources incompleteSourceCache
+	sourceStore       *store.Store
 	// bootNonce tags every session directory this instance mints (see
 	// newBootNonce): nextID resets to zero each process lifetime, so without it
 	// a fresh instance's first session would mint the exact directory name a
@@ -1152,11 +1156,17 @@ func (s *Sessions) encoderSegment(ctx context.Context, key SessionKey, session *
 	if err := s.waitWhileEncoderProgresses(ctx, key, session, rung, segment, true, path, run, waitBudget); err != nil {
 		return "", err
 	}
-	if session.segmentLacksMedia(path) {
+	_, observed, observeErr := s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+		return session.segmentStart(rung, segment), session.segmentLacksMedia(path)
+	})
+	if observed {
 		// FFmpeg started past the real end of a truncated source writes a
 		// segment with no media; serving it as playable would stall the player.
 		s.noteSourceEnd(key, session, rung, segment, "")
 		return "", ErrSourceEnded
+	}
+	if observeErr != nil {
+		return "", observeErr
 	}
 	return path, nil
 }
@@ -1341,6 +1351,15 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
 func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
+	// Capture the generation before encoding, outside the session lock.
+	var sourceInfo os.FileInfo
+	if secure == nil {
+		sourceInfo, _ = os.Stat(src)
+	}
+	sourceGeneration := store.SourceFileGeneration(sourceInfo)
+	if secure != nil {
+		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
+	}
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1382,7 +1401,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		}
 	}
 	if hasExisting {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
+		if existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
@@ -1411,6 +1430,8 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	session := &hlsSession{
 		dir:               dir,
 		src:               src,
+		sourceInfo:        sourceInfo,
+		sourceGeneration:  sourceGeneration,
 		durationSeconds:   durationSeconds,
 		timeline:          timeline,
 		rungs:             requestedRungs,
@@ -1826,13 +1847,17 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		wroteSegment := segmentWrittenSince(rungDir, base, started)
 		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && session.durationSeconds > 0 {
-			last := frontier
-			for last >= base && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
-				last--
-			}
-			if end := last + 1; end < session.segmentCount(rung) {
-				sourceEnd = end
-			}
+			_, _, _ = s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
+				last := frontier
+				for last >= base && session.segmentLacksMedia(filepath.Join(rungDir, fmt.Sprintf("seg%05d.m4s", last))) {
+					last--
+				}
+				if end := last + 1; end < session.segmentCount(rung) {
+					sourceEnd = end
+					return session.segmentStart(rung, end), true
+				}
+				return 0, false
+			})
 		}
 
 		s.mu.Lock()

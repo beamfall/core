@@ -1480,6 +1480,19 @@ describe("usePlayer", () => {
     expect(screen.getByTestId("action")).toHaveTextContent("retry");
   });
 
+  it("explains an incomplete source and offers Back without retrying (CORE-2380)", async () => {
+    vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
+      decision: "unavailable",
+      reason: "media-source-incomplete",
+      streams: [],
+    });
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("phase")).toHaveTextContent("message"));
+    expect(screen.getByTestId("message")).toHaveTextContent("source ends early");
+    expect(screen.getByTestId("action")).toHaveTextContent("back");
+    expect(fetchPlaybackInfo).toHaveBeenCalledTimes(1);
+  });
+
   it("maps an unavailable decision's reason to its copy and action (CORE-1146)", async () => {
     vi.mocked(fetchPlaybackInfo).mockResolvedValueOnce({
       decision: "unavailable",

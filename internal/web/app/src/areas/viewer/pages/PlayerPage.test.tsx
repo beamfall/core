@@ -11,7 +11,8 @@ import {
   setClientPref,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
-import type { PlaybackAdjustment, PlaybackInfo } from "../lib/playback";
+import { STRINGS } from "@/strings";
+import { type PlaybackAdjustment, type PlaybackInfo, unavailableReason } from "../lib/playback";
 import { readVersionChoice, writeVersionChoice } from "../lib/versionChoice";
 import { PlayerHost } from "../player/PlayerHost";
 import { PlayerTransport } from "../player/PlayerTransport";
@@ -207,6 +208,17 @@ describe("PlayerPage failure and recovery states", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
+  it("explains an incomplete source with Back to Browse and no Try again (CORE-2380)", () => {
+    const reason = unavailableReason("media-source-incomplete", {
+      sourceEndsEarly: STRINGS.en.playbackSourceEndsEarly,
+    });
+    const { retry } = renderPlayer(playerState({ phase: "message", ...reason }));
+    expect(screen.getByRole("alert")).toHaveTextContent(STRINGS.en.playbackSourceEndsEarly);
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to Browse" }));
+    expect(retry).not.toHaveBeenCalled();
+  });
+
   it("passes copy for every unavailable reason to the engine", () => {
     renderPlayer(playerState({ phase: "loading" }));
     const messages = vi.mocked(usePlayer).mock.calls.at(-1)?.[1];
@@ -220,7 +232,7 @@ describe("PlayerPage failure and recovery states", () => {
       dolbyVisionUnavailable: expect.any(String),
       hdrToneMapUnavailable: expect.any(String),
       hdrToneMapDisabled: expect.any(String),
-      sourceEndsEarly: expect.any(String),
+      sourceEndsEarly: STRINGS.en.playbackSourceEndsEarly,
     });
   });
 

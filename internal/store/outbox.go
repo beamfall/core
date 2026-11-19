@@ -949,6 +949,16 @@ type InvalidationPayload struct {
 // caller from the mutated record, never client input, so an invalidation can
 // never cross a Profile boundary.
 func (s *Store) AppendInvalidationEvent(ctx context.Context, payload InvalidationPayload, now time.Time) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return err
+	}
+	return s.appendInvalidationEventLocked(ctx, payload, now)
+}
+
+// appendInvalidationEventLocked requires s.mu and a successful guardLocked.
+func (s *Store) appendInvalidationEventLocked(ctx context.Context, payload InvalidationPayload, now time.Time) error {
 	if payload.ProfileID == "" {
 		return ValidationError("invalidation event is missing its Profile")
 	}
@@ -957,11 +967,6 @@ func (s *Store) AppendInvalidationEvent(ctx context.Context, payload Invalidatio
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return err
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if err := s.guardLocked(); err != nil {
 		return err
 	}
 	now = normalizeTime(now)

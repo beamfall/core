@@ -667,6 +667,7 @@ func (s *Service) SetAssets(assets AssetsLocator) {
 func (s *Service) SetSessions(sessions *Sessions) {
 	s.sessions = sessions
 	if sessions != nil && s.store != nil {
+		sessions.sourceStore = s.store
 		sessions.SetKeyframeStore(s.store) // probe each audio-copy source once (CORE-0021)
 	}
 }
@@ -1065,6 +1066,21 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	file, streams, parts, versions, err := s.negotiateVersion(ctx, media, files, profile, selectedSubtitleIndex, selectedVersion, factsFingerprint, ov)
 	if err != nil {
 		return decision{}, err
+	}
+	// CORE-2380: every Part of the negotiated Version must be complete before
+	// we mint streams or advertise a resume. Other Versions remain playable.
+	// Persistent observations are generation-bound, so repaired sources can play again.
+	for _, part := range files {
+		if part.VersionLabel != file.VersionLabel {
+			continue
+		}
+		incomplete, err := s.store.MediaFileSourceIncomplete(ctx, part)
+		if err != nil {
+			return decision{}, err
+		}
+		if incomplete || (s.sessions != nil && s.sessions.incompleteSources.contains(part.Path)) {
+			return decision{media: media, verdict: "unavailable", reason: "media-source-incomplete", streams: []StreamChoice{}}, nil
+		}
 	}
 	// alternate marks a negotiated file other than the one the Media row's
 	// frame size describes (the first Version, which may be missing). Under a
