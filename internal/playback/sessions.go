@@ -524,8 +524,11 @@ type Sessions struct {
 	// stopEncoder, when set, replaces (*ffmpeg.HLSProcess).Stop. Tests set it
 	// to a slow Stop.
 	stopEncoder func(*ffmpeg.HLSProcess)
-	// removeDir, when set, replaces os.RemoveAll in runTeardowns. Tests set it
-	// to a slow removal.
+	// cleanupMu serializes teardown removals and guards failed paths awaiting
+	// retry. It is acquired without Sessions.mu or session.mu held.
+	cleanupMu   sync.Mutex
+	pendingDirs map[string]struct{}
+	// removeDir, when set, replaces os.RemoveAll during teardown and retry.
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
@@ -587,11 +590,9 @@ func (s *Sessions) teardown(session *hlsSession) {
 	if session.live != nil {
 		session.live.Close()
 	}
-	if s.removeDir != nil {
-		_ = s.removeDir(session.dir)
-	} else {
-		_ = os.RemoveAll(session.dir)
-	}
+	s.cleanupMu.Lock()
+	s.removeSessionDirLocked(session.dir)
+	s.cleanupMu.Unlock()
 	if lease != nil {
 		lease.Release()
 	}
@@ -604,6 +605,27 @@ func (s *Sessions) teardown(session *hlsSession) {
 	delete(s.detachedSessions, session)
 	close(session.teardownDone)
 	s.mu.Unlock()
+}
+
+func (s *Sessions) removeSessionDirLocked(dir string) {
+	remove := s.removeDir
+	if remove == nil {
+		remove = os.RemoveAll
+	}
+	if err := remove(dir); err != nil {
+		s.pendingDirs[dir] = struct{}{}
+		slog.Warn("transcode session directory removal failed", "error", err)
+		return
+	}
+	delete(s.pendingDirs, dir)
+}
+
+func (s *Sessions) retrySessionDirs() {
+	s.cleanupMu.Lock()
+	defer s.cleanupMu.Unlock()
+	for dir := range s.pendingDirs {
+		s.removeSessionDirLocked(dir)
+	}
 }
 
 // stopRun drains a run after its endpoint has been signaled. The process,
@@ -896,11 +918,18 @@ func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
 // TerminateSessions revokes playback for the entire set of auth sessions
 // before waiting for any of their transcodes to drain.
 func (s *Sessions) TerminateSessions(sessionIDs []store.SessionID) int {
+	return s.RevokeSessions(sessionIDs)()
+}
+
+// RevokeSessions immediately invalidates playback readers and encoder tokens.
+// The returned function waits for teardown and reports the number detached by
+// this call, allowing callers to signal more revocations before waiting.
+func (s *Sessions) RevokeSessions(sessionIDs []store.SessionID) func() int {
 	ids := make(map[store.SessionID]bool, len(sessionIDs))
 	for _, id := range sessionIDs {
 		ids[id] = true
 	}
-	return s.terminate(func(key SessionKey) bool { return ids[key.SessionID] })
+	return s.beginTermination(func(key SessionKey) bool { return ids[key.SessionID] })
 }
 
 // TerminatePlayback aborts the in-flight transcodes one auth Session holds for
@@ -910,21 +939,27 @@ func (s *Sessions) TerminateSessions(sessionIDs []store.SessionID) int {
 // MediaID) pair and returns how many it detached, leaving the Session's other
 // Media alone. Ending a playback with no live transcode is a zero-stop no-op.
 func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int {
-	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID && key.MediaID == mediaID })
+	return s.beginTermination(func(key SessionKey) bool {
+		return key.SessionID == sessionID && key.MediaID == mediaID
+	})()
 }
 
-func (s *Sessions) terminate(match func(SessionKey) bool) int {
+func (s *Sessions) beginTermination(match func(SessionKey) bool) func() int {
 	s.mu.Lock()
 	teardowns, detached := s.detachMatchingLocked(match)
 	s.mu.Unlock()
 	for _, session := range detached {
 		revokeSession(session)
 	}
-	s.drainTeardowns(teardowns)
-	for _, session := range detached {
-		<-session.teardownDone
+	if len(teardowns) != 0 {
+		go s.drainTeardowns(teardowns)
 	}
-	return len(teardowns)
+	return func() int {
+		for _, session := range detached {
+			<-session.teardownDone
+		}
+		return len(teardowns)
+	}
 }
 
 // detachMatchingLocked includes sessions whose teardown another caller owns.
@@ -968,6 +1003,7 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		bootNonce:        newBootNonce(),
 		sessions:         map[SessionKey]*hlsSession{},
 		detachedSessions: make(map[*hlsSession]SessionKey),
+		pendingDirs:      make(map[string]struct{}),
 		cap:              defaultTranscodeCap,
 		resumeHints:      map[SessionKey]resumeHint{},
 	}
@@ -2090,6 +2126,7 @@ func (s *Sessions) reap() {
 	}
 	s.mu.Unlock()
 	s.runTeardowns(teardowns)
+	s.retrySessionDirs()
 }
 
 // sessionDirName matches a transcode session working directory
@@ -2153,11 +2190,9 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 	return joined
 }
 
-// Close stops every running transcode and removes its working directory. It
-// also waits for encoder starts and teardowns running with the lock released
-// (a start sees its session gone and stops what it spawned), so no encoder,
-// lease or directory outlives it. Keyframe probes still running are cancelled
-// and waited for, and no session is created once Close has begun.
+// Close prevents new sessions, cancels keyframe probes and drains running
+// encoders and in-progress starts and teardowns. It retries failed directory
+// removals before returning.
 func (s *Sessions) Close() {
 	s.mu.Lock()
 	s.closed = true
@@ -2171,6 +2206,7 @@ func (s *Sessions) Close() {
 	for _, session := range detached {
 		<-session.teardownDone
 	}
+	s.retrySessionDirs()
 }
 
 // fileReady reports whether path exists with a non-empty body — the readiness

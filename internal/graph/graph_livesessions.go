@@ -239,7 +239,10 @@ func (h *Handler) revokeDevice(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return RevokeDeviceResult{}, err
 	}
-	aborted := h.abortDeviceTranscodes(byDevice[store.DeviceID(id)])
+	aborted := 0
+	if ids := byDevice[store.DeviceID(id)]; len(ids) != 0 {
+		aborted = h.transcodeTerminator.RevokeSessions(ids)()
+	}
 	if err := h.logActivity(ctx, scope, store.ActivityDeviceRevoke, "device", id, ""); err != nil {
 		return RevokeDeviceResult{}, err
 	}
@@ -295,13 +298,4 @@ func activeSessionIDsByDevice(active []store.ActiveSession) map[store.DeviceID][
 		byDevice[session.DeviceID] = append(byDevice[session.DeviceID], session.SessionID)
 	}
 	return byDevice
-}
-
-// abortDeviceTranscodes revokes all the listed sessions before draining any
-// of them. A nil terminator or empty list aborts zero.
-func (h *Handler) abortDeviceTranscodes(sessionIDs []store.SessionID) int {
-	if h.transcodeTerminator == nil || len(sessionIDs) == 0 {
-		return 0
-	}
-	return h.transcodeTerminator.TerminateSessions(sessionIDs)
 }

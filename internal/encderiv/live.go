@@ -51,10 +51,11 @@ type LiveSession struct {
 	dir       string
 	libraryID string
 
-	// mu guards the key and reader registration. It is never held during I/O.
+	// mu guards the key and open/reader registration. It is never held during I/O.
 	mu        sync.Mutex
 	key       []byte
 	files     map[*LiveFile]struct{}
+	opens     sync.WaitGroup
 	revoked   atomic.Bool
 	closeOnce sync.Once
 
@@ -92,7 +93,7 @@ func (s *LiveSession) Revoke() {
 	s.key = nil
 }
 
-// Close revokes the session and drains the underlying files of open readers.
+// Close revokes the session and drains open readers and in-progress opens.
 func (s *LiveSession) Close() {
 	s.Revoke()
 	s.closeOnce.Do(func() {
@@ -103,6 +104,7 @@ func (s *LiveSession) Close() {
 		for f := range files {
 			f.end()
 		}
+		s.opens.Wait()
 	})
 }
 
@@ -237,9 +239,19 @@ func (s *LiveSession) put(rel string, body io.Reader) error {
 // Open returns a decrypting view of the file at rel. A file that fails
 // authentication does not open.
 func (s *LiveSession) Open(rel string) (*LiveFile, error) {
+	return s.open(rel, libencrypt.NewDecryptReaderV2)
+}
+
+func (s *LiveSession) open(rel string, decrypt func(io.ReaderAt, int64, []byte, libencrypt.ObjectContext) (*libencrypt.DecryptReaderV2, error)) (*LiveFile, error) {
+	s.mu.Lock()
 	if s.revoked.Load() {
+		s.mu.Unlock()
 		return nil, ErrLiveSessionClosed
 	}
+	s.opens.Add(1)
+	s.mu.Unlock()
+	defer s.opens.Done()
+
 	path, err := s.resolve(rel)
 	if err != nil {
 		return nil, err
@@ -258,7 +270,7 @@ func (s *LiveSession) Open(rel string) (*LiveFile, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	r, err := libencrypt.NewDecryptReaderV2(f, info.Size(), key, s.object(rel))
+	r, err := decrypt(f, info.Size(), key, s.object(rel))
 	libencrypt.ZeroKey(key)
 	if err != nil {
 		_ = f.Close()

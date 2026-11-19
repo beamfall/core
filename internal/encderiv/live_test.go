@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/libencrypt"
 )
 
 const testLiveRung = "r"
@@ -219,6 +220,96 @@ func TestLiveSessionCloseZeroesTheKey(t *testing.T) {
 	}
 	if names := sessionFiles(t, session.Dir()); len(names) != 1 {
 		t.Fatalf("files %v after a refused write", names)
+	}
+}
+
+type readerAtFunc func([]byte, int64) (int, error)
+
+func (f readerAtFunc) ReadAt(p []byte, off int64) (int, error) { return f(p, off) }
+
+func TestLiveSessionCloseDrainsAuthenticatingOpen(t *testing.T) {
+	session := newTestLiveSession(t)
+	const rel = testLiveRung + "/segment"
+	if err := session.WriteFile(rel, []byte("payload")); err != nil {
+		t.Fatal(err)
+	}
+	file, err := session.Open(rel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, readErr := io.ReadAll(file)
+	if closeErr := file.Close(); string(data) != "payload" || readErr != nil || closeErr != nil {
+		t.Fatalf("read fixture: %q, %v, close: %v", data, readErr, closeErr)
+	}
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	var fd *os.File
+	var copiedKey []byte
+	opened := make(chan error, 1)
+	go func() {
+		file, err := session.open(rel, func(src io.ReaderAt, size int64, key []byte, object libencrypt.ObjectContext) (*libencrypt.DecryptReaderV2, error) {
+			fd = src.(*os.File)
+			copiedKey = key
+			return libencrypt.NewDecryptReaderV2(readerAtFunc(func(p []byte, off int64) (int, error) {
+				if off == 0 {
+					close(entered)
+					<-release
+				}
+				return src.ReadAt(p, off)
+			}), size, key, object)
+		})
+		if file != nil {
+			_ = file.Close()
+		}
+		opened <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Open never reached encrypted header authentication")
+	}
+	if _, err := fd.Stat(); err != nil || len(copiedKey) == 0 {
+		t.Fatalf("authentication reached without a file and key: %v", err)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		session.Close()
+		close(closed)
+	}()
+	for deadline := time.Now().Add(5 * time.Second); !session.revoked.Load(); {
+		if time.Now().After(deadline) {
+			t.Fatal("Close did not signal revocation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-closed:
+		t.Fatal("Close returned while Open held a descriptor and key")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	unblock()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return after authentication resumed")
+	}
+	if _, err := fd.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("descriptor after Close: %v", err)
+	}
+	if !bytes.Equal(copiedKey, make([]byte, len(copiedKey))) {
+		t.Fatal("Close left the Open key copy intact")
+	}
+	select {
+	case err := <-opened:
+		if !errors.Is(err, ErrLiveSessionClosed) {
+			t.Fatalf("Open after revocation: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Open did not return after authentication resumed")
 	}
 }
 

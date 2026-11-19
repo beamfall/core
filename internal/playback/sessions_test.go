@@ -2511,6 +2511,102 @@ func TestCloseWaitsForADirectoryOnlyTeardown(t *testing.T) {
 	}
 }
 
+func TestSessionsBatchTeardownSerializesDirectoryRemoval(t *testing.T) {
+	t.Parallel()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	const count = 12
+	const id = "session-playlist-only"
+	var dirs []string
+	for i := range count {
+		key := SessionKey{SessionID: id, MediaID: store.MediaID(fmt.Sprintf("media-%d", i))}
+		if _, err := filePath720(sessions, key, masterPlaylistName); err != nil {
+			t.Fatal(err)
+		}
+		session := registeredSession(t, sessions, key)
+		if session.proc != nil {
+			t.Fatal("playlist-only session started an encoder")
+		}
+		dirs = append(dirs, session.dir)
+	}
+
+	entered, release := make(chan string, count), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	sessions.removeDir = func(dir string) error {
+		entered <- dir
+		<-release
+		return os.RemoveAll(dir)
+	}
+	done := make(chan int, 1)
+	go func() { done <- sessions.TerminateSession(id) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("batch teardown never reached directory removal")
+	}
+	select {
+	case dir := <-entered:
+		t.Fatalf("a second directory removal entered while the first was blocked: %s", dir)
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	select {
+	case got := <-done:
+		if got != count {
+			t.Fatalf("detached %d sessions, want %d", got, count)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("batch teardown did not finish")
+	}
+	for _, dir := range dirs {
+		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("directory %s after teardown: %v", dir, err)
+		}
+	}
+}
+
+func TestSessionsRetryFailedDirectoryRemoval(t *testing.T) {
+	t.Parallel()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	key := SessionKey{SessionID: "session-removal-retry", MediaID: "media-alpha"}
+	path, err := filePath720(sessions, key, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Size() == 0 {
+		t.Fatalf("playlist fixture is missing or empty: %v", err)
+	}
+	dir := registeredSession(t, sessions, key).dir
+	attempts := 0
+	sessions.removeDir = func(got string) error {
+		if got != dir {
+			t.Errorf("remove %s, want %s", got, dir)
+		}
+		attempts++
+		if attempts <= 2 {
+			return os.ErrPermission
+		}
+		return os.RemoveAll(got)
+	}
+	if got := sessions.TerminateSession(key.SessionID); got != 1 || attempts != 1 {
+		t.Fatalf("termination detached %d sessions and attempted %d removals", got, attempts)
+	}
+	sessions.reap()
+	if _, err := os.Stat(dir); err != nil || attempts != 2 {
+		t.Fatalf("failed reap retry: stat %v, attempts %d", err, attempts)
+	}
+	sessions.Close()
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) || attempts != 3 {
+		t.Fatalf("shutdown retry: stat %v, attempts %d", err, attempts)
+	}
+	sessions.reap()
+	if attempts != 3 {
+		t.Fatalf("successful removal was retried: %d attempts", attempts)
+	}
+}
+
 // TestPendingStartIsNotPreempted covers preemption during an off-lock encoder
 // replacement: the replacing session cannot be torn down by a preemptor,
 // because its teardown could not wait for the replaced encoder to exit and the

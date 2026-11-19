@@ -482,7 +482,7 @@ type Handler struct {
 	transcodeConfigMu sync.Mutex
 	// scanPreviews holds the single-use rescan preview tokens (CORE-1054).
 	scanPreviews scanPreviewTokens
-	// mutationAuditAppend is a test seam for the request-level audit lifecycle.
+	// mutationAuditAppend is a test seam for mutation audit writes.
 	// Nil uses store.AppendActivity in production.
 	mutationAuditAppend func(context.Context, store.ActivityEntry) error
 	// audit records every admin-scoped GraphQL operation, including reads and
@@ -757,10 +757,11 @@ type UpdateChecker interface {
 // TranscodeTerminator aborts in-flight transcodes: every one owned by a set of
 // auth Sessions (device revocation), or the ones one Session holds for one Media
 // (endPlayback, CORE-2345). Defined at the consumer (ADR-0016 §seams); the
-// playback Sessions manager satisfies it. Both return how many transcodes they
-// stopped so the mutations can report propagation honestly.
+// playback Sessions manager satisfies it.
 type TranscodeTerminator interface {
-	TerminateSessions(sessionIDs []store.SessionID) int
+	// RevokeSessions signals playback revocation immediately. Its result
+	// waits for teardown and reports how many transcodes were stopped.
+	RevokeSessions(sessionIDs []store.SessionID) func() int
 	TerminatePlayback(sessionID store.SessionID, mediaID store.MediaID) int
 }
 
@@ -3896,7 +3897,7 @@ func scopedAPIKeyInfo(key store.ScopedAPIKey) ScopedAPIKeyInfo {
 // code, token, or path. Reveal/relock entries carry no target: they must
 // never name restricted content in their payload.
 func (h *Handler) logActivity(ctx context.Context, scope auth.Scope, action, targetType, targetID string, libraryID store.LibraryID) error {
-	err := h.store.AppendActivity(ctx, store.ActivityEntry{
+	err := h.appendMutationAudit(ctx, store.ActivityEntry{
 		OccurredAt: time.Now().UTC(),
 		Action:     action,
 		SessionID:  scope.SessionID,
