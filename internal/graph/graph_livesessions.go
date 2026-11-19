@@ -297,15 +297,11 @@ func activeSessionIDsByDevice(active []store.ActiveSession) map[store.DeviceID][
 	return byDevice
 }
 
-// abortDeviceTranscodes terminates each pre-grouped Session once. Returns the
-// count aborted. A nil terminator or empty list aborts zero.
+// abortDeviceTranscodes revokes all the listed sessions before draining any
+// of them. A nil terminator or empty list aborts zero.
 func (h *Handler) abortDeviceTranscodes(sessionIDs []store.SessionID) int {
-	if h.transcodeTerminator == nil {
+	if h.transcodeTerminator == nil || len(sessionIDs) == 0 {
 		return 0
 	}
-	aborted := 0
-	for _, sessionID := range sessionIDs {
-		aborted += h.transcodeTerminator.TerminateSession(sessionID)
-	}
-	return aborted
+	return h.transcodeTerminator.TerminateSessions(sessionIDs)
 }

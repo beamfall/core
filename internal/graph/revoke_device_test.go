@@ -1,17 +1,28 @@
 package graph
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/beamfall/core/internal/encderiv"
+	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 // fakeTerminator stands in for *playback.Sessions. live holds how many
-// transcodes each session runs; TerminateSession stops and reports them, and a
+// transcodes each session runs; TerminateSessions stops and reports them, and a
 // session with none is the zero-stop no-op the real manager returns. aborted
 // records, in call order, the sessions that had something to stop, and
 // playbacks records every TerminatePlayback call.
@@ -26,13 +37,16 @@ type fakePlayback struct {
 	mediaID   store.MediaID
 }
 
-func (f *fakeTerminator) TerminateSession(sessionID store.SessionID) int {
-	n := f.live[sessionID]
-	if n > 0 {
-		delete(f.live, sessionID)
-		f.aborted = append(f.aborted, sessionID)
+func (f *fakeTerminator) TerminateSessions(sessionIDs []store.SessionID) int {
+	aborted := 0
+	for _, sessionID := range sessionIDs {
+		if n := f.live[sessionID]; n > 0 {
+			aborted += n
+			delete(f.live, sessionID)
+			f.aborted = append(f.aborted, sessionID)
+		}
 	}
-	return n
+	return aborted
 }
 
 // TerminatePlayback records the call. It does not change live, which lets a
@@ -119,6 +133,140 @@ func TestRevokeDeviceAbortsTranscodesForThatDeviceOnly(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("no %q activity entry for device-tv: %#v", store.ActivityDeviceRevoke, entries)
+	}
+}
+
+type blockedEncryptedSpawn struct {
+	playback.Transcoder
+	entered chan struct{}
+	release <-chan struct{}
+}
+
+func (b blockedEncryptedSpawn) StartEncryptedHLSSegments(context.Context, ffmpeg.EncryptedLiveEndpoint, int, int, ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	b.entered <- struct{}{}
+	<-b.release
+	return &ffmpeg.HLSProcess{}, nil
+}
+
+type deviceTestSource struct{ *bytes.Reader }
+
+func (deviceTestSource) Close() error { return nil }
+
+func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
+	st := storetest.Open(t)
+	handler := newTestHandlerWithStore(st)
+	openManagerAdminSession(t, st)
+	ids := []store.SessionID{"session-default", "session-managed"}
+	byDevice, err := st.SessionIDsByDevice(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entered, release := make(chan struct{}, 2), make(chan struct{})
+	sessions := playback.NewSessions(blockedEncryptedSpawn{entered: entered, release: release}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	handler.SetTranscodeTerminator(sessions)
+	shape := playback.StreamShape{Encrypted: &playback.EncryptedSource{
+		LibraryID: "library-sealed",
+		Size:      1,
+		Open: func() (io.ReadSeekCloser, error) {
+			return deviceTestSource{bytes.NewReader([]byte{1})}, nil
+		},
+	}}
+	filePath := func(key playback.SessionKey, name string) (string, error) {
+		return sessions.FilePathShaped(t.Context(), key, "", 120, 1280, 720, false, false,
+			playback.LadderCapsFromGrant(streamtoken.Grant{}), playback.VideoSignal{}, -1,
+			ffmpeg.AudioProfile{}, nil, shape, playback.PriorityNormal, name)
+	}
+	var readers []*encderiv.LiveFile
+	starts := make(chan error, 2)
+	for _, id := range ids {
+		if !slices.Contains(byDevice["device-tv"], id) {
+			t.Fatalf("device-tv has no auth session %s", id)
+		}
+		key := playback.SessionKey{SessionID: id, MediaID: "media-alpha"}
+		path, err := filePath(key, "master.m3u8")
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader, err := sessions.OpenLiveArtifact(key, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		var buf [1]byte
+		if _, err := io.ReadFull(reader, buf[:]); err != nil {
+			t.Fatalf("read %s before revocation: %v", id, err)
+		}
+		readers = append(readers, reader)
+		go func() {
+			_, err := filePath(key, "720p/seg00000.m4s")
+			starts <- err
+		}()
+		select {
+		case <-entered:
+		case err := <-starts:
+			t.Fatalf("%s start failed before the drain could block: %v", id, err)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s never reached the blocked spawn", id)
+		}
+	}
+
+	req := httptest.NewRequestWithContext(t.Context(), "POST", "/api/graphql", strings.NewReader(
+		`{"query":"mutation { revokeDevice(deviceID:\"device-tv\"){ transcodesAborted } }"}`))
+	authorizeManager(req)
+	response := httptest.NewRecorder()
+	finished := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, req)
+		close(finished)
+	}()
+	for i, reader := range readers {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			var buf [1]byte
+			n, err := reader.ReadAt(buf[:], 0)
+			if n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("reader %d while both spawns were blocked: read %d, err %v", i, n, err)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	select {
+	case <-finished:
+		t.Fatalf("device revocation returned before the sessions drained: %s", response.Body)
+	default:
+	}
+
+	unblock()
+	for range readers {
+		select {
+		case err := <-starts:
+			if !errors.Is(err, playback.ErrSessionEvicted) {
+				t.Fatalf("start after revocation: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("start did not finish after release")
+		}
+	}
+	select {
+	case <-finished:
+		var got struct {
+			Data struct {
+				RevokeDevice RevokeDeviceResult `json:"revokeDevice"`
+			} `json:"data"`
+			Errors []graphError `json:"errors"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || len(got.Errors) != 0 || got.Data.RevokeDevice.TranscodesAborted != 2 {
+			t.Fatalf("revokeDevice response: %s, decode err %v", response.Body, err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("device revocation did not finish after release")
 	}
 }
 

@@ -140,8 +140,12 @@ func TestTerminateSessionRevokesAllReadersWhileJoinsDrain(t *testing.T) {
 
 	// Stall both joins so the first teardown cannot finish, regardless of
 	// which session TerminateSession finds first in the map.
-	firstJoin, releaseFirst := blockFragmentJoin(t, registeredSession(t, sessions, first), regularJoinPart(t))
+	firstSession := registeredSession(t, sessions, first)
+	firstJoin, releaseFirst := blockFragmentJoin(t, firstSession, regularJoinPart(t))
 	secondJoin, releaseSecond := blockFragmentJoin(t, registeredSession(t, sessions, second), regularJoinPart(t))
+	firstSession.mu.Lock()
+	unlock := sync.OnceFunc(firstSession.mu.Unlock)
+	defer unlock()
 	terminated := make(chan int, 1)
 	go func() { terminated <- sessions.TerminateSession(first.SessionID) }()
 
@@ -157,6 +161,7 @@ func TestTerminateSessionRevokesAllReadersWhileJoinsDrain(t *testing.T) {
 		t.Fatalf("TerminateSession returned %d while the joins were blocked", n)
 	default:
 	}
+	unlock()
 	releaseFirst()
 	releaseSecond()
 	assertJoinEvicted(t, firstJoin)

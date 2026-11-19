@@ -195,16 +195,23 @@ func (e *endpoint) Err() error {
 // returned and the server has stopped. It is safe to call more than once and
 // from more than one goroutine.
 func (e *endpoint) Revoke() {
+	e.signalRevoke()
+	e.waitRevoked()
+}
+
+// signalRevoke invalidates the token before any connection or handler is drained.
+func (e *endpoint) signalRevoke() {
+	e.mu.Lock()
+	e.revoked = true
+	e.open = nil
+	e.mu.Unlock()
+}
+
+func (e *endpoint) waitRevoked() {
 	e.revokeOnce.Do(func() {
-		e.mu.Lock()
-		e.revoked = true
-		e.mu.Unlock()
 		_ = e.srv.Close()
 		e.inflight.Wait()
 		<-e.serveDone
-		e.mu.Lock()
-		e.open = nil
-		e.mu.Unlock()
 	})
 }
 

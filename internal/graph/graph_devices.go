@@ -112,18 +112,23 @@ func (h *Handler) revokeAllDevices(ctx context.Context, scope auth.Scope) (Revok
 		return RevokeAllDevicesResult{}, err
 	}
 	result := RevokeAllDevicesResult{}
+	var revokedSessions []store.SessionID
 	for _, d := range list {
 		if d.ID == scope.DeviceID || d.Revoked {
 			continue
 		}
-		if err := h.store.RevokeDevice(ctx, d.ID); err != nil {
-			return RevokeAllDevicesResult{}, err
+		if err = h.store.RevokeDevice(ctx, d.ID); err != nil {
+			break
 		}
 		result.RevokedCount++
-		result.TranscodesAborted += h.abortDeviceTranscodes(activeByDevice[d.ID])
-		if err := h.logActivity(ctx, scope, store.ActivityDeviceRevoke, "device", string(d.ID), ""); err != nil {
-			return RevokeAllDevicesResult{}, err
+		revokedSessions = append(revokedSessions, activeByDevice[d.ID]...)
+		if err = h.logActivity(ctx, scope, store.ActivityDeviceRevoke, "device", string(d.ID), ""); err != nil {
+			break
 		}
+	}
+	result.TranscodesAborted = h.abortDeviceTranscodes(revokedSessions)
+	if err != nil {
+		return RevokeAllDevicesResult{}, err
 	}
 	return result, nil
 }

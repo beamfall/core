@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/beamfall/core/internal/libencrypt"
@@ -44,26 +45,22 @@ var (
 )
 
 // LiveSession is one encrypted live session: its directory and the session key
-// every file in it is encrypted under. Close zeroes the key; the owner removes
-// the directory.
+// every file in it is encrypted under. The owner closes the session before
+// removing its directory.
 type LiveSession struct {
 	dir       string
 	libraryID string
 
-	// mu guards key and closed. Writers and readers hold it shared only while
-	// they use the key; Close takes it exclusively to zero it.
-	mu     sync.RWMutex
-	key    []byte
-	closed bool
+	// mu guards the key and reader registration. It is never held during I/O.
+	mu        sync.Mutex
+	key       []byte
+	files     map[*LiveFile]struct{}
+	revoked   atomic.Bool
+	closeOnce sync.Once
 
 	// publish serialises the exists check and .part creation, so two uploads
 	// of one name cannot both proceed.
 	publish sync.Mutex
-
-	// files are the LiveFiles open now; Close ends them. Lock order: mu,
-	// then filesMu, then a LiveFile's own mu.
-	filesMu sync.Mutex
-	files   map[*LiveFile]struct{}
 }
 
 // NewLiveSession draws a fresh session key for the files under dir, which must
@@ -85,26 +82,37 @@ func NewLiveSession(dir, libraryID string) (*LiveSession, error) {
 // Dir is the session directory.
 func (s *LiveSession) Dir() string { return s.dir }
 
-// Close zeroes the session key and ends every file open in the session, so a
-// response still streaming one stops at its next read: once the session ends,
-// for example because its Library was sealed, no more plaintext leaves it.
-// Nothing new can be written or opened.
-func (s *LiveSession) Close() {
+// Revoke zeroes the session key and invalidates every reader immediately,
+// including readers whose underlying file operations are still in progress.
+func (s *LiveSession) Revoke() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.closed {
-		return
-	}
-	s.closed = true
+	s.revoked.Store(true)
 	libencrypt.ZeroKey(s.key)
 	s.key = nil
-	s.filesMu.Lock()
-	files := s.files
-	s.files = nil
-	s.filesMu.Unlock()
-	for f := range files {
-		f.end()
+}
+
+// Close revokes the session and drains the underlying files of open readers.
+func (s *LiveSession) Close() {
+	s.Revoke()
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		files := s.files
+		s.files = nil
+		s.mu.Unlock()
+		for f := range files {
+			f.end()
+		}
+	})
+}
+
+func (s *LiveSession) copyKey() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.revoked.Load() {
+		return nil, ErrLiveSessionClosed
 	}
+	return bytes.Clone(s.key), nil
 }
 
 // object binds a file to its Library and its place in the session, so a file
@@ -143,17 +151,20 @@ func (s *LiveSession) Rel(path string) (string, bool) {
 
 // encrypt writes src encrypted to f under the session key.
 func (s *LiveSession) encrypt(f *os.File, src io.Reader, rel string) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.closed {
-		return ErrLiveSessionClosed
+	key, err := s.copyKey()
+	if err != nil {
+		return err
 	}
-	return libencrypt.EncryptStreamV2(f, src, s.key, s.object(rel))
+	defer libencrypt.ZeroKey(key)
+	return libencrypt.EncryptStreamV2(f, src, key, s.object(rel))
 }
 
 // WriteFile replaces the file at rel with data, encrypted. Core uses it for
 // the playlists it serves itself.
 func (s *LiveSession) WriteFile(rel string, data []byte) error {
+	if s.revoked.Load() {
+		return ErrLiveSessionClosed
+	}
 	path, err := s.resolve(rel)
 	if err != nil {
 		return err
@@ -166,6 +177,9 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 	err = s.encrypt(f, bytes.NewReader(data), rel)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
+	}
+	if err == nil && s.revoked.Load() {
+		err = ErrLiveSessionClosed
 	}
 	if err == nil {
 		err = os.Rename(tmp, path)
@@ -180,6 +194,9 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 // place. A name already published, or one another upload is writing, is
 // refused with errUploadExists before body is read (first writer wins).
 func (s *LiveSession) put(rel string, body io.Reader) error {
+	if s.revoked.Load() {
+		return ErrLiveSessionClosed
+	}
 	path, err := s.resolve(rel)
 	if err != nil {
 		return err
@@ -205,6 +222,9 @@ func (s *LiveSession) put(rel string, body io.Reader) error {
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
+	if err == nil && s.revoked.Load() {
+		err = ErrLiveSessionClosed
+	}
 	if err == nil {
 		err = os.Rename(part, path)
 	}
@@ -217,6 +237,9 @@ func (s *LiveSession) put(rel string, body io.Reader) error {
 // Open returns a decrypting view of the file at rel. A file that fails
 // authentication does not open.
 func (s *LiveSession) Open(rel string) (*LiveFile, error) {
+	if s.revoked.Load() {
+		return nil, ErrLiveSessionClosed
+	}
 	path, err := s.resolve(rel)
 	if err != nil {
 		return nil, err
@@ -230,14 +253,13 @@ func (s *LiveSession) Open(rel string) (*LiveFile, error) {
 		_ = f.Close()
 		return nil, err
 	}
-	// Held until the file is registered, so Close cannot miss it.
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.closed {
+	key, err := s.copyKey()
+	if err != nil {
 		_ = f.Close()
-		return nil, ErrLiveSessionClosed
+		return nil, err
 	}
-	r, err := libencrypt.NewDecryptReaderV2(f, info.Size(), s.key, s.object(rel))
+	r, err := libencrypt.NewDecryptReaderV2(f, info.Size(), key, s.object(rel))
+	libencrypt.ZeroKey(key)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
@@ -251,12 +273,17 @@ func (s *LiveSession) Open(rel string) (*LiveFile, error) {
 		return nil, err
 	}
 	lf := &LiveFile{owner: s, file: f, r: r, size: size, modTime: info.ModTime()}
-	s.filesMu.Lock()
+	s.mu.Lock()
+	if s.revoked.Load() {
+		s.mu.Unlock()
+		_ = f.Close()
+		return nil, ErrLiveSessionClosed
+	}
 	if s.files == nil {
 		s.files = make(map[*LiveFile]struct{})
 	}
 	s.files[lf] = struct{}{}
-	s.filesMu.Unlock()
+	s.mu.Unlock()
 	return lf, nil
 }
 
@@ -279,18 +306,29 @@ func (f *LiveFile) Size() int64 { return f.size }
 func (f *LiveFile) ModTime() time.Time { return f.modTime }
 
 func (f *LiveFile) Read(p []byte) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.ended {
+	if f.owner.revoked.Load() {
 		return 0, ErrLiveSessionClosed
 	}
-	return f.r.Read(p)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ended || f.owner.revoked.Load() {
+		return 0, ErrLiveSessionClosed
+	}
+	n, err := f.r.Read(p)
+	if f.owner.revoked.Load() {
+		clear(p[:n])
+		return 0, ErrLiveSessionClosed
+	}
+	return n, err
 }
 
 func (f *LiveFile) Seek(offset int64, whence int) (int64, error) {
+	if f.owner.revoked.Load() {
+		return 0, ErrLiveSessionClosed
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.ended {
+	if f.ended || f.owner.revoked.Load() {
 		return 0, ErrLiveSessionClosed
 	}
 	return f.r.Seek(offset, whence)
@@ -298,9 +336,12 @@ func (f *LiveFile) Seek(offset int64, whence int) (int64, error) {
 
 // ReadAt reads at off without moving the Read offset.
 func (f *LiveFile) ReadAt(p []byte, off int64) (int, error) {
+	if f.owner.revoked.Load() {
+		return 0, ErrLiveSessionClosed
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.ended {
+	if f.ended || f.owner.revoked.Load() {
 		return 0, ErrLiveSessionClosed
 	}
 	pos, err := f.r.Seek(0, io.SeekCurrent)
@@ -317,6 +358,10 @@ func (f *LiveFile) ReadAt(p []byte, off int64) (int, error) {
 	if _, seekErr := f.r.Seek(pos, io.SeekStart); err == nil {
 		err = seekErr
 	}
+	if f.owner.revoked.Load() {
+		clear(p[:n])
+		return 0, ErrLiveSessionClosed
+	}
 	return n, err
 }
 
@@ -326,9 +371,9 @@ func (f *LiveFile) Close() error {
 	f.mu.Lock()
 	err := f.endLocked()
 	f.mu.Unlock()
-	f.owner.filesMu.Lock()
+	f.owner.mu.Lock()
 	delete(f.owner.files, f)
-	f.owner.filesMu.Unlock()
+	f.owner.mu.Unlock()
 	return err
 }
 
@@ -452,6 +497,12 @@ func (r *LiveRun) Secret() string { return r.ep.token }
 // Revoke ends the token and waits for requests in flight; an upload cut off
 // leaves no file behind.
 func (r *LiveRun) Revoke() { r.ep.Revoke() }
+
+// SignalRevoke invalidates the token without waiting for the endpoint's I/O.
+func (r *LiveRun) SignalRevoke() { r.ep.signalRevoke() }
+
+// WaitRevoked closes connections and waits for handlers after SignalRevoke.
+func (r *LiveRun) WaitRevoked() { r.ep.waitRevoked() }
 
 // Finish ends the token after the encoder has exited, once the uploads it
 // already sent are stored (see endpoint.Drain).

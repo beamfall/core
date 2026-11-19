@@ -73,6 +73,14 @@ func (s *Sessions) startEncryptedRung(ctx context.Context, session *hlsSession, 
 	if err != nil {
 		return nil, nil, err
 	}
+	s.mu.Lock()
+	if session.detached.Load() {
+		s.mu.Unlock()
+		live.Revoke()
+		return nil, nil, ErrSessionEvicted
+	}
+	session.liveRun.Store(live)
+	s.mu.Unlock()
 	ep := ffmpeg.EncryptedLiveEndpoint{Source: live.SourceURL(), Output: live.OutputURL(), Secret: live.Secret()}
 	proc, err := starter.StartEncryptedHLSSegments(ctx, ep, segment, rungSegmentSeconds(rung), session.rendition(rung))
 	if err != nil {

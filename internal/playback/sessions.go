@@ -184,6 +184,12 @@ func (r *encoderRun) exitedChan() <-chan struct{} {
 	return r.exited
 }
 
+func (r *encoderRun) signalRevoke() {
+	if r != nil && r.live != nil {
+		r.live.SignalRevoke()
+	}
+}
+
 // ErrTranscodeCapacity is returned when admission control cannot start
 // another transcode: every slot is held by an actively-streaming session.
 var ErrTranscodeCapacity = errors.New("transcode capacity reached")
@@ -345,6 +351,9 @@ type hlsSession struct {
 	secure     *EncryptedSource
 	live       *encderiv.LiveSession
 	revokeDone chan struct{}
+	// liveRun is published under Sessions.mu before spawn so revocation can
+	// reach the endpoint even if the starter or the session lock is blocked.
+	liveRun atomic.Pointer[encderiv.LiveRun]
 }
 
 // takeRestartLocked spends one crash restart from the session's sliding
@@ -539,21 +548,27 @@ type sessionTeardown struct {
 }
 
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
-	// Start every teardown before waiting. A blocked fragment join or encoder
-	// must never delay revocation of another session's encrypted readers.
+	for _, t := range teardowns {
+		revokeSession(t.session)
+	}
+	s.drainTeardowns(teardowns)
+}
+
+func revokeSession(session *hlsSession) {
+	if session.live != nil {
+		session.live.Revoke()
+	}
+	if liveRun := session.liveRun.Load(); liveRun != nil {
+		liveRun.SignalRevoke()
+	}
+}
+
+func (s *Sessions) drainTeardowns(teardowns []sessionTeardown) {
 	var draining sync.WaitGroup
 	for _, t := range teardowns {
-		draining.Go(func() {
-			if t.pending {
-				// The starter owns process cleanup and may be stalled stopping
-				// the previous encoder. Revoke its readers here.
-				if t.session.live != nil {
-					t.session.live.Close()
-				}
-				return
-			}
-			s.teardown(t.session)
-		})
+		if !t.pending {
+			draining.Go(func() { s.teardown(t.session) })
+		}
 	}
 	draining.Wait()
 }
@@ -565,13 +580,13 @@ func (s *Sessions) teardown(session *hlsSession) {
 	session.currentRung = ""
 	lease := session.transcodeLease
 	session.transcodeLease = nil
-	if session.revokeDone != nil {
-		close(session.revokeDone)
-	}
 	session.mu.Unlock()
 
-	s.stopRun(proc, run, session.live)
+	s.stopRun(proc, run)
 	session.joins.Wait()
+	if session.live != nil {
+		session.live.Close()
+	}
 	if s.removeDir != nil {
 		_ = s.removeDir(session.dir)
 	} else {
@@ -591,17 +606,13 @@ func (s *Sessions) teardown(session *hlsSession) {
 	s.mu.Unlock()
 }
 
-// stopRun revokes the run's endpoint before closing live readers on final
-// teardown. Revoking first aborts uploads that could hold the session key in
-// use. The process and its reaper must exit before the directory is reused.
-func (s *Sessions) stopRun(proc *ffmpeg.HLSProcess, run *encoderRun, closeLive *encderiv.LiveSession) {
-	if run != nil && run.live != nil {
-		run.live.Revoke()
-	}
-	if closeLive != nil {
-		closeLive.Close()
-	}
+// stopRun drains a run after its endpoint has been signaled. The process,
+// endpoint and reaper must all exit before the directory is reused.
+func (s *Sessions) stopRun(proc *ffmpeg.HLSProcess, run *encoderRun) {
 	s.stop(proc)
+	if run != nil && run.live != nil {
+		run.live.WaitRevoked()
+	}
 	if exited := run.exitedChan(); exited != nil {
 		<-exited
 	}
@@ -850,6 +861,9 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 
 func (s *Sessions) detachLocked(key SessionKey, session *hlsSession) sessionTeardown {
 	session.detached.Store(true)
+	if session.revokeDone != nil {
+		close(session.revokeDone)
+	}
 	session.teardownDone = make(chan struct{})
 	s.detachedSessions[session] = key
 	if session.hasSlot {
@@ -876,7 +890,17 @@ func (s *Sessions) liveLocked(key SessionKey, session *hlsSession) bool {
 // blocked future auth; this closes the live transport that revocation alone
 // leaves running until idle reap.
 func (s *Sessions) TerminateSession(sessionID store.SessionID) int {
-	return s.terminate(func(key SessionKey) bool { return key.SessionID == sessionID })
+	return s.TerminateSessions([]store.SessionID{sessionID})
+}
+
+// TerminateSessions revokes playback for the entire set of auth sessions
+// before waiting for any of their transcodes to drain.
+func (s *Sessions) TerminateSessions(sessionIDs []store.SessionID) int {
+	ids := make(map[store.SessionID]bool, len(sessionIDs))
+	for _, id := range sessionIDs {
+		ids[id] = true
+	}
+	return s.terminate(func(key SessionKey) bool { return ids[key.SessionID] })
 }
 
 // TerminatePlayback aborts the in-flight transcodes one auth Session holds for
@@ -891,24 +915,33 @@ func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.Me
 
 func (s *Sessions) terminate(match func(SessionKey) bool) int {
 	s.mu.Lock()
+	teardowns, detached := s.detachMatchingLocked(match)
+	s.mu.Unlock()
+	for _, session := range detached {
+		revokeSession(session)
+	}
+	s.drainTeardowns(teardowns)
+	for _, session := range detached {
+		<-session.teardownDone
+	}
+	return len(teardowns)
+}
+
+// detachMatchingLocked includes sessions whose teardown another caller owns.
+func (s *Sessions) detachMatchingLocked(match func(SessionKey) bool) ([]sessionTeardown, []*hlsSession) {
 	var teardowns []sessionTeardown
 	for key := range s.sessions {
 		if match(key) {
 			teardowns = append(teardowns, *s.removeLocked(key))
 		}
 	}
-	var done []<-chan struct{}
+	var detached []*hlsSession
 	for session, key := range s.detachedSessions {
 		if match(key) {
-			done = append(done, session.teardownDone)
+			detached = append(detached, session)
 		}
 	}
-	s.mu.Unlock()
-	s.runTeardowns(teardowns)
-	for _, completed := range done {
-		<-completed
-	}
-	return len(teardowns)
+	return teardowns, detached
 }
 
 // NewSessions creates a transcode session manager rooted at dataDir/transcode.
@@ -1331,8 +1364,17 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
 	}
 	var teardowns []sessionTeardown
+	var replaced *hlsSession
 	s.mu.Lock()
 	defer func() {
+		// Keep the old session attached until layout work finishes, so a
+		// detached session's revocation never waits on initialization I/O.
+		if replaced != nil {
+			if s.sessions[key] == replaced {
+				delete(s.sessions, key)
+			}
+			teardowns = append(teardowns, s.detachLocked(key, replaced))
+		}
 		s.mu.Unlock()
 		s.runTeardowns(teardowns)
 	}()
@@ -1372,7 +1414,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	}
 	if hasExisting {
 		if existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
-			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
+			replaced = existing // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
 			// reshaped replacement; the unchanged session ignores it.
@@ -1538,10 +1580,15 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	defer session.startMu.Unlock()
 	session.mu.Lock()
 	teardownAfterStart := false
+	var unstartedLive *encderiv.LiveRun
 	defer func() {
 		session.mu.Unlock()
 		if teardownAfterStart {
+			revokeSession(session)
 			s.teardown(session)
+		}
+		if unstartedLive != nil {
+			unstartedLive.WaitRevoked()
 		}
 	}()
 
@@ -1618,10 +1665,12 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	session.startPending = true
 	s.mu.Unlock()
 	session.mu.Unlock()
+	previous.signalRevoke()
 	if victim != nil {
+		revokeSession(victim.session)
 		s.teardown(victim.session)
 	}
-	s.stopRun(replaced, previous, nil)
+	s.stopRun(replaced, previous)
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
 	var liveRun *encderiv.LiveRun
@@ -1683,7 +1732,8 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			go watchLiveRun(run)
 		}
 	} else if liveRun != nil {
-		liveRun.Revoke() // no process to serve
+		liveRun.SignalRevoke()
+		unstartedLive = liveRun // drain off the session lock
 	}
 	return run, nil
 }
@@ -2111,19 +2161,15 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 func (s *Sessions) Close() {
 	s.mu.Lock()
 	s.closed = true
-	var teardowns []sessionTeardown
-	for key := range s.sessions {
-		teardowns = append(teardowns, *s.removeLocked(key))
-	}
-	done := make([]<-chan struct{}, 0, len(s.detachedSessions))
-	for session := range s.detachedSessions {
-		done = append(done, session.teardownDone)
-	}
+	teardowns, detached := s.detachMatchingLocked(func(SessionKey) bool { return true })
 	s.mu.Unlock()
+	for _, session := range detached {
+		revokeSession(session)
+	}
 	s.keyframes.close()
-	s.runTeardowns(teardowns)
-	for _, completed := range done {
-		<-completed
+	s.drainTeardowns(teardowns)
+	for _, session := range detached {
+		<-session.teardownDone
 	}
 }
 

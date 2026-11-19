@@ -3,10 +3,13 @@
 package playback
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,9 +17,105 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/governor"
 )
+
+type sourceReadingTranscoder struct {
+	fakeEncryptedTranscoder
+	sourceURL chan string
+}
+
+func (f *sourceReadingTranscoder) StartEncryptedHLSSegments(ctx context.Context, endpoint ffmpeg.EncryptedLiveEndpoint, start, seconds int, rendition ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	if _, err := f.fakeEncryptedTranscoder.StartEncryptedHLSSegments(ctx, endpoint, start, seconds, rendition); err != nil {
+		return nil, err
+	}
+	proc, err := ffmpeg.StartHLSCommand(exec.CommandContext(ctx, "sleep", "60"))
+	if err == nil {
+		f.sourceURL <- endpoint.Source
+	}
+	return proc, err
+}
+
+type blockedLiveSource struct {
+	nopReadSeekCloser
+	entered chan struct{}
+	release <-chan struct{}
+}
+
+func (s *blockedLiveSource) Read(p []byte) (int, error) {
+	close(s.entered)
+	<-s.release
+	return s.nopReadSeekCloser.Read(p)
+}
+
+func TestTerminateSessionRevokesReaderWhileLiveSourceDrains(t *testing.T) {
+	t.Parallel()
+	transcoder := &sourceReadingTranscoder{sourceURL: make(chan string, 1)}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(unblock)
+	secure := testEncryptedSource(nil)
+	secure.Size = 1
+	secure.Open = func() (io.ReadSeekCloser, error) {
+		return &blockedLiveSource{nopReadSeekCloser{bytes.NewReader([]byte{1})}, entered, release}, nil
+	}
+	key := SessionKey{SessionID: "source-drain", MediaID: "media-a"}
+	path, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00000.m4s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := sessions.OpenLiveArtifact(key, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	var buf [1]byte
+	if _, err := io.ReadFull(reader, buf[:]); err != nil {
+		t.Fatalf("read before revocation: %v", err)
+	}
+	clientDone := make(chan struct{})
+	go func() {
+		defer close(clientDone)
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(<-transcoder.sourceURL)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	select {
+	case <-entered:
+	case <-clientDone:
+		t.Fatal("source request ended before reaching the blocked Read")
+	case <-time.After(5 * time.Second):
+		t.Fatal("source request never reached Read")
+	}
+
+	terminated := make(chan int, 1)
+	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
+	waitSessionCondition(t, "artifact reader to close while the source is blocked", func() bool {
+		n, err := reader.ReadAt(buf[:], 0)
+		return n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed)
+	})
+	select {
+	case n := <-terminated:
+		t.Fatalf("TerminateSession returned %d before the endpoint drained", n)
+	default:
+	}
+	unblock()
+	select {
+	case n := <-terminated:
+		if n != 1 {
+			t.Fatalf("TerminateSession = %d, want 1", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("TerminateSession did not return after the source drained")
+	}
+	<-clientDone
+}
 
 // scriptedTranscoder runs a real child process per start (so the reaper and
 // exit watch run exactly as for ffmpeg) and lets each test script what every
