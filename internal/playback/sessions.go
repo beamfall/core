@@ -168,13 +168,14 @@ const (
 // encoderRun is one FFmpeg process generation. exited is closed by the
 // process reaper after it has recorded outcome and released the session's
 // hold on the process, so a request waiting on an artifact notices the exit
-// at once instead of waiting out its latency budget. exited is nil for a
-// process that is not running (test transcoders), which never signals.
+// at once instead of waiting out its latency budget. exited is nil when no
+// process was launched or the transcoder returned no running process.
 type encoderRun struct {
-	proc    *ffmpeg.HLSProcess
-	rungID  string
-	exited  chan struct{}
-	outcome encoderExit // written under Sessions.mu before exited closes
+	proc      *ffmpeg.HLSProcess
+	rungID    string
+	exited    chan struct{}
+	outcome   encoderExit // written under Sessions.mu before exited closes
+	launchErr error       // guarded by Sessions.mu
 	// waiting counts the requests currently waiting on this run's artifacts;
 	// the stall watchdog only acts while it is non-zero.
 	waiting atomic.Int32
@@ -1270,16 +1271,20 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 		if !errors.Is(err, errEncoderExited) {
 			return run, err
 		}
-		switch run.outcome {
-		case exitStopped:
+		if request != nil || run.outcome == exitStopped {
 			// A same-rung replacement carries this request forward if
 			// it can still produce the fragment. Wait for that start
 			// to finish before using the successor's exit channel.
-			next, live := s.replacementRun(key, session, run, request)
-			if !live {
-				return run, ErrSessionEvicted
+			next, err := s.replacementRun(key, session, run, request)
+			if err != nil {
+				return run, err
 			}
-			run = next
+			if next != nil || run.outcome == exitStopped {
+				run = next
+				continue
+			}
+		}
+		switch run.outcome {
 		case exitEndOfInput:
 			if isSegment && s.beyondSourceEnd(session, rung, segment) {
 				return run, ErrSourceEnded
@@ -1299,18 +1304,25 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 	}
 }
 
-func (s *Sessions) replacementRun(key SessionKey, session *hlsSession, previous *encoderRun, request *segmentRequest) (*encoderRun, bool) {
+func (s *Sessions) replacementRun(key SessionKey, session *hlsSession, previous *encoderRun, request *segmentRequest) (*encoderRun, error) {
 	if request != nil {
 		session.startMu.Lock()
 		defer session.startMu.Unlock()
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	live := s.liveLocked(key, session)
-	if live && request != nil && request.run != previous && request.run == session.run {
-		return request.run, true
+	if !s.liveLocked(key, session) {
+		return nil, ErrSessionEvicted
 	}
-	return nil, live
+	if request != nil && request.run != nil && request.run != previous {
+		if err := request.run.launchErr; err != nil {
+			return nil, err
+		}
+		if request.run == session.run {
+			return request.run, nil
+		}
+	}
+	return nil, nil
 }
 
 // waitWhileEncoderProgresses runs waitForEncoder in budget-long windows. When
@@ -1683,6 +1695,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	if ready {
 		return nil, nil
 	}
+	if request != nil && request.run != nil && request.run.launchErr != nil {
+		return nil, request.run.launchErr
+	}
 	rungDir := filepath.Join(session.dir, rung.ID)
 	if segment == initRequest {
 		if session.proc != nil && session.currentRung == rung.ID {
@@ -1700,7 +1715,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		}
 		return session.run
 	}
-	if session.proc != nil && session.currentRung == rung.ID {
+	// A paced encoder cannot regenerate a missing fragment it already
+	// published. Let the restart path choose a base for it.
+	if session.proc != nil && session.currentRung == rung.ID && (!session.run.paced || segment > session.run.lastMedia) {
 		if session.durationSeconds == 0 || (request != nil && request.run == session.run && segment >= session.baseSegment) {
 			return useCurrentRun(), nil
 		}
@@ -1796,7 +1813,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		close(previous.outputCanceled)
 	}
 	session.run = run
-	if previous != nil && previous.rungID == rung.ID {
+	if previous != nil && previous.rungID == rung.ID && previous.launchErr == nil {
 		for pending := range session.demand[rung.ID] {
 			if pending.run == previous && pending.waitingFor >= segment {
 				pending.run = run
@@ -1864,6 +1881,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		// transcode lease. This is the rollback for a fresh start and the teardown
 		// for a replacement that could not relaunch — either way the session drops
 		// to zero live transcodes and generation may resume.
+		run.launchErr = err
 		session.currentRung = ""
 		s.releaseTranscodeLease(session)
 		return nil, err

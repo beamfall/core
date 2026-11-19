@@ -30,7 +30,7 @@ sandbox-exec confinement. The test identifies the active encoder using:
   /bin/ps -axww -o pid=,stat=,command=
   /bin/ps -p "$encoder_pid" -o pid=,stat=,comm=
 
-Raw output follows.
+Raw output from the host run after the round 6 repairs follows.
 
 ProductName:		macOS
 ProductVersion:		27.2.1
@@ -46,18 +46,18 @@ r_frame_rate=60000/1001
 duration=264.767000
 transcode probe: h264,1920,1080
 playhead=0s segment=0 frontier=8 on_disk_ahead=8 unpublished_completed=0
-ps: 16893 T    /opt/homebrew/bin/ffmpeg
-wall-clock playback: 60.222s
+ps: 48381 T    /opt/homebrew/bin/ffmpeg
+wall-clock playback: 60.226s
 playhead=60s segment=15 frontier=23 on_disk_ahead=8 unpublished_completed=0
-ps: 16893 T    /opt/homebrew/bin/ffmpeg
+ps: 48381 T    /opt/homebrew/bin/ffmpeg
 seek: 60s -> 80s (+20s)
 playhead=80s segment=20 frontier=23 on_disk_ahead=3 unpublished_completed=0
-ps: 16893 R    /opt/homebrew/bin/ffmpeg
+ps: 48381 R    /opt/homebrew/bin/ffmpeg
 playhead=80s segment=20 frontier=28 on_disk_ahead=8 unpublished_completed=0
-ps: 16893 T    /opt/homebrew/bin/ffmpeg
+ps: 48381 T    /opt/homebrew/bin/ffmpeg
 decoder final progress:
 frame=4076
-fps=58.32
+fps=56.67
 stream_0_0_q=-0.0
 bitrate=N/A
 total_size=N/A
@@ -66,8 +66,8 @@ out_time_ms=84017267
 out_time=00:01:24.017267
 dup_frames=0
 drop_frames=0
-speed= 1.2x
+speed=1.17x
 progress=end
---- PASS: TestPacingMacOSReceipt (92.32s)
+--- PASS: TestPacingMacOSReceipt (91.25s)
 PASS
-ok  	github.com/beamfall/core/internal/playback	92.623s
+ok  	github.com/beamfall/core/internal/playback	91.479s

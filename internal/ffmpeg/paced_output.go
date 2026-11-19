@@ -49,7 +49,7 @@ func (o *PacedHLSOutput) Receive(segment int, exited <-chan struct{}) error {
 		return err
 	}
 	defer os.Remove(f.Name())
-	err = readHLSSegmentGate(o.stage, name+".tmp", f, exited)
+	err = readHLSSegmentGate(o.stage, name, f, exited)
 	if closeErr := f.Close(); closeErr != nil {
 		return errors.Join(closeErr, err)
 	}

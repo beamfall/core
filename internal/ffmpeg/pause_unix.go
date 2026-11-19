@@ -64,7 +64,7 @@ func makeHLSSegmentGate(path string) error {
 }
 
 func readHLSSegmentGate(stage *os.File, name string, dst io.Writer, exited <-chan struct{}) error {
-	fd, err := openHLSStageEntry(stage, name, unix.S_IFIFO)
+	fd, err := openHLSStageEntry(stage, name+".tmp", unix.S_IFIFO)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func readHLSSegmentGate(stage *os.File, name string, dst io.Writer, exited <-cha
 	poll := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}} // #nosec G115 -- a kernel file descriptor fits in a pollfd
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
-	wrote := false
+	var wrote, committed bool
 	for {
 		n, err := unix.Read(fd, buf[:])
 		switch {
@@ -93,10 +93,32 @@ func readHLSSegmentGate(stage *os.File, name string, dst io.Writer, exited <-cha
 			return err
 		case wrote: // the writer closed the fragment
 			return nil
-		default: // EOF also means that the muxer has not opened it yet
+		case committed:
+			return fmt.Errorf("ffmpeg: empty HLS segment commit %q", name)
+		default:
+			// With no bytes read, EOF cannot distinguish an unopened
+			// gate from an empty fragment. The rename commits it.
+			finished := false
 			select {
 			case <-exited:
+				finished = true
+			default:
+			}
+			var stat unix.Stat_t
+			err := unix.Fstatat(int(stage.Fd()), name, &stat, unix.AT_SYMLINK_NOFOLLOW)
+			switch {
+			case err == nil:
+				// The writer could have opened, written and renamed
+				// since the read above. Drain once past the rename.
+				committed = true
+				continue
+			case !errors.Is(err, unix.ENOENT):
+				return err
+			case finished:
 				return io.EOF
+			}
+			select {
+			case <-exited:
 			case <-ticker.C:
 			}
 		}
