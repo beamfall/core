@@ -77,7 +77,7 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 		return os.RemoveAll(dir)
 	}
 	// Hold the victim's state lock as publication would. Preemption must
-	// detach from the map before it waits for either the lock or the join.
+	// detach and start the new encoder while publication is blocked.
 	session.mu.Lock()
 	unlock := sync.OnceFunc(session.mu.Unlock)
 	defer unlock()
@@ -93,10 +93,6 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 		_, err := filePath720(sessions, other, masterPlaylistName)
 		return err
 	})
-	if got := transcoder.startCount(); got != 1 {
-		t.Fatalf("encoder starts before the victim can stop = %d, want 1", got)
-	}
-	unlock()
 	select {
 	case err := <-started:
 		if err != nil {
@@ -119,6 +115,7 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 	if _, err := os.Stat(session.dir); err != nil {
 		t.Fatalf("purge removed a directory still owned by teardown: %v", err)
 	}
+	unlock()
 	release()
 	assertJoinEvicted(t, joined)
 	select {
@@ -179,16 +176,21 @@ func TestSessionsPreemptionDuringJoinPublication(t *testing.T) {
 		started <- err
 	}()
 	waitSessionCondition(t, "preemption detached the session during rename", session.detached.Load)
-	release()
-	assertJoinEvicted(t, joined)
 	select {
 	case err := <-started:
 		if err != nil {
 			t.Fatalf("foreground start: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("foreground start did not finish after the join drained")
+		t.Fatal("foreground start waited for the blocked fragment rename")
 	}
+	select {
+	case <-session.teardownDone:
+		t.Fatal("victim teardown finished while the fragment rename was blocked")
+	default:
+	}
+	release()
+	assertJoinEvicted(t, joined)
 	select {
 	case <-session.teardownDone:
 	case <-time.After(5 * time.Second):

@@ -554,7 +554,8 @@ type Sessions struct {
 // sessionTeardown is handed out under Sessions.mu and consumed off-lock.
 type sessionTeardown struct {
 	session *hlsSession
-	pending bool // its off-lock starter will finish teardown
+	run     *encoderRun // captured on detach, safe to stop if no launch is pending
+	pending bool        // its off-lock starter will finish teardown
 }
 
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
@@ -593,12 +594,21 @@ func (s *Sessions) drainTeardowns(teardowns []sessionTeardown) {
 }
 
 func (s *Sessions) stopAndQueueTeardown(session *hlsSession) {
-	run := s.stopSession(session)
+	s.mu.Lock()
+	run := session.run
+	s.mu.Unlock()
+	s.stopRun(session, run)
 	s.drainAndQueueSessionDir(session, run)
 }
 
 func (s *Sessions) drainAndQueueSessionDir(session *hlsSession, run *encoderRun) {
 	drainRun(run)
+	// A join that checked detached before detach may still be registering
+	// under session.mu. Let it finish registering before waiting for joins.
+	session.mu.Lock()
+	session.proc = nil
+	session.currentRung = ""
+	session.mu.Unlock()
 	session.joins.Wait()
 	if session.live != nil {
 		session.live.Close()
@@ -628,19 +638,6 @@ func (s *Sessions) drainSessionDirs() {
 
 		s.finishTeardown(session)
 	}
-}
-
-// stopSession withdraws the run and stops its process before the caller drains
-// the remaining work. The detached session still owns its directory.
-func (s *Sessions) stopSession(session *hlsSession) *encoderRun {
-	session.mu.Lock()
-	run := session.run
-	session.proc = nil
-	session.currentRung = ""
-	session.mu.Unlock()
-
-	s.stopRun(session, run)
-	return run
 }
 
 func (s *Sessions) finishTeardown(session *hlsSession) {
@@ -997,7 +994,7 @@ func (s *Sessions) detachLocked(key SessionKey, session *hlsSession) sessionTear
 	}
 	session.teardownDone = make(chan struct{})
 	s.detachedSessions[session] = key
-	return sessionTeardown{session: session, pending: session.startPending}
+	return sessionTeardown{session: session, run: session.run, pending: session.startPending}
 }
 
 // liveLocked verifies map identity for callers already holding Sessions.mu.
@@ -1850,10 +1847,10 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	session.mu.Unlock()
 	if victim != nil {
 		s.revokeSession(victim.session)
-		// Wait for the revoked victim's encoder to stop before launching.
-		// Its run and directory drain independently of the new encoder.
-		run := s.stopSession(victim.session)
-		go s.drainAndQueueSessionDir(victim.session, run)
+		// Preemption only selects sessions with no start pending. Stop the
+		// captured run without taking the lock that guards fragment publication.
+		s.stopRun(victim.session, victim.run)
+		go s.drainAndQueueSessionDir(victim.session, victim.run)
 	}
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
