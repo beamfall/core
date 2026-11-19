@@ -204,6 +204,26 @@ describe("Library browse", () => {
     expect(screen.getByTestId("where")).toHaveTextContent(/^\/n\/films\/all$/);
   });
 
+  it("accepts up to 200 Unicode code points in the browse search (CORE-2582)", async () => {
+    vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
+    const user = userEvent.setup();
+    renderBrowse("/n/films/all");
+
+    await screen.findByRole("link", { name: "Item 0" });
+    const search = screen.getByRole("searchbox", { name: "Search Films" });
+    const character = "\u{20000}";
+    await user.click(search);
+    await user.paste(character.repeat(150));
+    expect(search).toHaveValue(character.repeat(150));
+
+    await user.paste(character.repeat(51));
+    expect(search).toHaveValue(character.repeat(200));
+    await user.keyboard("{Enter}");
+    expect(vi.mocked(fetchLibraryItems).mock.calls.at(-1)?.[0].state.query).toBe(
+      character.repeat(200),
+    );
+  });
+
   it("opens the filters from one button that counts them and returns focus on Escape (CORE-2568)", async () => {
     vi.mocked(fetchLibraryItems).mockImplementation(async (request) => pageFor(request));
     const user = userEvent.setup();

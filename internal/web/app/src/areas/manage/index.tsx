@@ -310,6 +310,10 @@ export function ManageArea() {
   useEffect(() => setRegister("manage"), [setRegister]);
   const route = currentRoute(location.pathname);
   const routeTitle = route.text ?? t(route.label);
+  const routeLead =
+    route.to === "/manage/restrictions" && session?.revealPinSet === false
+      ? "restrictionsSetupSubtitle"
+      : route.lead;
 
   if (loading) {
     return (
@@ -352,7 +356,7 @@ export function ManageArea() {
 
         <div className="min-w-0 grow">
           {/* The route's one h1 and its lead; each ManageSection card title below is an h2. */}
-          <IconHeading icon={route.icon} title={routeTitle} lead={t(route.lead)} />
+          <IconHeading icon={route.icon} title={routeTitle} lead={t(routeLead)} />
           <ManageAdminLock>
             <RevealSetting />
             <Routes>

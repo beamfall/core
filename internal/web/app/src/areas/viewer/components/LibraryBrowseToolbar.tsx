@@ -25,7 +25,6 @@ import type { StringKey } from "@/strings";
 import {
   browseQuery,
   browseYear,
-  LIBRARY_MAX_QUERY,
   LIBRARY_MAX_YEAR,
   LIBRARY_MIN_RATINGS,
   LIBRARY_MIN_YEAR,
@@ -36,6 +35,7 @@ import {
   type LibraryDirection,
   type LibraryItemsFacets,
   type LibrarySort,
+  limitBrowseQuery,
 } from "../lib/libraryBrowse";
 
 const ALL = "all";
@@ -434,10 +434,9 @@ function BrowseSearch({
         enterKeyHint="search"
         autoComplete="off"
         spellCheck={false}
-        maxLength={LIBRARY_MAX_QUERY}
         placeholder={label}
         value={text}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => setText(limitBrowseQuery(event.target.value))}
         onKeyDown={(event) => {
           if (event.key === "Enter") commitRef.current(browseQuery(text));
         }}
