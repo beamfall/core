@@ -6,7 +6,8 @@ import (
 )
 
 // LibraryHasUndeclaredMedia reports whether a plugin declaration is too narrow
-// to authorize a scan's retirement/missing pass. An empty declaration keeps the legacy unrestricted scan policy.
+// to authorize a scan's retirement/missing pass for live Media. An empty
+// declaration keeps the legacy unrestricted scan policy.
 func (s *Store) LibraryHasUndeclaredMedia(ctx context.Context, libraryID LibraryID, classes []MediaClass) (bool, error) {
 	if len(classes) == 0 {
 		return false, nil
@@ -27,6 +28,6 @@ func (s *Store) LibraryHasUndeclaredMedia(ctx context.Context, libraryID Library
 		args = append(args, class)
 	}
 	var found bool
-	err = plane.reader.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM media WHERE library_id = ? AND media_class NOT IN (`+strings.Join(placeholders, ",")+`))`, args...).Scan(&found)
+	err = plane.reader.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM media WHERE library_id = ? AND trashed_at_ms IS NULL AND media_class NOT IN (`+strings.Join(placeholders, ",")+`))`, args...).Scan(&found)
 	return found, err
 }

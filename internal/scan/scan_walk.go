@@ -157,6 +157,11 @@ func scanFromCheckpoint(ctx context.Context, st *store.Store, prober Prober, gra
 	}
 	state.countUnmatchedVersions()
 	state.applyDeferredArtwork()
+	// Walk errors are best-effort, but an unavailable root must fail the scan
+	// even when the plugin declaration prevents retirement of existing Media.
+	if err := checkScanRootReadable(req.Root); err != nil {
+		return Result{}, err
+	}
 	// A declaration controls admission, not ownership of existing Media. A
 	// missing class may be a plugin regression; neither trash nor the missing
 	// pass may infer that its already catalogued items should disappear.
@@ -219,13 +224,10 @@ const (
 )
 
 // markMissingIfPlausible runs the post-walk missing pass only when the walk
-// result is believable. An absent, non-directory or unreadable root fails the
-// scan; a root that walked no media files while it still has present rows, or
-// a pass tripping the missing-ratio guard, skips marking with a warning.
+// result is believable, after the caller has validated root readability.
+// A root that walked no media files while it still has present rows, or a
+// pass tripping the missing-ratio guard, skips marking with a warning.
 func (s *scanWalkState) markMissingIfPlausible(scanStarted time.Time) error {
-	if err := checkScanRootReadable(s.req.Root); err != nil {
-		return err
-	}
 	present, stale, err := s.presentFilesUnderRoot(scanStarted)
 	if err != nil {
 		return err
