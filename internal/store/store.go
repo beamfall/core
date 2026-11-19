@@ -3863,16 +3863,44 @@ func HashMediaFilePath(path string) string {
 
 // HashMediaFileContent returns the content fingerprint used for Media identity.
 func HashMediaFileContent(path string) (string, error) {
+	return HashMediaFileContentContext(context.Background(), path)
+}
+
+// HashMediaFileContentContext returns the same fingerprint, checking ctx between
+// reads so cancellation stops hashing after the current file read returns.
+func HashMediaFileContentContext(ctx context.Context, path string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
+	return hashMediaFileContent(ctx, file)
+}
+
+func hashMediaFileContent(ctx context.Context, file io.ReadCloser) (string, error) {
 	defer file.Close()
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
+	buffer := make([]byte, 128*1024)
+	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		n, err := file.Read(buffer)
+		if n > 0 {
+			_, _ = hash.Write(buffer[:n])
+		}
+		if err == io.EOF {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
+		}
+		if err != nil {
+			return "", err
+		}
 	}
-	return "sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // SearchMedia returns Media whose titles match the FTS query, reveal-filtered
