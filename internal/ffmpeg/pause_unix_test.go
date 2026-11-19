@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build (linux && !android) || (darwin && !ios)
 
 package ffmpeg
 
@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"go/build"
 	"io"
 	"os"
 	"os/exec"
@@ -54,6 +55,54 @@ func TestHLSProcessPauseResumeKeepsPID(t *testing.T) {
 	}
 	if want := strconv.Itoa(pid) + ":continued\n"; output.String() != want {
 		t.Fatalf("output after resume = %q, want %q", output.String(), want)
+	}
+}
+
+func TestHLSProcessStartsInOwnGroupWithCallerPgid(t *testing.T) {
+	cmd := exec.CommandContext(t.Context(), "sleep", "30")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pgid: syscall.Getpgrp()}
+	process, err := StartHLSCommand(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(process.Stop)
+
+	pid := cmd.Process.Pid
+	pgid, err := syscall.Getpgid(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pgid != pid {
+		t.Fatalf("encoder process group = %d, want encoder PID %d", pgid, pid)
+	}
+}
+
+func TestHLSMobileTargetsSelectUnsupportedUnix(t *testing.T) {
+	for _, target := range []string{"android", "ios"} {
+		t.Run(target, func(t *testing.T) {
+			ctx := build.Default
+			ctx.GOOS = target
+			ctx.GOARCH = "arm64"
+			for _, file := range []struct {
+				name     string
+				selected bool
+			}{
+				{"pause_other.go", true},
+				{"procwait_unsupported_unix.go", true},
+				{"pause_unix.go", false},
+				{"procwait_supported.go", false},
+				{"procwait_kqueue.go", false},
+				{"procwait_waitid.go", false},
+			} {
+				selected, err := ctx.MatchFile(".", file.name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if selected != file.selected {
+					t.Errorf("%s selected = %t, want %t", file.name, selected, file.selected)
+				}
+			}
+		})
 	}
 }
 
