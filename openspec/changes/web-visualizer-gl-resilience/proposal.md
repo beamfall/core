@@ -58,29 +58,52 @@ visual off until the component remounts, although browsers restore contexts rout
   as for any other visualizer failure; playback is never interrupted.
 - A geometry change costs the picture: the frame is held until the limiter grants its fall, the
   visual is black until the start, and the new frame rises through the grant as a first frame
-  does. A drag that outlasts the black starts and withdraws a frame until the slot is still.
+  does. A drag that outlasts the black stays black: a frame starts once two draws running ask
+  for one geometry, and a started frame withdrawn before its paint costs another 0.1 s of
+  black, so a moving slot allocates the full-resolution targets once in that time at most and
+  not at every frame. Framebuffer completeness is checked at the first start only: later starts
+  use the formats it checked, and a target incomplete all the same shows black.
   This is the price of one rule with no pixel carried over.
 - The fade and the black are counted in the time the limiter is credited with, not on the clock.
   The page cannot read the display's refresh period or when a frame was painted, and its
   animation-frame cadence does not give it: Safari runs animation frames at 60 a second on a
   120 Hz display, where a frame painted a refresh late and followed on time is shown half the
   interval. So a steady cadence credits half of each interval (`shownMs`), bounded by the
-  shortest of the last 32 draw intervals, and credited time takes about twice as long on the
-  clock at 60 frames a second. Measuring the cadence cannot safely shorten this, since the
+  shortest draw interval since the visualizer mounted, and credited time takes about twice as
+  long on the clock at 60 frames a second. The bound is never forgotten: one taken over recent
+  draws rises when the page slows on the same display (120 to 30 draws a second at 120 Hz) and
+  then credits two refreshes to a frame shown one. The cost is that a display that slows (a
+  window moved from a 240 Hz monitor to a 60 Hz one) or one burst of callbacks closer than a
+  refresh leaves the credit low, a quarter of each interval at worst, until the visualizer is
+  mounted again. The residual: a page that has never drawn faster than every third refresh of
+  its display can still be credited more than a late frame was shown; only presentation times
+  close that. Measuring the cadence cannot safely shorten this, since the
   credit must stay a lower bound: crediting more needs the limiter to take a correction for a
   frame after its successor is drawn, or the platform to report presentation times. Modelled there at the default 3 Hz: a dark frame is black at once and starts
   about 0.25 s after the change; a frame with luma to drop is held about 0.7 s (two luma tokens,
   0.33 s credited), is black about 0.25 s and rises about 0.7 s after the start; a full-frame
   saturated red is held about 2.7 s (the red token, 1.33 s credited) and rises about 2.7 s after
-  the start. The 2 s cap on the fade is about 4 s and is reached only if the grant word never
-  clears.
+  the start. The 2 s cap on the fade is about 4 s on the clock. It is reached if the grant word
+  never clears, and also if the word clears and no read of it finishes. It is later than the
+  soonest a fade may end without such a read (Oscillux `frame-limiter`: the red token's refill,
+  1.33 s at 3 Hz, and two frames more), so a fade that ends at the cap has met that too.
 - After a change of device pixel ratio the cached CSS box says nothing about the slot's physical
   pixels. Until the slot is observed at the new ratio the frame on screen is held undrawn: a
-  zoom freezes the visual for a frame or two, three at most, and a slot with no size stays
-  frozen until it has one.
+  zoom freezes the visual for a frame or two, three at most. The three-frame limit holds for a
+  slot with no size too: on the fourth frame it is measured as empty, the cached device-pixel
+  box is dropped, and drawing goes on, which fades the frame to black. A ratio that is left and
+  come back to, or met again after a lost context, is observed afresh and waits its frames
+  again.
 - The grant word is read through a pixel-pack buffer and a fence, never by a blocking
-  `readPixels`: the fade ends a frame or two after the grant, later on a busy GPU, and at the
-  2 s cap if no read ever finishes.
+  `readPixels`. Each frame of the fade reads its own grant after everything else it issues, in
+  place of a read the GPU had not finished, and the next frame takes the word, before it issues
+  anything, only if the fence has passed: the fade ends a frame after the grant, and at the 2 s
+  cap on a GPU that runs more than a frame behind. The residual: `getBufferSubData` is still a
+  round trip to the browser's GPU process, so commands issued between frames (an artwork
+  upload, a visual's compile) or by other contexts can delay that one call.
+- The canvas is clipped to a narrowed slot in the observation that reports it, not at the next
+  draw, so a slot narrowed and widened again by another observer before the paint shows
+  nothing back.
 - A slot that shrinks and grows back between two draws costs a fade: the half it hid cannot come
   back into a frame whose view only shrinks.
 

@@ -10,13 +10,13 @@
 // and no more than the bound (Codex rounds 19 to 21). At a steady cadence that is half of each
 // interval. A steady cadence does not show the refresh period, so it earns no more than that.
 //
-// The bound is the shortest interval among the last REFRESH_WINDOW draws, not since the loop
-// started: a display that slows down (240 Hz to 60 Hz, a window moved to another monitor) would
-// otherwise keep the old minimum and credit a quarter of each interval (Codex round 27).
-// Forgetting is safe: any bound at or above R gives a credit at or below the time shown.
+// The bound is the shortest interval between two draws since the loop first ran, and it is never
+// forgotten: a larger bound credits more, and a page that slows down on the same display (120 to
+// 30 draws a second at 120 Hz) would raise a bound taken over its recent draws to four refreshes
+// and be credited two for a frame shown one (Codex round 28). So a display that slows down (a
+// window moved from a 240 Hz monitor to a 60 Hz one) keeps the shorter bound and is credited
+// less than it could be, until the visualizer is mounted again.
 
-/** Draw intervals the bound is taken over. */
-export const REFRESH_WINDOW = 32;
 // The shortest refresh period trusted (a 250 Hz display): two callbacks closer than that are a
 // browser catching up, not a display refreshing.
 const MIN_REFRESH_MS = 4;
@@ -26,26 +26,15 @@ const MIN_REFRESH_MS = 4;
 const MAX_REFRESH_MS = 1000 / 24;
 
 export class RefreshBound {
-  // A ring of the last intervals, so a frame allocates nothing.
-  private readonly recent = new Float64Array(REFRESH_WINDOW).fill(MAX_REFRESH_MS);
-  private at = 0;
-
-  /** Forgets the cadence, when the draw loop starts again. */
-  reset(): void {
-    this.recent.fill(MAX_REFRESH_MS);
-    this.at = 0;
-  }
+  private bound = MAX_REFRESH_MS;
 
   /** Records the interval between two draws, in milliseconds. */
   note(interval: number): void {
-    this.recent[this.at] = Math.min(MAX_REFRESH_MS, Math.max(MIN_REFRESH_MS, interval));
-    this.at = (this.at + 1) % REFRESH_WINDOW;
+    this.bound = Math.min(this.bound, Math.max(MIN_REFRESH_MS, interval));
   }
 
   /** The time credited to a frame that the next draw followed after `interval` milliseconds. */
   shown(interval: number): number {
-    let bound = MAX_REFRESH_MS;
-    for (let i = 0; i < REFRESH_WINDOW; i++) if (this.recent[i] < bound) bound = this.recent[i];
-    return Math.min(bound, Math.max(interval / 2, interval - bound));
+    return Math.min(this.bound, Math.max(interval / 2, interval - this.bound));
   }
 }

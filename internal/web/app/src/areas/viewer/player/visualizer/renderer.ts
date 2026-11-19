@@ -405,6 +405,10 @@ export class Renderer {
   // Seconds of black left before a frame starts, counted once black is shown.
   private black: number;
   private blackShown = false;
+  // The geometry the last draw asked for: a frame starts only at one asked for twice running.
+  private asked: Geometry | null = null;
+  // Whether a start has checked its framebuffers complete (framebuffer).
+  private verified = false;
   private time = 0;
   private clockMs = 0;
   private presented = 0;
@@ -692,11 +696,12 @@ export class Renderer {
    * One rule covers every change to what the viewer sees, whether the backing size, the texel size
    * or the texels in view: the frame on screen fades to black through the limiter (until a frame
    * of the fade is seen to have shown its black input exactly, FADE_S at most), black is
-   * presented (BLACK_S),
-   * and a frame starts at the geometry asked for then, black with every
+   * presented (BLACK_S), and a frame starts at the geometry asked for then, black with every
    * budget spent (start). A change during the fade or the black only moves that target: nothing
-   * is reallocated, spent or restarted, so a slot dragged to a new size costs one fade and one
-   * start. No pixel is carried from one geometry to the next (CORE-2516).
+   * is reallocated, spent or restarted. The black lasts until two draws running ask for one
+   * geometry, and a started frame withdrawn before its paint costs another BLACK_S of black, so
+   * a slot dragged to a new size costs one fade and, while it moves, no allocation at all
+   * (Codex round 28). No pixel is carried from one geometry to the next (CORE-2516).
    */
   draw(
     width: number,
@@ -715,6 +720,8 @@ export class Renderer {
     this.reducedMotion = reducedMotion;
     this.undo = null;
     const want = geometry(width, height, texel, slotWidth, slotHeight);
+    const still = !this.asked || sameGeometry(this.asked, want);
+    this.asked = want;
     // The fade and the black run on the time the limiter is credited with, shownMs up to one
     // token's refill a frame, so the fall's grant has come by the end of the fade whatever the
     // frame rate (Codex rounds 18, 22).
@@ -727,8 +734,10 @@ export class Renderer {
       // grant held no direction, so every fall has been granted, and black fed to a black frame
       // stays black. A frame whose trackers hold nothing a step above black gets there in one
       // frame, a frame with luma to drop when the luma tokens are back, and one with saturated red
-      // when the red token is. The word is read without waiting for the GPU, so the fade ends a
-      // frame or two after that frame. FADE_S, by when the slowest grant has come, is the backstop.
+      // when the red token is. The word read is the last frame's, and only if the GPU has
+      // finished that frame by now (readGrant), so the fade ends a frame after the black one.
+      // FADE_S, by when the slowest grant has come, is the backstop: the fade of a GPU that
+      // runs more than a frame behind ends there.
       if (this.fadeLeft === 0 || this.grantRead() === true) {
         this.fadeLeft = 0;
         // The frame is black by now. A size change ends a switch, as in the reference host.
@@ -750,9 +759,10 @@ export class Renderer {
     }
     if (!size) {
       // Black for BLACK_S from the first black frame shown, then the start. A slot with no whole
-      // texel in view stays black.
+      // texel in view stays black, and so does one that is still changing: a start allocates
+      // every target at full resolution, which a drag would otherwise do at every frame.
       if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - shownS);
-      if (this.black > 0 || want.visibleWidth < 1 || want.visibleHeight < 1) {
+      if (this.black > 0 || !still || want.visibleWidth < 1 || want.visibleHeight < 1) {
         this.blackShown = true;
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.clearColor(0, 0, 0, 1);
@@ -829,11 +839,13 @@ export class Renderer {
       };
     }
     this.limit(size, shownMs);
-    // Any frame of the fade seen black ends it, so a read still in flight is left to finish.
-    if (fading && !this.grantSync) this.readGrant(L);
 
     // 4. The limited frame to the canvas.
     this.showLimited(size);
+    // Every frame of the fade reads its own grant, last of all its commands, in place of a read
+    // the GPU had not finished: the next draw takes the word only if the GPU has finished this
+    // whole frame, so the read waits behind nothing this renderer drew (Codex round 28).
+    if (fading) this.readGrant(L);
   }
 
   /** Withdraws the last frame drawn, before it is painted: the canvas shows the limiter's previous
@@ -841,8 +853,10 @@ export class Renderer {
    * slot's size changes between a draw and its paint, so a frame judged against the old area limit
    * is never shown in the new slot (Codex round 18); the next draw starts the fade from the frame
    * that was on screen. Black and the frames of a fade stand. Before the frame that started there
-   * was no frame, only black, so withdrawing it leaves black and no frame: the next draw starts
-   * at the geometry asked for then, with no fade of a frame nobody saw (Codex round 26). */
+   * was no frame, only black, so withdrawing it leaves black and no frame, with no fade of a
+   * frame nobody saw (Codex round 26). The black then runs BLACK_S again before the next start:
+   * a slot still moving frees and allocates the targets once in that time at most, not at every
+   * frame (Codex round 28). */
   withdraw(): void {
     const u = this.undo;
     const size = this.size;
@@ -857,6 +871,8 @@ export class Renderer {
       const gl = this.gl;
       this.endSwitch();
       this.freeSize();
+      this.black = BLACK_S;
+      this.blackShown = true;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.clearColor(0, 0, 0, 1);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -948,7 +964,7 @@ export class Renderer {
   }
 
   // Starts a read of the last grant word: into the pack buffer, behind a fence, so nothing waits
-  // for the GPU.
+  // for the GPU. The caller has issued every command of its frame: the fence is the last of them.
   private readGrant(L: Limiter): void {
     const gl = this.gl;
     this.dropGrantRead();
@@ -962,7 +978,10 @@ export class Renderer {
   }
 
   // The read in flight, if the GPU has finished it: whether the frame it read showed its input
-  // exactly, at every pixel. Null while the GPU has not, or with no read. It never waits.
+  // exactly, at every pixel. Null while the GPU has not, or with no read. Called before a draw
+  // issues anything, with the fence passed, getBufferSubData has no command of this renderer's
+  // frames to wait behind. Commands issued between frames (an artwork upload, a visual's
+  // compile) and the browser's own round trip to its GPU process can still delay it.
   private grantRead(): boolean | null {
     const gl = this.gl;
     const sync = this.grantSync;
@@ -1247,6 +1266,7 @@ export class Renderer {
     const window = limiterWindow(W, H, g.texel, g.visibleWidth, g.visibleHeight);
     const limiter = this.newLimiterState(rows, out, track, fOut, window);
     this.spend(limiter);
+    this.verified = true;
     this.size = {
       ...g,
       viewWidth: W * g.texel,
@@ -1416,7 +1436,9 @@ export class Renderer {
 
   // checkFramebufferStatus waits on the GPU process, including any shader still compiling in
   // parallel (over 500 ms seen on a switch), so the targets a switch adds skip it: they reuse
-  // the feedback format start already checked.
+  // the feedback format start already checked. So does every start after the first: its formats
+  // are the ones that start checked, at another size (Codex round 28). A target that is
+  // incomplete all the same draws nothing, and the canvas stays black.
   private framebuffer(attachments: WebGLTexture[], verify = true): WebGLFramebuffer {
     const gl = this.gl;
     const f = must(gl.createFramebuffer());
@@ -1425,7 +1447,11 @@ export class Renderer {
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0),
     );
     gl.drawBuffers(attachments.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
-    if (verify && gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    if (
+      verify &&
+      !this.verified &&
+      gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE
+    ) {
       throw new Error("visualizer: incomplete framebuffer");
     }
     return f;

@@ -211,11 +211,13 @@ export function Visualizer({
     let frame = 0;
     let lastDrawn: number | null = null;
     let lastWall: number | null = null;
-    // The time each frame is credited to the limiter with, from the recent draw intervals.
+    // The time each frame is credited to the limiter with, from the shortest draw interval seen.
     const refresh = new RefreshBound();
-    // The backing size of the last draw while it is unpainted: a draw sets it, and the next
-    // animation frame, which runs after the paint, clears it.
-    let unpainted: string | null = null;
+    // Whether the last draw is unpainted, and what it asked for: a draw sets them, and the next
+    // animation frame, which runs after the paint, clears the flag. Numbers, so a frame
+    // allocates no key (Codex round 28).
+    let unpainted = false;
+    const drawn: [number, number, number, number, number] = [0, 0, 0, 0, 0];
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -225,60 +227,13 @@ export function Visualizer({
     const slot = canvas.parentElement ?? canvas;
     let device: { inlineSize: number; blockSize: number } | null = null;
     let css: { width: number; height: number } | null = null;
-    // The device pixel ratio the slot was last reported at, the one a fresh report was last
-    // asked for at, and the frames that report has been waited for (tick).
+    // The device pixel ratio the slot was last reported at; the one a fresh report is awaited
+    // at, or 0 with none awaited; and the frames it has been waited for (tick). Any report, a
+    // ratio back at the reported one and a lost context end the wait, so a ratio visited again
+    // is observed afresh and waits its frames again (Codex round 28).
     let reportedAt = 0;
     let askedAt = 0;
     let waited = 0;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[entries.length - 1];
-      if (!entry) return;
-      device = entry.devicePixelContentBoxSize?.[0] ?? null;
-      css = { width: entry.contentRect.width, height: entry.contentRect.height };
-      reportedAt = window.devicePixelRatio;
-      // The frame on screen never shows more than the smallest slot observed since it started,
-      // whether or not a draw follows: a draw can be held back (a device pixel ratio awaiting
-      // its report, a hidden page), and the slot can have grown again by the next one (Codex
-      // round 27).
-      try {
-        rendererRef.current?.narrow(
-          ...slotPixels(device, css.width, css.height, window.devicePixelRatio),
-        );
-      } catch {
-        // A lost context shows nothing to narrow.
-      }
-      // Observers run after animation frames and before the paint: a slot resized since this
-      // frame's draw would show a frame judged against the old area limit, so it is withdrawn
-      // and the next draw starts the fade from the frame on screen (Codex round 18).
-      const drawn = unpainted;
-      if (drawn === null) return;
-      unpainted = null;
-      // The comparison is of the geometry the renderer shows, not of the slot's pixels: a slot
-      // that gains or loses a pixel no whole texel fills is the same frame, and withdrawing for
-      // it would stop the limiter's clock for as long as the slot jitters (Codex round 26).
-      const key = geometryKey(
-        ...backingSize(device, css.width, css.height, window.devicePixelRatio),
-        ...slotPixels(device, css.width, css.height, window.devicePixelRatio),
-      );
-      if (key === drawn) return;
-      try {
-        rendererRef.current?.withdraw();
-      } catch {
-        // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
-      }
-    });
-    // An observer reports a target when it is first observed, before the next paint. Observing
-    // one already observed with the same box is a no-op in Chromium, so a fresh report takes
-    // an unobserve first (Codex round 27).
-    const watch = () => {
-      observer.unobserve(slot);
-      try {
-        observer.observe(slot, { box: "device-pixel-content-box" });
-      } catch {
-        observer.observe(slot);
-      }
-    };
-    watch();
     // Fit, filter and clip the frame the renderer shows. Through a fade all three follow the
     // frame that is fading, and through the black after it the canvas stays as that frame left it.
     let cssSize = "";
@@ -301,6 +256,55 @@ export function Visualizer({
       canvas.style.width = `${(shown.width * texel) / r}px`;
       canvas.style.height = `${(shown.height * texel) / r}px`;
     };
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (!entry) return;
+      device = entry.devicePixelContentBoxSize?.[0] ?? null;
+      css = { width: entry.contentRect.width, height: entry.contentRect.height };
+      reportedAt = window.devicePixelRatio;
+      askedAt = 0;
+      // The frame on screen never shows more than the smallest slot observed since it started,
+      // whether or not a draw follows: a draw can be held back (a device pixel ratio awaiting
+      // its report, a hidden page), and the slot can have grown again by the next one (Codex
+      // round 27). The canvas is clipped here, before this paint, not at the next draw: a slot
+      // narrowed after one frame's observations is reported in the next frame's, and another
+      // observer can widen it again before that frame paints (Codex round 28).
+      const renderer = rendererRef.current;
+      if (renderer) {
+        renderer.narrow(...slotPixels(device, css.width, css.height, window.devicePixelRatio));
+        fitCanvas(renderer);
+      }
+      // Observers run after animation frames and before the paint: a slot resized since this
+      // frame's draw would show a frame judged against the old area limit, so it is withdrawn
+      // and the next draw starts the fade from the frame on screen (Codex round 18).
+      if (!unpainted) return;
+      unpainted = false;
+      // The comparison is of the geometry the renderer shows, not of the slot's pixels: a slot
+      // that gains or loses a pixel no whole texel fills is the same frame, and withdrawing for
+      // it would stop the limiter's clock for as long as the slot jitters (Codex round 26).
+      const key = geometryKey(
+        ...backingSize(device, css.width, css.height, window.devicePixelRatio),
+        ...slotPixels(device, css.width, css.height, window.devicePixelRatio),
+      );
+      if (key === geometryKey(...drawn)) return;
+      try {
+        renderer?.withdraw();
+      } catch {
+        // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
+      }
+    });
+    // An observer reports a target when it is first observed, before the next paint. Observing
+    // one already observed with the same box is a no-op in Chromium, so a fresh report takes
+    // an unobserve first (Codex round 27).
+    const watch = () => {
+      observer.unobserve(slot);
+      try {
+        observer.observe(slot, { box: "device-pixel-content-box" });
+      } catch {
+        observer.observe(slot);
+      }
+    };
+    watch();
     const fail = (err: unknown) => {
       if (!alive) return;
       console.warn("visualizer: off", err);
@@ -327,7 +331,7 @@ export function Visualizer({
     };
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
-      unpainted = null;
+      unpainted = false;
       const renderer = rendererRef.current;
       const video = videoRef.current;
       if (!renderer || !video || document.hidden) return;
@@ -340,7 +344,9 @@ export function Visualizer({
       // device-pixel box, so that box is still the slot's: drawing goes on from it, a
       // measurement, with the CSS size read from layout (Codex round 27).
       const ratio = window.devicePixelRatio;
-      if (css && ratio !== reportedAt) {
+      if (!css || ratio === reportedAt) {
+        askedAt = 0;
+      } else {
         if (ratio !== askedAt) {
           askedAt = ratio;
           waited = 0;
@@ -356,6 +362,7 @@ export function Visualizer({
         css = { width: rect.width, height: rect.height };
         if (!(rect.width > 0 && rect.height > 0)) device = null;
         reportedAt = ratio;
+        askedAt = 0;
       }
       const box = css ?? slot.getBoundingClientRect();
       const [width, height, texel] = backingSize(
@@ -389,8 +396,8 @@ export function Visualizer({
         // (refresh.ts), from the shorter of the frame timestamps' interval and the time between
         // draws (a late callback has a stale timestamp, Codex round 18). A device that draws
         // slower than its display refreshes ages its evidence slower: held areas wait longer. A
-        // display that changes its refresh rate between two paints is over-credited one interval
-        // (Codex round 22, OSC-0046).
+        // display that speeds up its refresh rate between two paints is over-credited one
+        // interval (Codex round 22, OSC-0046).
         const wall = performance.now();
         const interval =
           lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
@@ -418,7 +425,12 @@ export function Visualizer({
         );
         lastDrawn = now;
         lastWall = wall;
-        unpainted = geometryKey(width, height, texel, slotWidth, slotHeight);
+        unpainted = true;
+        drawn[0] = width;
+        drawn[1] = height;
+        drawn[2] = texel;
+        drawn[3] = slotWidth;
+        drawn[4] = slotHeight;
         fitCanvas(renderer);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {
@@ -463,7 +475,6 @@ export function Visualizer({
             if (!current()) return;
             lastDrawn = null;
             lastWall = null;
-            refresh.reset();
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(tick);
             queueUpcoming(renderer, rotateRef.current, first);
@@ -479,6 +490,8 @@ export function Visualizer({
       event.preventDefault();
       build++;
       cancelAnimationFrame(frame);
+      unpainted = false;
+      askedAt = 0;
       const old = rendererRef.current;
       rendererRef.current = null;
       try {

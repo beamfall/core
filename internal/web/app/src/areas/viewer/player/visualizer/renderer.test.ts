@@ -149,6 +149,10 @@ function recordingGl() {
   const packed = new Uint32Array(4);
   const gpu = { busy: false };
   const waits: number[] = [];
+  // The order of the frames' blits to the canvas, the fences and the pack buffer reads; the
+  // framebuffer status checks; and the textures created.
+  const order: string[] = [];
+  const count = { checks: 0, textures: 0 };
   const TIMEOUT_EXPIRED = 0x911b;
   const CONDITION_SATISFIED = 0x911c;
   const canvas = { width: 0, height: 0, clientWidth: 0 };
@@ -158,12 +162,25 @@ function recordingGl() {
       if (key === "FRAMEBUFFER_COMPLETE") return 1;
       if (key === "TIMEOUT_EXPIRED") return TIMEOUT_EXPIRED;
       if (key === "WAIT_FAILED") return 0x911d;
-      if (key === "checkFramebufferStatus") return () => 1;
+      if (key === "checkFramebufferStatus")
+        return () => {
+          count.checks++;
+          return 1;
+        };
       if (typeof key === "string" && /^[A-Z0-9_]+$/.test(key)) return 0;
+      if (key === "createTexture")
+        return () => {
+          count.textures++;
+          return { id: ++next };
+        };
       if (typeof key === "string" && key.startsWith("create")) return () => ({ id: ++next });
       if (typeof key === "string" && key.startsWith("delete"))
         return (x: unknown) => deleted.add(x);
-      if (key === "blitFramebuffer") return (...a: number[]) => blits.push(a.slice(0, 8));
+      if (key === "blitFramebuffer")
+        return (...a: number[]) => {
+          order.push("blit");
+          blits.push(a.slice(0, 8));
+        };
       if (key === "bindFramebuffer") return (_: unknown, f: unknown) => (bound.f = f);
       if (key === "clearBufferuiv")
         return (_: unknown, __: unknown, v: Uint32Array) => spent.push([bound.f, [...v]]);
@@ -181,14 +198,21 @@ function recordingGl() {
           reads.push(bound.f);
           packed.set(pick.word());
         };
-      if (key === "fenceSync") return () => ({ id: ++next });
+      if (key === "fenceSync")
+        return () => {
+          order.push("fence");
+          return { id: ++next };
+        };
       if (key === "clientWaitSync")
         return (_: unknown, __: unknown, timeout: number) => {
           waits.push(timeout);
           return gpu.busy ? TIMEOUT_EXPIRED : CONDITION_SATISFIED;
         };
       if (key === "getBufferSubData")
-        return (_: unknown, __: unknown, into: Uint32Array) => into.set(packed);
+        return (_: unknown, __: unknown, into: Uint32Array) => {
+          order.push("sub");
+          into.set(packed);
+        };
       return () => undefined;
     },
   });
@@ -207,6 +231,8 @@ function recordingGl() {
     blocking,
     gpu,
     waits,
+    order,
+    count,
   };
 }
 
@@ -247,6 +273,8 @@ describe("Renderer geometry (CORE-2516)", () => {
       fadeLeft: 0,
       black: restored ? BLACK_S : 0,
       blackShown: false,
+      asked: null,
+      verified: false,
     });
     const renderer = r as unknown as Renderer;
     // The grant of a frame of a fade holds a direction, as while a lit frame waits for its fall,
@@ -496,7 +524,11 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(blits).toEqual([]);
     expect(blocks).toEqual([]);
 
+    // The black is over, but the slot is still moving: nothing starts (Codex round 28).
     draw(1200, 675, BLACK_S / 2);
+    expect(r.size).toBe(null);
+    expect(blits).toEqual([]);
+    draw(1200, 675);
     const L = limiter();
     expect([canvas.width, canvas.height]).toEqual([1200, 675]);
     for (const f of L.fOut) expect(spent).toContainEqual([f, [0, 0, 0, 0]]);
@@ -602,6 +634,9 @@ describe("Renderer geometry (CORE-2516)", () => {
     through((ms) => drawIn([1, 1, 1], [0, 0], ms));
     expect(r.size).toBe(null);
     expect(renderer.settled(1, 1, 1, 0, 0)).toBe(true);
+    expect(renderer.settled(64, 36, 1)).toBe(false);
+    drawIn([64, 36, 1], [64, 36]);
+    expect(r.size).toBe(null);
     expect(renderer.settled(64, 36, 1)).toBe(false);
     drawIn([64, 36, 1], [64, 36]);
     expect(r.size).not.toBe(size);
@@ -723,21 +758,30 @@ describe("Renderer geometry (CORE-2516)", () => {
   // Codex round 27: each frame of the fade read its grant into an array, which waits for the
   // GPU on the main thread: about 160 waits through a red fall at 60 frames a second. The read
   // is polled, so a busy GPU only ends the fade later.
+  // Codex round 28: a read left in flight while later frames drew was taken, once its fence
+  // passed, behind those frames' commands, and the pack buffer read waited for them. Each frame
+  // of the fade reads its own grant, after everything else it issues, and the next draw takes
+  // the word, before it issues anything, only if the GPU has finished that frame.
   it("never waits for the GPU through a fade", () => {
-    const { r, draw, fadeGrant, reads, blocking, gpu, waits } = make();
+    const { r, draw, fadeGrant, reads, blocking, gpu, waits, order } = make();
     draw(640, 360);
     draw(640, 360);
     fadeGrant[0] = 0x02;
     gpu.busy = true;
+    order.length = 0;
     draw(800, 450);
     const size = r.size;
     for (let i = 0; i < 3; i++) draw(800, 450);
-    // One read in flight, of the fade's first frame; the fade goes on behind it.
-    expect(reads).toHaveLength(1);
+    // One read a frame, each in place of the last; the fade goes on, and no word is taken.
+    expect(reads).toHaveLength(4);
+    expect(order).toEqual(["blit", "fence", "blit", "fence", "blit", "fence", "blit", "fence"]);
     expect(r.size).toBe(size);
     expect(r.fadeLeft).toBeCloseTo(FADE_S - 3 / 60);
     gpu.busy = false;
     draw(800, 450);
+    // The word is taken straight after the last frame's fence, behind no later command.
+    expect(order.slice(-2)).toEqual(["fence", "sub"]);
+    expect(order.filter((x) => x === "sub")).toHaveLength(1);
     expect(r.size).toBe(null);
     expect(r.black).toBe(BLACK_S);
     expect(blocking).toEqual([]);
@@ -807,8 +851,9 @@ describe("Renderer geometry (CORE-2516)", () => {
   });
 
   // Codex round 26: the slot changed after the last black frame was painted, so the frame that
-  // started was withdrawn. It was never on screen: the black is, and the next draw starts at the
-  // new geometry with no second fade.
+  // started was withdrawn. It was never on screen: the black is, and a frame starts at the new
+  // geometry with no second fade. Codex round 28: after BLACK_S more of black, once two draws
+  // running ask for that geometry.
   it("starts at the new geometry when the frame that ended the black is withdrawn", () => {
     const { r, renderer, draw, limiter, spent, clears, blits, canvas, deleted } = make();
     draw(640, 360);
@@ -826,13 +871,17 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(r.size).toBe(null);
     expect(renderer.shown).toBe(null);
     expect(r.fadeLeft).toBe(0);
-    expect(r.black).toBe(0);
+    expect(r.black).toBe(BLACK_S);
     expect(r.clockMs).toBe((clock as number) - 125);
     expect(clears).toEqual([null]);
     expect(blits).toEqual([]);
     expect([...started.fOut, ...started.fG].every((f) => deleted.has(f))).toBe(true);
     expect(renderer.settled(900, 500, 1)).toBe(false);
 
+    draw(900, 500, BLACK_S);
+    expect(r.size).toBe(null);
+    expect(r.black).toBe(0);
+    expect(blits).toEqual([]);
     draw(900, 500);
     const L = limiter();
     expect([canvas.width, canvas.height]).toEqual([900, 500]);
@@ -887,10 +936,56 @@ describe("Renderer geometry (CORE-2516)", () => {
     renderer.withdraw();
     expect(renderer.settled(64, 36, 1)).toBe(false);
     expect(reads).toHaveLength(0);
-    draw(64, 36);
+    draw(64, 36, BLACK_S);
     expect(renderer.settled(64, 36, 1)).toBe(true);
     expect(renderer.settled(64, 36, 1)).toBe(true);
     expect(reads).toHaveLength(1);
+  });
+
+  // Codex round 28: a slot dragged after the black started a frame at every draw and withdrew
+  // it at every observation, freeing and allocating every full-resolution target each time.
+  it("allocates nothing while the slot moves, and once in BLACK_S when it stops between", () => {
+    const { r, renderer, draw, count } = make();
+    draw(640, 360);
+    draw(800, 450);
+    for (let i = 0; i < 16; i++) draw(800, 450, 0.125);
+    expect(r.size).toBe(null);
+    const textures = count.textures;
+    // The drag outlasts the black: a new size at every draw, each withdrawn at the observation
+    // after it.
+    for (let i = 0; i < 60; i++) {
+      draw(801 + i, 450);
+      renderer.withdraw();
+    }
+    expect(r.black).toBe(0);
+    expect(r.size).toBe(null);
+    expect(count.textures).toBe(textures);
+    // The slot rests for two draws and moves again before the paint: one start, withdrawn.
+    draw(860, 450);
+    expect(r.size).not.toBe(null);
+    const started = count.textures;
+    expect(started).toBeGreaterThan(textures);
+    renderer.withdraw();
+    expect(r.black).toBe(BLACK_S);
+    for (let i = 0; i < 5; i++) {
+      draw(860, 450);
+      renderer.withdraw();
+    }
+    expect(r.size).toBe(null);
+    expect(count.textures).toBe(started);
+  });
+
+  // Codex round 28: checkFramebufferStatus waits for the GPU process. The first start checks
+  // the formats every later start uses.
+  it("checks the framebuffers of the first start only", () => {
+    const { r, draw, through, count, canvas } = make();
+    draw(640, 360);
+    const checks = count.checks;
+    expect(checks).toBeGreaterThan(0);
+    through((ms) => draw(800, 450, ms / 1000));
+    expect([canvas.width, canvas.height]).toEqual([800, 450]);
+    expect(r.size).not.toBe(null);
+    expect(count.checks).toBe(checks);
   });
 
   // Codex round 18: the limiter ages evidence by the time frames are shown apart, which a late

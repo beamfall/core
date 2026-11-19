@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REFRESH_WINDOW, RefreshBound } from "./refresh";
+import { RefreshBound } from "./refresh";
 
 // Draws `count` frames `interval` ms apart and returns the credit of the last.
 function run(refresh: RefreshBound, interval: number, count: number): number {
@@ -28,7 +28,7 @@ describe("RefreshBound", () => {
         const refresh = new RefreshBound();
         const interval = n * R;
         const shown = Math.max(R, interval - R);
-        for (let i = 0; i < 3 * REFRESH_WINDOW; i++) {
+        for (let i = 0; i < 100; i++) {
           refresh.note(interval);
           expect(refresh.shown(interval)).toBeLessThanOrEqual(shown + 1e-9);
         }
@@ -36,14 +36,13 @@ describe("RefreshBound", () => {
     }
   });
 
-  // Codex round 27: a page that drew at 240 Hz and now draws at 60 Hz kept the 4.17 ms minimum
-  // and credited a quarter of each interval for as long as it ran.
-  it("measures a slower cadence again within the window", () => {
+  // Codex round 28: a bound taken over the last 32 draws forgot the display. At 120 Hz a page
+  // that slowed to 30 draws a second had a bound of four refreshes after 32 of them, and a frame
+  // painted three refreshes late and followed on time, shown 8.33 ms, was credited 16.67 ms.
+  it("keeps the shortest interval however long the cadence has been slower", () => {
     const refresh = new RefreshBound();
-    run(refresh, 1000 / 240, 500);
-    expect(run(refresh, 1000 / 60, 1)).toBeCloseTo(1000 / 240);
-    expect(run(refresh, 1000 / 60, REFRESH_WINDOW - 2)).toBeCloseTo(1000 / 240);
-    expect(run(refresh, 1000 / 60, 1)).toBeCloseTo(500 / 60);
+    run(refresh, 1000 / 120, 100);
+    expect(run(refresh, 1000 / 30, 1000)).toBeCloseTo(1000 / 120);
   });
 
   it("takes a faster cadence at its first interval", () => {
@@ -52,30 +51,21 @@ describe("RefreshBound", () => {
     expect(run(refresh, 1000 / 240, 1)).toBeCloseTo(500 / 240);
   });
 
-  it("holds a short interval for the window, then lets it go", () => {
+  it("keeps a short interval", () => {
     const refresh = new RefreshBound();
     run(refresh, 1000 / 60, 100);
     // A jittery frame: a late callback, then one that catches up.
     refresh.note(28);
     refresh.note(5);
-    expect(refresh.shown(1000 / 60)).toBeCloseTo(5);
-    expect(run(refresh, 1000 / 60, REFRESH_WINDOW - 1)).toBeCloseTo(5);
-    expect(run(refresh, 1000 / 60, 1)).toBeCloseTo(500 / 60);
+    expect(run(refresh, 1000 / 60, 1000)).toBeCloseTo(5);
   });
 
   it("keeps the bound between 4 ms and a 24 Hz refresh", () => {
     const refresh = new RefreshBound();
     // A throttled page: one frame a second is credited one 24 Hz refresh.
-    expect(run(refresh, 1000, 2 * REFRESH_WINDOW)).toBeCloseTo(1000 / 24);
+    expect(run(refresh, 1000, 100)).toBeCloseTo(1000 / 24);
     // A burst of callbacks closer than any display refreshes.
     expect(run(refresh, 1, 1)).toBeCloseTo(0.5);
     expect(run(refresh, 1000 / 60, 1)).toBeCloseTo(4);
-  });
-
-  it("forgets the cadence on reset", () => {
-    const refresh = new RefreshBound();
-    run(refresh, 1000 / 240, 100);
-    refresh.reset();
-    expect(run(refresh, 1000 / 60, 1)).toBeCloseTo(500 / 60);
   });
 });

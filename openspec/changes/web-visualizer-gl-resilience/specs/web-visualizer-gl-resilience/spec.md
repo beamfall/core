@@ -115,7 +115,7 @@ frame shown.
 
 #### Scenario: Steady 60 frames a second
 
-- **WHEN** frames have arrived every 1/60 s for the last 32 draws
+- **WHEN** frames have arrived every 1/60 s since the visualizer mounted
 - **THEN** each frame is credited half its interval, so the 0.1 s of black lasts about 0.2 s on
   the clock and the 2 s cap about 4 s
 
@@ -128,8 +128,20 @@ later draw outside a fade, at a fade's start and at a withdrawal.
 #### Scenario: Grant read while the GPU is busy
 
 - **WHEN** the read of a fade frame's grant has not finished at the next frame
-- **THEN** that frame is drawn without waiting, and the fade ends at the first frame that finds
-  the read finished with no direction held
+- **THEN** that frame is drawn without waiting and reads its own grant, and the fade ends at
+  the first frame that finds the read of the frame before it finished with no direction held
+
+### Requirement: A grant is taken behind none of the renderer's later frames
+
+Each frame of a fade SHALL start the read of its grant after every other command of the frame.
+The next frame SHALL take the word, before it issues a command, only if the read's fence has
+passed, and SHALL otherwise drop that read for its own.
+
+#### Scenario: Word taken behind no later frame
+
+- **WHEN** a frame of the fade takes a finished read
+- **THEN** the read's fence was the last command of the frame before, and no command of a later
+  frame was issued ahead of the pack buffer read
 
 #### Scenario: No read ever finishes
 
@@ -139,10 +151,10 @@ later draw outside a fade, at a fade's start and at a withdrawal.
 ### Requirement: A frame is credited no more than it was shown
 
 The time the web visualizer credits the limiter for a frame SHALL be a lower bound on the time
-the frame was on screen. With B the shortest of the last 32 draw intervals, clamped to 4 ms and
-1/24 s, the credit for an interval SHALL be `min(B, max(interval / 2, interval - B))`. A steady
-cadence SHALL NOT raise the credit above half the interval: the animation-frame cadence is not
-the display's refresh period.
+the frame was on screen. With B the shortest draw interval since the visualizer mounted, clamped
+to 4 ms and 1/24 s, the credit for an interval SHALL be `min(B, max(interval / 2, interval - B))`.
+B SHALL NOT rise while the visualizer is mounted. A steady cadence SHALL NOT raise the credit
+above half the interval: the animation-frame cadence is not the display's refresh period.
 
 #### Scenario: Animation frames at 60 a second on a 120 Hz display
 
@@ -152,8 +164,13 @@ the display's refresh period.
 #### Scenario: Cadence slows from 240 to 60 frames a second
 
 - **WHEN** frames arrived every 1/240 s and then arrive every 1/60 s
-- **THEN** each frame is credited 1/240 s until 32 draws have passed at the new cadence, and half
-  its interval from then on
+- **THEN** each frame is credited 1/240 s for as long as the visualizer is mounted
+
+#### Scenario: Page slows to 30 draws a second on a 120 Hz display
+
+- **WHEN** frames arrived every 1/120 s, then arrive every 1/30 s, and one is painted three
+  refreshes late and the next on time
+- **THEN** the frame was shown 8.3 ms and is credited 8.3 ms
 
 #### Scenario: Long interval
 
@@ -163,13 +180,22 @@ the display's refresh period.
 ### Requirement: A change during the fade only moves the target
 
 A geometry change during the fade or the black SHALL change only the geometry the next frame
-starts at. It SHALL NOT reallocate, write the grant state or restart either clock.
+starts at. It SHALL NOT reallocate, write the grant state or restart either clock. A frame SHALL
+start only once two draws running ask for one geometry, and a started frame withdrawn before
+its paint SHALL be followed by the black again, so a slot that keeps changing allocates the
+targets once in the black's length at most.
 
 #### Scenario: Slot dragged through the fade
 
 - **WHEN** the slot's size changes on every frame of a fade
 - **THEN** the fade keeps its geometry and its clock, the grant state is not written again, and
   one frame starts at the last size asked for
+
+#### Scenario: Slot dragged past the black
+
+- **WHEN** the slot's size changes on every frame after the black has run
+- **THEN** the canvas stays black and no target is allocated until two draws running ask for one
+  size
 
 ### Requirement: A frame starts black with every budget spent
 

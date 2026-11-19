@@ -27,13 +27,18 @@
 - [x] 3.12 Delete the copy paths (divisor, overlap, partial expose), the cut-texel hold and `collapse`
 - [x] 3.13 End the fade at the frame after one whose grant held no direction; 2 s is the cap
 - [x] 3.14 Compare the slot by the geometry a frame is drawn at (`geometryKey`), not by its pixels
-- [x] 3.15 A withdrawn frame that started leaves black and no frame, so the next draw starts
+- [x] 3.15 A withdrawn frame that started leaves black and no frame, with no second fade
 - [x] 3.16 Hold the frame after a device-pixel-ratio change until the slot is observed again
 - [x] 3.17 Narrow the view at each observation (`narrow`), before the device-pixel-ratio guard; fade a frame whose view was cut
 - [x] 3.18 Observe the slot afresh after a ratio change (unobserve, observe); draw from the last device-pixel box after three frames with no report
 - [x] 3.19 Read the grant word through a pixel-pack buffer and a fence, with no blocking `readPixels`
-- [x] 3.20 Bound the refresh period by the last 32 draw intervals (`RefreshBound`), so a slower cadence is measured again
+- [x] 3.20 Bound the refresh period by the shortest draw interval since mount (`RefreshBound`); a bound over recent draws over-credits a late frame once the page slows
 - [x] 3.21 Decline a credit above half the interval at a steady cadence: animation frames do not give the display's refresh period
+- [x] 3.22 Clip the canvas to a narrowed slot in the observation that reports it, before the paint
+- [x] 3.23 End a wait for a ratio's report at any report, at a ratio back at the reported one and at a lost context, so a ratio met again is observed afresh
+- [x] 3.24 Start a frame only once two draws running ask for one geometry; a withdrawn start costs the black again; check framebuffers at the first start only
+- [x] 3.25 Read each fade frame's grant after its last command and take the word at the next frame only if the fence has passed
+- [x] 3.26 Keep the drawn geometry as numbers; build a geometry key only for an observation that follows a draw
 
 ## 4. Gate and archive
 

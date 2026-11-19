@@ -1,6 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { REFRESH_WINDOW } from "./refresh";
 import { Visualizer } from "./Visualizer";
 
 // A mocked renderer factory: each create hands out a fresh renderer, as a restored context does.
@@ -25,45 +24,53 @@ const made = vi.hoisted(() => ({
   }[],
   restores: [] as boolean[],
   fail: false,
+  // Geometry keys built, each an allocation.
+  keys: 0,
   // When set, the next create waits on it, as a create still compiling when the context goes.
   gate: null as Promise<void> | null,
 }));
 
 vi.mock("./oscillux", () => ({ loadOscillux: () => Promise.resolve({}) }));
-vi.mock("./renderer", async (importOriginal) => ({
-  MAX_SIDE: 8192,
-  TRACKED_BLACK: "#000",
-  geometryKey: (await importOriginal<typeof import("./renderer")>()).geometryKey,
-  Renderer: {
-    create: async (_canvas: HTMLCanvasElement, _osc: unknown, restored: boolean) => {
-      made.restores.push(restored);
-      const gate = made.gate;
-      made.gate = null;
-      if (gate) await gate;
-      if (made.fail) return null;
-      const r = {
-        setImage: vi.fn(),
-        use: vi.fn(() => Promise.resolve()),
-        prepare: vi.fn(() => Promise.resolve()),
-        draw: vi.fn(),
-        settled: vi.fn(() => false),
-        withdraw: vi.fn(),
-        // As the renderer does: the view of the frame on screen only shrinks.
-        narrow: vi.fn((slotWidth: number, slotHeight: number) => {
-          const shown = r.shown;
-          if (!shown) return;
-          shown.viewWidth = Math.min(shown.viewWidth, slotWidth);
-          shown.viewHeight = Math.min(shown.viewHeight, slotHeight);
-        }),
-        shown: null as (typeof made.renderers)[number]["shown"],
-        dispose: vi.fn(),
-        contextLost: false,
-      };
-      made.renderers.push(r);
-      return r;
+vi.mock("./renderer", async (importOriginal) => {
+  const { geometryKey } = await importOriginal<typeof import("./renderer")>();
+  return {
+    MAX_SIDE: 8192,
+    TRACKED_BLACK: "#000",
+    geometryKey: (...args: Parameters<typeof geometryKey>) => {
+      made.keys += 1;
+      return geometryKey(...args);
     },
-  },
-}));
+    Renderer: {
+      create: async (_canvas: HTMLCanvasElement, _osc: unknown, restored: boolean) => {
+        made.restores.push(restored);
+        const gate = made.gate;
+        made.gate = null;
+        if (gate) await gate;
+        if (made.fail) return null;
+        const r = {
+          setImage: vi.fn(),
+          use: vi.fn(() => Promise.resolve()),
+          prepare: vi.fn(() => Promise.resolve()),
+          draw: vi.fn(),
+          settled: vi.fn(() => false),
+          withdraw: vi.fn(),
+          // As the renderer does: the view of the frame on screen only shrinks.
+          narrow: vi.fn((slotWidth: number, slotHeight: number) => {
+            const shown = r.shown;
+            if (!shown) return;
+            shown.viewWidth = Math.min(shown.viewWidth, slotWidth);
+            shown.viewHeight = Math.min(shown.viewHeight, slotHeight);
+          }),
+          shown: null as (typeof made.renderers)[number]["shown"],
+          dispose: vi.fn(),
+          contextLost: false,
+        };
+        made.renderers.push(r);
+        return r;
+      },
+    },
+  };
+});
 
 const direct = { kind: "direct-play", url: "/api/media/m1/stream" };
 let pending: Set<number>;
@@ -74,6 +81,7 @@ beforeEach(() => {
   made.renderers.length = 0;
   made.restores.length = 0;
   made.fail = false;
+  made.keys = 0;
   made.gate = null;
   pending = new Set();
   callbacks = new Map();
@@ -572,6 +580,105 @@ describe("Visualizer resize before paint", () => {
     }
   });
 
+  // Codex round 28: a red frame fading in an 800-pixel slot. After the visualizer's observer has
+  // run, another observer narrows the slot to 400, which is reported in the next frame's
+  // observations, after that frame's draw; the other observer then widens the slot again before
+  // the paint. The canvas was clipped at the next draw only, so the right half came back, lit,
+  // for a paint. The observation itself clips the canvas.
+  it("clips the canvas to a narrowed slot at the observation, before the paint", async () => {
+    const ratio = window.devicePixelRatio;
+    setRatio(1);
+    try {
+      const { canvas } = mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[0];
+      reportBox([800, 600], [800, 600]);
+      step(16);
+      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
+      step(32);
+      expect(canvas.style.clipPath).toBe("");
+      step(48);
+      reportBox([400, 600], [400, 600]);
+      expect(canvas.style.clipPath).toBe("inset(0 400px 0px 0)");
+      // The slot is 800 wide again before the paint: nothing comes back.
+      reportBox([800, 600], [800, 600]);
+      expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 600 });
+      expect(canvas.style.clipPath).toBe("inset(0 400px 0px 0)");
+      expect(canvas.style.width).toBe("800px");
+    } finally {
+      setRatio(ratio);
+    }
+  });
+
+  // Codex round 28: a request for a report at DPR 2 timed out on an empty slot and stayed on
+  // record. After a context loss, a report at DPR 1 and a restore, the first frame back at DPR 2
+  // matched the old request: it observed nothing and, its frames long since counted, drew from
+  // the DPR 1 box.
+  it("observes afresh and waits again at a ratio it asked at before", async () => {
+    const ratio = window.devicePixelRatio;
+    setRatio(1);
+    try {
+      const { canvas } = mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      reportBox([800, 600], [800, 600]);
+      step(16);
+      setRatio(2);
+      const rect = vi
+        .spyOn(canvas.parentElement!, "getBoundingClientRect")
+        .mockReturnValue({ width: 0, height: 0 } as DOMRect);
+      for (const now of [32, 48, 64, 80]) step(now);
+      expect(made.renderers[0].draw).toHaveBeenCalledTimes(2);
+      reportBox([400, 300], [800, 600]);
+
+      act(() => void canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true })));
+      setRatio(1);
+      reportBox([800, 600], [800, 600]);
+      act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[1];
+      rect.mockReturnValue({ width: 400, height: 300 } as DOMRect);
+
+      setRatio(2);
+      const asked = observes;
+      for (const now of [96, 112, 128]) step(now);
+      expect(observes).toBe(asked + 1);
+      expect(renderer.draw).not.toHaveBeenCalled();
+      reportBox([400, 300], [800, 600]);
+      step(144);
+      expect(renderer.draw).toHaveBeenCalledOnce();
+      expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+
+      // A ratio left before its report and come back to is asked for again, from the start.
+      setRatio(1);
+      step(160);
+      setRatio(2);
+      step(176);
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
+      setRatio(1);
+      for (const now of [192, 208, 224]) step(now);
+      expect(observes).toBe(asked + 3);
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
+    } finally {
+      setRatio(ratio);
+    }
+  });
+
+  // Codex round 28: the loop built a geometry key, an array and a string, at every frame. Keys
+  // are built for an observation that follows a draw, not for a draw.
+  it("builds no geometry key for a frame nothing observes", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    report(640, 360);
+    for (let i = 1; i <= 60; i++) step(16 * i);
+    expect(renderer.draw).toHaveBeenCalledTimes(60);
+    expect(made.keys).toBe(0);
+    report(320, 360);
+    expect(made.keys).toBe(2);
+    expect(renderer.withdraw).toHaveBeenCalledOnce();
+  });
+
   // Codex round 26: at DPR 4 a slot alternating between 128 and 129 physical pixels shows the
   // same 64 x 36 two-pixel texels. The observer compared slot pixels and withdrew every frame,
   // which stopped the limiter's clock for as long as the slot jittered.
@@ -689,9 +796,10 @@ describe("Visualizer resize before paint", () => {
     clock.mockRestore();
   });
 
-  // Codex round 27: the bound was the shortest interval since the loop started, so a page that
-  // drew at 240 Hz and then at 60 Hz credited a quarter of each frame for good.
-  it("measures the cadence again after it slows from 240 Hz to 60 Hz", async () => {
+  // Codex round 28: a bound measured again from the last draws over-credits a late frame once
+  // the page draws slower than the display refreshes, so the bound is the shortest interval
+  // since the loop started. A cadence that slows from 240 Hz to 60 Hz keeps the 240 Hz bound.
+  it("keeps the shortest draw interval after the cadence slows from 240 Hz to 60 Hz", async () => {
     mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
@@ -707,10 +815,12 @@ describe("Visualizer resize before paint", () => {
     step(0);
     frames(100, 1000 / 240);
     expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(500 / 240);
-    frames(REFRESH_WINDOW - 1, 1000 / 60);
+    frames(200, 1000 / 60);
     expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(1000 / 240);
-    frames(1, 1000 / 60);
-    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(500 / 60);
+    // A frame three refreshes late was on screen for one refresh at least.
+    frames(1, 4000 / 240);
+    frames(1, 1000 / 240);
+    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(500 / 240);
     clock.mockRestore();
   });
 
