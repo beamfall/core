@@ -1,20 +1,19 @@
-//go:build linux || darwin
+//go:build (linux && !android) || (darwin && !ios)
 
 package ffmpeg
 
-import (
-	"fmt"
-	"os/exec"
-)
+import "fmt"
 
-// waitHLSProcess observes the leader's exit without reaping it, kills the
-// still-identity-bound process group, then lets exec.Cmd reap the leader.
-func waitHLSProcess(cmd *exec.Cmd, killTree func()) error {
-	if err := waitForProcessExit(cmd.Process.Pid); err != nil {
-		killTree()
-		_ = cmd.Wait()
-		return fmt.Errorf("ffmpeg: wait for process exit: %w", err)
+var hlsExitObserver = waitForProcessExit
+
+func (p *HLSProcess) waitForExit() error {
+	observeErr := hlsExitObserver(p.cmd.Process.Pid)
+	// Even on observer failure the leader is unreaped, reserving the group
+	// ID for the final kill. The OS init reaps orphaned descendants.
+	p.killTree()
+	waitErr := p.cmd.Wait()
+	if observeErr != nil {
+		return fmt.Errorf("ffmpeg: observe encoder exit: %w", observeErr)
 	}
-	killTree()
-	return cmd.Wait()
+	return waitErr
 }

@@ -102,12 +102,21 @@ def _check_containers(root: Path) -> list[str]:
     errors: list[str] = []
     dockerfile = root / "Dockerfile"
     stages: set[str] = set()
+    current_stage = ""
+    runtime_entrypoint = ""
     for line_number, line in enumerate(_read(dockerfile, errors).splitlines(), 1):
         if match := FROM_RE.match(line):
-            if match.group(1) not in stages:
+            if match.group(1).lower() not in stages:
                 _check_container(dockerfile, line_number, match.group(1), errors)
-            if stage := STAGE_RE.search(line):
-                stages.add(stage.group(1))
+            stage = STAGE_RE.search(line)
+            current_stage = stage.group(1).lower() if stage else ""
+            if current_stage:
+                stages.add(current_stage)
+        elif current_stage == "runtime":
+            if entrypoint := re.match(r"^\s*ENTRYPOINT\s+(.+)$", line, re.IGNORECASE):
+                runtime_entrypoint = entrypoint.group(1).strip()
+    if not re.fullmatch(r'\[\s*"/usr/bin/tini"\s*,\s*"--"\s*,\s*"/usr/local/bin/beamfall"\s*\]', runtime_entrypoint):
+        errors.append(f"{dockerfile}: runtime ENTRYPOINT must start Beamfall under tini")
 
     compose_paths = set(root.glob("docker-compose*.yml")) | set(root.glob("docker-compose*.yaml"))
     compose_paths |= set((root / "packaging/compose").glob("*.yml"))

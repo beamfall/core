@@ -1,11 +1,7 @@
-//go:build !linux && !darwin
+//go:build !unix
 
 package ffmpeg
 
-import "os/exec"
-
-// Platforms without a pre-reap exit observer skip residual-group signalling;
-// signalling after Wait would risk targeting a recycled process identifier.
-func waitHLSProcess(cmd *exec.Cmd, _ func()) error {
-	return cmd.Wait()
+func (p *HLSProcess) waitForExit() error {
+	return p.cmd.Wait()
 }

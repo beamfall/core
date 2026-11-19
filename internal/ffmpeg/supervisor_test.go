@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,7 +63,7 @@ func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
 	wg.Wait()
 
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		if hlsDescendantExited(pid) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -89,12 +90,36 @@ func TestHLSProcessNaturalLeaderExitReapsDescendant(t *testing.T) {
 		t.Fatal(err)
 	}
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		if hlsDescendantExited(pid) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("descendant process %d survived natural HLS leader exit", pid)
+}
+
+func hlsDescendantExited(pid int) bool {
+	if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+		return true
+	}
+	if runtime.GOOS != "linux" {
+		return false // init should reap the descendant
+	}
+	status, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status") // #nosec G304 -- test-owned PID
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil || !strings.Contains(string(status), "\nState:\tZ") {
+		return false
+	}
+	// Linux test runners may have a PID 1 that does not reap orphans.
+	for line := range strings.SplitSeq(string(status), "\n") {
+		if value, ok := strings.CutPrefix(line, "PPid:"); ok {
+			ppid, err := strconv.Atoi(strings.TrimSpace(value))
+			return err == nil && ppid > 0 && ppid != os.Getpid()
+		}
+	}
+	return false
 }
 
 // TestBoundedBufferCapsAndSignalsOnce proves the capture buffer never retains

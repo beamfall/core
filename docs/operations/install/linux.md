@@ -56,6 +56,11 @@ base file (`compose.cpu.yml`, `compose.intel-vaapi.yml`, or `compose.nvidia.yml`
 need membership in that group too. NVIDIA containers need the NVIDIA Container Toolkit and host
 driver. Add `compose.public.yml` only as described in the reference for Caddy HTTPS.
 
+Keep the image's default entrypoint so `tini` runs as PID 1 and reaps orphaned encoder
+descendants. Running Beamfall itself as PID 1 leaves descendant zombies after an encoder
+group is stopped. Beamfall joins the encoder it started. On native macOS, Stop kills the
+process group immediately and `launchd` reaps orphaned descendants.
+
 ## Run as a service
 
 For the native installation above, create `/etc/beamfall.env`, owned by root with mode `0600`:

@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin && !ios
 
 package ffmpeg
 
@@ -10,9 +10,8 @@ import (
 )
 
 // waitForProcessExit blocks until pid, an unreaped child of this process, has
-// exited. kqueue refuses EVFILT_PROC with ESRCH once the child is already a
-// zombie; an unreaped child's pid cannot be reused, so ESRCH means it has
-// already exited, not that it is unknown.
+// exited. kqueue may report ESRCH once the child is already a zombie. An
+// unreaped child's pid cannot be reused, so ESRCH means it has already exited.
 func waitForProcessExit(pid int) error {
 	if pid < 0 {
 		return syscall.EINVAL
@@ -24,12 +23,10 @@ func waitForProcessExit(pid int) error {
 	}
 	defer unix.Close(kq)
 
-	changes := []unix.Kevent_t{{
-		Ident:  uint64(pid),
-		Filter: unix.EVFILT_PROC,
-		Flags:  unix.EV_ADD | unix.EV_ONESHOT,
-		Fflags: unix.NOTE_EXIT,
-	}}
+	var change unix.Kevent_t
+	unix.SetKevent(&change, pid, unix.EVFILT_PROC, unix.EV_ADD|unix.EV_ONESHOT)
+	change.Fflags = unix.NOTE_EXIT
+	changes := []unix.Kevent_t{change}
 	events := make([]unix.Kevent_t, 1)
 	for {
 		n, err := unix.Kevent(kq, changes, events, nil)

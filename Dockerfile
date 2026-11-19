@@ -112,7 +112,12 @@ FROM ffmpeg-runtime AS runtime
 
 COPY --from=build /out/beamfall /usr/local/bin/beamfall
 
+# The apt sources inherited from ffmpeg-runtime point at the pinned snapshot.
 RUN set -eux; \
+	apt-get update; \
+	apt-get install -y --no-install-recommends tini; \
+	apt-get clean; \
+	rm -rf /var/lib/apt/lists/*; \
 	groupadd --system --gid 1000 beamfall; \
 	useradd --system --uid 1000 --gid beamfall --home-dir /data --shell /usr/sbin/nologin beamfall; \
 	mkdir -p /data /media /transcode; \
@@ -137,5 +142,5 @@ USER beamfall:beamfall
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 	CMD curl -fsS http://127.0.0.1:8800/health >/dev/null || exit 1
 
-ENTRYPOINT ["/usr/local/bin/beamfall"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/beamfall"]
 CMD ["serve"]

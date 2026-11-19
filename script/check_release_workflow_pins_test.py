@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import importlib.util
 import hashlib
+import json
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -77,6 +79,7 @@ RUN sh /in/build.sh /in/ffmpeg.lock /in/ffmpeg.pin "$TARGETARCH" /out
 FROM debian:bookworm@sha256:{debian} AS ffmpeg-runtime
 COPY --from=ffmpeg /out/SHA256SUMS /out/*-source.tar /usr/share/beamfall/source/ffmpeg/
 FROM ffmpeg-runtime AS runtime
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/beamfall"]
 """.format(node="c" * 64, go="d" * 64, debian="e" * 64),
         )
         workflow = """jobs:
@@ -177,6 +180,35 @@ FROM ffmpeg-runtime AS runtime
         path = ".github/workflows/gate.yml"
         self.write(path, self.read(path).replace("@" + "a" * 40, "@v5", 1))
         self.assert_error("action reference is mutable")
+
+    def test_rejects_runtime_entrypoint_without_tini(self) -> None:
+        path = "Dockerfile"
+        self.write(path, self.read(path) + 'ENTRYPOINT ["/usr/local/bin/beamfall"]\n')
+        self.assert_error("runtime ENTRYPOINT must start Beamfall under tini")
+
+    def test_release_bake_keeps_runtime_when_final_stage_overrides_entrypoint(self) -> None:
+        if shutil.which("docker") is None or subprocess.run(
+            ["docker", "buildx", "version"], capture_output=True, timeout=30
+        ).returncode != 0:
+            self.skipTest("Docker Buildx is required to resolve the release bake target")
+
+        bakefile = "docker-bake.hcl"
+        self.write(bakefile, MODULE_PATH.parent.parent.joinpath(bakefile).read_text(encoding="utf-8"))
+        self.write(
+            "Dockerfile",
+            self.read("Dockerfile") + 'FROM runtime AS release\nENTRYPOINT ["/usr/local/bin/beamfall"]\n',
+        )
+        result = subprocess.run(
+            ["docker", "buildx", "bake", "--print", "--file", bakefile],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        target = json.loads(result.stdout)["target"]["beamfall-core"]
+        self.assertEqual("Dockerfile", target["dockerfile"])
+        self.assertEqual("runtime", target.get("target"))
 
     def test_rejects_mutable_dockerfile_base(self) -> None:
         self.write("Dockerfile", self.read("Dockerfile").replace("@sha256:" + "c" * 64, ""))
