@@ -18888,6 +18888,10 @@
           ]
         },
         {
+          "name": "entryPinSet",
+          "kind": "scalar"
+        },
+        {
           "name": "id",
           "kind": "scalar"
         },
@@ -20885,6 +20889,10 @@
               "kind": "scalar"
             }
           ]
+        },
+        {
+          "name": "entryPinSet",
+          "kind": "scalar"
         },
         {
           "name": "id",
@@ -30703,6 +30711,10 @@
               "kind": "scalar"
             }
           ]
+        },
+        {
+          "name": "entryPinSet",
+          "kind": "scalar"
         },
         {
           "name": "id",

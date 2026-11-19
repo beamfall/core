@@ -2226,6 +2226,7 @@
       "children": [
         "avatar",
         "certificationCeilings",
+        "entryPinSet",
         "id",
         "kind",
         "name",
@@ -2623,6 +2624,7 @@
       "children": [
         "avatar",
         "certificationCeilings",
+        "entryPinSet",
         "id",
         "kind",
         "name",
@@ -3637,6 +3639,7 @@
       "children": [
         "avatar",
         "certificationCeilings",
+        "entryPinSet",
         "id",
         "kind",
         "name",

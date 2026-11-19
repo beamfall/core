@@ -22,10 +22,12 @@ var (
 var (
 	// ErrNoProfileEntryPIN means an adult Profile has no independent entry
 	// credential, or that entry PINs do not apply to the target Profile kind.
+	// Integration sign-in refuses it; a profile switch does not (CORE-2581).
 	ErrNoProfileEntryPIN = errors.New("profile has no entry PIN")
 	// ErrProfileEntryPINMismatch means the supplied independent entry PIN did
-	// not match. Callers should present the same challenge for this error and
-	// ErrNoProfileEntryPIN so verifier presence is not disclosed.
+	// not match. Verifier presence is not secret: the owner chose on
+	// 2026-11-18 that an adult Profile without an entry PIN opens freely, so
+	// the picker reports which Profiles have one (ProfileEntryPINsSet).
 	ErrProfileEntryPINMismatch = errors.New("profile entry PIN mismatch")
 )
 
@@ -216,9 +218,11 @@ func (s *Store) VerifyProfileEntryPIN(ctx context.Context, profileID ProfileID, 
 }
 
 // SetSessionProfileWithEntryPIN verifies the target Profile's independent
-// entry credential and rebinds the session in one catalog transaction. Adult
-// targets fail closed without a verifier; managed targets remain PIN-free.
-// Every successful switch clears Reveal and Admin Session authority.
+// entry credential and rebinds the session in one catalog transaction. An
+// adult target with an entry PIN needs it; an adult target without one opens
+// without a PIN, as managed targets always do (owner decision 2026-11-18,
+// CORE-2581). Every successful switch clears Reveal and Admin Session
+// authority.
 func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID SessionID, profileID ProfileID, pin string) error {
 	if sessionID == "" {
 		return ValidationError("session ID is required")
@@ -266,7 +270,7 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 	if disabled != 0 {
 		return ErrProfileDisabled
 	}
-	if kind != ProfileManaged {
+	if kind == ProfileAdult && verifier.Valid && verifier.String != "" {
 		if err := verifyProfileEntryPIN(kind, verifier, pin); err != nil {
 			return err
 		}
@@ -286,6 +290,38 @@ func (s *Store) SetSessionProfileWithEntryPIN(ctx context.Context, sessionID Ses
 		return errors.New("session not found")
 	}
 	return tx.Commit()
+}
+
+// ProfileEntryPINsSet reports which adult Profiles have an entry PIN, so a
+// picker asks for one only where a switch needs it (CORE-2581, CORE-1242).
+// Profiles absent from the map have none; managed Profiles never do.
+func (s *Store) ProfileEntryPINsSet(ctx context.Context) (map[ProfileID]bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return nil, err
+	}
+	rows, err := s.catalogR.QueryContext(ctx, `
+		SELECT p.id
+		FROM profile p
+		JOIN server_config c ON c.key = ? || p.id
+		WHERE p.kind = ? AND c.value <> ''
+	`, profileEntryPINConfigPrefix, ProfileAdult)
+	if err != nil {
+		return nil, err
+	}
+	set := map[ProfileID]bool{}
+	for rows.Next() {
+		var id ProfileID
+		if err := rows.Scan(&id); err != nil {
+			return nil, errors.Join(err, rows.Close())
+		}
+		set[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.Join(err, rows.Close())
+	}
+	return set, rows.Close()
 }
 
 func verifyProfileEntryPIN(kind ProfileKind, verifier sql.NullString, pin string) error {
