@@ -1,12 +1,17 @@
 // The time the flash limiter is credited with for each frame (limiter README, `limiter1`
-// deltaMs). It is meant as a lower bound on the time the last frame was on screen, and is one
-// wherever the bound below is no longer than the display's refresh period (Codex round 29):
+// deltaMs): min(bound, max(interval / 2, interval - bound)). That is half the interval while the
+// interval is shorter than twice the bound, and the bound from there on: after one 1/120 s
+// interval a 1/90 s one earns 5.56 ms, not the bound's 8.33 ms (Codex round 30). It is meant as
+// a lower bound on the time the last frame was on screen, and is one wherever the bound is no
+// longer than the display's refresh period (Codex round 29):
 //
-//   - It can be more than the frame was shown where the page has only ever drawn slower than its
-//     display, so the bound is several refreshes: at a steady 30 draws a second since the mount
-//     on a 120 Hz display it is 16.7 ms, and a frame painted three refreshes late was shown
-//     8.3 ms. The excess is at most the bound less one refresh.
-//   - It is less than the frame was shown where the bound is shorter than the cadence, with no
+//   - It can be more than the frame was shown where the bound is longer than the refresh period.
+//     That is a page that has only ever drawn slower than its display: at a steady 30 draws a
+//     second since the mount on a 120 Hz display the bound is 16.7 ms, and a frame painted three
+//     refreshes late was shown 8.3 ms. It is also any display faster than 250 Hz, whose refresh
+//     period is under MIN_REFRESH_MS: at 360 Hz the bound stays 4 ms over a period of 2.78 ms.
+//     The excess is at most the bound less one refresh.
+//   - It is less than the frame was shown where the interval is twice the bound or more, with no
 //     floor but MIN_REFRESH_MS: after one 1/240 s interval, 30 draws a second earn 4.17 ms of
 //     each 33.3 ms.
 //
@@ -26,8 +31,9 @@
 // window moved from a 240 Hz monitor to a 60 Hz one) keeps the shorter bound and is credited
 // less than it could be, until the visualizer is mounted again.
 
-// The shortest refresh period trusted (a 250 Hz display): two callbacks closer than that are a
-// browser catching up, not a display refreshing.
+// The shortest refresh period trusted (a 250 Hz display): two callbacks closer than that are
+// taken for a browser catching up, not a display refreshing. A faster display keeps the bound
+// here, above its refresh period.
 const MIN_REFRESH_MS = 4;
 // The longest refresh period of any display a browser presents on (24 Hz): a host drawing slower
 // than its display, as a throttled one does, cannot measure the refresh, and a paint can be late

@@ -43,6 +43,12 @@
 - [x] 3.28 Check framebuffer completeness at every start; an incomplete target frees the frame, presents black and fails the visualizer (supersedes the first-start-only check of 3.24)
 - [x] 3.29 The first request after a mount also needs two draws running; compare the geometry asked for in two kept objects and measure the slot in place, with no allocation at a draw
 - [x] 3.30 State the refresh credit as it is: at most B, over-credit where the page never drew at the display's rate, under-credit where B is shorter than the cadence
+- [x] 3.31 Drop the frame of a slot with no pixels at once (black, targets freed, no canvas size, nothing drawn) and start again as a first frame; the viewport cropping a frame that keeps its slot is a known limitation
+- [x] 3.32 Start no frame while a visual compiles in parallel; check one framebuffer of each format and size at a start, the fixed-size limiter targets at the first only (narrows 3.28)
+- [x] 3.33 Lay the artwork backdrop at the stage's box while the canvas exists, so it adds no scrollable overflow
+- [x] 3.34 Take the canvas's size and clip away at a lost context
+- [x] 3.35 Compare an observed slot with the drawn frame as numbers in kept fields; no array or string at an observation (supersedes the key of 3.26)
+- [x] 3.36 State the credit as half the interval under twice B, and B as above the refresh period on displays faster than 250 Hz
 
 ## 4. Gate and archive
 

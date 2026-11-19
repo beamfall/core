@@ -23,12 +23,18 @@ expose the chosen format for diagnostics.
 On `webglcontextlost` the web visualizer SHALL call `preventDefault()` and stop rendering. On
 `webglcontextrestored` it SHALL recreate its GL resources, re-apply the selected visual and
 artwork, and resume with fresh feedback and limiter state. If the restore fails it SHALL fall back
-to the failed state. It SHALL remove its listeners on unmount.
+to the failed state. It SHALL remove its listeners on unmount. At the loss it SHALL take the
+canvas's size and clip away, so no box the size of the lost frame stays in the page.
 
 #### Scenario: Loss and restore
 
 - **WHEN** the context is lost and later restored
 - **THEN** rendering stops at the loss and resumes on a new renderer after the restore
+
+#### Scenario: Loss with a frame on screen
+
+- **WHEN** the context is lost while a frame of 640 by 360 pixels is on screen
+- **THEN** the canvas has no size and no clip
 
 #### Scenario: Restore fails
 
@@ -173,11 +179,23 @@ is not the display's refresh period.
 
 ### Requirement: The credit is a lower bound only at the display's rate
 
-The credit SHALL be no more than B. It is a lower bound on the time the frame was on screen only
-where B is no longer than the display's refresh period, which holds once two draws have come one
-refresh apart. Where the page has only drawn slower than its display, a frame painted late can
-be credited more than it was shown, by up to B less one refresh. Where B is shorter than the
-cadence, the credit is B an interval, less than the frame was shown.
+The credit SHALL be no more than B: half the interval while the interval is under twice B, and
+B from there on, less than the frame was shown. It is a lower bound on the time shown only
+where B is no longer than the display's refresh period: after two draws one refresh apart, on a
+display of 250 Hz or slower (B is never under 4 ms). Where B is longer, a frame painted late
+can be credited up to B less one refresh more than it was shown.
+
+#### Scenario: Cadence slows from 120 to 90 frames a second
+
+- **WHEN** one interval of 1/120 s is followed by one of 1/90 s
+- **THEN** the second is credited 5.56 ms, half of it, not B's 8.33 ms
+
+#### Scenario: 360 Hz display
+
+- **WHEN** frames arrive every 1/360 s, and then one is painted two refreshes late and the next
+  on time
+- **THEN** B is 4 ms, above the 2.78 ms refresh period; the steady frames are credited 1.39 ms
+  each, and the late one was shown 2.78 ms and is credited 4 ms
 
 #### Scenario: Cadence slows from 240 to 60 or 30 frames a second
 
@@ -207,7 +225,8 @@ starts at. It SHALL NOT reallocate, write the grant state or restart either cloc
 A frame (the first after a mount or a restored context included) SHALL start only once two
 draws running ask for one geometry, and a started frame withdrawn before its paint SHALL be
 followed by the black again, so a slot that keeps changing allocates the targets once in the
-black's length at most. The geometry asked for SHALL be compared without allocating at a draw.
+black's length at most. The geometry asked for SHALL be compared without allocating at a draw, and an observation SHALL
+compare the slot with the frame drawn as numbers, building no array or string.
 
 #### Scenario: Slot dragged past the black
 
@@ -235,15 +254,49 @@ with every budget spent.
 
 ### Requirement: Every start checks its framebuffers
 
-The web visualizer SHALL check the completeness of every framebuffer a start allocates, at the
-first start and at every later one. If any is incomplete it SHALL free the targets, present
-black, draw nothing through them and fail as for any other GL failure, which turns the
+The web visualizer SHALL check framebuffer completeness at the first start and at every later
+one: one framebuffer of each format and size the start allocates, and the limiter's targets of
+fixed size at the renderer's first start only. If any is incomplete it SHALL free the targets,
+present black, draw nothing through them and fail as for any other GL failure, which turns the
 visualizer off.
 
 #### Scenario: Target incomplete after a resize
 
 - **WHEN** the frame that starts after a fade allocates a limiter target that is incomplete
 - **THEN** no frame is drawn, the canvas shows black and the visualizer is turned off
+
+### Requirement: No frame starts while a visual compiles
+
+The web visualizer SHALL NOT start a frame, and so SHALL NOT check a framebuffer, while a
+visual's program is compiling in parallel: the check waits on the GPU process behind the
+compile. It SHALL present black until the compile is done.
+
+#### Scenario: Visual compiling when the black has run
+
+- **WHEN** the black has run and two draws ask for one geometry while a visual's program is
+  still compiling in parallel
+- **THEN** black is presented with no target allocated and no completeness check, and the frame
+  starts at the first draw after the compile
+
+### Requirement: A slot with no pixels drops the frame
+
+When the slot measures no physical pixel in width or in height (the player docked or hidden),
+the web visualizer SHALL drop the frame at the observation or the draw that finds it, without a
+fade: present black, free the targets and give the canvas no size. It SHALL draw nothing while
+the slot is empty, and the next frame SHALL start as a first frame does. No pixel of the
+dropped frame SHALL be shown again.
+
+#### Scenario: Player docked during a saturated frame and reopened
+
+- **WHEN** the slot of a frame is observed with no pixels and is given its size back before the
+  limiter would have granted the frame's fall
+- **THEN** the frame was dropped at the observation, the canvas has no size, and the next frame
+  starts from black with every budget spent
+
+#### Scenario: Slot empty while a frame fades
+
+- **WHEN** the slot has no pixels during a fade
+- **THEN** the fade ends there, black is presented and the targets are freed
 
 ### Requirement: A spent grant state is judged before it is trusted
 

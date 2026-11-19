@@ -71,6 +71,22 @@ describe("RefreshBound", () => {
     expect(run(refresh, 1000 / 30, 100)).toBeCloseTo(1000 / 240);
   });
 
+  // Codex round 30: under twice the bound the credit is half the interval, not the bound.
+  it("credits half of an interval shorter than twice the bound", () => {
+    const refresh = new RefreshBound();
+    run(refresh, 1000 / 120, 1);
+    expect(run(refresh, 1000 / 90, 1)).toBeCloseTo(500 / 90);
+    expect(run(refresh, 1000 / 60, 1)).toBeCloseTo(1000 / 120);
+  });
+
+  // Codex round 30: the 4 ms floor is over a 360 Hz display's refresh period, 2.78 ms.
+  it("keeps the bound over the refresh period of a display faster than 250 Hz", () => {
+    const refresh = new RefreshBound();
+    expect(run(refresh, 1000 / 360, 100)).toBeCloseTo(500 / 360);
+    // Every third refresh: a frame painted two late was shown 2.78 ms and is credited 4.
+    expect(run(refresh, 3000 / 360, 1)).toBeCloseTo(4);
+  });
+
   it("keeps the bound between 4 ms and a 24 Hz refresh", () => {
     const refresh = new RefreshBound();
     // A throttled page: one frame a second is credited one 24 Hz refresh.

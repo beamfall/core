@@ -4,12 +4,12 @@ import {
   BLACK_S,
   FADE_S,
   frameSize,
-  geometryKey,
   limiterWindow,
   pickFeedbackFormat,
   QUALITY_LADDER,
   Renderer,
   renderQuality,
+  sameFrame,
   switchAction,
 } from "./renderer";
 
@@ -276,6 +276,8 @@ describe("Renderer geometry (CORE-2516)", () => {
       want: { width: 0, height: 0, texel: 0, visibleWidth: 0, visibleHeight: 0 },
       asked: { width: 0, height: 0, texel: 0, visibleWidth: 0, visibleHeight: 0 },
       incomplete: false,
+      fixedChecked: false,
+      building: 0,
     });
     const renderer = r as unknown as Renderer;
     // The grant of a frame of a fade holds a direction, as while a lit frame waits for its fall,
@@ -910,7 +912,7 @@ describe("Renderer geometry (CORE-2516)", () => {
   });
 
   // Codex round 26: at DPR 4 a slot alternating between 128 and 129 physical pixels shows the
-  // same 64 two-pixel texels. The host compares geometry keys, so it withdraws no frame and the
+  // same 64 two-pixel texels. The host compares geometries, so it withdraws no frame and the
   // limiter's clock runs.
   it("advances the limiter's clock while the slot gains and loses an unfilled pixel", () => {
     const { r, renderer, drawIn } = make();
@@ -922,17 +924,17 @@ describe("Renderer geometry (CORE-2516)", () => {
     const size = r.size;
     const clock = r.clockMs as number;
     for (let i = 1; i <= 120; i++) {
-      const drawn = geometryKey(64, 36, 2, ...slots[(i - 1) % 2]);
       drawIn([64, 36, 2], slots[(i - 1) % 2]);
       // The observer's callback: the slot it reports against the frame just drawn.
-      if (geometryKey(64, 36, 2, ...slots[i % 2]) !== drawn) renderer.withdraw();
+      if (!sameFrame([64, 36, 2, ...slots[i % 2]], [64, 36, 2, ...slots[(i - 1) % 2]]))
+        renderer.withdraw();
     }
     expect(r.size).toBe(size);
     expect(r.fadeLeft).toBe(0);
     expect((r.clockMs as number) - clock).toBeCloseTo(120 * (1000 / 60));
     // A slot that cuts a texel it showed is another geometry.
-    expect(geometryKey(64, 36, 2, 127, 72)).not.toBe(geometryKey(64, 36, 2, 128, 72));
-    expect(geometryKey(64, 36, 2, 129, 72)).toBe(geometryKey(64, 36, 2, 128, 72));
+    expect(sameFrame([64, 36, 2, 127, 72], [64, 36, 2, 128, 72])).toBe(false);
+    expect(sameFrame([64, 36, 2, 129, 72], [64, 36, 2, 128, 72])).toBe(true);
   });
 
   it("withdraws nothing after a draw that presented black", () => {
@@ -993,15 +995,74 @@ describe("Renderer geometry (CORE-2516)", () => {
   // Codex round 29: only the first start checked its framebuffers, so a target whose storage
   // failed at a later size was drawn into anyway. The limiter read its zeros, counted nothing
   // over the area limit and passed a full-screen red frame on a spent grant.
-  it("checks the framebuffers of every start", () => {
+  // Codex round 30: twelve checks a start, each a wait on the GPU process. One of each format
+  // and size is enough: the feedback, the history, the output and the row counts at every
+  // start, and the limiter's four fixed-size targets at the first.
+  it("checks the framebuffers of every start, one of each format and size", () => {
     const { r, draw, through, count, canvas } = make();
     draw(640, 360);
-    const checks = count.checks;
-    expect(checks).toBeGreaterThan(0);
+    expect(count.checks).toBe(8);
     through((ms) => draw(800, 450, ms / 1000));
     expect([canvas.width, canvas.height]).toEqual([800, 450]);
     expect(r.size).not.toBe(null);
-    expect(count.checks).toBe(2 * checks);
+    expect(count.checks).toBe(12);
+  });
+
+  // Codex round 30: a framebuffer check waits for a shader compiling in parallel, on the page's
+  // thread. No frame starts until the compile is done; the canvas stays black meanwhile.
+  it("starts no frame while a visual compiles", () => {
+    const { r, draw, count, clears } = make();
+    r.building = 1;
+    for (let i = 0; i < 30; i++) draw(640, 360);
+    expect(r.size).toBe(null);
+    expect(count.checks).toBe(0);
+    expect(count.textures).toBe(0);
+    expect(clears.at(-1)).toBe(null);
+    r.building = 0;
+    draw(640, 360);
+    expect(r.size).not.toBe(null);
+  });
+
+  // Codex round 30: a docked player's slot has no pixels. A fade held the frame, with the clip
+  // it started with, and showed it again when the player reopened before the fall was granted.
+  it("drops the frame of a slot with no pixels and starts again as a first frame", () => {
+    const { r, renderer, draw, limiter, spent, clears, blits, deleted } = make();
+    draw(640, 360);
+    draw(640, 360);
+    const first = limiter();
+    renderer.drop();
+    expect(r.size).toBe(null);
+    expect(renderer.shown).toBe(null);
+    expect(r.fadeLeft).toBe(0);
+    expect(r.black).toBe(BLACK_S);
+    expect(clears.at(-1)).toBe(null);
+    expect(first.fOut.every((f) => deleted.has(f))).toBe(true);
+    // Dropping again does nothing more, and nothing is withdrawn.
+    const cleared = clears.length;
+    renderer.drop();
+    renderer.withdraw();
+    expect(clears.length).toBe(cleared);
+    // The same geometry again: one ask is not two running, and the black runs first.
+    blits.length = 0;
+    renderer.draw(640, 360, 1 / 60, silentFrame(), false);
+    expect(r.size).toBe(null);
+    renderer.draw(640, 360, BLACK_S, silentFrame(), false);
+    expect(r.size).not.toBe(null);
+    const L = limiter();
+    expect(L).not.toBe(first);
+    expect(spent.at(-1)).toEqual([L.fG[L.cur ^ 1], SPENT]);
+    expect(blits).toHaveLength(1);
+  });
+
+  // The fade of a frame whose slot emptied is dropped with it.
+  it("drops a frame that is fading", () => {
+    const { r, renderer, draw } = make();
+    draw(640, 360);
+    draw(800, 450);
+    expect(r.fadeLeft).toBe(FADE_S);
+    renderer.drop();
+    expect(r.size).toBe(null);
+    expect(r.fadeLeft).toBe(0);
   });
 
   it("presents black and fails when a later start's framebuffer is incomplete", () => {
@@ -1017,10 +1078,10 @@ describe("Renderer geometry (CORE-2516)", () => {
     blits.length = 0;
     blocks.length = 0;
     clears.length = 0;
-    // The limiter's row-count target, the first framebuffer after the frame's own.
-    count.incompleteAt = checks + 5;
+    // The limiter's row-count target, the last framebuffer a later start checks.
+    count.incompleteAt = checks + 4;
     expect(() => draw(800, 450, 0.125)).toThrow("incomplete framebuffer");
-    expect(count.checks).toBe(2 * checks);
+    expect(count.checks).toBe(checks + 4);
     // No frame, nothing drawn through the limiter, black on the canvas, every target freed.
     expect(r.size).toBe(null);
     expect(renderer.shown).toBe(null);

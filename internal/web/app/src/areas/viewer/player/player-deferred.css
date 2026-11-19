@@ -897,6 +897,14 @@
   overflow: visible;
 }
 
+/* With the stage not clipping, a backdrop box 64px past it would be scrollable overflow, which a
+   clip-path does not take away (Codex round 30). The slot's black covers the backdrop for as
+   long as the canvas exists, so the blur needs no room to spill. */
+.bf-audio-stage:has(.bf-audio-visualizer-canvas) .bf-audio-backdrop {
+  inset: 0;
+  clip-path: inset(0);
+}
+
 .bf-audio-card {
   position: relative;
   display: flex;

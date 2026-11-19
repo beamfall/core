@@ -11,6 +11,7 @@ const made = vi.hoisted(() => ({
     draw: ReturnType<typeof vi.fn>;
     settled: ReturnType<typeof vi.fn>;
     withdraw: ReturnType<typeof vi.fn>;
+    drop: ReturnType<typeof vi.fn>;
     shown: {
       width: number;
       height: number;
@@ -23,21 +24,24 @@ const made = vi.hoisted(() => ({
   }[],
   restores: [] as boolean[],
   fail: false,
-  // Geometry keys built, each an allocation.
-  keys: 0,
+  // Geometries compared, and what the comparisons returned that was not a boolean.
+  compares: 0,
+  results: [] as unknown[],
   // When set, the next create waits on it, as a create still compiling when the context goes.
   gate: null as Promise<void> | null,
 }));
 
 vi.mock("./oscillux", () => ({ loadOscillux: () => Promise.resolve({}) }));
 vi.mock("./renderer", async (importOriginal) => {
-  const { geometryKey } = await importOriginal<typeof import("./renderer")>();
+  const { sameFrame } = await importOriginal<typeof import("./renderer")>();
   return {
     MAX_SIDE: 8192,
     TRACKED_BLACK: "#000",
-    geometryKey: (...args: Parameters<typeof geometryKey>) => {
-      made.keys += 1;
-      return geometryKey(...args);
+    sameFrame: (...args: Parameters<typeof sameFrame>) => {
+      made.compares += 1;
+      const same = sameFrame(...args);
+      if (typeof same !== "boolean") made.results.push(same);
+      return same;
     },
     Renderer: {
       create: async (_canvas: HTMLCanvasElement, _osc: unknown, restored: boolean) => {
@@ -53,6 +57,7 @@ vi.mock("./renderer", async (importOriginal) => {
           draw: vi.fn(),
           settled: vi.fn(() => false),
           withdraw: vi.fn(),
+          drop: vi.fn(),
           shown: null as (typeof made.renderers)[number]["shown"],
           dispose: vi.fn(),
           contextLost: false,
@@ -73,7 +78,8 @@ beforeEach(() => {
   made.renderers.length = 0;
   made.restores.length = 0;
   made.fail = false;
-  made.keys = 0;
+  made.compares = 0;
+  made.results.length = 0;
   made.gate = null;
   pending = new Set();
   callbacks = new Map();
@@ -126,12 +132,23 @@ describe("Visualizer context loss (CORE-2482)", () => {
     const { canvas } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const first = made.renderers[0];
+    vi.stubGlobal("devicePixelRatio", 1);
+    first.shown = { width: 640, height: 360, texel: 1, visibleWidth: 600, visibleHeight: 360 };
+    step(16);
+    expect([canvas.style.width, canvas.style.clipPath]).toEqual(["640px", "inset(0 40px 0px 0)"]);
 
     const lost = new Event("webglcontextlost", { cancelable: true });
     act(() => void canvas.dispatchEvent(lost));
     expect(lost.defaultPrevented).toBe(true);
     expect(pending.size).toBe(0);
     expect(first.dispose).toHaveBeenCalled();
+    // Codex round 30: the lost frame's box, 640 pixels wide, stayed in the page until the
+    // restore and overflowed a window narrowed meanwhile.
+    expect([canvas.style.width, canvas.style.height, canvas.style.clipPath]).toEqual([
+      "0px",
+      "0px",
+      "",
+    ]);
 
     act(() => void canvas.dispatchEvent(new Event("webglcontextrestored")));
     await waitFor(() => expect(pending.size).toBe(1));
@@ -618,7 +635,9 @@ describe("Visualizer resize before paint", () => {
         .spyOn(canvas.parentElement!, "getBoundingClientRect")
         .mockReturnValue({ width: 0, height: 0 } as DOMRect);
       for (const now of [32, 48, 64, 80]) step(now);
-      expect(made.renderers[0].draw).toHaveBeenCalledTimes(2);
+      // The wait over, the slot measures empty: its frame is dropped, not drawn.
+      expect(made.renderers[0].draw).toHaveBeenCalledOnce();
+      expect(made.renderers[0].drop).toHaveBeenCalledOnce();
       reportBox([400, 300], [800, 600]);
 
       act(() => void canvas.dispatchEvent(new Event("webglcontextlost", { cancelable: true })));
@@ -655,18 +674,20 @@ describe("Visualizer resize before paint", () => {
     }
   });
 
-  // Codex round 28: the loop built a geometry key, an array and a string, at every frame. Keys
-  // are built for an observation that follows a draw, not for a draw.
-  it("builds no geometry key for a frame nothing observes", async () => {
+  // Codex round 28: the loop built a geometry key, an array and a string, at every frame.
+  // Codex round 30: so did every observation that followed a draw. Geometries are compared for
+  // such an observation only, as numbers.
+  it("compares no geometry for a frame nothing observes, and builds no key", async () => {
     mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
     report(640, 360);
     for (let i = 1; i <= 60; i++) step(16 * i);
     expect(renderer.draw).toHaveBeenCalledTimes(60);
-    expect(made.keys).toBe(0);
+    expect(made.compares).toBe(0);
     report(320, 360);
-    expect(made.keys).toBe(2);
+    expect(made.compares).toBe(1);
+    expect(made.results).toEqual([]);
     expect(renderer.withdraw).toHaveBeenCalledOnce();
   });
 
@@ -710,22 +731,47 @@ describe("Visualizer resize before paint", () => {
   });
 
   // Codex round 20: a collapsed slot and a one-pixel slot share a backing size, so the slot's
-  // pixels tell them apart. A collapse is a geometry change like any other: the frame drawn for
-  // the open slot is withdrawn and the renderer keeps drawing, which fades the one on screen.
-  it("keeps drawing a slot that has no pixels", async () => {
-    mount();
+  // pixels tell them apart. Codex round 30: a slot with no pixels (a docked player's) shows
+  // nothing of the frame, and fading it held the frame, clipped as it started, to show again
+  // when the slot reopened before the fall was granted. The frame is dropped at the observation
+  // and nothing is drawn until the slot has pixels.
+  it("drops the frame of a slot that has no pixels and draws nothing for it", async () => {
+    const { canvas } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
-    report(1, 360);
+    report(640, 360);
+    renderer.draw.mockImplementationOnce(() => {
+      renderer.shown = { width: 640, height: 360, texel: 1, visibleWidth: 600, visibleHeight: 360 };
+    });
+    renderer.drop.mockImplementation(() => {
+      renderer.shown = null;
+    });
     step(16);
     expect(renderer.draw).toHaveBeenCalledOnce();
-    expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([1, 360]);
-    report(0, 360);
-    expect(renderer.withdraw).toHaveBeenCalledOnce();
+    expect(canvas.style.width).toBe("640px");
+
+    // Docked: the frame goes at the observation, with its box.
+    report(0, 0);
+    expect(renderer.drop).toHaveBeenCalledOnce();
+    expect(renderer.withdraw).not.toHaveBeenCalled();
+    expect([canvas.style.width, canvas.style.height]).toEqual(["0px", "0px"]);
     step(32);
+    step(48);
+    expect(renderer.draw).toHaveBeenCalledOnce();
+    expect(renderer.drop).toHaveBeenCalledTimes(3);
+
+    // A slot with one dimension is as empty.
+    report(0, 360);
+    step(64);
+    expect(renderer.draw).toHaveBeenCalledOnce();
+
+    // Reopened: drawing goes on, timed as a first frame, and nothing is fitted until the
+    // renderer shows a frame again.
+    report(640, 360);
+    step(80);
     expect(renderer.draw).toHaveBeenCalledTimes(2);
-    expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 360]);
-    expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([0, 360]);
+    expect(renderer.draw.mock.lastCall?.[5]).toBeCloseTo(1000 / 60);
+    expect([canvas.style.width, canvas.style.height]).toEqual(["0px", "0px"]);
   });
 
   // Codex rounds 21 and 22: at DPR 4 a texel is two device pixels. A one-pixel slot would cut

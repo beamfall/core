@@ -165,19 +165,27 @@ function sameGeometry(a: Geometry, b: Geometry): boolean {
   );
 }
 
-/** The geometry a draw request would show, as a key: two requests with one key are the same frame
- * to the renderer, whatever the slot's pixels past its last whole texel. A host compares the key
- * of the frame it drew with the key of the slot it then observes, so a slot that only gained or
- * lost a pixel no texel fills withdraws nothing (Codex round 26). */
-export function geometryKey(
+type DrawRequest = readonly [
   width: number,
   height: number,
   texel: number,
   slotWidth: number,
   slotHeight: number,
-): string {
-  const g = setGeometry(noGeometry(), width, height, texel, slotWidth, slotHeight);
-  return [g.width, g.height, g.texel, g.visibleWidth, g.visibleHeight].join();
+];
+// sameFrame's two geometries, written in place.
+const frameA = noGeometry();
+const frameB = noGeometry();
+
+/** Whether two draw requests would show the same geometry: the same frame to the renderer,
+ * whatever the slot's pixels past its last whole texel. A host compares the request it drew
+ * with the slot it then observes, so a slot that only gained or lost a pixel no texel fills
+ * withdraws nothing (Codex round 26). Numbers compared in two kept objects: an observation
+ * allocates nothing (Codex round 30). */
+export function sameFrame(a: DrawRequest, b: DrawRequest): boolean {
+  return sameGeometry(
+    setGeometry(frameA, a[0], a[1], a[2], a[3], a[4]),
+    setGeometry(frameB, b[0], b[1], b[2], b[3], b[4]),
+  );
 }
 const LIMITER_VERTEX =
   "#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }";
@@ -395,6 +403,8 @@ export class Renderer {
   // KHR_parallel_shader_compile: a visual compiles off the page's thread and is polled for
   // completion, instead of the page waiting on its status (CORE-2368).
   private parallel = false;
+  // Programs the driver is compiling in parallel now: no frame starts meanwhile (draw).
+  private building = 0;
   private visual: Layer | null = null;
   private outgoing: Layer | null = null;
   // The visual asked for while a switch runs, started when it ends.
@@ -413,8 +423,10 @@ export class Renderer {
   // a frame starts only at one asked for twice running. Both are written in place.
   private want = noGeometry();
   private asked = noGeometry();
-  // Whether a framebuffer the start in progress built is incomplete (framebuffer).
+  // Whether a framebuffer the start in progress built is incomplete (framebuffer), and whether
+  // a start has checked the limiter's fixed-size targets, which are the same at every start.
   private incomplete = false;
+  private fixedChecked = false;
   private time = 0;
   private clockMs = 0;
   private presented = 0;
@@ -685,9 +697,14 @@ export class Renderer {
     // Disposed while the source loaded: allocate nothing more.
     if (this.disposed) return null;
     const program = this.compile(this.visualVertex, source);
-    while (this.parallel && !this.disposed && !this.gl.isContextLost()) {
-      if (this.gl.getProgramParameter(program, COMPLETION_STATUS_KHR)) break;
-      await new Promise((resolve) => setTimeout(resolve, COMPILE_POLL_MS));
+    this.building += 1;
+    try {
+      while (this.parallel && !this.disposed && !this.gl.isContextLost()) {
+        if (this.gl.getProgramParameter(program, COMPLETION_STATUS_KHR)) break;
+        await new Promise((resolve) => setTimeout(resolve, COMPILE_POLL_MS));
+      }
+    } finally {
+      this.building -= 1;
     }
     if (this.disposed) return null;
     this.check(program);
@@ -707,8 +724,10 @@ export class Renderer {
    * is reallocated, spent or restarted. The black lasts until two draws running ask for one
    * geometry, the first frame after a mount included (Codex round 29), and a started frame
    * withdrawn before its paint costs another BLACK_S of black, so a slot dragged to a new size
-   * costs one fade and, while it moves, no allocation at all (Codex round 28). No pixel is
-   * carried from one geometry to the next (CORE-2516).
+   * costs one fade and, while it moves, no allocation at all (Codex round 28). No frame starts
+   * while a visual compiles in parallel either: the start's framebuffer checks would wait for
+   * the compile on the page's thread, so the black lasts until it is done (Codex round 30). No
+   * pixel is carried from one geometry to the next (CORE-2516).
    *
    * The frame on screen keeps the geometry it started with until it is black: the host shows
    * the canvas at that size whatever the slot does meanwhile (shown), so the slot's layout
@@ -773,9 +792,12 @@ export class Renderer {
     if (!size) {
       // Black for BLACK_S from the first black frame shown, then the start. A slot with no whole
       // texel in view stays black, and so does one that is still changing: a start allocates
-      // every target at full resolution, which a drag would otherwise do at every frame.
+      // every target at full resolution, which a drag would otherwise do at every frame. So
+      // does any slot while a visual compiles: a start checks its framebuffers, and a check
+      // waits for the compile.
       if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - shownS);
-      if (this.black > 0 || !still || want.visibleWidth < 1 || want.visibleHeight < 1) {
+      const wait = this.black > 0 || !still || this.building > 0;
+      if (wait || want.visibleWidth < 1 || want.visibleHeight < 1) {
         this.blackShown = true;
         this.presentBlack();
         return;
@@ -885,6 +907,27 @@ export class Renderer {
     }
     size.limiter.cur = u.cur;
     this.showLimited(size);
+  }
+
+  /** Drops the frame on screen with no fade, for a slot with no pixels (a hidden or docked
+   * player): nothing of the frame is in view, so there is nothing to fade, and a frame kept
+   * through it would be back, clipped as it was, when the slot has pixels again, with no
+   * granted rise (Codex round 30). The canvas is black and the frame's targets and trackers
+   * are gone. The next frame starts as the first does: after BLACK_S of black, at a geometry
+   * asked for twice running, black with every budget spent. */
+  drop(): void {
+    this.undo = null;
+    // No request has a texel of zero: the next draw's is not the one asked for before.
+    this.asked.texel = 0;
+    const size = this.size;
+    if (size) {
+      this.fadeLeft = 0;
+      this.endSwitch();
+      this.freeSize();
+      this.black = BLACK_S;
+    }
+    if (size || !this.blackShown) this.presentBlack();
+    this.blackShown = true;
   }
 
   // Black to the canvas: all it shows with no frame on screen.
@@ -1232,10 +1275,11 @@ export class Renderer {
   // first frame is rationed like any change after a host write, and a resize never hands a strobe
   // a fresh flash budget (CORE-2516, Oscillux shaders/limiter/README.md, "Ping-pong and reset").
   //
-  // Every framebuffer is checked complete, at every start: a target whose storage failed is not
-  // written, and a limiter that reads its zeros counts nothing over the area limit and passes the
-  // frame whole (Codex round 29). With one incomplete the targets are freed, the canvas is black
-  // and the start throws: the host turns the visualizer off, or waits for a lost context.
+  // Its framebuffers are checked complete at every start, one of each format and size
+  // (framebuffer): a target whose storage failed is not written, and a limiter that reads its
+  // zeros counts nothing over the area limit and passes the frame whole (Codex round 29). With
+  // one incomplete the targets are freed, the canvas is black and the start throws: the host
+  // turns the visualizer off, or waits for a lost context.
   private start(g: Geometry): Size {
     const gl = this.gl;
     this.incomplete = false;
@@ -1247,19 +1291,19 @@ export class Renderer {
     const render = renderQuality(W, H, this.level);
     const feedback = this.feedbackPair(render.width, render.height, internal, type);
     const frame = this.storage(W, H, gl.RGBA8);
-    const history = [0, 1].map(() => {
+    const history = [0, 1].map((i) => {
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.NEAREST);
-      const fbo = this.framebuffer([frame, tex]);
+      const fbo = this.framebuffer([frame, tex], i === 0);
       gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
       return { tex, fbo };
     });
     const rows = this.storage(64, H, gl.RGBA32UI);
     const out = [0, 1].map(() => this.storage(W, H, gl.RGBA8));
     const track = [0, 1].map(() => this.storage(W, H, gl.RGBA16UI));
-    const fOut = out.map((x, i) => this.framebuffer([x, track[i]]));
+    const fOut = out.map((x, i) => this.framebuffer([x, track[i]], i === 0));
     for (const f of fOut) this.clearOutput(f);
     const window = limiterWindow(W, H, g.texel, g.visibleWidth, g.visibleHeight);
-    const limiter = this.newLimiterState(rows, out, track, fOut, window);
+    const limiter = this.newLimiterState(rows, out, track, fOut, window, !this.fixedChecked);
     this.spend(limiter);
     this.size = {
       ...g,
@@ -1277,6 +1321,7 @@ export class Renderer {
       this.presentBlack();
       throw new Error("visualizer: incomplete framebuffer");
     }
+    this.fixedChecked = true;
     return this.size;
   }
 
@@ -1346,9 +1391,9 @@ export class Renderer {
     verify = true,
   ): Target[] {
     const gl = this.gl;
-    return [0, 1].map(() => {
+    return [0, 1].map((i) => {
       const tex = this.texture(W, H, internal, gl.RGBA, type, gl.LINEAR);
-      const fbo = this.framebuffer([tex], verify);
+      const fbo = this.framebuffer([tex], verify && i === 0);
       gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
       return { tex, fbo };
     });
@@ -1362,6 +1407,7 @@ export class Renderer {
     track: WebGLTexture[],
     fOut: WebGLFramebuffer[],
     window: LimiterWindow,
+    fixed: boolean,
   ): Limiter {
     const gl = this.gl;
     const s = this.storage(64, 36, gl.RGBA32UI);
@@ -1377,10 +1423,10 @@ export class Renderer {
       track,
       out,
       fRows: this.framebuffer([rows]),
-      fS: this.framebuffer([s]),
-      fC: this.framebuffer([c]),
-      fW: this.framebuffer([w]),
-      fG: g.map((x) => this.framebuffer([x])),
+      fS: this.framebuffer([s], fixed),
+      fC: this.framebuffer([c], fixed),
+      fW: this.framebuffer([w], fixed),
+      fG: g.map((x, i) => this.framebuffer([x], fixed && i === 0)),
       fOut,
       window,
       cur: 0,
@@ -1434,9 +1480,12 @@ export class Renderer {
   // checkFramebufferStatus waits on the GPU process, including any shader still compiling in
   // parallel (over 500 ms seen on a switch), so the targets a switch or a governor level adds
   // skip it: they hold the visual's picture, which the limiter judges whatever it is, in the
-  // feedback format start checked. Every target a start builds is checked, at every start: a
-  // start comes only at a geometry asked for twice running, after a black, and an allocation
-  // that fails at one size can succeed at another (Codex round 29). start reads the result.
+  // feedback format start checked. A start checks one target of each format and size it builds,
+  // at every start: an allocation that fails at one size can succeed at another (Codex round
+  // 29). The second target of a pair is the first one's twin, and the limiter's fixed-size
+  // targets are the same at every start, so those are checked at the renderer's first start
+  // only: four checks a later start, and none while a visual compiles (draw, Codex round 30).
+  // start reads the result.
   private framebuffer(attachments: WebGLTexture[], verify = true): WebGLFramebuffer {
     const gl = this.gl;
     const f = must(gl.createFramebuffer());

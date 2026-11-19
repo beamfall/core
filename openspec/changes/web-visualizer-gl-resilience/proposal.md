@@ -65,8 +65,12 @@ visual off until the component remounts, although browsers restore contexts rout
   paint costs another 0.1 s of black, so a moving slot allocates the full-resolution targets
   once in that time at most and not at every frame. Framebuffer completeness is checked at
   every start: a target can be incomplete at one size and not another, and a limiter that reads
-  an incomplete target's zeros passes anything. An incomplete target frees the frame, presents
-  black and turns the visualizer off, as any other GL failure does.
+  an incomplete target's zeros passes anything. The check is one framebuffer of each format and
+  size (eight at the renderer's first start, four at later ones, the limiter's fixed-size
+  targets not being allocated anew), and no frame starts while a visual's program compiles in
+  parallel: a completeness check waits on the GPU process behind the compile and would block
+  the page, so the visual stays black until the compile is done. An incomplete target frees the
+  frame, presents black and turns the visualizer off, as any other GL failure does.
   This is the price of one rule with no pixel carried over.
 - The fade and the black are counted in the time the limiter is credited with, not on the clock.
   The page cannot read the display's refresh period or when a frame was painted, and its
@@ -78,12 +82,16 @@ visual off until the component remounts, although browsers restore contexts rout
   the clock at 60 frames a second. B is never forgotten: one taken over recent draws rises when
   the page slows on the same display (120 to 30 draws a second at 120 Hz) and then credits two
   refreshes to a frame shown one.
+  The credit is half the interval while the interval is shorter than twice B, and B from there
+  on: after one 1/120 s interval a 1/90 s one earns 5.56 ms, not 8.33 ms.
   The credit is not a lower bound on the time shown in every case. It is one where B is no
   longer than the display's refresh period, which takes two draws one refresh apart since the
-  mount. It over-credits where the page has only drawn slower than its display: steady 30 draws
+  mount and a display of 250 Hz or slower: B's 4 ms floor is above the 2.78 ms refresh period of
+  a 360 Hz display, which is over-credited by up to 1.22 ms for a frame painted late. It
+  over-credits also where the page has only drawn slower than its display: steady 30 draws
   a second since the mount on a 120 Hz display credits 16.7 ms, and a frame painted three
   refreshes late was shown 8.3 ms; the excess is at most B less one refresh. Only presentation
-  times close that. It under-credits where B is shorter than the cadence, with no floor but
+  times close that. It under-credits where the interval is twice B or more, with no floor but
   B's own 4 ms: after one 1/240 s interval (a 240 Hz monitor the window left, or a burst of
   callbacks) 60 draws a second earn 4.17 ms of each 16.7 ms, a quarter, and 30 draws a second
   4.17 ms of each 33.3 ms, an eighth, so the 2 s cap on the fade is 16 s on the clock there,
@@ -101,7 +109,7 @@ visual off until the component remounts, although browsers restore contexts rout
   pixels. Until the slot is observed at the new ratio the frame on screen is held undrawn: a
   zoom freezes the visual for a frame or two, three at most. The three-frame limit holds for a
   slot with no size too: on the fourth frame it is measured as empty, the cached device-pixel
-  box is dropped, and drawing goes on, which fades the frame to black. A ratio that is left and
+  box is dropped, and the frame is dropped as for any empty slot (below). A ratio that is left and
   come back to, or met again after a lost context, is observed afresh and waits its frames
   again.
 - The grant word is read through a pixel-pack buffer and a fence, never by a blocking
@@ -111,11 +119,21 @@ visual off until the component remounts, although browsers restore contexts rout
   cap on a GPU that runs more than a frame behind. The residual: `getBufferSubData` is still a
   round trip to the browser's GPU process, so commands issued between frames (an artwork
   upload, a visual's compile) or by other contexts can delay that one call.
+- A slot with no pixels (the player docked or hidden) drops the frame at once, with no fade:
+  black is presented, the targets are freed, the canvas has no size and nothing is drawn while
+  the slot is empty. A frame held for its fade would come back with the clip it started at when
+  the player is reopened, lit, with no granted rise. The next frame starts as a first frame
+  does, from black with every budget spent. A lost context takes the canvas's size and clip
+  away in the same way, so no box of the lost frame's size stays in the page.
 - A frame whose slot shrank keeps its size until it has faded, up to the fade's cap, and lies
   over whatever the slot's neighbours show there; the audio stage no longer clips its children
-  while the visualizer is on, so the page can gain scrollable overflow for that long. This is
-  accepted: the alternative crops lit pixels with no judged draw. The window's own edge still
-  crops the canvas, which no page can prevent.
+  while the visualizer is on, so the page can gain scrollable overflow for that long from the
+  canvas alone (the artwork backdrop is laid at the stage's box while the canvas exists and adds
+  none). This is accepted: the alternative crops lit pixels with no judged draw.
+- Known limitation, ticketed separately: the browser's viewport still crops the canvas, which
+  no page can prevent. A frame whose slot keeps some pixels while the viewport cuts a lit region
+  for a draw (800 pixels wide shrunk to 400) and widens again before the limiter grants the
+  fall shows that region again with no granted rise.
 - A slot that shrinks and grows back between two draws costs nothing: no draw asked for another
   geometry, and the frame's pixels never left view.
 

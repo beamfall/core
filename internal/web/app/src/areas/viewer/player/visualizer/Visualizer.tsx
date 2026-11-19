@@ -6,7 +6,7 @@ import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
 import { RefreshBound } from "./refresh";
-import { geometryKey, MAX_SIDE, Renderer, TRACKED_BLACK } from "./renderer";
+import { MAX_SIDE, Renderer, sameFrame, TRACKED_BLACK } from "./renderer";
 import { canVisualize, type VisualChoice } from "./visualChoice";
 import {
   chosenVisual,
@@ -236,9 +236,11 @@ export function Visualizer({
     const refresh = new RefreshBound();
     // Whether the last draw is unpainted, and the request of the last frame: a draw sets the
     // flag, and the next animation frame, which runs after the paint, clears it. The request is
-    // measured in place, so a frame allocates neither it nor a key (Codex rounds 28, 29).
+    // measured in place, as the slot an observer reports is (`seen`), so neither a frame nor
+    // an observation allocates (Codex rounds 28 to 30).
     let unpainted = false;
     const drawn: Request = [0, 0, 0, 0, 0];
+    const seen: Request = [0, 0, 0, 0, 0];
     const silent = silentFrame();
     const shown = silentFrame();
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -246,8 +248,12 @@ export function Visualizer({
     // so the draw loop reads no layout. Until it first reports, the loop measures. The
     // slot, not the canvas, is observed: the loop sizes the canvas to the frame it shows.
     const slot = canvas.parentElement ?? canvas;
-    let device: { inlineSize: number; blockSize: number } | null = null;
-    let css: { width: number; height: number } | null = null;
+    // Both are kept objects written in place: `device` is `deviceBox` or null without a
+    // device-pixel box, and `css` holds nothing until `measured`.
+    const deviceBox = { inlineSize: 0, blockSize: 0 };
+    let device: typeof deviceBox | null = null;
+    const css = { width: 0, height: 0 };
+    let measured = false;
     // The device pixel ratio the slot was last reported at; the one a fresh report is awaited
     // at, or 0 with none awaited; and the frames it has been waited for (tick). Any report, a
     // ratio back at the reported one and a lost context end the wait, so a ratio visited again
@@ -285,13 +291,44 @@ export function Visualizer({
       canvas.style.height = `${(shown.height * texel) / r}px`;
       canvas.style.clipPath = viewClip(shown, r);
     };
+    // A slot with no pixels (the player hidden or docked, a collapsed layout) shows nothing of
+    // the frame, so the frame is dropped, not faded: a fade would hold it, with the clip it
+    // started with, and show it again when the slot has pixels before the limiter granted the
+    // fall (Codex round 30). The renderer then starts as at a mount: black, two draws asking
+    // for one geometry, every budget spent. Returns whether the slot is empty.
+    const dropEmpty = (request: Request) => {
+      if (request[3] >= 1 && request[4] >= 1) return false;
+      const renderer = rendererRef.current;
+      if (!renderer) return true;
+      try {
+        renderer.drop();
+        fitCanvas(renderer);
+      } catch {
+        // A lost context shows nothing to drop; its restore starts the limiter afresh.
+      }
+      return true;
+    };
     const observer = new ResizeObserver((entries) => {
       const entry = entries[entries.length - 1];
       if (!entry) return;
-      device = entry.devicePixelContentBoxSize?.[0] ?? null;
-      css = { width: entry.contentRect.width, height: entry.contentRect.height };
+      const box = entry.devicePixelContentBoxSize?.[0];
+      if (box) {
+        deviceBox.inlineSize = box.inlineSize;
+        deviceBox.blockSize = box.blockSize;
+      }
+      device = box ? deviceBox : null;
+      css.width = entry.contentRect.width;
+      css.height = entry.contentRect.height;
+      measured = true;
       reportedAt = window.devicePixelRatio;
       askedAt = 0;
+      measure(seen, device, css.width, css.height, window.devicePixelRatio);
+      // A slot with no pixels shows nothing of the frame: it goes now, before the slot can
+      // have pixels again (dropEmpty).
+      if (dropEmpty(seen)) {
+        unpainted = false;
+        return;
+      }
       // Observers run after animation frames and before the paint: a slot resized since this
       // frame's draw would show a frame judged against the old area limit, so it is withdrawn
       // and the next draw starts the fade from the frame on screen (Codex round 18).
@@ -300,10 +337,7 @@ export function Visualizer({
       // The comparison is of the geometry the renderer shows, not of the slot's pixels: a slot
       // that gains or loses a pixel no whole texel fills is the same frame, and withdrawing for
       // it would stop the limiter's clock for as long as the slot jitters (Codex round 26).
-      const key = geometryKey(
-        ...measure([0, 0, 0, 0, 0], device, css.width, css.height, window.devicePixelRatio),
-      );
-      if (key === geometryKey(...drawn)) return;
+      if (sameFrame(seen, drawn)) return;
       const renderer = rendererRef.current;
       if (!renderer) return;
       try {
@@ -365,7 +399,7 @@ export function Visualizer({
       // device-pixel box, so that box is still the slot's: drawing goes on from it, a
       // measurement, with the CSS size read from layout (Codex round 27).
       const ratio = window.devicePixelRatio;
-      if (!css || ratio === reportedAt) {
+      if (!measured || ratio === reportedAt) {
         askedAt = 0;
       } else {
         if (ratio !== askedAt) {
@@ -380,13 +414,22 @@ export function Visualizer({
         // A slot with no size is the one case a fresh observation does not report, and the box
         // kept may be from before it emptied.
         const rect = slot.getBoundingClientRect();
-        css = { width: rect.width, height: rect.height };
+        css.width = rect.width;
+        css.height = rect.height;
+        measured = true;
         if (!(rect.width > 0 && rect.height > 0)) device = null;
         reportedAt = ratio;
         askedAt = 0;
       }
-      const box = css ?? slot.getBoundingClientRect();
+      const box = measured ? css : slot.getBoundingClientRect();
       measure(drawn, device, box.width, box.height, window.devicePixelRatio);
+      // Nothing is drawn for a slot with no pixels, and the time it has none is no frame
+      // interval: the next draw is timed as a first one.
+      if (dropEmpty(drawn)) {
+        lastDrawn = null;
+        lastWall = null;
+        return;
+      }
       const width = drawn[0];
       const height = drawn[1];
       const texel = drawn[2];
@@ -503,6 +546,13 @@ export function Visualizer({
       cancelAnimationFrame(frame);
       unpainted = false;
       askedAt = 0;
+      // There is no frame until the restore: the canvas takes no room and has no clip, so the
+      // lost frame's box overflows nothing however the page is resized meanwhile (Codex round
+      // 30). The restored renderer's first frame fits it again.
+      fitted = undefined;
+      canvas.style.width = "0px";
+      canvas.style.height = "0px";
+      canvas.style.clipPath = "";
       const old = rendererRef.current;
       rendererRef.current = null;
       try {
