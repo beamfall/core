@@ -145,13 +145,26 @@ func (t *workerTask) fill(ctx context.Context, st *store.Store, prober Prober, g
 // slot until the reader closes, and leave probes and other work outside it.
 var scanHashSlot = make(chan struct{}, 1)
 
+// onScanHashWait lets a test observe a worker finding the hash slot occupied.
+var onScanHashWait func(path string)
+
 func hashScanFile(ctx context.Context, path string) (string, error) {
+	done := ctx.Done()
 	select {
 	case scanHashSlot <- struct{}{}:
-		defer func() { <-scanHashSlot }()
-	case <-ctx.Done():
+	case <-done:
 		return "", ctx.Err()
+	default:
+		if onScanHashWait != nil {
+			onScanHashWait(path)
+		}
+		select {
+		case scanHashSlot <- struct{}{}:
+		case <-done:
+			return "", ctx.Err()
+		}
 	}
+	defer func() { <-scanHashSlot }()
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}

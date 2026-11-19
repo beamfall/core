@@ -30,7 +30,7 @@ func TestScanJobsSerializeWholeFileHashes(t *testing.T) {
 	st := storetest.Open(t)
 	firstRoot, secondRoot := t.TempDir(), t.TempDir()
 	firstPath := writeScanFile(t, firstRoot, "first.mp4", []byte("first"))
-	writeScanFile(t, secondRoot, "second.mp4", []byte("second"))
+	secondPath := writeScanFile(t, secondRoot, "second.mp4", []byte("second"))
 	enqueueHashTestScan(t, st, "first", firstRoot, now)
 	enqueueHashTestScan(t, st, "second", secondRoot, now.Add(time.Millisecond))
 
@@ -42,32 +42,32 @@ func TestScanJobsSerializeWholeFileHashes(t *testing.T) {
 	}()
 	firstHash := make(chan struct{})
 	secondHash := make(chan struct{})
+	secondWaiting := make(chan struct{})
 	releaseFirst := make(chan struct{})
-	original := hashFileContent
+	originalHash, originalWait := hashFileContent, onScanHashWait
+	onScanHashWait = func(path string) {
+		if path == secondPath {
+			close(secondWaiting)
+		}
+	}
 	hashFileContent = func(hashCtx context.Context, path string) (string, error) {
-		if path == firstPath {
+		switch path {
+		case firstPath:
 			close(firstHash)
 			select {
 			case <-releaseFirst:
 			case <-ctx.Done(): // Bound teardown even if the scan drops cancellation.
 				return "", ctx.Err()
 			}
-		} else {
+		case secondPath:
 			close(secondHash)
 		}
-		return original(hashCtx, path)
+		return originalHash(hashCtx, path)
 	}
-	t.Cleanup(func() { hashFileContent = original })
+	t.Cleanup(func() { hashFileContent, onScanHashWait = originalHash, originalWait })
 
-	secondClaimed := make(chan struct{})
-	handler := HandlerWithWorkerGovernor(st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(2))
 	registry := jobs.NewRegistry(st, "worker")
-	registry.Register(JobKind, func(ctx context.Context, job store.Job) (jobs.Result, error) {
-		if job.ID == "second" {
-			close(secondClaimed)
-		}
-		return handler(ctx, job)
-	})
+	registry.Register(JobKind, HandlerWithWorkerGovernor(st, nil, nil, nil, nil, nil, nil, nil, fixedGovernor(2)))
 	run := func() <-chan error {
 		done := make(chan error, 1)
 		runs.Go(func() {
@@ -84,16 +84,11 @@ func TestScanJobsSerializeWholeFileHashes(t *testing.T) {
 	}
 	secondDone := run()
 	select {
-	case <-secondClaimed:
-	case <-ctx.Done():
-		t.Fatal("second job was never claimed")
-	}
-	select {
+	case <-secondWaiting:
 	case <-secondHash:
 		t.Fatal("second job entered its hash while the first job was hashing")
 	case <-ctx.Done():
-		t.Fatal(ctx.Err())
-	case <-time.After(100 * time.Millisecond):
+		t.Fatal("second job never waited for the occupied hash slot")
 	}
 	close(releaseFirst)
 	for _, done := range []<-chan error{firstDone, secondDone} {
