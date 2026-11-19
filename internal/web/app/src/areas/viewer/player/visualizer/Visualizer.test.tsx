@@ -6,7 +6,6 @@ import { easeFrame, silentFrame } from "./analysis";
 import {
   backingSize,
   canVisualize,
-  collapsed,
   type Rotation,
   slotPixels,
   takeUpcoming,
@@ -217,14 +216,18 @@ describe("backingSize", () => {
     ]);
   });
 
-  // Codex round 23: a slot one pixel wide that grows past MAX_SIDE keeps a texel the slot cuts,
-  // judged against the pixel shown, instead of going black.
-  it("keeps a cut texel when a side over MAX_SIDE needs a larger one", () => {
+  // Codex rounds 22 and 23: a slot one pixel wide that grows past MAX_SIDE needs a texel wider
+  // than the slot. The renderer shows whole texels only, so it fades that slot to black.
+  it("keeps the larger texel a side over MAX_SIDE needs, though the slot cuts it", () => {
     const device = { inlineSize: 1, blockSize: 8193 };
     expect(backingSize(device, 1, 8193, 1)).toEqual([1, 4096, 2]);
     expect(slotPixels(device, 1, 8193, 1)).toEqual([1, 8193]);
-    expect(collapsed(device, 1, 8193, 1)).toBe(false);
-    expect(collapsed({ inlineSize: 0, blockSize: 8193 }, 0, 8193, 1)).toBe(true);
+  });
+
+  it("asks for one texel of a slot with no pixels, which shows none", () => {
+    const device = { inlineSize: 0, blockSize: 360 };
+    expect(backingSize(device, 0, 360, 1)).toEqual([1, 360, 1]);
+    expect(slotPixels(device, 0, 360, 1)).toEqual([0, 360]);
   });
 
   it("falls back to the CSS box, and to DPR 1 for a bad ratio", () => {
@@ -233,7 +236,7 @@ describe("backingSize", () => {
   });
 });
 
-// Codex round 24: the canvas shows no pixel past the ones the limiter has judged in view.
+// Codex round 24: the canvas shows no pixel past the view the renderer reports for its frame.
 describe("viewClip", () => {
   const shown = { width: 64, height: 36, texel: 2, viewWidth: 128, viewHeight: 72 };
 
@@ -241,7 +244,7 @@ describe("viewClip", () => {
     expect(viewClip(shown, 4)).toBe("");
   });
 
-  it("clips the hidden pixels of a cut texel and everything past it", () => {
+  it("clips every pixel past the view", () => {
     expect(viewClip({ ...shown, viewWidth: 3 }, 4)).toBe("inset(0 31.25px 0px 0)");
     expect(viewClip({ ...shown, viewWidth: 3, viewHeight: 71 }, 1)).toBe("inset(0 125px 1px 0)");
     expect(viewClip({ ...shown, viewWidth: 0, viewHeight: 0 }, 2)).toBe("inset(0 64px 36px 0)");

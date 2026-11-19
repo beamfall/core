@@ -22,16 +22,19 @@ const GRID_Y = 9;
 const SUB = 4;
 const TOKEN = 65025;
 const MAX_FLASH_HZ = 3;
+// The longest interval one frame credits the limiter with: a luma token's refill (limit).
+const CREDIT_MS = 1000 / (2 * MAX_FLASH_HZ);
 /** The limiter's grant state with every budget just spent: two luma tokens of deficit (bit 8 of x
  * carries one), a red token and no credit (Oscillux shaders/limiter/grant.glsl). */
 const SPENT = new Uint32Array([256, TOKEN, TOKEN, 0]);
-/** How long a display-scale change presents black: longer than the limiter's coverage interval,
- * 1 / (5 maxFlashHz) s (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). */
-export const SCALE_BLACK_S = 0.1;
-/** How long a display-scale change first fades the output to black through the limiter at the old
- * size: longer than the slowest grant of a fall, the red token's refill of 8 / (2 maxFlashHz) s
- * (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). */
-export const SCALE_FADE_S = 2;
+/** How long a geometry change fades the frame on screen to black through the limiter, in time the
+ * limiter is credited with: longer than the slowest grant of a fall, the red token's refill of
+ * 8 / (2 maxFlashHz) s, by more than the one frame's credit the fade's last frame is not judged
+ * with (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). */
+export const FADE_S = 2;
+/** How long black is presented before a frame starts after a fade or a restored context: longer
+ * than the limiter's coverage interval, 1 / (5 maxFlashHz) s (same section). */
+export const BLACK_S = 0.1;
 /** What the host shows wherever the canvas shows no judged pixel (past its edge, through its clip,
  * before its first frame): the black every tracker starts at (clearOutput), whatever the theme,
  * so a pixel that comes into view rises from what its tracker holds (Codex round 25). */
@@ -45,12 +48,6 @@ export const MAX_SIDE = 8192;
 
 /** The render size for a canvas of `width` x `height`: at least the minimum on each side and at
  * most MAX_SIDE on the longer one, scaled down uniformly so the frame keeps its aspect. */
-/** Whether a display-scale change from `from` to `to` physical pixels per texel keeps every pixel
- * on screen: `to` is a smaller divisor of `from`. */
-export function exactDrop(from: number, to: number): boolean {
-  return from > 0 && to > 0 && to < from && from % to === 0;
-}
-
 export function frameSize(width: number, height: number): [number, number] {
   const k = Math.min(1, MAX_SIDE / Math.max(width, height));
   return [
@@ -85,31 +82,69 @@ function span(len: number, n: number, cells: number): number {
 }
 
 /** windowOf("wcag", W, H) from tools/shader/limiter-geometry.mjs for a W x H frame whose texels
- * are `texel` physical pixels on a side: the field is a third of the visible frame each way,
- * the window the fewest whole cells that contain every texel the field touches wherever it sits,
- * and the area limit a quarter of the field's physical pixels over the texel's area, so a patch
- * over the physical limit is over it in texels (Codex round 13). */
+ * are `texel` physical pixels on a side, with visibleWidth x visibleHeight of them in view: the
+ * field is a third of the visible frame each way, the window the fewest whole cells that contain
+ * every texel the field touches wherever it sits, and the area limit a quarter of the field's
+ * physical pixels over the texel's area, so a patch over the physical limit is over it in texels
+ * (Codex round 13). */
 export function limiterWindow(
   W: number,
   H: number,
   texel = 1,
   visibleWidth = W,
   visibleHeight = H,
-  visiblePxWidth = visibleWidth * texel,
-  visiblePxHeight = visibleHeight * texel,
 ): LimiterWindow {
-  // The field is a third of the physical pixels on screen. A texel the slot cuts is judged whole,
-  // so its area counts in full against a limit from the pixels shown: an overcount, never less.
   const fieldPx = (px: number) => Math.min(px, Math.max(1, Math.round(px / 3)));
   const touched = (px: number, n: number) =>
     Math.min(n, texel === 1 ? px : Math.ceil((px - 1) / texel) + 1);
-  const fwPx = fieldPx(visiblePxWidth);
-  const fhPx = fieldPx(visiblePxHeight);
+  const fwPx = fieldPx(visibleWidth * texel);
+  const fhPx = fieldPx(visibleHeight * texel);
   return {
     cols: span(touched(fwPx, W), W, GRID_X),
     rows: span(touched(fhPx, H), H, GRID_Y),
     limit: Math.floor((fwPx * fhPx) / 4 / (texel * texel)),
   };
+}
+
+/** What the viewer sees of a frame: its backing size in texels, the texel's side in physical
+ * pixels and the whole texels in view, from the top left. */
+interface Geometry {
+  width: number;
+  height: number;
+  texel: number;
+  visibleWidth: number;
+  visibleHeight: number;
+}
+
+// The geometry for a slot of slotWidth x slotHeight physical pixels. A texel the slot cuts is not
+// in view: it is never shown, so no pixel is ever seen that the limiter did not judge whole.
+function geometry(
+  width: number,
+  height: number,
+  texel: number,
+  slotWidth: number,
+  slotHeight: number,
+): Geometry {
+  const [W, H] = frameSize(width, height);
+  const whole = (slot: number, n: number) =>
+    Math.max(0, Math.min(n, Math.floor(slot / texel + 1e-6)));
+  return {
+    width: W,
+    height: H,
+    texel,
+    visibleWidth: whole(slotWidth, W),
+    visibleHeight: whole(slotHeight, H),
+  };
+}
+
+function sameGeometry(a: Geometry, b: Geometry): boolean {
+  return (
+    a.width === b.width &&
+    a.height === b.height &&
+    a.texel === b.texel &&
+    a.visibleWidth === b.visibleWidth &&
+    a.visibleHeight === b.visibleHeight
+  );
 }
 const LIMITER_VERTEX =
   "#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }";
@@ -214,15 +249,11 @@ interface Limiter {
   cur: number;
 }
 
-interface Size {
-  width: number;
-  height: number;
-  /** The texels in view, a cut one included (all of them before a draw: they start black), and
-   * the physical pixels the limiter has judged in view (none before a draw). */
-  visibleWidth: number;
-  visibleHeight: number;
-  visiblePxWidth: number;
-  visiblePxHeight: number;
+interface Size extends Geometry {
+  /** The physical pixels of the canvas the host may show, from the top left: the smallest slot
+   * since the frame started (draw). */
+  viewWidth: number;
+  viewHeight: number;
   /** The visual's render size at the governor's level: its feedback, and a switch's targets. */
   renderWidth: number;
   renderHeight: number;
@@ -304,15 +335,9 @@ export class Renderer {
   private readonly grantWord = new Uint32Array(4);
   private grantSettled = true;
   private limiterSpent = false;
-  // The state before the last frame drawn, until the next draw (withdraw): the fade and black
-  // clocks, and the limiter's state when the frame ran it.
-  private undo: {
-    fadeLeft: number;
-    black: number;
-    blackShown: boolean;
-    size: Size | null;
-    limiter: { cur: number; clockMs: number; carry: number; spent: boolean } | null;
-  } | null = null;
+  // The limiter's state before the last frame drawn, until the next draw, when that frame was
+  // judged outside a fade (withdraw).
+  private undo: { cur: number; clockMs: number; carry: number; spent: boolean } | null = null;
   // The fraction of a refill unit earned and not yet granted (limiter README, Codex round 15).
   private refillCarry = 0;
   private readonly visualVertex: string;
@@ -336,14 +361,13 @@ export class Renderer {
   // The visual last asked for: an older request still compiling is dropped.
   private wanted: Visual | null = null;
   private reducedMotion = false;
+  // The frame on screen: none before the first draw and while black is presented.
   private size: Size | null = null;
-  // Physical pixels per frame texel at the last resize (0 before the first).
-  private displayScale = 0;
-  // Seconds of black left after a display-scale change or restore, counted once black is shown.
-  private black = 0;
+  // Seconds left of a geometry change's fade to black, or 0 outside one.
+  private fadeLeft = 0;
+  // Seconds of black left before a frame starts, counted once black is shown.
+  private black: number;
   private blackShown = false;
-  // Seconds left of the fade to black before a display-scale change, or -1 outside one.
-  private fadeLeft = -1;
   private time = 0;
   private clockMs = 0;
   private presented = 0;
@@ -393,10 +417,12 @@ export class Renderer {
     present: string,
     blend: string,
     limiter: string[],
-    private readonly restored: boolean,
+    restored: boolean,
   ) {
     this.gl = gl;
     this.osc = osc;
+    // A restored context replaces whatever the lost one left on screen: black comes first.
+    this.black = restored ? BLACK_S : 0;
     this.vivid = osc.vividPresent();
     // Whatever was allocated before a failure is released here, as no caller holds the
     // instance to dispose it.
@@ -572,7 +598,7 @@ export class Renderer {
   }
 
   // The switch's eased progress this frame, or null with no switch running. A switch that has
-  // ended (or that a resize cut short) is dropped here, and a visual queued behind it starts.
+  // ended (or that a geometry change cut short) is dropped here, and a visual queued behind it starts.
   private switchProgress(reducedMotion: boolean): number | null {
     if (!this.outgoing && !this.pending) return null;
     if (this.outgoing && !reducedMotion) {
@@ -618,9 +644,17 @@ export class Renderer {
     return program;
   }
 
-  /** Draws one frame at width x height texels, each `texel` physical pixels on a side, dt seconds
-   * after the last, in a slot slotWidth x slotHeight physical pixels: more than the texels cover
-   * when the slot cuts a texel. */
+  /**
+   * Draws one frame at width x height texels, each `texel` physical pixels on a side, dt seconds
+   * after the last, in a slot slotWidth x slotHeight physical pixels.
+   *
+   * One rule covers every change to what the viewer sees, whether the backing size, the texel size
+   * or the texels in view: the frame on screen fades to black through the limiter (FADE_S), black
+   * is presented (BLACK_S), and a frame starts at the geometry asked for then, black with every
+   * budget spent (start). A change during the fade or the black only moves that target: nothing
+   * is reallocated, spent or restarted, so a slot dragged to a new size costs one fade and one
+   * start. No pixel is carried from one geometry to the next (CORE-2516).
+   */
   draw(
     width: number,
     height: number,
@@ -636,49 +670,50 @@ export class Renderer {
     if (!this.visual) return;
     const gl = this.gl;
     this.reducedMotion = reducedMotion;
-    // A withdrawn frame was never shown, so it takes back its fade and black time too (Codex
-    // round 23).
-    this.undo = {
-      fadeLeft: this.fadeLeft,
-      black: this.black,
-      blackShown: this.blackShown,
-      size: this.size,
-      limiter: null,
-    };
-    // A display-scale change first fades the output to black at the old size (fading), then
-    // switches with the limiter's state tracked black and its budgets spent (resize).
-    // The fade runs on the time the limiter is credited with, so its grant has come by its end;
-    // the black interval on the same time (Codex rounds 18 and 22).
-    // A slot grown past a texel it cut goes the same way at its own scale: the view is held
-    // through the fade and starts again from nothing in view (inView, Codex round 24).
-    const reseat = this.size !== null && this.inView(this.size, slotWidth, slotHeight).held;
-    const fading = this.fading(texel, shownMs / 1000, reseat);
-    const size =
-      fading && this.size ? this.size : this.resize(...frameSize(width, height), texel, reseat);
-    const { width: W, height: H } = size;
-    // The slot clips a minimum-sized backing or an old surface still fading at its own scale.
-    const v = this.inView(size, slotWidth, slotHeight);
-    if (v.width !== size.visibleWidth || v.height !== size.visibleHeight) {
-      this.expose(size, v.width, v.height);
-      size.visibleWidth = v.width;
-      size.visibleHeight = v.height;
-    }
-    if (v.pxWidth !== size.visiblePxWidth || v.pxHeight !== size.visiblePxHeight) {
-      // The area limit follows the pixels in view; a grant earned under another is not spent
-      // under it (expose).
-      size.visiblePxWidth = v.pxWidth;
-      size.visiblePxHeight = v.pxHeight;
-      size.limiter.window = limiterWindow(
-        W,
-        H,
-        this.displayScale,
-        v.width,
-        v.height,
-        v.pxWidth,
-        v.pxHeight,
-      );
+    this.undo = null;
+    const want = geometry(width, height, texel, slotWidth, slotHeight);
+    // The fade and the black run on the time the limiter is credited with, shownMs up to one
+    // token's refill a frame, so the fall's grant has come by the end of the fade whatever the
+    // frame rate (Codex rounds 18, 22).
+    const shownS = Math.min(shownMs, CREDIT_MS) / 1000;
+    let size = this.size;
+    if (size && this.fadeLeft > 0) {
+      this.fadeLeft = Math.max(0, this.fadeLeft - shownS);
+      if (this.fadeLeft === 0) {
+        // The frame is black by now. A size change ends a switch, as in the reference host.
+        this.endSwitch();
+        this.freeSize();
+        this.black = BLACK_S;
+        this.blackShown = false;
+        size = null;
+      }
+    } else if (size && !sameGeometry(size, want)) {
+      // The fade starts: from this frame the limiter is fed black, with its budgets written spent
+      // and an area limit of zero, so every transition down to black waits for a grant however
+      // little of the frame is still in view.
+      this.fadeLeft = FADE_S;
       this.spend(size.limiter);
+      size.limiter.window = { ...size.limiter.window, limit: 0 };
     }
+    if (!size) {
+      // Black for BLACK_S from the first black frame shown, then the start. A slot with no whole
+      // texel in view stays black.
+      if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - shownS);
+      if (this.black > 0 || want.visibleWidth < 1 || want.visibleHeight < 1) {
+        this.blackShown = true;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        return;
+      }
+      size = this.start(want);
+    }
+    // The part of the canvas the host may show only shrinks (shown): a pixel the slot hid would
+    // come back unjudged, so it stays hidden until the start.
+    size.viewWidth = Math.min(size.viewWidth, Math.max(0, Math.floor(slotWidth)));
+    size.viewHeight = Math.min(size.viewHeight, Math.max(0, Math.floor(slotHeight)));
+    const fading = this.fadeLeft > 0;
+    const { width: W, height: H } = size;
     this.time += dt;
     const p = this.switchProgress(reducedMotion);
     // The governor times frames outside a switch only, and its level changes between switches,
@@ -727,19 +762,17 @@ export class Renderer {
     if (fading) gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
     size.history = [histNext, histPrev];
 
-    // Show black for SCALE_BLACK_S from the first black frame after a scale change or restore.
-    // The visual and its history keep running; the limiter starts from black with every budget
-    // spent (resize). Run the limiter again once the interval ends, even if playback is paused.
-    if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - shownMs / 1000);
-    if (this.black > 0) {
-      this.blackShown = true;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.clearColor(0, 0, 0, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      return;
+    // 3. The frame flash limiter, on the time the frames are shown apart (shownMs). A frame of
+    // the fade is never withdrawn: under its zero area limit it is safe in any view.
+    const L = size.limiter;
+    if (!fading) {
+      this.undo = {
+        cur: L.cur,
+        clockMs: this.clockMs,
+        carry: this.refillCarry,
+        spent: this.limiterSpent,
+      };
     }
-
-    // 3. The frame flash limiter, on the time the frames are shown apart (shownMs).
     this.limit(size, shownMs);
 
     // 4. The limited frame to the canvas.
@@ -747,51 +780,26 @@ export class Renderer {
   }
 
   /** Withdraws the last frame drawn, before it is painted: the canvas shows the limiter's previous
-   * output again and the limiter's state goes back to before the frame, so the next draw judges
-   * afresh. A host calls it when the slot's size changes between a draw and its paint, so a frame
-   * judged against the old area limit is never shown in the new one (Codex round 18). */
+   * output again and the limiter's state goes back to before the frame. A host calls it when the
+   * slot's size changes between a draw and its paint, so a frame judged against the old area limit
+   * is never shown in the new slot (Codex round 18); the next draw starts the fade from the frame
+   * that was on screen. Black and the frames of a fade stand. */
   withdraw(): void {
     const u = this.undo;
     const size = this.size;
     this.undo = null;
     if (!u || !size) return;
-    // A frame that switched the scale keeps its black: the old frame is gone.
-    if (u.size === size) {
-      this.fadeLeft = u.fadeLeft;
-      this.black = u.black;
-      this.blackShown = u.blackShown;
-    }
-    // A black frame stays black: it was judged against no area limit.
-    const l = u.limiter;
-    if (!l) return;
-    size.limiter.cur = l.cur;
-    this.clockMs = l.clockMs;
-    this.refillCarry = l.carry;
-    this.limiterSpent = l.spent;
+    size.limiter.cur = u.cur;
+    this.clockMs = u.clockMs;
+    this.refillCarry = u.carry;
+    this.limiterSpent = u.spent;
     this.grantSettled = false;
     this.showLimited(size);
   }
 
-  /** The slot shows nothing (a zero width or height): the canvas goes black and the limiter
-   * forgets its visible region, so a reopened slot exposes black area and spends the budgets like
-   * any newly shown area. Its backing keeps the minimum size, which the slot's key alone would not
-   * tell apart from a one-pixel slot (Codex round 20). */
-  collapse(): void {
-    const size = this.size;
-    this.undo = null;
-    if (!size) return;
-    size.visibleWidth = 0;
-    size.visibleHeight = 0;
-    size.visiblePxWidth = 0;
-    size.visiblePxHeight = 0;
-    this.grantSettled = false;
-    this.showLimited(size);
-  }
-
-  // The limited frame to the canvas: its visible part only, the rest black. A slot that grows
-  // before the next draw then reveals black, never pixels the limiter has not judged in view
-  // (Codex round 17). GL rows run bottom-up, so the top-left anchored visible rows are the top
-  // ones.
+  // The limited frame to the canvas: its texels in view only, the rest black, so the canvas shows
+  // no texel the limiter has not judged in view (Codex round 17). GL rows run bottom-up, so the
+  // top-left anchored visible rows are the top ones.
   private showLimited(size: Size): void {
     const gl = this.gl;
     const L = size.limiter;
@@ -804,11 +812,11 @@ export class Renderer {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
   }
 
-  /** The frame shown: its size in texels, the texel's side in physical pixels, and the physical
-   * pixels of it the limiter has judged in view, from the top left. During a display-scale
-   * change's fade it is the old one, which the host keeps presenting at its old size. The host
-   * clips the canvas to the view: a slot grown since the draw, or past a texel it cut, then shows
-   * no pixel the limiter has not judged (Codex round 24). */
+  /** The frame on screen, or null while there is none: its size in texels, the texel's side in
+   * physical pixels, and the physical pixels of the canvas the host may show, from the top left.
+   * The host keeps the canvas at this size and position, clipped to this view, until the next
+   * frame starts: through a fade the slot may shrink and grow, and a pixel it hid must not come
+   * back (Codex round 24). */
   get shown(): {
     width: number;
     height: number;
@@ -821,14 +829,14 @@ export class Renderer {
       ? {
           width: size.width,
           height: size.height,
-          texel: this.displayScale,
-          viewWidth: size.visiblePxWidth,
-          viewHeight: size.visiblePxHeight,
+          texel: size.texel,
+          viewWidth: size.viewWidth,
+          viewHeight: size.viewHeight,
         }
       : null;
   }
 
-  /** Whether the shown frame can be held for this request while playback is paused. */
+  /** Whether the picture can be held for this request while playback is paused. */
   settled(
     width: number,
     height: number,
@@ -836,19 +844,11 @@ export class Renderer {
     slotWidth = width * texel,
     slotHeight = height * texel,
   ): boolean {
+    const want = geometry(width, height, texel, slotWidth, slotHeight);
     const size = this.size;
-    if (!size || this.fadeLeft > 0 || this.black > 0 || texel !== this.displayScale) return false;
-    const [W, H] = frameSize(width, height);
-    if (size.width !== W || size.height !== H) return false;
-    const v = this.inView(size, slotWidth, slotHeight);
-    if (
-      v.held ||
-      size.visibleWidth !== v.width ||
-      size.visibleHeight !== v.height ||
-      size.visiblePxWidth !== v.pxWidth ||
-      size.visiblePxHeight !== v.pxHeight
-    )
-      return false;
+    // With no frame the canvas is black: all a slot with no whole texel in view ever shows.
+    if (!size) return this.black <= 0 && (want.visibleWidth < 1 || want.visibleHeight < 1);
+    if (this.fadeLeft > 0 || !sameGeometry(size, want)) return false;
     // A grant state the host wrote spent has judged no frame, so its clear held bits say nothing
     // about the input: a withdrawn first draw would otherwise hold black (Codex round 24).
     if (this.limiterSpent) return false;
@@ -865,58 +865,6 @@ export class Renderer {
     // v0.2.9): clear, the output shows the input exactly (Codex round 18).
     this.grantSettled = (this.grantWord[0] & 0xf0) === 0;
     return this.grantSettled;
-  }
-
-  // The part of the frame at the current scale that a slotWidth x slotHeight slot shows, from the
-  // top left, given the part judged in view so far: physical pixels, and texels including one the
-  // slot cuts. A slot that shrinks may cut a texel: it stays partly on screen, so it is judged and
-  // shown like the rest (Codex round 23). A slot that grows shows more whole texels, each exposed
-  // black (expose), or from nothing in view under one texel, that texel cut. Past a texel it cut
-  // there is nothing safe to show: the texel's hidden pixels would appear in its colour with no
-  // tracker event, and clearing the texel would drop the pixels it shows with no grant. The view
-  // is then held, and draw fades the frame out and starts the view again (Codex round 24).
-  private inView(
-    size: Pick<Size, "width" | "height" | "visiblePxWidth" | "visiblePxHeight">,
-    slotWidth: number,
-    slotHeight: number,
-  ): { width: number; height: number; pxWidth: number; pxHeight: number; held: boolean } {
-    const s = this.displayScale;
-    let held = false;
-    const axis = (slot: number, texels: number, seen: number): number => {
-      const px = Math.max(0, Math.min(Math.floor(slot), texels * s));
-      if (px <= seen) return px;
-      if (seen % s === 0) return px < s ? px : Math.floor(px / s) * s;
-      held = true;
-      return seen;
-    };
-    const pxWidth = axis(slotWidth, size.width, size.visiblePxWidth);
-    const pxHeight = axis(slotHeight, size.height, size.visiblePxHeight);
-    return {
-      width: Math.ceil(pxWidth / s),
-      height: Math.ceil(pxHeight / s),
-      pxWidth,
-      pxHeight,
-      held,
-    };
-  }
-
-  // Whether this frame fades to black before a display-scale change to `texel`: for SCALE_FADE_S
-  // of the time the limiter is credited with (shownMs), after the change is first asked for, so
-  // the fall's grant has come whatever the frame rate (Codex round 22). A change asked for before
-  // the first frame, back to the current scale, or down to a divisor of it needs none: the
-  // divisor keeps every pixel on screen (resize). A held view (`reseat`) fades at any scale. A
-  // spend during the fade starts it again (spend).
-  private fading(texel: number, shownS: number, reseat = false): boolean {
-    if (
-      !this.size ||
-      this.displayScale === 0 ||
-      (!reseat && (texel === this.displayScale || exactDrop(this.displayScale, texel)))
-    ) {
-      this.fadeLeft = -1;
-      return false;
-    }
-    this.fadeLeft = this.fadeLeft < 0 ? SCALE_FADE_S : this.fadeLeft - shownS;
-    return this.fadeLeft > 0;
   }
 
   // Draws a visual from feedback[0] into feedback[1] and returns that target.
@@ -1092,15 +1040,8 @@ export class Renderer {
   private limit(size: Size, frameMs: number): void {
     const gl = this.gl;
     const L = size.limiter;
-    if (this.undo)
-      this.undo.limiter = {
-        cur: L.cur,
-        clockMs: this.clockMs,
-        carry: this.refillCarry,
-        spent: this.limiterSpent,
-      };
     this.clockMs += frameMs;
-    // The interval up to a resize may age copied trackers, but cannot refill its new deficit.
+    // The interval up to a host write of the grant state cannot refill the deficit it wrote.
     // The fraction of a unit carries to the next frame, so the refill keeps the exact rate. A
     // token is TOKEN - 1 units of credit, so a carried fraction cannot finish one early (Codex
     // round 16).
@@ -1156,34 +1097,17 @@ export class Renderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
-  // The targets for a W x H canvas, rebuilt when the size changes. The flash limiter's state is
-  // never cleared after the start and every resize spends its budgets, so resizing never hands a
-  // strobe a fresh flash budget (CORE-2516). `reset` starts the frame again as a display-scale
-  // change does, at any size (a held view, draw).
-  private resize(W: number, H: number, texel: number, reset = false): Size {
-    if (
-      !reset &&
-      this.size &&
-      this.size.width === W &&
-      this.size.height === H &&
-      texel === this.displayScale
-    ) {
-      return this.size;
-    }
-    // A size change ends a switch, as in the reference host.
-    this.endSwitch();
-    const old = this.size;
-    const kept = old?.limiter ?? null;
-    this.freeSize(kept !== null);
+  // Starts a frame at a geometry: new targets, the limiter's output black and tracked black and
+  // every budget written spent. This is the only way a frame comes onto the screen, at the first
+  // draw and after every black. The host cannot know what the canvas replaces on screen, so the
+  // first frame is rationed like any change after a host write, and a resize never hands a strobe
+  // a fresh flash budget (CORE-2516, Oscillux shaders/limiter/README.md, "Ping-pong and reset").
+  private start(g: Geometry): Size {
     const gl = this.gl;
+    const { width: W, height: H } = g;
     const canvas = gl.canvas as HTMLCanvasElement;
     canvas.width = W;
     canvas.height = H;
-    // Physical pixels per texel: a resize at the same scale keeps every on-screen position, and
-    // so does a drop to a divisor of the scale, each old texel becoming k x k new ones.
-    const k = exactDrop(this.displayScale, texel) ? this.displayScale / texel : 1;
-    const sameScale = texel === this.displayScale || k > 1;
-    this.displayScale = texel;
     const { internal, type } = this.feedbackFormat;
     const render = renderQuality(W, H, this.level);
     const feedback = this.feedbackPair(render.width, render.height, internal, type);
@@ -1199,57 +1123,13 @@ export class Renderer {
     const track = [0, 1].map(() => this.storage(W, H, gl.RGBA16UI));
     const fOut = out.map((x, i) => this.framebuffer([x, track[i]]));
     for (const f of fOut) this.clearOutput(f);
-    // The view the limiter has judged: at the same scale the old one, in physical pixels, so a
-    // texel the old slot cut stays cut (Codex round 24); otherwise none, with every texel black.
-    // Draw exposes the rest of the visible slot.
-    const carried = kept !== null && old !== null && sameScale && !reset;
-    const px: [number, number] = carried
-      ? [Math.min(W * texel, old.visiblePxWidth), Math.min(H * texel, old.visiblePxHeight)]
-      : [0, 0];
-    const visible: [number, number] = carried
-      ? [Math.ceil(px[0] / texel), Math.ceil(px[1] / texel)]
-      : [W, H];
-    const window = carried
-      ? limiterWindow(W, H, texel, visible[0], visible[1], px[0], px[1])
-      : limiterWindow(W, H, texel);
-    const limiter: Limiter = kept
-      ? { ...kept, rows, out, track, fRows: this.framebuffer([rows]), fOut, window }
-      : this.newLimiterState(rows, out, track, fOut, window);
-    // The limiter's history follows what is on screen (Oscillux shaders/limiter/README.md,
-    // "Ping-pong and reset"): at the same scale the overlap is copied 1:1 from the top-left,
-    // where the canvas is anchored, and new area starts tracked black. A drop to a divisor of
-    // the scale copies each texel and its tracker k x k times, so the screen does not change
-    // (Codex round 22). After a scale change, a reset or a context restore, the whole frame
-    // starts tracked black and the canvas presents black for SCALE_BLACK_S (draw).
-    // Only the old visible region is copied: pixels hidden by a clipped slot were never judged
-    // in view, so they start black and tracked black like new area (Codex round 17).
-    if (carried) {
-      const i = kept.cur;
-      const vw = old.visibleWidth;
-      const vh = old.visibleHeight;
-      this.copyAnchored(kept.out[i], old.width, old.height, out[i], W, H, vw, vh, k);
-      this.copyAnchored(kept.track[i], old.width, old.height, track[i], W, H, vw, vh, k);
-    } else if (kept || this.restored) {
-      this.black = SCALE_BLACK_S;
-      this.blackShown = false;
-    }
-    // Every size starts with the budgets written spent, the first one too: the host cannot
-    // know what the canvas replaced on screen, so the first frame is rationed like any change
-    // after a host write (Oscillux shaders/limiter/README.md, Codex round 24).
+    const window = limiterWindow(W, H, g.texel, g.visibleWidth, g.visibleHeight);
+    const limiter = this.newLimiterState(rows, out, track, fOut, window);
     this.spend(limiter);
-    if (kept) {
-      gl.deleteTexture(kept.rows);
-      gl.deleteFramebuffer(kept.fRows);
-      [...kept.out, ...kept.track].forEach((t) => gl.deleteTexture(t));
-      kept.fOut.forEach((f) => gl.deleteFramebuffer(f));
-    }
     this.size = {
-      width: W,
-      height: H,
-      visibleWidth: visible[0],
-      visibleHeight: visible[1],
-      visiblePxWidth: px[0],
-      visiblePxHeight: px[1],
+      ...g,
+      viewWidth: W * g.texel,
+      viewHeight: H * g.texel,
       renderWidth: render.width,
       renderHeight: render.height,
       feedback,
@@ -1262,45 +1142,13 @@ export class Renderer {
     return this.size;
   }
 
-  // A slot that grows within an unchanged backing shows pixels the limiter last saw while they
-  // were hidden. They start black and tracked black, as newly exposed area does on a resize, and
-  // the budgets are spent, so revealing hidden content is rationed like any rise (Oscillux
-  // shaders/limiter/README.md, Codex round 16). Any change of the visible size changes the area
-  // limit, so a shrink spends the budgets too: a grant earned under the old limit is not spent
-  // under the new one (Codex round 17).
-  private expose(size: Size, visibleWidth: number, visibleHeight: number): void {
-    const { height: H, visibleWidth: oldWidth, visibleHeight: oldHeight } = size;
-    const gl = this.gl;
-    const L = size.limiter;
-    // GL rows run bottom-up, so the top-left anchored visible rows are the top ones.
-    const regions: [number, number, number, number][] = [];
-    if (visibleWidth > oldWidth)
-      regions.push([oldWidth, H - visibleHeight, visibleWidth - oldWidth, visibleHeight]);
-    if (visibleHeight > oldHeight)
-      regions.push([0, H - visibleHeight, visibleWidth, visibleHeight - oldHeight]);
-    gl.enable(gl.SCISSOR_TEST);
-    for (const [x, y, w, h] of regions) {
-      gl.scissor(x, y, w, h);
-      for (const f of L.fOut) this.clearOutput(f);
-    }
-    gl.disable(gl.SCISSOR_TEST);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    this.spend(L);
-  }
-
-  // Marks every limiter budget just spent, in the grant state the next frame reads. A fade to
-  // black waits out the grant of its fall, so a spend during one starts it again: the switch at
-  // its end would otherwise clear a frame the limiter still holds (Codex round 24). The spend
-  // outlives a withdrawn frame, so the restart does too: the fade a withdraw goes back to starts
-  // again even when the frame that spent had cancelled it (Codex round 25).
+  // Marks every limiter budget just spent, in the grant state the next frame reads.
   private spend(L: Limiter): void {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, L.fG[L.cur]);
     gl.clearBufferuiv(gl.COLOR, 0, SPENT);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.limiterSpent = true;
-    if (this.fadeLeft > 0) this.fadeLeft = SCALE_FADE_S;
-    if (this.undo && this.undo.fadeLeft > 0) this.undo.fadeLeft = SCALE_FADE_S;
   }
 
   // Moves the visual to a governor level between switches: only its feedback pair is rebuilt,
@@ -1328,38 +1176,6 @@ export class Renderer {
     size.feedback = feedback;
     size.renderWidth = render.width;
     size.renderHeight = render.height;
-  }
-
-  // Copies the overlap of one texture's top-left vw x vh into another of the same format, each
-  // texel k x k times, through framebuffers of one attachment each (an integer blit must be
-  // NEAREST and match every draw buffer).
-  private copyAnchored(
-    from: WebGLTexture,
-    fw: number,
-    fh: number,
-    to: WebGLTexture,
-    tw: number,
-    th: number,
-    vw = fw,
-    vh = fh,
-    k = 1,
-  ): void {
-    const gl = this.gl;
-    const read = this.framebuffer([from], false);
-    const draw = this.framebuffer([to], false);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw);
-    // GL rows run bottom-up, so the top-left anchor is the top rows of each. Only the source's
-    // top-left vw x vh is copied, in whole texels.
-    // A texel the target cuts is copied too, its pixels outside the target clipped: they are on
-    // screen in both (Codex round 23).
-    const w = Math.min(vw, Math.ceil(tw / k));
-    const h = Math.min(vh, Math.ceil(th / k));
-    gl.blitFramebuffer(0, fh - h, w, fh, 0, th - h * k, w * k, th, gl.COLOR_BUFFER_BIT, gl.NEAREST);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.deleteFramebuffer(read);
-    gl.deleteFramebuffer(draw);
   }
 
   // Copies one target into another, scaling with linear filtering when the sizes differ.
@@ -1400,7 +1216,7 @@ export class Renderer {
     });
   }
 
-  // A fresh limiter: its output targets arrive black and tracked black, and resize writes its
+  // A fresh limiter: its output targets arrive black and tracked black, and start writes its
   // budgets spent.
   private newLimiterState(
     rows: WebGLTexture,
@@ -1435,9 +1251,8 @@ export class Renderer {
     return limiter;
   }
 
-  // Frees the size's targets. With keepLimiter the limiter's textures stay for resize to carry
-  // over (and free its size-bound ones after copying the last output).
-  private freeSize(keepLimiter = false): void {
+  // Frees the frame's targets.
+  private freeSize(): void {
     const s = this.size;
     if (!s) return;
     const gl = this.gl;
@@ -1447,12 +1262,8 @@ export class Renderer {
       gl.deleteFramebuffer(t.fbo);
     }
     gl.deleteTexture(s.frame);
-    if (!keepLimiter) {
-      for (const t of [L.rows, L.s, L.c, L.w, ...L.g, ...L.track, ...L.out]) {
-        gl.deleteTexture(t);
-      }
-      for (const f of [L.fRows, L.fS, L.fC, L.fW, ...L.fG, ...L.fOut]) gl.deleteFramebuffer(f);
-    }
+    for (const t of [L.rows, L.s, L.c, L.w, ...L.g, ...L.track, ...L.out]) gl.deleteTexture(t);
+    for (const f of [L.fRows, L.fS, L.fC, L.fW, ...L.fG, ...L.fOut]) gl.deleteFramebuffer(f);
     this.size = null;
   }
 
@@ -1483,7 +1294,7 @@ export class Renderer {
 
   // checkFramebufferStatus waits on the GPU process, including any shader still compiling in
   // parallel (over 500 ms seen on a switch), so the targets a switch adds skip it: they reuse
-  // the feedback format resize already checked.
+  // the feedback format start already checked.
   private framebuffer(attachments: WebGLTexture[], verify = true): WebGLFramebuffer {
     const gl = this.gl;
     const f = must(gl.createFramebuffer());

@@ -35,18 +35,66 @@ to the failed state. It SHALL remove its listeners on unmount.
 - **WHEN** a renderer cannot be created after the restore
 - **THEN** the visualizer slot is left empty
 
-### Requirement: A resize never hands out a flash budget
+### Requirement: One path for every geometry change
 
-On a canvas resize at the same display scale the web visualizer SHALL rebuild the flash limiter's
-size-dependent textures, copy the output and tracker texels that were in view one to one from the
-top left, start every other texel black and tracked black, and write the grant state with every
-budget spent. The grant state SHALL start spent at the first size too.
+When a frame is on screen and the geometry asked for differs from it (the backing size in texels,
+the physical pixels per texel, or the whole texels the slot shows), the web visualizer SHALL fade
+that frame to black through the flash limiter for 2 s, then present black for 0.1 s, then start a
+frame at the geometry asked for then. No output or tracker texel SHALL be carried from one
+geometry to another.
 
 #### Scenario: Window resized during a strobe
 
-- **WHEN** the canvas is resized at the same display scale while the limiter is holding
-- **THEN** the texels that were in view keep their output and tracker state, new area starts black
-  and tracked black, and the grant state is written with every budget spent
+- **WHEN** the canvas is resized while the limiter is holding
+- **THEN** the frame on screen fades to black at its old size, black is presented, and one frame
+  starts at the new size, black and tracked black, with every budget spent
+
+#### Scenario: Display scale drops
+
+- **WHEN** the display scale drops from 3 to 2 physical pixels per texel, or from 2 to 1
+- **THEN** the frame fades at its own scale and a frame starts at the new scale from black, with
+  no texel copied
+
+#### Scenario: Slot with no whole texel
+
+- **WHEN** the slot shrinks to less than one texel
+- **THEN** the frame fades to black, and black is presented with no frame until the slot shows a
+  whole texel
+
+### Requirement: The fade is granted by the limiter
+
+For the fade the web visualizer SHALL keep the frame's geometry, write the grant state with every
+budget spent once, set the area limit to zero and feed the limiter black, so every fall to black
+waits for a grant. It SHALL count the fade and the black in the time the limiter is credited
+with, at most 1/6 s a frame, and the black from the first black frame shown.
+
+#### Scenario: Fade starts
+
+- **WHEN** a geometry change starts the fade
+- **THEN** the grant state is written with every budget spent, the area limit is zero, and the
+  limiter's input is black from that frame on
+
+#### Scenario: Slow frame during the fade
+
+- **WHEN** a frame of the fade was shown for one second
+- **THEN** the fade counts 1/6 s for it, as the limiter's refill does
+
+### Requirement: A change during the fade only moves the target
+
+A geometry change during the fade or the black SHALL change only the geometry the next frame
+starts at. It SHALL NOT reallocate, write the grant state or restart either clock.
+
+#### Scenario: Slot dragged through the fade
+
+- **WHEN** the slot's size changes on every frame of a fade
+- **THEN** the fade keeps its geometry and its clock, the grant state is not written again, and
+  one frame starts at the last size asked for
+
+### Requirement: A frame starts black with every budget spent
+
+Every frame the web visualizer starts (the first, the first after a restored context, and the one
+after a fade) SHALL start with its output black, its trackers black and its grant state written
+with every budget spent.
 
 #### Scenario: First frame
 
@@ -56,56 +104,70 @@ budget spent. The grant state SHALL start spent at the first size too.
 ### Requirement: A spent grant state is judged before it is trusted
 
 A grant state the host wrote spent has judged no frame. A paused player SHALL draw a frame through
-it before holding the picture, and a spend during the fade of a display-scale change SHALL start
-that fade again. A spend outlives a withdrawn frame, so the fade a withdrawn frame goes back to
-SHALL start again too.
+it before holding the picture, and SHALL keep drawing through a fade and the black after it.
 
 #### Scenario: Paused on a grant the host wrote
 
 - **WHEN** playback is paused and the grant state was written spent with no frame judged since
 - **THEN** the renderer does not report the picture settled, and the next frame is drawn
 
-#### Scenario: Resize during the scale-change fade
+#### Scenario: Resized while paused
 
-- **WHEN** a resize spends the budgets one second into the fade of a display-scale change
-- **THEN** the fade runs its full length again from that spend
+- **WHEN** playback is paused and the slot is resized
+- **THEN** the renderer does not report the picture settled until a frame at the new size has
+  been judged with no direction held
 
-#### Scenario: Withdrawn frame that cancelled the fade
+### Requirement: Only whole judged texels are shown
 
-- **WHEN** a frame cancels a fade with one second left, spends the budgets, and is withdrawn
-  before it is painted
-- **THEN** the fade it goes back to runs its full length again
+A frame SHALL present only the whole texels its slot shows when it starts, on black. A texel the
+slot cuts SHALL NOT be presented.
 
-### Requirement: Only judged pixels are shown
+#### Scenario: Slot cuts a texel
 
-Physical pixels SHALL come into view only as whole texels that start black, or, from nothing in
-view, as one texel cut by a slot under one texel wide. When the slot grows past a texel it cut,
-the web visualizer SHALL hold the view, fade the frame to black and start again with nothing in
-view. It SHALL clip the canvas to the pixels the limiter has judged in view.
+- **WHEN** a frame starts at two physical pixels per texel in a slot 3 pixels wide
+- **THEN** one texel column is presented and the third pixel column shows black
 
-#### Scenario: Slot grows past a cut texel
+### Requirement: The view of a frame only shrinks
 
-- **WHEN** a slot at two physical pixels per texel shrinks from 4 to 3 pixels wide, cutting its
-  second texel, and grows back to 4
-- **THEN** the fourth pixel column stays clipped, the frame fades to black, and the view starts
-  again from black
+Until the next frame starts, the web visualizer SHALL keep the canvas at the frame's size and
+position, clipped to the smallest slot seen since the frame started, so a pixel leaves view only
+by that clip and a pixel the slot hid does not come back.
 
-#### Scenario: Slot grows by a whole texel
+#### Scenario: Slot shrinks and grows back during the fade
 
-- **WHEN** a slot showing whole texels grows by one texel
-- **THEN** the new texel comes into view black and tracked black, with every budget spent
+- **WHEN** a slot at two physical pixels per texel shrinks from 4 to 3 pixels wide and grows back
+  to 4
+- **THEN** the fourth pixel column stays clipped through the fade and comes back black with the
+  frame that starts
+
+### Requirement: A frame judged for a changed slot is withdrawn
+
+A frame judged for a slot that changed before the frame was painted SHALL be withdrawn: the
+previous output is presented again and the limiter's state goes back to before the frame. Black
+and the frames of a fade SHALL stand.
+
+#### Scenario: Slot changed before paint
+
+- **WHEN** the slot's size changes between a frame's draw and its paint
+- **THEN** the frame is withdrawn, the previous output is presented, and the next draw starts the
+  fade from it
+
+#### Scenario: Slot changed during the fade
+
+- **WHEN** the slot's size changes between the draw and the paint of a frame of the fade
+- **THEN** that frame stands and the fade's clock is not put back
 
 ### Requirement: Unjudged pixels show black
 
 Wherever the slot shows no judged pixel (past the canvas, through its clip, before its first
-frame) the web visualizer SHALL show black, the level those pixels' trackers start at, whatever
-the theme.
+frame, between a fade and the frame that starts) the web visualizer SHALL show black, the level
+those pixels' trackers start at, whatever the theme.
 
 #### Scenario: Strip not yet drawn
 
 - **WHEN** the slot grows and paints before the next frame is drawn
-- **THEN** the new strip shows black, not the theme's scrim, and its texels then come into view
-  from black
+- **THEN** the new strip shows black, not the theme's scrim, and stays black until the frame that
+  starts after the fade brings its texels into view from black
 
 ### Requirement: Backing store from device pixels
 

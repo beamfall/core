@@ -11,8 +11,13 @@ const made = vi.hoisted(() => ({
     draw: ReturnType<typeof vi.fn>;
     settled: ReturnType<typeof vi.fn>;
     withdraw: ReturnType<typeof vi.fn>;
-    collapse: ReturnType<typeof vi.fn>;
-    shown: { width: number; height: number; texel: number } | null;
+    shown: {
+      width: number;
+      height: number;
+      texel: number;
+      viewWidth: number;
+      viewHeight: number;
+    } | null;
     dispose: ReturnType<typeof vi.fn>;
     contextLost: boolean;
   }[],
@@ -40,7 +45,6 @@ vi.mock("./renderer", () => ({
         draw: vi.fn(),
         settled: vi.fn(() => false),
         withdraw: vi.fn(),
-        collapse: vi.fn(),
         shown: null,
         dispose: vi.fn(),
         contextLost: false,
@@ -90,7 +94,7 @@ function mount() {
   const videoRef = { current: document.createElement("video") };
   const view = render(<Visualizer videoRef={videoRef} stream={direct} trackKey="m1" />);
   const canvas = view.container.querySelector("canvas") as HTMLCanvasElement;
-  // jsdom lays nothing out; a slot with no pixels collapses the renderer instead of drawing.
+  // jsdom lays nothing out, and a slot with no pixels has nothing to show.
   vi.spyOn(canvas.parentElement!, "getBoundingClientRect").mockReturnValue({
     width: 640,
     height: 360,
@@ -245,13 +249,13 @@ describe("Visualizer canvas fitting", () => {
     } as DOMRect);
   }
 
-  it("filters at the shown scale until the old surface finishes fading", async () => {
+  it("fits and filters the frame on screen until its fade ends", async () => {
     const { canvas } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
     vi.stubGlobal("devicePixelRatio", 3);
     const box = slotSize(canvas, 640, 360);
-    renderer.shown = { width: 960, height: 540, texel: 2 };
+    renderer.shown = { width: 960, height: 540, texel: 2, viewWidth: 1920, viewHeight: 1080 };
     step(16);
     expect(canvas.style.imageRendering).toBe("pixelated");
 
@@ -262,15 +266,15 @@ describe("Visualizer canvas fitting", () => {
     expect(canvas.style.imageRendering).toBe("pixelated");
     expect(canvas.style.width).toBe("960px");
 
-    renderer.shown = { width: 1920, height: 1080, texel: 1 };
+    renderer.shown = { width: 1920, height: 1080, texel: 1, viewWidth: 1920, viewHeight: 1080 };
     step(48);
     expect(canvas.style.imageRendering).toBe("");
     expect(canvas.style.width).toBe("960px");
   });
 
-  // Codex round 24: a slot grown past a texel it cut would show the texel's hidden pixels before
-  // the limiter judged them, so the canvas is clipped to the view the renderer reports.
-  it("clips the canvas to the pixels the limiter has judged in view", async () => {
+  // Codex round 24: a slot that shrank and grew again would show pixels that had left view, so
+  // the canvas is clipped to the view the renderer reports for its frame.
+  it("clips the canvas to the view of the frame on screen", async () => {
     const { canvas } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
@@ -292,7 +296,7 @@ describe("Visualizer canvas fitting", () => {
     vi.stubGlobal("devicePixelRatio", 1);
     const box = slotSize(canvas, 640, 360);
     const renderer = made.renderers[0];
-    renderer.shown = { width: 640, height: 360, texel: 1 };
+    renderer.shown = { width: 640, height: 360, texel: 1, viewWidth: 640, viewHeight: 360 };
     step(16);
     expect(canvas.style.width).toBe("640px");
 
@@ -306,17 +310,17 @@ describe("Visualizer canvas fitting", () => {
     expect(canvas.style.height).toBe("288px");
   });
 
-  it("keeps drawing a paused scale switch until the renderer settles", async () => {
+  it("keeps drawing a paused geometry change until the renderer settles", async () => {
     const { canvas, videoRef } = mount();
     await waitFor(() => expect(pending.size).toBe(1));
     Object.defineProperty(videoRef.current, "readyState", { value: 3 });
     vi.stubGlobal("devicePixelRatio", 1);
     slotSize(canvas, 640, 360);
     const renderer = made.renderers[0];
-    renderer.shown = { width: 320, height: 180, texel: 2 };
-    // The new size is shown as black while the scale switch is still in progress.
+    renderer.shown = { width: 320, height: 180, texel: 2, viewWidth: 640, viewHeight: 360 };
+    // The frame starts at the new geometry, black, and has not been judged yet.
     renderer.draw.mockImplementationOnce(() => {
-      renderer.shown = { width: 640, height: 360, texel: 1 };
+      renderer.shown = { width: 640, height: 360, texel: 1, viewWidth: 640, viewHeight: 360 };
     });
     step(16);
     step(32);
@@ -386,25 +390,27 @@ describe("Visualizer resize before paint", () => {
     expect(renderer.withdraw).not.toHaveBeenCalled();
   });
 
-  // Codex round 20: a collapsed slot and a one-pixel slot share a backing size.
-  it("collapses the renderer when the slot has no pixels, and does not draw", async () => {
+  // Codex round 20: a collapsed slot and a one-pixel slot share a backing size, so the slot's
+  // pixels tell them apart. A collapse is a geometry change like any other: the frame drawn for
+  // the open slot is withdrawn and the renderer keeps drawing, which fades the one on screen.
+  it("keeps drawing a slot that has no pixels", async () => {
     mount();
     await waitFor(() => expect(pending.size).toBe(1));
     const renderer = made.renderers[0];
     report(1, 360);
     step(16);
     expect(renderer.draw).toHaveBeenCalledOnce();
+    expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([1, 360]);
     report(0, 360);
-    expect(renderer.collapse).toHaveBeenCalledOnce();
+    expect(renderer.withdraw).toHaveBeenCalledOnce();
     step(32);
-    expect(renderer.collapse).toHaveBeenCalledTimes(2);
-    expect(renderer.draw).toHaveBeenCalledOnce();
-    expect(renderer.withdraw).not.toHaveBeenCalled();
+    expect(renderer.draw).toHaveBeenCalledTimes(2);
+    expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 360]);
+    expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([0, 360]);
   });
 
-  // Codex rounds 21 and 22: at DPR 4 a texel is two device pixels. A one-pixel slot would clip
-  // it, and both showing and clearing a clipped texel are unsafe when the slot changes, so it
-  // takes one-pixel texels; only a slot with no pixels collapses.
+  // Codex rounds 21 and 22: at DPR 4 a texel is two device pixels. A one-pixel slot would cut
+  // it and show nothing, so it takes one-pixel texels.
   it("gives a slot narrower than one texel smaller texels", async () => {
     const ratio = window.devicePixelRatio;
     Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 4 });
@@ -418,13 +424,9 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw.mock.lastCall?.[6]).toBe(2);
       report(1, 120);
       step(32);
-      expect(renderer.collapse).not.toHaveBeenCalled();
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 120]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
-      report(0, 120);
-      step(48);
-      expect(renderer.collapse).toHaveBeenCalled();
-      expect(renderer.draw).toHaveBeenCalledTimes(2);
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([1, 120]);
     } finally {
       Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio });
     }

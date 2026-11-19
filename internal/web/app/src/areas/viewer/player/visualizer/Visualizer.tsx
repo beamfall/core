@@ -46,43 +46,19 @@ export function backingSize(
   cssHeight: number,
   ratio: number,
 ): [number, number, number] {
-  const [width, height, texel] = texels(device, cssWidth, cssHeight, ratio);
-  return [Math.max(1, width), Math.max(1, height), texel];
-}
-/**
- * True when the slot is under one physical pixel in either dimension: it shows nothing. A slot
- * that cuts a texel still shows it, judged against the pixels in view (Codex rounds 20 to 23).
- */
-export function collapsed(
-  device: { inlineSize: number; blockSize: number } | null,
-  cssWidth: number,
-  cssHeight: number,
-  ratio: number,
-): boolean {
-  const [width, height] = texels(device, cssWidth, cssHeight, ratio);
-  return width < 1 || height < 1;
-}
-function texels(
-  device: { inlineSize: number; blockSize: number } | null,
-  cssWidth: number,
-  cssHeight: number,
-  ratio: number,
-): [number, number, number] {
   const r = ratio > 0 ? ratio : 1;
   const w = device ? device.inlineSize : cssWidth * r;
   const h = device ? device.blockSize : cssHeight * r;
-  // A slot narrower than the display-scale texel takes a smaller one rather than clip a texel:
-  // a clipped texel is partly on screen, and neither showing nor clearing it is safe when the
-  // slot changes (Codex rounds 21 and 22). Only a side over MAX_SIDE keeps a larger texel.
+  // A slot narrower than the display-scale texel takes a smaller one, so it has a whole texel to
+  // show: the renderer shows whole texels only. Only a side over MAX_SIDE keeps a larger texel,
+  // and a slot narrower than that one shows black.
   const texel = Math.max(
     1,
     Math.min(Math.ceil(r / MAX_DPR - 1e-9), Math.floor(w + 1e-6), Math.floor(h + 1e-6)),
     Math.ceil(w / MAX_SIDE),
     Math.ceil(h / MAX_SIDE),
   );
-  // A slot under the texel a side over MAX_SIDE needs keeps one texel, cut by the slot: the
-  // renderer judges a cut texel in full against the pixels shown (Codex round 23).
-  const fit = (n: number) => (n < 1 - 1e-6 ? 0 : Math.max(1, Math.floor(n / texel + 1e-6)));
+  const fit = (n: number) => Math.max(1, Math.floor(n / texel + 1e-6));
   return [fit(w), fit(h), texel];
 }
 
@@ -99,10 +75,11 @@ export function slotPixels(
   return [Math.floor(w + 1e-6), Math.floor(h + 1e-6)];
 }
 
-/** The canvas's clip-path for a frame of which the limiter has judged viewWidth x viewHeight
- * physical pixels in view, from the top left: nothing past them shows, so a slot that grows
- * before the next draw, or past a texel it cut, reveals the slot's black (TRACKED_BLACK) and never
- * a pixel the limiter has not judged (Codex round 24). Empty when the whole frame is in view. */
+/** The canvas's clip-path for a frame the host may show viewWidth x viewHeight physical pixels
+ * of, from the top left: the smallest the slot has been since the frame started. Nothing past
+ * them shows, so a slot that shrinks and grows before the frame's fade ends reveals the slot's
+ * black (TRACKED_BLACK), never a pixel that was out of view (Codex round 24). Empty when the
+ * whole frame is in view. */
 export function viewClip(
   shown: { width: number; height: number; texel: number; viewWidth: number; viewHeight: number },
   ratio: number,
@@ -261,17 +238,7 @@ export function Visualizer({
       css = { width: entry.contentRect.width, height: entry.contentRect.height };
       // Observers run after animation frames and before the paint: a slot resized since this
       // frame's draw would show a frame judged against the old area limit, so it is withdrawn
-      // and the next draw judges at the new size (Codex round 18).
-      // A slot that collapsed shows nothing; reopening it exposes black area (Codex round 20).
-      if (collapsed(device, css.width, css.height, window.devicePixelRatio)) {
-        unpainted = null;
-        try {
-          rendererRef.current?.collapse();
-        } catch {
-          // A lost context shows nothing; its restore starts the limiter afresh.
-        }
-        return;
-      }
+      // and the next draw starts the fade from the frame on screen (Codex round 18).
       const drawn = unpainted;
       if (drawn === null) return;
       unpainted = null;
@@ -291,8 +258,8 @@ export function Visualizer({
     } catch {
       observer.observe(slot);
     }
-    // Fit, filter and clip the frame the renderer shows. During a display-scale fade, all three
-    // still follow the old frame's texel size.
+    // Fit, filter and clip the frame the renderer shows. Through a fade all three follow the
+    // frame that is fading, and through the black after it the canvas stays as that frame left it.
     let cssSize = "";
     let clipped = "";
     const fitCanvas = (renderer: Renderer) => {
@@ -344,14 +311,6 @@ export function Visualizer({
       const video = videoRef.current;
       if (!renderer || !video || document.hidden) return;
       const box = css ?? slot.getBoundingClientRect();
-      if (collapsed(device, box.width, box.height, window.devicePixelRatio)) {
-        try {
-          renderer.collapse();
-        } catch {
-          // A lost context shows nothing; its restore starts the limiter afresh.
-        }
-        return;
-      }
       const [width, height, texel] = backingSize(
         device,
         box.width,
@@ -365,9 +324,10 @@ export function Visualizer({
         window.devicePixelRatio,
       );
       try {
-        // Paused by the listener: hold still. Paused while a new source loads: keep moving. A size
-        // or display-scale change still draws while paused until the renderer settles. Refitting
-        // the held frame accounts for a DPR change even when the physical frame stays the same.
+        // Paused by the listener: hold still. Paused while a new source loads: keep moving. A
+        // geometry change still draws while paused, through its fade and black, until the
+        // renderer settles. Refitting the held frame accounts for a DPR change even when the
+        // physical frame stays the same.
         if (
           video.paused &&
           video.readyState >= HAVE_FUTURE_DATA &&

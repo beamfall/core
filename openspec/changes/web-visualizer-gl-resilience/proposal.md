@@ -22,16 +22,19 @@ visual off until the component remounts, although browsers restore contexts rout
   textures, framebuffers), re-applies the selected visual and artwork, and resumes with fresh
   feedback and limiter state. Its listeners are removed on unmount.
 
-- A resize never hands the flash limiter a fresh budget (CORE-2516). At the same display scale
-  the size-dependent textures are rebuilt, the texels that were in view are copied one to one from
-  the top left, everything else starts black and tracked black, and the grant state is written
-  with every budget spent, as it is at the first size. A paused player draws a frame through a
-  grant state the host wrote before it holds the picture, and a spend during the fade of a
-  display-scale change starts the fade again, also for a frame that is then withdrawn.
-- Pixels come into view only as whole texels that start black. A slot grown past a texel it cut
-  holds the view, fades to black and starts again, and the canvas is clipped to the pixels the
-  limiter has judged in view. The slot behind the canvas is black, not the theme's scrim, so a
-  pixel with no judged frame shows the level its tracker starts at (CORE-2516).
+- Every change to what the viewer sees takes one path (CORE-2516), whether the backing size, the
+  display scale or the texels in view changed: the frame on screen fades to black through the
+  flash limiter (grant state written spent, area limit zero, limiter fed black, for 2 s of
+  credited time), black is presented for 0.1 s, and a frame starts at the geometry asked for
+  then, black and tracked black with every budget spent, as the first frame does. A change during
+  the fade or the black only moves that target, so a slot dragged to a new size costs one fade
+  and one start. No texel is carried from one geometry to the next: the copy paths are gone.
+- A frame presents only the whole texels its slot shows. Until the next frame starts the canvas
+  keeps its size and position, clipped to the smallest slot seen, so a shrinking slot takes pixels
+  out of view by the page's clip and never drops them to the backdrop. A paused player draws a
+  frame through a grant state the host wrote before it holds the picture. The slot behind the
+  canvas is black, not the theme's scrim, so a pixel with no judged frame shows the level its
+  tracker starts at (CORE-2516).
 - The canvas backing size comes from a `ResizeObserver` with `device-pixel-content-box` (exact
   device pixels, DPR capped at 2), falling back to the CSS box, instead of a per-frame
   `getBoundingClientRect()` (CORE-2516).
@@ -52,10 +55,13 @@ visual off until the component remounts, although browsers restore contexts rout
 
 - A restore that cannot create a renderer, or fails to apply the visual, leaves the slot empty
   as for any other visualizer failure; playback is never interrupted.
+- A geometry change costs the picture: the visual is black from the end of the fall the limiter
+  grants until about 2.1 s after the change, and a drag longer than that repeats the cycle. This
+  is the price of one rule with no pixel carried over.
 
 ## Acceptance evidence
 
-- vitest: `renderer.test.ts` (fallback order, probe cleanup, budgets spent and the view held over a resize),
+- vitest: `renderer.test.ts` (fallback order, probe cleanup, the one path for a geometry change),
   `Visualizer.context.test.tsx` (loss, restore, failed restore, listener removal),
   `Visualizer.test.tsx` (`backingSize`, `chosenVisual`, `viewClip`, the black slot), `cadence.test.ts` (synthetic 30 Hz
   clock through the vendored Oscillux governor).

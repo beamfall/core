@@ -13,17 +13,18 @@
 
 ## 3. Resize and reduced motion (CORE-2516, CORE-2517)
 
-- [x] 3.1 Same-scale resize: copy the texels in view, start the rest tracked black, write the grant spent
+- [x] 3.1 One path for every geometry change: fade through the limiter, black, start at the geometry asked for then
 - [x] 3.2 `ResizeObserver` with `device-pixel-content-box`; `backingSize`
 - [x] 3.3 Calm fallback for pinned and per-key visuals (`chosenVisual`)
 - [x] 3.4 Bind the previous tracker state as `uTrack` for the limiter `rows` pass
 - [x] 3.5 Cadence gate before the governor (CORE-2483)
 - [x] 3.6 vitest
 - [x] 3.7 Grant state starts spent at the first size; `settled` is false on a host-written grant
-- [x] 3.8 A spend during the scale-change fade starts the fade again
-- [x] 3.9 Hold, fade and restart when a slot grows past a cut texel; clip the canvas to the judged view (`viewClip`)
+- [x] 3.8 A geometry change during the fade or the black only moves the target: no reallocation, spend or restart
+- [x] 3.9 Present whole texels in view only; keep the canvas and clip it to the smallest slot until the start (`viewClip`)
 - [x] 3.10 Paint the slot behind the canvas black (`TRACKED_BLACK`), not the theme's scrim
-- [x] 3.11 A spend restarts the fade a withdrawn frame goes back to, even when that frame cancelled it
+- [x] 3.11 Withdraw only a judged frame outside a fade; fade and black frames stand
+- [x] 3.12 Delete the copy paths (divisor, overlap, partial expose), the cut-texel hold and `collapse`
 
 ## 4. Gate and archive
 
