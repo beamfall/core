@@ -384,6 +384,28 @@ describe("Visualizer resize before paint", () => {
     expect(renderer.withdraw).not.toHaveBeenCalled();
   });
 
+  // Codex round 21: at DPR 4 a texel is two device pixels; a one-pixel slot would clip it, and
+  // widening the slot would then show its hidden column without a grant.
+  it("collapses a slot narrower than one texel", async () => {
+    const ratio = window.devicePixelRatio;
+    Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: 4 });
+    try {
+      mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[0];
+      report(1, 120);
+      step(16);
+      expect(renderer.collapse).toHaveBeenCalled();
+      expect(renderer.draw).not.toHaveBeenCalled();
+      report(2, 120);
+      step(32);
+      expect(renderer.draw).toHaveBeenCalledOnce();
+      expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([1, 60]);
+    } finally {
+      Object.defineProperty(window, "devicePixelRatio", { configurable: true, value: ratio });
+    }
+  });
+
   it("times the limiter by the shorter of the frame and draw intervals", async () => {
     mount();
     await waitFor(() => expect(pending.size).toBe(1));
@@ -393,7 +415,7 @@ describe("Visualizer resize before paint", () => {
     clock.mockReturnValue(183);
     step(183);
     expect(renderer.draw.mock.lastCall?.[5]).toBe(183);
-    expect(renderer.draw.mock.lastCall?.[7]).toBe(33);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(16.5);
     clock.mockRestore();
   });
 
@@ -406,7 +428,7 @@ describe("Visualizer resize before paint", () => {
     step(0);
     clock.mockReturnValue(16);
     step(16);
-    expect(renderer.draw.mock.lastCall?.[7]).toBe(16);
+    expect(renderer.draw.mock.lastCall?.[7]).toBe(8);
     clock.mockReturnValue(132);
     step(132);
     expect(renderer.draw.mock.lastCall?.[5]).toBe(116);
@@ -417,6 +439,23 @@ describe("Visualizer resize before paint", () => {
     clock.mockReturnValue(149);
     step(149);
     expect(renderer.draw.mock.lastCall?.[7]).toBe(4);
+    clock.mockRestore();
+  });
+
+  // Codex round 21: animation frames at every other refresh (59.94 Hz drawn at 29.97 Hz) look
+  // like a 29.97 Hz display, and a frame painted one refresh late is shown for one refresh.
+  it("times the limiter by half the interval when the refresh may be half of it", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    const period = 2000 / 59.94;
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    step(0);
+    clock.mockReturnValue(period);
+    step(period);
+    clock.mockReturnValue(2 * period);
+    step(2 * period);
+    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(1000 / 59.94);
     clock.mockRestore();
   });
 

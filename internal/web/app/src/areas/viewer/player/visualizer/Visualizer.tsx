@@ -46,6 +46,29 @@ export function backingSize(
   cssHeight: number,
   ratio: number,
 ): [number, number, number] {
+  const [width, height, texel] = texels(device, cssWidth, cssHeight, ratio);
+  return [Math.max(1, width), Math.max(1, height), texel];
+}
+/**
+ * True when the slot cannot hold one whole texel in either dimension. A canvas wider than its slot
+ * is clipped, and a slot that then grows within the same texel count shows physical pixels the
+ * limiter never exposed, so such a slot shows nothing (Codex rounds 20 and 21).
+ */
+export function collapsed(
+  device: { inlineSize: number; blockSize: number } | null,
+  cssWidth: number,
+  cssHeight: number,
+  ratio: number,
+): boolean {
+  const [width, height] = texels(device, cssWidth, cssHeight, ratio);
+  return width < 1 || height < 1;
+}
+function texels(
+  device: { inlineSize: number; blockSize: number } | null,
+  cssWidth: number,
+  cssHeight: number,
+  ratio: number,
+): [number, number, number] {
   const r = ratio > 0 ? ratio : 1;
   const w = device ? device.inlineSize : cssWidth * r;
   const h = device ? device.blockSize : cssHeight * r;
@@ -55,20 +78,8 @@ export function backingSize(
     Math.ceil(w / MAX_SIDE),
     Math.ceil(h / MAX_SIDE),
   );
-  const fit = (n: number) => Math.max(1, Math.floor(n / texel + 1e-6));
+  const fit = (n: number) => Math.max(0, Math.floor(n / texel + 1e-6));
   return [fit(w), fit(h), texel];
-}
-/** True when the slot has no device pixel to show in either dimension. */
-export function collapsed(
-  device: { inlineSize: number; blockSize: number } | null,
-  cssWidth: number,
-  cssHeight: number,
-  ratio: number,
-): boolean {
-  const r = ratio > 0 ? ratio : 1;
-  const w = device ? device.inlineSize : cssWidth * r;
-  const h = device ? device.blockSize : cssHeight * r;
-  return w < 1 || h < 1;
 }
 // How the audio values glide across a track change (CORE-2218): toward rest while the next
 // track's analysis is not ready, and up into it once it is, for this long.
@@ -316,7 +327,12 @@ export function Visualizer({
         const interval =
           lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
         if (lastWall !== null) refreshMs = Math.min(refreshMs, Math.max(MIN_REFRESH_MS, interval));
-        const shownMs = Math.min(interval, refreshMs);
+        // refreshMs only bounds the display's refresh from above: a browser may run animation
+        // frames at every other refresh (a 120 Hz display at 60 Hz, a throttled one at 30 Hz), so
+        // the refresh can be as short as half the interval. A frame painted one refresh late was
+        // shown for max(refresh, interval - refresh), which is least at half the interval when
+        // the refresh is unknown (Codex round 21).
+        const shownMs = Math.min(refreshMs, Math.max(interval / 2, interval - refreshMs));
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);
