@@ -4,13 +4,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
 
 // joinPlaylistFragments registers the join before opening any descriptors so
 // teardown can drain it before removing the working directory.
-func (h *hlsSession) joinPlaylistFragments(dst string, parts []string) error {
+func (h *hlsSession) joinPlaylistFragments(dst string, parts []string, readPart func(string) ([]byte, error)) error {
 	h.mu.Lock()
 	if h.detached.Load() {
 		h.mu.Unlock()
@@ -20,7 +21,7 @@ func (h *hlsSession) joinPlaylistFragments(dst string, parts []string) error {
 	h.mu.Unlock()
 	defer h.joins.Done()
 
-	return joinFragments(dst, parts, func(tmp, dst string) error {
+	return joinFragments(dst, parts, readPart, func(tmp, dst string) error {
 		h.mu.Lock()
 		defer h.mu.Unlock()
 		if h.detached.Load() {
@@ -36,7 +37,7 @@ func (h *hlsSession) joinPlaylistFragments(dst string, parts []string) error {
 // to their own moof, so they move unchanged). sidx boxes are dropped: each
 // indexes only the part it came from. The segment is written to a temporary
 // file and renamed into place, so a reader never sees it half written.
-func joinFragments(dst string, parts []string, publish func(string, string) error) (err error) {
+func joinFragments(dst string, parts []string, readPart func(string) ([]byte, error), publish func(string, string) error) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(dst), ".join-*")
 	if err != nil {
 		return err
@@ -48,7 +49,7 @@ func joinFragments(dst string, parts []string, publish func(string, string) erro
 		}
 	}()
 	for i, part := range parts {
-		body, err := os.ReadFile(part) // #nosec G304 -- part is an encoder segment inside the session's own output directory
+		body, err := readPart(part)
 		if err != nil {
 			return err
 		}
@@ -69,6 +70,22 @@ func joinFragments(dst string, parts []string, publish func(string, string) erro
 		return err
 	}
 	return publish(tmp.Name(), dst)
+}
+
+func readJoinFragment(path string) ([]byte, error) {
+	f, err := openJoinFragment(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("join segment %s is not a regular file: %w", filepath.Base(path), os.ErrInvalid)
+	}
+	return io.ReadAll(f)
 }
 
 // isoBox is one top-level ISO-BMFF box: its four-character type and its bytes,

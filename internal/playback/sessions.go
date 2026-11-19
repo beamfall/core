@@ -539,6 +539,13 @@ type sessionTeardown struct {
 }
 
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
+	// A pending start owns process cleanup and may be stalled stopping the
+	// previous encoder. Close its readers before waiting for any teardown.
+	for _, t := range teardowns {
+		if t.pending && t.session.live != nil {
+			t.session.live.Close()
+		}
+	}
 	for _, t := range teardowns {
 		if !t.pending {
 			s.teardown(t.session)
@@ -558,11 +565,8 @@ func (s *Sessions) teardown(session *hlsSession) {
 	}
 	session.mu.Unlock()
 
-	s.stopRun(proc, run)
+	s.stopRun(proc, run, session.live)
 	session.joins.Wait()
-	if session.live != nil {
-		session.live.Close()
-	}
 	if s.removeDir != nil {
 		_ = s.removeDir(session.dir)
 	} else {
@@ -582,11 +586,15 @@ func (s *Sessions) teardown(session *hlsSession) {
 	s.mu.Unlock()
 }
 
-// stopRun revokes an encrypted run's endpoint, stops its encoder, and joins
-// the process reaper before the directory can be removed or reused.
-func (s *Sessions) stopRun(proc *ffmpeg.HLSProcess, run *encoderRun) {
+// stopRun revokes the run's endpoint before closing live readers on final
+// teardown. Revoking first aborts uploads that could hold the session key in
+// use. The process and its reaper must exit before the directory is reused.
+func (s *Sessions) stopRun(proc *ffmpeg.HLSProcess, run *encoderRun, closeLive *encderiv.LiveSession) {
 	if run != nil && run.live != nil {
 		run.live.Revoke()
+	}
+	if closeLive != nil {
+		closeLive.Close()
 	}
 	s.stop(proc)
 	if exited := run.exitedChan(); exited != nil {
@@ -1095,7 +1103,7 @@ func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session 
 	if len(parts) == 1 {
 		return parts[0], nil
 	}
-	if err := session.joinPlaylistFragments(joined, parts); err != nil {
+	if err := session.joinPlaylistFragments(joined, parts, readJoinFragment); err != nil {
 		return "", err
 	}
 	return joined, nil
@@ -1608,7 +1616,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	if victim != nil {
 		s.teardown(victim.session)
 	}
-	s.stopRun(replaced, previous)
+	s.stopRun(replaced, previous, nil)
 	procCtx := context.WithoutCancel(ctx)
 	var proc *ffmpeg.HLSProcess
 	var liveRun *encderiv.LiveRun

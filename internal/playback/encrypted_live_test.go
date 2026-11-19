@@ -265,6 +265,10 @@ func TestTerminateSessionDrainsEncryptedReplacement(t *testing.T) {
 	terminated := make(chan int, 1)
 	go func() { terminated <- sessions.TerminateSession(key.SessionID) }()
 	waitSessionCondition(t, "revocation detached the replacing session", session.detached.Load)
+	waitSessionCondition(t, "revocation closed the open reader while the old encoder was stopping", func() bool {
+		n, err := reader.ReadAt(buf[:], 0)
+		return n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed)
+	})
 	alreadyDetached := make(chan int, 1)
 	go func() { alreadyDetached <- sessions.TerminateSession(key.SessionID) }()
 	select {

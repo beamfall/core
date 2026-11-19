@@ -22,7 +22,7 @@ func TestSessionsCloseDrainsInProgressFragmentJoin(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := registeredSession(t, sessions, key)
-	joined, release := blockFragmentJoin(t, session)
+	joined, release := blockFragmentJoin(t, session, regularJoinPart(t))
 	sessions.removeDir = func(dir string) error {
 		entries, err := filepath.Glob(filepath.Join(dir, "720p", ".join-*"))
 		if err != nil || len(entries) != 0 {
@@ -65,7 +65,7 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 		t.Fatal(err)
 	}
 	session := registeredSession(t, sessions, victim)
-	joined, release := blockFragmentJoin(t, session)
+	joined, release := blockFragmentJoin(t, session, regularJoinPart(t))
 	// Hold the victim's state lock as publication would. Preemption must
 	// detach from the map before it waits for either the lock or the join.
 	session.mu.Lock()
@@ -108,44 +108,85 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 	}
 }
 
-// blockFragmentJoin stalls the real join after it opens its temporary output.
-func blockFragmentJoin(t *testing.T, session *hlsSession) (<-chan error, func()) {
-	t.Helper()
-	fragment := mediaSegment()
-	input := t.TempDir()
-	first := filepath.Join(input, "first.m4s")
-	if err := os.WriteFile(first, fragment, 0o600); err != nil {
+func TestSessionsCloseRejectsFragmentFIFOWithoutWriter(t *testing.T) {
+	t.Parallel()
+	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	key := SessionKey{SessionID: "join-fifo", MediaID: "media-a"}
+	if _, err := filePath720(sessions, key, masterPlaylistName); err != nil {
 		t.Fatal(err)
 	}
-	pipe := filepath.Join(input, "second.m4s")
+	session := registeredSession(t, sessions, key)
+	pipe := filepath.Join(t.TempDir(), "input.m4s")
 	if err := unix.Mkfifo(pipe, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	joined, release := blockFragmentJoin(t, session, pipe)
+
+	closed := make(chan struct{})
+	go func() {
+		sessions.Close()
+		close(closed)
+	}()
+	waitSessionCondition(t, "shutdown detached the session with a FIFO input", session.detached.Load)
+	release()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close blocked on a fragment FIFO with no writer")
+	}
+	select {
+	case err := <-joined:
+		if !errors.Is(err, os.ErrInvalid) {
+			t.Fatalf("join err = %v, want invalid fragment", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("join did not reject the FIFO")
+	}
+	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("session dir after Close: %v", err)
+	}
+}
+
+func regularJoinPart(t *testing.T) string {
+	t.Helper()
+	part := filepath.Join(t.TempDir(), "input.m4s")
+	if err := os.WriteFile(part, mediaSegment(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return part
+}
+
+// blockFragmentJoin stalls the real join after it opens its temporary output.
+func blockFragmentJoin(t *testing.T, session *hlsSession, part string) (<-chan error, func()) {
+	t.Helper()
+	first := regularJoinPart(t)
 	output := filepath.Join(session.dir, "720p")
 	joined := make(chan error, 1)
-	go func() {
-		joined <- session.joinPlaylistFragments(filepath.Join(output, "joined00000.m4s"), []string{first, pipe})
-	}()
-	release := sync.OnceFunc(func() {
-		var fd int
-		var err error
-		waitSessionCondition(t, "join opened its FIFO input", func() bool {
-			fd, err = unix.Open(pipe, unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
-			return !errors.Is(err, unix.ENXIO)
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer unix.Close(fd) //nolint:errcheck // Closing the writer releases the reader.
-		if _, err := unix.Write(fd, fragment); err != nil {
-			t.Fatal(err)
-		}
-	})
+	entered := make(chan struct{})
+	resume := make(chan struct{})
+	release := sync.OnceFunc(func() { close(resume) })
 	t.Cleanup(release)
-	waitSessionCondition(t, "join opened its temporary output", func() bool {
-		entries, _ := filepath.Glob(filepath.Join(output, ".join-*"))
-		return len(entries) == 1
-	})
+	go func() {
+		readPart := func(path string) ([]byte, error) {
+			if path == part {
+				close(entered)
+				<-resume
+			}
+			return readJoinFragment(path)
+		}
+		joined <- session.joinPlaylistFragments(filepath.Join(output, "joined00000.m4s"), []string{first, part}, readPart)
+	}()
+	select {
+	case <-entered:
+	case err := <-joined:
+		t.Fatalf("join ended before reading its part: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("join did not reach its fragment read")
+	}
+	entries, err := filepath.Glob(filepath.Join(output, ".join-*"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("join scratch before detach: %v, %v", entries, err)
+	}
 	return joined, release
 }
 
