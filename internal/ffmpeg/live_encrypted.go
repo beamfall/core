@@ -48,7 +48,7 @@ func (r *Runner) startEncryptedHLSSegments(ctx context.Context, goos string, ep 
 		return nil, fmt.Errorf("ffmpeg is not available: %w", err)
 	}
 	// Live playback is not niced: a viewer is waiting on it.
-	cmd, err := r.loopbackCommand(ctx, goos, port, ffmpegPath, args)
+	cmd, err := r.loopbackCommand(ctx, goos, port, ffmpegPath, pipeArgsForTool(ffmpegPath, args))
 	if err != nil {
 		return nil, err
 	}
