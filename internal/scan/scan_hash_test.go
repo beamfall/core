@@ -41,6 +41,7 @@ func TestScanJobsSerializeWholeFileHashes(t *testing.T) {
 		runs.Wait()
 	}()
 	firstHash := make(chan struct{})
+	firstHashReturned := make(chan struct{})
 	secondHash := make(chan struct{})
 	secondWaiting := make(chan struct{})
 	releaseFirst := make(chan struct{})
@@ -53,6 +54,7 @@ func TestScanJobsSerializeWholeFileHashes(t *testing.T) {
 	hashFileContent = func(hashCtx context.Context, path string) (string, error) {
 		switch path {
 		case firstPath:
+			defer close(firstHashReturned)
 			close(firstHash)
 			select {
 			case <-releaseFirst:
@@ -60,6 +62,11 @@ func TestScanJobsSerializeWholeFileHashes(t *testing.T) {
 				return "", ctx.Err()
 			}
 		case secondPath:
+			select {
+			case <-firstHashReturned:
+			default:
+				t.Error("second job entered its hash before the first hash returned")
+			}
 			close(secondHash)
 		}
 		return originalHash(hashCtx, path)
