@@ -32,6 +32,28 @@
 #             ledger — not this field — is the source of truth for "is it tested".
 #   adr       the governing ADR(s).
 #
+# ── surface decisions (ADR-0237) ─────────────────────────────────────────────
+#   A surface is any target but `server`. Every (feature x surface) cell is one of:
+#     supported    in `applies` and proven by a `feature:<id>` marker
+#     planned      in `applies`, not yet proven ("not yet added")
+#     unsupported  listed under `unsupported:` with a reason ("not supported")
+#     undecided    none of the above — a gap in this ledger, capped per surface
+#                  by maxUndecided in feature-coverage-ratchet.json
+#   Optional per-feature blocks, one `surface: value` per line (no inline maps):
+#     unsupported:            surface -> reason. Not in `applies`. On a
+#       androidtv: Remote-only.   fullParity surface the reason must carry the
+#                             owner's decision: `(owner YYYY-MM-DD)`.
+#     tickets:                surface -> ticket tracking a planned cell
+#       tvos: CORE-2700       (unticketed planned cells are capped by
+#                             maxUnticketed; `featurecheck -gaps` lists them).
+#     release:                surface -> first release the feature appears in,
+#       web: "1.0"            the owner's per-release feature gate.
+#                             `featurecheck -release 1.0` fails unless every cell
+#                             targeted at 1.0 or earlier is proven.
+#   fullParity lists the surfaces that support everything the server supports
+#   (owner, 2026-11-18): web is the functional gold standard, and the Mac and
+#   Windows viewers match the server.
+#
 # Convenience groups used in comments only (lists below are always explicit):
 #   viewers       = tvos, androidtv, iphone, ipad, androidmobile, web
 #   apple-mobile  = iphone, ipad
@@ -40,6 +62,8 @@
 schemaVersion: 1
 
 targets: [server, web, tvos, androidtv, iphone, ipad, androidmobile, macos, windows]
+
+fullParity: [web, macos, windows]
 
 features:
 
