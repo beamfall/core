@@ -239,10 +239,7 @@ func (h *Handler) revokeDevice(ctx context.Context, scope auth.Scope, req reques
 	if err != nil {
 		return RevokeDeviceResult{}, err
 	}
-	aborted := 0
-	if ids := byDevice[store.DeviceID(id)]; len(ids) != 0 {
-		aborted = h.transcodeTerminator.RevokeSessions(ids)()
-	}
+	aborted := h.abortDeviceTranscodes(byDevice[store.DeviceID(id)])
 	if err := h.logActivity(ctx, scope, store.ActivityDeviceRevoke, "device", id, ""); err != nil {
 		return RevokeDeviceResult{}, err
 	}
@@ -300,15 +297,11 @@ func activeSessionIDsByDevice(active []store.ActiveSession) map[store.DeviceID][
 	return byDevice
 }
 
-// abortDeviceTranscodes terminates each pre-grouped Session once. Returns the
-// count aborted. A nil terminator or empty list aborts zero.
+// abortDeviceTranscodes revokes all of a device's playback sessions before
+// waiting for any of them to drain. It returns the number of transcodes aborted.
 func (h *Handler) abortDeviceTranscodes(sessionIDs []store.SessionID) int {
-	if h.transcodeTerminator == nil {
+	if h.transcodeTerminator == nil || len(sessionIDs) == 0 {
 		return 0
 	}
-	aborted := 0
-	for _, sessionID := range sessionIDs {
-		aborted += h.transcodeTerminator.RevokeSessions([]store.SessionID{sessionID})()
-	}
-	return aborted
+	return h.transcodeTerminator.RevokeSessions(sessionIDs)()
 }

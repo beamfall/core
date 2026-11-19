@@ -164,6 +164,17 @@ func encryptedDeviceTestShape() playback.StreamShape {
 }
 
 func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
+	testDeviceRevocationRevokesBothReadersBeforeDraining(t,
+		`{"query":"mutation { result: revokeDevice(deviceID:\"device-tv\"){ transcodesAborted } }"}`)
+}
+
+func TestRevokeAllDevicesRevokesBothReadersBeforeDraining(t *testing.T) {
+	testDeviceRevocationRevokesBothReadersBeforeDraining(t,
+		`{"query":"mutation { result: revokeAllDevices { transcodesAborted } }"}`)
+}
+
+func testDeviceRevocationRevokesBothReadersBeforeDraining(t *testing.T, requestBody string) {
+	t.Helper()
 	st := storetest.Open(t)
 	handler := newTestHandlerWithStore(st)
 	openManagerAdminSession(t, st)
@@ -178,7 +189,12 @@ func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
 	t.Cleanup(sessions.Close)
 	unblock := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(unblock)
-	handler.SetTranscodeTerminator(sessions)
+	draining := make(chan struct{})
+	markDraining := sync.OnceFunc(func() { close(draining) })
+	handler.SetTranscodeTerminator(&observedDeviceDrain{
+		TranscodeTerminator: sessions,
+		beforeDrain:         func([]store.SessionID) { markDraining() },
+	})
 	shape := encryptedDeviceTestShape()
 	filePath := func(key playback.SessionKey, name string) (string, error) {
 		return sessions.FilePathShaped(t.Context(), key, "", 120, 1280, 720, false, false,
@@ -219,8 +235,7 @@ func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequestWithContext(t.Context(), "POST", "/api/graphql", strings.NewReader(
-		`{"query":"mutation { revokeDevice(deviceID:\"device-tv\"){ transcodesAborted } }"}`))
+	req := httptest.NewRequestWithContext(t.Context(), "POST", "/api/graphql", strings.NewReader(requestBody))
 	authorizeManager(req)
 	response := httptest.NewRecorder()
 	finished := make(chan struct{})
@@ -228,18 +243,26 @@ func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
 		handler.ServeHTTP(response, req)
 		close(finished)
 	}()
+	t.Cleanup(func() {
+		unblock()
+		select {
+		case <-finished:
+		case <-time.After(5 * time.Second):
+			t.Error("device revocation did not finish during cleanup")
+		}
+	})
+	select {
+	case <-draining:
+	case <-finished:
+		t.Fatalf("device revocation returned without draining: %s", response.Body)
+	case <-time.After(5 * time.Second):
+		t.Fatal("device revocation did not reach the drain")
+	}
 	for i, reader := range readers {
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			var buf [1]byte
-			n, err := reader.ReadAt(buf[:], 0)
-			if n == 0 && errors.Is(err, encderiv.ErrLiveSessionClosed) {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("reader %d while both spawns were blocked: read %d, err %v", i, n, err)
-			}
-			time.Sleep(time.Millisecond)
+		var buf [1]byte
+		n, err := reader.ReadAt(buf[:], 0)
+		if n != 0 || !errors.Is(err, encderiv.ErrLiveSessionClosed) {
+			t.Fatalf("reader %s while both spawns were blocked: read %d, err %v", ids[i], n, err)
 		}
 	}
 	select {
@@ -263,12 +286,14 @@ func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
 	case <-finished:
 		var got struct {
 			Data struct {
-				RevokeDevice RevokeDeviceResult `json:"revokeDevice"`
+				Result struct {
+					TranscodesAborted int `json:"transcodesAborted"`
+				} `json:"result"`
 			} `json:"data"`
 			Errors []graphError `json:"errors"`
 		}
-		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || len(got.Errors) != 0 || got.Data.RevokeDevice.TranscodesAborted != 2 {
-			t.Fatalf("revokeDevice response: %s, decode err %v", response.Body, err)
+		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || len(got.Errors) != 0 || got.Data.Result.TranscodesAborted != 2 {
+			t.Fatalf("device revocation response: %s, decode err %v", response.Body, err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("device revocation did not finish after release")
@@ -276,12 +301,12 @@ func TestRevokeDeviceRevokesBothReadersBeforeDraining(t *testing.T) {
 }
 
 type observedDeviceDrain struct {
-	fakeTerminator
+	TranscodeTerminator
 	beforeDrain func([]store.SessionID)
 }
 
 func (f *observedDeviceDrain) RevokeSessions(ids []store.SessionID) func() int {
-	wait := f.fakeTerminator.RevokeSessions(ids)
+	wait := f.TranscodeTerminator.RevokeSessions(ids)
 	return func() int {
 		f.beforeDrain(ids)
 		return wait()
@@ -303,7 +328,7 @@ func TestRevokeAllDevicesDrainsBeforeAuditingAndAdvancing(t *testing.T) {
 
 	firstDrainReached := false
 	handler.SetTranscodeTerminator(&observedDeviceDrain{
-		fakeTerminator: fakeTerminator{live: map[store.SessionID]int{firstSession: 1, secondSession: 1}},
+		TranscodeTerminator: &fakeTerminator{live: map[store.SessionID]int{firstSession: 1, secondSession: 1}},
 		beforeDrain: func(ids []store.SessionID) {
 			if !slices.Contains(ids, firstSession) {
 				return
