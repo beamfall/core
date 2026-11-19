@@ -2438,16 +2438,14 @@ const hlsStderrWaitDelay = time.Second
 
 // HLSProcess is a running HLS transcode owned by its caller.
 type HLSProcess struct {
-	cmd         *exec.Cmd
-	observeExit func(int) error
-	wait        sync.Once
-	waitErr     error
-	// signalMu serializes signals with group cleanup or the switch to
-	// leader-only signaling before Wait releases the leader PID.
-	signalMu     sync.Mutex
-	groupSignals bool
-	paused       bool
-	killed       bool
+	cmd     *exec.Cmd
+	wait    sync.Once
+	waitErr error
+	// signalMu serializes pause and resume with the final kill. On Unix,
+	// Wait reaps the leader only after killTree has ruled out later signals.
+	signalMu sync.Mutex
+	paused   bool
+	killed   bool
 	// stopRequested records that the owner asked for this exit (Stop or context
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
@@ -2547,11 +2545,7 @@ func (l *lockedTail) String() string {
 func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 	applySysProcAttr(cmd)
 	configureProcessGroup(cmd)
-	p := &HLSProcess{
-		cmd:          cmd,
-		observeExit:  hlsExitObserver,
-		groupSignals: hlsExitObserver != nil,
-	}
+	p := &HLSProcess{cmd: cmd}
 	p.stderr.tail.limit = hlsStderrTailBytes
 	cmd.Cancel = func() error {
 		p.stopRequested.Store(true)
@@ -2592,11 +2586,7 @@ func (p *HLSProcess) killTree() {
 		return
 	}
 	p.killed = true
-	if p.groupSignals {
-		killProcessGroup(p.cmd)
-	} else {
-		_ = p.cmd.Process.Kill()
-	}
+	killProcessGroup(p.cmd)
 }
 
 // Running reports whether this process wraps a started OS child.
@@ -2612,7 +2602,7 @@ func (p *HLSProcess) Pause() bool {
 	}
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
-	if p.killed || !p.groupSignals {
+	if p.killed {
 		return false
 	}
 	if !p.paused {
@@ -2629,7 +2619,7 @@ func (p *HLSProcess) Resume() bool {
 	}
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
-	if p.killed || !p.groupSignals {
+	if p.killed {
 		return false
 	}
 	if p.paused && p.resumeGroup() {
@@ -2649,9 +2639,7 @@ func (p *HLSProcess) Wait() error {
 	return p.waitErr
 }
 
-// Stop kills the encoder and joins the leader through Wait. If non-reaping
-// exit observation is unavailable or fails, Stop uses os.Process.Kill for
-// leader-only shutdown.
+// Stop kills the encoder tree and joins the leader through Wait.
 func (p *HLSProcess) Stop() {
 	if !p.Running() {
 		return

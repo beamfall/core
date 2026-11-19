@@ -1,4 +1,4 @@
-//go:build linux || zos
+//go:build linux
 
 package ffmpeg
 
@@ -7,8 +7,6 @@ import (
 
 	"golang.org/x/sys/unix"
 )
-
-var hlsExitObserver = waitForProcessExit
 
 func waitForProcessExit(pid int) error {
 	var info unix.Siginfo

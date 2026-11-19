@@ -1,6 +1,7 @@
-//go:build !(linux || zos || darwin || dragonfly || freebsd || netbsd || openbsd)
+//go:build !unix
 
 package ffmpeg
 
-// Without a non-reaping observer, HLS waits for and signals only the leader.
-var hlsExitObserver func(int) error
+func (p *HLSProcess) waitForExit() error {
+	return p.cmd.Wait()
+}

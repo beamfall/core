@@ -1,4 +1,4 @@
-//go:build darwin || dragonfly || freebsd || netbsd || openbsd
+//go:build darwin
 
 package ffmpeg
 
@@ -8,8 +8,6 @@ import (
 
 	"golang.org/x/sys/unix"
 )
-
-var hlsExitObserver = waitForProcessExit
 
 // waitForProcessExit blocks until pid, an unreaped child of this process, has
 // exited. kqueue may report ESRCH once the child is already a zombie. An

@@ -5,6 +5,7 @@ package ffmpeg
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -57,6 +58,15 @@ func TestHLSProcessPauseResumeKeepsPID(t *testing.T) {
 }
 
 func TestHLSProcessStopReapsStoppedLeaderAndDescendant(t *testing.T) {
+	runHLSStoppedGroupTest(t, "stop")
+}
+
+func TestHLSProcessWaitObserverErrorKillsPausedGroup(t *testing.T) {
+	runHLSStoppedGroupTest(t, "observer-error")
+}
+
+func runHLSStoppedGroupTest(t *testing.T, mode string) {
+	t.Helper()
 	dir := t.TempDir()
 	// Allow time for fixture setup and race-detector shutdown around the reap
 	// bound. The parent can still kill and Wait for a wedged helper.
@@ -68,18 +78,19 @@ func TestHLSProcessStopReapsStoppedLeaderAndDescendant(t *testing.T) {
 	}
 	cmd := exec.CommandContext(ctx, binary, "-test.run=^TestHLSProcessStopHelper$") // #nosec G204 -- this test binary
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), hlsStopHelperEnv+"=1")
+	cmd.Env = append(os.Environ(), hlsStopHelperEnv+"="+mode)
 	// The watchdog targets only its own child. A private session lets the
 	// kernel send SIGHUP and SIGCONT if the stopped fixture group is orphaned.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.WaitDelay = time.Second
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("bounded Stop helper: %v (watchdog: %v)\n%s", err, ctx.Err(), output)
+		t.Fatalf("bounded %s helper: %v (watchdog: %v)\n%s", mode, err, ctx.Err(), output)
 	}
 }
 
 func TestHLSProcessStopHelper(t *testing.T) {
-	if os.Getenv(hlsStopHelperEnv) != "1" {
+	mode := os.Getenv(hlsStopHelperEnv)
+	if mode != "stop" && mode != "observer-error" {
 		return
 	}
 	// The fixture can also exit on EOF if the helper dies before pausing it.
@@ -115,19 +126,34 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), hlsReapTestBound)
 	defer cancel()
 	deadline, _ := ctx.Deadline()
-	select {
-	case <-stopHLSProcess(process):
-		if !time.Now().Before(deadline) {
-			t.Fatalf("Stop joined the leader after %s", hlsReapTestBound)
+	if mode == "observer-error" {
+		// The watchdog starts a fresh test binary for this fixture, so the
+		// observer override has no readers outside this Wait.
+		hlsExitObserver = func(int) error { return syscall.EIO }
+		select {
+		case err := <-waitForHLSPauseTestExit(process):
+			if !errors.Is(err, syscall.EIO) {
+				t.Fatalf("Wait error = %v, want observer error %v", err, syscall.EIO)
+			}
+		case <-ctx.Done():
+			t.Fatalf("Wait did not join the leader within %s of observer failure", hlsReapTestBound)
 		}
-	case <-ctx.Done():
-		t.Fatalf("Stop did not join the leader within %s", hlsReapTestBound)
+		assertHLSPauseRefused(t, process)
+	} else {
+		select {
+		case <-stopHLSProcess(process):
+		case <-ctx.Done():
+			t.Fatalf("Stop did not join the leader within %s", hlsReapTestBound)
+		}
+	}
+	if !time.Now().Before(deadline) {
+		t.Fatalf("%s joined the leader after %s", mode, hlsReapTestBound)
 	}
 	if cmd.ProcessState == nil {
-		t.Fatal("Stop returned before joining the leader")
+		t.Fatalf("%s returned before joining the leader", mode)
 	}
 	if signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal(); signal != syscall.SIGKILL {
-		t.Errorf("Stop ended the leader with %s, want SIGKILL", signal)
+		t.Errorf("%s ended the leader with %s, want SIGKILL", mode, signal)
 	}
 	for time.Now().Before(deadline) {
 		if hlsDescendantExited(descendant) {
@@ -177,58 +203,6 @@ func TestHLSProcessPauseRacesNaturalExit(t *testing.T) {
 			t.Fatalf("leader %d survived Wait", pid)
 		}
 		assertHLSPauseRefused(t, process)
-	}
-}
-
-func TestHLSProcessWaitObserverErrorLeavesEncoderRunning(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), hlsPauseTestBound)
-	defer cancel()
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reader.Close()
-	defer writer.Close()
-	var output bytes.Buffer
-	cmd := exec.CommandContext(ctx, "sh", "-c", `read -r line && printf '%s\n' "$line"`)
-	cmd.Stdin = reader
-	cmd.Stdout = &output
-	process := startHLSPauseTestProcess(t, cmd)
-	observerCalled := make(chan struct{})
-	process.observeExit = func(int) error {
-		close(observerCalled)
-		return syscall.ENOSYS
-	}
-	done := waitForHLSPauseTestExit(process)
-	select {
-	case <-observerCalled:
-	case <-ctx.Done():
-		t.Fatal("Wait did not call the exit observer")
-	}
-
-	// Keep the encoder blocked on input until Wait has disabled group signaling.
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for process.Resume() {
-		select {
-		case <-ticker.C:
-		case <-ctx.Done():
-			t.Fatal("Wait did not switch to leader-only signaling")
-		}
-	}
-	if _, err := io.WriteString(writer, "continued\n"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Wait interrupted a healthy encoder after observer failure: %v", err)
-		}
-	case <-ctx.Done():
-		t.Fatal("encoder did not finish after Wait fell back")
-	}
-	if got := output.String(); got != "continued\n" {
-		t.Fatalf("encoder output = %q, want continued", got)
 	}
 }
 
