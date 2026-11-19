@@ -2904,8 +2904,30 @@ func segmentArgsFor(io segmentIO, startSegment, segmentSeconds int, rendition Re
 // streams may be another one with different keyframes (CORE-1735). Mapping
 // disables the automatic audio choice too, so the selected audio stream is
 // mapped, or the first one when none is selected.
+//
+// The copied streams start exactly at the seek (-copypriorss 0). FFmpeg backs
+// an input seek off by a fraction of a second when the video has B-frames, so
+// a seek to a keyframe's own time lands on the keyframe before it, and stream
+// copy keeps the packets ahead of the seek point by default. That whole
+// earlier GOP, stamped before start, would then fill startSegment and push the
+// requested GOP into the next file. With a transcoded E-AC-3 track it is worse:
+// the segmenter cuts at the requested keyframe before any audio packet reached
+// the muxer, so init.mp4 is written without its dec3 box (unreadable) and
+// startSegment carries no media at all (CORE-2618). Copy then drops any packet
+// stamped before the seek, and keyframe times are rounded up to the
+// microsecond, so a keyframe between two microseconds (a fractional frame rate
+// in a fine MP4 timescale) would sit just before a seek to its own rounded time
+// and be dropped with its whole GOP. The seek and output offset therefore sit
+// one microsecond earlier: the keyframe stays at or after the copy start, the
+// frame before it (a whole frame earlier) does not, and output timestamps are
+// unchanged because the offset matches the seek. An audio-only rendition takes
+// no -copypriorss and keeps the seek as given.
 func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration, rendition Rendition) []string {
-	offset := formatMicros(start)
+	copyStart := start
+	if copyStart > 0 && !rendition.AudioOnly {
+		copyStart -= time.Microsecond
+	}
+	offset := formatMicros(copyStart)
 	audioMap := "0:a:0?"
 	if rendition.AudioStreamIndex != nil {
 		audioMap = fmt.Sprintf("0:%d", *rendition.AudioStreamIndex)
@@ -2915,14 +2937,15 @@ func keyframeSegmentArgs(src, dir string, startSegment int, start time.Duration,
 	if start == 0 && rendition.KeepPriming {
 		seek = ""
 	}
-	return segmentArgs(fileSegmentIO(src, dir), startSegment, seek, offset, keyframeSegmentHLSTime, streamMaps, nil, rendition)
+	return segmentArgs(fileSegmentIO(src, dir), startSegment, seek, offset, keyframeSegmentHLSTime, streamMaps, []string{"-copypriorss", "0"}, rendition)
 }
 
 // segmentArgs assembles a segmenting command line: seek is the input position
 // ("" for no input seek, see Rendition.KeepPriming), outputOffset the first
 // output timestamp. An audio-only rendition maps just the selected audio
-// stream and drops the video arguments; a video rendition adds streamMaps.
-func segmentArgs(io segmentIO, startSegment int, seek, outputOffset, hlsTime string, streamMaps, forceKeyframes []string, rendition Rendition) []string {
+// stream and drops the video arguments; a video rendition adds streamMaps and
+// videoOutputArgs (forced keyframes, or the stream-copy start).
+func segmentArgs(io segmentIO, startSegment int, seek, outputOffset, hlsTime string, streamMaps, videoOutputArgs []string, rendition Rendition) []string {
 	args := []string{
 		"-v", "error",
 	}
@@ -2940,7 +2963,7 @@ func segmentArgs(io segmentIO, startSegment int, seek, outputOffset, hlsTime str
 	} else {
 		args = append(args, rendition.videoArgs()...)
 		args = append(args, streamMaps...)
-		args = append(args, forceKeyframes...)
+		args = append(args, videoOutputArgs...)
 		args = append(args, rendition.args()...)
 	}
 	args = append(args, rendition.audioArgs()...)
