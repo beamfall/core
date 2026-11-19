@@ -2436,12 +2436,21 @@ const hlsStderrTailBytes = 4 << 10
 // stderr pipe delay the reap once the leader has exited.
 const hlsStderrWaitDelay = time.Second
 
+// hlsStopGrace gives a resumed encoder time to handle TERM before the forced
+// group kill. It fits within the existing pipe reap bound.
+const hlsStopGrace = 100 * time.Millisecond
+
 // HLSProcess is a running HLS transcode owned by its caller.
 type HLSProcess struct {
 	cmd     *exec.Cmd
 	wait    sync.Once
 	kill    sync.Once
 	waitErr error
+	// signalMu serializes pause and resume with termination and the final
+	// group kill before the leader PID is released by Wait.
+	signalMu sync.Mutex
+	paused   bool
+	stopping bool
 	// stopRequested records that the owner asked for this exit (Stop or context
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
@@ -2585,12 +2594,48 @@ func (p *HLSProcess) killTree() {
 	if p == nil || p.cmd == nil {
 		return
 	}
+	p.signalMu.Lock()
+	defer p.signalMu.Unlock()
+	p.stopping = true
 	p.kill.Do(func() { killProcessGroup(p.cmd) })
 }
 
 // Running reports whether this process wraps a started OS child.
 func (p *HLSProcess) Running() bool {
 	return p != nil && p.cmd != nil && p.cmd.Process != nil
+}
+
+// Pause suspends the encoder's process group. It returns false when the
+// platform cannot suspend the group or the process is already stopping.
+func (p *HLSProcess) Pause() bool {
+	if !p.Running() {
+		return false
+	}
+	p.signalMu.Lock()
+	defer p.signalMu.Unlock()
+	if p.stopping {
+		return false
+	}
+	if !p.paused {
+		p.paused = pauseProcessGroup(p.cmd)
+	}
+	return p.paused
+}
+
+// Resume continues a paused encoder's process group.
+func (p *HLSProcess) Resume() bool {
+	if !p.Running() {
+		return false
+	}
+	p.signalMu.Lock()
+	defer p.signalMu.Unlock()
+	if p.stopping {
+		return false
+	}
+	if p.paused && resumeProcessGroup(p.cmd) {
+		p.paused = false
+	}
+	return !p.paused
 }
 
 // Wait blocks until the transcode exits.
@@ -2610,7 +2655,16 @@ func (p *HLSProcess) Stop() {
 		return
 	}
 	p.stopRequested.Store(true)
-	p.killTree()
+	p.signalMu.Lock()
+	graceful := !p.stopping && p.paused && terminatePausedProcessGroup(p.cmd)
+	p.stopping = true
+	p.signalMu.Unlock()
+	if graceful {
+		forceKill := time.AfterFunc(hlsStopGrace, p.killTree)
+		defer forceKill.Stop()
+	} else {
+		p.killTree()
+	}
 	_ = p.Wait()
 }
 

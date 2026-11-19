@@ -2788,3 +2788,143 @@ func TestTerminatePlaybackStopsOnlyThatMediasTranscode(t *testing.T) {
 		t.Fatalf("second TerminatePlayback = %d, want 0", got)
 	}
 }
+
+// pacedTranscoder publishes one completed segment per permit and runs in a
+// real process group so the test observes OS suspension and process identity.
+type pacedTranscoder struct {
+	fakeTranscoder
+	stoppedFile string
+	pid         int
+}
+
+func (p *pacedTranscoder) StartHLSSegments(ctx context.Context, _, dir string, start, _ int, _ ffmpeg.Rendition) (*ffmpeg.HLSProcess, error) {
+	const script = `
+dir=$1
+n=$2
+stopped=$3
+trap 'printf stopped > "$stopped"; exit 0' TERM
+while :; do
+  if [ "$n" -eq "$2" ] || [ -f "$dir/produce$n" ]; then
+    file=$(printf '%s/seg%05d.m4s' "$dir" "$n")
+    printf m4s > "$file.tmp" && mv "$file.tmp" "$file" || exit 1
+    n=$((n+1))
+  else
+    sleep 0.01
+  fi
+done
+`
+	// #nosec G204 -- fixed script and test-owned arguments.
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", script, "paced-transcoder", dir, strconv.Itoa(start), p.stoppedFile)
+	proc, err := ffmpeg.StartHLSCommand(cmd)
+	if err == nil {
+		p.mu.Lock()
+		p.segmentStarts = append(p.segmentStarts, start)
+		p.pid = cmd.Process.Pid
+		p.mu.Unlock()
+	}
+	return proc, err
+}
+
+func TestSessionsPaceEncodeAhead(t *testing.T) {
+	if !ffmpeg.SupportsHLSPause {
+		t.Skip("requires process-group suspension and ps")
+	}
+	const lead = 8
+	for _, teardown := range []string{"stop", "idle reap"} {
+		t.Run(teardown, func(t *testing.T) {
+			root := t.TempDir()
+			transcoder := &pacedTranscoder{stoppedFile: filepath.Join(root, "stopped")}
+			var advance atomic.Int64
+			sessions := NewSessions(transcoder, root, func() time.Time {
+				return time.Now().Add(time.Duration(advance.Load()))
+			})
+			t.Cleanup(sessions.Close)
+			g := governor.New()
+			sessions.SetGovernor(g)
+			sessions.SetTranscodeCap(1)
+			key := SessionKey{SessionID: "paced-session", MediaID: "paced-media"}
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			path, err := sessions.FilePath(ctx, key, "source", 120, 1280, 720, false, "720p/seg00002.m4s")
+			if err != nil {
+				t.Fatalf("request segment 2: %v", err)
+			}
+			dir := filepath.Dir(path)
+			pid := strconv.Itoa(transcoder.pid)
+			// After segment 2 the child waits for permits, so it cannot
+			// move past the frontier the test has authorized.
+			produce := func(n int) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("produce%d", n)), nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := waitForFile(ctx, filepath.Join(dir, fmt.Sprintf("seg%05d.m4s", n))); err != nil {
+					t.Fatalf("did not produce segment %d: %v", n, err)
+				}
+			}
+			waitStopped := func(stopped bool) {
+				t.Helper()
+				for {
+					// #nosec G204 -- PID of this test's child process.
+					out, err := exec.CommandContext(ctx, "ps", "-o", "stat=", "-p", pid).Output()
+					if err != nil {
+						t.Fatalf("ps %s: %v", pid, err)
+					}
+					if strings.HasPrefix(strings.TrimSpace(string(out)), "T") == stopped {
+						return
+					}
+					select {
+					case <-ctx.Done():
+						t.Fatalf("PID %s state = %q, want stopped=%v", pid, out, stopped)
+					case <-time.After(10 * time.Millisecond):
+					}
+				}
+			}
+			for segment := 3; segment <= 2+lead; segment++ {
+				produce(segment)
+			}
+			waitStopped(true)
+			if keys := sessions.ActiveKeys(); len(keys) != 1 || keys[0] != key || g.ActiveTranscodes() != 1 {
+				t.Fatalf("paused session lost admission or lease: keys=%v leases=%d", keys, g.ActiveTranscodes())
+			}
+			if sessions.CanAdmit(SessionKey{SessionID: "other", MediaID: "other"}) {
+				t.Fatal("paused encoder did not count toward admission")
+			}
+
+			if _, err := sessions.FilePath(ctx, key, "source", 120, 1280, 720, false, "720p/seg00003.m4s"); err != nil {
+				t.Fatalf("request cached segment 3: %v", err)
+			}
+			waitStopped(false)
+			if got := strconv.Itoa(transcoder.pid); got != pid {
+				t.Fatalf("encoder PID changed: before=%s after=%s", pid, got)
+			}
+			if starts := transcoder.segmentStartsSnapshot(); len(starts) != 1 || starts[0] != 2 {
+				t.Fatalf("encoder starts = %v, want [2]", starts)
+			}
+			produce(3 + lead)
+			waitStopped(true)
+
+			done := make(chan struct{})
+			go func() {
+				if teardown == "idle reap" {
+					advance.Store(int64(sessionIdleTimeout + time.Second))
+					sessions.reap()
+				} else {
+					sessions.Close()
+				}
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("paused encoder teardown exceeded the reap bound")
+			}
+			if out, err := os.ReadFile(transcoder.stoppedFile); err != nil || string(out) != "stopped" {
+				t.Fatalf("paused encoder did not handle TERM: %q, %v", out, err)
+			}
+			if got := g.ActiveTranscodes(); got != 0 {
+				t.Fatalf("governor leases after teardown = %d, want 0", got)
+			}
+		})
+	}
+}
