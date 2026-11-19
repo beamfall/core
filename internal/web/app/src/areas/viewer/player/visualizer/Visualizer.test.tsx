@@ -29,6 +29,7 @@ function withWebGL2() {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

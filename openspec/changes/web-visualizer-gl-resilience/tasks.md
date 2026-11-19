@@ -29,6 +29,11 @@
 - [x] 3.14 Compare the slot by the geometry a frame is drawn at (`geometryKey`), not by its pixels
 - [x] 3.15 A withdrawn frame that started leaves black and no frame, so the next draw starts
 - [x] 3.16 Hold the frame after a device-pixel-ratio change until the slot is observed again
+- [x] 3.17 Narrow the view at each observation (`narrow`), before the device-pixel-ratio guard; fade a frame whose view was cut
+- [x] 3.18 Observe the slot afresh after a ratio change (unobserve, observe); draw from the last device-pixel box after three frames with no report
+- [x] 3.19 Read the grant word through a pixel-pack buffer and a fence, with no blocking `readPixels`
+- [x] 3.20 Bound the refresh period by the last 32 draw intervals (`RefreshBound`), so a slower cadence is measured again
+- [x] 3.21 Decline a credit above half the interval at a steady cadence: animation frames do not give the display's refresh period
 
 ## 4. Gate and archive
 

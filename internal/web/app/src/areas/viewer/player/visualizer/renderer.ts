@@ -138,6 +138,15 @@ function geometry(
   };
 }
 
+// Whether a frame's view hides a texel its geometry has in view: the slot was narrower since the
+// frame started than it is now (narrow).
+function cut(size: { viewWidth: number; viewHeight: number } & Geometry): boolean {
+  return (
+    size.viewWidth < size.visibleWidth * size.texel ||
+    size.viewHeight < size.visibleHeight * size.texel
+  );
+}
+
 function sameGeometry(a: Geometry, b: Geometry): boolean {
   return (
     a.width === b.width &&
@@ -349,6 +358,11 @@ export class Renderer {
   private readonly vivid: Float64Array;
   private readonly limiterBlock = new Float32Array(8);
   private readonly grantWord = new Uint32Array(4);
+  // The grant word is read through a pixel pack buffer and a fence, polled a frame later, so a
+  // read never waits for the GPU on the main thread (Codex round 27). One read is in flight at
+  // most: grantSync is its fence.
+  private readonly grantPbo: WebGLBuffer;
+  private grantSync: WebGLSync | null = null;
   private grantSettled = true;
   private limiterSpent = false;
   // The limiter's state before the last frame drawn, until the next draw, when that frame was
@@ -496,6 +510,10 @@ export class Renderer {
       this.limiterUbo = must(gl.createBuffer());
       gl.bindBuffer(gl.UNIFORM_BUFFER, this.limiterUbo);
       gl.bufferData(gl.UNIFORM_BUFFER, this.limiterBlock.byteLength, gl.DYNAMIC_DRAW);
+      this.grantPbo = must(gl.createBuffer());
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.grantPbo);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, this.grantWord.byteLength, gl.STREAM_READ);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
       this.switchUbo = must(gl.createBuffer());
       gl.bindBuffer(gl.UNIFORM_BUFFER, this.switchUbo);
       gl.bufferData(gl.UNIFORM_BUFFER, this.switchBlock.byteLength, gl.DYNAMIC_DRAW);
@@ -673,7 +691,8 @@ export class Renderer {
    *
    * One rule covers every change to what the viewer sees, whether the backing size, the texel size
    * or the texels in view: the frame on screen fades to black through the limiter (until a frame
-   * of the fade showed its black input exactly, FADE_S at most), black is presented (BLACK_S),
+   * of the fade is seen to have shown its black input exactly, FADE_S at most), black is
+   * presented (BLACK_S),
    * and a frame starts at the geometry asked for then, black with every
    * budget spent (start). A change during the fade or the black only moves that target: nothing
    * is reallocated, spent or restarted, so a slot dragged to a new size costs one fade and one
@@ -704,11 +723,13 @@ export class Renderer {
     let started = false;
     if (size && this.fadeLeft > 0) {
       this.fadeLeft = Math.max(0, this.fadeLeft - shownS);
-      // The fade is over once its last frame showed its input, black, at every pixel: the grant
-      // held no direction, so every fall has been granted. A dark frame gets there in one frame, a
-      // frame with luma to drop when the luma tokens are back, and one with saturated red when the
-      // red token is. FADE_S, by when the slowest grant has come, is the backstop.
-      if (this.fadeLeft === 0 || this.exact(size)) {
+      // The fade is over once one of its frames showed its input, black, at every pixel: the
+      // grant held no direction, so every fall has been granted, and black fed to a black frame
+      // stays black. A frame whose trackers hold nothing a step above black gets there in one
+      // frame, a frame with luma to drop when the luma tokens are back, and one with saturated red
+      // when the red token is. The word is read without waiting for the GPU, so the fade ends a
+      // frame or two after that frame. FADE_S, by when the slowest grant has come, is the backstop.
+      if (this.fadeLeft === 0 || this.grantRead() === true) {
         this.fadeLeft = 0;
         // The frame is black by now. A size change ends a switch, as in the reference host.
         this.endSwitch();
@@ -717,10 +738,12 @@ export class Renderer {
         this.blackShown = false;
         size = null;
       }
-    } else if (size && !sameGeometry(size, want)) {
+    } else if (size && (!sameGeometry(size, want) || cut(size))) {
       // The fade starts: from this frame the limiter is fed black, with its budgets written spent
       // and an area limit of zero, so every transition down to black waits for a grant however
-      // little of the frame is still in view.
+      // little of the frame is still in view. A read of an earlier frame's grant says nothing
+      // of the fade's.
+      this.dropGrantRead();
       this.fadeLeft = FADE_S;
       this.spend(size.limiter);
       size.limiter.window = { ...size.limiter.window, limit: 0 };
@@ -741,8 +764,7 @@ export class Renderer {
     }
     // The part of the canvas the host may show only shrinks (shown): a pixel the slot hid would
     // come back unjudged, so it stays hidden until the start.
-    size.viewWidth = Math.min(size.viewWidth, Math.max(0, Math.floor(slotWidth)));
-    size.viewHeight = Math.min(size.viewHeight, Math.max(0, Math.floor(slotHeight)));
+    this.narrow(slotWidth, slotHeight);
     const fading = this.fadeLeft > 0;
     const { width: W, height: H } = size;
     this.time += dt;
@@ -797,6 +819,7 @@ export class Renderer {
     // the fade is never withdrawn: under its zero area limit it is safe in any view.
     const L = size.limiter;
     if (!fading) {
+      this.dropGrantRead();
       this.undo = {
         cur: L.cur,
         clockMs: this.clockMs,
@@ -806,6 +829,8 @@ export class Renderer {
       };
     }
     this.limit(size, shownMs);
+    // Any frame of the fade seen black ends it, so a read still in flight is left to finish.
+    if (fading && !this.grantSync) this.readGrant(L);
 
     // 4. The limited frame to the canvas.
     this.showLimited(size);
@@ -827,6 +852,7 @@ export class Renderer {
     this.refillCarry = u.carry;
     this.limiterSpent = u.spent;
     this.grantSettled = false;
+    this.dropGrantRead();
     if (u.started) {
       const gl = this.gl;
       this.endSwitch();
@@ -853,6 +879,18 @@ export class Renderer {
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.fOut[L.cur]);
     gl.blitFramebuffer(0, H - vh, vw, H, 0, H - vh, vw, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+  }
+
+  /** Narrows the view of the frame on screen to a slot of slotWidth x slotHeight physical
+   * pixels. The view only shrinks: a pixel the slot hid would come back unjudged, so it stays
+   * hidden until the next frame starts. A host calls it for every slot size it observes, drawn
+   * for or not, so a slot that shrank and grew between two draws shows no more than it did at
+   * its smallest; the next draw then fades the frame (Codex round 27). */
+  narrow(slotWidth: number, slotHeight: number): void {
+    const size = this.size;
+    if (!size) return;
+    size.viewWidth = Math.min(size.viewWidth, Math.max(0, Math.floor(slotWidth)));
+    size.viewHeight = Math.min(size.viewHeight, Math.max(0, Math.floor(slotHeight)));
   }
 
   /** The frame on screen, or null while there is none: its size in texels, the texel's side in
@@ -891,29 +929,62 @@ export class Renderer {
     const size = this.size;
     // With no frame the canvas is black: all a slot with no whole texel in view ever shows.
     if (!size) return this.black <= 0 && (want.visibleWidth < 1 || want.visibleHeight < 1);
-    if (this.fadeLeft > 0 || !sameGeometry(size, want)) return false;
-    return this.exact(size);
-  }
-
-  // Whether the last frame judged showed its input exactly, at every pixel.
-  private exact(size: Size): boolean {
+    if (this.fadeLeft > 0 || !sameGeometry(size, want) || cut(size)) return false;
     // A grant state the host wrote spent has judged no frame, so its clear held bits say nothing
     // about the input: a withdrawn first draw would otherwise hold black (Codex round 24).
     if (this.limiterSpent) return false;
     if (this.grantSettled) return true;
-    // A denied direction can leave a steady input held. Read the last grant only when deciding
-    // whether to stop drawing or to end a fade, and reuse an all-admitted result until the next
-    // draw.
+    // A denied direction can leave a steady input held, so the last frame's grant decides
+    // whether to stop drawing. Its read takes a frame or more, and the frame is held meanwhile:
+    // a draw would make the read stale. An all-admitted result stands until the next draw.
+    if (!this.grantSync) {
+      this.readGrant(size.limiter);
+      return this.grantSync !== null;
+    }
+    const clear = this.grantRead();
+    if (clear === null) return this.grantSync !== null;
+    this.grantSettled = clear;
+    return clear;
+  }
+
+  // Starts a read of the last grant word: into the pack buffer, behind a fence, so nothing waits
+  // for the GPU.
+  private readGrant(L: Limiter): void {
     const gl = this.gl;
-    const L = size.limiter;
-    this.grantWord[0] = 0;
+    this.dropGrantRead();
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.fG[L.cur]);
-    gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, this.grantWord);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.grantPbo);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA_INTEGER, gl.UNSIGNED_INT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    this.grantSync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
+  }
+
+  // The read in flight, if the GPU has finished it: whether the frame it read showed its input
+  // exactly, at every pixel. Null while the GPU has not, or with no read. It never waits.
+  private grantRead(): boolean | null {
+    const gl = this.gl;
+    const sync = this.grantSync;
+    if (!sync) return null;
+    const status = gl.clientWaitSync(sync, 0, 0);
+    if (status === gl.TIMEOUT_EXPIRED) return null;
+    gl.deleteSync(sync);
+    this.grantSync = null;
+    if (status === gl.WAIT_FAILED) return null;
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.grantPbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this.grantWord);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     // Bits 4 to 7 are the directions some pixel fires in that the grant did not admit (Oscillux
     // v0.2.9): clear, the output shows the input exactly (Codex round 18).
-    this.grantSettled = (this.grantWord[0] & 0xf0) === 0;
-    return this.grantSettled;
+    return (this.grantWord[0] & 0xf0) === 0;
+  }
+
+  // Abandons the read in flight: the frame it read is no longer the one on screen.
+  private dropGrantRead(): void {
+    if (!this.grantSync) return;
+    this.gl.deleteSync(this.grantSync);
+    this.grantSync = null;
   }
 
   // Draws a visual from feedback[0] into feedback[1] and returns that target.
@@ -1008,6 +1079,7 @@ export class Renderer {
     gl.deleteBuffer(this.quad ?? null);
     gl.deleteBuffer(this.presentUbo ?? null);
     gl.deleteBuffer(this.limiterUbo ?? null);
+    gl.deleteBuffer(this.grantPbo ?? null);
     gl.deleteBuffer(this.switchUbo ?? null);
     gl.deleteTexture(this.image ?? null);
     this.linked.length = 0;
@@ -1302,6 +1374,7 @@ export class Renderer {
 
   // Frees the frame's targets.
   private freeSize(): void {
+    this.dropGrantRead();
     const s = this.size;
     if (!s) return;
     const gl = this.gl;

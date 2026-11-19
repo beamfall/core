@@ -1,5 +1,6 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { REFRESH_WINDOW } from "./refresh";
 import { Visualizer } from "./Visualizer";
 
 // A mocked renderer factory: each create hands out a fresh renderer, as a restored context does.
@@ -11,6 +12,7 @@ const made = vi.hoisted(() => ({
     draw: ReturnType<typeof vi.fn>;
     settled: ReturnType<typeof vi.fn>;
     withdraw: ReturnType<typeof vi.fn>;
+    narrow: ReturnType<typeof vi.fn>;
     shown: {
       width: number;
       height: number;
@@ -46,7 +48,14 @@ vi.mock("./renderer", async (importOriginal) => ({
         draw: vi.fn(),
         settled: vi.fn(() => false),
         withdraw: vi.fn(),
-        shown: null,
+        // As the renderer does: the view of the frame on screen only shrinks.
+        narrow: vi.fn((slotWidth: number, slotHeight: number) => {
+          const shown = r.shown;
+          if (!shown) return;
+          shown.viewWidth = Math.min(shown.viewWidth, slotWidth);
+          shown.viewHeight = Math.min(shown.viewHeight, slotHeight);
+        }),
+        shown: null as (typeof made.renderers)[number]["shown"],
         dispose: vi.fn(),
         contextLost: false,
       };
@@ -76,6 +85,7 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -338,6 +348,10 @@ describe("Visualizer resize before paint", () => {
   type Observed = (entries: unknown[]) => void;
   let observed: Observed | null;
   let observes: number;
+  // As Chromium's observer: a target is reported once after it is first observed, and observing
+  // it again while it is registered does nothing.
+  let registered: boolean;
+  let fresh: boolean;
   const report = (width: number, height: number) =>
     act(() =>
       observed?.([
@@ -347,6 +361,23 @@ describe("Visualizer resize before paint", () => {
         },
       ]),
     );
+  // A slot of `device` physical pixels laid out as `css` CSS pixels.
+  const reportBox = (css: [number, number], device: [number, number]) =>
+    act(() =>
+      observed?.([
+        {
+          contentRect: { width: css[0], height: css[1] },
+          devicePixelContentBoxSize: [{ inlineSize: device[0], blockSize: device[1] }],
+        },
+      ]),
+    );
+  // What the browser does between a frame and its paint, with no size change: it reports a
+  // target observed afresh, and nothing otherwise.
+  const paint = (css: [number, number], device: [number, number]) => {
+    if (!fresh) return;
+    fresh = false;
+    reportBox(css, device);
+  };
   // A browser without device-pixel-content-box reports CSS pixels only.
   const reportCss = (width: number, height: number) =>
     act(() => observed?.([{ contentRect: { width, height } }]));
@@ -355,6 +386,8 @@ describe("Visualizer resize before paint", () => {
   beforeEach(() => {
     observed = null;
     observes = 0;
+    registered = false;
+    fresh = false;
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -363,6 +396,13 @@ describe("Visualizer resize before paint", () => {
         }
         observe() {
           observes += 1;
+          if (registered) return;
+          registered = true;
+          fresh = true;
+        }
+        unobserve() {
+          registered = false;
+          fresh = false;
         }
         disconnect() {}
       },
@@ -423,6 +463,110 @@ describe("Visualizer resize before paint", () => {
       expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
       expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
       expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+    } finally {
+      setRatio(ratio);
+    }
+  });
+
+  // Codex round 27: the same zoom, with nothing handed to the observer. The device-pixel box is
+  // unchanged, so the observation in place reports nothing, and observing the slot again while
+  // it is registered is a no-op in Chromium: the loop held the frame for good. Unobserving first
+  // makes the observation fresh, and a fresh one is reported before the paint.
+  it("draws again after a zoom that keeps the slot's physical pixels", async () => {
+    const ratio = window.devicePixelRatio;
+    setRatio(2);
+    try {
+      mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[0];
+      paint([400, 300], [800, 600]);
+      step(16);
+      paint([400, 300], [800, 600]);
+      expect(renderer.draw).toHaveBeenCalledOnce();
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+
+      setRatio(1);
+      step(32);
+      expect(renderer.draw).toHaveBeenCalledOnce();
+      paint([800, 600], [800, 600]);
+      step(48);
+      paint([800, 600], [800, 600]);
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
+      expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+    } finally {
+      setRatio(ratio);
+    }
+  });
+
+  // An observer that reports nothing at the new ratio: the device-pixel box it last reported is
+  // still the slot's, so after a few held frames the loop draws from it, with the CSS size read
+  // from layout. Nothing is guessed from the old CSS size.
+  it("draws from the device-pixel box it has when no report comes at the new ratio", async () => {
+    const ratio = window.devicePixelRatio;
+    setRatio(2);
+    try {
+      const { canvas } = mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[0];
+      reportBox([400, 300], [800, 600]);
+      step(16);
+      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
+
+      setRatio(1);
+      vi.spyOn(canvas.parentElement!, "getBoundingClientRect").mockReturnValue({
+        width: 800,
+        height: 600,
+      } as DOMRect);
+      for (const now of [32, 48, 64]) step(now);
+      expect(renderer.draw).toHaveBeenCalledOnce();
+      expect(canvas.style.width).toBe("800px");
+      step(80);
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
+      expect(renderer.draw.mock.lastCall?.slice(0, 2)).toEqual([800, 600]);
+      expect(renderer.draw.mock.lastCall?.[6]).toBe(1);
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      // It goes on drawing: the ratio counts as reported.
+      step(96);
+      expect(renderer.draw).toHaveBeenCalledTimes(3);
+    } finally {
+      setRatio(ratio);
+    }
+  });
+
+  // Codex round 27: a red frame fading at DPR 1 with 800 pixels in view; the slot shrinks to 400
+  // before the paint, so 400 are painted; then the ratio goes to 2 with the slot still 400 CSS
+  // pixels wide, 800 physical. The held frame was fitted with the 800-pixel view it had at its
+  // last draw, and the right half came back with no grant. The observed 400 narrows the view at
+  // once, and nothing widens it.
+  it("keeps a held frame clipped to the smallest slot observed", async () => {
+    const ratio = window.devicePixelRatio;
+    setRatio(1);
+    try {
+      const { canvas } = mount();
+      await waitFor(() => expect(pending.size).toBe(1));
+      const renderer = made.renderers[0];
+      reportBox([800, 600], [800, 600]);
+      step(16);
+      renderer.shown = { width: 800, height: 600, texel: 1, viewWidth: 800, viewHeight: 600 };
+      step(32);
+      reportBox([400, 600], [400, 600]);
+      expect(renderer.narrow).toHaveBeenLastCalledWith(400, 600);
+
+      setRatio(2);
+      step(48);
+      expect(renderer.draw).toHaveBeenCalledTimes(2);
+      expect(canvas.style.width).toBe("400px");
+      expect(canvas.style.clipPath).toBe("inset(0 200px 0px 0)");
+
+      // The slot observed at the new ratio is 800 physical pixels wide again.
+      reportBox([400, 300], [800, 600]);
+      step(64);
+      expect(renderer.draw).toHaveBeenCalledTimes(3);
+      expect(renderer.draw.mock.lastCall?.slice(8)).toEqual([800, 600]);
+      expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 600 });
+      expect(canvas.style.clipPath).toBe("inset(0 200px 0px 0)");
     } finally {
       setRatio(ratio);
     }
@@ -542,6 +686,31 @@ describe("Visualizer resize before paint", () => {
     clock.mockReturnValue(149);
     step(149);
     expect(renderer.draw.mock.lastCall?.[7]).toBe(4);
+    clock.mockRestore();
+  });
+
+  // Codex round 27: the bound was the shortest interval since the loop started, so a page that
+  // drew at 240 Hz and then at 60 Hz credited a quarter of each frame for good.
+  it("measures the cadence again after it slows from 240 Hz to 60 Hz", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    let now = 0;
+    const frames = (count: number, period: number) => {
+      for (let i = 0; i < count; i++) {
+        now += period;
+        clock.mockReturnValue(now);
+        step(now);
+      }
+    };
+    step(0);
+    frames(100, 1000 / 240);
+    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(500 / 240);
+    frames(REFRESH_WINDOW - 1, 1000 / 60);
+    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(1000 / 240);
+    frames(1, 1000 / 60);
+    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(500 / 60);
     clock.mockRestore();
   });
 

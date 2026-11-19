@@ -5,6 +5,7 @@ import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
+import { RefreshBound } from "./refresh";
 import { geometryKey, MAX_SIDE, Renderer, TRACKED_BLACK } from "./renderer";
 import { canVisualize, type VisualChoice } from "./visualChoice";
 import {
@@ -20,13 +21,9 @@ import {
 // does not jump its clock. The governor gets the raw interval instead, so it can tell a pause
 // (a stall, a throttled or occluded page) from a slow frame and ignore it.
 const MAX_DT = 0.1;
-// The shortest refresh period the limiter's shown time trusts (a 250 Hz display): two callbacks
-// closer than that are a browser catching up, not a display refreshing.
-const MIN_REFRESH_MS = 4;
-// The longest refresh period of any display a browser presents on (24 Hz): a host drawing slower
-// than its display, as a throttled one does, cannot measure the refresh, and a paint can be late by
-// one refresh, so a frame is assumed shown for no longer than this (Codex round 20).
-const MAX_REFRESH_MS = 1000 / 24;
+// Frames a device pixel ratio change waits for the slot's report at the new ratio before it
+// takes the device-pixel box it already has (tick).
+const REPORT_FRAMES = 3;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
 
@@ -214,11 +211,8 @@ export function Visualizer({
     let frame = 0;
     let lastDrawn: number | null = null;
     let lastWall: number | null = null;
-    // The shortest interval between draws since the loop started, and at most a 24 Hz refresh:
-    // about the display's refresh period. A frame can be painted late and the next one on time, so
-    // the time a frame was shown can be as short as one refresh whatever the clocks between draws
-    // say (Codex rounds 19 and 20).
-    let refreshMs = MAX_REFRESH_MS;
+    // The time each frame is credited to the limiter with, from the recent draw intervals.
+    const refresh = new RefreshBound();
     // The backing size of the last draw while it is unpainted: a draw sets it, and the next
     // animation frame, which runs after the paint, clears it.
     let unpainted: string | null = null;
@@ -231,16 +225,28 @@ export function Visualizer({
     const slot = canvas.parentElement ?? canvas;
     let device: { inlineSize: number; blockSize: number } | null = null;
     let css: { width: number; height: number } | null = null;
-    // The device pixel ratio the slot was last reported at, and the one a fresh report was last
-    // asked for at (tick).
+    // The device pixel ratio the slot was last reported at, the one a fresh report was last
+    // asked for at, and the frames that report has been waited for (tick).
     let reportedAt = 0;
     let askedAt = 0;
+    let waited = 0;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[entries.length - 1];
       if (!entry) return;
       device = entry.devicePixelContentBoxSize?.[0] ?? null;
       css = { width: entry.contentRect.width, height: entry.contentRect.height };
       reportedAt = window.devicePixelRatio;
+      // The frame on screen never shows more than the smallest slot observed since it started,
+      // whether or not a draw follows: a draw can be held back (a device pixel ratio awaiting
+      // its report, a hidden page), and the slot can have grown again by the next one (Codex
+      // round 27).
+      try {
+        rendererRef.current?.narrow(
+          ...slotPixels(device, css.width, css.height, window.devicePixelRatio),
+        );
+      } catch {
+        // A lost context shows nothing to narrow.
+      }
       // Observers run after animation frames and before the paint: a slot resized since this
       // frame's draw would show a frame judged against the old area limit, so it is withdrawn
       // and the next draw starts the fade from the frame on screen (Codex round 18).
@@ -261,8 +267,11 @@ export function Visualizer({
         // A lost context shows nothing to withdraw; its restore starts the limiter afresh.
       }
     });
-    // Observing a slot already observed reports it again before the next paint.
+    // An observer reports a target when it is first observed, before the next paint. Observing
+    // one already observed with the same box is a no-op in Chromium, so a fresh report takes
+    // an unobserve first (Codex round 27).
     const watch = () => {
+      observer.unobserve(slot);
       try {
         observer.observe(slot, { box: "device-pixel-content-box" });
       } catch {
@@ -326,15 +335,27 @@ export function Visualizer({
       // pixels times the new ratio is a guess, and a fade or a clip from a guessed slot can cut a
       // lit frame with no grant. The frame on screen is held as it is, refitted to the same
       // physical pixels, and the slot is observed afresh; the report comes before the paint, so
-      // the next frame draws from a measurement (Codex round 26).
+      // the next frame draws from a measurement (Codex round 26). A report that has not come in
+      // REPORT_FRAMES frames is not coming, and the observer reports every change to the
+      // device-pixel box, so that box is still the slot's: drawing goes on from it, a
+      // measurement, with the CSS size read from layout (Codex round 27).
       const ratio = window.devicePixelRatio;
       if (css && ratio !== reportedAt) {
         if (ratio !== askedAt) {
           askedAt = ratio;
+          waited = 0;
           watch();
         }
-        fitCanvas(renderer);
-        return;
+        if (++waited <= REPORT_FRAMES) {
+          fitCanvas(renderer);
+          return;
+        }
+        // A slot with no size is the one case a fresh observation does not report, and the box
+        // kept may be from before it emptied.
+        const rect = slot.getBoundingClientRect();
+        css = { width: rect.width, height: rect.height };
+        if (!(rect.width > 0 && rect.height > 0)) device = null;
+        reportedAt = ratio;
       }
       const box = css ?? slot.getBoundingClientRect();
       const [width, height, texel] = backingSize(
@@ -364,22 +385,17 @@ export function Visualizer({
         }
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
-        // The limiter ages its evidence by a lower bound on the time the last frame was shown:
-        // the shorter of the frame timestamps' interval and the time between draws (a late
-        // callback has a stale timestamp, Codex round 18), and no more than the refresh period,
-        // since the last frame's paint may have been late (Codex round 19). A device that draws
-        // slower than its display refreshes ages its evidence slower: held areas wait longer.
+        // The limiter ages its evidence by a lower bound on the time the last frame was shown
+        // (refresh.ts), from the shorter of the frame timestamps' interval and the time between
+        // draws (a late callback has a stale timestamp, Codex round 18). A device that draws
+        // slower than its display refreshes ages its evidence slower: held areas wait longer. A
+        // display that changes its refresh rate between two paints is over-credited one interval
+        // (Codex round 22, OSC-0046).
         const wall = performance.now();
         const interval =
           lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
-        if (lastWall !== null) refreshMs = Math.min(refreshMs, Math.max(MIN_REFRESH_MS, interval));
-        // refreshMs only bounds the display's refresh from above: a browser may run animation
-        // frames at every other refresh (a 120 Hz display at 60 Hz, a throttled one at 30 Hz), so
-        // the refresh can be as short as half the interval. A frame painted one refresh late was
-        // shown for max(refresh, interval - refresh), which is least at half the interval when
-        // the refresh is unknown (Codex round 21). A display that changes its refresh rate
-        // between two paints is over-credited one interval (Codex round 22, OSC-0046).
-        const shownMs = Math.min(refreshMs, Math.max(interval / 2, interval - refreshMs));
+        if (lastWall !== null) refresh.note(interval);
+        const shownMs = refresh.shown(interval);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);
@@ -447,6 +463,7 @@ export function Visualizer({
             if (!current()) return;
             lastDrawn = null;
             lastWall = null;
+            refresh.reset();
             cancelAnimationFrame(frame);
             frame = requestAnimationFrame(tick);
             queueUpcoming(renderer, rotateRef.current, first);

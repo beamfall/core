@@ -142,12 +142,22 @@ function recordingGl() {
   const grant = new Uint32Array([15, 0, 0, 0]);
   // The grant word readPixels returns: `grant` unless a harness picks another.
   const pick = { word: () => grant };
+  // Reads into the pixel pack buffer, by the framebuffer read, and reads into an array, which
+  // wait for the GPU. A fence signals at the next poll unless the GPU is busy.
   const reads: unknown[] = [];
+  const blocking: unknown[] = [];
+  const packed = new Uint32Array(4);
+  const gpu = { busy: false };
+  const waits: number[] = [];
+  const TIMEOUT_EXPIRED = 0x911b;
+  const CONDITION_SATISFIED = 0x911c;
   const canvas = { width: 0, height: 0, clientWidth: 0 };
   const gl = new Proxy({} as Record<string | symbol, unknown>, {
     get(_, key) {
       if (key === "canvas") return canvas;
       if (key === "FRAMEBUFFER_COMPLETE") return 1;
+      if (key === "TIMEOUT_EXPIRED") return TIMEOUT_EXPIRED;
+      if (key === "WAIT_FAILED") return 0x911d;
       if (key === "checkFramebufferStatus") return () => 1;
       if (typeof key === "string" && /^[A-Z0-9_]+$/.test(key)) return 0;
       if (typeof key === "string" && key.startsWith("create")) return () => ({ id: ++next });
@@ -164,14 +174,40 @@ function recordingGl() {
       if (key === "bufferSubData")
         return (_: unknown, __: unknown, values: Float32Array) => blocks.push([...values]);
       if (key === "readPixels")
-        return (...args: [number, number, number, number, number, number, Uint32Array]) => {
+        return (
+          ...args: [number, number, number, number, number, number, Uint32Array | number]
+        ) => {
+          if (typeof args[6] !== "number") return blocking.push(bound.f);
           reads.push(bound.f);
-          args[6].set(pick.word());
+          packed.set(pick.word());
         };
+      if (key === "fenceSync") return () => ({ id: ++next });
+      if (key === "clientWaitSync")
+        return (_: unknown, __: unknown, timeout: number) => {
+          waits.push(timeout);
+          return gpu.busy ? TIMEOUT_EXPIRED : CONDITION_SATISFIED;
+        };
+      if (key === "getBufferSubData")
+        return (_: unknown, __: unknown, into: Uint32Array) => into.set(packed);
       return () => undefined;
     },
   });
-  return { gl, deleted, blits, canvas, spent, clears, fills, blocks, grant, pick, reads };
+  return {
+    gl,
+    deleted,
+    blits,
+    canvas,
+    spent,
+    clears,
+    fills,
+    blocks,
+    grant,
+    pick,
+    reads,
+    blocking,
+    gpu,
+    waits,
+  };
 }
 
 // One rule covers every change to what the viewer sees (CORE-2516): the frame on screen fades to
@@ -197,6 +233,8 @@ describe("Renderer geometry (CORE-2516)", () => {
       presentBlock: new Float32Array(92),
       limiterBlock: new Float32Array(8),
       grantWord: new Uint32Array(4),
+      grantPbo: {},
+      grantSync: null,
       grantSettled: true,
       limiterSpent: false,
       refillCarry: 0,
@@ -297,8 +335,11 @@ describe("Renderer geometry (CORE-2516)", () => {
     draw(640, 360, BLACK_S);
     const L = limiter();
     expect(reads).toHaveLength(0);
-    expect(renderer.settled(640, 360, 1)).toBe(false);
+    // The frame is held for the tick its grant is read in, then drawn again.
+    expect(renderer.settled(640, 360, 1)).toBe(true);
     expect(reads).toEqual([L.fG[L.cur]]);
+    expect(renderer.settled(640, 360, 1)).toBe(false);
+    expect(reads).toHaveLength(1);
 
     grant[0] = 0x01;
     draw(640, 360);
@@ -306,7 +347,37 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(renderer.settled(640, 360, 1)).toBe(true);
     expect(reads.at(-1)).toBe(L.fG[L.cur]);
     expect(renderer.settled(640, 360, 1)).toBe(true);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
     expect(reads).toHaveLength(2);
+  });
+
+  // Codex round 27: a read into an array waits for the GPU on the main thread. The word goes to
+  // a pixel pack buffer behind a fence, polled with no timeout.
+  it("holds a paused frame while the GPU reads its grant, without waiting", () => {
+    const { renderer, draw, grant, reads, blocking, gpu, waits } = make();
+    draw(640, 360);
+    grant[0] = 0x1e;
+    draw(640, 360);
+    gpu.busy = true;
+    for (let i = 0; i < 4; i++) expect(renderer.settled(640, 360, 1)).toBe(true);
+    expect(reads).toHaveLength(1);
+    gpu.busy = false;
+    expect(renderer.settled(640, 360, 1)).toBe(false);
+    expect(blocking).toEqual([]);
+    expect(waits.every((timeout) => timeout === 0)).toBe(true);
+  });
+
+  it("reads the grant again after a draw, not the one in flight", () => {
+    const { renderer, draw, grant, reads } = make();
+    draw(640, 360);
+    draw(640, 360);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
+    // The frame drawn since holds a direction: the read in flight, of a clear word, is dropped.
+    grant[0] = 0x1e;
+    draw(640, 360);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
+    expect(reads).toHaveLength(2);
+    expect(renderer.settled(640, 360, 1)).toBe(false);
   });
 
   it("settles only for the geometry on screen", () => {
@@ -617,11 +688,11 @@ describe("Renderer geometry (CORE-2516)", () => {
     fadeGrant[0] = 0x02;
     draw(800, 450);
     expect(r.fadeLeft).toBe(FADE_S);
-    expect(reads).toHaveLength(0);
-    const judged = old.fG[old.cur];
+    // The read is of the grant the fade's first frame was judged with.
+    expect(reads).toEqual([old.fG[old.cur]]);
     clears.length = 0;
     draw(800, 450);
-    expect(reads).toEqual([judged]);
+    expect(reads).toHaveLength(1);
     expect(r.fadeLeft).toBe(0);
     expect(r.size).toBe(null);
     expect(renderer.shown).toBe(null);
@@ -638,12 +709,101 @@ describe("Renderer geometry (CORE-2516)", () => {
     for (let i = 0; i < 5; i++) draw(800, 450);
     expect(r.size).toBe(size);
     expect(r.fadeLeft).toBeCloseTo(FADE_S - 5 / 60);
-    expect(reads).toHaveLength(5);
-    // The red token is back and the fall is granted: the frame on screen is black.
+    expect(reads).toHaveLength(6);
+    // The red token is back and the fall is granted: the frame drawn now is black, and the fade
+    // ends at the next frame, which sees its grant.
     fadeGrant[0] = 0x08;
+    draw(800, 450);
+    expect(r.size).toBe(size);
     draw(800, 450);
     expect(r.size).toBe(null);
     expect(r.black).toBe(BLACK_S);
+  });
+
+  // Codex round 27: each frame of the fade read its grant into an array, which waits for the
+  // GPU on the main thread: about 160 waits through a red fall at 60 frames a second. The read
+  // is polled, so a busy GPU only ends the fade later.
+  it("never waits for the GPU through a fade", () => {
+    const { r, draw, fadeGrant, reads, blocking, gpu, waits } = make();
+    draw(640, 360);
+    draw(640, 360);
+    fadeGrant[0] = 0x02;
+    gpu.busy = true;
+    draw(800, 450);
+    const size = r.size;
+    for (let i = 0; i < 3; i++) draw(800, 450);
+    // One read in flight, of the fade's first frame; the fade goes on behind it.
+    expect(reads).toHaveLength(1);
+    expect(r.size).toBe(size);
+    expect(r.fadeLeft).toBeCloseTo(FADE_S - 3 / 60);
+    gpu.busy = false;
+    draw(800, 450);
+    expect(r.size).toBe(null);
+    expect(r.black).toBe(BLACK_S);
+    expect(blocking).toEqual([]);
+    expect(waits).toHaveLength(4);
+    expect(waits.every((timeout) => timeout === 0)).toBe(true);
+  });
+
+  it("ends the fade at FADE_S when no read of the grant ever finishes", () => {
+    const { r, draw, through, fadeGrant, gpu, blocking, canvas } = make();
+    draw(640, 360);
+    fadeGrant[0] = 0x02;
+    gpu.busy = true;
+    draw(800, 450);
+    for (let i = 0; i < 15; i++) draw(800, 450, 0.125);
+    expect(r.size).not.toBe(null);
+    draw(800, 450, 0.125);
+    expect(r.size).toBe(null);
+    through((ms) => draw(800, 450, ms / 1000));
+    expect([canvas.width, canvas.height]).toEqual([800, 450]);
+    expect(blocking).toEqual([]);
+  });
+
+  // A read started before the fade is of a frame that was not black.
+  it("does not end the fade on a grant read before it started", () => {
+    const { r, renderer, draw, reads } = make();
+    draw(640, 360);
+    draw(640, 360);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
+    expect(reads).toHaveLength(1);
+    draw(800, 450);
+    const size = r.size;
+    draw(800, 450);
+    expect(r.size).toBe(size);
+    expect(r.fadeLeft).toBeCloseTo(FADE_S - 1 / 60);
+  });
+
+  // Codex round 27: a slot observed narrower between two draws narrows the view at once, drawn
+  // for or not, and a slot wider again by the next draw does not bring the hidden pixels back:
+  // the frame fades, and the frame that starts shows them.
+  it("narrows the view to a slot observed between draws and fades the frame it cut", () => {
+    const { r, renderer, drawIn } = make();
+    drawIn([800, 450, 1], [800, 450]);
+    drawIn([800, 450, 1], [800, 450]);
+    const size = r.size;
+    renderer.narrow(400, 450);
+    expect(renderer.shown).toMatchObject({ width: 800, viewWidth: 400, viewHeight: 450 });
+    // The view never widens.
+    renderer.narrow(800, 600);
+    expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 450 });
+    expect(renderer.settled(800, 450, 1, 800, 450)).toBe(false);
+    drawIn([800, 450, 1], [800, 450]);
+    expect(r.size).toBe(size);
+    expect(r.fadeLeft).toBe(FADE_S);
+    expect(renderer.shown).toMatchObject({ viewWidth: 400, viewHeight: 450 });
+  });
+
+  it("narrows nothing with no frame on screen, and fades nothing for an unfilled pixel", () => {
+    const { r, renderer, drawIn } = make();
+    renderer.narrow(10, 10);
+    expect(renderer.shown).toBe(null);
+    drawIn([64, 36, 2], [129, 72]);
+    // 128 pixels still show all 64 texels: the view narrows by a pixel no texel fills.
+    renderer.narrow(128, 72);
+    drawIn([64, 36, 2], [129, 72]);
+    expect(r.fadeLeft).toBe(0);
+    expect(renderer.shown).toMatchObject({ viewWidth: 128, viewHeight: 72 });
   });
 
   // Codex round 26: the slot changed after the last black frame was painted, so the frame that
@@ -729,6 +889,8 @@ describe("Renderer geometry (CORE-2516)", () => {
     expect(reads).toHaveLength(0);
     draw(64, 36);
     expect(renderer.settled(64, 36, 1)).toBe(true);
+    expect(renderer.settled(64, 36, 1)).toBe(true);
+    expect(reads).toHaveLength(1);
   });
 
   // Codex round 18: the limiter ages evidence by the time frames are shown apart, which a late

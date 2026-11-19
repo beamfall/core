@@ -38,7 +38,8 @@ to the failed state. It SHALL remove its listeners on unmount.
 ### Requirement: One path for every geometry change
 
 When a frame is on screen and the geometry asked for differs from it (the backing size in texels,
-the physical pixels per texel, or the whole texels the slot shows), the web visualizer SHALL fade
+the physical pixels per texel, or the whole texels the slot shows), or the frame's view was
+narrowed below the texels the slot shows now, the web visualizer SHALL fade
 that frame to black through the flash limiter, then present black for 0.1 s, then start a frame
 at the geometry asked for then. No output or tracker texel SHALL be carried from one
 geometry to another.
@@ -55,6 +56,13 @@ geometry to another.
 - **THEN** the frame fades at its own scale and a frame starts at the new scale from black, with
   no texel copied
 
+#### Scenario: Slot shrank and grew back between two draws
+
+- **WHEN** the slot is observed 400 pixels wide and then 800 again between two draws of an
+  800-pixel frame
+- **THEN** the view stays 400 pixels wide and the next draw starts the fade, so the hidden half
+  comes back with the frame that starts
+
 #### Scenario: Slot with no whole texel
 
 - **WHEN** the slot shrinks to less than one texel
@@ -65,10 +73,10 @@ geometry to another.
 
 For the fade the web visualizer SHALL keep the frame's geometry, write the grant state with every
 budget spent once, set the area limit to zero and feed the limiter black, so every fall to black
-waits for a grant. It SHALL end the fade at the first frame after one of the fade's frames whose
-grant held no direction, and after 2 s at most. It SHALL count the fade and the black in the time
-the limiter is credited with, at most 1/6 s a frame, and the black from the first black frame
-shown.
+waits for a grant. It SHALL end the fade at the first frame that has read no direction held in
+one of the fade's frames, and after 2 s at most. It SHALL count the fade and the black in the
+time the limiter is credited with, at most 1/6 s a frame, and the black from the first black
+frame shown.
 
 #### Scenario: Fade starts
 
@@ -83,14 +91,22 @@ shown.
 
 #### Scenario: Dark frame
 
-- **WHEN** the fade starts on a frame with no pixel a step above black
-- **THEN** the fade's first frame holds no direction and the next frame presents black
+- **WHEN** the fade starts on a frame whose trackers hold no fall of a step to black (no luma
+  extreme or reference a step above black, no red one)
+- **THEN** the fade's first frame holds no direction, and black is presented at the first frame
+  that has read its grant
+
+#### Scenario: Dark frame after a brighter one
+
+- **WHEN** the fade starts on a dark frame whose trackers still hold a peak a step above black
+- **THEN** the fall to black is a transition and the fade waits for its grant as for any other
+  frame
 
 #### Scenario: Frame with a fall to grant
 
 - **WHEN** the fade's frames hold the fall to black
-- **THEN** the fade goes on until the frame after the one that granted it, and the grant state
-  the fade wrote is not read as a grant
+- **THEN** the fade goes on until a frame has read the grant of the frame that granted it, and
+  the grant state the fade wrote, or one read before the fade started, is not taken as a grant
 
 #### Scenario: Grant that never clears
 
@@ -99,9 +115,50 @@ shown.
 
 #### Scenario: Steady 60 frames a second
 
-- **WHEN** frames arrive every 1/60 s and the refresh period is unknown
+- **WHEN** frames have arrived every 1/60 s for the last 32 draws
 - **THEN** each frame is credited half its interval, so the 0.1 s of black lasts about 0.2 s on
   the clock and the 2 s cap about 4 s
+
+### Requirement: The grant is read without waiting on the GPU
+
+The web visualizer SHALL read a frame's grant through a pixel-pack buffer and a fence it polls
+once a frame, and SHALL NOT block on the GPU for it. It SHALL drop a read still in flight at a
+later draw outside a fade, at a fade's start and at a withdrawal.
+
+#### Scenario: Grant read while the GPU is busy
+
+- **WHEN** the read of a fade frame's grant has not finished at the next frame
+- **THEN** that frame is drawn without waiting, and the fade ends at the first frame that finds
+  the read finished with no direction held
+
+#### Scenario: No read ever finishes
+
+- **WHEN** no read of a grant finishes during the fade
+- **THEN** black is presented once the fade has counted 2 s
+
+### Requirement: A frame is credited no more than it was shown
+
+The time the web visualizer credits the limiter for a frame SHALL be a lower bound on the time
+the frame was on screen. With B the shortest of the last 32 draw intervals, clamped to 4 ms and
+1/24 s, the credit for an interval SHALL be `min(B, max(interval / 2, interval - B))`. A steady
+cadence SHALL NOT raise the credit above half the interval: the animation-frame cadence is not
+the display's refresh period.
+
+#### Scenario: Animation frames at 60 a second on a 120 Hz display
+
+- **WHEN** frames arrive every 16.7 ms and one is painted a refresh late and the next on time
+- **THEN** the frame was shown 8.3 ms and is credited 8.3 ms
+
+#### Scenario: Cadence slows from 240 to 60 frames a second
+
+- **WHEN** frames arrived every 1/240 s and then arrive every 1/60 s
+- **THEN** each frame is credited 1/240 s until 32 draws have passed at the new cadence, and half
+  its interval from then on
+
+#### Scenario: Long interval
+
+- **WHEN** an interval of 2 s follows steady 59.94 Hz frames
+- **THEN** it is credited 1/59.94 s, one refresh
 
 ### Requirement: A change during the fade only moves the target
 
@@ -128,7 +185,9 @@ with every budget spent.
 ### Requirement: A spent grant state is judged before it is trusted
 
 A grant state the host wrote spent has judged no frame. A paused player SHALL draw a frame through
-it before holding the picture, and SHALL keep drawing through a fade and the black after it.
+it before holding the picture, and SHALL keep drawing through a fade and the black after it. It
+SHALL hold the picture undrawn while the grant of the frame on screen is being read, and draw
+again when the read finds a direction held.
 
 #### Scenario: Paused on a grant the host wrote
 
@@ -156,6 +215,13 @@ slot cuts SHALL NOT be presented.
 Until the next frame starts, the web visualizer SHALL keep the canvas at the frame's size and
 position, clipped to the smallest slot seen since the frame started, so a pixel leaves view only
 by that clip and a pixel the slot hid does not come back.
+
+#### Scenario: Slot shrinks, then the device pixel ratio changes
+
+- **WHEN** a frame with 800 pixels in view at ratio 1 has its slot observed 400 pixels wide, and
+  the ratio then goes to 2 before the next draw
+- **THEN** the view is 400 pixels wide from the observation on, while the frame is held and after
+  the slot is observed 800 physical pixels wide at the new ratio
 
 #### Scenario: Slot shrinks and grows back during the fade
 
@@ -204,8 +270,10 @@ slot's pixels that leaves that geometry as it was SHALL NOT withdraw a frame.
 ### Requirement: A slot measured at another device pixel ratio is not drawn for
 
 When the device pixel ratio differs from the one the slot was last observed at, the web
-visualizer SHALL NOT draw, start a fade or move the clip from the cached size. It SHALL leave the
-frame on screen as it is, observe the slot again, and draw from the next observation.
+visualizer SHALL NOT draw, start a fade or move the clip from the cached CSS size. It SHALL leave
+the frame on screen as it is, observe the slot afresh, and draw from the next observation. An
+observation SHALL narrow the view of the frame on screen when it is made, whatever the ratio, and
+nothing on this path SHALL widen it.
 
 #### Scenario: Zoom with the slot's pixels unchanged
 
@@ -213,6 +281,25 @@ frame on screen as it is, observe the slot again, and draw from the next observa
   animation frame runs before the slot is observed
 - **THEN** nothing is drawn, no fade starts and the clip does not shrink; after the observation
   reports 800 by 600 the frame goes on with no fade
+
+### Requirement: A ratio change is observed afresh
+
+After a change of device pixel ratio the web visualizer SHALL stop observing the slot and observe
+it again, since observing a slot already observed reports nothing while its box is unchanged. If
+no observation has come after three animation frames, the device-pixel box last observed is
+still the slot's, and it SHALL draw from that box and the CSS size read from layout.
+
+#### Scenario: Zoom the observer in place does not report
+
+- **WHEN** a zoom leaves the slot's device-pixel box unchanged, so the observation in place
+  reports nothing
+- **THEN** the fresh observation reports the slot before the paint and the next frame is drawn
+
+#### Scenario: No observation at the new ratio
+
+- **WHEN** the ratio changes and three animation frames pass with no observation
+- **THEN** the fourth draws from the device-pixel box last observed, with the pixels per texel of
+  the new ratio
 
 ### Requirement: Unjudged pixels show black
 
