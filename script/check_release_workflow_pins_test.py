@@ -77,6 +77,7 @@ RUN sh /in/build.sh /in/ffmpeg.lock /in/ffmpeg.pin "$TARGETARCH" /out
 FROM debian:bookworm@sha256:{debian} AS ffmpeg-runtime
 COPY --from=ffmpeg /out/SHA256SUMS /out/*-source.tar /usr/share/beamfall/source/ffmpeg/
 FROM ffmpeg-runtime AS runtime
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/beamfall"]
 """.format(node="c" * 64, go="d" * 64, debian="e" * 64),
         )
         workflow = """jobs:
@@ -177,6 +178,11 @@ FROM ffmpeg-runtime AS runtime
         path = ".github/workflows/gate.yml"
         self.write(path, self.read(path).replace("@" + "a" * 40, "@v5", 1))
         self.assert_error("action reference is mutable")
+
+    def test_rejects_runtime_entrypoint_without_tini(self) -> None:
+        path = "Dockerfile"
+        self.write(path, self.read(path) + 'ENTRYPOINT ["/usr/local/bin/beamfall"]\n')
+        self.assert_error("runtime ENTRYPOINT must start Beamfall under tini")
 
     def test_rejects_mutable_dockerfile_base(self) -> None:
         self.write("Dockerfile", self.read("Dockerfile").replace("@sha256:" + "c" * 64, ""))

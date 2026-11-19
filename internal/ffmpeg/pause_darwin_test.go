@@ -2,8 +2,6 @@ package ffmpeg
 
 import "golang.org/x/sys/unix"
 
-func hlsEncoderPID(p *HLSProcess) int { return p.cmd.Process.Pid }
-
 func hlsProcessStopped(pid int) (bool, error) {
 	info, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	if err != nil {

@@ -2436,16 +2436,21 @@ const hlsStderrTailBytes = 4 << 10
 // stderr pipe delay the reap once the leader has exited.
 const hlsStderrWaitDelay = time.Second
 
+const hlsStopBound = time.Second
+
 // HLSProcess is a running HLS transcode owned by its caller.
 type HLSProcess struct {
 	cmd     *exec.Cmd
 	wait    sync.Once
+	done    chan struct{}
 	waitErr error
-	// signalMu serializes pause, resume and teardown requests.
-	signalMu sync.Mutex
-	paused   bool
-	stopping bool
-	reaper   hlsReaper
+	// signalMu serializes signals through the final group kill, before Wait
+	// releases the leader PID for reuse.
+	signalMu   sync.Mutex
+	paused     bool
+	stopping   bool
+	killed     bool
+	escalation *time.Timer
 	// stopRequested records that the owner asked for this exit (Stop or context
 	// cancellation), so a supervisor can tell an expected kill from a crash.
 	stopRequested atomic.Bool
@@ -2539,18 +2544,14 @@ func (l *lockedTail) String() string {
 	return l.tail.String()
 }
 
-func newHLSProcess(cmd *exec.Cmd) *HLSProcess {
-	p := &HLSProcess{cmd: cmd}
-	p.stderr.tail.limit = hlsStderrTailBytes
-	return p
-}
-
-// startHLSProcess is the single lifecycle boundary for every long-running HLS
-// process. Context cancellation and Stop share one process-group kill path;
-// concurrent Wait calls share exactly one exec.Cmd.Wait call. Unless the
-// caller already routed stderr, its bounded tail is kept for StderrTail.
+// startHLSProcess starts an HLS command. Concurrent Wait and Stop calls share
+// a single exec.Cmd.Wait. Unless the caller routes stderr, StderrTail keeps
+// its bounded tail.
 func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
-	p := newHLSProcess(cmd)
+	applySysProcAttr(cmd)
+	configureProcessGroup(cmd)
+	p := &HLSProcess{cmd: cmd, done: make(chan struct{})}
+	p.stderr.tail.limit = hlsStderrTailBytes
 	cmd.Cancel = func() error {
 		p.stopRequested.Store(true)
 		p.killTree()
@@ -2568,7 +2569,7 @@ func startHLSProcess(cmd *exec.Cmd) (*HLSProcess, error) {
 	}
 	p.started = time.Now()
 	p.reportsProgress = reportsProgress
-	if err := p.start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -2584,15 +2585,23 @@ func StartHLSCommand(cmd *exec.Cmd) (*HLSProcess, error) {
 }
 
 func (p *HLSProcess) killTree() {
-	if p == nil || p.cmd == nil {
-		return
-	}
 	p.signalMu.Lock()
 	defer p.signalMu.Unlock()
-	if !p.stopping {
-		p.stopping = true
-		p.terminateGroup()
+	p.killTreeLocked()
+}
+
+// killTreeLocked disarms any pending escalation before releasing the leader PID.
+func (p *HLSProcess) killTreeLocked() {
+	if p.killed {
+		return
 	}
+	p.stopping = true
+	p.killed = true
+	if p.escalation != nil {
+		p.escalation.Stop()
+		p.escalation = nil
+	}
+	p.killGroup()
 }
 
 // Running reports whether this process wraps a started OS child.
@@ -2634,26 +2643,48 @@ func (p *HLSProcess) Resume() bool {
 	return !p.paused
 }
 
-// Wait blocks until the transcode exits and its reaper finishes.
+// Wait blocks until the transcode exits and exec.Cmd.Wait finishes.
 func (p *HLSProcess) Wait() error {
-	if p == nil || p.cmd == nil {
+	if !p.Running() {
 		return nil
 	}
-	p.wait.Do(func() {
-		p.waitErr = p.waitForExit()
-	})
+	p.startWait()
+	<-p.done
 	return p.waitErr
 }
 
-// Stop terminates the transcode group and waits for reaping up to the platform's
-// stop bound. Wait joins the reaper if a Linux descendant takes longer to exit.
-func (p *HLSProcess) Stop() {
-	if p == nil || p.cmd == nil || p.cmd.Process == nil {
-		return
+func (p *HLSProcess) startWait() {
+	p.wait.Do(func() {
+		go func() {
+			p.waitErr = p.waitForExit()
+			close(p.done)
+		}()
+	})
+}
+
+// Stop requests termination and joins the leader. If the join times out, the
+// caller must keep resources the process could still use until Wait completes.
+func (p *HLSProcess) Stop() error {
+	if !p.Running() {
+		return nil
 	}
 	p.stopRequested.Store(true)
-	p.killTree()
-	p.waitAfterStop()
+	p.signalMu.Lock()
+	if !p.stopping {
+		p.stopping = true
+		p.terminateGroupLocked()
+	}
+	p.signalMu.Unlock()
+
+	p.startWait()
+	timer := time.NewTimer(hlsStopBound)
+	defer timer.Stop()
+	select {
+	case <-p.done:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("ffmpeg: encoder stop did not join within %s", hlsStopBound)
+	}
 }
 
 // Kill terminates the process tree without marking the exit as requested, so

@@ -29,7 +29,7 @@ func TestHLSProcessPauseResumeKeepsPID(t *testing.T) {
 	cmd.Stdin = reader
 	cmd.Stdout = &output
 	process := startHLSPauseTestProcess(t, cmd)
-	pid := hlsEncoderPID(process)
+	pid := cmd.Process.Pid
 	if !process.Pause() {
 		t.Fatal("Pause refused a running process")
 	}
@@ -89,11 +89,8 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	const descendantFile = "descendant.pid"
 	cmd := exec.CommandContext(context.Background(), "sh", "-c", `read -r line <&3 & echo $! > "$1"; wait`, "sh", descendantFile)
 	cmd.ExtraFiles = []*os.File{reader}
-	process, err := startHLSProcess(cmd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leader := hlsEncoderPID(process)
+	process := startHLSPauseTestProcess(t, cmd)
+	leader := cmd.Process.Pid
 	descendant := waitForPidFile(t, descendantFile)
 	if !process.Pause() {
 		t.Fatal("Pause refused a running group")
@@ -101,44 +98,23 @@ func TestHLSProcessStopHelper(t *testing.T) {
 	waitForStoppedHLSProcess(t, leader)
 	waitForStoppedHLSProcess(t, descendant)
 
-	deadline := time.Now().Add(hlsPauseTestBound)
-	stopped := make(chan struct{})
-	go func() {
-		process.Stop()
-		close(stopped)
-	}()
-	select {
-	case <-stopped:
-	case <-time.After(time.Until(deadline)):
-		t.Fatal("Stop did not finish within the reap bound")
-	}
-	if !time.Now().Before(deadline) {
-		t.Fatal("Stop did not finish within the reap bound")
+	deadline := time.Now().Add(hlsStopBound)
+	if err := process.Stop(); err != nil {
+		t.Fatal(err)
 	}
 	if cmd.ProcessState == nil {
-		t.Fatal("Stop returned before reaping the leader")
+		t.Fatal("Stop returned before joining the leader")
 	}
-	signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal()
-	for {
-		// Signal zero also sees zombies. Only the production Stop path (or
-		// launchd on Darwin) can make the descendant disappear.
-		leaderErr := syscall.Kill(leader, 0)
-		descendantErr := syscall.Kill(descendant, 0)
-		if leaderErr == syscall.ESRCH && descendantErr == syscall.ESRCH {
-			if !time.Now().Before(deadline) {
-				t.Fatal("group reaped after the reap bound")
-			}
-			break
-		}
-		if !time.Now().Before(deadline) {
-			t.Fatalf("group not reaped within %s: leader %d: %v, descendant %d: %v",
-				hlsPauseTestBound, leader, leaderErr, descendant, descendantErr)
+	if signal := cmd.ProcessState.Sys().(syscall.WaitStatus).Signal(); signal != syscall.SIGKILL {
+		t.Errorf("Stop ended the leader with %s, want SIGKILL", signal)
+	}
+	for time.Now().Before(deadline) {
+		if hlsDescendantExited(descendant) {
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if signal != syscall.SIGKILL {
-		t.Errorf("Stop ended the leader with %s, want SIGKILL", signal)
-	}
+	t.Fatalf("descendant %d did not exit within %s", descendant, hlsStopBound)
 }
 
 func TestHLSProcessPauseRacesNaturalExit(t *testing.T) {
@@ -148,7 +124,7 @@ func TestHLSProcessPauseRacesNaturalExit(t *testing.T) {
 		if err := raceHLSPauseWithExit(t, process); err != nil {
 			t.Fatalf("natural exit failed: %v", err)
 		}
-		if pid := hlsEncoderPID(process); processAlive(pid) {
+		if pid := cmd.Process.Pid; processAlive(pid) {
 			t.Fatalf("leader %d survived Wait", pid)
 		}
 		assertHLSPauseRefused(t, process)
@@ -160,7 +136,7 @@ func TestHLSProcessPauseRefusedAfterStop(t *testing.T) {
 		name      string
 		terminate func(*HLSProcess)
 	}{
-		{"Stop", (*HLSProcess).Stop},
+		{"Stop", func(p *HLSProcess) { _ = p.Stop() }},
 		{"Kill before Wait", (*HLSProcess).Kill},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -175,13 +151,44 @@ func TestHLSProcessPauseRefusedAfterStop(t *testing.T) {
 	}
 }
 
+type blockingHLSOutput struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (w blockingHLSOutput) Write(data []byte) (int, error) {
+	close(w.entered)
+	<-w.release
+	return len(data), nil
+}
+
+func TestHLSProcessStopTimesOutUntilWaitCompletes(t *testing.T) {
+	output := blockingHLSOutput{entered: make(chan struct{}), release: make(chan struct{})}
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", "printf ready; exec sleep 30")
+	cmd.Stdout = output
+	process := startHLSPauseTestProcess(t, cmd)
+	defer close(output.release)
+	select {
+	case <-output.entered:
+	case <-time.After(hlsPauseTestBound):
+		t.Fatal("encoder did not reach the blocked output writer")
+	}
+	if err := process.Stop(); err == nil {
+		t.Fatal("Stop succeeded while exec.Cmd.Wait was still blocked")
+	}
+}
+
 func startHLSPauseTestProcess(t *testing.T, cmd *exec.Cmd) *HLSProcess {
 	t.Helper()
 	process, err := startHLSProcess(cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(process.Stop)
+	t.Cleanup(func() {
+		if err := process.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
 	return process
 }
 

@@ -525,7 +525,8 @@ type Sessions struct {
 	// has not finished, including ones that only remove a directory. Close
 	// waits for starting, stopping and detached to reach zero so no encoder,
 	// lease or directory outlives it.
-	detached int
+	detached     int
+	detachedDirs map[string]struct{} // directories still owned by teardowns or off-lock starts
 	// offLockIdle, when non-nil, is closed when starting, stopping and
 	// detached all drop to zero.
 	offLockIdle chan struct{}
@@ -577,6 +578,7 @@ func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
 			t.lease.Release()
 		}
 		s.mu.Lock()
+		delete(s.detachedDirs, t.dir)
 		if t.counted {
 			s.stopping--
 		}
@@ -611,7 +613,10 @@ func (s *Sessions) stop(proc *ffmpeg.HLSProcess) {
 		s.stopEncoder(proc)
 		return
 	}
-	proc.Stop()
+	if err := proc.Stop(); err != nil {
+		// Keep the directory, lease and slot until the encoder actually joins.
+		_ = proc.Wait()
+	}
 }
 
 // holdsTranscodeLocked reports whether session occupies a transcode slot: it
@@ -856,6 +861,7 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 		session.revokeDone = nil
 	}
 	s.detached++
+	s.detachedDirs[session.dir] = struct{}{}
 	switch {
 	case session.proc != nil:
 		// The process keeps running until the teardown stops it, so the
@@ -865,10 +871,10 @@ func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 		teardown.counted = true
 		s.stopping++
 	case session.startPending:
-		// An off-lock ensureRung start owns this session's lease and may be
-		// spawning a process. It sees the eviction when it relocks, stops what
-		// it spawned, removes the directory again, then releases the lease and
-		// this slot.
+		// The off-lock start may still be joining the replaced process or
+		// spawning its successor. It owns the directory, lease and slot
+		// until it has joined both processes.
+		teardown.dir = ""
 		s.stopping++
 	default:
 		// No process: nothing else will release the lease.
@@ -960,13 +966,14 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		now = time.Now
 	}
 	s := &Sessions{
-		transcoder:  transcoder,
-		dir:         scratchDir,
-		now:         now,
-		bootNonce:   newBootNonce(),
-		sessions:    map[SessionKey]*hlsSession{},
-		cap:         defaultTranscodeCap,
-		resumeHints: map[SessionKey]resumeHint{},
+		transcoder:   transcoder,
+		dir:          scratchDir,
+		now:          now,
+		bootNonce:    newBootNonce(),
+		sessions:     map[SessionKey]*hlsSession{},
+		cap:          defaultTranscodeCap,
+		resumeHints:  map[SessionKey]resumeHint{},
+		detachedDirs: map[string]struct{}{},
 	}
 	_ = s.PurgeOrphanedTranscodeDirs()
 	return s
@@ -1682,11 +1689,9 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	s.mu.Lock()
 	session.startPending = false
 	if !s.liveLocked(key, session) {
-		// Torn down while the lock was released. removeLocked counted this
-		// start in s.stopping and scheduled the directory's removal, possibly
-		// before the replaced process exited or the new one wrote anything, so
-		// stop the new process and remove the directory again before releasing
-		// the lease and the slot.
+		// Evicted while the lock was released. The replaced process has joined.
+		// Join any new process before removing the directory and releasing the
+		// lease and the slot removeLocked left with this start.
 		s.mu.Unlock()
 		if err == nil {
 			if liveRun != nil {
@@ -1696,6 +1701,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		}
 		_ = os.RemoveAll(session.dir)
 		s.mu.Lock()
+		delete(s.detachedDirs, session.dir)
 		s.releaseTranscodeLease(session)
 		s.stopping--
 		s.starting--
@@ -2106,10 +2112,10 @@ var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
 // on-disk media/library attribution — they are keyed by an in-memory counter), so
 // they are purged here as a set.
 //
-// The sweep runs under the session lock and skips any dir a live session still
-// holds, so it never deletes an in-flight session's working dir even if it runs
-// after serving has begun (the runtime-unseal path). At boot the in-memory map is
-// empty — a restart drops all session state before serving — so every session dir
+// The sweep runs under the session lock and skips dirs held by live sessions
+// and in-flight teardowns, including after serving begins on the runtime-unseal
+// path. At boot the in-memory map is empty — a restart drops all session
+// state before serving — so every session dir
 // on disk is an orphan and is removed — which is also why NewSessionsInDir
 // calls this at construction, before any session is live, to purge whatever a
 // prior process on the same root left behind. Hard delete is correct: session
@@ -2139,6 +2145,9 @@ func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
 		dir := filepath.Join(s.dir, entry.Name())
 		if _, held := live[dir]; held {
 			continue // in-flight session: never delete a live plaintext working dir
+		}
+		if _, held := s.detachedDirs[dir]; held {
+			continue
 		}
 		joined = errors.Join(joined, os.RemoveAll(dir))
 	}

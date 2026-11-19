@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,9 @@ import (
 )
 
 func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
+	if !SupportsHLSPause {
+		t.Skip("HLS group signalling unavailable")
+	}
 	pidPath := filepath.Join(t.TempDir(), "descendant.pid")
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, "sh", "-c", "sleep 30 & echo $! > \"$1\"; wait", "sh", pidPath) // #nosec G204 -- test-owned path
@@ -58,11 +62,13 @@ func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
 		wg.Add(1)
 		go func() { defer wg.Done(); _ = process.Wait() }()
 	}
-	process.Stop()
+	if err := process.Stop(); err != nil {
+		t.Fatal(err)
+	}
 	wg.Wait()
 
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		if hlsDescendantExited(pid) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -71,6 +77,9 @@ func TestHLSProcessConcurrentCancelStopWaitReapsGroup(t *testing.T) {
 }
 
 func TestHLSProcessNaturalLeaderExitReapsDescendant(t *testing.T) {
+	if !SupportsHLSPause {
+		t.Skip("HLS group signalling unavailable")
+	}
 	pidPath := filepath.Join(t.TempDir(), "natural-descendant.pid")
 	cmd := exec.CommandContext(context.Background(), "sh", "-c", "sleep 30 & echo $! > \"$1\"; exit 0", "sh", pidPath) // #nosec G204 -- test-owned path
 	process, err := startHLSProcess(cmd)
@@ -89,12 +98,36 @@ func TestHLSProcessNaturalLeaderExitReapsDescendant(t *testing.T) {
 		t.Fatal(err)
 	}
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+		if hlsDescendantExited(pid) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("descendant process %d survived natural HLS leader exit", pid)
+}
+
+func hlsDescendantExited(pid int) bool {
+	if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+		return true
+	}
+	if runtime.GOOS != "linux" {
+		return false // launchd should reap the descendant on Darwin
+	}
+	status, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status") // #nosec G304 -- test-owned PID
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil || !strings.Contains(string(status), "\nState:\tZ") {
+		return false
+	}
+	// Linux test runners may have a PID 1 that does not reap orphans.
+	for line := range strings.SplitSeq(string(status), "\n") {
+		if value, ok := strings.CutPrefix(line, "PPid:"); ok {
+			ppid, err := strconv.Atoi(strings.TrimSpace(value))
+			return err == nil && ppid > 0 && ppid != os.Getpid()
+		}
+	}
+	return false
 }
 
 // TestBoundedBufferCapsAndSignalsOnce proves the capture buffer never retains

@@ -1,12 +1,12 @@
-//go:build darwin
+//go:build linux || darwin
 
 package ffmpeg
 
 import "fmt"
 
-// waitForExit observes the leader's exit without reaping it. killTree
-// disarms further signals and kills the group while the leader PID is still
-// reserved, even if the exit observer fails.
+// waitForExit observes the leader's exit without reaping it. killTree disarms
+// the escalation timer and kills residual group members while the leader PID
+// is still reserved. The OS init reaps orphaned descendants.
 func (p *HLSProcess) waitForExit() error {
 	exitErr := waitForProcessExit(p.cmd.Process.Pid)
 	p.killTree()

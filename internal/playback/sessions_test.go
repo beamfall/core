@@ -2419,6 +2419,12 @@ func TestSessionEvictedDuringEncoderReplacement(t *testing.T) {
 	if got := g.ActiveTranscodes(); got != 1 {
 		t.Fatalf("ActiveTranscodes while the evicted start is stopping = %d, want 1", got)
 	}
+	if err := sessions.PurgeOrphanedTranscodeDirs(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("session directory while the evicted start is stopping: %v", err)
+	}
 
 	slow.unblock()
 	select {
@@ -2539,8 +2545,7 @@ func TestCloseWaitsForAnInFlightEncoderStart(t *testing.T) {
 
 // dirlessSpawn is a fakeTranscoder whose starts, once dirless is set, succeed
 // without writing to the session directory, like an FFmpeg process that has
-// launched but not written anything yet. Close removes the directory while the
-// start runs, so a start that writes there would fail instead.
+// launched but not written anything yet.
 type dirlessSpawn struct {
 	*fakeTranscoder
 	dirless atomic.Bool
