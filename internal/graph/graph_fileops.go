@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/beamfall/core/internal/auth"
+	"github.com/beamfall/core/internal/l10n"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/workflow/convert"
 )
 
 // File-operation resolvers (ADR-0009 §5–6): preview-first organize, move, and
@@ -325,7 +327,61 @@ func (h *Handler) createManagedFolder(ctx context.Context, scope auth.Scope, req
 	return managedPathInfo(created), nil
 }
 
+// Check the durable override at admission so a newly disabled workflow is
+// refused even if the client still has its tools open.
+func (h *Handler) requireWorkflowCapability(ctx context.Context, id string) error {
+	states, err := h.store.CapabilityStates(ctx)
+	if err != nil {
+		return err
+	}
+	if enabled, configured := states[id]; configured && !enabled {
+		return &l10n.Error{
+			Key: l10n.WorkflowCapabilityDisabled,
+			Err: reasonedClientError{
+				message: clientError("This workflow is disabled in Console → Optional features."),
+				reason:  ErrorReasonCapabilityDisabled,
+			},
+		}
+	}
+	return nil
+}
+
+func (h *Handler) enqueueConvertJob(ctx context.Context, scope auth.Scope, req request) (JobInfo, error) {
+	if err := h.requireWorkflowCapability(ctx, "conversion"); err != nil {
+		return JobInfo{}, err
+	}
+	libraryID := store.LibraryID(trimmedVariable(req, "libraryID"))
+	path := stringVar(req, "srcPath")
+	profile := trimmedVariable(req, "profile")
+	filter := scope.LibraryFilter()
+	// Check the source before queueing. The worker validates it again under
+	// the caller's saved LibraryFilter and owns all file changes.
+	path, _, _, err := h.store.ResolveManagedMediaFile(ctx, libraryID, path, filter)
+	if err != nil {
+		return JobInfo{}, err
+	}
+	encrypted, err := h.store.LibraryEncrypted(ctx, libraryID)
+	if err != nil {
+		return JobInfo{}, err
+	}
+	if encrypted {
+		return JobInfo{}, store.ValidationError("managed conversion is unavailable for encrypted libraries")
+	}
+	job, err := convert.NewConvertJob(libraryID, path, profile, filter, time.Now().UTC())
+	if err != nil {
+		return JobInfo{}, err
+	}
+	created, err := h.store.EnqueueJob(ctx, job)
+	if err != nil {
+		return JobInfo{}, err
+	}
+	return h.jobInfo(ctx, scope, created), nil
+}
+
 func (h *Handler) renameManagedPath(ctx context.Context, scope auth.Scope, req request) (ManagedPathInfo, error) {
+	if err := h.requireWorkflowCapability(ctx, "rename"); err != nil {
+		return ManagedPathInfo{}, err
+	}
 	libraryID := trimmedVariable(req, "libraryID")
 	path := stringVar(req, "path")
 	name := trimmedVariable(req, "name")
@@ -343,6 +399,9 @@ func (h *Handler) renameManagedPath(ctx context.Context, scope auth.Scope, req r
 }
 
 func (h *Handler) batchRenameManagedPaths(ctx context.Context, scope auth.Scope, req request) (BatchResultInfo, error) {
+	if err := h.requireWorkflowCapability(ctx, "rename"); err != nil {
+		return BatchResultInfo{}, err
+	}
 	libraryID := trimmedVariable(req, "libraryID")
 	if libraryID == "" {
 		return BatchResultInfo{}, clientError("libraryID is required")

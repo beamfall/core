@@ -440,6 +440,11 @@
     "tier": "session"
   },
   {
+    "field": "enqueueconvertjob",
+    "effect": "write",
+    "tier": "session"
+  },
+  {
     "field": "entitiesformedia",
     "effect": "read",
     "tier": "session"
@@ -1668,5 +1673,10 @@
     "field": "webhooksettings",
     "effect": "read",
     "tier": "admin"
+  },
+  {
+    "field": "workflowcapabilitystates",
+    "effect": "read",
+    "tier": "session"
   }
 ]

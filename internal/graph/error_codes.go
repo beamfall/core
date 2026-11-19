@@ -80,6 +80,8 @@ const (
 	// Profile the session is no longer bound to (CORE-2177). Nothing was
 	// written; the client drops the write instead of retrying it.
 	ErrorReasonProfileMismatch ErrorReason = "PROFILE_MISMATCH"
+	// ErrorReasonCapabilityDisabled: the operator disabled the requested workflow.
+	ErrorReasonCapabilityDisabled ErrorReason = "CAPABILITY_DISABLED"
 )
 
 // ErrorReasons returns the closed reason vocabulary in its documented order.
@@ -89,6 +91,7 @@ func ErrorReasons() []ErrorReason {
 		ErrorReasonRevealPINRequired,
 		ErrorReasonRevealPINIncorrect,
 		ErrorReasonProfileMismatch,
+		ErrorReasonCapabilityDisabled,
 	}
 }
 
@@ -219,6 +222,7 @@ var clientErrorCodes = map[string]ErrorCode{
 	"an item in this batch was later merged into another item as a Version; undo that merge first": ErrorCodeConflict,
 	"job is not terminal":                                                                          ErrorCodeConflict,
 	"job is terminal":                                                                              ErrorCodeConflict,
+	"This workflow is disabled in Console → Optional features.":                                    ErrorCodeConflict,
 	"no identification to refresh; use Fix Match first":                                            ErrorCodeConflict,
 	"extension request already resolved":                                                           ErrorCodeConflict,
 	"library is already provisioned":                                                               ErrorCodeConflict,

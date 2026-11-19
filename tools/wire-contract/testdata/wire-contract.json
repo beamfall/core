@@ -443,6 +443,11 @@
       "tier": "session"
     },
     {
+      "field": "enqueueconvertjob",
+      "effect": "write",
+      "tier": "session"
+    },
+    {
       "field": "entitiesformedia",
       "effect": "read",
       "tier": "session"
@@ -1671,6 +1676,11 @@
       "field": "webhooksettings",
       "effect": "read",
       "tier": "admin"
+    },
+    {
+      "field": "workflowcapabilitystates",
+      "effect": "read",
+      "tier": "session"
     }
   ],
   "nested": [
@@ -7929,6 +7939,106 @@
               "kind": "scalar"
             }
           ]
+        }
+      ]
+    },
+    {
+      "field": "enqueueconvertjob",
+      "kind": "object",
+      "children": [
+        {
+          "name": "attempts",
+          "kind": "scalar"
+        },
+        {
+          "name": "class",
+          "kind": "scalar"
+        },
+        {
+          "name": "createdAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "error",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "finishedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "progress",
+          "kind": "object",
+          "children": [
+            {
+              "name": "current",
+              "kind": "scalar"
+            },
+            {
+              "name": "message",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "total",
+              "kind": "scalar"
+            },
+            {
+              "name": "unit",
+              "kind": "scalar"
+            }
+          ]
+        },
+        {
+          "name": "startedAt",
+          "kind": "scalar",
+          "optional": true
+        },
+        {
+          "name": "status",
+          "kind": "scalar"
+        },
+        {
+          "name": "target",
+          "kind": "object",
+          "optional": true,
+          "nullable": true,
+          "children": [
+            {
+              "name": "backfill",
+              "kind": "scalar",
+              "optional": true
+            },
+            {
+              "name": "libraryID",
+              "kind": "scalar"
+            },
+            {
+              "name": "libraryTitle",
+              "kind": "scalar"
+            },
+            {
+              "name": "root",
+              "kind": "scalar",
+              "optional": true
+            }
+          ]
+        },
+        {
+          "name": "updatedAt",
+          "kind": "scalar",
+          "optional": true
         }
       ]
     },
@@ -36909,6 +37019,59 @@
           "kind": "scalar"
         }
       ]
+    },
+    {
+      "field": "workflowcapabilitystates",
+      "kind": "list",
+      "elem": {
+        "kind": "object",
+        "children": [
+          {
+            "name": "enabled",
+            "kind": "scalar"
+          },
+          {
+            "name": "flippable",
+            "kind": "scalar"
+          },
+          {
+            "name": "id",
+            "kind": "scalar"
+          },
+          {
+            "name": "kind",
+            "kind": "scalar"
+          },
+          {
+            "name": "reason",
+            "kind": "scalar",
+            "optional": true
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "enabled",
+          "kind": "scalar"
+        },
+        {
+          "name": "flippable",
+          "kind": "scalar"
+        },
+        {
+          "name": "id",
+          "kind": "scalar"
+        },
+        {
+          "name": "kind",
+          "kind": "scalar"
+        },
+        {
+          "name": "reason",
+          "kind": "scalar",
+          "optional": true
+        }
+      ]
     }
   ],
   "v1": {
@@ -40920,7 +41083,8 @@
       "REVEAL_PIN_NOT_SET",
       "REVEAL_PIN_REQUIRED",
       "REVEAL_PIN_INCORRECT",
-      "PROFILE_MISMATCH"
+      "PROFILE_MISMATCH",
+      "CAPABILITY_DISABLED"
     ],
     "notes": [
       "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",

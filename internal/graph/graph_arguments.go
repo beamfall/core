@@ -346,6 +346,11 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "kind", Kind: "string"},
 		{Name: "mediaID", Kind: "string", Optional: true},
 	},
+	"enqueueconvertjob": {
+		{Name: "libraryID", Kind: "string"},
+		{Name: "srcPath", Kind: "string"},
+		{Name: "profile", Kind: "string"},
+	},
 	"entitiesformedia": fieldArguments["entitiesformedia"],
 	"entity":           fieldArguments["entity"],
 	"entityrelations": slices.Concat(fieldArguments["entityrelations"], []NestedArgument{
@@ -1232,9 +1237,10 @@ var fieldArgumentRegistry = map[string][]NestedArgument{
 		{Name: "positionMS", Kind: "number", Optional: true},
 		{Name: "request", Kind: "string", Optional: true},
 	},
-	"webhookdeliveries": {},
-	"webhooks":          {},
-	"webhooksettings":   {},
+	"webhookdeliveries":        {},
+	"webhooks":                 {},
+	"webhooksettings":          {},
+	"workflowcapabilitystates": {},
 }
 
 // sourceItemsRegistryArguments is the sourceItems resolver's argument list:

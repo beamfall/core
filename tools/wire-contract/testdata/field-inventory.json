@@ -1115,6 +1115,25 @@
       ]
     },
     {
+      "field": "enqueueconvertjob",
+      "effect": "write",
+      "tier": "session",
+      "children": [
+        "attempts",
+        "class",
+        "createdAt",
+        "error",
+        "finishedAt",
+        "id",
+        "kind",
+        "progress",
+        "startedAt",
+        "status",
+        "target",
+        "updatedAt"
+      ]
+    },
+    {
       "field": "entitiesformedia",
       "effect": "read",
       "tier": "session",
@@ -4571,6 +4590,18 @@
         "eventKinds",
         "formats",
         "publicBaseURL"
+      ]
+    },
+    {
+      "field": "workflowcapabilitystates",
+      "effect": "read",
+      "tier": "session",
+      "children": [
+        "enabled",
+        "flippable",
+        "id",
+        "kind",
+        "reason"
       ]
     }
   ]

@@ -68,7 +68,9 @@ var originalScopedFields = []string{
 	"connectionendpoints", // RELREV-8-CORE: authenticated secret-free endpoint discovery
 	"consoleconfig",
 	"capabilitystates",           // POWERTOOLS-9 (ADR-0124 §5): capability runtime-state read
+	"workflowcapabilitystates",   // CORE-2453: manager read of Workflow state
 	"setcapabilityenabled",       // POWERTOOLS-9 (ADR-0124 §5): audited Workflow-capability toggle
+	"enqueueconvertjob",          // CORE-2453: queue a managed file conversion
 	"controlsession",             // AV-3 (ADR-0035 §7): cross-device transport mutation
 	"formgroup",                  // AV-4 (ADR-0035 §8): Ambient Group Conductor — form group
 	"joingroup",                  // AV-4 (ADR-0035 §8): join group with calibrated offset+latency

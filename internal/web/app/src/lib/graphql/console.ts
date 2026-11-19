@@ -611,6 +611,19 @@ export async function fetchCapabilityStates(signal?: AbortSignal): Promise<Capab
   return data.capabilityStates;
 }
 
+/** Manager view of the same persisted workflow state used by the Console. */
+export async function fetchWorkflowCapabilityStates(
+  signal?: AbortSignal,
+): Promise<CapabilityStateInfo[]> {
+  const data = await graphql<{ workflowCapabilityStates: CapabilityStateInfo[] }>(
+    "query WorkflowCapabilityStates { workflowCapabilityStates { id kind enabled flippable } }",
+    {},
+    signal,
+    { adminUnlock: false },
+  );
+  return data.workflowCapabilityStates;
+}
+
 const SET_CAPABILITY_ENABLED_MUTATION =
   "mutation SetCapabilityEnabled($capability: String!, $enabled: Boolean!) { setCapabilityEnabled(capability: $capability, enabled: $enabled) { id kind enabled flippable reason } }";
 

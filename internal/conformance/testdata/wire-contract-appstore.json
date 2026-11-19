@@ -40046,7 +40046,8 @@
       "REVEAL_PIN_NOT_SET",
       "REVEAL_PIN_REQUIRED",
       "REVEAL_PIN_INCORRECT",
-      "PROFILE_MISMATCH"
+      "PROFILE_MISMATCH",
+      "CAPABILITY_DISABLED"
     ],
     "notes": [
       "Every entry in a GraphQL response's errors array carries extensions.code from the closed vocabulary in codes. Clients branch on the code, never on the message text; growing the vocabulary is a deliberate wire-contract change.",

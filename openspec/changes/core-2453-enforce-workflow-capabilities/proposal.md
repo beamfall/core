@@ -13,8 +13,8 @@ calls an enqueue mutation and needs a server handler for that request.
 - Check the persisted capability before admitting a conversion or applying a
   single or batch rename. Return a typed conflict when the workflow is off.
 - Wire the existing Convert client request to the server's conversion queue.
-- Let Manage read workflow state through the Console's existing query. Hide
-  disabled workflow links and redirect direct visits to their pages.
+- Give Manage a manager-scoped view of the same workflow state read by the
+  Console. Hide disabled workflow links and redirect direct visits to their pages.
 - Update the Optional features help in every shipped locale.
 
 The settings govern new workflow requests. Already admitted jobs and the

@@ -13,10 +13,10 @@ export const settingsHelp2Strings = {
       "Extra tools you can switch on or off for the whole server. Features marked as detected are found automatically and cannot be switched.",
     capabilityConversion: "File conversion",
     capabilityConversionTip:
-      "Lets admins convert media files to other formats from Manage → Convert. This version saves the choice but does not apply it yet: the Convert tools stay available.",
+      "Lets you convert media files to other formats. Turning this off hides Manage → Convert and blocks new conversion requests.",
     capabilityRename: "Rename files",
     capabilityRenameTip:
-      "Lets admins rename and move media files on disk with a naming pattern, from Manage → Rename. This version saves the choice but does not apply it yet: the Rename tools stay available.",
+      "Lets you rename files on disk, individually or with a naming pattern. Turning this off hides Manage → Rename and blocks new file rename requests.",
     capabilityShareMount: "Network shares",
     capabilityShareMountTip:
       "Whether this server can mount network shares (SMB or NFS) for libraries. It is detected from the operating system automatically, so there is nothing to switch.",
@@ -56,10 +56,10 @@ export const settingsHelp2Strings = {
       "Des outils supplémentaires à activer ou désactiver pour tout le serveur. Les fonctions marquées comme détectées sont trouvées automatiquement et ne peuvent pas être modifiées.",
     capabilityConversion: "Conversion de fichiers",
     capabilityConversionTip:
-      "Permet aux administrateurs de convertir des fichiers vers d’autres formats depuis Gérer → Convertir. Cette version enregistre le choix mais ne l’applique pas encore : les outils de conversion restent disponibles.",
+      "Permet de convertir les fichiers multimédias dans d’autres formats. Désactiver cette option masque Gérer → Convertir et bloque les nouvelles demandes de conversion.",
     capabilityRename: "Renommer les fichiers",
     capabilityRenameTip:
-      "Permet aux administrateurs de renommer et déplacer les fichiers sur le disque selon un modèle, depuis Gérer → Renommer. Cette version enregistre le choix mais ne l’applique pas encore : les outils de renommage restent disponibles.",
+      "Permet de renommer les fichiers sur le disque, un par un ou selon un modèle. Désactiver cette option masque Gérer → Renommer et bloque les nouvelles demandes de renommage.",
     capabilityShareMount: "Partages réseau",
     capabilityShareMountTip:
       "Indique si ce serveur peut monter des partages réseau (SMB ou NFS) pour les bibliothèques. C’est détecté automatiquement depuis le système, il n’y a donc rien à modifier.",
@@ -98,10 +98,10 @@ export const settingsHelp2Strings = {
       "Zusätzliche Werkzeuge, die Sie für den ganzen Server ein- oder ausschalten können. Als erkannt markierte Funktionen werden automatisch gefunden und lassen sich nicht umschalten.",
     capabilityConversion: "Dateiumwandlung",
     capabilityConversionTip:
-      "Erlaubt Admins, Mediendateien unter Verwalten → Umwandeln in andere Formate umzuwandeln. Diese Version speichert die Wahl, wendet sie aber noch nicht an: Die Umwandeln-Werkzeuge bleiben verfügbar.",
+      "Wandelt Mediendateien in andere Formate um. Das Ausschalten blendet Verwalten → Umwandeln aus und blockiert neue Umwandlungsaufträge.",
     capabilityRename: "Dateien umbenennen",
     capabilityRenameTip:
-      "Erlaubt Admins, Mediendateien auf der Platte nach einem Muster umzubenennen und zu verschieben, unter Verwalten → Umbenennen. Diese Version speichert die Wahl, wendet sie aber noch nicht an: Die Umbenennen-Werkzeuge bleiben verfügbar.",
+      "Benennt Dateien auf dem Datenträger einzeln oder nach einem Muster um. Das Ausschalten blendet Verwalten → Umbenennen aus und blockiert neue Anfragen zum Umbenennen.",
     capabilityShareMount: "Netzwerkfreigaben",
     capabilityShareMountTip:
       "Ob dieser Server Netzwerkfreigaben (SMB oder NFS) für Bibliotheken einbinden kann. Das wird automatisch am Betriebssystem erkannt, es gibt also nichts umzuschalten.",
@@ -140,10 +140,10 @@ export const settingsHelp2Strings = {
       "Herramientas adicionales que puedes activar o desactivar para todo el servidor. Las funciones marcadas como detectadas se encuentran automáticamente y no se pueden cambiar.",
     capabilityConversion: "Conversión de archivos",
     capabilityConversionTip:
-      "Permite a los administradores convertir archivos a otros formatos desde Gestionar → Convertir. Esta versión guarda la elección pero aún no la aplica: las herramientas de conversión siguen disponibles.",
+      "Permite convertir archivos multimedia a otros formatos. Al desactivar esta opción se oculta Gestionar → Convertir y se bloquean las nuevas solicitudes de conversión.",
     capabilityRename: "Renombrar archivos",
     capabilityRenameTip:
-      "Permite a los administradores renombrar y mover archivos en el disco con un patrón, desde Gestionar → Renombrar. Esta versión guarda la elección pero aún no la aplica: las herramientas de renombrado siguen disponibles.",
+      "Permite renombrar archivos en el disco, uno a uno o con un patrón. Al desactivar esta opción se oculta Gestionar → Renombrar y se bloquean las nuevas solicitudes de cambio de nombre.",
     capabilityShareMount: "Recursos compartidos de red",
     capabilityShareMountTip:
       "Si este servidor puede montar recursos compartidos de red (SMB o NFS) para las bibliotecas. Se detecta automáticamente desde el sistema operativo, así que no hay nada que cambiar.",
@@ -181,10 +181,10 @@ export const settingsHelp2Strings = {
       "Ferramentas extras que você pode ativar ou desativar para todo o servidor. Recursos marcados como detectados são encontrados automaticamente e não podem ser alterados.",
     capabilityConversion: "Conversão de arquivos",
     capabilityConversionTip:
-      "Permite que administradores convertam arquivos para outros formatos em Gerenciar → Converter. Esta versão salva a escolha mas ainda não a aplica: as ferramentas de conversão continuam disponíveis.",
+      "Permite converter arquivos de mídia para outros formatos. Desativar esta opção oculta Gerenciar → Converter e bloqueia novas solicitações de conversão.",
     capabilityRename: "Renomear arquivos",
     capabilityRenameTip:
-      "Permite que administradores renomeiem e movam arquivos no disco com um padrão, em Gerenciar → Renomear. Esta versão salva a escolha mas ainda não a aplica: as ferramentas de renomeação continuam disponíveis.",
+      "Permite renomear arquivos no disco, um por vez ou seguindo um padrão. Desativar esta opção oculta Gerenciar → Renomear e bloqueia novas solicitações de renomeação.",
     capabilityShareMount: "Compartilhamentos de rede",
     capabilityShareMountTip:
       "Se este servidor pode montar compartilhamentos de rede (SMB ou NFS) para bibliotecas. É detectado automaticamente pelo sistema operacional, então não há nada para alterar.",

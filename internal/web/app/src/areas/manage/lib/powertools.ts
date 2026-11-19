@@ -6,10 +6,9 @@
 // manage area (Allowed Paths) rather than the shared lib/graphql so the powertools
 // wiring stays self-contained.
 //
-// Degrades gracefully: the convert *enqueue* field is not part of the current wire
-// surface, so enqueueConvertJob reports `available: false` instead of throwing when
-// the server rejects an unknown mutation field. Queue + progress monitoring works
-// off the existing job substrate regardless.
+// Older servers may lack the convert enqueue field. In that case
+// enqueueConvertJob reports `available: false` and the page can still monitor
+// jobs through the shared queue.
 import { ApiError, graphql } from "@/lib/api";
 import { fetchJobs } from "@/lib/graphql";
 import type { BatchResultInfo, JobInfo } from "@/lib/graphql/types";

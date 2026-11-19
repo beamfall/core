@@ -35,6 +35,7 @@ import (
 	schedulepkg "github.com/beamfall/core/internal/schedule"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/streamtoken"
+	"github.com/beamfall/core/internal/workflow/convert"
 )
 
 // ServerInfo describes the connected Beamfall server.
@@ -2028,7 +2029,19 @@ func (h *Handler) jobRetry(ctx context.Context, scope auth.Scope, req request) (
 	if id == "" {
 		return JobInfo{}, clientError(store.ErrJobNotFound.Error())
 	}
-	job, err := h.store.RetryJob(ctx, store.JobID(id), time.Now().UTC())
+	job, err := h.store.Job(ctx, store.JobID(id))
+	if errors.Is(err, store.ErrJobNotFound) {
+		return JobInfo{}, clientError(err.Error())
+	}
+	if err != nil {
+		return JobInfo{}, err
+	}
+	if job.Kind == convert.JobKind {
+		if err := h.requireWorkflowCapability(ctx, "conversion"); err != nil {
+			return JobInfo{}, err
+		}
+	}
+	job, err = h.store.RetryJob(ctx, job.ID, time.Now().UTC())
 	if err != nil {
 		if errors.Is(err, store.ErrJobNotTerminal) || errors.Is(err, store.ErrJobNotFound) {
 			return JobInfo{}, clientError(err.Error())

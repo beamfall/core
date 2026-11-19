@@ -15,6 +15,7 @@
     "typecheck": "tsc -b --noEmit",
     "verify:build": "npm run check && npm run typecheck && npm run build",
     "test": "vitest run",
+    "strings:record": "vitest run src/strings.test.ts --update",
     "test:watch": "vitest",
     "e2e": "playwright test"
   },

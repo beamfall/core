@@ -3,8 +3,8 @@
 ### Requirement: File workflows honor their persisted capability setting
 
 The server SHALL check the persisted File conversion and Rename files settings
-before admitting a conversion or applying a single or batch rename. Disabling
-a workflow SHALL take effect on subsequent requests without a restart.
+before admitting or retrying a conversion or applying a single or batch rename.
+Disabling a workflow SHALL take effect on subsequent requests without a restart.
 
 #### Scenario: Disabled workflow refuses a new operation
 
@@ -18,9 +18,9 @@ a workflow SHALL take effect on subsequent requests without a restart.
 
 ### Requirement: Manage shows available workflow pages
 
-Manage SHALL use the workflow states from the capability query to decide if
-Convert and Rename are available. Authorized manager sessions SHALL be able to
-read those workflow states. Changing a setting SHALL require an Admin Session.
+Manage SHALL use the same workflow states as the Console to decide if Convert
+and Rename are available. Authorized manager sessions SHALL be able to read
+those workflow states. Changing a setting SHALL require an Admin Session.
 
 #### Scenario: Manage opens with a disabled workflow
 

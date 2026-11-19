@@ -593,16 +593,23 @@ export function searchSettings(
     pages = MENU_PAGES,
     appStoreHost = false,
     limit = 8,
-  }: { pages?: SearchablePage[]; appStoreHost?: boolean; limit?: number } = {},
+    visiblePage = () => true,
+  }: {
+    pages?: SearchablePage[];
+    appStoreHost?: boolean;
+    limit?: number;
+    visiblePage?: (area: SettingsArea, path: string) => boolean;
+  } = {},
 ): SettingsSearchResult[] {
   const words = normalizeSearchText(query).split(/\s+/).filter(Boolean);
   if (words.length === 0) return [];
 
   const candidates: { result: SettingsSearchResult; label: string; help: string }[] = [];
-  const firewalled = (area: SettingsArea, path: string) =>
-    area === "console" && appStoreHost && APP_STORE_FIREWALL_PATHS.has(path);
+  const hidden = (area: SettingsArea, path: string) =>
+    (area === "console" && appStoreHost && APP_STORE_FIREWALL_PATHS.has(path)) ||
+    !visiblePage(area, path);
   for (const page of pages) {
-    if (firewalled(page.area, page.path)) continue;
+    if (hidden(page.area, page.path)) continue;
     candidates.push({
       result: {
         key: `${page.area}:${page.path}`,
@@ -615,7 +622,7 @@ export function searchSettings(
     });
   }
   for (const page of SETTINGS_INDEX) {
-    if (firewalled(page.area, page.path)) continue;
+    if (hidden(page.area, page.path)) continue;
     for (const setting of page.settings) {
       candidates.push({
         result: {
