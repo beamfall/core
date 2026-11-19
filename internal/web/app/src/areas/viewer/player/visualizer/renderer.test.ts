@@ -303,7 +303,7 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(renderer.settled(640, 360, 1)).toBe(false);
 
     draw(640, 360, SCALE_BLACK_S / 2);
-    expect(clears).toHaveLength(2);
+    expect(clears).toHaveLength(3); // the canvas is cleared before the visible blit
     expect(limit).toHaveBeenCalledOnce();
     expect(blits).toEqual([[0, 0, 640, 360, 0, 0, 640, 360]]);
     expect(renderer.settled(640, 360, 1)).toBe(true);
@@ -368,6 +368,57 @@ describe("Renderer resize (CORE-2516)", () => {
     const after = spent.slice(before);
     for (const f of fOut) expect(after.map(([f]) => f)).toContain(f);
     expect(after.some(([f, v]) => fG.includes(f) && v[1] === 65025)).toBe(true);
+    expect(blocks.at(-1)?.[3]).toBe(0);
+  });
+
+  // Codex round 17: a backing resize copied the hidden columns of a clipped slot and counted them
+  // as visible, so the next draw exposed nothing and steady red appeared at once.
+  it("copies only the visible region on a backing resize and exposes the rest", () => {
+    const { r, draw, blits, scissors } = make();
+    draw(32, 100);
+    const { width, visibleWidth } = r.size as { width: number; visibleWidth: number };
+    expect([width, visibleWidth]).toEqual([64, 32]);
+    blits.length = 0;
+    draw(64, 101);
+    // Output and trackers: the old top-left 32 x 100 into the top of the new 64 x 101.
+    expect(blits.slice(0, 2)).toEqual([
+      [0, 0, 32, 100, 0, 1, 32, 101],
+      [0, 0, 32, 100, 0, 1, 32, 101],
+    ]);
+    expect(scissors).toEqual([
+      [32, 0, 32, 101],
+      [0, 0, 64, 1],
+    ]);
+  });
+
+  // Codex round 17: the canvas showed the whole backing, so a slot growing between draws revealed
+  // hidden pixels for a paint before the next draw cleared them.
+  it("presents only the visible region over black", () => {
+    const { draw, blits, clears } = make();
+    draw(64, 36);
+    draw(32, 30);
+    expect(blits.at(-1)).toEqual([0, 6, 32, 36, 0, 6, 32, 36]);
+    expect(clears.at(-1)).toBe(null);
+  });
+
+  // Codex round 17: shrinking a clipped slot lowers the area limit; a grant earned under the old
+  // one must not be spent under the new one.
+  it("spends the budgets when a clipped slot shrinks", () => {
+    const { r, draw, spent, blocks } = make();
+    draw(64, 36);
+    draw(64, 36);
+    const before = spent.length;
+    draw(32, 36);
+    const { fG } = (r.size as { limiter: { fG: unknown[] } }).limiter;
+    const after = spent.slice(before);
+    expect(after.some(([f, v]) => fG.includes(f) && v[1] === 65025)).toBe(true);
+    expect(blocks.at(-1)?.[3]).toBe(0);
+  });
+
+  // Codex round 17: the first draw earned a frame of credit before any budget write it could repay.
+  it("refills nothing on the first draw", () => {
+    const { draw, blocks } = make();
+    draw(64, 36);
     expect(blocks.at(-1)?.[3]).toBe(0);
   });
 

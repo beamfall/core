@@ -682,11 +682,17 @@ export class Renderer {
     // 3. The frame flash limiter.
     this.limit(size, frameMs);
 
-    // 4. The limited frame to the canvas.
+    // 4. The limited frame to the canvas: its visible part only, the rest black. A slot that grows
+    // before the next draw then reveals black, never pixels the limiter has not judged in view
+    // (Codex round 17). GL rows run bottom-up, so the top-left anchored visible rows are the top
+    // ones.
     const L = size.limiter;
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.fOut[L.cur]);
+    const { visibleWidth: vw, visibleHeight: vh } = size;
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
-    gl.blitFramebuffer(0, 0, W, H, 0, 0, W, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.fOut[L.cur]);
+    gl.blitFramebuffer(0, H - vh, vw, H, 0, H - vh, vw, H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
   }
 
@@ -1006,6 +1012,8 @@ export class Renderer {
     const fOut = out.map((x, i) => this.framebuffer([x, track[i]]));
     for (const f of fOut) this.clearOutput(f);
     const window = limiterWindow(W, H, texel);
+    // The region the limiter has judged in view; draw exposes the rest of the visible slot.
+    let visible: [number, number] = [W, H];
     const limiter: Limiter = kept
       ? { ...kept, rows, out, track, fRows: this.framebuffer([rows]), fOut, window }
       : this.newLimiterState(rows, out, track, fOut, window);
@@ -1015,10 +1023,15 @@ export class Renderer {
       // where the canvas is anchored, and new area starts tracked black. After a scale change
       // or context restore, the whole frame starts tracked black and the canvas presents black
       // for SCALE_BLACK_S (draw). Either way the budgets are written spent.
+      // Only the old visible region is copied: pixels hidden by a clipped slot were never judged
+      // in view, so they start black and tracked black like new area (Codex round 17).
       if (kept && old && sameScale) {
         const i = kept.cur;
-        this.copyAnchored(kept.out[i], old.width, old.height, out[i], W, H);
-        this.copyAnchored(kept.track[i], old.width, old.height, track[i], W, H);
+        const vw = old.visibleWidth;
+        const vh = old.visibleHeight;
+        this.copyAnchored(kept.out[i], old.width, old.height, out[i], W, H, vw, vh);
+        this.copyAnchored(kept.track[i], old.width, old.height, track[i], W, H, vw, vh);
+        visible = [Math.min(vw, W), Math.min(vh, H)];
       } else {
         this.black = SCALE_BLACK_S;
         this.blackShown = false;
@@ -1034,8 +1047,8 @@ export class Renderer {
     this.size = {
       width: W,
       height: H,
-      visibleWidth: W,
-      visibleHeight: H,
+      visibleWidth: visible[0],
+      visibleHeight: visible[1],
       renderWidth: render.width,
       renderHeight: render.height,
       feedback,
@@ -1051,10 +1064,11 @@ export class Renderer {
   // A slot that grows within an unchanged backing shows pixels the limiter last saw while they
   // were hidden. They start black and tracked black, as newly exposed area does on a resize, and
   // the budgets are spent, so revealing hidden content is rationed like any rise (Oscillux
-  // shaders/limiter/README.md, Codex round 16).
+  // shaders/limiter/README.md, Codex round 16). Any change of the visible size changes the area
+  // limit, so a shrink spends the budgets too: a grant earned under the old limit is not spent
+  // under the new one (Codex round 17).
   private expose(size: Size, visibleWidth: number, visibleHeight: number): void {
     const { height: H, visibleWidth: oldWidth, visibleHeight: oldHeight } = size;
-    if (visibleWidth <= oldWidth && visibleHeight <= oldHeight) return;
     const gl = this.gl;
     const L = size.limiter;
     // GL rows run bottom-up, so the top-left anchored visible rows are the top ones.
@@ -1109,7 +1123,7 @@ export class Renderer {
     size.renderHeight = render.height;
   }
 
-  // Copies the overlap of one texture into another of the same format 1:1 from the top-left,
+  // Copies the overlap of one texture's top-left vw x vh into another of the same format 1:1,
   // through framebuffers of one attachment each (an integer blit must be NEAREST and match every
   // draw buffer).
   private copyAnchored(
@@ -1119,15 +1133,18 @@ export class Renderer {
     to: WebGLTexture,
     tw: number,
     th: number,
+    vw = fw,
+    vh = fh,
   ): void {
     const gl = this.gl;
     const read = this.framebuffer([from], false);
     const draw = this.framebuffer([to], false);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, read);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, draw);
-    // GL rows run bottom-up, so the top-left anchor is the top rows of each.
-    const w = Math.min(fw, tw);
-    const h = Math.min(fh, th);
+    // GL rows run bottom-up, so the top-left anchor is the top rows of each. Only the source's
+    // top-left vw x vh is copied.
+    const w = Math.min(vw, tw);
+    const h = Math.min(vh, th);
     gl.blitFramebuffer(0, fh - h, w, fh, 0, th - h, w, th, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
@@ -1186,6 +1203,9 @@ export class Renderer {
     const c = this.storage(16, 9, gl.RGBA32UI);
     const w = this.storage(16, 9, gl.RGBA16UI);
     const g = [0, 1].map(() => this.storage(1, 1, gl.RGBA16UI));
+    // The first frame refills nothing, as after any write of the budgets (Oscillux
+    // shaders/limiter/README.md, Codex round 17).
+    this.limiterSpent = true;
     const limiter: Limiter = {
       rows,
       s,
