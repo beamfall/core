@@ -8,6 +8,7 @@ import {
   fetchTagAssignments,
 } from "@/lib/graphql";
 import { I18nProvider } from "@/lib/i18n";
+import type { Locale } from "@/strings";
 import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
 vi.mock("@/lib/graphql", async (importOriginal) => ({
@@ -56,9 +57,9 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-function renderMenu(isAudio: boolean) {
+function renderMenu(isAudio: boolean, onDetails?: () => void, locale: Locale = "en") {
   render(
-    <I18nProvider initialLocale="en">
+    <I18nProvider initialLocale={locale}>
       <MediaItemCardMenu
         title="Track One"
         primaryLabel="Play"
@@ -67,13 +68,27 @@ function renderMenu(isAudio: boolean) {
         href="https://example.test/watch/t1"
         target={{ mediaID: "t1" }}
         onPrimary={() => {}}
+        onDetails={onDetails}
       />
     </I18nProvider>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "More actions for Track One" }));
+  fireEvent.click(screen.getByRole("button"));
 }
 
 describe("MediaItemCardMenu wording", () => {
+  it.each([
+    ["en", "Details"],
+    ["fr", "Détails"],
+    ["de", "Details"],
+    ["es", "Detalles"],
+    ["pt", "Detalhes"],
+  ] as const)("localizes the detail action in %s", async (locale, label) => {
+    const details = vi.fn();
+    renderMenu(false, details, locale);
+    fireEvent.click(await screen.findByRole("menuitem", { name: label }));
+    expect(details).toHaveBeenCalledOnce();
+  });
+
   it("uses listening wording for audio Media", async () => {
     renderMenu(true);
     expect(await screen.findByRole("menuitem", { name: "Mark played" })).toBeInTheDocument();

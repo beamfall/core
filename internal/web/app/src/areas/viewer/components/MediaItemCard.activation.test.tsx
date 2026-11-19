@@ -9,6 +9,10 @@ import { SectionView } from "./SectionView";
 
 vi.mock("@/lib/session", () => ({ useViewerIdentity: () => "viewer-1" }));
 vi.mock("../player/preload", () => ({ preloadPlayer: vi.fn() }));
+vi.mock("@/lib/graphql", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/graphql")>()),
+  fetchItemState: vi.fn().mockResolvedValue({ watched: false }),
+}));
 
 // CORE-1144 activation model: a poster opens the item's detail page, a row in
 // a list plays it at once, and a non-media card still opens its entity page.
@@ -56,6 +60,19 @@ function renderSection(kind: string) {
 afterEach(cleanup);
 
 describe("card activation", () => {
+  it.each(["shelf", "list"])("opens detail from a %s card's menu", async (kind) => {
+    renderSection(kind);
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Alpha" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Details" }));
+    expect(screen.getByTestId("path")).toHaveTextContent("/media/m1");
+    const state = JSON.parse(screen.getByTestId("state").textContent || "null");
+    expect(readMediaPreview(state, "viewer-1", "m1")).toEqual({
+      item: items[0],
+      sectionID: `sec-${kind}`,
+    });
+    expect(state.queueIdentity).toBe("viewer-1");
+  });
+
   it.each(["shelf", "grid"])("opens the detail page from a %s poster", (kind) => {
     renderSection(kind);
     fireEvent.click(screen.getByRole("link", { name: "Alpha" }));

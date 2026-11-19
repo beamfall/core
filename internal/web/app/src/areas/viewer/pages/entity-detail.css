@@ -53,11 +53,39 @@
   list-style: none;
 }
 
+[data-register="viewer"] .bf-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Link, Play, More stay in the same visual and keyboard order at every width. */
+[data-register="viewer"] .bf-child-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+[data-register="viewer"] .bf-child-actions .bf-card-more {
+  position: static;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  opacity: 1;
+  transform: none;
+}
+
+[data-register="viewer"] .bf-child-actions .bf-card-more::after {
+  display: none;
+}
+
 [data-register="viewer"] .bf-child-link {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  height: 100%;
+  flex: 1 1 auto;
   padding: 8px;
   border-radius: var(--radius-card);
   color: var(--text-primary);
@@ -394,7 +422,12 @@
 }
 
 @media (max-width: 640px) {
+  [data-register="viewer"] .bf-row {
+    flex-wrap: wrap;
+    gap: 0;
+  }
   [data-register="viewer"] .bf-row-link {
+    flex-basis: 100%;
     gap: 12px;
   }
   [data-register="viewer"] .bf-row-thumb {

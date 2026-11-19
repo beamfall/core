@@ -11,6 +11,7 @@ import { mediaLinkState, resumeProgress } from "../lib/mediaDetail";
 import { runtimeParts } from "../lib/viewerFields";
 import { type PlayerNavState, playQueueOf, queueWindow } from "../lib/watchQueue";
 import { preloadPlayer } from "../player/preload";
+import { MediaItemCardMenu } from "./MediaItemCardMenu";
 
 // A container's own video Media as detail rows (CORE-2510): the still, the
 // ordinal its siblings do not share with the runtime, the title once and a
@@ -112,16 +113,34 @@ export function ContainerMediaRows({
               </span>
             </Link>
             {!item.locked && (
-              <button
-                type="button"
-                className="bf-row-play"
-                aria-label={t("mediaDetailPlayLabel", { title: item.title })}
-                onClick={() => play(item)}
-                onPointerEnter={preloadPlayer}
-                onFocus={preloadPlayer}
-              >
-                <Play aria-hidden />
-              </button>
+              <div className="bf-child-actions">
+                <button
+                  type="button"
+                  className="bf-row-play"
+                  aria-label={t("mediaDetailPlayLabel", { title: item.title })}
+                  onClick={() => play(item)}
+                  onPointerEnter={preloadPlayer}
+                  onFocus={preloadPlayer}
+                >
+                  <Play aria-hidden />
+                </button>
+                <MediaItemCardMenu
+                  title={item.title}
+                  primaryLabel={t("play")}
+                  isMedia
+                  href={
+                    new URL(
+                      `${import.meta.env.BASE_URL}media/${encodeURIComponent(item.id)}`,
+                      window.location.origin,
+                    ).href
+                  }
+                  target={{ mediaID: item.id }}
+                  onPrimary={() => play(item)}
+                  onDetails={() =>
+                    navigate(`/media/${encodeURIComponent(item.id)}`, { state: linkState(item) })
+                  }
+                />
+              </div>
             )}
           </li>
         );

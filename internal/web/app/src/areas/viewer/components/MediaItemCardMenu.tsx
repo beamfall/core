@@ -32,6 +32,7 @@ export function MediaItemCardMenu({
   href,
   target,
   onPrimary,
+  onDetails,
 }: {
   title: string;
   primaryLabel: string;
@@ -43,6 +44,8 @@ export function MediaItemCardMenu({
   /** The item the watched entry acts on. */
   target: ItemTarget;
   onPrimary: () => void;
+  /** Opens Media detail without starting playback (CORE-1144, CORE-2034). */
+  onDetails?: () => void;
 }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
@@ -103,6 +106,12 @@ export function MediaItemCardMenu({
                 <PrimaryIcon aria-hidden="true" size={15} />
                 {primaryLabel}
               </Menu.Item>
+              {onDetails && (
+                <Menu.Item className="bf-card-menu-item" onClick={onDetails}>
+                  <SquareArrowOutUpRight aria-hidden="true" size={15} />
+                  {t("mediaDetailDetails")}
+                </Menu.Item>
+              )}
               <Menu.Item
                 className="bf-card-menu-item"
                 disabled={pending || !state}

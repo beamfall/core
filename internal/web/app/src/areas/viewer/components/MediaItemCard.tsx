@@ -344,6 +344,17 @@ export function MediaItemCard({
         href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
         target={itemTargetFor(item)}
         onPrimary={isMedia ? play : open}
+        onDetails={
+          isMedia
+            ? () =>
+                navigate(`/media/${encodeURIComponent(item.id)}`, {
+                  state: {
+                    ...mediaLinkState(item, identity, focusAnchor?.section),
+                    ...queueState(),
+                  },
+                })
+            : undefined
+        }
       />
     </li>
   );
