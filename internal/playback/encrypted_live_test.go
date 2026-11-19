@@ -112,7 +112,12 @@ func encryptedFilePath(sessions *Sessions, key SessionKey, secure *EncryptedSour
 // readLiveArtifact returns the decrypted bytes of an encrypted session file.
 func readLiveArtifact(t *testing.T, sessions *Sessions, key SessionKey, path string) []byte {
 	t.Helper()
-	f, err := sessions.OpenLiveArtifact(key, path)
+	artifact, err := testArtifactForPath(sessions, key, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer artifact.Release()
+	f, err := artifact.OpenEncrypted()
 	if err != nil {
 		t.Fatalf("OpenLiveArtifact(%s): %v", filepath.Base(path), err)
 	}
@@ -131,7 +136,7 @@ func TestEncryptedLiveSessionKeepsOnlyCiphertext(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeEncryptedTranscoder{}
 	root := t.TempDir()
-	sessions := NewSessions(transcoder, root, nil)
+	sessions := newTestSessions(t, transcoder, root, nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-sealed", MediaID: "media-sealed"}
 	secure := testEncryptedSource(nil)
@@ -198,7 +203,7 @@ func TestEncryptedLiveSessionKeepsOnlyCiphertext(t *testing.T) {
 // session down: the directory goes and its files can no longer be opened.
 func TestEncryptedLiveSessionEndsWhenRevoked(t *testing.T) {
 	t.Parallel()
-	sessions := NewSessions(&fakeEncryptedTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeEncryptedTranscoder{}, t.TempDir(), nil)
 	sessions.revocationPoll = 5 * time.Millisecond
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-revoke", MediaID: "media-revoke"}
@@ -213,7 +218,10 @@ func TestEncryptedLiveSessionEndsWhenRevoked(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		_, statErr := os.Stat(dir)
-		_, openErr := sessions.OpenLiveArtifact(key, segment)
+		artifact, openErr := testArtifactForPath(sessions, key, segment)
+		if artifact != nil {
+			artifact.Release()
+		}
 		if errors.Is(statErr, os.ErrNotExist) && errors.Is(openErr, ErrSessionEvicted) {
 			return
 		}
@@ -240,7 +248,7 @@ func TestEncryptedLiveSessionRefusesUnsupportedShapes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			transcoder := &fakeEncryptedTranscoder{}
-			sessions := NewSessions(transcoder, t.TempDir(), nil)
+			sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 			defer sessions.Close()
 			key := SessionKey{SessionID: "session-shape", MediaID: "media-shape"}
 			_, err := encryptedFilePath(sessions, key, testEncryptedSource(nil), tc.duration, tc.burn, tc.composed, "master.m3u8")
@@ -260,7 +268,7 @@ func TestEncryptedLiveSessionRefusesUnsupportedShapes(t *testing.T) {
 func TestEncryptedLiveSessionNeedsTheEncryptedTranscoder(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeTranscoder{}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-plain", MediaID: "media-plain"}
 	_, err := encryptedFilePath(sessions, key, testEncryptedSource(nil), 120, -1, false, "720p/seg00000.m4s")
@@ -279,7 +287,7 @@ func TestEncryptedLiveSessionNeedsTheEncryptedTranscoder(t *testing.T) {
 func TestEncryptedLiveSessionDetectsAnEmptySegmentThroughDecryption(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeEncryptedTranscoder{segment: func(int) []byte { return emptySegment() }}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-empty", MediaID: "media-empty"}
 	_, err := encryptedFilePath(sessions, key, testEncryptedSource(nil), 120, -1, false, "720p/seg00010.m4s")

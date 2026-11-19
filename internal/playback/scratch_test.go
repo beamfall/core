@@ -1,0 +1,635 @@
+package playback
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/beamfall/core/internal/encderiv"
+	"github.com/beamfall/core/internal/ffmpeg"
+	"golang.org/x/sys/unix"
+)
+
+func newTestSessions(t testing.TB, transcoder Transcoder, dir string, now func() time.Time) *Sessions {
+	t.Helper()
+	s, err := NewSessions(transcoder, dir, now)
+	return ownTestSessions(t, s, err)
+}
+
+func newTestSessionsInDir(t testing.TB, transcoder Transcoder, dir string, now func() time.Time) *Sessions {
+	t.Helper()
+	s, err := NewSessionsInDir(transcoder, dir, now)
+	return ownTestSessions(t, s, err)
+}
+
+func ownTestSessions(t testing.TB, s *Sessions, err error) *Sessions {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return s
+}
+
+func testArtifactForPath(s *Sessions, key SessionKey, path string) (*LiveArtifact, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h := s.sessions[key]
+	if h == nil {
+		return nil, ErrSessionEvicted
+	}
+	h.scratch.users++
+	return &LiveArtifact{manager: s, session: h, path: path}, nil
+}
+
+func requireScratchMissing(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("scratch %s still present: %v", path, err)
+	}
+}
+
+func TestNewSessionsCreatesDefaultAndValidatesExplicitRoot(t *testing.T) {
+	data := t.TempDir()
+	def := filepath.Join(data, "transcode")
+	requireScratchMissing(t, def)
+	newTestSessions(t, nil, data, nil)
+	if info, err := os.Stat(def); err != nil || !info.IsDir() {
+		t.Fatalf("default scratch = %v, %v", info, err)
+	}
+
+	missing := filepath.Join(data, "missing")
+	if s, err := NewSessionsInDir(nil, missing, nil); err == nil {
+		_ = s.Close()
+		t.Fatal("constructor accepted a missing explicit root")
+	}
+	requireScratchMissing(t, missing)
+	file := filepath.Join(data, "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := NewSessionsInDir(nil, file, nil); err == nil {
+		_ = s.Close()
+		t.Fatal("constructor accepted a regular file as the explicit root")
+	}
+}
+
+func requireScratchLocked(t *testing.T, root string) {
+	t.Helper()
+	s, err := NewSessionsInDir(nil, root, nil)
+	if s != nil {
+		_ = s.Close()
+	}
+	if !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("constructor for %s returned %v, want a lock conflict", root, err)
+	}
+}
+
+func TestNewSessionsRejectsLiveRootAndAliasBeforeSweep(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	path, err := filePath720(s, SessionKey{SessionID: "owner"}, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mustRead(t, path)
+	orphan := filepath.Join(s.dir, "session-42", "marker")
+	seedScratchFile(t, orphan)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(s.dir, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range []string{s.dir, alias} {
+		requireScratchLocked(t, root)
+		if got := mustRead(t, path); string(got) != string(want) {
+			t.Fatalf("owner's playlist changed via %s", root)
+		}
+		if got := mustRead(t, orphan); string(got) != "stale" {
+			t.Fatalf("root was swept via %s", root)
+		}
+	}
+}
+
+func TestCloseWaitsForOpenArtifactReader(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "reader"}, "/src", 120, 1280, 720, false, false,
+		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{}, PriorityNormal, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Release()
+	f, _, err := a.OpenPlain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	waitScratchSignal(t, a.session.scratch.cutoff)
+	requireScratchLocked(t, s.dir)
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned with an open reader: %v", err)
+	default:
+	}
+	if _, err := f.Read(make([]byte, 1)); err != nil {
+		t.Fatalf("read held descriptor: %v", err)
+	}
+	_ = f.Close()
+	a.Release()
+	if err := waitScratchResult(t, closed); err != nil {
+		t.Fatal(err)
+	}
+	newTestSessionsInDir(t, nil, s.dir, nil)
+}
+
+func TestTerminateCutsOffEncryptedReaderBeforeWaitingForRelease(t *testing.T) {
+	s := newTestSessions(t, &fakeEncryptedTranscoder{}, t.TempDir(), nil)
+	key := SessionKey{SessionID: "encrypted-reader"}
+	a, err := s.LiveArtifactShaped(t.Context(), key, "", 120, 1280, 720, false, false, ladderCaps{}, VideoSignal{}, -1,
+		ffmpeg.AudioProfile{Codec: "aac", Channels: 2}, nil, StreamShape{Encrypted: testEncryptedSource(nil)}, PriorityNormal, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Release()
+	f, err := a.OpenEncrypted()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	buf := make([]byte, 1)
+	if _, err := f.Read(buf); err != nil {
+		t.Fatal(err)
+	}
+
+	terminated := make(chan int, 1)
+	go func() { terminated <- s.TerminateSession(key.SessionID) }()
+	waitScratchSignal(t, a.session.scratch.cutoff)
+	if _, err := f.Read(buf); !errors.Is(err, encderiv.ErrLiveSessionClosed) {
+		t.Fatalf("next read after cutoff: %v", err)
+	}
+	if _, err := os.Stat(a.session.dir); err != nil {
+		t.Fatalf("directory removed with reader still held: %v", err)
+	}
+	select {
+	case n := <-terminated:
+		t.Fatalf("termination returned while reader still held: %d", n)
+	default:
+	}
+	_ = f.Close()
+	a.Release()
+	select {
+	case n := <-terminated:
+		if n != 1 {
+			t.Fatalf("terminated %d sessions", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("termination kept waiting after reader release")
+	}
+	requireScratchMissing(t, a.session.dir)
+}
+
+func TestCloseWaitsForFragmentJoin(t *testing.T) {
+	transcoder := &keyframeFakeTranscoder{index: ffmpeg.KeyframeIndex{
+		Keyframes: []time.Duration{0, time.Second}, Duration: 2 * time.Second,
+	}}
+	s := newTestSessions(t, transcoder, t.TempDir(), nil)
+	key := SessionKey{SessionID: "join"}
+	src := filepath.Join(t.TempDir(), "source")
+	seedScratchFile(t, src)
+	path, err := s.FilePath(t.Context(), key, src, 2, 1280, 720, true, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	h := s.sessions[key]
+	s.mu.Unlock()
+	dir := filepath.Join(filepath.Dir(path), audioCopyRungID)
+	for _, part := range []string{"seg00000.m4s", "seg00001.m4s"} {
+		if err := os.WriteFile(filepath.Join(dir, part), mediaSegment(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entered, release := scratchLatch(t)
+	s.join = func(dst *os.File, open func(string) (*os.File, error), parts []string) error {
+		if err := joinFragments(dst, open, parts); err != nil {
+			return err
+		}
+		close(entered)
+		<-release.ch
+		return nil
+	}
+	joined := make(chan error, 1)
+	go func() {
+		_, err := s.FilePath(t.Context(), key, src, 2, 1280, 720, true, audioCopyRungID+"/seg00000.m4s")
+		joined <- err
+	}()
+	waitScratchSignal(t, entered)
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	waitScratchSignal(t, h.scratch.cutoff)
+	requireScratchLocked(t, s.dir)
+	requireScratchMissing(t, filepath.Join(dir, "joined00000.m4s"))
+	release.open()
+	if err := waitScratchResult(t, joined); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("join after cutoff: %v", err)
+	}
+	if err := waitScratchResult(t, closed); err != nil {
+		t.Fatal(err)
+	}
+	requireScratchMissing(t, h.dir)
+	newTestSessionsInDir(t, nil, s.dir, nil)
+}
+
+func TestCloseWaitsForAdmittedScratchSweepAndSharesItsError(t *testing.T) {
+	s, err := NewSessions(nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	entered, release := scratchLatch(t)
+	readErr := &os.PathError{Op: "readdir", Path: s.dir, Err: os.ErrPermission}
+	s.readScratch = func(fs.FS, string) ([]fs.DirEntry, error) {
+		close(entered)
+		<-release.ch
+		return nil, readErr
+	}
+	swept := make(chan error, 1)
+	go func() { swept <- s.PurgeOrphanedTranscodeDirs() }()
+	waitScratchSignal(t, entered)
+	if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, errIncompleteScratchSweep) {
+		t.Fatalf("concurrent sweep: %v", err)
+	}
+
+	closed := make(chan error, 2)
+	go func() { closed <- s.Close() }()
+	go func() { closed <- s.Close() }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		s.mu.Lock()
+		closing := s.closed
+		s.mu.Unlock()
+		if closing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Close did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	requireScratchLocked(t, s.dir)
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned during ReadDir: %v", err)
+	default:
+	}
+	release.open()
+	if err := waitScratchResult(t, swept); !errors.Is(err, readErr) {
+		t.Fatalf("sweep returned %v", err)
+	}
+	first := waitScratchResult(t, closed)
+	second := waitScratchResult(t, closed)
+	if !errors.Is(first, readErr) || second != first {
+		t.Fatalf("Close callers returned %v and %v", first, second)
+	}
+	newTestSessionsInDir(t, nil, s.dir, nil)
+}
+
+func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	collision := fmt.Sprintf("session-%s-1", s.bootNonce)
+	future := fmt.Sprintf("session-%s-900000", s.bootNonce)
+	seedScratchFile(t, filepath.Join(s.dir, collision, "720p", "seg00000.m4s"))
+	seedScratchFile(t, filepath.Join(s.dir, future, "marker"))
+	entered, release := scratchLatch(t)
+	s.mkdirDir = func(name string, mode fs.FileMode) error {
+		if err := s.root.Mkdir(name, mode); err != nil {
+			return err
+		}
+		close(entered)
+		<-release.ch
+		return nil
+	}
+	result := make(chan error, 1)
+	key := SessionKey{SessionID: "first"}
+	go func() {
+		_, err := filePath720(s, key, "720p/seg00000.m4s")
+		result <- err
+	}()
+	waitScratchSignal(t, entered)
+	newDir := filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce))
+	if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, errIncompleteScratchSweep) {
+		t.Fatalf("sweep with unresolved mkdir: %v", err)
+	}
+	requireScratchMissing(t, filepath.Join(s.dir, collision))
+	requireScratchMissing(t, filepath.Join(s.dir, future))
+	if _, err := os.Stat(newDir); err != nil {
+		t.Fatalf("sweep removed unresolved allocation: %v", err)
+	}
+	release.open()
+	if err := waitScratchResult(t, result); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustRead(t, filepath.Join(newDir, "720p", "seg00000.m4s")); string(got) == "stale" {
+		t.Fatal("new session served the collision's segment")
+	}
+
+	// Model the state after exclusive mkdir and before publication.
+	s.mkdirDir = nil
+	s.mu.Lock()
+	unpublished, err := s.allocateScratchLocked(t.Context(), "library")
+	s.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		s.releaseScratch(unpublished)
+		s.mu.Lock()
+		td := s.transitionLocked(&hlsSession{scratch: unpublished}, detachSession{}).teardown
+		s.mu.Unlock()
+		s.runTeardowns([]*sessionTeardown{td})
+	}()
+	if err := s.PurgeOrphanedTranscodeDirs(); err != nil {
+		t.Fatalf("sweep with confirmed unpublished allocation: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.dir, unpublished.name)); err != nil {
+		t.Fatalf("sweep removed confirmed unpublished allocation: %v", err)
+	}
+}
+
+func TestScratchSweepRecordsCollisionFailureAsRootDebt(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	name := fmt.Sprintf("session-%s-1", s.bootNonce)
+	collision := filepath.Join(s.dir, name)
+	seedScratchFile(t, filepath.Join(collision, "marker"))
+	fail := errors.New("injected remove failure")
+	s.removeDir = func(path string) error {
+		if path == collision {
+			return fail
+		}
+		return s.root.RemoveAll(filepath.Base(path))
+	}
+	key := SessionKey{SessionID: "collision"}
+	a, err := s.LiveArtifactShaped(t.Context(), key, "/src", 120, 1280, 720, false, false,
+		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{LibraryID: "library"}, PriorityNormal, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Release()
+	if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, fail) {
+		t.Fatalf("sweep returned %v", err)
+	}
+	s.mu.Lock()
+	debt := s.paths[name]
+	if debt == nil || debt.state != scratchDebt || debt.library != "" || debt.retryAt.IsZero() {
+		t.Errorf("collision debt = %+v, want root-only debt with retry scheduled", debt)
+	}
+	s.mu.Unlock()
+	s.removeDir = nil
+	if err := s.PurgeOrphanedTranscodeDirs(); err != nil {
+		t.Fatal(err)
+	}
+	requireScratchMissing(t, collision)
+}
+
+func TestScratchReaperRetriesDetachedDebtWithSuccessorOrVacantHead(t *testing.T) {
+	for _, successor := range []bool{true, false} {
+		t.Run(fmt.Sprintf("successor=%t", successor), func(t *testing.T) {
+			var millis atomic.Int64
+			s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), func() time.Time { return time.UnixMilli(millis.Load()) })
+			key := SessionKey{SessionID: "same-key"}
+			a, err := s.LiveArtifactShaped(t.Context(), key, "/src", 120, 1280, 720, false, false, ladderCaps{},
+				VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{LibraryID: "library"}, PriorityNormal, masterPlaylistName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old := a.session.dir
+			a.Release()
+
+			entered, release := scratchLatch(t)
+			var tries atomic.Int64
+			s.removeDir = func(path string) error {
+				if path == old && tries.Add(1) == 1 {
+					close(entered)
+					<-release.ch
+					return os.ErrPermission
+				}
+				return s.root.RemoveAll(filepath.Base(path))
+			}
+			terminated := make(chan struct{})
+			go func() {
+				s.TerminateSession(key.SessionID)
+				close(terminated)
+			}()
+			waitScratchSignal(t, entered)
+			// The path registry must report pending cleanup even if an entry is
+			// absent from the sweep listing.
+			s.readScratch = func(fs.FS, string) ([]fs.DirEntry, error) { return nil, nil }
+			if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, errIncompleteScratchSweep) {
+				t.Fatalf("sweep during initial removal: %v", err)
+			}
+			release.open()
+			waitScratchSignal(t, terminated)
+			s.mu.Lock()
+			debt := s.paths[filepath.Base(old)]
+			if debt == nil || debt.state != scratchDebt || debt.library != "library" {
+				t.Errorf("detached debt = %+v", debt)
+			}
+			s.mu.Unlock()
+			var fresh string
+			if successor {
+				fresh, err = filePath720(s, key, masterPlaylistName)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			s.reap()
+			if tries.Load() != 1 {
+				t.Fatal("reaper ignored removal backoff")
+			}
+			millis.Add(1000)
+			s.reap()
+			if tries.Load() != 2 {
+				t.Fatalf("reaper tried old directory %d times", tries.Load())
+			}
+			requireScratchMissing(t, old)
+			if successor {
+				if after, err := filePath720(s, key, masterPlaylistName); err != nil || after != fresh {
+					t.Fatalf("successor changed after retry: %s, %v", after, err)
+				}
+			}
+		})
+	}
+}
+
+func TestScratchOwnershipStaysBoundedDuringLatchedSweep(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	orphan := filepath.Join(s.dir, "session-9999")
+	seedScratchFile(t, filepath.Join(orphan, "marker"))
+	entered, release := scratchLatch(t)
+	s.readScratch = func(root fs.FS, name string) ([]fs.DirEntry, error) {
+		entries, err := fs.ReadDir(root, name)
+		close(entered)
+		<-release.ch
+		return entries, err
+	}
+	result := make(chan error, 1)
+	go func() { result <- s.PurgeOrphanedTranscodeDirs() }()
+	waitScratchSignal(t, entered)
+	key := SessionKey{SessionID: "churn"}
+	for range 40 {
+		if _, err := filePath720(s, key, masterPlaylistName); err != nil {
+			t.Fatal(err)
+		}
+		s.TerminateSession(key.SessionID)
+	}
+	live, err := filePath720(s, key, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	paths := len(s.paths)
+	s.mu.Unlock()
+	if paths != 1 {
+		t.Fatalf("churn retained %d paths with one live session", paths)
+	}
+	release.open()
+	if err := waitScratchResult(t, result); err != nil {
+		t.Fatal(err)
+	}
+	requireScratchMissing(t, orphan)
+	if _, err := os.Stat(live); err != nil {
+		t.Fatalf("sweep removed current session: %v", err)
+	}
+}
+
+func TestScratchArtifactOpensRefuseSymlinksAndFIFO(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	key := SessionKey{SessionID: "unsafe"}
+	path, err := filePath720(s, key, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := testArtifactForPath(s, key, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Release()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside")
+	seedScratchFile(t, outside)
+	if err := os.Symlink(outside, path); err != nil {
+		t.Fatal(err)
+	}
+	if f, _, err := a.OpenPlain(); err == nil {
+		_ = f.Close()
+		t.Fatal("opened a symlink")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		f, _, err := a.OpenPlain()
+		if f != nil {
+			_ = f.Close()
+		}
+		result <- err
+	}()
+	if err := waitScratchResult(t, result); err == nil {
+		t.Fatal("opened a writerless FIFO")
+	}
+	if err := s.joinArtifact(context.Background(), a.session, filepath.Join(a.session.dir, "720p", "joined00000.m4s"), []string{path}); err == nil {
+		t.Fatal("join read a writerless FIFO")
+	}
+}
+
+func seedScratchFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type scratchRelease struct {
+	ch   chan struct{}
+	once sync.Once
+}
+
+func (r *scratchRelease) open() {
+	r.once.Do(func() { close(r.ch) })
+}
+
+func scratchLatch(t *testing.T) (chan struct{}, *scratchRelease) {
+	t.Helper()
+	r := &scratchRelease{ch: make(chan struct{})}
+	t.Cleanup(r.open)
+	return make(chan struct{}), r
+}
+
+func waitScratchSignal(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for scratch owner")
+	}
+}
+
+func waitScratchResult(t *testing.T, ch <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for scratch result")
+		return nil
+	}
+}
+
+func TestScratchCleanupOwnsLateMkdirAfterCancellation(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	entered, release := scratchLatch(t)
+	s.mkdirDir = func(name string, mode fs.FileMode) error {
+		close(entered)
+		<-release.ch
+		return s.root.Mkdir(name, mode)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := s.FilePath(ctx, SessionKey{SessionID: "canceled"}, "/src", 120, 1280, 720, false, masterPlaylistName)
+		result <- err
+	}()
+	waitScratchSignal(t, entered)
+	cancel()
+	release.open()
+	if err := waitScratchResult(t, result); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled creator returned %v", err)
+	}
+	requireScratchMissing(t, filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce)))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.paths) != 0 || len(s.sessions) != 0 {
+		t.Fatalf("late mkdir retained %d paths and %d sessions", len(s.paths), len(s.sessions))
+	}
+}

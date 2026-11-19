@@ -80,6 +80,8 @@ func bootstrapAdminPassword(ctx context.Context, st *store.Store, logger *slog.L
 	return nil
 }
 
+var bootstrapAppSetupToken = bootstrapSetupToken
+
 // bootstrapSetupToken generates and installs the one-time setup token until
 // first-run setup has completed (ADR-0007 §2 / feature:first-run-setup-token).
 // Setup is complete once an adult Profile and an enrolled Device exist, so a

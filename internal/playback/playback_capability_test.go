@@ -643,7 +643,7 @@ func (*hevcCapableTranscoder) SupportsTranscodeCodec(codec string) bool {
 
 func TestTranscodeLadderAddsHEVC4KRungWithClientCapAndHardware(t *testing.T) {
 	service, st, scope := capabilityTestService(t)
-	sessions := NewSessions(&hevcCapableTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &hevcCapableTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 

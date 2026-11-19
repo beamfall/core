@@ -254,7 +254,7 @@ func TestComposedShapedSessionEncodesTheGrantedShape(t *testing.T) {
 	t.Parallel()
 	for _, height := range []int{720, 480, 360} {
 		transcoder := &fakeTranscoder{}
-		sessions := NewSessions(transcoder, t.TempDir(), nil)
+		sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 		sessions.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
 			return ComposedPicture{TimedText: composedTestText}, true, nil
 		})
@@ -265,7 +265,9 @@ func TestComposedShapedSessionEncodesTheGrantedShape(t *testing.T) {
 				t.Fatalf("%dp %s: %v", height, name, err)
 			}
 		}
-		sessions.Close()
+		if err := sessions.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if len(transcoder.renditions) != 1 || transcoder.renditions[0].Height != height {
 			t.Fatalf("%dp: encodes = %+v, want one %dp composed encode", height, transcoder.renditions, height)
 		}

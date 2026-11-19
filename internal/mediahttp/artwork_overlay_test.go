@@ -16,7 +16,7 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
-	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
 )
@@ -51,7 +51,7 @@ func newOverlayArtworkTestHandler(t *testing.T) (*Handler, *artwork.Service) {
 	st := storetest.Open(t)
 	tokens := streamtoken.NewService([]byte("test-token-key"), time.Now)
 	svc := artwork.NewService(st, formatArtworkScaler{}, t.TempDir())
-	return NewHandler(st, auth.NewService(st), tokens, svc, playback.NewSessions(nil, t.TempDir(), nil)), svc
+	return NewHandler(st, auth.NewService(st), tokens, svc, sessiontest.New(t, nil, t.TempDir(), nil)), svc
 }
 
 // transparentTestPNG is a PNG whose left half is fully transparent and whose

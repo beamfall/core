@@ -96,13 +96,24 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 			}
 			delete(s.sessions, session.key)
 		}
-		t := &sessionTeardown{session: session, proc: session.proc, dir: session.dir, live: session.live}
+		t := &sessionTeardown{session: session, proc: session.proc, live: session.live}
+		if t.live != nil {
+			t.live.Cutoff()
+		}
 		if session.run != nil {
 			t.liveRun = session.run.live
 		}
 		if session.revokeDone != nil {
 			close(session.revokeDone)
 			session.revokeDone = nil
+		}
+		if p := session.scratch; p != nil {
+			p.state = scratchPending
+			close(p.cutoff)
+			p.drained = make(chan struct{})
+			if p.users == 0 {
+				close(p.drained)
+			}
 		}
 		s.detached++
 		switch {
@@ -113,7 +124,9 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 			t.counted = true
 			s.stopping++
 		case session.start != nil:
-			// The start owner retains the lease and slot through late cleanup.
+			// The start retains its slot and lease. The last directory user
+			// completes cleanup, so termination can return during the start.
+			t.cleanupOnRelease = true
 			s.stopping++
 		default:
 			session.releaseTranscodeLeaseLocked()

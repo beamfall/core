@@ -282,7 +282,7 @@ func renderNodeReports(nodes []ffmpeg.RenderNode) []config.RenderNodeReport {
 // The optional Hooks value carries compiled plugin-module behavior from the
 // executable composition root; callers that need only declarative bundles may
 // omit it. More than one Hooks value is invalid.
-func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []plugin.Bundle, hookValues ...Hooks) (*App, error) {
+func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []plugin.Bundle, hookValues ...Hooks) (_ *App, resultErr error) {
 	executableBundles := append([]plugin.Bundle(nil), bundles...)
 	hooks, err := resolveHooks(hookValues)
 	if err != nil {
@@ -781,7 +781,22 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	playbackInfo := playback.NewService(st, tokenService, readClock)
 	// Console resource graphs: an in-memory ring of host samples, never persisted.
 	hostSampler := hostmetrics.New(hostmetrics.DefaultInterval, hostmetrics.DefaultWindow)
-	hlsSessions := playback.NewSessionsInDir(ffmpegRunner, cfg.TranscodeScratchDir, time.Now)
+	var hlsSessions *playback.Sessions
+	if !cfg.TranscodeScratchDirExplicit && cfg.TranscodeScratchDir == defaultTranscodeScratchDir {
+		hlsSessions, err = playback.NewSessions(ffmpegRunner, cfg.DataDir, time.Now)
+	} else {
+		hlsSessions, err = playback.NewSessionsInDir(ffmpegRunner, cfg.TranscodeScratchDir, time.Now)
+	}
+	if err != nil {
+		return nil, errors.Join(err, st.Close())
+	}
+	defer func() {
+		if resultErr != nil {
+			if cleanupErr := errors.Join(hlsSessions.Close(), st.Close()); cleanupErr != nil {
+				resultErr = errors.Join(resultErr, cleanupErr)
+			}
+		}
+	}()
 	hlsSessions.SetGovernor(resourceGovernor)
 	hlsSessions.SetTranscodeCap(cfg.TranscodeCap)
 	playbackInfo.SetSessions(hlsSessions)
@@ -799,14 +814,12 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// advertises a selector instead of a raw content fingerprint.
 	playbackInfo.SetSelector(playback.NewSelectorService(cfg.StreamTokenKey, readClock))
 	pairingService := pairing.NewService(st, readClock)
-	setupToken, err := bootstrapSetupToken(ctx, st, pairingService)
+	setupToken, err := bootstrapAppSetupToken(ctx, st, pairingService)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	if cfg.ReviewDemoEnrollment.Enabled {
 		if err := configureReviewDemoEnrollment(cfg.ReviewDemoEnrollment.ProfileID, cfg.DataDir, pairingService, logger); err != nil {
-			_ = st.Close()
 			return nil, err
 		}
 	}
@@ -855,7 +868,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// schedule always exist (the Console wires config live later).
 	qbitIngestor, err := buildQBittorrentIngestor(ctx, cfg, st, logger, jobWake)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	jobRegistry.Register(qbittorrent.PollJobKind, qbittorrent.Handler(qbitIngestor))
@@ -886,7 +898,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	identifyService.SetAutoStores(st, st)
 	autoIdentifier.service = identifyService
 	if err := installLibraryHealthProfile(ctx, st, identifyService, hooks.HydrationMappers, artworkService); err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	// Library-wide metadata refresh (CORE-1136): network-bound provider
@@ -902,7 +913,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		filepath.Join(cfg.DataDir, "proxy-archive"),
 	)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	proxyTeeOwned := true
@@ -934,7 +944,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		logger.Warn("library precompute schedules unavailable", "error", err)
 	}
 	if err := scheduleService.Reconcile(ctx, time.Now().UTC()); err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	// ADR-0058 third-party Integration Worker lifecycle controller: the Console
@@ -967,7 +976,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	cryptoOwners, err := st.LibraryEncryptionOwners(ctx)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	ownerIDs := make([]string, 0, len(cryptoOwners))
@@ -976,7 +984,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	}
 	refMigration, err := libEncryptManager.MigrateLegacyRefs(ownerIDs)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	if len(refMigration.Moved) != 0 {
@@ -988,11 +995,9 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	if err := libEncryptManager.RecoverProvisionJournals(ownerIDs, func(owner string) error {
 		return st.AbortEncryptedLibraryDBProvision(ctx, store.LibraryID(owner))
 	}); err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	if err := libEncryptManager.RecoverRewrapJournals(ownerIDs); err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	encryptedBackupCipher = func() store.EncryptedLibraryDBCipher {
@@ -1168,7 +1173,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// lives in <DataDir>/secrets/relay-token (0600, invariant 5).
 	directHTTPS, err := remoteaccess.NewDirectHTTPS(cfg.RemoteAccess)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	// Baseline self-signed TLS identity: every server holds one,
@@ -1177,12 +1181,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// operator ACME and the SPKI pin stays stable across restarts.
 	selfSigned, err := remoteaccess.LoadOrCreateSelfSigned(filepath.Join(cfg.DataDir, "tls"))
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	relayClient, err := remoteaccess.NewRelayClient(cfg.RemoteAccess, filepath.Join(cfg.DataDir, "secrets"))
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	// LAN port for the dual-URL endpoint set: the configured
@@ -1305,7 +1307,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		moderationContactFromEnv(),
 	)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	srv.SetModeration(moderationService)
@@ -1360,7 +1361,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// MUSIC ticket, so the stub StationSnapshotSource is wired until it lands.
 	offlinePackPin, err := selfSigned.ServerSPKIPin(ctx)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	offlinePackAuthority, err := offlinepack.LoadOrCreateAuthority(
@@ -1369,7 +1369,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		readClock,
 	)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	offlinePackAuthority.SetIssueEnabled(!cfg.Role.Attached())
@@ -1455,7 +1454,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// with none configured the emitter idles.
 	webhookManager, err := buildWebhookManager(cfg, st, artworkService, libEncryptManager, logger)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	graphHandler.SetWebhooks(webhookManager)
@@ -1475,7 +1473,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// WatchedObserver feeds it and Run drains its queue.
 	scrobbleDispatcher, err := buildScrobbleDispatcher(cfg, st, logger, executablePlugins, hooks.ScrobbleAdapters)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	// Third-party Integration Worker manager: supervises any installed,
@@ -1484,7 +1481,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 	// supervision goroutine only then.
 	integrationMgr, err := buildIntegrationManager(ctx, st, executablePlugins, secretFiles{dir: filepath.Join(cfg.DataDir, "secrets")}, integrationController, logger, cfg.IntegrationWorkerHardeningShimPath)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	if integrationMgr != nil {
@@ -1505,7 +1501,6 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger, bundles []
 		TrustedProxyCIDRs: cfg.JellyfinCompat.TrustedProxyCIDRs,
 	}, authService, nil)
 	if err != nil {
-		_ = st.Close()
 		return nil, err
 	}
 	compatHandler.SetRelayedRequestPredicate(server.RequestFromRelay)
@@ -1901,7 +1896,7 @@ func (a *App) checkpointRuntimeState() error {
 			err = errors.Join(err, closeErr)
 		}
 	}
-	a.hls.Close()
+	err = errors.Join(err, a.hls.Close())
 	if a.proxyTee != nil {
 		if closeErr := a.proxyTee.Close(); closeErr != nil {
 			a.logger.Warn("proxy archive root close failed", "error", closeErr)

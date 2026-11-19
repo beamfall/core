@@ -20,10 +20,10 @@ func hungEncoder() []string {
 
 func stallSessions(t *testing.T, transcoder Transcoder) *Sessions {
 	t.Helper()
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.stallTimeout = 100 * time.Millisecond
 	sessions.waitWindow = 5 * time.Second
-	t.Cleanup(sessions.Close)
+
 	return sessions
 }
 

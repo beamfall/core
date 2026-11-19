@@ -13,6 +13,7 @@ import (
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
 )
@@ -34,8 +35,8 @@ func castTrustBoundaryFixture(t *testing.T) (*Handler, *streamtoken.Service, aut
 	}
 	now := time.Unix(100, 0).UTC()
 	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
-	sessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
+
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
 	return handler, tokens, scope, now
 }

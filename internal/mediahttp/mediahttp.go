@@ -1070,6 +1070,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	// Ready at mint) is likewise decided at mint and carried by the grant.
 	shape := playback.StreamShapeFromGrant(grant, media)
 	shape.AudioSource = playback.AudioSourceStream(streams, audioStreamIndex)
+	shape.LibraryID = media.LibraryID
 	shape.Encrypted = secure
 	// A Media stored without a runtime is probed on demand so a new session
 	// writes a VOD playlist covering the whole file (CORE-2314). An Encrypted
@@ -1078,7 +1079,7 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 	if durationSeconds <= 0 && secure == nil {
 		durationSeconds = h.hls.ProbedDurationSeconds(r.Context(), file.ContentFingerprint, file.Path)
 	}
-	path, err := h.hls.FilePathShaped(r.Context(), key, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
+	artifact, err := h.hls.LiveArtifactShaped(r.Context(), key, file.Path, durationSeconds, media.VideoWidth, media.VideoHeight, audioCopy, degraded, caps, playback.VideoSignalFromStreams(streams), burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
 	if err != nil {
 		// An evicted session is an expected teardown (ADR-0012 §7 revocation,
 		// idle reap, preemption), not a server fault. 503 is retryable, which
@@ -1113,24 +1114,27 @@ func (h *Handler) HLS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	defer artifact.Release()
 	if strings.HasSuffix(name, ".m3u8") {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	} else {
-		// init.mp4 and the fMP4 .m4s media segments are both MP4 bytes.
 		w.Header().Set("Content-Type", "video/mp4")
 	}
 	if secure != nil {
-		h.serveLiveArtifact(w, r, key, path)
+		serveLiveArtifact(w, r, name, artifact)
 		return
 	}
-	// The session engine hands back a member of its own work directory. Serving it
-	// through the root-scoped opener binds the bytes to that directory entry, so a
-	// segment replaced by a link between the engine's publish and this read is
-	// refused instead of streamed.
-	if err := serveRooted(w, r, name, rootedFile(path), time.Time{}); err != nil {
+	f, info, err := artifact.OpenPlain()
+	if err != nil {
+		if errors.Is(err, playback.ErrSessionEvicted) {
+			http.Error(w, "stream ended", http.StatusGone)
+			return
+		}
 		http.Error(w, "stream unavailable", rootScopeStatus(err))
 		return
 	}
+	defer f.Close()
+	http.ServeContent(w, r, name, info.ModTime(), f)
 }
 
 func (h *Handler) servePrecomputedHLS(w http.ResponseWriter, r *http.Request, grant streamtoken.Grant, scope auth.Scope, library store.Library, name string) {
@@ -1667,8 +1671,8 @@ func (h *Handler) encryptedLiveSource(library store.Library, file store.MediaFil
 }
 
 // serveLiveArtifact serves one file of an encrypted live session decrypted.
-func (h *Handler) serveLiveArtifact(w http.ResponseWriter, r *http.Request, key playback.SessionKey, path string) {
-	f, err := h.hls.OpenLiveArtifact(key, path)
+func serveLiveArtifact(w http.ResponseWriter, r *http.Request, name string, artifact *playback.LiveArtifact) {
+	f, err := artifact.OpenEncrypted()
 	if err != nil {
 		if errors.Is(err, playback.ErrSessionEvicted) {
 			http.Error(w, "stream ended", http.StatusGone)
@@ -1678,7 +1682,7 @@ func (h *Handler) serveLiveArtifact(w http.ResponseWriter, r *http.Request, key 
 		return
 	}
 	defer f.Close()
-	http.ServeContent(w, r, filepath.Base(path), f.ModTime(), requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f})
+	http.ServeContent(w, r, filepath.Base(name), f.ModTime(), requestContextReadSeeker{ctx: r.Context(), ReadSeeker: f})
 }
 
 type requestContextReadSeeker struct {

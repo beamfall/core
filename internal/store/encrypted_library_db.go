@@ -75,19 +75,29 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.guardLocked(); err != nil {
+	proceed, err := s.encryptedLibraryUnsealNeededLocked(libraryID)
+	if err != nil || !proceed {
 		return err
 	}
-	if !s.encryptedDBLifecycleEnable {
-		return ErrEncryptedLibraryDBDisabled
+	// Scratch is shared across libraries and needs no catalog snapshot. Run
+	// its reconciliation before working files or a registered plane exist.
+	reconciler := s.encDerivativeReconciler
+	if scratch, ok := reconciler.(interface {
+		ReconcileEncryptedTranscodeScratch(context.Context, LibraryID) error
+	}); ok {
+		s.mu.Unlock()
+		err = scratch.ReconcileEncryptedTranscodeScratch(ctx, libraryID)
+		s.mu.Lock()
+		if err != nil {
+			return err
+		}
+		proceed, err = s.encryptedLibraryUnsealNeededLocked(libraryID)
+		if err != nil || !proceed {
+			return err
+		}
 	}
-	if db := s.encryptedDBs[libraryID]; db != nil {
-		if db.state == "failed-quarantined" {
-			return fmt.Errorf("%w: %s", ErrEncryptedLibraryDBQuarantined, db.quarantine)
-		}
-		if db.state == "unsealed-registered" {
-			return nil
-		}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	paths := s.encryptedLibraryDBPaths(libraryID)
 	if err := os.MkdirAll(filepath.Dir(paths.ciphertext), 0o700); err != nil {
@@ -152,16 +162,34 @@ func (s *Store) UnsealEncryptedLibraryDB(ctx context.Context, libraryID LibraryI
 	// orphaned derivatives, unwind the registration (like the replay path above)
 	// so the Library stays Sealed until an explicit lifecycle repair succeeds,
 	// rather than serving a plane whose derivatives are unaccounted for.
-	if s.encDerivativeReconciler != nil {
+	if reconciler != nil {
 		liveKeys, err := s.snapshotEncryptedLibraryMediaLocked(ctx, s.encryptedDBs[libraryID])
 		if err == nil {
-			err = s.encDerivativeReconciler.ReconcileEncryptedDerivatives(ctx, libraryID, liveKeys)
+			err = reconciler.ReconcileEncryptedDerivatives(ctx, libraryID, liveKeys)
 		}
 		if err != nil {
 			return s.unwindEncryptedLibraryUnsealLocked(libraryID, reader, writer, paths.working, err)
 		}
 	}
 	return nil
+}
+
+func (s *Store) encryptedLibraryUnsealNeededLocked(libraryID LibraryID) (bool, error) {
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	if !s.encryptedDBLifecycleEnable {
+		return false, ErrEncryptedLibraryDBDisabled
+	}
+	if db := s.encryptedDBs[libraryID]; db != nil {
+		switch db.state {
+		case "failed-quarantined":
+			return false, fmt.Errorf("%w: %s", ErrEncryptedLibraryDBQuarantined, db.quarantine)
+		case "unsealed-registered":
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (s *Store) unwindEncryptedLibraryUnsealLocked(libraryID LibraryID, reader, writer *sql.DB, workingPath string, cause error) error {

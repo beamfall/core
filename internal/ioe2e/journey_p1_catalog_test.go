@@ -22,6 +22,7 @@ import (
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/scan"
 	"github.com/beamfall/core/internal/server"
 	"github.com/beamfall/core/internal/store"
@@ -232,7 +233,7 @@ func newJourneyServer(t *testing.T, st *store.Store, handler *graph.Handler) (*s
 		beam.NewService(st, authService, clock),
 		pairingService,
 		handler,
-		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)),
+		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil)),
 		authService,
 		st,
 	), pairingService

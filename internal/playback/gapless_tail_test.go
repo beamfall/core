@@ -98,7 +98,7 @@ func TestTranscodedGaplessTailSegmentIsServed(t *testing.T) {
 		t.Fatalf("no gapless trim for streams %+v", streams)
 	}
 
-	sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+	sessions := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-gapless-tail", MediaID: "media-piece"}
 	shape := StreamShape{AudioOnly: true, AudioSource: streams[0]}
@@ -177,7 +177,7 @@ func TestResumedPrimedEncodeServesTheTailSegment(t *testing.T) {
 	if grid := primedAACGrid(streams[0], aac, segmentSeconds); grid.segments != 3 {
 		t.Fatalf("grid = %+v, want three segments", grid)
 	}
-	sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+	sessions := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-gapless-resume", MediaID: "media-piece"}
 	shape := StreamShape{AudioOnly: true, AudioSource: streams[0]}

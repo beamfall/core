@@ -46,8 +46,8 @@ func requireStarts(t *testing.T, transcoder *scriptedTranscoder, want ...int) {
 func TestResumedSessionStartsItsEncoderAtTheResumeSegment(t *testing.T) {
 	t.Parallel()
 	transcoder := resumeTranscoder(t)
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+
 	key := SessionKey{SessionID: "session-resume", MediaID: "media-resume"}
 
 	sessions.NoteResumePosition(key, 41)
@@ -70,8 +70,8 @@ func TestInitAfterSegmentReusesTheRunningEncoder(t *testing.T) {
 		writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", startSegment), mediaSegment())
 		return []string{"sh", "-c", `sleep 0.2; printf init > "$1"/init.mp4; exec sleep 60`, "sh", dir}
 	}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+
 	key := SessionKey{SessionID: "session-seek", MediaID: "media-seek"}
 
 	if _, err := filePath720(sessions, key, "720p/seg00007.m4s"); err != nil {
@@ -108,8 +108,8 @@ func TestResumeHintIsClearedExpiredOrPastTheEnd(t *testing.T) {
 			clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
 			advance := func(d time.Duration) { mu.Lock(); now = now.Add(d); mu.Unlock() }
 			transcoder := resumeTranscoder(t)
-			sessions := NewSessions(transcoder, t.TempDir(), clock)
-			t.Cleanup(sessions.Close)
+			sessions := newTestSessions(t, transcoder, t.TempDir(), clock)
+
 			key := SessionKey{SessionID: store.SessionID("session-" + name), MediaID: "media-hint"}
 
 			note(sessions, key, advance)
@@ -127,8 +127,8 @@ func TestResumeHintIsClearedExpiredOrPastTheEnd(t *testing.T) {
 func TestResumeHintAfterEncoderStartIsIgnored(t *testing.T) {
 	t.Parallel()
 	transcoder := resumeTranscoder(t)
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+
 	key := SessionKey{SessionID: "session-started", MediaID: "media-started"}
 
 	if _, err := filePath720(sessions, key, "720p/init.mp4"); err != nil {
@@ -153,8 +153,8 @@ func TestResumeHintAfterEncoderStartIsIgnored(t *testing.T) {
 func TestPlaybackInfoNotesTheResumePositionForTheHLSSession(t *testing.T) {
 	t.Parallel()
 	service, st, scope := capabilityTestService(t)
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+
 	service.SetSessions(sessions)
 	mediaID := importProbedMedia(t, st, "fp-resume-hls", "mkv", "hevc", 1920, 1080, []store.MediaFileStream{
 		videoStream("hevc", "Main 10", 0, ""),

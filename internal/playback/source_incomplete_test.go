@@ -87,8 +87,8 @@ func testPlaybackInfoRefusesIncompletePart(t *testing.T, laterPart bool, version
 		}
 		return []string{"sh", "-c", "echo 'File ended prematurely' >&2; exit 0"}
 	}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+
 	service.SetSessions(sessions)
 	profile := CapabilityProfile{Client: "web-h264", Containers: []string{"mp4"}, VideoCodecs: []VideoCodecCap{{Codec: "h264", MaxHeight: 1080}}, AudioCodecs: []AudioCodecCap{{Codec: "aac", MaxChannels: 2}}}
 	request := InfoRequest{MediaID: string(media.ID), CapabilityProfile: profile}
@@ -185,14 +185,14 @@ func testPlaybackInfoRefusesIncompletePart(t *testing.T, laterPart bool, version
 	sessions.incompleteSources.mu.Unlock()
 	check()
 	shelf(false)
-	sessions.Close()
+	_ = sessions.Close()
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
 	st = storetest.OpenAt(t, dataDir)
 	service = NewService(st, streamtoken.NewService([]byte("test-token-key"), nil), nil)
-	sessions = NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions = newTestSessions(t, transcoder, t.TempDir(), nil)
+
 	service.SetSessions(sessions)
 	check()
 	shelf(false)
@@ -259,8 +259,8 @@ func TestEncryptedSourceEndSurvivesSessionReplacement(t *testing.T) {
 	scope.Revealed = true
 	service := NewService(f.st, streamtoken.NewService([]byte("test-token-key"), nil), nil)
 	transcoder := &fakeEncryptedTranscoder{segment: func(int) []byte { return emptySegment() }}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
+
 	service.SetSessions(sessions)
 	if err := f.st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{ProfileID: scope.ProfileID, MediaID: f.mediaID, PositionSeconds: 63, DurationSeconds: 120}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
 		t.Fatal(err)
@@ -307,9 +307,9 @@ func TestEncryptedSourceEndSurvivesSessionReplacement(t *testing.T) {
 		shelf(false)
 	}
 	check()
-	sessions.Close()
-	sessions = NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	_ = sessions.Close()
+	sessions = newTestSessions(t, transcoder, t.TempDir(), nil)
+
 	service.SetSessions(sessions)
 	check()
 	// A different content-addressed object must not inherit the old EOF.
@@ -326,7 +326,7 @@ func TestEncryptedSourceEndSurvivesSessionReplacement(t *testing.T) {
 
 func TestEvictedSessionCannotObserveEOFInRemovedOutput(t *testing.T) {
 	f := newEncryptedPrecomputeFixture(t)
-	sessions := NewSessions(&fakeEncryptedTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeEncryptedTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.sourceStore = f.st
 	key := SessionKey{SessionID: "evicted", MediaID: f.mediaID}

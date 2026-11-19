@@ -20,7 +20,7 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/mediahttp"
-	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -153,7 +153,7 @@ func newEncryptedSubtitleFixture(t *testing.T) encryptedSubtitleFixture {
 
 	runner := &endpointSubtitleRunner{source: mediaRaw}
 	subsDir := filepath.Join(dataDir, "subtitles")
-	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), playback.NewSessions(nil, filepath.Join(dataDir, "transcode"), nil))
+	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), sessiontest.New(t, nil, filepath.Join(dataDir, "transcode"), nil))
 	// The wirings mirror the composition root (app.New), with FFmpeg faked.
 	handler.SetSubtitles(ffmpeg.New(), subsDir)
 	handler.SetSealed(func(id store.LibraryID) bool {

@@ -72,7 +72,7 @@ func TestPlayObservationKeepsTheChosenQualityAfterTheEncoderFinishes(t *testing.
 
 	rung := Rung{ID: "low", Bandwidth: 1_500_000}
 	session := &hlsSession{rungs: []Rung{rung}}
-	service.sessions = NewSessionsInDir(nil, t.TempDir(), time.Now)
+	service.sessions = newTestSessionsInDir(t, nil, t.TempDir(), time.Now)
 	service.sessions.sessions[SessionKey{SessionID: scope.SessionID, MediaID: "media-alpha"}] = session
 
 	if obs, _ := service.PlayObservation(scope.SessionID, "media-alpha"); obs.Method != PlayMethodDirect {
@@ -118,7 +118,7 @@ func TestPlayObservationFollowsTheRouteReadMostRecently(t *testing.T) {
 	rungs := []Rung{{ID: "high", Bandwidth: 8_000_000}, {ID: "low", Bandwidth: 1_500_000}}
 	sender := &hlsSession{rungs: rungs, started: true, deliveredRung: "high", lastAccess: start}
 	receiver := &hlsSession{rungs: rungs, started: true, deliveredRung: "low", lastAccess: start.Add(time.Minute)}
-	service.sessions = NewSessionsInDir(nil, t.TempDir(), time.Now)
+	service.sessions = newTestSessionsInDir(t, nil, t.TempDir(), time.Now)
 	service.sessions.sessions[SessionKey{SessionID: scope.SessionID, MediaID: "media-alpha", ProfileCapability: "sender"}] = sender
 	service.sessions.sessions[SessionKey{SessionID: scope.SessionID, MediaID: "media-alpha", ProfileCapability: "receiver"}] = receiver
 
@@ -145,7 +145,7 @@ func TestPlayObservationKeepsSourceBitrateForCopiedVideo(t *testing.T) {
 	source, _ := service.PlayObservation(scope.SessionID, "media-alpha")
 	copied := audioCopyRung()
 	session := &hlsSession{rungs: []Rung{copied}, started: true, deliveredRung: copied.ID, lastAccess: service.now().Add(time.Second)}
-	service.sessions = NewSessionsInDir(nil, t.TempDir(), time.Now)
+	service.sessions = newTestSessionsInDir(t, nil, t.TempDir(), time.Now)
 	service.sessions.sessions[SessionKey{SessionID: scope.SessionID, MediaID: "media-alpha"}] = session
 
 	obs, _ := service.PlayObservation(scope.SessionID, "media-alpha")

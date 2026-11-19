@@ -22,6 +22,7 @@ import (
 	"github.com/beamfall/core/internal/observability"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -45,7 +46,7 @@ func newTestServerWithMetrics(t *testing.T) (*Server, *store.Store, *governor.Go
 		beam.NewService(st, authService, clock),
 		pairing.NewService(st, clock),
 		testServerGraphHandler{Handler: graph.NewHandler(manifests, authService, st, nil)},
-		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)),
+		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil)),
 		authService,
 		st,
 	)

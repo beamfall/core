@@ -21,6 +21,9 @@ var ErrComposedPictureUnavailable = errors.New("composed picture is unavailable"
 // ladder, decided at mint and carried by the byte layer. The zero value shapes
 // nothing.
 type StreamShape struct {
+	// LibraryID attributes the live directory to its authoritative Library.
+	LibraryID store.LibraryID
+
 	// ComposedPicture replaces the session's ladder with one composed rung
 	// that draws the Media's composed picture over its audio: the live form
 	// of a precomputed composed rendition (ADR-0057).

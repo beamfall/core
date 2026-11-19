@@ -36,7 +36,7 @@ func (p *probingTranscoder) probeCount() int {
 func TestInfoProbesAMissingRuntimeOnce(t *testing.T) {
 	service, st, scope := capabilityTestService(t)
 	prober := &probingTranscoder{duration: 7152}
-	sessions := NewSessions(prober, t.TempDir(), nil)
+	sessions := newTestSessions(t, prober, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 
@@ -80,7 +80,7 @@ func TestInfoProbesAMissingRuntimeOnce(t *testing.T) {
 func TestInfoKeepsAStoredRuntimeWithoutProbing(t *testing.T) {
 	service, st, scope := capabilityTestService(t)
 	prober := &probingTranscoder{duration: 7152}
-	sessions := NewSessions(prober, t.TempDir(), nil)
+	sessions := newTestSessions(t, prober, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	mediaID := importProbedMedia(t, st, "fp-has-runtime", "mkv", "h264", 1920, 1080, []store.MediaFileStream{
@@ -99,7 +99,7 @@ func TestInfoKeepsAStoredRuntimeWithoutProbing(t *testing.T) {
 func TestProbedDurationSecondsRemembersAMissForAWhile(t *testing.T) {
 	prober := &probingTranscoder{}
 	now := time.Unix(1000, 0)
-	sessions := NewSessions(prober, t.TempDir(), func() time.Time { return now })
+	sessions := newTestSessions(t, prober, t.TempDir(), func() time.Time { return now })
 	defer sessions.Close()
 
 	if got := sessions.ProbedDurationSeconds(context.Background(), "fp", "/media/x.mkv"); got != 0 {

@@ -25,6 +25,7 @@ import (
 	"github.com/beamfall/core/internal/observability"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/reveal"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -1604,7 +1605,7 @@ func newTestServerWithMediaFile(t *testing.T, mediaID store.MediaID, body []byte
 		beam.NewService(st, authService, func() time.Time { return time.Unix(0, 0).UTC() }),
 		pairing.NewService(st, func() time.Time { return time.Unix(0, 0).UTC() }),
 		testServerGraphHandler{Handler: graph.NewHandler(manifests, authService, st, nil)},
-		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)),
+		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil)),
 		authService,
 		st,
 	)

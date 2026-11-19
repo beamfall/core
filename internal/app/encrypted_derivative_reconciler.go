@@ -60,7 +60,7 @@ type encryptedDerivativeReconciler struct {
 	artwork         *artwork.Service
 	assets          *genassets.Service
 	subtitles       *mediahttp.Handler
-	sessions        *playback.Sessions
+	sweepTranscodes func() error
 	precomputeCache string
 }
 
@@ -69,13 +69,26 @@ type encryptedDerivativeReconciler struct {
 // precomputeCacheRoot may be empty (no precompute cache configured), in which case
 // the precompute sweep is a no-op.
 func newEncryptedDerivativeReconciler(art *artwork.Service, assets *genassets.Service, subtitles *mediahttp.Handler, sessions *playback.Sessions, precomputeCacheRoot string) *encryptedDerivativeReconciler {
-	return &encryptedDerivativeReconciler{
+	r := &encryptedDerivativeReconciler{
 		artwork:         art,
 		assets:          assets,
 		subtitles:       subtitles,
-		sessions:        sessions,
 		precomputeCache: precomputeCacheRoot,
 	}
+	if sessions != nil {
+		r.sweepTranscodes = sessions.PurgeOrphanedTranscodeDirs
+	}
+	return r
+}
+
+// ReconcileEncryptedTranscodeScratch runs before Store registers the plane.
+func (r *encryptedDerivativeReconciler) ReconcileEncryptedTranscodeScratch(_ context.Context, libraryID store.LibraryID) error {
+	if r.sweepTranscodes != nil {
+		if err := r.sweepTranscodes(); err != nil {
+			return fmt.Errorf("encrypted-library %s derivative reconcile: %w", libraryID, err)
+		}
+	}
+	return nil
 }
 
 // ReconcileEncryptedDerivatives purges every plaintext derivative belonging to
@@ -88,14 +101,6 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 	var joined error
 	for _, key := range live {
 		joined = errors.Join(joined, r.purgeMedia(libraryID, key))
-	}
-	// Transcode session dirs are not media-attributable (they are keyed by an
-	// in-memory counter, not by Media/Library), so the 5th class is swept once as
-	// a set: every session dir on disk that no live session holds is an orphaned
-	// plaintext leak. At boot the map is empty so all are purged; the live-session
-	// guard makes it safe on the runtime-unseal path too.
-	if r.sessions != nil {
-		joined = errors.Join(joined, r.sessions.PurgeOrphanedTranscodeDirs())
 	}
 	if r.subtitles != nil {
 		joined = errors.Join(joined, r.subtitles.ReconcileEncryptedSubtitles(libraryID, libencrypt.HasObjectHeader))

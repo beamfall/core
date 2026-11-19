@@ -21,8 +21,8 @@ import (
 func liveComposedService(t *testing.T) (*Service, *store.Store, auth.Scope) {
 	t.Helper()
 	service, st, scope := capabilityTestService(t)
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+
 	sessions.SetTranscodeCap(4)
 	service.SetSessions(sessions)
 	service.SetComposedCacheRoot(t.TempDir())
@@ -165,7 +165,7 @@ func TestLiveComposedPlayRaisesQueuedSweepRender(t *testing.T) {
 func TestComposedShapedSessionEncodesOneComposedRung(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeTranscoder{}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	calls := 0
 	sessions.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
@@ -207,11 +207,13 @@ func TestComposedShapedSessionRefusesUnresolvedPicture(t *testing.T) {
 			return ComposedPicture{}, false, nil
 		},
 	} {
-		sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 		sessions.SetPictureComposer(composer)
 		_, err := sessions.FilePathShaped(context.Background(), SessionKey{SessionID: "s", MediaID: "m"}, "/src/song.mp3", 30, 0, 0,
 			false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{ComposedPicture: true}, PriorityNormal, masterPlaylistName)
-		sessions.Close()
+		if err := sessions.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if !errors.Is(err, ErrComposedPictureUnavailable) {
 			t.Errorf("%s: err = %v, want ErrComposedPictureUnavailable", name, err)
 		}

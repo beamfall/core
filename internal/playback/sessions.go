@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -227,6 +228,8 @@ type hlsSession struct {
 	state             sessionState
 	teardown          *sessionTeardown
 	dir               string
+	scratch           *scratchPath
+	joins             map[string]chan struct{}
 	src               string
 	sourceInfo        os.FileInfo
 	sourceGeneration  string
@@ -453,9 +456,21 @@ func (h *hlsSession) rendition(rung Rung) ffmpeg.Rendition {
 // rendition switches, capped server-wide with idle preemption, reaped after
 // idleness, all stopped on shutdown.
 type Sessions struct {
-	transcoder Transcoder
-	dir        string
-	now        func() time.Time
+	transcoder    Transcoder
+	dir           string
+	now           func() time.Time
+	root          *os.Root
+	rootLock      *os.File
+	setupMu       sync.Mutex
+	paths         map[string]*scratchPath
+	removing      int
+	sweeping      bool
+	closeOnce     sync.Once
+	closeErr      error
+	closeSweepErr error
+	readScratch   func(fs.FS, string) ([]fs.DirEntry, error)
+	mkdirDir      func(string, fs.FileMode) error
+	join          func(*os.File, func(string) (*os.File, error), []string) error
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
 	durationProbes    durationProbeCache
 	incompleteSources incompleteSourceCache
@@ -486,7 +501,7 @@ type Sessions struct {
 	// stopEncoder, when set, replaces (*ffmpeg.HLSProcess).Stop. Tests set it
 	// to a slow Stop.
 	stopEncoder func(*ffmpeg.HLSProcess)
-	// removeDir, when set, replaces os.RemoveAll in runTeardowns. Tests set it
+	// removeDir, when set, replaces scratch removal. Tests set it
 	// to a slow removal.
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
@@ -502,8 +517,7 @@ type Sessions struct {
 	// waits for starting, stopping and detached to reach zero so no encoder,
 	// lease or directory outlives it.
 	detached int
-	// offLockIdle, when non-nil, is closed when starting, stopping and
-	// detached all drop to zero.
+	// offLockIdle is closed when all admitted off-lock work finishes.
 	offLockIdle chan struct{}
 	// closed is set by Close; once set no session is created.
 	closed bool
@@ -520,47 +534,67 @@ type Sessions struct {
 type sessionTeardown struct {
 	session *hlsSession
 	proc    *ffmpeg.HLSProcess
-	dir     string
 	// lease is the session's transcode lease, released only once proc has
 	// stopped so the governor keeps background generation out until then.
 	lease *governor.TranscodeLease
 	// counted means detachment added this teardown to s.stopping.
 	counted bool
-	// liveRun is revoked before proc stops, and live closed (its key zeroed)
-	// after dir is gone, on an encrypted session (ADR-0236 D2).
+	// A late start keeps its directory until its last user releases it.
+	cleanupOnRelease bool
+	// End access before waiting for directory owners to exit.
 	liveRun *encderiv.LiveRun
 	live    *encderiv.LiveSession
 }
 
-// runTeardowns stops each process, removes each directory, then releases each
-// lease and transcode slot. Call it without s.mu held.
+// runTeardowns stops detached encoders before waiting on directory references.
+// Every detached path has exactly one initial removal owner.
 func (s *Sessions) runTeardowns(teardowns []*sessionTeardown) {
 	for _, t := range teardowns {
 		if t.liveRun != nil {
 			t.liveRun.Revoke()
 		}
 		s.stop(t.proc)
-		if t.dir != "" {
-			if s.removeDir != nil {
-				_ = s.removeDir(t.dir)
-			} else {
-				_ = os.RemoveAll(t.dir)
-			}
-		}
-		if t.live != nil {
-			t.live.Close()
-		}
 		if t.lease != nil {
 			t.lease.Release()
 		}
-		s.mu.Lock()
-		s.transitionLocked(t.session, t)
-		s.mu.Unlock()
+	}
+	for _, t := range teardowns {
+		p := t.session.scratch
+		if t.cleanupOnRelease && p != nil {
+			s.mu.Lock()
+			if p.users > 0 {
+				p.cleanup = t
+				s.mu.Unlock()
+				continue
+			}
+			s.mu.Unlock()
+		}
+		s.finishTeardown(t)
 	}
 }
 
-// wakeCloseLocked wakes a waiting Close once no start or teardown is running
-// with mu released. Call it after decrementing starting, stopping or detached.
+func (s *Sessions) finishTeardown(t *sessionTeardown) {
+	p := t.session.scratch
+	if p != nil {
+		<-p.drained
+	}
+	if t.live != nil {
+		t.live.Close()
+	}
+	if p != nil {
+		s.mu.Lock()
+		s.claimScratchRemovalLocked(p)
+		s.mu.Unlock()
+		if err := s.removeScratch(p); err != nil {
+			slog.Warn("live transcode directory cleanup failed", "error", err)
+		}
+	}
+	s.mu.Lock()
+	s.transitionLocked(t.session, t)
+	s.mu.Unlock()
+}
+
+// wakeCloseLocked wakes Close once admitted off-lock work is complete.
 // Callers hold mu.
 func (s *Sessions) wakeCloseLocked() {
 	if s.offLockIdleLocked() && s.offLockIdle != nil {
@@ -569,10 +603,9 @@ func (s *Sessions) wakeCloseLocked() {
 	}
 }
 
-// offLockIdleLocked reports whether no encoder start or teardown is running
-// with mu released. Callers hold mu.
+// offLockIdleLocked reports whether the manager has joined its owned work. Callers hold mu.
 func (s *Sessions) offLockIdleLocked() bool {
-	return s.starting == 0 && s.stopping == 0 && s.detached == 0
+	return s.starting == 0 && s.stopping == 0 && s.detached == 0 && s.removing == 0 && !s.sweeping
 }
 
 // stop stops proc and waits for it to exit. Call it without s.mu held.
@@ -844,36 +877,6 @@ func (s *Sessions) TerminatePlayback(sessionID store.SessionID, mediaID store.Me
 	return len(teardowns)
 }
 
-// NewSessions creates a transcode session manager rooted at dataDir/transcode.
-func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) *Sessions {
-	return NewSessionsInDir(transcoder, filepath.Join(dataDir, "transcode"), now)
-}
-
-// NewSessionsInDir creates a transcode session manager rooted at scratchDir.
-// It purges every pre-existing session directory under scratchDir before
-// returning: the in-memory session map is always empty at construction, so
-// PurgeOrphanedTranscodeDirs' live-session confinement treats every
-// session-<nonce>-<N>/ entry already on disk as an orphan of a prior process
-// (a restart drops the map that would have removed them on normal end) and
-// removes it, closing the window where a reused-looking directory name could
-// serve a previous run's leftover segments to a new session.
-func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time) *Sessions {
-	if now == nil {
-		now = time.Now
-	}
-	s := &Sessions{
-		transcoder:  transcoder,
-		dir:         scratchDir,
-		now:         now,
-		bootNonce:   newBootNonce(),
-		sessions:    map[SessionKey]*hlsSession{},
-		cap:         defaultTranscodeCap,
-		resumeHints: map[SessionKey]resumeHint{},
-	}
-	_ = s.PurgeOrphanedTranscodeDirs()
-	return s
-}
-
 // newBootNonce mints an 8-byte crypto-random hex tag, ignoring the
 // (practically unreachable, per crypto/rand's contract) read error the same
 // way this package's other ephemeral-id generators do: it is not a durable
@@ -932,12 +935,23 @@ func (s *Sessions) FilePathPriorityWithBurnSubtitleAudioLadderMap(ctx context.Co
 // FilePathShaped is FilePathPriorityWithBurnSubtitleAudioLadderMap with the
 // grant's StreamShape, which can reshape the session beyond its ladder.
 func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (string, error) {
+	artifact, err := s.LiveArtifactShaped(ctx, key, src, durationSeconds, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, shape, priority, name)
+	if err != nil {
+		return "", err
+	}
+	defer artifact.Release()
+	return artifact.path, nil
+}
+
+// LiveArtifactShaped selects and holds one live artifact. Its caller releases
+// it after closing any reader opened from it.
+func (s *Sessions) LiveArtifactShaped(ctx context.Context, key SessionKey, src string, durationSeconds, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, shape StreamShape, priority Priority, name string) (*LiveArtifact, error) {
 	if shape.Encrypted != nil && shape.ComposedPicture {
-		return "", ErrEncryptedLiveUnavailable // ADR-0236 D4
+		return nil, ErrEncryptedLiveUnavailable // ADR-0236 D4
 	}
 	picture, err := s.livePicture(ctx, key, src, shape)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	// The keyframe timeline lays out the copied-video rung, which a composed
 	// picture or an audio adjustment replaces with a single encoded rung.
@@ -949,14 +963,30 @@ func (s *Sessions) FilePathShaped(ctx context.Context, key SessionKey, src strin
 	var timeline *keyframeTimeline
 	if audioCopy && durationSeconds > 0 && picture == nil && shape.Adjust.IsZero() && shape.Encrypted == nil {
 		if timeline, err = s.copyVideoTimeline(ctx, key, src); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	audioOnlyPeak := audioOnlyBandwidth(audioProfile, shape.AudioSource, !shape.Adjust.IsZero())
-	session, err := s.session(key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, priority)
+	session, err := s.session(ctx, key, src, durationSeconds, timeline, videoWidth, videoHeight, audioCopy, degraded, caps, sourceVideo, burnSubtitleIndex, audioProfile, audioStreamIndex, picture, shape.Adjust, shape.AudioOnly, shape.AudioSource, audioOnlyPeak, shape.Encrypted, shape.LibraryID, priority)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+	path, err := s.resolveArtifactPath(ctx, key, session, name)
+	s.mu.Lock()
+	evicted := session.state != sessionRunning
+	s.mu.Unlock()
+	if evicted || err != nil {
+		s.releaseScratch(session.scratch)
+		if evicted {
+			return nil, ErrSessionEvicted
+		}
+		return nil, err
+	}
+	return &LiveArtifact{manager: s, session: session, path: path}, nil
+}
+
+func (s *Sessions) resolveArtifactPath(ctx context.Context, key SessionKey, session *hlsSession, name string) (string, error) {
+	var err error
 	if name == masterPlaylistName {
 		return filepath.Join(session.dir, masterPlaylistName), nil
 	}
@@ -1020,7 +1050,7 @@ func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session 
 		return s.encoderSegment(ctx, key, session, rung, first)
 	}
 	joined := filepath.Join(session.dir, rung.ID, fmt.Sprintf("joined%05d.m4s", segment))
-	if fileReady(joined) {
+	if session.artifactReady(joined) {
 		return joined, nil
 	}
 	parts := make([]string, 0, end-first)
@@ -1037,7 +1067,7 @@ func (s *Sessions) playlistSegment(ctx context.Context, key SessionKey, session 
 	if len(parts) == 1 {
 		return parts[0], nil
 	}
-	if err := joinFragments(joined, parts); err != nil {
+	if err := s.joinArtifact(ctx, session, joined, parts); err != nil {
 		return "", err
 	}
 	return joined, nil
@@ -1086,7 +1116,7 @@ func (s *Sessions) waitForEncoder(ctx context.Context, key SessionKey, session *
 		if run != nil {
 			run.waiting.Add(1)
 		}
-		err := waitForArtifact(ctx, path, run.exitedChan())
+		err := waitForArtifact(ctx, path, run.exitedChan(), session.scratch.cutoff, session.artifactReady)
 		if run != nil {
 			run.waiting.Add(-1)
 		}
@@ -1143,7 +1173,7 @@ func (s *Sessions) waitWhileEncoderProgresses(ctx context.Context, key SessionKe
 		}
 		after, base, stillTracked := s.rungEncoder(session, rung)
 		if !tracked || !stillTracked || current != run || after != run || base > segment ||
-			!segmentWrittenSince(filepath.Join(session.dir, rung.ID), base, windowStart) {
+			!session.segmentWrittenSince(rung.ID, base, windowStart) {
 			return err
 		}
 	}
@@ -1163,8 +1193,8 @@ func (s *Sessions) rungEncoder(session *hlsSession, rung Rung) (run *encoderRun,
 // segmentWrittenSince reports whether rungDir holds a segment at or past base
 // modified at or after since. Segments cached by earlier runs keep their older
 // times, so only this run's writes count.
-func segmentWrittenSince(rungDir string, base int, since time.Time) bool {
-	entries, err := os.ReadDir(rungDir)
+func (h *hlsSession) segmentWrittenSince(rung string, base int, since time.Time) bool {
+	entries, err := h.scratch.readRung(rung)
 	if err != nil {
 		return false
 	}
@@ -1176,7 +1206,12 @@ func segmentWrittenSince(rungDir string, base int, since time.Time) bool {
 		if segment, _ := strconv.Atoi(match[1]); segment < base {
 			continue
 		}
-		if info, err := entry.Info(); err == nil && !info.ModTime().Before(since) {
+		f, info, err := openScratchMember(h.scratch.root, filepath.Join(rung, entry.Name()))
+		if err != nil {
+			continue
+		}
+		_ = f.Close()
+		if !info.ModTime().Before(since) {
 			return true
 		}
 	}
@@ -1227,7 +1262,7 @@ func (s *Sessions) markDelivered(session *hlsSession, rungID string) {
 // starts or replaces FFmpeg. Cached artifacts are returned before waiting, so
 // only first-start and post-start encode paths consume these numeric SLOs.
 func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time.Duration {
-	if fileReady(path) {
+	if session.artifactReady(path) {
 		return fileWaitTimeout
 	}
 	if s.waitWindow > 0 {
@@ -1250,7 +1285,7 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // non-zero adjust stretches durationSeconds (a source duration) onto the
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
-func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
+func (s *Sessions) session(ctx context.Context, key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, library store.LibraryID, priority Priority) (*hlsSession, error) {
 	// Capture the generation before encoding, outside the session lock.
 	var sourceInfo os.FileInfo
 	if secure == nil {
@@ -1261,9 +1296,11 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		sourceGeneration = store.EncryptedSourceGeneration(secure.Fingerprint)
 	}
 	var teardowns []*sessionTeardown
+	s.setupMu.Lock()
 	s.mu.Lock()
 	defer func() {
 		s.mu.Unlock()
+		s.setupMu.Unlock()
 		s.runTeardowns(teardowns)
 	}()
 	if s.closed {
@@ -1300,29 +1337,25 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 			return nil, err
 		}
 	}
+	if secure != nil {
+		library = store.LibraryID(secure.LibraryID)
+	}
 	if hasExisting {
-		if existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
+		if existing.scratch.library != library || existing.sourceGeneration != sourceGeneration || (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
 			teardowns = append(teardowns, s.transitionLocked(existing, detachSession{}).teardown) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
 			// reshaped replacement; the unchanged session ignores it.
 			s.transitionLocked(existing, reuseSession{priority: priority})
+			existing.scratch.users++
 			return existing, nil
 		}
 	}
-	s.nextID++
-	dir := filepath.Join(s.dir, fmt.Sprintf("session-%s-%d", s.bootNonce, s.nextID))
-	var live *encderiv.LiveSession
-	if secure != nil {
-		abs, err := filepath.Abs(dir)
-		if err == nil {
-			dir = abs
-			live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
-		}
-		if err != nil {
-			return nil, err
-		}
+	scratch, err := s.allocateScratchLocked(ctx, library)
+	if scratch == nil {
+		return nil, err
 	}
+	dir := filepath.Join(s.dir, scratch.name)
 	lastAccess := s.now()
 	var resumeSeconds int
 	if hint, ok := s.resumeHints[key]; ok {
@@ -1334,6 +1367,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	session := &hlsSession{
 		key:               key,
 		dir:               dir,
+		scratch:           scratch,
 		src:               src,
 		sourceInfo:        sourceInfo,
 		sourceGeneration:  sourceGeneration,
@@ -1350,21 +1384,33 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		priority:          priority,
 		degraded:          degraded,
 		adjust:            adjust,
-		live:              live,
 		secure:            secure,
 		encodePolicy:      policy,
 		resumeSeconds:     resumeSeconds,
 	}
-	err := writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
+	if err == nil {
+		err = ctx.Err()
+		if s.closed {
+			err = ErrSessionEvicted
+		}
+	}
+	if err == nil && secure != nil {
+		session.live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
+	}
+	if err == nil {
+		err = writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
+	}
 	var preparedPicture *ffmpeg.ComposedPicture
 	if err == nil && picture != nil {
 		preparedPicture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
 	}
 	if err != nil {
+		scratch.users--
 		teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		return nil, err
 	}
 	if !s.transitionLocked(session, publishSession{composed: picture, picture: preparedPicture}).accepted {
+		scratch.users--
 		teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		return nil, ErrSessionEvicted
 	}
@@ -1427,9 +1473,6 @@ func rungsEqual(left, right []Rung) bool {
 // rung's playlist follows timeline when there is one. write stores one
 // playlist under its slash-separated name relative to dir.
 func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid, write func(rel string, data []byte) error) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
 	if err := write(masterPlaylistName, []byte(masterPlaylist(rungs))); err != nil {
 		return err
 	}
@@ -1458,7 +1501,12 @@ func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeli
 // seek lands outside the produced window. It returns the encoder run that will
 // produce path, or nil when path already exists.
 func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsSession, rung Rung, segment int, path string) (*encoderRun, error) {
-	if _, err := os.Stat(path); err == nil {
+	select {
+	case <-session.scratch.cutoff:
+		return nil, ErrSessionEvicted
+	default:
+	}
+	if session.artifactReady(path) {
 		return nil, nil // already produced (possibly by an earlier rendition run)
 	}
 	session.startMu.Lock()
@@ -1468,7 +1516,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	if session.state != sessionRunning {
 		return nil, ErrSessionEvicted // torn down between s.session() and this lock
 	}
-	if _, err := os.Stat(path); err == nil {
+	if session.artifactReady(path) {
 		return nil, nil
 	}
 	rungDir := filepath.Join(session.dir, rung.ID)
@@ -1492,7 +1540,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		base := session.baseSegment
 		run := session.run
 		s.mu.Unlock()
-		scanned := scanFrontier(rungDir, base)
+		scanned := session.scanFrontier(rung.ID, base)
 		s.mu.Lock()
 		if session.state != sessionRunning {
 			return nil, ErrSessionEvicted // torn down while the frontier scan ran off-lock
@@ -1554,9 +1602,8 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		run = &encoderRun{proc: proc, live: liveRun}
 	}
 	if !s.transitionLocked(session, completeEncoderStart{start: start, run: run, rungID: rung.ID, segment: segment}).accepted {
-		// Detachment counted this start in s.stopping and scheduled the
-		// directory's removal. Dispose of the late launch and any output it
-		// wrote before releasing the original instance's lease and slot.
+		// The artifact request still holds the directory. Stop the late
+		// child and finish its claim before releasing that reference.
 		s.mu.Unlock()
 		if err == nil {
 			if liveRun != nil {
@@ -1564,7 +1611,6 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 			}
 			s.stop(proc)
 		}
-		_ = os.RemoveAll(session.dir)
 		s.mu.Lock()
 		s.transitionLocked(session, finishDetachedStart{start: start})
 		return nil, ErrSessionEvicted
@@ -1573,6 +1619,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 		return nil, err
 	}
 	if run.exited != nil {
+		session.scratch.users++
 		s.reapProcess(key, session, run, rung, segment)
 		if proc.ReportsProgress() {
 			go watchForStall(run, s.encoderStallTimeout())
@@ -1674,6 +1721,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 	started := time.Now() // before the goroutine, so no segment of this run predates it
 	go func() {
 		defer close(run.exited)
+		defer s.releaseScratch(session.scratch)
 		waitErr := run.proc.Wait()
 		if run.live != nil {
 			// The token lives exactly as long as the process, plus the time
@@ -1691,8 +1739,8 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 		}
 		// Filesystem reads stay off-lock, as with ensureRung's frontier scan.
 		rungDir := filepath.Join(session.dir, rung.ID)
-		frontier := scanFrontier(rungDir, base)
-		wroteSegment := segmentWrittenSince(rungDir, base, started)
+		frontier := session.scanFrontier(rung.ID, base)
+		wroteSegment := session.segmentWrittenSince(rung.ID, base, started)
 		sourceEnd := -1 // the first segment with no media, when the source ends early
 		if outcome == exitEndOfInput && session.durationSeconds > 0 {
 			_, _, _ = s.observeIncompleteSource(key, session, func() (time.Duration, bool) {
@@ -1746,19 +1794,17 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 	}()
 }
 
-// scanFrontier returns the highest segment number at or after base that exists
-// in rungDir, or base-1 when none do yet. It is a pure filesystem read taking no
-// session state, so callers run it off-lock (never holding s.mu) and fold the
-// result back into the session's cached frontier under the lock.
-func scanFrontier(rungDir string, base int) int {
+// scanFrontier reads the held rung directory. Callers fold the result back
+// into the session's cached frontier under the manager lock.
+func (h *hlsSession) scanFrontier(rung string, base int) int {
 	frontier := base - 1
-	entries, err := os.ReadDir(rungDir)
+	entries, err := h.scratch.readRung(rung)
 	if err != nil {
 		return frontier
 	}
 	for _, entry := range entries {
 		match := segmentName.FindStringSubmatch(entry.Name())
-		if match == nil {
+		if match == nil || !entry.Type().IsRegular() {
 			continue
 		}
 		segment, _ := strconv.Atoi(match[1])
@@ -1917,93 +1963,39 @@ func (s *Sessions) reap() {
 	}
 	s.mu.Unlock()
 	s.runTeardowns(teardowns)
+	if err := s.retryScratch(false); err != nil {
+		slog.Warn("live transcode directory retry failed", "error", err)
+	}
 }
 
-// sessionDirName matches a transcode session working directory
-// (session-<bootNonce>-<N>), the layout session() mints under the transcode
-// root, and the pre-nonce session-<N> layout an older build left on disk, which
-// can still hold plaintext segments after an upgrade. The reconcile sweep uses
-// it to tell a session dir apart from any other entry under the root.
-var sessionDirName = regexp.MustCompile(`^session-(?:[0-9a-f]{16}-)?\d+$`)
-
-// PurgeOrphanedTranscodeDirs removes every transcode session directory under the
-// transcode root that no live session owns. It closes the crash-recovery leak of
-// the 5th derivative class (ADR-0045 §reconcile, ENCPRIV-10c): a live HLS
-// transcode of Encrypted-Library media writes PLAINTEXT segments to
-// dataDir/transcode/session-<bootNonce>-<N>/, and a crash mid-transcode orphans that dir on
-// disk — the in-memory session map that would have removed it on normal end is
-// gone after the restart. Those orphans are outside the four MediaID/fingerprint-
-// keyed derivative classes the reconciler otherwise sweeps (session dirs carry no
-// on-disk media/library attribution — they are keyed by an in-memory counter), so
-// they are purged here as a set.
-//
-// The sweep runs under the session lock and skips any dir a live session still
-// holds, so it never deletes an in-flight session's working dir even if it runs
-// after serving has begun (the runtime-unseal path). At boot the in-memory map is
-// empty — a restart drops all session state before serving — so every session dir
-// on disk is an orphan and is removed — which is also why NewSessionsInDir
-// calls this at construction, before any session is live, to purge whatever a
-// prior process on the same root left behind. Hard delete is correct: session
-// dirs are ephemeral, regenerable transcode caches, and invariant #5 forbids
-// leaked plaintext at rest. Any removal error is joined and returned so a
-// caller with a use for it — the encrypted-derivative reconciler fails the
-// unseal closed — can react; NewSessionsInDir has none, so it discards it.
-func (s *Sessions) PurgeOrphanedTranscodeDirs() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	live := make(map[string]struct{}, len(s.sessions))
-	for _, session := range s.sessions {
-		live[session.dir] = struct{}{}
-	}
-	entries, err := os.ReadDir(s.dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var joined error
-	for _, entry := range entries {
-		if !entry.IsDir() || !sessionDirName.MatchString(entry.Name()) {
-			continue
-		}
-		dir := filepath.Join(s.dir, entry.Name())
-		if _, held := live[dir]; held {
-			continue // in-flight session: never delete a live plaintext working dir
-		}
-		joined = errors.Join(joined, os.RemoveAll(dir))
-	}
-	return joined
-}
-
-// Close stops every running transcode and removes its working directory. It
-// also waits for encoder starts and teardowns running with the lock released
-// (a start sees its session gone and stops what it spawned), so no encoder,
-// lease or directory outlives it. Keyframe probes still running are cancelled
-// and waited for, and no session is created once Close has begun.
-func (s *Sessions) Close() {
-	s.mu.Lock()
-	s.closed = true
-	var teardowns []*sessionTeardown
-	for _, session := range s.sessions {
-		teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
-	}
-	s.mu.Unlock()
-	s.keyframes.close()
-	s.runTeardowns(teardowns)
-	for {
+// Close waits for admitted users and reconciliation before releasing the
+// root. Concurrent callers join the same cleanup attempt and result.
+func (s *Sessions) Close() error {
+	s.closeOnce.Do(func() {
 		s.mu.Lock()
-		if s.offLockIdleLocked() {
-			s.mu.Unlock()
-			return
+		s.closed = true
+		var teardowns []*sessionTeardown
+		for _, session := range s.sessions {
+			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
 		}
-		if s.offLockIdle == nil {
-			s.offLockIdle = make(chan struct{})
-		}
-		idle := s.offLockIdle
 		s.mu.Unlock()
-		<-idle
-	}
+		s.runTeardowns(teardowns)
+		s.keyframes.close()
+
+		s.mu.Lock()
+		if !s.offLockIdleLocked() {
+			s.offLockIdle = make(chan struct{})
+			idle := s.offLockIdle
+			s.mu.Unlock()
+			<-idle
+		} else {
+			s.mu.Unlock()
+		}
+		if s.root != nil {
+			s.closeErr = errors.Join(s.closeSweepErr, s.retryScratch(true), s.root.Close(), s.rootLock.Close())
+		}
+	})
+	return s.closeErr
 }
 
 // fileReady reports whether path exists with a non-empty body — the readiness
@@ -2025,20 +2017,20 @@ func fileReady(path string) bool {
 // cannot be armed (the directory is gone, or the OS refuses a handle), it falls
 // back to the slow polling loop so a watcher failure degrades, never errors.
 func waitForFile(ctx context.Context, path string) error {
-	return waitForArtifact(ctx, path, nil)
+	return waitForArtifact(ctx, path, nil, nil, fileReady)
 }
 
 // waitForArtifact is waitForFile that also watches the producing encoder:
 // when exited closes before path is ready it returns errEncoderExited, so a
 // dead encoder is noticed in milliseconds rather than at the deadline. A nil
 // exited never fires.
-func waitForArtifact(ctx context.Context, path string, exited <-chan struct{}) error {
-	if fileReady(path) {
+func waitForArtifact(ctx context.Context, path string, exited, cutoff <-chan struct{}, ready func(string) bool) error {
+	if ready(path) {
 		return nil // fast path: already produced, no watch needed
 	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return pollForArtifact(ctx, path, exited)
+		return pollForArtifact(ctx, path, exited, cutoff, ready)
 	}
 	defer watcher.Close()
 	// Arm the watch on the parent dir BEFORE the post-arm stat: a file that
@@ -2047,9 +2039,9 @@ func waitForArtifact(ctx context.Context, path string, exited <-chan struct{}) e
 	// where an event is missed and the file already exists — the classic
 	// inotify setup race.
 	if err := watcher.Add(filepath.Dir(path)); err != nil {
-		return pollForArtifact(ctx, path, exited)
+		return pollForArtifact(ctx, path, exited, cutoff, ready)
 	}
-	if fileReady(path) {
+	if ready(path) {
 		return nil // appeared during arm
 	}
 	deadline := time.NewTimer(fileWaitTimeout)
@@ -2064,12 +2056,14 @@ func waitForArtifact(ctx context.Context, path string, exited <-chan struct{}) e
 	var settleC <-chan time.Time
 	for {
 		select {
+		case <-cutoff:
+			return ErrSessionEvicted
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
 			return errors.New("stream not ready")
 		case <-exited:
-			if fileReady(path) {
+			if ready(path) {
 				return nil // the encoder's last write landed just before it exited
 			}
 			return errEncoderExited
@@ -2077,7 +2071,7 @@ func waitForArtifact(ctx context.Context, path string, exited <-chan struct{}) e
 			if filepath.Clean(event.Name) != filepath.Clean(path) {
 				continue
 			}
-			if fileReady(path) {
+			if ready(path) {
 				return nil
 			}
 			// A Create notification can precede the first write, and that Write
@@ -2087,14 +2081,14 @@ func waitForArtifact(ctx context.Context, path string, exited <-chan struct{}) e
 				settleC = settle.C
 			}
 		case <-watcher.Errors:
-			return pollForArtifact(ctx, path, exited) // watch broke; degrade to polling
+			return pollForArtifact(ctx, path, exited, cutoff, ready) // watch broke; degrade to polling
 		case <-settleC:
 			settleC = nil
-			if fileReady(path) {
+			if ready(path) {
 				return nil
 			}
 		case <-safety.C:
-			if fileReady(path) {
+			if ready(path) {
 				return nil // backstop a missed/coalesced event
 			}
 		}
@@ -2105,25 +2099,27 @@ func waitForArtifact(ctx context.Context, path string, exited <-chan struct{}) e
 // preserving waitForFile's exact contract (ready → nil, deadline → "stream not
 // ready", cancel → ctx.Err()) when an fsnotify watch cannot be established.
 func pollForFile(ctx context.Context, path string) error {
-	return pollForArtifact(ctx, path, nil)
+	return pollForArtifact(ctx, path, nil, nil, fileReady)
 }
 
 // pollForArtifact is pollForFile that also returns errEncoderExited once
 // exited closes with path still not ready.
-func pollForArtifact(ctx context.Context, path string, exited <-chan struct{}) error {
+func pollForArtifact(ctx context.Context, path string, exited, cutoff <-chan struct{}, ready func(string) bool) error {
 	deadline := time.Now().Add(fileWaitTimeout)
 	for {
-		if fileReady(path) {
+		if ready(path) {
 			return nil
 		}
 		if time.Now().After(deadline) {
 			return errors.New("stream not ready")
 		}
 		select {
+		case <-cutoff:
+			return ErrSessionEvicted
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-exited:
-			if fileReady(path) {
+			if ready(path) {
 				return nil
 			}
 			return errEncoderExited
@@ -2132,27 +2128,8 @@ func pollForArtifact(ctx context.Context, path string, exited <-chan struct{}) e
 	}
 }
 
-// segmentLacksMedia reports whether the fMP4 segment at path is a complete,
-// well-formed ISO-BMFF box sequence carrying no media payload (no non-empty
-// mdat box). FFmpeg's HLS muxer writes such a segment — a lone styp box,
-// EXTINF 0 — when it is started at or past the real end of a truncated input.
-// Anything it cannot positively parse reads as media, so an unexpected layout
-// is served as before rather than refused. It reads only box headers.
-func segmentLacksMedia(path string) bool {
-	f, err := os.Open(path) // #nosec G304 -- path is a segment file inside the session's own encoder output directory
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return readerLacksMedia(f, info.Size())
-}
-
-// readerLacksMedia is segmentLacksMedia for a segment of size bytes read
-// through r.
+// readerLacksMedia reports whether a complete ISO-BMFF segment contains no
+// media payload. It reads only box headers and declines malformed input.
 func readerLacksMedia(r io.ReaderAt, size int64) bool {
 	if size == 0 {
 		return false

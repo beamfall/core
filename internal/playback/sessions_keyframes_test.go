@@ -86,7 +86,7 @@ func TestAudioCopyPlaylistFollowsSourceKeyframes(t *testing.T) {
 	const duration = 60
 	for _, name := range []string{"gop7.mp4", "gop7.mkv"} {
 		src := makeGOPSource(t, name, 7, 25, duration)
-		sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+		sessions := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
 		defer sessions.Close()
 		key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 		playlist := readAudioCopyPlaylist(t, sessions, key, src, duration)
@@ -145,7 +145,7 @@ func TestAudioCopyRestartsLandOnPlaylistTimes(t *testing.T) {
 		"two-video.mkv": makeTwoVideoSource(t, "two-video.mkv", duration),
 	}
 	for name, src := range sources {
-		sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+		sessions := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
 		defer sessions.Close()
 		key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 		playlist := readAudioCopyPlaylist(t, sessions, key, src, duration)
@@ -221,7 +221,7 @@ func TestAudioCopyKeyframesProbedOncePerFileGeneration(t *testing.T) {
 		Duration:  20 * time.Second,
 	}}
 	keyframes := &memoryKeyframeStore{}
-	first := NewSessions(transcoder, t.TempDir(), nil)
+	first := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer first.Close()
 	first.SetKeyframeStore(keyframes)
 
@@ -265,7 +265,7 @@ func TestAudioCopyKeyframesProbedOncePerFileGeneration(t *testing.T) {
 	}
 
 	// A new Sessions sharing the store (a server restart) does not probe.
-	second := NewSessions(transcoder, t.TempDir(), nil)
+	second := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer second.Close()
 	second.SetKeyframeStore(keyframes)
 	readAudioCopyPlaylist(t, second, SessionKey{SessionID: "after-restart", MediaID: "media-alpha"}, src, 20)
@@ -295,7 +295,7 @@ func TestAudioCopyProbeFailureFailsTheRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	transcoder := &keyframeFakeTranscoder{probeErr: fmt.Errorf("no video keyframes")}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 	if _, err := sessions.FilePath(context.Background(), key, src, 20, 64, 64, true, audioCopyRungID+"/index.m3u8"); err == nil {
@@ -311,7 +311,7 @@ func TestAudioCopyProbeFailureFailsTheRequest(t *testing.T) {
 func TestReencodeSessionsDoNotProbeKeyframes(t *testing.T) {
 	t.Parallel()
 	transcoder := &keyframeFakeTranscoder{}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 	path, err := sessions.FilePath(context.Background(), key, "/src/movie.mkv", 120, 1280, 720, false, "720p/index.m3u8")
@@ -507,7 +507,7 @@ func TestCloseCancelsAndWaitsForKeyframeProbes(t *testing.T) {
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(transcoder.release) }) }
 	t.Cleanup(release)
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 
 	served := make(chan error, 1)
@@ -519,7 +519,7 @@ func TestCloseCancelsAndWaitsForKeyframeProbes(t *testing.T) {
 
 	closed := make(chan struct{})
 	go func() {
-		sessions.Close()
+		_ = sessions.Close()
 		close(closed)
 	}()
 	select {
@@ -625,7 +625,19 @@ func TestJoinFragmentsKeepsFragmentsAndDropsIndexes(t *testing.T) {
 		return append(out, payload...)
 	}
 	join := func(boxes ...[]byte) []byte { return slices.Concat(boxes...) }
-	dir := t.TempDir()
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	key := SessionKey{SessionID: "join"}
+	path, err := filePath720(sessions, key, "master.m3u8")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := testArtifactForPath(sessions, key, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer artifact.Release()
+	session := artifact.session
+	dir := filepath.Join(filepath.Dir(path), "720p")
 	partA := filepath.Join(dir, "seg00000.m4s")
 	partB := filepath.Join(dir, "seg00001.m4s")
 	if err := os.WriteFile(partA, join(box("styp", "a"), box("sidx", "a1"), box("sidx", "a2"), box("moof", "a"), box("mdat", "aa")), 0o600); err != nil {
@@ -635,7 +647,7 @@ func TestJoinFragmentsKeepsFragmentsAndDropsIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 	dst := filepath.Join(dir, "joined00000.m4s")
-	if err := joinFragments(dst, []string{partA, partB}); err != nil {
+	if err := sessions.joinArtifact(t.Context(), session, dst, []string{partA, partB}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(dst) // #nosec G304 -- path is beneath a test-owned temporary directory.
@@ -652,13 +664,13 @@ func TestJoinFragmentsKeepsFragmentsAndDropsIndexes(t *testing.T) {
 		t.Fatal(err)
 	}
 	refused := filepath.Join(dir, "joined00001.m4s")
-	if err := joinFragments(refused, []string{partA, broken}); err == nil {
+	if err := sessions.joinArtifact(t.Context(), session, refused, []string{partA, broken}); err == nil {
 		t.Fatal("joined a truncated segment")
 	}
 	if _, err := os.Stat(refused); !os.IsNotExist(err) {
 		t.Fatalf("a refused join left %s behind: %v", refused, err)
 	}
-	if leftovers, _ := filepath.Glob(filepath.Join(dir, ".join-*")); len(leftovers) > 0 {
+	if leftovers, _ := filepath.Glob(filepath.Join(session.dir, ".join-*")); len(leftovers) > 0 {
 		t.Fatalf("a refused join left temporary files: %v", leftovers)
 	}
 }
@@ -672,7 +684,7 @@ func TestAudioCopyMergesShortGOPSegments(t *testing.T) {
 	ffmpegtest.Require(t)
 	const duration = 30
 	src := makeGOPSource(t, "gop2.mp4", 2, 25, duration)
-	sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+	sessions := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 	playlist := readAudioCopyPlaylist(t, sessions, key, src, duration)
@@ -767,7 +779,7 @@ func TestSlowKeyframeProbeDoesNotHoldFirstPlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	transcoder := &blockingProbeTranscoder{started: make(chan struct{}), release: make(chan struct{})}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	sessions.keyframes.firstPlayWait = 50 * time.Millisecond
 	defer sessions.Close()
 	session := func(key SessionKey) *hlsSession {

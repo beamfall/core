@@ -14,7 +14,7 @@ import (
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/ffmpeg"
-	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
 )
@@ -87,7 +87,7 @@ printf m4s > "$dir/seg00000.m4s"
 			if err != nil {
 				t.Fatal(err)
 			}
-			sessions := playback.NewSessions(ffmpeg.New(), t.TempDir(), nil)
+			sessions := sessiontest.New(t, ffmpeg.New(), t.TempDir(), nil)
 			defer sessions.Close()
 			handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
 

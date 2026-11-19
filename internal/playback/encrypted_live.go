@@ -119,47 +119,20 @@ func (s *Sessions) watchLiveRevocation(session *hlsSession, done <-chan struct{}
 // segmentLacksMedia is the package's segmentLacksMedia for one of the
 // session's segments, decrypting it first on an encrypted session.
 func (h *hlsSession) segmentLacksMedia(path string) bool {
-	if h.live == nil {
-		return segmentLacksMedia(path)
+	if h.live != nil {
+		f, err := h.openEncryptedArtifact(path)
+		if err != nil {
+			return false
+		}
+		defer f.Close()
+		return readerLacksMedia(f, f.Size())
 	}
-	rel, ok := h.live.Rel(path)
-	if !ok {
-		return false
-	}
-	f, err := h.live.Open(rel)
+	f, info, err := h.openArtifact(path)
 	if err != nil {
 		return false
 	}
 	defer f.Close()
-	return readerLacksMedia(f, f.Size())
-}
-
-// OpenLiveArtifact opens path, a file FilePathShaped returned for key's
-// encrypted session, as decrypted bytes. It fails when the session is gone or
-// is not encrypted.
-func (s *Sessions) OpenLiveArtifact(key SessionKey, path string) (*encderiv.LiveFile, error) {
-	s.mu.Lock()
-	session, ok := s.sessions[key]
-	var live *encderiv.LiveSession
-	if ok {
-		live = session.live
-	}
-	s.mu.Unlock()
-	if !ok {
-		return nil, ErrSessionEvicted
-	}
-	if live == nil {
-		return nil, errors.New("playback: session is not encrypted")
-	}
-	rel, ok := live.Rel(path)
-	if !ok {
-		return nil, errors.New("unknown stream file")
-	}
-	f, err := live.Open(rel)
-	if errors.Is(err, encderiv.ErrLiveSessionClosed) {
-		return nil, ErrSessionEvicted
-	}
-	return f, err
+	return readerLacksMedia(f, info.Size())
 }
 
 // writePlaylist stores one of the playlists the session serves itself, under

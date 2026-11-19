@@ -49,6 +49,7 @@ import (
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/migrate"
 	"github.com/beamfall/core/internal/offlinepack"
+	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback/subtitleingest"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/reveal"
@@ -501,6 +502,37 @@ func TestAppWiresJellyfinCompatToggle(t *testing.T) {
 				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestNewReleasesScratchAfterBootstrapSetupTokenFailure(t *testing.T) {
+	cfg := testConfig(t)
+	root := filepath.Join(cfg.DataDir, "transcode")
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("default root already exists: %v", err)
+	}
+	bootstrap := bootstrapAppSetupToken
+	t.Cleanup(func() { bootstrapAppSetupToken = bootstrap })
+	want := errors.New("setup token fixture failure")
+	bootstrapAppSetupToken = func(ctx context.Context, st *store.Store, svc *pairing.Service) (string, error) {
+		if _, err := os.Stat(root); err != nil {
+			t.Errorf("default root unavailable at bootstrap: %v", err)
+		}
+		if _, err := st.FirstRunSetupComplete(ctx); err != nil {
+			t.Errorf("Store unavailable at bootstrap: %v", err)
+		}
+		return "", want
+	}
+	if app, err := New(t.Context(), cfg, nil, nil); app != nil || !errors.Is(err, want) {
+		t.Fatalf("New after bootstrap failure = (%v, %v)", app, err)
+	}
+	bootstrapAppSetupToken = bootstrap
+	app, err := New(t.Context(), cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("immediate retry: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
