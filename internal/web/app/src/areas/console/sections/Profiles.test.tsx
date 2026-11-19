@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createProfile,
   disableProfile,
@@ -12,6 +12,7 @@ import {
 } from "@/lib/graphql";
 import type { ProfileAdminInfo } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
+import { setAdminEpochSignal } from "../adminEpoch";
 import { Profiles } from "./Profiles";
 
 vi.mock("@/lib/graphql", () => ({
@@ -29,6 +30,13 @@ const rows: ProfileAdminInfo[] = [
   { id: "p1", name: "Owner", kind: "adult", libraryIDs: ["library-local"], disabled: false },
   { id: "p2", name: "Kid", kind: "managed", libraryIDs: ["library-local"], disabled: false },
 ];
+const salon: ProfileAdminInfo = {
+  id: "p3",
+  name: "Salon",
+  kind: "adult",
+  libraryIDs: ["library-local"],
+  disabled: false,
+};
 
 beforeEach(() => {
   // Radix Select needs these jsdom shims.
@@ -39,13 +47,7 @@ beforeEach(() => {
   vi.mocked(updateProfile).mockReset();
   vi.mocked(disableProfile).mockReset();
   vi.mocked(fetchProfilesAdmin).mockResolvedValue(rows);
-  vi.mocked(createProfile).mockResolvedValue({
-    id: "p3",
-    name: "Salon",
-    kind: "adult",
-    libraryIDs: ["library-local"],
-    disabled: false,
-  });
+  vi.mocked(createProfile).mockResolvedValue(salon);
   vi.mocked(updateProfile).mockResolvedValue({
     id: "p2",
     name: "Teen",
@@ -60,11 +62,21 @@ beforeEach(() => {
   vi.mocked(setProfileAvatar).mockResolvedValue(undefined as never);
 });
 
+afterEach(() => setAdminEpochSignal());
+
 function rowOrder() {
   return screen
     .getAllByLabelText("Profile name")
     .slice(1)
     .map((input) => (input as HTMLInputElement).value);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 function renderSection() {
@@ -127,6 +139,9 @@ describe("Console Profiles lane", () => {
 
   it("moves a profile with the arrow buttons, saves the order and announces it (CORE-2477)", async () => {
     const user = userEvent.setup();
+    vi.mocked(fetchProfilesAdmin)
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([rows[1], rows[0]]);
     renderSection();
     await screen.findByDisplayValue("Kid");
     expect(screen.getByRole("button", { name: "Move Owner up" })).toBeDisabled();
@@ -139,6 +154,9 @@ describe("Console Profiles lane", () => {
 
   it("moves a profile with Alt+Arrow from its row", async () => {
     const user = userEvent.setup();
+    vi.mocked(fetchProfilesAdmin)
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([rows[1], rows[0]]);
     renderSection();
     await screen.findByDisplayValue("Owner");
     await user.click(screen.getByRole("button", { name: "Move Kid up" }));
@@ -148,8 +166,45 @@ describe("Console Profiles lane", () => {
     expect(reorderProfiles).toHaveBeenLastCalledWith(["p1", "p2"]);
   });
 
+  it("keeps a saved reorder when an older create refresh returns and reconciles with the server", async () => {
+    const user = userEvent.setup();
+    const older = deferred<ProfileAdminInfo[]>();
+    const saved = deferred<string[]>();
+    const reconciled = deferred<ProfileAdminInfo[]>();
+    vi.mocked(fetchProfilesAdmin)
+      .mockResolvedValueOnce(rows)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(reconciled.promise);
+    vi.mocked(reorderProfiles).mockReturnValueOnce(saved.promise);
+    renderSection();
+    await screen.findByDisplayValue("Kid");
+
+    await user.type(screen.getAllByLabelText("Profile name")[0], "Salon");
+    await user.click(screen.getByRole("button", { name: "Create profile" }));
+    await waitFor(() => expect(fetchProfilesAdmin).toHaveBeenCalledTimes(2));
+    const olderSignal = vi.mocked(fetchProfilesAdmin).mock.calls[1]?.[0];
+
+    await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+    expect(reorderProfiles).toHaveBeenCalledWith(["p2", "p1"]);
+    expect(rowOrder()).toEqual(["Kid", "Owner"]);
+    const olderWasAbortedBeforeSave = olderSignal?.aborted;
+    await act(async () => saved.resolve(["p2", "p1", "p3"]));
+
+    // Model a response that was already in flight and arrives despite abort.
+    await act(async () => older.resolve([...rows, salon]));
+    expect(rowOrder()).toEqual(["Kid", "Owner"]);
+    expect(olderWasAbortedBeforeSave).toBe(true);
+    expect(fetchProfilesAdmin).toHaveBeenCalledTimes(3);
+
+    await act(async () => reconciled.resolve([rows[1], rows[0], salon]));
+    expect(rowOrder()).toEqual(["Kid", "Owner", "Salon"]);
+  });
+
   it("saves one order at a time, ending on the newest one", async () => {
     const user = userEvent.setup();
+    vi.mocked(fetchProfilesAdmin)
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([rows[1], rows[0]]);
     let release = () => {};
     vi.mocked(reorderProfiles).mockImplementationOnce(
       (ids) =>
@@ -164,10 +219,30 @@ describe("Console Profiles lane", () => {
     await user.click(screen.getByRole("button", { name: "Move Owner down" }));
     // The later moves wait for the first save rather than racing it.
     expect(reorderProfiles).toHaveBeenCalledTimes(1);
+    expect(fetchProfilesAdmin).toHaveBeenCalledTimes(1);
     release();
     await waitFor(() => expect(reorderProfiles).toHaveBeenCalledTimes(2));
     expect(reorderProfiles).toHaveBeenLastCalledWith(["p2", "p1"]);
+    expect(fetchProfilesAdmin).toHaveBeenCalledTimes(2);
     expect(rowOrder()).toEqual(["Kid", "Owner"]);
+  });
+
+  it("does not start a reconciliation after the Admin Session ends", async () => {
+    const user = userEvent.setup();
+    const session = new AbortController();
+    setAdminEpochSignal(session.signal);
+    const saved = deferred<string[]>();
+    vi.mocked(reorderProfiles).mockReturnValueOnce(saved.promise);
+    const view = renderSection();
+    await screen.findByDisplayValue("Kid");
+    await user.click(screen.getByRole("button", { name: "Move Kid up" }));
+
+    session.abort();
+    setAdminEpochSignal();
+    view.unmount();
+    await act(async () => saved.resolve(["p2", "p1"]));
+
+    expect(fetchProfilesAdmin).toHaveBeenCalledTimes(1);
   });
 
   it("holds moves while the list reloads after a failed save", async () => {

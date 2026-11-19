@@ -24,6 +24,8 @@ export interface AsyncState<T> {
   refresh: () => Promise<void>;
   /** Replace data through the same abort and generation fence as a fetch. */
   replace: (producer: (signal: AbortSignal) => Promise<T>) => Promise<void>;
+  /** Publish local data and discard any in-flight load. */
+  mutate: (next: T) => void;
   setData: (next: T) => void;
 }
 
@@ -53,11 +55,17 @@ export function useAsync<T>(
   const epoch = useRef(0);
   const request = useRef<AbortController | null>(null);
 
-  const beginRequest = useCallback(() => {
+  const invalidateRequest = useCallback(() => {
+    const generation = ++epoch.current;
     request.current?.abort();
+    request.current = null;
+    return generation;
+  }, []);
+
+  const beginRequest = useCallback(() => {
+    const started = invalidateRequest();
     const controller = new AbortController();
     request.current = controller;
-    const started = ++epoch.current;
     // The signal handed to the fetcher carries BOTH boundaries: this hook's own
     // (dependency change, manual refresh, unmount) and the Admin-Session epoch
     // (expiry, lock, Profile switch). Console screens render only under an
@@ -67,7 +75,7 @@ export function useAsync<T>(
     const signal = withAdminEpoch(controller.signal);
     const current = () => epoch.current === started && !signal.aborted;
     return { current, signal };
-  }, []);
+  }, [invalidateRequest]);
 
   const refresh = useCallback(async () => {
     const { current, signal } = beginRequest();
@@ -98,6 +106,16 @@ export function useAsync<T>(
     [beginRequest],
   );
 
+  const mutate = useCallback(
+    (next: T) => {
+      invalidateRequest();
+      setData(next);
+      setLoading(false);
+      setFailed(false);
+    },
+    [invalidateRequest],
+  );
+
   useLayoutEffect(() => {
     // A dependency change selects a different scoped resource (and may be an
     // identity transition), so no row or error from the departed dependency
@@ -107,14 +125,11 @@ export function useAsync<T>(
     setLoading(true);
     setFailed(false);
     void refresh();
-    return () => {
-      request.current?.abort();
-      epoch.current++;
-    };
+    return () => void invalidateRequest();
     // `deps` (the caller's declared dependency array), not `refresh` — see
     // the fetcherRef comment above for why keying off refresh is unsound.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  return { data, loading, failed, refresh, replace, setData };
+  return { data, loading, failed, refresh, replace, mutate, setData };
 }
