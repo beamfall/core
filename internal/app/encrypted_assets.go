@@ -51,7 +51,7 @@ func (p encryptedAssetPurger) PurgeEncryptedDerivatives(ctx context.Context, lib
 // assetPipeRunner is the FFmpeg seam the encrypted asset generator drives.
 // Satisfied by *ffmpeg.Runner.
 type assetPipeRunner interface {
-	SpriteSheetsToPipe(ctx context.Context, in ffmpeg.PipeInput, intervalSeconds, tileWidth, columns, rows int, stdout io.Writer) error
+	SpriteSheetsToPipe(ctx context.Context, in ffmpeg.PipeInput, intervalSeconds, tileWidth, columns, rows, frameCount int, stdout io.Writer) error
 	FrameGrabToPipe(ctx context.Context, in ffmpeg.PipeInput, atSeconds float64, width int, stdout io.Writer) error
 	SampleClipToPipe(ctx context.Context, in ffmpeg.PipeInput, offsets []float64, segmentSeconds float64, width, maxFPS int, stdout io.Writer) error
 	WaveformAmplitudesFromPipe(ctx context.Context, in ffmpeg.PipeInput) ([]float64, error)
@@ -81,12 +81,12 @@ type encryptedAssetGenerator struct {
 
 var _ genassets.EncryptedGenerator = encryptedAssetGenerator{}
 
-func (g encryptedAssetGenerator) SpriteSheets(ctx context.Context, src genassets.EncryptedSource, intervalSeconds, tileWidth, columns, rows, maxSheets int) ([][]byte, error) {
+func (g encryptedAssetGenerator) SpriteSheets(ctx context.Context, src genassets.EncryptedSource, intervalSeconds, tileWidth, columns, rows, frameCount, maxSheets int) ([][]byte, error) {
 	if maxSheets <= 0 {
 		return nil, errors.New("encrypted sprite sheets need a bounded count")
 	}
 	out, err := g.capture(ctx, src, int64(maxSheets)*encryptedSheetMaxBytes, func(ctx context.Context, in ffmpeg.PipeInput, stdout io.Writer) error {
-		return g.runner.SpriteSheetsToPipe(ctx, in, intervalSeconds, tileWidth, columns, rows, stdout)
+		return g.runner.SpriteSheetsToPipe(ctx, in, intervalSeconds, tileWidth, columns, rows, frameCount, stdout)
 	})
 	if err != nil {
 		return nil, err

@@ -75,7 +75,11 @@ func SweepHandler(service *Service) jobs.Handler {
 			if ctx.Err() != nil {
 				break
 			}
-			if err := service.DetectForMedia(ctx, id); err != nil {
+			err := service.DetectForMedia(ctx, id)
+			if ctx.Err() != nil {
+				break // Retry the interrupted item.
+			}
+			if err != nil {
 				checkpoint.Failed++
 			} else {
 				checkpoint.Detected++
@@ -96,12 +100,12 @@ func SweepHandler(service *Service) jobs.Handler {
 			Unit:    "items",
 			Message: "Detecting skip-segments",
 		}
-		if err := service.store.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
-			return jobs.Result{}, err
+		if err := service.store.UpdateJobCheckpoint(context.WithoutCancel(ctx), job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
+			return jobs.Result{Checkpoint: data}, err
 		}
 		if len(ids) == sweepJobBatchSize || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
-		return jobs.Result{}, nil
+		return jobs.Result{Checkpoint: data}, nil
 	}
 }

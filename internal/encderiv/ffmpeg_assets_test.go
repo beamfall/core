@@ -47,7 +47,7 @@ func TestRunCaptureGeneratesAssetsWithRealFFmpeg(t *testing.T) {
 	t.Run("sprite sheets", func(t *testing.T) {
 		out := capture(t, 8<<20, func(ctx context.Context, in ffmpeg.PipeInput, w io.Writer) error {
 			// io:ffmpeg-sprite-sheets-to-pipe
-			return runner.SpriteSheetsToPipe(ctx, in, 1, 80, 3, 2, w)
+			return runner.SpriteSheetsToPipe(ctx, in, 1, 80, 3, 2, 12, w)
 		})
 		sheets, err := ffmpeg.SplitJPEGStream(out, 4)
 		if err != nil {

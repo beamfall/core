@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   browseFollowsEngagement,
+  browseQuery,
   browseStateParams,
   DEFAULT_BROWSE_STATE,
+  LIBRARY_MAX_QUERY,
   libraryItemsVariables,
   libraryViewClass,
   parseBrowseState,
@@ -113,5 +115,30 @@ describe("library browse sorts and year range (CORE-2443)", () => {
     const vars = libraryItemsVariables({ libraryID: "l", state: openEnded, limit: 10, offset: 0 });
     expect(vars.yearTo).toBe(1979);
     expect(vars).not.toHaveProperty("yearFrom");
+  });
+});
+
+describe("library browse search (CORE-2568)", () => {
+  const read = (query: string) => parseBrowseState(new URLSearchParams(query));
+
+  it("reads the search from q, trimmed, and writes it back first", () => {
+    const state = read("sort=year&q=%20%20blue%20moon%20");
+    expect(state.query).toBe("blue moon");
+    expect(browseStateParams(state).toString()).toBe("q=blue+moon&sort=year");
+    expect(read("q=%20%20").query).toBe("");
+    expect(browseStateParams(read("q=")).toString()).toBe("");
+  });
+
+  it("caps the search at the server's limit in characters, not bytes", () => {
+    const long = "é".repeat(LIBRARY_MAX_QUERY + 20);
+    expect(Array.from(browseQuery(long))).toHaveLength(LIBRARY_MAX_QUERY);
+    expect(browseQuery(undefined)).toBe("");
+  });
+
+  it("sends the search as the query argument only when there is one", () => {
+    const vars = (state = DEFAULT_BROWSE_STATE) =>
+      libraryItemsVariables({ libraryID: "l", state, limit: 10, offset: 0 });
+    expect(vars({ ...DEFAULT_BROWSE_STATE, query: "moon" })).toMatchObject({ query: "moon" });
+    expect(vars()).not.toHaveProperty("query");
   });
 });

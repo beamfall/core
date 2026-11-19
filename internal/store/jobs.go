@@ -502,6 +502,21 @@ func (s *Store) JobStats(ctx context.Context) ([]JobStatsRow, error) {
 	return s.jobStatsSQL(ctx)
 }
 
+// HasRunnableJob reports whether kind has a queued or yielded job available now.
+func (s *Store) HasRunnableJob(ctx context.Context, kind JobKind, now time.Time) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := s.guardLocked(); err != nil {
+		return false, err
+	}
+	var exists bool
+	err := s.eventsR.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM job
+		WHERE kind = ? AND status IN ('queued', 'yielded') AND available_at_ms <= ?)
+	`, kind, timeToMillis(now)).Scan(&exists)
+	return exists, err
+}
+
 // OldestQueuedJobAgeMs returns how long, in milliseconds, the oldest job still
 // waiting to run (queued or yielded) has been enqueued, and whether any such job
 // exists. It backs ADR-0146 §8's server-observable job-queue-age SLI: the
@@ -740,6 +755,22 @@ func enqueueJobTx(ctx context.Context, tx *sql.Tx, job Job) (Job, error) {
 	if job.DedupeKey != "" {
 		existing, err := activeJobByDedupeSQL(ctx, tx, job.Kind, job.DedupeKey)
 		if err == nil {
+			if job.Kind == "asset-catch-up" {
+				// A running worker may still hold the old payload. Its checkpoint
+				// records the floor it covered; completion below checks that floor
+				// atomically before releasing this dedupe key.
+				_, err = tx.ExecContext(ctx, `UPDATE job SET
+					payload_json = json_set(payload_json, '$.after_rowid',
+						min(json_extract(payload_json, '$.after_rowid'), json_extract(?, '$.after_rowid')),
+						'$.generation', coalesce(json_extract(payload_json, '$.generation'), 0) + 1),
+					updated_at_ms = max(updated_at_ms, ?)
+					WHERE id = ?`, string(job.Payload), timeToMillis(job.UpdatedAt), existing.ID)
+				if err != nil {
+					return Job{}, err
+				}
+				err = tx.QueryRowContext(ctx, `SELECT payload_json FROM job WHERE id = ?`, existing.ID).Scan(&existing.Payload)
+				return existing, err
+			}
 			return existing, nil
 		}
 		if !errors.Is(err, ErrJobNotFound) {
@@ -1044,11 +1075,33 @@ func (s *Store) finishJobSQL(ctx context.Context, id JobID, leaseOwner string, s
 	if now, err = jobTransitionTimeSQL(ctx, tx, id, now); err != nil {
 		return err
 	}
+	// A catch-up enqueue may arrive after the handler's final checkpoint.
+	// Keep the job runnable until a claim has covered that generation. Enqueue and
+	// completion serialize on this transaction, including the final-batch race.
+	if status == JobStatusCompleted {
+		var pending bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+			SELECT 1 FROM job j LEFT JOIN job_checkpoint c ON c.job_id = j.id
+			WHERE j.id = ? AND j.kind = 'asset-catch-up'
+			AND (json_extract(c.checkpoint_json, '$.after_rowid') IS NULL
+				OR json_extract(c.checkpoint_json, '$.after_rowid') > json_extract(j.payload_json, '$.after_rowid')
+				OR coalesce(json_extract(c.checkpoint_json, '$.generation'), 0) < coalesce(json_extract(j.payload_json, '$.generation'), 0))
+		)`, id).Scan(&pending); err != nil {
+			return err
+		}
+		if pending {
+			status = JobStatusYielded
+		}
+	}
+	var finishedAt any
+	if status != JobStatusYielded {
+		finishedAt = timeToMillis(now)
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE job
 		SET status = ?, lease_owner = NULL, lease_expires_at_ms = NULL, last_error = ?, updated_at_ms = ?, finished_at_ms = ?
 		WHERE id = ?`+jobLiveLeaseClause,
-		status, nullableString(message), timeToMillis(now), timeToMillis(now), id, leaseOwner, timeToMillis(leaseNow()))
+		status, nullableString(message), timeToMillis(now), finishedAt, id, leaseOwner, timeToMillis(leaseNow()))
 	if err := jobMutationResult(result, err, ErrJobLeaseLost); err != nil {
 		return err
 	}

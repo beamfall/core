@@ -3,6 +3,7 @@ package genassets
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/beamfall/core/internal/jobs"
@@ -71,19 +72,9 @@ func SweepHandler(service *Service) jobs.Handler {
 			if ctx.Err() != nil {
 				break
 			}
-			failed := false
-			for _, generate := range []func(context.Context, store.MediaID) error{
-				service.GenerateTrickplay,
-				service.GenerateMarkerThumbs,
-				service.GeneratePreviewClip,
-				service.GenerateWaveform,
-				service.GenerateSilenceMap,
-				service.GenerateLoudness,
-				service.GenerateImageEnrich,
-			} {
-				if err := generate(ctx, id); err != nil {
-					failed = true
-				}
+			failed := generateMediaAssets(ctx, service, id)
+			if ctx.Err() != nil {
+				break // Retry the interrupted item, including its missing assets.
 			}
 			if failed {
 				checkpoint.Failed++
@@ -106,12 +97,142 @@ func SweepHandler(service *Service) jobs.Handler {
 			Unit:    "items",
 			Message: "Generating assets",
 		}
-		if err := service.store.UpdateJobCheckpoint(ctx, job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
-			return jobs.Result{}, err
+		if err := service.store.UpdateJobCheckpoint(context.WithoutCancel(ctx), job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
+			return jobs.Result{Checkpoint: data}, err
 		}
 		if len(ids) > processed || ctx.Err() != nil {
 			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
 		}
-		return jobs.Result{}, nil
+		return jobs.Result{Checkpoint: data}, nil
 	}
+}
+
+// CatchUpJobKind fills missing assets only for Media inserted after a scan's
+// watermark. It shares the sweep's background admission and generation policy.
+const CatchUpJobKind store.JobKind = "asset-catch-up"
+
+type catchUpPayload struct {
+	Generation int64 `json:"generation,omitempty"`
+	Version    int   `json:"version"`
+	AfterRowID int64 `json:"after_rowid"`
+}
+
+type catchUpCheckpoint struct {
+	Generation int64  `json:"generation,omitempty"`
+	AfterRowID *int64 `json:"after_rowid,omitempty"`
+	Version    int    `json:"version"`
+	LastRowID  int64  `json:"last_rowid"`
+	Generated  int    `json:"generated"`
+	Failed     int    `json:"failed"`
+}
+
+// NewCatchUpJob builds a deduped, non-blocking catch-up for newly inserted Media.
+// Enqueue coalesces active catch-ups to the minimum floor, even during a claim.
+func NewCatchUpJob(createdAt time.Time, afterRowID int64) (store.Job, error) {
+	if afterRowID < 0 {
+		return store.Job{}, errors.New("catch-up rowid must be non-negative")
+	}
+	payload, err := json.Marshal(catchUpPayload{Version: 1, AfterRowID: afterRowID})
+	if err != nil {
+		return store.Job{}, err
+	}
+	return store.Job{
+		Kind:      CatchUpJobKind,
+		Class:     store.JobClassBackground,
+		DedupeKey: string(CatchUpJobKind),
+		Payload:   payload,
+		CreatedAt: createdAt,
+	}, nil
+}
+
+// CatchUpHandler walks insertion order above the scan's floor, checkpointing
+// only completed items so playback or scan preemption can safely resume work.
+func CatchUpHandler(service *Service) jobs.Handler {
+	return func(ctx context.Context, job store.Job) (jobs.Result, error) {
+		var payload catchUpPayload
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			return jobs.Result{}, err
+		}
+		if payload.Version != 1 || payload.AfterRowID < 0 {
+			return jobs.Result{}, errors.New("invalid asset catch-up payload")
+		}
+		checkpoint := catchUpCheckpoint{Version: 1, LastRowID: payload.AfterRowID}
+		if len(job.Checkpoint) > 0 {
+			if err := json.Unmarshal(job.Checkpoint, &checkpoint); err != nil {
+				return jobs.Result{}, err
+			}
+			if checkpoint.AfterRowID == nil || *checkpoint.AfterRowID > payload.AfterRowID {
+				// This claim must revisit the lower floor, regardless of progress
+				// saved by a worker that started before the coalescing enqueue.
+				checkpoint.LastRowID = payload.AfterRowID
+			}
+			if checkpoint.Version != 1 || checkpoint.LastRowID < payload.AfterRowID {
+				return jobs.Result{}, errors.New("invalid asset catch-up checkpoint")
+			}
+		}
+		checkpoint.AfterRowID = &payload.AfterRowID
+		checkpoint.Generation = payload.Generation
+		refs, err := service.store.MediaIDsAfterRowID(ctx, checkpoint.LastRowID, sweepJobBatchSize+1)
+		if err != nil {
+			return jobs.Result{}, err
+		}
+		processed := 0
+		for _, ref := range refs {
+			if ctx.Err() != nil {
+				break
+			}
+			failed := generateMediaAssets(ctx, service, ref.ID)
+			if ctx.Err() != nil {
+				break
+			}
+			if failed {
+				checkpoint.Failed++
+			} else {
+				checkpoint.Generated++
+			}
+			checkpoint.LastRowID = ref.RowID
+			processed++
+			if processed >= sweepJobBatchSize {
+				break
+			}
+		}
+		data, err := json.Marshal(checkpoint)
+		if err != nil {
+			return jobs.Result{}, err
+		}
+		progress := store.JobProgress{
+			Current: int64(checkpoint.Generated),
+			Unit:    "items",
+			Message: "Generating assets for new media",
+		}
+		if err := service.store.UpdateJobCheckpoint(context.WithoutCancel(ctx), job.ID, job.LeaseOwner, data, progress, time.Now().UTC()); err != nil {
+			return jobs.Result{Checkpoint: data}, err
+		}
+		if len(refs) > processed || ctx.Err() != nil {
+			return jobs.Result{Checkpoint: data}, jobs.ErrYielded
+		}
+		return jobs.Result{Checkpoint: data}, nil
+	}
+}
+
+// generateMediaAssets is the shared per-item recipe for full sweeps and catch-up.
+// Asset failures do not prevent other asset families or later items from running.
+func generateMediaAssets(ctx context.Context, service *Service, id store.MediaID) (failed bool) {
+	for _, generate := range []func(context.Context, store.MediaID) error{
+		service.GenerateTrickplay,
+		service.GenerateMarkerThumbs,
+		service.GeneratePreviewClip,
+		service.GenerateWaveform,
+		service.GenerateSilenceMap,
+		service.GenerateLoudness,
+		service.GenerateImageEnrich,
+	} {
+		if ctx.Err() != nil {
+			break
+		}
+		if err := generate(ctx, id); err != nil {
+			failed = true
+		}
+	}
+	return failed
 }

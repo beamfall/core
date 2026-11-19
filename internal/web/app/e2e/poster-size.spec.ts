@@ -14,7 +14,7 @@ async function openLibraryGrid(page: Page): Promise<void> {
   const href = await link.getAttribute("href");
   expect(href, "a seeded library node link on the home page").toBeTruthy();
   await page.goto(`${href}/all`);
-  await expect(page.getByRole("combobox", { name: "Sort by" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Sort by / })).toBeVisible();
 }
 
 async function gridColumns(page: Page): Promise<number> {

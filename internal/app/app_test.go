@@ -39,6 +39,7 @@ import (
 	"github.com/beamfall/core/internal/artwork"
 	backupcore "github.com/beamfall/core/internal/backup"
 	"github.com/beamfall/core/internal/config"
+	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/governor"
 	"github.com/beamfall/core/internal/graph"
 	"github.com/beamfall/core/internal/identify"
@@ -1016,6 +1017,10 @@ func TestAppRegistersScanJobHandler(t *testing.T) {
 		t.Fatalf("New returned error: %v", err)
 	}
 	defer beamfall.Close()
+	floor, err := beamfall.store.MaxMediaRowID(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	now := time.Unix(100, 0).UTC()
 	job, err := scanpkg.NewJob(scanpkg.JobRequest{
 		ID:        "job-scan-app",
@@ -1040,6 +1045,32 @@ func TestAppRegistersScanJobHandler(t *testing.T) {
 	}
 	if !hasSourceTitle(items, "clip") {
 		t.Fatalf("sourceItems = %#v, want imported clip", items)
+	}
+	queued, err := beamfall.store.ListJobs(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	catchUps := 0
+	for _, queuedJob := range queued {
+		if queuedJob.Kind == genassets.SweepJobKind {
+			t.Fatal("scan or boot queued a full asset sweep")
+		}
+		if queuedJob.Kind == genassets.CatchUpJobKind {
+			catchUps++
+			var payload struct {
+				Version    int   `json:"version"`
+				AfterRowID int64 `json:"after_rowid"`
+			}
+			if err := json.Unmarshal(queuedJob.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Version != 1 || payload.AfterRowID != floor {
+				t.Fatalf("catch-up payload = %+v, want floor %d", payload, floor)
+			}
+		}
+	}
+	if catchUps != 1 {
+		t.Fatalf("catch-up jobs = %d, want 1", catchUps)
 	}
 }
 
@@ -3061,6 +3092,7 @@ func TestAppSchedulesMaintenanceWithoutBootHerd(t *testing.T) {
 		"scan:library-archive": true,
 		"retention-sweep":      true,
 		"database-backup":      true,
+		"asset-sweep":          true,
 		"offline-pack-expire":  true,
 		"subscription-poll":    true,
 		"decode-verify":        true,
@@ -3070,6 +3102,11 @@ func TestAppSchedulesMaintenanceWithoutBootHerd(t *testing.T) {
 	var decodeVerify *store.Schedule
 	for i, schedule := range schedules {
 		delete(want, string(schedule.ID))
+		if schedule.ID == store.ScheduleID(genassets.SweepJobKind) {
+			if got := schedule.Trigger; got.Kind != store.ScheduleTriggerDaily || got.Hour != 3 || got.Minute != 0 || !schedule.Enabled {
+				t.Fatalf("asset sweep schedule = %#v, want enabled Daily(03:00)", schedule)
+			}
+		}
 		if schedule.ID == "decode-verify" {
 			decodeVerify = &schedules[i]
 		}
@@ -3102,6 +3139,9 @@ func TestAppSchedulesMaintenanceWithoutBootHerd(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, job := range jobs {
+		if job.Kind == genassets.SweepJobKind || job.Kind == genassets.CatchUpJobKind {
+			t.Fatalf("Generated Assets job was boot-enqueued: %#v", job)
+		}
 		if job.Kind == ingest.PollJobKind {
 			t.Fatalf("subscription poll was boot-enqueued outside scheduler: %#v", job)
 		}

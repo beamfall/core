@@ -68,6 +68,9 @@ type LibraryBrowseQuery struct {
 	// MinRating keeps only Media the requesting Profile rated at least this
 	// high (1..ItemRatingMax); 0 applies no rating filter.
 	MinRating int
+	// Text keeps only items whose title or sort title holds every word of
+	// it, ignoring case, accents and punctuation (CORE-2568); "" keeps all.
+	Text string
 	// FacetEntityKinds names the Entity Kinds whose titles are reported as
 	// facet values, in this order. Empty reports none.
 	FacetEntityKinds []string
@@ -200,6 +203,7 @@ func (s *Store) LibraryBrowse(ctx context.Context, filter LibraryFilter, query L
 		result.Facets.Entities = append(result.Facets.Entities, facet)
 	}
 
+	candidates = filterLibraryBrowseText(candidates, query.Text)
 	for i := range query.EntityFilters {
 		related, err := libraryBrowseCandidates(ctx, reader, certify, visible, &query.EntityFilters[i])
 		if err != nil {
@@ -631,6 +635,29 @@ func libraryBrowseFacets(candidates []libraryBrowseCandidate) LibraryBrowseFacet
 		}
 	}
 	return facets
+}
+
+// filterLibraryBrowseText drops the candidates whose title and sort title do
+// not each hold every word of text, folded as keyword search folds them. It
+// runs on the candidates themselves, so an Entity listing matches the
+// Entity's own title, not the titles of the Media it reaches.
+func filterLibraryBrowseText(candidates []libraryBrowseCandidate, text string) []libraryBrowseCandidate {
+	words := strings.Fields(foldSearchText(text))
+	if len(words) == 0 {
+		return candidates
+	}
+	holdsAll := func(title string) bool {
+		folded := foldSearchText(title)
+		for _, word := range words {
+			if !strings.Contains(folded, word) {
+				return false
+			}
+		}
+		return true
+	}
+	return slices.DeleteFunc(candidates, func(c libraryBrowseCandidate) bool {
+		return !holdsAll(c.item.Title) && (c.sortTitle == "" || !holdsAll(c.sortTitle))
+	})
 }
 
 func libraryBrowseMatches(c libraryBrowseCandidate, query LibraryBrowseQuery) bool {

@@ -167,7 +167,7 @@ func (r *Runner) runPipeToolWith(ctx context.Context, port int, in PipeInput, to
 	if err != nil {
 		return fmt.Errorf("%s is not available: %w", tool, err)
 	}
-	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, toolPath, args)
+	cmd, err := r.pipeCommand(ctx, runtime.GOOS, port, toolPath, pipeArgsForTool(toolPath, args))
 	if err != nil {
 		return err
 	}
@@ -217,7 +217,8 @@ func pipeReadTimeout(in PipeInput) time.Duration {
 }
 
 // pipeInputOptions scope a pipe run's one input: HTTP over TCP only, no
-// redirects, a bounded blocked read and single-resource demuxers.
+// redirects, a bounded blocked read and single-resource demuxers. A build
+// whose http protocol lacks -max_redirects runs without it (pipeArgsForTool).
 func pipeInputOptions(timeout time.Duration) []string {
 	return []string{
 		"-protocol_whitelist", pipeProtocolAllowlist,

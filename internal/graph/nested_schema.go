@@ -453,6 +453,7 @@ func libraryItemsArguments() []NestedArgument {
 			store.QualityTierSD,
 			store.QualityTierUHD,
 		}},
+		{Name: "query", Kind: "string", Optional: true},
 		{Name: "seed", Kind: "string", Optional: true},
 		{Name: "sort", Kind: "string", Optional: true, Enum: []string{
 			store.LibraryBrowseSortAdded,

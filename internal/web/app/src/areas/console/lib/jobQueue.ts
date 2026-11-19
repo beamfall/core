@@ -94,7 +94,7 @@ export function unresolvedFailedJobs(jobs: JobInfo[]): JobInfo[] {
   return arrangeJobQueue(jobs).failed.map((group) => group.job);
 }
 
-/** Whole seconds a job ran: start to finish, or start to now while it runs. */
+/** Elapsed seconds since first start, including waits and yields (CORE-2572). */
 export function jobRunSeconds(job: JobInfo, now: number): number | null {
   const started = Date.parse(job.startedAt ?? "");
   if (Number.isNaN(started)) return null;

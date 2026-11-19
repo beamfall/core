@@ -86,9 +86,25 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 	var parsed ParsedMedia
 	var parsedFields []store.MediaField
 	parsedOK := false
+	var refresh store.ParserFieldRefresh
+	// The fast path skipped the probe, so the parse sees the directory
+	// preflight's probe or, for a file with legacy parser fields, the one-off
+	// probe fill took (CORE-2554). Only a parse that saw a real probe, or one
+	// no probe could change, settles probe-dependent fields; a scan without a
+	// prober never does, so it cannot undo an earlier probed parse.
 	parseProbe := ParseProbe{}
+	authoritative := imported.Class == store.MediaClassImage
 	if decision := s.directoryPreflights[filepath.Dir(path)]; decision != nil {
 		parseProbe = decision.probes[path]
+		authoritative = authoritative || !parseProbeEmpty(parseProbe)
+	} else if task.probe.succeeded {
+		parseProbe = ParseProbe{
+			HasVideo:        task.probe.hasVideo,
+			HasAudio:        task.probe.hasAudio,
+			DurationSeconds: task.probe.value.DurationSeconds,
+			Tags:            task.probe.value.Tags,
+		}
+		authoritative = true
 	}
 	if s.parser != nil {
 		var refused bool
@@ -101,9 +117,10 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
+		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, parsedFields, partMarkerTitle(s.parser, path, parseProbe), nil, false); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), nil, false); err != nil {
 			return err
 		}
 		return s.ctx.Err()
@@ -126,14 +143,8 @@ func (s *scanWalkState) consumeFastTask(task *workerTask) error {
 		return skipManagedAdmissionInFlight(err, path)
 	}
 	s.rememberVersionAnchor(versionKey, media.ID, stored.ContentFingerprint, parsed)
-	fields := append([]store.MediaField(nil), parsedFields...)
-	if parsedOK {
-		fields = appendParsedStructuralMediaFields(fields, parsed)
-	}
-	if len(fields) > 0 {
-		if err := s.st.InsertMediaFieldsIfAbsent(s.ctx, media.ID, fields); err != nil {
-			return err
-		}
+	if err := s.refreshParserFields(media.ID, refresh); err != nil {
+		return err
 	}
 	if imported.Class == store.MediaClassImage {
 		if err := applyLocalMetadata(s.ctx, s.st, s.req.LibraryID, media.ID, task.local); err != nil {
@@ -241,12 +252,20 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	}
 	var parsed ParsedMedia
 	var parsedFields []store.MediaField
+	var refresh store.ParserFieldRefresh
 	parsedOK := false
 	parseProbe := ParseProbe{
 		HasVideo:        hasVideo,
 		HasAudio:        hasAudio,
 		DurationSeconds: imported.DurationSecondsHint,
 		Tags:            probeTags,
+	}
+	authoritative := probeSucceeded || isImage
+	// A folder preflight parsed the file with its own probe, so the parse and
+	// its field ownership follow that probe, not the worker's (CORE-2554).
+	if decision := s.directoryPreflights[filepath.Dir(path)]; decision != nil {
+		parseProbe = decision.probes[path]
+		authoritative = isImage || !parseProbeEmpty(parseProbe)
 	}
 	if s.parser != nil {
 		var refused bool
@@ -259,6 +278,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 			imported.Title = parsedMediaTitle(s.parser, path, parseProbe, parsed.Title)
 			imported.Year = parsed.Year
 		}
+		refresh = s.parserFieldRefresh(path, parseProbe, parsed, parsedOK, parsedFields, authoritative)
 	}
 	// The fast path took every file whose size and mtime are unchanged, so a
 	// file here is new to the catalog or changed on disk (CORE-2040).
@@ -270,7 +290,7 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		}
 	})
 	if s.isParsedPart(parsed, parsedOK) {
-		if err := s.queueParsedPart(imported, parsed, parsedFields, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
+		if err := s.queueParsedPart(imported, parsed, refresh, partMarkerTitle(s.parser, path, parseProbe), probeChapters, probeSucceeded); err != nil {
 			return err
 		}
 		return s.ctx.Err()
@@ -317,14 +337,8 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 	if err := s.hydrateMetadata(media, path, fingerprint, probeTags); err != nil {
 		return err
 	}
-	fields := append([]store.MediaField(nil), parsedFields...)
-	if parsedOK {
-		fields = appendParsedStructuralMediaFields(fields, parsed)
-	}
-	if len(fields) > 0 {
-		if err := s.st.InsertMediaFieldsIfAbsent(s.ctx, media.ID, fields); err != nil {
-			return err
-		}
+	if err := s.refreshParserFields(media.ID, refresh); err != nil {
+		return err
 	}
 	if len(probeChapters) > 0 {
 		if err := s.st.ReplaceDetectedMarkers(s.ctx, media.ID, "chapter-import", markersFromProbeChapters(probeChapters), store.LibraryFilter{AllLibraries: true}, now()); err != nil {

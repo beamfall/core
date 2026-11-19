@@ -1,0 +1,5 @@
+- [x] Baseline quirk entry `chromecast-default-receiver-floor`
+- [x] Playback test: shipped baseline resolves the Default Media Receiver and leaves other `chromecast-` clients unresolved
+- [x] Core web Cast button no longer gated by `CAST_RECEIVER_PLAYBACK_READY`
+- [x] Quirks README no longer calls the baseline empty
+- [ ] Android kit sends `chromecast-default-receiver` (beamfall-android-ui, CORE-2562/CORE-2565)

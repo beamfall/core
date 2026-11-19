@@ -55,7 +55,7 @@ type fakeGen struct {
 	loudnessFromTags   bool    // provenance flag returned
 }
 
-func (f *fakeGen) SpriteSheets(_ context.Context, _ string, interval, tileWidth, columns, rows int, pattern string) error {
+func (f *fakeGen) SpriteSheets(_ context.Context, _ string, interval, tileWidth, columns, rows, _ int, pattern string) error {
 	f.spriteCalls++
 	f.spriteInterval, f.spriteTileW, f.spriteCols, f.spriteRows = interval, tileWidth, columns, rows
 	for i := 1; i <= f.sheetCount; i++ {

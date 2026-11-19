@@ -138,6 +138,7 @@ func (s *Store) LibraryEntities(ctx context.Context, filter LibraryFilter, query
 	if err != nil {
 		return empty, err
 	}
+	candidates = filterLibraryBrowseText(candidates, query.Browse.Text)
 	if libraryEntityBrowseReadsMedia(query.Browse) {
 		candidates, err = s.libraryEntityBrowseFilterLocked(ctx, reader, filter, query, candidates)
 		if err != nil {

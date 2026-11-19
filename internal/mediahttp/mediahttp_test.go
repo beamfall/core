@@ -2531,7 +2531,7 @@ func TestAssetsServesTokenGatedBytes(t *testing.T) {
 // amplitudes; every other generator method is unused by these tests.
 type waveformOnlyGen struct{ calls int }
 
-func (g *waveformOnlyGen) SpriteSheets(context.Context, string, int, int, int, int, string) error {
+func (g *waveformOnlyGen) SpriteSheets(context.Context, string, int, int, int, int, int, string) error {
 	return errors.New("unused")
 }
 func (g *waveformOnlyGen) SampleClip(context.Context, string, []float64, float64, int, int, string) error {

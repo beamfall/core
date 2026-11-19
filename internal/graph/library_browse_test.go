@@ -101,11 +101,31 @@ func TestLibraryItemsRejectsUnknownSortAndFilters(t *testing.T) {
 		"unknown watch":   {"libraryID": "library-local", "watch": "abandoned"},
 		"unknown quality": {"libraryID": "library-local", "quality": "8k"},
 		"blank grouping":  {"libraryID": "library-local", "groupFilters": map[string]any{"sector": " "}},
+		"query too long":  {"libraryID": "library-local", "query": strings.Repeat("é", maxLibraryBrowseQueryRunes+1)},
 	} {
 		resp := postGraphJSON(t, handler, authorizeViewer, libraryItemsTestQuery, variables)
 		if len(resp.Errors) == 0 {
 			t.Errorf("%s: accepted, want a client error", name)
 		}
+	}
+}
+
+// The query narrows the whole Library by title on the server (CORE-2568): the
+// total is the matches', not the page's, and a blank query narrows nothing.
+func TestLibraryItemsNarrowsByTitleQuery(t *testing.T) {
+	handler := newDemoLibraryHandler(t)
+	const q = `query($libraryID: String!, $query: String, $limit: Int) {
+		libraryItems(libraryID: $libraryID, query: $query, limit: $limit) { total items { id title } }
+	}`
+	var all, steel, blank LibraryItemsResponse
+	execGraph(t, handler, authorizeDemoViewer, q, map[string]any{"libraryID": "library-demo-open", "limit": 1}, "libraryItems", &all)
+	execGraph(t, handler, authorizeDemoViewer, q, map[string]any{"libraryID": "library-demo-open", "query": " tears OF ", "limit": 1}, "libraryItems", &steel)
+	execGraph(t, handler, authorizeDemoViewer, q, map[string]any{"libraryID": "library-demo-open", "query": "  ", "limit": 1}, "libraryItems", &blank)
+	if steel.Total != 1 || len(steel.Items) != 1 || steel.Items[0].Title != "Tears of Steel" {
+		t.Fatalf("query \"tears of\" = %+v (total %d), want only Tears of Steel", steel.Items, steel.Total)
+	}
+	if all.Total < 2 || blank.Total != all.Total {
+		t.Fatalf("blank query total = %d, want the unfiltered %d", blank.Total, all.Total)
 	}
 }
 

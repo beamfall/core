@@ -108,7 +108,9 @@ class MutationRunnerTest(unittest.TestCase):
         self.assertEqual(self.status()["status"], "COMPLETE")
 
     def test_timeout_semantics_and_descendant_cleanup(self) -> None:
-        self.env["MUTATION_PKG_CAP_SEC"] = "0.15"
+        # Long enough for the Python fake to start and spawn its child under
+        # gate load; the fake sleeps 30 s, so the cap still always fires (CORE-0789).
+        self.env["MUTATION_PKG_CAP_SEC"] = "1.0"
         pid_path = self.directory / "child.pid"
         self.env["FAKE_CHILD_PID"] = str(pid_path)
         first = self.invoke("streamtoken", "timeout-first")
