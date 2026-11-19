@@ -524,6 +524,18 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     expect(screen.getByRole("status", { name: "detail" })).toHaveTextContent("m1");
   });
 
+  it("offers Mark played for an audio child alongside video children", async () => {
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([
+      { ...related, mediaClass: "audio" },
+      { ...related, id: "m2", title: "Video child", mediaClass: "video" },
+    ]);
+    renderEntity();
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Related item" }));
+
+    expect(await screen.findByRole("menuitem", { name: "Mark played" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Mark watched" })).toBeNull();
+  });
+
   it.each(["button", "menu"])("keeps direct Play through the %s", async (entry) => {
     renderEntity();
     const link = await screen.findByRole("link", { name: /Related item/ });
@@ -582,60 +594,89 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
   });
 });
 
-describe("EntityPage child navigation in a mixed detail layout", () => {
-  beforeEach(() => {
-    mocks.layouts = [
-      {
-        id: "mixed-detail",
-        role: "detail",
-        entityKind: entity.kind,
-        sections: [
-          {
-            id: "children",
-            kind: "list",
-            title: { en: "Children" },
-            artworkSlot: "thumb",
-            source: { kind: "entity-media" },
-          },
-          { ...recentSection, kind: "list" },
-        ],
-      },
-    ];
-    vi.mocked(fetchEntity).mockResolvedValue({ ...entity, archetype: "container" });
-    const child = { ...related, mediaClass: "video", artworkSlots: { thumb: "/art/child" } };
-    vi.mocked(fetchMediaForEntity).mockResolvedValue([child]);
-    vi.mocked(fetchSourceItems).mockImplementation(async ({ kind }) =>
-      kind === "entity-media" ? [child] : [recentItem],
-    );
-  });
-
-  it.each(["title", "thumbnail", "Details", "Play"])(
-    "activates the child through its %s",
-    async (entry) => {
-      renderEntity();
-      const children = await screen.findByRole("list", { name: "Children" });
-      const link = within(children).getByRole("link", { name: /Related item/ });
-      expect(await screen.findByRole("link", { name: /Recent item/ })).toHaveAttribute(
-        "href",
-        "/watch/recent-item",
+describe.each(["list", "grid"] as const)(
+  "EntityPage child navigation in a mixed detail %s layout",
+  (kind) => {
+    beforeEach(() => {
+      mocks.layouts = [
+        {
+          id: "mixed-detail",
+          role: "detail",
+          entityKind: entity.kind,
+          sections: [
+            {
+              id: "children",
+              kind,
+              title: { en: "Children" },
+              artworkSlot: "thumb",
+              source: { kind: "entity-media" },
+            },
+            { ...recentSection, kind: "list" },
+          ],
+        },
+      ];
+      vi.mocked(fetchEntity).mockResolvedValue({ ...entity, archetype: "container" });
+      const child = { ...related, mediaClass: "video", artworkSlots: { thumb: "/art/child" } };
+      const lockedChild = { ...child, id: "locked", title: "Locked child", locked: true };
+      vi.mocked(fetchMediaForEntity).mockResolvedValue([child, lockedChild]);
+      vi.mocked(fetchSourceItems).mockImplementation(async ({ kind }) =>
+        kind === "entity-media" ? [child, lockedChild] : [recentItem],
       );
+    });
 
-      if (entry === "title") {
-        fireEvent.click(within(link).getByText("Related item"));
-      } else if (entry === "thumbnail") {
-        fireEvent.click(link.querySelector("img")!);
-      } else {
-        fireEvent.click(
-          within(children).getByRole("button", { name: "More actions for Related item" }),
+    it.each(["title", "thumbnail", "Details", "Play"])(
+      "activates the child through its %s",
+      async (entry) => {
+        renderEntity();
+        const children = await screen.findByRole("list", { name: "Children" });
+        const link = within(children).getByRole("link", { name: /Related item/ });
+        expect(await screen.findByRole("link", { name: /Recent item/ })).toHaveAttribute(
+          "href",
+          "/watch/recent-item",
         );
-        fireEvent.click(await screen.findByRole("menuitem", { name: entry }));
-      }
 
-      const destination = entry === "Play" ? "player" : "detail";
-      expect(screen.getByRole("status", { name: destination })).toHaveTextContent(/^m1\b/);
-    },
-  );
-});
+        if (entry === "title") {
+          fireEvent.click(within(link).getByText("Related item"));
+        } else if (entry === "thumbnail") {
+          fireEvent.click(link.querySelector("img")!);
+        } else {
+          fireEvent.click(
+            within(children).getByRole("button", { name: "More actions for Related item" }),
+          );
+          fireEvent.click(await screen.findByRole("menuitem", { name: entry }));
+        }
+
+        const destination = entry === "Play" ? "player" : "detail";
+        expect(screen.getByRole("status", { name: destination })).toHaveTextContent(/^m1\b/);
+      },
+    );
+
+    it("tabs from detail through direct Play to More and plays from the focused button", async () => {
+      const user = userEvent.setup();
+      renderEntity();
+      const children = within(await screen.findByRole("list", { name: "Children" }));
+      const link = children.getByRole("link", { name: /Related item/ });
+      const play = children.getByRole("button", { name: "Play Related item" });
+      const more = children.getByRole("button", { name: "More actions for Related item" });
+      const locked = children.getByRole("link", { name: /Locked child/ });
+
+      link.focus();
+      await user.tab();
+      expect(play).toHaveFocus();
+      await user.tab();
+      expect(more).toHaveFocus();
+      await user.tab();
+      expect(locked).toHaveFocus();
+      expect(within(locked.closest("li")!).queryByRole("button")).toBeNull();
+      await user.tab({ shift: true });
+      await user.tab({ shift: true });
+      expect(play).toHaveFocus();
+      await user.keyboard("{Enter}");
+
+      expect(screen.getByRole("status", { name: "player" })).toHaveTextContent(/^m1\b/);
+    });
+  },
+);
 
 describe("EntityPage audio container order", () => {
   // Server order puts the second disc's track first; the list and both play

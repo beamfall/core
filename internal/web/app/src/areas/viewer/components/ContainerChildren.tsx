@@ -142,6 +142,7 @@ function ChildRow({
             title={item.title}
             primaryLabel={t("play")}
             isMedia
+            isAudio={item.mediaClass === "audio"}
             href={
               new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href
             }

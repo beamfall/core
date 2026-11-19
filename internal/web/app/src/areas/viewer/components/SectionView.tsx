@@ -32,7 +32,7 @@ export function SectionView({
   items: served,
   seeAll,
   navigationID,
-  playOnActivate,
+  showPlayButton = false,
   nameContainer = true,
 }: {
   section: Section;
@@ -40,8 +40,8 @@ export function SectionView({
   /** When set (shelves), renders the See-All affordance to this target. */
   seeAll?: SeeAllTarget;
   navigationID?: string;
-  /** Cards start playback instead of opening a detail page; defaults to list Sections only. */
-  playOnActivate?: boolean;
+  /** Child Media open detail and have a separate Play button. */
+  showPlayButton?: boolean;
   /** Cards name the container holding their item; false inside a container's page (CORE-2524). */
   nameContainer?: boolean;
 }) {
@@ -116,7 +116,8 @@ export function SectionView({
               posInSet={index + 1}
               setSize={items.length}
               queue={queue}
-              playOnActivate={playOnActivate ?? section.kind === "list"}
+              playOnActivate={!showPlayButton && section.kind === "list"}
+              showPlayButton={showPlayButton}
               showYear={showsYear(item, repeated)}
               nameContainer={nameContainer}
               focusAnchor={

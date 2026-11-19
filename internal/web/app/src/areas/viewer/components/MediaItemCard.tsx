@@ -41,8 +41,7 @@ const CARD_BUCKETS = ["w320", "w640"] as const;
 // accessible name is the title plus the acting Profile's state, and the same
 // state is drawn on the artwork (progress bar, finished mark, remaining count).
 // It is an anchor with an href (CORE-2511), so a modifier or middle click opens
-// the page in a new tab. The More menu is a sibling control, never nested
-// inside the link.
+// the page in a new tab. Play and More are sibling controls outside the link.
 export function MediaItemCard({
   item,
   posInSet,
@@ -50,6 +49,7 @@ export function MediaItemCard({
   focusAnchor,
   queue,
   playOnActivate,
+  showPlayButton = false,
   showYear = false,
   display = "poster",
   nameContainer = true,
@@ -64,6 +64,8 @@ export function MediaItemCard({
   queue?: PlayQueueItem[];
   /** A list row plays at once; a poster opens the Media detail page (CORE-1144). */
   playOnActivate?: boolean;
+  /** Child Media have a Play button alongside the detail link. */
+  showPlayButton?: boolean;
   /** The title repeats in this list, so the card shows its year (CORE-2320). */
   showYear?: boolean;
   /**
@@ -88,6 +90,7 @@ export function MediaItemCard({
   const [imageFailed, setImageFailed] = useState(false);
   const [previewClip, setPreviewClip] = useState("");
   const isMedia = item.kind === "media";
+  const hasPlayButton = showPlayButton && isMedia && !item.locked;
   const state = cardState(item, t);
   const rating = isMedia ? cardRating(item, displayLocale, t) : undefined;
   const isTable = display === "table";
@@ -246,8 +249,36 @@ export function MediaItemCard({
     return mediaQueryMatches(POINTER_PREVIEW_QUERY) && !mediaQueryMatches(REDUCED_MOTION_QUERY);
   }
 
+  const menu = !(showPlayButton && isMedia && item.locked) && (
+    <MediaItemCardMenu
+      // The actions target this item, not the container its card is headed by.
+      title={item.title}
+      primaryLabel={primaryLabel}
+      isMedia={isMedia}
+      isAudio={item.mediaClass === "audio"}
+      href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
+      target={itemTargetFor(item)}
+      onPrimary={isMedia ? play : open}
+      onDetails={
+        isMedia
+          ? () =>
+              navigate(`/media/${encodeURIComponent(item.id)}`, {
+                state: {
+                  ...mediaLinkState(item, identity, focusAnchor?.section),
+                  ...queueState(),
+                },
+              })
+          : undefined
+      }
+    />
+  );
+
   return (
-    <li className="bf-card-shell list-none" aria-posinset={posInSet} aria-setsize={setSize}>
+    <li
+      className={`bf-card-shell list-none${hasPlayButton ? " bf-card-shell-with-play" : ""}`}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
+    >
       <Link
         to={path}
         state={linkState()}
@@ -335,27 +366,23 @@ export function MediaItemCard({
           </span>
         ) : null}
       </Link>
-      <MediaItemCardMenu
-        // The actions target this item, not the container its card is headed by.
-        title={item.title}
-        primaryLabel={primaryLabel}
-        isMedia={isMedia}
-        isAudio={item.mediaClass === "audio"}
-        href={new URL(`${import.meta.env.BASE_URL}${path.slice(1)}`, window.location.origin).href}
-        target={itemTargetFor(item)}
-        onPrimary={isMedia ? play : open}
-        onDetails={
-          isMedia
-            ? () =>
-                navigate(`/media/${encodeURIComponent(item.id)}`, {
-                  state: {
-                    ...mediaLinkState(item, identity, focusAnchor?.section),
-                    ...queueState(),
-                  },
-                })
-            : undefined
-        }
-      />
+      {hasPlayButton ? (
+        <div className="bf-child-actions">
+          <button
+            type="button"
+            className="bf-row-play"
+            aria-label={t("mediaDetailPlayLabel", { title: item.title })}
+            onClick={play}
+            onPointerEnter={preloadPlayer}
+            onFocus={preloadPlayer}
+          >
+            <Play aria-hidden />
+          </button>
+          {menu}
+        </div>
+      ) : (
+        menu
+      )}
     </li>
   );
 }

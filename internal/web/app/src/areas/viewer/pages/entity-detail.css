@@ -82,6 +82,33 @@
   display: none;
 }
 
+/* Hydrated child cards put actions beneath the poster or beside the list row. */
+[data-register="viewer"] .bf-card-shell-with-play .bf-child-actions {
+  gap: 4px;
+  padding: 0;
+}
+
+[data-register="viewer"] .bf-card-shell-with-play .bf-child-actions > button {
+  max-width: calc(50% - 2px);
+}
+
+[data-register="viewer"] .bf-stack .bf-card-shell-with-play {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding-right: 8px;
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
+[data-register="viewer"] .bf-stack .bf-card-shell-with-play .bf-card {
+  padding-right: 8px;
+}
+
+[data-register="viewer"] .bf-stack .bf-card-shell-with-play .bf-card-more {
+  transform: none;
+}
+
 [data-register="viewer"] .bf-child-link {
   display: flex;
   flex-direction: column;
