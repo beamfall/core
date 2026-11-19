@@ -5,21 +5,15 @@
 // receiver's capability profile to /api/playback-info and lets the server
 // choose a route the receiver can play: H.264 and stereo AAC in MP4, or the
 // server's HLS transcode. A `chromecast-` client marks the Stream Token as
-// receiver-bound (ADR-0194 §6): the server refuses the bytes until a quirks-DB
-// selector resolves the receiver, which the UI reports as a failed load.
+// receiver-bound (ADR-0194 §6): the server serves the bytes only when a
+// quirks-DB selector resolves the receiver. The shipped baseline resolves
+// `chromecast-default-receiver` (CORE-2563); any other id is refused.
 import { postJSON } from "@/lib/api";
 import type { CapabilityProfile } from "../../lib/capabilityProfile";
 import type { PlaybackCaptionTrack, PlaybackInfo, PlaybackStream } from "../../lib/playback";
 import type { CastLoadRequestLike, ChromeCastLike } from "./castSdk";
 
-/**
- * Whether the player offers casting. It stays false until a quirks-DB selector
- * lets the server resolve Cast receivers (ADR-0194 §6): until then every
- * receiver-bound media request is refused, so a Cast button could never play.
- */
-export const CAST_RECEIVER_PLAYBACK_READY = false;
-
-/** The Default Media Receiver: 1080p H.264 up to High 4.1, stereo AAC, WebVTT. */
+/** The Default Media Receiver floor every Cast device plays (CORE-2563 quirks baseline): 720p H.264 up to High 4.1, stereo AAC, WebVTT. */
 export const CAST_RECEIVER_PROFILE: CapabilityProfile = {
   client: "chromecast-default-receiver",
   containers: ["mp4"],
@@ -28,7 +22,7 @@ export const CAST_RECEIVER_PROFILE: CapabilityProfile = {
     {
       codec: "h264",
       profiles: ["Constrained Baseline", "Baseline", "Main", "High"],
-      maxHeight: 1080,
+      maxHeight: 720,
       maxLevel: 41,
     },
   ],
