@@ -4,6 +4,7 @@ package playback
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/beamfall/core/internal/encderiv"
 )
 
 func TestSessionsCloseDrainsInProgressFragmentJoin(t *testing.T) {
@@ -105,6 +108,66 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 	}
 	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("victim dir after preemption: %v", err)
+	}
+}
+
+func TestTerminateSessionRevokesAllReadersWhileJoinsDrain(t *testing.T) {
+	t.Parallel()
+	sessions := NewSessions(&fakeEncryptedTranscoder{}, t.TempDir(), nil)
+	t.Cleanup(sessions.Close)
+	secure := testEncryptedSource(nil)
+	first := SessionKey{SessionID: "revoke-while-joining", MediaID: "media-a"}
+	second := SessionKey{SessionID: first.SessionID, MediaID: "media-b"}
+
+	openReader := func(key SessionKey) *encderiv.LiveFile {
+		t.Helper()
+		path, err := encryptedFilePath(sessions, key, secure, 120, -1, false, "720p/seg00000.m4s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		reader, err := sessions.OpenLiveArtifact(key, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = reader.Close() })
+		var buf [1]byte
+		if _, err := io.ReadFull(reader, buf[:]); err != nil {
+			t.Fatalf("%s: read before revocation: %v", key.MediaID, err)
+		}
+		return reader
+	}
+	firstReader, secondReader := openReader(first), openReader(second)
+
+	// Stall both joins so the first teardown cannot finish, regardless of
+	// which session TerminateSession finds first in the map.
+	firstJoin, releaseFirst := blockFragmentJoin(t, registeredSession(t, sessions, first), regularJoinPart(t))
+	secondJoin, releaseSecond := blockFragmentJoin(t, registeredSession(t, sessions, second), regularJoinPart(t))
+	terminated := make(chan int, 1)
+	go func() { terminated <- sessions.TerminateSession(first.SessionID) }()
+
+	waitSessionCondition(t, "both readers to close while both joins are blocked", func() bool {
+		var buf [1]byte
+		firstN, firstErr := firstReader.ReadAt(buf[:], 0)
+		secondN, secondErr := secondReader.ReadAt(buf[:], 0)
+		return firstN == 0 && errors.Is(firstErr, encderiv.ErrLiveSessionClosed) &&
+			secondN == 0 && errors.Is(secondErr, encderiv.ErrLiveSessionClosed)
+	})
+	select {
+	case n := <-terminated:
+		t.Fatalf("TerminateSession returned %d while the joins were blocked", n)
+	default:
+	}
+	releaseFirst()
+	releaseSecond()
+	assertJoinEvicted(t, firstJoin)
+	assertJoinEvicted(t, secondJoin)
+	select {
+	case n := <-terminated:
+		if n != 2 {
+			t.Fatalf("TerminateSession = %d, want 2", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("TerminateSession did not return after the joins drained")
 	}
 }
 

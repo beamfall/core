@@ -539,18 +539,23 @@ type sessionTeardown struct {
 }
 
 func (s *Sessions) runTeardowns(teardowns []sessionTeardown) {
-	// A pending start owns process cleanup and may be stalled stopping the
-	// previous encoder. Close its readers before waiting for any teardown.
+	// Start every teardown before waiting. A blocked fragment join or encoder
+	// must never delay revocation of another session's encrypted readers.
+	var draining sync.WaitGroup
 	for _, t := range teardowns {
-		if t.pending && t.session.live != nil {
-			t.session.live.Close()
-		}
-	}
-	for _, t := range teardowns {
-		if !t.pending {
+		draining.Go(func() {
+			if t.pending {
+				// The starter owns process cleanup and may be stalled stopping
+				// the previous encoder. Revoke its readers here.
+				if t.session.live != nil {
+					t.session.live.Close()
+				}
+				return
+			}
 			s.teardown(t.session)
-		}
+		})
 	}
+	draining.Wait()
 }
 
 func (s *Sessions) teardown(session *hlsSession) {
