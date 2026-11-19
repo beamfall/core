@@ -107,6 +107,27 @@ describe("track list rules", () => {
     ]);
   });
 
+  it("ignores nonpositive listed positions and falls back to the per-Media row", () => {
+    const listed = [
+      media("t1", "Track One", { sequence: 1, index: 1 }),
+      media("t2", "Track Two", { sequence: -1, index: -1 }),
+    ];
+    const positioned = {
+      t1: row("t1", "Track One", ["person-a"]),
+      t2: row("t2", "Track Two", ["person-a"], { sequence: 1, index: 2 }),
+    };
+    expect(
+      albumTrackRows(listed, positioned, new Set(["person-a"])).map((t) => [
+        t.item.id,
+        t.group,
+        t.number,
+      ]),
+    ).toEqual([
+      ["t1", undefined, 1],
+      ["t2", undefined, 2],
+    ]);
+  });
+
   it("does not group unless every track has a sequence and they differ", () => {
     const partial = {
       t1: row("t1", "Track One", ["person-a"], { sequence: 1, index: 3 }),

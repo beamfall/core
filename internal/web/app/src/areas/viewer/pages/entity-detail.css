@@ -84,12 +84,16 @@
 
 /* Hydrated child cards put actions beneath the poster or beside the list row. */
 [data-register="viewer"] .bf-card-shell-with-play .bf-child-actions {
+  flex-wrap: wrap;
   gap: 4px;
   padding: 0;
 }
 
+/* Keep each action a full 44 x 44 touch target; a card too narrow for both wraps them. */
 [data-register="viewer"] .bf-card-shell-with-play .bf-child-actions > button {
-  max-width: calc(50% - 2px);
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 100%;
 }
 
 [data-register="viewer"] .bf-stack .bf-card-shell-with-play {
