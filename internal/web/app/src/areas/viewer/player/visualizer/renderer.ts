@@ -299,7 +299,7 @@ export class Renderer {
   private size: Size | null = null;
   // Physical pixels per frame texel at the last resize (0 before the first).
   private displayScale = 0;
-  // Seconds of black left to present after a display-scale change, counted once black is shown.
+  // Seconds of black left after a display-scale change or restore, counted once black is shown.
   private black = 0;
   private blackShown = false;
   // Seconds left of the fade to black before a display-scale change, or -1 outside one.
@@ -323,7 +323,11 @@ export class Renderer {
    * (SwiftShader, say) runs every full-frame pass on the CPU and stalls the page, so it is
    * refused rather than used for decoration.
    */
-  static async create(canvas: HTMLCanvasElement, osc: Oscillux): Promise<Renderer | null> {
+  static async create(
+    canvas: HTMLCanvasElement,
+    osc: Oscillux,
+    restored = false,
+  ): Promise<Renderer | null> {
     const gl = canvas.getContext("webgl2", {
       failIfMajorPerformanceCaveat: true,
       alpha: false,
@@ -339,7 +343,7 @@ export class Renderer {
       shaderSource("switch/switch.frag"),
       ...LIMITER.map((name) => shaderSource(`limiter/${name}.frag`)),
     ]);
-    return new Renderer(gl, osc, vertex, present, blend, limiter);
+    return new Renderer(gl, osc, vertex, present, blend, limiter, restored);
   }
 
   private constructor(
@@ -349,6 +353,7 @@ export class Renderer {
     present: string,
     blend: string,
     limiter: string[],
+    private readonly restored: boolean,
   ) {
     this.gl = gl;
     this.osc = osc;
@@ -640,13 +645,11 @@ export class Renderer {
     if (fading) gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
     size.history = [histNext, histPrev];
 
-    // After a display-scale change the canvas shows black, not the limiter, for SCALE_BLACK_S
-    // counted from the first black frame shown, so no tracker stamp from before it is recent when
-    // content returns (Codex round 13). The output had faded to black first, so showing black is
-    // no transition. The visual and its history keep running; the limiter starts from black with
-    // every budget spent (resize).
+    // Show black for SCALE_BLACK_S from the first black frame after a scale change or restore.
+    // The visual and its history keep running; the limiter starts from black with every budget
+    // spent (resize). Present content as soon as the interval ends, even if playback is paused.
+    if (this.black > 0 && this.blackShown) this.black = Math.max(0, this.black - dt);
     if (this.black > 0) {
-      if (this.blackShown) this.black -= dt;
       this.blackShown = true;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.clearColor(0, 0, 0, 1);
@@ -672,6 +675,14 @@ export class Renderer {
     return this.size
       ? { width: this.size.width, height: this.size.height, texel: this.displayScale }
       : null;
+  }
+
+  /** Whether the shown frame can be held for this request while playback is paused. */
+  settled(width: number, height: number, texel: number): boolean {
+    if (!this.size || this.fadeLeft > 0 || this.black > 0 || texel !== this.displayScale)
+      return false;
+    const [W, H] = frameSize(width, height);
+    return this.size.width === W && this.size.height === H;
   }
 
   // Whether this frame fades to black before a display-scale change to `texel`: for SCALE_FADE_S
@@ -947,15 +958,14 @@ export class Renderer {
     const limiter: Limiter = kept
       ? { ...kept, rows, out, track, fRows: this.framebuffer([rows]), fOut, window }
       : this.newLimiterState(rows, out, track, fOut, window);
-    if (kept && old) {
-      const i = kept.cur;
+    if (kept || this.restored) {
       // The limiter's history follows what is on screen (Oscillux shaders/limiter/README.md,
       // "Ping-pong and reset"): at the same scale the overlap is copied 1:1 from the top-left,
-      // where the canvas is anchored, and new area starts tracked black; after a scale change
-      // the whole output and tracker state start tracked black, never resampled or stretched,
-      // and the canvas presents black for SCALE_BLACK_S (draw). Either way the budgets are
-      // written spent.
-      if (sameScale) {
+      // where the canvas is anchored, and new area starts tracked black. After a scale change
+      // or context restore, the whole frame starts tracked black and the canvas presents black
+      // for SCALE_BLACK_S (draw). Either way the budgets are written spent.
+      if (kept && old && sameScale) {
+        const i = kept.cur;
         this.copyAnchored(kept.out[i], old.width, old.height, out[i], W, H);
         this.copyAnchored(kept.track[i], old.width, old.height, track[i], W, H);
       } else {
@@ -963,6 +973,8 @@ export class Renderer {
         this.blackShown = false;
       }
       this.spend(limiter);
+    }
+    if (kept) {
       gl.deleteTexture(kept.rows);
       gl.deleteFramebuffer(kept.fRows);
       [...kept.out, ...kept.track].forEach((t) => gl.deleteTexture(t));

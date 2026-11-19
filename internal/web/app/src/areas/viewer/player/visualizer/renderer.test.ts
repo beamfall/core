@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { silentFrame } from "./analysis";
 import {
   frameSize,
   limiterWindow,
@@ -134,6 +135,7 @@ function recordingGl() {
   const blits: number[][] = [];
   const bound: { f: unknown } = { f: null };
   const spent: [unknown, number[]][] = [];
+  const clears: unknown[] = [];
   const canvas = { width: 0, height: 0, clientWidth: 0 };
   const gl = new Proxy({} as Record<string | symbol, unknown>, {
     get(_, key) {
@@ -148,10 +150,11 @@ function recordingGl() {
       if (key === "bindFramebuffer") return (_: unknown, f: unknown) => (bound.f = f);
       if (key === "clearBufferuiv")
         return (_: unknown, __: unknown, v: Uint32Array) => spent.push([bound.f, [...v]]);
+      if (key === "clear") return () => clears.push(bound.f);
       return () => undefined;
     },
   });
-  return { gl, deleted, blits, canvas, spent };
+  return { gl, deleted, blits, canvas, spent, clears };
 }
 
 describe("Renderer resize (CORE-2516)", () => {
@@ -165,8 +168,8 @@ describe("Renderer resize (CORE-2516)", () => {
       window: unknown;
     };
   };
-  const make = () => {
-    const { gl, deleted, blits, canvas, spent } = recordingGl();
+  const make = (restored = false) => {
+    const { gl, deleted, blits, canvas, spent, clears } = recordingGl();
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
     Object.assign(r, {
       gl,
@@ -176,17 +179,21 @@ describe("Renderer resize (CORE-2516)", () => {
       endSwitch: () => undefined,
       displayScale: 0,
       black: 0,
+      blackShown: false,
+      fadeLeft: -1,
+      restored,
     });
     const resize = (w: number, h: number, texel = 1) =>
       (r.resize as (w: number, h: number, texel: number) => Sized).call(r, w, h, texel);
-    return { r, resize, deleted, blits, canvas, spent };
+    const renderer = r as unknown as Renderer;
+    return { r, renderer, resize, deleted, blits, canvas, spent, clears };
   };
 
   // Codex round 12: the display scale is the texel's side in physical pixels. A change switches
   // at once, never stretching the old frame, with the output and trackers tracked black, every
   // budget spent and black presented for longer than the coverage interval.
   it("switches a display-scale change at once to black with every budget spent", () => {
-    const { r, resize, blits, spent } = make();
+    const { r, renderer, resize, blits, spent } = make();
     resize(1200, 900, 1);
     blits.length = 0;
     spent.length = 0;
@@ -196,6 +203,7 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(spent.at(-1)).toEqual([L.fG[L.cur], [256, 65025, 65025, 0]]);
     expect(spent.slice(0, -1).every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
     expect(r.black).toBe(SCALE_BLACK_S);
+    expect(renderer.settled(600, 450, 2)).toBe(false);
     expect(SCALE_BLACK_S).toBeGreaterThan(1 / 15);
   });
 
@@ -241,6 +249,55 @@ describe("Renderer resize (CORE-2516)", () => {
     resize(640, 360);
     expect(spent.length).toBeGreaterThan(0);
     expect(spent.every(([, v]) => v.join() === "0,0,0,0")).toBe(true);
+  });
+
+  it("restores with tracked black and spent grants, timing black from the first shown frame", () => {
+    const { r, renderer, resize, blits, spent, clears } = make(true);
+    const limit = vi.fn();
+    Object.assign(r, {
+      visual: {},
+      time: 0,
+      switchProgress: () => null,
+      cadence: { sample: () => null },
+      governor: { level: r.level },
+      drawVisual: (_: unknown, feedback: unknown[]) => feedback[1],
+      packPresent: () => undefined,
+      limit,
+    });
+    const audio = silentFrame();
+    const draw = (dt: number) => renderer.draw(640, 360, dt, audio, false);
+
+    // This interval preceded the first displayed black frame and cannot count toward the hold.
+    draw(SCALE_BLACK_S);
+    const L = resize(640, 360).limiter as unknown as {
+      fG: unknown[];
+      fOut: unknown[];
+      cur: number;
+    };
+    for (const f of L.fOut) expect(spent).toContainEqual([f, [0, 0, 0, 0]]);
+    expect(spent.at(-1)).toEqual([L.fG[L.cur], [256, 65025, 65025, 0]]);
+    expect(clears).toEqual([null]);
+    expect(renderer.settled(640, 360, 1)).toBe(false);
+
+    draw(SCALE_BLACK_S / 2);
+    expect(clears).toEqual([null, null]);
+    expect(blits).toEqual([]);
+    expect(limit).not.toHaveBeenCalled();
+    expect(renderer.settled(640, 360, 1)).toBe(false);
+
+    draw(SCALE_BLACK_S / 2);
+    expect(clears).toHaveLength(2);
+    expect(limit).toHaveBeenCalledOnce();
+    expect(blits).toEqual([[0, 0, 640, 360, 0, 0, 640, 360]]);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
+  });
+
+  it("settles at the minimum backing for an undersized slot", () => {
+    const { renderer, resize } = make();
+    resize(64, 36);
+    expect(renderer.settled(60, 36, 1)).toBe(true);
+    expect(renderer.settled(65, 36, 1)).toBe(false);
+    expect(renderer.settled(60, 36, 2)).toBe(false);
   });
 
   it("keeps the limiter's budget, carries its trackers and rebuilds its size-dependent targets", () => {
@@ -308,8 +365,11 @@ describe("Renderer display-scale fade (Codex round 13)", () => {
 
   it("needs no fade before the first frame or back at the current scale", () => {
     const { r, fading } = make();
+    const renderer = r as unknown as Renderer;
     expect(fading(2, 1 / 60)).toBe(true);
+    expect(renderer.settled(640, 360, 1)).toBe(false);
     expect(fading(1, 1 / 60)).toBe(false);
+    expect(renderer.settled(640, 360, 1)).toBe(true);
     expect(r.fadeLeft).toBe(-1);
     r.displayScale = 0;
     expect(fading(2, 1 / 60)).toBe(false);

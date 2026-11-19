@@ -184,14 +184,16 @@ export function Visualizer({
     } catch {
       observer?.observe(slot);
     }
-    // The canvas's CSS size: the frame the renderer shows, texels times texel device pixels. It
-    // keeps the old size while a display-scale change fades out (Codex round 13).
+    // Fit and filter the frame the renderer shows. During a display-scale fade, both still
+    // follow the old frame's texel size.
     let cssSize = "";
     const fitCanvas = (renderer: Renderer) => {
       const shown = renderer.shown;
       if (!shown) return;
       const r = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
-      const texel = shown.texel || 1;
+      const texel = shown.texel;
+      const rendering = texel > 1 ? "pixelated" : "";
+      if (canvas.style.imageRendering !== rendering) canvas.style.imageRendering = rendering;
       const next = `${(shown.width * texel) / r}px ${(shown.height * texel) / r}px`;
       if (next === cssSize) return;
       cssSize = next;
@@ -238,20 +240,16 @@ export function Visualizer({
         window.devicePixelRatio,
       );
       // Paused by the listener: hold still. Paused while a new source loads: keep moving. A size
-      // or display-scale change still draws while paused until the shown frame matches it, so a
-      // stale frame is never stretched (Codex round 13).
-      const held = renderer.shown;
+      // or display-scale change still draws while paused until the renderer settles. Refitting
+      // the held frame accounts for a DPR change even when the physical frame stays the same.
       if (
         video.paused &&
         video.readyState >= HAVE_FUTURE_DATA &&
-        held &&
-        held.width === width &&
-        held.height === height &&
-        held.texel === texel
-      )
+        renderer.settled(width, height, texel)
+      ) {
+        fitCanvas(renderer);
         return;
-      const rendering = texel > 1 ? "pixelated" : "";
-      if (canvas.style.imageRendering !== rendering) canvas.style.imageRendering = rendering;
+      }
       try {
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
@@ -273,9 +271,9 @@ export function Visualizer({
     };
     // Builds the renderer and starts drawing. It runs again after a lost context is restored,
     // when every GL resource is new: the visual and artwork are applied afresh and the
-    // feedback and limiter start empty. A newer build supersedes an older one still loading, and a
-    // superseded build's failure is ignored: a context lost mid-create rejects it, and removing the
-    // canvas then would leave no context to restore.
+    // feedback starts fresh while the limiter starts black with its budgets spent. A newer build
+    // supersedes an older one still loading. Ignore a superseded build's failure: a context lost
+    // mid-create rejects it, and removing the canvas then would leave no context to restore.
     let build = 0;
     // A context lost before its webglcontextlost event arrives: GL calls fail first, and the loss
     // and restore handlers will recover it, so a failure then does not remove the canvas.
@@ -286,11 +284,11 @@ export function Visualizer({
         return false;
       }
     };
-    const start = () => {
+    const start = (restored = false) => {
       const mine = ++build;
       const current = () => alive && mine === build;
       return loadOscillux()
-        .then((osc) => Renderer.create(canvas, osc))
+        .then((osc) => Renderer.create(canvas, osc, restored))
         .then((renderer) => {
           // No hardware WebGL2: the slot stays empty, as without WebGL2 at all.
           if (!renderer) {
@@ -328,7 +326,7 @@ export function Visualizer({
         // Deleting objects on a lost context is a no-op or throws; either way it is gone.
       }
     };
-    const restored = () => void start();
+    const restored = () => void start(true);
     canvas.addEventListener("webglcontextlost", lost);
     canvas.addEventListener("webglcontextrestored", restored);
     void start();
