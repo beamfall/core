@@ -97,23 +97,35 @@ export function useLiveSearch(query: string, mode: SearchMode): LiveSearch {
   // what was shown and the next change tries again.
   const epoch = useEngagementEpoch();
   const seenEpoch = useRef(epoch);
+  const loadedOffset = useRef(0);
+  useEffect(() => {
+    loadedOffset.current = settled.nextOffset;
+  }, [settled.nextOffset]);
   useEffect(() => {
     if (seenEpoch.current === epoch) return;
     seenEpoch.current = epoch;
     if (!term) return;
     const controller = new AbortController();
-    searchResult(term, mode, controller.signal).then(
-      (res) => {
+    const loaded = loadedOffset.current;
+    async function refreshLoadedPages() {
+      const fresh = new Map<string, SearchResultItem>();
+      let offset = 0;
+      let requestMode = mode;
+      do {
+        const res = await searchResult(term, requestMode, controller.signal, { offset, limit: 50 });
         if (controller.signal.aborted) return;
-        const fresh = new Map(res.items.map((item) => [rowKey(item), item]));
-        setSettled((prev) =>
-          prev.items && prev.resultTerm === term
-            ? { ...prev, items: prev.items.map((item) => fresh.get(rowKey(item)) ?? item) }
-            : prev,
-        );
-      },
-      () => {},
-    );
+        for (const item of res.items) fresh.set(rowKey(item), item);
+        offset += res.items.length;
+        if (res.mode !== "keyword" || !res.hasMore || res.items.length === 0) break;
+        requestMode = "keyword";
+      } while (offset < loaded);
+      setSettled((prev) =>
+        prev.items && prev.resultTerm === term
+          ? { ...prev, items: prev.items.map((item) => fresh.get(rowKey(item)) ?? item) }
+          : prev,
+      );
+    }
+    void refreshLoadedPages().catch(() => {});
     return () => controller.abort();
   }, [epoch, term, mode]);
 

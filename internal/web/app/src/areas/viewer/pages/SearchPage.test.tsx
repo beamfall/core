@@ -354,3 +354,39 @@ it("aborts an additional page when the query changes and ignores its late respon
   expect(screen.queryByText("Late result")).toBeNull();
   expect(screen.queryByText("Old result")).toBeNull();
 });
+
+it("refreshes engagement on every loaded page beyond fifty results", async () => {
+  const user = userEvent.setup();
+  let refreshed = false;
+  const rows = Array.from({ length: 115 }, (_, i) => ({
+    id: `refresh-${i}`,
+    kind: "media" as const,
+    title: `Result ${i}`,
+    mode: "keyword" as const,
+    score: 0,
+  }));
+  vi.mocked(searchResult).mockImplementation(async (_term, _mode, _signal, page) => {
+    const offset = page?.offset ?? 0;
+    const limit = page?.limit ?? 50;
+    return {
+      mode: "keyword",
+      restrictedResultsPresent: false,
+      hasMore: offset + limit < rows.length,
+      items: rows
+        .slice(offset, offset + limit)
+        .map((row) => ({ ...row, title: row.title + (refreshed ? " updated" : "") })),
+    };
+  });
+  renderPage("/search?q=Result");
+  await screen.findByText("Result 49");
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  await screen.findByText("Result 99");
+  await user.click(screen.getByRole("button", { name: "Load more" }));
+  await screen.findByText("Result 114");
+  refreshed = true;
+  act(() => notifyEngagementChanged());
+  expect(await screen.findByText("Result 114 updated")).toBeInTheDocument();
+  expect(screen.getByText("Result 0 updated")).toBeInTheDocument();
+  expect(screen.getByText("Result 50 updated")).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("115 results");
+});
