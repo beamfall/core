@@ -38,6 +38,7 @@ group "default" {
 
 target "beamfall-core" {
   dockerfile = "Dockerfile"
+  target     = "runtime" # The release image must start Beamfall under tini.
   context    = "."
   platforms  = ["linux/amd64", "linux/arm64"]
   tags = [
