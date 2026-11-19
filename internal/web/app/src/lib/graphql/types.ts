@@ -147,7 +147,7 @@ export interface SourceItem {
    * entity carries the class its linked Media all share, else none (CORE-2362).
    */
   mediaClass?: string;
-  /** A media item's stored year (CORE-2269); absent for entities and undated Media. */
+  /** Stored Media year or a Section Source Entity's earliest visible linked Media year. */
   year?: number;
   /** A Media item's display content rating (PG-13, TV-MA); absent when unrated (CORE-2398). */
   certification?: string;

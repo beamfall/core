@@ -11,10 +11,10 @@ import (
 // card can state it without a detail read (CORE-2269). An entity item takes
 // the class its directly linked, untrashed Media share, so a card for a
 // container of audio frames its art like its tracks (CORE-2362); one whose
-// Media mix classes, or that links none, keeps an empty class, and entities
-// never carry a year. Media whose class is unknown keep an empty class and
-// Media with no year keep 0. Certification, AudienceScore and
-// AudienceScoreVotes come from the core-conventional rating fields (see
+// Media mix classes, or that links none, keeps an empty class. The scoped
+// Source read sets Entity years separately. Media whose class is unknown
+// keep an empty class and Media with no year keep 0. Certification,
+// AudienceScore and AudienceScoreVotes come from the core-conventional rating fields (see
 // MediaRatingFrom, CORE-2398, CORE-2415); Media without them keep the zero
 // values. Every open catalog plane is read, so an
 // unsealed Encrypted Library's Media are annotated too. The same read sets a
@@ -153,4 +153,91 @@ func (s *Store) entityMediaClassesLocked(ctx context.Context, ids []MediaID) (ma
 		}
 	}
 	return classes, nil
+}
+
+// annotateEntityYearsLocked sets each Entity card's year from its earliest
+// dated, directly linked Media visible to this Source. The Source bounds the
+// number of IDs, so each readable plane can aggregate in one query.
+func (s *Store) annotateEntityYearsLocked(ctx context.Context, filter LibraryFilter, items []SourceItem) error {
+	var ids []any
+	for _, item := range items {
+		if item.Kind == "entity" {
+			ids = append(ids, item.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	libraries, err := loadLibraries(ctx, s.catalogR)
+	if err != nil {
+		return err
+	}
+	years := make(map[MediaID]int, len(ids))
+	var publicIDs []LibraryID
+	for _, library := range libraries {
+		if !libraryVisible(library, filter) {
+			continue
+		}
+		if !library.Encrypted {
+			publicIDs = append(publicIDs, library.ID)
+			continue
+		}
+		db := s.encryptedDBs[library.ID]
+		if db == nil || db.state != "unsealed-registered" || db.reader == nil {
+			continue
+		}
+		var pluginID string
+		if library.PluginID != nil {
+			pluginID = *library.PluginID
+		}
+		certClause, certArgs := planeCertificationFilterSQL(pluginID, filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+		if err := readEntityYears(ctx, db.reader, ids, []LibraryID{library.ID}, certClause, certArgs, years); err != nil {
+			return err
+		}
+	}
+	if len(publicIDs) > 0 {
+		certClause, certArgs := certificationFilterSQL(filter.Certification, filter.PlaybackGate, filter.GrantedMediaIDs)
+		if err := readEntityYears(ctx, s.catalogR, ids, publicIDs, certClause, certArgs, years); err != nil {
+			return err
+		}
+	}
+	for i := range items {
+		if items[i].Kind == "entity" {
+			items[i].Year = years[items[i].ID]
+		}
+	}
+	return nil
+}
+
+func readEntityYears(ctx context.Context, reader *sql.DB, ids []any, libraryIDs []LibraryID, certClause string, certArgs []any, years map[MediaID]int) error {
+	libraries, libraryArgs := libraryIDPlaceholders(libraryIDs)
+	args := make([]any, 0, len(ids)+len(libraryArgs)+len(certArgs))
+	args = append(args, ids...)
+	args = append(args, libraryArgs...)
+	args = append(args, certArgs...)
+	// #nosec G202 -- only generated placeholders and closed certification SQL are interpolated.
+	rows, err := reader.QueryContext(ctx, `
+		SELECT r.from_entity_id, MIN(m.year)
+		FROM entity_relation r
+		JOIN media m ON m.id = r.to_media_id
+		WHERE r.from_entity_id IN (`+sqlPlaceholders(len(ids))+`)
+		  AND r.to_media_id IS NOT NULL
+		  AND m.library_id IN (`+libraries+`)
+		  AND m.trashed_at_ms IS NULL AND m.year > 0`+certClause+`
+		GROUP BY r.from_entity_id`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id MediaID
+		var year int
+		if err := rows.Scan(&id, &year); err != nil {
+			return err
+		}
+		if current, ok := years[id]; !ok || year < current {
+			years[id] = year
+		}
+	}
+	return rows.Err()
 }
