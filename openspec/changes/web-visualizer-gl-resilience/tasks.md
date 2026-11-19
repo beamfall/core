@@ -22,6 +22,8 @@
 - [x] 3.7 Grant state starts spent at the first size; `settled` is false on a host-written grant
 - [x] 3.8 A spend during the scale-change fade starts the fade again
 - [x] 3.9 Hold, fade and restart when a slot grows past a cut texel; clip the canvas to the judged view (`viewClip`)
+- [x] 3.10 Paint the slot behind the canvas black (`TRACKED_BLACK`), not the theme's scrim
+- [x] 3.11 A spend restarts the fade a withdrawn frame goes back to, even when that frame cancelled it
 
 ## 4. Gate and archive
 

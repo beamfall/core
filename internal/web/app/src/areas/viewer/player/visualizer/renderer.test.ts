@@ -626,6 +626,28 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(r.fadeLeft).toBeCloseTo(SCALE_FADE_S - 0.5);
   });
 
+  // Codex round 25: a draw that cancelled the fade and spent the grant left the saved fade time
+  // as it was, so withdrawing it resumed a fade shorter than the grant of its fall.
+  it("starts the fade a withdrawn draw goes back to again when that draw cancelled it and spent", () => {
+    const { r, renderer } = make();
+    const draw = (slotWidth: number, shownMs = 33) =>
+      renderer.draw(64, 36, 0.1, silentFrame(), false, 200, 2, shownMs, slotWidth, 72);
+    draw(6);
+    draw(5);
+    // Past the texel the slot cut: the view is held and fades.
+    draw(6);
+    draw(6, 1000);
+    expect(r.fadeLeft).toBe(SCALE_FADE_S - 1);
+    // A smaller slot needs no fade, and its new area limit spends the grant.
+    draw(3);
+    expect(r.fadeLeft).toBe(-1);
+    renderer.withdraw();
+    expect(r.limiterSpent).toBe(true);
+    expect(r.fadeLeft).toBe(SCALE_FADE_S);
+    draw(6, 1000);
+    expect(r.fadeLeft).toBe(SCALE_FADE_S - 1);
+  });
+
   // Codex round 24: at two physical pixels per texel, a slot widened from 3 to 4 pixels covers the
   // same two texel columns, so nothing was exposed and the fourth pixel column appeared in its
   // texel's colour with no tracker event. The view is held through a fade, then starts again.

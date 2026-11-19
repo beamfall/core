@@ -867,15 +867,13 @@
   opacity: 0.35;
 }
 
-/* The slot the pinned Oscillux visualizer draws into (CORE-1309). */
+/* The slot the pinned Oscillux visualizer draws into (CORE-1309). It has no background of its
+   own: empty, the artwork backdrop shows through, and the visualizer paints it the flash
+   limiter's black behind its canvas, which no theme role is (Visualizer.tsx). */
 .bf-audio-visualizer {
   position: absolute;
   inset: 0;
   overflow: hidden;
-}
-
-.bf-audio-visualizer:has(> .bf-audio-visualizer-canvas) {
-  background: var(--scrim);
 }
 
 /* The draw loop sizes the canvas to whole texels of whole device pixels. The slot clips a

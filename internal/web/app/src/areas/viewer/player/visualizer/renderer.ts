@@ -32,6 +32,10 @@ export const SCALE_BLACK_S = 0.1;
  * size: longer than the slowest grant of a fall, the red token's refill of 8 / (2 maxFlashHz) s
  * (Oscillux shaders/limiter/README.md, "Ping-pong and reset"). */
 export const SCALE_FADE_S = 2;
+/** What the host shows wherever the canvas shows no judged pixel (past its edge, through its clip,
+ * before its first frame): the black every tracker starts at (clearOutput), whatever the theme,
+ * so a pixel that comes into view rises from what its tracker holds (Codex round 25). */
+export const TRACKED_BLACK = "#000";
 /** The limiter's smallest frame: one pixel per sub-block. */
 export const MIN_WIDTH = 64;
 export const MIN_HEIGHT = 36;
@@ -1287,17 +1291,16 @@ export class Renderer {
   // Marks every limiter budget just spent, in the grant state the next frame reads. A fade to
   // black waits out the grant of its fall, so a spend during one starts it again: the switch at
   // its end would otherwise clear a frame the limiter still holds (Codex round 24). The spend
-  // outlives a withdrawn frame, so the restart does too.
+  // outlives a withdrawn frame, so the restart does too: the fade a withdraw goes back to starts
+  // again even when the frame that spent had cancelled it (Codex round 25).
   private spend(L: Limiter): void {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, L.fG[L.cur]);
     gl.clearBufferuiv(gl.COLOR, 0, SPENT);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.limiterSpent = true;
-    if (this.fadeLeft > 0) {
-      this.fadeLeft = SCALE_FADE_S;
-      if (this.undo) this.undo.fadeLeft = SCALE_FADE_S;
-    }
+    if (this.fadeLeft > 0) this.fadeLeft = SCALE_FADE_S;
+    if (this.undo && this.undo.fadeLeft > 0) this.undo.fadeLeft = SCALE_FADE_S;
   }
 
   // Moves the visual to a governor level between switches: only its feedback pair is rebuilt,

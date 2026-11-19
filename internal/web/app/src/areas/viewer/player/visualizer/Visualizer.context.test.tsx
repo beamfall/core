@@ -25,6 +25,7 @@ const made = vi.hoisted(() => ({
 vi.mock("./oscillux", () => ({ loadOscillux: () => Promise.resolve({}) }));
 vi.mock("./renderer", () => ({
   MAX_SIDE: 8192,
+  TRACKED_BLACK: "#000",
   Renderer: {
     create: async (_canvas: HTMLCanvasElement, _osc: unknown, restored: boolean) => {
       made.restores.push(restored);

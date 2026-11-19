@@ -1,11 +1,11 @@
-import { type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PlaybackStream } from "../../lib/playback";
 import { usePrefersReducedMotion } from "../trackChangeMotion";
 import { decodable, heardTime } from "../useGaplessAudio";
 import { decodeTrack, easeFrame, silentFrame, TrackAnalysis } from "./analysis";
 import { loadArtwork } from "./artwork";
 import { loadOscillux } from "./oscillux";
-import { MAX_SIDE, Renderer } from "./renderer";
+import { MAX_SIDE, Renderer, TRACKED_BLACK } from "./renderer";
 import { canVisualize, type VisualChoice } from "./visualChoice";
 import {
   chosenVisual,
@@ -101,8 +101,8 @@ export function slotPixels(
 
 /** The canvas's clip-path for a frame of which the limiter has judged viewWidth x viewHeight
  * physical pixels in view, from the top left: nothing past them shows, so a slot that grows
- * before the next draw, or past a texel it cut, reveals the slot's background and never a pixel
- * the limiter has not judged (Codex round 24). Empty when the whole frame is in view. */
+ * before the next draw, or past a texel it cut, reveals the slot's black (TRACKED_BLACK) and never
+ * a pixel the limiter has not judged (Codex round 24). Empty when the whole frame is in view. */
 export function viewClip(
   shown: { width: number; height: number; texel: number; viewWidth: number; viewHeight: number },
   ratio: number,
@@ -214,6 +214,20 @@ export function Visualizer({
   const imageRef = useRef<ImageBitmap | null>(null);
   const decodes = useRef(new Map<string, Decode>());
   const enabled = !!url && !failed && canVisualize();
+
+  // The slot shows wherever the canvas shows no judged pixel: past its edge, through its clip
+  // (viewClip) and before its first frame. There the limiter's trackers hold black, so the slot
+  // is that black from before the canvas first paints, and never a themed colour: a strip that
+  // came into view from the theme's scrim rose from a level its tracker did not hold (Codex
+  // round 25). An empty slot keeps no background, so the artwork backdrop shows through.
+  useLayoutEffect(() => {
+    const slot = canvasRef.current?.parentElement;
+    if (!enabled || !slot) return;
+    slot.style.backgroundColor = TRACKED_BLACK;
+    return () => {
+      slot.style.backgroundColor = "";
+    };
+  }, [enabled]);
 
   // The renderer and its draw loop, for as long as the slot is shown.
   useEffect(() => {

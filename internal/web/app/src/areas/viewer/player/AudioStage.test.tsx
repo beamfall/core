@@ -65,8 +65,7 @@ describe("AudioStage visualizer layout", () => {
     const css = readFileSync(join(__dirname, "player-deferred.css"), "utf8");
     const rules = css.match(/^\.bf-audio-visualizer[^\n]*\{[^}]*\}/gm) ?? [];
     style = document.createElement("style");
-    // jsdom resolves no var(): the slot backdrop is the scrim role, dark root #070c10 (tokens.css).
-    style.textContent = rules.map((r) => r.replaceAll("var(--scrim)", "rgb(7, 12, 16)")).join("\n");
+    style.textContent = rules.join("\n");
     document.head.append(style);
   });
 
@@ -94,14 +93,14 @@ describe("AudioStage visualizer layout", () => {
     }
   });
 
-  it("leaves the artwork backdrop visible whenever the slot is empty", () => {
+  // The sheet gives the slot no background, least of all a themed one: the visualizer paints it
+  // the flash limiter's black behind its canvas (Visualizer.test.tsx, Codex round 25).
+  it("leaves the artwork backdrop visible through the slot", () => {
     const { container, slot, canvas } = stage();
     const background = () => getComputedStyle(slot).backgroundColor;
     expect(container.querySelector(".bf-audio-backdrop img")?.getAttribute("src")).toBe("/art.jpg");
     expect(background()).toBe("rgba(0, 0, 0, 0)");
     slot.append(canvas);
-    expect(background()).toBe("rgb(7, 12, 16)");
-    canvas.remove();
     expect(background()).toBe("rgba(0, 0, 0, 0)");
   });
 });

@@ -27,10 +27,11 @@ visual off until the component remounts, although browsers restore contexts rout
   the top left, everything else starts black and tracked black, and the grant state is written
   with every budget spent, as it is at the first size. A paused player draws a frame through a
   grant state the host wrote before it holds the picture, and a spend during the fade of a
-  display-scale change starts the fade again.
+  display-scale change starts the fade again, also for a frame that is then withdrawn.
 - Pixels come into view only as whole texels that start black. A slot grown past a texel it cut
   holds the view, fades to black and starts again, and the canvas is clipped to the pixels the
-  limiter has judged in view (CORE-2516).
+  limiter has judged in view. The slot behind the canvas is black, not the theme's scrim, so a
+  pixel with no judged frame shows the level its tracker starts at (CORE-2516).
 - The canvas backing size comes from a `ResizeObserver` with `device-pixel-content-box` (exact
   device pixels, DPR capped at 2), falling back to the CSS box, instead of a per-frame
   `getBoundingClientRect()` (CORE-2516).
@@ -56,7 +57,7 @@ visual off until the component remounts, although browsers restore contexts rout
 
 - vitest: `renderer.test.ts` (fallback order, probe cleanup, budgets spent and the view held over a resize),
   `Visualizer.context.test.tsx` (loss, restore, failed restore, listener removal),
-  `Visualizer.test.tsx` (`backingSize`, `chosenVisual`, `viewClip`), `cadence.test.ts` (synthetic 30 Hz
+  `Visualizer.test.tsx` (`backingSize`, `chosenVisual`, `viewClip`, the black slot), `cadence.test.ts` (synthetic 30 Hz
   clock through the vendored Oscillux governor).
 
 ## Rollback

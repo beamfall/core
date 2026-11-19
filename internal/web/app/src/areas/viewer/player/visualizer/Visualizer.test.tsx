@@ -57,6 +57,29 @@ describe("Visualizer (CORE-1309)", () => {
     expect(slot?.querySelector("canvas.bf-audio-visualizer-canvas")).toBeTruthy();
   });
 
+  // Codex round 25: the slot showed the theme's scrim behind the canvas, so a strip that came
+  // into view rose from a level its tracker, which starts at black, did not hold.
+  it("paints the slot black behind the canvas, and not once the canvas is gone", () => {
+    withWebGL2();
+    const stage = (stream: typeof direct) => (
+      <AudioStage
+        title="Song"
+        artworkURL=""
+        credits={[]}
+        videoRef={createRef<HTMLVideoElement>()}
+        stream={stream}
+        trackKey="m1"
+      />
+    );
+    const { container, rerender } = render(stage(direct));
+    const slot = container.querySelector<HTMLElement>("[data-visualizer-slot]");
+    expect(slot?.querySelector("canvas")).toBeTruthy();
+    expect(slot?.style.backgroundColor).toBe("rgb(0, 0, 0)");
+    rerender(stage({ kind: "transcode", url: "/api/media/m1/master.m3u8" }));
+    expect(slot?.querySelector("canvas")).toBeNull();
+    expect(slot?.style.backgroundColor).toBe("");
+  });
+
   it("leaves the slot empty without WebGL2", () => {
     expect(canVisualize()).toBe(false);
     const { container } = render(

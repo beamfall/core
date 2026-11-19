@@ -57,7 +57,8 @@ budget spent. The grant state SHALL start spent at the first size too.
 
 A grant state the host wrote spent has judged no frame. A paused player SHALL draw a frame through
 it before holding the picture, and a spend during the fade of a display-scale change SHALL start
-that fade again.
+that fade again. A spend outlives a withdrawn frame, so the fade a withdrawn frame goes back to
+SHALL start again too.
 
 #### Scenario: Paused on a grant the host wrote
 
@@ -68,6 +69,12 @@ that fade again.
 
 - **WHEN** a resize spends the budgets one second into the fade of a display-scale change
 - **THEN** the fade runs its full length again from that spend
+
+#### Scenario: Withdrawn frame that cancelled the fade
+
+- **WHEN** a frame cancels a fade with one second left, spends the budgets, and is withdrawn
+  before it is painted
+- **THEN** the fade it goes back to runs its full length again
 
 ### Requirement: Only judged pixels are shown
 
@@ -87,6 +94,18 @@ view. It SHALL clip the canvas to the pixels the limiter has judged in view.
 
 - **WHEN** a slot showing whole texels grows by one texel
 - **THEN** the new texel comes into view black and tracked black, with every budget spent
+
+### Requirement: Unjudged pixels show black
+
+Wherever the slot shows no judged pixel (past the canvas, through its clip, before its first
+frame) the web visualizer SHALL show black, the level those pixels' trackers start at, whatever
+the theme.
+
+#### Scenario: Strip not yet drawn
+
+- **WHEN** the slot grows and paints before the next frame is drawn
+- **THEN** the new strip shows black, not the theme's scrim, and its texels then come into view
+  from black
 
 ### Requirement: Backing store from device pixels
 
