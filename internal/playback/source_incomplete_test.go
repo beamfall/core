@@ -18,6 +18,22 @@ import (
 
 // CORE-2380 extends CORE-1343's no-segments-past-EOF rule to playbackInfo.
 func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		laterPart bool
+		version   string
+	}{
+		{name: "single Part"},
+		{name: "later Part default Version", laterPart: true},
+		{name: "later Part alternate Version", laterPart: true, version: "alternate"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testPlaybackInfoRefusesIncompletePart(t, tc.laterPart, tc.version)
+		})
+	}
+}
+
+func testPlaybackInfoRefusesIncompletePart(t *testing.T, laterPart bool, version string) {
 	ctx := context.Background()
 	dataDir := storetest.MigratedDataDir(t)
 	st := storetest.OpenAt(t, dataDir)
@@ -26,6 +42,7 @@ func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := NewService(st, streamtoken.NewService([]byte("test-token-key"), nil), nil)
+	service.SetSelector(NewSelectorService([]byte("test-token-key"), nil))
 	source := filepath.Join(t.TempDir(), "truncated.mkv")
 	if err := os.WriteFile(source, []byte("incomplete download"), 0o600); err != nil {
 		t.Fatal(err)
@@ -37,6 +54,25 @@ func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if laterPart {
+		streams := []store.MediaFileStream{videoStream("hevc", "Main", 0, ""), audioStream(1, "aac", 2)}
+		addVersion(t, st, media.ID, "fp-default-later", "", 1, streams)
+		addVersion(t, st, media.ID, "fp-alternate-first", "alternate", 0, streams)
+		addVersion(t, st, media.ID, "fp-alternate-later", "alternate", 1, streams)
+		files, err := st.MediaFilesForMedia(ctx, media.ID, scope.LibraryFilter())
+		if err != nil {
+			t.Fatal(err)
+		}
+		source = ""
+		for _, file := range files {
+			if file.VersionLabel == version && file.PartOrdinal == 1 {
+				source = file.Path
+			}
+		}
+		if source == "" {
+			t.Fatal("later Part fixture missing")
+		}
 	}
 	if err := st.UpsertPlaybackProgress(ctx, store.PlaybackProgress{ProfileID: scope.ProfileID, MediaID: media.ID, PositionSeconds: 163, DurationSeconds: 6906}, false, store.ResumePolicy{Class: store.MediaClassVideo}); err != nil {
 		t.Fatal(err)
@@ -54,9 +90,15 @@ func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
 	service.SetSessions(sessions)
 	profile := CapabilityProfile{Client: "web-h264", Containers: []string{"mp4"}, VideoCodecs: []VideoCodecCap{{Codec: "h264", MaxHeight: 1080}}, AudioCodecs: []AudioCodecCap{{Codec: "aac", MaxChannels: 2}}}
 	request := InfoRequest{MediaID: string(media.ID), CapabilityProfile: profile}
+	if version != "" {
+		request.SelectedVersion = versionID(media.ID, version)
+	}
 	before, err := service.Info(ctx, scope, request)
 	if err != nil || before.Timeline.PositionSeconds != 163 || len(before.Streams) == 0 {
 		t.Fatalf("baseline = %+v, %v", before, err)
+	}
+	if laterPart && (len(before.Parts) != 2 || resolveSel(t, service, scope, before.Parts[1]).VersionLabel != version) {
+		t.Fatalf("baseline did not select the multi-Part Version: %+v", before)
 	}
 	key := SessionKey{SessionID: scope.SessionID, MediaID: media.ID}
 	if _, err := sessions.FilePath(ctx, key, source, 6906, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
@@ -90,8 +132,20 @@ func TestPlaybackInfoRefusesResumeBeyondTruncatedSource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Decision != "unavailable" || info.Reason != "media-source-incomplete" || len(info.Streams) != 0 || info.Timeline.PositionSeconds != 0 {
+		if info.Decision != "unavailable" || info.Reason != "media-source-incomplete" || len(info.Streams) != 0 || len(info.Parts) != 0 || info.Timeline.PositionSeconds != 0 {
 			t.Fatalf("known incomplete source still offers playback/resume: %+v", info)
+		}
+		if laterPart {
+			otherVersion := "alternate"
+			if version == otherVersion {
+				otherVersion = ""
+			}
+			otherRequest := request
+			otherRequest.SelectedVersion = versionID(media.ID, otherVersion)
+			other, err := service.Info(ctx, scope, otherRequest)
+			if err != nil || other.Decision == "unavailable" || len(other.Streams) == 0 || other.Timeline.PositionSeconds != 163 {
+				t.Fatalf("complete alternate Version lost playback/resume: %+v, %v", other, err)
+			}
 		}
 	}
 	check()

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
+import { playerRecoveryStrings } from "@/strings/player-recovery";
 import {
   adjustmentApplied,
   fetchPlaybackInfo,
@@ -169,6 +170,7 @@ describe("unavailableReason (CORE-1146)", () => {
   // internal/ffmpeg/tonemap.go (VideoSignal.FullTranscodeRefusal).
   const serverReasons = {
     "media-unavailable": ["mediaNotAvailable", "back"],
+    "media-source-incomplete": ["sourceEndsEarly", "back"],
     "media-file-unavailable": ["mediaFileMissing", "retry"],
     "transcode-disallowed": ["transcodeDisallowed", "back"],
     "stream-limit-reached": ["streamLimitReached", "retry"],
@@ -180,6 +182,7 @@ describe("unavailableReason (CORE-1146)", () => {
   const messages: Required<UnavailableReasonMessages> = {
     mediaFileMissing: "file missing",
     mediaNotAvailable: "not available",
+    sourceEndsEarly: "source ends early",
     transcodeDisallowed: "transcode off",
     streamLimitReached: "stream limit",
     transcodeCapacityReached: "server busy",
@@ -187,6 +190,17 @@ describe("unavailableReason (CORE-1146)", () => {
     hdrToneMapUnavailable: "hdr",
     hdrToneMapDisabled: "hdr off",
   };
+
+  it.each(Object.entries(playerRecoveryStrings))(
+    "uses the localized EOF explanation and Back for an incomplete source in %s",
+    (_locale, strings) => {
+      expect(
+        unavailableReason("media-source-incomplete", {
+          sourceEndsEarly: strings.playbackSourceEndsEarly,
+        }),
+      ).toEqual({ message: strings.playbackSourceEndsEarly, action: "back" });
+    },
+  );
 
   it("maps exactly the server's reasons", () => {
     expect(Object.keys(UNAVAILABLE_REASONS).sort()).toEqual(Object.keys(serverReasons).sort());

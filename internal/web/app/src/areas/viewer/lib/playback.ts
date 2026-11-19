@@ -328,6 +328,7 @@ export type PlaybackMessageAction = "retry" | "back";
 
 /** The copy for each `reason` a playback-info `unavailable` decision can carry. */
 export interface UnavailableReasonMessages {
+  sourceEndsEarly?: string;
   mediaFileMissing?: string;
   mediaNotAvailable?: string;
   transcodeDisallowed?: string;
@@ -348,6 +349,7 @@ export const UNAVAILABLE_REASONS: Record<
 > = {
   "media-file-unavailable": { message: "mediaFileMissing", action: "retry" },
   "media-unavailable": { message: "mediaNotAvailable", action: "back" },
+  "media-source-incomplete": { message: "sourceEndsEarly", action: "back" },
   "transcode-disallowed": { message: "transcodeDisallowed", action: "back" },
   "stream-limit-reached": { message: "streamLimitReached", action: "retry" },
   "transcode-capacity-reached": {
