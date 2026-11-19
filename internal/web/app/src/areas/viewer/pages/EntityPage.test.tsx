@@ -9,6 +9,7 @@ import { fetchMediaRows, type MediaRow } from "@/lib/graphql/browse";
 import type { EntityInfo, Layout, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
+import type { Locale } from "@/strings";
 import { notifyEngagementChanged } from "../actions/engagementSync";
 import { sectionCacheKey } from "../components/HydratedSection";
 import { entityLinkState } from "../lib/entityPreview";
@@ -72,9 +73,9 @@ function PlayerProbe() {
   );
 }
 
-function renderEntity(state?: unknown) {
+function renderEntity(state?: unknown, locale: Locale = "en") {
   return render(
-    <I18nProvider>
+    <I18nProvider initialLocale={locale}>
       <MemoryRouter initialEntries={[{ pathname: "/entity/e1", state }]}>
         <Routes>
           <Route path="/entity/:entityId" element={<EntityPage />} />
@@ -587,6 +588,70 @@ describe("EntityPage audio container order", () => {
       d1t1: row("d1t1", "First Disc Opener", 1, 1),
       d1t2: row("d1t2", "First Disc Closer", 1, 2),
     });
+  });
+
+  // CORE-1879: verify the existing sequence/index pipeline at the album page boundary.
+  it.each([
+    ["en", "Disc"],
+    ["fr", "Disque"],
+    ["de", "CD"],
+    ["es", "Disco"],
+    ["pt", "Disco"],
+  ] as const)(
+    "groups a two-disc album in disc/track order with %s headings",
+    async (locale, label) => {
+      const shuffledTracks = [
+        { id: "d2t2", kind: "media", title: "Second Disc Closer" },
+        tracks[2],
+        tracks[0],
+        tracks[1],
+      ];
+      vi.mocked(fetchMediaForEntity).mockResolvedValue(shuffledTracks);
+      vi.mocked(fetchMediaRows).mockResolvedValue({
+        d2t2: row("d2t2", "Second Disc Closer", 2, 2),
+        d1t2: row("d1t2", "First Disc Closer", 1, 2),
+        d2t1: row("d2t1", "Second Disc Opener", 2, 1),
+        d1t1: row("d1t1", "First Disc Opener", 1, 1),
+      });
+      renderEntity(undefined, locale);
+      const first = await screen.findByRole("list", { name: `${label} 1` });
+      const second = screen.getByRole("list", { name: `${label} 2` });
+      expect(
+        screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent),
+      ).toEqual([`${label} 1`, `${label} 2`]);
+      for (const [list, titles] of [
+        [first, ["First Disc Opener", "First Disc Closer"]],
+        [second, ["Second Disc Opener", "Second Disc Closer"]],
+      ] as const) {
+        const rows = within(list).getAllByRole("listitem");
+        expect(rows).toHaveLength(2);
+        rows.forEach((track, index) => {
+          expect(within(track).getByText(titles[index])).toBeInTheDocument();
+          expect(within(track).getByText(String(index + 1))).toHaveClass("bf-track-number");
+        });
+      }
+      expect(fetchMediaRows).toHaveBeenCalledWith(
+        shuffledTracks.map((track) => track.id),
+        expect.any(AbortSignal),
+        { positions: true },
+      );
+    },
+  );
+
+  it.each([1, 2])("keeps a single-disc album flat when its stored disc is %s", async (sequence) => {
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([tracks[2], tracks[1]]);
+    vi.mocked(fetchMediaRows).mockResolvedValue({
+      d1t2: row("d1t2", "First Disc Closer", sequence, 2),
+      d1t1: row("d1t1", "First Disc Opener", sequence, 1),
+    });
+    renderEntity();
+    const list = await screen.findByRole("list", { name: "Tracks" });
+    expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
+    expect(
+      within(list)
+        .getAllByRole("button", { name: /^Play / })
+        .map((button) => button.textContent),
+    ).toEqual(["1First Disc Opener", "2First Disc Closer"]);
   });
 
   function playerState() {
