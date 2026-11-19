@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchEntity, fetchItemState, fetchMediaForEntity } from "@/lib/graphql";
+import { fetchEntity, fetchItemState, fetchMediaForEntity, fetchSourceItems } from "@/lib/graphql";
 import { fetchMediaRows, type MediaRow } from "@/lib/graphql/browse";
-import type { EntityInfo, Layout, SourceItem } from "@/lib/graphql/types";
+import type { EntityInfo, Layout, Section, SourceItem } from "@/lib/graphql/types";
 import { I18nProvider } from "@/lib/i18n";
 import { clearViewerCache, readViewerCache, writeViewerCache } from "@/lib/viewerCache";
 import type { Locale } from "@/strings";
@@ -25,6 +25,7 @@ vi.mock("@/lib/graphql", () => ({
   fetchEntity: vi.fn(),
   fetchItemState: vi.fn(),
   fetchMediaForEntity: vi.fn(),
+  fetchSourceItems: vi.fn(),
 }));
 vi.mock("@/lib/graphql/browse", () => ({ fetchMediaRows: vi.fn() }));
 vi.mock("@/lib/session", () => ({
@@ -41,12 +42,6 @@ vi.mock("../actions", async (importOriginal) => ({
   ItemActions: () => null,
 }));
 vi.mock("../components/NotAvailable", () => ({ NotAvailable: () => <p>not available</p> }));
-vi.mock("../components/MediaItemCard", () => ({
-  MediaItemCard: ({ item }: { item: SourceItem }) => <li>{item.title}</li>,
-}));
-vi.mock("../components/LayoutView", () => ({
-  LayoutView: ({ layout }: { layout: Layout }) => <p>detail layout {layout.id}</p>,
-}));
 
 const identity = JSON.stringify(["viewer", "p1", "adult", false]);
 const revealedIdentity = JSON.stringify(["viewer", "p1", "adult", true]);
@@ -62,6 +57,14 @@ const related: SourceItem = {
   title: "Related item",
   artwork: { poster: "" },
 };
+const recentSection: Section = {
+  id: "recent",
+  kind: "shelf",
+  title: { en: "Recently added" },
+  artworkSlot: "poster",
+  source: { kind: "recent" },
+};
+const recentItem: SourceItem = { id: "recent-item", kind: "media", title: "Recent item" };
 
 function PlayerProbe() {
   const mediaId = useParams()["*"];
@@ -109,6 +112,7 @@ beforeEach(() => {
     rating: 0,
   });
   vi.mocked(fetchMediaRows).mockReset().mockResolvedValue({});
+  vi.mocked(fetchSourceItems).mockReset().mockResolvedValue([]);
   vi.mocked(fetchMediaForEntity)
     .mockReset()
     .mockReturnValue(new Promise(() => {}));
@@ -199,14 +203,16 @@ describe("EntityPage instant paint", () => {
   });
 
   it("starts the detail Layout from the previewed kind and lists no Media beside it", async () => {
-    mocks.layouts = [{ id: "series-detail", sections: [], role: "detail", entityKind: "Series" }];
+    mocks.layouts = [
+      { id: "series-detail", sections: [recentSection], role: "detail", entityKind: "Series" },
+    ];
     vi.mocked(fetchEntity).mockReturnValue(new Promise(() => {}));
     vi.mocked(fetchMediaForEntity).mockResolvedValue([related]);
+    vi.mocked(fetchSourceItems).mockResolvedValue([recentItem]);
 
     renderEntity(entityLinkState({ id: "e1", title: "Card title", kind: "Series" }, identity));
-    await act(async () => {});
 
-    expect(screen.getByText("detail layout series-detail")).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Recently added" })).toBeInTheDocument();
     // The Media are read for the primary action only; the Layout renders them.
     expect(screen.queryByText("Related item")).toBeNull();
   });
@@ -304,13 +310,16 @@ describe("EntityPage related Entities", () => {
   });
 
   it("renders related groups after a detail Layout", async () => {
-    mocks.layouts = [{ id: "rack-detail", sections: [], role: "detail", entityKind: "rack" }];
+    mocks.layouts = [
+      { id: "rack-detail", sections: [recentSection], role: "detail", entityKind: "rack" },
+    ];
     vi.mocked(fetchEntity).mockResolvedValue(withGroups);
+    vi.mocked(fetchSourceItems).mockResolvedValue([recentItem]);
 
     renderEntity();
 
     const box = await screen.findByText("Linked box");
-    const layout = screen.getByText("detail layout rack-detail");
+    const layout = await screen.findByRole("list", { name: "Recently added" });
     expect(layout.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
@@ -532,6 +541,18 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
     expect(state.queueIdentity).toBe(identity);
   });
 
+  it("shows the localized action error on the child whose menu failed to load", async () => {
+    vi.mocked(fetchItemState).mockRejectedValueOnce(new Error("offline"));
+    renderEntity(undefined, "fr");
+    const link = await screen.findByRole("link", { name: /Related item/ });
+    const row = within(link.closest("li")!);
+    fireEvent.click(row.getByRole("button", { name: "Plus d’actions pour Related item" }));
+
+    const message = "Échec de l'enregistrement. Réessayez.";
+    expect(await row.findByText(message)).toHaveAttribute("role", "status");
+    expect(screen.getAllByText(message)).toHaveLength(1);
+  });
+
   it("orders child controls as link, Play, More and excludes locked playback", async () => {
     const { container } = renderEntity();
     await screen.findByRole("link", { name: /Related item/ });
@@ -559,6 +580,61 @@ describe.each([false, true])("EntityPage child navigation (detail layout: %s)", 
       expect(control).toHaveFocus();
     }
   });
+});
+
+describe("EntityPage child navigation in a mixed detail layout", () => {
+  beforeEach(() => {
+    mocks.layouts = [
+      {
+        id: "mixed-detail",
+        role: "detail",
+        entityKind: entity.kind,
+        sections: [
+          {
+            id: "children",
+            kind: "list",
+            title: { en: "Children" },
+            artworkSlot: "thumb",
+            source: { kind: "entity-media" },
+          },
+          { ...recentSection, kind: "list" },
+        ],
+      },
+    ];
+    vi.mocked(fetchEntity).mockResolvedValue({ ...entity, archetype: "container" });
+    const child = { ...related, mediaClass: "video", artworkSlots: { thumb: "/art/child" } };
+    vi.mocked(fetchMediaForEntity).mockResolvedValue([child]);
+    vi.mocked(fetchSourceItems).mockImplementation(async ({ kind }) =>
+      kind === "entity-media" ? [child] : [recentItem],
+    );
+  });
+
+  it.each(["title", "thumbnail", "Details", "Play"])(
+    "activates the child through its %s",
+    async (entry) => {
+      renderEntity();
+      const children = await screen.findByRole("list", { name: "Children" });
+      const link = within(children).getByRole("link", { name: /Related item/ });
+      expect(await screen.findByRole("link", { name: /Recent item/ })).toHaveAttribute(
+        "href",
+        "/watch/recent-item",
+      );
+
+      if (entry === "title") {
+        fireEvent.click(within(link).getByText("Related item"));
+      } else if (entry === "thumbnail") {
+        fireEvent.click(link.querySelector("img")!);
+      } else {
+        fireEvent.click(
+          within(children).getByRole("button", { name: "More actions for Related item" }),
+        );
+        fireEvent.click(await screen.findByRole("menuitem", { name: entry }));
+      }
+
+      const destination = entry === "Play" ? "player" : "detail";
+      expect(screen.getByRole("status", { name: destination })).toHaveTextContent(/^m1\b/);
+    },
+  );
 });
 
 describe("EntityPage audio container order", () => {
@@ -766,7 +842,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     await act(async () => {});
     await act(async () => {});
 
-    expect(screen.queryByText("detail layout record-detail")).toBeNull();
+    expect(fetchSourceItems).not.toHaveBeenCalled();
     const list = screen.getByRole("list", { name: "Tracks" });
     const titles = within(list)
       .getAllByRole("button", { name: /^Play / })
@@ -815,7 +891,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
     await act(async () => {});
 
     // The rows replace the Layout's poster list, headed by its Section title.
-    expect(screen.queryByText("detail layout record-detail")).toBeNull();
+    expect(fetchSourceItems).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "Rows" })).toBeInTheDocument();
     const rows = screen.getByRole("list", { name: "Rows" });
     expect(within(rows).getByRole("link", { name: /^First Part/ })).toHaveAttribute(
@@ -838,7 +914,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
       ),
     );
     // A container lists them as rows (CORE-2510), so nothing paints that the rows would replace.
-    expect(screen.queryByText("detail layout record-detail")).toBeNull();
+    expect(fetchSourceItems).not.toHaveBeenCalled();
   });
 
   it("holds the Layout back while an audio container's Media are unknown", () => {
@@ -849,7 +925,7 @@ describe("EntityPage listening over a Media-only detail Layout (CORE-2362)", () 
         identity,
       ),
     );
-    expect(screen.queryByText("detail layout record-detail")).toBeNull();
+    expect(fetchSourceItems).not.toHaveBeenCalled();
   });
 });
 

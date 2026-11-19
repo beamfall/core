@@ -54,6 +54,7 @@
 }
 
 [data-register="viewer"] .bf-child {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -315,6 +316,7 @@
 }
 
 [data-register="viewer"] .bf-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
