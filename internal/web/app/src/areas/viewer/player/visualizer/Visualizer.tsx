@@ -50,10 +50,8 @@ export function backingSize(
   return [Math.max(1, width), Math.max(1, height), texel];
 }
 /**
- * True when the slot cannot hold one whole texel in either dimension: under one physical pixel,
- * or under the texel a side over MAX_SIDE needs. A canvas wider than its slot is clipped, and a
- * slot that then grows within the same texel count shows physical pixels the limiter never
- * exposed, so such a slot shows nothing (Codex rounds 20 and 21).
+ * True when the slot is under one physical pixel in either dimension: it shows nothing. A slot
+ * that cuts a texel still shows it, judged against the pixels in view (Codex rounds 20 to 23).
  */
 export function collapsed(
   device: { inlineSize: number; blockSize: number } | null,
@@ -82,8 +80,23 @@ function texels(
     Math.ceil(w / MAX_SIDE),
     Math.ceil(h / MAX_SIDE),
   );
-  const fit = (n: number) => Math.max(0, Math.floor(n / texel + 1e-6));
+  // A slot under the texel a side over MAX_SIDE needs keeps one texel, cut by the slot: the
+  // renderer judges a cut texel in full against the pixels shown (Codex round 23).
+  const fit = (n: number) => (n < 1 - 1e-6 ? 0 : Math.max(1, Math.floor(n / texel + 1e-6)));
   return [fit(w), fit(h), texel];
+}
+
+/** The slot's size in whole physical pixels, which can cut the last texel in each dimension. */
+export function slotPixels(
+  device: { inlineSize: number; blockSize: number } | null,
+  cssWidth: number,
+  cssHeight: number,
+  ratio: number,
+): [number, number] {
+  const r = ratio > 0 ? ratio : 1;
+  const w = device ? device.inlineSize : cssWidth * r;
+  const h = device ? device.blockSize : cssHeight * r;
+  return [Math.floor(w + 1e-6), Math.floor(h + 1e-6)];
 }
 // How the audio values glide across a track change (CORE-2218): toward rest while the next
 // track's analysis is not ready, and up into it once it is, for this long.
@@ -234,7 +247,10 @@ export function Visualizer({
       const drawn = unpainted;
       if (drawn === null) return;
       unpainted = null;
-      const key = backingSize(device, css.width, css.height, window.devicePixelRatio).join();
+      const key = [
+        ...backingSize(device, css.width, css.height, window.devicePixelRatio),
+        ...slotPixels(device, css.width, css.height, window.devicePixelRatio),
+      ].join();
       if (key === drawn) return;
       try {
         rendererRef.current?.withdraw();
@@ -308,6 +324,12 @@ export function Visualizer({
         box.height,
         window.devicePixelRatio,
       );
+      const [slotWidth, slotHeight] = slotPixels(
+        device,
+        box.width,
+        box.height,
+        window.devicePixelRatio,
+      );
       try {
         // Paused by the listener: hold still. Paused while a new source loads: keep moving. A size
         // or display-scale change still draws while paused until the renderer settles. Refitting
@@ -315,7 +337,7 @@ export function Visualizer({
         if (
           video.paused &&
           video.readyState >= HAVE_FUTURE_DATA &&
-          renderer.settled(width, height, texel)
+          renderer.settled(width, height, texel, slotWidth, slotHeight)
         ) {
           fitCanvas(renderer);
           return;
@@ -346,10 +368,21 @@ export function Visualizer({
         if (target === silent) tau = SETTLE_TAU;
         else if (current && now - current.since < ARRIVE_SECONDS * 1000) tau = ARRIVE_TAU;
         easeFrame(shown, target, tau ? 1 - Math.exp(-dt / tau) : 1);
-        renderer.draw(width, height, dt, shown, !!reduced?.matches, frameMs, texel, shownMs);
+        renderer.draw(
+          width,
+          height,
+          dt,
+          shown,
+          !!reduced?.matches,
+          frameMs,
+          texel,
+          shownMs,
+          slotWidth,
+          slotHeight,
+        );
         lastDrawn = now;
         lastWall = wall;
-        unpainted = [width, height, texel].join();
+        unpainted = [width, height, texel, slotWidth, slotHeight].join();
         fitCanvas(renderer);
         rotate(renderer, dt, shown.values.downbeat > 0.5, !!reduced?.matches);
       } catch (err) {

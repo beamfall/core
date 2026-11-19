@@ -282,7 +282,7 @@ describe("Visualizer canvas fitting", () => {
     vi.stubGlobal("devicePixelRatio", 1.25);
     box.mockReturnValue({ width: 512, height: 288 } as DOMRect);
     step(32);
-    expect(renderer.settled).toHaveBeenLastCalledWith(640, 360, 1);
+    expect(renderer.settled).toHaveBeenLastCalledWith(640, 360, 1, 640, 360);
     expect(renderer.draw).toHaveBeenCalledTimes(1);
     expect(canvas.style.width).toBe("512px");
     expect(canvas.style.height).toBe("288px");

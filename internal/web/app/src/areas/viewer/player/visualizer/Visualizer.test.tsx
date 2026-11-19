@@ -3,7 +3,15 @@ import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioStage } from "../AudioStage";
 import { easeFrame, silentFrame } from "./analysis";
-import { backingSize, canVisualize, type Rotation, takeUpcoming, Visualizer } from "./Visualizer";
+import {
+  backingSize,
+  canVisualize,
+  collapsed,
+  type Rotation,
+  slotPixels,
+  takeUpcoming,
+  Visualizer,
+} from "./Visualizer";
 import { chosenVisual, VISUALS, visualFor } from "./visuals";
 
 // The Oscillux core never loads in jsdom: a pending load keeps the visualizer mounted and idle.
@@ -183,6 +191,16 @@ describe("backingSize", () => {
     expect(backingSize({ inlineSize: 1201, blockSize: 901 }, 400.3, 300.3, 3)).toEqual([
       600, 450, 2,
     ]);
+  });
+
+  // Codex round 23: a slot one pixel wide that grows past MAX_SIDE keeps a texel the slot cuts,
+  // judged against the pixel shown, instead of going black.
+  it("keeps a cut texel when a side over MAX_SIDE needs a larger one", () => {
+    const device = { inlineSize: 1, blockSize: 8193 };
+    expect(backingSize(device, 1, 8193, 1)).toEqual([1, 4096, 2]);
+    expect(slotPixels(device, 1, 8193, 1)).toEqual([1, 8193]);
+    expect(collapsed(device, 1, 8193, 1)).toBe(false);
+    expect(collapsed({ inlineSize: 0, blockSize: 8193 }, 0, 8193, 1)).toBe(true);
   });
 
   it("falls back to the CSS box, and to DPR 1 for a bad ratio", () => {

@@ -264,6 +264,23 @@ describe("Renderer resize (CORE-2516)", () => {
     expect([s.visibleWidth, s.visibleHeight]).toEqual([1200, 900]);
   });
 
+  // Codex round 23: a drop to a divisor into a target that cuts the last old texel keeps the
+  // texel's visible part, and the first draw sets the area limit from the pixels in view.
+  it("keeps a cut texel on a drop to a divisor of the display scale", () => {
+    const { r, resize, blits } = make();
+    resize(600, 38, 2);
+    r.black = 0;
+    blits.length = 0;
+    resize(1200, 75, 1);
+    expect(blits).toEqual([
+      [0, 0, 600, 38, 0, -1, 1200, 75],
+      [0, 0, 600, 38, 0, -1, 1200, 75],
+    ]);
+    const s = r.size as Record<string, number>;
+    expect([s.visibleWidth, s.visibleHeight]).toEqual([1200, 75]);
+    expect([s.visiblePxWidth, s.visiblePxHeight]).toEqual([-1, -1]);
+  });
+
   it("presents no black for a resize at one display scale", () => {
     const { r, resize } = make();
     resize(640, 360);
@@ -584,11 +601,59 @@ describe("limiterWindow", () => {
   });
 });
 
+// Codex round 23: a slot that cuts an old texel during a fade still shows it, so it is judged in
+// full, against an area limit from the physical pixels in view.
+describe("Renderer view of a cut texel", () => {
+  const inView = (scale: number, W: number, H: number, sw: number, sh: number) => {
+    const r = Object.create(Renderer.prototype) as Record<string, unknown>;
+    r.displayScale = scale;
+    return (r.inView as (...a: number[]) => unknown).call(r, W, H, sw, sh);
+  };
+
+  it("counts a cut texel in view and the pixels shown", () => {
+    expect(inView(3, 64, 40, 2, 120)).toEqual({ width: 1, height: 40, pxWidth: 2, pxHeight: 120 });
+    expect(inView(3, 64, 40, 7, 119)).toEqual({ width: 3, height: 40, pxWidth: 7, pxHeight: 119 });
+    expect(inView(1, 64, 100, 1, 100)).toEqual({
+      width: 1,
+      height: 100,
+      pxWidth: 1,
+      pxHeight: 100,
+    });
+  });
+
+  it("takes the area limit from the pixels shown", () => {
+    expect(limiterWindow(64, 100, 1, 1, 100)).toEqual(limiterWindow(64, 100, 1, 1, 100, 1, 100));
+    expect(limiterWindow(64, 40, 3, 1, 40, 2, 120).limit).toBe(Math.floor((1 * 40) / 4 / 9));
+  });
+});
+
+describe("Renderer withdraw (Codex round 23)", () => {
+  it("takes back a withdrawn frame's fade time, but not a scale switch's black", () => {
+    const r = Object.create(Renderer.prototype) as Record<string, unknown>;
+    const size = {};
+    Object.assign(r, { size, fadeLeft: 0.5, black: 0, blackShown: false });
+    r.undo = { fadeLeft: 1.5, black: 0, blackShown: false, size, limiter: null };
+    (r as unknown as Renderer).withdraw();
+    expect(r.fadeLeft).toBe(1.5);
+    r.undo = { fadeLeft: 0.01, black: 0, blackShown: false, size: {}, limiter: null };
+    r.black = 0.1;
+    (r as unknown as Renderer).withdraw();
+    expect(r.black).toBe(0.1);
+  });
+});
+
 describe("Renderer display-scale fade (Codex round 13)", () => {
   const make = () => {
     const r = Object.create(Renderer.prototype) as Record<string, unknown>;
     Object.assign(r, {
-      size: { width: 640, height: 360, visibleWidth: 640, visibleHeight: 360 },
+      size: {
+        width: 640,
+        height: 360,
+        visibleWidth: 640,
+        visibleHeight: 360,
+        visiblePxWidth: 640,
+        visiblePxHeight: 360,
+      },
       displayScale: 1,
       fadeLeft: -1,
       grantSettled: true,
