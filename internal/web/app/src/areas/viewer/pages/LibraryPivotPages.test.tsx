@@ -267,7 +267,7 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
 
     const jump = within(screen.getByRole("navigation", { name: "Jump to a category" }));
     await userEvent.click(jump.getByRole("link", { name: "Studio" }));
-    expect(screen.getByRole("heading", { name: "Studio" })).toHaveFocus();
+    await vi.waitFor(() => expect(screen.getByRole("heading", { name: "Studio" })).toHaveFocus());
     await expectNoAxeViolations(container);
     expectNoPositiveTabindex(container);
 
@@ -285,8 +285,10 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
       /^\/n\/library-films\/categories\?kind=studio$/,
     );
     // The A-Z list opens at its top even from a scrolled overview.
-    expect(scrolled.mock.contexts[0]).toHaveClass("bf-category-index");
-    expect(screen.getByRole("heading", { name: "Studio" })).toHaveFocus();
+    await vi.waitFor(() => {
+      expect(scrolled.mock.contexts[0]).toHaveClass("bf-category-index");
+      expect(screen.getByRole("heading", { name: "Studio" })).toHaveFocus();
+    });
   });
 
   it("lists every value A-Z with a filter that ignores case and accents", async () => {
@@ -300,7 +302,10 @@ describe("Library Categories pivot (CORE-2437, CORE-2505)", () => {
     ]);
     const { container } = renderAt("/n/library-films/categories?kind=studio");
 
-    expect(await screen.findByRole("heading", { level: 2, name: "Studio" })).toHaveFocus();
+    // CategoryIndex focuses its heading in a mount effect; wait for focus, not just the heading (CORE-2661).
+    await vi.waitFor(() =>
+      expect(screen.getByRole("heading", { level: 2, name: "Studio" })).toHaveFocus(),
+    );
     const letters = within(screen.getByRole("navigation", { name: "Jump to a letter" }));
     expect(letters.getAllByRole("link").map((link) => link.textContent)).toEqual([
       "#",
