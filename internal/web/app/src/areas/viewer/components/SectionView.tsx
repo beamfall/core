@@ -32,6 +32,7 @@ export function SectionView({
   items: served,
   seeAll,
   navigationID,
+  playOnActivate = section.kind === "list",
   showPlayButton = false,
   nameContainer = true,
 }: {
@@ -40,6 +41,8 @@ export function SectionView({
   /** When set (shelves), renders the See-All affordance to this target. */
   seeAll?: SeeAllTarget;
   navigationID?: string;
+  /** Cards start playback on activation, which is the default for list Sections. */
+  playOnActivate?: boolean;
   /** Child Media open detail and have a separate Play button. */
   showPlayButton?: boolean;
   /** Cards name the container holding their item; false inside a container's page (CORE-2524). */
@@ -116,7 +119,7 @@ export function SectionView({
               posInSet={index + 1}
               setSize={items.length}
               queue={queue}
-              playOnActivate={!showPlayButton && section.kind === "list"}
+              playOnActivate={!showPlayButton && playOnActivate}
               showPlayButton={showPlayButton}
               showYear={showsYear(item, repeated)}
               nameContainer={nameContainer}
