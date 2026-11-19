@@ -524,6 +524,65 @@ type readerFunc func([]byte) (int, error)
 
 func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
 
+func TestLiveSessionCloseDrainsEncryptingUpload(t *testing.T) {
+	session := newTestLiveSession(t)
+	sink := liveSink{session: session, rung: testLiveRung}
+	const name = "seg00000.m4s"
+	entered, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	body := io.MultiReader(strings.NewReader("payload"), readerFunc(func([]byte) (int, error) {
+		close(entered)
+		<-release
+		return 0, io.EOF
+	}))
+	uploaded := make(chan error, 1)
+	go func() { uploaded <- sink.upload(name, body) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload never reached encryption")
+	}
+	part := filepath.Join(session.Dir(), testLiveRung, name+livePartSuffix)
+	if info, err := os.Stat(part); err != nil || info.Size() == 0 {
+		t.Fatalf("upload blocked before writing a ciphertext header: %v, %v", info, err)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		session.Close()
+		close(closed)
+	}()
+	for deadline := time.Now().Add(5 * time.Second); !session.revoked.Load(); {
+		if time.Now().After(deadline) {
+			t.Fatal("Close did not signal revocation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-closed:
+		t.Fatal("Close returned while an upload was still encrypting")
+	case <-time.After(50 * time.Millisecond):
+	}
+	unblock()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return after the upload resumed")
+	}
+	if names := sessionFiles(t, session.Dir()); len(names) != 0 {
+		t.Fatalf("Close left files from the revoked upload: %v", names)
+	}
+	select {
+	case err := <-uploaded:
+		if !errors.Is(err, ErrLiveSessionClosed) {
+			t.Fatalf("upload after revocation: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload did not return")
+	}
+}
+
 func TestLiveRunRevokeMidUploadLeavesNoFile(t *testing.T) {
 	session := newTestLiveSession(t)
 	sink := &signalSink{uploadSink: liveSink{session: session, rung: testLiveRung}, reading: make(chan struct{})}

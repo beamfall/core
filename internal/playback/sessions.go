@@ -536,9 +536,9 @@ type Sessions struct {
 	removeDir func(string) error
 	// revocationPoll, when positive, replaces liveRevocationPoll. Tests set it.
 	revocationPoll time.Duration
-	// Detached sessions keep their directories and any occupied slots until
-	// teardown finishes. Their keys let explicit termination find teardowns
-	// another caller or an in-progress start already owns.
+	// Detached sessions keep their slots until session work drains, and
+	// remain tracked until directory cleanup finishes. Their keys let explicit
+	// termination find teardowns another caller or an in-progress start owns.
 	stopping         int
 	detachedSessions map[*hlsSession]SessionKey
 	// closed is set by Close; once set no session is created.
@@ -581,6 +581,11 @@ func (s *Sessions) drainTeardowns(teardowns []sessionTeardown) {
 }
 
 func (s *Sessions) teardown(session *hlsSession) {
+	s.stopSession(session)
+	s.finishTeardown(session)
+}
+
+func (s *Sessions) stopSession(session *hlsSession) {
 	session.mu.Lock()
 	proc, run := session.proc, session.run
 	session.proc = nil
@@ -594,11 +599,6 @@ func (s *Sessions) teardown(session *hlsSession) {
 	if session.live != nil {
 		session.live.Close()
 	}
-	if !s.removeSessionDir(session.dir) {
-		s.cleanupMu.Lock()
-		s.pendingDirs[session.dir] = nil
-		s.cleanupMu.Unlock()
-	}
 	if lease != nil {
 		lease.Release()
 	}
@@ -608,6 +608,18 @@ func (s *Sessions) teardown(session *hlsSession) {
 		session.hasSlot = false
 		s.stopping--
 	}
+	s.mu.Unlock()
+}
+
+// finishTeardown keeps the detached session visible to Close and explicit
+// termination until its directory removal attempt completes.
+func (s *Sessions) finishTeardown(session *hlsSession) {
+	if !s.removeSessionDir(session.dir) {
+		s.cleanupMu.Lock()
+		s.pendingDirs[session.dir] = nil
+		s.cleanupMu.Unlock()
+	}
+	s.mu.Lock()
 	delete(s.detachedSessions, session)
 	close(session.teardownDone)
 	s.mu.Unlock()
@@ -909,7 +921,7 @@ func (s *Sessions) admitLocked(key SessionKey, priority Priority, degraded bool)
 }
 
 // removeLocked detaches a session under Sessions.mu and reserves its occupied
-// slot until teardown finishes. It never acquires session.mu or touches disk.
+// slot until session work drains. It never acquires session.mu or touches disk.
 func (s *Sessions) removeLocked(key SessionKey) *sessionTeardown {
 	session, ok := s.sessions[key]
 	if !ok {
@@ -1744,7 +1756,10 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	previous.signalRevoke()
 	if victim != nil {
 		revokeSession(victim.session)
-		s.teardown(victim.session)
+		s.stopSession(victim.session)
+		// Only the encoder and readers compete with this start for capacity.
+		// The detached session's directory can wait for a removal slot.
+		go s.finishTeardown(victim.session)
 	}
 	s.stopRun(replaced, previous)
 	procCtx := context.WithoutCancel(ctx)

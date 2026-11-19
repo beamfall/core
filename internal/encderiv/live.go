@@ -51,11 +51,11 @@ type LiveSession struct {
 	dir       string
 	libraryID string
 
-	// mu guards the key and open/reader registration. It is never held during I/O.
+	// mu guards the key and I/O and reader registration. It is never held during I/O.
 	mu        sync.Mutex
 	key       []byte
 	files     map[*LiveFile]struct{}
-	opens     sync.WaitGroup
+	inFlight  sync.WaitGroup
 	revoked   atomic.Bool
 	closeOnce sync.Once
 
@@ -93,7 +93,7 @@ func (s *LiveSession) Revoke() {
 	s.key = nil
 }
 
-// Close revokes the session and drains open readers and in-progress opens.
+// Close revokes the session and drains readers, opens, and encrypted writes.
 func (s *LiveSession) Close() {
 	s.Revoke()
 	s.closeOnce.Do(func() {
@@ -104,8 +104,20 @@ func (s *LiveSession) Close() {
 		for f := range files {
 			f.end()
 		}
-		s.opens.Wait()
+		s.inFlight.Wait()
 	})
+}
+
+// beginIO registers work before it can open a file or copy the key. Revoke
+// closes admission under the same lock before Close waits for that work.
+func (s *LiveSession) beginIO() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.revoked.Load() {
+		return false
+	}
+	s.inFlight.Add(1)
+	return true
 }
 
 func (s *LiveSession) copyKey() ([]byte, error) {
@@ -164,9 +176,10 @@ func (s *LiveSession) encrypt(f *os.File, src io.Reader, rel string) error {
 // WriteFile replaces the file at rel with data, encrypted. Core uses it for
 // the playlists it serves itself.
 func (s *LiveSession) WriteFile(rel string, data []byte) error {
-	if s.revoked.Load() {
+	if !s.beginIO() {
 		return ErrLiveSessionClosed
 	}
+	defer s.inFlight.Done()
 	path, err := s.resolve(rel)
 	if err != nil {
 		return err
@@ -196,9 +209,10 @@ func (s *LiveSession) WriteFile(rel string, data []byte) error {
 // place. A name already published, or one another upload is writing, is
 // refused with errUploadExists before body is read (first writer wins).
 func (s *LiveSession) put(rel string, body io.Reader) error {
-	if s.revoked.Load() {
+	if !s.beginIO() {
 		return ErrLiveSessionClosed
 	}
+	defer s.inFlight.Done()
 	path, err := s.resolve(rel)
 	if err != nil {
 		return err
@@ -243,14 +257,10 @@ func (s *LiveSession) Open(rel string) (*LiveFile, error) {
 }
 
 func (s *LiveSession) open(rel string, decrypt func(io.ReaderAt, int64, []byte, libencrypt.ObjectContext) (*libencrypt.DecryptReaderV2, error)) (*LiveFile, error) {
-	s.mu.Lock()
-	if s.revoked.Load() {
-		s.mu.Unlock()
+	if !s.beginIO() {
 		return nil, ErrLiveSessionClosed
 	}
-	s.opens.Add(1)
-	s.mu.Unlock()
-	defer s.opens.Done()
+	defer s.inFlight.Done()
 
 	path, err := s.resolve(rel)
 	if err != nil {

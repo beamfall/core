@@ -106,6 +106,11 @@ func TestSessionsPreemptionDuringSessionIO(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("foreground start did not finish after the join drained")
 	}
+	select {
+	case <-session.teardownDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("victim directory removal did not finish")
+	}
 	if _, err := os.Stat(session.dir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("victim dir after preemption: %v", err)
 	}

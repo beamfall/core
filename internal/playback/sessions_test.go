@@ -2513,63 +2513,85 @@ func TestCloseWaitsForADirectoryOnlyTeardown(t *testing.T) {
 
 func TestSessionsPreemptionDuringDirectoryRemoval(t *testing.T) {
 	t.Parallel()
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
-	sessions.SetTranscodeCap(2)
+	transcoder := &fakeTranscoder{}
+	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions.SetTranscodeCap(1)
 	t.Cleanup(sessions.Close)
-	keyA := SessionKey{SessionID: "deleting", MediaID: "media-alpha"}
-	keyVictim := SessionKey{SessionID: "preempted", MediaID: "media-beta"}
-	keyB := SessionKey{SessionID: "foreground", MediaID: "media-gamma"}
+	const batchID = "deleting"
+	first := SessionKey{SessionID: batchID, MediaID: "media-alpha"}
+	second := SessionKey{SessionID: batchID, MediaID: "media-beta"}
+	keyVictim := SessionKey{SessionID: "preempted", MediaID: "media-gamma"}
+	foreground := SessionKey{SessionID: "foreground", MediaID: "media-delta"}
 	const segment = "720p/seg00000.m4s"
-	for _, key := range []SessionKey{keyA, keyVictim} {
-		if _, err := filePath720(sessions, key, segment); err != nil {
-			t.Fatalf("start %s: %v", key.SessionID, err)
+	for _, key := range []SessionKey{first, second} {
+		if _, err := filePath720(sessions, key, masterPlaylistName); err != nil {
+			t.Fatal(err)
 		}
 	}
-	dirA := registeredSession(t, sessions, keyA).dir
-	dirVictim := registeredSession(t, sessions, keyVictim).dir
-	entered, release := make(chan struct{}), make(chan struct{})
-	markEntered := sync.OnceFunc(func() { close(entered) })
+	if _, err := filePath720(sessions, keyVictim, segment); err != nil {
+		t.Fatal(err)
+	}
+	firstDir := registeredSession(t, sessions, first).dir
+	secondDir := registeredSession(t, sessions, second).dir
+	victim := registeredSession(t, sessions, keyVictim)
+	entered, release := make(chan struct{}, 2), make(chan struct{})
 	unblock := sync.OnceFunc(func() { close(release) })
 	defer unblock()
 	sessions.removeDir = func(dir string) error {
-		if dir == dirA {
-			markEntered()
+		if dir == firstDir || dir == secondDir {
+			entered <- struct{}{}
 			<-release
 		}
 		return os.RemoveAll(dir)
 	}
 
 	terminated := make(chan int, 1)
-	go func() { terminated <- sessions.TerminateSession(keyA.SessionID) }()
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("session A never reached directory removal")
+	go func() { terminated <- sessions.TerminateSession(batchID) }()
+	for range 2 {
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("batch did not occupy both directory removal slots")
+		}
 	}
 	preempted := make(chan error, 1)
 	go func() {
-		_, err := filePath720Priority(sessions, keyB, PriorityForeground, segment)
+		_, err := filePath720Priority(sessions, foreground, PriorityForeground, segment)
 		preempted <- err
 	}()
 	select {
 	case err := <-preempted:
 		if err != nil {
-			t.Fatalf("session B could not preempt: %v", err)
+			t.Fatalf("foreground session could not preempt: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("session B's preemption blocked behind session A's deletion")
+		t.Fatal("foreground preemption waited for background directory removal")
 	}
-	if _, err := os.Stat(dirVictim); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("preempted session's directory: stat err = %v, want not-exist", err)
+	sessions.mu.Lock()
+	live := sessions.liveCount()
+	sessions.mu.Unlock()
+	if starts := transcoder.startCount(); starts != 2 || live != 1 {
+		t.Fatalf("encoder starts = %d, slots occupied = %d, want 2 starts and 1 slot", starts, live)
+	}
+	if _, err := os.Stat(victim.dir); err != nil {
+		t.Fatalf("victim directory while both removal slots are occupied: %v", err)
 	}
 	unblock()
 	select {
 	case got := <-terminated:
-		if got != 1 {
-			t.Fatalf("detached %d sessions, want 1", got)
+		if got != 2 {
+			t.Fatalf("detached %d sessions, want 2", got)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("session A's teardown did not finish after deletion was released")
+		t.Fatal("batch teardown did not finish after deletion was released")
+	}
+	select {
+	case <-victim.teardownDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("victim directory removal did not finish")
+	}
+	if _, err := os.Stat(victim.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("victim directory after teardown: %v", err)
 	}
 }
 
