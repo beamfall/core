@@ -224,6 +224,7 @@ const (
 type hlsSession struct {
 	dir               string
 	src               string
+	sourceInfo        os.FileInfo
 	durationSeconds   int
 	rungs             []Rung
 	audioProfile      ffmpeg.AudioProfile
@@ -479,7 +480,8 @@ type Sessions struct {
 	dir        string
 	now        func() time.Time
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
-	durationProbes durationProbeCache
+	durationProbes    durationProbeCache
+	incompleteSources incompleteSourceCache
 	// bootNonce tags every session directory this instance mints (see
 	// newBootNonce): nextID resets to zero each process lifetime, so without it
 	// a fresh instance's first session would mint the exact directory name a
@@ -1286,6 +1288,7 @@ func (s *Sessions) noteSourceEnd(key SessionKey, session *hlsSession, rung Rung,
 	lowered := s.liveLocked(key, session) && session.noteSourceEndLocked(session.segmentStart(rung, segment))
 	s.mu.Unlock()
 	if lowered {
+		s.rememberIncompleteSource(session)
 		logSourceEnd(key, session, rung, segment, stderr)
 	}
 }
@@ -1341,6 +1344,11 @@ func (s *Sessions) transcodeLatencyBudget(session *hlsSession, path string) time
 // adjusted output timeline and, without a picture, offers the single
 // audio-only rung. audioOnly (an audio-class Media) offers that rung too.
 func (s *Sessions) session(key SessionKey, src string, durationSeconds int, timeline *keyframeTimeline, videoWidth, videoHeight int, audioCopy, degraded bool, caps ladderCaps, sourceVideo VideoSignal, burnSubtitleIndex int, audioProfile ffmpeg.AudioProfile, audioStreamIndex *int, picture *ComposedPicture, adjust ffmpeg.AudioAdjust, audioOnly bool, audioSourceStream store.MediaFileStream, audioOnlyPeak int, secure *EncryptedSource, priority Priority) (*hlsSession, error) {
+	// Capture the generation before encoding, outside the session lock.
+	var sourceInfo os.FileInfo
+	if secure == nil {
+		sourceInfo, _ = os.Stat(src)
+	}
 	var teardowns []sessionTeardown
 	s.mu.Lock()
 	defer func() {
@@ -1382,7 +1390,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 		}
 	}
 	if hasExisting {
-		if existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
+		if (existing.sourceInfo != nil && !sameSourceFile(existing.sourceInfo, sourceInfo)) || existing.src != src || existing.durationSeconds != durationSeconds || existing.primed != primed || existing.timeline != timeline || existing.degraded != degraded || !rungsEqual(existing.rungs, requestedRungs) || existing.sourceVideo != sourceVideo || existing.burnSubtitleIndex != burnSubtitleIndex || !audioProfilesEqual(existing.audioProfile, audioProfile) || !equalOptionalInt(existing.audioStreamIndex, audioStreamIndex) || (existing.composed != nil) != (picture != nil) || existing.adjust != adjust || (existing.secure != nil) != (secure != nil) {
 			teardowns = append(teardowns, *s.removeLocked(key)) // mode-shaping changed; old artifacts are incompatible
 		} else {
 			// A position noted while this session ran was kept only for a
@@ -1411,6 +1419,7 @@ func (s *Sessions) session(key SessionKey, src string, durationSeconds int, time
 	session := &hlsSession{
 		dir:               dir,
 		src:               src,
+		sourceInfo:        sourceInfo,
 		durationSeconds:   durationSeconds,
 		timeline:          timeline,
 		rungs:             requestedRungs,
@@ -1881,6 +1890,7 @@ func (s *Sessions) reapProcess(key SessionKey, session *hlsSession, run *encoder
 			slog.Error("live transcode exited unexpectedly", append(attrs, "status", status, "stderr", stderr)...)
 		}
 		if lowered {
+			s.rememberIncompleteSource(session)
 			logSourceEnd(key, session, rung, sourceEnd, stderr)
 		}
 		if failedNow {

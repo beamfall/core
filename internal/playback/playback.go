@@ -1066,6 +1066,12 @@ func (s *Service) decide(ctx context.Context, scope auth.Scope, mediaID, suffix 
 	if err != nil {
 		return decision{}, err
 	}
+	// CORE-2380: an encoder already proved this file ends early. Do not
+	// mint a new stream or advertise a saved resume into data we cannot serve.
+	// The cache is generation-bound, so a completed download can play again.
+	if s.sessions != nil && s.sessions.incompleteSources.contains(file.Path) {
+		return decision{media: media, verdict: "unavailable", reason: "media-source-incomplete", streams: []StreamChoice{}}, nil
+	}
 	// alternate marks a negotiated file other than the one the Media row's
 	// frame size describes (the first Version, which may be missing). Under a
 	// height ceiling, passthrough below is barred for it, or for any Version
