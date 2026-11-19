@@ -2286,6 +2286,10 @@ func (s *Store) ProfilesGrantedLibrary(ctx context.Context, libraryID LibraryID)
 	if err := s.guardLocked(); err != nil {
 		return nil, err
 	}
+	return s.profilesGrantedLibraryLocked(ctx, libraryID)
+}
+
+func (s *Store) profilesGrantedLibraryLocked(ctx context.Context, libraryID LibraryID) ([]ProfileID, error) {
 	rows, err := s.catalogR.QueryContext(ctx,
 		`SELECT pl.profile_id FROM profile_library pl
 		   JOIN profile p ON p.id = pl.profile_id

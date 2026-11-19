@@ -103,6 +103,64 @@ func TestEncryptedSourceEndLivesInOwningCatalogAcrossSeal(t *testing.T) {
 	}
 }
 
+func TestSourceEndRetriesInvalidationAfterCatalogCommit(t *testing.T) {
+	ctx := context.Background()
+	st, media := seededEncryptedMedia(t, "source-end-invalidation")
+	defer st.Close()
+	files, err := st.MediaFilesForMedia(ctx, media.ID, LibraryFilter{AllLibraries: true, Revealed: true})
+	if err != nil || len(files) != 1 {
+		t.Fatalf("files = %v, %v", files, err)
+	}
+	file := files[0]
+	generation := EncryptedSourceGeneration(file.ContentFingerprint)
+	// Prove normal persistence and notification before failing the outbox write.
+	changed := st.EventOutboxChanged()
+	if err := st.RecordSourceEnd(ctx, media.ID, "", file.ContentFingerprint, generation, 100); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-changed:
+	default:
+		t.Fatal("encrypted source end did not notify clients")
+	}
+	if _, err := st.eventsW.ExecContext(ctx, `CREATE TRIGGER fail_source_invalidation BEFORE INSERT ON event_outbox WHEN NEW.kind = 'client.invalidate' BEGIN SELECT RAISE(FAIL, 'injected invalidation failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = st.eventsW.ExecContext(ctx, `DROP TRIGGER IF EXISTS fail_source_invalidation`) }()
+	changed = st.EventOutboxChanged()
+	err = st.RecordSourceEnd(ctx, media.ID, "", file.ContentFingerprint, generation, 12)
+	if err == nil || !strings.Contains(err.Error(), "injected invalidation failure") {
+		t.Fatalf("did not reach outbox failure: %v", err)
+	}
+	var end float64
+	if err := st.encryptedDBs[media.LibraryID].reader.QueryRowContext(ctx, `SELECT end_seconds FROM source_end_observation WHERE content_fingerprint = ?`, file.ContentFingerprint).Scan(&end); err != nil || end != 12 {
+		t.Fatalf("notification failure rolled back durable EOF: %v, %v", end, err)
+	}
+	if len(st.pendingSourceEnds) != 1 {
+		t.Fatal("notification failure lost its retry")
+	}
+	select {
+	case <-changed:
+		t.Fatal("failed outbox write notified clients")
+	default:
+	}
+	if _, err := st.eventsW.ExecContext(ctx, `DROP TRIGGER fail_source_invalidation`); err != nil {
+		t.Fatal(err)
+	}
+	// Sealing flushes the retry without a second EOF observation.
+	if err := st.SealEncryptedLibraryDB(ctx, media.LibraryID, copyEncryptedLibraryDBCipher{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.pendingSourceEnds) != 0 {
+		t.Fatal("successful notification left a pending retry")
+	}
+	select {
+	case <-changed:
+	default:
+		t.Fatal("retry did not notify clients")
+	}
+}
+
 func TestContinueWatchingFiltersSourceEndsBeforePagination(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true})

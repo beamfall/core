@@ -4,6 +4,7 @@ package playback
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -105,8 +106,33 @@ func testPlaybackInfoRefusesIncompletePart(t *testing.T, laterPart bool, version
 	if _, err := sessions.FilePath(ctx, key, source, 6906, 1280, 720, false, "720p/seg00000.m4s"); err != nil {
 		t.Fatal(err)
 	}
+	changed := st.EventOutboxChanged()
 	if _, err := sessions.FilePath(ctx, key, source, 6906, 1280, 720, false, "720p/seg00038.m4s"); !errors.Is(err, ErrSourceEnded) {
 		t.Fatalf("truncated fixture did not reach EOF detection: %v", err)
+	}
+	select {
+	case <-changed:
+	default:
+		t.Fatal("observed EOF did not wake other clients")
+	}
+	events, err := st.ReadEventOutbox(ctx, 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notified := map[store.ProfileID]bool{}
+	for _, event := range events {
+		if event.Kind == store.InvalidationKind {
+			var payload store.InvalidationPayload
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Reason == store.InvalidationReasonEngagementChanged {
+				notified[payload.ProfileID] = true
+			}
+		}
+	}
+	if !notified["profile-default"] || !notified["profile-managed"] {
+		t.Fatalf("EOF must invalidate all granted Profiles, got %v", notified)
 	}
 	shelf := func(want bool) {
 		t.Helper()

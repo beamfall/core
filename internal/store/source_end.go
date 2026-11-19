@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // SourceFileGeneration identifies the bytes an encoder opened. Size and mtime
@@ -116,6 +117,21 @@ func (s *Store) flushSourceEndLocked(ctx context.Context, key pendingSourceEnd) 
 		_, err = plane.writer.ExecContext(ctx, `INSERT INTO source_end_observation(content_fingerprint, generation, end_seconds) VALUES (?, ?, ?) ON CONFLICT(content_fingerprint, generation) DO UPDATE SET end_seconds = MIN(end_seconds, excluded.end_seconds)`, file.ContentFingerprint, key.generation, s.pendingSourceEnds[key])
 		if err != nil {
 			return err
+		}
+		// EOF changes every Profile's engagement shelves, not just the player's.
+		// Reuse their content-free invalidation after the catalog commit. Keep
+		// the observation pending if notification fails so a later flush retries.
+		profiles, err := s.profilesGrantedLibraryLocked(ctx, key.libraryID)
+		if err != nil {
+			return err
+		}
+		for _, profileID := range profiles {
+			if err := s.appendInvalidationEventLocked(ctx, InvalidationPayload{
+				ProfileID: profileID,
+				Reason:    InvalidationReasonEngagementChanged,
+			}, time.Now().UTC()); err != nil {
+				return err
+			}
 		}
 	}
 	delete(s.pendingSourceEnds, key)
