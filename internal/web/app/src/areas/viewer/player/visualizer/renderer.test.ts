@@ -442,6 +442,23 @@ describe("Renderer resize (CORE-2516)", () => {
     expect(L.cur).toBe(cur ^ 1);
   });
 
+  // Codex round 20: a slot collapsed to no pixels and reopened at the old size must expose its
+  // whole field again, not reveal the held frame against an unspent budget.
+  it("exposes the whole field and spends after a collapse", () => {
+    const { r, renderer, draw, spent, blocks } = make();
+    draw(64, 36);
+    draw(64, 36);
+    expect(renderer.settled(64, 36, 1)).toBe(true);
+    renderer.collapse();
+    expect(renderer.settled(64, 36, 1)).toBe(false);
+    const before = spent.length;
+    draw(64, 36);
+    const { fG } = (r.size as { limiter: { fG: unknown[] } }).limiter;
+    const after = spent.slice(before);
+    expect(after.some(([f, v]) => fG.includes(f) && v[1] === 65025)).toBe(true);
+    expect(blocks.at(-1)?.[3]).toBe(0);
+  });
+
   it("withdraws nothing after a draw that presented black", () => {
     const { r, renderer, draw, blits } = make(true);
     draw(640, 360, SCALE_BLACK_S / 2);

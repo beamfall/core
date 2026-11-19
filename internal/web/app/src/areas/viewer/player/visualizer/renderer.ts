@@ -709,6 +709,20 @@ export class Renderer {
     this.showLimited(size);
   }
 
+  /** The slot shows nothing (a zero width or height): the canvas goes black and the limiter
+   * forgets its visible region, so a reopened slot exposes black area and spends the budgets like
+   * any newly shown area. Its backing keeps the minimum size, which the slot's key alone would not
+   * tell apart from a one-pixel slot (Codex round 20). */
+  collapse(): void {
+    const size = this.size;
+    this.undo = null;
+    if (!size) return;
+    size.visibleWidth = 0;
+    size.visibleHeight = 0;
+    this.grantSettled = false;
+    this.showLimited(size);
+  }
+
   // The limited frame to the canvas: its visible part only, the rest black. A slot that grows
   // before the next draw then reveals black, never pixels the limiter has not judged in view
   // (Codex round 17). GL rows run bottom-up, so the top-left anchored visible rows are the top

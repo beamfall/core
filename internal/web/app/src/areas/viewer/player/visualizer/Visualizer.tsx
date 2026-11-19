@@ -23,6 +23,10 @@ const MAX_DT = 0.1;
 // The shortest refresh period the limiter's shown time trusts (a 250 Hz display): two callbacks
 // closer than that are a browser catching up, not a display refreshing.
 const MIN_REFRESH_MS = 4;
+// The longest refresh period of any display a browser presents on (24 Hz): a host drawing slower
+// than its display, as a throttled one does, cannot measure the refresh, and a paint can be late by
+// one refresh, so a frame is assumed shown for no longer than this (Codex round 20).
+const MAX_REFRESH_MS = 1000 / 24;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
 
@@ -53,6 +57,18 @@ export function backingSize(
   );
   const fit = (n: number) => Math.max(1, Math.floor(n / texel + 1e-6));
   return [fit(w), fit(h), texel];
+}
+/** True when the slot has no device pixel to show in either dimension. */
+export function collapsed(
+  device: { inlineSize: number; blockSize: number } | null,
+  cssWidth: number,
+  cssHeight: number,
+  ratio: number,
+): boolean {
+  const r = ratio > 0 ? ratio : 1;
+  const w = device ? device.inlineSize : cssWidth * r;
+  const h = device ? device.blockSize : cssHeight * r;
+  return w < 1 || h < 1;
 }
 // How the audio values glide across a track change (CORE-2218): toward rest while the next
 // track's analysis is not ready, and up into it once it is, for this long.
@@ -165,10 +181,11 @@ export function Visualizer({
     let frame = 0;
     let lastDrawn: number | null = null;
     let lastWall: number | null = null;
-    // The shortest interval between draws since the loop started: about the display's refresh
-    // period. A frame can be painted late and the next one on time, so the time a frame was shown
-    // can be as short as one refresh whatever the clocks between draws say (Codex round 19).
-    let refreshMs = Number.POSITIVE_INFINITY;
+    // The shortest interval between draws since the loop started, and at most a 24 Hz refresh:
+    // about the display's refresh period. A frame can be painted late and the next one on time, so
+    // the time a frame was shown can be as short as one refresh whatever the clocks between draws
+    // say (Codex rounds 19 and 20).
+    let refreshMs = MAX_REFRESH_MS;
     // The backing size of the last draw while it is unpainted: a draw sets it, and the next
     // animation frame, which runs after the paint, clears it.
     let unpainted: string | null = null;
@@ -189,6 +206,16 @@ export function Visualizer({
       // Observers run after animation frames and before the paint: a slot resized since this
       // frame's draw would show a frame judged against the old area limit, so it is withdrawn
       // and the next draw judges at the new size (Codex round 18).
+      // A slot that collapsed shows nothing; reopening it exposes black area (Codex round 20).
+      if (collapsed(device, css.width, css.height, window.devicePixelRatio)) {
+        unpainted = null;
+        try {
+          rendererRef.current?.collapse();
+        } catch {
+          // A lost context shows nothing; its restore starts the limiter afresh.
+        }
+        return;
+      }
       const drawn = unpainted;
       if (drawn === null) return;
       unpainted = null;
@@ -252,6 +279,14 @@ export function Visualizer({
       const video = videoRef.current;
       if (!renderer || !video || document.hidden) return;
       const box = css ?? slot.getBoundingClientRect();
+      if (collapsed(device, box.width, box.height, window.devicePixelRatio)) {
+        try {
+          renderer.collapse();
+        } catch {
+          // A lost context shows nothing; its restore starts the limiter afresh.
+        }
+        return;
+      }
       const [width, height, texel] = backingSize(
         device,
         box.width,
@@ -281,10 +316,7 @@ export function Visualizer({
         const interval =
           lastWall === null ? frameMs : Math.max(0, Math.min(frameMs, wall - lastWall));
         if (lastWall !== null) refreshMs = Math.min(refreshMs, Math.max(MIN_REFRESH_MS, interval));
-        const shownMs = Math.min(
-          interval,
-          refreshMs === Number.POSITIVE_INFINITY ? interval : refreshMs,
-        );
+        const shownMs = Math.min(interval, refreshMs);
         const current = analysisRef.current;
         // The time heard, not the element's: a decoded track sounds while the element shadows it.
         const heard = heardTime(video, trackRef.current);

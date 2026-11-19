@@ -11,6 +11,7 @@ const made = vi.hoisted(() => ({
     draw: ReturnType<typeof vi.fn>;
     settled: ReturnType<typeof vi.fn>;
     withdraw: ReturnType<typeof vi.fn>;
+    collapse: ReturnType<typeof vi.fn>;
     shown: { width: number; height: number; texel: number } | null;
     dispose: ReturnType<typeof vi.fn>;
     contextLost: boolean;
@@ -38,6 +39,7 @@ vi.mock("./renderer", () => ({
         draw: vi.fn(),
         settled: vi.fn(() => false),
         withdraw: vi.fn(),
+        collapse: vi.fn(),
         shown: null,
         dispose: vi.fn(),
         contextLost: false,
@@ -87,6 +89,11 @@ function mount() {
   const videoRef = { current: document.createElement("video") };
   const view = render(<Visualizer videoRef={videoRef} stream={direct} trackKey="m1" />);
   const canvas = view.container.querySelector("canvas") as HTMLCanvasElement;
+  // jsdom lays nothing out; a slot with no pixels collapses the renderer instead of drawing.
+  vi.spyOn(canvas.parentElement!, "getBoundingClientRect").mockReturnValue({
+    width: 640,
+    height: 360,
+  } as DOMRect);
   return { ...view, canvas, videoRef };
 }
 
@@ -361,6 +368,22 @@ describe("Visualizer resize before paint", () => {
     expect(renderer.withdraw).not.toHaveBeenCalled();
   });
 
+  // Codex round 20: a collapsed slot and a one-pixel slot share a backing size.
+  it("collapses the renderer when the slot has no pixels, and does not draw", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    report(1, 360);
+    step(16);
+    expect(renderer.draw).toHaveBeenCalledOnce();
+    report(0, 360);
+    expect(renderer.collapse).toHaveBeenCalledOnce();
+    step(32);
+    expect(renderer.collapse).toHaveBeenCalledTimes(2);
+    expect(renderer.draw).toHaveBeenCalledOnce();
+    expect(renderer.withdraw).not.toHaveBeenCalled();
+  });
+
   it("times the limiter by the shorter of the frame and draw intervals", async () => {
     mount();
     await waitFor(() => expect(pending.size).toBe(1));
@@ -394,6 +417,22 @@ describe("Visualizer resize before paint", () => {
     clock.mockReturnValue(149);
     step(149);
     expect(renderer.draw.mock.lastCall?.[7]).toBe(4);
+    clock.mockRestore();
+  });
+
+  // Codex round 20: a host that only ever draws slower than its display cannot measure the
+  // refresh, so a late paint could follow its predecessor by one refresh; no frame is assumed shown
+  // for longer than a 24 Hz refresh.
+  it("never times the limiter past a 24 Hz refresh when it draws slowly", async () => {
+    mount();
+    await waitFor(() => expect(pending.size).toBe(1));
+    const renderer = made.renderers[0];
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    step(0);
+    clock.mockReturnValue(100);
+    step(100);
+    expect(renderer.draw.mock.lastCall?.[5]).toBe(100);
+    expect(renderer.draw.mock.lastCall?.[7]).toBeCloseTo(1000 / 24);
     clock.mockRestore();
   });
 });
