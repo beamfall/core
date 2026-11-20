@@ -1293,6 +1293,91 @@ func (r *recordingDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 	return r.failErr
 }
 
+type countingScratchDerivativeReconciler struct {
+	recordingDerivativeReconciler
+	sweeps int
+}
+
+func (r *countingScratchDerivativeReconciler) ReconcileEncryptedTranscodeScratch(context.Context, LibraryID) error {
+	r.sweeps++
+	return nil
+}
+
+func TestEncryptedLibraryUnsealCanceledBeforeScratchSweep(t *testing.T) {
+	st, err := Open(t.Context(), migratedDataDir(t), Options{EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	libraryID := LibraryID("library-enc")
+	cipher := copyEncryptedLibraryDBCipher{}
+	reconciler := &countingScratchDerivativeReconciler{}
+	st.SetEncryptedDerivativeReconciler(reconciler)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); !errors.Is(err, context.Canceled) {
+		t.Fatalf("unseal returned %v, want context.Canceled", err)
+	}
+	if reconciler.sweeps != 0 {
+		t.Fatalf("canceled unseal ran %d scratch sweeps, want zero", reconciler.sweeps)
+	}
+	if st.EncryptedLibraryDBRegistered(libraryID) {
+		t.Fatal("canceled unseal registered the library")
+	}
+
+	if err := st.UnsealEncryptedLibraryDB(t.Context(), libraryID, cipher); err != nil {
+		t.Fatalf("retry unseal: %v", err)
+	}
+	if reconciler.sweeps != 1 || !st.EncryptedLibraryDBRegistered(libraryID) {
+		t.Fatalf("retry ran %d scratch sweeps, want one with a registered library", reconciler.sweeps)
+	}
+}
+
+type scratchPanicDerivativeReconciler struct {
+	recordingDerivativeReconciler
+	panicValue error
+}
+
+func (r *scratchPanicDerivativeReconciler) ReconcileEncryptedTranscodeScratch(context.Context, LibraryID) error {
+	panic(r.panicValue)
+}
+
+func TestEncryptedLibraryUnsealScratchPanicLeavesStoreUsable(t *testing.T) {
+	ctx := t.Context()
+	st, err := Open(ctx, migratedDataDir(t), Options{EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	libraryID := LibraryID("library-enc")
+	cipher := copyEncryptedLibraryDBCipher{}
+	reconciler := &scratchPanicDerivativeReconciler{panicValue: errors.New("injected scratch panic")}
+	st.SetEncryptedDerivativeReconciler(reconciler)
+	func() {
+		defer func() {
+			if got := recover(); got != reconciler.panicValue {
+				t.Fatalf("unseal panic = %v, want %v", got, reconciler.panicValue)
+			}
+		}()
+		_ = st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher)
+	}()
+	if st.EncryptedLibraryDBRegistered(libraryID) || len(reconciler.calls) != 0 {
+		t.Fatal("scratch panic allowed the unseal to publish or reconcile derivatives")
+	}
+	if _, err := os.Stat(st.encryptedLibraryDBPaths(libraryID).working); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("working DB after scratch panic: %v, want not exist", err)
+	}
+	st.SetEncryptedDerivativeReconciler(nil)
+	if err := st.UnsealEncryptedLibraryDB(ctx, libraryID, cipher); err != nil {
+		t.Fatalf("retry unseal: %v", err)
+	}
+	if !st.EncryptedLibraryDBRegistered(libraryID) {
+		t.Fatal("retry did not register the encrypted library")
+	}
+}
+
 func TestEncryptedLibraryUnsealFiresDerivativeReconcileWithSnapshotInventory(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, migratedDataDir(t), Options{SeedDevelopmentData: true, EnableEncryptedLibraryDBLifecycle: true})

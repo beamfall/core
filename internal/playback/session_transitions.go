@@ -28,7 +28,8 @@ type recordSourceEnd struct {
 	rung    Rung
 	segment int
 }
-type detachSession struct{}
+type detachSession struct{ cleanupOnRelease bool }
+type stoppedDetachedEncoder struct{ teardown *sessionTeardown }
 type takeEncoderRestart struct{}
 
 // encoderStart is the claim held across the existing off-lock start path.
@@ -96,13 +97,24 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 			}
 			delete(s.sessions, session.key)
 		}
-		t := &sessionTeardown{session: session, proc: session.proc, dir: session.dir, live: session.live}
+		t := &sessionTeardown{session: session, proc: session.proc, live: session.live, cleanupOnRelease: change.cleanupOnRelease}
+		if t.live != nil {
+			t.live.Cutoff()
+		}
 		if session.run != nil {
 			t.liveRun = session.run.live
 		}
 		if session.revokeDone != nil {
 			close(session.revokeDone)
 			session.revokeDone = nil
+		}
+		if p := session.scratch; p != nil {
+			p.state = scratchPending
+			close(p.cutoff)
+			p.drained = make(chan struct{})
+			if p.users == 0 {
+				close(p.drained)
+			}
 		}
 		s.detached++
 		switch {
@@ -113,7 +125,9 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 			t.counted = true
 			s.stopping++
 		case session.start != nil:
-			// The start owner retains the lease and slot through late cleanup.
+			// The start retains its slot and lease. The last directory user
+			// completes cleanup, so termination can return during the start.
+			t.cleanupOnRelease = true
 			s.stopping++
 		default:
 			session.releaseTranscodeLeaseLocked()
@@ -123,12 +137,16 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 		session.state = sessionRevoking
 		session.teardown = t
 		return transitionResult{accepted: true, teardown: t}
-	case *sessionTeardown:
-		if session.state != sessionRevoking || session.teardown != change {
+	case stoppedDetachedEncoder:
+		if session.state != sessionRevoking || change.teardown == nil || session.teardown != change.teardown || !change.teardown.counted {
 			return transitionResult{}
 		}
-		if change.counted {
-			s.stopping--
+		s.stopping--
+		change.teardown.counted = false
+		return transitionResult{accepted: true}
+	case *sessionTeardown:
+		if session.state != sessionRevoking || session.teardown != change || change.counted {
+			return transitionResult{}
 		}
 		s.detached--
 		session.teardown = nil

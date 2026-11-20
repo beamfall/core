@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/beamfall/core/internal/libencrypt"
@@ -39,7 +40,7 @@ var (
 	liveSegmentName = regexp.MustCompile(`^seg(\d{5}|[1-9]\d{5,8})\.m4s$`)
 	// liveRungName bounds a rung to one URL- and path-safe component.
 	liveRungName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-	// ErrLiveSessionClosed is returned once the session key has been zeroed.
+	// ErrLiveSessionClosed is returned after the session cuts off access.
 	ErrLiveSessionClosed = errors.New("encderiv: live session closed")
 )
 
@@ -55,6 +56,7 @@ type LiveSession struct {
 	mu     sync.RWMutex
 	key    []byte
 	closed bool
+	cutoff atomic.Bool
 
 	// publish serialises the exists check and .part creation, so two uploads
 	// of one name cannot both proceed.
@@ -85,11 +87,16 @@ func NewLiveSession(dir, libraryID string) (*LiveSession, error) {
 // Dir is the session directory.
 func (s *LiveSession) Dir() string { return s.dir }
 
+// Cutoff refuses subsequent reads and opens without waiting for current
+// readers or uploads. Close disposes of the descriptors and key.
+func (s *LiveSession) Cutoff() { s.cutoff.Store(true) }
+
 // Close zeroes the session key and ends every file open in the session, so a
 // response still streaming one stops at its next read: once the session ends,
 // for example because its Library was sealed, no more plaintext leaves it.
 // Nothing new can be written or opened.
 func (s *LiveSession) Close() {
+	s.Cutoff()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
@@ -145,7 +152,7 @@ func (s *LiveSession) Rel(path string) (string, bool) {
 func (s *LiveSession) encrypt(f *os.File, src io.Reader, rel string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.closed {
+	if s.cutoff.Load() {
 		return ErrLiveSessionClosed
 	}
 	return libencrypt.EncryptStreamV2(f, src, s.key, s.object(rel))
@@ -225,15 +232,29 @@ func (s *LiveSession) Open(rel string) (*LiveFile, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.OpenFile(rel, f)
+}
+
+// OpenFile takes ownership of an already confined ciphertext descriptor and
+// binds its decryption to rel. It closes the descriptor on failure.
+func (s *LiveSession) OpenFile(rel string, f *os.File) (*LiveFile, error) {
+	if _, err := s.resolve(rel); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
 	info, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
+	if !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, os.ErrInvalid
+	}
 	// Held until the file is registered, so Close cannot miss it.
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.closed {
+	if s.cutoff.Load() {
 		_ = f.Close()
 		return nil, ErrLiveSessionClosed
 	}
@@ -281,7 +302,7 @@ func (f *LiveFile) ModTime() time.Time { return f.modTime }
 func (f *LiveFile) Read(p []byte) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.ended {
+	if f.ended || f.owner.cutoff.Load() {
 		return 0, ErrLiveSessionClosed
 	}
 	return f.r.Read(p)
@@ -290,7 +311,7 @@ func (f *LiveFile) Read(p []byte) (int, error) {
 func (f *LiveFile) Seek(offset int64, whence int) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.ended {
+	if f.ended || f.owner.cutoff.Load() {
 		return 0, ErrLiveSessionClosed
 	}
 	return f.r.Seek(offset, whence)
@@ -300,7 +321,7 @@ func (f *LiveFile) Seek(offset int64, whence int) (int64, error) {
 func (f *LiveFile) ReadAt(p []byte, off int64) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.ended {
+	if f.ended || f.owner.cutoff.Load() {
 		return 0, ErrLiveSessionClosed
 	}
 	pos, err := f.r.Seek(0, io.SeekCurrent)

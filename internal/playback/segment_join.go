@@ -1,9 +1,11 @@
 package playback
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -12,21 +14,15 @@ import (
 // media segment (CORE-1843). The first part's styp box opens it and every part
 // contributes its fragments (moof and mdat, whose sample offsets are relative
 // to their own moof, so they move unchanged). sidx boxes are dropped: each
-// indexes only the part it came from. The segment is written to a temporary
-// file and renamed into place, so a reader never sees it half written.
-func joinFragments(dst string, parts []string) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".join-*")
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmp.Name())
-		}
-	}()
+// indexes only the part it came from. The caller supplies a private staging file.
+func joinFragments(dst *os.File, open func(string) (*os.File, error), parts []string) error {
 	for i, part := range parts {
-		body, err := os.ReadFile(part) // #nosec G304 -- part is an encoder segment inside the session's own output directory
+		f, err := open(part)
+		if err != nil {
+			return err
+		}
+		body, err := io.ReadAll(f)
+		_ = f.Close()
 		if err != nil {
 			return err
 		}
@@ -38,15 +34,77 @@ func joinFragments(dst string, parts []string) (err error) {
 			if box.kind == "sidx" || (box.kind == "styp" && i > 0) {
 				continue
 			}
-			if _, err := tmp.Write(box.data); err != nil {
+			if _, err := dst.Write(box.data); err != nil {
 				return err
 			}
 		}
 	}
-	if err := tmp.Close(); err != nil {
+	return nil
+}
+
+// joinArtifact serializes writers by destination and publishes from a private
+// staging file only while the same session still owns the directory.
+func (s *Sessions) joinArtifact(ctx context.Context, h *hlsSession, dst string, parts []string) error {
+	for {
+		s.mu.Lock()
+		if h.state != sessionRunning {
+			s.mu.Unlock()
+			return ErrSessionEvicted
+		}
+		if wait := h.joins[dst]; wait != nil {
+			s.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-h.scratch.cutoff:
+				return ErrSessionEvicted
+			}
+		}
+		if h.joins == nil {
+			h.joins = make(map[string]chan struct{})
+		}
+		done := make(chan struct{})
+		h.joins[dst] = done
+		s.mu.Unlock()
+		defer func() {
+			s.mu.Lock()
+			delete(h.joins, dst)
+			close(done)
+			s.mu.Unlock()
+		}()
+		break
+	}
+	if h.artifactReady(dst) {
+		return nil
+	}
+	rel, err := h.artifactRelativePath(dst)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), dst)
+	tmp, err := os.CreateTemp(h.dir, ".join-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	join := joinFragments
+	if s.join != nil {
+		join = s.join
+	}
+	err = join(tmp, func(path string) (*os.File, error) {
+		f, _, err := h.openArtifact(path)
+		return f, err
+	}, parts)
+	if err = errors.Join(err, tmp.Close()); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if h.state != sessionRunning {
+		return ErrSessionEvicted
+	}
+	return os.Rename(tmp.Name(), filepath.Join(h.dir, rel))
 }
 
 // isoBox is one top-level ISO-BMFF box: its four-character type and its bytes,

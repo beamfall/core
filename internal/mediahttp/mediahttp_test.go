@@ -23,6 +23,7 @@ import (
 	"github.com/beamfall/core/internal/ffmpeg"
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/playback/subtitleingest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -373,7 +374,7 @@ func newMuxedSubtitleTestHandler(t *testing.T, converter *indexRecordingSubtitle
 	if resp.Decision != "transcode" {
 		t.Fatalf("Decision = %q, want transcode", resp.Decision)
 	}
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	handler.SetSubtitles(converter, t.TempDir())
 	return handler, resp.CaptionTracks
 }
@@ -594,7 +595,7 @@ func TestSubtitlesUsesNegotiatedVersionFile(t *testing.T) {
 		defaultPath:  "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nWrong primary version\n",
 		selectedPath: selectedRaw,
 	}}
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	handler.SetSubtitles(converter, t.TempDir())
 	rec := httptest.NewRecorder()
 	handler.Subtitles(rec, httptest.NewRequest(http.MethodGet, url, nil))
@@ -755,7 +756,7 @@ func TestDirectRejectsTokenAfterBackingSessionExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 	authService := auth.NewServiceWithClock(st, func() time.Time { return time.Unix(151, 0).UTC() })
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	req := httptest.NewRequest(http.MethodGet, "/api/media/direct/"+token, nil)
 	rec := httptest.NewRecorder()
 
@@ -787,7 +788,7 @@ func newTestHandler(t *testing.T, sessionID store.SessionID, mediaID store.Media
 	if err != nil {
 		t.Fatal(err)
 	}
-	return NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)), token
+	return NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil)), token
 }
 
 func newTestHandlerWithBytes(t *testing.T, sessionID store.SessionID, mediaID store.MediaID, body []byte) (*Handler, string) {
@@ -847,7 +848,7 @@ func newArtworkTestHandler(t *testing.T) (*Handler, *artwork.Service) {
 	authService := auth.NewService(st)
 	tokens := streamtoken.NewService([]byte("test-token-key"), time.Now)
 	artworkService := artwork.NewService(st, nil, t.TempDir())
-	return NewHandler(st, authService, tokens, artworkService, playback.NewSessions(nil, t.TempDir(), nil)), artworkService
+	return NewHandler(st, authService, tokens, artworkService, sessiontest.New(t, nil, t.TempDir(), nil)), artworkService
 }
 
 func writeTestPoster(t *testing.T, svc *artwork.Service, mediaID store.MediaID) {
@@ -1101,7 +1102,7 @@ func TestArtworkCandidatePreviewServesTokenGatedCachedBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	fetcher := &fakeCandidatePreviewFetcher{data: []byte("preview bytes")}
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	handler.SetArtworkCandidateFetcher(fetcher)
 	req := httptest.NewRequest(http.MethodGet, "/api/media/artwork-candidate/"+token+"/"+candidateID, nil)
 
@@ -1178,7 +1179,7 @@ func TestArtworkCandidateRejectsSealedLibrary(t *testing.T) {
 		t.Fatal(err)
 	}
 	fetcher := &fakeCandidatePreviewFetcher{data: []byte("preview bytes")}
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	handler.SetArtworkCandidateFetcher(fetcher)
 	handler.SetSealed(func(libraryID store.LibraryID) bool { return libraryID == "library-local" })
 	rec := httptest.NewRecorder()
@@ -1241,7 +1242,7 @@ func TestHLSServesPlaylistForValidToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
+	sessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
 
@@ -1438,8 +1439,8 @@ func newHLSSealedTestHandlerWith(t *testing.T, transcoder playback.Transcoder) (
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions := playback.NewSessions(transcoder, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := sessiontest.New(t, transcoder, t.TempDir(), nil)
+
 	return NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions), token
 }
 
@@ -1909,7 +1910,7 @@ func newPrecomputedHLSTestHandler(t *testing.T, sessionID store.SessionID, media
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil))
 	return handler, token, cacheDir
 }
 
@@ -1956,7 +1957,7 @@ func TestHLSMasterFromGrantVerdictNotRungName(t *testing.T) {
 	// An audio-copy grant whose master.m3u8 is fetched first (no audio-copy/*
 	// artifact requested yet) must advertise the single audio-copy rung, never
 	// the resolution ladder. A fresh Sessions per case isolates the seeded rungs.
-	sessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
+	sessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
 
@@ -1976,7 +1977,7 @@ func TestHLSMasterFromGrantVerdictNotRungName(t *testing.T) {
 	}
 
 	// A standard grant seeds the standard transcode ladder for the same source.
-	stdSessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
+	stdSessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
 	defer stdSessions.Close()
 	stdHandler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), stdSessions)
 
@@ -2033,7 +2034,7 @@ func TestHLSSessionRecreatedForModeShapingChange(t *testing.T) {
 		return token
 	}
 
-	sessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
+	sessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
 	fetchSegment := func(token, path string) int {
@@ -2055,7 +2056,7 @@ func TestHLSSessionRecreatedForModeShapingChange(t *testing.T) {
 	}
 
 	// Degraded mode must also recreate and refuse an inherited standard segment.
-	degradedSessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
+	degradedSessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
 	defer degradedSessions.Close()
 	degradedHandler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), degradedSessions)
 	degradedFetch := func(token, path string) int {
@@ -2113,7 +2114,7 @@ func TestHLSForegroundGrantControlsPreemption(t *testing.T) {
 	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
 
 	// One transcode slot, so the second start must preempt to be admitted.
-	sessions := playback.NewSessions(fakeHLSTranscoder{}, t.TempDir(), nil)
+	sessions := sessiontest.New(t, fakeHLSTranscoder{}, t.TempDir(), nil)
 	sessions.SetTranscodeCap(1)
 	defer sessions.Close()
 	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessions)
@@ -2204,7 +2205,7 @@ func newArtworkScalerTestHandler(t *testing.T, scaleErr error) (*Handler, *artwo
 	authService := auth.NewService(st)
 	tokens := streamtoken.NewService([]byte("test-token-key"), time.Now)
 	artworkService := artwork.NewService(st, fakeArtworkScaler{scaleErr: scaleErr}, t.TempDir())
-	return NewHandler(st, authService, tokens, artworkService, playback.NewSessions(nil, t.TempDir(), nil)), artworkService
+	return NewHandler(st, authService, tokens, artworkService, sessiontest.New(t, nil, t.TempDir(), nil)), artworkService
 }
 
 func TestArtworkServesBucketedDerivative(t *testing.T) {
@@ -2470,7 +2471,7 @@ func newAssetsTestHandler(t *testing.T, sessionID store.SessionID, mediaID store
 		t.Fatal(err)
 	}
 	assets := genassets.NewService(st, nil, t.TempDir())
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	handler.SetAssets(assets)
 	return handler, assets, token, file.ContentFingerprint
 }
@@ -2586,7 +2587,7 @@ func TestAssetsGeneratesMissingWaveformOnDemand(t *testing.T) {
 	}
 	gen := &waveformOnlyGen{}
 	assets := genassets.NewService(st, gen, t.TempDir())
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	handler.SetAssets(assets)
 
 	rec := httptest.NewRecorder()

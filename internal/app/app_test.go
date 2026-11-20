@@ -53,6 +53,7 @@ import (
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/migrate"
 	"github.com/beamfall/core/internal/offlinepack"
+	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback/subtitleingest"
 	"github.com/beamfall/core/internal/plugin"
 	"github.com/beamfall/core/internal/reveal"
@@ -505,6 +506,191 @@ func TestAppWiresJellyfinCompatToggle(t *testing.T) {
 				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.want, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestNewReleasesScratchAfterBootstrapSetupTokenFailure(t *testing.T) {
+	cfg := testConfig(t)
+	root := filepath.Join(cfg.DataDir, "transcode")
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("default root already exists: %v", err)
+	}
+	bootstrap := bootstrapAppSetupToken
+	t.Cleanup(func() { bootstrapAppSetupToken = bootstrap })
+	want := errors.New("setup token fixture failure")
+	bootstrapAppSetupToken = func(ctx context.Context, st *store.Store, svc *pairing.Service) (string, error) {
+		if _, err := os.Stat(root); err != nil {
+			t.Errorf("default root unavailable at bootstrap: %v", err)
+		}
+		if _, err := st.FirstRunSetupComplete(ctx); err != nil {
+			t.Errorf("Store unavailable at bootstrap: %v", err)
+		}
+		return "", want
+	}
+	if app, err := New(t.Context(), cfg, nil, nil); app != nil || !errors.Is(err, want) {
+		t.Fatalf("New after bootstrap failure = (%v, %v)", app, err)
+	}
+	bootstrapAppSetupToken = bootstrap
+	app, err := New(t.Context(), cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("immediate retry: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewReleasesScratchAndStoreAfterPluginFactoryPanic(t *testing.T) {
+	cfg := testConfig(t)
+	bundle := testBundle(testPathPluginID)
+	want := errors.New("plugin factory panic")
+	var openedStore *store.Store
+	hooks := Hooks{PrePlayPolicy: &PrePlayPolicyHook{
+		PluginID: string(bundle.ID),
+		New: func(st *store.Store) graph.PrePlayPolicy {
+			openedStore = st
+			panic(want)
+		},
+	}}
+	func() {
+		defer func() {
+			if got := recover(); got != want {
+				t.Fatalf("New panicked with %v, want %v", got, want)
+			}
+		}()
+		app, err := New(t.Context(), cfg, nil, []plugin.Bundle{bundle}, hooks)
+		if app != nil {
+			_ = app.Close()
+		}
+		t.Errorf("New returned without a plugin factory panic: %v", err)
+	}()
+	if _, err := openedStore.FirstRunSetupComplete(t.Context()); !errors.Is(err, store.ErrClosed) {
+		t.Errorf("Store after constructor panic: %v, want %v", err, store.ErrClosed)
+	}
+	app, err := New(t.Context(), cfg, nil, []plugin.Bundle{bundle})
+	if err != nil {
+		t.Fatalf("immediate retry: %v", err)
+	}
+	if err := app.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewHonorsConsoleScratchWhenItMatchesLexicalDefault(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	a, err := filepath.EvalSymlinks(cfg.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(a, link); err != nil {
+		t.Fatal(err)
+	}
+	cfg.DataDir = link
+	cfg.TranscodeScratchDir = filepath.Join(link, "transcode")
+	stored := cfg.TranscodeScratchDir
+	active := filepath.Join(a, "scratch")
+	if err := os.Symlink(active, stored); err != nil {
+		t.Fatal(err)
+	}
+	storedOrphan := filepath.Join(active, "session-2")
+	if err := os.MkdirAll(storedOrphan, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(t.Context(), a, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, saveErr := st.SetTranscodeConfig(t.Context(), store.TranscodeConfigPatch{TempDir: &stored}, time.Now())
+	if err := errors.Join(saveErr, st.Close()); err != nil {
+		t.Fatal(err)
+	}
+	beamfall, err := New(t.Context(), cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := beamfall.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := os.Stat(storedOrphan); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Console scratch orphan should be removed: %v", err)
+	}
+	if err := beamfall.store.SetSessionAdminUntil(t.Context(), "session-manager", time.Now().Add(time.Hour).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/graphql", strings.NewReader(`{"query":"query { transcodeConfig { tempDir effectiveTempDir tempDirRestartRequired } }"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Beamfall-Session", "session-manager")
+	req.Header.Set("X-Beamfall-Device", "device-mac")
+	req.Header.Set("X-Beamfall-Device-Secret", "dev-manager-secret")
+	rec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(rec, req)
+	var response struct {
+		Data   struct{ TranscodeConfig graph.TranscodeConfigInfo }
+		Errors []json.RawMessage
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	info := response.Data.TranscodeConfig
+	if rec.Code != http.StatusOK || len(response.Errors) > 0 || info.TempDir != stored || info.EffectiveTempDir != active || info.TempDirRestartRequired {
+		t.Errorf("transcodeConfig = %d %s, want %q stored and %q effective", rec.Code, rec.Body.String(), stored, active)
+	}
+}
+
+func TestClearingConsoleScratchAlreadyAtDefaultNeedsNoRestart(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.SeedDevelopmentData = true
+	active, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := filepath.Join(t.TempDir(), "console-scratch")
+	for _, path := range []string{filepath.Join(cfg.DataDir, "transcode"), stored} {
+		if err := os.Symlink(active, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := store.Open(t.Context(), cfg.DataDir, store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, saveErr := st.SetTranscodeConfig(t.Context(), store.TranscodeConfigPatch{TempDir: &stored}, time.Now())
+	if err := errors.Join(saveErr, st.Close()); err != nil {
+		t.Fatal(err)
+	}
+	beamfall, err := New(t.Context(), cfg, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := beamfall.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := beamfall.store.SetSessionAdminUntil(t.Context(), "session-manager", time.Now().Add(time.Hour).UTC()); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/graphql", strings.NewReader(`{"query":"mutation { setTranscodeConfig(tempDir: \"\") { tempDir effectiveTempDir tempDirRestartRequired } }"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Beamfall-Session", "session-manager")
+	req.Header.Set("X-Beamfall-Device", "device-mac")
+	req.Header.Set("X-Beamfall-Device-Secret", "dev-manager-secret")
+	rec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(rec, req)
+	var response struct {
+		Data   struct{ SetTranscodeConfig graph.TranscodeConfigInfo }
+		Errors []json.RawMessage
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	info := response.Data.SetTranscodeConfig
+	if rec.Code != http.StatusOK || len(response.Errors) > 0 || info.TempDir != "" || info.EffectiveTempDir != active || info.TempDirRestartRequired {
+		t.Errorf("clear Console scratch = %d %s, want %q effective with no restart", rec.Code, rec.Body.String(), active)
 	}
 }
 
@@ -2483,6 +2669,7 @@ func testConfig(t *testing.T) config.Config {
 }
 
 type failingListener struct {
+	firstConn  net.Conn
 	acceptOnce sync.Once
 	failOnce   sync.Once
 	accepting  chan struct{}
@@ -2490,15 +2677,22 @@ type failingListener struct {
 	fail       chan struct{}
 }
 
+var errTestListenerFailed = errors.New("test listener failed")
+
 func newFailingListener() *failingListener {
 	return &failingListener{accepting: make(chan struct{}), returned: make(chan struct{}), fail: make(chan struct{})}
 }
 
 func (l *failingListener) Accept() (net.Conn, error) {
+	if l.firstConn != nil {
+		conn := l.firstConn
+		l.firstConn = nil
+		return conn, nil
+	}
 	l.acceptOnce.Do(func() { close(l.accepting) })
 	<-l.fail
 	close(l.returned)
-	return nil, errors.New("test listener failed")
+	return nil, errTestListenerFailed
 }
 
 func (l *failingListener) Close() error {

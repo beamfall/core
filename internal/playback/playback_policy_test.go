@@ -142,7 +142,7 @@ func TestInfoBatchesActiveProfileSessionLookup(t *testing.T) {
 			limit := 1
 			setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
 
-			sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+			sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 			defer sessions.Close()
 			sessions.SetTranscodeCap(32)
 			service.SetSessions(sessions)
@@ -176,7 +176,7 @@ func TestInfoRefusesTranscodePastProfileStreamCap(t *testing.T) {
 	service, st, scope := newPolicyTestService(t, "session-default")
 	limit := 1
 	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	// session-revealed shares profile-default: its running transcode counts
@@ -202,7 +202,7 @@ func TestInfoStreamCapIgnoresOwnTranscodeOfSameMedia(t *testing.T) {
 	service, st, scope := newPolicyTestService(t, "session-default")
 	limit := 1
 	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	// The requesting session's own transcode of the same Media would be
@@ -225,7 +225,7 @@ func TestInfoStreamCapIgnoresOtherProfiles(t *testing.T) {
 	service, st, scope := newPolicyTestService(t, "session-default")
 	limit := 1
 	setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	// session-managed belongs to profile-managed: its transcode never counts
@@ -296,7 +296,7 @@ func TestInfoTrackPreferencesDefaultToEmptyListsNeverNull(t *testing.T) {
 
 func TestInfoRefusesTranscodeAtServerCapacity(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)
@@ -336,7 +336,7 @@ func (s stubRoster) SessionInWatchPartyForMedia(store.SessionID, store.MediaID) 
 // rendition, grant.Degraded set) instead of being refused.
 func TestInfoDegradesWatchPartyMemberAtServerCapacity(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)
@@ -373,7 +373,7 @@ func TestInfoDegradesWatchPartyMemberAtServerCapacity(t *testing.T) {
 // (the roster, not a client flag, is the gate).
 func TestInfoRefusesNonPartyMemberAtServerCapacity(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)
@@ -415,7 +415,7 @@ func TestInfoDoesNotDegradeWatchPartyMemberPastPolicyGate(t *testing.T) {
 
 func TestInfoOmitsManualPinWhenTranscodeCannotStart(t *testing.T) {
 	service, _, scope := newPolicyTestService(t, "session-default")
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetTranscodeCap(1)
 	service.SetSessions(sessions)

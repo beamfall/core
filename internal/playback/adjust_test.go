@@ -166,7 +166,7 @@ func adjustedFilePath(sessions *Sessions, key SessionKey, adjust ffmpeg.AudioAdj
 func TestAdjustedSessionEncodesOneAudioOnlyRungOnTheOutputTimeline(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeTranscoder{}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-adjusted", MediaID: "media-song"}
 	adjust := ffmpeg.AudioAdjust{PitchSemitones: 2, Tempo: 0.8}
@@ -203,7 +203,7 @@ func TestAdjustedSessionEncodesOneAudioOnlyRungOnTheOutputTimeline(t *testing.T)
 func TestAdjustmentChangeRestartsAtTheSameSongPosition(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeTranscoder{}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-retempo", MediaID: "media-song"}
 	if _, err := adjustedFilePath(sessions, key, ffmpeg.AudioAdjust{Tempo: 0.8}, audioOnlyRungID+"/init.mp4"); err != nil {

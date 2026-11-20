@@ -164,7 +164,7 @@ func TestTranscodedGaplessPiecesJoinWithoutGap(t *testing.T) {
 	runFFmpeg(t, "-i", tone, "-t", strconv.Itoa(pieceSeconds), "-c:a", "aac", first)
 	runFFmpeg(t, "-ss", strconv.Itoa(pieceSeconds), "-i", tone, "-c:a", "aac", second)
 
-	sessions := NewSessions(ffmpeg.New(), t.TempDir(), nil)
+	sessions := newTestSessions(t, ffmpeg.New(), t.TempDir(), nil)
 	defer sessions.Close()
 	var joined, untrimmed []float32
 	for i, piece := range []string{first, second} {
@@ -296,12 +296,14 @@ func TestSessionKeepsPrimingOnlyForPicturelessSources(t *testing.T) {
 		{64, 64, "64p", false},
 	} {
 		transcoder := &fakeTranscoder{}
-		sessions := NewSessions(transcoder, t.TempDir(), nil)
+		sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 		key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 		if _, err := sessions.FilePath(context.Background(), key, "/src/piece.m4a", 120, tc.width, tc.height, false, tc.rung+"/seg00000.m4s"); err != nil {
 			t.Fatalf("%dx%d segment: %v", tc.width, tc.height, err)
 		}
-		sessions.Close()
+		if err := sessions.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if len(transcoder.renditions) == 0 || transcoder.renditions[0].KeepPriming != tc.want {
 			t.Fatalf("%dx%d renditions = %+v, want KeepPriming %v", tc.width, tc.height, transcoder.renditions, tc.want)
 		}

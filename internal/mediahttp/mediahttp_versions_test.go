@@ -13,6 +13,7 @@ import (
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -89,7 +90,7 @@ func TestDirectServesNegotiatedVersionFile(t *testing.T) {
 	if resp.Decision != "direct-play" || len(resp.Versions) != 2 || !resp.Versions[1].Selected {
 		t.Fatalf("playbackInfo = %s with %+v, want direct-play of the 1080p Version", resp.Decision, resp.Versions)
 	}
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	get := func(url string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
 		handler.Direct(rec, httptest.NewRequest(http.MethodGet, url, nil))

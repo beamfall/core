@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 // TestFFmpegShimHappyPathRealTranscode is the criterion (c) regression check
@@ -60,6 +62,61 @@ func TestFFmpegShimHappyPathRealTranscode(t *testing.T) {
 	defer f.Close()
 	if _, err := jpeg.Decode(f); err != nil {
 		t.Fatalf("dst is not a valid JPEG: %v", err)
+	}
+}
+
+func TestFFmpegShimLivePlaybackWritesSessionRung(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not available")
+	}
+	bin := filepath.Join(t.TempDir(), "beamfall")
+	// #nosec G204 -- bin is an output under this test's temporary directory.
+	if out, err := exec.CommandContext(t.Context(), "go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build beamfall: %v\n%s", err, out)
+	}
+	src := filepath.Join(t.TempDir(), "source.mp4")
+	// #nosec G204 -- src is an output under this test's temporary directory.
+	if out, err := exec.CommandContext(t.Context(), "ffmpeg", "-v", "error", "-f", "lavfi",
+		"-i", "testsrc2=duration=2:size=320x240:rate=10", "-c:v", "libx264", "-y", src).CombinedOutput(); err != nil {
+		t.Fatalf("synthesize source: %v\n%s", err, out)
+	}
+	runner := ffmpeg.New()
+	runner.SetHardeningShim(bin)
+	runner.SetEncodePolicy(ffmpeg.EncodePolicy{SoftwareOnly: true})
+	sessions, err := playback.NewSessions(runner, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := sessions.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	for _, tc := range []struct {
+		name     string
+		duration int
+	}{
+		{"linear", 0},
+		{"vod", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key := playback.SessionKey{SessionID: "shim-live"}
+			artifact, err := sessions.LiveArtifactShaped(t.Context(), key, src, tc.duration, 1280, 720, false, false,
+				playback.LadderCapsFromGrant(streamtoken.Grant{}), playback.VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil,
+				playback.StreamShape{}, playback.PriorityNormal, "720p/seg00000.m4s")
+			if err != nil {
+				t.Fatalf("first live segment through the production shim: %v", err)
+			}
+			defer artifact.Release()
+			f, info, err := artifact.OpenPlain()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if info.Size() == 0 {
+				t.Fatal("live segment is empty")
+			}
+		})
 	}
 }
 

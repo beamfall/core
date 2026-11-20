@@ -3,15 +3,24 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/jobs"
+	"github.com/beamfall/core/internal/playback"
 	"github.com/beamfall/core/internal/store"
+	"github.com/beamfall/core/internal/streamtoken"
 )
 
 func TestShutdownSequenceStopsClaimsBeforeCancelJoinCheckpointAndStoreClose(t *testing.T) {
@@ -316,6 +325,158 @@ func TestCloseAfterRunStaysQuiet(t *testing.T) {
 	if err := beamfall.Close(); err != nil {
 		t.Fatalf("Close after Run: %v", err)
 	}
+}
+
+func TestRunReportsScratchCleanupError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the fixture needs directory permissions to prevent unlink")
+	}
+	beamfall, _, playlist := newShutdownHLSTestApp(t)
+	dir := filepath.Dir(playlist)
+	if err := os.Chmod(dir, 0o500); err != nil { //nolint:gosec // Keep the fixture directory traversable by its owner.
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // Restore the fixture's owner-only directory permissions.
+			t.Error(err)
+		}
+	})
+
+	cancel, runDone := startShutdownTestApp(t, beamfall)
+	cancel()
+	select {
+	case err := <-runDone:
+		if !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("Run returned %v, want scratch removal permission error", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after scratch cleanup failed")
+	}
+	if err := beamfall.Close(); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("Close returned %v, want the same scratch cleanup failure", err)
+	}
+}
+
+func TestRunClosesBlockedHLSResponseOnListenerFailure(t *testing.T) {
+	beamfall, path, playlist := newShutdownHLSTestApp(t)
+	// Keep the handler inside ServeContent when the connection stops accepting
+	// bytes. A small playlist could fit in net/http's buffers and release early.
+	body := "#EXTM3U\n" + strings.Repeat("# playlist comment\n", 4096)
+	if err := os.WriteFile(playlist, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	serverConn, clientConn := net.Pipe()
+	conn := &observedWriteConn{Conn: serverConn, writing: make(chan string, 1)}
+	listener := newFailingListener()
+	listener.firstConn = conn
+	oldListenTCP := listenTCP
+	listenTCP = func(_, _ string) (net.Listener, error) { return listener, nil }
+	defer func() { listenTCP = oldListenTCP }()
+
+	finished := make(chan struct{})
+	var runErr error
+	go func() {
+		defer close(finished)
+		runErr = beamfall.Run(t.Context())
+	}()
+	defer func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+		listener.failNow()
+		waitForShutdownSignal(t, finished, "Run did not retire after closing the test connection")
+	}()
+	if err := clientConn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fmt.Fprintf(clientConn, "GET %s HTTP/1.1\r\nHost: localhost\r\n\r\n", path); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case status := <-conn.writing:
+		if status != "HTTP/1.1 200 OK" {
+			t.Fatalf("blocked response status = %q, want successful HLS", status)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("HLS response did not reach its blocked write")
+	}
+	listener.failNow()
+	waitForShutdownSignal(t, finished, "Run did not finish while the HLS client was stalled")
+	if !errors.Is(runErr, errTestListenerFailed) {
+		t.Fatalf("Run returned %v, want %v", runErr, errTestListenerFailed)
+	}
+	if _, err := os.Stat(playlist); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("HLS scratch artifact survives Run: %v", err)
+	}
+	root := filepath.Dir(filepath.Dir(playlist))
+	next, err := playback.NewSessionsInDir(nil, root, nil)
+	if err != nil {
+		t.Fatalf("reopen scratch after Run: %v", err)
+	}
+	if err := next.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type observedWriteConn struct {
+	net.Conn
+	once    sync.Once
+	writing chan string
+}
+
+func (c *observedWriteConn) Write(p []byte) (int, error) {
+	c.once.Do(func() {
+		status, _, _ := strings.Cut(string(p), "\r\n")
+		c.writing <- status
+	})
+	return c.Conn.Write(p)
+}
+
+func newShutdownHLSTestApp(t *testing.T) (*App, string, string) {
+	t.Helper()
+	cfg := testConfig(t)
+	cfg.Addr = "127.0.0.1:0"
+	cfg.Discovery.Enabled = false
+	cfg.SeedDevelopmentData = true
+	ctx := t.Context()
+	beamfall, err := New(ctx, cfg, discardLogger(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = beamfall.Close() })
+	const mediaID store.MediaID = "media-alpha"
+	src := filepath.Join(t.TempDir(), "source.bin")
+	if err := os.WriteFile(src, []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := beamfall.store.SetPrimaryMediaFile(ctx, mediaID, src); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := auth.NewService(beamfall.store).Scope(ctx, "session-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := streamtoken.NewService(cfg.StreamTokenKey, time.Now).Issue(ctx, streamtoken.Grant{
+		Target:    streamtoken.TargetMediaHLS,
+		MediaID:   mediaID,
+		DeviceID:  scope.DeviceID,
+		SessionID: scope.SessionID,
+		ProfileID: scope.ProfileID,
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/media/hls/" + token + "/master.m3u8"
+	rec := httptest.NewRecorder()
+	beamfall.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("fixture HLS status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	playlists, err := filepath.Glob(filepath.Join(cfg.DataDir, "transcode", "session-*", "master.m3u8"))
+	if err != nil || len(playlists) != 1 {
+		t.Fatalf("fixture HLS playlists = %v, %v, want one live playlist", playlists, err)
+	}
+	return beamfall, path, playlists[0]
 }
 
 func assertShutdownPortReleased(t *testing.T, addr string) {

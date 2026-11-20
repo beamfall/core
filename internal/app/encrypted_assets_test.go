@@ -24,7 +24,7 @@ import (
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/mediahttp"
-	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -237,7 +237,7 @@ func newEncryptedAssetsFixture(t *testing.T) encryptedAssetsFixture {
 		}
 		return token
 	}
-	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), playback.NewSessions(nil, filepath.Join(dataDir, "transcode"), nil))
+	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, dataDir), sessiontest.New(t, nil, dataDir, nil))
 	handler.SetSealed(sealed)
 	handler.SetEncryptedBytes(adapter)
 	handler.SetAssets(assets)

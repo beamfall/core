@@ -13,7 +13,7 @@ import (
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/libencrypt"
 	"github.com/beamfall/core/internal/mediahttp"
-	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -93,7 +93,7 @@ func newEncryptedDirectPlayFixture(t *testing.T) encryptedDirectPlayFixture {
 		t.Fatal(err)
 	}
 
-	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	// Both wirings are copied verbatim from the composition root (app.New).
 	handler.SetSealed(func(id store.LibraryID) bool {
 		return manager.Provisioned(string(id)) && manager.Sealed(string(id))

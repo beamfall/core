@@ -18,6 +18,7 @@ import (
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -71,7 +72,7 @@ func newSubtitleRouteServer(t *testing.T) (*Server, *store.Store, store.MediaID)
 		pairing.NewService(st, clock),
 		graph.NewHandler(manifests, authService, st, nil),
 		mediahttp.NewHandler(st, authService, tokens,
-			artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)),
+			artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil)),
 		authService,
 		st,
 	)

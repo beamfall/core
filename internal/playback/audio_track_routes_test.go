@@ -133,7 +133,7 @@ func TestComposedPictureFollowsSelectedAudioTrack(t *testing.T) {
 	}
 
 	transcoder := &fakeTranscoder{}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	sessions.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
 		return picture, true, nil

@@ -15,6 +15,7 @@ import (
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -103,7 +104,7 @@ func newSubtitleWriteFixture(t *testing.T) *subtitleWriteFixture {
 	now := time.Unix(100, 0).UTC()
 	tokens := streamtoken.NewService([]byte("test-token-key"), func() time.Time { return now })
 	handler := NewHandler(st, auth.NewService(st), tokens,
-		artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+		artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	return &subtitleWriteFixture{store: st, handler: handler, tokens: tokens, episodes: episodes, now: now}
 }
 

@@ -113,7 +113,7 @@ func TestStreamingCeilingKeepsHEVCRungsThatFit(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			service, st, scope := capabilityTestService(t)
-			sessions := NewSessions(&hevcCapableTranscoder{}, t.TempDir(), nil)
+			sessions := newTestSessions(t, &hevcCapableTranscoder{}, t.TempDir(), nil)
 			defer sessions.Close()
 			service.SetSessions(sessions)
 			mediaID := importProbedMedia(t, st, "fp-ceiling-4k", "mkv", "h264", 3840, 2160, []store.MediaFileStream{

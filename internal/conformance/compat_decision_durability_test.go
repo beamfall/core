@@ -20,6 +20,7 @@ import (
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/server"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
@@ -106,7 +107,7 @@ func bootCompatDurabilityWorld(t *testing.T, dataDir string, jobStatsFor func(*s
 		beam.NewService(st, authService, clock),
 		pairing.NewService(st, clock),
 		graph.NewHandler(manifests, authService, st, nil),
-		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)),
+		mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil)),
 		authService,
 		jobStats,
 	)

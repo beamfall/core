@@ -71,6 +71,9 @@ func TestSessionTransitionsAfterReplacement(t *testing.T) {
 				if oldRun.outcome != exitEndOfInput || old.sourceEndKnown {
 					t.Fatal("late reap failed to record its own outcome or published an EOF bound")
 				}
+				if !s.transitionLocked(old, stoppedDetachedEncoder{teardown: teardown}).accepted {
+					t.Fatal("could not release the original encoder slot")
+				}
 			}
 			if !tt.teardownFirst {
 				s.transitionLocked(old, teardown)

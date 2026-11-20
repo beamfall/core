@@ -98,7 +98,7 @@ func TestEncoderCrashMidWaitRestartsInsideRequest(t *testing.T) {
 		writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", startSegment), mediaSegment())
 		return []string{"sleep", "60"}
 	}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-crash", MediaID: "media-crash"}
 
@@ -150,7 +150,7 @@ func TestEncoderCrashBudgetFailsFast(t *testing.T) {
 	transcoder.start = func(_ int, _ string, _ int) []string {
 		return []string{"sh", "-c", "echo 'Invalid data found when processing input' >&2; exit 1"}
 	}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-doomed", MediaID: "media-doomed"}
 
@@ -195,7 +195,7 @@ func TestTruncatedSourceRefusesSegmentsPastItsEnd(t *testing.T) {
 		}
 		return []string{"sh", "-c", "echo 'File ended prematurely' >&2; exit 0"}
 	}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-short", MediaID: "media-short"}
 
@@ -224,7 +224,7 @@ func TestSeekPastTruncatedEndNeverServesEmptySegment(t *testing.T) {
 		writeArtifact(t, dir, fmt.Sprintf("seg%05d.m4s", startSegment), emptySegment())
 		return []string{"sleep", "60"} // still running: the content check alone must catch it
 	}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-seek", MediaID: "media-seek"}
 
@@ -251,7 +251,7 @@ func TestShortLastSegmentStillServes(t *testing.T) {
 		}
 		return []string{"true"}
 	}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-ten", MediaID: "media-ten"}
 	for _, name := range []string{"720p/seg00000.m4s", "720p/seg00002.m4s"} {
@@ -301,16 +301,17 @@ func TestSegmentLacksMedia(t *testing.T) {
 		{"oversized box", mp4Box("styp", make([]byte, 4))[:10], false},
 	}
 	dir := t.TempDir()
+	h := &hlsSession{dir: dir}
 	for i, tc := range cases {
 		path := filepath.Join(dir, fmt.Sprintf("case%d.m4s", i))
 		if err := os.WriteFile(path, tc.body, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got := segmentLacksMedia(path); got != tc.want {
+		if got := h.segmentLacksMedia(path); got != tc.want {
 			t.Errorf("%s: segmentLacksMedia = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	if segmentLacksMedia(filepath.Join(dir, "missing.m4s")) {
+	if h.segmentLacksMedia(filepath.Join(dir, "missing.m4s")) {
 		t.Error("a missing file must not read as an empty segment")
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/beamfall/core/internal/observability"
 	"github.com/beamfall/core/internal/pairing"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -55,7 +56,7 @@ func newArtworkUploadServer(t *testing.T) (*Server, *store.Store, *artwork.Servi
 			authService,
 			tokens,
 			artworkService,
-			playback.NewSessions(nil, t.TempDir(), nil),
+			sessiontest.New(t, nil, t.TempDir(), nil),
 		),
 		authService,
 		st,

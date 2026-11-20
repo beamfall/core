@@ -21,8 +21,8 @@ import (
 func liveComposedService(t *testing.T) (*Service, *store.Store, auth.Scope) {
 	t.Helper()
 	service, st, scope := capabilityTestService(t)
-	sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
-	t.Cleanup(sessions.Close)
+	sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+
 	sessions.SetTranscodeCap(4)
 	service.SetSessions(sessions)
 	service.SetComposedCacheRoot(t.TempDir())
@@ -165,7 +165,7 @@ func TestLiveComposedPlayRaisesQueuedSweepRender(t *testing.T) {
 func TestComposedShapedSessionEncodesOneComposedRung(t *testing.T) {
 	t.Parallel()
 	transcoder := &fakeTranscoder{}
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	calls := 0
 	sessions.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
@@ -174,11 +174,14 @@ func TestComposedShapedSessionEncodesOneComposedRung(t *testing.T) {
 	})
 	key := SessionKey{SessionID: "session-default", MediaID: "media-song"}
 	shape := StreamShape{ComposedPicture: true}
-	for _, name := range []string{masterPlaylistName, ComposedRungID + "/seg00000.m4s"} {
-		if _, err := sessions.FilePathShaped(context.Background(), key, "/src/song.mp3", 30, 0, 0, false, false,
-			ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, name); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
+	masterPath, err := sessions.FilePathShaped(t.Context(), key, "/src/song.mp3", 30, 0, 0, false, false,
+		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sessions.FilePathShaped(t.Context(), key, "/src/song.mp3", 30, 0, 0, false, false,
+		ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, ComposedRungID+"/seg00000.m4s"); err != nil {
+		t.Fatal(err)
 	}
 	if calls != 1 {
 		t.Fatalf("composer resolved %d times, want once per session", calls)
@@ -187,15 +190,16 @@ func TestComposedShapedSessionEncodesOneComposedRung(t *testing.T) {
 		t.Fatalf("encodes = %d, want 1", len(transcoder.renditions))
 	}
 	picture, ok := transcoder.renditions[0].Picture()
-	if !ok || picture.TimedTextPath == "" || filepath.Base(filepath.Dir(picture.TimedTextPath)) != ComposedRungID {
-		t.Fatalf("rendition picture = %+v ok %v, want timed text in the composed rung dir", picture, ok)
+	wantTimedText := filepath.Join(filepath.Dir(masterPath), ComposedRungID, composedTimedTextFile)
+	if !ok || picture.TimedTextPath != wantTimedText {
+		t.Fatalf("rendition picture = %+v ok %v, want timed text at %q", picture, ok, wantTimedText)
 	}
 	if text, err := os.ReadFile(picture.TimedTextPath); err != nil || string(text) != composedTestText {
 		t.Fatalf("timed text = %q err %v", text, err)
 	}
-	master, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(picture.TimedTextPath)), masterPlaylistName))
-	if err != nil || strings.Count(string(master), "#EXT-X-STREAM-INF") != 1 || !strings.Contains(string(master), ComposedRungID+"/") {
-		t.Fatalf("master = %q err %v, want only the composed rung", master, err)
+	master := string(mustRead(t, masterPath))
+	if strings.Count(master, "#EXT-X-STREAM-INF") != 1 || !strings.Contains(master, ComposedRungID+"/") {
+		t.Fatalf("master = %q, want only the composed rung", master)
 	}
 }
 
@@ -207,11 +211,13 @@ func TestComposedShapedSessionRefusesUnresolvedPicture(t *testing.T) {
 			return ComposedPicture{}, false, nil
 		},
 	} {
-		sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 		sessions.SetPictureComposer(composer)
 		_, err := sessions.FilePathShaped(context.Background(), SessionKey{SessionID: "s", MediaID: "m"}, "/src/song.mp3", 30, 0, 0,
 			false, false, ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, StreamShape{ComposedPicture: true}, PriorityNormal, masterPlaylistName)
-		sessions.Close()
+		if err := sessions.Close(); err != nil {
+			t.Fatal(err)
+		}
 		if !errors.Is(err, ErrComposedPictureUnavailable) {
 			t.Errorf("%s: err = %v, want ErrComposedPictureUnavailable", name, err)
 		}

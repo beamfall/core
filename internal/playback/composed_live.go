@@ -21,6 +21,9 @@ var ErrComposedPictureUnavailable = errors.New("composed picture is unavailable"
 // ladder, decided at mint and carried by the byte layer. The zero value shapes
 // nothing.
 type StreamShape struct {
+	// LibraryID attributes the live directory to its authoritative Library.
+	LibraryID store.LibraryID
+
 	// ComposedPicture replaces the session's ladder with one composed rung
 	// that draws the Media's composed picture over its audio: the live form
 	// of a precomputed composed rendition (ADR-0057).
@@ -98,11 +101,11 @@ func (s *Sessions) livePicture(ctx context.Context, key SessionKey, src string, 
 // writeLivePicture lays a resolved picture out for the encoder: a graphics
 // track is read in place beside the source, and timed text is written into the
 // rung directory, inside the encode's read-write confinement.
-func writeLivePicture(rungDir string, picture ComposedPicture) (*ffmpeg.ComposedPicture, error) {
+func writeLivePicture(dir string, picture ComposedPicture) (*ffmpeg.ComposedPicture, error) {
 	if picture.TimedText == "" {
 		return &ffmpeg.ComposedPicture{GraphicsPath: picture.GraphicsPath}, nil
 	}
-	path := filepath.Join(rungDir, composedTimedTextFile)
+	path := filepath.Join(dir, ComposedRungID, composedTimedTextFile)
 	if err := os.WriteFile(path, []byte(picture.TimedText), 0o600); err != nil {
 		return nil, err
 	}

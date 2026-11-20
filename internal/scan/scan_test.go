@@ -25,6 +25,7 @@ import (
 	"github.com/beamfall/core/internal/jobs"
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -1872,7 +1873,7 @@ func TestScannedMediaCanDirectPlayAndServeRange(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, info.Streams[0].URL, nil)
 	req.Header.Set("Range", "bytes=2-5")
 	rec := httptest.NewRecorder()
-	mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil)).Direct(rec, req)
+	mediahttp.NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil)).Direct(rec, req)
 	if rec.Code != http.StatusPartialContent {
 		t.Fatalf("status = %d, want 206: %s", rec.Code, rec.Body.String())
 	}

@@ -78,6 +78,16 @@ func newEncryptedDerivativeReconciler(art *artwork.Service, assets *genassets.Se
 	}
 }
 
+// ReconcileEncryptedTranscodeScratch runs before Store registers the plane.
+func (r *encryptedDerivativeReconciler) ReconcileEncryptedTranscodeScratch(_ context.Context, libraryID store.LibraryID) error {
+	if r.sessions != nil {
+		if err := r.sessions.PurgeOrphanedTranscodeDirs(); err != nil {
+			return fmt.Errorf("encrypted-library %s derivative reconcile: %w", libraryID, err)
+		}
+	}
+	return nil
+}
+
 // ReconcileEncryptedDerivatives purges every plaintext derivative belonging to
 // the just-unsealed Encrypted Library's live media. It never partially succeeds
 // silently: every purge error for every class is joined and returned, so the
@@ -88,14 +98,6 @@ func (r *encryptedDerivativeReconciler) ReconcileEncryptedDerivatives(ctx contex
 	var joined error
 	for _, key := range live {
 		joined = errors.Join(joined, r.purgeMedia(libraryID, key))
-	}
-	// Transcode session dirs are not media-attributable (they are keyed by an
-	// in-memory counter, not by Media/Library), so the 5th class is swept once as
-	// a set: every session dir on disk that no live session holds is an orphaned
-	// plaintext leak. At boot the map is empty so all are purged; the live-session
-	// guard makes it safe on the runtime-unseal path too.
-	if r.sessions != nil {
-		joined = errors.Join(joined, r.sessions.PurgeOrphanedTranscodeDirs())
 	}
 	if r.subtitles != nil {
 		joined = errors.Join(joined, r.subtitles.ReconcileEncryptedSubtitles(libraryID, libencrypt.HasObjectHeader))

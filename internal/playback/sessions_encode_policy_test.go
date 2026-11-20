@@ -91,7 +91,7 @@ func TestConsolePolicyChangeKeepsActiveHEVCSession(t *testing.T) {
 	t.Parallel()
 	transcoder := &policyTranscoder{}
 	transcoder.segmentsToLay = 1
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
 	request := hevcSessionRequest(sessions)
@@ -136,7 +136,7 @@ func TestConsoleHardwareReenableKeepsActiveSoftwareSession(t *testing.T) {
 	t.Parallel()
 	transcoder := &policyTranscoder{policy: ffmpeg.EncodePolicy{SoftwareOnly: true}}
 	transcoder.segmentsToLay = 1
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	request := hevcSessionRequest(sessions)
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}
@@ -174,7 +174,7 @@ func TestSessionLadderAndEncoderShareOnePolicySnapshot(t *testing.T) {
 	t.Parallel()
 	transcoder := &savingTranscoder{}
 	transcoder.segmentsToLay = 1
-	sessions := NewSessions(transcoder, t.TempDir(), nil)
+	sessions := newTestSessions(t, transcoder, t.TempDir(), nil)
 	defer sessions.Close()
 	request := hevcSessionRequest(sessions)
 	key := SessionKey{SessionID: "session-default", MediaID: "media-alpha"}

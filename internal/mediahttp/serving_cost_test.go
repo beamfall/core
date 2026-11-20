@@ -14,7 +14,7 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
-	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
 )
@@ -40,7 +40,7 @@ func newCountingArtworkHandler(t *testing.T) (*Handler, *artwork.Service, *count
 	scaler := &countingArtworkScaler{}
 	svc := artwork.NewService(st, scaler, t.TempDir())
 	tokens := streamtoken.NewService([]byte("test-token-key"), time.Now)
-	return NewHandler(st, auth.NewService(st), tokens, svc, playback.NewSessions(nil, t.TempDir(), nil)), svc, scaler
+	return NewHandler(st, auth.NewService(st), tokens, svc, sessiontest.New(t, nil, t.TempDir(), nil)), svc, scaler
 }
 
 func TestArtworkRevalidationSkipsDerivativeWork(t *testing.T) {

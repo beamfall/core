@@ -4,16 +4,20 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/genassets"
 	"github.com/beamfall/core/internal/mediahttp"
 	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 )
 
@@ -122,7 +126,7 @@ func TestEncryptedDerivativeReconcilerFailsClosedOnPurgeError(t *testing.T) {
 // the sweep is scoped to session-<N> dirs.
 func TestEncryptedDerivativeReconcilerPurgesOrphanedTranscodeDirs(t *testing.T) {
 	dataDir := t.TempDir()
-	sessions := playback.NewSessions(nil, dataDir, nil)
+	sessions := sessiontest.New(t, nil, dataDir, nil)
 	transcodeRoot := filepath.Join(dataDir, "transcode")
 
 	orphanSeg := filepath.Join(transcodeRoot, "session-7", "720p", "seg00000.m4s")
@@ -136,9 +140,8 @@ func TestEncryptedDerivativeReconcilerPurgesOrphanedTranscodeDirs(t *testing.T) 
 	subtitleHandler.SetSubtitles(nil, filepath.Join(dataDir, "subtitles"))
 	reconciler := newEncryptedDerivativeReconciler(artworkSvc, assetSvc, subtitleHandler, sessions, filepath.Join(dataDir, "playback-cache"))
 
-	live := []store.MediaDerivativeKey{{MediaID: store.MediaID("media-enc-tc"), Fingerprints: []string{"sha256:tc"}}}
-	if err := reconciler.ReconcileEncryptedDerivatives(context.Background(), store.LibraryID("library-enc"), live); err != nil {
-		t.Fatalf("ReconcileEncryptedDerivatives: %v", err)
+	if err := reconciler.ReconcileEncryptedTranscodeScratch(t.Context(), "library-enc"); err != nil {
+		t.Fatal(err)
 	}
 
 	mustBeGone(t, "orphaned transcode session dir", filepath.Join(transcodeRoot, "session-7"))
@@ -147,32 +150,93 @@ func TestEncryptedDerivativeReconcilerPurgesOrphanedTranscodeDirs(t *testing.T) 
 	}
 }
 
-// TestEncryptedDerivativeReconcilerFailsClosedOnTranscodeSweepError proves the
-// transcode class honors the fail-closed contract: if the sweep cannot complete
-// the whole reconcile returns a non-nil, Library-named error so the store unwinds
-// the unseal and the Library stays Sealed. The failure is induced by pointing the
-// transcode root at a regular file, so PurgeOrphanedTranscodeDirs' os.ReadDir
-// errors.
 func TestEncryptedDerivativeReconcilerFailsClosedOnTranscodeSweepError(t *testing.T) {
 	dataDir := t.TempDir()
-	sessions := playback.NewSessions(nil, dataDir, nil)
-	if err := os.WriteFile(filepath.Join(dataDir, "transcode"), []byte("file where the transcode dir is expected"), 0o600); err != nil {
-		t.Fatalf("seed bad transcode root: %v", err)
+	st, err := store.Open(t.Context(), dataDir, store.Options{EnableEncryptedLibraryDBLifecycle: true})
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	artworkSvc := artwork.NewService(nil, nil, dataDir)
-	assetSvc := genassets.NewService(nil, nil, dataDir)
-	subtitleHandler := mediahttp.NewHandler(nil, nil, nil, artworkSvc, nil)
-	subtitleHandler.SetSubtitles(nil, filepath.Join(dataDir, "subtitles"))
-	reconciler := newEncryptedDerivativeReconciler(artworkSvc, assetSvc, subtitleHandler, sessions, filepath.Join(dataDir, "playback-cache"))
-
-	live := []store.MediaDerivativeKey{{MediaID: store.MediaID("media-enc-tc"), Fingerprints: []string{"sha256:tc"}}}
-	err := reconciler.ReconcileEncryptedDerivatives(context.Background(), store.LibraryID("library-enc"), live)
-	if err == nil {
-		t.Fatal("reconcile returned nil despite an unsweepable transcode root, want fail-closed error")
+	defer st.Close()
+	root := filepath.Join(dataDir, "transcode")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "library-enc") {
-		t.Fatalf("fail-closed error must name the Library for triage, got %v", err)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	readErr := &os.PathError{Op: "readdir", Path: root, Err: os.ErrPermission}
+	failRead := false
+	sessions, err := playback.NewSessionsInDir(nil, root, nil, playback.WithScratchReadDir(func(root fs.FS, name string) ([]fs.DirEntry, error) {
+		if !failRead {
+			return fs.ReadDir(root, name)
+		}
+		close(entered)
+		<-release
+		return nil, readErr
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := sessions.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	st.SetEncryptedDerivativeReconciler(newEncryptedDerivativeReconciler(nil, nil, nil, sessions, ""))
+
+	failRead = true
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	libraryID := store.LibraryID("library-enc")
+	result := make(chan error, 1)
+	go func() {
+		result <- st.UnsealEncryptedLibraryDB(t.Context(), libraryID, passthroughAppDBCipher{})
+	}()
+	select {
+	case <-entered:
+	case err := <-result:
+		t.Fatalf("unseal returned before scratch read: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("unseal never reached scratch read")
+	}
+	if other, err := playback.NewSessionsInDir(nil, root, nil); err == nil {
+		_ = other.Close()
+		t.Fatal("another manager acquired the root during unseal")
+	}
+	read := make(chan error, 1)
+	go func() {
+		_, err := st.FirstRunSetupComplete(t.Context())
+		read <- err
+	}()
+	select {
+	case err := <-read:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("scratch read held the Store lock")
+	}
+	if st.EncryptedLibraryDBRegistered(libraryID) {
+		t.Fatal("plane registered while scratch read was pending")
+	}
+	close(release)
+	err = <-result
+	if !errors.Is(err, readErr) || !strings.Contains(err.Error(), string(libraryID)) {
+		t.Fatalf("unseal returned %v, want Library-named scratch read failure", err)
+	}
+	if st.EncryptedLibraryDBRegistered(libraryID) {
+		t.Fatal("failed scratch read published the plane")
+	}
+	failRead = false
+	if err := st.UnsealEncryptedLibraryDB(t.Context(), libraryID, passthroughAppDBCipher{}); err != nil {
+		t.Fatalf("retry unseal: %v", err)
+	}
+	if !st.EncryptedLibraryDBRegistered(libraryID) {
+		t.Fatal("successful retry did not publish the plane")
 	}
 }
 

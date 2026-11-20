@@ -14,7 +14,7 @@ import (
 
 	"github.com/beamfall/core/internal/artwork"
 	"github.com/beamfall/core/internal/auth"
-	"github.com/beamfall/core/internal/playback"
+	"github.com/beamfall/core/internal/playback/sessiontest"
 	"github.com/beamfall/core/internal/store"
 	"github.com/beamfall/core/internal/store/storetest"
 	"github.com/beamfall/core/internal/streamtoken"
@@ -69,7 +69,7 @@ func newSubtitleTestHandler(t *testing.T, sessionID store.SessionID, mediaID sto
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), playback.NewSessions(nil, t.TempDir(), nil))
+	handler := NewHandler(st, authService, tokens, artwork.NewService(st, nil, t.TempDir()), sessiontest.New(t, nil, t.TempDir(), nil))
 	handler.SetSubtitles(conv, t.TempDir())
 	return handler, token
 }

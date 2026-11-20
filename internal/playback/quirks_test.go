@@ -259,8 +259,8 @@ func TestQuirkOverlayIsMonotoneRestrictive(t *testing.T) {
 			setup: func(t *testing.T, service *Service, st *store.Store, scope auth.Scope) {
 				limit := 1
 				setProfileSettings(t, st, scope.ProfileID, store.ProfileSettings{MaxConcurrentStreams: &limit})
-				sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
-				t.Cleanup(sessions.Close)
+				sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+
 				service.SetSessions(sessions)
 				startTranscode(t, sessions, SessionKey{SessionID: scope.SessionID, MediaID: "media-other"})
 			},
@@ -270,8 +270,8 @@ func TestQuirkOverlayIsMonotoneRestrictive(t *testing.T) {
 			name:    "quirk-forced transcode at server encoder capacity",
 			entries: []QuirkEntry{denyHEVCForGen1()},
 			setup: func(t *testing.T, service *Service, _ *store.Store, scope auth.Scope) {
-				sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
-				t.Cleanup(sessions.Close)
+				sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+
 				sessions.SetTranscodeCap(1)
 				service.SetSessions(sessions)
 				startTranscode(t, sessions, SessionKey{SessionID: "session-managed", MediaID: "media-other"})
@@ -544,7 +544,7 @@ func TestQuirkForceRemuxOnHDRSourceFallsToTranscode(t *testing.T) {
 // replaced direct-play would re-emit exactly the codec the veto refused.
 func TestQuirkDeniedCodecExcludedFromTranscodeTarget(t *testing.T) {
 	service, st, scope := capabilityTestService(t)
-	sessions := NewSessions(&hevcCapableTranscoder{}, t.TempDir(), nil)
+	sessions := newTestSessions(t, &hevcCapableTranscoder{}, t.TempDir(), nil)
 	defer sessions.Close()
 	service.SetSessions(sessions)
 	installQuirks(t, service, QuirkEntry{
@@ -799,7 +799,7 @@ func TestQuirkCapsApplyToUnknownDimensionSource(t *testing.T) {
 			Selector: QuirkSelector{Client: "tv-x"},
 			Override: QuirkOverride{MaxHeight: 720},
 		})
-		sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 		defer sessions.Close()
 		sessions.SetTranscodeCap(1)
 		service.SetSessions(sessions)
@@ -1325,7 +1325,7 @@ func TestContainerRemuxReasonOnlyOnForcedRemux(t *testing.T) {
 			Selector: QuirkSelector{Client: "tv-x"},
 			Override: QuirkOverride{ForceRemux: true},
 		})
-		sessions := NewSessions(&fakeTranscoder{}, t.TempDir(), nil)
+		sessions := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 		defer sessions.Close()
 		sessions.SetTranscodeCap(1)
 		service.SetSessions(sessions)
