@@ -41,12 +41,21 @@ and its Media SHALL remain unchanged.
 - **WHEN** staged bytes match a legacy full SHA-256 digest cataloged at another path
 - **THEN** managed admission refuses the duplicate
 
-#### Scenario: Legacy bytes restored by managed admission
+#### Scenario: Same-path admission finds both schemes
 
 - **WHEN** the on-disk file is absent and managed import or convert restores bytes whose full
-  SHA-256 matches a live or missing file row on a non-trashed Media at the same path and library
-- **THEN** admission preserves the existing Media ID, fingerprint, watch state and match pin
-- **AND** the catalog records the admitted file's stats so the next unchanged scan reuses the row
+  SHA-256 and sample identify rows at the same path and library
+- **THEN** admission prefers a live match, or revives the most recently seen missing match when
+  neither is live, excluding trashed Media
+- **AND** it preserves the selected Media ID, fingerprint, watch state and match pin and records
+  the admitted file's stats so the next unchanged scan reuses the row
+
+#### Scenario: Recovery sees a committed admission
+
+- **WHEN** convert recovery checks its journal destination or managed import checks for an
+  already committed admission during cleanup
+- **THEN** it uses the same same-path lookup in live-only mode, since the admission wrote its
+  identity before recovery and recovery has no staged fingerprint to compare
 
 ## ADDED Requirements
 
@@ -81,6 +90,12 @@ The mtime comparison SHALL use the original catalog precision, dividing Unix nan
 - **WHEN** the path has only a missing legacy row, even if the returning file has the same stats
 - **THEN** the scan samples the file without reading the full legacy digest or reusing the missing
   legacy identity
+
+#### Scenario: Missing sampled file returns to its original path
+
+- **WHEN** a scan samples the returning file and finds a same-library, same-path match
+- **THEN** it selects a live match first and otherwise revives the selected missing row,
+  retaining its Media ID and recording the observed stats
 
 #### Scenario: Legacy file at the same path with incomplete stats
 
