@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -187,6 +188,21 @@ func (s *scanWalkState) flushPendingParts() error {
 	}
 	parts := s.pendingParts
 	s.pendingParts = nil
+	// The unstable sibling may need probe tags for the parser to place it.
+	// Hold the group if any of its folders contains such a candidate.
+	if len(s.checkpoint.DeferredPartDirs) > 0 && slices.ContainsFunc(parts, func(part parsedPartImport) bool {
+		return s.checkpoint.DeferredPartDirs[store.HashMediaFilePath(filepath.Dir(part.imported.Path))]
+	}) {
+		for _, part := range parts {
+			path := part.imported.Path
+			if err := s.st.MarkMediaFileSeen(s.ctx, s.req.LibraryID, path, s.scanStarted); err != nil {
+				return deferredPartSeenError{err}
+			}
+			s.dropTallies(path)
+		}
+		s.releaseHeld()
+		return nil
+	}
 	sort.SliceStable(parts, func(i, j int) bool {
 		return parts[i].parsed.Index < parts[j].parsed.Index
 	})

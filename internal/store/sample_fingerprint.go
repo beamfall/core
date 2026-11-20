@@ -19,7 +19,7 @@ const (
 
 // SampleMediaFileContent reads the sample1 identity from a file.
 func SampleMediaFileContent(ctx context.Context, path string) (string, error) {
-	return SampleMediaFileContentFrom(ctx, func() (SampleFile, error) {
+	return SampleMediaFileContentFrom(ctx, path, func() (SampleFile, error) {
 		return os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
 	})
 }
@@ -30,8 +30,8 @@ type SampleFile interface {
 	io.ReaderAt
 }
 
-// SampleMediaFileContentFrom opens, stats, samples and closes a file.
-func SampleMediaFileContentFrom(ctx context.Context, open func() (SampleFile, error)) (string, error) {
+// SampleMediaFileContentFrom samples an opened file and verifies that path still names its inode.
+func SampleMediaFileContentFrom(ctx context.Context, path string, open func() (SampleFile, error)) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -48,11 +48,11 @@ func SampleMediaFileContentFrom(ctx context.Context, open func() (SampleFile, er
 	if err != nil {
 		return "", err
 	}
-	after, err := file.Stat()
+	after, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
-	if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
+	if !os.SameFile(info, after) || after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
 		return "", errors.New("file changed while sampling content")
 	}
 	return fingerprint, nil

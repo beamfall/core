@@ -345,6 +345,8 @@ type jobCheckpoint struct {
 	// GroupMedia lists the Media of several files (Versions, parts) already
 	// counted in MediaImported, so a resumed scan does not count them again.
 	GroupMedia []string `json:"group_media,omitempty"`
+	// Directory digests keep Parts deferred when a job resumes past an unstable sibling.
+	DeferredPartDirs map[string]bool `json:"deferred_part_dirs,omitempty"`
 	// Unidentified carries the identification outcomes that applied no
 	// match across job yields, so the finished scan reports them once.
 	Unidentified []IdentifyGroup `json:"unidentified,omitempty"`

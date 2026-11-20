@@ -87,7 +87,7 @@ func TestScanBoundsFingerprintReadsOnSparseFile(t *testing.T) {
 	savedSample, savedLegacy := sampleScanFile, legacyFileContent
 	t.Cleanup(func() { sampleScanFile, legacyFileContent = savedSample, savedLegacy })
 	sampleScanFile = func(ctx context.Context, path string) (string, error) {
-		return store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
+		return store.SampleMediaFileContentFrom(ctx, path, func() (store.SampleFile, error) {
 			file, err := os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
 			if err != nil {
 				return nil, err
@@ -141,7 +141,7 @@ func (f *changingSampleFile) ReadAt(p []byte, offset int64) (int, error) {
 }
 
 func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
-	for _, change := range []string{"size", "mtime"} {
+	for _, change := range []string{"size", "mtime", "rename-over"} {
 		t.Run(change, func(t *testing.T) {
 			root := t.TempDir()
 			payload := []byte("already cataloged bytes")
@@ -157,6 +157,10 @@ func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			replacement := writeScanFile(t, root, ".replacement", bytes.Repeat([]byte{'x'}, len(payload)))
+			if err := os.Chtimes(replacement, before.ModTime(), before.ModTime()); err != nil {
+				t.Fatal(err)
+			}
 			dir, err := os.OpenRoot(root)
 			if err != nil {
 				t.Fatal(err)
@@ -168,13 +172,16 @@ func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
 				if path != copyPath {
 					return originalSample(ctx, path)
 				}
-				return store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
+				return store.SampleMediaFileContentFrom(ctx, path, func() (store.SampleFile, error) {
 					file, err := dir.OpenFile(filepath.Base(path), os.O_RDWR, 0)
 					if err != nil {
 						return nil, err
 					}
 					return &changingSampleFile{File: file, beforeFirstRead: func() error {
-						if change == "mtime" {
+						switch change {
+						case "rename-over":
+							return os.Rename(replacement, path)
+						case "mtime":
 							return os.Chtimes(path, before.ModTime(), before.ModTime().Add(time.Second))
 						}
 						if _, err := file.WriteAt([]byte(" more bytes"), before.Size()); err != nil {
@@ -195,6 +202,9 @@ func TestScanDoesNotRepointMediaWhenFileChangesDuringSampling(t *testing.T) {
 			mtimeChanged := !after.ModTime().Equal(before.ModTime())
 			if sizeChanged != (change == "size") || mtimeChanged != (change == "mtime") {
 				t.Fatalf("expected only %s to change, size %d → %d, mtime %v → %v", change, before.Size(), after.Size(), before.ModTime(), after.ModTime())
+			}
+			if os.SameFile(before, after) == (change == "rename-over") {
+				t.Fatalf("unexpected inode at the sampled path after %s", change)
 			}
 			files, err := st.MediaFilesForLibrary(t.Context(), req.LibraryID)
 			if err != nil || len(files) != 1 || files[0].Path != originalPath || files[0].MediaID != initial.Files[0].MediaID {
@@ -228,9 +238,127 @@ func TestScanRetriesLegacyFileAfterUnstableSample(t *testing.T) {
 		{name: "trashed row with read error", change: func(*os.File, string, os.FileInfo) error {
 			return readErr
 		}, wantErr: readErr, trashed: true},
+		{name: "legacy read error", wantErr: readErr},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testScanRetriesLegacyFileAfterUnstableSample(t, tc.change, tc.wantErr, tc.trashed)
+		})
+	}
+}
+
+func TestScanDefersPartsWhenASampleFails(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		part  int
+		yield bool
+	}{
+		{name: "first Part", part: 0},
+		{name: "last Part", part: 1},
+		{name: "resume past failed Part", part: 0, yield: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			root := t.TempDir()
+			dir := storetest.MigratedDataDir(t)
+			st := storetest.OpenAt(t, dir)
+			req := Request{LibraryID: partsLibrary(t, st), Root: root}
+			paths := []string{
+				writeScanFile(t, root, "01.mp3", []byte("first part")),
+				writeScanFile(t, root, "02.mp3", []byte("second part")),
+			}
+			parsers := map[string]FilenameParser{"parts": numberedPartsParser{}}
+			run := func(started time.Time, checkpoint jobCheckpoint) Result {
+				t.Helper()
+				result, err := scanFromCheckpoint(ctx, st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(2), nil, req, checkpoint, started, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return result
+			}
+			initial := run(time.Now(), jobCheckpoint{})
+			if len(initial.Files) != 2 || initial.MediaImported != 1 || initial.Files[0].MediaID != initial.Files[1].MediaID {
+				t.Fatalf("initial Parts = %+v, want one Media with two Parts", initial)
+			}
+			mediaID := initial.Files[0].MediaID
+			filter := store.LibraryFilter{AllowedIDs: []store.LibraryID{req.LibraryID}}
+			checkParts := func() []store.MediaFile {
+				t.Helper()
+				files, err := st.MediaFilesForMedia(ctx, mediaID, filter)
+				if err != nil || len(files) != 2 {
+					t.Fatalf("Parts = %+v, err = %v, want both Parts of %s", files, err, mediaID)
+				}
+				for i, file := range files {
+					if file.Path != paths[i] || file.PartOrdinal != i || file.ContentFingerprint != initial.Files[i].ContentFingerprint {
+						t.Fatalf("Part %d changed identity or ordinal: %+v", i, file)
+					}
+				}
+				return files
+			}
+			before := checkParts()
+			path := paths[tc.part]
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mtime := info.ModTime().Add(time.Second)
+			if err := os.Chtimes(path, mtime, mtime); err != nil {
+				t.Fatal(err)
+			}
+			original := sampleScanFile
+			t.Cleanup(func() { sampleScanFile = original })
+			calls := 0
+			sampleScanFile = func(ctx context.Context, candidate string) (string, error) {
+				if candidate == path {
+					calls++
+					return "", io.ErrUnexpectedEOF
+				}
+				return original(ctx, candidate)
+			}
+			cutoff := time.UnixMilli(max(before[0].LastSeenAt.UnixMilli(), before[1].LastSeenAt.UnixMilli()) + 1)
+			var checkpoint jobCheckpoint
+			if tc.yield {
+				cover := writeScanFile(t, root, "01_cover.jpg", jpegBytes("intervening image"))
+				var saved []byte
+				_, err := scanFromCheckpoint(ctx, st, nil, nil, parsers, nil, nil, nil, nil, fixedGovernor(1), nil, req, jobCheckpoint{}, cutoff, func(cp jobCheckpoint, _ store.JobProgress) error {
+					if cp.LastPath != cover {
+						t.Fatalf("yield at %q, want %q", cp.LastPath, cover)
+					}
+					var err error
+					saved, err = marshalScanCheckpoint(cp)
+					if err != nil {
+						return err
+					}
+					return jobs.ErrYielded
+				})
+				if !errors.Is(err, jobs.ErrYielded) {
+					t.Fatalf("scan did not yield at the intervening image: %v", err)
+				}
+				checkpoint, err = checkpointFromJob(saved)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := st.Close(); err != nil {
+					t.Fatal(err)
+				}
+				st = storetest.OpenAt(t, dir)
+			}
+			deferred := run(cutoff, checkpoint)
+			if calls != 1 {
+				t.Fatalf("unstable Part sample attempts = %d, want 1", calls)
+			}
+			if err := st.Close(); err != nil {
+				t.Fatal(err)
+			}
+			st = storetest.OpenAt(t, dir)
+			checkParts()
+			if len(deferred.Files) != 0 || deferred.FilesMissing != 0 {
+				t.Fatalf("deferred scan = %+v, want neither Part admitted or marked missing", deferred)
+			}
+			sampleScanFile = original
+			if retry := run(cutoff.Add(time.Millisecond), jobCheckpoint{}); len(retry.Files) != 2+checkpoint.FilesSeen {
+				t.Fatalf("retry files = %+v, want both Parts and any intervening image", retry.Files)
+			}
+			checkParts()
 		})
 	}
 }
@@ -294,6 +422,9 @@ func testScanRetriesLegacyFileAfterUnstableSample(t *testing.T, change func(*os.
 	fullReads := 0
 	legacyFileContent = func(ctx context.Context, path string) (string, error) {
 		fullReads++
+		if change == nil && fullReads == 1 {
+			return "", wantErr
+		}
 		return originalLegacy(ctx, path)
 	}
 	rootDir, err := os.OpenRoot(root)
@@ -303,20 +434,22 @@ func testScanRetriesLegacyFileAfterUnstableSample(t *testing.T, change func(*os.
 	defer rootDir.Close()
 	var sampleErr, changeErr error
 	var changeAttempted bool
-	sampleScanFile = func(ctx context.Context, path string) (string, error) {
-		fingerprint, err := store.SampleMediaFileContentFrom(ctx, func() (store.SampleFile, error) {
-			file, err := rootDir.OpenFile(filepath.Base(path), os.O_RDWR, 0)
-			if err != nil {
-				return nil, err
-			}
-			return &changingSampleFile{File: file, beforeFirstRead: func() error {
-				changeAttempted = true
-				changeErr = change(file, path, before)
-				return changeErr
-			}}, nil
-		})
-		sampleErr = err
-		return fingerprint, err
+	if change != nil {
+		sampleScanFile = func(ctx context.Context, path string) (string, error) {
+			fingerprint, err := store.SampleMediaFileContentFrom(ctx, path, func() (store.SampleFile, error) {
+				file, err := rootDir.OpenFile(filepath.Base(path), os.O_RDWR, 0)
+				if err != nil {
+					return nil, err
+				}
+				return &changingSampleFile{File: file, beforeFirstRead: func() error {
+					changeAttempted = true
+					changeErr = change(file, path, before)
+					return changeErr
+				}}, nil
+			})
+			sampleErr = err
+			return fingerprint, err
+		}
 	}
 	// Advance beyond both rows' last-seen milliseconds so missing retirement runs.
 	cutoff := time.UnixMilli(max(file.LastSeenAt.UnixMilli(), deleted.LastSeenAt.UnixMilli()) + 1)
@@ -324,13 +457,17 @@ func testScanRetriesLegacyFileAfterUnstableSample(t *testing.T, change func(*os.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !changeAttempted || (changeErr != nil && !errors.Is(changeErr, wantErr)) {
-		t.Fatalf("sample injection reached = %t, error = %v", changeAttempted, changeErr)
+	wantFirstFullReads := 1
+	if change != nil {
+		wantFirstFullReads = 0
+		if !changeAttempted || (changeErr != nil && !errors.Is(changeErr, wantErr)) {
+			t.Fatalf("sample injection reached = %t, error = %v", changeAttempted, changeErr)
+		}
+		if sampleErr == nil || (wantErr != nil && !errors.Is(sampleErr, wantErr)) {
+			t.Fatalf("sampling error = %v, want a failure (specific error: %v)", sampleErr, wantErr)
+		}
 	}
-	if sampleErr == nil || (wantErr != nil && !errors.Is(sampleErr, wantErr)) {
-		t.Fatalf("sampling error = %v, want a failure (specific error: %v)", sampleErr, wantErr)
-	}
-	if first.FilesSeen != 0 || fullReads != 0 || first.FilesMissing != 1 {
+	if first.FilesSeen != 0 || fullReads != wantFirstFullReads || first.FilesMissing != 1 {
 		t.Errorf("first scan: admitted = %d, full hashes = %d, missing = %d, want only the deleted file marked missing", first.FilesSeen, fullReads, first.FilesMissing)
 	}
 	if err := st.Close(); err != nil {
@@ -348,15 +485,17 @@ func testScanRetriesLegacyFileAfterUnstableSample(t *testing.T, change func(*os.
 		t.Errorf("live files after reopening = %+v, err = %v, want statless legacy Media %s", live, err, media.ID)
 	}
 
-	if err := os.WriteFile(path, payload, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
-		t.Fatal(err)
+	if change != nil {
+		if err := os.WriteFile(path, payload, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil {
+			t.Fatal(err)
+		}
 	}
 	sampleScanFile = originalSample
 	second, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
-	if err != nil || len(second.Files) != 1 || second.Files[0].MediaID != media.ID || second.Files[0].ContentFingerprint != full || fullReads != 1 {
+	if err != nil || len(second.Files) != 1 || second.Files[0].MediaID != media.ID || second.Files[0].ContentFingerprint != full || fullReads != wantFirstFullReads+1 {
 		t.Fatalf("retry files = %+v, full hashes = %d, err = %v, want one full compare and legacy Media %s", second.Files, fullReads, err, media.ID)
 	}
 	progress, found, err := st.PlaybackProgressFor(ctx, profile, second.Files[0].MediaID)

@@ -234,7 +234,10 @@ func (s *scanWalkState) consumeFullTask(task *workerTask) error {
 		// Verify it once so the normal import records the missing stats.
 		full, err := hashLegacyScanFile(s.ctx, task.path)
 		if err != nil {
-			return err
+			if canceled := s.ctx.Err(); canceled != nil {
+				return canceled
+			}
+			return errFileSettling
 		}
 		if full == stored.ContentFingerprint {
 			task.fingerprint = full

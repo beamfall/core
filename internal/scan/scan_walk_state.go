@@ -17,6 +17,10 @@ import (
 
 var errFileSettling = errors.New("file is still settling")
 
+type deferredPartSeenError struct{ error }
+
+func (e deferredPartSeenError) Unwrap() error { return e.error }
+
 type scanWalkState struct {
 	ctx                context.Context
 	st                 *store.Store
@@ -176,22 +180,24 @@ func (s *scanWalkState) admitEntry(path string, entry fs.DirEntry, err error) (*
 	if s.imageRule.skips(path) {
 		return nil, nil
 	}
+	task := &workerTask{path: path, done: make(chan struct{})}
 	mtime := info.ModTime()
 	if now().Sub(mtime) < stabilityWindow {
-		return nil, errFileSettling
+		// Handle settling files in walk order alongside failed samples.
+		task.err = errFileSettling
 	}
 	// The legacy catalog writer rounded pre-epoch mtimes toward zero.
 	if mtime.Before(time.Unix(0, 0)) {
 		mtime = time.UnixMilli(mtime.UnixNano() / int64(time.Millisecond))
 	}
-	return &workerTask{
-		path: path,
-		info: fileStat{size: info.Size(), modTime: mtime},
-		done: make(chan struct{}),
-	}, nil
+	task.info = fileStat{size: info.Size(), modTime: mtime}
+	return task, nil
 }
 
 func (s *scanWalkState) fill(ctx context.Context, task *workerTask) {
+	if task.err != nil {
+		return
+	}
 	if err := s.acquireBudget(ctx); err != nil {
 		task.err = err
 		return
@@ -215,9 +221,16 @@ func (s *scanWalkState) skipOrPropagate(path string, err error) error {
 		return nil
 	}
 	if errors.Is(err, errFileSettling) {
+		if s.parser != nil && !imageClassForPath(path) {
+			if s.checkpoint.DeferredPartDirs == nil {
+				s.checkpoint.DeferredPartDirs = map[string]bool{}
+			}
+			s.checkpoint.DeferredPartDirs[store.HashMediaFilePath(filepath.Dir(path))] = true
+		}
 		return s.st.MarkMediaFileSeen(s.ctx, s.req.LibraryID, path, s.scanStarted)
 	}
-	if errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
+	var seenErr deferredPartSeenError
+	if errors.As(err, &seenErr) || errors.Is(err, fs.SkipDir) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, jobs.ErrYielded) || errors.Is(err, errImageDerivation) {
 		return err
 	}
 	slog.Warn("scan: skipping unreadable or invalid file", "path", path, "error", err.Error())
