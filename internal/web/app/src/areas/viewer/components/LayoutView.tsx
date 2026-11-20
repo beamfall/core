@@ -69,7 +69,7 @@ export function LayoutView({
   const [filterSelections, setFilterSelections] = useState<Record<string, FieldFilters>>({});
 
   const { sections, homeRecent, homeHero } = useMemo(() => {
-    const known = (layout?.sections || []).filter((section) => SECTION_KINDS.has(section.kind));
+    const known = (layout?.sections || []).filter((s) => SECTION_KINDS.has(s.kind));
     const sections = known.slice(0, MAX_RENDERED_SECTIONS);
     const homeRecent = home && !libraryID ? findHomeRecentSection(sections) : undefined;
     const homeHero: Section | undefined =
