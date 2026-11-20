@@ -197,6 +197,7 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.mocked(watchPartyAutoSkip).mockReset();
+    vi.mocked(watchPartyTransport).mockReset();
     vi.mocked(requestWatchPartyTransport).mockReset();
     vi.mocked(fetchClientPrefs).mockResolvedValue([]);
     vi.mocked(calibrateWatchPartyClock).mockRejectedValue(new Error("not on the home network"));
@@ -275,8 +276,9 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     { order: "timeupdate first", transition: null, reject: false, target: 30 },
     { order: "seeked first", transition: 30_000, reject: false, target: 30 },
     { order: "timeupdate first", transition: 45_000, reject: false, target: 45 },
-    { order: "timeupdate first", transition: null, reject: true, target: 10 },
+    { order: "timeupdate first", transition: null, reject: true, target: 0 },
     { order: "timeupdate first", transition: 45_000, reject: true, target: 45 },
+    { order: "seeked first", transition: 30_000, reject: true, target: 30 },
   ])(
     "resolves a scrub into an intro ($order, stream position $transition, rejected $reject)",
     async ({ order, transition, reject, target }) => {
@@ -294,13 +296,11 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
       expect(await startWatchParty("media-alpha")).toBe(true);
       const response = deferred<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
       vi.mocked(watchPartyAutoSkip).mockReturnValueOnce(response.promise);
-      if (reject && transition === null) {
-        vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
-          item,
-          positionMS,
-          presentAtMS: 0,
-        }));
-      }
+      vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
+        item,
+        positionMS,
+        presentAtMS: 0,
+      }));
       await act(async () => {
         renderPlayer(
           playerState({
@@ -328,8 +328,8 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
       act(() => vi.advanceTimersByTime(500));
       expect(video.currentTime).toBe(10);
 
-      if (transition !== null) {
-        await act(async () => {
+      const broadcast = (positionMS: number) =>
+        act(async () => {
           stream.mock.lastCall?.[0](
             new MessageEvent("group.sync", {
               data: JSON.stringify({
@@ -337,7 +337,7 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
                   groupID: "p1",
                   item: "media-alpha",
                   signal: "transition",
-                  positionMS: transition,
+                  positionMS,
                   presentAtMS: 0,
                   paused: true,
                 },
@@ -345,6 +345,9 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
             }),
           );
         });
+      const broadcastAfterError = reject && transition === 30_000;
+      if (transition !== null && !broadcastAfterError) {
+        await broadcast(transition);
         // An authoritative skip can move the player while the reply is delayed.
         if (transition === 30_000) expect(video.currentTime).toBe(30);
       }
@@ -359,22 +362,15 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
             presentAtMS: 0,
           });
       });
+      expect(watchPartyTransport).not.toHaveBeenCalled();
+      if (broadcastAfterError) await broadcast(transition);
       act(() => vi.advanceTimersByTime(500));
-      if (reject && transition === null) {
-        expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
-          partyID: "p1",
-          item: "media-alpha",
-          positionMS: 10_000,
-          paused: true,
-        });
-      } else {
-        expect(watchPartyTransport).not.toHaveBeenCalled();
-      }
+      expect(watchPartyTransport).not.toHaveBeenCalled();
       expect(video.currentTime).toBe(target);
     },
   );
 
-  it("requests the scrub if the party denies auto-skip", async () => {
+  it.each([false, true])("handles a denied auto-skip (host also skips: %s)", async (hostSkips) => {
     vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
     const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
     vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
@@ -392,7 +388,10 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     expect(await joinWatchParty("p1")).toBe("media-alpha");
     const response = deferred<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
     vi.mocked(watchPartyAutoSkip).mockReturnValueOnce(response.promise);
-    vi.mocked(requestWatchPartyTransport).mockResolvedValueOnce({ partyID: "p1", approved: false });
+    vi.mocked(requestWatchPartyTransport).mockResolvedValueOnce({
+      partyID: "p1",
+      approved: false,
+    });
     await act(async () => {
       renderPlayer(
         playerState({
@@ -402,6 +401,7 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
       );
     });
     const video = stageVideo();
+    Object.defineProperty(video, "readyState", { value: 4 });
     fireEvent.pointerDown(video);
     video.currentTime = 10;
     fireEvent.seeking(video);
@@ -410,7 +410,31 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     expect(watchPartyAutoSkip).toHaveBeenCalledTimes(1);
     expect(requestWatchPartyTransport).not.toHaveBeenCalled();
 
+    if (hostSkips) {
+      await act(async () => {
+        stream.mock.lastCall?.[0](
+          new MessageEvent("group.sync", {
+            data: JSON.stringify({
+              payload: {
+                ...anchor,
+                groupID: "p1",
+                signal: "transition",
+                positionMS: 30_000,
+                paused: true,
+              },
+            }),
+          }),
+        );
+      });
+      expect(video.currentTime).toBe(30);
+      expect(screen.queryByRole("button", { name: /undo/i })).not.toBeInTheDocument();
+    }
     await act(async () => response.resolve({ partyID: "p1", applied: false, ...anchor }));
+    if (hostSkips) {
+      expect(requestWatchPartyTransport).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: /undo/i })).not.toBeInTheDocument();
+      return;
+    }
     expect(requestWatchPartyTransport).toHaveBeenCalledExactlyOnceWith({
       partyID: "p1",
       item: "media-alpha",
@@ -419,85 +443,166 @@ describe("PlayerPage auto-skip (CORE-1803)", () => {
     });
   });
 
-  it.each(["transition", "response"])("holds lead reports until the skip's %s", async (first) => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    vi.mocked(reportWatchPartyLeadPosition).mockClear();
-    vi.mocked(watchPartyTransport).mockClear();
-    vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
-    const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
-    vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
-    vi.mocked(createWatchParty).mockResolvedValue({
-      partyID: "p1",
-      content: "media-alpha",
-      relaxed: false,
-      members: [],
-    });
-    expect(await startWatchParty("media-alpha", 0, false, true)).toBe(true);
-
-    const anchor = { item: "media-alpha", positionMS: 30_000, presentAtMS: Date.now() };
-    const response = deferred<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
-    vi.mocked(watchPartyAutoSkip).mockReturnValueOnce(response.promise);
-    const broadcast = (positionMS: number) =>
-      stream.mock.lastCall?.[0](
-        new MessageEvent("group.sync", {
-          data: JSON.stringify({
-            payload: {
-              ...anchor,
-              groupID: "p1",
-              signal: "transition",
-              lead: true,
-              positionMS,
-              presentAtMS:
-                positionMS === anchor.positionMS ? anchor.presentAtMS : anchor.presentAtMS - 1,
-            },
+  it.each([1000, 20_000])(
+    "handles a return to the current anchor while a skip is pending (%i ms)",
+    async (delay) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+      vi.mocked(watchPartyTransport).mockClear();
+      vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
+      vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+      vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
+      vi.mocked(createWatchParty).mockResolvedValue({
+        partyID: "p1",
+        content: "media-alpha",
+        relaxed: true,
+        members: [],
+      });
+      expect(await startWatchParty("media-alpha")).toBe(true);
+      const response = deferred<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
+      vi.mocked(watchPartyAutoSkip).mockReturnValueOnce(response.promise);
+      vi.mocked(watchPartyTransport).mockImplementationOnce(async ({ item, positionMS }) => ({
+        item,
+        positionMS,
+        presentAtMS: 0,
+      }));
+      await act(async () => {
+        renderPlayer(
+          playerState({
+            phase: "playing",
+            markers: [{ title: "Intro", segmentKind: "intro", startSeconds: 5, endSeconds: 30 }],
           }),
+        );
+      });
+      const video = stageVideo();
+      Object.defineProperty(video, "readyState", { value: 4 });
+      for (const seconds of [10, 0]) {
+        act(() => vi.advanceTimersByTime(1));
+        fireEvent.pointerDown(video);
+        video.currentTime = seconds;
+        fireEvent.seeking(video);
+        fireEvent.seeked(video);
+      }
+      expect(watchPartyAutoSkip).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        item: "media-alpha",
+        positionMS: 30_000,
+      });
+      expect(watchPartyTransport).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(delay));
+      expect(video.currentTime).toBe(0);
+
+      await act(async () =>
+        response.resolve({
+          partyID: "p1",
+          applied: true,
+          item: "media-alpha",
+          positionMS: 30_000,
+          presentAtMS: 0,
         }),
       );
-    const reply = () => response.resolve({ ...anchor, partyID: "p1", applied: true });
+      if (delay === 1000) {
+        expect(watchPartyTransport).toHaveBeenCalledExactlyOnceWith({
+          partyID: "p1",
+          item: "media-alpha",
+          positionMS: 0,
+          paused: true,
+        });
+        expect(video.currentTime).toBe(0);
+      } else {
+        expect(watchPartyTransport).not.toHaveBeenCalled();
+        expect(video.currentTime).toBe(30);
+      }
+    },
+  );
 
-    await act(async () => {
-      renderPlayer(
-        playerState({
-          phase: "playing",
-          markers: [{ title: "Intro", segmentKind: "intro", startSeconds: 0, endSeconds: 30 }],
-        }),
+  it.each(["transition", "response", "transition after lost response"])(
+    "holds lead reports until the skip's %s",
+    async (first) => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      vi.mocked(reportWatchPartyLeadPosition).mockClear();
+      vi.mocked(watchPartyTransport).mockClear();
+      vi.mocked(fetchClientPrefs).mockResolvedValue([{ key: "autoskip.intro", value: "on" }]);
+      const stream = vi.spyOn(api, "subscribeEvents").mockReturnValue(() => {});
+      vi.mocked(calibrateWatchPartyClock).mockResolvedValueOnce({ offsetMS: 0, roundTripMS: 1 });
+      vi.mocked(createWatchParty).mockResolvedValue({
+        partyID: "p1",
+        content: "media-alpha",
+        relaxed: false,
+        members: [],
+      });
+      expect(await startWatchParty("media-alpha", 0, false, true)).toBe(true);
+
+      const anchor = { item: "media-alpha", positionMS: 30_000, presentAtMS: Date.now() };
+      const response = deferred<Awaited<ReturnType<typeof watchPartyAutoSkip>>>();
+      vi.mocked(watchPartyAutoSkip).mockReturnValueOnce(response.promise);
+      const broadcast = (positionMS: number) =>
+        stream.mock.lastCall?.[0](
+          new MessageEvent("group.sync", {
+            data: JSON.stringify({
+              payload: {
+                ...anchor,
+                groupID: "p1",
+                signal: "transition",
+                lead: true,
+                positionMS,
+                presentAtMS:
+                  positionMS === anchor.positionMS ? anchor.presentAtMS : anchor.presentAtMS - 1,
+              },
+            }),
+          }),
+        );
+      const reply = () => response.resolve({ ...anchor, partyID: "p1", applied: true });
+
+      await act(async () => {
+        renderPlayer(
+          playerState({
+            phase: "playing",
+            markers: [{ title: "Intro", segmentKind: "intro", startSeconds: 0, endSeconds: 30 }],
+          }),
+        );
+      });
+      const video = stageVideo();
+      Object.defineProperties(video, { readyState: { value: 4 }, paused: { value: false } });
+      video.currentTime = 10;
+      fireEvent.timeUpdate(video);
+      expect(watchPartyAutoSkip).toHaveBeenCalledExactlyOnceWith({
+        partyID: "p1",
+        item: "media-alpha",
+        positionMS: 30_000,
+      });
+
+      act(() => broadcast(12_000));
+      act(() => vi.advanceTimersByTime(1000));
+      expect(video.currentTime).toBe(10);
+      expect(reportWatchPartyLeadPosition).not.toHaveBeenCalled();
+
+      if (first === "transition after lost response") {
+        await act(async () => response.reject(new Error("Network unavailable")));
+        act(() => vi.advanceTimersByTime(1000));
+        expect(video.currentTime).toBe(10);
+        expect(reportWatchPartyLeadPosition).not.toHaveBeenCalled();
+      }
+      await act(async () => {
+        if (first === "response") reply();
+        else broadcast(30_000);
+      });
+      expect(video.currentTime).toBe(30);
+      fireEvent.seeked(video);
+      expect(watchPartyTransport).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1000));
+      expect(reportWatchPartyLeadPosition).toHaveBeenCalledExactlyOnceWith(
+        "p1",
+        expect.objectContaining({ positionMS: 30_000 }),
       );
-    });
-    const video = stageVideo();
-    Object.defineProperties(video, { readyState: { value: 4 }, paused: { value: false } });
-    video.currentTime = 10;
-    fireEvent.timeUpdate(video);
-    expect(watchPartyAutoSkip).toHaveBeenCalledExactlyOnceWith({
-      partyID: "p1",
-      item: "media-alpha",
-      positionMS: 30_000,
-    });
 
-    act(() => broadcast(12_000));
-    act(() => vi.advanceTimersByTime(1000));
-    expect(video.currentTime).toBe(10);
-    expect(reportWatchPartyLeadPosition).not.toHaveBeenCalled();
-
-    await act(async () => {
-      if (first === "transition") broadcast(30_000);
-      else reply();
-    });
-    expect(video.currentTime).toBe(30);
-    fireEvent.seeked(video);
-    expect(watchPartyTransport).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1000));
-    expect(reportWatchPartyLeadPosition).toHaveBeenCalledExactlyOnceWith(
-      "p1",
-      expect.objectContaining({ positionMS: 30_000 }),
-    );
-
-    video.currentTime = 31;
-    await act(async () => {
-      if (first === "transition") reply();
-      else broadcast(30_000);
-    });
-    expect(video.currentTime).toBe(31);
-  });
+      video.currentTime = 31;
+      await act(async () => {
+        if (first === "transition") reply();
+        if (first === "response") broadcast(30_000);
+      });
+      expect(video.currentTime).toBe(31);
+    },
+  );
 });
 
 // feature:hls-error-recovery

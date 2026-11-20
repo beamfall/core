@@ -29,6 +29,7 @@ vi.mock("./watchPartyStore", () => ({
   followLeadParty: vi.fn(async () => null),
   resumeFollowedParty: vi.fn(async () => null),
   watchForLeadParty: vi.fn(() => () => {}),
+  pendingPartyAutoSkipTarget: () => undefined,
 }));
 
 let homeNetwork = false;
@@ -133,7 +134,7 @@ describe("useWatchParty local transport", () => {
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
     video.currentTime = 30;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 30_000, true);
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 30_000, true, expect.any(Number));
     view.unmount();
   });
 
@@ -150,7 +151,7 @@ describe("useWatchParty local transport", () => {
     markViewerIntent();
     video.currentTime = 45;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 45_000, true);
+    expect(sendPartyTransport).toHaveBeenCalledWith("m1", 45_000, true, expect.any(Number));
     view.unmount();
   });
 
@@ -171,7 +172,7 @@ describe("useWatchParty local transport", () => {
 
     video.seeking = false;
     video.dispatchEvent(new Event("seeked"));
-    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true);
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true, 15_001);
     act(() => vi.advanceTimersByTime(500));
     expect(video.currentTime).toBe(45);
 
@@ -194,7 +195,7 @@ describe("useWatchParty local transport", () => {
     video.currentTime = 45;
     video.dispatchEvent(new Event("seeking"));
     await act(async () => video.dispatchEvent(new Event("seeked")));
-    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true);
+    expect(sendPartyTransport).toHaveBeenCalledExactlyOnceWith("m1", 45_000, true, 15_001);
     act(() => vi.advanceTimersByTime(500));
     expect(video.currentTime).toBe(45);
     act(() => vi.advanceTimersByTime(15_000));
@@ -219,8 +220,8 @@ describe("useWatchParty local transport", () => {
         video.dispatchEvent(new Event("seeked"));
       }
       expect(vi.mocked(sendPartyTransport).mock.calls).toEqual([
-        ["m1", 30_000, true],
-        ["m1", target * 1000, true],
+        ["m1", 30_000, true, 15_001],
+        ["m1", target * 1000, true, 15_002],
       ]);
 
       const publish = (positionMS: number) => {
@@ -522,7 +523,7 @@ describe("useWatchParty lead party (CORE-2245)", () => {
       fireEvent.keyDown(document.body, { key: "ArrowRight" });
       video.currentTime = 30;
       video.dispatchEvent(new Event("seeked"));
-      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 30_000, false);
+      expect(sendPartyTransport).toHaveBeenLastCalledWith("m1", 30_000, false, expect.any(Number));
       view.unmount();
     });
 

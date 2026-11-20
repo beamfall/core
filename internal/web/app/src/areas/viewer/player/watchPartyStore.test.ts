@@ -558,6 +558,38 @@ describe("races", () => {
       }
     },
   );
+
+  it("discards an expired queued scrub when the previous mutation finishes", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    vi.mocked(createWatchParty).mockResolvedValue({
+      partyID: "p1",
+      content: "m1",
+      relaxed: true,
+      members: [],
+    });
+    try {
+      expect(await startWatchParty("m1")).toBe(true);
+      let releaseFirst!: () => void;
+      const inFlight = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      vi.mocked(watchPartyTransport).mockImplementation(async ({ item, positionMS }) => {
+        if (positionMS === 30_000) await inFlight;
+        return { item, positionMS, presentAtMS: 0 };
+      });
+      const first = sendPartyTransport("m1", 30_000, true);
+      const queued = sendPartyTransport("m1", 60_000, true, 15_000);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      clock.mockReturnValue(20_000);
+      releaseFirst();
+      await expect(first).resolves.toBe(true);
+      await expect(queued).resolves.toBe(false);
+      expect(watchPartyTransport).toHaveBeenCalledTimes(1);
+      expect(getWatchParty().timeline?.positionMS).toBe(30_000);
+    } finally {
+      clock.mockRestore();
+    }
+  });
 });
 
 describe("host leave, end and page exit (CORE-1763)", () => {

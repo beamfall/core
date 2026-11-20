@@ -126,18 +126,22 @@ let generation = 0;
 let rewind: { fromMS: number; toMS: number } | null = null;
 
 interface TransportWork {
+  generation: number;
+  expiresAt?: number;
+  autoSkip?: { item: string; positionMS: number };
   run: () => Promise<void>;
   supersede: () => void;
 }
 
 interface TransportQueue {
-  latest: TransportWork | null;
+  inFlight: TransportWork | null;
   pending: TransportWork | null;
 }
 
 const transportQueues = new Map<string, TransportQueue>();
 
 function runTransport(partyID: string, queue: TransportQueue, work: TransportWork): void {
+  queue.inFlight = work;
   void work.run().finally(() => {
     const next = queue.pending;
     queue.pending = null;
@@ -150,18 +154,28 @@ function runTransport(partyID: string, queue: TransportQueue, work: TransportWor
 // the mutation itself has settled so the server sees intents in order.
 function enqueueTransport<T>(
   superseded: T,
+  { expiresAt, autoSkip }: { expiresAt?: number; autoSkip?: TransportWork["autoSkip"] },
   run: (settle: (result: T) => void, isLatest: () => boolean) => Promise<void>,
 ): Promise<T> {
   const { partyID } = state;
   const gen = generation;
   const running = transportQueues.get(partyID);
-  const queue = running ?? { latest: null, pending: null };
+  const queue = running ?? { inFlight: null, pending: null };
   return new Promise((settle) => {
     const work: TransportWork = {
-      run: () => run(settle, () => gen === generation && queue.latest === work),
+      generation: gen,
+      expiresAt,
+      autoSkip,
+      run: () => {
+        // The player follows the shared timeline again after the seek deadline.
+        if (gen !== generation || (expiresAt !== undefined && performance.now() >= expiresAt)) {
+          settle(superseded);
+          return Promise.resolve();
+        }
+        return run(settle, () => gen === generation && (queue.pending ?? queue.inFlight) === work);
+      },
       supersede: () => settle(superseded),
     };
-    queue.latest = work;
     if (running) {
       queue.pending?.supersede();
       queue.pending = work;
@@ -174,6 +188,20 @@ function enqueueTransport<T>(
 
 export function hasPartyTransportPending(): boolean {
   return transportQueues.has(state.partyID);
+}
+
+/** A scrub back to the current anchor can still supersede a pending auto-skip. */
+export function pendingPartyAutoSkipTarget(item: string): number | undefined {
+  const queue = transportQueues.get(state.partyID);
+  if (!queue) return;
+  const deadline = queue.pending?.expiresAt;
+  const latest =
+    deadline !== undefined && performance.now() >= deadline
+      ? queue.inFlight
+      : (queue.pending ?? queue.inFlight);
+  if (latest?.generation === generation && latest.autoSkip?.item === item) {
+    return latest.autoSkip.positionMS;
+  }
 }
 
 /** Date.now() of the last drift report; the rate bound counts from it. */
@@ -744,12 +772,13 @@ export function sendPartyTransport(
   item: string,
   positionMS: number,
   paused: boolean,
+  expiresAt?: number,
 ): Promise<boolean> {
   if (state.status !== "active" || (state.lead && !state.isHost)) return Promise.resolve(false);
   const partyID = state.partyID;
   const vars = { partyID, item, positionMS: Math.max(0, Math.round(positionMS)), paused };
   const gen = generation;
-  return enqueueTransport(false, async (settle, isLatest) => {
+  return enqueueTransport(false, { expiresAt }, async (settle, isLatest) => {
     if (state.lead && !state.isHost) {
       settle(false);
       return;
@@ -782,15 +811,20 @@ export function sendPartyTransport(
   });
 }
 
-export type PartyAutoSkipOutcome = "applied" | "denied" | "failed" | "unconfirmed";
+export type PartyAutoSkipOutcome = "applied" | "denied" | "unconfirmed";
 
 /** The server decides whether the auto-skip can move the shared timeline. */
-export function sendPartyAutoSkip(item: string, positionMS: number): Promise<PartyAutoSkipOutcome> {
+export function sendPartyAutoSkip(
+  item: string,
+  positionMS: number,
+  expiresAt?: number,
+): Promise<PartyAutoSkipOutcome> {
   if (state.status !== "active" || state.timeline?.item !== item || (state.lead && !state.isHost)) {
     return Promise.resolve("unconfirmed");
   }
   const target = Math.round(positionMS);
-  return enqueueTransport<PartyAutoSkipOutcome>("unconfirmed", async (settle, isLatest) => {
+  const intent = { expiresAt, autoSkip: { item, positionMS: target } };
+  return enqueueTransport<PartyAutoSkipOutcome>("unconfirmed", intent, async (settle, isLatest) => {
     const { partyID, timeline, lead, isHost } = state;
     if (timeline?.item !== item || (lead && !isHost)) {
       settle("unconfirmed");
@@ -798,17 +832,19 @@ export function sendPartyAutoSkip(item: string, positionMS: number): Promise<Par
     }
     const gen = generation;
     let acknowledged = false;
-    // Playback can follow the skip as soon as the transition arrives, even if
-    // the HTTP response is still on the way.
-    const stopTracking = subscribe(() => {
-      const latest = state.timeline;
-      if (!isLatest() || latest?.item !== item) {
-        settle("unconfirmed");
-      } else if (latest !== timeline && latest.positionMS === target) {
-        acknowledged = true;
-        settle("applied");
-      }
-    });
+    // The host can acknowledge its skip from the stream. Other members follow
+    // each shared transition, but need their own response to confirm permission.
+    const stopTracking = isHost
+      ? subscribe(() => {
+          const latest = state.timeline;
+          if (!isLatest() || !state.isHost || latest?.item !== item) {
+            settle("unconfirmed");
+          } else if (latest !== timeline && latest.positionMS === target) {
+            acknowledged = true;
+            settle("applied");
+          }
+        })
+      : undefined;
     try {
       const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
       const latest = state.timeline;
@@ -817,7 +853,7 @@ export function sendPartyAutoSkip(item: string, positionMS: number): Promise<Par
         return;
       }
       if (!result.applied) {
-        settle(isLatest() ? "denied" : "unconfirmed");
+        settle(isLatest() && latest === timeline ? "denied" : "unconfirmed");
         return;
       }
       // A lead transition uses the server's immediate clock. Its response can
@@ -833,11 +869,11 @@ export function sendPartyAutoSkip(item: string, positionMS: number): Promise<Par
       });
       settle(isLatest() ? "applied" : "unconfirmed");
     } catch {
-      // Only an unchanged anchor leaves the scrub that triggered this skip
-      // eligible for ordinary transport.
-      settle(isLatest() && state.timeline === timeline ? "failed" : "unconfirmed");
+      // The server may already have applied the skip. Follow the shared timeline
+      // as updates arrive; sending the original scrub could undo that skip.
+      settle("unconfirmed");
     } finally {
-      stopTracking();
+      stopTracking?.();
     }
   });
 }

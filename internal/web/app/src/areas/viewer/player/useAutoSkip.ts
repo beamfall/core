@@ -17,6 +17,7 @@ import {
 
 export type PartySeekAutoSkip = (
   video: HTMLVideoElement,
+  expiresAt: number,
 ) => Promise<PartyAutoSkipOutcome> | undefined;
 
 // Auto-skip playback (ADR-0048 Decision 6): while a per-profile
@@ -53,7 +54,7 @@ export function useAutoSkip({
   /** Song seconds per stream second: the tempo the server applied; 1 when none. */
   songScale?: number;
   /** Coordinate the lead's skip with its position reports. */
-  autoSkipLead?: (positionMS: number) => Promise<PartyAutoSkipOutcome>;
+  autoSkipLead?: (positionMS: number, expiresAt?: number) => Promise<PartyAutoSkipOutcome>;
   /** Give party transport the opportunity to skip a segment reached by a scrub. */
   partySeekAutoSkip?: RefObject<PartySeekAutoSkip | null>;
 }): {
@@ -118,7 +119,7 @@ export function useAutoSkip({
       setSkipped(segment);
     };
 
-    const trySkip = (fromSeek = false) => {
+    const trySkip = (expiresAt?: number) => {
       const scale = songScaleRef.current;
       const segment = autoSkipSegmentAt(
         markersRef.current,
@@ -142,11 +143,11 @@ export function useAutoSkip({
           return;
         }
         // A playback tick must not displace a newer queued scrub.
-        if (!fromSeek && hasPartyTransportPending()) return;
+        if (expiresAt === undefined && hasPartyTransportPending()) return;
         suppressedKeyRef.current = key;
         const request = party.lead
-          ? party.isHost && autoSkipLead?.(target)
-          : sendPartyAutoSkip(mediaID, target);
+          ? party.isHost && autoSkipLead?.(target, expiresAt)
+          : sendPartyAutoSkip(mediaID, target, expiresAt);
         if (!request) return;
         return request.then((outcome) => {
           if (cancelled || getWatchParty().partyID !== party.partyID) return "unconfirmed";
@@ -177,7 +178,8 @@ export function useAutoSkip({
       void trySkip();
     };
     if (partySeekAutoSkip) {
-      partySeekAutoSkip.current = (element) => (element === video ? trySkip(true) : undefined);
+      partySeekAutoSkip.current = (element, expiresAt) =>
+        element === video ? trySkip(expiresAt) : undefined;
     }
 
     video.addEventListener("timeupdate", onTime);
