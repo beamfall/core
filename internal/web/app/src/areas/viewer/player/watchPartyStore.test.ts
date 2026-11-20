@@ -732,6 +732,50 @@ describe("races", () => {
     }
   });
 
+  it.each(["unknown party", "not a member of this party"])(
+    "clears stale membership on the first %s refusal and drops pending transport",
+    async (reason) => {
+      const partyID = "stale-party";
+      const host = reason === "unknown party";
+      if (host) {
+        vi.mocked(createWatchParty).mockResolvedValueOnce({
+          partyID,
+          content: "m1",
+          relaxed: true,
+          members: [],
+        });
+        expect(await startWatchParty("m1")).toBe(true);
+      } else {
+        vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
+          deliver({ groupID: partyID, signal: "roster", item: "m1", paused: true });
+          return { partyID, item: "m1", positionMS: 0, presentAtMS: 0 };
+        });
+        expect(await joinWatchParty(partyID)).toBe("m1");
+      }
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const mutation = host
+        ? vi.mocked(watchPartyTransport)
+        : vi.mocked(requestWatchPartyTransport);
+      mutation.mockRejectedValue(new ApiError(reason, host ? 200 : 403));
+      try {
+        const refused = sendPartyTransport("m1", { playing: true });
+        const queued = host ? undefined : sendPartyTransport("m1", { playing: false });
+        expect(mutation).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(getWatchParty()).toMatchObject({ status: "idle", partyID: "", timeline: null });
+        await expect(refused).resolves.toBe(false);
+        if (queued) await expect(queued).resolves.toBe(false);
+        await vi.advanceTimersByTimeAsync(3000);
+        expect(mutation).toHaveBeenCalledTimes(1);
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+        expect(leaveWatchParty).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+        mutation.mockReset();
+      }
+    },
+  );
+
   it("discards a relaxed member's queued seek after the host changes titles", async () => {
     vi.mocked(acceptWatchParty).mockImplementationOnce(async () => {
       deliver({ groupID: "p1", signal: "roster", item: "m1", paused: true });

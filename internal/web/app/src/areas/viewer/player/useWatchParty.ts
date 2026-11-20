@@ -19,6 +19,7 @@ import {
   sendPartyAutoSkip,
   sendPartyTransport,
   startWatchParty,
+  submittedPartyTitleSwitch,
   useWatchPartyState,
   type WatchPartyState,
   watchForLeadParty,
@@ -300,21 +301,19 @@ export function useWatchParty({
     reportPartyDrift(drift);
   }, [videoRef, correct, play, follow, positionScale, baseRate]);
 
-  // A host switch belongs to the local selection that queued it. A new shared
-  // title invalidates that switch and the player follows the surviving anchor.
+  // An unsent switch belongs to the route that queued it. If it was already
+  // sent, hold the latest local selection until that switch settles.
   useLayoutEffect(() => {
     const partyItem = getWatchParty().timeline?.item;
-    if (!active || !party.isHost || !partyItem || !mediaId || partyItem === mediaId) return;
+    if (!active || !party.isHost || !partyItem || !mediaId) return;
+    const submitted = submittedPartyTitleSwitch();
+    if (!submitted && partyItem === mediaId) return;
     const selection = new AbortController();
     hostSelection.current = selection.signal;
-    void sendPartyTransport(mediaId, {
-      positionMS: 0,
-      playing: true,
-      selection: selection.signal,
-    }).then((applied) => {
+    const epoch = getPartyTransportEpoch();
+    const followShared = () => {
       if (selection.signal.aborted) return;
       hostSelection.current = null;
-      if (applied) return;
       const current = getWatchParty();
       if (
         current.partyID === party.partyID &&
@@ -323,7 +322,40 @@ export function useWatchParty({
       ) {
         onFollowRef.current(current.timeline.item);
       }
-    });
+    };
+    const reconcile = async () => {
+      if (submitted) await submitted.settled;
+      if (selection.signal.aborted) return;
+      const current = getWatchParty();
+      const item = current.timeline?.item;
+      const currentEpoch = getPartyTransportEpoch();
+      // A submitted switch can advance the epoch. Other title or membership
+      // changes invalidate this selection.
+      const sameSelection =
+        currentEpoch === epoch || (currentEpoch === epoch + 1 && item === submitted?.itemId);
+      if (
+        current.partyID !== party.partyID ||
+        !current.isHost ||
+        !item ||
+        !sameSelection ||
+        item === mediaId
+      ) {
+        followShared();
+        return;
+      }
+      if (
+        await sendPartyTransport(mediaId, {
+          positionMS: 0,
+          playing: true,
+          selection: selection.signal,
+        })
+      ) {
+        if (!selection.signal.aborted) hostSelection.current = null;
+      } else {
+        followShared();
+      }
+    };
+    void reconcile();
     return () => {
       selection.abort();
       hostSelection.current = null;

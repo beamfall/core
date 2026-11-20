@@ -142,9 +142,11 @@ interface TransportIntent {
 interface TransportWork {
   intent: TransportIntent;
   autoSkip: boolean;
+  titleSwitch: boolean;
   playbackChange?: { confirmed: boolean };
   isCurrent: () => boolean;
   submitted: boolean;
+  settled: boolean;
   confirmed: boolean;
   run: () => Promise<void>;
   settle: (result: PartyAutoSkipOutcome) => void;
@@ -152,6 +154,7 @@ interface TransportWork {
 
 interface TransportQueue {
   inFlight: TransportWork | null;
+  settled?: Promise<void>;
   pending: TransportWork | null;
 }
 
@@ -169,7 +172,13 @@ export function pendingPartyTransport(itemId: string): TransportIntent | undefin
 
 function pendingTransportWork(itemId: string): TransportWork | undefined {
   const work = latestTransport;
-  if (work?.intent.itemId === itemId && work.isCurrent()) return work;
+  if (work?.intent.itemId !== itemId || !work.isCurrent()) return;
+  // A relaxed member can miss the stream acknowledgement after approval.
+  if (work.settled && performance.now() >= work.intent.seekProtectedUntil) {
+    latestTransport = null;
+    return;
+  }
+  return work;
 }
 
 function matchesTransport(work: TransportWork, timeline: PartyTimeline): boolean {
@@ -181,9 +190,49 @@ function matchesTransport(work: TransportWork, timeline: PartyTimeline): boolean
   );
 }
 
+function pauseRetainsLeadSkip(work: TransportWork, next: TransportWork | null): boolean {
+  return (
+    state.lead &&
+    state.isHost &&
+    next !== null &&
+    !next.intent.playing &&
+    next.intent.itemId === work.intent.itemId &&
+    next.intent.epoch === work.intent.epoch &&
+    next.intent.positionMS === work.intent.positionMS
+  );
+}
+
+function settleTransport(
+  work: TransportWork,
+  result: PartyAutoSkipOutcome,
+  next: TransportWork | null,
+): void {
+  if (result === "unconfirmed" && work.autoSkip && next && pauseRetainsLeadSkip(work, next)) {
+    // The retained target can still be acknowledged by the authoritative Pause.
+    const settlePause = next.settle;
+    next.settle = (outcome) => {
+      work.settle(outcome === "applied" ? "applied" : "unconfirmed");
+      settlePause(outcome);
+    };
+    return;
+  }
+  work.settle(result);
+}
+
+/** A superseded switch that was already sent can still move the shared title. */
+export function submittedPartyTitleSwitch():
+  | { itemId: string; settled: Promise<void> }
+  | undefined {
+  const queue = transportQueues.get(state.partyID);
+  const work = queue?.inFlight;
+  if (work?.submitted && work.titleSwitch && queue?.settled) {
+    return { itemId: work.intent.itemId, settled: queue.settled };
+  }
+}
+
 function runTransport(partyID: string, queue: TransportQueue, work: TransportWork): void {
   queue.inFlight = work;
-  void work.run().finally(() => {
+  queue.settled = work.run().finally(() => {
     if (transportQueues.get(partyID) !== queue) return;
     const next = queue.pending;
     queue.pending = null;
@@ -201,6 +250,7 @@ function enqueueTransport(
   selection?: AbortSignal,
 ): Promise<PartyAutoSkipOutcome> {
   const { partyID } = state;
+  const gen = generation;
   const isCurrent = () =>
     intent.epoch === transportEpoch &&
     state.partyID === partyID &&
@@ -212,9 +262,11 @@ function enqueueTransport(
     const work: TransportWork = {
       intent,
       autoSkip,
+      titleSwitch: state.isHost && intent.itemId !== state.timeline?.item,
       playbackChange,
       isCurrent,
       submitted: false,
+      settled: false,
       confirmed: false,
       run: async () => {
         const isLatest = () => isCurrent() && (queue.pending ?? queue.inFlight) === work;
@@ -236,9 +288,20 @@ function enqueueTransport(
               result = applied ? "applied" : "denied";
             }
             if (result !== "applied" && latestTransport === work) latestTransport = null;
-            work.settle(result);
+            work.settled = true;
+            settleTransport(work, result, queue.pending);
             return;
           } catch (err) {
+            if (
+              gen === generation &&
+              err instanceof ApiError &&
+              (err.message === "unknown party" || err.message === "not a member of this party")
+            ) {
+              if (state.lead) declinedParties.add(partyID);
+              forgetFollowing();
+              reset();
+              break;
+            }
             if (!isLatest() || work.confirmed) break;
             // An explicit title refusal leaves the shared title where it was.
             if (err instanceof ApiError && err.message === PARTY_TITLE_NOT_VISIBLE) {
@@ -249,7 +312,7 @@ function enqueueTransport(
           }
         }
         if (latestTransport === work) latestTransport = null;
-        work.settle(work.confirmed ? "applied" : "unconfirmed");
+        settleTransport(work, work.confirmed ? "applied" : "unconfirmed", queue.pending);
       },
       settle: resolve,
     };
@@ -330,10 +393,10 @@ function set(patch: Partial<WatchPartyState>): void {
       if (!work?.submitted || !work.isCurrent() || !matchesTransport(work, timeline)) continue;
       work.confirmed = true;
       if (work.playbackChange) work.playbackChange.confirmed = true;
-      if (work === latestTransport) {
-        latestTransport = null;
-        if (work.autoSkip && state.isHost) work.settle("applied");
-      }
+      const latest = work === latestTransport;
+      if (work.autoSkip && state.isHost && (latest || pauseRetainsLeadSkip(work, latestTransport)))
+        work.settle("applied");
+      if (latest) latestTransport = null;
     }
     noteTimeline(timeline);
   }
@@ -976,12 +1039,13 @@ async function applyPartyAutoSkip(
   const result = await watchPartyAutoSkip({ partyID, item, positionMS: target });
   const latest = state.timeline;
   if (!work.isCurrent() || latest?.item !== item) return "unconfirmed";
-  if (work.confirmed && result.applied) return isLatest() ? "applied" : "unconfirmed";
   if (!result.applied) return isLatest() && latest === timeline ? "denied" : "unconfirmed";
+  const relevant = isLatest() || pauseRetainsLeadSkip(work, latestTransport);
+  if (work.confirmed) return relevant ? "applied" : "unconfirmed";
   // A lead response can supersede an earlier heartbeat. Otherwise the stream
   // wins once it has published a newer anchor.
   if (latest !== timeline && (!lead || latest.presentAtMS >= result.presentAtMS)) {
-    return isLatest() && matchesTransport(work, latest) ? "applied" : "unconfirmed";
+    return relevant && matchesTransport(work, latest) ? "applied" : "unconfirmed";
   }
   set({
     timeline: {
@@ -991,7 +1055,7 @@ async function applyPartyAutoSkip(
       ...(playbackChange ? { paused: !playing } : {}),
     },
   });
-  return isLatest() ? "applied" : "unconfirmed";
+  return relevant ? "applied" : "unconfirmed";
 }
 
 /**

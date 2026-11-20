@@ -31,6 +31,7 @@ vi.mock("./watchPartyStore", () => ({
   resumeFollowedParty: vi.fn(async () => null),
   watchForLeadParty: vi.fn(() => () => {}),
   pendingPartyTransport: vi.fn(() => undefined),
+  submittedPartyTitleSwitch: () => undefined,
   getPartyTransportEpoch: () => 1,
   PARTY_TRANSPORT_TIMEOUT_MS: 15_000,
 }));
