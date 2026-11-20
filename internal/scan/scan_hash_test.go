@@ -321,6 +321,7 @@ func TestScanTreatsUnstableSampleAsUnchanged(t *testing.T) {
 		path := writeScanFile(t, root, "new.mp4", []byte("new bytes"))
 		st := storetest.Open(t)
 		req := Request{LibraryID: "library-local", Root: root}
+		logs := captureScanWarnings(t)
 		original := sampleScanFile
 		t.Cleanup(func() { sampleScanFile = original })
 		var reads int
@@ -330,9 +331,19 @@ func TestScanTreatsUnstableSampleAsUnchanged(t *testing.T) {
 			}
 			return "", readErr
 		}
-		first, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
-		if err != nil || first.FilesSeen != 0 || reads != 1 {
-			t.Fatalf("unstable scan = %+v, reads = %d, err = %v, want one read attempt and no admission", first, reads, err)
+		for attempt := 1; attempt <= 2; attempt++ {
+			logs.Reset()
+			result, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
+			if err != nil || result.FilesSeen != 0 || reads != attempt {
+				t.Fatalf("unstable scan %d = %+v, reads = %d, err = %v, want one read attempt per scan and no admission", attempt, result, reads, err)
+			}
+			const message = `msg="scan: file sample could not be verified"`
+			log := logs.String()
+			_, warning, _ := strings.Cut(log, message)
+			warning, _, _ = strings.Cut(warning, "\n")
+			if strings.Count(log, message) != 1 || !strings.Contains(warning, path) || !strings.Contains(warning, readErr.Error()) {
+				t.Errorf("scan %d warnings = %q, want one sample warning with path %q and error %q", attempt, log, path, readErr)
+			}
 		}
 		sampleScanFile = original
 		second, err := Scan(ctx, st, nil, nil, nil, nil, nil, req)
