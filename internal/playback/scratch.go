@@ -47,7 +47,16 @@ type scratchPath struct {
 // setupMu admits a single owner and mu protects its revocation.
 type scratchAllocation struct {
 	key     SessionKey
+	path    *scratchPath // set only once mkdir confirms ownership
 	revoked bool
+}
+
+func (a *scratchAllocation) revokeLocked() {
+	a.revoked = true
+	if a.path != nil {
+		// Reconciliation reports the pending path; setup remains its removal owner.
+		a.path.state = scratchPending
+	}
 }
 
 // SessionsOption configures a session manager before its startup sweep.
@@ -240,6 +249,10 @@ func (s *Sessions) allocateScratchLocked(allocation *scratchAllocation, library 
 		// caller publishes or assigns the initial remover under mu.
 		p.library = library
 		p.state, p.users = scratchLive, 1
+		allocation.path = p
+		if allocation.revoked {
+			p.state = scratchPending
+		}
 		return p, nil
 	}
 	return nil, ErrSessionEvicted

@@ -658,27 +658,6 @@ func TestScratchSweepReconcilesCollisionAndPreservesUnpublishedAllocation(t *tes
 	if err := waitScratchResult(t, result); err != nil {
 		t.Fatal(err)
 	}
-	// Model the state after exclusive mkdir and before publication.
-	s.mkdirDir = nil
-	s.mu.Lock()
-	unpublished, err := s.allocateScratchLocked(&scratchAllocation{}, "library")
-	s.mu.Unlock()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		s.releaseScratch(unpublished)
-		s.mu.Lock()
-		td := s.transitionLocked(&hlsSession{scratch: unpublished}, detachSession{}).teardown
-		s.mu.Unlock()
-		s.runTeardowns([]*sessionTeardown{td})
-	}()
-	if err := s.PurgeOrphanedTranscodeDirs(); err != nil {
-		t.Fatalf("sweep with confirmed unpublished allocation: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(s.dir, unpublished.name)); err != nil {
-		t.Fatalf("sweep removed confirmed unpublished allocation: %v", err)
-	}
 }
 
 func TestScratchSweepRecordsCollisionFailureAsRootDebt(t *testing.T) {
@@ -984,21 +963,20 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 				cancel()
 			}
 			entered, release := scratchLatch(t)
-			if at != "before setupMu" {
+			switch at {
+			case "during mkdir":
 				s.mkdirDir = func(path string, mode fs.FileMode) error {
-					if at == "after successful mkdir" {
-						if err := os.Mkdir(path, mode); err != nil {
-							return err
-						}
-					}
 					close(entered)
 					<-release.ch
-					if at == "during mkdir" {
-						return os.Mkdir(path, mode)
-					}
-					return nil
+					return os.Mkdir(path, mode)
+				}
+			case "after successful mkdir":
+				s.beforeSetupCommit = func() {
+					close(entered)
+					<-release.ch
 				}
 			}
+			preparedDir := filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce))
 			canceled := make(chan error, 1)
 			go func() {
 				_, err := s.FilePath(ctx, key, src, 90, 1280, 720, false, masterPlaylistName)
@@ -1006,6 +984,9 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 			}()
 			if at != "before setupMu" {
 				waitScratchSignal(t, entered)
+				if at == "after successful mkdir" {
+					mustRead(t, filepath.Join(preparedDir, masterPlaylistName))
+				}
 				cancel()
 				release.open()
 			}
@@ -1013,13 +994,17 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 				t.Fatalf("canceled replacement returned %v", err)
 			}
 			s.mkdirDir = nil
-			requireScratchMissing(t, filepath.Join(s.dir, fmt.Sprintf("session-%s-2", s.bootNonce)))
+			s.beforeSetupCommit = nil
+			requireScratchMissing(t, preparedDir)
 			s.mu.Lock()
 			head, running, hint, paths := s.sessions[key], playlist.session.proc, s.resumeHints[key], len(s.paths)
 			s.mu.Unlock()
 			if head != playlist.session || running != proc || paths != 1 || hint.seconds != 41 {
 				t.Errorf("cancellation preserved head=%v encoder=%v paths=%d resume=%d",
 					head == playlist.session, running == proc, paths, hint.seconds)
+			}
+			if proc.StopRequested() {
+				t.Error("cancellation stopped the original encoder")
 			}
 			f, _, err := playlist.OpenPlain()
 			if err != nil {
@@ -1042,20 +1027,28 @@ func TestCanceledShapeReplacementPreservesEncoderAndResumeHint(t *testing.T) {
 func TestTerminationRevokesScratchAllocation(t *testing.T) {
 	cases := []struct {
 		name      string
+		lateMkdir bool
 		terminate func(*Sessions, SessionKey) int
 	}{
-		{"session", func(s *Sessions, key SessionKey) int { return s.TerminateSession(key.SessionID) }},
-		{"playback", func(s *Sessions, key SessionKey) int { return s.TerminatePlayback(key.SessionID, key.MediaID) }},
+		{"session with late mkdir", true, func(s *Sessions, key SessionKey) int { return s.TerminateSession(key.SessionID) }},
+		{"playback with confirmed mkdir", false, func(s *Sessions, key SessionKey) int { return s.TerminatePlayback(key.SessionID, key.MediaID) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			transcoder := &fakeTranscoder{}
 			s := newTestSessions(t, transcoder, t.TempDir(), nil)
-			entered, release := scratchLatch(t)
-			s.mkdirDir = func(path string, mode fs.FileMode) error {
-				close(entered)
-				<-release.ch
-				return os.Mkdir(path, mode)
+			mkdirEntered, mkdirRelease := scratchLatch(t)
+			prepared, publish := scratchLatch(t)
+			if tc.lateMkdir {
+				s.mkdirDir = func(path string, mode fs.FileMode) error {
+					close(mkdirEntered)
+					<-mkdirRelease.ch
+					return os.Mkdir(path, mode)
+				}
+			}
+			s.beforeSetupCommit = func() {
+				close(prepared)
+				<-publish.ch
 			}
 			key := SessionKey{SessionID: "viewer", MediaID: "item", ProfileCapability: "receiver"}
 			request := make(chan error, 1)
@@ -1063,7 +1056,14 @@ func TestTerminationRevokesScratchAllocation(t *testing.T) {
 				_, err := filePath720(s, key, "720p/seg00000.m4s")
 				request <- err
 			}()
-			waitScratchSignal(t, entered)
+			if tc.lateMkdir {
+				waitScratchSignal(t, mkdirEntered)
+			} else {
+				waitScratchSignal(t, prepared)
+				if err := s.PurgeOrphanedTranscodeDirs(); err != nil {
+					t.Fatalf("sweep before revocation: %v", err)
+				}
+			}
 			terminated := make(chan error, 1)
 			go func() {
 				if count := s.TerminatePlayback(key.SessionID, "other"); count != 0 {
@@ -1083,11 +1083,18 @@ func TestTerminationRevokesScratchAllocation(t *testing.T) {
 			if err := waitScratchResult(t, terminated); err != nil {
 				t.Fatal(err)
 			}
-			release.open()
+			mkdirRelease.open()
+			waitScratchSignal(t, prepared)
+			dir := filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce))
+			if err := s.PurgeOrphanedTranscodeDirs(); !errors.Is(err, errIncompleteScratchSweep) {
+				t.Errorf("sweep with revoked unpublished directory = %v, want incomplete reconciliation", err)
+			}
+			mustRead(t, filepath.Join(dir, masterPlaylistName))
+			publish.open()
 			if err := waitScratchResult(t, request); !errors.Is(err, ErrSessionEvicted) {
 				t.Fatalf("revoked creator returned %v", err)
 			}
-			requireScratchMissing(t, filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce)))
+			requireScratchMissing(t, dir)
 			if got := len(transcoder.starts); got != 0 {
 				t.Fatalf("revoked creator started %d encoders", got)
 			}

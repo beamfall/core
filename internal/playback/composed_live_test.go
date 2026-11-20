@@ -190,11 +190,11 @@ func TestComposedShapedSessionEncodesOneComposedRung(t *testing.T) {
 		t.Fatalf("encodes = %d, want 1", len(transcoder.renditions))
 	}
 	picture, ok := transcoder.renditions[0].Picture()
-	if !ok || filepath.Base(picture.TimedTextPath) != composedTimedTextFile {
-		t.Fatalf("rendition picture = %+v ok %v, want timed text in the composed rung dir", picture, ok)
+	wantTimedText := filepath.Join(filepath.Dir(masterPath), ComposedRungID, composedTimedTextFile)
+	if !ok || picture.TimedTextPath != wantTimedText {
+		t.Fatalf("rendition picture = %+v ok %v, want timed text at %q", picture, ok, wantTimedText)
 	}
-	// The server closes its rung descriptor as soon as the starter returns.
-	if text, err := os.ReadFile(filepath.Join(filepath.Dir(masterPath), ComposedRungID, composedTimedTextFile)); err != nil || string(text) != composedTestText {
+	if text, err := os.ReadFile(picture.TimedTextPath); err != nil || string(text) != composedTestText {
 		t.Fatalf("timed text = %q err %v", text, err)
 	}
 	master := string(mustRead(t, masterPath))

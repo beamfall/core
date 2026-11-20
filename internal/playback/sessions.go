@@ -473,6 +473,8 @@ type Sessions struct {
 	mkdirDir      func(string, fs.FileMode) error
 	lstatScratch  func(string) (fs.FileInfo, error)
 	join          func(*os.File, func(string) (*os.File, error), []string) error
+	// beforeSetupCommit lets tests pause after writing the unpublished playlists.
+	beforeSetupCommit func()
 	// durationProbes caches on-demand runtime probes (ProbedDurationSeconds).
 	durationProbes    durationProbeCache
 	incompleteSources incompleteSourceCache
@@ -881,7 +883,7 @@ func (s *Sessions) terminate(matches func(SessionKey) bool) int {
 	s.mu.Lock()
 	revoked := 0
 	if a := s.allocation; a != nil && !s.closed && !a.revoked && matches(a.key) {
-		a.revoked = true
+		a.revokeLocked()
 		revoked++
 	}
 	var teardowns []*sessionTeardown
@@ -1358,6 +1360,9 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 	var preparedPicture *ffmpeg.ComposedPicture
 	if err == nil && picture != nil {
 		preparedPicture, err = writeLivePicture(dir, *picture)
+	}
+	if s.beforeSetupCommit != nil {
+		s.beforeSetupCommit()
 	}
 	s.mu.Lock()
 	// setupMu excludes other publishers. Termination can still revoke this claim
@@ -1942,6 +1947,9 @@ func (s *Sessions) Close() error {
 		s.keyframes.stop()
 		s.mu.Lock()
 		s.closed = true
+		if s.allocation != nil {
+			s.allocation.revokeLocked()
+		}
 		var teardowns []*sessionTeardown
 		for _, session := range s.sessions {
 			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
