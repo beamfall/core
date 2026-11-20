@@ -14,6 +14,7 @@ import (
 
 	"github.com/beamfall/core/internal/encderiv"
 	"github.com/beamfall/core/internal/ffmpeg"
+	"github.com/beamfall/core/internal/store"
 	"golang.org/x/sys/unix"
 )
 
@@ -82,6 +83,20 @@ func TestNewSessionsCreatesDefaultAndValidatesExplicitRoot(t *testing.T) {
 	if s, err := NewSessionsInDir(nil, file, nil); err == nil {
 		_ = s.Close()
 		t.Fatal("constructor accepted a regular file as the explicit root")
+	}
+}
+
+func TestNewSessionsRejectsEmptyExplicitRootBeforeSweeping(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	marker := filepath.Join(dir, "session-42", "marker")
+	seedScratchFile(t, marker)
+	if s, err := NewSessionsInDir(nil, "", nil); err == nil {
+		_ = s.Close()
+		t.Error("constructor accepted an empty explicit root")
+	}
+	if got := string(mustRead(t, marker)); got != "stale" {
+		t.Fatalf("working-directory marker changed: %q", got)
 	}
 }
 
@@ -274,19 +289,7 @@ func TestCloseWaitsForAdmittedScratchSweepAndSharesItsError(t *testing.T) {
 	closed := make(chan error, 2)
 	go func() { closed <- s.Close() }()
 	go func() { closed <- s.Close() }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		s.mu.Lock()
-		closing := s.closed
-		s.mu.Unlock()
-		if closing {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Close did not start")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitScratchCloseBlocked(t, s)
 	requireScratchLocked(t, s.dir)
 	select {
 	case err := <-closed:
@@ -530,15 +533,30 @@ func TestScratchArtifactOpensRefuseSymlinksAndFIFO(t *testing.T) {
 	}
 	outside := filepath.Join(t.TempDir(), "outside")
 	seedScratchFile(t, outside)
-	if err := os.Symlink(outside, path); err != nil {
+	inRoot := filepath.Join(a.session.dir, "target.m3u8")
+	seedScratchFile(t, inRoot)
+	for _, target := range []string{outside, filepath.Base(inRoot)} {
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+		if f, _, err := a.OpenPlain(); err == nil {
+			_ = f.Close()
+			t.Fatalf("opened top-level symlink to %q", target)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedScratchFile(t, filepath.Join(a.session.dir, "720p", "seg00000.m4s"))
+	if err := os.Symlink("720p", filepath.Join(a.session.dir, "rung-alias")); err != nil {
 		t.Fatal(err)
 	}
-	if f, _, err := a.OpenPlain(); err == nil {
+	if f, _, err := a.session.openArtifact(filepath.Join(a.session.dir, "rung-alias", "seg00000.m4s")); err == nil {
 		_ = f.Close()
-		t.Fatal("opened a symlink")
+		t.Fatal("opened artifact through an in-root rung symlink")
 	}
-	if err := os.Remove(path); err != nil {
-		t.Fatal(err)
+	if entries, err := a.session.scratch.readRung("rung-alias"); err == nil {
+		t.Fatalf("listed a symlinked rung: %v", entries)
 	}
 	if err := unix.Mkfifo(path, 0o600); err != nil {
 		t.Fatal(err)
@@ -605,6 +623,22 @@ func waitScratchResult(t *testing.T, ch <-chan error) error {
 	}
 }
 
+func waitScratchCloseBlocked(t *testing.T, s *Sessions) <-chan struct{} {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		idle := s.offLockIdle
+		s.mu.Unlock()
+		if idle != nil {
+			return idle
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("Close did not wait for scratch ownership")
+	return nil
+}
+
 func TestScratchCleanupOwnsLateMkdirAfterCancellation(t *testing.T) {
 	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
 	entered, release := scratchLatch(t)
@@ -632,4 +666,180 @@ func TestScratchCleanupOwnsLateMkdirAfterCancellation(t *testing.T) {
 	if len(s.paths) != 0 || len(s.sessions) != 0 {
 		t.Fatalf("late mkdir retained %d paths and %d sessions", len(s.paths), len(s.sessions))
 	}
+}
+
+func TestCloseWaitsForRemovalAfterLateScratchMkdir(t *testing.T) {
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), nil)
+	mkdirEntered, mkdirRelease := scratchLatch(t)
+	removeEntered, removeRelease := scratchLatch(t)
+	s.mkdirDir = func(name string, mode fs.FileMode) error {
+		close(mkdirEntered)
+		<-mkdirRelease.ch
+		return s.root.Mkdir(name, mode)
+	}
+	s.removeDir = func(path string) error {
+		close(removeEntered)
+		<-removeRelease.ch
+		return s.root.RemoveAll(filepath.Base(path))
+	}
+	created := make(chan error, 1)
+	go func() {
+		_, err := filePath720(s, SessionKey{SessionID: "late-mkdir"}, masterPlaylistName)
+		created <- err
+	}()
+	waitScratchSignal(t, mkdirEntered)
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	idle := waitScratchCloseBlocked(t, s)
+	requireScratchLocked(t, s.dir)
+	mkdirRelease.open()
+	waitScratchSignal(t, removeEntered)
+	select {
+	case <-idle:
+		t.Fatal("late mkdir signaled idle before its removal completed")
+	default:
+	}
+	requireScratchLocked(t, s.dir)
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned during late directory removal: %v", err)
+	default:
+	}
+	removeRelease.open()
+	if err := waitScratchResult(t, created); !errors.Is(err, ErrSessionEvicted) {
+		t.Fatalf("late creator returned %v", err)
+	}
+	if err := waitScratchResult(t, closed); err != nil {
+		t.Fatal(err)
+	}
+	requireScratchMissing(t, filepath.Join(s.dir, fmt.Sprintf("session-%s-1", s.bootNonce)))
+	newTestSessionsInDir(t, nil, s.dir, nil)
+}
+
+func TestScratchWritersStayInHeldRootAfterReplacement(t *testing.T) {
+	for _, encrypted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("encrypted=%t", encrypted), func(t *testing.T) {
+			s := newTestSessions(t, &fakeEncryptedTranscoder{}, t.TempDir(), nil)
+			shape := StreamShape{ComposedPicture: true}
+			rung := ComposedRungID
+			if encrypted {
+				shape = StreamShape{Encrypted: testEncryptedSource(nil)}
+				rung = "720p"
+			}
+			s.SetPictureComposer(func(context.Context, store.MediaID, string) (ComposedPicture, bool, error) {
+				return ComposedPicture{TimedText: composedTestText}, true, nil
+			})
+			entered, release := scratchLatch(t)
+			s.mkdirDir = func(name string, mode fs.FileMode) error {
+				err := s.root.Mkdir(name, mode)
+				close(entered)
+				<-release.ch
+				return err
+			}
+			result := make(chan error, 1)
+			go func() {
+				a, err := s.LiveArtifactShaped(t.Context(), SessionKey{SessionID: "root-swap"}, "/src", 120, 1280, 720, false, false,
+					ladderCaps{}, VideoSignal{}, -1, ffmpeg.AudioProfile{}, nil, shape, PriorityNormal, rung+"/seg00000.m4s")
+				if err == nil {
+					a.Release()
+				}
+				result <- err
+			}()
+			waitScratchSignal(t, entered)
+			held := s.dir + "-held"
+			if err := os.Rename(s.dir, held); err != nil {
+				t.Fatal(err)
+			}
+			name := fmt.Sprintf("session-%s-1", s.bootNonce)
+			original := filepath.Join(held, name)
+			replacement := filepath.Join(s.dir, name)
+			marker := filepath.Join(replacement, masterPlaylistName)
+			seedScratchFile(t, marker)
+			release.open()
+			if err := waitScratchResult(t, result); err != nil {
+				t.Fatal(err)
+			}
+			for _, rel := range []string{masterPlaylistName, rung + "/index.m3u8", rung + "/seg00000.m4s"} {
+				if len(mustRead(t, filepath.Join(original, rel))) == 0 {
+					t.Fatalf("missing output in the held directory: %s", rel)
+				}
+			}
+			if !encrypted {
+				if got := string(mustRead(t, filepath.Join(original, rung, composedTimedTextFile))); got != composedTestText {
+					t.Fatalf("timed text in the held directory = %q", got)
+				}
+			}
+			requireScratchLocked(t, held)
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			requireScratchMissing(t, original)
+			if got := string(mustRead(t, marker)); got != "stale" {
+				t.Fatalf("replacement playlist changed: %q", got)
+			}
+			entries, err := os.ReadDir(replacement)
+			if err != nil || len(entries) != 1 || entries[0].Name() != masterPlaylistName {
+				t.Fatalf("replacement directory changed: %v, %v", entries, err)
+			}
+		})
+	}
+}
+
+func TestScratchReaperRetriesDebtWhileIdleReaderIsHeld(t *testing.T) {
+	var millis atomic.Int64
+	s := newTestSessions(t, &fakeTranscoder{}, t.TempDir(), func() time.Time { return time.UnixMilli(millis.Load()) })
+	debtKey := SessionKey{SessionID: "debt"}
+	path, err := filePath720(s, debtKey, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	debtDir := filepath.Dir(path)
+	var attempts atomic.Int64
+	s.removeDir = func(path string) error {
+		if path == debtDir && attempts.Add(1) == 1 {
+			return os.ErrPermission
+		}
+		return s.root.RemoveAll(filepath.Base(path))
+	}
+	s.TerminateSession(debtKey.SessionID)
+	if attempts.Load() != 1 {
+		t.Fatal("failed to seed removal debt")
+	}
+	key := SessionKey{SessionID: "idle"}
+	path, err = filePath720(s, key, masterPlaylistName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := testArtifactForPath(s, key, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Release()
+	f, _, err := a.OpenPlain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	millis.Store((sessionIdleTimeout + time.Second).Milliseconds())
+	reaped := make(chan struct{})
+	go func() {
+		s.reap()
+		close(reaped)
+	}()
+	waitScratchSignal(t, a.session.scratch.cutoff)
+	waitScratchSignal(t, reaped)
+	if attempts.Load() != 2 {
+		t.Fatalf("unrelated debt received %d removal attempts, want 2", attempts.Load())
+	}
+	requireScratchMissing(t, debtDir)
+	if _, err := f.Read(make([]byte, 1)); err != nil {
+		t.Fatalf("read from the held artifact: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("idle directory removed before reader release: %v", err)
+	}
+	_ = f.Close()
+	a.Release()
+	requireScratchMissing(t, filepath.Dir(path))
 }

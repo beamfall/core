@@ -28,7 +28,7 @@ type recordSourceEnd struct {
 	rung    Rung
 	segment int
 }
-type detachSession struct{}
+type detachSession struct{ cleanupOnRelease bool }
 type takeEncoderRestart struct{}
 
 // encoderStart is the claim held across the existing off-lock start path.
@@ -96,7 +96,7 @@ func (s *Sessions) transitionLocked(session *hlsSession, change any) transitionR
 			}
 			delete(s.sessions, session.key)
 		}
-		t := &sessionTeardown{session: session, proc: session.proc, live: session.live}
+		t := &sessionTeardown{session: session, proc: session.proc, live: session.live, cleanupOnRelease: change.cleanupOnRelease}
 		if t.live != nil {
 			t.live.Cutoff()
 		}

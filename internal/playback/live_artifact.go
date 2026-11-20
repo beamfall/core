@@ -67,34 +67,34 @@ func (h *hlsSession) openArtifact(path string) (*os.File, fs.FileInfo, error) {
 	if err != nil || !filepath.IsLocal(rel) {
 		return nil, nil, fs.ErrInvalid
 	}
-	return openScratchMember(h.scratch.root, rel)
+	return openScratchMember(h.scratch.dir, rel)
+}
+
+func openScratchChild(dir *os.File, name string, flags int) (*os.File, error) {
+	if !fs.ValidPath(name) || name == "." || filepath.Base(name) != name {
+		return nil, fs.ErrInvalid
+	}
+	fd, err := unix.Openat(int(dir.Fd()), name, flags|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: name, Err: err}
+	}
+	return os.NewFile(uintptr(fd), name), nil
 }
 
 // Live paths have at most one rung directory. Open both components without
 // following symlinks, and use nonblocking mode before checking the file type.
-func openScratchMember(root *os.Root, rel string) (*os.File, fs.FileInfo, error) {
-	const flags = unix.O_RDONLY | unix.O_NONBLOCK | unix.O_NOFOLLOW
-	var f *os.File
-	var err error
+func openScratchMember(dir *os.File, rel string) (*os.File, fs.FileInfo, error) {
 	if rung, name, ok := strings.Cut(rel, string(filepath.Separator)); ok {
-		if !filepath.IsLocal(name) || filepath.Base(name) != name {
-			return nil, nil, fs.ErrInvalid
-		}
-		dir, err := root.OpenFile(rung, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+		rungDir, err := openScratchChild(dir, rung, unix.O_RDONLY|unix.O_DIRECTORY)
 		if err != nil {
 			return nil, nil, err
 		}
-		defer dir.Close()
-		fd, err := unix.Openat(int(dir.Fd()), name, flags|unix.O_CLOEXEC, 0)
-		if err != nil {
-			return nil, nil, &os.PathError{Op: "open", Path: rel, Err: err}
-		}
-		f = os.NewFile(uintptr(fd), rel)
-	} else {
-		f, err = root.OpenFile(rel, flags, 0)
-		if err != nil {
-			return nil, nil, err
-		}
+		defer rungDir.Close()
+		dir, rel = rungDir, name
+	}
+	f, err := openScratchChild(dir, rel, unix.O_RDONLY)
+	if err != nil {
+		return nil, nil, err
 	}
 	info, err := f.Stat()
 	if err == nil && !info.Mode().IsRegular() {
@@ -108,7 +108,7 @@ func openScratchMember(root *os.Root, rel string) (*os.File, fs.FileInfo, error)
 }
 
 func (p *scratchPath) readRung(rung string) ([]os.DirEntry, error) {
-	dir, err := p.root.OpenFile(rung, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	dir, err := openScratchChild(p.dir, rung, unix.O_RDONLY|unix.O_DIRECTORY)
 	if err != nil {
 		return nil, err
 	}
@@ -129,13 +129,13 @@ func (h *hlsSession) openEncryptedArtifact(path string) (*encderiv.LiveFile, err
 	if h.live == nil {
 		return nil, fs.ErrInvalid
 	}
-	rel, ok := h.live.Rel(path)
-	if !ok {
+	rel, err := filepath.Rel(h.dir, path)
+	if err != nil || !filepath.IsLocal(rel) {
 		return nil, fs.ErrInvalid
 	}
 	f, _, err := h.openArtifact(path)
 	if err != nil {
 		return nil, err
 	}
-	return h.live.OpenFile(rel, f)
+	return h.live.OpenFile(filepath.ToSlash(rel), f)
 }

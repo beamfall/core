@@ -31,16 +31,27 @@ const (
 
 // Sessions.mu protects the path registry and every claim's mutable state.
 type scratchPath struct {
-	name    string
-	library store.LibraryID
-	state   scratchState
-	users   int
-	drained chan struct{}
-	cleanup *sessionTeardown
-	cutoff  chan struct{}
-	retryAt time.Time
-	backoff time.Duration
-	root    *os.Root
+	name      string
+	library   store.LibraryID
+	state     scratchState
+	users     int
+	drained   chan struct{}
+	cleanup   *sessionTeardown
+	cutoff    chan struct{}
+	retryAt   time.Time
+	backoff   time.Duration
+	root      *os.Root
+	dir       *os.File
+	writerDir string
+}
+
+// SessionsOption configures a session manager before its startup sweep.
+type SessionsOption func(*Sessions)
+
+// WithScratchReadDir supplies the directory read used by scratch reconciliation.
+// The reader receives the locked root's filesystem, including at startup.
+func WithScratchReadDir(read func(fs.FS, string) ([]fs.DirEntry, error)) SessionsOption {
+	return func(s *Sessions) { s.readScratch = read }
 }
 
 // NewSessions creates the default root on first use.
@@ -54,12 +65,15 @@ func NewSessions(transcoder Transcoder, dataDir string, now func() time.Time) (*
 
 // NewSessionsInDir requires an existing directory and locks its inode before
 // reconciling session entries. Closing the descriptor releases the flock.
-func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time) (*Sessions, error) {
+func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.Time, opts ...SessionsOption) (*Sessions, error) {
+	if scratchDir == "" {
+		return nil, errors.New("playback: explicit scratch directory is empty")
+	}
 	dir, err := filepath.Abs(scratchDir)
 	if err != nil {
 		return nil, err
 	}
-	// Use the same canonical path for path-based encoders and encderiv.
+	// Keep the canonical spelling for diagnostic and artifact names.
 	dir, err = filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, err
@@ -93,6 +107,9 @@ func NewSessionsInDir(transcoder Transcoder, scratchDir string, now func() time.
 		cap:         defaultTranscodeCap,
 		resumeHints: make(map[SessionKey]resumeHint),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
 	// A successful probe also validates writability for direct callers of this
 	// constructor. Keep the probe under the lock and outside the session namespace.
 	probe := ".beamfall-write-" + s.bootNonce
@@ -120,7 +137,6 @@ func (s *Sessions) allocateScratchLocked(ctx context.Context, library store.Libr
 		}
 		p := &scratchPath{name: name, cutoff: make(chan struct{})}
 		s.paths[name] = p
-		s.starting++
 		s.mu.Unlock()
 		mkdir := s.root.Mkdir
 		if s.mkdirDir != nil {
@@ -129,22 +145,33 @@ func (s *Sessions) allocateScratchLocked(ctx context.Context, library store.Libr
 		err := mkdir(name, 0o700)
 		created := err == nil
 		var root *os.Root
+		var dir *os.File
+		var writerDir string
 		if created {
-			root, err = s.root.OpenRoot(name)
+			dir, err = openScratchChild(s.rootLock, name, unix.O_RDONLY|unix.O_DIRECTORY)
+			if err == nil {
+				writerDir, err = scratchWriterPath(dir)
+			}
+			if err == nil {
+				root, err = os.OpenRoot(writerDir)
+			}
 		}
 		s.mu.Lock()
-		s.starting--
-		s.wakeCloseLocked()
 		if !created && errors.Is(err, fs.ErrExist) {
 			// The session never owned this entry. Its cleanup belongs to the root.
 			p.state = scratchDebt
+			s.wakeCloseLocked()
 			continue
 		}
 		if !created {
 			delete(s.paths, name)
+			s.wakeCloseLocked()
 			return nil, err
 		}
-		p.library, p.root, p.state, p.users = library, root, scratchLive, 1
+		// Close continues to count this claim through unpublished setup. Its
+		// caller publishes or assigns the initial remover under mu.
+		p.library, p.root, p.dir, p.writerDir = library, root, dir, writerDir
+		p.state, p.users = scratchLive, 1
 		return p, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -179,6 +206,9 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 	if p.root != nil {
 		err = p.root.Close()
 	}
+	if p.dir != nil {
+		err = errors.Join(err, p.dir.Close())
+	}
 	remove := s.root.RemoveAll
 	name := p.name
 	if s.removeDir != nil {
@@ -192,7 +222,7 @@ func (s *Sessions) removeScratch(p *scratchPath) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	p.root = nil
+	p.root, p.dir = nil, nil
 	if err == nil {
 		delete(s.paths, p.name)
 	} else {

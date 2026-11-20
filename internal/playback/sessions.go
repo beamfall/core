@@ -539,7 +539,7 @@ type sessionTeardown struct {
 	lease *governor.TranscodeLease
 	// counted means detachment added this teardown to s.stopping.
 	counted bool
-	// A late start keeps its directory until its last user releases it.
+	// Late starts and the idle reaper leave removal to the last user if busy.
 	cleanupOnRelease bool
 	// End access before waiting for directory owners to exit.
 	liveRun *encderiv.LiveRun
@@ -597,7 +597,7 @@ func (s *Sessions) finishTeardown(t *sessionTeardown) {
 // wakeCloseLocked wakes Close once admitted off-lock work is complete.
 // Callers hold mu.
 func (s *Sessions) wakeCloseLocked() {
-	if s.offLockIdleLocked() && s.offLockIdle != nil {
+	if s.offLockIdle != nil && s.offLockIdleLocked() {
 		close(s.offLockIdle)
 		s.offLockIdle = nil
 	}
@@ -605,7 +605,17 @@ func (s *Sessions) wakeCloseLocked() {
 
 // offLockIdleLocked reports whether the manager has joined its owned work. Callers hold mu.
 func (s *Sessions) offLockIdleLocked() bool {
-	return s.starting == 0 && s.stopping == 0 && s.detached == 0 && s.removing == 0 && !s.sweeping
+	if s.starting != 0 || s.stopping != 0 || s.detached != 0 || s.removing != 0 || s.sweeping {
+		return false
+	}
+	// An allocation is an owner from reservation through setup, even before
+	// its instance can appear among the heads Close just detached.
+	for _, p := range s.paths {
+		if p.state != scratchDebt {
+			return false
+		}
+	}
+	return true
 }
 
 // stop stops proc and waits for it to exit. Call it without s.mu held.
@@ -1206,7 +1216,7 @@ func (h *hlsSession) segmentWrittenSince(rung string, base int, since time.Time)
 		if segment, _ := strconv.Atoi(match[1]); segment < base {
 			continue
 		}
-		f, info, err := openScratchMember(h.scratch.root, filepath.Join(rung, entry.Name()))
+		f, info, err := openScratchMember(h.scratch.dir, filepath.Join(rung, entry.Name()))
 		if err != nil {
 			continue
 		}
@@ -1395,14 +1405,14 @@ func (s *Sessions) session(ctx context.Context, key SessionKey, src string, dura
 		}
 	}
 	if err == nil && secure != nil {
-		session.live, err = encderiv.NewLiveSession(dir, secure.LibraryID)
+		session.live, err = encderiv.NewLiveSession(scratch.writerDir, secure.LibraryID)
 	}
 	if err == nil {
-		err = writeSessionPlaylists(dir, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
+		err = writeSessionPlaylists(scratch.root, requestedRungs, durationSeconds, timeline, primed, session.writePlaylist)
 	}
 	var preparedPicture *ffmpeg.ComposedPicture
 	if err == nil && picture != nil {
-		preparedPicture, err = writeLivePicture(filepath.Join(dir, ComposedRungID), *picture)
+		preparedPicture, err = writeLivePicture(scratch, *picture)
 	}
 	if err != nil {
 		scratch.users--
@@ -1472,13 +1482,12 @@ func rungsEqual(left, right []Rung) bool {
 // playlist each variant serves before a single segment exists. The audio-copy
 // rung's playlist follows timeline when there is one. write stores one
 // playlist under its slash-separated name relative to dir.
-func writeSessionPlaylists(dir string, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid, write func(rel string, data []byte) error) error {
+func writeSessionPlaylists(root *os.Root, rungs []Rung, durationSeconds int, timeline *keyframeTimeline, primed primedGrid, write func(rel string, data []byte) error) error {
 	if err := write(masterPlaylistName, []byte(masterPlaylist(rungs))); err != nil {
 		return err
 	}
 	for _, rung := range rungs {
-		rungDir := filepath.Join(dir, rung.ID)
-		if err := os.MkdirAll(rungDir, 0o700); err != nil {
+		if err := root.Mkdir(rung.ID, 0o700); err != nil {
 			return err
 		}
 		if durationSeconds > 0 {
@@ -1519,7 +1528,7 @@ func (s *Sessions) ensureRung(ctx context.Context, key SessionKey, session *hlsS
 	if session.artifactReady(path) {
 		return nil, nil
 	}
-	rungDir := filepath.Join(session.dir, rung.ID)
+	rungDir := filepath.Join(session.scratch.writerDir, rung.ID)
 	if segment == initRequest {
 		if session.proc != nil && session.currentRung == rung.ID {
 			return session.run, nil // every encoder writes init.mp4 when it starts
@@ -1958,7 +1967,7 @@ func (s *Sessions) reap() {
 	cutoff := s.now().Add(-sessionIdleTimeout)
 	for _, session := range s.sessions {
 		if session.lastAccess.Before(cutoff) {
-			teardowns = append(teardowns, s.transitionLocked(session, detachSession{}).teardown)
+			teardowns = append(teardowns, s.transitionLocked(session, detachSession{cleanupOnRelease: true}).teardown)
 		}
 	}
 	s.mu.Unlock()
@@ -1983,14 +1992,14 @@ func (s *Sessions) Close() error {
 		s.keyframes.close()
 
 		s.mu.Lock()
-		if !s.offLockIdleLocked() {
+		for !s.offLockIdleLocked() {
 			s.offLockIdle = make(chan struct{})
 			idle := s.offLockIdle
 			s.mu.Unlock()
 			<-idle
-		} else {
-			s.mu.Unlock()
+			s.mu.Lock()
 		}
+		s.mu.Unlock()
 		if s.root != nil {
 			s.closeErr = errors.Join(s.closeSweepErr, s.retryScratch(true), s.root.Close(), s.rootLock.Close())
 		}

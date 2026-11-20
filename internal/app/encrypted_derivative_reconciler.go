@@ -60,7 +60,7 @@ type encryptedDerivativeReconciler struct {
 	artwork         *artwork.Service
 	assets          *genassets.Service
 	subtitles       *mediahttp.Handler
-	sweepTranscodes func() error
+	sessions        *playback.Sessions
 	precomputeCache string
 }
 
@@ -69,22 +69,19 @@ type encryptedDerivativeReconciler struct {
 // precomputeCacheRoot may be empty (no precompute cache configured), in which case
 // the precompute sweep is a no-op.
 func newEncryptedDerivativeReconciler(art *artwork.Service, assets *genassets.Service, subtitles *mediahttp.Handler, sessions *playback.Sessions, precomputeCacheRoot string) *encryptedDerivativeReconciler {
-	r := &encryptedDerivativeReconciler{
+	return &encryptedDerivativeReconciler{
 		artwork:         art,
 		assets:          assets,
 		subtitles:       subtitles,
+		sessions:        sessions,
 		precomputeCache: precomputeCacheRoot,
 	}
-	if sessions != nil {
-		r.sweepTranscodes = sessions.PurgeOrphanedTranscodeDirs
-	}
-	return r
 }
 
 // ReconcileEncryptedTranscodeScratch runs before Store registers the plane.
 func (r *encryptedDerivativeReconciler) ReconcileEncryptedTranscodeScratch(_ context.Context, libraryID store.LibraryID) error {
-	if r.sweepTranscodes != nil {
-		if err := r.sweepTranscodes(); err != nil {
+	if r.sessions != nil {
+		if err := r.sessions.PurgeOrphanedTranscodeDirs(); err != nil {
 			return fmt.Errorf("encrypted-library %s derivative reconcile: %w", libraryID, err)
 		}
 	}

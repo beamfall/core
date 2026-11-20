@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -156,19 +157,40 @@ func TestEncryptedDerivativeReconcilerFailsClosedOnTranscodeSweepError(t *testin
 		t.Fatal(err)
 	}
 	defer st.Close()
-	sessions := sessiontest.New(t, nil, dataDir, nil)
 	root := filepath.Join(dataDir, "transcode")
-	reconciler := newEncryptedDerivativeReconciler(nil, nil, nil, sessions, "")
-	st.SetEncryptedDerivativeReconciler(reconciler)
-
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	readErr := &os.PathError{Op: "readdir", Path: root, Err: os.ErrPermission}
-	reconciler.sweepTranscodes = func() error {
+	failRead := false
+	sessions, err := playback.NewSessionsInDir(nil, root, nil, playback.WithScratchReadDir(func(root fs.FS, name string) ([]fs.DirEntry, error) {
+		if !failRead {
+			return fs.ReadDir(root, name)
+		}
 		close(entered)
 		<-release
-		return readErr
+		return nil, readErr
+	}))
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer func() {
+		if err := sessions.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	st.SetEncryptedDerivativeReconciler(newEncryptedDerivativeReconciler(nil, nil, nil, sessions, ""))
+
+	failRead = true
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
 	libraryID := store.LibraryID("library-enc")
 	result := make(chan error, 1)
 	go func() {
@@ -181,13 +203,6 @@ func TestEncryptedDerivativeReconcilerFailsClosedOnTranscodeSweepError(t *testin
 	case <-time.After(5 * time.Second):
 		t.Fatal("unseal never reached scratch read")
 	}
-	defer func() {
-		select {
-		case <-release:
-		default:
-			close(release)
-		}
-	}()
 	if other, err := playback.NewSessionsInDir(nil, root, nil); err == nil {
 		_ = other.Close()
 		t.Fatal("another manager acquired the root during unseal")
@@ -216,7 +231,7 @@ func TestEncryptedDerivativeReconcilerFailsClosedOnTranscodeSweepError(t *testin
 	if st.EncryptedLibraryDBRegistered(libraryID) {
 		t.Fatal("failed scratch read published the plane")
 	}
-	reconciler.sweepTranscodes = sessions.PurgeOrphanedTranscodeDirs
+	failRead = false
 	if err := st.UnsealEncryptedLibraryDB(t.Context(), libraryID, passthroughAppDBCipher{}); err != nil {
 		t.Fatalf("retry unseal: %v", err)
 	}
