@@ -24,6 +24,14 @@ const MAX_DT = 0.1;
 // Frames a device pixel ratio change waits for the slot's report at the new ratio before it
 // takes the device-pixel box it already has (tick).
 const REPORT_FRAMES = 3;
+// The visual steps at 60 Hz at most, as in Oscillux's reference hosts (hosts/web/host.js at the
+// pinned rev): its feedback, trails and limiter are tuned per 60 Hz step, so a faster display
+// skips a tick that comes early rather than stepping them faster, and a late step's remainder
+// carries, so a 120 Hz display steps on every other tick and a 144 Hz one near 60 Hz. No deficit
+// carries: a display a little faster than 60 Hz steps on every tick rather than dropping one.
+const STEP_MS = 1000 / 60;
+// How early a tick may come and still step: a display's intervals jitter around its rate.
+const STEP_SLACK_MS = 1.5;
 // Render no more pixels than this: the visual sits behind the artwork card.
 const MAX_DPR = 2;
 
@@ -232,6 +240,9 @@ export function Visualizer({
     let frame = 0;
     let lastDrawn: number | null = null;
     let lastWall: number | null = null;
+    // The step clock: the last tick's timestamp and the time owed to the next step.
+    let lastTick: number | null = null;
+    let due = 0;
     // The time each frame is credited to the limiter with, from the shortest draw interval seen.
     const refresh = new RefreshBound();
     // Whether the last draw is unpainted, and the request of the last frame: a draw sets the
@@ -451,6 +462,14 @@ export function Visualizer({
           fitCanvas(renderer);
           return;
         }
+        if (lastDrawn === null || lastTick === null) {
+          due = 0;
+        } else {
+          due = Math.min(due + now - lastTick, 2 * STEP_MS);
+        }
+        lastTick = now;
+        if (lastDrawn !== null && due < STEP_MS - STEP_SLACK_MS) return;
+        if (lastDrawn !== null) due = Math.max(0, due - STEP_MS);
         const frameMs = lastDrawn === null ? 1000 / 60 : now - lastDrawn;
         const dt = Math.min(MAX_DT, frameMs / 1000);
         // The limiter ages its evidence by the credit of refresh.ts, a lower bound on the time
